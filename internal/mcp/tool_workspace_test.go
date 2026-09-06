@@ -286,7 +286,7 @@ func TestEnumerationProducesANameTheAddressingToolsAccept(t *testing.T) {
 		if res.IsError {
 			t.Fatalf("describe refused a name the enumeration produced (%q): %s", name, res.Content[0].Text)
 		}
-		var described describeComponentPayload
+		var described describeEntityPayload
 		decodeStructured(t, res, &described)
 		if described.Name != name || described.Kind != "Component" {
 			t.Fatalf("describe answered about %s %q; the enumeration named Component %q",

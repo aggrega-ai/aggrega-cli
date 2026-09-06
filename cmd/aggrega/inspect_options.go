@@ -97,6 +97,16 @@ type inspectOptions struct {
 	// Only a Release resolves to a graph. Every other kind refuses the request
 	// rather than rendering its own view and quietly dropping it.
 	irGraph bool
+	// closure asks for the Release's dependency closure — which catalog entities
+	// it reaches and at which resolved versions — in place of the resolved-node
+	// view. It selects a different document about the same subject rather than a
+	// different format for one document, which is what separates it from output:
+	// the node view says what the deployment looks like, and the closure says
+	// what was pulled in to build it.
+	//
+	// Only a Release resolves a closure. Every other kind refuses the request
+	// rather than rendering its own view and quietly dropping it.
+	closure bool
 }
 
 // parseColorMode maps the --color string to a colorMode, returning a clear

@@ -22,9 +22,13 @@ type describeArgs struct {
 	ResponseFormat string   `json:"response_format"`
 }
 
-// describeComponentPayload is the structured payload for a catalog entity
-// subject: its kind, its identity, and its resolved definition.
-type describeComponentPayload struct {
+// describeEntityPayload is the structured payload for a catalog entity subject:
+// its kind, its identity, and its resolved definition.
+//
+// Kind is whichever kind the name resolved to, read off the resolved entity
+// rather than assumed from the request — a caller that names a Recipe is
+// answered about a Recipe.
+type describeEntityPayload struct {
 	Kind       string          `json:"kind"`
 	Name       string          `json:"name"`
 	Version    string          `json:"version"`
@@ -65,24 +69,25 @@ type describeReleasePayload struct {
 var describeToolSpec = toolSpec{
 	kinds: []string{"component", "feature", "release"},
 	description: "Describe an Aggrega subject in structured form, rendering nothing and writing nothing. Two modes: pass `name` to resolve a " +
-		"catalog Component or Feature by its type URI and get its fully-resolved definition (schema, uses-schema, provides, " +
-		"labels) with inheritance applied; or pass `release` (a Release path) to get a closure summary — the resolved " +
-		"Aggregate and Manifest identities plus every catalog entity the Release reaches, with resolved versions. Use the " +
-		"name mode to understand a catalog building block before wiring it into an Aggregate, and the release mode to see " +
-		"what a deployment depends on before building it. Optional `workspace_root` and `catalog_dirs` override discovery; " +
-		"`response_format` chooses detailed (full definition / every entity) or concise (identity and counts).",
+		"catalog entity of any kind by its type URI and get its fully-resolved definition (schema, uses-schema, provides, " +
+		"labels) with inheritance applied; or pass `release` (a Release path) to get its dependency closure — what a " +
+		"deployment is built FROM, not its shape — the resolved Aggregate and Manifest identities plus every catalog " +
+		"entity the Release reaches, with resolved versions. Use `name` to understand a building block before wiring it " +
+		"into an Aggregate, and `release` to see what a deployment depends on before building it. Optional " +
+		"`workspace_root` and `catalog_dirs` override discovery; `response_format` chooses detailed (full definition / " +
+		"every entity) or concise (identity and counts).",
 	inputSchema: `{
   "type": "object",
   "properties": {
     "name": {
       "type": "string",
       "minLength": 1,
-      "description": "A catalog Component or Feature type URI to resolve and describe, e.g. core/compute/api-server. Mutually exclusive with release."
+      "description": "A catalog entity type URI (any kind) to resolve and describe, e.g. core/compute/api-server. Mutually exclusive with release."
     },
     "release": {
       "type": "string",
       "minLength": 1,
-      "description": "A Release path whose catalog closure to summarize. Mutually exclusive with name."
+      "description": "A Release path whose dependency closure to report. Mutually exclusive with name."
     },
     "workspace_root": {
       "type": "string",
@@ -128,9 +133,15 @@ func describeInvoke(s *server, _ context.Context, args json.RawMessage) (*callTo
 	}
 }
 
-// describeCatalogEntity resolves a Component or Feature by its type URI through
-// the request-scoped view — with extends inheritance applied — and returns its
-// fully-resolved definition.
+// describeCatalogEntity resolves a name by its type URI through the
+// request-scoped view — with extends inheritance applied — and returns the
+// fully-resolved definition of whichever kind it matched.
+//
+// The resolution is the shared one every by-name surface runs, so a name that
+// resolves at a command line or over the daemon's protocol resolves here too, to
+// the same entity and the same kind. A name that resolves to nothing is refused
+// rather than answered with an empty definition: an empty answer would report a
+// mistyped name as an entity with nothing to say about itself.
 func (s *server) describeCatalogEntity(a describeArgs, name string) (*callToolResult, *rpcError) {
 	tw, err := s.resolveToolWorkspace(a.WorkspaceRoot, a.CatalogDirs)
 	if err != nil {
@@ -138,25 +149,22 @@ func (s *server) describeCatalogEntity(a describeArgs, name string) (*callToolRe
 	}
 	view := tw.newView(nil)
 
-	if comp, ok := view.Component(name); ok {
-		def, mErr := json.Marshal(comp)
-		if mErr != nil {
-			return nil, &rpcError{Code: codeInternalError, Message: "marshal component: " + mErr.Error()}
-		}
-		payload := describeComponentPayload{Kind: "Component", Name: comp.Metadata.Name, Version: comp.Metadata.Version, Definition: def}
-		return textResult(renderDescribeEntityText(payload, comp.Metadata.Description), payload)
+	match, ok := compilerops.ResolveEntity(view, name)
+	if !ok {
+		return errorResult(explainDiagnostic(fmt.Sprintf(
+			"No catalog entity named %q resolved, in any kind (%s). Check the type URI and that the "+
+				"catalog directories cover it.",
+			name, strings.Join(compilerops.EntityKinds(), ", ")), "component"))
 	}
-	if feat, ok := view.Feature(name); ok {
-		def, mErr := json.Marshal(feat)
-		if mErr != nil {
-			return nil, &rpcError{Code: codeInternalError, Message: "marshal feature: " + mErr.Error()}
-		}
-		payload := describeComponentPayload{Kind: "Feature", Name: feat.Metadata.Name, Version: feat.Metadata.Version, Definition: def}
-		return textResult(renderDescribeEntityText(payload, feat.Metadata.Description), payload)
+	def, mErr := json.Marshal(match.Definition)
+	if mErr != nil {
+		return nil, &rpcError{Code: codeInternalError,
+			Message: "marshal " + strings.ToLower(match.Kind) + ": " + mErr.Error()}
 	}
-	return errorResult(explainDiagnostic(fmt.Sprintf(
-		"No Component or Feature named %q resolved in the catalog. Check the type URI and that the catalog directories cover it.",
-		name), "component"))
+	payload := describeEntityPayload{
+		Kind: match.Kind, Name: match.Name, Version: match.Version, Definition: def,
+	}
+	return textResult(renderDescribeEntityText(payload, match.Description), payload)
 }
 
 // describeRelease resolves a Release's catalog closure and returns a summary of
@@ -199,7 +207,12 @@ func (s *server) describeRelease(a describeArgs, release string) (*callToolResul
 	}
 	if detail {
 		for _, e := range resolved.Closure.Entities {
-			payload.Entities = append(payload.Entities, describeEntity{URI: e.URI, Version: e.ResolvedVersion, Kind: e.KindHint})
+			// The kind is rendered as an author writes it rather than as the walk
+			// recorded it, through the same translation every other surface reporting
+			// a closure applies — so one entry reads the same wherever it is read.
+			payload.Entities = append(payload.Entities, describeEntity{
+				URI: e.URI, Version: e.ResolvedVersion, Kind: compilerops.EntityKindForHint(e.KindHint),
+			})
 		}
 	}
 	return textResult(renderDescribeReleaseText(payload), payload)
@@ -207,7 +220,7 @@ func (s *server) describeRelease(a describeArgs, release string) (*callToolResul
 
 // renderDescribeEntityText renders the human-readable one-line summary of a
 // catalog entity, with its description when it carries one.
-func renderDescribeEntityText(p describeComponentPayload, description string) string {
+func renderDescribeEntityText(p describeEntityPayload, description string) string {
 	line := fmt.Sprintf("%s %s (version %s)", p.Kind, p.Name, p.Version)
 	if strings.TrimSpace(description) != "" {
 		line += ": " + description

@@ -286,7 +286,7 @@ func TestDescribeToolComponentAndRelease(t *testing.T) {
 	if comp.IsError {
 		t.Fatalf("describe component reported error: %s", comp.Content[0].Text)
 	}
-	var compPayload describeComponentPayload
+	var compPayload describeEntityPayload
 	if err := json.Unmarshal(comp.StructuredContent, &compPayload); err != nil {
 		t.Fatalf("unmarshal describe component payload: %v", err)
 	}

@@ -12,6 +12,7 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
+	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 )
@@ -130,79 +131,30 @@ func (s *Server) entityDefinition(ctx context.Context, name string) (entityDefin
 	// concurrent request that does hold pins.
 	view := s.lazyCatalog.ForRequest(nil)
 
-	match, ok := resolveEntityByName(view, name)
+	// The resolution is the shared one every by-name surface runs, so a name
+	// resolves to the same entity here as it does at a command line or a tool
+	// call. Each accessor behind it is still this view's own, which is what keeps
+	// the tier cascade, the extends merge and the miss bookkeeping in the one
+	// place that implements them: a Component arrives merged because the view
+	// merges it.
+	match, ok := compilerops.ResolveEntity(view, name)
 	if !ok {
 		return entityDefinitionResult{}, s.unresolvedEntityEnvelope(ctx, view, name)
 	}
-	definition, err := yaml.Marshal(match.entity)
+	definition, err := yaml.Marshal(match.Definition)
 	if err != nil {
 		return entityDefinitionResult{}, &jsonRPCError{
 			Code:    jsonRPCInternalError,
-			Message: fmt.Sprintf("render %s %q: %v", match.kind, name, err),
+			Message: fmt.Sprintf("render %s %q: %v", match.Kind, name, err),
 			cause:   err,
 		}
 	}
 	return entityDefinitionResult{
-		Kind:       match.kind,
-		Name:       match.name,
-		Version:    match.version,
+		Kind:       match.Kind,
+		Name:       match.Name,
+		Version:    match.Version,
 		Definition: string(definition),
 	}, nil
-}
-
-// entityMatch is one resolved entity plus the identity to report it under.
-type entityMatch struct {
-	kind    string
-	name    string
-	version string
-	entity  any
-}
-
-// resolveEntityByName resolves name against the catalog view across every kind,
-// returning the first match.
-//
-// The kind order is the one the command line resolves in, and it is shared
-// rather than re-chosen here: two surfaces asked for the same ambiguous name
-// must not answer with different entities. The order only decides an ambiguity
-// — one name declared by two kinds — which is a workspace nobody should author,
-// but which has to resolve to something rather than to whichever kind happened
-// to be tried first on the day.
-//
-// Every accessor here is the view's own, so the tier cascade, the extends merge
-// and the miss bookkeeping stay in the one place that implements them. Nothing
-// is re-derived: a Component arrives merged because the view merges it.
-func resolveEntityByName(view *catalog.LazyLookup, name string) (entityMatch, bool) {
-	if c, ok := view.Component(name); ok {
-		return entityMatch{"Component", c.Metadata.Name, c.Metadata.Version, c}, true
-	}
-	if p, ok := view.PluginByURI(name); ok {
-		return entityMatch{"Plugin", p.Metadata.Name, p.Metadata.Version, p}, true
-	}
-	if f, ok := view.Feature(name); ok {
-		return entityMatch{"Feature", f.Metadata.Name, f.Metadata.Version, f}, true
-	}
-	if r, ok := view.RecipeByURI(name); ok {
-		return entityMatch{"Recipe", r.Metadata.Name, r.Metadata.Version, r}, true
-	}
-	if fr, ok := view.FeatureRecipeByURI(name); ok {
-		return entityMatch{"FeatureRecipe", fr.Metadata.Name, fr.Metadata.Version, fr}, true
-	}
-	if a, ok := view.AggregateLookup()(name); ok && a.Aggregate != nil {
-		return entityMatch{"Aggregate", a.Aggregate.Metadata.Name, a.Aggregate.Metadata.Version, a.Aggregate}, true
-	}
-	if lib, ok := view.SchemaLibrary(name); ok {
-		return entityMatch{"SchemaLibrary", lib.Metadata.Name, lib.Metadata.Version, lib}, true
-	}
-	if lib, ok := view.MappingLibrary(name); ok {
-		return entityMatch{"MappingLibrary", lib.Metadata.Name, lib.Metadata.Version, lib}, true
-	}
-	if lib, ok := view.WorkloadLibrary(name); ok {
-		return entityMatch{"WorkloadLibrary", lib.Metadata.Name, lib.Metadata.Version, lib}, true
-	}
-	if lib, ok := view.ArtifactsLibrary(name); ok {
-		return entityMatch{"ArtifactsLibrary", lib.Metadata.Name, lib.Metadata.Version, lib}, true
-	}
-	return entityMatch{}, false
 }
 
 // unresolvedEntityEnvelope builds the refusal for a name the catalog resolved
@@ -407,7 +359,7 @@ func (s *Server) handleReleaseClosure(ctx context.Context, params releaseClosure
 func closureEntities(cl closure.Closure) []ClosureEntity {
 	out := make([]ClosureEntity, 0, len(cl.Entities))
 	for _, e := range cl.Entities {
-		out = append(out, ClosureEntity{URI: e.URI, Version: e.ResolvedVersion, Kind: entityKindForHint(e.KindHint)})
+		out = append(out, ClosureEntity{URI: e.URI, Version: e.ResolvedVersion, Kind: compilerops.EntityKindForHint(e.KindHint)})
 	}
 	return out
 }
@@ -444,25 +396,4 @@ func closurePlugins(cl closure.Closure) []ClosureEntity {
 		out = append(out, ClosureEntity{URI: p.URI, Version: p.ResolvedVersion, Kind: "Plugin"})
 	}
 	return out
-}
-
-// entityKindForHint renders the kind a closure entry was collected under as the
-// kind an author writes, or the empty string when the collection site recorded
-// none.
-//
-// The translation is deliberate rather than incidental. The recorded hint is a
-// note the walk keeps for itself about where a reference came from; the kind a
-// reader recognises is the one they type at the head of a document. A client
-// displaying the hint verbatim would be showing a word that appears nowhere in
-// anything the author wrote.
-func entityKindForHint(hint string) string {
-	switch hint {
-	case "recipe":
-		return "Recipe"
-	case "feature_recipe":
-		return "FeatureRecipe"
-	case "aggregate":
-		return "Aggregate"
-	}
-	return ""
 }

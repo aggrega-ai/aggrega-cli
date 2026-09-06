@@ -15,6 +15,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/ir"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
+	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 	"github.com/aggrega-ai/aggrega-cli/internal/redact"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
@@ -45,6 +46,7 @@ func newInspectCmd() *cobra.Command {
 		flatFlag           bool
 		unredactedFlag     bool
 		irGraphFlag        bool
+		closureFlag        bool
 	)
 	c := &cobra.Command{
 		Use:   "inspect [identifier]",
@@ -71,11 +73,18 @@ sensitive appears as authored. That is what as-authored means; handle such
 output as you would the entity file itself. --output yaml reproduces the file
 the same way for every kind, a Release included.
 
---ir-graph asks for a different document: the IR graph a Release resolves to,
-written to stdout as JSON in addition to whatever else this command produces.
-It is orthogonal to --output, which picks the format of the command's own view.
-Values an author declared sensitive are withheld from the graph, as they are
-from the readable layouts. Pass --unredacted to print them instead.`,
+A Release answers two further questions, and each has its own flag because
+neither answer contains the other. --ir-graph asks for the IR graph a Release
+resolves to — what the deployment looks like, as JSON on stdout in addition to
+whatever else this command produces. --closure asks for the Release's dependency
+closure — every catalog entity it reaches and the version each resolved to,
+which is what was pulled in to build the deployment. An entity can be reached
+without appearing as a node, and a node does not carry the version its type
+resolved to, so holding one of the two is not holding the other.
+
+--ir-graph is orthogonal to --output, which picks the format of the command's
+own view. Values an author declared sensitive are withheld from the graph, as
+they are from the readable layouts. Pass --unredacted to print them instead.`,
 		Example: `  # A catalog entity by name
   aggrega inspect core/compute/api-server
 
@@ -89,7 +98,10 @@ from the readable layouts. Pass --unredacted to print them instead.`,
   aggrega inspect ./releases/production.yaml --raw
 
   # The IR graph that Release resolves to, as JSON
-  aggrega inspect ./releases/production.yaml --ir-graph`,
+  aggrega inspect ./releases/production.yaml --ir-graph
+
+  # What that Release depends on, and at which resolved versions
+  aggrega inspect ./releases/production.yaml --closure`,
 		// Arg-count contract enforced before RunE (so genuine misuse surfaces the
 		// Usage block): exactly one identifier in the normal path; zero when
 		// --plugin names a raw .wasm to derive host functions from.
@@ -111,6 +123,9 @@ from the readable layouts. Pass --unredacted to print them instead.`,
 			if pluginFlag != "" {
 				if irGraphFlag {
 					return refuseIRGraph("a raw plugin artifact")
+				}
+				if closureFlag {
+					return refuseClosure("a raw plugin artifact")
 				}
 				return inspectRawPlugin(out, pluginFlag)
 			}
@@ -151,6 +166,7 @@ from the readable layouts. Pass --unredacted to print them instead.`,
 				flat:           flatFlag,
 				unredacted:     unredactedFlag,
 				irGraph:        irGraphFlag,
+				closure:        closureFlag,
 			}
 			return dispatchInspect(rw, args[0], catalogDirs, opts)
 		},
@@ -167,10 +183,20 @@ from the readable layouts. Pass --unredacted to print them instead.`,
 	c.Flags().BoolVar(&flatFlag, "flat", false, "Render a tree-shaped entity (Aggregate, Release) as a flat list, each node prefixed with its full dotted path. No effect on tabular kinds.")
 	c.Flags().BoolVar(&unredactedFlag, "unredacted", false, "Print the values an author declared sensitive instead of withholding them. Anything the output reaches — a terminal, a pipe, a file, a screen recording — then carries those values in the clear.")
 	c.Flags().BoolVar(&irGraphFlag, flagIRGraph, false, helpIRGraph+". Applies to a Release, the one kind that resolves to a graph; any other kind refuses the request rather than silently dropping it. Pass --unredacted to print the withheld values instead")
+	c.Flags().BoolVar(&closureFlag, flagClosure, false, helpClosure+".")
 	c.Flags().StringVar(&pluginFlag, "plugin", "", "Filesystem path to a raw .wasm artifact; derives and prints the host functions it imports, before `aggrega plugin sync` records them in a Plugin entity. Takes no identifier argument.")
 	c.MarkFlagsMutuallyExclusive("list", "detail")
 	c.MarkFlagsMutuallyExclusive("raw", "resolved")
 	c.MarkFlagsMutuallyExclusive("color", "no-color")
+	// The dependency closure is one of the documents this command can produce
+	// about a Release, and each of these flags asks for a different one: the
+	// entity as authored, the entity fully resolved, the compiled graph, or a
+	// format for the command's own view. Asking for two documents in one
+	// invocation is refused rather than silently answered with one of them.
+	c.MarkFlagsMutuallyExclusive(flagClosure, "raw")
+	c.MarkFlagsMutuallyExclusive(flagClosure, "resolved")
+	c.MarkFlagsMutuallyExclusive(flagClosure, "output")
+	c.MarkFlagsMutuallyExclusive(flagClosure, flagIRGraph)
 	return c
 }
 
@@ -203,24 +229,39 @@ func dispatchInspect(rw *workspaceconfig.ResolvedWorkspace, identifier string, c
 	// A bare identifier resolves against the catalog, and no catalog kind is a
 	// Release: a Release names an Aggregate and a Manifest beside it, so it is
 	// reached as a file. Refusing here rather than rendering the entity and
-	// dropping the request is what keeps the flag from quietly doing nothing.
+	// dropping the request is what keeps either flag from quietly doing nothing.
 	if opts.irGraph {
 		return refuseIRGraph("a catalog entity")
+	}
+	if opts.closure {
+		return refuseClosure("a catalog entity")
 	}
 	return inspectCatalogEntity(rw, identifier, catalogDirs, opts)
 }
 
-// refuseIRGraph reports a request for the IR graph made of a subject that
-// resolves to none, naming what does resolve to one.
+// refuseReleaseOnly reports a request for a document only a Release resolves,
+// made of a subject that resolves none, naming what does resolve one.
 //
-// It is one function rather than a sentence at each branch, so the three places
-// that can meet the request answer it identically. The refusal is loud because
-// the alternative is a flag that renders the subject's own view and silently
-// omits the document the caller asked for, which reads to that caller exactly
-// like a Release with an empty graph.
+// It is one function rather than a sentence at each branch, so every place that
+// can meet such a request answers it identically. The refusal is loud because the
+// alternative is a flag that renders the subject's own view and silently omits
+// the document the caller asked for, which reads to that caller exactly like a
+// Release whose document is empty.
+func refuseReleaseOnly(flag, subject, document string) error {
+	return fmt.Errorf("OPS_ERROR: --%s applies to a Release, and %s resolves to no %s; point inspect at a Release file to read one",
+		flag, subject, document)
+}
+
+// refuseIRGraph reports a request for the IR graph made of a subject that
+// resolves to none.
 func refuseIRGraph(subject string) error {
-	return fmt.Errorf("OPS_ERROR: --%s applies to a Release, and %s resolves to no graph; point inspect at a Release file to read one",
-		flagIRGraph, subject)
+	return refuseReleaseOnly(flagIRGraph, subject, "graph")
+}
+
+// refuseClosure reports a request for a dependency closure made of a subject
+// that resolves none.
+func refuseClosure(subject string) error {
+	return refuseReleaseOnly(flagClosure, subject, "dependency closure")
 }
 
 // isPathInput returns true when the identifier names a filesystem path
@@ -354,6 +395,9 @@ func inspectPath(rw *workspaceconfig.ResolvedWorkspace, path string, catalogDirs
 	if opts.irGraph && preamble.Kind != "Release" {
 		return refuseIRGraph("a " + preamble.Kind)
 	}
+	if opts.closure && preamble.Kind != "Release" {
+		return refuseClosure("a " + preamble.Kind)
+	}
 
 	if render, ok := kindRenderers[preamble.Kind]; ok {
 		return render(rw, path, data, catalogDirs, opts)
@@ -366,9 +410,14 @@ func inspectPath(rw *workspaceconfig.ResolvedWorkspace, path string, catalogDirs
 
 // inspectCatalogEntity resolves a bare identifier against the catalog across
 // every entity kind and renders the first match. It loads the catalog over the
-// first-win search stack, resolves extends chains, then tries kinds in a fixed
-// precedence — Component, Plugin, Feature, Recipe, FeatureRecipe, Aggregate,
-// SchemaLibrary, MappingLibrary, WorkloadLibrary, ArtifactsLibrary — returning the first identity match.
+// first-win search stack, resolves extends chains, then hands the identifier to
+// the shared by-name resolution, which tries the kinds in a fixed precedence and
+// returns the first identity match.
+//
+// The precedence lives with that resolution rather than here, so this command and
+// every other surface that resolves a name answer with the same entity for the
+// same ambiguous identifier. What stays here is the rendering: which view each
+// matched kind gets, and the withdrawal advisory that follows it.
 //
 // A Component match keeps its dedicated render path: the merged schema +
 // usesSchema view. Every other kind is
@@ -416,68 +465,110 @@ func inspectCatalogEntity(rw *workspaceconfig.ResolvedWorkspace, identifier stri
 	if extErrs := cat.ResolveAllExtends(); len(extErrs) > 0 {
 		return fmt.Errorf("resolve extends: %s", extErrs[0].Error())
 	}
-	lookup := cat.CatalogLookup()
+	// A name that matches nothing is refused rather than rendered as an entity
+	// with nothing in it, which is what an empty view of a mistyped name would
+	// read as.
+	match, found := compilerops.ResolveEntity(catalogEntityView{cat: cat, lookup: cat.CatalogLookup()}, identifier)
+	if !found {
+		return fmt.Errorf("%q matched no catalog entity of any kind", identifier)
+	}
+	// The identity the withdrawal advisory is looked up by is read from the
+	// resolved entity, never from the typed identifier, which may carry a version
+	// the published location has none.
+	id := entityIdentity{kind: match.Kind, provider: match.Scope, name: match.Name}
 
-	// Component is first and keeps its own render path: the structured schema
-	// view. Its withdrawal advisory is the shared one every other kind gets.
-	if comp, found := lookup.Component(identifier); found {
+	switch match.Kind {
+	case "Component":
+		// Component keeps its own render path: the structured schema view. Its
+		// withdrawal advisory is the shared one every other kind gets.
+		comp, _ := match.Definition.(types.Component)
 		if err := renderComponentStructured(comp, identifier, opts); err != nil {
 			return err
 		}
-		reportEntityWithdrawal(rw, entityIdentity{kind: "Component", name: comp.Metadata.Name}, opts)
+		reportEntityWithdrawal(rw, id, opts)
 		return nil
-	}
-
-	// Remaining kinds resolve through the version-aware catalog accessors; the
-	// first match wins in the fixed precedence below. Each names the identity the
-	// withdrawal advisory is looked up by — read from the resolved entity, never
-	// from the typed identifier, which may carry a version the location has none.
-	if p, ok := lookup.Plugin(identifier); ok {
-		return renderCatalogMatch(rw, entityIdentity{"Plugin", p.Metadata.PluginType, p.Metadata.Name}, identifier, p, catalogDirs, opts)
-	}
-	if f, ok := lookup.Feature(identifier); ok {
-		return renderCatalogMatch(rw, entityIdentity{kind: "Feature", name: f.Metadata.Name}, identifier, f, catalogDirs, opts)
-	}
-	if r, ok := cat.RecipeByURI(identifier); ok {
-		return renderCatalogMatch(rw, entityIdentity{"Recipe", r.Spec.Capability, r.Metadata.Name}, identifier, r, catalogDirs, opts)
-	}
-	if fr, ok := cat.FeatureRecipeByURI(identifier); ok {
-		return renderCatalogMatch(rw, entityIdentity{"FeatureRecipe", fr.Spec.Capability, fr.Metadata.Name}, identifier, fr, catalogDirs, opts)
-	}
-	// Aggregate is a resolved-instance kind: its inspector reads the entity from
-	// a filesystem path to run the topology pass, unlike the pure-unmarshal
-	// renderers that read the passed bytes. The catalog-resolved match carries
-	// the retained source path and authored bytes, so it is dispatched directly
-	// rather than through a re-marshal.
-	//
-	// The catalog records that path relative to the workspace root, because a
-	// machine-stable provenance string is what the IR wants. The inspector opens
-	// it as a filesystem path, which resolves against the process working
-	// directory — so the relative form only finds the file when the command is
-	// run from the workspace root, and fails from any subdirectory of the same
-	// workspace. Anchoring it here, at the site that knows the root the path is
-	// relative TO, is what makes a bare Aggregate identifier resolve from
-	// anywhere in the workspace, as every other kind already does.
-	if ra, ok := cat.AggregateLookup()(identifier); ok {
-		if err := kindRenderers["Aggregate"](rw, workspaceAnchoredPath(wsRoot, ra.Path), ra.Bytes, catalogDirs, opts); err != nil {
+	case "Aggregate":
+		// Aggregate is a resolved-instance kind: its inspector reads the entity
+		// from a filesystem path to run the topology pass, unlike the
+		// pure-unmarshal renderers that read the passed bytes. The resolved match
+		// carries the retained source path and authored bytes, so it is dispatched
+		// directly rather than through a re-marshal.
+		//
+		// The catalog records that path relative to the workspace root, because a
+		// machine-stable provenance string is what the IR wants. The inspector
+		// opens it as a filesystem path, which resolves against the process
+		// working directory — so the relative form only finds the file when the
+		// command is run from the workspace root, and fails from any subdirectory
+		// of the same workspace. Anchoring it here, at the site that knows the
+		// root the path is relative TO, is what makes a bare Aggregate identifier
+		// resolve from anywhere in the workspace, as every other kind already
+		// does.
+		if err := kindRenderers["Aggregate"](rw, workspaceAnchoredPath(wsRoot, match.Source), match.Bytes, catalogDirs, opts); err != nil {
 			return err
 		}
-		reportEntityWithdrawal(rw, entityIdentity{kind: "Aggregate", name: ra.Aggregate.Metadata.Name}, opts)
+		reportEntityWithdrawal(rw, id, opts)
 		return nil
+	default:
+		return renderCatalogMatch(rw, id, identifier, match.Definition, catalogDirs, opts)
 	}
-	if lib, ok := cat.SchemaLibraries[identifier]; ok {
-		return renderCatalogMatch(rw, entityIdentity{kind: "SchemaLibrary", name: lib.Metadata.Name}, identifier, lib, catalogDirs, opts)
-	}
-	if lib, ok := cat.MappingLibraries[identifier]; ok {
-		return renderCatalogMatch(rw, entityIdentity{kind: "MappingLibrary", name: lib.Metadata.Name}, identifier, lib, catalogDirs, opts)
-	}
-	if lib, ok := cat.WorkloadLibraries[identifier]; ok {
-		return renderCatalogMatch(rw, entityIdentity{kind: "WorkloadLibrary", name: lib.Metadata.Name}, identifier, lib, catalogDirs, opts)
-	}
-	if lib, ok := cat.ArtifactsLibraries[identifier]; ok {
-		return renderCatalogMatch(rw, entityIdentity{kind: "ArtifactsLibrary", name: lib.Metadata.Name}, identifier, lib, catalogDirs, opts)
-	}
-	return fmt.Errorf("%q matched no catalog entity of any kind", identifier)
+}
+
+// catalogEntityView adapts an eagerly-loaded catalog to the accessor surface the
+// shared by-name resolution reads.
+//
+// It exists because this command loads its catalog strictly and up front, while
+// the surfaces that hold a session resolve lazily, and the two backings expose
+// their accessors under different names and shapes. The adapter is the whole of
+// the difference: every method here forwards to this command's own accessor, so
+// the resolution reaches exactly what this command reaches and the shared part is
+// only the order the kinds are tried in.
+type catalogEntityView struct {
+	cat    *catalog.Catalog
+	lookup resolver.CatalogLookup
+}
+
+func (v catalogEntityView) Component(uri string) (types.Component, bool) {
+	return v.lookup.Component(uri)
+}
+
+func (v catalogEntityView) Feature(uri string) (types.Feature, bool) {
+	return v.lookup.Feature(uri)
+}
+
+func (v catalogEntityView) PluginByURI(uri string) (types.Plugin, bool) {
+	return v.cat.PluginByURI(uri)
+}
+
+func (v catalogEntityView) RecipeByURI(uri string) (types.Recipe, bool) {
+	return v.cat.RecipeByURI(uri)
+}
+
+func (v catalogEntityView) FeatureRecipeByURI(uri string) (types.FeatureRecipe, bool) {
+	return v.cat.FeatureRecipeByURI(uri)
+}
+
+func (v catalogEntityView) AggregateLookup() resolver.AggregateLookup {
+	return v.cat.AggregateLookup()
+}
+
+func (v catalogEntityView) SchemaLibrary(uri string) (types.SchemaLibrary, bool) {
+	lib, ok := v.cat.SchemaLibraries[uri]
+	return lib, ok
+}
+
+func (v catalogEntityView) MappingLibrary(uri string) (types.MappingLibrary, bool) {
+	lib, ok := v.cat.MappingLibraries[uri]
+	return lib, ok
+}
+
+func (v catalogEntityView) WorkloadLibrary(uri string) (types.WorkloadLibrary, bool) {
+	lib, ok := v.cat.WorkloadLibraries[uri]
+	return lib, ok
+}
+
+func (v catalogEntityView) ArtifactsLibrary(uri string) (types.ArtifactsLibrary, bool) {
+	lib, ok := v.cat.ArtifactsLibraries[uri]
+	return lib, ok
 }
 
 // workspaceAnchoredPath resolves a catalog-recorded source path — which the
@@ -611,6 +702,14 @@ func renderReleaseFile(rw *workspaceconfig.ResolvedWorkspace, releasePath string
 	authored := opts.mode == modeForcedRaw || opts.output == outputYAML
 	if authored && !opts.irGraph {
 		return emitYAMLRoundTrip(opts, releasePath, data)
+	}
+	// The dependency closure is a different document about the same Release, and
+	// it is resolved rather than rendered: nothing here builds a graph, loads a
+	// rendering guest or produces an artifact. It is reached before the pipeline
+	// below because that pipeline is the cost of the node view, which a caller
+	// asking for the closure did not ask for.
+	if opts.closure {
+		return renderReleaseClosure(rw, releasePath, catalogDirs, opts)
 	}
 	// wsRoot is the resolved workspace root; the catalog renders its entity
 	// source-file accessors relative to it so catalog-sourced IR records read
