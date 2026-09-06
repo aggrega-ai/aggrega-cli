@@ -217,7 +217,7 @@ func validateReleaseScope(s *server, ctx context.Context, a validateArgs, releas
 	if err != nil {
 		return errorResult(explainToolError("Could not resolve the workspace for validation.", err, "release"))
 	}
-	releasePath := tw.absReleasePath(release)
+	releasePath := tw.absWorkspacePath(release)
 	lf := loadReleaseLockfile(releasePath)
 	view := tw.newView(lf)
 
@@ -277,7 +277,7 @@ func validateEntityScope(s *server, a validateArgs, entity string) (*callToolRes
 	if err != nil {
 		return errorResult(explainToolError("Could not resolve the workspace for validation.", err, "component"))
 	}
-	entityPath := tw.absReleasePath(entity)
+	entityPath := tw.absWorkspacePath(entity)
 
 	res, verr := validateops.ValidateEntity(tw.root, tw.cacheDir, tw.dirs, entityPath, false)
 
@@ -312,10 +312,10 @@ func validatePluginScope(s *server, a validateArgs, plugin, pluginType, entity s
 	if err != nil {
 		return errorResult(explainToolError("Could not resolve the workspace for validation.", err, "plugin"))
 	}
-	pluginPath := tw.absReleasePath(plugin)
+	pluginPath := tw.absWorkspacePath(plugin)
 	entityPath := entity
 	if entity != "" {
-		entityPath = tw.absReleasePath(entity)
+		entityPath = tw.absWorkspacePath(entity)
 	}
 
 	res, verr := validateops.ValidatePluginBinary(pluginPath, pluginType, entityPath, pluginValidateMaxMemoryPages)

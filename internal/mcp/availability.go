@@ -109,6 +109,19 @@ var curatedToolNames = map[string][]string{
 	"cache-status":  {"cache-status"},
 	"registry-list": {"registry-list"},
 	"search":        {"search"},
+
+	// The four publication verbs. Each is also reachable as the tool generated
+	// from its command, which re-runs that command in a separate process and
+	// answers with the text it printed; these run the operation inside this server
+	// and answer with the facts — the reference, the tag, the published digest,
+	// what was signed, and how far the call reached. The names are the ones the
+	// session protocol gives the same four capabilities, because a caller reading
+	// both surfaces should meet one concept under one name, and neither surface's
+	// caller ever typed a command.
+	"push":          {"publish-entity"},
+	"push-artifact": {"publish-artifact"},
+	"sign":          {"sign-artifacts"},
+	"deprecate":     {"deprecate-artifact"},
 }
 
 // curated names a tool spec after the operation it answers, and is the one way a

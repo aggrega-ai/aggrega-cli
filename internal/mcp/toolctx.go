@@ -68,14 +68,22 @@ func (tw *toolWorkspace) newView(lf *lockfile.Lockfile) *catalog.LazyLookup {
 	return v
 }
 
-// absReleasePath resolves a tool call's release argument to an absolute path.
-// A relative path is taken against the workspace root so a call can name the
-// release by a workspace-relative path or an absolute one interchangeably.
-func (tw *toolWorkspace) absReleasePath(release string) string {
-	if filepath.IsAbs(release) {
-		return release
+// absWorkspacePath resolves a path a tool call named to an absolute path. A
+// relative path is taken against the workspace root, so a call can name its
+// subject by a workspace-relative path or an absolute one interchangeably.
+//
+// It is the one home of that contract for every path argument on this surface —
+// a Release, an entity document, a plugin executable, an artifact file, a batch
+// file. The contract is deliberately the same for all of them: a caller here
+// names the workspace it means on the call itself, so a path outside that root is
+// something it can address rather than something it has strayed into, and a rule
+// that admitted an absolute Release while refusing an absolute entity would be
+// one no caller could predict from the rest of this surface.
+func (tw *toolWorkspace) absWorkspacePath(p string) string {
+	if filepath.IsAbs(p) {
+		return p
 	}
-	return filepath.Join(tw.root, release)
+	return filepath.Join(tw.root, p)
 }
 
 // loadReleaseLockfile loads the per-Release lockfile beside releasePath,

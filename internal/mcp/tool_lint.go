@@ -159,14 +159,14 @@ func (s *server) lintInProcess(ctx context.Context, req lintRequest, stdout, std
 		return err
 	}
 	if req.release != "" {
-		return lintops.RunRelease(tw.rw, tw.absReleasePath(req.release), nil, stdout, stderr, nil)
+		return lintops.RunRelease(tw.rw, tw.absWorkspacePath(req.release), nil, stdout, stderr, nil)
 	}
 	pluginPath := req.plugin
 	if pluginPath != "" {
-		pluginPath = tw.absReleasePath(pluginPath)
+		pluginPath = tw.absWorkspacePath(pluginPath)
 	}
 	return lintops.RunEntity(lintops.Config{
-		EntityPath:     tw.absReleasePath(req.entity),
+		EntityPath:     tw.absWorkspacePath(req.entity),
 		PrePublish:     req.prePublish,
 		PluginPath:     pluginPath,
 		PolicyResolver: func(_ string, ws bool) bool { return ws },

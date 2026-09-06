@@ -183,7 +183,7 @@ func TestCuratedRefusesWhatTheTableDoesNotAccountFor(t *testing.T) {
 		},
 		{
 			name:    "an operation with no curated name",
-			id:      "push",
+			id:      anOperationWithNoCuratedName(t),
 			refuses: "declares no curated name",
 		},
 	} {
@@ -224,6 +224,27 @@ func TestCuratedOverwritesANameASpecCarries(t *testing.T) {
 		t.Fatalf("a spec's own name survived registration: the tool is named %q, and the table gives %q",
 			got.name, "lint")
 	}
+}
+
+// anOperationWithNoCuratedName returns an operation this protocol declares no
+// curated tool name for, walking the operation set in its own order so the answer
+// is deterministic.
+//
+// It is derived rather than named because naming one is how this case rots: the
+// identifier that used to stand for "no curated tool" is exactly what stops
+// standing for it the day a curated tool is written for that operation, and the
+// symptom is this assertion failing for a reason that has nothing to do with what
+// it tests. It fails loudly when every operation has a curated name, because then
+// the refusal under test is unreachable and the case would be asserting nothing.
+func anOperationWithNoCuratedName(t *testing.T) string {
+	t.Helper()
+	for _, op := range opsurface.Operations() {
+		if _, declared := curatedToolNames[op.ID]; !declared {
+			return op.ID
+		}
+	}
+	t.Fatal("every operation has a curated tool name, so the refusal this case drives is unreachable")
+	return ""
 }
 
 func containsName(names []string, want string) bool {

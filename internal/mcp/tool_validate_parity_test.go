@@ -94,7 +94,7 @@ func TestValidateToolEntityScopeCoreParity(t *testing.T) {
 		}
 		payload := unmarshalValidatePayload(t, res)
 
-		_, coreErr := validateops.ValidateEntity(tw.root, tw.cacheDir, tw.dirs, tw.absReleasePath(entityPath), false)
+		_, coreErr := validateops.ValidateEntity(tw.root, tw.cacheDir, tw.dirs, tw.absWorkspacePath(entityPath), false)
 		if coreErr != nil {
 			t.Fatalf("core rejected the clean fixture: %v", coreErr)
 		}
@@ -113,7 +113,7 @@ func TestValidateToolEntityScopeCoreParity(t *testing.T) {
 		})
 		payload := unmarshalValidatePayload(t, res)
 
-		_, coreErr := validateops.ValidateEntity(tw.root, tw.cacheDir, tw.dirs, tw.absReleasePath(entityPath), false)
+		_, coreErr := validateops.ValidateEntity(tw.root, tw.cacheDir, tw.dirs, tw.absWorkspacePath(entityPath), false)
 		if coreErr == nil {
 			t.Fatalf("expected the core to reject a Release as a single-entity target")
 		}

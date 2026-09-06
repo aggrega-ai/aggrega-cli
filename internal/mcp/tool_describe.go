@@ -174,7 +174,7 @@ func (s *server) describeRelease(a describeArgs, release string) (*callToolResul
 	if err != nil {
 		return errorResult(explainToolError("Could not resolve the workspace for the Release.", err, "release"))
 	}
-	releasePath := tw.absReleasePath(release)
+	releasePath := tw.absWorkspacePath(release)
 	lf := loadReleaseLockfile(releasePath)
 	view := tw.newView(lf)
 

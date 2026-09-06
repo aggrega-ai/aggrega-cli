@@ -48,6 +48,17 @@ import (
 // once the capability tool has surfaced it, and each is also reachable as the tool
 // generated from its own command, so deferring costs a discovery call rather than
 // access.
+// The four publication verbs sit here on the same criterion, tested against it
+// rather than filed here for room. Each answers at one moment — when a caller has
+// finished authoring and is ready to put something where other people will resolve
+// it — and none of them is reachable-from-cold in the way the enumeration tools
+// are: a publication needs an entity or a reference the caller already has to have
+// found, so every one of them is downstream of a tool the default set already
+// carries. Deferring them costs one discovery call at the moment they become
+// relevant. It is also the conservative side of the only asymmetry here that is not
+// about budget: these are the tools that write beyond this machine, and a set a
+// client loads up front is a set an assistant reaches for without having asked
+// what it does.
 var deferredToolRegistry = []toolSpec{
 	curated("lint", lintToolSpec),
 	curated("feature-attach-candidates", attachCandidatesToolSpec),
@@ -55,6 +66,10 @@ var deferredToolRegistry = []toolSpec{
 	curated("cache-status", cacheStatusToolSpec),
 	curated("registry-list", registryListToolSpec),
 	curated("search", searchToolSpec),
+	curated("push", publishEntityToolSpec),
+	curated("push-artifact", publishArtifactToolSpec),
+	curated("sign", signArtifactsToolSpec),
+	curated("deprecate", deprecateArtifactToolSpec),
 }
 
 // describeCapabilitiesName is the meta capability tool's name. It is referenced

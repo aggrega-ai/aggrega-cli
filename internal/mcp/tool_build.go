@@ -105,7 +105,7 @@ func buildInvoke(s *server, ctx context.Context, args json.RawMessage) (*callToo
 	if err != nil {
 		return errorResult(explainToolError("Could not resolve the workspace for the build.", err, "release"))
 	}
-	releasePath := tw.absReleasePath(a.Release)
+	releasePath := tw.absWorkspacePath(a.Release)
 	lf := loadReleaseLockfile(releasePath)
 	view := tw.newView(lf)
 

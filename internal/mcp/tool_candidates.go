@@ -214,7 +214,7 @@ func attachCandidatesInvoke(s *server, ctx context.Context, args json.RawMessage
 // render ran, so skipping it keeps a question about label matching from loading
 // a rendering plugin to answer itself.
 func (s *server) attachCandidatesForGraphNode(ctx context.Context, tw *toolWorkspace, a attachCandidatesArgs) (*callToolResult, *rpcError) {
-	releasePath := tw.absReleasePath(a.Release)
+	releasePath := tw.absWorkspacePath(a.Release)
 	lf := loadReleaseLockfile(releasePath)
 	view := tw.newView(lf)
 

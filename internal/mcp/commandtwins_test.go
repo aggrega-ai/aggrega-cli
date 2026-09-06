@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/clisurface"
+	"github.com/aggrega-ai/aggrega-cli/internal/opsurface"
 )
 
 // twinnedServer builds a server over the commands the operation set records, so
@@ -269,11 +270,42 @@ func TestTheDisclosureIsDerivedFromTheOperation(t *testing.T) {
 
 	// The operation an unpaired command records is still read, so an operation
 	// gaining a curated tool later is paired with no edit here.
-	unpaired := deriveCommandTool(clisurface.Descriptor{Path: "aggrega push"})
-	if unpaired.operation != "push" {
-		t.Errorf("a generated tool for %q records the operation %q, want %q", "aggrega push", unpaired.operation, "push")
+	//
+	// Which command that is has to be DERIVED. Naming one is how this case rots:
+	// the command that stands for "no curated tool answers this" stops standing for
+	// it the day a curated tool is written for its operation, and the symptom is
+	// this assertion failing for a reason that has nothing to do with what it tests.
+	id, path := anUncuratedCommand(t)
+	unpaired := deriveCommandTool(clisurface.Descriptor{Path: path})
+	if unpaired.operation != id {
+		t.Errorf("a generated tool for %q records the operation %q, want %q", path, unpaired.operation, id)
 	}
 	if strings.Contains(unpaired.description, "answers this same capability") {
 		t.Errorf("a command no curated tool answers carries a disclosure anyway:\n%s", unpaired.description)
 	}
+}
+
+// anUncuratedCommand returns an operation the command line exposes at exactly one
+// path and no curated tool answers, together with that path.
+//
+// The single-path condition is what makes the answer usable here: a path claimed
+// by several operations carries whichever one names it alone, so a multi-path
+// record would leave the operation the generated tool records undecided by this
+// walk. It fails loudly when no such command exists, because the negative control
+// below would then be asserting nothing.
+func anUncuratedCommand(t *testing.T) (operation, path string) {
+	t.Helper()
+	table := clisurface.OperationAvailability()
+	for _, op := range opsurface.Operations() {
+		a, ok := table[op.ID]
+		if !ok || !a.IsExposed() || len(a.Names) != 1 {
+			continue
+		}
+		if _, curatedName := curatedToolNames[op.ID]; curatedName {
+			continue
+		}
+		return op.ID, a.Names[0]
+	}
+	t.Fatal("every command-backed operation has a curated tool, so the unpaired control asserts nothing")
+	return "", ""
 }

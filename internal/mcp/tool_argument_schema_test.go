@@ -191,6 +191,48 @@ func TestDeclaredSchemasStateTheArgumentRulesTheToolsEnforce(t *testing.T) {
 		{describeCapabilitiesName, "the whole long tail", `{}`, true},
 		{describeCapabilitiesName, "narrowed to one kind", `{"kind":"component"}`, true},
 		{describeCapabilitiesName, "a kind that is not an entity kind at all", `{"kind":"nonesuch"}`, false},
+
+		// The four publication tools. Every invalid row here is refused before the
+		// operation is reached, which is what makes them drivable at all: a row that
+		// got past argument checking would try to publish.
+		{publishEntityToolName, "an entity to the workspace's own destination", `{"entity":"1.0.0/entity.yaml"}`, true},
+		{publishEntityToolName, "a Plugin entity with its executable", `{"entity":"p.yaml","plugin":"g.wasm"}`, true},
+		{publishEntityToolName, "a dry run to a named destination", `{"entity":"e.yaml","registry":"r.example","dry_run":true}`, true},
+		{publishEntityToolName, "signing declined explicitly", `{"entity":"e.yaml","sign":false}`, true},
+		{publishEntityToolName, "keyed signing by held key", `{"entity":"e.yaml","key_path":"/k.pem"}`, true},
+		{publishEntityToolName, "keyless signing with a supplied credential", `{"entity":"e.yaml","identity_token":"t","fulcio_url":"https://f"}`, true},
+		{publishEntityToolName, "no entity", `{}`, false},
+		{publishEntityToolName, "a blank entity", `{"entity":""}`, false},
+		{publishEntityToolName, "an entity of the wrong type", `{"entity":5}`, false},
+		{publishEntityToolName, "a blank executable", `{"entity":"e.yaml","plugin":""}`, false},
+
+		{publishArtifactToolName, "a file with its name and version", `{"file":"b.txt","name":"handbook","tag":"2.0.0"}`, true},
+		{publishArtifactToolName, "a dry run with an explicit media type", `{"file":"b.txt","name":"h","tag":"2.0.0","media_type":"application/x-tar","dry_run":true}`, true},
+		{publishArtifactToolName, "no file", `{"name":"h","tag":"2.0.0"}`, false},
+		{publishArtifactToolName, "no name", `{"file":"b.txt","tag":"2.0.0"}`, false},
+		{publishArtifactToolName, "no tag", `{"file":"b.txt","name":"h"}`, false},
+		{publishArtifactToolName, "a blank tag", `{"file":"b.txt","name":"h","tag":""}`, false},
+
+		{signArtifactsToolName, "one reference", `{"references":["r.example/component/core/api:1.0.0"]}`, true},
+		{signArtifactsToolName, "a batch with a supplied credential", `{"references":["a:1","b:1"],"identity_token":"t"}`, true},
+		{signArtifactsToolName, "no references", `{}`, false},
+		{signArtifactsToolName, "an empty reference list", `{"references":[]}`, false},
+		{signArtifactsToolName, "a blank entry in the list", `{"references":[""]}`, false},
+		{signArtifactsToolName, "references sent as a bare string", `{"references":"a:1"}`, false},
+
+		// deprecate-artifact: a single reference with its content, or a batch file
+		// — and the batch file carries its own content, so content sent alongside it
+		// would be read by nothing.
+		{deprecateArtifactToolName, "one reference with its content", `{"reference":"a:1","severity":"warning","reason":"superseded"}`, true},
+		{deprecateArtifactToolName, "one reference with every optional field", `{"reference":"a:1","severity":"warning","reason":"superseded","replacement":"a:2","message":"move on"}`, true},
+		{deprecateArtifactToolName, "a batch file", `{"from":"batch.yaml"}`, true},
+		{deprecateArtifactToolName, "a batch file with a signing key", `{"from":"batch.yaml","key_path":"/k.pem"}`, true},
+		{deprecateArtifactToolName, "neither a reference nor a batch file", `{}`, false},
+		{deprecateArtifactToolName, "both at once", `{"reference":"a:1","severity":"warning","reason":"x","from":"batch.yaml"}`, false},
+		{deprecateArtifactToolName, "a reference with no content", `{"reference":"a:1"}`, false},
+		{deprecateArtifactToolName, "a reference with only a severity", `{"reference":"a:1","severity":"warning"}`, false},
+		{deprecateArtifactToolName, "content alongside a batch file", `{"from":"batch.yaml","severity":"warning"}`, false},
+		{deprecateArtifactToolName, "a replacement alongside a batch file", `{"from":"batch.yaml","replacement":"a:2"}`, false},
 	}
 
 	s := newGuidanceServer(t)
@@ -245,7 +287,10 @@ func TestDeclaredSchemasStateTheArgumentRulesTheToolsEnforce(t *testing.T) {
 // the list cannot silently stop matching the schemas — a named tool whose schema
 // declares no combination is a failure.
 func TestDeclaredSchemasCoverEveryToolWithACombinationRule(t *testing.T) {
-	withCombinationRules := []string{"validate", "describe", "lint", "get-schema", "gen-catalog", "attach-candidates"}
+	withCombinationRules := []string{
+		"validate", "describe", "lint", "get-schema", "gen-catalog", "attach-candidates",
+		deprecateArtifactToolName,
+	}
 	s := newGuidanceServer(t)
 	for _, name := range withCombinationRules {
 		spec, found := s.lookupTool(name)

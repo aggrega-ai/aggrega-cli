@@ -194,7 +194,7 @@ func TestDiscoverLibraryDeprecationRecordsMarker(t *testing.T) {
 		Reason:   "withdrawn: unsound port range",
 		IssuedOn: "2026-08-01T00:00:00Z",
 	}
-	if err := registryindex.AttachSignedMarker(ctx, io.Discard, store, libTestVersion,
+	if _, err := registryindex.AttachSignedMarker(ctx, io.Discard, store, libTestVersion,
 		libTestHost+"/schemalibrary/portspec:"+libTestVersion, marker, signer); err != nil {
 		t.Fatalf("attachSignedMarker: %v", err)
 	}
