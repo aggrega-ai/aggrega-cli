@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/buildops"
+	"github.com/aggrega-ai/aggrega-cli/internal/cacheops"
 	"github.com/aggrega-ai/aggrega-cli/internal/pullops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 )
@@ -111,10 +112,16 @@ type acquireExternalInputsResult struct {
 // pinnedExternalInput is one newly-pinned external input: the URL the render
 // requested, the content digest it was pinned at, and the size of the bytes
 // stored.
+//
+// SizeText is that size written in the binary-unit vocabulary every surface
+// spells sizes in, carried beside the number rather than instead of it, so a
+// caller displaying what was pinned does not have to reproduce the rounding rule
+// to spell it the way the rest of the product does.
 type pinnedExternalInput struct {
-	URL    string `json:"url"`
-	Sha256 string `json:"sha256"`
-	Size   int64  `json:"size"`
+	URL      string `json:"url"`
+	Sha256   string `json:"sha256"`
+	Size     int64  `json:"size"`
+	SizeText string `json:"sizeText"`
 }
 
 // dispatchResolveDependencies unmarshals params and answers the request.
@@ -281,7 +288,12 @@ func (s *Server) handleAcquireExternalInputs(ctx context.Context, params acquire
 
 	pinned := make([]pinnedExternalInput, 0, len(acquired))
 	for _, rec := range acquired {
-		pinned = append(pinned, pinnedExternalInput{URL: rec.URL, Sha256: rec.Sha256, Size: rec.Size})
+		pinned = append(pinned, pinnedExternalInput{
+			URL:      rec.URL,
+			Sha256:   rec.Sha256,
+			Size:     rec.Size,
+			SizeText: cacheops.HumanSize(rec.Size),
+		})
 	}
 	return acquireExternalInputsResult{
 		Lockfile: s.workspaceRelative(lockfile.PathFor(releasePath)),

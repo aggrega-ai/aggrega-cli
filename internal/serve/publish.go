@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"io"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/cacheops"
 	"github.com/aggrega-ai/aggrega-cli/internal/publishops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/registryhost"
 )
@@ -123,13 +124,21 @@ type publishEntityParams struct {
 // is computed, and the two booleans say which path ran — dryRun published nothing,
 // and alreadyPublished found the tag already pointing at byte-identical content
 // and landed nothing.
+//
+// Each size is carried twice: as the byte count a caller computes with, and as
+// the same quantity written in the binary-unit vocabulary every surface spells
+// sizes in, so a caller displaying it does not have to reproduce the rounding
+// rule. PluginSizeText is absent exactly when PluginSize is, so the pair is never
+// half-present.
 type publishEntityResult struct {
 	Reference        string           `json:"reference"`
 	Tag              string           `json:"tag"`
 	Kind             string           `json:"kind"`
 	MediaType        string           `json:"mediaType"`
 	Size             int              `json:"size"`
+	SizeText         string           `json:"sizeText"`
 	PluginSize       int              `json:"pluginSize,omitempty"`
+	PluginSizeText   string           `json:"pluginSizeText,omitempty"`
 	Digest           string           `json:"digest"`
 	Signed           bool             `json:"signed"`
 	AlreadyPublished bool             `json:"alreadyPublished"`
@@ -157,6 +166,7 @@ type publishArtifactResult struct {
 	Tag              string           `json:"tag"`
 	MediaType        string           `json:"mediaType"`
 	Size             int              `json:"size"`
+	SizeText         string           `json:"sizeText"`
 	Digest           string           `json:"digest"`
 	AlreadyPublished bool             `json:"alreadyPublished"`
 	DryRun           bool             `json:"dryRun"`
@@ -329,19 +339,27 @@ func runPublishEntity(cfg publishops.PushConfig) (publishEntityResult, *jsonRPCE
 			cause:   err,
 		}
 	}
-	return publishEntityResult{
+	out := publishEntityResult{
 		Reference:        res.Reference,
 		Tag:              res.Tag,
 		Kind:             res.Kind,
 		MediaType:        res.MediaType,
 		Size:             res.Size,
+		SizeText:         cacheops.HumanSize(int64(res.Size)),
 		PluginSize:       res.PluginSize,
 		Digest:           res.Digest,
 		Signed:           res.Signed,
 		AlreadyPublished: res.AlreadyPublished,
 		DryRun:           res.DryRun,
 		Reach:            reachOf(res.Reference, !res.DryRun),
-	}, nil
+	}
+	// The plugin size is carried only for a plugin entity, so its rendering is
+	// held to the same presence: a caller never reads a rendered size with no
+	// number beside it, in either direction.
+	if res.PluginSize != 0 {
+		out.PluginSizeText = cacheops.HumanSize(int64(res.PluginSize))
+	}
+	return out, nil
 }
 
 // dispatchPublishArtifact publishes a standalone data artifact to a registry.
@@ -426,6 +444,7 @@ func runPublishArtifact(cfg publishops.PushArtifactConfig) (publishArtifactResul
 		Tag:              res.Tag,
 		MediaType:        res.MediaType,
 		Size:             res.Size,
+		SizeText:         cacheops.HumanSize(int64(res.Size)),
 		Digest:           res.Digest,
 		AlreadyPublished: res.AlreadyPublished,
 		DryRun:           res.DryRun,

@@ -28,11 +28,21 @@ type cacheScope struct {
 }
 
 // cacheElementResult is one enumerated cache element on the wire.
+//
+// SizeText is the byte count written in the binary-unit vocabulary every surface
+// spells sizes in, and it is the display half of a round trip: the same
+// vocabulary is what [cacheops.ParseHumanSize] reads, so a quantity a caller
+// shows can be handed straight back to an operation that takes a size. It is
+// carried beside the number rather than instead of it — a caller that computes
+// needs the number, and a caller that displays needs the text — so that no
+// consumer has to reproduce the rounding rule to spell a size the way the rest
+// of the product spells it.
 type cacheElementResult struct {
-	Label  string `json:"label"`
-	Size   int64  `json:"size"`
-	Digest string `json:"digest,omitempty"`
-	Note   string `json:"note,omitempty"`
+	Label    string `json:"label"`
+	Size     int64  `json:"size"`
+	SizeText string `json:"sizeText"`
+	Digest   string `json:"digest,omitempty"`
+	Note     string `json:"note,omitempty"`
 }
 
 // cacheClassResult is one cache class on the wire: its name, how far its
@@ -54,12 +64,16 @@ type cacheClassResult struct {
 //
 // Every collection is an array rather than a null, so a client iterates
 // unconditionally instead of special-casing an empty cache.
+//
+// TotalSizeText carries the total in the shared spelling, on the same terms as
+// every other rendered size here.
 type cacheStatusResult struct {
-	Classes    []cacheClassResult      `json:"classes"`
-	Provenance []cacheProvenanceResult `json:"provenance"`
-	TotalCount int                     `json:"totalCount"`
-	TotalSize  int64                   `json:"totalSize"`
-	Scope      cacheScope              `json:"scope"`
+	Classes       []cacheClassResult      `json:"classes"`
+	Provenance    []cacheProvenanceResult `json:"provenance"`
+	TotalCount    int                     `json:"totalCount"`
+	TotalSize     int64                   `json:"totalSize"`
+	TotalSizeText string                  `json:"totalSizeText"`
+	Scope         cacheScope              `json:"scope"`
 }
 
 // cacheProvenanceResult is one recorded content digest's resolved plugin
@@ -74,10 +88,11 @@ type cacheProvenanceResult struct {
 // the class it came from so a caller reading a single removal is told its scope
 // without having to consult the summary.
 type cacheRemovalResult struct {
-	Class string `json:"class"`
-	Label string `json:"label"`
-	Reach string `json:"reach"`
-	Size  int64  `json:"size"`
+	Class    string `json:"class"`
+	Label    string `json:"label"`
+	Reach    string `json:"reach"`
+	Size     int64  `json:"size"`
+	SizeText string `json:"sizeText"`
 }
 
 // cacheShortfallResult is a set of elements an operation left behind because it
@@ -86,19 +101,22 @@ type cacheShortfallResult struct {
 	Class       string   `json:"class"`
 	Count       int      `json:"count"`
 	Size        int64    `json:"size"`
+	SizeText    string   `json:"sizeText"`
 	Reach       string   `json:"reach"`
 	ReclaimedBy []string `json:"reclaimedBy"`
 }
 
 // cachePruneResult is the aggrega/cachePrune response.
 type cachePruneResult struct {
-	Removed           []cacheRemovalResult   `json:"removed"`
-	RetainedCount     int                    `json:"retainedCount"`
-	ReclaimedBytes    int64                  `json:"reclaimedBytes"`
-	UnattributedCount int                    `json:"unattributedCount"`
-	UnattributedSize  int64                  `json:"unattributedSize"`
-	NotPruneEligible  []cacheShortfallResult `json:"notPruneEligible"`
-	Scope             cacheScope             `json:"scope"`
+	Removed              []cacheRemovalResult   `json:"removed"`
+	RetainedCount        int                    `json:"retainedCount"`
+	ReclaimedBytes       int64                  `json:"reclaimedBytes"`
+	ReclaimedBytesText   string                 `json:"reclaimedBytesText"`
+	UnattributedCount    int                    `json:"unattributedCount"`
+	UnattributedSize     int64                  `json:"unattributedSize"`
+	UnattributedSizeText string                 `json:"unattributedSizeText"`
+	NotPruneEligible     []cacheShortfallResult `json:"notPruneEligible"`
+	Scope                cacheScope             `json:"scope"`
 }
 
 // cacheEvictParams selects the size cap the compiled-module cache is trimmed to.
@@ -110,28 +128,37 @@ type cacheEvictParams struct {
 }
 
 // cacheEvictResult is the aggrega/cacheEvict response.
+// CapBytesText closes the loop the cap opened: the cap arrived as text a caller
+// wrote, and it leaves as text in the same vocabulary, so the value a caller
+// reads back is one it could send again unchanged.
 type cacheEvictResult struct {
-	WithinCapBefore bool                 `json:"withinCapBefore"`
-	Removed         []cacheRemovalResult `json:"removed"`
-	TotalBefore     int64                `json:"totalBefore"`
-	ReclaimedBytes  int64                `json:"reclaimedBytes"`
-	RemainingBytes  int64                `json:"remainingBytes"`
-	CapBytes        int64                `json:"capBytes"`
-	Scope           cacheScope           `json:"scope"`
+	WithinCapBefore    bool                 `json:"withinCapBefore"`
+	Removed            []cacheRemovalResult `json:"removed"`
+	TotalBefore        int64                `json:"totalBefore"`
+	TotalBeforeText    string               `json:"totalBeforeText"`
+	ReclaimedBytes     int64                `json:"reclaimedBytes"`
+	ReclaimedBytesText string               `json:"reclaimedBytesText"`
+	RemainingBytes     int64                `json:"remainingBytes"`
+	RemainingBytesText string               `json:"remainingBytesText"`
+	CapBytes           int64                `json:"capBytes"`
+	CapBytesText       string               `json:"capBytesText"`
+	Scope              cacheScope           `json:"scope"`
 }
 
 // cacheClearedResult is one whole subtree a wipe removed.
 type cacheClearedResult struct {
-	Class string `json:"class"`
-	Reach string `json:"reach"`
-	Size  int64  `json:"size"`
+	Class    string `json:"class"`
+	Reach    string `json:"reach"`
+	Size     int64  `json:"size"`
+	SizeText string `json:"sizeText"`
 }
 
 // cacheClearResult is the aggrega/cacheClear response.
 type cacheClearResult struct {
-	Cleared        []cacheClearedResult `json:"cleared"`
-	ReclaimedBytes int64                `json:"reclaimedBytes"`
-	Scope          cacheScope           `json:"scope"`
+	Cleared            []cacheClearedResult `json:"cleared"`
+	ReclaimedBytes     int64                `json:"reclaimedBytes"`
+	ReclaimedBytesText string               `json:"reclaimedBytesText"`
+	Scope              cacheScope           `json:"scope"`
 }
 
 // cacheLocations resolves the cache roots this session addresses.
@@ -181,10 +208,11 @@ func (s *Server) dispatchCacheStatus(ctx context.Context, req *jsonRPCRequest) e
 		elements := make([]cacheElementResult, 0, len(cl.Elements))
 		for _, el := range cl.Elements {
 			elements = append(elements, cacheElementResult{
-				Label:  el.Label,
-				Size:   el.Size,
-				Digest: el.DigestHex,
-				Note:   el.Note,
+				Label:    el.Label,
+				Size:     el.Size,
+				SizeText: cacheops.HumanSize(el.Size),
+				Digest:   el.DigestHex,
+				Note:     el.Note,
 			})
 		}
 		classes = append(classes, cacheClassResult{
@@ -201,11 +229,12 @@ func (s *Server) dispatchCacheStatus(ctx context.Context, req *jsonRPCRequest) e
 	}
 
 	return s.writeResult(ctx, req.ID, cacheStatusResult{
-		Classes:    classes,
-		Provenance: provenance,
-		TotalCount: report.TotalCount,
-		TotalSize:  report.TotalSize,
-		Scope:      s.cacheScopeOf(cacheops.MachineWideClasses(report.Classes)),
+		Classes:       classes,
+		Provenance:    provenance,
+		TotalCount:    report.TotalCount,
+		TotalSize:     report.TotalSize,
+		TotalSizeText: cacheops.HumanSize(report.TotalSize),
+		Scope:         s.cacheScopeOf(cacheops.MachineWideClasses(report.Classes)),
 	})
 }
 
@@ -231,13 +260,15 @@ func (s *Server) dispatchCachePrune(ctx context.Context, req *jsonRPCRequest) er
 		return s.writeError(ctx, req.ID, jsonRPCInternalError, err.Error())
 	}
 	return s.writeResult(ctx, req.ID, cachePruneResult{
-		Removed:           cacheRemovals(res.Removed),
-		RetainedCount:     res.RetainedCount,
-		ReclaimedBytes:    res.ReclaimedBytes,
-		UnattributedCount: res.UnattributedCount,
-		UnattributedSize:  res.UnattributedSize,
-		NotPruneEligible:  cacheShortfalls(res.NotPruneEligible),
-		Scope:             s.cacheScopeOf(res.MachineWide),
+		Removed:              cacheRemovals(res.Removed),
+		RetainedCount:        res.RetainedCount,
+		ReclaimedBytes:       res.ReclaimedBytes,
+		ReclaimedBytesText:   cacheops.HumanSize(res.ReclaimedBytes),
+		UnattributedCount:    res.UnattributedCount,
+		UnattributedSize:     res.UnattributedSize,
+		UnattributedSizeText: cacheops.HumanSize(res.UnattributedSize),
+		NotPruneEligible:     cacheShortfalls(res.NotPruneEligible),
+		Scope:                s.cacheScopeOf(res.MachineWide),
 	})
 }
 
@@ -275,13 +306,17 @@ func (s *Server) dispatchCacheEvict(ctx context.Context, req *jsonRPCRequest) er
 		return s.writeError(ctx, req.ID, jsonRPCInternalError, evictErr.Error())
 	}
 	return s.writeResult(ctx, req.ID, cacheEvictResult{
-		WithinCapBefore: res.WithinCapBefore,
-		Removed:         cacheRemovals(res.Removed),
-		TotalBefore:     res.TotalBefore,
-		ReclaimedBytes:  res.ReclaimedBytes,
-		RemainingBytes:  res.RemainingBytes,
-		CapBytes:        res.CapBytes,
-		Scope:           s.cacheScopeOf(res.MachineWide),
+		WithinCapBefore:    res.WithinCapBefore,
+		Removed:            cacheRemovals(res.Removed),
+		TotalBefore:        res.TotalBefore,
+		TotalBeforeText:    cacheops.HumanSize(res.TotalBefore),
+		ReclaimedBytes:     res.ReclaimedBytes,
+		ReclaimedBytesText: cacheops.HumanSize(res.ReclaimedBytes),
+		RemainingBytes:     res.RemainingBytes,
+		RemainingBytesText: cacheops.HumanSize(res.RemainingBytes),
+		CapBytes:           res.CapBytes,
+		CapBytesText:       cacheops.HumanSize(res.CapBytes),
+		Scope:              s.cacheScopeOf(res.MachineWide),
 	})
 }
 
@@ -304,12 +339,18 @@ func (s *Server) dispatchCacheClear(ctx context.Context, req *jsonRPCRequest) er
 	}
 	cleared := make([]cacheClearedResult, 0, len(res.Cleared))
 	for _, c := range res.Cleared {
-		cleared = append(cleared, cacheClearedResult{Class: c.Class, Reach: string(c.Reach), Size: c.Size})
+		cleared = append(cleared, cacheClearedResult{
+			Class:    c.Class,
+			Reach:    string(c.Reach),
+			Size:     c.Size,
+			SizeText: cacheops.HumanSize(c.Size),
+		})
 	}
 	return s.writeResult(ctx, req.ID, cacheClearResult{
-		Cleared:        cleared,
-		ReclaimedBytes: res.ReclaimedBytes,
-		Scope:          s.cacheScopeOf(res.MachineWide),
+		Cleared:            cleared,
+		ReclaimedBytes:     res.ReclaimedBytes,
+		ReclaimedBytesText: cacheops.HumanSize(res.ReclaimedBytes),
+		Scope:              s.cacheScopeOf(res.MachineWide),
 	})
 }
 
@@ -318,7 +359,13 @@ func (s *Server) dispatchCacheClear(ctx context.Context, req *jsonRPCRequest) er
 func cacheRemovals(in []cacheops.Removal) []cacheRemovalResult {
 	out := make([]cacheRemovalResult, 0, len(in))
 	for _, r := range in {
-		out = append(out, cacheRemovalResult{Class: r.Class, Label: r.Label, Reach: string(r.Reach), Size: r.Size})
+		out = append(out, cacheRemovalResult{
+			Class:    r.Class,
+			Label:    r.Label,
+			Reach:    string(r.Reach),
+			Size:     r.Size,
+			SizeText: cacheops.HumanSize(r.Size),
+		})
 	}
 	return out
 }
@@ -331,6 +378,7 @@ func cacheShortfalls(in []cacheops.Shortfall) []cacheShortfallResult {
 			Class:       s.Class,
 			Count:       s.Count,
 			Size:        s.Size,
+			SizeText:    cacheops.HumanSize(s.Size),
 			Reach:       string(s.Reach),
 			ReclaimedBy: s.ReclaimedBy,
 		})
