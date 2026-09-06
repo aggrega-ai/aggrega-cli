@@ -466,8 +466,11 @@ func runPublishArtifact(cfg publishops.PushArtifactConfig) (publishArtifactResul
 //
 // One authentication serves the whole batch, and nothing is prompted for: the
 // identity is resolved once, from the request or from the environment, before any
-// reference is signed, so a batch with no usable credential refuses at the start
-// rather than partway through.
+// reference is signed, so a batch with no credential available at all refuses at
+// the start rather than partway through. A credential that is supplied but does
+// not hold up is a different case and is reported later: a supplied token is taken
+// as given here, and its subject is checked when the signer is built, which is
+// after the first reference has been resolved against the registry.
 func (s *Server) dispatchSignArtifacts(ctx context.Context, req *jsonRPCRequest) error {
 	var params signArtifactsParams
 	if len(req.Params) > 0 {
