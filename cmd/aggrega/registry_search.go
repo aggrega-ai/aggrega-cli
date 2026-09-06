@@ -6,78 +6,37 @@ package main
 import (
 	"context"
 	"errors"
-	"fmt"
 	"path"
-	"sort"
-	"strings"
 
-	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
+	"github.com/aggrega-ai/aggrega-cli/internal/registryops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
-// registryRepoLister enumerates the repository names a registry serves. It is
-// the one registry capability the search primitive needs — the OCI catalog
-// (_catalog) API surfaced by oras as Repositories. The production value is an
-// authenticated oras remote registry; a test substitutes an in-memory lister so
-// search runs without a network.
-type registryRepoLister interface {
-	Repositories(ctx context.Context, last string, fn func(repos []string) error) error
-}
+// The registry enumeration primitive, its scope predicate and the two standing
+// scopes live in the shared operations layer, which is where every surface that
+// enumerates a registry reaches them. They are named here so this package's
+// existing spellings resolve to that one implementation rather than to a second
+// copy of it.
+type (
+	registryRepoLister = registryops.RepoLister
+	searchScope        = registryops.RepoScope
+)
 
-// searchScope decides whether a repository path is within a search's scope. It
-// is what makes one search primitive serve two commands: plugin search and
-// catalog search pass different scopes over the same enumeration.
-type searchScope func(repoPath string) bool
+// pluginSearchScope admits the repository paths Wasm plugins publish under, so
+// an enumeration is scoped to installable plugins rather than the whole catalog.
+var pluginSearchScope = registryops.PluginScope
 
-// pluginSearchScope admits the repository paths Wasm plugins publish under — the
-// plugin/ path prefix the plugin URI convention uses (KindPathSegment("Plugin")).
-// It scopes plugin search to installable plugins rather than the whole catalog.
-func pluginSearchScope(repoPath string) bool {
-	return strings.HasPrefix(repoPath, catalog.KindPathSegment("Plugin")+"/")
-}
+// catalogSearchScope admits every repository — a catalog enumeration spans the
+// full entity surface, not one kind.
+var catalogSearchScope = registryops.CatalogScope
 
-// catalogSearchScope admits every repository — catalog search spans the full
-// entity surface, not one kind.
-func catalogSearchScope(string) bool { return true }
-
-// searchRegistry is the single registry-search primitive behind both
-// `aggrega plugin search` and `aggrega catalog search`. It enumerates the
-// registry's repositories, keeps those the scope admits whose path contains the
-// case-insensitive query substring (an empty query matches every in-scope
-// repository), and returns the matches in ascending order. The two commands
-// differ only in the scope they pass; the enumeration, filtering, and ordering
-// live here once so the two never drift into two searches.
-//
-// Enumeration is progress-aware. The registry delivers each catalog page to the
-// callback before it parses that page's pagination header, so a registry that
-// serves a malformed pagination header fails only after the first page's
-// repositories were already collected. In that case the matches gathered so far
-// are returned rather than discarded — a partial result beats no result. An
-// error raised before any page was delivered (a connection or first-request
-// failure) still propagates, since there is nothing to fall back to.
+// searchRegistry enumerates the repositories a registry serves that the scope
+// admits and whose path contains the query substring, in ascending order. It
+// delegates to the shared layer's one enumeration primitive, whose walk,
+// filtering, ordering and partial-on-error posture are documented there.
 func searchRegistry(ctx context.Context, reg registryRepoLister, query string, scope searchScope) ([]string, error) {
-	q := strings.ToLower(query)
-	var matches []string
-	pageDelivered := false
-	err := reg.Repositories(ctx, "", func(repos []string) error {
-		pageDelivered = true
-		for _, repo := range repos {
-			if !scope(repo) {
-				continue
-			}
-			if q != "" && !strings.Contains(strings.ToLower(repo), q) {
-				continue
-			}
-			matches = append(matches, repo)
-		}
-		return nil
-	})
-	if err != nil && !pageDelivered {
-		return nil, fmt.Errorf("search registry: %w", err)
-	}
-	sort.Strings(matches)
-	return matches, nil
+	return registryops.EnumerateRepositories(ctx, reg, query, scope)
 }
 
 // registrySearchTarget resolves the registry to search from the resolved

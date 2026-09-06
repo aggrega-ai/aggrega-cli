@@ -115,3 +115,23 @@ func WriteDestination(op ConfigOperation, global, workspace bool, root string, l
 	}
 	return filepath.Join(root, ConfigFilename), nil
 }
+
+// WriteDestination resolves the config file a mutating operation writes to,
+// against THIS resolution's own root and its own view of the environment.
+//
+// It is the form to reach for wherever a resolved workspace is already in hand,
+// and the reason is a correctness one rather than convenience. The free function
+// above takes the environment reader as a parameter, so a caller holding a
+// resolution can pass a different one — or nil, which reads the live process
+// environment — and then write to a global file the resolution never read. The
+// two come apart whenever the resolution was directed at a particular global
+// file rather than at the ambient one, which is exactly what a caller does when
+// it points the global layer somewhere explicit.
+//
+// Reading a configuration from one file and writing the change to another is a
+// silent wrong answer: the operation reports success, names the file it wrote,
+// and the setting the caller asked to change is not the one the next read will
+// see.
+func (r *ResolvedWorkspace) WriteDestination(op ConfigOperation, global, workspace bool) (string, error) {
+	return WriteDestination(op, global, workspace, r.root, r.lookup)
+}

@@ -217,7 +217,31 @@ import (
 //
 // What did NOT move with them is the protection: these run only when a request
 // names them, so nothing writes while a document is being validated or inspected.
-const boundCeiling = 13
+//
+// It came down by THREE again when the daemon took on the registries a workspace
+// reaches: registering one with its trust policy, dropping one, and refreshing
+// the local index the search reads. The three ship together for the reason the
+// rows themselves gave — the removal row said outright that settling the
+// registration and leaving it would split one decision — and all three are
+// admitted by the same invocation rule.
+//
+// The registration row is the one that decided the shape here, and it decided it
+// by being WRONG. It argued for exposure on the ground that the write's "default
+// target is inside" the workspace. Measured, it is not: a registry is tool-scoped
+// tooling, so with no override the write resolves to the global configuration
+// file every workspace on the machine reads through. The correct argument is the
+// opposite one — the reach is machine-wide, which is why each of these responses
+// carries the file it wrote and whether that file is the shared one, rather than
+// letting a session-scoped answer be read as a workspace-scoped change.
+//
+// The refresh row was wrong the other way. It said the index "is not in the
+// workspace, which is why search itself is declined"; the index is written under
+// the workspace's own configured cache directory, and search was exposed on that
+// very ground. What is genuinely distinctive about the refresh is the reach, not
+// the write: it is the only method the daemon carries that goes out to a
+// registry, and it does so without prompting, which is what the credential
+// posture already required of every surface with nobody watching.
+const boundCeiling = 10
 
 // TestTheBoundOnlyShrinks is the ratchet. See boundCeiling for why both
 // directions refuse.

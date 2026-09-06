@@ -14,6 +14,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/registryindex"
+	"github.com/aggrega-ai/aggrega-cli/internal/registryops"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
@@ -373,7 +374,10 @@ var pluginRepoWithdrawalLister = func(ctx context.Context, cfg workspaceconfig.C
 		return nil, err
 	}
 	policy, _ := cfg.RegistryTrustPolicy(host)
-	return collectVersionDeprecations(ctx, cfg, policy, repo, repoPath, versions, out), nil
+	// The structured per-marker notes are for a surface that answers with values;
+	// this path announces its substitutions in prose on the writer it was given.
+	markers, _ := registryops.CollectVersionDeprecations(ctx, cfg, policy, repo, repoPath, versions, out)
+	return markers, nil
 }
 
 // livePluginRetractionScreen builds the withdrawal screen for a plugin repository

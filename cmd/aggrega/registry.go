@@ -4,12 +4,9 @@
 package main
 
 import (
-	"context"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"strings"
 	"text/tabwriter"
 
@@ -17,8 +14,6 @@ import (
 	"oras.land/oras-go/v2/registry/remote/credentials"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/registryops"
-	"github.com/aggrega-ai/aggrega-cli/pkg/registryhost"
-	"github.com/aggrega-ai/aggrega-cli/pkg/registrytrust"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
@@ -45,8 +40,13 @@ to sign.
 than having you write it out. "aggrega registry update" builds the local
 searchable index that "aggrega search" and "aggrega plugin add" read.
 
-Which config file an entry is written to follows the same rule as every other
-setting: the workspace file by default, the global file with --global.`,
+A registry entry is written to the global config shared across every workspace
+on this machine, because a registry and the identities you trust on it are
+usually the same wherever you work. That makes adding or removing one a
+machine-wide change: every project on this machine resolves through the entry
+you just wrote or dropped. Pass --workspace to write it to this project's config
+file instead. Building the searchable index is the exception — that lands in
+this workspace's own artifact cache and reaches no other project.`,
 		Example: `  # Configured registries and their trust posture
   aggrega registry list
 
@@ -263,35 +263,29 @@ type registryRemoveConfig struct {
 	lookup func(string) string
 }
 
-// registryRemoveRun resolves the target config file and drops the registry entry
-// addressed by cfg.Token. A token that matches nothing in that file fails loudly
-// rather than silently rewriting an unchanged config.
+// registryRemoveRun drops the registry entry addressed by cfg.Token from the
+// resolved config file and confirms what it dropped and from where.
+//
+// The removal itself comes from the shared layer, so this command and every
+// other surface perform one removal rather than each performing its own. Only
+// the confirmation line is decided here, and it names the file so a person
+// reading it can see whether the change was machine-wide or this project's.
 func registryRemoveRun(cfg registryRemoveConfig) error {
 	rw, err := workspaceOrResolve(cfg.ws)
 	if err != nil {
 		return fmt.Errorf("workspaceconfig: %w", err)
 	}
-	cfgPath, err := workspaceconfig.WriteDestination(workspaceconfig.OpRegistry, cfg.Global, cfg.Workspace, rw.Root(), cfg.lookup)
+	res, err := registryops.Remove(rw, registryops.RemoveOptions{
+		Token:     cfg.Token,
+		Global:    cfg.Global,
+		Workspace: cfg.Workspace,
+		Lookup:    cfg.lookup,
+	})
 	if err != nil {
 		return err
-	}
-	removed, err := workspaceconfig.RemoveRegistry(cfgPath, cfg.Token)
-	if err != nil {
-		return err
-	}
-	if !removed {
-		return fmt.Errorf("aggrega registry remove: registry %q is not configured in %s", cfg.Token, cfgPath)
 	}
 	if cfg.Out != nil {
-		// Resolve the token to its host for the confirmation line, through the same
-		// primitive the removal matched on. On the success path the entry existed,
-		// so this resolves to the host that was dropped; an ambiguity or other
-		// resolver error falls back to echoing the token verbatim.
-		host := cfg.Token
-		if h, rerr := rw.Config().ResolveRegistry(cfg.Token); rerr == nil {
-			host = h
-		}
-		fmt.Fprintf(cfg.Out, "Removed registry %s from %s\n", host, cfgPath)
+		fmt.Fprintf(cfg.Out, "Removed registry %s from %s\n", res.Host, res.Target.Path)
 	}
 	return nil
 }
@@ -320,7 +314,7 @@ flags are mutually exclusive.
 By default the registry's advertised trust policy is fetched once from the
 registry's own origin (https://<host>/.well-known/aggrega-trust) and pinned
 locally — trust-on-first-use. Verification at pull time always runs against the
-pinned local policy, never a live re-fetch. Pass --no-fetch-trust to skip the
+pinned local policy, never a live re-fetch. Pass --fetch-trust=false to skip the
 fetch and pin only what the flags supply.
 
 A trust policy can also be set by hand: keyless (one or more --identity entries,
@@ -335,7 +329,7 @@ When the registry advertises no trust policy (a 404 or an unreachable endpoint),
 the add does not fail: it writes the policy from the flags (or an empty policy)
 and prints a notice suggesting manual --identity / --key pinning.
 
-The entry is written to the workspace config file, preserving existing settings.`,
+Existing settings in the target config file are preserved.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			rw, err := workspaceFromContext(cmd.Context())
@@ -365,7 +359,7 @@ The entry is written to the workspace config file, preserving existing settings.
 	c.Flags().StringVar(&trustedRoot, "trusted-root", "", "Path to a pinned Sigstore trust-root bundle for air-gapped keyless verification")
 	c.Flags().BoolVar(&requireSignatures, "require-signatures", false, "Require a signature on every artifact pulled from (and pushed to) this registry")
 	c.Flags().BoolVar(&advisory, "advisory", false, "Downgrade verification failures for this registry to warnings instead of halting")
-	c.Flags().BoolVar(&fetchTrust, "fetch-trust", true, "Fetch and pin the registry's advertised trust policy on first use. Use --no-fetch-trust to skip; manual --identity/--key also skip the fetch.")
+	c.Flags().BoolVar(&fetchTrust, "fetch-trust", true, "Fetch and pin the registry's advertised trust policy on first use. Use --fetch-trust=false to skip; manual --identity/--key also skip the fetch.")
 	c.Flags().BoolVar(&global, "global", false, "Write the entry to the global config shared across every workspace. A registry defaults here.")
 	c.Flags().BoolVar(&workspace, "workspace", false, "Write the entry to this project's workspace config instead of the global config.")
 	return c
@@ -412,148 +406,59 @@ type registryAddConfig struct {
 	lookup func(string) string
 }
 
-// registryAddRun assembles a RegistryConfig for the host and upserts it into
-// the workspace config file at the resolved workspace root.
+// registryAddRun registers the host and its trust policy in the resolved config
+// file and confirms what it wrote and where.
 //
-// Trust-policy precedence:
-//
-//   - Manual flags win. When --identity or --key is supplied, the policy is
-//     built from the flags alone and the advertised-trust fetch is skipped —
-//     the operator has stated the trust set explicitly.
-//   - Otherwise, trust-on-first-use. With FetchTrust set and no manual policy,
-//     the registry's advertised trust document is fetched once from its own
-//     origin and its identities pinned locally. This is the first-contact
-//     decision; verification at pull time runs against this pinned copy, never
-//     a live re-fetch.
-//   - Graceful fallback. A registry that advertises nothing (a 404 or an
-//     unreachable endpoint) is not an error: the add prints a notice and writes
-//     an empty/permissive policy (or, for the hub host, the embedded baseline),
-//     exactly as before trust-on-first-use existed.
+// The registration itself — the write-target resolution, the trust-policy
+// precedence and the advertised-trust fetch — comes from the shared layer, so
+// this command and every other surface perform one registration rather than each
+// performing its own. What is decided here is the prose: the trust fetch's
+// outcome is reported where it happened, before any later refusal, so a person
+// watching sees the same sequence they always did.
 func registryAddRun(cfg registryAddConfig) error {
 	rw, err := workspaceOrResolve(cfg.ws)
 	if err != nil {
 		return fmt.Errorf("workspaceconfig: %w", err)
 	}
-	host := registryhost.Of(cfg.Host)
-	if host == "" {
-		return fmt.Errorf("aggrega registry add: a registry host is required")
+	res, addErr := registryops.Add(rw, registryops.AddOptions{
+		Host:              cfg.Host,
+		Name:              cfg.Name,
+		Identities:        cfg.Identities,
+		KeyPath:           cfg.KeyPath,
+		TrustedRoot:       cfg.TrustedRoot,
+		RequireSignatures: cfg.RequireSignatures,
+		RequireValue:      cfg.RequireValue,
+		Advisory:          cfg.Advisory,
+		FetchTrust:        cfg.FetchTrust,
+		Global:            cfg.Global,
+		Workspace:         cfg.Workspace,
+		TrustClient:       cfg.trustClient,
+		Lookup:            cfg.lookup,
+	})
+	// The trust-fetch notice is written whether or not the registration went on to
+	// succeed, because the fetch happened either way and a reader who is told
+	// nothing about it cannot tell a skipped fetch from a failed one.
+	if cfg.Out != nil {
+		writeTrustFetchNotice(cfg.Out, res.Host, res.Trust)
 	}
-
-	// Resolve the write destination up front — it does not depend on the trust
-	// fetch, so a write-target flag misuse (both --global and --workspace) or an
-	// unresolvable global path fails fast, before any network fetch.
-	cfgPath, err := workspaceconfig.WriteDestination(workspaceconfig.OpRegistry, cfg.Global, cfg.Workspace, rw.Root(), cfg.lookup)
-	if err != nil {
-		return err
-	}
-
-	manualPolicy := len(cfg.Identities) > 0 || cfg.KeyPath != ""
-
-	reg := workspaceconfig.RegistryConfig{Host: host}
-
-	// Adding the official hub with no explicit manual policy pins the embedded
-	// baseline (the maintainer + CI OR-set, signatures required).
-	if host == workspaceconfig.HubBaselineHost && !manualPolicy {
-		reg = workspaceconfig.DefaultBaseline()
-	}
-
-	// The friendly alias rides on the same host-keyed entry regardless of how the
-	// trust policy is assembled below. Empty leaves the entry host-only.
-	reg.Name = cfg.Name
-
-	// Trust-on-first-use: fetch and pin the advertised policy unless a manual
-	// policy overrides it. A manual --identity/--key skips the fetch entirely.
-	if cfg.FetchTrust && !manualPolicy {
-		if perr := pinAdvertisedTrust(&reg, host, cfg.trustClient, cfg.Out); perr != nil {
-			return perr
-		}
-	}
-
-	for _, spec := range cfg.Identities {
-		id, issuer, ok := strings.Cut(spec, "=")
-		if !ok || id == "" || issuer == "" {
-			return fmt.Errorf("aggrega registry add: --identity %q must be in the form identity=issuer", spec)
-		}
-		reg.TrustedIdentities = append(reg.TrustedIdentities, workspaceconfig.TrustedIdentity{
-			Identity: id,
-			Issuer:   issuer,
-		})
-	}
-
-	if cfg.KeyPath != "" {
-		pem, rerr := os.ReadFile(cfg.KeyPath)
-		if rerr != nil {
-			return fmt.Errorf("aggrega registry add: read public key %s: %w", cfg.KeyPath, rerr)
-		}
-		reg.PublicKey = string(pem)
-	}
-	if cfg.TrustedRoot != "" {
-		reg.TrustedRoot = cfg.TrustedRoot
-	}
-	if cfg.RequireSignatures {
-		reg.Signing.Required = cfg.RequireValue
-	}
-	if cfg.Advisory {
-		reg.Advisory = true
-	}
-
-	if err := workspaceconfig.UpsertRegistry(cfgPath, reg); err != nil {
-		return err
+	if addErr != nil {
+		return addErr
 	}
 	if cfg.Out != nil {
-		fmt.Fprintf(cfg.Out, "Registered registry %s in %s\n", host, cfgPath)
+		fmt.Fprintf(cfg.Out, "Registered registry %s in %s\n", res.Host, res.Target.Path)
 	}
 	return nil
 }
 
-// pinAdvertisedTrust fetches host's advertised trust document and copies its
-// fields onto reg. A registry that advertises nothing — a 404 (mapped to
-// ErrNoTrustAdvertised) or an unreachable endpoint (a transport error) — is
-// tolerated: it prints a notice and leaves reg's policy for the caller's
-// manual flags (or the empty/baseline default) to fill, rather than failing
-// the add. A MALFORMED advertised document (one that fetched but did not
-// decode, ErrMalformedTrust) is a hard error, since the endpoint answered with
-// content that is not a usable trust policy — a real misconfiguration the
-// operator should see.
-func pinAdvertisedTrust(reg *workspaceconfig.RegistryConfig, host string, client *http.Client, out interface{ Write([]byte) (int, error) }) error {
-	adv, ferr := registrytrust.Fetch(context.Background(), client, host)
-	if ferr != nil {
-		if errors.Is(ferr, registrytrust.ErrMalformedTrust()) {
-			return fmt.Errorf("aggrega registry add: %w", ferr)
-		}
-		if out != nil {
-			fmt.Fprintf(out, "Notice: registry %s advertises no trust config (%v); pin identities manually with --identity/--key\n", host, ferr)
-		}
-		return nil
+// writeTrustFetchNotice states what the advertised-trust fetch did, in the two
+// cases that have something to say. A skipped fetch says nothing: the operator
+// either supplied a policy outright or asked for no fetch, so there is no
+// outcome to report and a line saying so would be noise on every manual add.
+func writeTrustFetchNotice(out interface{ Write([]byte) (int, error) }, host string, t registryops.TrustFetchOutcome) {
+	switch {
+	case t.Pinned:
+		fmt.Fprintf(out, "Pinned advertised trust policy from %s (%d identities)\n", host, t.Identities)
+	case t.NotAdvertised:
+		fmt.Fprintf(out, "Notice: registry %s advertises no trust config (%s); pin identities manually with --identity/--key\n", host, t.Reason)
 	}
-
-	reg.Signing.Required = adv.RequiresSignatures
-	reg.TrustedIdentities = advertisedIdentities(adv.TrustedIdentities)
-	reg.TrustedDeprecationIdentities = advertisedIdentities(adv.TrustedDeprecationIdentities)
-	if adv.PublicKey != "" {
-		reg.PublicKey = adv.PublicKey
-	}
-	if out != nil {
-		fmt.Fprintf(out, "Pinned advertised trust policy from %s (%d identities)\n", host, len(reg.TrustedIdentities))
-	}
-	return nil
-}
-
-// advertisedIdentities converts the wire-shape identities from an advertised
-// trust document into the per-registry config's identity type. The two shapes
-// are field-identical; the copy keeps the config package unaware of the
-// registrytrust wire type.
-func advertisedIdentities(ids []registrytrust.AdvertisedIdentity) []workspaceconfig.TrustedIdentity {
-	if len(ids) == 0 {
-		return nil
-	}
-	out := make([]workspaceconfig.TrustedIdentity, 0, len(ids))
-	for _, id := range ids {
-		out = append(out, workspaceconfig.TrustedIdentity{
-			Identity:       id.Identity,
-			IdentityRegexp: id.IdentityRegexp,
-			Issuer:         id.Issuer,
-		})
-	}
-	return out
 }

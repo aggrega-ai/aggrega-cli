@@ -4,97 +4,28 @@
 package main
 
 import (
-	"context"
-	"encoding/json"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
-	"strings"
 	"time"
 
-	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/spf13/cobra"
-	"oras.land/oras-go/v2"
 
-	"github.com/aggrega-ai/aggrega-cli/internal/registryindex"
-	"github.com/aggrega-ai/aggrega-cli/pkg/deprecation"
-	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
-	"github.com/aggrega-ai/aggrega-cli/pkg/pullverify"
-	"github.com/aggrega-ai/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/internal/registryops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
-// registryIndexSource is the registry capability a local index build needs: it
-// enumerates the repositories a registry serves and hands back a per-repository
-// target for tag listing and manifest reads. It embeds the same repository
-// enumeration the search primitive consumes, so the walk reuses that one
-// progress-aware enumeration rather than re-deriving it. Production wires an
-// oras remote registry for enumeration and a per-repository remote repository
-// for reads; a test substitutes an in-memory source so the build runs without a
-// network.
-type registryIndexSource interface {
-	registryRepoLister
-	Repository(repo string) (oras.ReadOnlyTarget, error)
-	// ConditionalTags lists a repository's tags, revalidating against a stored
-	// listing validator: when ifNoneMatch matches the registry's current validator
-	// the registry answers that the listing is unchanged (notModified true, tags
-	// nil), otherwise it returns the current tags and the new validator. truncated
-	// reports a listing that did not fit one page, so its single-request validator
-	// does not cover the whole set. An empty ifNoneMatch lists unconditionally.
-	ConditionalTags(ctx context.Context, repo, ifNoneMatch string) (tags []string, etag string, notModified bool, truncated bool, err error)
-}
-
-// remoteIndexSource is the production registryIndexSource. It enumerates through
-// an authenticated remote registry and constructs a per-repository remote
-// repository on demand, both through the one registry-client home so the
-// enumeration and the per-repo reads share loopback and credential handling.
-type remoteIndexSource struct {
-	reg        registryRepoLister
-	host       string
-	httpClient *http.Client
-}
-
-func (s remoteIndexSource) Repositories(ctx context.Context, last string, fn func(repos []string) error) error {
-	return s.reg.Repositories(ctx, last, fn)
-}
-
-func (s remoteIndexSource) Repository(repo string) (oras.ReadOnlyTarget, error) {
-	return oci.NewRemoteRepository(s.host+"/"+repo, s.httpClient)
-}
-
-func (s remoteIndexSource) ConditionalTags(ctx context.Context, repo, ifNoneMatch string) (tags []string, etag string, notModified bool, truncated bool, err error) {
-	return oci.ConditionalListTags(ctx, s.host, repo, ifNoneMatch, s.httpClient)
-}
-
-// registryIndexTarget resolves the index source for a registry host. Production
-// returns a remote source; a test substitutes an in-memory source so the index
-// build runs without a network. It is a package-level seam because the live
-// path needs registry credentials the sandbox does not carry — the index-build
-// logic is proven against a fake source, and the live registry resolution is
-// operator-gated. It mirrors registrySearchTarget.
-var registryIndexTarget = func(cfg workspaceconfig.Config, host string) (registryIndexSource, error) {
-	httpClient, err := workspaceEgressClient(cfg)
-	if err != nil {
-		return nil, err
-	}
-	reg, err := oci.NewRemoteRegistry(host, httpClient)
-	if err != nil {
-		return nil, err
-	}
-	return remoteIndexSource{reg: reg, host: host, httpClient: httpClient}, nil
-}
-
-// RegistryIndex is the in-memory aggregate a registry update builds for one
-// host: the host it was built from and the entity records, one per repository
-// whose latest version conforms to strict SemVer. It is the shape the writer
-// iterates to emit one file per repository under the host's index directory;
-// the on-disk layout is per-repository files, not this struct serialized whole.
-// Records are held in URI-then-version order.
-type RegistryIndex struct {
-	Host    string                 `json:"host"`
-	Records []registryindex.Record `json:"records"`
-}
+// The index build itself lives in the shared operations layer, which every
+// surface reaches. What stays here is the cobra wiring and the terminal
+// concerns: the flags, and the stream the walk's running commentary is written
+// to. The names below resolve to that one implementation so this package's
+// existing spellings — and the fixtures that drive them — address the shared
+// layer rather than a second copy of it.
+type (
+	registryIndexSource = registryops.IndexSource
+	// RegistryIndex is one host's assembled index, as the writer takes it.
+	RegistryIndex = registryops.HostIndex
+)
 
 // newRegistryUpdateCmd builds `registry update [<name|host>]`, which walks each
 // configured registry's repositories, reads each repository's latest-version
@@ -110,6 +41,12 @@ of each, and write a deterministic local searchable index to the artifact cache.
 
 With no argument, every configured registry is indexed. With a single registry
 argument (a host or a friendly alias), only that registry is indexed.
+
+This is the one registry command that reaches the network. The index it writes
+lands in this workspace's own artifact cache, so refreshing it changes nothing
+another project on this machine resolves through. Credentials are read from a
+supplied or ambient source and never asked for: a registry that needs one you do
+not have fails with a message naming what it wanted.
 
 For each repository the highest strict-SemVer version is selected (pre-release
 versions are skipped) and its catalog facets — kind, description, category,
@@ -175,21 +112,14 @@ type registryUpdateConfig struct {
 	now func() time.Time
 }
 
-// registryUpdateRun resolves the target host set and builds a local index for
-// each. With no argument it indexes every configured registry; with one it
-// resolves the token to a single host. Each host's records file plus its
-// freshness sibling are written under the artifact cache's index subtree.
+// registryUpdateRun builds a local index for each selected registry.
 //
-// Host-level failure handling depends on which path selected the hosts. When the
-// operator targets a single registry by argument, a failure there is returned
-// immediately — the operator asked for that one registry and gets a loud error.
-// When no argument selects every configured registry, one unreachable registry
-// must not abandon the reachable ones: a host whose source resolution,
-// enumeration, or index write fails is noted and the walk continues to the next
-// host, mirroring the per-repository skip-and-continue posture. After the walk,
-// if any host failed the run returns a non-nil error summarizing the count so
-// the exit code stays non-zero, but only after every reachable registry has been
-// indexed and written.
+// The walk itself comes from the shared layer, so this command and every other
+// surface run one index build rather than each performing its own. What is
+// decided here is where the running commentary goes: a person is watching this
+// stream, so the walk's notices are written to it as they happen rather than
+// collected and rendered at the end — a network walk over several registries is
+// exactly the case where a silent wait is the wrong answer.
 func registryUpdateRun(cfg registryUpdateConfig) error {
 	rw, err := workspaceOrResolve(cfg.ws)
 	if err != nil {
@@ -199,459 +129,14 @@ func registryUpdateRun(cfg registryUpdateConfig) error {
 	if out == nil {
 		out = os.Stdout
 	}
-	wsCfg := rw.Config()
-
-	singleExplicit := len(cfg.Args) == 1
-	var hosts []string
-	if singleExplicit {
-		host, rerr := wsCfg.ResolveRegistry(cfg.Args[0])
-		if rerr != nil {
-			return fmt.Errorf("aggrega registry update: %w", rerr)
-		}
-		hosts = []string{host}
-	} else {
-		for _, r := range wsCfg.Registries {
-			hosts = append(hosts, r.Host)
-		}
+	var token string
+	if len(cfg.Args) == 1 {
+		token = cfg.Args[0]
 	}
-	if len(hosts) == 0 {
-		fmt.Fprintln(out, "No registries configured.")
-		return nil
-	}
-
-	now := cfg.now
-	if now == nil {
-		now = time.Now
-	}
-
-	ctx := context.Background()
-	root := rw.Root()
-	cacheDir := wsCfg.ResolvedArtifactCacheDir()
-	var failed []string
-	for _, host := range hosts {
-		count, herr := updateHostIndex(ctx, wsCfg, root, cacheDir, host, now, cfg.Upgrade, out)
-		if herr != nil {
-			if singleExplicit {
-				return fmt.Errorf("aggrega registry update: %s: %w", host, herr)
-			}
-			fmt.Fprintf(out, "registry %s: %v\n", host, herr)
-			failed = append(failed, host)
-			continue
-		}
-		fmt.Fprintf(out, "Indexed %d entities from %s\n", count, host)
-	}
-	if len(failed) > 0 {
-		return fmt.Errorf("aggrega registry update: %d of %d registries failed to update", len(failed), len(hosts))
-	}
-	return nil
-}
-
-// updateHostIndex resolves one host's index source, builds its index, and writes
-// the records file plus its freshness sibling, returning the record count on
-// success. The returned error is unwrapped by host so the caller frames it for
-// the single-registry path (returned immediately) or the all-registries path
-// (noted per host, walk continues).
-func updateHostIndex(ctx context.Context, cfg workspaceconfig.Config, root, cacheDir, host string, now func() time.Time, upgrade bool, out io.Writer) (int, error) {
-	src, err := registryIndexTarget(cfg, host)
-	if err != nil {
-		return 0, err
-	}
-	var prior map[string]registryindex.Record
-	if !upgrade {
-		prior = loadPriorRecords(root, cacheDir, host)
-	}
-	// The host's own trust policy, resolved once for the whole walk: it decides
-	// which signers may withdraw a version of anything this host serves, so every
-	// repository under the host is verified against the same set.
-	policy, _ := cfg.RegistryTrustPolicy(host)
-	idx, err := buildHostIndex(ctx, cfg, policy, host, src, prior, out)
-	if err != nil {
-		return 0, err
-	}
-	if err := writeHostIndex(root, cacheDir, idx, now().UTC()); err != nil {
-		return 0, err
-	}
-	reportDeprecationScan(out, cfg, policy, host, idx)
-	return len(idx.Records), nil
-}
-
-// reportDeprecationScan states the outcome of the host's deprecation-marker scan,
-// which the per-marker notices alone cannot: they are written only when there is a
-// marker to write about, so on their own an empty walk and a walk that never looked
-// produce the same silence. The two are different facts — one says the registry
-// published no honored marker, the other says this run had no trust basis to judge
-// one — and an operator who attached a marker and sees neither notice needs to know
-// which of them happened.
-func reportDeprecationScan(out io.Writer, cfg workspaceconfig.Config, policy workspaceconfig.RegistryConfig, host string, idx RegistryIndex) {
-	if !deprecationScanEnabled(cfg, policy) {
-		fmt.Fprintf(out, "Deprecation markers not examined for %s: signature verification is disabled for this registry\n", host)
-		return
-	}
-	fmt.Fprintf(out, "Recorded %d deprecation markers from %s\n", countRecordedDeprecations(idx), host)
-}
-
-// loadPriorRecords loads the previous per-host index records keyed by URI, so a
-// conditional refresh can reuse an unchanged repository's record. A not-yet-built
-// or unreadable prior index yields a nil map, degrading the refresh to a full
-// build rather than failing — the first update after a cache wipe re-reads
-// everything.
-func loadPriorRecords(root, cacheDir, host string) map[string]registryindex.Record {
-	loaded, err := registryindex.LoadHost(root, cacheDir, host)
-	if err != nil {
-		return nil
-	}
-	prior := make(map[string]registryindex.Record, len(loaded.Records))
-	for _, rec := range loaded.Records {
-		prior[rec.URI] = rec
-	}
-	return prior
-}
-
-// buildHostIndex enumerates the host's repositories through the one search
-// enumeration primitive (progress-aware and partial-on-error) and appends one
-// record per repository whose latest version conforms to strict SemVer. Each
-// repository is revalidated conditionally against prior (keyed by URI): a
-// repository whose tag set and headline manifest digest match its prior record
-// reuses that record, skipping the manifest read and the per-version referrer
-// scan. A nil prior forces a full read of every repository. Records are sorted
-// by URI then version so the emitted files are deterministic. A repository that
-// dropped out of the registry is simply not enumerated, so it contributes no
-// record and its file is not rewritten (the writer resets the host directory).
-func buildHostIndex(
-	ctx context.Context,
-	wsCfg workspaceconfig.Config,
-	policy workspaceconfig.RegistryConfig,
-	host string,
-	src registryIndexSource,
-	prior map[string]registryindex.Record,
-	out io.Writer,
-) (RegistryIndex, error) {
-	repos, err := searchRegistry(ctx, src, "", catalogSearchScope)
-	if err != nil {
-		return RegistryIndex{}, err
-	}
-	idx := RegistryIndex{Host: host}
-	for _, repo := range repos {
-		rec, ok := indexRepo(ctx, wsCfg, policy, host, src, repo, prior, out)
-		if !ok {
-			continue
-		}
-		idx.Records = append(idx.Records, rec)
-	}
-	registryindex.SortRecords(idx.Records)
-	return idx, nil
-}
-
-// indexRepo builds the record for one repository's latest published version. It
-// revalidates against the prior record for the repository's URI in two conditional
-// steps before deciding to re-read. First a conditional tags listing: when the
-// stored listing validator still matches, the tag set is unchanged and the tag
-// re-list is skipped. Then a headline manifest digest re-resolve (a cheap metadata
-// read, no content blob): when the digest also matches the prior record, that
-// record is reused untouched — skipping the manifest read and the per-version
-// referrer scan, so an unchanged repository costs one conditional tag listing plus
-// one cheap digest resolve. Only a changed or previously-unseen repository re-reads
-// the manifest annotations and re-scans referrers. A nil prior (a full-upgrade
-// refresh, or the first build) reuses nothing.
-//
-// A repository with no strict-SemVer version is skipped silently (a deterministic
-// non-error). A repository that cannot be read — no per-repo target, a tag-list
-// failure, a resolve failure, or a manifest read failure — is skipped with a note
-// so one unreadable repository does not abandon the walk, mirroring the search
-// primitive's partial-on-error posture.
-func indexRepo(
-	ctx context.Context,
-	wsCfg workspaceconfig.Config,
-	policy workspaceconfig.RegistryConfig,
-	host string,
-	src registryIndexSource,
-	repo string,
-	prior map[string]registryindex.Record,
-	out io.Writer,
-) (registryindex.Record, bool) {
-	target, err := src.Repository(repo)
-	if err != nil {
-		fmt.Fprintf(out, "  skipped %s: %v\n", repo, err)
-		return registryindex.Record{}, false
-	}
-	uri := "oci://" + host + "/" + repo
-	p, hasPrior := prior[uri]
-
-	// Conditional tags listing: present the prior record's listing validator so an
-	// unchanged tag set answers as not-modified and skips the re-list.
-	priorListing := ""
-	if hasPrior {
-		priorListing = p.ListingDigest
-	}
-	tags, listingDigest, notModified, truncated, err := src.ConditionalTags(ctx, repo, priorListing)
-	if err != nil {
-		fmt.Fprintf(out, "  skipped %s: %v\n", repo, err)
-		return registryindex.Record{}, false
-	}
-	if notModified {
-		// The tag set is unchanged. Confirm the headline manifest digest is unchanged
-		// too — a tag re-pushed to new content changes the digest without changing the
-		// set — and reuse the prior record when it is.
-		digest, exists, rerr := oci.Resolve(ctx, target, p.Version)
-		if rerr == nil && exists && p.ManifestDigest != "" && p.ManifestDigest == digest {
-			return p, true
-		}
-		// The headline manifest moved (or the resolve failed): re-list unconditionally
-		// to get the current tag set and validator, then fall through to a full read.
-		tags, listingDigest, _, truncated, err = src.ConditionalTags(ctx, repo, "")
-		if err != nil {
-			fmt.Fprintf(out, "  skipped %s: %v\n", repo, err)
-			return registryindex.Record{}, false
-		}
-	}
-	// A truncated listing's single-request validator does not cover the whole tag set,
-	// so fall back to the full enumeration and record no validator (the next refresh
-	// re-reads rather than falsely matching a partial validator).
-	if truncated {
-		tags, err = oci.ListTags(ctx, target)
-		if err != nil {
-			fmt.Fprintf(out, "  skipped %s: %v\n", repo, err)
-			return registryindex.Record{}, false
-		}
-		listingDigest = ""
-	}
-
-	version := oci.SelectLatestVersion(tags, false /* includePreRelease */)
-	if version == "" {
-		return registryindex.Record{}, false
-	}
-	versions := oci.SortedSemverTags(tags)
-
-	digest, exists, err := oci.Resolve(ctx, target, version)
-	if err != nil {
-		fmt.Fprintf(out, "  skipped %s: %v\n", repo, err)
-		return registryindex.Record{}, false
-	}
-	if !exists {
-		fmt.Fprintf(out, "  skipped %s: selected version %s no longer resolves\n", repo, version)
-		return registryindex.Record{}, false
-	}
-	if hasPrior && p.ManifestDigest != "" && p.ManifestDigest == digest && equalStrings(p.Versions, versions) {
-		// The manifest and tag set are unchanged; reuse the prior record but carry the
-		// refreshed listing validator forward (it may have been absent before).
-		p.ListingDigest = listingDigest
-		return p, true
-	}
-
-	annotations, manifestDigest, err := oci.FetchManifestAnnotations(ctx, target, version)
-	if err != nil {
-		fmt.Fprintf(out, "  skipped %s: %v\n", repo, err)
-		return registryindex.Record{}, false
-	}
-	rec, err := recordFromAnnotations(host, repo, version, annotations)
-	if err != nil {
-		fmt.Fprintf(out, "  skipped %s: %v\n", repo, err)
-		return registryindex.Record{}, false
-	}
-	rec.Versions = versions
-	rec.ManifestDigest = manifestDigest
-	rec.ListingDigest = listingDigest
-	rec.Deprecations = collectVersionDeprecations(ctx, wsCfg, policy, target, repo, versions, out)
-	return rec, true
-}
-
-// equalStrings reports whether two string slices are element-wise equal. The
-// conditional refresh compares a repository's live tag set against the prior
-// record's Versions to decide reuse.
-func equalStrings(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
-}
-
-// collectVersionDeprecations scans each conforming version's deprecation
-// referrers and records the authoritative marker for every version that carries a
-// marker whose OWN signature verifies, in the ascending version order it is given.
-// Each version's marker is selected by the same newest-issuedOn rule the closure
-// discovery pass uses (with the manifest digest as the deterministic tiebreak), and
-// verified through the same single verification home, so the two passes cannot
-// disagree about which marker is authoritative or which signer is honored.
-//
-// Recording implies verification, and that invariant is what the record is for: a
-// consumer reading the index offline — including the discovery step that refuses to
-// select a withdrawn version — acts on a signed claim it does not have to re-judge.
-// A marker with no signature, or one that does not verify against the honored set,
-// is not recorded at all rather than recorded as unverified: a record that had to be
-// checked before use would put the trust judgement back at every read site.
-//
-// A registry whose policy skips signature verification records nothing. That is the
-// operator's own choice rather than a gap — with verification off there is no trust
-// basis for a withdrawal, and inventing one from an unauthenticated marker is
-// exactly what must not happen.
-//
-// The original artifact's own signer is recovered only on a keyless policy, where
-// the honored set folds it in so a publisher can withdraw their own artifact. A
-// keyed policy pins one key, so the same key already IS the same signer and the two
-// extra reads are skipped.
-//
-// Every step stays best-effort: a referrer-listing, decode or verification failure
-// skips that version rather than failing the index build, mirroring the walk's
-// partial-on-error posture. A version with no honored marker contributes nothing, so
-// the slice is empty when no version is withdrawn or deprecated.
-//
-// A marker that is PRESENT but not honored is noted rather than dropped in silence.
-// Silence there would be the worst of the three outcomes: the operator would see an
-// index with no withdrawal, having attached one, and nothing would say why. The note
-// mirrors the closure discovery pass, which reports the same condition in the same
-// words.
-//
-// A marker that IS honored is noted on the same footing, stating the severity
-// through the shared wording rule so this line and every other notice about a
-// recorded severity describe the same value the same way. The parenthesis is left
-// to the two failure lines, where it carries the fault; stating the severity in a
-// second parenthesis here would nest one inside the other for the advisory tiers,
-// whose wording names the tier as well as the value. Reporting only the failures
-// would invert which outcome is audible: recording many markers would pass in
-// silence while declining one would announce itself, and an operator watching the
-// walk could not tell a registry that published no marker from a run that recorded
-// a dozen.
-func collectVersionDeprecations(
-	ctx context.Context,
-	wsCfg workspaceconfig.Config,
-	policy workspaceconfig.RegistryConfig,
-	target oras.ReadOnlyTarget,
-	repo string,
-	versions []string,
-	out io.Writer,
-) []registryindex.VersionDeprecation {
-	if !deprecationScanEnabled(wsCfg, policy) {
-		return nil
-	}
-	var deprecations []registryindex.VersionDeprecation
-	for _, version := range versions {
-		markers, err := oci.ListReferrers(ctx, target, version, deprecation.ArtifactType)
-		if err != nil || len(markers) == 0 {
-			continue
-		}
-		markerDesc, marker, err := registryindex.LatestMarker(ctx, target, markers)
-		if err != nil {
-			fmt.Fprintf(out, "  deprecation: %s:%s: marker present but not readable (%v); not recorded\n", repo, version, err)
-			continue
-		}
-		var origSigner *pullverify.Result
-		if policy.PublicKey == "" {
-			origSigner = registryindex.VerifiedArtifactSigner(ctx, wsCfg, target, version, policy)
-		}
-		signer, err := registryindex.VerifyMarkerSignature(ctx, wsCfg, target, markerDesc.Digest.String(), policy, origSigner)
-		if err != nil {
-			fmt.Fprintf(out, "  deprecation: %s:%s: marker present but not honored (%v); not recorded\n", repo, version, err)
-			continue
-		}
-		fmt.Fprintf(out, "  deprecation: %s:%s: marker present and honored; recorded as %s\n", repo, version, marker.Severity.StatedAs())
-		deprecations = append(deprecations, registryindex.VersionDeprecation{Version: version, Marker: marker, Signer: signer})
-	}
-	return deprecations
-}
-
-// deprecationScanEnabled reports whether this run examines a host's published
-// versions for deprecation markers at all. Verification switched off — globally or
-// for this one registry — means there is no trust basis on which a marker could be
-// recorded, so the walk does not look.
-//
-// It is the single definition of that condition. The scan reads it to decide whether
-// to look, and the walk's summary reads the same function to decide which of the two
-// outcomes it is reporting, so "no marker was recorded" and "no version was examined"
-// cannot come to disagree about which of them happened.
-func deprecationScanEnabled(wsCfg workspaceconfig.Config, policy workspaceconfig.RegistryConfig) bool {
-	return !wsCfg.SkipSignatureVerification && !policy.SkipSignatureVerification
-}
-
-// countRecordedDeprecations totals the deprecation markers a host's assembled index
-// records across every repository, so the walk can state the outcome of its scan
-// rather than leaving the operator to infer it from the absence of notices.
-func countRecordedDeprecations(idx RegistryIndex) int {
-	n := 0
-	for _, rec := range idx.Records {
-		n += len(rec.Deprecations)
-	}
-	return n
-}
-
-// recordFromAnnotations assembles an registryindex.Record from a repository's latest
-// version and its manifest annotations. Every facet is read through the
-// searchable-annotation constants, so no annotation key is spelled here as a
-// bare string. Capabilities were stamped comma-joined in author order and are
-// split back into a list.
-//
-// Labels are decoded from the label-map annotation the publish stamped, so a
-// search matches on every label the entity's author wrote. The decode preserves
-// author order, which is what keeps a rewritten record byte-identical for
-// unchanged registry state. A record carries no labels when the published
-// manifest carries no label map — an entity that declares none, and an artifact
-// published before the whole map travelled.
-//
-// A label map that is present but undecodable is an error rather than a record
-// with the labels dropped: a partially-populated label map would make a selector
-// silently match nothing, which is indistinguishable from the entity not
-// existing.
-func recordFromAnnotations(host, repo, version string, ann map[string]string) (registryindex.Record, error) {
-	rec := registryindex.Record{
-		URI:         "oci://" + host + "/" + repo,
-		Name:        repo,
-		Version:     version,
-		Kind:        ann[oci.AnnotationKind],
-		Description: ann[ocispec.AnnotationDescription],
-		Category:    ann[oci.AnnotationCategory],
-		PluginType:  ann[oci.AnnotationPluginType],
-	}
-	if caps := ann[oci.AnnotationCapabilities]; caps != "" {
-		rec.Capabilities = strings.Split(caps, ",")
-	}
-	if raw := ann[oci.AnnotationLabels]; raw != "" {
-		labels := types.NewOrderedMap[string]()
-		if err := labels.UnmarshalJSON([]byte(raw)); err != nil {
-			return registryindex.Record{}, fmt.Errorf("decoding labels of %s:%s: %w", repo, version, err)
-		}
-		rec.Labels = labels
-	}
-	return rec, nil
-}
-
-// writeHostIndex writes one file per repository under the host's index
-// directory, plus the host's freshness sibling, under the artifact cache's index
-// subtree. The host directory is rebuilt from scratch — removed then recreated —
-// so the file set on disk is exactly the current record set: a repository that
-// dropped out of the registry leaves no stale file behind. Each per-repo file is
-// deterministic — indented JSON with a trailing newline, ordered slices, and
-// author-order labels — so two builds against the same registry state produce
-// byte-identical files and an identical file set. The timestamp lives only in
-// the sibling `.updated` file, beside the host directory, so it never perturbs
-// the records.
-func writeHostIndex(workspaceRoot, cacheDir string, idx RegistryIndex, now time.Time) error {
-	hostDir := oci.IndexBasePath(workspaceRoot, cacheDir, idx.Host)
-	if err := os.RemoveAll(hostDir); err != nil {
-		return fmt.Errorf("index reset %s: %w", hostDir, err)
-	}
-	if err := os.MkdirAll(hostDir, 0o755); err != nil {
-		return fmt.Errorf("index mkdir %s: %w", hostDir, err)
-	}
-	for _, rec := range idx.Records {
-		data, err := json.MarshalIndent(rec, "", "  ")
-		if err != nil {
-			return fmt.Errorf("index marshal %s: %w", rec.Name, err)
-		}
-		data = append(data, '\n')
-		repoPath := oci.IndexRepoPath(workspaceRoot, cacheDir, idx.Host, rec.Name)
-		if err := os.WriteFile(repoPath, data, 0o644); err != nil {
-			return fmt.Errorf("index write %s: %w", repoPath, err)
-		}
-	}
-
-	base := oci.IndexBasePath(workspaceRoot, cacheDir, idx.Host)
-	stamp := now.Format(time.RFC3339) + "\n"
-	if err := os.WriteFile(base+".updated", []byte(stamp), 0o644); err != nil {
-		return fmt.Errorf("index timestamp write %s: %w", base+".updated", err)
-	}
-	return nil
+	_, err = registryops.Update(rw, registryops.UpdateOptions{
+		Registry: token,
+		Upgrade:  cfg.Upgrade,
+		Now:      cfg.now,
+	}, out)
+	return err
 }

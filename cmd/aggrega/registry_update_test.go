@@ -20,6 +20,7 @@ import (
 	"oras.land/oras-go/v2/content/memory"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/registryindex"
+	"github.com/aggrega-ai/aggrega-cli/internal/registryops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/deprecation"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/signing"
@@ -242,11 +243,15 @@ func seedPluginRepo(t *testing.T, tags []string, meta oci.SearchableMetadata) *m
 
 // withIndexTarget points the index-target seam at a fixed source for the
 // duration of the test.
+//
+// The seam is the shared layer's one seam, so pointing it here points it for
+// every surface that builds an index — which is what makes a command-level test
+// a test of the build the session performs too, rather than of a second one.
 func withIndexTarget(t *testing.T, src registryIndexSource) {
 	t.Helper()
-	prev := registryIndexTarget
-	registryIndexTarget = func(workspaceconfig.Config, string) (registryIndexSource, error) { return src, nil }
-	t.Cleanup(func() { registryIndexTarget = prev })
+	prev := registryops.IndexTarget
+	registryops.IndexTarget = func(workspaceconfig.Config, string) (registryIndexSource, error) { return src, nil }
+	t.Cleanup(func() { registryops.IndexTarget = prev })
 }
 
 // withIndexTargetFunc points the index-target seam at a caller-supplied resolver
@@ -254,9 +259,9 @@ func withIndexTarget(t *testing.T, src registryIndexSource) {
 // fail while another host succeeds.
 func withIndexTargetFunc(t *testing.T, fn func(workspaceconfig.Config, string) (registryIndexSource, error)) {
 	t.Helper()
-	prev := registryIndexTarget
-	registryIndexTarget = fn
-	t.Cleanup(func() { registryIndexTarget = prev })
+	prev := registryops.IndexTarget
+	registryops.IndexTarget = fn
+	t.Cleanup(func() { registryops.IndexTarget = prev })
 }
 
 // TestRegistryUpdateBuildsSearchableIndex proves the update walk reads the

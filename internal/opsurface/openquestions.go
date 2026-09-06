@@ -93,17 +93,22 @@ var openQuestions = []OpenQuestion{
 	// that one answer settles them all, which is the thing nobody has
 	// established.
 	//
-	// Two of that set have since been settled and are gone from here: resolving a
-	// Release's dependencies, and pinning the external inputs its render consumes.
-	// Both were left at the same fork — whether a session owes an operation that
-	// fetches — and both were answered the same way, that the rule which survives
-	// is explicit invocation rather than which surface asked. Their availability
-	// is declared on the surface instead, which is where an answered question
-	// belongs.
+	// Several of that set have since been settled and are gone from here:
+	// resolving a Release's dependencies and pinning the external inputs its
+	// render consumes; reporting and reclaiming the caches that serve the work;
+	// and registering, dropping and refreshing the registries a workspace
+	// reaches. Every one of them was left at some version of the same fork —
+	// whether a session owes an operation that writes, or that fetches — and
+	// every one was answered the same way, that the rule which survives is
+	// explicit invocation rather than which surface asked. Their availability is
+	// declared on the surface instead, which is where an answered question
+	// belongs, and each response there states the reach of what it changed.
 	//
-	// A neighbouring set is deliberately untouched: the capabilities declined
-	// because their subject is outside the workspace keep that reason, which
-	// holds on its own and was never the retired one.
+	// The rows left below are the ones that fork on something else. A subject
+	// that straddles the boundary, a capability whose product is new authoring
+	// files, a machine-wide credential store: none of those is settled by the
+	// invocation rule alone, which is why disposing of the rows above says
+	// nothing about them.
 	{SurfaceServe, "config-capture",
 		"Capture writes this project's workspace configuration file and never the global one, so its subject is " +
 			"the workspace the session opened, it reaches no registry and it prompts nobody. No property of the " +
@@ -154,23 +159,6 @@ var openQuestions = []OpenQuestion{
 			"outside the workspace, and a caller invoking the removal has asked for the write. Does a session " +
 			"owe edits to the cascade it already reports the effective value of, or is editing configuration " +
 			"left to the surface a person drives?"},
-	{SurfaceServe, "registry-add",
-		"Registering a registry and its trust policy writes an entry into the configuration cascade — the " +
-			"workspace file by default, the global one when asked — and reaches the registry itself when it is " +
-			"asked to take that registry's advertised policy. The companion that reports configured registries " +
-			"is declined for sitting outside the workspace; this one's default target is inside it. Is the " +
-			"trust policy a thing a session owes a caller, given that a session already enforces it?"},
-	{SurfaceServe, "registry-remove",
-		"Removing a registry entry edits the same configuration cascade the addition writes, and reaches nothing " +
-			"else. It is the smaller half of the same fork: whichever way editing the cascade is settled, this " +
-			"is that edit with no network reach at all, so settling the addition and leaving this would split " +
-			"one decision. Does a session owe edits to the configuration it reports?"},
-	{SurfaceServe, "registry-update",
-		"Building the local searchable index reaches every configured registry and writes the index the search " +
-			"capability reads. The index is not in the workspace, which is why search itself is declined — but " +
-			"the reach is the part that is unsettled, since every method answered today is served from the " +
-			"workspace and what is already cached. Does a session owe an operation that goes to the network to " +
-			"refresh what a later call would read, or is fetching the boundary a session does not cross?"},
 	{SurfaceServe, "lint",
 		"The daemon carries the correctness check and not the publishing-conventions check. Its subject is in " +
 			"the workspace and it writes nothing, so none of this surface's grounds for declining applies. Are " +

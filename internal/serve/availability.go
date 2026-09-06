@@ -247,6 +247,33 @@ var operationAvailability = map[string]serveAvailability{
 	"registry-list": servedAt(at("aggrega/registryList", (*Server).dispatchRegistryList)),
 	"search":        servedAt(at("aggrega/search", (*Server).dispatchRegistrySearch)),
 
+	// The session also changes that set and refreshes what it is searched
+	// against. All three write, and they are admitted on the same rule the
+	// resolution and the cache maintenance above run under: a caller that sent
+	// one has asked for it. What stays out of bounds is a write performed while
+	// validating or inspecting, where nobody asked, and none of these is that.
+	//
+	// Two properties separate them from everything else here, and each response
+	// states its own rather than leaving a caller to infer it.
+	//
+	// A registration and a removal write the GLOBAL configuration file by
+	// default — a registry is machine-wide tooling, so that is the operation's
+	// own default rather than something a request opted into. Every workspace on
+	// the machine resolves through the entry, so those two responses name the
+	// file they wrote and whether it is the machine-wide one. A session is opened
+	// over a workspace, so an answer that said nothing would be read as being
+	// about that workspace, and for the default target that reading is wrong.
+	//
+	// A refresh is the other way round: it is the only method the daemon carries
+	// that goes out to a registry, and what it writes is the index under this
+	// workspace's own configured cache directory. Nothing is prompted for — a
+	// registry needing a credential no ambient source carries is refused with the
+	// credential named, which is what makes it safe on a stream with nobody
+	// watching.
+	"registry-add":    servedAt(at("aggrega/registryAdd", (*Server).dispatchRegistryAdd)),
+	"registry-remove": servedAt(at("aggrega/registryRemove", (*Server).dispatchRegistryRemove)),
+	"registry-update": servedAt(at("aggrega/registryUpdate", (*Server).dispatchRegistryUpdate)),
+
 	"definition-at-position":      servedAt(at("aggrega/resolve", (*Server).dispatchResolve)),
 	"references-at-position":      servedAt(at("aggrega/findReferences", (*Server).dispatchFindReferences)),
 	"implementations-at-position": servedAt(at("aggrega/findImplementations", (*Server).dispatchFindImplementations)),
