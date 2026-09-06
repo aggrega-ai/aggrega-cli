@@ -112,11 +112,11 @@ const (
 	unavailabilityReasonNoTerminal = "it asks a person for input, and the daemon's only stream is its request channel"
 
 	// unavailabilityReasonAboutTheToolchain covers an operation whose subject is
-	// the toolchain rather than the work: this binary's own identity, the schema
-	// set compiled into it, the guest modules it can load or is configured with. A
-	// session is opened over a workspace to work on that workspace's documents and
-	// the caches that serve them, and holds nothing about the binary running it —
-	// so such a subject is no nearer here than to any other caller of it.
+	// the toolchain rather than the work: this binary's own identity, and the guest
+	// modules it can load or is configured with. A session is opened over a
+	// workspace to work on that workspace's documents and the caches that serve
+	// them, and holds nothing about the binary running it — so such a subject is no
+	// nearer here than to any other caller of it.
 	//
 	// It is deliberately about what a session HOLDS rather than about where a
 	// subject sits on disk, and the two come apart in a way that decides real rows.
@@ -129,13 +129,38 @@ const (
 	// a decision.
 	//
 	// It deliberately claims nothing about where every method here is anchored.
-	// The drafting method is anchored to a kind named in the request rather than
-	// to the workspace, so a reason resting on the stronger claim would be false
-	// against the table below — and a reason that is false about the surface it
+	// Two methods are anchored to a kind named in the request rather than to the
+	// workspace — the one that drafts a starter document and the one that reports a
+	// kind's schema — so a reason resting on the stronger claim would be false
+	// against the table below, and a reason that is false about the surface it
 	// describes decides nothing, whatever it happens to decide today.
-	unavailabilityReasonAboutTheToolchain = "its subject is the toolchain rather than the work — this binary, " +
-		"the schemas compiled into it, the guest modules it can load — and a session is opened over a " +
-		"workspace to work on that workspace's documents and the caches that serve them"
+	//
+	// The schema set compiled into this binary is deliberately absent from the
+	// subjects named above, for the same reason. Both of those methods answer out
+	// of it, so naming it here would decline a subject this surface carries.
+	unavailabilityReasonAboutTheToolchain = "its subject is the toolchain rather than the work — this binary and " +
+		"the guest modules it can load — and a session is opened over a workspace to work on that " +
+		"workspace's documents and the caches that serve them"
+
+	// unavailabilityReasonAddressedByAHostPath covers an operation whose subject is
+	// a file the request names by a filesystem path of its own, for the daemon to
+	// locate and read. A session resolves a path it must locate inside the
+	// workspace it opened and refuses every other form — an absolute value, or one
+	// resolving outside that root — so an operation constituted by a path chosen
+	// outside that root asks for the addressing this surface declines.
+	//
+	// It rests on the addressing rather than on what the named file turns out to
+	// be. This daemon already loads and runs guest modules — every build a session
+	// performs does, drawing on the shared compiled-module store this process fills
+	// — so a reason resting on execution would be false of the surface it
+	// describes. What a session does not do is locate a file the workspace does not
+	// hold.
+	//
+	// Confining such an operation to the workspace would not narrow it but replace
+	// it: a guest resolved through the workspace is what a build already runs, and
+	// the capability here is the one addressed outside that resolution.
+	unavailabilityReasonAddressedByAHostPath = "its subject is a file the request names by a filesystem path of " +
+		"its own, and a session locates what it reads inside the workspace it opened"
 
 	// unavailabilityReasonIsAStreamServer covers an operation that is itself a
 	// server owning a stream. The daemon already owns this one, and a second
@@ -305,6 +330,21 @@ var operationAvailability = map[string]serveAvailability{
 	// written: the answer is text, and where it goes is the client's.
 	"scaffold-entity": servedAt(at("aggrega/scaffoldEntity", (*Server).dispatchScaffoldEntity)),
 
+	// The session reports a kind's schema, and the set of kinds when the request
+	// names none. Its subject is the same one the drafting method above answers
+	// from — a skeleton is derived from these very bytes — so a surface carrying
+	// the derived document while declining its source would be describing one
+	// subject two ways.
+	//
+	// It is carried on the same ground, and that ground is about who is on the
+	// other end. A client drawing an editor's schema association, or holding a
+	// document to the contract the running binary carries, is asking the one
+	// process that answers for THIS binary rather than for whichever copy is
+	// installed elsewhere. Nothing is written, no registry is reached, and the
+	// workspace is not consulted, so it answers where a session has nothing
+	// prepared yet.
+	"get-schema": servedAt(at("aggrega/getSchema", (*Server).dispatchGetSchema)),
+
 	// Capabilities no method carries, each on a property of this daemon.
 	//
 	// The set is smaller than the capabilities the daemon lacks a method for,
@@ -312,10 +352,9 @@ var operationAvailability = map[string]serveAvailability{
 	// declines the capability; a capability nobody has ruled on is named in the
 	// bound the availability check reads instead, where it reads as the question
 	// it is rather than as a decision.
-	"get-schema":            notServed(unavailabilityReasonAboutTheToolchain),
 	"plugin-list":           notServed(unavailabilityReasonAboutTheToolchain),
-	"plugin-run-local":      notServed(unavailabilityReasonAboutTheToolchain),
 	"version":               notServed(unavailabilityReasonAboutTheToolchain),
+	"plugin-run-local":      notServed(unavailabilityReasonAddressedByAHostPath),
 	"deprecate":             notServed(unavailabilityReasonWritesToARegistry),
 	"push":                  notServed(unavailabilityReasonWritesToARegistry),
 	"push-artifact":         notServed(unavailabilityReasonWritesToARegistry),

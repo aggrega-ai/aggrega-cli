@@ -4,12 +4,14 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io"
-	"strings"
 
 	schemas "github.com/aggrega-ai/aggrega-schemas"
 	"github.com/spf13/cobra"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/scaffoldops"
 )
 
 // newGetSchemaCmd builds the get-schema command, which prints the canonical
@@ -61,10 +63,15 @@ func listSchemaKinds(out io.Writer) error {
 // emitSchema writes the schema for kind verbatim. An unknown kind is an
 // actionable error that names every valid kind, so the caller can correct a
 // typo without a second lookup.
+//
+// The corrective text comes from the shared drafting layer, which is where every
+// surface resolving a kind token against this set phrases its rejection. Spelling
+// it here as well would leave one rejection with two wordings, and a caller
+// meeting them on two surfaces reading them as two different faults.
 func emitSchema(out io.Writer, kind string) error {
 	schema, ok := schemas.SchemaByKind(kind)
 	if !ok {
-		return fmt.Errorf("unknown schema kind %q; valid kinds: %s", kind, strings.Join(schemas.Kinds(), ", "))
+		return errors.New(scaffoldops.UnknownKindGuidance(kind))
 	}
 	_, err := io.WriteString(out, schema)
 	return err
