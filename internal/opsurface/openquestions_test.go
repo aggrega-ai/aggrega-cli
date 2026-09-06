@@ -85,7 +85,20 @@ import (
 // the nearest command converts a foreign source description rather than starting
 // from a kind's contract — is why the two stayed separate commands rather than
 // becoming two modes of one.
-const boundCeiling = 26
+//
+// It came down by one again when the daemon began resolving an entity by name
+// and reporting a Release's dependency closure. That row asked whether by-name
+// resolution was left to the surfaces that have it on purpose or whether a
+// session owed it; the answer is that a session owes it, and two methods now
+// carry the capability, so the pair is disposed of and the room it held does not
+// stay open.
+//
+// Both halves shipped together, and that was the condition on the row leaving.
+// The capability is reporting a resolved definition OR a dependency closure, so
+// half of it would have been half a decision — a row disposed of on a capability
+// the surface still only partly carried, with nothing left to record the part it
+// did not.
+const boundCeiling = 25
 
 // TestTheBoundOnlyShrinks is the ratchet. See boundCeiling for why both
 // directions refuse.

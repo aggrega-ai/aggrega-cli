@@ -199,12 +199,6 @@ var openQuestions = []OpenQuestion{
 			"the reach is the part that is unsettled, since every method answered today is served from the " +
 			"workspace and what is already cached. Does a session owe an operation that goes to the network to " +
 			"refresh what a later call would read, or is fetching the boundary a session does not cross?"},
-	{SurfaceServe, "inspect",
-		"The daemon answers entity questions addressed at a cursor and reports the workspace's entity index, " +
-			"but it resolves no entity by name and reports no dependency closure. Its subject is in the " +
-			"workspace, it writes nothing and it reaches no registry, so none of this surface's grounds for " +
-			"declining applies. Is by-name resolution left to the surfaces that have it on purpose, or does a " +
-			"session owe it?"},
 	{SurfaceServe, "lint",
 		"The daemon carries the correctness check and not the publishing-conventions check. Its subject is in " +
 			"the workspace and it writes nothing, so none of this surface's grounds for declining applies. Are " +

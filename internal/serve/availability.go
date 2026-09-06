@@ -163,6 +163,22 @@ var operationAvailability = map[string]serveAvailability{
 		at("aggrega/buildPreview", (*Server).dispatchBuildPreview),
 	),
 
+	// The session reports what an entity resolves to and what a Release depends
+	// on, and two methods carry it because the two are asked from different
+	// coordinates: one from a name, one from a Release. Both are named, because a
+	// caller enumerating this table is asking what the daemon can be asked for,
+	// and a capability reachable two ways under one name would be described as
+	// reachable one way.
+	//
+	// Neither renders. The Release half runs the same inspection the graph
+	// request runs and reports the closure that resolution reached rather than
+	// the graph derived from it — a different document about the same Release,
+	// which is why it is this operation and not the graph one.
+	"inspect": servedAt(
+		at("aggrega/entityDefinition", (*Server).dispatchEntityDefinition),
+		at("aggrega/releaseClosure", (*Server).dispatchReleaseClosure),
+	),
+
 	"definition-at-position":      servedAt(at("aggrega/resolve", (*Server).dispatchResolve)),
 	"references-at-position":      servedAt(at("aggrega/findReferences", (*Server).dispatchFindReferences)),
 	"implementations-at-position": servedAt(at("aggrega/findImplementations", (*Server).dispatchFindImplementations)),
