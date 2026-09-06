@@ -42,15 +42,26 @@ import (
 // cancellation interrupts a long workspace traversal between files
 // rather than running it to completion.
 func (s *Server) walkWorkspaceYAML(ctx context.Context, visit func(path string) error) error {
-	w := newGitignoreWalker(s.workspaceRoot)
-	return filepath.WalkDir(s.workspaceRoot, func(path string, d fs.DirEntry, err error) error {
+	return walkWorkspaceYAMLIn(ctx, s.workspaceRoot, visit)
+}
+
+// walkWorkspaceYAMLIn is the whole of walkWorkspaceYAML with the root supplied
+// rather than read off a session.
+//
+// The split is what lets a caller holding no session run the same traversal.
+// The session-bound form above is a one-line delegation passing its own root, so
+// there is one walk rather than two that agree until one of them learns about an
+// exclusion the other does not.
+func walkWorkspaceYAMLIn(ctx context.Context, root string, visit func(path string) error) error {
+	w := newGitignoreWalker(root)
+	return filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return nil
 		}
 		if cerr := ctx.Err(); cerr != nil {
 			return cerr
 		}
-		if path == s.workspaceRoot {
+		if path == root {
 			return nil
 		}
 		name := d.Name()
@@ -235,9 +246,9 @@ func (w *gitignoreWalker) matcherFor(dir string) gitignore.Matcher {
 	return matcher
 }
 
-// workspaceDoc is one parsed workspace YAML document delivered by
-// rangeWorkspaceDocs, paired with the cleaned absolute path it was read
-// from.
+// workspaceDoc is one parsed workspace YAML document delivered by the
+// workspace-document traversal, paired with the cleaned absolute path it
+// was read from.
 //
 // The node is the same pointer the parse cache holds for a cached
 // document, so a visitor reads it and never mutates it.
@@ -246,9 +257,14 @@ type workspaceDoc struct {
 	node *yaml.Node
 }
 
-// rangeWorkspaceDocs invokes visit once per workspace YAML document,
-// and is the single traversal every workspace-wide document projection
-// is built on. Returning false from visit stops the traversal.
+// rangeWorkspaceDocs invokes visit once per workspace YAML document, for
+// a caller holding a session: it snapshots the session's parse cache as
+// the overlay and runs the shared traversal below over it. Returning
+// false from visit stops the traversal.
+//
+// The traversal itself is single-sourced in that shared form, which is
+// what every workspace-wide document projection is built on, whether it
+// reaches it from a session or without one.
 //
 // Two passes, in this order:
 //
@@ -280,13 +296,26 @@ type workspaceDoc struct {
 // it, so a visitor is never running while the lock is held and may be
 // as expensive as it needs to be.
 func (s *Server) rangeWorkspaceDocs(ctx context.Context, visit func(doc workspaceDoc) bool) {
-	seen := map[string]bool{}
-
 	var cached []workspaceDoc
 	s.parseCache.Range(func(file string, node *yaml.Node, _ []byte) bool {
 		cached = append(cached, workspaceDoc{path: filepath.Clean(file), node: node})
 		return true
 	})
+	rangeWorkspaceDocsIn(ctx, s.workspaceRoot, cached, visit)
+}
+
+// rangeWorkspaceDocsIn is the whole of rangeWorkspaceDocs with the root and the
+// fresher-than-disk overlay supplied rather than read off a session.
+//
+// The overlay is the first pass and the on-disk walk the second, exactly as
+// described above. A caller holding no editor supplies no overlay, and the
+// traversal is then the walk alone — which is the same answer the session-bound
+// form gives when nothing is open, rather than a second reading of what counts
+// as a workspace document.
+func rangeWorkspaceDocsIn(ctx context.Context, root string, overlay []workspaceDoc, visit func(doc workspaceDoc) bool) {
+	seen := map[string]bool{}
+
+	cached := append([]workspaceDoc(nil), overlay...)
 	sort.Slice(cached, func(i, j int) bool { return cached[i].path < cached[j].path })
 	for _, doc := range cached {
 		if seen[doc.path] {
@@ -299,7 +328,7 @@ func (s *Server) rangeWorkspaceDocs(ctx context.Context, visit func(doc workspac
 	}
 
 	stopped := false
-	_ = s.walkWorkspaceYAML(ctx, func(path string) error {
+	_ = walkWorkspaceYAMLIn(ctx, root, func(path string) error {
 		if stopped {
 			return filepath.SkipAll
 		}

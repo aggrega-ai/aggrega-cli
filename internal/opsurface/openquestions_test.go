@@ -98,7 +98,30 @@ import (
 // half of it would have been half a decision — a row disposed of on a capability
 // the surface still only partly carried, with nothing left to record the part it
 // did not.
-const boundCeiling = 25
+//
+// It came down by TWO when the tool protocol began enumerating a workspace's
+// entities and its Releases. Two rows left in one edit, and the argument for
+// taking both together is that they were one question asked about two
+// populations: a caller on that surface could learn neither what a workspace
+// contains nor which Releases it holds.
+//
+// What settled them is that every other capability there takes a name and
+// refuses one it cannot resolve — deliberately, since an empty answer would
+// report a typo as a subject with nothing to offer. Enumeration is the only
+// capability that takes no subject at all, so it is the only way to obtain a
+// name the rest will accept, and withholding it left a surface whose inputs a
+// caller had no way to come by. Disposing of one and leaving the other would
+// have split that: naming an entity and naming a Release are the two inputs
+// almost every remaining capability requires, and a caller able to discover only
+// one of them is still unable to start.
+//
+// Neither is a capability this surface grew of its own. Both call the
+// implementation an editor's answer is computed by, so what counts as an entity
+// and what counts as a Release is decided in one place — which matters most for
+// the Release walk, where membership is read from each file's own kind header
+// and a second implementation would pass every test written over
+// conventionally-named files while disagreeing on the ones that matter.
+const boundCeiling = 23
 
 // TestTheBoundOnlyShrinks is the ratchet. See boundCeiling for why both
 // directions refuse.

@@ -215,11 +215,6 @@ var openQuestions = []OpenQuestion{
 		"The build result carries the rendered files and the Release they came from, not the graph the render " +
 			"consumed. The graph is built on this surface — the render cannot proceed without it — so it is " +
 			"produced and not returned. Is it withheld on purpose, or is the absence one nobody has examined?"},
-	{SurfaceMCP, "workspace-entity-index",
-		"The read surface serves one catalog entity by its identity and enumerates the schema kinds; it " +
-			"enumerates no workspace-local entity, so a caller has to know an identity already in order to ask " +
-			"for one. Is enumeration left off this surface on purpose, or does it owe a caller some way to " +
-			"discover what a workspace holds?"},
 	{SurfaceMCP, "feature-attach-candidates",
 		"The label-matching result exists so that a caller offering attach targets offers the same set the " +
 			"compiler would match. Nothing on this surface offers attach targets today, which is why the " +
@@ -234,12 +229,6 @@ var openQuestions = []OpenQuestion{
 			"whichever way the attachment half is settled, this half is the same capability for the other " +
 			"kind of edge, so settling one and leaving the other would split one decision across two " +
 			"surfaces. Is candidacy for an editor alone, or does it belong here as well?"},
-	{SurfaceMCP, "release-candidates",
-		"Half of this capability's reason plainly does not apply here: the candidate set exists so a caller's " +
-			"own Release detection matches the compiler's, and on this surface every call names the Release it " +
-			"means, so there is no detection to keep in step. The other half is what is unsettled — a caller " +
-			"that does not yet know which Releases a workspace holds has no way to ask. Is discovery left off " +
-			"this surface on purpose, or does it owe one?"},
 }
 
 // isOpen reports whether the bound excuses an availability declaration for the

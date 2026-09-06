@@ -5,9 +5,12 @@ package serve
 
 import (
 	"context"
+	"path/filepath"
 	"sort"
 
 	"go.yaml.in/yaml/v3"
+
+	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 )
 
 // CatalogEntity is one workspace-local entity in the aggrega/catalogIndex
@@ -100,9 +103,66 @@ func (s *Server) dispatchCatalogIndex(ctx context.Context, req *jsonRPCRequest) 
 // ahead of a workspace document sharing its kind and name rather than
 // landing in an order that depends on where the daemon happened to read it.
 func (s *Server) catalogIndex(ctx context.Context) []CatalogEntity {
+	var overlay []workspaceDoc
+	s.parseCache.Range(func(file string, node *yaml.Node, _ []byte) bool {
+		overlay = append(overlay, workspaceDoc{path: filepath.Clean(file), node: node})
+		return true
+	})
+	return workspaceEntityIndex(ctx, s.workspaceRoot, s.lazyCatalog, overlay)
+}
+
+// WorkspaceEntityIndex reports every entity a workspace holds — each one's kind,
+// name, apiVersion, description, labels and source file — for a caller that
+// holds a workspace root and a catalog lookup rather than an open session.
+//
+// It is the same projection the daemon answers with, over the same traversal and
+// the same rule for what counts as an entity, so two surfaces reporting a
+// workspace's entities cannot come to disagree about what is in it. What a
+// caller without a session does not supply is the overlay of documents an editor
+// is holding unsaved; with none, the answer is read from what is on disk, which
+// is what such a caller can see anyway.
+//
+// Read-only: it resolves nothing, writes nothing, and reaches no registry or
+// network. The collection is never nil, so a caller iterates it without a nil
+// check.
+func WorkspaceEntityIndex(ctx context.Context, root string, view *catalog.LazyLookup) []CatalogEntity {
+	return workspaceEntityIndex(ctx, root, view, nil)
+}
+
+// ReleaseCandidates reports every Release-kind document under root, decided by
+// each file's own kind header rather than by its name — so a Release named
+// without a conventional prefix is included and a non-Release file named like
+// one is not.
+//
+// It is the same walk that answers the question for an editor, so which files
+// count as Releases is decided once. What differs is the coordinate each path is
+// reported under: this reports the path relative to the root, which is the
+// coordinate WorkspaceEntityIndex reports a file under, so a caller that asked
+// both questions can line the two answers up. A caller that needs an absolute
+// path joins the root back on, which it supplied.
+//
+// The paths are sorted, and the collection is never nil.
+func ReleaseCandidates(root string) []string {
+	out := []string{}
+	for _, abs := range walkForReleases(root) {
+		rel, inside := relInsideRoot(root, abs)
+		if !inside {
+			continue
+		}
+		out = append(out, rel)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// workspaceEntityIndex is the whole of the entity index with the root, the
+// catalog lookup and the fresher-than-disk overlay supplied rather than read off
+// a session, so the session-bound method and the sessionless entry point above
+// are one implementation rather than two that agree today.
+func workspaceEntityIndex(ctx context.Context, root string, view *catalog.LazyLookup, overlay []workspaceDoc) []CatalogEntity {
 	out := []CatalogEntity{}
 	workspaceFeatures := map[string]bool{}
-	s.rangeWorkspaceDocs(ctx, func(doc workspaceDoc) bool {
+	rangeWorkspaceDocsIn(ctx, root, overlay, func(doc workspaceDoc) bool {
 		kind := scalarAtPathOnDoc(doc.node, []string{"kind"})
 		if kind == "" {
 			return true
@@ -111,7 +171,7 @@ func (s *Server) catalogIndex(ctx context.Context) []CatalogEntity {
 		if name == "" {
 			return true
 		}
-		rel, inside := relInsideRoot(s.workspaceRoot, doc.path)
+		rel, inside := relInsideRoot(root, doc.path)
 		if !inside {
 			// The parse cache holds whatever file the editor last sent,
 			// which need not be a workspace file at all. A document outside
@@ -136,7 +196,7 @@ func (s *Server) catalogIndex(ctx context.Context) []CatalogEntity {
 		})
 		return true
 	})
-	for _, feat := range s.catalogFeatures(workspaceFeatures) {
+	for _, feat := range catalogFeaturesFrom(view, workspaceFeatures) {
 		labels := map[string]string{}
 		for k, v := range feat.Metadata.Labels.All() {
 			labels[k] = v

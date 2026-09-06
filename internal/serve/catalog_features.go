@@ -4,6 +4,7 @@
 package serve
 
 import (
+	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -60,13 +61,23 @@ const (
 // collected slice is a function of the catalog's content rather than of the
 // order a directory walk happened to return entries in.
 func (s *Server) catalogFeatures(alreadyReported map[string]bool) []types.Feature {
-	names := s.lazyCatalog.FeatureNames()
+	return catalogFeaturesFrom(s.lazyCatalog, alreadyReported)
+}
+
+// catalogFeaturesFrom is the whole of catalogFeatures with the lookup supplied
+// rather than read off a session, so a caller holding a lookup and no session
+// collects the same Features under the same collision rule.
+func catalogFeaturesFrom(view *catalog.LazyLookup, alreadyReported map[string]bool) []types.Feature {
+	if view == nil {
+		return nil
+	}
+	names := view.FeatureNames()
 	out := make([]types.Feature, 0, len(names))
 	for _, name := range names {
 		if alreadyReported[name] {
 			continue
 		}
-		feat, ok := s.lazyCatalog.Feature(name)
+		feat, ok := view.Feature(name)
 		if !ok {
 			// The name came out of the directory index, so a miss here means
 			// the document behind it could not be parsed as a Feature. That is

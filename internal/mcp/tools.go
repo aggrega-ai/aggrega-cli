@@ -73,6 +73,8 @@ var toolRegistry []toolSpec
 
 func init() {
 	toolRegistry = []toolSpec{
+		curated("workspace-entity-index", listEntitiesToolSpec),
+		curated("release-candidates", listReleasesToolSpec),
 		curated("validate", validateToolSpec),
 		curated("build", buildToolSpec),
 		curated("inspect", describeToolSpec),

@@ -86,15 +86,17 @@ func OperationAvailability() map[string]opsurface.OperationAvailability {
 // backed by a command is reachable both as the generated command tool and, where
 // a curated tool answers it too, under that tool's goal-shaped name.
 var curatedToolNames = map[string][]string{
-	"validate":              {"validate"},
-	"build":                 {"build"},
-	"inspect":               {"describe"},
-	"get-schema":            {"get-schema"},
-	"plugin-gen-catalog":    {"gen-catalog"},
-	"lint":                  {"lint"},
-	"explain-error":         {"explain-error"},
-	"scaffold-entity":       {"scaffold"},
-	"describe-capabilities": {describeCapabilitiesName},
+	"validate":               {"validate"},
+	"build":                  {"build"},
+	"inspect":                {"describe"},
+	"get-schema":             {"get-schema"},
+	"plugin-gen-catalog":     {"gen-catalog"},
+	"lint":                   {"lint"},
+	"explain-error":          {"explain-error"},
+	"scaffold-entity":        {"scaffold"},
+	"describe-capabilities":  {describeCapabilitiesName},
+	"workspace-entity-index": {"list-entities"},
+	"release-candidates":     {"list-releases"},
 }
 
 // curated names a tool spec after the operation it answers, and is the one way a

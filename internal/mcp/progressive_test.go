@@ -301,7 +301,25 @@ func TestDefaultDefinitionTokenBudget(t *testing.T) {
 	// and says how the two differ, so a caller choosing between two
 	// similarly-named tools is not choosing blind. Both cost definition bytes once
 	// and save a wrong call every time.
-	const ceiling = 18000
+	//
+	// It was raised once, for the two tools that enumerate what a workspace holds,
+	// and the argument the raise owes is this. What the ceiling exists to catch is
+	// a LONG-TAIL tool creeping into the default list — a tool serving a narrow
+	// case, which a client should load only when it turns out to need it. These two
+	// are the opposite of that: every other tool in the default set takes a subject,
+	// and until these landed there was no tool here that could tell a caller what
+	// subjects the workspace has. A caller arriving cold could name nothing and had
+	// no way to find out. Deferring them would have left that intact — the entry
+	// point to the surface reachable only by a caller who already knew to go looking
+	// for it.
+	//
+	// The raise is bounded by what it admits, not by what was needed: both are the
+	// cheapest definitions in the set bar one, each roughly half a long-tail tool's,
+	// and the new ceiling leaves LESS headroom than the old one did. So the gate
+	// discriminates more sharply after the raise than before it, which is the
+	// property that matters — a ceiling raised to a round number with room to spare
+	// would have bought the two tools by retiring the check.
+	const ceiling = 19700
 	if bytesTotal > ceiling {
 		t.Errorf("default definition budget %d bytes exceeds %d; move long-tail tools to the deferred set", bytesTotal, ceiling)
 	}
