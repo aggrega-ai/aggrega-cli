@@ -511,7 +511,7 @@ func TestClosureEnvelopeCarriesTheFailureItRendered(t *testing.T) {
 	t.Parallel()
 	tmp := tier4Workspace(t, "dangling-extends", []string{"release.yaml", "manifest.yaml", "aggregate.yaml"})
 	srv := newTestServer(t, tmp, nil, nil)
-	resolved, envelope := srv.resolveReleaseClosure(srv.lazyCatalog.ForRequest(nil), filepath.Join(tmp, "release.yaml"), nil)
+	resolved, envelope := srv.resolveReleaseClosure(srv.lazyCatalog.ForRequest(nil), filepath.Join(tmp, "release.yaml"))
 	if envelope == nil {
 		t.Fatalf("the closure resolved (resolved=%v); the failure branch was never reached", resolved != nil)
 	}

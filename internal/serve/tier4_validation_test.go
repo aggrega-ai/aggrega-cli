@@ -591,7 +591,7 @@ func TestRunTier4Validation_CrossFileAnalyzerViolationsFilteredToValidatedFile(t
 	// the root Aggregate file AND the sub-aggregate file before the
 	// per-file filter assertion is meaningful.
 	view := srv.lazyCatalog.ForRequest(nil)
-	resolved, env := srv.resolveReleaseClosure(view, filepath.Join(tmp, "release.yaml"), nil)
+	resolved, env := srv.resolveReleaseClosure(view, filepath.Join(tmp, "release.yaml"))
 	if env != nil {
 		t.Fatalf("resolveReleaseClosure envelope: %+v", env)
 	}

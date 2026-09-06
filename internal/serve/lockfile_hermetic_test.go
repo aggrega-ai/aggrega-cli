@@ -132,16 +132,47 @@ spec:
 	return ws, filepath.Base(relPath)
 }
 
-// TestServeReconstructsClosureAxesFromLockfile proves the serve drift path brings
-// its closure onto the same hermetic footing the CLI build uses. ComputeClosure
-// alone leaves the cross-document library axis empty, so a lockfile pinning that
-// library would drift-report it as "no longer used" — a spurious warning.
-// resolveReleaseClosure (with a lockfile) runs the hermetic augment pass, so the
-// same lockfile verifies clean.
+// writeFixtureLockfile puts a lockfile on disk beside its Release, which is what
+// the graph request reads: the inspection loads the lockfile itself rather than
+// being handed one, so a fixture that only held an in-memory value would drive a
+// path no client can reach.
+func writeFixtureLockfile(t *testing.T, path string, lf *lockfile.Lockfile) {
+	t.Helper()
+	if err := lockfile.WriteLockfile(path, lf); err != nil {
+		t.Fatalf("write lockfile %s: %v", path, err)
+	}
+}
+
+// serveInspectionClosure returns the closure the graph request computes for rel
+// — the same value handleIrGraph hands verifyDriftAndPublish. It drives
+// previewRelease, the daemon's own entry, so what is asserted below is the
+// closure production drift-verifies against and not a closure assembled for the
+// test.
+func serveInspectionClosure(t *testing.T, srv *Server, rel string) closure.Closure {
+	t.Helper()
+	preview, env := srv.previewRelease(context.Background(), rel, srv.irGraphPipelineOptions())
+	if env != nil {
+		t.Fatalf("previewRelease %s: %s", rel, env.Message)
+	}
+	return preview.resolved.Closure
+}
+
+// TestServeReconstructsClosureAxesFromLockfile proves the daemon's drift path
+// brings its closure onto the same hermetic footing the CLI build uses.
+// ComputeClosure alone leaves the cross-document library axis empty, so a
+// lockfile pinning that library would drift-report it as "no longer used" — a
+// spurious warning. The graph request's preview folds the library axes and
+// reconstructs the rest, so the same lockfile verifies clean.
+//
+// It drives previewRelease rather than a helper of its own, because the closure
+// under test is the one the drift verify is handed: a test that reconstructed
+// separately could agree with production today and stop agreeing without
+// failing.
 func TestServeReconstructsClosureAxesFromLockfile(t *testing.T) {
 	t.Parallel()
 	ws, rel := libraryRefWorkspace(t)
 	releasePath := filepath.Join(ws, rel)
+	lockfilePath := lockfile.PathFor(releasePath)
 
 	var in, out bytes.Buffer
 	srv := newPinIsolationServer(t, ws, &in, &out, 1)
@@ -162,32 +193,48 @@ func TestServeReconstructsClosureAxesFromLockfile(t *testing.T) {
 		t.Fatalf("precondition: ComputeClosure should leave the schema-library axis empty, got %d", len(computed.Closure.SchemaLibraries))
 	}
 
-	// A lockfile pinned from a full (reconstructed) closure. Reconstruct once to
-	// learn the honest axis set, then pin it.
-	seedView := srv.lazyCatalog.ForRequest(nil)
-	seedLf := &lockfile.Lockfile{Version: 1, Release: "./" + rel, GeneratedAt: "2026-06-03T10:00:00Z"}
-	seedResolved, env := srv.resolveReleaseClosure(seedView, releasePath, seedLf)
-	if env != nil {
-		t.Fatalf("reconstruct (seed) resolveReleaseClosure: %s", env.Message)
-	}
-	if len(seedResolved.Closure.SchemaLibraries) == 0 {
+	// A lockfile pinned from a full (reconstructed) closure. Run the graph
+	// request's own preview once to learn the honest axis set, then pin it.
+	writeFixtureLockfile(t, lockfilePath, &lockfile.Lockfile{Version: 1, Release: "./" + rel, GeneratedAt: "2026-06-03T10:00:00Z"})
+	seedClosure := serveInspectionClosure(t, srv, rel)
+	if len(seedClosure.SchemaLibraries) == 0 {
 		t.Fatalf("reconstruction did not populate the schema-library axis; the hermetic serve path is not running")
 	}
-	pinned := lockfileFromClosure("./"+rel, seedResolved.Closure)
+	pinned := lockfileFromClosure("./"+rel, seedClosure)
 
-	// The pinned lockfile drift-verifies CLEAN against a freshly reconstructed
-	// closure (no false "no longer used").
-	reconView := srv.lazyCatalog.ForRequest(catalog.PinsFromLockfile(pinned))
-	reconResolved, env := srv.resolveReleaseClosure(reconView, releasePath, pinned)
-	if env != nil {
-		t.Fatalf("reconstruct resolveReleaseClosure: %s", env.Message)
-	}
-	if err := lockfile.Verify(pinned, reconResolved.Closure); err != nil {
+	// The pinned lockfile drift-verifies CLEAN against the closure the graph
+	// request computes (no false "no longer used"), and the daemon's own drift
+	// check publishes nothing for it.
+	writeFixtureLockfile(t, lockfilePath, pinned)
+	reconClosure := serveInspectionClosure(t, srv, rel)
+	if err := lockfile.Verify(pinned, reconClosure); err != nil {
 		t.Fatalf("drift against the reconstructed closure should be clean, got: %v", err)
 	}
+	srv.verifyDriftAndUpdateCache(lockfilePath, reconClosure)
+	if diags := srv.snapshotDiagnostics(lockfilePath); len(diags) != 0 {
+		t.Fatalf("an undrifted lockfile should publish no drift diagnostic, got %d: %+v", len(diags), diags)
+	}
 
-	// Load-bearing control: the SAME lockfile drift-reports against a compute-only
-	// closure — proving the reconstruction is what removes the false positive.
+	// The drifted direction, through the same check: a lockfile pinning an entity
+	// the closure does not reach must still be reported.
+	drifted := lockfileFromClosure("./"+rel, reconClosure)
+	drifted.Entities = append(drifted.Entities, lockfile.Entity{
+		URI: "demo/withdrawn", ResolvedVersion: "1.0.0", Digest: "sha256:" + strings.Repeat("0", 64),
+	})
+	srv.verifyDriftAndUpdateCache(lockfilePath, computed.Closure) // reset the entry off the clean state
+	writeFixtureLockfile(t, lockfilePath, drifted)
+	srv.verifyDriftAndUpdateCache(lockfilePath, reconClosure)
+	driftDiags := srv.snapshotDiagnostics(lockfilePath)
+	if len(driftDiags) == 0 {
+		t.Fatal("a drifted lockfile must still report drift; got no diagnostic")
+	}
+	if !strings.Contains(driftDiags[0].Message, "drifted") {
+		t.Fatalf("drift diagnostic does not name the condition: %q", driftDiags[0].Message)
+	}
+
+	// Load-bearing control: the SAME pinned lockfile drift-reports against a
+	// compute-only closure — proving the reconstruction is what removes the false
+	// positive.
 	err := lockfile.Verify(pinned, computed.Closure)
 	if err == nil {
 		t.Fatal("expected drift against the compute-only closure (the false positive reconstruction removes), got none")
@@ -696,20 +743,19 @@ func TestServeReconstructsTransitiveSubAggregateAxis(t *testing.T) {
 		}
 	}
 
-	// The drift path: resolveReleaseClosure with a lockfile runs the reconstruction.
-	view := srv.lazyCatalog.ForRequest(nil)
-	lf := &lockfile.Lockfile{Version: 1, Release: "./" + rel, GeneratedAt: "2026-06-03T10:00:00Z"}
-	resolved, env := srv.resolveReleaseClosure(view, releasePath, lf)
-	if env != nil {
-		t.Fatalf("reconstruct resolveReleaseClosure: %s", env.Message)
-	}
+	// The drift path: the graph request's preview reconstructs the axes, and the
+	// closure it returns is the one the drift verify is handed.
+	writeFixtureLockfile(t, lockfile.PathFor(releasePath), &lockfile.Lockfile{
+		Version: 1, Release: "./" + rel, GeneratedAt: "2026-06-03T10:00:00Z",
+	})
+	reconstructed := serveInspectionClosure(t, srv, rel)
 
-	if !closureHasEntity(resolved.Closure, "serve-leaf") {
+	if !closureHasEntity(reconstructed, "serve-leaf") {
 		t.Errorf("reconstructed closure is missing the depth-two Aggregate %q — the sub-aggregate descent did not re-walk %q; entities=%v",
-			"serve-leaf", "serve-mid", closureEntityURIs(resolved.Closure))
+			"serve-leaf", "serve-mid", closureEntityURIs(reconstructed))
 	}
-	if !closureHasEntity(resolved.Closure, "serve-worker") {
+	if !closureHasEntity(reconstructed, "serve-worker") {
 		t.Errorf("reconstructed closure is missing %q, the component type named only inside the depth-two Aggregate %q — the descent stopped after the first level instead of recursing; entities=%v",
-			"serve-worker", "serve-leaf", closureEntityURIs(resolved.Closure))
+			"serve-worker", "serve-leaf", closureEntityURIs(reconstructed))
 	}
 }

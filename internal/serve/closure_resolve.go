@@ -14,33 +14,35 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
-	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
-	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
-	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/yamlpos"
 )
 
 // resolveReleaseClosure loads the Manifest + Aggregate siblings to
-// releasePath and computes the catalog closure via the shared
-// compiler-operations layer, adapting its stage-tagged failure into the
-// daemon's wire envelope. Every caller supplies the Release its own
+// releasePath and computes the catalog closure the daemon's Release-scope
+// validation runs over, adapting the shared layer's stage-tagged failure into
+// the daemon's wire envelope. Every caller supplies the Release its own
 // request named, so no two callers can be resolving different Releases
 // while believing they share one.
+//
+// It resolves through compilerops.ResolveValidationClosure — the entry every
+// front door that validates a Release resolves through — rather than through
+// the general resolver, so the footing a release-scope validation runs on is
+// one value at one site and the reason for it is held by the code that sets
+// it. No lockfile is supplied: this is the quiet editing-cadence load
+// runTier4Validation describes, and the entry admits that absence.
 //
 // view is the request-scoped catalog lookup the closure walk resolves
 // against — seeded with this request's pins, so a cache-resident entity
 // resolves against the right pin set and another concurrent request's
 // pins can never interleave into this walk. The same view is threaded
-// onward into the render pipeline, so closure compute and render see one
+// onward into the validation core, so closure compute and validation see one
 // consistent pin snapshot. skipContext reads the view's skip record for
 // the same reason.
 //
 // On error returns a populated *jsonRPCError envelope (1004
-// errEntityNotResolvable) so handleIrGraph can forward it via
-// writeErrorEnvelope. The drift-check caller treats a non-nil
-// envelope as a stderr-logged warning and skips drift verification;
-// the next handleIrGraph retries.
+// errEntityNotResolvable), which the caller maps into a closure-level
+// diagnostic at the head of the file.
 //
 // The envelope carries the failure it was rendered from as well as the
 // rendered text, because rendering is one-way and a caller that maps
@@ -61,30 +63,12 @@ import (
 // multiple source dirs) and is annotated with skipContext so an in-closure
 // entity skipped at the tolerant lazy enumeration is explained rather than a
 // bare "not found".
-//
-// When lf is non-nil, the resolved closure is brought onto the same hermetic
-// footing the CLI build uses: the cross-document library axes are resolved and
-// the sub-aggregate + pipeline-plugin axes ComputeClosure leaves empty are
-// reconstructed from the pinned cache, so a drift verify against the lockfile
-// compares like-for-like rather than reporting spurious "no longer used"
-// entries. Reconstruction is hermetic (the closure Lookup carries a nil
-// OCIPuller, so no registry fetch fires) and provider bindings resolve from the
-// LOCKFILE, so a plugins.providers change after the pull does not move the
-// reconstructed closure. Callers that do not verify drift (the quiet
-// validation load) pass nil to skip the reconstruction.
-func (s *Server) resolveReleaseClosure(view *catalog.LazyLookup, releasePath string, lf *lockfile.Lockfile) (*compilerops.ResolvedClosure, *jsonRPCError) {
-	// Augment stays off: serve folds the library axes and reconstructs the
-	// sub-aggregate + plugin axes in reconstructClosureAxes below (only on the
-	// drift path, when lf is non-nil), so folding here as well would run the
-	// augment twice. The Lockfile gates the external Aggregate seed on a registry
-	// pin, matching the CLI build.
-	resolved, cerr := compilerops.ResolveClosure(compilerops.ClosureInputs{
+func (s *Server) resolveReleaseClosure(view *catalog.LazyLookup, releasePath string) (*compilerops.ResolvedClosure, *jsonRPCError) {
+	resolved, cerr := compilerops.ResolveValidationClosure(compilerops.ValidationClosureInputs{
 		View:            view,
 		ReleasePath:     releasePath,
 		WorkspaceRoot:   s.workspaceRoot,
 		WorkspaceConfig: s.wsConfig,
-		Lockfile:        lf,
-		Augment:         false,
 	})
 	if cerr != nil {
 		if cerr.Stage == compilerops.ClosureStageComputeClosure {
@@ -99,15 +83,6 @@ func (s *Server) resolveReleaseClosure(view *catalog.LazyLookup, releasePath str
 			Message: cerr.Error(),
 			Data:    s.closureErrorData(releasePath, cerr.Stage),
 			cause:   cerr,
-		}
-	}
-	if lf != nil {
-		if rerr := reconstructClosureAxes(view, resolved, lf, s.workspaceRoot, s.wsConfig.ResolvedArtifactCacheDir()); rerr != nil {
-			return nil, &jsonRPCError{
-				Code:    errEntityNotResolvable,
-				Message: s.skipContext(view, rerr.Error()),
-				cause:   rerr,
-			}
 		}
 	}
 	return resolved, nil
@@ -228,59 +203,6 @@ func (s *Server) closureErrorData(releasePath string, stage compilerops.ClosureS
 		return fileLevel
 	}
 	return newErrorDataWithRange(releasePath, span.Line, span.Column, span.EndLine, span.EndColumn)
-}
-
-// reconstructClosureAxes augments the resolved closure's cross-document library
-// axes and reconstructs the sub-aggregate + pipeline-plugin axes from the
-// lockfile-pinned cache, mirroring the CLI build's hermetic closure so the drift
-// verify compares an honest expected set. It runs against the closure Lookup the
-// resolution walked (reused, not rebuilt), reading provider bindings from the
-// lockfile. Phase B re-folds the view's pin set to the augmented closure so the
-// just-pinned plugin entities are visible; the pins are restored to the lockfile
-// view afterward so the render path resolves exactly as before.
-func reconstructClosureAxes(view *catalog.LazyLookup, resolved *compilerops.ResolvedClosure, lf *lockfile.Lockfile, workspaceRoot, cacheDir string) error {
-	lookup := resolved.Lookup
-	if err := closure.AugmentClosure(&resolved.Closure, view, lookup); err != nil {
-		return err
-	}
-	aggLoader, err := closure.RequireAggregateLoader(lookup)
-	if err != nil {
-		return err
-	}
-	recipeLoader, err := closure.RequireRecipeLoader(lookup)
-	if err != nil {
-		return err
-	}
-	bindings := lockfile.ProviderBindings(lf)
-	reconResolver := func(ref string) (types.Plugin, bool, error) {
-		return view.ProviderPluginForTarget(ref, bindings)
-	}
-	reconRefold := func() (closure.RecipeLoader, error) {
-		view.SetPins(catalog.PinsFromClosure(resolved.Closure))
-		return view.ClosureRecipeLoader(), nil
-	}
-	if err := closure.ReconstructClosureAxes(&resolved.Closure, aggLoader, recipeLoader, lookup, reconResolver, reconRefold); err != nil {
-		view.SetPins(catalog.PinsFromLockfile(lf))
-		return err
-	}
-	view.SetPins(catalog.PinsFromLockfile(lf))
-
-	// Reconstruct the output-shaping workspace-socket plugin entities and their
-	// .wasm from the LOCKFILE (provider bindings + mutator attachments), config-
-	// invariant, mirroring the CLI build: these sockets are pull-time choices
-	// recorded only in the lockfile, so ComputeClosure cannot re-derive them
-	// hermetically. The socket lookup honors the lockfile pins so a pinned socket
-	// .wasm resolves from the content-addressed cache offline.
-	socketEntityURIs := lockfile.WorkspaceSocketEntityURIs(lf)
-	if len(socketEntityURIs) > 0 {
-		socketLookup := view.ClosureLookupWithPins(nil, workspaceRoot, cacheDir, nil, catalog.PinsFromLockfile(lf))
-		socketRecipeLoader, socketErr := closure.RequireRecipeLoader(socketLookup)
-		if socketErr != nil {
-			return socketErr
-		}
-		return closure.ReconstructWorkspaceSocketEntities(&resolved.Closure, socketEntityURIs, socketRecipeLoader, socketLookup)
-	}
-	return nil
 }
 
 // skipContext annotates a closure-level message with the catalog files the lazy
