@@ -18,6 +18,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/parse"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
+	"github.com/aggrega-ai/aggrega-cli/internal/pluginfetchverify"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
@@ -1108,7 +1109,7 @@ func resolveVerdictInputs(atts []workspaceconfig.VerdictAttachment) ([]lockfile.
 // plugin is at pull — registry signature verification against the resolving
 // registry's trust policy AND host-function stamp re-derivation from the cached
 // .wasm — through the one fetch-verification home every tier shares
-// (verifyFetchedPlugin). Because a verdict gate is cache-not-pin, the verified
+// (pluginfetchverify.Verify). Because a verdict gate is cache-not-pin, the verified
 // fact is not recorded in the lockfile and never enters the reproducibility
 // closure; it is verified all the same, so a tampered or unsigned gate plugin
 // halts the pull rather than running unverified at build. A registry gate carries
@@ -1178,7 +1179,7 @@ func cacheVerdictSocketPlugins(ctx context.Context, cfg workspaceconfig.Config, 
 // discovery (the same binding the pinned plugin-entity signature uses) and reads
 // the entity stamp + content-verified .wasm from the pull-populated cache (the
 // same cache-not-pin read the build resolves the gate through), then hands both
-// to verifyFetchedPlugin. The verified fact is discarded: a verdict gate is
+// to pluginfetchverify.Verify. The verified fact is discarded: a verdict gate is
 // cache-not-pin and never enters the lockfile.
 //
 // It also returns the identity that one cache read reports — the plugin's identity
@@ -1191,7 +1192,7 @@ func cacheVerdictSocketPlugins(ctx context.Context, cfg workspaceconfig.Config, 
 // coordinate is the caller's signal that there was nothing to identify.
 func verifyCachedVerdictSocketPlugin(ctx context.Context, cfg workspaceconfig.Config, lazyView *catalog.LazyLookup, uri, manifestDigest, workspaceRoot, cacheDir string, targetFor pullverify.TargetFor, diagOut io.Writer) (verdictPluginResolution, error) {
 	var identity verdictPluginResolution
-	fp := fetchedPlugin{
+	fp := pluginfetchverify.Fetched{
 		URI:            uri,
 		ManifestDigest: manifestDigest,
 		Kind:           catalog.EntityKindForHint("plugin"),
@@ -1233,7 +1234,7 @@ func verifyCachedVerdictSocketPlugin(ctx context.Context, cfg workspaceconfig.Co
 			fp.WasmBytes = wasmBytes
 		}
 	}
-	if _, err = verifyFetchedPlugin(ctx, fp, cfg, targetFor, diagOut); err != nil {
+	if _, err = pluginfetchverify.Verify(ctx, fp, cfg, targetFor, diagOut); err != nil {
 		return verdictPluginResolution{}, err
 	}
 	// Withdrawal discovery runs at this same registry-touching moment, over the same

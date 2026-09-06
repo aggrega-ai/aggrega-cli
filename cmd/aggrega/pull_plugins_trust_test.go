@@ -607,13 +607,13 @@ func TestTrustedPluginsSummary(t *testing.T) {
 func TestVerdictTrustRecordHasOneWriter(t *testing.T) {
 	callers := enclosingCallers(t)
 
-	got := make([]string, 0, len(callers["recordVerdictPluginTrust"]))
-	for name := range callers["recordVerdictPluginTrust"] {
+	got := make([]string, 0, len(callers["main.recordVerdictPluginTrust"]))
+	for name := range callers["main.recordVerdictPluginTrust"] {
 		got = append(got, name)
 	}
 	sort.Strings(got)
-	if strings.Join(got, ",") != "pullRun" {
-		t.Errorf("callers of recordVerdictPluginTrust = %v; want exactly [pullRun]\n"+
+	if strings.Join(got, ",") != "main.pullRun" {
+		t.Errorf("callers of recordVerdictPluginTrust = %v; want exactly [main.pullRun]\n"+
 			"the record is written by the pull and by nothing else; a second writer would let a "+
 			"resolution that acquired nothing overwrite identities it never resolved", got)
 	}
@@ -623,8 +623,8 @@ func TestVerdictTrustRecordHasOneWriter(t *testing.T) {
 		writers = append(writers, name)
 	}
 	sort.Strings(writers)
-	if strings.Join(writers, ",") != "recordVerdictPluginTrust" {
-		t.Errorf("callers of pluginstrust.Write = %v; want exactly [recordVerdictPluginTrust]", writers)
+	if strings.Join(writers, ",") != "main.recordVerdictPluginTrust" {
+		t.Errorf("callers of pluginstrust.Write = %v; want exactly [main.recordVerdictPluginTrust]", writers)
 	}
 
 	// The build's auto-pull step reaches the record by running the pull path
@@ -640,9 +640,9 @@ func TestVerdictTrustRecordHasOneWriter(t *testing.T) {
 	// lockfile came back with pins. Neither substitutes for the other — this one
 	// catches a second fill implementation appearing, and that one catches the
 	// hand-off being dropped.
-	if !callers["pullRun"]["buildDispatchConfig"] {
+	if !callers["main.pullRun"]["main.buildDispatchConfig"] {
 		t.Errorf("the build dispatch does not hand the pull path to the build layer; the auto-pull route to the record runs the pull path verbatim (callers seen: %v)",
-			callers["pullRun"])
+			callers["main.pullRun"])
 	}
 }
 
@@ -948,26 +948,26 @@ func TestVerdictUpgradeTargetsCoverAttachmentsAndTheRecord(t *testing.T) {
 func TestVerdictTrustRecordHasOneComparisonSite(t *testing.T) {
 	callers := enclosingCallers(t)
 
-	got := make([]string, 0, len(callers["holdVerdictPluginsToTheirRecord"]))
-	for name := range callers["holdVerdictPluginsToTheirRecord"] {
+	got := make([]string, 0, len(callers["main.holdVerdictPluginsToTheirRecord"]))
+	for name := range callers["main.holdVerdictPluginsToTheirRecord"] {
 		got = append(got, name)
 	}
 	sort.Strings(got)
-	if strings.Join(got, ",") != "pullRun" {
-		t.Errorf("callers of holdVerdictPluginsToTheirRecord = %v; want exactly [pullRun]\n"+
+	if strings.Join(got, ",") != "main.pullRun" {
+		t.Errorf("callers of holdVerdictPluginsToTheirRecord = %v; want exactly [main.pullRun]\n"+
 			"the resolved identities are held to the record by the pull and by nothing else; a second site "+
 			"could adopt what the first refused, and which one ran would depend on the path taken", got)
 	}
 
 	// The reduction both sides read: neither the comparison nor the write may
 	// filter the resolutions for itself, or the two could consider different sets.
-	readers := make([]string, 0, len(callers["recordableVerdictResolutions"]))
-	for name := range callers["recordableVerdictResolutions"] {
+	readers := make([]string, 0, len(callers["main.recordableVerdictResolutions"]))
+	for name := range callers["main.recordableVerdictResolutions"] {
 		readers = append(readers, name)
 	}
 	sort.Strings(readers)
-	if strings.Join(readers, ",") != "holdVerdictPluginsToTheirRecord,recordVerdictPluginTrust" {
-		t.Errorf("callers of recordableVerdictResolutions = %v; want exactly [holdVerdictPluginsToTheirRecord recordVerdictPluginTrust]", readers)
+	if strings.Join(readers, ",") != "main.holdVerdictPluginsToTheirRecord,main.recordVerdictPluginTrust" {
+		t.Errorf("callers of recordableVerdictResolutions = %v; want exactly [main.holdVerdictPluginsToTheirRecord main.recordVerdictPluginTrust]", readers)
 	}
 }
 

@@ -14,6 +14,7 @@ import (
 
 	"oras.land/oras-go/v2/content/memory"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/pluginfetchverify"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
@@ -25,7 +26,7 @@ import (
 // verdictGateVerify drives a host-less verdict-socket gate plugin (a linter or
 // policy plugin configured cache-not-pin) through the exact pull-time
 // verification path cacheVerdictSocketPlugins uses for such a gate:
-// verifyCachedVerdictSocketPlugin -> verifyFetchedPlugin. A verdict gate never
+// verifyCachedVerdictSocketPlugin -> pluginfetchverify.Verify. A verdict gate never
 // enters the closure, so this is the ONLY pass that verifies it — the closure
 // signature pass the pinned tier runs never sees it.
 //
@@ -111,7 +112,7 @@ func TestVerdictGateSignatureHaltsAtPull(t *testing.T) {
 
 // TestVerdictGateHostFunctionStampHaltsAtSharedHome proves the host-function
 // stamp re-derivation fires on the verdict tier: the verdict gate's verification
-// home (verifyFetchedPlugin — the callee verifyCachedVerdictSocketPlugin routes
+// home (pluginfetchverify.Verify — the callee verifyCachedVerdictSocketPlugin routes
 // every gate through, locked by the source guard) HALTS with
 // ErrWasmHostFunctionsStampMismatch when a gate's committed
 // spec.runtime.hostFunctions stamp diverges from the imports of its
@@ -132,7 +133,7 @@ func TestVerdictGateHostFunctionStampHaltsAtSharedHome(t *testing.T) {
 		t.Fatalf("derive host functions: %v", err)
 	}
 
-	base := fetchedPlugin{
+	base := pluginfetchverify.Fetched{
 		URI:         "linter/gate",
 		EntityURI:   "linter/gate",
 		ArtifactURI: "linter/gate",
@@ -143,7 +144,7 @@ func TestVerdictGateHostFunctionStampHaltsAtSharedHome(t *testing.T) {
 	t.Run("divergent_stamp_halts", func(t *testing.T) {
 		in := base
 		in.Entity = pluginEntity("linter/gate", []string{"aggrega_log"})
-		_, err := verifyFetchedPlugin(context.Background(), in, offline, nil, io.Discard)
+		_, err := pluginfetchverify.Verify(context.Background(), in, offline, nil, io.Discard)
 		if !errors.Is(err, wasm.ErrWasmHostFunctionsStampMismatch()) {
 			t.Fatalf("a verdict gate whose stamp diverges from its .wasm imports must halt with ErrWasmHostFunctionsStampMismatch; got %v", err)
 		}
@@ -152,7 +153,7 @@ func TestVerdictGateHostFunctionStampHaltsAtSharedHome(t *testing.T) {
 	t.Run("matching_stamp_passes", func(t *testing.T) {
 		in := base
 		in.Entity = pluginEntity("linter/gate", derived)
-		if _, err := verifyFetchedPlugin(context.Background(), in, offline, nil, io.Discard); err != nil {
+		if _, err := pluginfetchverify.Verify(context.Background(), in, offline, nil, io.Discard); err != nil {
 			t.Fatalf("a verdict gate whose stamp matches its .wasm imports must pass; got %v", err)
 		}
 	})

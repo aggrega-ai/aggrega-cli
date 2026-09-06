@@ -12,6 +12,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/pluginfetchverify"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
@@ -244,7 +245,7 @@ func productionInstallPluginFetch(ctx context.Context, rw *workspaceconfig.Resol
 	}
 
 	bare := strings.TrimPrefix(ref, "oci://")
-	if !isRegistryHost(registryhost.Of(bare)) {
+	if !pluginfetchverify.IsRegistryHost(registryhost.Of(bare)) {
 		// Local / embedded reference: resolve through the shared cascade
 		// with no network and no cache write, mirroring the closure verify pass's
 		// skip of non-registry items.
@@ -280,7 +281,7 @@ func productionInstallPluginFetch(ctx context.Context, rw *workspaceconfig.Resol
 	// signature is verified. result.Digest is the fetched manifest digest the
 	// signature commits to.
 	installVerifyClient, _ := workspaceEgressClient(wsCfg)
-	if _, err := verifyFetchedPlugin(ctx, fetchedPlugin{
+	if _, err := pluginfetchverify.Verify(ctx, pluginfetchverify.Fetched{
 		URI:            ref,
 		ManifestDigest: result.Digest,
 		Host:           registryhost.Of(bare),
