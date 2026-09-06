@@ -197,7 +197,27 @@ import (
 // while somebody is validating or typing; both of these run only when a request
 // asks for them by name, so the protection is untouched and the surface's other
 // methods still answer from the workspace and what is already cached.
-const boundCeiling = 16
+//
+// It came down by THREE when the daemon took on the caches that serve the work:
+// reclaiming entries no lockfile references, trimming the compiled-module store
+// to a cap, and wiping every cache. All three write, and all three are admitted
+// by the rule the rows themselves pointed at — a caller that sent one has asked
+// for the reclamation, exactly as a caller sending a build has asked for
+// artifacts. Taking them separately would have split one answer three ways.
+//
+// The eviction row is the one that decided the shape. It observed that the
+// compiled-module store sits outside every workspace, which is what a
+// neighbouring set of declines rested on, AND that this daemon is what fills that
+// store, once per guest, for every session on the machine. The second fact is the
+// stronger one: a surface that populates a store is not neutral about it, so the
+// decline was resting on where the store sits rather than on anything the daemon
+// decided. The reason those neighbours carry was restated accordingly, on what a
+// session holds rather than on which directory a subject occupies, and its row set
+// was checked one at a time against the new wording.
+//
+// What did NOT move with them is the protection: these run only when a request
+// names them, so nothing writes while a document is being validated or inspected.
+const boundCeiling = 13
 
 // TestTheBoundOnlyShrinks is the ratchet. See boundCeiling for why both
 // directions refuse.

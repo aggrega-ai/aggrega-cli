@@ -100,6 +100,15 @@ var curatedToolNames = map[string][]string{
 
 	"feature-attach-candidates": {"attach-candidates"},
 	"connection-candidates":     {"connection-candidates"},
+
+	// The two inventories. Each is also reachable as the tool generated from its
+	// command, which returns that command's rendered output; these carry the
+	// values, so a caller totals sizes or picks a version without parsing a table
+	// back into the numbers it was rendered from. The name is the operation's own,
+	// which is the name the command line and the daemon use for the same concept.
+	"cache-status":  {"cache-status"},
+	"registry-list": {"registry-list"},
+	"search":        {"search"},
 }
 
 // curated names a tool spec after the operation it answers, and is the one way a

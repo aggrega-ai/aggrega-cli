@@ -5,9 +5,9 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
-	"sort"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -15,32 +15,13 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/registryindex"
-	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"github.com/aggrega-ai/aggrega-cli/internal/registryops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
-
-// indexStaleAfter is the fixed age beyond which a loaded index is considered
-// clearly old and search prints a one-line advisory to refresh it. It is a plain
-// constant, not a configurable or tuned threshold: the advisory only nudges; it
-// never forces a network refresh.
-const indexStaleAfter = 30 * 24 * time.Hour
 
 // searchNow supplies the clock the staleness advisory compares a snapshot's age
 // against. It is a package seam so tests pin freshness deterministically.
 var searchNow = time.Now
-
-// searchIndexesStale reports whether any loaded snapshot is clearly old — its
-// timestamp is absent, or older than indexStaleAfter relative to now — so search
-// can print a single advisory line to refresh. It reads only the already-loaded
-// timestamps and contacts no network.
-func searchIndexesStale(indexes []registryindex.Loaded, now time.Time) bool {
-	for _, li := range indexes {
-		if !li.HasTimestamp || now.Sub(li.LastUpdated) > indexStaleAfter {
-			return true
-		}
-	}
-	return false
-}
 
 // newSearchCmd builds `search [query]`, which searches the local index of the
 // configured registries — built offline by `aggrega registry update` — for
@@ -153,54 +134,43 @@ func searchRun(rw *workspaceconfig.ResolvedWorkspace, out, errOut io.Writer, opt
 		return err
 	}
 
-	cfg := rw.Config()
+	res, err := registryops.Search(rw, registryops.Query{
+		Text:             opts.Query,
+		Kinds:            opts.Kinds,
+		Selector:         opts.Selector,
+		Capabilities:     opts.Capabilities,
+		PluginType:       opts.PluginType,
+		Registry:         opts.Registry,
+		Limit:            opts.Limit,
+		IncludeRetracted: opts.IncludeRetracted,
+	}, errOut, searchNow())
 
-	singleExplicit := opts.Registry != ""
-	var hosts []string
-	if singleExplicit {
-		host, err := cfg.ResolveRegistry(opts.Registry)
-		if err != nil {
-			return fmt.Errorf("aggrega search: %w", err)
-		}
-		hosts = []string{host}
-	} else {
-		for _, r := range cfg.Registries {
-			hosts = append(hosts, r.Host)
-		}
+	// A configured registry with no index yet is named before anything else,
+	// including before a failure is reported. The hosts that could not be consulted
+	// are the most useful thing a caller can be told when the search then finds
+	// nothing to read at all, so they are never withheld by the error path.
+	for _, host := range res.MissingIndexHosts {
+		fmt.Fprintf(errOut, "registry %s: no local index; run 'aggrega registry update'\n", host)
 	}
-	if len(hosts) == 0 {
+
+	if err != nil {
+		// A malformed selector is the caller's own input error and is reported in
+		// its own words; everything else is a failure of the search and carries the
+		// command's name.
+		var selErr *registryops.SelectorError
+		if errors.As(err, &selErr) {
+			return err
+		}
+		return fmt.Errorf("aggrega search: %w", err)
+	}
+	if res.NoRegistriesConfigured {
 		fmt.Fprintln(out, "No registries configured.")
 		return nil
 	}
 
-	root := rw.Root()
-	cacheDir := cfg.ResolvedArtifactCacheDir()
-
-	var loaded []registryindex.Loaded
-	for _, host := range hosts {
-		idx, err := registryindex.LoadHost(root, cacheDir, host)
-		if err != nil {
-			if registryindex.IsNotBuilt(err) {
-				if singleExplicit {
-					return fmt.Errorf("aggrega search: registry %s has no local index; run 'aggrega registry update'", host)
-				}
-				fmt.Fprintf(errOut, "registry %s: no local index; run 'aggrega registry update'\n", host)
-				continue
-			}
-			return fmt.Errorf("aggrega search: %w", err)
-		}
-		loaded = append(loaded, idx)
-	}
-	if len(loaded) == 0 {
-		return fmt.Errorf("aggrega search: no local index found for any configured registry; run 'aggrega registry update'")
-	}
-
 	// Freshness lines to errOut, hosts ascending, so the order is deterministic
 	// regardless of config order and stdout stays result-only.
-	byHost := make([]registryindex.Loaded, len(loaded))
-	copy(byHost, loaded)
-	sort.Slice(byHost, func(i, j int) bool { return byHost[i].Host < byHost[j].Host })
-	for _, li := range byHost {
+	for _, li := range res.Indexes {
 		if li.HasTimestamp {
 			fmt.Fprintf(errOut, "Index for %s last updated %s\n", li.Host, li.LastUpdated.Format(time.RFC3339))
 		} else {
@@ -212,102 +182,21 @@ func searchRun(rw *workspaceconfig.ResolvedWorkspace, out, errOut io.Writer, opt
 	// clearly old (or carries no timestamp) a one-line nudge to refresh is written
 	// to errOut. Search itself never contacts the network; the refresh it points at
 	// is the cheap conditional 'registry update'.
-	if searchIndexesStale(byHost, searchNow()) {
+	if res.Stale {
 		fmt.Fprintln(errOut, "One or more indexes are stale; run 'aggrega registry update' to refresh.")
-	}
-
-	records, screening := screenIndexRecords(loaded, opts.IncludeRetracted, errOut)
-	registryindex.SortRecords(records)
-
-	matched, err := filterRecords(records, searchFilter{
-		Query:        opts.Query,
-		Kinds:        opts.Kinds,
-		Selector:     opts.Selector,
-		Capabilities: opts.Capabilities,
-		PluginType:   opts.PluginType,
-	})
-	if err != nil {
-		return err
-	}
-
-	if opts.Limit > 0 && len(matched) > opts.Limit {
-		matched = matched[:opts.Limit]
 	}
 
 	switch opts.Output {
 	case "json":
-		return writeSearchJSON(out, byHost, matched, screening)
+		return writeSearchJSON(out, res.Indexes, res.Records, res.Screening)
 	case "names":
-		for _, rec := range matched {
+		for _, rec := range res.Records {
 			fmt.Fprintln(out, rec.URI)
 		}
 		return nil
 	default:
-		return writeSearchTable(out, matched, screening)
+		return writeSearchTable(out, res.Records, res.Screening)
 	}
-}
-
-// searchScreening is what one entity's recorded withdrawals mean for the version
-// search reports: the versions screened out of selection, ascending, and the
-// version a resolution would take once they are removed. Selected is empty when
-// every published version was screened, which is the case the result must state
-// rather than present as an ordinary row.
-type searchScreening struct {
-	Retracted []string
-	Selected  string
-}
-
-// screenIndexRecords applies each host's own recorded withdrawals to that host's
-// records, and returns the merged record set together with, per artifact URI, what
-// the screening found. A host recording no verified withdrawal forms no screen and
-// its records pass through untouched, so a result that meets no withdrawal is the
-// result the unscreened path produced.
-//
-// The withdrawal judgement is not made here. The screen comes from the one
-// constructor that turns index records into a screen, which is the same one the
-// pull and plugin-attach paths reach when they build a screen from a loaded index
-// — so a version is withdrawn on identical grounds, a verified signature and the
-// withdrawal severity, whichever surface is asking. This function only decides what
-// to do with the answer.
-//
-// The screen is addressed with the reference form of each record's URI and asked
-// about that record's published versions, then the reported version is re-selected
-// from what survives with the same selection primitive the index build used to
-// choose the headline in the first place. That is what makes the reported version
-// mean "the version a resolution would take" rather than "the headline the index
-// happened to record".
-//
-// includeRetracted keeps the recorded headline instead. It changes only the
-// reported version: the screening result is returned either way, so the versions
-// left out are named in the result whichever question the reader is asking.
-//
-// A record carrying no published-version list yields no exclusions and passes
-// through unchanged, which is the honest outcome — with nothing to screen there is
-// no basis to alter what the record reports.
-func screenIndexRecords(indexes []registryindex.Loaded, includeRetracted bool, errOut io.Writer) ([]registryindex.Record, map[string]searchScreening) {
-	var records []registryindex.Record
-	screening := map[string]searchScreening{}
-	for _, li := range indexes {
-		screen := registryindex.NewScreenFromRecords(li.Records, registryindex.SnapshotProvenance(li.LastUpdated, li.HasTimestamp), errOut)
-		for _, rec := range li.Records {
-			if screen != nil {
-				eligible, excluded := screen.ScreenVersions(registryindex.ReferenceForURI(rec.URI), rec.Versions)
-				if len(excluded) > 0 {
-					retracted := make([]string, 0, len(excluded))
-					for _, x := range excluded {
-						retracted = append(retracted, x.Version)
-					}
-					selected := oci.SelectLatestVersion(eligible, false /* includePreRelease */)
-					screening[rec.URI] = searchScreening{Retracted: retracted, Selected: selected}
-					if !includeRetracted {
-						rec.Version = selected
-					}
-				}
-			}
-			records = append(records, rec)
-		}
-	}
-	return records, screening
 }
 
 // retractionNote renders the cell naming what a record's screening found, or the
@@ -318,7 +207,7 @@ func screenIndexRecords(indexes []registryindex.Loaded, includeRetracted bool, e
 // says outright when nothing is left to take — an entity that exists and holds no
 // selectable version has to be reported as exactly that, because a result which
 // merely omitted it would be indistinguishable from the entity not existing.
-func retractionNote(s searchScreening) string {
+func retractionNote(s registryops.Screening) string {
 	if len(s.Retracted) == 0 {
 		return ""
 	}
@@ -333,7 +222,7 @@ func retractionNote(s searchScreening) string {
 // screening is what emptied it. A record that carries no version for any other
 // reason is rendered exactly as it was before, so a result meeting no withdrawal is
 // untouched.
-func reportedVersionCell(version string, s searchScreening) string {
+func reportedVersionCell(version string, s registryops.Screening) string {
 	if version == "" && len(s.Retracted) > 0 {
 		return "(none)"
 	}
@@ -349,7 +238,7 @@ func reportedVersionCell(version string, s searchScreening) string {
 // unscreened path produced. It is deliberately not a permanent column: adding one
 // unconditionally would change every existing invocation's output to carry a
 // column that is empty on almost all of them.
-func writeSearchTable(out io.Writer, records []registryindex.Record, screening map[string]searchScreening) error {
+func writeSearchTable(out io.Writer, records []registryindex.Record, screening map[string]registryops.Screening) error {
 	if len(records) == 0 {
 		fmt.Fprintln(out, "(no matches)")
 		return nil
@@ -422,7 +311,7 @@ type searchJSON struct {
 // the machine-readable half of the same contract the table states: an entity whose
 // every published version is retracted carries an empty version alongside the
 // retracted list, rather than being dropped from the result.
-func writeSearchJSON(out io.Writer, indexes []registryindex.Loaded, records []registryindex.Record, screening map[string]searchScreening) error {
+func writeSearchJSON(out io.Writer, indexes []registryindex.Loaded, records []registryindex.Record, screening map[string]registryops.Screening) error {
 	updated := make(map[string]string, len(indexes))
 	for _, li := range indexes {
 		if li.HasTimestamp {

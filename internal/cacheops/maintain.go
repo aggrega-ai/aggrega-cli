@@ -1,0 +1,286 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Cognitio S.r.l.
+
+package cacheops
+
+import (
+	"errors"
+	"fmt"
+	"os"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
+	"github.com/aggrega-ai/aggrega-cli/internal/wasm/attribindex"
+)
+
+// ErrPruneNeedsWorkspace is returned when a prune runs with no resolvable
+// workspace to draw a reference set from.
+var ErrPruneNeedsWorkspace = errors.New("cache prune needs a workspace, but none could be resolved")
+
+// Removal is one element an operation removed, named by the class it belonged to
+// and carrying that class's reach.
+//
+// Reach travels with the removal rather than being looked up again by the
+// reader, so a caller reporting what was removed cannot describe a machine-wide
+// removal as workspace-local by consulting the wrong table.
+type Removal struct {
+	Class string `json:"class"`
+	Label string `json:"label"`
+	Reach Reach  `json:"reach"`
+	Size  int64  `json:"size"`
+}
+
+// Shortfall is a set of elements an operation left behind because it has no
+// basis to reclaim them, with the verb that would.
+//
+// It is reported rather than folded into the retained count because the two mean
+// different things: a retained element is one the operation examined and kept,
+// and a shortfall is one it could not judge at all.
+type Shortfall struct {
+	Class string `json:"class"`
+	Count int    `json:"count"`
+	Size  int64  `json:"size"`
+	Reach Reach  `json:"reach"`
+	// ReclaimedBy names the operations that can reclaim the set, in the
+	// vocabulary a caller invokes them under.
+	ReclaimedBy []string `json:"reclaimedBy"`
+}
+
+// PruneResult is what a prune did: the elements it removed in removal order, the
+// totals, the elements it had no basis to judge, and the classes it cannot
+// reclaim at all.
+//
+// MachineWide names the classes among those it acted on whose contents are
+// shared across every project on the machine. It is computed from the classes
+// rather than asserted, so it cannot understate the reach of what was removed.
+type PruneResult struct {
+	Removed           []Removal   `json:"removed"`
+	RetainedCount     int         `json:"retainedCount"`
+	ReclaimedBytes    int64       `json:"reclaimedBytes"`
+	UnattributedCount int         `json:"unattributedCount"`
+	UnattributedSize  int64       `json:"unattributedSize"`
+	NotPruneEligible  []Shortfall `json:"notPruneEligible"`
+	MachineWide       []string    `json:"machineWide"`
+}
+
+// Prune removes every prunable element whose content digest is absent from the
+// reference set the workspace's lockfiles pin, and reports what it did.
+//
+// It halts loudly when no workspace or no lockfile is present rather than
+// pruning against an empty reference set, which would evict every entry.
+//
+// A removal failure part-way through returns both the error and the result
+// assembled so far, so a caller renders the removals that did happen instead of
+// reporting a partial prune as though nothing had been removed.
+func Prune(loc Locations) (PruneResult, error) {
+	var res PruneResult
+	if loc.WorkspaceRoot == "" {
+		return res, ErrPruneNeedsWorkspace
+	}
+
+	lockPaths := FindLockfiles(loc.WorkspaceRoot, loc.CacheDir)
+	if len(lockPaths) == 0 {
+		return res, fmt.Errorf("cache prune needs a pulled workspace: no lockfiles (*.lock) found under %s; run `aggrega pull --release <release>` first", loc.WorkspaceRoot)
+	}
+	refset, loaded := BuildReferenceSet(lockPaths)
+	if loaded == 0 {
+		return res, fmt.Errorf("cache prune found %d lockfile candidate(s) under %s but none parsed as a lockfile; run `aggrega pull --release <release>` first", len(lockPaths), loc.WorkspaceRoot)
+	}
+
+	// Prune every prunable class, drawn from the single class-set assembly. The
+	// describe cache is included because a describe entry's filename stem is the
+	// guest's content digest, which equals the pin a lockfile plugin entry records
+	// — so it maps to the same reference set. The compiled-module cache is prunable
+	// too, but by attribution rather than by an element digest, so it is handled by
+	// a dedicated arm that consults the attribution index directly.
+	classes := Collect(loc)
+	ax, _ := attribindex.Load(loc.AttribIndexPath)
+	res.MachineWide = MachineWideClasses(classes)
+
+	// Reconciliation inputs: the leaf keys removed, and the guest referrer digests
+	// those removals drop, so a surviving kernel's referrer set no longer counts a
+	// pruned guest.
+	var removedLeafKeys, droppedReferrers []string
+	for _, cl := range classes {
+		if !cl.Prunable {
+			continue
+		}
+		if cl.Name == CompiledModuleClassName {
+			for _, el := range cl.Elements {
+				entry, attributed := ax.Entry(el.Label)
+				if !attributed {
+					// A compiled leaf whose attribution cannot be determined is retained on
+					// purpose — never removed on a guess — and reported apart from the
+					// retained count so that count is read correctly.
+					res.UnattributedCount++
+					res.UnattributedSize += el.Size
+					continue
+				}
+				if anyReferrerInSet(entry.Referrers, refset) {
+					res.RetainedCount++
+					continue
+				}
+				if rmErr := os.Remove(el.Path); rmErr != nil {
+					return res, fmt.Errorf("cache prune: remove %s: %w", el.Path, rmErr)
+				}
+				removeEmptyParents(el.Path, cl.Root)
+				res.Removed = append(res.Removed, Removal{Class: cl.Name, Label: el.Label, Reach: cl.Reach, Size: el.Size})
+				res.ReclaimedBytes += el.Size
+				removedLeafKeys = append(removedLeafKeys, el.Label)
+				if !entry.Kernel {
+					droppedReferrers = append(droppedReferrers, entry.Referrers...)
+				}
+			}
+			continue
+		}
+		for _, el := range cl.Elements {
+			if el.DigestHex == "" || refset[el.DigestHex] {
+				res.RetainedCount++
+				continue
+			}
+			if rmErr := os.RemoveAll(el.Path); rmErr != nil {
+				return res, fmt.Errorf("cache prune: remove %s: %w", el.Path, rmErr)
+			}
+			removeEmptyParents(el.Path, cl.Root)
+			res.Removed = append(res.Removed, Removal{Class: cl.Name, Label: el.Label, Reach: cl.Reach, Size: el.Size})
+			res.ReclaimedBytes += el.Size
+		}
+	}
+
+	// Reconcile the attribution index so it no longer references removed leaves and
+	// a surviving kernel's referrer set no longer counts a pruned guest. This is
+	// index hygiene, not prune correctness — but it keeps the shared-by accounting
+	// honest for the next inspection.
+	if len(removedLeafKeys) > 0 && loc.AttribIndexPath != "" {
+		if err := attribindex.RemoveLeaves(loc.AttribIndexPath, removedLeafKeys, droppedReferrers); err != nil {
+			return res, fmt.Errorf("cache prune: reconcile attribution index: %w", err)
+		}
+	}
+
+	// The classes a prune cannot reclaim at all, so the retained count above is not
+	// read against the full set.
+	for _, cl := range classes {
+		if cl.Prunable || len(cl.Elements) == 0 {
+			continue
+		}
+		s := Shortfall{Class: cl.Name, Reach: cl.Reach, ReclaimedBy: []string{"cache-clear"}}
+		for _, el := range cl.Elements {
+			s.Count++
+			s.Size += el.Size
+		}
+		res.NotPruneEligible = append(res.NotPruneEligible, s)
+	}
+	return res, nil
+}
+
+// anyReferrerInSet reports whether any of a compiled leaf's referrer digests is
+// present in the lockfile reference set. Both sides are normalized (prefix-free
+// lowercase hex), so membership is a direct lookup.
+func anyReferrerInSet(referrers []string, refset map[string]bool) bool {
+	for _, r := range referrers {
+		if refset[r] {
+			return true
+		}
+	}
+	return false
+}
+
+// EvictResult is what an eviction did: the leaves it removed, the totals, and the
+// cap it was held to.
+//
+// WithinCapBefore reports that the cache already fitted the cap, in which case
+// nothing was removed. Reach is stated outright because eviction addresses one
+// class and that class is machine-wide — there is no set of classes to derive a
+// union from.
+type EvictResult struct {
+	WithinCapBefore bool      `json:"withinCapBefore"`
+	Removed         []Removal `json:"removed"`
+	TotalBefore     int64     `json:"totalBefore"`
+	ReclaimedBytes  int64     `json:"reclaimedBytes"`
+	RemainingBytes  int64     `json:"remainingBytes"`
+	CapBytes        int64     `json:"capBytes"`
+	MachineWide     []string  `json:"machineWide"`
+}
+
+// Evict trims the compiled-module cache to capBytes and reports what it did.
+//
+// The selection and the removal are not decided here: both come from the shared
+// capped-reclamation routine, the same one that applies the configured cap
+// automatically. This only assembles the outcome, so the operation and the
+// automatic cap can never disagree about which leaves a given cap removes. What
+// that routine guarantees — removal oldest-compiled first with a deterministic
+// tie-break, in-flight compiles left alone, and a removed entry costing a later
+// recompile rather than a failed read — is documented once, there.
+//
+// A removal failure returns both the error and the leaves removed before it, so
+// a partial trim is never silent.
+func Evict(loc Locations, capBytes int64) (EvictResult, error) {
+	out := EvictResult{
+		CapBytes:    capBytes,
+		MachineWide: []string{CompiledModuleClassName},
+	}
+	if loc.CompileDir == "" {
+		return out, errors.New("cache evict: no compiled-module cache directory could be resolved")
+	}
+	res, err := wasm.ReclaimCompileCache(loc.CompileDir, capBytes)
+	out.TotalBefore = res.Total
+	out.WithinCapBefore = res.WithinCapBefore()
+	for _, l := range res.Removed {
+		out.Removed = append(out.Removed, Removal{
+			Class: CompiledModuleClassName,
+			Label: l.Label,
+			Reach: ReachMachine,
+			Size:  l.Size,
+		})
+	}
+	out.ReclaimedBytes = res.Reclaimed
+	out.RemainingBytes = res.Remaining
+	if err != nil {
+		return out, fmt.Errorf("cache evict: %w", err)
+	}
+	return out, nil
+}
+
+// ClearedClass is one whole cache subtree a clear removed, with its reach and the
+// bytes it held.
+type ClearedClass struct {
+	Class string `json:"class"`
+	Reach Reach  `json:"reach"`
+	Size  int64  `json:"size"`
+}
+
+// ClearResult is what a total wipe did: every subtree it removed and the bytes it
+// reclaimed.
+//
+// MachineWide is computed from the classes actually removed, so a clear that
+// found no machine-wide subtree does not claim to have reached one.
+type ClearResult struct {
+	Cleared        []ClearedClass `json:"cleared"`
+	ReclaimedBytes int64          `json:"reclaimedBytes"`
+	MachineWide    []string       `json:"machineWide"`
+}
+
+// Clear removes every cache subtree. Each subtree is sized before removal so the
+// result states what was reclaimed. Absent subtrees are no-ops.
+//
+// A removal failure returns both the error and the subtrees cleared before it.
+func Clear(loc Locations) (ClearResult, error) {
+	var res ClearResult
+	for _, cl := range Collect(loc) {
+		if cl.Root == "" {
+			continue
+		}
+		if _, err := os.Stat(cl.Root); err != nil {
+			continue
+		}
+		size := dirSize(cl.Root)
+		if rmErr := os.RemoveAll(cl.Root); rmErr != nil {
+			return res, fmt.Errorf("cache clear: remove %s: %w", cl.Root, rmErr)
+		}
+		res.Cleared = append(res.Cleared, ClearedClass{Class: cl.Name, Reach: cl.Reach, Size: size})
+		if cl.Reach == ReachMachine {
+			res.MachineWide = append(res.MachineWide, cl.Name)
+		}
+		res.ReclaimedBytes += size
+	}
+	return res, nil
+}

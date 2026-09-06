@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Cognitio S.r.l.
 
-package main
+package registryops
 
 import (
 	"reflect"
@@ -16,7 +16,9 @@ import (
 // output against a stable input order.
 func sampleRecords() []registryindex.Record {
 	datastore := types.NewOrderedMap[string]()
-	datastore.Set(componentCategoryLabel, "datastore")
+	// The label key is fixture data rather than a coupling: what these cases
+	// exercise is selector matching, for which any key would serve equally.
+	datastore.Set("component.aggrega.ai/category", "datastore")
 	return []registryindex.Record{
 		{
 			URI:         "oci://h/component/postgres",
@@ -67,77 +69,77 @@ func names(recs []registryindex.Record) []string {
 func TestFilterRecords(t *testing.T) {
 	cases := []struct {
 		name   string
-		filter searchFilter
+		filter Query
 		want   []string
 	}{
 		{
 			name:   "empty filter matches every record in input order",
-			filter: searchFilter{},
+			filter: Query{},
 			want:   []string{"postgres", "redis", "helm-render", "policy-guard"},
 		},
 		{
 			name:   "query matches description case-insensitively",
-			filter: searchFilter{Query: "database"},
+			filter: Query{Text: "database"},
 			want:   []string{"postgres"},
 		},
 		{
 			name:   "query matches name case-insensitively",
-			filter: searchFilter{Query: "REDIS"},
+			filter: Query{Text: "REDIS"},
 			want:   []string{"redis"},
 		},
 		{
 			name:   "query matching neither name nor description excludes",
-			filter: searchFilter{Query: "nonesuch"},
+			filter: Query{Text: "nonesuch"},
 			want:   nil,
 		},
 		{
 			name:   "single kind",
-			filter: searchFilter{Kinds: []string{"Plugin"}},
+			filter: Query{Kinds: []string{"Plugin"}},
 			want:   []string{"helm-render", "policy-guard"},
 		},
 		{
 			name:   "repeated kind ORs within the set",
-			filter: searchFilter{Kinds: []string{"Component", "Plugin"}},
+			filter: Query{Kinds: []string{"Component", "Plugin"}},
 			want:   []string{"postgres", "redis", "helm-render", "policy-guard"},
 		},
 		{
 			name:   "kind is case-insensitive: lowercase flag matches capitalized record kind",
-			filter: searchFilter{Kinds: []string{"component"}},
+			filter: Query{Kinds: []string{"component"}},
 			want:   []string{"postgres", "redis"},
 		},
 		{
 			name:   "selector matches on the catalog category label",
-			filter: searchFilter{Selector: "component.aggrega.ai/category=datastore"},
+			filter: Query{Selector: "component.aggrega.ai/category=datastore"},
 			want:   []string{"postgres"},
 		},
 		{
 			name:   "empty selector matches every record",
-			filter: searchFilter{Selector: ""},
+			filter: Query{Selector: ""},
 			want:   []string{"postgres", "redis", "helm-render", "policy-guard"},
 		},
 		{
 			name:   "single capability",
-			filter: searchFilter{Capabilities: []string{"fs.read"}},
+			filter: Query{Capabilities: []string{"fs.read"}},
 			want:   []string{"helm-render"},
 		},
 		{
 			name:   "repeated capability ORs within the set",
-			filter: searchFilter{Capabilities: []string{"fs.read", "net.none"}},
+			filter: Query{Capabilities: []string{"fs.read", "net.none"}},
 			want:   []string{"helm-render", "policy-guard"},
 		},
 		{
 			name:   "plugin type exact match",
-			filter: searchFilter{PluginType: "render"},
+			filter: Query{PluginType: "render"},
 			want:   []string{"helm-render"},
 		},
 		{
 			name:   "clauses AND together",
-			filter: searchFilter{Kinds: []string{"Plugin"}, PluginType: "render"},
+			filter: Query{Kinds: []string{"Plugin"}, PluginType: "render"},
 			want:   []string{"helm-render"},
 		},
 		{
 			name:   "a record failing any one clause is excluded",
-			filter: searchFilter{Kinds: []string{"Component"}, PluginType: "render"},
+			filter: Query{Kinds: []string{"Component"}, PluginType: "render"},
 			want:   nil,
 		},
 	}
@@ -173,7 +175,7 @@ func TestFilterRecordsKindCaseFold(t *testing.T) {
 		{"FeatureRecipe", []string{"tls"}},
 	}
 	for _, tc := range cases {
-		got, err := filterRecords(recs, searchFilter{Kinds: []string{tc.flag}})
+		got, err := filterRecords(recs, Query{Kinds: []string{tc.flag}})
 		if err != nil {
 			t.Fatalf("filterRecords(--kind %q): %v", tc.flag, err)
 		}
@@ -187,7 +189,7 @@ func TestFilterRecordsKindCaseFold(t *testing.T) {
 // cannot satisfy a non-empty selector, and that the nil-Labels bridge to the
 // selector's value-typed OrderedMap does not panic.
 func TestFilterRecordsNilLabelsWithSelector(t *testing.T) {
-	got, err := filterRecords(sampleRecords(), searchFilter{
+	got, err := filterRecords(sampleRecords(), Query{
 		Selector: "component.aggrega.ai/category=datastore",
 	})
 	if err != nil {
@@ -203,7 +205,7 @@ func TestFilterRecordsNilLabelsWithSelector(t *testing.T) {
 // TestFilterRecordsMalformedSelector confirms a malformed selector surfaces as an
 // error rather than silently matching nothing — a bad selector is a user error.
 func TestFilterRecordsMalformedSelector(t *testing.T) {
-	_, err := filterRecords(sampleRecords(), searchFilter{Selector: "component.aggrega.ai/category in ("})
+	_, err := filterRecords(sampleRecords(), Query{Selector: "component.aggrega.ai/category in ("})
 	if err == nil {
 		t.Fatal("filterRecords: want error for malformed selector, got nil")
 	}
@@ -213,11 +215,11 @@ func TestFilterRecordsMalformedSelector(t *testing.T) {
 // input slice order and is identical across two runs of the same input.
 func TestFilterRecordsOrderDeterminism(t *testing.T) {
 	in := sampleRecords()
-	first, err := filterRecords(in, searchFilter{})
+	first, err := filterRecords(in, Query{})
 	if err != nil {
 		t.Fatalf("filterRecords: unexpected error: %v", err)
 	}
-	second, err := filterRecords(in, searchFilter{})
+	second, err := filterRecords(in, Query{})
 	if err != nil {
 		t.Fatalf("filterRecords: unexpected error: %v", err)
 	}

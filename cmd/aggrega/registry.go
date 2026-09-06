@@ -10,14 +10,13 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"sort"
 	"strings"
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
-	"oras.land/oras-go/v2/registry/remote/auth"
 	"oras.land/oras-go/v2/registry/remote/credentials"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/registryops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/registryhost"
 	"github.com/aggrega-ai/aggrega-cli/pkg/registrytrust"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
@@ -127,57 +126,14 @@ type registryListConfig struct {
 	store credentials.Store
 }
 
-// registryListEntry is one registry as both renderings see it: the resolved
-// config entry, whether it is the default, and the credential state resolved for
-// its host. It exists so the table and the structured document project one model
-// rather than each assembling its own.
-type registryListEntry struct {
-	cfg       workspaceconfig.RegistryConfig
-	isDefault bool
-	auth      string
-}
-
-// registryAuth* are the credential states a listing reports for a host. They say
-// whether a credential is present, never what it is and never whether the
-// registry would accept it — establishing the latter takes a network round trip,
-// which a listing does not make.
-const (
-	// registryAuthConfigured means the credential store holds an entry for the host.
-	registryAuthConfigured = "configured"
-	// registryAuthNone means it holds none.
-	registryAuthNone = "none"
-	// registryAuthUnknown means the credential store could not be consulted, so
-	// presence is genuinely undetermined rather than absent.
-	registryAuthUnknown = "unknown"
-)
-
-// resolveRegistryList returns the effective registries in ascending host order,
-// each with its default marker and, when authOf is non-nil, its credential state.
-//
-// The order is a total sort over the host, which is the entry's identity and
-// therefore unique across the merged set — so the sequence is fixed for a given
-// configuration regardless of which files contributed which entries or in what
-// order they merged. Both renderings consume this one sequence, which is what
-// keeps them from disagreeing about order.
-func resolveRegistryList(cfg workspaceconfig.Config, authOf func(host string) string) []registryListEntry {
-	regs := make([]workspaceconfig.RegistryConfig, len(cfg.Registries))
-	copy(regs, cfg.Registries)
-	sort.Slice(regs, func(i, j int) bool { return regs[i].Host < regs[j].Host })
-
-	out := make([]registryListEntry, 0, len(regs))
-	for _, r := range regs {
-		e := registryListEntry{cfg: r, isDefault: r.Host == cfg.DefaultRegistry}
-		if authOf != nil {
-			e.auth = authOf(r.Host)
-		}
-		out = append(out, e)
-	}
-	return out
-}
-
 // registryListRun renders the effective registries in ascending host order. It
 // reads the merged effective config — the same set resolution and push consult —
 // and marks the default registry.
+//
+// The set itself comes from the shared layer, so this command and every other
+// surface report one resolution rather than each assembling its own. Only the
+// rendering is decided here: the table shows no credential state, so the default
+// invocation passes no resolver and opens no credential store at all.
 func registryListRun(cfg registryListConfig) error {
 	rw, err := workspaceOrResolve(cfg.ws)
 	if err != nil {
@@ -186,10 +142,11 @@ func registryListRun(cfg registryListConfig) error {
 	wsCfg := rw.Config()
 
 	if cfg.JSON {
-		return writeRegistryListJSON(cfg.Out, resolveRegistryList(wsCfg, registryAuthResolver(cfg.store)))
+		entries := registryops.List(wsCfg, registryops.AuthResolver(cfg.store))
+		return writeStructured(cfg.Out, "registry list", registryListDoc{Registries: entries})
 	}
 
-	entries := resolveRegistryList(wsCfg, nil)
+	entries := registryops.List(wsCfg, nil)
 	if len(entries) == 0 {
 		fmt.Fprintln(cfg.Out, "No registries configured.")
 		return nil
@@ -199,40 +156,12 @@ func registryListRun(cfg registryListConfig) error {
 	fmt.Fprintln(w, "HOST\tALIAS\tTRUST\tDEFAULT")
 	for _, e := range entries {
 		marker := ""
-		if e.isDefault {
+		if e.Default {
 			marker = "*"
 		}
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", e.cfg.Host, e.cfg.Name, registryTrustSummary(e.cfg), marker)
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", e.Host, e.Name, registryTrustSummary(e.Trust), marker)
 	}
 	return w.Flush()
-}
-
-// registryAuthResolver returns a per-host credential-state lookup over store,
-// opening the shared OCI credential store when store is nil.
-//
-// A store that cannot be opened yields registryAuthUnknown for every host rather
-// than failing the listing: the credential state is one column of a read-only
-// enumeration, and an unreadable keychain is no reason to withhold the registry
-// set. The returned function reports presence by asking the store for the host's
-// entry; it never inspects, measures, or retains the credential.
-func registryAuthResolver(store credentials.Store) func(host string) string {
-	if store == nil {
-		s, err := credentials.NewStoreFromDocker(credentials.StoreOptions{})
-		if err != nil {
-			return func(string) string { return registryAuthUnknown }
-		}
-		store = s
-	}
-	return func(host string) string {
-		cred, err := store.Get(context.Background(), host)
-		if err != nil {
-			return registryAuthUnknown
-		}
-		if cred == auth.EmptyCredential {
-			return registryAuthNone
-		}
-		return registryAuthConfigured
-	}
 }
 
 // registryListDoc is the structured -o json listing: every configured registry
@@ -240,94 +169,36 @@ func registryAuthResolver(store credentials.Store) func(host string) string {
 // wire even when nothing is configured, so a consumer iterates unconditionally
 // instead of special-casing null.
 type registryListDoc struct {
-	Registries []registryDoc `json:"registries"`
-}
-
-// registryDoc is one registry on the -o json surface. Host is the identity;
-// Name is the optional friendly alias that resolves to it.
-//
-// AuthState reports whether a credential for Host is present in the shared
-// credential store — configured, none, or unknown when the store could not be
-// consulted. No field on this document carries credential material, its length,
-// its shape, or any rendering of it: presence is the whole of what is reported,
-// which is what makes the document safe to log, paste into an issue, or commit.
-type registryDoc struct {
-	Host      string           `json:"host"`
-	Name      string           `json:"name,omitempty"`
-	Default   bool             `json:"default"`
-	AuthState string           `json:"authState"`
-	Trust     registryTrustDoc `json:"trust"`
-}
-
-// registryTrustDoc is one registry's trust posture as discrete fields, the same
-// configuration the table renders as a plain-language sentence. Anchor is keyed
-// when a public key is pinned, keyless when identities are, and empty when the
-// entry pins neither.
-type registryTrustDoc struct {
-	SignaturesRequired  bool   `json:"signaturesRequired"`
-	VerificationSkipped bool   `json:"verificationSkipped,omitempty"`
-	Advisory            bool   `json:"advisory,omitempty"`
-	Anchor              string `json:"anchor,omitempty"`
-	KeylessIdentities   int    `json:"keylessIdentities,omitempty"`
-}
-
-// writeRegistryListJSON emits the resolved listing through the shared structured
-// seam, in the readable indented shape.
-func writeRegistryListJSON(w io.Writer, entries []registryListEntry) error {
-	docs := make([]registryDoc, 0, len(entries))
-	for _, e := range entries {
-		docs = append(docs, registryDoc{
-			Host:      e.cfg.Host,
-			Name:      e.cfg.Name,
-			Default:   e.isDefault,
-			AuthState: e.auth,
-			Trust:     registryTrustOf(e.cfg),
-		})
-	}
-	return writeStructured(w, "registry list", registryListDoc{Registries: docs})
-}
-
-// registryTrustOf projects a registry's configured trust posture onto the
-// structured shape.
-func registryTrustOf(r workspaceconfig.RegistryConfig) registryTrustDoc {
-	d := registryTrustDoc{
-		SignaturesRequired:  r.Signing.Required,
-		VerificationSkipped: r.SkipSignatureVerification,
-		Advisory:            r.Advisory,
-	}
-	switch {
-	case r.PublicKey != "":
-		d.Anchor = "keyed"
-	case len(r.TrustedIdentities) > 0:
-		d.Anchor = "keyless"
-		d.KeylessIdentities = len(r.TrustedIdentities)
-	}
-	return d
+	Registries []registryops.Registry `json:"registries"`
 }
 
 // registryTrustSummary renders a short, plain-language description of a
 // registry's trust posture: whether signatures are required, whether the trust
 // anchor is a pinned key or a keyless identity set, and whether verification
 // failures are advisory or skipped.
-func registryTrustSummary(r workspaceconfig.RegistryConfig) string {
+// It reads the posture the shared layer resolved rather than the raw config
+// entry, so the sentence this table prints and the discrete fields the structured
+// renderings emit are two projections of one value and cannot describe the same
+// registry differently.
+func registryTrustSummary(t registryops.Trust) string {
 	var parts []string
 	switch {
-	case r.SkipSignatureVerification:
+	case t.VerificationSkipped:
 		parts = append(parts, "verification skipped")
-	case r.Signing.Required:
+	case t.SignaturesRequired:
 		parts = append(parts, "signatures required")
 	default:
 		parts = append(parts, "signatures optional")
 	}
 	switch {
-	case r.PublicKey != "":
+	case t.Anchor == "keyed":
 		parts = append(parts, "keyed")
-	case len(r.TrustedIdentities) == 1:
+	case t.Anchor == "keyless" && t.KeylessIdentities == 1:
 		parts = append(parts, "keyless (1 identity)")
-	case len(r.TrustedIdentities) > 1:
-		parts = append(parts, fmt.Sprintf("keyless (%d identities)", len(r.TrustedIdentities)))
+	case t.Anchor == "keyless" && t.KeylessIdentities > 1:
+		parts = append(parts, fmt.Sprintf("keyless (%d identities)", t.KeylessIdentities))
 	}
-	if r.Advisory {
+	if t.Advisory {
 		parts = append(parts, "advisory")
 	}
 	return strings.Join(parts, ", ")

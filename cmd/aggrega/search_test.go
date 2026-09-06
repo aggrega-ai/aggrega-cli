@@ -291,7 +291,7 @@ func TestSearchStalenessAdvisory(t *testing.T) {
 		t.Errorf("fresh snapshot must draw no staleness advisory; errOut:\n%s", errFresh)
 	}
 
-	// Clearly old: pin the clock far past indexStaleAfter.
+	// Clearly old: pin the clock far past the staleness threshold.
 	withSearchClock(t, searchFrozen().Add(90*24*time.Hour))
 	out, errStale, err := runSearch(t, rw, searchOptions{Output: "names"})
 	if err != nil {

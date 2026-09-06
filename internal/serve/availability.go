@@ -111,22 +111,31 @@ const (
 	// nothing to prompt on.
 	unavailabilityReasonNoTerminal = "it asks a person for input, and the daemon's only stream is its request channel"
 
-	// unavailabilityReasonOutsideTheWorkspace covers an operation whose subject is
-	// not in the workspace: a machine-wide cache, the machine-wide credential
-	// store, the global configuration and the registries and plugins configured
-	// in it, a configured registry's index, the schema set compiled into the
-	// binary, a guest module named by path, the binary's own identity. A session
-	// is opened over a workspace and holds nothing besides, so it brings such a
-	// subject no closer than any other caller of this binary already has it.
+	// unavailabilityReasonAboutTheToolchain covers an operation whose subject is
+	// the toolchain rather than the work: this binary's own identity, the schema
+	// set compiled into it, the guest modules it can load or is configured with. A
+	// session is opened over a workspace to work on that workspace's documents and
+	// the caches that serve them, and holds nothing about the binary running it —
+	// so such a subject is no nearer here than to any other caller of it.
+	//
+	// It is deliberately about what a session HOLDS rather than about where a
+	// subject sits on disk, and the two come apart in a way that decides real rows.
+	// The compiled-module store sits outside every workspace and is nonetheless one
+	// of the caches that serve the work — this daemon fills it, once per guest, for
+	// every session on the machine — so reporting and trimming it are carried here.
+	// A reason resting on the weaker "not in the workspace directory" would have
+	// declined those too while the daemon was the very process populating them,
+	// which is a reason justifying itself from an incidental fact rather than from
+	// a decision.
 	//
 	// It deliberately claims nothing about where every method here is anchored.
 	// The drafting method is anchored to a kind named in the request rather than
 	// to the workspace, so a reason resting on the stronger claim would be false
 	// against the table below — and a reason that is false about the surface it
 	// describes decides nothing, whatever it happens to decide today.
-	unavailabilityReasonOutsideTheWorkspace = "its subject is not in the workspace, and the session the daemon " +
-		"holds over the workspace it opened brings such a subject no closer than any other caller of this " +
-		"binary already has it"
+	unavailabilityReasonAboutTheToolchain = "its subject is the toolchain rather than the work — this binary, " +
+		"the schemas compiled into it, the guest modules it can load — and a session is opened over a " +
+		"workspace to work on that workspace's documents and the caches that serve them"
 
 	// unavailabilityReasonIsAStreamServer covers an operation that is itself a
 	// server owning a stream. The daemon already owns this one, and a second
@@ -204,6 +213,40 @@ var operationAvailability = map[string]serveAvailability{
 	"pull":    servedAt(at("aggrega/resolveDependencies", (*Server).dispatchResolveDependencies)),
 	"acquire": servedAt(at("aggrega/acquireExternalInputs", (*Server).dispatchAcquireExternalInputs)),
 
+	// The session reports and maintains the caches that serve the work. One of
+	// them is the workspace's own artifact cache; two are shared across every
+	// project on the machine, and this daemon is what fills the compiled-module
+	// one — once per guest, for every session on the machine. A surface that
+	// populates a store is the surface that owes a way to read and reclaim it.
+	//
+	// Three of the four write, and they are admitted on the same rule the
+	// resolution above runs under: a caller that sent one has asked for the
+	// reclamation. What stays out of bounds is a write performed while validating
+	// or inspecting, where nobody asked, and none of these is that.
+	//
+	// Because two of the classes are machine-wide, every one of these responses
+	// carries a scope naming the machine-wide classes it touched. A caller that
+	// opened a session over a workspace would otherwise read a reclamation as
+	// being about that workspace, and for those classes that reading is wrong.
+	"cache-status": servedAt(at("aggrega/cacheStatus", (*Server).dispatchCacheStatus)),
+	"cache-prune":  servedAt(at("aggrega/cachePrune", (*Server).dispatchCachePrune)),
+	"cache-evict":  servedAt(at("aggrega/cacheEvict", (*Server).dispatchCacheEvict)),
+	"cache-clear":  servedAt(at("aggrega/cacheClear", (*Server).dispatchCacheClear)),
+
+	// The session reports the registries the workspace reaches and what their
+	// local index offers. Both are readings of what the session already holds: the
+	// configured set is the merged effective configuration whose provenance this
+	// surface already reports, and the index is written under the workspace's own
+	// configured cache directory. Neither contacts a registry.
+	//
+	// The listing additionally reports whether a credential is present for each
+	// host, which is a machine-wide fact and is marked as one in the response. It
+	// reports presence only: never the credential, never its shape, and never
+	// whether the registry would accept it, since establishing that would be the
+	// network round trip a listing does not make.
+	"registry-list": servedAt(at("aggrega/registryList", (*Server).dispatchRegistryList)),
+	"search":        servedAt(at("aggrega/search", (*Server).dispatchRegistrySearch)),
+
 	"definition-at-position":      servedAt(at("aggrega/resolve", (*Server).dispatchResolve)),
 	"references-at-position":      servedAt(at("aggrega/findReferences", (*Server).dispatchFindReferences)),
 	"implementations-at-position": servedAt(at("aggrega/findImplementations", (*Server).dispatchFindImplementations)),
@@ -242,13 +285,10 @@ var operationAvailability = map[string]serveAvailability{
 	// declines the capability; a capability nobody has ruled on is named in the
 	// bound the availability check reads instead, where it reads as the question
 	// it is rather than as a decision.
-	"cache-status":          notServed(unavailabilityReasonOutsideTheWorkspace),
-	"get-schema":            notServed(unavailabilityReasonOutsideTheWorkspace),
-	"plugin-list":           notServed(unavailabilityReasonOutsideTheWorkspace),
-	"plugin-run-local":      notServed(unavailabilityReasonOutsideTheWorkspace),
-	"registry-list":         notServed(unavailabilityReasonOutsideTheWorkspace),
-	"search":                notServed(unavailabilityReasonOutsideTheWorkspace),
-	"version":               notServed(unavailabilityReasonOutsideTheWorkspace),
+	"get-schema":            notServed(unavailabilityReasonAboutTheToolchain),
+	"plugin-list":           notServed(unavailabilityReasonAboutTheToolchain),
+	"plugin-run-local":      notServed(unavailabilityReasonAboutTheToolchain),
+	"version":               notServed(unavailabilityReasonAboutTheToolchain),
 	"deprecate":             notServed(unavailabilityReasonWritesToARegistry),
 	"push":                  notServed(unavailabilityReasonWritesToARegistry),
 	"push-artifact":         notServed(unavailabilityReasonWritesToARegistry),

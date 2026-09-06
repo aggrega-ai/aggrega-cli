@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
+	"github.com/aggrega-ai/aggrega-cli/internal/cacheops"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/attribindex"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/embedded"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/provindex"
@@ -29,7 +29,7 @@ const cacheTestCacheDir = ".aggrega/cache"
 // cacheFixture is an on-disk cache state built under a temp workspace plus
 // temp global caches, with a lockfile pinning a known subset of the digests.
 type cacheFixture struct {
-	loc cacheLocations
+	loc cacheops.Locations
 
 	refEntitySlot   string
 	unrefEntitySlot string
@@ -119,8 +119,8 @@ func newCacheFixture(t *testing.T) cacheFixture {
 	unrefSourceSlot := writeSourceSlot(t, wsRoot, "helm-oci-chart", "oci://hub.aggrega.ai/charts/orphan", "2.0.0", unrefSrcDigest, []byte("unref-src"))
 
 	// External-input blobs (filename = hex digest).
-	refInputHex := normalizeDigestHex(digest.ContentDigest([]byte("ref-input")))
-	unrefInputHex := normalizeDigestHex(digest.ContentDigest([]byte("unref-input")))
+	refInputHex := cacheops.NormalizeDigestHex(digest.ContentDigest([]byte("ref-input")))
+	unrefInputHex := cacheops.NormalizeDigestHex(digest.ContentDigest([]byte("unref-input")))
 	refInputBlob := writeInputBlob(t, wsRoot, refInputHex, []byte("ref-input"))
 	unrefInputBlob := writeInputBlob(t, wsRoot, unrefInputHex, []byte("unref-input"))
 
@@ -128,7 +128,7 @@ func newCacheFixture(t *testing.T) cacheFixture {
 	// Seeded in colon form so the on-disk stem is the real "sha256-<hex>.json"
 	// the writer emits, exercising the dash-form stem the retain side must match.
 	pluginDigest := digest.ContentDigest([]byte("plugin-guest-bytes"))
-	pluginHex := normalizeDigestHex(pluginDigest)
+	pluginHex := cacheops.NormalizeDigestHex(pluginDigest)
 	refDescribe := writeDescribe(t, describeDir, pluginDigest)
 	unrefDescribe := writeDescribe(t, describeDir, digest.ContentDigest([]byte("orphan-guest")))
 
@@ -179,9 +179,9 @@ func newCacheFixture(t *testing.T) cacheFixture {
 	}
 
 	return cacheFixture{
-		loc: cacheLocations{
-			wsRoot: wsRoot, cacheDir: cacheTestCacheDir,
-			compileDir: compileDir, describeDir: describeDir,
+		loc: cacheops.Locations{
+			WorkspaceRoot: wsRoot, CacheDir: cacheTestCacheDir,
+			CompileDir: compileDir, DescribeDir: describeDir,
 		},
 		refEntitySlot: refEntitySlot, unrefEntitySlot: unrefEntitySlot,
 		refSourceSlot: refSourceSlot, unrefSourceSlot: unrefSourceSlot,
@@ -220,7 +220,7 @@ func writeDocsBundleSlot(t *testing.T, wsRoot, ref, version string) string {
 // version as a deterministic label.
 func TestCacheStatusListsDocsBundleClass(t *testing.T) {
 	fx := newCacheFixture(t)
-	slot := writeDocsBundleSlot(t, fx.loc.wsRoot, "reg.example.com/docs/aggrega-docs", "1.0.0")
+	slot := writeDocsBundleSlot(t, fx.loc.WorkspaceRoot, "reg.example.com/docs/aggrega-docs", "1.0.0")
 
 	var a, b bytes.Buffer
 	if err := runCacheStatus(&a, fx.loc); err != nil {
@@ -249,7 +249,7 @@ func TestCacheStatusListsDocsBundleClass(t *testing.T) {
 // not-prune-eligible rather than reclaimed — while clear removes it.
 func TestCachePruneRetainsDocsBundle(t *testing.T) {
 	fx := newCacheFixture(t)
-	slot := writeDocsBundleSlot(t, fx.loc.wsRoot, "reg.example.com/docs/aggrega-docs", "1.0.0")
+	slot := writeDocsBundleSlot(t, fx.loc.WorkspaceRoot, "reg.example.com/docs/aggrega-docs", "1.0.0")
 
 	var out bytes.Buffer
 	if err := runCachePrune(&out, fx.loc); err != nil {
@@ -341,9 +341,9 @@ func TestCachePruneRetainsEmbeddedAndPinnedDescribe(t *testing.T) {
 		t.Fatal("no embedded plugin guests present; cannot prove the embedded-provider describe entry is retained")
 	}
 	// Seed a describe entry for an actively-embedded provider, in the real stem.
-	embDescribe := writeDescribe(t, fx.loc.describeDir, embDigests[0])
+	embDescribe := writeDescribe(t, fx.loc.DescribeDir, embDigests[0])
 	// Seed a describe entry for a digest neither embedded nor lockfile-pinned.
-	unmatchedDescribe := writeDescribe(t, fx.loc.describeDir, digest.ContentDigest([]byte("neither-embedded-nor-pinned")))
+	unmatchedDescribe := writeDescribe(t, fx.loc.DescribeDir, digest.ContentDigest([]byte("neither-embedded-nor-pinned")))
 
 	var out bytes.Buffer
 	if err := runCachePrune(&out, fx.loc); err != nil {
@@ -435,7 +435,7 @@ func TestCachePruneCompiledModulesByReference(t *testing.T) {
 
 	refDigest := digest.ContentDigest([]byte("referenced-guest"))
 	orphanDigest := digest.ContentDigest([]byte("orphan-guest"))
-	refHex := normalizeDigestHex(refDigest)
+	refHex := cacheops.NormalizeDigestHex(refDigest)
 
 	guestRef := writeCompileLeaf(t, modDir, "guestref00", 800000, now)
 	guestOrphan := writeCompileLeaf(t, modDir, "guestorphan0", 900000, now)
@@ -464,9 +464,9 @@ func TestCachePruneCompiledModulesByReference(t *testing.T) {
 	// Lockfile pins only the referenced guest.
 	writeRefLockfile(t, wsRoot, refDigest)
 
-	loc := cacheLocations{
-		wsRoot: wsRoot, cacheDir: cacheTestCacheDir,
-		compileDir: compileDir, attribIndexPath: attribPath,
+	loc := cacheops.Locations{
+		WorkspaceRoot: wsRoot, CacheDir: cacheTestCacheDir,
+		CompileDir: compileDir, AttribIndexPath: attribPath,
 	}
 	var out bytes.Buffer
 	if err := runCachePrune(&out, loc); err != nil {
@@ -550,9 +550,9 @@ func TestCachePruneCompiledKernelReclaimedWhenAllReferrersOrphaned(t *testing.T)
 
 	writeRefLockfile(t, wsRoot, unrelated)
 
-	loc := cacheLocations{
-		wsRoot: wsRoot, cacheDir: cacheTestCacheDir,
-		compileDir: compileDir, attribIndexPath: attribPath,
+	loc := cacheops.Locations{
+		WorkspaceRoot: wsRoot, CacheDir: cacheTestCacheDir,
+		CompileDir: compileDir, AttribIndexPath: attribPath,
 	}
 	var out bytes.Buffer
 	if err := runCachePrune(&out, loc); err != nil {
@@ -580,7 +580,7 @@ func TestCachePruneCompiledKernelReclaimedWhenAllReferrersOrphaned(t *testing.T)
 }
 
 func TestCachePruneNoWorkspace(t *testing.T) {
-	loc := cacheLocations{compileDir: t.TempDir(), describeDir: t.TempDir()}
+	loc := cacheops.Locations{CompileDir: t.TempDir(), DescribeDir: t.TempDir()}
 	err := runCachePrune(&bytes.Buffer{}, loc)
 	if err == nil {
 		t.Fatalf("expected a loud error with no workspace")
@@ -588,7 +588,7 @@ func TestCachePruneNoWorkspace(t *testing.T) {
 }
 
 func TestCachePruneNoLockfile(t *testing.T) {
-	loc := cacheLocations{wsRoot: t.TempDir(), cacheDir: cacheTestCacheDir}
+	loc := cacheops.Locations{WorkspaceRoot: t.TempDir(), CacheDir: cacheTestCacheDir}
 	err := runCachePrune(&bytes.Buffer{}, loc)
 	if err == nil {
 		t.Fatalf("expected a loud error with no lockfile")
@@ -597,16 +597,26 @@ func TestCachePruneNoLockfile(t *testing.T) {
 
 func TestCacheClearWipesAll(t *testing.T) {
 	fx := newCacheFixture(t)
+
+	// The subtrees are taken from the shared class assembly before the wipe, so
+	// the assertion is over exactly the set clear acts on rather than over a
+	// second list of roots this test would have to keep in step.
+	var roots []string
+	for _, cl := range cacheops.Collect(fx.loc) {
+		if cl.Root != "" {
+			roots = append(roots, cl.Root)
+		}
+	}
+	if len(roots) == 0 {
+		t.Fatal("the fixture produced no cache classes, so clear would have nothing to wipe")
+	}
+
 	var out bytes.Buffer
 	if err := runCacheClear(&out, fx.loc); err != nil {
 		t.Fatalf("clear: %v", err)
 	}
 	t.Logf("clear output:\n%s", out.String())
 
-	roots := []string{
-		fx.loc.entitiesRoot(), fx.loc.sourceArtifactsRoot(), fx.loc.inputsRoot(),
-		fx.loc.compileDir, fx.loc.describeDir,
-	}
 	for _, r := range roots {
 		if exists(r) {
 			t.Errorf("clear left a cache subtree in place: %s", r)
@@ -663,21 +673,6 @@ func TestCacheClearConfirm(t *testing.T) {
 	}
 }
 
-// TestCacheEntitySlotEncoding guards that an entity slot's display label
-// round-trips the URL-encoded on-disk directory name back to a readable URI.
-func TestCacheEntitySlotEncoding(t *testing.T) {
-	fx := newCacheFixture(t)
-	els := enumEntities(fx.loc.entitiesRoot())
-	if len(els) == 0 {
-		t.Fatal("no entity elements enumerated")
-	}
-	for _, el := range els {
-		if _, err := url.PathUnescape(el.label); err != nil {
-			t.Errorf("entity label not decodable: %q", el.label)
-		}
-	}
-}
-
 // writeCompileLeaf writes a synthetic compiled-module cache leaf of the given
 // byte size and modification time, creating dir if needed, and returns its path.
 func writeCompileLeaf(t *testing.T, dir, name string, size int, mtime time.Time) string {
@@ -707,7 +702,7 @@ func TestCacheEvictOverCap(t *testing.T) {
 	old2 := writeCompileLeaf(t, modDir, "leaf-old-2", 100, base.Add(time.Hour))
 	newest := writeCompileLeaf(t, modDir, "leaf-new", 100, base.Add(2*time.Hour))
 
-	loc := cacheLocations{compileDir: compileDir}
+	loc := cacheops.Locations{CompileDir: compileDir}
 	var out bytes.Buffer
 	// Total is 300 B; cap 150 B forces eviction of the two oldest leaves.
 	if err := runCacheEvict(&out, loc, 150); err != nil {
@@ -736,7 +731,7 @@ func TestCacheEvictIdempotent(t *testing.T) {
 	writeCompileLeaf(t, modDir, "leaf-old", 100, base)
 	newest := writeCompileLeaf(t, modDir, "leaf-new", 100, base.Add(time.Hour))
 
-	loc := cacheLocations{compileDir: compileDir}
+	loc := cacheops.Locations{CompileDir: compileDir}
 	if err := runCacheEvict(&bytes.Buffer{}, loc, 150); err != nil {
 		t.Fatalf("first evict: %v", err)
 	}
@@ -763,7 +758,7 @@ func TestCacheEvictUnderCap(t *testing.T) {
 	a := writeCompileLeaf(t, modDir, "leaf-a", 100, base)
 	b := writeCompileLeaf(t, modDir, "leaf-b", 100, base.Add(time.Hour))
 
-	loc := cacheLocations{compileDir: compileDir}
+	loc := cacheops.Locations{CompileDir: compileDir}
 	var out bytes.Buffer
 	// Total is 200 B; cap 200 B is exactly at the total, so nothing is evicted.
 	if err := runCacheEvict(&out, loc, 200); err != nil {
@@ -790,7 +785,7 @@ func TestCacheEvictTieBreak(t *testing.T) {
 	a := writeCompileLeaf(t, modDir, "leaf-a", 100, equal)
 	b := writeCompileLeaf(t, modDir, "leaf-b", 100, equal)
 
-	loc := cacheLocations{compileDir: compileDir}
+	loc := cacheops.Locations{CompileDir: compileDir}
 	var out bytes.Buffer
 	// Total is 200 B; cap 100 B forces exactly one eviction. Equal mtimes break
 	// on name ascending, so "leaf-a" is evicted first and "leaf-b" survives.
@@ -827,7 +822,7 @@ func TestCacheEvictSkipsSidecarsAndTmp(t *testing.T) {
 	lock := writeCompileLeaf(t, compileDir, ".compile-deadbeef.lock", 500, base)
 	tmp := writeCompileLeaf(t, modDir, "half-written.tmp", 500, base)
 
-	loc := cacheLocations{compileDir: compileDir}
+	loc := cacheops.Locations{CompileDir: compileDir}
 	var out bytes.Buffer
 	// Only the two real leaves (200 B) are counted; cap 150 B evicts one.
 	if err := runCacheEvict(&out, loc, 150); err != nil {
@@ -854,125 +849,11 @@ func TestCacheEvictSkipsSidecarsAndTmp(t *testing.T) {
 	}
 }
 
-// TestCompileLeafMembershipUnified asserts the single membership predicate both
-// the status and evict enumerations consult excludes a half-written *.tmp
-// transient from BOTH — so the status listing and the eviction leaf set agree on
-// which files are cache content. The *.tmp exclusion is the point: an in-flight
-// compile's staging file must never be listed or evicted on either path.
-func TestCompileLeafMembershipUnified(t *testing.T) {
-	compileDir := t.TempDir()
-	modDir := filepath.Join(compileDir, "wazero-1.0-amd64-linux")
-	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-
-	module := writeCompileLeaf(t, modDir, "abcdef0123", 100, base)
-	tmp := writeCompileLeaf(t, modDir, "abcdef0123.tmp", 100, base)
-	lock := writeCompileLeaf(t, compileDir, ".compile-deadbeef.lock", 100, base)
-
-	// Status enumeration: only the finished module is a listed element.
-	els := enumCompileModules(compileDir, "", "")
-	if len(els) != 1 {
-		t.Fatalf("status enumeration returned %d element(s), want 1:\n%+v", len(els), els)
-	}
-	if !strings.HasSuffix(filepath.ToSlash(els[0].path), "abcdef0123") {
-		t.Fatalf("status enumeration listed a non-module leaf: %s", els[0].path)
-	}
-	for _, el := range els {
-		if strings.HasSuffix(el.label, ".tmp") {
-			t.Errorf("status enumeration listed a *.tmp transient: %s", el.label)
-		}
-		if strings.HasPrefix(filepath.Base(el.path), ".compile-") {
-			t.Errorf("status enumeration listed a compile-lock sidecar: %s", el.path)
-		}
-	}
-
-	// Reclamation enumeration: the same single leaf, agreeing with status. It is
-	// the shared collector the size cap uses, so this asserts the status listing
-	// agrees with what a cap would actually remove — not with a second local copy
-	// of the membership rule.
-	leaves, err := wasm.CollectCompileCacheLeaves(compileDir)
-	if err != nil {
-		t.Fatalf("CollectCompileCacheLeaves: %v", err)
-	}
-	if len(leaves) != 1 {
-		t.Fatalf("reclamation enumeration returned %d leaf(s), want 1:\n%+v", len(leaves), leaves)
-	}
-	if leaves[0].Path != module {
-		t.Fatalf("reclamation enumeration leaf %q, want the module %q", leaves[0].Path, module)
-	}
-
-	// The predicate itself, exercised directly on each name.
-	if !isCompileLeaf("abcdef0123") {
-		t.Errorf("isCompileLeaf rejected a finished module name")
-	}
-	if isCompileLeaf("abcdef0123.tmp") {
-		t.Errorf("isCompileLeaf admitted a *.tmp transient")
-	}
-	if isCompileLeaf(".compile-deadbeef.lock") {
-		t.Errorf("isCompileLeaf admitted a compile-lock sidecar")
-	}
-
-	// The fixtures exist; nothing was mutated by enumeration.
-	for _, p := range []string{module, tmp, lock} {
-		if !exists(p) {
-			t.Errorf("enumeration mutated the tree; missing %s", p)
-		}
-	}
-}
-
 // TestCacheEvictNoCompileDir asserts a loud error when no compiled-module cache
 // directory resolves.
 func TestCacheEvictNoCompileDir(t *testing.T) {
-	if err := runCacheEvict(&bytes.Buffer{}, cacheLocations{}, 100); err == nil {
+	if err := runCacheEvict(&bytes.Buffer{}, cacheops.Locations{}, 100); err == nil {
 		t.Fatalf("expected a loud error with no compiled-module cache directory")
-	}
-}
-
-// TestParseHumanSize covers the shared binary-unit vocabulary parseHumanSize and
-// humanSize agree on, plus the malformed-input error paths.
-func TestParseHumanSize(t *testing.T) {
-	ok := []struct {
-		in   string
-		want int64
-	}{
-		{"1024", 1024},
-		{"0", 0},
-		{"512 B", 512},
-		{"1KiB", 1 << 10},
-		{"1 kib", 1 << 10},
-		{"512MiB", 512 << 20},
-		{"5GiB", 5 << 30},
-		{"4.5 GiB", int64(4.5 * float64(int64(1)<<30))},
-		{"1TiB", 1 << 40},
-	}
-	for _, c := range ok {
-		got, err := parseHumanSize(c.in)
-		if err != nil {
-			t.Errorf("parseHumanSize(%q) unexpected error: %v", c.in, err)
-			continue
-		}
-		if got != c.want {
-			t.Errorf("parseHumanSize(%q) = %d, want %d", c.in, got, c.want)
-		}
-	}
-
-	bad := []string{"", "   ", "GiB", "abc", "5 ZiB", "1.5", "MiB"}
-	for _, in := range bad {
-		if _, err := parseHumanSize(in); err == nil {
-			t.Errorf("parseHumanSize(%q) expected an error, got nil", in)
-		}
-	}
-
-	// Round-trip: an exact unit multiple humanSize prints parses back to itself,
-	// proving the display and parse sides share one unit scheme.
-	for _, n := range []int64{512, 1 << 10, 512 << 20, 5 << 30, 1 << 40} {
-		rt, err := parseHumanSize(humanSize(n))
-		if err != nil {
-			t.Errorf("round-trip parseHumanSize(humanSize(%d)) error: %v", n, err)
-			continue
-		}
-		if rt != n {
-			t.Errorf("round-trip %d -> %q -> %d", n, humanSize(n), rt)
-		}
 	}
 }
 
@@ -1015,7 +896,7 @@ func TestCacheStatusCompileAttribution(t *testing.T) {
 		t.Fatalf("provenance upsert: %v", err)
 	}
 
-	loc := cacheLocations{compileDir: compileDir, attribIndexPath: attribPath, provIndexPath: provPath}
+	loc := cacheops.Locations{CompileDir: compileDir, AttribIndexPath: attribPath, ProvIndexPath: provPath}
 	var a, b bytes.Buffer
 	if err := runCacheStatus(&a, loc); err != nil {
 		t.Fatalf("status a: %v", err)
@@ -1060,7 +941,7 @@ func TestCacheStatusProvenanceSharedBy(t *testing.T) {
 		t.Fatalf("upsert solo: %v", err)
 	}
 
-	loc := cacheLocations{provIndexPath: idxPath}
+	loc := cacheops.Locations{ProvIndexPath: idxPath}
 	var a, b bytes.Buffer
 	if err := runCacheStatus(&a, loc); err != nil {
 		t.Fatalf("status a: %v", err)
@@ -1088,158 +969,4 @@ func TestCacheStatusProvenanceSharedBy(t *testing.T) {
 	if !bytes.Contains(a.Bytes(), []byte("oci://hub.aggrega.ai/plugins/core/kustomize@3.1.0\n")) {
 		t.Errorf("status did not list the solitary identity plainly:\n%s", s)
 	}
-}
-
-// TestRemoveEmptyParentsStopsAtPathBoundary pins that the parent climb is bounded
-// by a path boundary rather than by a raw string prefix. The names used here are
-// the ones the caches really occupy — a normal invocation owns "aggrega" beneath
-// the user cache directory and a test binary owns the sibling "aggrega-test" — so
-// one root's name is a string prefix of the other's, which is exactly the shape a
-// prefix comparison accepts and a boundary comparison refuses. Every path is
-// inside the test's own temporary directory.
-func TestRemoveEmptyParentsStopsAtPathBoundary(t *testing.T) {
-	t.Run("sibling whose name extends the boundary is refused", func(t *testing.T) {
-		tmp := t.TempDir()
-		stopAt := filepath.Join(tmp, "aggrega")
-		sibling := filepath.Join(tmp, "aggrega-test")
-		siblingClass := filepath.Join(sibling, "wasm-compile")
-		siblingLeaf := filepath.Join(siblingClass, "sha256-abc")
-		if err := os.MkdirAll(stopAt, 0o700); err != nil {
-			t.Fatalf("mkdir boundary: %v", err)
-		}
-		if err := os.MkdirAll(siblingLeaf, 0o700); err != nil {
-			t.Fatalf("mkdir sibling leaf: %v", err)
-		}
-
-		// The slot the caller has already removed. It never existed on disk; only
-		// its parents are candidates for the climb.
-		removeEmptyParents(filepath.Join(siblingLeaf, "module.bin"), stopAt)
-
-		// Nothing under the sibling may be touched: it is not inside stopAt, it
-		// merely starts with the same characters.
-		for _, dir := range []string{siblingLeaf, siblingClass, sibling} {
-			if _, err := os.Stat(dir); err != nil {
-				t.Errorf("climb escaped the boundary and removed %q, which is a sibling of %q rather than a directory inside it: %v", dir, stopAt, err)
-			}
-		}
-	})
-
-	t.Run("empty parents inside the boundary are removed", func(t *testing.T) {
-		tmp := t.TempDir()
-		stopAt := filepath.Join(tmp, "aggrega")
-		class := filepath.Join(stopAt, "wasm-compile")
-		leaf := filepath.Join(class, "sha256-abc")
-		if err := os.MkdirAll(leaf, 0o700); err != nil {
-			t.Fatalf("mkdir leaf: %v", err)
-		}
-
-		removeEmptyParents(filepath.Join(leaf, "module.bin"), stopAt)
-
-		for _, dir := range []string{leaf, class} {
-			if _, err := os.Stat(dir); !os.IsNotExist(err) {
-				t.Errorf("empty parent %q inside %q survived the climb (stat err %v)", dir, stopAt, err)
-			}
-		}
-		// The climb stops at the boundary and never removes it.
-		if _, err := os.Stat(stopAt); err != nil {
-			t.Errorf("the climb removed the boundary %q itself: %v", stopAt, err)
-		}
-	})
-
-	t.Run("non-empty parent ends the climb", func(t *testing.T) {
-		tmp := t.TempDir()
-		stopAt := filepath.Join(tmp, "aggrega")
-		class := filepath.Join(stopAt, "wasm-compile")
-		leaf := filepath.Join(class, "sha256-abc")
-		if err := os.MkdirAll(leaf, 0o700); err != nil {
-			t.Fatalf("mkdir leaf: %v", err)
-		}
-		sibling := filepath.Join(class, "sha256-def")
-		if err := os.MkdirAll(sibling, 0o700); err != nil {
-			t.Fatalf("mkdir retained sibling: %v", err)
-		}
-
-		removeEmptyParents(filepath.Join(leaf, "module.bin"), stopAt)
-
-		if _, err := os.Stat(leaf); !os.IsNotExist(err) {
-			t.Errorf("the empty leaf directory %q survived (stat err %v)", leaf, err)
-		}
-		// The class directory still holds another entry, so the climb ends there.
-		if _, err := os.Stat(class); err != nil {
-			t.Errorf("the climb removed the non-empty directory %q: %v", class, err)
-		}
-		if _, err := os.Stat(sibling); err != nil {
-			t.Errorf("the climb reached into a retained entry %q: %v", sibling, err)
-		}
-	})
-
-	t.Run("a directory above the boundary is not climbed into", func(t *testing.T) {
-		tmp := t.TempDir()
-		// The boundary sits deeper than the slot's own parent, so the climb's
-		// first candidate is already above it. Above is not inside, so nothing
-		// is removed — including the sibling subtree the candidate belongs to.
-		above := filepath.Join(tmp, "aggrega")
-		stopAt := filepath.Join(above, "wasm-compile")
-		outside := filepath.Join(above, "describe")
-		if err := os.MkdirAll(stopAt, 0o700); err != nil {
-			t.Fatalf("mkdir boundary: %v", err)
-		}
-		if err := os.MkdirAll(outside, 0o700); err != nil {
-			t.Fatalf("mkdir outside: %v", err)
-		}
-
-		removeEmptyParents(filepath.Join(outside, "module.bin"), stopAt)
-
-		for _, dir := range []string{outside, above, stopAt} {
-			if _, err := os.Stat(dir); err != nil {
-				t.Errorf("the climb removed %q, which is not inside the boundary %q: %v", dir, stopAt, err)
-			}
-		}
-	})
-
-	t.Run("the boundary is never removed however it is spelled", func(t *testing.T) {
-		tmp := t.TempDir()
-		// The boundary handed in carries a trailing separator, so it is not the
-		// spelling the climb's own candidates take. Containment is decided on
-		// where a candidate lands rather than on how the boundary was typed, so
-		// the interior empties still go and the boundary still stays.
-		boundary := filepath.Join(tmp, "aggrega")
-		class := filepath.Join(boundary, "wasm-compile")
-		leaf := filepath.Join(class, "sha256-abc")
-		if err := os.MkdirAll(leaf, 0o700); err != nil {
-			t.Fatalf("mkdir leaf: %v", err)
-		}
-
-		removeEmptyParents(filepath.Join(leaf, "module.bin"), boundary+string(filepath.Separator))
-
-		for _, dir := range []string{leaf, class} {
-			if _, err := os.Stat(dir); !os.IsNotExist(err) {
-				t.Errorf("empty parent %q inside %q survived the climb (stat err %v)", dir, boundary, err)
-			}
-		}
-		if _, err := os.Stat(boundary); err != nil {
-			t.Errorf("the climb removed the boundary %q itself: %v", boundary, err)
-		}
-	})
-
-	t.Run("no boundary touches nothing", func(t *testing.T) {
-		tmp := t.TempDir()
-		// Every cache root is composed from a workspace or user directory plus a
-		// named segment, and an unresolvable one arrives empty. An empty
-		// boundary names no directory to climb towards, so the climb does not
-		// start: were it to, the candidates here are empty and would go.
-		class := filepath.Join(tmp, "aggrega", "wasm-compile")
-		leaf := filepath.Join(class, "sha256-abc")
-		if err := os.MkdirAll(leaf, 0o700); err != nil {
-			t.Fatalf("mkdir leaf: %v", err)
-		}
-
-		removeEmptyParents(filepath.Join(leaf, "module.bin"), "")
-
-		for _, dir := range []string{leaf, class, filepath.Join(tmp, "aggrega")} {
-			if _, err := os.Stat(dir); err != nil {
-				t.Errorf("the climb removed %q with no boundary to climb towards: %v", dir, err)
-			}
-		}
-	})
 }

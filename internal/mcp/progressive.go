@@ -37,10 +37,24 @@ import (
 // without it. Deferring them costs one discovery call at the moment they become
 // relevant, and the kind filter surfaces both for the kinds an author is working
 // in.
+// The two inventories sit here on the same criterion, and each was tested against
+// it rather than filed here for room. The cache inventory answers at one moment —
+// when a caller is deciding whether to reclaim space — and nothing else needs it
+// first. The configured-registry listing and the index search answer about what
+// lies outside the workspace, which is a question a caller asks after it knows
+// what the workspace already holds; the enumeration tools that answer THAT are
+// what a caller arriving cold cannot proceed without, and they remain in the
+// default set for exactly that reason. Each of these three is reachable by name
+// once the capability tool has surfaced it, and each is also reachable as the tool
+// generated from its own command, so deferring costs a discovery call rather than
+// access.
 var deferredToolRegistry = []toolSpec{
 	curated("lint", lintToolSpec),
 	curated("feature-attach-candidates", attachCandidatesToolSpec),
 	curated("connection-candidates", connectionCandidatesToolSpec),
+	curated("cache-status", cacheStatusToolSpec),
+	curated("registry-list", registryListToolSpec),
+	curated("search", searchToolSpec),
 }
 
 // describeCapabilitiesName is the meta capability tool's name. It is referenced

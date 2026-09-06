@@ -133,24 +133,6 @@ var openQuestions = []OpenQuestion{
 			"document in the workspace — the same kind of document every method answered today is anchored to. " +
 			"The daemon declines it on nothing. Is bringing an entity file into step with the module it names a " +
 			"thing a session owes, or is it left to the surface that installed the module?"},
-	{SurfaceServe, "cache-clear",
-		"Wiping every cache reaches both the compiled-module store, which is shared across every project on the " +
-			"machine, and the artifact cache, which sits under the workspace's own configured cache directory. " +
-			"So the subject straddles the boundary the neighbouring capabilities are declined on, and a caller " +
-			"invoking it has asked for the write. Does a session owe a caller a way to reclaim what its own " +
-			"workspace has cached, or is cache maintenance left to the surface a person drives?"},
-	{SurfaceServe, "cache-evict",
-		"Trimming the compiled-module cache acts on a store shared across every project on the machine, which is " +
-			"the property the capabilities declined for sitting outside the workspace rest on — but eviction is " +
-			"a write a caller explicitly asks for, and it is the daemon that fills that store, once per guest, " +
-			"for every session on the machine. Is the surface that populates it also the surface that owes a way " +
-			"to trim it, or is a machine-wide store outside what any session addresses?"},
-	{SurfaceServe, "cache-prune",
-		"Reclaiming artifact-cache entries no lockfile references acts on the cache directory the workspace " +
-			"configures, defaulting to one inside the workspace itself, and decides what to keep by reading that " +
-			"workspace's lockfiles. Both inputs are ones a session already holds. Nothing in the daemon declines " +
-			"it. Is reclaiming a workspace's own cache a thing a session owes, or does maintenance belong only " +
-			"where a person sees what is removed?"},
 	{SurfaceServe, "config-init",
 		"Seeding a configuration writes the global file shared across every workspace by default, and this " +
 			"project's workspace file when asked. The default subject is outside the workspace, which is the " +

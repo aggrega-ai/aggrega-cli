@@ -12,6 +12,8 @@ import (
 
 	"oras.land/oras-go/v2/registry/remote/auth"
 	"oras.land/oras-go/v2/registry/remote/credentials"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/registryops"
 )
 
 // registryListJSONConfig declares three registries in an order that is neither
@@ -75,7 +77,7 @@ func TestRegistryListJSONCarriesIdentityAndTrust(t *testing.T) {
 	if len(doc.Registries) != 3 {
 		t.Fatalf("expected 3 registries, got %d\nstdout:\n%s", len(doc.Registries), raw)
 	}
-	byHost := map[string]registryDoc{}
+	byHost := map[string]registryops.Registry{}
 	for _, r := range doc.Registries {
 		byHost[r.Host] = r
 	}
@@ -143,16 +145,16 @@ func TestRegistryListJSONReportsCredentialPresenceWithoutLeaking(t *testing.T) {
 
 	doc, raw := listRegistriesJSON(t, registryListJSONConfig, store)
 
-	byHost := map[string]registryDoc{}
+	byHost := map[string]registryops.Registry{}
 	for _, r := range doc.Registries {
 		byHost[r.Host] = r
 	}
-	if got := byHost[host].AuthState; got != registryAuthConfigured {
-		t.Errorf("%s has a stored credential; authState = %q, want %q", host, got, registryAuthConfigured)
+	if got := byHost[host].AuthState; got != registryops.AuthConfigured {
+		t.Errorf("%s has a stored credential; authState = %q, want %q", host, got, registryops.AuthConfigured)
 	}
 	for _, other := range []string{"mid.example.com", "zed.example.com"} {
-		if got := byHost[other].AuthState; got != registryAuthNone {
-			t.Errorf("%s has no stored credential; authState = %q, want %q", other, got, registryAuthNone)
+		if got := byHost[other].AuthState; got != registryops.AuthNone {
+			t.Errorf("%s has no stored credential; authState = %q, want %q", other, got, registryops.AuthNone)
 		}
 	}
 
@@ -183,9 +185,9 @@ func TestRegistryListJSONUnreadableStoreIsUnknownNotNone(t *testing.T) {
 	doc, raw := listRegistriesJSON(t, registryListJSONConfig, failingCredentialStore{})
 
 	for _, r := range doc.Registries {
-		if r.AuthState != registryAuthUnknown {
+		if r.AuthState != registryops.AuthUnknown {
 			t.Errorf("%s authState = %q; an unreadable store means %q\nstdout:\n%s",
-				r.Host, r.AuthState, registryAuthUnknown, raw)
+				r.Host, r.AuthState, registryops.AuthUnknown, raw)
 		}
 	}
 }
