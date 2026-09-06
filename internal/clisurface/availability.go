@@ -150,6 +150,7 @@ var operationAvailability = map[string]opsurface.OperationAvailability{
 	"workspace-entity-index":      opsurface.Unavailable(unavailabilityReasonEditorViewParity),
 	"feature-attach-candidates":   opsurface.Unavailable(unavailabilityReasonEditorViewParity),
 	"connection-candidates":       opsurface.Unavailable(unavailabilityReasonEditorViewParity),
+	"document-insertion-point":    opsurface.Unavailable(unavailabilityReasonEditorViewParity),
 	"release-candidates":          opsurface.Unavailable(unavailabilityReasonEditorViewParity),
 	"active-release":              opsurface.Unavailable(unavailabilityReasonEditorViewParity),
 	"describe-capabilities":       opsurface.Unavailable(unavailabilityReasonProtocolLocalMeta),

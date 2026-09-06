@@ -37,6 +37,12 @@ import (
 // without it. Deferring them costs one discovery call at the moment they become
 // relevant, and the kind filter surfaces both for the kinds an author is working
 // in.
+// The insertion-point tool sits here on that same criterion, one step further
+// along the same moment: it answers when a caller has settled what to attach and
+// is about to write it, and it needs a document the enumeration already had to
+// supply. It is kind-agnostic rather than filed under the kinds candidacy serves,
+// because what it reads is a document's own structure — so the kind filter
+// surfaces it wherever an author is working rather than for a chosen few.
 // The two inventories sit here on the same criterion, and each was tested against
 // it rather than filed here for room. The cache inventory answers at one moment —
 // when a caller is deciding whether to reclaim space — and nothing else needs it
@@ -63,6 +69,7 @@ var deferredToolRegistry = []toolSpec{
 	curated("lint", lintToolSpec),
 	curated("feature-attach-candidates", attachCandidatesToolSpec),
 	curated("connection-candidates", connectionCandidatesToolSpec),
+	curated("document-insertion-point", insertionPointToolSpec),
 	curated("cache-status", cacheStatusToolSpec),
 	curated("registry-list", registryListToolSpec),
 	curated("search", searchToolSpec),

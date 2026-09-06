@@ -323,6 +323,7 @@ var operationAvailability = map[string]serveAvailability{
 	"workspace-entity-index":      servedAt(at("aggrega/catalogIndex", (*Server).dispatchCatalogIndex)),
 	"feature-attach-candidates":   servedAt(at("aggrega/attachCandidates", (*Server).dispatchAttachCandidates)),
 	"connection-candidates":       servedAt(at("aggrega/connectionCandidates", (*Server).dispatchConnectionCandidates)),
+	"document-insertion-point":    servedAt(at("aggrega/insertionPoint", (*Server).dispatchInsertionPoint)),
 	"release-candidates":          servedAt(at("aggrega/releaseCandidates", (*Server).dispatchReleaseCandidates)),
 	"active-release":              servedAt(at("aggrega/activeRelease", (*Server).dispatchActiveRelease)),
 

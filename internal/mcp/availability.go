@@ -100,6 +100,7 @@ var curatedToolNames = map[string][]string{
 
 	"feature-attach-candidates": {"attach-candidates"},
 	"connection-candidates":     {"connection-candidates"},
+	"document-insertion-point":  {"insertion-point"},
 
 	// The two inventories. Each is also reachable as the tool generated from its
 	// command, which returns that command's rendered output; these carry the

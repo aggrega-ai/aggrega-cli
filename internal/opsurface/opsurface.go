@@ -139,6 +139,7 @@ var operations = []Operation{
 	{"workspace-entity-index", "Report every workspace-local entity's kind, name, description and source file."},
 	{"feature-attach-candidates", "Report the Features whose declared applicability an entity's labels satisfy."},
 	{"connection-candidates", "Report an entity's dependency sockets and the components whose declared labels satisfy each one."},
+	{"document-insertion-point", "Report where in an authored document a new entry under a named container belongs."},
 	{"release-candidates", "Report every Release-kind document under the workspace root, by content."},
 	{"active-release", "Report the Release the workspace's disambiguation cascade selected."},
 
