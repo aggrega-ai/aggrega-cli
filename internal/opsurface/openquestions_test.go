@@ -159,7 +159,32 @@ import (
 // by running the command, so the command line's answer IS the tool protocol's
 // answer. A row left standing on one surface would have asked a question the other
 // surface's disposal had already settled.
-const boundCeiling = 20
+//
+// It came down by TWO again when the tool protocol began answering both halves of
+// candidacy — which Features may attach to a node, and what a node may connect to.
+// The pairing was not decided here: the rows themselves recorded it, in the words
+// the connection row carried, and taking both together is the condition those words
+// set. They are one capability asked about the two kinds of edge, a Feature
+// attaching to a node and a node connecting to another, so settling one and leaving
+// the other would have split one decision across two surfaces and left a caller able
+// to ask about one kind of edge and not the other for no reason it could discover.
+//
+// What settled them is that the parity argument the rows recorded as not applying
+// had become the argument FOR carrying them. Each row observed that the capability
+// exists so a caller offering choices offers the set the compiler would match, and
+// that nothing on this surface offered any — which made the parity half moot. A
+// caller on this surface is an assistant proposing an attachment or an edge, so it
+// was offering them from memory of the schema instead, which is precisely the
+// divergence the capability exists to prevent. The absence was unexamined rather
+// than deliberate, and a reason written for it would have been that unexamined
+// absence dressed as a deliberate one.
+//
+// Neither is a capability this surface grew of its own: both call the
+// implementation an editor's answer is computed by, so what the compiler would
+// match is decided in one place. A second label match or a second socket walk would
+// agree on the ordinary case and part company on the awkward one, and the feature
+// would then be a source of wrong suggestions rather than a guard against them.
+const boundCeiling = 18
 
 // TestTheBoundOnlyShrinks is the ratchet. See boundCeiling for why both
 // directions refuse.

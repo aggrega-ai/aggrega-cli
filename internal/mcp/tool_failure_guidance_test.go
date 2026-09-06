@@ -281,6 +281,15 @@ func TestEveryRegisteredToolGuidesAnEmptyCall(t *testing.T) {
 // calls are refused before the operation runs, whereas this one runs the
 // operation and reports its outcome, which is where a caller most needs to be
 // told what to fix.
+//
+// The payload is built from what each tool declares rather than being one
+// literal, because a release argument is not always a subject on its own. On a
+// tool that also declares a graph node, the Release says which graph to build and
+// naming it alone is a refusal at the argument stage — which would leave the
+// operation never run and this assertion measuring the wrong channel. Sending the
+// companion is what keeps the call legal so the operation runs and fails on the
+// Release, which is the property under test. The assertions themselves are
+// identical for every tool.
 func TestEveryReleaseTakingToolGuidesAnUnresolvableRelease(t *testing.T) {
 	s := newGuidanceServer(t)
 	drivable := 0
@@ -289,7 +298,11 @@ func TestEveryReleaseTakingToolGuidesAnUnresolvableRelease(t *testing.T) {
 			continue
 		}
 		drivable++
-		f := callToolRaw(t, s, spec.name, `{"release": "no-such-release.yaml"}`)
+		payload := `{"release": "no-such-release.yaml"}`
+		if declaresStringArgument(t, spec, "graph_node") {
+			payload = `{"graph_node": "any-node", "release": "no-such-release.yaml"}`
+		}
+		f := callToolRaw(t, s, spec.name, payload)
 		if !f.failed {
 			t.Errorf("%s: reported success for a Release that is not there: %q", spec.name, f.text)
 			continue

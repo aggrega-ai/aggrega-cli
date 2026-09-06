@@ -204,21 +204,10 @@ var openQuestions = []OpenQuestion{
 			"expected to resolve the expansion itself from the code it was handed, or does the surface that " +
 			"produced the diagnostic owe the expansion of it?"},
 
-	// The tool protocol.
-	{SurfaceMCP, "feature-attach-candidates",
-		"The label-matching result exists so that a caller offering attach targets offers the same set the " +
-			"compiler would match. Nothing on this surface offers attach targets today, which is why the " +
-			"parity half of that reason does not apply here — but a caller proposing an attachment is a " +
-			"plausible consumer of the match itself. Is the capability for an editor alone, or does it belong " +
-			"here as well?"},
-	{SurfaceMCP, "connection-candidates",
-		"The same fork the attach-candidates row above records, reached from the other half of the " +
-			"authoring question: nothing on this surface proposes a connection, so the parity half of " +
-			"that reason does not apply here either — but a caller composing one is a plausible consumer " +
-			"of the socket declarations and the target match. The two rows stand or fall together: " +
-			"whichever way the attachment half is settled, this half is the same capability for the other " +
-			"kind of edge, so settling one and leaving the other would split one decision across two " +
-			"surfaces. Is candidacy for an editor alone, or does it belong here as well?"},
+	// The tool protocol holds no undecided pair. Its last two asked whether
+	// candidacy — which Features may attach to a node, and what a node may connect
+	// to — was for an editor alone; the answer is that both belong here too, and
+	// two tools now carry them.
 }
 
 // isOpen reports whether the bound excuses an availability declaration for the

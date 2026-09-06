@@ -12,6 +12,7 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
+	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/selector"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
@@ -173,7 +174,8 @@ func (p attachCandidatesParams) coordinates() []string {
 	return given
 }
 
-// attachCandidatesResult is the aggrega/attachCandidates response.
+// AttachCandidatesResult is the attach-candidacy answer, on every surface that
+// carries one.
 //
 // NodeLabels carries the label pairs the match was actually evaluated
 // against, so the answer is auditable from the response alone and a
@@ -196,7 +198,7 @@ func (p attachCandidatesParams) coordinates() []string {
 // origin says why a catalog-resolved entity reports no file. The field stays
 // present rather than being omitted so the response shape is the same
 // whichever coordinate was sent.
-type attachCandidatesResult struct {
+type AttachCandidatesResult struct {
 	Node        string            `json:"node"`
 	NodeLabels  map[string]string `json:"nodeLabels"`
 	LabelSource string            `json:"labelSource"`
@@ -339,26 +341,70 @@ func (s *Server) dispatchAttachCandidates(ctx context.Context, req *jsonRPCReque
 // the method: a request that builds no graph crosses no such precondition,
 // which is why addressing a workspace document by name still answers on a
 // workspace nobody has prepared yet.
-func (s *Server) attachCandidatesForGraphNode(ctx context.Context, node, release string) (attachCandidatesResult, *jsonRPCError) {
+func (s *Server) attachCandidatesForGraphNode(ctx context.Context, node, release string) (AttachCandidatesResult, *jsonRPCError) {
 	// Nothing rendered: this reads the node's labels out of the graph and
 	// discards everything else, and the graph is byte-identical whether or
 	// not the render ran. Skipping it keeps the answer from loading a
 	// rendering plugin to compute a label match.
 	preview, errEnvelope := s.previewRelease(ctx, release, pipeline.Options{IncludeTrace: false, SkipRender: true})
 	if errEnvelope != nil {
-		return attachCandidatesResult{}, errEnvelope
+		return AttachCandidatesResult{}, errEnvelope
 	}
 
-	irNode, ok := preview.pipeline.IRGraph.Spec.Nodes.Get(node)
-	if !ok {
+	result, found := attachCandidatesForGraphNodeIn(ctx, s.workspaceRoot, s.lazyCatalog, s.overlayDocs(),
+		preview.pipeline.IRGraph, node)
+	if !found {
 		// Named the graph rather than the workspace, because that is what the
 		// caller addressed. A client told "no workspace entity is named X"
 		// after asking about a graph node would look for a document it never
 		// meant.
-		return attachCandidatesResult{}, &jsonRPCError{
+		return AttachCandidatesResult{}, &jsonRPCError{
 			Code:    errEntityNotResolvable,
 			Message: "the compiled graph of " + release + " has no node with id " + node,
 		}
+	}
+	return result, nil
+}
+
+// AttachCandidatesForGraphNode reports which Features may attach to the named
+// node of an already-compiled graph. The second return reports whether the graph
+// carries a node with that id at all.
+//
+// The graph is the caller's rather than this function's, and that split is the
+// decision. Which preview a surface runs — and therefore what it promises about
+// the lockfile — is a property of the operation that surface is performing, so
+// each surface builds the graph through the operation shaped for its own
+// contract. What must NOT differ is everything downstream of the graph: the node
+// lookup, the label read and the match are one implementation here, so two
+// surfaces answering about one node cannot offer two different Feature sets.
+//
+// Nothing reconstructs a node id or re-derives a label set. The ids are the
+// graph's own keys, so a node contributed by a sub-aggregate is addressed by
+// exactly the qualified id the graph published for it, and the labels are that
+// node's finalised set — the set a build evaluates applicability against, which
+// is what makes this answer a statement about what a build would decide rather
+// than merely a differently spelled one. The result says so through its label
+// source.
+//
+// What a caller without a session does not supply is the overlay of documents an
+// editor is holding unsaved; with none, the candidate population is read from
+// what is on disk, which is what such a caller can see anyway.
+func AttachCandidatesForGraphNode(ctx context.Context, root string, view *catalog.LazyLookup,
+	graph *types.IRGraph, node string) (AttachCandidatesResult, bool) {
+	return attachCandidatesForGraphNodeIn(ctx, root, view, nil, graph, node)
+}
+
+// attachCandidatesForGraphNodeIn is the whole of AttachCandidatesForGraphNode
+// with the fresher-than-disk overlay supplied, which only a caller holding a
+// session has.
+func attachCandidatesForGraphNodeIn(ctx context.Context, root string, view *catalog.LazyLookup,
+	overlay []workspaceDoc, graph *types.IRGraph, node string) (AttachCandidatesResult, bool) {
+	if graph == nil {
+		return AttachCandidatesResult{}, false
+	}
+	irNode, ok := graph.Spec.Nodes.Get(node)
+	if !ok {
+		return AttachCandidatesResult{}, false
 	}
 
 	labels := map[string]string{}
@@ -366,12 +412,12 @@ func (s *Server) attachCandidatesForGraphNode(ctx context.Context, node, release
 		labels[k] = v
 	}
 
-	return attachCandidatesResult{
+	return AttachCandidatesResult{
 		Node:        node,
 		NodeLabels:  labels,
 		LabelSource: NodeLabelsResolved,
-		Candidates:  s.matchingFeatures(ctx, irNode.Labels),
-	}, nil
+		Candidates:  matchingFeaturesIn(ctx, root, view, overlay, irNode.Labels),
+	}, true
 }
 
 // attachCandidatesForLabels reports which Features may attach to a node
@@ -424,8 +470,28 @@ func (s *Server) attachCandidatesForGraphNode(ctx context.Context, node, release
 // to offer; there is no name here to have typed wrongly, so the empty list
 // carries no such ambiguity. A malformed request is still refused, before any
 // of this runs.
-func (s *Server) attachCandidatesForLabels(ctx context.Context, labels map[string]string) (attachCandidatesResult, bool) {
-	candidates := s.matchingFeatures(ctx, orderedLabels(labels))
+func (s *Server) attachCandidatesForLabels(ctx context.Context, labels map[string]string) (AttachCandidatesResult, bool) {
+	return attachCandidatesForLabelsIn(ctx, s.workspaceRoot, s.lazyCatalog, s.overlayDocs(), labels)
+}
+
+// AttachCandidatesForLabels is the whole of attachCandidatesForLabels with the
+// root and the catalog lookup supplied rather than read off a session.
+//
+// It is the shape underneath the two name-addressed coordinates: both obtain a
+// label set and then perform this identical match, so a caller that already holds
+// one has nothing to name, nothing to be refused for mistyping, and no lookup to
+// wait on. That makes it the coordinate needing no coordinate — the one a caller
+// holding labels reaches for first — rather than an advanced form of the others.
+func AttachCandidatesForLabels(ctx context.Context, root string, view *catalog.LazyLookup,
+	labels map[string]string) (AttachCandidatesResult, bool) {
+	return attachCandidatesForLabelsIn(ctx, root, view, nil, labels)
+}
+
+// attachCandidatesForLabelsIn is the whole of AttachCandidatesForLabels with the
+// fresher-than-disk overlay supplied, which only a caller holding a session has.
+func attachCandidatesForLabelsIn(ctx context.Context, root string, view *catalog.LazyLookup,
+	overlay []workspaceDoc, labels map[string]string) (AttachCandidatesResult, bool) {
+	candidates := matchingFeaturesIn(ctx, root, view, overlay, orderedLabels(labels))
 	if ctx.Err() != nil {
 		// The traversal yields nothing under a cancelled context, and on this
 		// path that would surface as a SUCCESSFUL response carrying an empty
@@ -433,9 +499,9 @@ func (s *Server) attachCandidatesForLabels(ctx context.Context, labels map[strin
 		// name-addressed path degrades into a refusal instead, because an
 		// empty traversal also loses the subject; this one has no subject to
 		// lose, so the check has to be here.
-		return attachCandidatesResult{}, false
+		return AttachCandidatesResult{}, false
 	}
-	return attachCandidatesResult{
+	return AttachCandidatesResult{
 		Node:        "",
 		NodeLabels:  labels,
 		LabelSource: NodeLabelsSupplied,
@@ -498,7 +564,26 @@ func (s *Server) attachCandidatesForLabels(ctx context.Context, labels map[strin
 // workspace-entity projection orders by. The traversal's own delivery
 // order is not that order, so the sort is what makes the response bytes a
 // function of the workspace content rather than of its file names.
-func (s *Server) attachCandidates(ctx context.Context, node string) (attachCandidatesResult, bool) {
+func (s *Server) attachCandidates(ctx context.Context, node string) (AttachCandidatesResult, bool) {
+	return attachCandidatesForNodeIn(ctx, s.workspaceRoot, s.lazyCatalog, s.overlayDocs(), node)
+}
+
+// AttachCandidatesForNode is the whole of attachCandidates with the root and the
+// catalog lookup supplied rather than read off a session.
+//
+// It answers about a workspace document addressed by its metadata.name, over the
+// labels that document declares — which is what a read over source can see, and
+// is weaker than what a build evaluates. The result says so through its label
+// source, so the difference reaches the caller instead of being smoothed over.
+func AttachCandidatesForNode(ctx context.Context, root string, view *catalog.LazyLookup,
+	node string) (AttachCandidatesResult, bool) {
+	return attachCandidatesForNodeIn(ctx, root, view, nil, node)
+}
+
+// attachCandidatesForNodeIn is the whole of AttachCandidatesForNode with the
+// fresher-than-disk overlay supplied, which only a caller holding a session has.
+func attachCandidatesForNodeIn(ctx context.Context, root string, view *catalog.LazyLookup,
+	overlay []workspaceDoc, node string) (AttachCandidatesResult, bool) {
 	// A workspace may declare the requested name on more than one
 	// document — two kinds may each carry it. Every match is collected and
 	// the total order below picks between them, so the answer does not
@@ -506,7 +591,7 @@ func (s *Server) attachCandidates(ctx context.Context, node string) (attachCandi
 	var named []AttachCandidate
 	namedLabels := map[string]map[string]string{}
 
-	features, workspaceNames := s.workspaceFeatureDecls(ctx, func(doc workspaceDoc, entity AttachCandidate) {
+	features, workspaceNames := workspaceFeatureDeclsIn(ctx, root, overlay, func(doc workspaceDoc, entity AttachCandidate) {
 		if entity.Name == node {
 			named = append(named, entity)
 			namedLabels[entity.File] = stringMapAtPathOnDoc(doc.node, []string{"metadata", "labels"})
@@ -514,7 +599,7 @@ func (s *Server) attachCandidates(ctx context.Context, node string) (attachCandi
 	})
 
 	if len(named) == 0 {
-		return attachCandidatesResult{}, false
+		return AttachCandidatesResult{}, false
 	}
 	sortCandidates(named)
 	subject := named[0]
@@ -524,9 +609,9 @@ func (s *Server) attachCandidates(ctx context.Context, node string) (attachCandi
 		labels = map[string]string{}
 	}
 
-	features = append(features, s.catalogFeatureDecls(workspaceNames)...)
+	features = append(features, catalogFeatureDeclsFrom(view, workspaceNames)...)
 
-	return attachCandidatesResult{
+	return AttachCandidatesResult{
 		Node:        subject.Name,
 		NodeLabels:  labels,
 		LabelSource: NodeLabelsDeclared,
@@ -563,10 +648,18 @@ type featureDecl struct {
 // directories, which is a common enough layout that the collision is the
 // normal case rather than an edge one.
 func (s *Server) workspaceFeatureDecls(ctx context.Context, visit func(workspaceDoc, AttachCandidate)) ([]featureDecl, map[string]bool) {
+	return workspaceFeatureDeclsIn(ctx, s.workspaceRoot, s.overlayDocs(), visit)
+}
+
+// workspaceFeatureDeclsIn is the whole of workspaceFeatureDecls with the root and
+// the fresher-than-disk overlay supplied rather than read off a session, so the
+// session-bound form above and the sessionless entry points below are one walk
+// rather than two that agree today.
+func workspaceFeatureDeclsIn(ctx context.Context, root string, overlay []workspaceDoc, visit func(workspaceDoc, AttachCandidate)) ([]featureDecl, map[string]bool) {
 	var features []featureDecl
 	names := map[string]bool{}
 
-	s.rangeWorkspaceDocs(ctx, func(doc workspaceDoc) bool {
+	rangeWorkspaceDocsIn(ctx, root, overlay, func(doc workspaceDoc) bool {
 		kind := scalarAtPathOnDoc(doc.node, []string{"kind"})
 		if kind == "" {
 			return true
@@ -575,7 +668,7 @@ func (s *Server) workspaceFeatureDecls(ctx context.Context, visit func(workspace
 		if name == "" {
 			return true
 		}
-		rel, inside := relInsideRoot(s.workspaceRoot, doc.path)
+		rel, inside := relInsideRoot(root, doc.path)
 		if !inside {
 			// The parse cache holds whatever file the editor last sent,
 			// which need not be a workspace file at all. A document outside
@@ -643,7 +736,13 @@ func featureDeclFromDoc(entity AttachCandidate, doc *yaml.Node) featureDecl {
 // therefore has a readable declaration by construction, which is the same
 // standard the authored-YAML path applies with its own reader.
 func (s *Server) catalogFeatureDecls(alreadyReported map[string]bool) []featureDecl {
-	resolved := s.catalogFeatures(alreadyReported)
+	return catalogFeatureDeclsFrom(s.lazyCatalog, alreadyReported)
+}
+
+// catalogFeatureDeclsFrom is the whole of catalogFeatureDecls with the lookup
+// supplied rather than read off a session.
+func catalogFeatureDeclsFrom(view *catalog.LazyLookup, alreadyReported map[string]bool) []featureDecl {
+	resolved := catalogFeaturesFrom(view, alreadyReported)
 	out := make([]featureDecl, 0, len(resolved))
 	for _, feat := range resolved {
 		out = append(out, featureDecl{
@@ -688,8 +787,16 @@ func matchFeatures(decls []featureDecl, labels types.OrderedMap[string]) []Attac
 // each needs the candidate population without the subject lookup the
 // name-addressed path performs in the same walk.
 func (s *Server) matchingFeatures(ctx context.Context, labels types.OrderedMap[string]) []AttachCandidate {
-	features, workspaceNames := s.workspaceFeatureDecls(ctx, nil)
-	features = append(features, s.catalogFeatureDecls(workspaceNames)...)
+	return matchingFeaturesIn(ctx, s.workspaceRoot, s.lazyCatalog, s.overlayDocs(), labels)
+}
+
+// matchingFeaturesIn is the whole of matchingFeatures with the root, the catalog
+// lookup and the fresher-than-disk overlay supplied rather than read off a
+// session.
+func matchingFeaturesIn(ctx context.Context, root string, view *catalog.LazyLookup,
+	overlay []workspaceDoc, labels types.OrderedMap[string]) []AttachCandidate {
+	features, workspaceNames := workspaceFeatureDeclsIn(ctx, root, overlay, nil)
+	features = append(features, catalogFeatureDeclsFrom(view, workspaceNames)...)
 	return matchFeatures(features, labels)
 }
 

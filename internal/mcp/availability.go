@@ -97,6 +97,9 @@ var curatedToolNames = map[string][]string{
 	"describe-capabilities":  {describeCapabilitiesName},
 	"workspace-entity-index": {"list-entities"},
 	"release-candidates":     {"list-releases"},
+
+	"feature-attach-candidates": {"attach-candidates"},
+	"connection-candidates":     {"connection-candidates"},
 }
 
 // curated names a tool spec after the operation it answers, and is the one way a

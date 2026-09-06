@@ -296,12 +296,24 @@ type workspaceDoc struct {
 // it, so a visitor is never running while the lock is held and may be
 // as expensive as it needs to be.
 func (s *Server) rangeWorkspaceDocs(ctx context.Context, visit func(doc workspaceDoc) bool) {
-	var cached []workspaceDoc
+	rangeWorkspaceDocsIn(ctx, s.workspaceRoot, s.overlayDocs(), visit)
+}
+
+// overlayDocs snapshots the session's parse cache as the fresher-than-disk
+// overlay the shared traversal takes.
+//
+// It is the one place the snapshot is taken, so every projection that reaches
+// the traversal from a session supplies the same overlay. A second snapshot
+// would agree with this one and would be free to stop agreeing — a different
+// path cleaning, a different iteration — and the divergence would show up as two
+// surfaces disagreeing about which version of a file they were reading.
+func (s *Server) overlayDocs() []workspaceDoc {
+	var out []workspaceDoc
 	s.parseCache.Range(func(file string, node *yaml.Node, _ []byte) bool {
-		cached = append(cached, workspaceDoc{path: filepath.Clean(file), node: node})
+		out = append(out, workspaceDoc{path: filepath.Clean(file), node: node})
 		return true
 	})
-	rangeWorkspaceDocsIn(ctx, s.workspaceRoot, cached, visit)
+	return out
 }
 
 // rangeWorkspaceDocsIn is the whole of rangeWorkspaceDocs with the root and the

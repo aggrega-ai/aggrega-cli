@@ -5,7 +5,6 @@ package serve
 
 import (
 	"context"
-	"path/filepath"
 	"sort"
 
 	"go.yaml.in/yaml/v3"
@@ -103,12 +102,7 @@ func (s *Server) dispatchCatalogIndex(ctx context.Context, req *jsonRPCRequest) 
 // ahead of a workspace document sharing its kind and name rather than
 // landing in an order that depends on where the daemon happened to read it.
 func (s *Server) catalogIndex(ctx context.Context) []CatalogEntity {
-	var overlay []workspaceDoc
-	s.parseCache.Range(func(file string, node *yaml.Node, _ []byte) bool {
-		overlay = append(overlay, workspaceDoc{path: filepath.Clean(file), node: node})
-		return true
-	})
-	return workspaceEntityIndex(ctx, s.workspaceRoot, s.lazyCatalog, overlay)
+	return workspaceEntityIndex(ctx, s.workspaceRoot, s.lazyCatalog, s.overlayDocs())
 }
 
 // WorkspaceEntityIndex reports every entity a workspace holds — each one's kind,

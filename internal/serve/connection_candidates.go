@@ -69,7 +69,8 @@ type connectionCandidatesParams struct {
 	Socket string `json:"socket"`
 }
 
-// connectionCandidatesResult is the aggrega/connectionCandidates response.
+// ConnectionCandidatesResult is the connection-candidacy answer, on every
+// surface that carries one.
 //
 // AdHocSocketsAccepted reports whether the addressed entity's dependency
 // surface accepts a socket its own declaration does not list. It is the
@@ -92,7 +93,7 @@ type connectionCandidatesParams struct {
 // onto.
 //
 // Sockets is always an array on the wire, empty rather than null.
-type connectionCandidatesResult struct {
+type ConnectionCandidatesResult struct {
 	Node                 string            `json:"node"`
 	AdHocSocketsAccepted bool              `json:"adHocSocketsAccepted"`
 	Sockets              []SocketCandidacy `json:"sockets"`
@@ -190,10 +191,12 @@ func (s *Server) dispatchConnectionCandidates(ctx context.Context, req *jsonRPCR
 // Those are the labels the document declares, which is what a read-only
 // query over source can see. A build evaluates a socket's constraint
 // against the finalised label set of the graph node at the far end of the
-// edge, and a composition or a Release may contribute labels to that set
-// which no single document declares. So this reports the match over
-// declared labels; it is not a prediction of what a build will decide for
-// a node whose labels are contributed from above.
+// edge, and that set is reached differently: a node takes the labels of
+// the component type it resolves to rather than of a document sharing its
+// name, and a label-transform attachment the workspace configuration
+// carries may then add to, change or remove them. So this reports the
+// match over one document's declared labels; it is not a prediction of
+// what a build will decide.
 //
 // # Which entities are candidate targets
 //
@@ -213,7 +216,28 @@ func (s *Server) dispatchConnectionCandidates(ctx context.Context, req *jsonRPCR
 // own delivery order is not that order, so the sort is what makes the
 // response bytes a function of the workspace content rather than of its
 // file names.
-func (s *Server) connectionCandidates(ctx context.Context, node, socket string) (connectionCandidatesResult, bool) {
+func (s *Server) connectionCandidates(ctx context.Context, node, socket string) (ConnectionCandidatesResult, bool) {
+	return connectionCandidatesIn(ctx, s.workspaceRoot, s.overlayDocs(), node, socket)
+}
+
+// ConnectionCandidates is the whole of connectionCandidates with the root
+// supplied rather than read off a session, so the session-bound method and a
+// caller holding no session are one walk rather than two that agree today.
+//
+// It takes no catalog lookup, and that is a property of the answer rather than an
+// omission: the target set is the workspace-local Components, and the sockets are
+// read from the addressed document's own usesSchema.
+//
+// What a caller without a session does not supply is the overlay of documents an
+// editor is holding unsaved; with none, the answer is read from what is on disk,
+// which is what such a caller can see anyway.
+func ConnectionCandidates(ctx context.Context, root, node, socket string) (ConnectionCandidatesResult, bool) {
+	return connectionCandidatesIn(ctx, root, nil, node, socket)
+}
+
+// connectionCandidatesIn is the whole of ConnectionCandidates with the
+// fresher-than-disk overlay supplied, which only a caller holding a session has.
+func connectionCandidatesIn(ctx context.Context, root string, overlay []workspaceDoc, node, socket string) (ConnectionCandidatesResult, bool) {
 	// A workspace may declare the requested name on more than one document
 	// — two kinds may each carry it. Every match is collected and the total
 	// order below picks between them, so the answer does not depend on
@@ -227,7 +251,7 @@ func (s *Server) connectionCandidates(ctx context.Context, node, socket string) 
 	}
 	var components []componentDecl
 
-	s.rangeWorkspaceDocs(ctx, func(doc workspaceDoc) bool {
+	rangeWorkspaceDocsIn(ctx, root, overlay, func(doc workspaceDoc) bool {
 		kind := scalarAtPathOnDoc(doc.node, []string{"kind"})
 		if kind == "" {
 			return true
@@ -236,7 +260,7 @@ func (s *Server) connectionCandidates(ctx context.Context, node, socket string) 
 		if name == "" {
 			return true
 		}
-		rel, inside := relInsideRoot(s.workspaceRoot, doc.path)
+		rel, inside := relInsideRoot(root, doc.path)
 		if !inside {
 			// The parse cache holds whatever file the editor last sent,
 			// which need not be a workspace file at all. An entity outside
@@ -265,13 +289,13 @@ func (s *Server) connectionCandidates(ctx context.Context, node, socket string) 
 	})
 
 	if len(named) == 0 {
-		return connectionCandidatesResult{}, false
+		return ConnectionCandidatesResult{}, false
 	}
 	sortCandidates(named)
 	subject := named[0]
 
 	declared := namedSchemas[subject.File]
-	result := connectionCandidatesResult{
+	result := ConnectionCandidatesResult{
 		Node:                 subject.Name,
 		AdHocSocketsAccepted: adHocSocketsAccepted(subject.Kind),
 		Sockets:              []SocketCandidacy{},

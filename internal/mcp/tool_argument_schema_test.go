@@ -160,6 +160,33 @@ func TestDeclaredSchemasStateTheArgumentRulesTheToolsEnforce(t *testing.T) {
 		{"gen-catalog", "no overlay", `{"from_embedded":true,"output_dir":"o"}`, false},
 		{"gen-catalog", "a blank output directory", `{"from_embedded":true,"output_dir":"","overlay":"v"}`, false},
 
+		// attach-candidates: exactly one of three coordinates, with the Release
+		// meaningful only alongside the graph node — and required by it, since a
+		// graph node names a node on a Release's graph and there is no graph to
+		// look in without one.
+		{"attach-candidates", "a workspace entity by name", `{"node":"example/compute/web"}`, true},
+		{"attach-candidates", "a graph node with its Release", `{"graph_node":"data.main-db","release":"r.yaml"}`, true},
+		{"attach-candidates", "a label set outright", `{"labels":{"component.aggrega.ai/type":"server"}}`, true},
+		{"attach-candidates", "an empty label set, which is a subject", `{"labels":{}}`, true},
+		{"attach-candidates", "a coordinate with every optional argument", `{"node":"n","workspace_root":"/w","catalog_dirs":["c"]}`, true},
+		{"attach-candidates", "no coordinate at all", `{}`, false},
+		{"attach-candidates", "a name and a label set together", `{"node":"n","labels":{}}`, false},
+		{"attach-candidates", "a name and a graph node together", `{"node":"n","graph_node":"g","release":"r.yaml"}`, false},
+		{"attach-candidates", "a graph node with no Release", `{"graph_node":"g"}`, false},
+		{"attach-candidates", "a Release without the graph node it qualifies", `{"node":"n","release":"r.yaml"}`, false},
+		{"attach-candidates", "a blank coordinate", `{"node":""}`, false},
+		{"attach-candidates", "a coordinate of the wrong type", `{"node":5}`, false},
+		{"attach-candidates", "a label value that is not a string", `{"labels":{"k":5}}`, false},
+
+		// connection-candidates: one required subject, with the optional single
+		// socket alongside. It carries no combination rule, and no coordinate-free
+		// form: there is deliberately no label set here.
+		{"connection-candidates", "every socket an entity declares", `{"node":"example/compute/web"}`, true},
+		{"connection-candidates", "one socket by name", `{"node":"example/compute/web","socket":"database"}`, true},
+		{"connection-candidates", "no subject", `{}`, false},
+		{"connection-candidates", "a blank subject", `{"node":""}`, false},
+		{"connection-candidates", "a blank socket", `{"node":"n","socket":""}`, false},
+
 		// describe-capabilities: the whole long tail, or one entity kind.
 		{describeCapabilitiesName, "the whole long tail", `{}`, true},
 		{describeCapabilitiesName, "narrowed to one kind", `{"kind":"component"}`, true},
@@ -218,7 +245,7 @@ func TestDeclaredSchemasStateTheArgumentRulesTheToolsEnforce(t *testing.T) {
 // the list cannot silently stop matching the schemas — a named tool whose schema
 // declares no combination is a failure.
 func TestDeclaredSchemasCoverEveryToolWithACombinationRule(t *testing.T) {
-	withCombinationRules := []string{"validate", "describe", "lint", "get-schema", "gen-catalog"}
+	withCombinationRules := []string{"validate", "describe", "lint", "get-schema", "gen-catalog", "attach-candidates"}
 	s := newGuidanceServer(t)
 	for _, name := range withCombinationRules {
 		spec, found := s.lookupTool(name)

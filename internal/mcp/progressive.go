@@ -24,8 +24,23 @@ import (
 // advertised name from that operation's row: withholding a tool from the default
 // listing changes when a client learns of it, never whether the operation table
 // accounts for it.
+//
+// The two candidacy tools sit here rather than in the default set, and the
+// budget ceiling's own criterion is what puts them there. What that ceiling
+// exists to catch is a tool serving a narrow case creeping into the list every
+// client loads up front; the raise it once took was argued on the opposite
+// ground — the enumeration tools are the entry point to the whole surface,
+// because until they landed a caller arriving cold could name no subject at all.
+// Candidacy is not that. It answers at one moment in authoring — when a caller
+// is about to propose an attachment or an edge — and it needs a name the
+// enumeration already had to supply, so a caller can reach every other tool here
+// without it. Deferring them costs one discovery call at the moment they become
+// relevant, and the kind filter surfaces both for the kinds an author is working
+// in.
 var deferredToolRegistry = []toolSpec{
 	curated("lint", lintToolSpec),
+	curated("feature-attach-candidates", attachCandidatesToolSpec),
+	curated("connection-candidates", connectionCandidatesToolSpec),
 }
 
 // describeCapabilitiesName is the meta capability tool's name. It is referenced
