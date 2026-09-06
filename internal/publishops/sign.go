@@ -88,6 +88,28 @@ func (cfg SignConfig) signerRequest(registry string) SignerRequest {
 	}
 }
 
+// SignResult reports which references the batch signed, in the order they were
+// given, as the facts themselves rather than as the status lines Sign also writes
+// to cfg.Out.
+//
+// It reports the SUCCESSES only. A batch with any failure returns an error naming
+// every one of them, so a caller never reads a partial batch as a whole one — and
+// a result that carried failures alongside an absent error would be exactly that
+// reading. The successes of a failed batch reach a caller through the status
+// lines, as they always have.
+type SignResult struct {
+	Signed []SignedArtifact
+}
+
+// SignedArtifact is one reference the batch signed, with the published digest the
+// signature commits to. The digest is what makes the answer checkable: a signature
+// commits to a digest string, so naming the reference alone would not say what was
+// signed.
+type SignedArtifact struct {
+	Reference string
+	Digest    string
+}
+
 // Sign signs every reference in cfg.References, attaching each signature
 // bundle as an OCI referrer of its already-published artifact. The published
 // artifacts are never re-published or mutated; each referrer is a sibling
@@ -102,9 +124,9 @@ func (cfg SignConfig) signerRequest(registry string) SignerRequest {
 // Signing is continue-and-report: a reference that fails to resolve, sign, or
 // attach is recorded and the batch proceeds to the next reference; after the
 // loop, if any reference failed, a summary naming each failure is returned.
-func Sign(cfg SignConfig) error {
+func Sign(cfg SignConfig) (SignResult, error) {
 	if len(cfg.References) == 0 {
-		return fmt.Errorf("at least one reference required")
+		return SignResult{}, fmt.Errorf("at least one reference required")
 	}
 	ctx := context.Background()
 	out := cfg.Out
@@ -119,14 +141,20 @@ func Sign(cfg SignConfig) error {
 	// is supplied so the acquire-once accounting holds for both paths.
 	b := &batchSigner{cfg: cfg, out: out}
 	if err := b.prepare(); err != nil {
-		return err
+		return SignResult{}, err
 	}
 
-	var failures []refFailure
+	var (
+		failures []refFailure
+		signed   []SignedArtifact
+	)
 	for _, ref := range cfg.References {
-		if err := b.signRef(ctx, ref); err != nil {
+		digest, err := b.signRef(ctx, ref)
+		if err != nil {
 			failures = append(failures, refFailure{ref: ref, err: err})
+			continue
 		}
+		signed = append(signed, SignedArtifact{Reference: ref, Digest: digest})
 	}
 
 	if len(failures) > 0 {
@@ -135,9 +163,9 @@ func Sign(cfg SignConfig) error {
 		for _, f := range failures {
 			fmt.Fprintf(&sb, "\n  %s: %v", f.ref, f.err)
 		}
-		return errors.New(sb.String())
+		return SignResult{}, errors.New(sb.String())
 	}
-	return nil
+	return SignResult{Signed: signed}, nil
 }
 
 // refFailure pairs a reference with the error that stopped it, so the batch can
@@ -219,26 +247,27 @@ func (b *batchSigner) prepare() error {
 	return nil
 }
 
-// signRef signs one reference and attaches its signature. It builds the
-// per-reference signer from the batch's once-resolved identity (keyless) or the
-// resolved key path (keyed) — never resolving an identity itself; the single
-// resolution lives in prepare. A keyless failure whose cause is a token without
-// a usable signing subject is mapped to a precise diagnostic; every other
-// failure is returned as-is so the batch continues and reports it.
-func (b *batchSigner) signRef(ctx context.Context, ref string) error {
+// signRef signs one reference and attaches its signature, returning the published
+// digest the signature commits to. It builds the per-reference signer from the
+// batch's once-resolved identity (keyless) or the resolved key path (keyed) —
+// never resolving an identity itself; the single resolution lives in prepare. A
+// keyless failure whose cause is a token without a usable signing subject is
+// mapped to a precise diagnostic; every other failure is returned as-is so the
+// batch continues and reports it.
+func (b *batchSigner) signRef(ctx context.Context, ref string) (string, error) {
 	target := b.cfg.Target
 	if target == nil {
 		rw, werr := requireWorkspace(b.cfg.Workspace)
 		if werr != nil {
-			return fmt.Errorf("%s: %w", ref, werr)
+			return "", fmt.Errorf("%s: %w", ref, werr)
 		}
 		httpClient, err := egressClient(rw.Config())
 		if err != nil {
-			return fmt.Errorf("%s: %w", ref, err)
+			return "", fmt.Errorf("%s: %w", ref, err)
 		}
 		repo, err := oci.NewRemoteRepository(ref, httpClient)
 		if err != nil {
-			return fmt.Errorf("%s: %w", ref, err)
+			return "", fmt.Errorf("%s: %w", ref, err)
 		}
 		target = repo
 	}
@@ -252,15 +281,15 @@ func (b *batchSigner) signRef(ctx context.Context, ref string) error {
 	// whatever digest the registry already holds for the reference.
 	digest, exists, err := oci.Resolve(ctx, target, subjectRef)
 	if err != nil {
-		return fmt.Errorf("resolve %s: %w", ref, err)
+		return "", fmt.Errorf("resolve %s: %w", ref, err)
 	}
 	if !exists {
-		return fmt.Errorf("%s is not published; nothing to sign", ref)
+		return "", fmt.Errorf("%s is not published; nothing to sign", ref)
 	}
 
 	signer, err := b.buildRefSigner(ref)
 	if err != nil {
-		return fmt.Errorf("%s: %w", ref, err)
+		return "", fmt.Errorf("%s: %w", ref, err)
 	}
 
 	bundleBytes, artifactType, err := signDigest(ctx, signer, digest)
@@ -271,17 +300,17 @@ func (b *batchSigner) signRef(ctx context.Context, ref string) error {
 		// precisely so the operator is pointed at the identity provider/client/
 		// scope rather than told to re-export a token that cannot help.
 		if b.keyless && keylessSubjectFailure(err) {
-			return fmt.Errorf("%s: signing failed; the identity token carries no verified email or subject claim — the OIDC flow/client did not return an email-scoped identity (re-exporting or re-acquiring the token will not help); configure the identity provider/client/scope to return one: %w", ref, err)
+			return "", fmt.Errorf("%s: signing failed; the identity token carries no verified email or subject claim — the OIDC flow/client did not return an email-scoped identity (re-exporting or re-acquiring the token will not help); configure the identity provider/client/scope to return one: %w", ref, err)
 		}
-		return fmt.Errorf("%s: %w", ref, err)
+		return "", fmt.Errorf("%s: %w", ref, err)
 	}
 
 	if err := attachBundle(ctx, target, subjectRef, artifactType, bundleBytes); err != nil {
-		return fmt.Errorf("attach signature to %s: %w", ref, err)
+		return "", fmt.Errorf("attach signature to %s: %w", ref, err)
 	}
 
 	fmt.Fprintf(b.out, "Signature attached: %s (%s)\n", ref, digest)
-	return nil
+	return digest, nil
 }
 
 // buildRefSigner returns the signer for one reference. A supplied signer is

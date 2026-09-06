@@ -55,18 +55,18 @@ func registryWriteFixture(t *testing.T, workspaceYAML string) (*Server, string, 
 	return srv, globalPath, wsPath
 }
 
-// callRegistryMethod drives one request through the production dispatch and
+// callDaemonMethod drives one request through the production dispatch and
 // serializer path and returns the decoded response.
-func callRegistryMethod(t *testing.T, srv *Server, method string, params any) jsonRPCResponse {
+func callDaemonMethod(t *testing.T, srv *Server, method string, params any) jsonRPCResponse {
 	t.Helper()
 	var in, out bytes.Buffer
 	in.Write(framedRequest(1, method, params))
 	return runOneRequest(t, srv, &in, &out)
 }
 
-// decodeRegistryResult decodes a successful response's result into v, failing
+// decodeDaemonResult decodes a successful response's result into v, failing
 // the test when the response carried an error instead.
-func decodeRegistryResult(t *testing.T, resp jsonRPCResponse, v any) {
+func decodeDaemonResult(t *testing.T, resp jsonRPCResponse, v any) {
 	t.Helper()
 	if resp.Error != nil {
 		t.Fatalf("expected a result; got error %d: %s", resp.Error.Code, resp.Error.Message)
@@ -89,13 +89,13 @@ func TestRegistryAddOnTheDaemonReportsItsMachineWideScope(t *testing.T) {
 	t.Parallel()
 	srv, globalPath, wsPath := registryWriteFixture(t, "workspace: {}\n")
 
-	resp := callRegistryMethod(t, srv, "aggrega/registryAdd", map[string]any{
+	resp := callDaemonMethod(t, srv, "aggrega/registryAdd", map[string]any{
 		"host":       "machine.example.test",
 		"name":       "shared",
 		"fetchTrust": false,
 	})
 	var res registryAddResult
-	decodeRegistryResult(t, resp, &res)
+	decodeDaemonResult(t, resp, &res)
 
 	if res.Host != "machine.example.test" {
 		t.Errorf("host: got %q, want machine.example.test", res.Host)
@@ -139,13 +139,13 @@ func TestRegistryAddOnTheDaemonHonoursTheWorkspaceOverride(t *testing.T) {
 	t.Parallel()
 	srv, globalPath, wsPath := registryWriteFixture(t, "workspace: {}\n")
 
-	resp := callRegistryMethod(t, srv, "aggrega/registryAdd", map[string]any{
+	resp := callDaemonMethod(t, srv, "aggrega/registryAdd", map[string]any{
 		"host":       "local.example.test",
 		"workspace":  true,
 		"fetchTrust": false,
 	})
 	var res registryAddResult
-	decodeRegistryResult(t, resp, &res)
+	decodeDaemonResult(t, resp, &res)
 
 	if res.Scope.MachineWide {
 		t.Errorf("a workspace-scoped registration must not report a machine-wide change; got scope %+v", res.Scope)
@@ -171,13 +171,13 @@ func TestRegistryRemoveOnTheDaemonReportsScopeAndRefusesAnAbsentEntry(t *testing
 	t.Parallel()
 	srv, globalPath, _ := registryWriteFixture(t, "workspace: {}\n")
 
-	addResp := callRegistryMethod(t, srv, "aggrega/registryAdd", map[string]any{
+	addResp := callDaemonMethod(t, srv, "aggrega/registryAdd", map[string]any{
 		"host":       "drop.example.test",
 		"name":       "doomed",
 		"fetchTrust": false,
 	})
 	var added registryAddResult
-	decodeRegistryResult(t, addResp, &added)
+	decodeDaemonResult(t, addResp, &added)
 
 	// A configuration write is not visible to a session holding the resolution it
 	// started with, so the session re-resolves before addressing the entry by its
@@ -193,9 +193,9 @@ func TestRegistryRemoveOnTheDaemonReportsScopeAndRefusesAnAbsentEntry(t *testing
 	}
 	srv.resolvedWorkspace = rw
 
-	removeResp := callRegistryMethod(t, srv, "aggrega/registryRemove", map[string]any{"registry": "doomed"})
+	removeResp := callDaemonMethod(t, srv, "aggrega/registryRemove", map[string]any{"registry": "doomed"})
 	var removed registryRemoveResult
-	decodeRegistryResult(t, removeResp, &removed)
+	decodeDaemonResult(t, removeResp, &removed)
 	if removed.Host != "drop.example.test" {
 		t.Errorf("host: got %q, want the alias resolved to drop.example.test", removed.Host)
 	}
@@ -207,7 +207,7 @@ func TestRegistryRemoveOnTheDaemonReportsScopeAndRefusesAnAbsentEntry(t *testing
 		t.Errorf("the entry survived a removal the answer reported as done:\n%s", global)
 	}
 
-	again := callRegistryMethod(t, srv, "aggrega/registryRemove", map[string]any{"registry": "drop.example.test"})
+	again := callDaemonMethod(t, srv, "aggrega/registryRemove", map[string]any{"registry": "drop.example.test"})
 	if again.Error == nil {
 		t.Fatalf("removing an absent entry must be refused; got result %s", again.Result)
 	}
@@ -245,7 +245,7 @@ func TestRegistryUpdateOnTheDaemonRefusesLoudlyWhenACredentialIsMissing(t *testi
 	srv, _, _ := registryWriteFixture(t, "workspace: {}\nregistries:\n  - host: "+host+"\n")
 
 	done := make(chan jsonRPCResponse, 1)
-	go func() { done <- callRegistryMethod(t, srv, "aggrega/registryUpdate", map[string]any{"registry": host}) }()
+	go func() { done <- callDaemonMethod(t, srv, "aggrega/registryUpdate", map[string]any{"registry": host}) }()
 
 	select {
 	case resp := <-done:
@@ -282,9 +282,9 @@ func TestRegistryUpdateOnTheDaemonSaysWhenNothingIsConfigured(t *testing.T) {
 	t.Parallel()
 	srv, _, _ := registryWriteFixture(t, "workspace: {}\nregistries: []\n")
 
-	resp := callRegistryMethod(t, srv, "aggrega/registryUpdate", map[string]any{})
+	resp := callDaemonMethod(t, srv, "aggrega/registryUpdate", map[string]any{})
 	var res registryUpdateResult
-	decodeRegistryResult(t, resp, &res)
+	decodeDaemonResult(t, resp, &res)
 
 	if res.RegistriesConfigured {
 		t.Errorf("a workspace with no registries must report registriesConfigured false; got %+v", res)
@@ -311,7 +311,7 @@ func TestRegistryWriteMethodsRefuseAMissingSubject(t *testing.T) {
 		{"remove with no registry", "aggrega/registryRemove", map[string]any{}, "registry is required"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			resp := callRegistryMethod(t, srv, tc.method, tc.params)
+			resp := callDaemonMethod(t, srv, tc.method, tc.params)
 			if resp.Error == nil {
 				t.Fatalf("expected a refusal; got result %s", resp.Result)
 			}

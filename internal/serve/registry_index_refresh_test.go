@@ -123,9 +123,9 @@ func TestRegistryUpdateOnTheDaemonWritesAnIndexTheSearchThenReads(t *testing.T) 
 
 	srv, _, _ := registryWriteFixture(t, "workspace: {}\ndefault_registry: "+host+"\nregistries:\n  - host: "+host+"\n")
 
-	resp := callRegistryMethod(t, srv, "aggrega/registryUpdate", map[string]any{})
+	resp := callDaemonMethod(t, srv, "aggrega/registryUpdate", map[string]any{})
 	var res registryUpdateResult
-	decodeRegistryResult(t, resp, &res)
+	decodeDaemonResult(t, resp, &res)
 
 	if !res.RegistriesConfigured {
 		t.Fatalf("the fixture configures one registry; got %+v", res)
@@ -163,9 +163,9 @@ func TestRegistryUpdateOnTheDaemonWritesAnIndexTheSearchThenReads(t *testing.T) 
 	// Read the effect back through the search method, which did not perform the
 	// refresh and opens the files rather than sharing any state with it.
 	srv.resolvedWorkspace = reresolve(t, srv)
-	searchResp := callRegistryMethod(t, srv, "aggrega/search", map[string]any{})
+	searchResp := callDaemonMethod(t, srv, "aggrega/search", map[string]any{})
 	var found registrySearchResult
-	decodeRegistryResult(t, searchResp, &found)
+	decodeDaemonResult(t, searchResp, &found)
 	if len(found.Records) != 1 {
 		t.Fatalf("the search must find the entity the refresh recorded; got %d record(s): %+v", len(found.Records), found.Records)
 	}
@@ -215,9 +215,9 @@ func TestRegistryUpdateOnTheDaemonReportsWhatItCouldNotRead(t *testing.T) {
 
 	srv, _, _ := registryWriteFixture(t, "workspace: {}\ndefault_registry: "+host+"\nregistries:\n  - host: "+host+"\n")
 
-	resp := callRegistryMethod(t, srv, "aggrega/registryUpdate", map[string]any{})
+	resp := callDaemonMethod(t, srv, "aggrega/registryUpdate", map[string]any{})
 	var res registryUpdateResult
-	decodeRegistryResult(t, resp, &res)
+	decodeDaemonResult(t, resp, &res)
 
 	if len(res.Hosts) != 1 {
 		t.Fatalf("expected one host in the answer; got %+v", res.Hosts)
@@ -270,17 +270,17 @@ func TestRegistryUpdateOnTheDaemonReusesAnUnchangedRepository(t *testing.T) {
 
 	srv, _, _ := registryWriteFixture(t, "workspace: {}\ndefault_registry: "+host+"\nregistries:\n  - host: "+host+"\n")
 
-	first := callRegistryMethod(t, srv, "aggrega/registryUpdate", map[string]any{})
+	first := callDaemonMethod(t, srv, "aggrega/registryUpdate", map[string]any{})
 	var res1 registryUpdateResult
-	decodeRegistryResult(t, first, &res1)
+	decodeDaemonResult(t, first, &res1)
 	if len(res1.Hosts) != 1 || res1.Hosts[0].Indexed != 1 {
 		t.Fatalf("the first run must index the repository; got %+v", res1.Hosts)
 	}
 	firstFile := indexFileBytes(t, res1.IndexRoot)
 
-	second := callRegistryMethod(t, srv, "aggrega/registryUpdate", map[string]any{})
+	second := callDaemonMethod(t, srv, "aggrega/registryUpdate", map[string]any{})
 	var res2 registryUpdateResult
-	decodeRegistryResult(t, second, &res2)
+	decodeDaemonResult(t, second, &res2)
 	if len(res2.Hosts) != 1 || res2.Hosts[0].Indexed != 1 {
 		t.Fatalf("the second run must index the repository; got %+v", res2.Hosts)
 	}

@@ -214,6 +214,48 @@ func ListPublishableKinds(out io.Writer) error {
 	return nil
 }
 
+// PushResult reports what a catalog-entity publication did, as the facts
+// themselves rather than as the status lines Push also writes to cfg.Out.
+//
+// The two are not alternatives. The prose is for a person watching a terminal; a
+// surface that answers a caller needs the values, and re-deriving them by parsing
+// the prose would make a display format into a contract. Every field is filled on
+// every path the operation can take, so a caller reads one shape whichever branch
+// ran, and the two booleans say WHICH branch ran: a dry run computed the digest
+// and published nothing, and an already-published re-publication landed nothing
+// because the bytes were already there.
+type PushResult struct {
+	// Reference and Tag address the published artifact: the repository reference
+	// and the entity's own metadata.version.
+	Reference string
+	Tag       string
+	// Kind is the entity kind published, and MediaType the transport media type
+	// its bundle was published under.
+	Kind      string
+	MediaType string
+	// Size is the published bundle's byte count. For a Plugin it is the entity
+	// document's size; the executable travels as an inline layer and its size is
+	// reported separately.
+	Size int
+	// PluginSize is the .wasm executable's byte count for a Plugin publication,
+	// and zero for every other kind. A Plugin publishes entity and executable as
+	// one manifest, so a single size would describe neither.
+	PluginSize int
+	// Digest is the published manifest's digest, and it is EMPTY on a dry run.
+	// A dry run stops before the immutability guard, which is where the proposed
+	// digest is first computed, and computing one here to fill the field would add
+	// work to a path whose whole purpose is not to do any.
+	Digest string
+	// Signed reports that a signature bundle was produced and attached.
+	Signed bool
+	// AlreadyPublished reports that the tag already pointed at byte-identical
+	// content, so the publication was an idempotent no-op.
+	AlreadyPublished bool
+	// DryRun reports that nothing was published: the bundle was computed and the
+	// destination was never contacted.
+	DryRun bool
+}
+
 // Push bundles the entity at cfg.EntityPath and publishes it.
 // Reads workspace config; parses the entity envelope (kind,
 // metadata.name, metadata.version); bundles via pkg/oci.Bundle (which
@@ -242,9 +284,9 @@ func ListPublishableKinds(out io.Writer) error {
 // without constructing a remote target. Useful for authoring and
 // for verifying the reference-shape construction without binding to
 // a registry.
-func Push(cfg PushConfig) error {
+func Push(cfg PushConfig) (PushResult, error) {
 	if cfg.EntityPath == "" {
-		return fmt.Errorf("entity path required (pass as positional arg or via --entity)")
+		return PushResult{}, fmt.Errorf("entity path required (pass as positional arg or via --entity)")
 	}
 	out := cfg.Out
 	if out == nil {
@@ -253,7 +295,7 @@ func Push(cfg PushConfig) error {
 
 	rw, err := requireWorkspace(cfg.Workspace)
 	if err != nil {
-		return fmt.Errorf("workspaceconfig: %w", err)
+		return PushResult{}, fmt.Errorf("workspaceconfig: %w", err)
 	}
 	wsCfg := rw.Config()
 	// Carry the resolved workspace forward so downstream helpers source the
@@ -265,29 +307,29 @@ func Push(cfg PushConfig) error {
 		token = wsCfg.DefaultRegistry
 	}
 	if token == "" {
-		return fmt.Errorf("no destination registry; set --registry or workspace.default_registry")
+		return PushResult{}, fmt.Errorf("no destination registry; set --registry or workspace.default_registry")
 	}
 	registry, err := wsCfg.ResolveRegistry(token)
 	if err != nil {
-		return err
+		return PushResult{}, err
 	}
 
 	data, err := os.ReadFile(cfg.EntityPath)
 	if err != nil {
-		return fmt.Errorf("read %s: %w", cfg.EntityPath, err)
+		return PushResult{}, fmt.Errorf("read %s: %w", cfg.EntityPath, err)
 	}
 	var header pushEntityHeader
 	if err := yaml.Unmarshal(data, &header); err != nil {
-		return fmt.Errorf("parse %s: %w", cfg.EntityPath, err)
+		return PushResult{}, fmt.Errorf("parse %s: %w", cfg.EntityPath, err)
 	}
 	if header.Kind == "" {
-		return fmt.Errorf("%s: missing kind field", cfg.EntityPath)
+		return PushResult{}, fmt.Errorf("%s: missing kind field", cfg.EntityPath)
 	}
 	if header.Metadata.Name == "" {
-		return fmt.Errorf("%s: missing metadata.name", cfg.EntityPath)
+		return PushResult{}, fmt.Errorf("%s: missing metadata.name", cfg.EntityPath)
 	}
 	if header.Metadata.Version == "" {
-		return fmt.Errorf("%s: missing metadata.version", cfg.EntityPath)
+		return PushResult{}, fmt.Errorf("%s: missing metadata.version", cfg.EntityPath)
 	}
 
 	// Signing policy. A publication is refused unsigned when EITHER the destination
@@ -313,10 +355,10 @@ func Push(cfg PushConfig) error {
 		// registry requirement is reported (it is the more specific
 		// destination-scoped cause).
 		if requiresSignatures {
-			return fmt.Errorf("registry %q requires signatures; re-run signing the artifact (there is no flag to push unsigned content here): %w",
+			return PushResult{}, fmt.Errorf("registry %q requires signatures; re-run signing the artifact (there is no flag to push unsigned content here): %w",
 				registry, signing.ErrUnsignedPushRefused())
 		}
-		return fmt.Errorf("the signing policy requires a signature for kind %q; re-run signing the artifact (there is no flag to push unsigned content here): %w",
+		return PushResult{}, fmt.Errorf("the signing policy requires a signature for kind %q; re-run signing the artifact (there is no flag to push unsigned content here): %w",
 			header.Kind, signing.ErrSigningPolicyRequiresSignature())
 	}
 
@@ -334,11 +376,19 @@ func Push(cfg PushConfig) error {
 
 	bundleBytes, mediaType, err := oci.Bundle(header.Kind, cfg.EntityPath)
 	if err != nil {
-		return fmt.Errorf("bundle %s: %w", cfg.EntityPath, err)
+		return PushResult{}, fmt.Errorf("bundle %s: %w", cfg.EntityPath, err)
 	}
 
 	reference := BuildPushReference(registry, header.Kind, header.Spec.Capability, header.Metadata.Name)
 	tag := header.Metadata.Version
+	result := PushResult{
+		Reference: reference,
+		Tag:       tag,
+		Kind:      header.Kind,
+		MediaType: mediaType,
+		Size:      len(bundleBytes),
+		Signed:    wantSign,
+	}
 
 	// Searchable catalog annotations, built once and stamped identically onto
 	// the digest preview and the real publication. Building them once is
@@ -357,24 +407,29 @@ func Push(cfg PushConfig) error {
 		Labels:      &header.Metadata.Labels,
 	}.Annotations()
 	if err != nil {
-		return fmt.Errorf("%s: %w", cfg.EntityPath, err)
+		return PushResult{}, fmt.Errorf("%s: %w", cfg.EntityPath, err)
 	}
 
 	if cfg.DryRun {
 		fmt.Fprintf(out, "aggrega push (dry-run): %s:%s\n  kind: %s\n  mediatype: %s\n  size: %d bytes\n",
 			reference, tag, header.Kind, mediaType, len(bundleBytes))
-		return nil
+		result.DryRun = true
+		// A dry run reports no signature: nothing was signed, because signing
+		// happens against the digest a publication is about to land and this one
+		// lands nothing.
+		result.Signed = false
+		return result, nil
 	}
 
 	target := cfg.PushTarget
 	if target == nil {
 		httpClient, err := egressClient(wsCfg)
 		if err != nil {
-			return fmt.Errorf("%s: %w", reference, err)
+			return PushResult{}, fmt.Errorf("%s: %w", reference, err)
 		}
 		repo, err := oci.NewRemoteRepository(reference, httpClient)
 		if err != nil {
-			return fmt.Errorf("%s: %w", reference, err)
+			return PushResult{}, fmt.Errorf("%s: %w", reference, err)
 		}
 		target = repo
 	}
@@ -391,18 +446,23 @@ func Push(cfg PushConfig) error {
 	// into, by design.
 	existingDigest, exists, err := oci.Resolve(ctx, target, tag)
 	if err != nil {
-		return fmt.Errorf("resolve %s:%s: %w", reference, tag, err)
+		return PushResult{}, fmt.Errorf("resolve %s:%s: %w", reference, tag, err)
 	}
 	proposedDigest, err := oci.ManifestDigest(ctx, mediaType, bundleBytes, annotations)
 	if err != nil {
-		return fmt.Errorf("%s:%s: %w", reference, tag, err)
+		return PushResult{}, fmt.Errorf("%s:%s: %w", reference, tag, err)
 	}
 	if exists {
 		if existingDigest == proposedDigest {
 			fmt.Fprintf(out, "Already published: %s:%s (%s)\n", reference, tag, existingDigest)
-			return nil
+			result.Digest = existingDigest
+			result.AlreadyPublished = true
+			// The bytes were already there, so no signature was produced on this
+			// call whatever the policy asked for.
+			result.Signed = false
+			return result, nil
 		}
-		return fmt.Errorf("%s:%s is already published as %s; refusing to overwrite with %s — publish a new version (aggrega lint --pre-publish verifies the bump): %w",
+		return PushResult{}, fmt.Errorf("%s:%s is already published as %s; refusing to overwrite with %s — publish a new version (aggrega lint --pre-publish verifies the bump): %w",
 			reference, tag, existingDigest, proposedDigest, oci.ErrImmutableTagConflict())
 	}
 
@@ -420,7 +480,7 @@ func Push(cfg PushConfig) error {
 	if wantSign {
 		signatureBundle, signatureType, err = signPublishDigest(ctx, cfg.signerRequest(registry), reference, tag, proposedDigest)
 		if err != nil {
-			return err
+			return PushResult{}, err
 		}
 	}
 
@@ -428,17 +488,18 @@ func Push(cfg PushConfig) error {
 		return oci.Push(ctx, target, tag, mediaType, bundleBytes, annotations)
 	}, IsRetryablePublishError)
 	if err != nil {
-		return fmt.Errorf("push %s:%s: %w", reference, tag, err)
+		return PushResult{}, fmt.Errorf("push %s:%s: %w", reference, tag, err)
 	}
 	fmt.Fprintf(out, "Push complete: %s:%s (%s)\n", reference, tag, digest)
+	result.Digest = digest
 
 	if wantSign {
 		if err := attachBundle(ctx, target, tag, signatureType, signatureBundle); err != nil {
-			return fmt.Errorf("attach signature to %s:%s: %w", reference, tag, err)
+			return PushResult{}, fmt.Errorf("attach signature to %s:%s: %w", reference, tag, err)
 		}
 		fmt.Fprintf(out, "Signature attached: %s:%s\n", reference, tag)
 	}
-	return nil
+	return result, nil
 }
 
 // BuildPushReference composes the canonical OCI repository reference

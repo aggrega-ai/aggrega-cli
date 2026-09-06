@@ -557,28 +557,45 @@ type irGraphParams struct {
 // it names the specific fault, and a sender told its value is absolute
 // has more to go on than one told it lands outside the root.
 func resolveReleaseParam(workspaceRoot, release string) (string, *jsonRPCError) {
-	if release == "" {
-		return "", invalidReleaseParam("the request named no Release")
-	}
-	if filepath.IsAbs(release) {
-		return "", invalidReleaseParam(fmt.Sprintf("%q is an absolute path", release))
-	}
-	resolved, ok := pathscope.Resolve(workspaceRoot, release)
-	if !ok {
-		return "", invalidReleaseParam(fmt.Sprintf("%q resolves outside the workspace root", release))
-	}
-	return resolved, nil
+	return resolveWorkspacePathParam("release", "a Release", "the request named no Release", workspaceRoot, release)
 }
 
-// invalidReleaseParam builds the refusal a malformed `release` value
-// draws. Every branch names the contract first and the specific fault
-// second, so a client author reading one message learns what to send
-// without consulting anything else.
-func invalidReleaseParam(fault string) *jsonRPCError {
-	return &jsonRPCError{
-		Code:    jsonRPCInvalidParams,
-		Message: "invalid params: release must be a path relative to the workspace root, naming a Release inside it; " + fault,
+// resolveWorkspacePathParam turns any request parameter that names a file into
+// the absolute path the daemon reads, refusing every value that does not honour
+// the contract those parameters share: a path relative to the workspace root,
+// naming something inside it.
+//
+// The contract belongs to the surface rather than to any one parameter, which is
+// why the check lives here once and each caller supplies only the words its own
+// refusal needs — the field the request spells, what that field names, and how to
+// say the request named nothing. A second copy of the check per parameter is how
+// one of them would come to accept a path the others refuse.
+//
+// Escape is judged on where the value lands, not on how it is spelled: the check
+// runs against the joined-and-cleaned path, so an interior `a/../b` resolves and
+// passes while `../../elsewhere` is refused. The absolute-path test stays separate
+// from the containment call below it, which would also refuse an absolute value:
+// it names the specific fault, and a sender told its value is absolute has more to
+// go on than one told it lands outside the root.
+func resolveWorkspacePathParam(field, subject, absentFault, workspaceRoot, value string) (string, *jsonRPCError) {
+	refuse := func(fault string) *jsonRPCError {
+		return &jsonRPCError{
+			Code: jsonRPCInvalidParams,
+			Message: "invalid params: " + field + " must be a path relative to the workspace root, naming " +
+				subject + " inside it; " + fault,
+		}
 	}
+	if value == "" {
+		return "", refuse(absentFault)
+	}
+	if filepath.IsAbs(value) {
+		return "", refuse(fmt.Sprintf("%q is an absolute path", value))
+	}
+	resolved, ok := pathscope.Resolve(workspaceRoot, value)
+	if !ok {
+		return "", refuse(fmt.Sprintf("%q resolves outside the workspace root", value))
+	}
+	return resolved, nil
 }
 
 // irGraphResult is the response shape for `aggrega/irGraph`. The

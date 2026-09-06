@@ -106,7 +106,7 @@ func deprecateRun(cfg deprecateConfig) error {
 	cfg.TokenGetter = tokenGetterOrDefault(cfg.TokenGetter)
 	cfg.IsTTY = ttyOrDefault(cfg.IsTTY)
 	cfg.EnvLookup = envLookupOrGetenv(cfg.EnvLookup)
-	if err := publishops.Deprecate(cfg); err != nil {
+	if _, err := publishops.Deprecate(cfg); err != nil {
 		return fmt.Errorf("aggrega deprecate: %w", err)
 	}
 	return nil

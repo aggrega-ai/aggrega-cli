@@ -34,23 +34,29 @@ import (
 // Its diagnostics name what went wrong and not the verb a person would have run:
 // a caller reaching this may never have typed a command, so each surface adds its
 // own name at its own boundary.
-func AttachSignedMarker(ctx context.Context, out io.Writer, target oras.Target, subjectRef, reference string, marker deprecation.Marker, signer signing.Signer) error {
+//
+// It returns the marker's own manifest digest, which is the marker's identity: the
+// marker is an untagged referrer, so nothing else addresses it and a caller told
+// only that the attachment succeeded cannot name what was attached. The digest is
+// reported for the same reason it is printed — a surface that answers with facts
+// rather than with a line of prose needs the fact itself.
+func AttachSignedMarker(ctx context.Context, out io.Writer, target oras.Target, subjectRef, reference string, marker deprecation.Marker, signer signing.Signer) (markerDigest string, err error) {
 	payload, err := deprecation.Marshal(marker)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	// The subject must already be published: a withdrawal never publishes the
 	// artifact it withdraws, it only amends it.
 	if _, exists, rerr := oci.Resolve(ctx, target, subjectRef); rerr != nil {
-		return fmt.Errorf("resolve %s: %w", reference, rerr)
+		return "", fmt.Errorf("resolve %s: %w", reference, rerr)
 	} else if !exists {
-		return fmt.Errorf("%s is not published; nothing to deprecate", reference)
+		return "", fmt.Errorf("%s is not published; nothing to deprecate", reference)
 	}
 
 	markerDesc, err := oci.AttachReferrer(ctx, target, subjectRef, deprecation.ArtifactType, payload)
 	if err != nil {
-		return fmt.Errorf("attach marker to %s: %w", reference, err)
+		return "", fmt.Errorf("attach marker to %s: %w", reference, err)
 	}
 
 	// Sign the marker's own manifest digest and attach the signature as a
@@ -59,12 +65,12 @@ func AttachSignedMarker(ctx context.Context, out io.Writer, target oras.Target, 
 	// its digest.
 	bundle, artifactType, err := signer.Sign(ctx, markerDesc.Digest.String())
 	if err != nil {
-		return fmt.Errorf("sign marker for %s: %w", reference, err)
+		return "", fmt.Errorf("sign marker for %s: %w", reference, err)
 	}
 	if _, err := oci.AttachReferrerToDescriptor(ctx, target, markerDesc, artifactType, bundle); err != nil {
-		return fmt.Errorf("attach signature to marker for %s: %w", reference, err)
+		return "", fmt.Errorf("attach signature to marker for %s: %w", reference, err)
 	}
 
 	fmt.Fprintf(out, "Deprecation attached: %s (%s, %s)\n", reference, marker.Severity, markerDesc.Digest)
-	return nil
+	return markerDesc.Digest.String(), nil
 }

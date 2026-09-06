@@ -89,7 +89,7 @@ func keyedMarkerSigner(t *testing.T) (signing.Signer, string) {
 func attachSignedMarkerToTag(t *testing.T, store *memory.Store, tag string, marker deprecation.Marker, signer signing.Signer) {
 	t.Helper()
 	ctx := context.Background()
-	err := registryindex.AttachSignedMarker(ctx, io.Discard, store, tag,
+	_, err := registryindex.AttachSignedMarker(ctx, io.Discard, store, tag,
 		"hub.aggrega.ai/component/core/api-server:"+tag, marker, signer)
 	if err != nil {
 		t.Fatalf("registryindex.AttachSignedMarker(%s): %v", tag, err)

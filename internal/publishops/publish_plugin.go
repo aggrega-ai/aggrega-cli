@@ -57,19 +57,19 @@ import (
 // describe different content — an edit landing on disk after the read cannot
 // reach any of the three. The loader applies the same read-once discipline
 // between import inspection, derivation, and instantiation.
-func pushPlugin(out io.Writer, cfg PushConfig, registry string, wantSign bool, name, version, entityPath string, entityYAML []byte) error {
+func pushPlugin(out io.Writer, cfg PushConfig, registry string, wantSign bool, name, version, entityPath string, entityYAML []byte) (PushResult, error) {
 	if cfg.PluginPath == "" {
-		return fmt.Errorf("Plugin %s: --plugin <path-to-.wasm> is required to publish a Plugin (publish binds the .wasm into the entity's manifest)", name)
+		return PushResult{}, fmt.Errorf("Plugin %s: --plugin <path-to-.wasm> is required to publish a Plugin (publish binds the .wasm into the entity's manifest)", name)
 	}
 
 	var entity types.Plugin
 	if err := yaml.Unmarshal(entityYAML, &entity); err != nil {
-		return fmt.Errorf("parse Plugin %s: %w", name, err)
+		return PushResult{}, fmt.Errorf("parse Plugin %s: %w", name, err)
 	}
 
 	wasmBytes, err := os.ReadFile(cfg.PluginPath)
 	if err != nil {
-		return fmt.Errorf("read .wasm %s: %w", cfg.PluginPath, err)
+		return PushResult{}, fmt.Errorf("read .wasm %s: %w", cfg.PluginPath, err)
 	}
 
 	// Publication-time describe()-cross-check: refuse before any bytes land if the
@@ -102,19 +102,19 @@ func pushPlugin(out io.Writer, cfg PushConfig, registry string, wantSign bool, n
 		Entity:         resolver.PluginEntityInputs(entity),
 	})
 	if errors.Is(err, wasm.ErrWasmCommandsMirrorMismatch()) {
-		return fmt.Errorf("Plugin %s: spec.commands in %s is out of sync with the .wasm at %s — re-run `aggrega plugin sync %s --plugin %s` and commit the result before publishing: %w",
+		return PushResult{}, fmt.Errorf("Plugin %s: spec.commands in %s is out of sync with the .wasm at %s — re-run `aggrega plugin sync %s --plugin %s` and commit the result before publishing: %w",
 			entityIdentity, entityPath, cfg.PluginPath, entityPath, cfg.PluginPath, err)
 	}
 	if errors.Is(err, wasm.ErrWasmHostFunctionsStampMismatch()) {
-		return fmt.Errorf("Plugin %s: spec.runtime.hostFunctions in %s is out of sync with the .wasm at %s — re-run `aggrega plugin sync %s --plugin %s` and commit the result before publishing: %w",
+		return PushResult{}, fmt.Errorf("Plugin %s: spec.runtime.hostFunctions in %s is out of sync with the .wasm at %s — re-run `aggrega plugin sync %s --plugin %s` and commit the result before publishing: %w",
 			entityIdentity, entityPath, cfg.PluginPath, entityPath, cfg.PluginPath, err)
 	}
 	if errors.Is(err, wasm.ErrWasmPluginVersionMismatch()) {
-		return fmt.Errorf("Plugin %s: metadata.version in %s does not match the .wasm describe() version at %s — set metadata.version to the guest's build version (regenerate with `aggrega plugin gen-catalog --plugin`) before publishing: %w",
+		return PushResult{}, fmt.Errorf("Plugin %s: metadata.version in %s does not match the .wasm describe() version at %s — set metadata.version to the guest's build version (regenerate with `aggrega plugin gen-catalog --plugin`) before publishing: %w",
 			entityIdentity, entityPath, cfg.PluginPath, err)
 	}
 	if err != nil {
-		return fmt.Errorf("Plugin %s: %w", entityIdentity, err)
+		return PushResult{}, fmt.Errorf("Plugin %s: %w", entityIdentity, err)
 	}
 
 	// Advisory only: report where the binary's describe() offers more than the
@@ -150,24 +150,36 @@ func pushPlugin(out io.Writer, cfg PushConfig, registry string, wantSign bool, n
 	// restatement of it.
 	annotations, err := oci.PluginSearchableMetadata(entity).Annotations()
 	if err != nil {
-		return fmt.Errorf("Plugin %s: %w", name, err)
+		return PushResult{}, fmt.Errorf("Plugin %s: %w", name, err)
+	}
+
+	result := PushResult{
+		Reference:  reference,
+		Tag:        version,
+		Kind:       "Plugin",
+		MediaType:  oci.MediaTypePlugin,
+		Size:       len(entityYAML),
+		PluginSize: len(wasmBytes),
+		Signed:     wantSign,
 	}
 
 	if cfg.DryRun {
 		fmt.Fprintf(out, "aggrega push (dry-run): %s:%s\n  kind: Plugin\n  entity mediatype: %s\n  wasm mediatype: %s\n  wasm content digest: %s\n  entity size: %d bytes\n  wasm size: %d bytes\n",
 			reference, version, oci.MediaTypePlugin, oci.MediaTypeWasm, contentDigest, len(entityYAML), len(wasmBytes))
-		return nil
+		result.DryRun = true
+		result.Signed = false
+		return result, nil
 	}
 
 	target := cfg.PushTarget
 	if target == nil {
 		httpClient, err := egressClient(cfg.Workspace.Config())
 		if err != nil {
-			return fmt.Errorf("%s: %w", reference, err)
+			return PushResult{}, fmt.Errorf("%s: %w", reference, err)
 		}
 		repo, err := oci.NewRemoteRepository(reference, httpClient)
 		if err != nil {
-			return fmt.Errorf("%s: %w", reference, err)
+			return PushResult{}, fmt.Errorf("%s: %w", reference, err)
 		}
 		target = repo
 	}
@@ -180,18 +192,21 @@ func pushPlugin(out io.Writer, cfg PushConfig, registry string, wantSign bool, n
 	// too.
 	existingDigest, exists, err := oci.Resolve(ctx, target, version)
 	if err != nil {
-		return fmt.Errorf("resolve %s:%s: %w", reference, version, err)
+		return PushResult{}, fmt.Errorf("resolve %s:%s: %w", reference, version, err)
 	}
 	proposedDigest, err := oci.PluginManifestDigest(ctx, entityYAML, wasmBytes, annotations)
 	if err != nil {
-		return fmt.Errorf("%s:%s: %w", reference, version, err)
+		return PushResult{}, fmt.Errorf("%s:%s: %w", reference, version, err)
 	}
 	if exists {
 		if existingDigest == proposedDigest {
 			fmt.Fprintf(out, "Already published: %s:%s (%s)\n", reference, version, existingDigest)
-			return nil
+			result.Digest = existingDigest
+			result.AlreadyPublished = true
+			result.Signed = false
+			return result, nil
 		}
-		return fmt.Errorf("%s:%s is already published as %s; refusing to overwrite with %s — publish a new version (aggrega lint --pre-publish verifies the bump): %w",
+		return PushResult{}, fmt.Errorf("%s:%s is already published as %s; refusing to overwrite with %s — publish a new version (aggrega lint --pre-publish verifies the bump): %w",
 			reference, version, existingDigest, proposedDigest, oci.ErrImmutableTagConflict())
 	}
 
@@ -209,11 +224,11 @@ func pushPlugin(out io.Writer, cfg PushConfig, registry string, wantSign bool, n
 	if wantSign {
 		signer, serr := resolvePublishSigner(cfg.signerRequest(registry))
 		if serr != nil {
-			return serr
+			return PushResult{}, serr
 		}
 		signatureBundle, signatureType, err = signPublishDigestWith(ctx, signer, reference, version, proposedDigest)
 		if err != nil {
-			return err
+			return PushResult{}, err
 		}
 	}
 
@@ -224,15 +239,16 @@ func pushPlugin(out io.Writer, cfg PushConfig, registry string, wantSign bool, n
 		return oci.PushPluginManifest(ctx, target, version, entityYAML, wasmBytes, annotations)
 	}, IsRetryablePublishError)
 	if err != nil {
-		return fmt.Errorf("push plugin %s:%s: %w", reference, version, err)
+		return PushResult{}, fmt.Errorf("push plugin %s:%s: %w", reference, version, err)
 	}
 	fmt.Fprintf(out, "Push complete: %s:%s (%s)\n", reference, version, manifestDigest)
+	result.Digest = manifestDigest
 
 	if wantSign {
 		if err := attachBundle(ctx, target, version, signatureType, signatureBundle); err != nil {
-			return fmt.Errorf("attach signature to %s:%s: %w", reference, version, err)
+			return PushResult{}, fmt.Errorf("attach signature to %s:%s: %w", reference, version, err)
 		}
 		fmt.Fprintf(out, "Signature attached: %s:%s\n", reference, version)
 	}
-	return nil
+	return result, nil
 }

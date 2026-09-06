@@ -51,6 +51,32 @@ type PushArtifactConfig struct {
 	Out io.Writer
 }
 
+// PushArtifactResult reports what a data-artifact publication did, as the facts
+// themselves rather than as the status lines PushArtifact also writes to cfg.Out.
+//
+// It carries the same shape discipline PushResult carries: every field is filled
+// on every path, and the two booleans say which branch ran — a dry run contacted
+// nothing, and an already-published re-publication landed nothing because the
+// bytes were already there.
+type PushArtifactResult struct {
+	// Reference and Tag address the published artifact.
+	Reference string
+	Tag       string
+	// MediaType is what the opaque bytes were published under, which is the
+	// caller's value or the documentation-bundle default it fell through to.
+	MediaType string
+	// Size is the published file's byte count.
+	Size int
+	// Digest is the published manifest's digest, and EMPTY on a dry run for the
+	// same reason PushResult.Digest is.
+	Digest string
+	// AlreadyPublished reports that the tag already pointed at byte-identical
+	// content, so the publication was an idempotent no-op.
+	AlreadyPublished bool
+	// DryRun reports that nothing was published.
+	DryRun bool
+}
+
 // PushArtifact publishes the file at cfg.FilePath as a standalone OCI data
 // artifact at <registry>/docs/<name>:<tag>. It reads the file bytes verbatim
 // and hands them to the kind-agnostic pkg/oci.Push transport under cfg.MediaType
@@ -71,15 +97,15 @@ type PushArtifactConfig struct {
 // When cfg.DryRun is true, PushArtifact prints the proposed <reference>:<tag>
 // plus media type and byte count and returns without constructing a remote
 // target.
-func PushArtifact(cfg PushArtifactConfig) error {
+func PushArtifact(cfg PushArtifactConfig) (PushArtifactResult, error) {
 	if cfg.FilePath == "" {
-		return fmt.Errorf("artifact file path required (pass as the positional arg)")
+		return PushArtifactResult{}, fmt.Errorf("artifact file path required (pass as the positional arg)")
 	}
 	if cfg.Name == "" {
-		return fmt.Errorf("artifact name required (--name)")
+		return PushArtifactResult{}, fmt.Errorf("artifact name required (--name)")
 	}
 	if cfg.Tag == "" {
-		return fmt.Errorf("version tag required (--tag)")
+		return PushArtifactResult{}, fmt.Errorf("version tag required (--tag)")
 	}
 	mediaType := cfg.MediaType
 	if mediaType == "" {
@@ -92,7 +118,7 @@ func PushArtifact(cfg PushArtifactConfig) error {
 
 	rw, err := requireWorkspace(cfg.Workspace)
 	if err != nil {
-		return fmt.Errorf("workspaceconfig: %w", err)
+		return PushArtifactResult{}, fmt.Errorf("workspaceconfig: %w", err)
 	}
 
 	wsCfg := rw.Config()
@@ -101,35 +127,43 @@ func PushArtifact(cfg PushArtifactConfig) error {
 		token = wsCfg.DefaultRegistry
 	}
 	if token == "" {
-		return fmt.Errorf("no destination registry; set --registry or workspace.default_registry")
+		return PushArtifactResult{}, fmt.Errorf("no destination registry; set --registry or workspace.default_registry")
 	}
 	registry, err := wsCfg.ResolveRegistry(token)
 	if err != nil {
-		return err
+		return PushArtifactResult{}, err
 	}
 
 	reference := registry + "/" + dataArtifactNamespace + "/" + cfg.Name
 
 	content, err := os.ReadFile(cfg.FilePath)
 	if err != nil {
-		return fmt.Errorf("read %s: %w", cfg.FilePath, err)
+		return PushArtifactResult{}, fmt.Errorf("read %s: %w", cfg.FilePath, err)
+	}
+
+	result := PushArtifactResult{
+		Reference: reference,
+		Tag:       cfg.Tag,
+		MediaType: mediaType,
+		Size:      len(content),
 	}
 
 	if cfg.DryRun {
 		fmt.Fprintf(out, "aggrega push-artifact (dry-run): %s:%s\n  mediatype: %s\n  size: %d bytes\n",
 			reference, cfg.Tag, mediaType, len(content))
-		return nil
+		result.DryRun = true
+		return result, nil
 	}
 
 	target := cfg.PushTarget
 	if target == nil {
 		httpClient, err := egressClient(wsCfg)
 		if err != nil {
-			return fmt.Errorf("%s: %w", reference, err)
+			return PushArtifactResult{}, fmt.Errorf("%s: %w", reference, err)
 		}
 		repo, err := oci.NewRemoteRepository(reference, httpClient)
 		if err != nil {
-			return fmt.Errorf("%s: %w", reference, err)
+			return PushArtifactResult{}, fmt.Errorf("%s: %w", reference, err)
 		}
 		target = repo
 	}
@@ -141,25 +175,28 @@ func PushArtifact(cfg PushArtifactConfig) error {
 	// the preview digest equals the digest the publication would land.
 	existingDigest, exists, err := oci.Resolve(context.Background(), target, cfg.Tag)
 	if err != nil {
-		return fmt.Errorf("resolve %s:%s: %w", reference, cfg.Tag, err)
+		return PushArtifactResult{}, fmt.Errorf("resolve %s:%s: %w", reference, cfg.Tag, err)
 	}
 	proposedDigest, err := oci.ManifestDigest(context.Background(), mediaType, content, nil)
 	if err != nil {
-		return fmt.Errorf("%s:%s: %w", reference, cfg.Tag, err)
+		return PushArtifactResult{}, fmt.Errorf("%s:%s: %w", reference, cfg.Tag, err)
 	}
 	if exists {
 		if existingDigest == proposedDigest {
 			fmt.Fprintf(out, "Already published: %s:%s (%s)\n", reference, cfg.Tag, existingDigest)
-			return nil
+			result.Digest = existingDigest
+			result.AlreadyPublished = true
+			return result, nil
 		}
-		return fmt.Errorf("%s:%s is already published as %s; refusing to overwrite with %s — publish a new version: %w",
+		return PushArtifactResult{}, fmt.Errorf("%s:%s is already published as %s; refusing to overwrite with %s — publish a new version: %w",
 			reference, cfg.Tag, existingDigest, proposedDigest, oci.ErrImmutableTagConflict())
 	}
 
 	digest, err := oci.Push(context.Background(), target, cfg.Tag, mediaType, content, nil)
 	if err != nil {
-		return fmt.Errorf("push %s:%s: %w", reference, cfg.Tag, err)
+		return PushArtifactResult{}, fmt.Errorf("push %s:%s: %w", reference, cfg.Tag, err)
 	}
 	fmt.Fprintf(out, "Push complete: %s:%s (%s)\n", reference, cfg.Tag, digest)
-	return nil
+	result.Digest = digest
+	return result, nil
 }

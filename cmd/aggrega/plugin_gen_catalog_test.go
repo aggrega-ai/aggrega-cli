@@ -91,7 +91,7 @@ spec:
 
 	cfg := pushConfig{Workspace: resolveTempWorkspace(t, tempWorkspaceOptions{Root: dir}), PluginPath: wasmPath, DryRun: true}
 	var out bytes.Buffer
-	if err := publishops.PushPlugin(&out, cfg, registry, false, entity.Metadata.Name, entity.Metadata.Version, entPath, entityYAML); err != nil {
+	if _, err := publishops.PushPlugin(&out, cfg, registry, false, entity.Metadata.Name, entity.Metadata.Version, entPath, entityYAML); err != nil {
 		t.Fatalf("push --plugin --dry-run cross-check failed: %v", err)
 	}
 	if !strings.Contains(out.String(), wantLocation) {
@@ -162,7 +162,7 @@ spec:
 
 	cfg := pushConfig{Workspace: resolveTempWorkspace(t, tempWorkspaceOptions{Root: dir}), PluginPath: wasmPath, DryRun: true}
 	var out bytes.Buffer
-	if err := publishops.PushPlugin(&out, cfg, registry, false, entity.Metadata.Name, entity.Metadata.Version, entPath, entityYAML); err != nil {
+	if _, err := publishops.PushPlugin(&out, cfg, registry, false, entity.Metadata.Name, entity.Metadata.Version, entPath, entityYAML); err != nil {
 		if errors.Is(err, wasm.ErrWasmHostFunctionsStampMismatch()) {
 			t.Fatalf("push re-derived a different host-function set than the generator stamped: %v", err)
 		}

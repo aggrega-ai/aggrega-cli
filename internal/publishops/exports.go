@@ -87,6 +87,6 @@ func DeprecateSigner(cfg DeprecateConfig) (signing.Signer, error) {
 // PushPlugin publishes a Plugin entity and its .wasm executable as one OCI
 // manifest. Push dispatches to it on the Plugin kind; it is reachable directly
 // for a caller that already knows the kind and has the entity bytes in hand.
-func PushPlugin(out io.Writer, cfg PushConfig, registry string, wantSign bool, name, version, entityPath string, entityYAML []byte) error {
+func PushPlugin(out io.Writer, cfg PushConfig, registry string, wantSign bool, name, version, entityPath string, entityYAML []byte) (PushResult, error) {
 	return pushPlugin(out, cfg, registry, wantSign, name, version, entityPath, entityYAML)
 }

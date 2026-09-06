@@ -91,21 +91,6 @@ func OperationAvailability() map[string]opsurface.OperationAvailability {
 // wired — "no method carries it, therefore no method should" would justify
 // itself, and the routing index would then be built from its own shape.
 const (
-	// unavailabilityReasonWritesToARegistry covers an operation whose product is a
-	// change to a registry's contents: publishing an artifact, or attaching a
-	// signature or a withdrawal marker to one already published. A session is
-	// opened over a workspace, and what it writes is that workspace's own files
-	// and the cache that serves them.
-	//
-	// It rests on what the operation does rather than on what this process links.
-	// A reason resting on linkage would justify itself — no method carries it,
-	// therefore no method should — and it would stop being true of anything the
-	// daemon later carries, which is the failure the block comment above names.
-	// Reading a registry is not this reason: a session resolves a Release's
-	// dependencies by fetching from one, and that is carried here.
-	unavailabilityReasonWritesToARegistry = "its product is a change to a registry's contents, and what a session " +
-		"writes is the workspace's own files and the cache that serves them"
-
 	// unavailabilityReasonNoTerminal covers an operation that asks a person for
 	// something. The daemon's only stream is its request channel, so there is
 	// nothing to prompt on.
@@ -299,6 +284,37 @@ var operationAvailability = map[string]serveAvailability{
 	"registry-remove": servedAt(at("aggrega/registryRemove", (*Server).dispatchRegistryRemove)),
 	"registry-update": servedAt(at("aggrega/registryUpdate", (*Server).dispatchRegistryUpdate)),
 
+	// The session publishes to a registry, signs what is already published there,
+	// and withdraws it. These four write further than anything else here: what
+	// they land is what every consumer of that registry resolves, and neither a
+	// published version nor a signature can be recalled from anyone who already
+	// fetched it.
+	//
+	// They are admitted on the same rule the resolution and the cache maintenance
+	// above run under, and the rule is about WHEN an operation runs rather than
+	// about which surface runs it: a caller that sent one of these has asked for
+	// the publication, exactly as a caller sending a build has asked for
+	// artifacts. What stays out of bounds is a write performed while validating or
+	// inspecting, where nobody asked, and none of these is that.
+	//
+	// Two properties separate them from every other writing method here, and each
+	// response states its own rather than leaving a caller to infer it. Their reach
+	// is beyond this machine entirely — the registry methods above reach the
+	// machine's own configuration, and these reach everybody resolving from that
+	// registry — so every response names the host it addressed and whether the call
+	// landed anything. And nothing is prompted for: identity resolves from what the
+	// request supplied or what the environment already carries, and a credential
+	// none of them yields is refused with what to supply named, which is what makes
+	// them safe on a stream with nobody watching.
+	//
+	// A request names no signing key, and that is an addressing decision rather
+	// than an omission: its ground is unavailabilityReasonAddressedByAHostPath,
+	// and the reasoning is stated with the methods themselves.
+	"push":          servedAt(at("aggrega/publishEntity", (*Server).dispatchPublishEntity)),
+	"push-artifact": servedAt(at("aggrega/publishArtifact", (*Server).dispatchPublishArtifact)),
+	"sign":          servedAt(at("aggrega/signArtifacts", (*Server).dispatchSignArtifacts)),
+	"deprecate":     servedAt(at("aggrega/deprecateArtifact", (*Server).dispatchDeprecateArtifact)),
+
 	"definition-at-position":      servedAt(at("aggrega/resolve", (*Server).dispatchResolve)),
 	"references-at-position":      servedAt(at("aggrega/findReferences", (*Server).dispatchFindReferences)),
 	"implementations-at-position": servedAt(at("aggrega/findImplementations", (*Server).dispatchFindImplementations)),
@@ -355,10 +371,6 @@ var operationAvailability = map[string]serveAvailability{
 	"plugin-list":           notServed(unavailabilityReasonAboutTheToolchain),
 	"version":               notServed(unavailabilityReasonAboutTheToolchain),
 	"plugin-run-local":      notServed(unavailabilityReasonAddressedByAHostPath),
-	"deprecate":             notServed(unavailabilityReasonWritesToARegistry),
-	"push":                  notServed(unavailabilityReasonWritesToARegistry),
-	"push-artifact":         notServed(unavailabilityReasonWritesToARegistry),
-	"sign":                  notServed(unavailabilityReasonWritesToARegistry),
 	"auth-token":            notServed(unavailabilityReasonNoTerminal),
 	"login":                 notServed(unavailabilityReasonNoTerminal),
 	"mcp":                   notServed(unavailabilityReasonIsAStreamServer),

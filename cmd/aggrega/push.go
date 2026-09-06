@@ -145,11 +145,16 @@ func listPublishableKinds(out io.Writer) error {
 // command line is the surface that does, so it supplies them here. And the
 // operation's diagnostics carry no command name, because a caller elsewhere never
 // typed one — so the name is added at this boundary, where it is true.
+//
+// The facts the operation reports are discarded here, and that is the command
+// line's own shape rather than an oversight: a terminal has already been written
+// the status lines, and a second rendering of the same outcome would be a
+// duplicate a reader has to reconcile.
 func pushRun(cfg pushConfig) error {
 	cfg.TokenGetter = tokenGetterOrDefault(cfg.TokenGetter)
 	cfg.IsTTY = ttyOrDefault(cfg.IsTTY)
 	cfg.EnvLookup = envLookupOrGetenv(cfg.EnvLookup)
-	if err := publishops.Push(cfg); err != nil {
+	if _, err := publishops.Push(cfg); err != nil {
 		return fmt.Errorf("aggrega push: %w", err)
 	}
 	return nil

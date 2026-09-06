@@ -120,6 +120,28 @@ func (cfg DeprecateConfig) tty() bool {
 	return cfg.IsTTY != nil && cfg.IsTTY()
 }
 
+// DeprecateResult reports which markers were attached, in the order they were
+// attached, as the facts themselves rather than as the status lines Deprecate also
+// writes to cfg.Out. A single-shot deprecation reports one entry and a batch
+// reports one per entry.
+type DeprecateResult struct {
+	Marked []DeprecationMarked
+}
+
+// DeprecationMarked is one attached marker: the artifact it withdraws, the
+// severity it carries, the timestamp it was stamped with, and the marker's own
+// manifest digest.
+//
+// The digest is the marker's identity. A marker is attached as an untagged
+// referrer of its subject, so nothing else addresses it, and a caller told only
+// that a deprecation succeeded could not name what was attached.
+type DeprecationMarked struct {
+	Reference string
+	Severity  string
+	IssuedOn  string
+	Digest    string
+}
+
 // Deprecate attaches a signed deprecation marker to the already-published
 // artifact named by cfg.Reference. It validates the severity/message, resolves
 // the subject's published digest, attaches the deprecation payload as an OCI
@@ -132,7 +154,7 @@ func (cfg DeprecateConfig) tty() bool {
 // signature-verify machinery. On the keyless path the identity token is resolved
 // once before the marker is attached, so a signer that cannot be constructed
 // refuses the deprecation before anything is written.
-func Deprecate(cfg DeprecateConfig) error {
+func Deprecate(cfg DeprecateConfig) (DeprecateResult, error) {
 	out := cfg.Out
 	if out == nil {
 		out = os.Stdout
@@ -152,10 +174,10 @@ func Deprecate(cfg DeprecateConfig) error {
 // deprecateSingle attaches one marker to cfg.Reference. Its content comes from
 // the caller's severity/reason/replacement fields, or — when the required fields
 // are absent and a person is watching — from a prompt. issuedOn is stamped now.
-func deprecateSingle(ctx context.Context, cfg DeprecateConfig, out io.Writer, now func() time.Time) error {
+func deprecateSingle(ctx context.Context, cfg DeprecateConfig, out io.Writer, now func() time.Time) (DeprecateResult, error) {
 	severity, reason, replacement, err := resolveSingleContent(cfg, out)
 	if err != nil {
-		return err
+		return DeprecateResult{}, err
 	}
 	marker := deprecation.Marker{
 		Severity:    deprecation.Severity(severity),
@@ -167,41 +189,57 @@ func deprecateSingle(ctx context.Context, cfg DeprecateConfig, out io.Writer, no
 
 	target, subjectRef, err := deprecateTargetFor(cfg, cfg.Reference)
 	if err != nil {
-		return err
+		return DeprecateResult{}, err
 	}
 
 	// Build the signer BEFORE the marker is attached so a keyless flow with no
 	// usable token, or a missing key, refuses the deprecation before writing.
 	signer, err := deprecateSigner(cfg)
 	if err != nil {
-		return err
+		return DeprecateResult{}, err
 	}
-	return registryindex.AttachSignedMarker(ctx, out, target, subjectRef, cfg.Reference, marker, signer)
+	digest, err := registryindex.AttachSignedMarker(ctx, out, target, subjectRef, cfg.Reference, marker, signer)
+	if err != nil {
+		return DeprecateResult{}, err
+	}
+	return DeprecateResult{Marked: []DeprecationMarked{markedFrom(cfg.Reference, marker, digest)}}, nil
+}
+
+// markedFrom projects one attached marker onto the reported shape, so the
+// single-shot and batch paths report the same fields from the same place.
+func markedFrom(reference string, marker deprecation.Marker, digest string) DeprecationMarked {
+	return DeprecationMarked{
+		Reference: reference,
+		Severity:  string(marker.Severity),
+		IssuedOn:  marker.IssuedOn,
+		Digest:    digest,
+	}
 }
 
 // deprecateBatch attaches one marker per entry in the file named by cfg.From.
 // The signer is built once from the first entry's registry and reused for every
 // entry, so a keyless flow acquires a single identity for the whole batch. Each
 // entry's issuedOn is stamped at attach time.
-func deprecateBatch(ctx context.Context, cfg DeprecateConfig, out io.Writer, now func() time.Time) error {
+func deprecateBatch(ctx context.Context, cfg DeprecateConfig, out io.Writer, now func() time.Time) (DeprecateResult, error) {
 	entries, err := loadDeprecationBatch(cfg.From)
 	if err != nil {
-		return err
+		return DeprecateResult{}, err
 	}
 	if len(entries) == 0 {
-		return fmt.Errorf("%s carries no deprecation entries", cfg.From)
+		return DeprecateResult{}, fmt.Errorf("%s carries no deprecation entries", cfg.From)
 	}
 
 	signerCfg := cfg
 	signerCfg.Reference = entries[0].Reference
 	signer, err := deprecateSigner(signerCfg)
 	if err != nil {
-		return err
+		return DeprecateResult{}, err
 	}
 
+	var marked []DeprecationMarked
 	for i, e := range entries {
 		if e.Reference == "" {
-			return fmt.Errorf("%s: entry %d is missing its reference", cfg.From, i+1)
+			return DeprecateResult{}, fmt.Errorf("%s: entry %d is missing its reference", cfg.From, i+1)
 		}
 		marker := deprecation.Marker{
 			Severity:    deprecation.Severity(e.Severity),
@@ -212,13 +250,15 @@ func deprecateBatch(ctx context.Context, cfg DeprecateConfig, out io.Writer, now
 		}
 		target, subjectRef, terr := deprecateTargetFor(cfg, e.Reference)
 		if terr != nil {
-			return terr
+			return DeprecateResult{}, terr
 		}
-		if aerr := registryindex.AttachSignedMarker(ctx, out, target, subjectRef, e.Reference, marker, signer); aerr != nil {
-			return aerr
+		digest, aerr := registryindex.AttachSignedMarker(ctx, out, target, subjectRef, e.Reference, marker, signer)
+		if aerr != nil {
+			return DeprecateResult{}, aerr
 		}
+		marked = append(marked, markedFrom(e.Reference, marker, digest))
 	}
-	return nil
+	return DeprecateResult{Marked: marked}, nil
 }
 
 // deprecationBatchEntry is one line of a batch file: the reference to
