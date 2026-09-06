@@ -102,7 +102,7 @@ func TestPushPluginSingleManifestPublish(t *testing.T) {
 	store := memory.New()
 
 	if err := pushRun(pushConfig{
-		ws:         resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}),
+		Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}),
 		EntityPath: entityPath,
 		PluginPath: pluginPath,
 		Registry:   "hub.aggrega.ai",
@@ -146,7 +146,7 @@ func TestPushPluginPublishedEntityReloadsClean(t *testing.T) {
 	store := memory.New()
 
 	if err := pushRun(pushConfig{
-		ws:         resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}),
+		Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}),
 		EntityPath: entityPath,
 		PluginPath: pluginPath,
 		Registry:   "hub.aggrega.ai",
@@ -177,7 +177,7 @@ func TestPushPluginRequiresPluginFlag(t *testing.T) {
 	store := memory.New()
 
 	err := pushRun(pushConfig{
-		ws:         resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
+		Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
 		EntityPath: entityPath,
 		Registry:   "hub.aggrega.ai",
 		PushTarget: store,
@@ -217,7 +217,7 @@ spec:
 
 	store := memory.New()
 	err := pushRun(pushConfig{
-		ws:         resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
+		Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
 		EntityPath: entityPath,
 		PluginPath: pluginPath,
 		Registry:   "hub.aggrega.ai",
@@ -247,7 +247,7 @@ func TestPushPluginPartialPushSafety(t *testing.T) {
 	target := &failVersionTagTarget{Target: store}
 
 	err := pushRun(pushConfig{
-		ws:         resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}),
+		Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}),
 		EntityPath: entityPath,
 		PluginPath: pluginPath,
 		Registry:   "hub.aggrega.ai",
@@ -290,7 +290,7 @@ func TestPushPluginSignedAndVerifiable(t *testing.T) {
 	store := memory.New()
 	wantSign := true
 	if err := pushRun(pushConfig{
-		ws:         resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}),
+		Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}),
 		EntityPath: entityPath,
 		PluginPath: pluginPath,
 		Registry:   "hub.aggrega.ai",
@@ -421,7 +421,7 @@ func TestPushPluginLargeGuestDryRunUnderDeclaredCap(t *testing.T) {
 
 	var out bytes.Buffer
 	if err := pushRun(pushConfig{
-		ws:         resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}),
+		Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}),
 		EntityPath: entityPath,
 		PluginPath: pluginPath,
 		Registry:   "hub.aggrega.ai",
@@ -444,7 +444,7 @@ func TestPushPluginLargeGuestDryRunFallsBackToDescribeFloor(t *testing.T) {
 
 	var out bytes.Buffer
 	if err := pushRun(pushConfig{
-		ws:         resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}),
+		Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}),
 		EntityPath: entityPath,
 		PluginPath: pluginPath,
 		Registry:   "hub.aggrega.ai",
@@ -464,7 +464,7 @@ func TestPushPluginLargeGuestDefaultCapInsufficient(t *testing.T) {
 	wsRoot, entityPath, pluginPath := writeLargeGuestPlugin(t, "  runtime:\n    maxMemoryPages: 1024\n")
 
 	err := pushRun(pushConfig{
-		ws:         resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}),
+		Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}),
 		EntityPath: entityPath,
 		PluginPath: pluginPath,
 		Registry:   "hub.aggrega.ai",
@@ -545,7 +545,7 @@ func TestPushPluginProviderReusableInstanceCrossCheck(t *testing.T) {
 
 	var out bytes.Buffer
 	if err := pushRun(pushConfig{
-		ws:         resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}),
+		Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}),
 		EntityPath: entityPath,
 		PluginPath: pluginPath,
 		Registry:   "hub.aggrega.ai",
@@ -581,7 +581,7 @@ func TestPushPluginProviderReusableInstanceMismatchHalts(t *testing.T) {
 `)
 
 	err := pushRun(pushConfig{
-		ws:         resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}),
+		Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}),
 		EntityPath: entityPath,
 		PluginPath: pluginPath,
 		Registry:   "hub.aggrega.ai",
@@ -610,7 +610,7 @@ func TestPublishPullRoundTripPlugin(t *testing.T) {
 	store := memory.New()
 
 	if err := pushRun(pushConfig{
-		ws:         resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}),
+		Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}),
 		EntityPath: entityPath,
 		PluginPath: pluginPath,
 		Registry:   "hub.aggrega.ai",
@@ -698,7 +698,7 @@ func TestVersionTagPushPullParity(t *testing.T) {
 	store := memory.New()
 
 	if err := pushRun(pushConfig{
-		ws:         resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}),
+		Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}),
 		EntityPath: entityPath,
 		PluginPath: pluginPath,
 		Registry:   "hub.aggrega.ai",

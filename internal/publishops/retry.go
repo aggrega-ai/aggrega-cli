@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Cognitio S.r.l.
 
-package main
+package publishops
 
 import (
 	"context"
@@ -20,11 +20,11 @@ import (
 // retry budget is small and fixed: the first call plus at most two retries.
 const maxPublishAttempts = 3
 
-// publishRetryBaseDelay is the first backoff interval; each subsequent retry
+// PublishRetryBaseDelay is the first backoff interval; each subsequent retry
 // doubles it (base, 2x, 4x). It is a package variable rather than a constant so
 // tests can shrink it to a sub-millisecond value and not sleep for real
 // seconds; production leaves it at the default.
-var publishRetryBaseDelay = 500 * time.Millisecond
+var PublishRetryBaseDelay = 500 * time.Millisecond
 
 // fulcioTokenTransientMarker is the substring the keyless certificate
 // authority emits when it transiently fails to process an identity token. The
@@ -42,7 +42,7 @@ type signBundle struct {
 	artifactType string
 }
 
-// retryTransient calls fn up to maxPublishAttempts times, returning its first
+// RetryTransient calls fn up to maxPublishAttempts times, returning its first
 // success. When fn fails, retryable decides the disposition: a terminal error
 // returns immediately (failing fast protects a timeout-bounded job from
 // wasting its budget on a hopeless error), while a retryable error sleeps an
@@ -51,7 +51,7 @@ type signBundle struct {
 // underlying failure. Context cancellation between attempts is honored: a
 // cancelled or deadline-exceeded context during a backoff returns the context
 // error rather than sleeping out the interval.
-func retryTransient[T any](ctx context.Context, fn func() (T, error), retryable func(error) bool) (T, error) {
+func RetryTransient[T any](ctx context.Context, fn func() (T, error), retryable func(error) bool) (T, error) {
 	var zero T
 	var lastErr error
 	for attempt := 0; attempt < maxPublishAttempts; attempt++ {
@@ -66,7 +66,7 @@ func retryTransient[T any](ctx context.Context, fn func() (T, error), retryable 
 		if attempt == maxPublishAttempts-1 {
 			break
 		}
-		backoff := publishRetryBaseDelay << attempt
+		backoff := PublishRetryBaseDelay << attempt
 		timer := time.NewTimer(backoff)
 		select {
 		case <-ctx.Done():
@@ -78,7 +78,7 @@ func retryTransient[T any](ctx context.Context, fn func() (T, error), retryable 
 	return zero, lastErr
 }
 
-// isRetryablePublishError classifies a sign-path or registry-push failure as
+// IsRetryablePublishError classifies a sign-path or registry-push failure as
 // transient (worth another attempt) or terminal (fail fast). It is the single
 // classifier both retry sites consult, so the sign retry and the push retry
 // never disagree about which errors are worth retrying.
@@ -89,7 +89,7 @@ func retryTransient[T any](ctx context.Context, fn func() (T, error), retryable 
 // server error (HTTP 5xx); a network timeout; a request-scoped deadline that is
 // not the caller's own cancellation; and the keyless authority's transient
 // token-processing failure.
-func isRetryablePublishError(err error) bool {
+func IsRetryablePublishError(err error) bool {
 	if err == nil {
 		return false
 	}

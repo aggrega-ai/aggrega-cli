@@ -134,7 +134,7 @@ spec:
 		EntityPath: entityPath,
 		Registry:   "dev",
 		DryRun:     true,
-		ws:         rw,
+		Workspace:  rw,
 		Out:        &out,
 	}); err != nil {
 		t.Fatalf("pushRun: %v", err)
@@ -153,13 +153,13 @@ func TestPushArtifactResolvesAlias(t *testing.T) {
 	path, _ := makeDocsBundle(t)
 	var out bytes.Buffer
 	if err := pushArtifactRun(pushArtifactConfig{
-		FilePath: path,
-		Name:     "aggrega-docs",
-		Tag:      "1.0.0",
-		Registry: "dev",
-		DryRun:   true,
-		ws:       rw,
-		Out:      &out,
+		FilePath:  path,
+		Name:      "aggrega-docs",
+		Tag:       "1.0.0",
+		Registry:  "dev",
+		DryRun:    true,
+		Workspace: rw,
+		Out:       &out,
 	}); err != nil {
 		t.Fatalf("pushArtifactRun: %v", err)
 	}

@@ -75,7 +75,7 @@ func TestDeprecateSingle_FlagsEnrichAndStamp(t *testing.T) {
 
 	var out bytes.Buffer
 	err := deprecateRun(deprecateConfig{
-		ws:          resolveTempWorkspace(t, tempWorkspaceOptions{}),
+		Workspace:   resolveTempWorkspace(t, tempWorkspaceOptions{}),
 		Reference:   "reg.test/component/core/legacy:1.0.0",
 		Severity:    "warning",
 		Reason:      "superseded by v2",
@@ -115,7 +115,7 @@ func TestDeprecateSingle_Interactive(t *testing.T) {
 
 	var out bytes.Buffer
 	err := deprecateRun(deprecateConfig{
-		ws:         resolveTempWorkspace(t, tempWorkspaceOptions{}),
+		Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{}),
 		Reference:  "reg.test/component/core/legacy:1.0.0",
 		Target:     store,
 		SubjectRef: "1.0.0",
@@ -146,7 +146,7 @@ func TestDeprecateSingle_Interactive(t *testing.T) {
 // blocking on a prompt no one can answer.
 func TestDeprecateSingle_NonInteractiveMissingContentFails(t *testing.T) {
 	err := deprecateRun(deprecateConfig{
-		ws:        resolveTempWorkspace(t, tempWorkspaceOptions{}),
+		Workspace: resolveTempWorkspace(t, tempWorkspaceOptions{}),
 		Reference: "reg.test/component/core/legacy:1.0.0",
 		Target:    memory.New(),
 		Signer:    keyedTestSigner(t),
@@ -189,13 +189,13 @@ func TestDeprecateBatch_AttachesPerEntry(t *testing.T) {
 
 	var out bytes.Buffer
 	err := deprecateRun(deprecateConfig{
-		ws:     resolveTempWorkspace(t, tempWorkspaceOptions{Root: dir}),
-		From:   path,
-		Target: store,
-		Signer: keyedTestSigner(t),
-		Now:    func() time.Time { return time.Date(2026, 2, 3, 4, 5, 6, 0, time.UTC) },
-		Out:    &out,
-		IsTTY:  func() bool { return false },
+		Workspace: resolveTempWorkspace(t, tempWorkspaceOptions{Root: dir}),
+		From:      path,
+		Target:    store,
+		Signer:    keyedTestSigner(t),
+		Now:       func() time.Time { return time.Date(2026, 2, 3, 4, 5, 6, 0, time.UTC) },
+		Out:       &out,
+		IsTTY:     func() bool { return false },
 	})
 	if err != nil {
 		t.Fatalf("deprecateRun batch: %v", err)

@@ -185,7 +185,7 @@ spec:
 
 	store := memory.New()
 	err := pushRun(pushConfig{
-		ws:         resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
+		Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
 		EntityPath: entityPath,
 		PluginPath: pluginPath,
 		Registry:   "hub.aggrega.ai",
@@ -236,7 +236,7 @@ spec:
 
 	var out bytes.Buffer
 	err := pushRun(pushConfig{
-		ws:         resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
+		Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
 		EntityPath: entityPath,
 		PluginPath: pluginPath,
 		Registry:   "hub.aggrega.ai",

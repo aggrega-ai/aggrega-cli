@@ -11,6 +11,7 @@ import (
 
 	"oras.land/oras-go/v2"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/publishops"
 	"github.com/aggrega-ai/aggrega-cli/internal/registryindex"
 	"github.com/aggrega-ai/aggrega-cli/pkg/deprecation"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
@@ -161,11 +162,11 @@ func TestVerifiedArtifactSignerRecoversThePublishersIdentity(t *testing.T) {
 		if err != nil || !exists {
 			t.Fatalf("resolve 1.0.0: %v (exists=%v)", err, exists)
 		}
-		bundle, artifactType, serr := signDigest(ctx, signer, digest)
+		bundle, artifactType, serr := publishops.SignDigest(ctx, signer, digest)
 		if serr != nil {
 			t.Fatalf("signDigest: %v", serr)
 		}
-		if aerr := attachBundle(ctx, target.Store, "1.0.0", artifactType, bundle); aerr != nil {
+		if aerr := publishops.AttachBundle(ctx, target.Store, "1.0.0", artifactType, bundle); aerr != nil {
 			t.Fatalf("attachBundle: %v", aerr)
 		}
 		got := registryindex.VerifiedArtifactSigner(ctx, wsCfg, target.Store, "1.0.0", policy)

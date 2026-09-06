@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Cognitio S.r.l.
 
-package main
+package publishops
 
 import (
 	"context"
@@ -9,6 +9,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/aggrega-ai/aggrega-cli/pkg/signing"
+	"github.com/aggrega-ai/aggrega-cli/pkg/signing/signingtest"
 )
 
 // The ambient GitHub Actions OIDC endpoint is discovered through these
@@ -18,6 +21,15 @@ const (
 	testActionsIDTokenRequestURL   = "ACTIONS_ID_TOKEN_REQUEST_URL"
 	testActionsIDTokenRequestToken = "ACTIONS_ID_TOKEN_REQUEST_TOKEN"
 )
+
+// resolveIdentityTokenSource preserves the call shape these precedence cases are
+// written against — terminal check and token getter as separate arguments — by
+// composing them into the ladder's optional interactive rung exactly as a surface
+// adapter does, then calling the shared ladder. It therefore exercises the real
+// composition rather than standing in for it.
+func resolveIdentityTokenSource(flagToken string, look func(string) string, tty func() bool, acquire func() (string, error), validate func(string) error, client *http.Client) (string, signing.IdentityTokenSource, error) {
+	return signing.ResolveIdentityToken(flagToken, look, validate, client, interactiveAcquirer(acquire, tty))
+}
 
 func lookMap(m map[string]string) func(string) string {
 	return func(k string) string { return m[k] }
@@ -64,17 +76,17 @@ func TestResolveIdentityTokenSourceStaticPrecedence(t *testing.T) {
 		{
 			name:      "flag beats ambient",
 			flagToken: "flag-token",
-			env:       withAmbient(map[string]string{envIdentityToken: "aggrega-token", envSigstoreIDToken: "sigstore-token"}),
+			env:       withAmbient(map[string]string{signing.EnvIdentityToken: "aggrega-token", signing.EnvSigstoreIDToken: "sigstore-token"}),
 			wantToken: "flag-token",
 		},
 		{
 			name:      "AGGREGA beats ambient",
-			env:       withAmbient(map[string]string{envIdentityToken: "aggrega-token", envSigstoreIDToken: "sigstore-token"}),
+			env:       withAmbient(map[string]string{signing.EnvIdentityToken: "aggrega-token", signing.EnvSigstoreIDToken: "sigstore-token"}),
 			wantToken: "aggrega-token",
 		},
 		{
 			name:      "SIGSTORE when no flag, no AGGREGA, no ambient",
-			env:       map[string]string{envSigstoreIDToken: "sigstore-token"},
+			env:       map[string]string{signing.EnvSigstoreIDToken: "sigstore-token"},
 			wantToken: "sigstore-token",
 		},
 	}
@@ -108,7 +120,7 @@ func TestResolveIdentityTokenSourceStaticPrecedence(t *testing.T) {
 // subject validator.
 func TestResolveIdentityTokenSourceAmbientOverSigstore(t *testing.T) {
 	t.Parallel()
-	jwt := subjectfulIDToken(t)
+	jwt := signingtest.SubjectfulIDToken(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.URL.Query().Get("audience"); got != "sigstore" {
 			t.Errorf("audience = %q, want sigstore", got)
@@ -123,7 +135,7 @@ func TestResolveIdentityTokenSourceAmbientOverSigstore(t *testing.T) {
 	env := map[string]string{
 		testActionsIDTokenRequestURL:   srv.URL,
 		testActionsIDTokenRequestToken: "ambient-req-token",
-		envSigstoreIDToken:             "frozen-sigstore-token",
+		signing.EnvSigstoreIDToken:     "frozen-sigstore-token",
 	}
 	idToken, source, err := resolveIdentityTokenSource(
 		"",

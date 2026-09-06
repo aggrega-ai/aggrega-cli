@@ -67,7 +67,7 @@ spec:
 
 	store := memory.New()
 	if err := pushRun(pushConfig{
-		ws:         resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
+		Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
 		EntityPath: entityPath,
 		Registry:   "example.com",
 		PushTarget: store,
@@ -126,7 +126,7 @@ spec:
 
 	store := memory.New()
 	if err := pushRun(pushConfig{
-		ws:         resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
+		Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
 		EntityPath: entityPath,
 		PluginPath: pluginPath,
 		Registry:   "hub.aggrega.ai",

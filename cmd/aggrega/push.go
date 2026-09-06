@@ -4,21 +4,12 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"io"
-	"os"
 
 	"github.com/spf13/cobra"
-	"go.yaml.in/yaml/v3"
-	"oras.land/oras-go/v2"
 
-	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
-	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
-	"github.com/aggrega-ai/aggrega-cli/pkg/registryhost"
-	"github.com/aggrega-ai/aggrega-cli/pkg/signing"
-	"github.com/aggrega-ai/aggrega-cli/pkg/types"
-	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
+	"github.com/aggrega-ai/aggrega-cli/internal/publishops"
 )
 
 // pushFlags carries the `push` command's flag state. It is constructed per
@@ -38,6 +29,11 @@ type pushFlags struct {
 	pluginPath string
 	listKinds  bool
 }
+
+// pushConfig is the publication operation's input contract, which lives with the
+// operation rather than with this command: the same contract serves every surface
+// that publishes. The alias keeps the command layer reading in its own vocabulary.
+type pushConfig = publishops.PushConfig
 
 func newPushCmd() *cobra.Command {
 	opts := &pushFlags{}
@@ -107,7 +103,7 @@ signing refuses the push rather than leaving unsigned content published.`,
 				TimestampURL: opts.timestamp,
 				IDToken:      opts.idToken,
 				PluginPath:   opts.pluginPath,
-				ws:           rw,
+				Workspace:    rw,
 			}
 			// --sign is tri-state: when the operator passes it explicitly we
 			// honour the value; otherwise the registry policy decides whether
@@ -133,412 +129,36 @@ signing refuses the push rather than leaving unsigned content published.`,
 	return c
 }
 
-// listPublishableKinds writes each publishable entity kind on its own line, in
-// the lexical order oci.MediaTypeKinds already returns them in.
-//
-// That enumeration is the single home of the publishable-kind set, so this
-// helper neither restates it nor filters it. A restated copy agrees on the day
-// it is written and silently disagrees the day a kind is added — and a filter
-// would be such a copy expressed as an exclusion. The order is not re-sorted
-// here for the same reason: sorting twice invites the two orderings to drift.
-//
-// The emitted shape is a parsed contract, not display text. One kind per line
-// with no header, count, or decoration is what lets a caller read the set
-// without a parser, so the shape is held stable rather than adjusted for
-// readability.
+// listPublishableKinds writes each publishable entity kind on its own line. The
+// enumeration and its ordering belong to the publication layer; this is the
+// command's route to it.
 func listPublishableKinds(out io.Writer) error {
-	for _, kind := range oci.MediaTypeKinds() {
-		if _, err := fmt.Fprintln(out, kind); err != nil {
-			return err
-		}
-	}
-	return nil
+	return publishops.ListPublishableKinds(out)
 }
 
-// pushConfig is the input contract for the push workflow. The cobra
-// command populates it from its own per-command flag state at
-// invocation time; pushRun reads ONLY from cfg (no package-level
-// variables referenced inside the function body) so test bodies stay
-// race-free under t.Parallel. Same shape as pullRun(pullConfig) /
-// dispatchBuild(...).
-type pushConfig struct {
-	EntityPath string
-	Registry   string
-	DryRun     bool
-
-	// Sign is the tri-state signing request. nil means "follow the
-	// destination registry's policy" (sign by default to a
-	// signature-requiring registry, do not sign otherwise). A non-nil
-	// value is the operator's explicit --sign choice and overrides the
-	// policy default — except that the strict-refuse guardrail below
-	// always halts an unsigned push to a signature-requiring registry,
-	// regardless of this field. There is no flag to bypass that refusal.
-	Sign *bool
-
-	// KeyPath, FulcioURL, RekorURL, TimestampURL, and IDToken are the
-	// signing inputs from the CLI flags. They override the workspace
-	// config's signing block; an empty value falls through to the
-	// per-registry then global config, then to the public-good endpoint
-	// default. IDToken is never sourced from config — it is a short-lived
-	// secret supplied only by flag or the ambient OIDC environment.
-	KeyPath      string
-	FulcioURL    string
-	RekorURL     string
-	TimestampURL string
-	IDToken      string
-
-	// PluginPath is the local filesystem path to the .wasm artifact, required
-	// when publishing a Plugin entity. Publish reads these bytes,
-	// cross-checks them against the entity's authored claims, computes their
-	// content digest, and pushes them as an OCI artifact addressed by that
-	// digest before pushing the entity. Empty for every non-Plugin kind.
-	PluginPath string
-
-	// ws is the resolved workspace, threaded in by the command's RunE. Nil only
-	// when a test invokes pushRun directly; workspaceOrResolve then resolves
-	// from the working directory.
-	ws *workspaceconfig.ResolvedWorkspace
-
-	// EnvLookup reads the environment for the identity-token secret resolution.
-	// Nil means production (os.Getenv); tests inject a frozen lookup so they
-	// stay race-free under t.Parallel.
-	EnvLookup func(string) string
-
-	// TokenGetter acquires a keyless OIDC identity token interactively when no
-	// explicit token is supplied. Nil means production
-	// (acquireInteractiveIDToken); tests inject a fake so no browser opens.
-	TokenGetter func() (string, error)
-
-	// IsTTY reports whether stdin is an interactive terminal, gating the
-	// interactive acquisition path. Nil means production (isTerminal); tests
-	// inject a fixed value so the decision is deterministic.
-	IsTTY func() bool
-
-	// PushTarget overrides the production remote.Repository
-	// construction. Tests inject an in-memory oras.Target via this
-	// field; nil in production. When nil and DryRun is false,
-	// pushRun constructs the target via oci.NewRemoteRepository.
-	PushTarget oras.Target
-
-	// Signer produces the signature bundle when signing is requested.
-	// Tests inject a fake; production constructs a real signer from the
-	// resolved signing inputs. When signing is requested and Signer is
-	// nil, pushRun builds a keyed or keyless signer via buildSigner.
-	Signer signing.Signer
-
-	// Out is the sink for the command's user-facing status output (the
-	// dry-run line, "Push complete", "Already published", and the
-	// signature-attached note). Nil defaults to os.Stdout at the top of
-	// pushRun (production); tests pass a buffer to capture the output
-	// without mutating a process global.
-	Out io.Writer
-}
-
-// componentCategoryLabel is the metadata.labels key whose value the standard
-// catalog convention sets to an entity's category. Its value is stamped as the
-// searchable category annotation at publish so a registry index can filter by
-// category without fetching the entity body.
-const componentCategoryLabel = "component.aggrega.ai/category"
-
-// pushEntityHeader is the minimal YAML envelope pushRun parses out
-// of the entity file: kind, metadata.name, metadata.version,
-// metadata.description, and metadata.labels. Description and labels feed
-// the searchable annotations stamped onto the published manifest.
+// pushRun is the command line's adapter onto the publication operation. It fills
+// the seams whose production value belongs to a terminal — the interactive
+// identity rung and the terminal check — and names the command in any failure.
 //
-// A second decode of the same document happens inside pkg/oci, where
-// validateEntityVersionPathSubdir reads metadata.version to compare it against
-// the entity's per-version directory. The two are deliberately separate, and the
-// reason is worth stating so nobody folds them together on the strength of the
-// one field they share:
-//
-//   - They are not the same shape. That decode reads exactly one field; this one
-//     reads six. Five of the six are meaningless to the version check, so a
-//     shared struct would carry them into a package with no use for them.
-//   - They cannot be shared in the direction it would have to run. This package
-//     consumes pkg/oci; pkg/oci does not consume this one, so the shared type
-//     would have to live on the pkg/oci side — which is the side that needs
-//     least of it.
-//   - Their requirements on the one shared field differ, and only on this side.
-//     Labels here must survive as an ordered map because the whole map is
-//     stamped onto the published manifest and identical input must produce
-//     byte-identical published bytes. The version check has no such constraint,
-//     reads no labels, and would gain nothing from the ordering.
-//
-// So this is one document read twice for two unrelated questions, not one
-// mechanism written twice. What must stay in step is only the field NAME the two
-// agree on, and that name comes from the published entity schema rather than
-// from either struct.
-type pushEntityHeader struct {
-	Kind     string `yaml:"kind"`
-	Metadata struct {
-		Name        string `yaml:"name"`
-		Version     string `yaml:"version"`
-		Description string `yaml:"description"`
-		// Labels is decoded into an ordered map rather than a Go map because the
-		// whole map is stamped onto the published manifest, and identical input must
-		// produce byte-identical published bytes. A Go map would lose the author's
-		// order at the decode, before the publish path could preserve it.
-		Labels types.OrderedMap[string] `yaml:"labels"`
-	} `yaml:"metadata"`
-	Spec struct {
-		// Capability is the render-engine capability for Recipe / FeatureRecipe.
-		// It is part of those kinds' identity (recipeIdentityKey is
-		// provider/name:version), so the OCI location must encode it — two
-		// providers may ship a recipe of the same name.
-		Capability string `yaml:"capability"`
-	} `yaml:"spec"`
-}
-
-// pushRun bundles the entity at cfg.EntityPath and publishes it.
-// Reads workspace config; parses the entity envelope (kind,
-// metadata.name, metadata.version); bundles via pkg/oci.Bundle (which
-// handles per-kind dispatch including per-version subdir enforcement for
-// every publishable kind and Recipe / FeatureRecipe tar.gz directory
-// walking); constructs the OCI repository reference; pushes via pkg/oci.Push.
-//
-// Signing is sign-before-push: when signing is requested, pushRun computes
-// the proposed manifest digest, constructs the signer, and signs the digest
-// BEFORE any bytes reach the registry. If the signer cannot be constructed or
-// signing fails, pushRun refuses before the push — zero bytes land, so an
-// unsigned artifact can never leak onto a signature-requiring registry. The
-// signature bundle is attached as a referrer only after the push succeeds; the
-// bundle commits to the digest string, so the pre-push signature is valid for
-// the published bytes.
-//
-// Returns wrapped errors on workspace-config validation failure,
-// entity-file read / parse failure, bundle failure (including
-// ErrUnknownEntityKind for non-publishable kinds and
-// ErrEntityVersionPathMismatch for an entity whose metadata.version
-// disagrees with its per-version subdirectory), signer-construction /
-// signing failure (refused before the push), and push failure.
-//
-// When cfg.DryRun is true, pushRun prints the proposed
-// <reference>:<tag> + mediatype + bundle byte count and returns
-// without constructing a remote target. Useful for CI authoring and
-// for verifying the reference-shape construction without binding to
-// a registry.
+// Both halves are what a surface adapter is for. The operation itself defaults to
+// no interactive rung at all, because most surfaces have nobody watching; the
+// command line is the surface that does, so it supplies them here. And the
+// operation's diagnostics carry no command name, because a caller elsewhere never
+// typed one — so the name is added at this boundary, where it is true.
 func pushRun(cfg pushConfig) error {
-	if cfg.EntityPath == "" {
-		return fmt.Errorf("aggrega push: entity path required (pass as positional arg or via --entity)")
-	}
-	out := cfg.Out
-	if out == nil {
-		out = os.Stdout
-	}
-
-	rw, err := workspaceOrResolve(cfg.ws)
-	if err != nil {
-		return fmt.Errorf("workspaceconfig: %w", err)
-	}
-	wsCfg := rw.Config()
-	// Carry the resolved workspace forward so downstream helpers (pushPlugin)
-	// source the egress client from the same resolution, not a possibly-nil
-	// caller-supplied ws (a direct-call test leaves it nil).
-	cfg.ws = rw
-
-	token := cfg.Registry
-	if token == "" {
-		token = wsCfg.DefaultRegistry
-	}
-	if token == "" {
-		return fmt.Errorf("aggrega push: no destination registry; set --registry or workspace.default_registry")
-	}
-	registry, err := wsCfg.ResolveRegistry(token)
-	if err != nil {
+	cfg.TokenGetter = tokenGetterOrDefault(cfg.TokenGetter)
+	cfg.IsTTY = ttyOrDefault(cfg.IsTTY)
+	cfg.EnvLookup = envLookupOrGetenv(cfg.EnvLookup)
+	if err := publishops.Push(cfg); err != nil {
 		return fmt.Errorf("aggrega push: %w", err)
 	}
-
-	data, err := os.ReadFile(cfg.EntityPath)
-	if err != nil {
-		return fmt.Errorf("aggrega push: read %s: %w", cfg.EntityPath, err)
-	}
-	var header pushEntityHeader
-	if err := yaml.Unmarshal(data, &header); err != nil {
-		return fmt.Errorf("aggrega push: parse %s: %w", cfg.EntityPath, err)
-	}
-	if header.Kind == "" {
-		return fmt.Errorf("aggrega push: %s: missing kind field", cfg.EntityPath)
-	}
-	if header.Metadata.Name == "" {
-		return fmt.Errorf("aggrega push: %s: missing metadata.name", cfg.EntityPath)
-	}
-	if header.Metadata.Version == "" {
-		return fmt.Errorf("aggrega push: %s: missing metadata.version", cfg.EntityPath)
-	}
-
-	// Signing policy. A push is refused unsigned when EITHER the destination
-	// registry requires signatures OR the workspace signing policy requires a
-	// signature for this artifact kind. Signing is on by default whenever
-	// either condition holds. An explicit --sign value overrides the default
-	// for whether to sign, but never relaxes the refusal: there is no flag to
-	// push unsigned content when a signature is required. The kind is read from
-	// the entity header (parsed above) so the org policy's kind scope can be
-	// evaluated before any bytes reach the registry — the refusal, like the
-	// per-registry one, halts before the push network call so an unsigned
-	// artifact never leaks.
-	requiresSignatures := wsCfg.RegistrySigningRequiredForKind(registryhost.Of(registry), header.Kind)
-	orgRequired := wsCfg.SigningRequiredForKind(header.Kind)
-	wantSign := requiresSignatures || orgRequired
-	if cfg.Sign != nil {
-		wantSign = *cfg.Sign
-	}
-	if (requiresSignatures || orgRequired) && !wantSign {
-		// Distinguish the cause: the org-policy refusal names the kind and
-		// wraps its own sentinel; the per-registry refusal keeps the
-		// registry-specific message and sentinel. When both conditions hold the
-		// registry requirement is reported (it is the more specific
-		// destination-scoped cause).
-		if requiresSignatures {
-			return fmt.Errorf("aggrega push: registry %q requires signatures; re-run signing the artifact (there is no flag to push unsigned content here): %w",
-				registry, signing.ErrUnsignedPushRefused())
-		}
-		return fmt.Errorf("aggrega push: the signing policy requires a signature for kind %q; re-run signing the artifact (there is no flag to push unsigned content here): %w",
-			header.Kind, signing.ErrSigningPolicyRequiresSignature())
-	}
-
-	// A Plugin publishes as ONE manifest — the entity YAML as the config blob,
-	// the .wasm as an inline layer addressed by its content digest — with a
-	// publish-time describe()-cross-check against the .wasm bytes. The entity
-	// body still carries a machine-derived host-function record; that plus the
-	// entity-and-executable-in-one-manifest packing differs enough from the
-	// single-artifact catalog-kind path that it has its own helper; signing,
-	// the immutability guard, and the content-digest spelling are reused, not
-	// re-spelled.
-	if header.Kind == "Plugin" {
-		return pushPlugin(out, cfg, registry, wantSign, header.Metadata.Name, header.Metadata.Version, cfg.EntityPath, data)
-	}
-
-	bundleBytes, mediaType, err := oci.Bundle(header.Kind, cfg.EntityPath)
-	if err != nil {
-		return fmt.Errorf("aggrega push: bundle %s: %w", cfg.EntityPath, err)
-	}
-
-	reference := buildPushReference(registry, header.Kind, header.Spec.Capability, header.Metadata.Name)
-	tag := header.Metadata.Version
-
-	// Searchable catalog annotations, built once and stamped identically onto
-	// the digest preview and the real push. Building them once is load-bearing:
-	// the previewed digest is signed and compared by the immutability guard, so
-	// the preview must stamp exactly the annotations the push will.
-	//
-	// The whole authored label map travels, not just the category: a label
-	// selector filters on every label an author wrote, and it can only match what
-	// the manifest carries.
-	category, _ := header.Metadata.Labels.Get(componentCategoryLabel)
-	annotations, err := oci.SearchableMetadata{
-		Description: header.Metadata.Description,
-		Category:    category,
-		Kind:        header.Kind,
-		Labels:      &header.Metadata.Labels,
-	}.Annotations()
-	if err != nil {
-		return fmt.Errorf("aggrega push: %s: %w", cfg.EntityPath, err)
-	}
-
-	if cfg.DryRun {
-		fmt.Fprintf(out, "aggrega push (dry-run): %s:%s\n  kind: %s\n  mediatype: %s\n  size: %d bytes\n",
-			reference, tag, header.Kind, mediaType, len(bundleBytes))
-		return nil
-	}
-
-	target := cfg.PushTarget
-	if target == nil {
-		httpClient, err := workspaceEgressClient(wsCfg)
-		if err != nil {
-			return fmt.Errorf("aggrega push: %s: %w", reference, err)
-		}
-		repo, err := oci.NewRemoteRepository(reference, httpClient)
-		if err != nil {
-			return fmt.Errorf("aggrega push: %s: %w", reference, err)
-		}
-		target = repo
-	}
-
-	ctx := context.Background()
-
-	// Immutability guard: published bytes are frozen. HEAD the target tag
-	// before publishing and compare the digest it points at with the digest
-	// this content would produce. Re-pushing byte-identical content is an
-	// idempotent no-op; overwriting an existing tag with different content is
-	// refused. Changed content is published under a new version — aggrega lint
-	// --pre-publish gates that bump against the previous release. There is no
-	// --force escape: the registry has no overwrite path the operator can opt
-	// into, by design.
-	existingDigest, exists, err := oci.Resolve(ctx, target, tag)
-	if err != nil {
-		return fmt.Errorf("aggrega push: resolve %s:%s: %w", reference, tag, err)
-	}
-	proposedDigest, err := oci.ManifestDigest(ctx, mediaType, bundleBytes, annotations)
-	if err != nil {
-		return fmt.Errorf("aggrega push: %s:%s: %w", reference, tag, err)
-	}
-	if exists {
-		if existingDigest == proposedDigest {
-			fmt.Fprintf(out, "Already published: %s:%s (%s)\n", reference, tag, existingDigest)
-			return nil
-		}
-		return fmt.Errorf("aggrega push: %s:%s is already published as %s; refusing to overwrite with %s — publish a new version (aggrega lint --pre-publish verifies the bump): %w",
-			reference, tag, existingDigest, proposedDigest, oci.ErrImmutableTagConflict())
-	}
-
-	// Sign-before-push: produce the signature bundle BEFORE any bytes reach
-	// the registry. The manifest digest is known pre-push, and the bundle
-	// commits to the digest string, so the signature is valid for the bytes
-	// that will land. If the signer cannot be constructed or signing fails,
-	// refuse here — nothing is pushed, so an unsigned artifact never leaks
-	// onto a signature-requiring registry. The bundle is held and attached
-	// as a referrer only after the push succeeds.
-	var (
-		signatureBundle []byte
-		signatureType   string
-	)
-	if wantSign {
-		signatureBundle, signatureType, err = signPushDigest(ctx, cfg, registry, reference, tag, proposedDigest)
-		if err != nil {
-			return err
-		}
-	}
-
-	digest, err := retryTransient(ctx, func() (string, error) {
-		return oci.Push(ctx, target, tag, mediaType, bundleBytes, annotations)
-	}, isRetryablePublishError)
-	if err != nil {
-		return fmt.Errorf("aggrega push: push %s:%s: %w", reference, tag, err)
-	}
-	fmt.Fprintf(out, "Push complete: %s:%s (%s)\n", reference, tag, digest)
-
-	if wantSign {
-		if err := attachBundle(ctx, target, tag, signatureType, signatureBundle); err != nil {
-			return fmt.Errorf("aggrega push: attach signature to %s:%s: %w", reference, tag, err)
-		}
-		fmt.Fprintf(out, "Signature attached: %s:%s\n", reference, tag)
-	}
 	return nil
 }
 
-// buildPushReference composes the canonical OCI repository reference
-// for a catalog entity: <registry>/<kindPathSegment>/<metadata.name>.
-// For most kinds the path segment is the lowercased kind name
-// (Component → component, Feature → feature, etc.) per the mediatype
-// convention (application/vnd.aggrega.<kindLower>.v1...);
-// metadata.name may itself contain "/" separators (e.g.,
-// "core/server", "core/compute/api-server") and is preserved verbatim.
-//
-// Plugin kinds carry a pluginType scope in their identity: the path
-// segment is `plugin`, and the caller passes the plugin's
-// metadata.pluginType as the scope — e.g., pluginType="linter" with a
-// bare metadata.name="aggrega-publishing" produces
-// <registry>/plugin/linter/aggrega-publishing. The pluginType segment
-// is part of the plugin's identity (same name in different sockets is a
-// different plugin); deriving the location from pluginType plus the bare
-// name keeps the URI symmetric with the catalog filesystem layout
-// `aggrega-hub/aggrega-catalog/plugin/<pluginType>/<name>`.
-//
-// The push-side construction here MUST agree with the consume-side
-// catalog.SplitURIForOCI which parses URIs back into their
-// (reference, tag) pair at the closure walker's Tier-3 dispatch.
-// TestPushReferenceRoundTripsThroughSplitURIForOCI pins the
-// symmetry across all publishable catalog kinds.
+// buildPushReference composes the canonical OCI repository reference for a
+// catalog entity. The rule belongs to the publication layer, which publishes
+// through it; this is the command package's route to the same rule, so a test
+// pinning the round trip against the consume-side parser reads one construction.
 func buildPushReference(registry, kind, provider, metadataName string) string {
-	return registry + "/" + catalog.OCILocation(kind, provider, metadataName)
+	return publishops.BuildPushReference(registry, kind, provider, metadataName)
 }

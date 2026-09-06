@@ -104,7 +104,7 @@ func TestPublishArtifactsLibraryEndToEnd(t *testing.T) {
 
 	var out bytes.Buffer
 	if err := pushRun(pushConfig{
-		ws:         resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
+		Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
 		EntityPath: entityPath,
 		Registry:   "example.com",
 		PushTarget: store,
@@ -204,7 +204,7 @@ func TestPublishArtifactsLibraryIsDeterministic(t *testing.T) {
 		t.Fatalf("orasoci.New: %v", err)
 	}
 	var first bytes.Buffer
-	if err := pushRun(pushConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), EntityPath: entityPath, Registry: "example.com", PushTarget: store, Out: &first}); err != nil {
+	if err := pushRun(pushConfig{Workspace: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), EntityPath: entityPath, Registry: "example.com", PushTarget: store, Out: &first}); err != nil {
 		t.Fatalf("first publish: %v", err)
 	}
 	if !strings.Contains(first.String(), "Push complete:") {
@@ -212,7 +212,7 @@ func TestPublishArtifactsLibraryIsDeterministic(t *testing.T) {
 	}
 
 	var second bytes.Buffer
-	if err := pushRun(pushConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), EntityPath: entityPath, Registry: "example.com", PushTarget: store, Out: &second}); err != nil {
+	if err := pushRun(pushConfig{Workspace: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), EntityPath: entityPath, Registry: "example.com", PushTarget: store, Out: &second}); err != nil {
 		t.Fatalf("re-publishing identical content must be an idempotent no-op, not a conflict: %v", err)
 	}
 	if !strings.Contains(second.String(), "Already published:") {

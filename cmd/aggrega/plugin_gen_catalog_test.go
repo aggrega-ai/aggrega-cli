@@ -15,6 +15,7 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/gencatalog"
+	"github.com/aggrega-ai/aggrega-cli/internal/publishops"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/embedded"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/entitysynth"
@@ -88,9 +89,9 @@ spec:
 	// spec.plugin field.
 	wantLocation := buildPushReference(registry, "Plugin", entity.Metadata.PluginType, entity.Metadata.Name)
 
-	cfg := pushConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: dir}), PluginPath: wasmPath, DryRun: true}
+	cfg := pushConfig{Workspace: resolveTempWorkspace(t, tempWorkspaceOptions{Root: dir}), PluginPath: wasmPath, DryRun: true}
 	var out bytes.Buffer
-	if err := pushPlugin(&out, cfg, registry, false, entity.Metadata.Name, entity.Metadata.Version, entPath, entityYAML); err != nil {
+	if err := publishops.PushPlugin(&out, cfg, registry, false, entity.Metadata.Name, entity.Metadata.Version, entPath, entityYAML); err != nil {
 		t.Fatalf("push --plugin --dry-run cross-check failed: %v", err)
 	}
 	if !strings.Contains(out.String(), wantLocation) {
@@ -159,9 +160,9 @@ spec:
 		t.Fatalf("generated entity did not stamp the derived host functions: %+v, want %v", entity.Spec.Runtime, wantHF)
 	}
 
-	cfg := pushConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: dir}), PluginPath: wasmPath, DryRun: true}
+	cfg := pushConfig{Workspace: resolveTempWorkspace(t, tempWorkspaceOptions{Root: dir}), PluginPath: wasmPath, DryRun: true}
 	var out bytes.Buffer
-	if err := pushPlugin(&out, cfg, registry, false, entity.Metadata.Name, entity.Metadata.Version, entPath, entityYAML); err != nil {
+	if err := publishops.PushPlugin(&out, cfg, registry, false, entity.Metadata.Name, entity.Metadata.Version, entPath, entityYAML); err != nil {
 		if errors.Is(err, wasm.ErrWasmHostFunctionsStampMismatch()) {
 			t.Fatalf("push re-derived a different host-function set than the generator stamped: %v", err)
 		}

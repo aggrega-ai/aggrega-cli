@@ -44,7 +44,7 @@ func TestPushKeyedEndToEndSignsBeforePush(t *testing.T) {
 
 	sign := true
 	if err := pushRun(pushConfig{
-		ws:         resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}),
+		Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}),
 		EntityPath: entityPath,
 		Registry:   "secure.example.com",
 		PushTarget: store,
@@ -89,7 +89,7 @@ func TestPushSignerErrorLeavesZeroBytes(t *testing.T) {
 
 	sign := true
 	err := pushRun(pushConfig{
-		ws:         resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}),
+		Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}),
 		EntityPath: entityPath,
 		Registry:   "secure.example.com",
 		PushTarget: store,
@@ -114,7 +114,7 @@ func TestPushKeyedMissingKeyLeavesZeroBytes(t *testing.T) {
 
 	sign := true
 	err := pushRun(pushConfig{
-		ws:         resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}),
+		Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}),
 		EntityPath: entityPath,
 		Registry:   "secure.example.com",
 		PushTarget: store,
@@ -141,7 +141,7 @@ func TestPushKeylessNoTokenNoTTYLeavesZeroBytes(t *testing.T) {
 
 	sign := true
 	err := pushRun(pushConfig{
-		ws:          resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}),
+		Workspace:   resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}),
 		EntityPath:  entityPath,
 		Registry:    "secure.example.com",
 		PushTarget:  store,
@@ -156,76 +156,6 @@ func TestPushKeylessNoTokenNoTTYLeavesZeroBytes(t *testing.T) {
 	}
 	if _, exists, _ := oci.Resolve(ctx, store, "1.0.0"); exists {
 		t.Error("keyless-no-token let bytes through: the tag exists after a refused push")
-	}
-}
-
-// TestBuildSignerDefaultsToPublicGood proves that with no URL flags or
-// config, buildSigner produces a keyless signer that defaults Fulcio and Rekor
-// to the public-good Sigstore instances. The RFC3161 timestamp authority is
-// NOT defaulted — it is opt-in, so TimestampURL stays empty unless supplied;
-// the keyless trusted timestamp comes from Rekor's transparency-log inclusion.
-func TestBuildSignerDefaultsToPublicGood(t *testing.T) {
-	t.Parallel()
-	signer, err := buildSigner(signerParams{IDToken: subjectfulIDToken(t)})
-	if err != nil {
-		t.Fatalf("buildSigner: %v", err)
-	}
-	keyless, ok := signer.(*signing.KeylessSigner)
-	if !ok {
-		t.Fatalf("buildSigner returned %T, want *KeylessSigner", signer)
-	}
-	if keyless.FulcioURL != signing.DefaultFulcioURL {
-		t.Errorf("FulcioURL = %q, want default %q", keyless.FulcioURL, signing.DefaultFulcioURL)
-	}
-	if keyless.RekorURL != signing.DefaultRekorURL {
-		t.Errorf("RekorURL = %q, want default %q", keyless.RekorURL, signing.DefaultRekorURL)
-	}
-	if keyless.TimestampURL != "" {
-		t.Errorf("TimestampURL = %q, want empty (timestamp authority is opt-in, not defaulted)", keyless.TimestampURL)
-	}
-}
-
-// TestBuildSignerTimestampOptIn proves the RFC3161 timestamp authority is
-// honored when supplied (the opt-in path), while Fulcio and Rekor still take
-// their public-good defaults for the unset fields.
-func TestBuildSignerTimestampOptIn(t *testing.T) {
-	t.Parallel()
-	signer, err := buildSigner(signerParams{
-		IDToken:      subjectfulIDToken(t),
-		TimestampURL: "https://tsa.private/api/v1/timestamp",
-	})
-	if err != nil {
-		t.Fatalf("buildSigner: %v", err)
-	}
-	keyless := signer.(*signing.KeylessSigner)
-	if keyless.TimestampURL != "https://tsa.private/api/v1/timestamp" {
-		t.Errorf("TimestampURL = %q, want the explicitly-supplied endpoint", keyless.TimestampURL)
-	}
-	if keyless.FulcioURL != signing.DefaultFulcioURL {
-		t.Errorf("FulcioURL = %q, want default for the unset field", keyless.FulcioURL)
-	}
-	if keyless.RekorURL != signing.DefaultRekorURL {
-		t.Errorf("RekorURL = %q, want default for the unset field", keyless.RekorURL)
-	}
-}
-
-// TestBuildSignerFlagOverridesDefault proves an explicit URL beats the
-// public-good default in buildSigner.
-func TestBuildSignerFlagOverridesDefault(t *testing.T) {
-	t.Parallel()
-	signer, err := buildSigner(signerParams{
-		IDToken:   subjectfulIDToken(t),
-		FulcioURL: "https://fulcio.private",
-	})
-	if err != nil {
-		t.Fatalf("buildSigner: %v", err)
-	}
-	keyless := signer.(*signing.KeylessSigner)
-	if keyless.FulcioURL != "https://fulcio.private" {
-		t.Errorf("FulcioURL = %q, want explicit override", keyless.FulcioURL)
-	}
-	if keyless.RekorURL != signing.DefaultRekorURL {
-		t.Errorf("RekorURL = %q, want default for the unset field", keyless.RekorURL)
 	}
 }
 
@@ -245,7 +175,7 @@ func TestSignAndPushShareOneSigningPath(t *testing.T) {
 	pushStore := memory.New()
 	sign := true
 	if err := pushRun(pushConfig{
-		ws:         resolveTempWorkspace(t, tempWorkspaceOptions{Root: pushWSRoot}),
+		Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{Root: pushWSRoot}),
 		EntityPath: pushEntity,
 		Registry:   "secure.example.com",
 		PushTarget: pushStore,
@@ -264,7 +194,7 @@ func TestSignAndPushShareOneSigningPath(t *testing.T) {
 	signStore := memory.New()
 	// Re-push the identical bytes into a second store so the digest matches.
 	if err := pushRun(pushConfig{
-		ws:         resolveTempWorkspace(t, tempWorkspaceOptions{Root: pushWSRoot}),
+		Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{Root: pushWSRoot}),
 		EntityPath: pushEntity,
 		Registry:   "example.com",
 		PushTarget: signStore,
@@ -279,7 +209,7 @@ func TestSignAndPushShareOneSigningPath(t *testing.T) {
 		t.Fatalf("seed digest %q != push digest %q", signDigestVal, pushDigest)
 	}
 	if err := signRun(signConfig{
-		ws:          resolveTempWorkspace(t, tempWorkspaceOptions{Root: pushWSRoot}),
+		Workspace:   resolveTempWorkspace(t, tempWorkspaceOptions{Root: pushWSRoot}),
 		References:  []string{"secure.example.com/component/core/api-server:1.0.0"},
 		SubjectRefs: map[string]string{"secure.example.com/component/core/api-server:1.0.0": "1.0.0"},
 		Target:      signStore,

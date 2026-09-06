@@ -19,6 +19,7 @@ import (
 	"oras.land/oras-go/v2"
 	"oras.land/oras-go/v2/content/memory"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/publishops"
 	"github.com/aggrega-ai/aggrega-cli/internal/registryindex"
 	"github.com/aggrega-ai/aggrega-cli/internal/registryops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/deprecation"
@@ -192,7 +193,7 @@ func (s listingSpySource) ConditionalTags(ctx context.Context, repo, ifNoneMatch
 func componentFixtureLabels() *types.OrderedMap[string] {
 	labels := types.NewOrderedMap[string]()
 	labels.Set("component.aggrega.ai/type", "server")
-	labels.Set(componentCategoryLabel, "compute")
+	labels.Set(publishops.ComponentCategoryLabel, "compute")
 	return labels
 }
 
@@ -369,15 +370,15 @@ func TestRegistryUpdateBuildsSearchableIndex(t *testing.T) {
 	if comp.Labels == nil {
 		t.Fatalf("component labels nil; want the published label map")
 	}
-	if v, ok := comp.Labels.Get(componentCategoryLabel); !ok || v != "compute" {
-		t.Errorf("component label %s = %q (ok=%v); want compute", componentCategoryLabel, v, ok)
+	if v, ok := comp.Labels.Get(publishops.ComponentCategoryLabel); !ok || v != "compute" {
+		t.Errorf("component label %s = %q (ok=%v); want compute", publishops.ComponentCategoryLabel, v, ok)
 	}
 	// Every authored label is read back, not only the category, and in author order.
 	if v, ok := comp.Labels.Get("component.aggrega.ai/type"); !ok || v != "server" {
 		t.Errorf("component label component.aggrega.ai/type = %q (ok=%v); want server", v, ok)
 	}
-	if keys := comp.Labels.Keys(); len(keys) != 2 || keys[0] != "component.aggrega.ai/type" || keys[1] != componentCategoryLabel {
-		t.Errorf("component label keys = %v; want author order [component.aggrega.ai/type %s]", keys, componentCategoryLabel)
+	if keys := comp.Labels.Keys(); len(keys) != 2 || keys[0] != "component.aggrega.ai/type" || keys[1] != publishops.ComponentCategoryLabel {
+		t.Errorf("component label keys = %v; want author order [component.aggrega.ai/type %s]", keys, publishops.ComponentCategoryLabel)
 	}
 
 	plug := loaded.Records[1]

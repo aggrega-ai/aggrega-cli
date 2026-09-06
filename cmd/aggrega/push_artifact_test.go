@@ -58,13 +58,13 @@ func TestPushArtifactDryRunPrintsDocsReference(t *testing.T) {
 	path, _ := makeDocsBundle(t)
 	var buf bytes.Buffer
 	if err := pushArtifactRun(pushArtifactConfig{
-		ws:       resolveTempWorkspace(t, tempWorkspaceOptions{}),
-		FilePath: path,
-		Name:     "aggrega-docs",
-		Tag:      "1.0.0",
-		Registry: "example.com",
-		DryRun:   true,
-		Out:      &buf,
+		Workspace: resolveTempWorkspace(t, tempWorkspaceOptions{}),
+		FilePath:  path,
+		Name:      "aggrega-docs",
+		Tag:       "1.0.0",
+		Registry:  "example.com",
+		DryRun:    true,
+		Out:       &buf,
 	}); err != nil {
 		t.Fatalf("pushArtifactRun --dry-run: %v", err)
 	}
@@ -92,7 +92,7 @@ func TestPushArtifactRoundTripsThroughFileBackedStore(t *testing.T) {
 
 	var buf bytes.Buffer
 	if err := pushArtifactRun(pushArtifactConfig{
-		ws:         resolveTempWorkspace(t, tempWorkspaceOptions{}),
+		Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{}),
 		FilePath:   path,
 		Name:       "aggrega-docs",
 		Tag:        "1.0.0",
@@ -132,7 +132,7 @@ func TestPushArtifactBypassesKindDispatch(t *testing.T) {
 
 	// The entity push path halts: the gzipped bundle carries no kind field.
 	entityErr := pushRun(pushConfig{
-		ws:         resolveTempWorkspace(t, tempWorkspaceOptions{}),
+		Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{}),
 		EntityPath: path,
 		Registry:   "example.com",
 		PushTarget: memory.New(),
@@ -143,7 +143,7 @@ func TestPushArtifactBypassesKindDispatch(t *testing.T) {
 
 	// The generic data-artifact path publishes the identical bytes.
 	if err := pushArtifactRun(pushArtifactConfig{
-		ws:         resolveTempWorkspace(t, tempWorkspaceOptions{}),
+		Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{}),
 		FilePath:   path,
 		Name:       "aggrega-docs",
 		Tag:        "1.0.0",
@@ -166,7 +166,7 @@ func TestPushArtifactImmutableTag(t *testing.T) {
 	// First publish of a fresh tag succeeds.
 	var first bytes.Buffer
 	if err := pushArtifactRun(pushArtifactConfig{
-		ws:         resolveTempWorkspace(t, tempWorkspaceOptions{}),
+		Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{}),
 		FilePath:   path,
 		Name:       "aggrega-docs",
 		Tag:        "1.0.0",
@@ -183,7 +183,7 @@ func TestPushArtifactImmutableTag(t *testing.T) {
 	// Re-push of identical bytes under the same tag: idempotent no-op.
 	var second bytes.Buffer
 	if err := pushArtifactRun(pushArtifactConfig{
-		ws:         resolveTempWorkspace(t, tempWorkspaceOptions{}),
+		Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{}),
 		FilePath:   path,
 		Name:       "aggrega-docs",
 		Tag:        "1.0.0",
@@ -207,7 +207,7 @@ func TestPushArtifactImmutableTag(t *testing.T) {
 	}
 	var third bytes.Buffer
 	err := pushArtifactRun(pushArtifactConfig{
-		ws:         resolveTempWorkspace(t, tempWorkspaceOptions{}),
+		Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{}),
 		FilePath:   otherPath,
 		Name:       "aggrega-docs",
 		Tag:        "1.0.0",
@@ -229,7 +229,7 @@ func TestPushArtifactSignsByReference(t *testing.T) {
 
 	path, _ := makeDocsBundle(t)
 	if err := pushArtifactRun(pushArtifactConfig{
-		ws:         resolveTempWorkspace(t, tempWorkspaceOptions{}),
+		Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{}),
 		FilePath:   path,
 		Name:       "aggrega-docs",
 		Tag:        "1.0.0",
@@ -247,7 +247,7 @@ func TestPushArtifactSignsByReference(t *testing.T) {
 	ref := "example.com/docs/aggrega-docs:1.0.0"
 	fake := &signingtest.FakeSigner{}
 	if err := signRun(signConfig{
-		ws:          resolveTempWorkspace(t, tempWorkspaceOptions{}),
+		Workspace:   resolveTempWorkspace(t, tempWorkspaceOptions{}),
 		References:  []string{ref},
 		SubjectRefs: map[string]string{ref: "1.0.0"},
 		Target:      store,

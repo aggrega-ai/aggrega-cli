@@ -61,7 +61,7 @@ spec:
 		EntityPath: entityPath,
 		Registry:   host,
 		PushTarget: store,
-		ws:         rw,
+		Workspace:  rw,
 	}); err != nil {
 		t.Fatalf("pushRun: %v", err)
 	}

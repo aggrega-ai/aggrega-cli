@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Cognitio S.r.l.
 
-package main
+package publishops
 
 import (
 	"context"
@@ -10,19 +10,20 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/signing"
+	"github.com/aggrega-ai/aggrega-cli/pkg/signing/signingtest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
-// TestSignAmbientSelfMints proves a keyless sign batch in a simulated GitHub
-// Actions environment — no explicit token, non-interactive — resolves the
+// TestDeprecateSignerAmbientSelfMints proves a keyless deprecate in a simulated
+// GitHub Actions environment — no explicit token, non-interactive — resolves the
 // ambient OIDC endpoint as a live source and self-mints, exactly as a push does,
-// rather than refusing. The batch resolves once (prepare) and the per-reference
-// signer reuses that live source, so every signature mints a fresh token from
-// the ambient endpoint. Before the token unification a non-TTY sign without an
-// exported token refused; self-minting here is the intended behavioral change.
-func TestSignAmbientSelfMints(t *testing.T) {
+// rather than refusing. Before the token unification the string-only resolver
+// had no ambient tier, so a non-TTY deprecate without an exported token refused;
+// that this path now returns a signer whose live source fetches a fresh token
+// from the ambient endpoint is the intended behavioral change.
+func TestDeprecateSignerAmbientSelfMints(t *testing.T) {
 	t.Parallel()
-	jwt := subjectfulIDToken(t)
+	jwt := signingtest.SubjectfulIDToken(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.URL.Query().Get("audience"); got != "sigstore" {
 			t.Errorf("audience = %q, want sigstore", got)
@@ -43,33 +44,22 @@ func TestSignAmbientSelfMints(t *testing.T) {
 		testActionsIDTokenRequestToken: "ambient-req-token",
 	}
 
-	b := &batchSigner{cfg: signConfig{
-		References:  []string{"reg.example.com/x:1.0.0"},
-		ws:          rw,
+	signer, err := deprecateSigner(DeprecateConfig{
+		Reference:   "reg.example.com/x:1.0.0",
+		Workspace:   rw,
 		EnvLookup:   lookMap(env),
 		IsTTY:       func() bool { return false },
 		TokenGetter: noAcquire(t),
-	}}
-	if err := b.prepare(); err != nil {
-		t.Fatalf("ambient sign refused rather than self-minting: %v", err)
-	}
-	if b.tokenSource == nil {
-		t.Fatal("want the ambient live source stored on the batch, got nil")
-	}
-	if b.idToken != "" {
-		t.Fatalf("want an empty static token on the ambient path, got %q", b.idToken)
-	}
-
-	signer, err := b.buildRefSigner(b.cfg.References[0])
+	})
 	if err != nil {
-		t.Fatalf("buildRefSigner: %v", err)
+		t.Fatalf("ambient deprecate refused rather than self-minting: %v", err)
 	}
 	ks, ok := signer.(*signing.KeylessSigner)
 	if !ok {
 		t.Fatalf("want a keyless signer, got %T", signer)
 	}
 	if ks.TokenSource == nil {
-		t.Fatal("want the live ambient source threaded to the per-reference signer, got nil")
+		t.Fatal("want a live ambient token source on the keyless signer, got nil")
 	}
 	got, ferr := ks.TokenSource(context.Background())
 	if ferr != nil {

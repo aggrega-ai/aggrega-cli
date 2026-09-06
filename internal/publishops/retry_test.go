@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Cognitio S.r.l.
 
-package main
+package publishops
 
 import (
 	"context"
@@ -19,9 +19,9 @@ import (
 // production default afterward.
 func shrinkRetryDelay(t *testing.T) {
 	t.Helper()
-	prev := publishRetryBaseDelay
-	publishRetryBaseDelay = 1 * time.Millisecond
-	t.Cleanup(func() { publishRetryBaseDelay = prev })
+	prev := PublishRetryBaseDelay
+	PublishRetryBaseDelay = 1 * time.Millisecond
+	t.Cleanup(func() { PublishRetryBaseDelay = prev })
 }
 
 // timeoutError is a net.Error whose Timeout reports true, standing in for a
@@ -35,15 +35,15 @@ func (timeoutError) Temporary() bool { return true }
 var errRetryable = errors.New("retryable")
 
 // alwaysRetryable classifies errRetryable as retryable and everything else as
-// terminal, isolating retryTransient's loop control from the production
+// terminal, isolating RetryTransient's loop control from the production
 // classifier.
 func alwaysRetryable(err error) bool { return errors.Is(err, errRetryable) }
 
 func TestRetryTransientRetryableThenSuccess(t *testing.T) {
-	// Not parallel: mutates the process-global publishRetryBaseDelay seam other tests read.
+	// Not parallel: mutates the process-global PublishRetryBaseDelay seam other tests read.
 	shrinkRetryDelay(t)
 	calls := 0
-	got, err := retryTransient(context.Background(), func() (string, error) {
+	got, err := RetryTransient(context.Background(), func() (string, error) {
 		calls++
 		if calls == 1 {
 			return "", errRetryable
@@ -51,7 +51,7 @@ func TestRetryTransientRetryableThenSuccess(t *testing.T) {
 		return "ok", nil
 	}, alwaysRetryable)
 	if err != nil {
-		t.Fatalf("retryTransient: unexpected error %v", err)
+		t.Fatalf("RetryTransient: unexpected error %v", err)
 	}
 	if got != "ok" {
 		t.Errorf("value = %q, want %q", got, "ok")
@@ -62,10 +62,10 @@ func TestRetryTransientRetryableThenSuccess(t *testing.T) {
 }
 
 func TestRetryTransientExhaustsAttempts(t *testing.T) {
-	// Not parallel: mutates the process-global publishRetryBaseDelay seam other tests read.
+	// Not parallel: mutates the process-global PublishRetryBaseDelay seam other tests read.
 	shrinkRetryDelay(t)
 	calls := 0
-	_, err := retryTransient(context.Background(), func() (string, error) {
+	_, err := RetryTransient(context.Background(), func() (string, error) {
 		calls++
 		return "", errRetryable
 	}, alwaysRetryable)
@@ -78,11 +78,11 @@ func TestRetryTransientExhaustsAttempts(t *testing.T) {
 }
 
 func TestRetryTransientTerminalFailsFast(t *testing.T) {
-	// Not parallel: mutates the process-global publishRetryBaseDelay seam other tests read.
+	// Not parallel: mutates the process-global PublishRetryBaseDelay seam other tests read.
 	shrinkRetryDelay(t)
 	terminal := errors.New("terminal")
 	calls := 0
-	_, err := retryTransient(context.Background(), func() (string, error) {
+	_, err := RetryTransient(context.Background(), func() (string, error) {
 		calls++
 		return "", terminal
 	}, alwaysRetryable)
@@ -111,8 +111,8 @@ func TestIsRetryablePublishError(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := isRetryablePublishError(tc.err); got != tc.want {
-				t.Errorf("isRetryablePublishError(%v) = %v, want %v", tc.err, got, tc.want)
+			if got := IsRetryablePublishError(tc.err); got != tc.want {
+				t.Errorf("IsRetryablePublishError(%v) = %v, want %v", tc.err, got, tc.want)
 			}
 		})
 	}

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Cognitio S.r.l.
 
-package main
+package publishops
 
 import (
 	"context"
@@ -28,9 +28,9 @@ func TestSignPushDigestRetriesTransientThenSucceeds(t *testing.T) {
 			return nil
 		},
 	}
-	bundle, artifactType, err := signPushDigestWith(context.Background(), fake, "example.com/component/core/api-server", "1.0.0", "sha256:abc")
+	bundle, artifactType, err := signPublishDigestWith(context.Background(), fake, "example.com/component/core/api-server", "1.0.0", "sha256:abc")
 	if err != nil {
-		t.Fatalf("signPushDigestWith: unexpected error %v", err)
+		t.Fatalf("signPublishDigestWith: unexpected error %v", err)
 	}
 	if len(bundle) == 0 {
 		t.Error("bundle is empty after a successful retry")
@@ -50,7 +50,7 @@ func TestSignPushDigestTerminalNotRetriedStillRefused(t *testing.T) {
 	// Not parallel: mutates the process-global publishRetryBaseDelay seam other tests read.
 	shrinkRetryDelay(t)
 	fake := &signingtest.FakeSigner{Err: errors.New("permanent signing failure")}
-	_, _, err := signPushDigestWith(context.Background(), fake, "example.com/component/core/api-server", "1.0.0", "sha256:abc")
+	_, _, err := signPublishDigestWith(context.Background(), fake, "example.com/component/core/api-server", "1.0.0", "sha256:abc")
 	if !errors.Is(err, signing.ErrUnsignedPushRefused()) {
 		t.Fatalf("error = %v, want wrapped ErrUnsignedPushRefused", err)
 	}

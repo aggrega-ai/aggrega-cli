@@ -11,27 +11,9 @@ import (
 
 	"oras.land/oras-go/v2/content/memory"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/publishops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/signing/signingtest"
 )
-
-// craftJWT builds a syntactically valid JWT whose payload is the given JSON
-// claims. The signature segment is a fixed placeholder: the pre-sign guard
-// decodes the unverified payload and never checks the signature, so a real one
-// is unnecessary.
-func craftJWT(t *testing.T, claimsJSON string) string {
-	t.Helper()
-	header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"none","typ":"JWT"}`))
-	payload := base64.RawURLEncoding.EncodeToString([]byte(claimsJSON))
-	return header + "." + payload + ".sig"
-}
-
-// subjectfulIDToken returns a crafted JWT carrying a verified email, so it
-// passes the pre-sign subject guard. Tests that exercise signer construction
-// rather than the guard itself use it to supply a structurally usable token.
-func subjectfulIDToken(t *testing.T) string {
-	t.Helper()
-	return craftJWT(t, `{"email":"dev@example.com","email_verified":true}`)
-}
 
 // TestCheckIDTokenSubject covers the pre-sign subject guard against crafted
 // JWTs (no live OIDC). The guard mirrors the certificate authority's subject
@@ -48,34 +30,34 @@ func TestCheckIDTokenSubject(t *testing.T) {
 	}{
 		{
 			name:    "verified email passes",
-			token:   craftJWT(t, `{"email":"dev@example.com","email_verified":true}`),
+			token:   signingtest.CraftJWT(t, `{"email":"dev@example.com","email_verified":true}`),
 			wantErr: false,
 		},
 		{
 			name:    "only sub passes",
-			token:   craftJWT(t, `{"sub":"workflow-identity-123"}`),
+			token:   signingtest.CraftJWT(t, `{"sub":"workflow-identity-123"}`),
 			wantErr: false,
 		},
 		{
 			name:    "email_verified as string true passes",
-			token:   craftJWT(t, `{"email":"dev@example.com","email_verified":"true"}`),
+			token:   signingtest.CraftJWT(t, `{"email":"dev@example.com","email_verified":"true"}`),
 			wantErr: false,
 		},
 		{
 			name:        "neither email nor sub fails precisely",
-			token:       craftJWT(t, `{"aud":"sigstore","iss":"https://example.com"}`),
+			token:       signingtest.CraftJWT(t, `{"aud":"sigstore","iss":"https://example.com"}`),
 			wantErr:     true,
 			wantSubstrs: []string{"no verified email and no sub claim", "OIDC flow/client"},
 		},
 		{
 			name:        "unverified email fails",
-			token:       craftJWT(t, `{"email":"dev@example.com","email_verified":false}`),
+			token:       signingtest.CraftJWT(t, `{"email":"dev@example.com","email_verified":false}`),
 			wantErr:     true,
 			wantSubstrs: []string{"did not mark verified", "verified email"},
 		},
 		{
 			name:        "email present without email_verified fails",
-			token:       craftJWT(t, `{"email":"dev@example.com"}`),
+			token:       signingtest.CraftJWT(t, `{"email":"dev@example.com"}`),
 			wantErr:     true,
 			wantSubstrs: []string{"did not mark verified"},
 		},
@@ -103,12 +85,12 @@ func TestCheckIDTokenSubject(t *testing.T) {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			err := checkIDTokenSubject(tc.token)
+			err := publishops.CheckIDTokenSubject(tc.token)
 			if tc.wantErr && err == nil {
-				t.Fatalf("checkIDTokenSubject(%q) = nil, want error", tc.name)
+				t.Fatalf("publishops.CheckIDTokenSubject(%q) = nil, want error", tc.name)
 			}
 			if !tc.wantErr && err != nil {
-				t.Fatalf("checkIDTokenSubject(%q) = %v, want nil", tc.name, err)
+				t.Fatalf("publishops.CheckIDTokenSubject(%q) = %v, want nil", tc.name, err)
 			}
 			if err != nil {
 				for _, sub := range tc.wantSubstrs {
@@ -161,8 +143,8 @@ func TestKeylessSubjectFailure(t *testing.T) {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			if got := keylessSubjectFailure(tc.err); got != tc.want {
-				t.Errorf("keylessSubjectFailure(%v) = %v, want %v", tc.err, got, tc.want)
+			if got := publishops.KeylessSubjectFailure(tc.err); got != tc.want {
+				t.Errorf("publishops.KeylessSubjectFailure(%v) = %v, want %v", tc.err, got, tc.want)
 			}
 		})
 	}
@@ -182,7 +164,7 @@ func TestSignNoSubjectFailureDiagnostic(t *testing.T) {
 	var acquired int
 	fake := &signingtest.FakeSigner{Err: errors.New("signing: keyless bundle: no subject found in claims")}
 	err := signRun(signConfig{
-		ws:          resolveTempWorkspace(t, tempWorkspaceOptions{}),
+		Workspace:   resolveTempWorkspace(t, tempWorkspaceOptions{}),
 		References:  refs,
 		SubjectRefs: subjects,
 		Target:      store,
@@ -228,7 +210,7 @@ func TestSignUnverifiedEmailFailureDiagnostic(t *testing.T) {
 	var acquired int
 	fake := &signingtest.FakeSigner{Err: errors.New("signing: keyless bundle: not verified by identity provider")}
 	err := signRun(signConfig{
-		ws:          resolveTempWorkspace(t, tempWorkspaceOptions{}),
+		Workspace:   resolveTempWorkspace(t, tempWorkspaceOptions{}),
 		References:  refs,
 		SubjectRefs: subjects,
 		Target:      store,
