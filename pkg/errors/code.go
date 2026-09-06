@@ -770,3 +770,96 @@ func Register(code string, meta Meta) *sealed {
 
 	return id
 }
+
+// Condition describes a registered halting condition: the two identifiers it
+// carries and the sentence every diagnostic naming it opens with.
+//
+// # It is a description, and deliberately not an identity
+//
+// The lookups below return one of these rather than the identity itself, and
+// that is what keeps the sealing intact. An identity is still obtainable only
+// from the accessor of the package that declares it: this value carries the
+// condition's published strings, so a caller holding one can report the
+// condition to a reader and can not match on it, wrap it, or hand it anywhere an
+// error is expected.
+//
+// So the rule stated on the identity type is untouched — the code remains an
+// OUTPUT and never an input to matching. What the lookups add is the other
+// direction of READING: a reader who quoted a code off a terminal can be told
+// which condition it names. That is answering a question about a code, not
+// resolving a code into an identity, and the two are different acts on different
+// values.
+type Condition struct {
+	// Code is the descriptive code the condition is registered under — the
+	// qualified, hyphenated one a consumer outside Go matches on.
+	Code string
+
+	// ShortCode is the compact code the condition is registered under — the
+	// letter E and four digits, the one a reader quotes off a terminal.
+	ShortCode string
+
+	// Message is the sentence the condition registers: the wording a composed
+	// diagnostic opens with, before any occurrence's own values.
+	Message string
+}
+
+// ConditionByShortCode returns the condition registered under shortCode, and
+// whether any condition is.
+//
+// It is the read a surface performs for someone holding a code a build printed.
+// The short code is the identifier that reaches a terminal, so it is the one a
+// reader arrives with; a value under no registration reports false, which is a
+// fact about the argument rather than a failure — see RetiredShortCode for the
+// case where the number named a condition once.
+func ConditionByShortCode(shortCode string) (Condition, bool) {
+	registryMu.RLock()
+	defer registryMu.RUnlock()
+	id, ok := shortCodeIndex[shortCode]
+	if !ok {
+		return Condition{}, false
+	}
+	return conditionOf(id), true
+}
+
+// ConditionByCode returns the condition registered under the descriptive code,
+// and whether any condition is.
+//
+// It is ConditionByShortCode's counterpart for the other identifier, and it
+// exists because the two identifiers reach two different readers: the short code
+// opens a printed diagnostic, while the descriptive code travels as a field of
+// its own on the structured diagnostic the compiler-as-service daemon publishes.
+// A surface that resolved only one of them would be silent for whoever was
+// handed the other.
+//
+// Like its counterpart it returns a description and never an identity, so this
+// is not the string-to-identity path the sealing forbids.
+func ConditionByCode(code string) (Condition, bool) {
+	registryMu.RLock()
+	defer registryMu.RUnlock()
+	id, ok := registry[code]
+	if !ok {
+		return Condition{}, false
+	}
+	return conditionOf(id), true
+}
+
+// conditionOf projects an identity onto its published description. It is the one
+// site that decides which of an identity's fields are published, so the two
+// lookups above cannot come to disagree about that.
+func conditionOf(id *sealed) Condition {
+	return Condition{Code: id.code, ShortCode: id.shortCode, Message: id.message}
+}
+
+// RetiredShortCode returns the note recorded against shortCode when the
+// retirement record holds one, and whether it does.
+//
+// It is what turns the numbering's promise into something a reader can act on. A
+// number that named a condition and no longer does resolves to nothing through
+// ConditionByShortCode, and a reader quoting it off an old report cannot
+// otherwise tell a retired number from one they mistyped. This reads the same
+// record [Register] consults to refuse a reissue, so what a reader is told and
+// what the program refuses come from one declaration.
+func RetiredShortCode(shortCode string) (string, bool) {
+	note, ok := retiredIndex[shortCode]
+	return note, ok
+}

@@ -13,6 +13,8 @@ import (
 	"sort"
 	"strings"
 	"unicode"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/haltref"
 )
 
 // haltsRelPath is the halting-conditions page, relative to the documentation
@@ -20,7 +22,13 @@ import (
 // conditions by what the author did wrong rather than by the identifier a
 // program matches — which is why the correspondence between the two has to be
 // declared rather than derived from the prose.
-const haltsRelPath = "language-reference/errors/fatal-halts.md"
+//
+// The path is read from the package that resolves a code against that page
+// rather than spelled again here. The side that writes the page's region and the
+// side that reads it have to name one page, and a second spelling of it would
+// agree until the day one of them was edited — at which point the reader would
+// resolve nothing and report it as a condition no entry documents.
+const haltsRelPath = haltref.PagePath
 
 // coverageAnchor matches the declaration an entry carries naming the identities
 // it covers:
@@ -136,20 +144,16 @@ func readEntries(docsRoot string) ([]pageEntry, error) {
 }
 
 // headingLevel returns the level of the heading a line opens, or zero when the
-// line opens none. The marker has to be followed by a space, which is what
-// separates a heading from a line merely beginning with the same character.
+// line opens none.
+//
+// The rule is read from the package that resolves a code against this page
+// rather than implemented again here, because both sides segment the same page:
+// this one to decide which entry a coverage declaration sits under, that one to
+// find the entry a rendered row names. Two implementations would split the page
+// two ways, and a row would then resolve to a neighbour's prose while reading as
+// a resolved correspondence.
 func headingLevel(line string) int {
-	n := 0
-	for n < len(line) && line[n] == '#' {
-		n++
-	}
-	if n == 0 || n > 6 || n == len(line) {
-		return 0
-	}
-	if line[n] != ' ' && line[n] != '\t' {
-		return 0
-	}
-	return n
+	return haltref.HeadingLevel(line)
 }
 
 // handlesIn splits a coverage declaration's body into the handles it names.

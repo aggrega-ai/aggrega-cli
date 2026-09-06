@@ -68,16 +68,14 @@ func OpenQuestions() []OpenQuestion {
 // The rows are grouped by surface and follow the operation set's order within a
 // surface, so a reader meets them in the same sequence the checks report them.
 var openQuestions = []OpenQuestion{
-	// The command line.
+	// The command line. One row, and the group heading is kept for the reason the
+	// others are: the rows are grouped by surface, and a surface with one row is
+	// still a surface a reader meets in the same sequence the checks report it.
 	{SurfaceCLI, "ir-graph",
 		"No command emits the serialized graph, and the command layer resolves the same graph to render a " +
 			"readable view of a Release. So the resolution is reached and the document is not offered. Is the " +
 			"readable view the intended extent of what a command gives, or does the command that already " +
 			"resolves the graph owe the document as one of its output shapes?"},
-	{SurfaceCLI, "explain-error",
-		"No command carries this capability at all: it is reachable as a tool and nowhere else. Is a command " +
-			"withheld on purpose, or is the absence one nobody has examined? Nothing in the command layer " +
-			"records which, and the two answers differ in what the command line then owes."},
 
 	// The JSON-RPC daemon.
 	//

@@ -6,8 +6,10 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/haltref"
 	"github.com/aggrega-ai/aggrega-cli/pkg/entitykind"
 )
 
@@ -39,18 +41,53 @@ func docPointerFor(kind string) string {
 }
 
 // explainDiagnostic expands a diagnostic message into actionable guidance: the
-// diagnostic's own text, followed by a documentation pointer for the surface it
-// concerns. It invents no error corpus — the message the compiler already
-// produced carries the remediation, and the pointer only names where to read
-// the authoring contract. kind selects the pointer; an empty kind uses the
+// diagnostic's own text, what the compiler declares about the condition the
+// message names where it names one, and a documentation pointer for the surface
+// it concerns. kind selects the pointer; an empty kind uses the
 // language-reference index.
+//
+// It invents no error corpus. The message the compiler already produced carries
+// the remediation, the pointer only names where to read the authoring contract,
+// and the condition note is read from the declarations the compiler itself
+// registers rather than composed here — so nothing in the guidance is text this
+// package made up about a failure.
 func explainDiagnostic(message, kind string) string {
 	message = strings.TrimSpace(message)
 	var b strings.Builder
 	b.WriteString(message)
+	b.WriteString(conditionNote(message))
 	b.WriteString("\n\nSee: ")
 	b.WriteString(docPointerFor(kind))
 	return b.String()
+}
+
+// conditionNote returns what the compiler declares about the condition a
+// diagnostic names, or the empty string when the text carries no code that
+// resolves to one.
+//
+// What it adds is the identifier a caller can BRANCH on. A printed diagnostic
+// carries the short code, which is compact enough to sit at the head of a line
+// and says nothing on its own; the descriptive code says what the condition is
+// and is what a consumer outside Go matches against. A caller handed only the
+// printed form would otherwise have to match on the wording of a message, which
+// is the one part of a diagnostic that is free to be reworded.
+//
+// A text carrying no code, or one no condition is registered under, adds nothing
+// rather than reporting anything: the guidance is about the diagnostic, and a
+// code this does not recognise is not a fact about the diagnostic worth
+// asserting.
+func conditionNote(message string) string {
+	code, ok := haltref.ShortCodeIn(message)
+	if !ok {
+		return ""
+	}
+	condition, err := haltref.Resolve(code)
+	if err != nil {
+		return ""
+	}
+	return fmt.Sprintf("\n\nThe short code %s names the condition %s. Match on that descriptive code "+
+		"rather than on the wording of the message, which is free to be reworded.",
+		condition.ShortCode, condition.Code)
 }
 
 // explainToolError renders a tool-level failure into the guidance an assistant
@@ -81,7 +118,8 @@ type explainErrorResult struct {
 }
 
 var explainErrorToolSpec = toolSpec{
-	description: "Expand a compiler diagnostic or error message into actionable, human-readable guidance. " +
+	description: "Expand a compiler diagnostic or error message into actionable, human-readable guidance, " +
+		"writing nothing. " +
 		"Pass the exact diagnostic text you got back from a validate or build call as `message`, and " +
 		"optionally the entity kind it concerns (release, aggregate, component, feature, recipe, manifest, " +
 		"and so on) as `kind`. The tool returns the diagnostic verbatim plus a pointer to the language-reference " +

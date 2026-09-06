@@ -117,6 +117,12 @@ var runtimeErrorCommands = []struct {
 	// token no schema answers to. Nothing is read from disk and nothing is
 	// written, so the case needs no arrangement.
 	{path: "aggrega scaffold", args: []string{"scaffold", "bogus"}},
+	// explain is the same shape again: a well-formed single argument reaches its
+	// RunE, and the failure is the refusal of a number that named a condition once
+	// and names none now. A retired number is answered from the record the binary
+	// carries, before any workspace is resolved and before the published
+	// documentation is looked for, so the case reaches no registry.
+	{path: "aggrega explain", args: []string{"explain", "E0157"}},
 	{path: "aggrega serve", args: []string{"serve", "--workspace-root", "/nonexistent-aggrega-xyz/ws"}},
 	{path: "aggrega lint", args: []string{"lint", "/nonexistent-aggrega-xyz/entity.yaml"}},
 	// validate reaches its RunE with a well-formed single argument, then fails

@@ -7,16 +7,13 @@ import (
 	"context"
 	"errors"
 	"strings"
-	"time"
 
 	"oras.land/oras-go/v2"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/docsbundle"
 	"github.com/aggrega-ai/aggrega-cli/pkg/docscache"
-	"github.com/aggrega-ai/aggrega-cli/pkg/egress"
-	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
-	"github.com/aggrega-ai/aggrega-cli/pkg/pullverify"
-	"github.com/aggrega-ai/aggrega-cli/pkg/registryhost"
+	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
 const (
@@ -31,16 +28,6 @@ const (
 	// authoring tree.
 	langrefPrefix   = "language-reference/"
 	authoringPrefix = "authoring/"
-
-	// docsBundleName is the artifact name of the documentation bundle within
-	// the reserved docs registry namespace. The default reference is
-	// <default_registry>/docs/<docsBundleName>.
-	docsBundleName = "aggrega-docs"
-
-	// docsNamespace is the reserved registry namespace standalone data
-	// artifacts publish under; a documentation bundle lives at
-	// <registry>/<docsNamespace>/<docsBundleName>.
-	docsNamespace = "docs"
 )
 
 // docsResourceTemplates returns the templated resources the server serves: the
@@ -65,16 +52,9 @@ func docsResourceTemplates() []resourceTemplate {
 	}
 }
 
-// docsAcquireTimeout bounds the one acquisition attempt a session makes. The
-// egress transport carries no deadline of its own, so without a bound an
-// unreachable registry would hold the handshake open for as long as the
-// operating system's connect timeout allows. It is generous enough for a cold
-// pull of a documentation bundle over a slow link and short enough that a dead
-// registry costs a pause rather than a session.
-const docsAcquireTimeout = 30 * time.Second
-
 // docsTargetFor resolves the OCI target the documentation bundle is pulled from
-// and the pull-time signature check to run against it.
+// and the pull-time signature check to run against it, for a session that has
+// already resolved its workspace.
 //
 // It is deliberately the narrowest seam that removes the registry: everything
 // after it — the cache-presence probe, the pull, the media-type check, the
@@ -82,6 +62,11 @@ const docsAcquireTimeout = 30 * time.Second
 // substituting a target still exercises all of it. A seam one level higher, over
 // the whole acquisition, would take the cache write out of the tested path and
 // leave the trigger proven against nothing.
+//
+// It carries the resolved workspace rather than the configuration alone, which
+// is what a test on this surface substitutes against; the acquisition itself
+// takes the narrower seam, and the two are bridged where ensureDocsBundle drives
+// it.
 //
 // Nil selects the production resolution below.
 type docsTargetFor func(tw *toolWorkspace, ref, version string, warn func(string)) (oras.ReadOnlyTarget, docscache.VerifyAtPull, error)
@@ -109,63 +94,33 @@ func (s *server) ensureDocsBundle() {
 			return
 		}
 		ref, version := s.docsBundleCoords(tw)
-		if docscache.Cached(tw.root, tw.cacheDir, ref, version) {
-			return
-		}
 		targetFor := s.docsTarget
 		if targetFor == nil {
 			targetFor = docsRegistryTarget
 		}
 		warn := func(notice string) { s.logf("mcp: %s", notice) }
-		target, verify, err := targetFor(tw, ref, version, warn)
+		acquired, err := docsbundle.EnsureCached(context.Background(), tw.cfg, tw.root, tw.cacheDir, ref, version,
+			func(_ workspaceconfig.Config, ref, version string, warn func(string)) (oras.ReadOnlyTarget, docscache.VerifyAtPull, error) {
+				return targetFor(tw, ref, version, warn)
+			}, warn)
 		if err != nil {
 			s.logf("mcp: documentation bundle %s@%s not acquired: %v", ref, version, err)
 			return
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), docsAcquireTimeout)
-		defer cancel()
-		if _, err := docscache.ResolveAndCache(ctx, target, ref, version, tw.root, tw.cacheDir, verify); err != nil {
-			s.logf("mcp: documentation bundle %s@%s not acquired: %v", ref, version, err)
-			return
+		if acquired {
+			s.logf("mcp: documentation bundle %s@%s acquired", ref, version)
 		}
-		s.logf("mcp: documentation bundle %s@%s acquired", ref, version)
 	})
 }
 
-// docsRegistryTarget is the production resolution. The workspace's egress gate
-// supplies the transport and refuses outright when the workspace is offline; the
-// shared OCI constructor supplies the authenticated repository, so credentials
-// and the loopback plain-HTTP decision are read from the one place that owns
-// them.
+// docsRegistryTarget is this surface's production resolution: the shared one,
+// given the configuration the session's workspace resolved.
 //
-// The verifier it returns is the same pull-time signature check a catalog entity
-// or a plugin gets, run against the workspace's own per-registry trust policy
-// through pullverify. Returning none would have been simpler and would have made
-// a documentation bundle the one artifact class that bypasses that policy.
+// It stays as a named function rather than being inlined so that the seam above
+// has a default to point at and a reader can see which resolution a session gets
+// without following the acquisition out of this package.
 func docsRegistryTarget(tw *toolWorkspace, ref, version string, warn func(string)) (oras.ReadOnlyTarget, docscache.VerifyAtPull, error) {
-	httpClient, err := egress.HTTPClient(tw.cfg)
-	if err != nil {
-		return nil, nil, err
-	}
-	repo, err := oci.NewRemoteRepository(ref, httpClient)
-	if err != nil {
-		return nil, nil, err
-	}
-	verify := func(ctx context.Context, manifestDigest string) error {
-		_, verr := pullverify.Verify(ctx, []pullverify.Entity{{
-			URI:            ref,
-			ManifestDigest: manifestDigest,
-			Host:           registryhost.Of(ref),
-		}}, pullverify.Options{
-			Config: tw.cfg,
-			Target: func(pullverify.Entity) (oras.ReadOnlyTarget, string, error) {
-				return repo, version, nil
-			},
-			Warn: warn,
-		})
-		return verr
-	}
-	return repo, verify, nil
+	return docsbundle.RegistryTarget(tw.cfg, ref, version, warn)
 }
 
 // readDocsResource serves a documentation resource URI as inline content read
@@ -270,7 +225,7 @@ func ensureMarkdownExt(body string) string {
 func (s *server) docsBundleCoords(tw *toolWorkspace) (ref, version string) {
 	ref = s.docsBundleRef
 	if ref == "" {
-		ref = tw.cfg.DefaultRegistry + "/" + docsNamespace + "/" + docsBundleName
+		ref = docsbundle.Ref(tw.cfg.DefaultRegistry)
 	}
 	version = s.docsBundleVersion
 	if version == "" {

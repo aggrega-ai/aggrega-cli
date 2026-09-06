@@ -95,6 +95,7 @@ var operationAvailability = map[string]opsurface.OperationAvailability{
 	"config-init":        opsurface.Exposed("aggrega config init"),
 	"config-show":        opsurface.Exposed("aggrega config show"),
 	"deprecate":          opsurface.Exposed("aggrega deprecate"),
+	"explain-error":      opsurface.Exposed("aggrega explain"),
 	"get-schema":         opsurface.Exposed("aggrega get-schema"),
 	"import":             opsurface.Exposed("aggrega import"),
 	"inspect":            opsurface.Exposed("aggrega inspect"),

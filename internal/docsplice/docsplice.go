@@ -68,6 +68,38 @@ func Splice(content, id, inner string) (string, error) {
 	}
 }
 
+// Region returns the content between the markers for id within content, and
+// whether a complete pair of markers was found. The leading and trailing
+// newlines the block form puts around the content are trimmed, so what is
+// returned is the body a generator handed to Splice.
+//
+// It is the reading counterpart of Splice, and it lives here for the reason
+// Splice does: the marker format has one home, so a reader that resolves a
+// region and the writer that produced it cannot come to disagree about where a
+// region starts and ends. A reader that recognised the markers for itself would
+// be a second declaration of that format, and the two would agree until the day
+// one of them was edited.
+//
+// A page carrying only one of the two markers reports false rather than
+// returning whatever follows the one it found: a half-marked page is an
+// authoring mistake, and reading an unbounded tail as generated content would be
+// worse than reporting nothing.
+func Region(content, id string) (string, bool) {
+	begin := fmt.Sprintf(beginMarker, id)
+	end := fmt.Sprintf(endMarker, id)
+
+	bi := strings.Index(content, begin)
+	if bi == -1 {
+		return "", false
+	}
+	from := bi + len(begin)
+	ei := strings.Index(content[from:], end)
+	if ei == -1 {
+		return "", false
+	}
+	return strings.Trim(content[from:from+ei], "\n"), true
+}
+
 // WriteFile splices inner into the region id of content and writes the result to
 // path, but only when the result differs from content. It reports whether the
 // file was written.

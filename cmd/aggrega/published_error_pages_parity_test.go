@@ -4,11 +4,15 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/docsplice"
+	"github.com/aggrega-ai/aggrega-cli/internal/haltref"
 )
 
 // The published error pages advertise what a build can tell an author. Nothing
@@ -241,6 +245,121 @@ func TestPublishedErrorPages_EveryAdvertisedPrefixHasAProducer(t *testing.T) {
 	}
 	if seen == 0 {
 		t.Fatal("no advertised prefix examined; the extraction is broken, not the pages")
+	}
+}
+
+// shortCodeToken matches a short code as the published region writes one.
+var shortCodeToken = regexp.MustCompile(`\bE[0-9]{4}\b`)
+
+// TestPublishedErrorPages_TheHaltRegionResolvesThroughTheReader is the parity
+// between the side that WRITES the code-to-entry correspondence onto the
+// halting-conditions page and the side that READS it back to answer a code.
+//
+// The two are separate programs: a generator renders the region from the
+// module's declarations, and the resolver looks a code up in a served copy of
+// the page. A drift gate holds the region current with the declarations, and
+// nothing held the reader to the region — so a row shape either side stopped
+// agreeing on would have left every lookup answering "no entry documents this",
+// which is a legitimate answer and therefore silent.
+//
+// This runs against the committed page rather than a fixture, which is the whole
+// point: a fixture is written by whoever writes the test, so it agrees with the
+// reader by construction. The pages sit outside the module, so a change to one
+// does not by itself re-run this — the drift gate is what watches the page's
+// contents, and this watches whether the reader can still read it.
+func TestPublishedErrorPages_TheHaltRegionResolvesThroughTheReader(t *testing.T) {
+	t.Parallel()
+	pages := publishedErrorPages(t)
+
+	name := filepath.Base(haltref.PagePath)
+	body, ok := pages[name]
+	if !ok {
+		t.Fatalf("the published error pages carry no %s, which is the page a code resolves against", name)
+	}
+	region, ok := docsplice.Region(body, haltref.RegionID)
+	if !ok {
+		t.Fatalf("%s carries no %q region, so nothing pairs a code with the entry documenting it",
+			name, haltref.RegionID)
+	}
+
+	codes := shortCodeToken.FindAllString(region, -1)
+	if len(codes) == 0 {
+		t.Fatal("the region names no short code; the extraction is broken, not the page")
+	}
+
+	// The reference page is what resolves a code this binary does not declare —
+	// every condition a provider guest declares is registered inside that guest
+	// and in no host — so both routes are exercised, and both against the
+	// committed pages.
+	refName := filepath.Base(haltref.ReferencePagePath)
+	reference, ok := pages[refName]
+	if !ok {
+		t.Fatalf("the published error pages carry no %s, which is what resolves a code no host declares", refName)
+	}
+
+	seen := map[string]bool{}
+	var viaReference int
+	for _, code := range codes {
+		if seen[code] {
+			continue
+		}
+		seen[code] = true
+
+		// The code the page publishes resolves to a condition the product
+		// declares, from the binary's own registry or from the published
+		// reference. A row for a condition neither carries would send a reader to
+		// an entry for a halt no build can report.
+		condition, rerr := haltref.Resolve(code)
+		if rerr != nil {
+			condition, rerr = haltref.ResolveIn([]byte(reference), code)
+			if rerr != nil {
+				t.Errorf("%s carries a row for %s, and neither this binary nor %s resolves it: %v",
+					name, code, refName, rerr)
+				continue
+			}
+			viaReference++
+		}
+		if condition.ShortCode != code {
+			t.Errorf("%s resolved to the condition %s, which reports the short code %s",
+				code, condition.Code, condition.ShortCode)
+		}
+		if condition.Code == "" || condition.Message == "" {
+			t.Errorf("%s resolved to a condition carrying no descriptive code or no sentence: %+v", code, condition)
+		}
+
+		// And the row resolves through the reader to prose that exists.
+		entries, eerr := haltref.Entries([]byte(body), code)
+		if eerr != nil {
+			t.Errorf("%s pairs %s with an entry the reader cannot reach: %v", name, code, eerr)
+			continue
+		}
+		for _, e := range entries {
+			if !strings.Contains(e.Body, e.Heading) {
+				t.Errorf("the entry resolved for %s does not carry its own heading %q", code, e.Heading)
+			}
+			if len(strings.TrimSpace(strings.TrimPrefix(e.Body, "#"))) <= len(e.Heading)+1 {
+				t.Errorf("the entry resolved for %s under %q carries no prose beneath its heading", code, e.Heading)
+			}
+		}
+	}
+
+	// The fallback is exercised rather than merely present. Every assertion above
+	// passes with the reference never read, so without this the case would go on
+	// passing if the reference route silently stopped working — and the codes it
+	// covers are exactly the ones the registry cannot answer.
+	if viaReference == 0 {
+		t.Error("no code resolved through the published reference, so the route that answers for a " +
+			"condition declared inside a provider guest was never exercised")
+	}
+
+	// Calibration. Every assertion above passes over a page the reader silently
+	// resolves nothing from, so the negative direction is asserted too: a code the
+	// region does not name is reported as undocumented rather than answered.
+	// E0000 can never be registered — numbers are handed out from E0001 upward —
+	// so it is the one value guaranteed absent from any region.
+	var undocumented *haltref.UndocumentedConditionError
+	if _, err := haltref.Entries([]byte(body), "E0000"); !errors.As(err, &undocumented) {
+		t.Errorf("a code the region does not name was not reported as undocumented: %v", err)
 	}
 }
 

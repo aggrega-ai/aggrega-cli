@@ -115,6 +115,7 @@ import (
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/docsplice"
+	"github.com/aggrega-ai/aggrega-cli/internal/haltref"
 )
 
 // regionID and shortCodeRegionID name the two generated regions within the
@@ -140,15 +141,27 @@ import (
 // reports without stopping. That fact is declared beside the rule that raises a
 // condition rather than beside the condition, so it is the one of the three no
 // other region can carry.
+//
+// Two of the four are read from the package that resolves a code against these
+// pages rather than spelled again here, because those two are the regions
+// something else reads BACK: a reader looking a code up in a served copy of a
+// page finds each by its id. Two spellings would agree until one was edited, and
+// the reader's failure would be silent — a region it cannot find is
+// indistinguishable from a condition nothing documents.
 const (
 	regionID          = "error-identities"
-	shortCodeRegionID = "condition-short-codes"
-	haltRegionID      = "halt-condition-sentences"
+	shortCodeRegionID = haltref.ReferenceRegionID
+	haltRegionID      = haltref.RegionID
 	advisoryRegionID  = "advisory-short-codes"
 )
 
 // pageRelPath is the sentinel reference, relative to the documentation tree root.
-const pageRelPath = "language-reference/errors/sentinels.md"
+//
+// It is read from the package that resolves a code against this page for the
+// reason the region ids above are: the writer and the reader of one page have to
+// name one page, and a second spelling would leave the reader looking for a page
+// nothing writes.
+const pageRelPath = haltref.ReferencePagePath
 
 // warningsRelPath is the advisory page, relative to the documentation tree root.
 // It teaches what each advisory means and what to do about it; the region

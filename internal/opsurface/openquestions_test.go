@@ -121,7 +121,27 @@ import (
 // the Release walk, where membership is read from each file's own kind header
 // and a second implementation would pass every test written over
 // conventionally-named files while disagreeing on the ones that matter.
-const boundCeiling = 23
+//
+// It came down by one when the command line began explaining a halting condition
+// from the code a build printed. That row asked whether a command was withheld on
+// purpose or whether the absence was one nobody had examined; the answer is that
+// it was unexamined, and a command now carries the capability, so the pair is
+// disposed of and the room it held does not stay open.
+//
+// What settled it is that the row's own observation — the capability was
+// reachable as a tool and nowhere else — turned out to rest on something absent
+// rather than on anything about the command line. The conditions a build can
+// report are declared inside the binary and the explanations are published, but
+// nothing read either: the declarations could not be asked what a code names, and
+// nothing resolved a code to the entry that teaches the fix. With both reads in
+// place the capability has no property of the command line standing against it,
+// and a reason written anyway would have been the unexamined absence dressed as a
+// deliberate one that this bound exists to keep visible.
+//
+// The daemon's row for the same capability is a different row and is untouched:
+// it asks whether the surface that emits a diagnostic owes the expansion of it,
+// which is a question about that surface and not about this one.
+const boundCeiling = 22
 
 // TestTheBoundOnlyShrinks is the ratchet. See boundCeiling for why both
 // directions refuse.
