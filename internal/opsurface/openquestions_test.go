@@ -76,7 +76,16 @@ import (
 //
 // The number goes down as each row is settled, one capability at a time, and
 // each of the sixteen states the fork that settles it.
-const boundCeiling = 27
+//
+// It came down by one when the command line began drafting a starter document
+// for an entity kind. That row asked whether a command was withheld on purpose
+// or whether the absence was one nobody had examined; the answer is that it was
+// unexamined, and a command now carries the capability, so the pair is disposed
+// of and the room it held does not stay open. The row's own observation — that
+// the nearest command converts a foreign source description rather than starting
+// from a kind's contract — is why the two stayed separate commands rather than
+// becoming two modes of one.
+const boundCeiling = 26
 
 // TestTheBoundOnlyShrinks is the ratchet. See boundCeiling for why both
 // directions refuse.

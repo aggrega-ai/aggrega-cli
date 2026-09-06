@@ -112,6 +112,11 @@ var runtimeErrorCommands = []struct {
 	// get-schema reaches its RunE with a well-formed single argument, then
 	// fails in its own work: no schema matches the unknown kind.
 	{path: "aggrega get-schema", args: []string{"get-schema", "bogus"}},
+	// scaffold is the same shape: a well-formed single argument reaches its
+	// RunE, and the failure is the shared drafting layer's own refusal of a kind
+	// token no schema answers to. Nothing is read from disk and nothing is
+	// written, so the case needs no arrangement.
+	{path: "aggrega scaffold", args: []string{"scaffold", "bogus"}},
 	{path: "aggrega serve", args: []string{"serve", "--workspace-root", "/nonexistent-aggrega-xyz/ws"}},
 	{path: "aggrega lint", args: []string{"lint", "/nonexistent-aggrega-xyz/entity.yaml"}},
 	// validate reaches its RunE with a well-formed single argument, then fails

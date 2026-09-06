@@ -3,15 +3,17 @@
 
 package main
 
-// Drafting parity at the real entrypoint. Both caller-facing surfaces that
-// carry the capability are driven as spawned processes over their own wire
-// protocol, and the documents they hand back are compared byte for byte.
+// Drafting parity at the real entrypoint. Every caller-facing surface that
+// carries the capability is driven as a spawned process over its own wire
+// protocol — the command line over its output stream, the daemon and the tool
+// protocol over theirs — and the documents they hand back are compared byte for
+// byte.
 //
 // This is the end-to-end leg the per-package parity tests structurally cannot
 // be. Each of those compares one surface against the shared drafting layer
-// in-process; neither observes the other's wire encoding, and neither would
-// notice a surface that reshaped the text on its way out. Here the comparison is
-// between the two answers a client actually receives.
+// in-process; none observes another's wire encoding, and none would notice a
+// surface that reshaped the text on its way out. Here the comparison is between
+// the answers a caller actually receives.
 
 import (
 	"bufio"
@@ -38,6 +40,32 @@ var scaffoldParityKinds = []string{
 // scaffoldParityName is the name both surfaces seed with, so the comparison
 // covers the seeding path and not only the placeholder one.
 const scaffoldParityName = "parity-drafted"
+
+// draftViaCommandLine runs the drafting command once per kind against an empty
+// workspace and returns what it printed, keyed by kind.
+//
+// It reads standard output alone. That stream is the whole of what this surface
+// hands a caller — a redirect is how the document reaches a file — so a surface
+// that decorated its answer with a banner or a trailing status line would fail
+// the comparison below rather than pass it with the decoration attached.
+func draftViaCommandLine(t *testing.T, bin string, kinds []string) map[string]string {
+	t.Helper()
+
+	ws := t.TempDir()
+	out := map[string]string{}
+	for _, kind := range kinds {
+		cmd := exec.Command(bin, "scaffold", kind, scaffoldParityName)
+		cmd.Dir = ws
+		var stdout, stderr strings.Builder
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
+		if err := cmd.Run(); err != nil {
+			t.Fatalf("the command refused %q: %v (%s)", kind, err, stderr.String())
+		}
+		out[kind] = stdout.String()
+	}
+	return out
+}
 
 // draftViaDaemon spawns the daemon against an empty workspace and returns the
 // skeleton it answers with for each kind, keyed by kind.
@@ -190,42 +218,170 @@ func draftViaToolProtocol(t *testing.T, bin string, kinds []string) map[string]s
 }
 
 // scaffoldToolName returns the name the tool protocol advertises the drafting
-// capability under, read from the surface's own availability record rather than
+// capability under in-process, read from the surface's own records rather than
 // written here — a name spelled twice is a name that can drift.
+//
+// The operation is reachable under more than one name on that surface: the
+// curated tool that derives the document in-process, and the tool derived from
+// the command that now carries the same capability, which reaches it by running
+// that command in a subprocess. Taking whichever name the availability record
+// happens to list first would follow the derivation's ordering rather than the
+// caller's intent, and it would do so silently — the wrong tool answers, with
+// its own arguments and its own refusals.
+//
+// What separates the two is that only the curated tool exists for a session that
+// was handed no command surface, which is exactly what the static tool set
+// reports. So the selection is derived from that set rather than from a position
+// or from a spelling written here.
 func scaffoldToolName(t *testing.T) string {
 	t.Helper()
 	availability, ok := mcp.OperationAvailability()["scaffold-entity"]
 	if !ok || !availability.IsExposed() {
 		t.Fatal("the tool protocol declares no exposed name for the drafting capability")
 	}
-	return availability.Names[0]
+	static := map[string]bool{}
+	for _, name := range mcp.StaticToolNames() {
+		static[name] = true
+	}
+	for _, name := range availability.Names {
+		if static[name] {
+			return name
+		}
+	}
+	t.Fatalf("the tool protocol claims the drafting capability under %v, and serves none of them "+
+		"without a command surface", availability.Names)
+	return ""
 }
 
 // TestDraftingIsByteIdenticalAcrossTheSurfacesThatCarryIt is the proof that one
-// implementation does the work. Two surfaces asked for the same kind and the
-// same name return the same bytes; if they differ, a second walker has appeared,
-// and it will have appeared agreeing with the first on everything but the case
-// that matters later.
+// implementation does the work. Every surface asked for the same kind and the
+// same name returns the same bytes; if any two differ, a second walker has
+// appeared, and it will have appeared agreeing with the first on everything but
+// the case that matters later.
 func TestDraftingIsByteIdenticalAcrossTheSurfacesThatCarryIt(t *testing.T) {
 	// Not parallel: spawns subprocesses, one of them a daemon.
 	bin := buildServeBinary(t)
 
+	fromCommandLine := draftViaCommandLine(t, bin, scaffoldParityKinds)
 	fromDaemon := draftViaDaemon(t, bin, scaffoldParityKinds)
 	fromToolProtocol := draftViaToolProtocol(t, bin, scaffoldParityKinds)
 
 	for _, kind := range scaffoldParityKinds {
-		daemon, tool := fromDaemon[kind], fromToolProtocol[kind]
+		command, daemon, tool := fromCommandLine[kind], fromDaemon[kind], fromToolProtocol[kind]
 		switch {
 		case strings.TrimSpace(daemon) == "":
 			t.Errorf("the daemon drafted nothing for %q, so the comparison for it asserts nothing", kind)
 		case daemon != tool:
-			t.Errorf("the two surfaces draft %q differently.\ndaemon:\n%s\ntool protocol:\n%s",
+			t.Errorf("the daemon and the tool protocol draft %q differently.\ndaemon:\n%s\ntool protocol:\n%s",
 				kind, daemon, tool)
+		case command != daemon:
+			t.Errorf("the command line and the daemon draft %q differently.\ncommand line:\n%s\ndaemon:\n%s",
+				kind, command, daemon)
 		case !strings.Contains(daemon, scaffoldParityName):
-			t.Errorf("neither surface seeded the requested name into %q, so the seeding path is untested:\n%s",
+			t.Errorf("no surface seeded the requested name into %q, so the seeding path is untested:\n%s",
 				kind, daemon)
 		}
 	}
+}
+
+// TestTheSurfacesRefuseAnUnknownKindInTheSameWords is the half a comparison over
+// successful drafts cannot see. Surfaces can agree on every document they
+// produce and still phrase the same rejection differently, which is what leaves
+// a person at a terminal and an assistant correcting one typo from two different
+// pieces of advice.
+//
+// The command's own half is asserted here too, because a refusal that printed a
+// document as well would satisfy a text comparison while handing the caller an
+// empty entity to redirect into a file.
+func TestTheSurfacesRefuseAnUnknownKindInTheSameWords(t *testing.T) {
+	// Not parallel: spawns subprocesses.
+	bin := buildServeBinary(t)
+	const typo = "compoent"
+
+	cmd := exec.Command(bin, "scaffold", typo)
+	cmd.Dir = t.TempDir()
+	var stdout, stderr strings.Builder
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+
+	if err == nil {
+		t.Fatalf("a kind no schema answers to was answered rather than refused: %q", stdout.String())
+	}
+	if stdout.String() != "" {
+		t.Errorf("the refusal printed a document as well, which a redirect would have written:\n%s", stdout.String())
+	}
+	fromCommandLine := strings.TrimSpace(stderr.String())
+	fromToolProtocol := refuseViaToolProtocol(t, bin, typo)
+	if fromCommandLine != fromToolProtocol {
+		t.Errorf("the surfaces phrase the same rejection differently.\ncommand line: %s\ntool protocol: %s",
+			fromCommandLine, fromToolProtocol)
+	}
+	if !strings.Contains(fromCommandLine, typo) {
+		t.Errorf("the refusal does not name the token that was sent: %s", fromCommandLine)
+	}
+}
+
+// refuseViaToolProtocol spawns the tool protocol, asks it to draft a kind no
+// schema answers to, and returns the refusal text it hands back.
+func refuseViaToolProtocol(t *testing.T, bin, kind string) string {
+	t.Helper()
+
+	args, err := json.Marshal(map[string]any{"kind": kind})
+	if err != nil {
+		t.Fatalf("marshal the tool arguments: %v", err)
+	}
+	conversation := `{"jsonrpc":"2.0","id":0,"method":"initialize","params":` +
+		`{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"parity","version":"0"}}}` + "\n" +
+		fmt.Sprintf(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":%q,"arguments":%s}}`+"\n",
+			scaffoldToolName(t), args)
+
+	cmd := exec.Command(bin, "mcp")
+	cmd.Dir = t.TempDir()
+	cmd.Stdin = strings.NewReader(conversation)
+	cmd.Stderr = os.Stderr
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("run the tool protocol: %v", err)
+	}
+
+	scanner := bufio.NewScanner(strings.NewReader(string(out)))
+	scanner.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+		var msg map[string]any
+		if err := json.Unmarshal([]byte(line), &msg); err != nil {
+			t.Fatalf("the tool protocol emitted a line that is not JSON: %v (%s)", err, line)
+		}
+		if id, ok := msg["id"].(float64); !ok || id != 1 {
+			continue
+		}
+		result, ok := msg["result"].(map[string]any)
+		if !ok {
+			t.Fatalf("the tool protocol's answer carries no result object: %+v", msg)
+		}
+		if failed, _ := result["isError"].(bool); !failed {
+			t.Fatalf("the tool protocol answered a kind no schema answers to: %+v", result)
+		}
+		content, ok := result["content"].([]any)
+		if !ok || len(content) == 0 {
+			t.Fatalf("the tool protocol's refusal carries no content block: %+v", result)
+		}
+		block, ok := content[0].(map[string]any)
+		if !ok {
+			t.Fatalf("the tool protocol's content block is not an object: %+v", content[0])
+		}
+		text, ok := block["text"].(string)
+		if !ok {
+			t.Fatalf("the tool protocol's content block carries no text: %+v", block)
+		}
+		return strings.TrimSpace(text)
+	}
+	t.Fatal("the tool protocol answered nothing")
+	return ""
 }
 
 // TestTheDaemonDraftsWithoutTouchingTheWorkspace pins at the real entrypoint

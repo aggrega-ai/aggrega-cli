@@ -115,6 +115,7 @@ var operationAvailability = map[string]opsurface.OperationAvailability{
 	"registry-list":      opsurface.Exposed("aggrega registry list"),
 	"registry-remove":    opsurface.Exposed("aggrega registry remove"),
 	"registry-update":    opsurface.Exposed("aggrega registry update"),
+	"scaffold-entity":    opsurface.Exposed("aggrega scaffold"),
 	"search":             opsurface.Exposed("aggrega search"),
 	"serve":              opsurface.Exposed("aggrega serve"),
 	"sign":               opsurface.Exposed("aggrega sign"),

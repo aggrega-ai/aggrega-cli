@@ -99,7 +99,11 @@ var scaffoldToolSpec = toolSpec{
 		"fixed apiVersion and kind filled in and a placeholder for every other required value. Pass the kind token as " +
 		"`kind` (component, aggregate, release, recipe, manifest, feature, and so on) and, optionally, a `name` to seed " +
 		"metadata.name. Use it to start a new entity from a correct shape rather than from memory, then flesh out the " +
-		"placeholders and validate. The output is YAML ready to write to a file.",
+		"placeholders and validate. The output is YAML ready to write to a file. " +
+		"The same drafting is on the command line as `aggrega scaffold <kind> [name]`, which prints these exact bytes to " +
+		"standard output, so the generated `cli-scaffold` tool reaches it too by running that command in a subprocess. " +
+		"Prefer this tool: it derives the skeleton in-process and returns it as structured data as well as text, and it " +
+		"needs no workspace.",
 	inputSchema: `{
   "type": "object",
   "properties": {

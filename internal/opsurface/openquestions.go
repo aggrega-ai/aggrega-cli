@@ -78,11 +78,6 @@ var openQuestions = []OpenQuestion{
 		"No command carries this capability at all: it is reachable as a tool and nowhere else. Is a command " +
 			"withheld on purpose, or is the absence one nobody has examined? Nothing in the command layer " +
 			"records which, and the two answers differ in what the command line then owes."},
-	{SurfaceCLI, "scaffold-entity",
-		"No command carries this capability at all: it is reachable as a tool and nowhere else. The nearest " +
-			"command drafts authoring files from a foreign source description, which is a different capability " +
-			"— it converts something that exists rather than starting from a kind's schema. Is a command " +
-			"withheld on purpose, or is the absence one nobody has examined?"},
 
 	// The JSON-RPC daemon.
 	//
