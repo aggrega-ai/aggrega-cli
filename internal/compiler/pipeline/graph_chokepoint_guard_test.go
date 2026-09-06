@@ -39,8 +39,8 @@ var graphConstructionHomes = map[string][]string{
 	},
 	"BuildGraph": {
 		"cmd/aggrega/inspect.go",
-		"cmd/aggrega/pull.go",
 		"internal/compiler/pipeline/pipeline.go",
+		"internal/pullops/pull.go",
 	},
 }
 

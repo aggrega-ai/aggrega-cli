@@ -34,7 +34,7 @@ func TestClosureComputeCallSiteCensus(t *testing.T) {
 	// path -> the reason that site is entitled to compute a closure.
 	expected := map[string]string{
 		"internal/compilerops/compilerops.go": "the shared resolver; judges shape immediately before the walk",
-		"cmd/aggrega/pull.go":                 "computes its own closure; carries the check itself",
+		"internal/pullops/pull.go":            "computes its own closure; carries the check itself",
 	}
 
 	found := map[string]int{}

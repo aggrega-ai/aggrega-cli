@@ -42,8 +42,8 @@ var hermeticReconstructionHomes = map[string][]string{
 	// duplicate: the lock-time descent folds the axes it is about to pin, and the
 	// resolution folds them for a caller that asked for an augmented closure.
 	".AugmentClosure(": {
-		"cmd/aggrega/pull.go",
 		"internal/compilerops/compilerops.go",
+		"internal/pullops/pull.go",
 	},
 }
 
