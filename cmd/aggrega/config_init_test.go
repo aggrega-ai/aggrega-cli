@@ -35,16 +35,15 @@ func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { retu
 // set, round-tripped through the resolver.
 func TestConfigInitSeedsGlobalHubBaseline(t *testing.T) {
 	t.Parallel()
-	rw := resolveTempWorkspace(t, tempWorkspaceOptions{})
 	global := filepath.Join(t.TempDir(), "aggrega", "config.yaml")
 	lookup := frozenEnv(map[string]string{workspaceconfig.EnvConfigOverride: global})
+	rw := resolveTempWorkspaceAgainst(t, tempWorkspaceOptions{}, lookup)
 
 	var out bytes.Buffer
 	if err := configInitRun(configInitConfig{
 		Registry:    workspaceconfig.HubBaselineHost,
 		ws:          rw,
 		Out:         &out,
-		lookup:      lookup,
 		trustClient: offlineTrustClient(),
 	}); err != nil {
 		t.Fatalf("configInitRun: %v", err)
@@ -79,16 +78,15 @@ func TestConfigInitSeedsGlobalHubBaseline(t *testing.T) {
 // overwrite, and that --force lets it proceed.
 func TestConfigInitRefusesExistingWithoutForce(t *testing.T) {
 	t.Parallel()
-	rw := resolveTempWorkspace(t, tempWorkspaceOptions{})
 	global := filepath.Join(t.TempDir(), "aggrega", "config.yaml")
 	lookup := frozenEnv(map[string]string{workspaceconfig.EnvConfigOverride: global})
+	rw := resolveTempWorkspaceAgainst(t, tempWorkspaceOptions{}, lookup)
 
 	base := func() configInitConfig {
 		return configInitConfig{
 			Registry:    workspaceconfig.HubBaselineHost,
 			ws:          rw,
 			Out:         &bytes.Buffer{},
-			lookup:      lookup,
 			trustClient: offlineTrustClient(),
 		}
 	}
@@ -117,11 +115,11 @@ func TestConfigInitRefusesExistingWithoutForce(t *testing.T) {
 // destination rather than requiring it to already exist.
 func TestConfigInitConfigPathCreatesTarget(t *testing.T) {
 	t.Parallel()
-	rw := resolveTempWorkspace(t, tempWorkspaceOptions{})
 	// A --config target under a not-yet-created directory. The flag-aware lookup
 	// is exactly what the root wiring builds from --config.
 	target := filepath.Join(t.TempDir(), "custom", "config.yaml")
 	lookup := globalConfigLookup(target, frozenEnv(nil))
+	rw := resolveTempWorkspaceAgainst(t, tempWorkspaceOptions{}, lookup)
 
 	if _, err := os.Stat(target); !os.IsNotExist(err) {
 		t.Fatalf("precondition: target should not exist yet; stat err = %v", err)
@@ -131,7 +129,6 @@ func TestConfigInitConfigPathCreatesTarget(t *testing.T) {
 		Registry:    workspaceconfig.HubBaselineHost,
 		ws:          rw,
 		Out:         &bytes.Buffer{},
-		lookup:      lookup,
 		trustClient: offlineTrustClient(),
 	}); err != nil {
 		t.Fatalf("configInitRun --config into a new path: %v", err)
@@ -178,7 +175,6 @@ func TestConfigInitConfigFlagMissingPathCreates(t *testing.T) {
 		Registry:    workspaceconfig.HubBaselineHost,
 		ws:          rw,
 		Out:         &bytes.Buffer{},
-		lookup:      lookup,
 		trustClient: offlineTrustClient(),
 	}); err != nil {
 		t.Fatalf("configInitRun into a missing --config path: %v", err)
@@ -200,15 +196,22 @@ func TestConfigInitConfigFlagMissingPathCreates(t *testing.T) {
 // routes init's write to the --config path, exactly as the RunE wiring does.
 func TestConfigInitContextLookupWritesConfigPath(t *testing.T) {
 	t.Parallel()
-	rw := resolveTempWorkspace(t, tempWorkspaceOptions{})
+	root := resolveTempWorkspace(t, tempWorkspaceOptions{}).Root()
 	target := filepath.Join(t.TempDir(), "wired", "config.yaml")
-	ctx := withWorkspaceResolver(context.Background(), rw.Root(), globalConfigLookup(target, frozenEnv(nil)))
+	ctx := withWorkspaceResolver(context.Background(), root, globalConfigLookup(target, frozenEnv(nil)))
+
+	// The RunE resolves the workspace through the context's own lookup, and the
+	// write destination then comes off that resolution — so pulling the lookup
+	// from the context is what carries --config all the way to the write.
+	rw, err := workspaceconfig.ResolveWithoutGlobal("", root, configLookupFromContext(ctx))
+	if err != nil {
+		t.Fatalf("resolve via the context lookup: %v", err)
+	}
 
 	if err := configInitRun(configInitConfig{
 		Registry:    workspaceconfig.HubBaselineHost,
 		ws:          rw,
 		Out:         &bytes.Buffer{},
-		lookup:      configLookupFromContext(ctx),
 		trustClient: offlineTrustClient(),
 	}); err != nil {
 		t.Fatalf("configInitRun via context lookup: %v", err)

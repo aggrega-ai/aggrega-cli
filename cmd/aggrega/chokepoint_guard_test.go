@@ -529,6 +529,88 @@ func TestEgressLibraryImportChokepointGuard(t *testing.T) {
 	}
 }
 
+// TestWriteDestinationChokepointGuard enforces the single write-target site
+// structurally. A config-mutating command resolves the file it writes from the
+// workspace resolution it already holds — rw.WriteDestination — so the write
+// lands in the file that run READ its configuration from. The package-level
+// workspaceconfig.WriteDestination takes the root and the environment reader as
+// parameters, so a caller can hand it a reader the resolution never used, or nil,
+// which reads the live process environment; the destination then resolves against
+// the machine's ambient configuration while the command reports success naming a
+// file the operator never asked for. Its home is pkg/workspaceconfig, where the
+// method delegates to it and its policy is unit-tested directly.
+//
+// The guard is deny-by-default over a whole-module walk, exempting only that home,
+// so a package that does not exist today is covered the moment it is added: there
+// is no offender list to maintain. It names the offending site at parse time,
+// which a compile error could not do — the call type-checks, and its wrongness is
+// which environment it consults.
+//
+// GlobalConfigPath is deliberately NOT covered, and that is a scope decision
+// rather than an oversight: it is the read primitive beneath this policy, its
+// callers are display surfaces rather than writers, and a write cannot reach a
+// file through it without also deciding the operation's nature — which is the
+// decision WriteDestination owns and this guard fences.
+//
+// Test files are exempt: a test that resolves a destination against a frozen
+// environment is exercising the policy, not bypassing it.
+func TestWriteDestinationChokepointGuard(t *testing.T) {
+	root := filepath.Join("..", "..")
+	homeDir := filepath.Join(root, "pkg", "workspaceconfig")
+
+	visited := 0
+	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			base := d.Name()
+			if p == homeDir || base == "vendor" || base == "testdata" ||
+				(p != root && strings.HasPrefix(base, ".")) {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(p, ".go") || strings.HasSuffix(p, "_test.go") {
+			return nil
+		}
+		visited++
+		fset := token.NewFileSet()
+		node, perr := parser.ParseFile(fset, p, nil, 0)
+		if perr != nil {
+			t.Fatalf("parse %s: %v", p, perr)
+		}
+		ast.Inspect(node, func(n ast.Node) bool {
+			call, ok := n.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			sel, ok := call.Fun.(*ast.SelectorExpr)
+			if !ok {
+				return true
+			}
+			pkgID, ok := sel.X.(*ast.Ident)
+			if !ok || pkgID.Name != "workspaceconfig" {
+				return true
+			}
+			if sel.Sel.Name == "WriteDestination" {
+				t.Errorf("%s: package-level workspaceconfig.WriteDestination in production — resolve the destination off the workspace resolution (rw.WriteDestination), so the write lands in the file this run read its configuration from", fset.Position(call.Pos()))
+			}
+			return true
+		})
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk %s: %v", root, err)
+	}
+	// The walk's own reach is asserted rather than assumed. A negative-by-default
+	// guard whose walk visited nothing passes exactly as a clean tree does, so a
+	// relocated module root or a mistaken skip would retire this check in silence.
+	if visited == 0 {
+		t.Fatalf("the walk from %s visited no production Go file — the guard is inert, not the tree clean", root)
+	}
+}
+
 // TestResolveCatalogDirsChokepointGuard enforces the single home for the
 // catalog-dir precedence stack structurally. The flag-dirs-prepend-config
 // first-win assembly lives once, exported from pkg/workspaceconfig as

@@ -131,6 +131,29 @@ func resolveTempWorkspace(t *testing.T, opts tempWorkspaceOptions) *workspacecon
 	return rw
 }
 
+// resolveTempWorkspaceAgainst resolves an isolated workspace against look,
+// WITHOUT the global layer, for a test whose command is about to create or
+// rewrite the very global file look names.
+//
+// Resolving against the reader the write will use is the point rather than setup
+// detail: a config-mutating command resolves its write destination off the
+// resolution, so a test that resolved through one view of the environment and
+// wrote through another would exercise a seam production does not have — and
+// would pass while the write landed in a file the resolution never read.
+//
+// The global layer is skipped because the file under test frequently does not
+// exist yet, and the full cascade rejects an explicit global path that is
+// missing. That is the same reason the write-oriented commands resolve this way.
+func resolveTempWorkspaceAgainst(t *testing.T, opts tempWorkspaceOptions, look func(string) string) *workspaceconfig.ResolvedWorkspace {
+	t.Helper()
+	root := resolveTempWorkspace(t, opts).Root()
+	rw, err := workspaceconfig.ResolveWithoutGlobal("", root, look)
+	if err != nil {
+		t.Fatalf("resolve workspace without the global layer: %v", err)
+	}
+	return rw
+}
+
 // declaredDirs returns dirs as a non-nil slice, so the encoded config carries an
 // explicit empty `catalog_dirs` list rather than an empty `workspace:` mapping
 // that asserts nothing about the catalog.

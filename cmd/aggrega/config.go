@@ -263,9 +263,10 @@ the existing file, other settings preserved).`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// init writes the global config, so it resolves the workspace WITHOUT
 			// the global layer: the explicit --config path it is about to create
-			// need not pre-exist. It needs only the workspace root (for the
-			// --workspace target); the --global default target derives from the
-			// config-path lookup, not the root.
+			// need not pre-exist. The resolution still carries the same flag-aware
+			// lookup every other command's does, because the write destination is
+			// resolved off the resolution — so the file init creates is the file a
+			// later read of this same invocation would consult.
 			lookup := configLookupFromContext(cmd.Context())
 			rw, err := workspaceconfig.ResolveWithoutGlobal("", workspaceRootFromContext(cmd.Context()), lookup)
 			if err != nil {
@@ -278,7 +279,6 @@ the existing file, other settings preserved).`,
 				Workspace: workspace,
 				ws:        rw,
 				Out:       cmd.OutOrStdout(),
-				lookup:    lookup,
 			})
 		},
 	}
@@ -306,9 +306,6 @@ type configInitConfig struct {
 
 	ws  *workspaceconfig.ResolvedWorkspace
 	Out io.Writer
-	// lookup reads the environment for global-write-path resolution, carrying the
-	// --config flag override. Nil selects the live process environment.
-	lookup func(string) string
 	// trustClient transports the advertised-trust fetch. Nil selects a default
 	// client; tests inject one so no live network is contacted.
 	trustClient *http.Client
@@ -326,7 +323,7 @@ func configInitRun(cfg configInitConfig) error {
 		return fmt.Errorf("workspaceconfig: %w", err)
 	}
 
-	dest, err := workspaceconfig.WriteDestination(workspaceconfig.OpRegistry, cfg.Global, cfg.Workspace, rw.Root(), cfg.lookup)
+	dest, err := rw.WriteDestination(workspaceconfig.OpRegistry, cfg.Global, cfg.Workspace)
 	if err != nil {
 		return err
 	}
@@ -346,7 +343,6 @@ func configInitRun(cfg configInitConfig) error {
 		Workspace:   cfg.Workspace,
 		ws:          rw,
 		Out:         cfg.Out,
-		lookup:      cfg.lookup,
 		trustClient: cfg.trustClient,
 	})
 }

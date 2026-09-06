@@ -47,26 +47,21 @@ type WriteTarget struct {
 // resolveWriteTarget resolves the configuration file a registry mutation writes
 // to and classifies its reach.
 //
-// The path comes from the single write-target policy, which is what makes the
+// The path comes from the single write-target site, which is what makes the
 // default correct: a registry is tool-scoped, so with neither override it
 // resolves to the global file shared across every workspace on the machine. The
 // reach is then read off the resolution rather than off the flags, because the
 // flags are only two of its three inputs.
 //
-// 🔴 With no explicit environment reader it resolves against THE SESSION'S OWN
-// resolution rather than against the ambient process environment. Those two come
+// 🔴 It resolves against THE SESSION'S OWN resolution, never against the ambient
+// process environment, and that is not a default a caller may vary. The two come
 // apart whenever the workspace was resolved with its global layer pointed at a
 // particular file, and reading a configuration from one file while writing the
-// change to another is a silent wrong answer. An explicit lookup still wins,
-// which is what lets a test freeze the environment it is resolving against.
-func resolveWriteTarget(rw *workspaceconfig.ResolvedWorkspace, global, workspace bool, lookup func(string) string) (WriteTarget, error) {
-	var path string
-	var err error
-	if lookup != nil {
-		path, err = workspaceconfig.WriteDestination(workspaceconfig.OpRegistry, global, workspace, rw.Root(), lookup)
-	} else {
-		path, err = rw.WriteDestination(workspaceconfig.OpRegistry, global, workspace)
-	}
+// change to another is a silent wrong answer. A test freezes the environment by
+// resolving the workspace against a frozen reader, which is the same seam
+// production uses rather than a second one beside it.
+func resolveWriteTarget(rw *workspaceconfig.ResolvedWorkspace, global, workspace bool) (WriteTarget, error) {
+	path, err := rw.WriteDestination(workspaceconfig.OpRegistry, global, workspace)
 	if err != nil {
 		return WriteTarget{}, err
 	}
@@ -107,10 +102,6 @@ type AddOptions struct {
 	// TrustClient transports the advertised-trust fetch. Nil selects a default
 	// client in the fetch path; a test injects one so no live network is reached.
 	TrustClient *http.Client
-	// Lookup reads the environment for global-write-path resolution. Nil selects
-	// the live process environment; a test injects a frozen lookup so resolution
-	// is deterministic and parallel-safe.
-	Lookup func(string) string
 }
 
 // TrustFetchOutcome is what the advertised-trust fetch did, as a value rather
@@ -170,7 +161,7 @@ func Add(rw *workspaceconfig.ResolvedWorkspace, opts AddOptions) (AddResult, err
 	}
 	res.Host = host
 
-	target, err := resolveWriteTarget(rw, opts.Global, opts.Workspace, opts.Lookup)
+	target, err := resolveWriteTarget(rw, opts.Global, opts.Workspace)
 	if err != nil {
 		return res, err
 	}
@@ -288,9 +279,6 @@ type RemoveOptions struct {
 	Token     string
 	Global    bool
 	Workspace bool
-	// Lookup reads the environment for global-write-path resolution. Nil selects
-	// the live process environment.
-	Lookup func(string) string
 }
 
 // RemoveResult is what a removal dropped and from where.
@@ -316,7 +304,7 @@ type RemoveResult struct {
 // is the default.
 func Remove(rw *workspaceconfig.ResolvedWorkspace, opts RemoveOptions) (RemoveResult, error) {
 	var res RemoveResult
-	target, err := resolveWriteTarget(rw, opts.Global, opts.Workspace, opts.Lookup)
+	target, err := resolveWriteTarget(rw, opts.Global, opts.Workspace)
 	if err != nil {
 		return res, err
 	}

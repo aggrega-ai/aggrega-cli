@@ -195,7 +195,6 @@ func (f pluginRetractionFixture) addGovernancePlugin(t *testing.T) (string, stri
 		Query:  "tag-injector",
 		ws:     f.rw,
 		Out:    &out,
-		lookup: func(string) string { return "" },
 	})
 	if err != nil {
 		return "", out.String(), err

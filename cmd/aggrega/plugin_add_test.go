@@ -27,12 +27,25 @@ import (
 // attachment into that dir's config file.
 func resolvedTestWorkspace(t *testing.T) *workspaceconfig.ResolvedWorkspace {
 	t.Helper()
+	return resolvedTestWorkspaceAgainst(t, nil)
+}
+
+// resolvedTestWorkspaceAgainst is resolvedTestWorkspace against an explicit
+// environment reader, and without the global layer.
+//
+// A test whose attachment is meant to land in a named global file resolves this
+// way rather than seeding a lookup beside the resolution: the write destination
+// comes off the resolution, so the reader the resolution used IS the reader the
+// write uses. A nil reader keeps the ambient process environment, which the
+// binary-wide home redirect has already isolated.
+func resolvedTestWorkspaceAgainst(t *testing.T, look func(string) string) *workspaceconfig.ResolvedWorkspace {
+	t.Helper()
 	dir := t.TempDir()
 	path := filepath.Join(dir, workspaceconfig.ConfigFilename)
 	if err := os.WriteFile(path, []byte("workspace: {}\ndefault_registry: hub.aggrega.ai\noffline: false\n"), 0o644); err != nil {
 		t.Fatalf("seed config: %v", err)
 	}
-	rw, err := workspaceconfig.Resolve(dir, "")
+	rw, err := workspaceconfig.ResolveWithoutGlobal(dir, "", look)
 	if err != nil {
 		t.Fatalf("resolve workspace: %v", err)
 	}

@@ -66,16 +66,17 @@ var describeInstallable = func(ctx context.Context, src resolvedInstallable) (wa
 // once, and pins the plugin into the plugins.cli config list plus warms the
 // describe cache. The write destination follows the CLI operation's nature (a
 // machine-wide tool defaults to the global config) with the --global / --workspace
-// overrides; global and workspace are resolved up front so a write-target flag
-// misuse fails before any fetch. The collision guard runs across every command
-// before the prompt so a plugin any of whose commands can never install is
-// rejected without asking, and the config is written only after confirmation.
-func pluginInstallRun(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, ref string, global, workspace, acceptCaps, assumeYes bool, lookup func(string) string, in io.Reader, out io.Writer) error {
-	var root string
-	if rw != nil {
-		root = rw.Root()
+// overrides, resolved off rw so the pin lands in the config file this run read;
+// it is resolved up front so a write-target flag misuse fails before any fetch.
+// The collision guard runs across every command before the prompt so a plugin any
+// of whose commands can never install is rejected without asking, and the config
+// is written only after confirmation.
+func pluginInstallRun(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, ref string, global, workspace, acceptCaps, assumeYes bool, in io.Reader, out io.Writer) error {
+	rw, err := workspaceOrResolve(rw)
+	if err != nil {
+		return fmt.Errorf("workspaceconfig: %w", err)
 	}
-	configPath, err := workspaceconfig.WriteDestination(workspaceconfig.OpCLI, global, workspace, root, lookup)
+	configPath, err := rw.WriteDestination(workspaceconfig.OpCLI, global, workspace)
 	if err != nil {
 		return err
 	}

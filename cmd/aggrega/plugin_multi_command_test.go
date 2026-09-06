@@ -32,7 +32,7 @@ func TestPluginMultiCommand_InstallAndRoute(t *testing.T) {
 	rw := resolvedTestWorkspace(t)
 
 	var out bytes.Buffer
-	if err := pluginInstallRun(context.Background(), rw, "oci://local/greet", false, true, false, true, nil, strings.NewReader(""), &out); err != nil {
+	if err := pluginInstallRun(context.Background(), rw, "oci://local/greet", false, true, false, true, strings.NewReader(""), &out); err != nil {
 		t.Fatalf("install multi-command guest: %v", err)
 	}
 

@@ -91,8 +91,13 @@ func GlobalConfigPath(lookup func(string) string) (string, bool) {
 // GlobalConfigPath (the $AGGREGA_CONFIG path or the XDG default); the workspace
 // destination is ConfigFilename at root, the resolved workspace root. lookup
 // reads the environment for the global-path resolution; pass nil for the live
-// process environment. This is the single write-target policy: every
-// config-mutating command routes through it so the write sites cannot drift.
+// process environment.
+//
+// This is the write-target POLICY, and it is not the form a command reaches for:
+// taking the root and the environment reader as parameters, it lets a caller
+// resolve a destination against a different environment view than the one its
+// configuration was read through. The method below binds both to one resolution
+// and is the form every config-mutating command uses.
 func WriteDestination(op ConfigOperation, global, workspace bool, root string, lookup func(string) string) (string, error) {
 	if global && workspace {
 		return "", fmt.Errorf("workspaceconfig: --global and --workspace cannot be combined; choose at most one")
@@ -119,14 +124,15 @@ func WriteDestination(op ConfigOperation, global, workspace bool, root string, l
 // WriteDestination resolves the config file a mutating operation writes to,
 // against THIS resolution's own root and its own view of the environment.
 //
-// It is the form to reach for wherever a resolved workspace is already in hand,
-// and the reason is a correctness one rather than convenience. The free function
-// above takes the environment reader as a parameter, so a caller holding a
-// resolution can pass a different one — or nil, which reads the live process
-// environment — and then write to a global file the resolution never read. The
-// two come apart whenever the resolution was directed at a particular global
-// file rather than at the ambient one, which is exactly what a caller does when
-// it points the global layer somewhere explicit.
+// This is the single write-target site: every config-mutating command routes
+// through it, so the write lands in the file the configuration was read from and
+// the write sites cannot drift. The reason is a correctness one rather than
+// convenience. The free function above takes the environment reader as a
+// parameter, so a caller holding a resolution can pass a different one — or nil,
+// which reads the live process environment — and then write to a global file the
+// resolution never read. The two come apart whenever the resolution was directed
+// at a particular global file rather than at the ambient one, which is exactly
+// what a caller does when it points the global layer somewhere explicit.
 //
 // Reading a configuration from one file and writing the change to another is a
 // silent wrong answer: the operation reports success, names the file it wrote,

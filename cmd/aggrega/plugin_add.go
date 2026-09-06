@@ -163,10 +163,6 @@ type pluginAddConfig struct {
 	ws  *workspaceconfig.ResolvedWorkspace
 	In  io.Reader
 	Out interface{ Write([]byte) (int, error) }
-	// lookup reads the environment for global-write-path resolution. Nil selects
-	// the live process environment; tests inject a frozen lookup so resolution
-	// is deterministic and parallel-safe.
-	lookup func(string) string
 }
 
 // pluginAddRun searches the workspace registry for a plugin serving cfg.Socket,
@@ -213,12 +209,15 @@ func pluginAddRun(ctx context.Context, cfg pluginAddConfig) error {
 
 	// Resolve the write destination up front — it does not depend on the search,
 	// so a write-target flag misuse (both --global and --workspace) or an
-	// unresolvable global path fails fast, before any registry search.
+	// unresolvable global path fails fast, before any registry search. It is
+	// resolved off the resolution itself, so the attachment lands in the config
+	// file this run read rather than in whichever file the ambient environment
+	// names.
 	op := workspaceconfig.OpConfigSocket
 	if isProvider {
 		op = workspaceconfig.OpProviderBinding
 	}
-	configPath, err := workspaceconfig.WriteDestination(op, cfg.Global, cfg.Workspace, rw.Root(), cfg.lookup)
+	configPath, err := rw.WriteDestination(op, cfg.Global, cfg.Workspace)
 	if err != nil {
 		return err
 	}
@@ -294,7 +293,7 @@ func pluginAddCLIRun(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace,
 		return fmt.Errorf("aggrega plugin add: %s has no published version tag to install; publish a version first", repoPath)
 	}
 	ref := "oci://" + host + "/" + repoPath + ":" + version
-	return pluginInstallRun(ctx, rw, ref, cfg.Global, cfg.Workspace, cfg.AcceptCaps, cfg.AssumeYes, cfg.lookup, cfg.In, cfg.Out)
+	return pluginInstallRun(ctx, rw, ref, cfg.Global, cfg.Workspace, cfg.AcceptCaps, cfg.AssumeYes, cfg.In, cfg.Out)
 }
 
 // socketSearchScope admits only the repository paths a plugin serving socket

@@ -96,11 +96,12 @@ func (r Reporter) resolved(cl closure.Closure) {
 // halts loudly rather than blocking on an answer that will never come. Supplying
 // it is the caller's declaration that a person is watching and can answer.
 //
-// candidates is the sorted candidate set the ambiguity was raised over; root is
-// the workspace root a recorded answer is written under; wsCfg is updated in
-// place so the re-resolution immediately following adopts the answer; out is the
-// stream the question is put on.
-type ResolveProviderAmbiguity func(target string, candidates []types.Plugin, root string, wsCfg *workspaceconfig.Config, out io.Writer) error
+// candidates is the sorted candidate set the ambiguity was raised over; rw is
+// the resolution a recorded answer is written against — the resolution rather
+// than its root, so the answer lands in the config file this run read; wsCfg is
+// updated in place so the re-resolution immediately following adopts the answer;
+// out is the stream the question is put on.
+type ResolveProviderAmbiguity func(target string, candidates []types.Plugin, rw *workspaceconfig.ResolvedWorkspace, wsCfg *workspaceconfig.Config, out io.Writer) error
 
 // Config is the dependency-resolution operation's input contract. A caller
 // assembles it from whatever state it holds — flag values, a request payload —
@@ -574,7 +575,7 @@ func Run(cfg Config) (Result, error) {
 		bare, _, _ := strings.Cut(ref, ":")
 		p, ok, err := lazyView.ProviderPluginForTarget(ref, wsCfg.Plugins.ProviderTargetURIs())
 		if errors.Is(err, catalog.ErrAmbiguousProviderPlugin()) && cfg.ResolveProviderAmbiguity != nil {
-			if herr := cfg.ResolveProviderAmbiguity(bare, lazyView.ProviderPluginCandidates(bare), rw.Root(), &wsCfg, cfg.DiagOut); herr != nil {
+			if herr := cfg.ResolveProviderAmbiguity(bare, lazyView.ProviderPluginCandidates(bare), rw, &wsCfg, cfg.DiagOut); herr != nil {
 				return types.Plugin{}, false, herr
 			}
 			p, ok, err = lazyView.ProviderPluginForTarget(ref, wsCfg.Plugins.ProviderTargetURIs())

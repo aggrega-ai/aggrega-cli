@@ -74,10 +74,6 @@ type pluginRemoveConfig struct {
 
 	ws  *workspaceconfig.ResolvedWorkspace
 	Out interface{ Write([]byte) (int, error) }
-	// lookup reads the environment for global-write-path resolution. Nil selects
-	// the live process environment; tests inject a frozen lookup so resolution
-	// is deterministic and parallel-safe.
-	lookup func(string) string
 }
 
 // pluginRemoveRun resolves the write destination for cfg.Socket — the same
@@ -105,7 +101,10 @@ func pluginRemoveRun(cfg pluginRemoveConfig) error {
 	case isCLI:
 		op = workspaceconfig.OpCLI
 	}
-	configPath, err := workspaceconfig.WriteDestination(op, cfg.Global, cfg.Workspace, rw.Root(), cfg.lookup)
+	// Resolved off the resolution itself, so the removal is applied to the config
+	// file this run read rather than to whichever file the ambient environment
+	// names.
+	configPath, err := rw.WriteDestination(op, cfg.Global, cfg.Workspace)
 	if err != nil {
 		return err
 	}

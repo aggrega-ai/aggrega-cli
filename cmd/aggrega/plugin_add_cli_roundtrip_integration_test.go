@@ -97,7 +97,7 @@ func TestIntegration_PluginAddCLI_FetchCachesForOfflineRun(t *testing.T) {
 	// production fetch pulls the bytes, verifies, pins by content digest, caches
 	// both blobs, describes the guest, and records the pin.
 	var out bytes.Buffer
-	if err := pluginInstallRun(context.Background(), rw, ref, false /*global*/, true /*workspace*/, false /*acceptCaps*/, true /*assumeYes*/, nil, strings.NewReader(""), &out); err != nil {
+	if err := pluginInstallRun(context.Background(), rw, ref, false /*global*/, true /*workspace*/, false /*acceptCaps*/, true /*assumeYes*/, strings.NewReader(""), &out); err != nil {
 		t.Fatalf("plugin add cli (real fetch): %v", err)
 	}
 

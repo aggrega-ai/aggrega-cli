@@ -152,7 +152,7 @@ func TestPluginInstall_Success(t *testing.T) {
 	rw := resolvedTestWorkspace(t)
 
 	var out bytes.Buffer
-	if err := pluginInstallRun(context.Background(), rw, "oci://local/moo", false, true, false, true, nil, strings.NewReader(""), &out); err != nil {
+	if err := pluginInstallRun(context.Background(), rw, "oci://local/moo", false, true, false, true, strings.NewReader(""), &out); err != nil {
 		t.Fatalf("install: %v", err)
 	}
 	if !strings.Contains(out.String(), "no additional capabilities") {
@@ -196,7 +196,7 @@ func TestPluginInstall_CollisionAndTypeGuards(t *testing.T) {
 			rw := resolvedTestWorkspace(t)
 
 			var out bytes.Buffer
-			err := pluginInstallRun(context.Background(), rw, "oci://local/x", false, true, true, true, nil, strings.NewReader(""), &out)
+			err := pluginInstallRun(context.Background(), rw, "oci://local/x", false, true, true, true, strings.NewReader(""), &out)
 			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
 				t.Fatalf("want error containing %q; got %v", tc.wantErr, err)
 			}
@@ -217,7 +217,7 @@ func TestPluginInstall_NonInteractiveRefuse(t *testing.T) {
 	rw := resolvedTestWorkspace(t)
 
 	var out bytes.Buffer
-	err := pluginInstallRun(context.Background(), rw, "oci://local/moo", false, true, false, false, nil, strings.NewReader(""), &out)
+	err := pluginInstallRun(context.Background(), rw, "oci://local/moo", false, true, false, false, strings.NewReader(""), &out)
 	if err == nil || !strings.Contains(err.Error(), "non-interactive") {
 		t.Fatalf("non-tty install without a flag should refuse; got %v", err)
 	}
@@ -240,7 +240,7 @@ func TestPluginInstall_RealGuestDescribe(t *testing.T) {
 	rw := resolvedTestWorkspace(t)
 
 	var out bytes.Buffer
-	if err := pluginInstallRun(context.Background(), rw, "oci://local/moo", false, true, false, true, nil, strings.NewReader(""), &out); err != nil {
+	if err := pluginInstallRun(context.Background(), rw, "oci://local/moo", false, true, false, true, strings.NewReader(""), &out); err != nil {
 		t.Fatalf("install real guest: %v", err)
 	}
 	wantDigest := digest.ContentDigest(guest)

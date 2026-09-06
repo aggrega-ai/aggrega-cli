@@ -257,10 +257,6 @@ type registryRemoveConfig struct {
 
 	ws  *workspaceconfig.ResolvedWorkspace
 	Out io.Writer
-	// lookup reads the environment for global-write-path resolution. Nil selects
-	// the live process environment; tests inject a frozen lookup so resolution is
-	// deterministic and parallel-safe.
-	lookup func(string) string
 }
 
 // registryRemoveRun drops the registry entry addressed by cfg.Token from the
@@ -279,7 +275,6 @@ func registryRemoveRun(cfg registryRemoveConfig) error {
 		Token:     cfg.Token,
 		Global:    cfg.Global,
 		Workspace: cfg.Workspace,
-		Lookup:    cfg.lookup,
 	})
 	if err != nil {
 		return err
@@ -400,10 +395,6 @@ type registryAddConfig struct {
 	// client in the fetch path; tests inject an httptest client so no live
 	// network is contacted.
 	trustClient *http.Client
-	// lookup reads the environment for global-write-path resolution. Nil selects
-	// the live process environment; tests inject a frozen lookup so resolution
-	// is deterministic and parallel-safe.
-	lookup func(string) string
 }
 
 // registryAddRun registers the host and its trust policy in the resolved config
@@ -433,7 +424,6 @@ func registryAddRun(cfg registryAddConfig) error {
 		Global:            cfg.Global,
 		Workspace:         cfg.Workspace,
 		TrustClient:       cfg.trustClient,
-		Lookup:            cfg.lookup,
 	})
 	// The trust-fetch notice is written whether or not the registration went on to
 	// succeed, because the fetch happened either way and a reader who is told

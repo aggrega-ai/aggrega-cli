@@ -29,11 +29,11 @@ func providerBindingHelperEligible(cfg pullConfig) bool {
 // renders an ambiguously-served target, writes the choice into the workspace's
 // `.aggrega-config.yaml` `plugins.providers` list, and updates the in-memory
 // config so the immediately-following re-resolution adopts it. candidates is the
-// sorted candidate set the ambiguity was raised over; root is the workspace root
-// the config file lives at; out is the prompt sink (the pull's diagnostic
+// sorted candidate set the ambiguity was raised over; rw is the resolution the
+// answer is recorded against; out is the prompt sink (the pull's diagnostic
 // stream). It never resolves the ambiguity silently: an unreadable choice or a
 // write failure returns an error that halts the pull.
-func runProviderBindingHelper(target string, candidates []types.Plugin, root string, wsCfg *workspaceconfig.Config, out io.Writer) error {
+func runProviderBindingHelper(target string, candidates []types.Plugin, rw *workspaceconfig.ResolvedWorkspace, wsCfg *workspaceconfig.Config, out io.Writer) error {
 	if len(candidates) < 2 {
 		// The helper is only reached on a genuine ambiguity; a degenerate set is a
 		// programming error, surfaced rather than silently guessed.
@@ -57,8 +57,15 @@ func runProviderBindingHelper(target string, candidates []types.Plugin, root str
 	chosen := candidates[choice-1]
 
 	// The interactive helper writes a build-scoped provider binding; it surfaces
-	// no write-target flags, so it always resolves to the workspace default.
-	configPath, err := workspaceconfig.WriteDestination(workspaceconfig.OpProviderBinding, false, false, root, nil)
+	// no write-target flags, so it always resolves to the workspace default. The
+	// destination is still resolved off the resolution rather than assembled from
+	// a root, so the binding lands in the config file this run read and the site
+	// stays correct if the operation's default file ever changes.
+	rw, err = workspaceOrResolve(rw)
+	if err != nil {
+		return fmt.Errorf("provider binding helper: %w", err)
+	}
+	configPath, err := rw.WriteDestination(workspaceconfig.OpProviderBinding, false, false)
 	if err != nil {
 		return err
 	}

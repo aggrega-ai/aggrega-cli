@@ -17,12 +17,22 @@ import (
 // the resolved workspace and the config path, so a remove writes into that dir.
 func seedWorkspaceConfig(t *testing.T, body string) (*workspaceconfig.ResolvedWorkspace, string) {
 	t.Helper()
+	return seedWorkspaceConfigAgainst(t, body, nil)
+}
+
+// seedWorkspaceConfigAgainst is seedWorkspaceConfig against an explicit
+// environment reader. A test whose removal targets a named global file resolves
+// this way, because the write destination comes off the resolution: the reader
+// the resolution used is the reader the write uses, and there is no second seam
+// beside it that could name a different file.
+func seedWorkspaceConfigAgainst(t *testing.T, body string, look func(string) string) (*workspaceconfig.ResolvedWorkspace, string) {
+	t.Helper()
 	dir := t.TempDir()
 	path := filepath.Join(dir, workspaceconfig.ConfigFilename)
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatalf("seed config: %v", err)
 	}
-	rw, err := workspaceconfig.Resolve(dir, "")
+	rw, err := workspaceconfig.Resolve(dir, "", look)
 	if err != nil {
 		t.Fatalf("resolve workspace: %v", err)
 	}
@@ -103,14 +113,13 @@ func TestPluginRemoveRun_CLIDefaultsGlobal(t *testing.T) {
 		return ""
 	}
 
-	rw, _ := seedWorkspaceConfig(t, "workspace: {}\n")
+	rw, _ := seedWorkspaceConfigAgainst(t, "workspace: {}\n", lookup)
 	var out bytes.Buffer
 	if err := pluginRemoveRun(pluginRemoveConfig{
 		Socket: "cli",
 		Query:  "greet",
 		ws:     rw,
 		Out:    &out,
-		lookup: lookup,
 	}); err != nil {
 		t.Fatalf("pluginRemoveRun (cli, default global): %v", err)
 	}

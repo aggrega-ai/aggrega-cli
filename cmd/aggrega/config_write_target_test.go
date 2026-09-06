@@ -26,16 +26,15 @@ func frozenEnv(vars map[string]string) func(string) string {
 // destination is printed.
 func TestRegistryAddDefaultsToGlobal(t *testing.T) {
 	t.Parallel()
-	rw := resolveTempWorkspace(t, tempWorkspaceOptions{})
 	global := filepath.Join(t.TempDir(), "aggrega", "config.yaml")
 	lookup := frozenEnv(map[string]string{"AGGREGA_CONFIG": global})
+	rw := resolveTempWorkspaceAgainst(t, tempWorkspaceOptions{}, lookup)
 
 	var out bytes.Buffer
 	if err := registryAddRun(registryAddConfig{
-		Host:   "tool.example.com",
-		lookup: lookup,
-		ws:     rw,
-		Out:    &out,
+		Host: "tool.example.com",
+		ws:   rw,
+		Out:  &out,
 	}); err != nil {
 		t.Fatalf("registryAddRun: %v", err)
 	}
@@ -109,13 +108,13 @@ func TestRegistryAddBothFlagsUsageError(t *testing.T) {
 // at the write.
 func TestRegistryAddGlobalCreatesMissingParentDir(t *testing.T) {
 	t.Parallel()
-	rw := resolveTempWorkspace(t, tempWorkspaceOptions{})
 	// $AGGREGA_CONFIG under two not-yet-created directory levels.
 	global := filepath.Join(t.TempDir(), "cfg", "aggrega", "config.yaml")
+	rw := resolveTempWorkspaceAgainst(t, tempWorkspaceOptions{},
+		frozenEnv(map[string]string{"AGGREGA_CONFIG": global}))
 	if err := registryAddRun(registryAddConfig{
 		Host:   "mkdir.example.com",
 		Global: true,
-		lookup: frozenEnv(map[string]string{"AGGREGA_CONFIG": global}),
 		ws:     rw,
 		Out:    &bytes.Buffer{},
 	}); err != nil {
@@ -159,9 +158,8 @@ func TestPluginAddProviderDefaultsToWorkspace(t *testing.T) {
 func TestPluginAddProviderGlobalOverride(t *testing.T) {
 	// Not parallel: mutates process-global globalDisplay, newRepoDeprecationLookup seams other tests read.
 	withSearchTarget(t, fakeRepoLister{repos: searchFixtureRepos}, nil)
-	rw := resolvedTestWorkspace(t)
 	global := filepath.Join(t.TempDir(), "aggrega", "config.yaml")
-	lookup := frozenEnv(map[string]string{"AGGREGA_CONFIG": global})
+	rw := resolvedTestWorkspaceAgainst(t, frozenEnv(map[string]string{"AGGREGA_CONFIG": global}))
 	var out bytes.Buffer
 
 	if err := pluginAddRun(context.Background(), pluginAddConfig{
@@ -169,7 +167,6 @@ func TestPluginAddProviderGlobalOverride(t *testing.T) {
 		Query:      "helm",
 		Capability: "helm",
 		Global:     true,
-		lookup:     lookup,
 		ws:         rw,
 		Out:        &out,
 	}); err != nil {
