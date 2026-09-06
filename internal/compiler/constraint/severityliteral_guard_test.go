@@ -31,6 +31,28 @@ import (
 // vocabulary while saying nothing about a literal in the next one to arrive.
 // Shape survives a vocabulary this file has never heard of.
 //
+// # The one literal this guard does not report, and why it is not a weakening
+//
+// A COMPARISON against the empty string is clean. It is the only carve-out, and
+// it is bounded by the reason it rests on rather than by convenience.
+//
+// The failure above is that a literal keeps compiling after the set it belonged
+// to is respelled, leaving a site carrying a value that is no longer a member of
+// anything. The empty string is a member of no severity vocabulary in this module
+// and cannot become one: it is the zero value of the field, which is the spelling
+// of ABSENCE, so respelling any tier set leaves such a comparison exactly as
+// correct as it was. A required-argument presence check is what the shape is for,
+// and it is the idiomatic Go form of one.
+//
+// The remedy this guard prints — name the tier at the site — presupposes a tier
+// is being named. Following it here would mean declaring a constant for the empty
+// string, a constant naming nothing, which is worse than the literal it replaced.
+//
+// The carve-out is deliberately narrow in both directions, and the calibration
+// pins both: a comparison against a real tier spelling is still reported, and an
+// ASSIGNMENT of the empty string is still reported, because writing absence into
+// a severity field is a value-carrying act rather than a test of one.
+//
 // # What this guard cannot see, and every finding it will therefore miss
 //
 // An unstated bound reads as full coverage, so each one is named.
@@ -66,6 +88,14 @@ import (
 // tiers.
 const severityFieldName = "Severity"
 
+// The three shapes a value reaches the field in, named once so the detector, the
+// calibration and the reported line all spell them the same way.
+const (
+	severityFormKeyed      = "keyed field"
+	severityFormAssignment = "assignment"
+	severityFormComparison = "comparison"
+)
+
 // severityLiteralUse is one place a bare string literal reaches a severity field,
 // carrying the position, the literal, and the shape it was written in. The shape
 // is reported because it is what a reader needs to find the line, never because
@@ -74,6 +104,15 @@ type severityLiteralUse struct {
 	pos   token.Position
 	value string
 	form  string
+}
+
+// severityLiteralCell is one cell of the grid the calibration drives: a shape
+// paired with the literal written in it. The detector's behaviour varies along
+// both axes — one cell is carved out — so the calibration keys on the pair rather
+// than on the shape alone.
+type severityLiteralCell struct {
+	form  string
+	value string
 }
 
 // TestNoGoSourceWritesASeverityLiteral refuses a bare string literal written into
@@ -148,40 +187,74 @@ func TestNoGoSourceWritesASeverityLiteral(t *testing.T) {
 }
 
 // calibrateSeverityLiteralGuard proves the detector fires on each shape it claims
-// to cover, and proves it stays quiet where the value is a constant, before
-// either verdict is believed.
+// to cover, proves the one carve-out is exactly one cell wide, and proves it stays
+// quiet where the value is a constant, before any of the three verdicts is
+// believed.
 //
 // It runs on every invocation rather than once at authoring time. A detector that
 // quietly stopped recognising a shape would report a clean tree, and a clean tree
 // is what this guard reports when all is well — the two are indistinguishable
 // from the outside, which is why a zero here is a claim about the instrument
 // until something makes it fire.
+//
+// The behaviour is a GRID rather than a list — three shapes, times whether the
+// literal is empty — and the carve-out sits in its interior, at one cell. So all
+// six cells are driven here rather than the margins alone: naming the shapes on
+// one axis and emptiness on the other would leave the carve-out's own cell, and
+// every cell adjacent to it, unstated.
 func calibrateSeverityLiteralGuard(t *testing.T) {
 	t.Helper()
 
 	fires := "package p\n\ntype d struct{ " + severityFieldName + " string }\n\n" +
-		"const tier = \"a-tier\"\n\n" +
-		"func f(x *d) bool {\n" +
+		"func f(x *d, y *d) bool {\n" +
 		"\t_ = d{" + severityFieldName + ": \"keyed\"}\n" +
+		"\t_ = d{" + severityFieldName + ": \"\"}\n" +
 		"\tx." + severityFieldName + " = \"assigned\"\n" +
+		"\ty." + severityFieldName + " = \"\"\n" +
 		"\tif x." + severityFieldName + " == \"compared\" {\n\t\treturn true\n\t}\n" +
+		"\tif y." + severityFieldName + " == \"\" {\n\t\treturn false\n\t}\n" +
 		"\treturn x." + severityFieldName + " != \"compared-ne\"\n}\n"
 
 	fset, parsed := parseCalibrationSource(t, fires)
 	uses, sites := findSeverityLiteralUses(fset, parsed)
-	byForm := map[string]int{}
+	reported := map[severityLiteralCell]int{}
 	for _, use := range uses {
-		byForm[use.form]++
+		reported[severityLiteralCell{form: use.form, value: use.value}]++
 	}
-	for _, form := range []string{"keyed field", "assignment", "comparison"} {
-		if byForm[form] == 0 {
-			t.Fatalf("the detector does not report a %s of a bare literal to a %s field, so it is not a "+
-				"working instrument and its verdict over this module means nothing", form, severityFieldName)
+	for _, cell := range []severityLiteralCell{
+		{severityFormKeyed, "keyed"},
+		{severityFormKeyed, ""},
+		{severityFormAssignment, "assigned"},
+		{severityFormAssignment, ""},
+		{severityFormComparison, "compared"},
+		{severityFormComparison, "compared-ne"},
+	} {
+		if reported[cell] == 0 {
+			t.Fatalf("the detector does not report a %s of the bare literal %q to a %s field, so it is not a "+
+				"working instrument and its verdict over this module means nothing",
+				cell.form, cell.value, severityFieldName)
 		}
 	}
+	// The carve-out itself, asserted as an absence against the five presences
+	// above. Together they pin it to one cell: were it widened to the whole
+	// comparison shape, the two comparisons above would stop being reported and
+	// the loop would have failed already.
+	if n := reported[severityLiteralCell{severityFormComparison, ""}]; n != 0 {
+		t.Fatalf("the detector reported %d %s(s) against the empty string, so the carve-out this guard "+
+			"documents is not in force and a required-argument presence check would be refused as though "+
+			"it named a tier", n, severityFormComparison)
+	}
 	if sites == 0 {
-		t.Fatalf("the detector counted no %s field site over source that writes four of them, so its "+
+		t.Fatalf("the detector counted no %s field site over source that writes seven of them, so its "+
 			"corpus figure would report an empty corpus over a populated one", severityFieldName)
+	}
+	// The carve-out withholds a finding and never a site: the presence check is a
+	// real severity field site, and a corpus figure that skipped it would
+	// understate how much was looked at.
+	if sites != 7 {
+		t.Fatalf("the detector counted %d %s field site(s) over source that writes seven of them; the "+
+			"corpus figure travels with the verdict, so it may not skip the site whose finding is carved out",
+			sites, severityFieldName)
 	}
 
 	// The other direction, and it is the one that keeps the guard usable. A
@@ -196,14 +269,16 @@ func calibrateSeverityLiteralGuard(t *testing.T) {
 		"\tx." + severityFieldName + " = tier\n" +
 		"\tx." + severityFieldName + " = s\n" +
 		"\tif x." + severityFieldName + " == tier {\n\t\treturn true\n\t}\n" +
+		"\tif x." + severityFieldName + " == \"\" {\n\t\treturn true\n\t}\n" +
 		"\treturn s == \"not a severity field\"\n}\n"
 
 	cleanFset, cleanParsed := parseCalibrationSource(t, clean)
 	if cleanUses, cleanSites := findSeverityLiteralUses(cleanFset, cleanParsed); len(cleanUses) != 0 {
-		t.Fatalf("the detector reported %d literal(s) over source whose every %s value is a constant, so "+
-			"it would fire on corrected code: %v", len(cleanUses), severityFieldName, cleanUses)
+		t.Fatalf("the detector reported %d literal(s) over source whose every %s value is a declared "+
+			"constant, a variable, or a presence check against the empty string, so it would fire on "+
+			"corrected code: %v", len(cleanUses), severityFieldName, cleanUses)
 	} else if cleanSites == 0 {
-		t.Fatalf("the detector counted no %s field site over source that writes four of them, so a clean "+
+		t.Fatalf("the detector counted no %s field site over source that writes several of them, so a clean "+
 			"tree and an unreached tree would read the same", severityFieldName)
 	}
 }
@@ -230,6 +305,14 @@ func findSeverityLiteralUses(fset *token.FileSet, file *ast.File) (uses []severi
 		if err != nil {
 			return
 		}
+		// The one carve-out, stated at the top of this file: comparing the field
+		// against the empty string tests for ABSENCE, and absence is a member of
+		// no tier set, so respelling one cannot falsify the site. The site is
+		// still counted in the corpus figure — it is a real severity field site,
+		// merely not a finding.
+		if form == severityFormComparison && value == "" {
+			return
+		}
 		uses = append(uses, severityLiteralUse{pos: fset.Position(lit.Pos()), value: value, form: form})
 	}
 	selectsSeverity := func(expr ast.Expr) bool {
@@ -246,7 +329,7 @@ func findSeverityLiteralUses(fset *token.FileSet, file *ast.File) (uses []severi
 					continue
 				}
 				if key, ok := kv.Key.(*ast.Ident); ok && key.Name == severityFieldName {
-					record("keyed field", kv.Value)
+					record(severityFormKeyed, kv.Value)
 				}
 			}
 		case *ast.AssignStmt:
@@ -258,7 +341,7 @@ func findSeverityLiteralUses(fset *token.FileSet, file *ast.File) (uses []severi
 			}
 			for i, lhs := range x.Lhs {
 				if selectsSeverity(lhs) {
-					record("assignment", x.Rhs[i])
+					record(severityFormAssignment, x.Rhs[i])
 				}
 			}
 		case *ast.BinaryExpr:
@@ -266,10 +349,10 @@ func findSeverityLiteralUses(fset *token.FileSet, file *ast.File) (uses []severi
 				return true
 			}
 			if selectsSeverity(x.X) {
-				record("comparison", x.Y)
+				record(severityFormComparison, x.Y)
 			}
 			if selectsSeverity(x.Y) {
-				record("comparison", x.X)
+				record(severityFormComparison, x.X)
 			}
 		}
 		return true

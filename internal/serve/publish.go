@@ -11,6 +11,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/cacheops"
 	"github.com/aggrega-ai/aggrega-cli/internal/publishops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/registryhost"
+	"github.com/aggrega-ai/aggrega-cli/pkg/signing"
 )
 
 // The four publication methods: publishing a catalog entity, publishing a
@@ -311,17 +312,19 @@ func (s *Server) publishEntityConfig(params publishEntityParams) (publishops.Pus
 		return publishops.PushConfig{}, jerr
 	}
 	return publishops.PushConfig{
-		EntityPath:   entityPath,
-		Registry:     params.Registry,
-		DryRun:       params.DryRun,
-		Sign:         params.Sign,
-		FulcioURL:    params.FulcioURL,
-		RekorURL:     params.RekorURL,
-		TimestampURL: params.TimestampURL,
-		IDToken:      params.IdentityToken,
-		PluginPath:   pluginPath,
-		Workspace:    s.resolvedWorkspace,
-		Out:          io.Discard,
+		EntityPath:        entityPath,
+		Registry:          params.Registry,
+		DryRun:            params.DryRun,
+		Sign:              params.Sign,
+		FulcioURL:         params.FulcioURL,
+		RekorURL:          params.RekorURL,
+		TimestampURL:      params.TimestampURL,
+		IDToken:           params.IdentityToken,
+		PluginPath:        pluginPath,
+		Workspace:         s.resolvedWorkspace,
+		IdentitySupply:    daemonIdentitySupply,
+		DestinationSupply: daemonDestinationSupply,
+		Out:               io.Discard,
 	}, nil
 }
 
@@ -418,14 +421,15 @@ func (s *Server) publishArtifactConfig(params publishArtifactParams) (publishops
 		return publishops.PushArtifactConfig{}, jerr
 	}
 	return publishops.PushArtifactConfig{
-		FilePath:  filePath,
-		Name:      params.Name,
-		Tag:       params.Tag,
-		MediaType: params.MediaType,
-		Registry:  params.Registry,
-		DryRun:    params.DryRun,
-		Workspace: s.resolvedWorkspace,
-		Out:       io.Discard,
+		FilePath:          filePath,
+		Name:              params.Name,
+		Tag:               params.Tag,
+		MediaType:         params.MediaType,
+		Registry:          params.Registry,
+		DryRun:            params.DryRun,
+		Workspace:         s.resolvedWorkspace,
+		DestinationSupply: daemonDestinationSupply,
+		Out:               io.Discard,
 	}, nil
 }
 
@@ -505,13 +509,14 @@ func (s *Server) signArtifactsConfig(params signArtifactsParams) (publishops.Sig
 		}
 	}
 	return publishops.SignConfig{
-		References:   params.References,
-		FulcioURL:    params.FulcioURL,
-		RekorURL:     params.RekorURL,
-		TimestampURL: params.TimestampURL,
-		IDToken:      params.IdentityToken,
-		Workspace:    s.resolvedWorkspace,
-		Out:          io.Discard,
+		References:     params.References,
+		FulcioURL:      params.FulcioURL,
+		RekorURL:       params.RekorURL,
+		TimestampURL:   params.TimestampURL,
+		IDToken:        params.IdentityToken,
+		Workspace:      s.resolvedWorkspace,
+		IdentitySupply: daemonIdentitySupply,
+		Out:            io.Discard,
 	}, nil
 }
 
@@ -612,18 +617,19 @@ func (s *Server) deprecateArtifactConfig(params deprecateArtifactParams) (publis
 		}
 	}
 	return publishops.DeprecateConfig{
-		Reference:    params.Reference,
-		Severity:     params.Severity,
-		Reason:       params.Reason,
-		Replacement:  params.Replacement,
-		Message:      params.Message,
-		From:         batchPath,
-		FulcioURL:    params.FulcioURL,
-		RekorURL:     params.RekorURL,
-		TimestampURL: params.TimestampURL,
-		IDToken:      params.IdentityToken,
-		Workspace:    s.resolvedWorkspace,
-		Out:          io.Discard,
+		Reference:      params.Reference,
+		Severity:       params.Severity,
+		Reason:         params.Reason,
+		Replacement:    params.Replacement,
+		Message:        params.Message,
+		From:           batchPath,
+		FulcioURL:      params.FulcioURL,
+		RekorURL:       params.RekorURL,
+		TimestampURL:   params.TimestampURL,
+		IDToken:        params.IdentityToken,
+		Workspace:      s.resolvedWorkspace,
+		IdentitySupply: daemonIdentitySupply,
+		Out:            io.Discard,
 	}, nil
 }
 
@@ -653,19 +659,38 @@ func runDeprecateArtifact(cfg publishops.DeprecateConfig) (deprecateArtifactResu
 	return deprecateArtifactResult{Marked: marked, Reach: reachOf(host, len(marked) > 0)}, nil
 }
 
+// The vocabulary this surface's refusals are written in. A caller here sends
+// request fields and has neither a command line nor a terminal, so a refusal that
+// named a flag would name something the caller cannot do — and one that reported
+// a terminal's absence would report on something the caller never had.
+//
+// These say only HOW to supply what is missing. WHETHER it is missing is decided
+// once, in the publication layer, and reached from here rather than re-tested.
+var (
+	daemonDestinationSupply publishops.DestinationSupply = "send registry, or set the workspace's " +
+		"default registry in its configuration"
+
+	daemonIdentitySupply = signing.IdentityTokenSupply{
+		AbsentInput: "no identityToken was sent",
+		Remedy:      "send identityToken",
+	}
+)
+
 // requireDestination refuses a publication that has nowhere to go, in this
 // surface's own vocabulary.
 //
-// The shared layer refuses the same condition, and it refuses it naming a command
-// line flag, which is correct on the surface a person types at and wrong on this
-// one. Catching it here is what keeps a caller from being told to pass an option it
-// has no way to pass.
+// The condition is the publication layer's and is asked there rather than
+// re-tested here — two copies of one two-value test agree only until one is
+// edited. What this boundary adds is the answer's CHANNEL: a request that named
+// no destination is a malformed request, so it draws an invalid-parameter
+// response rather than surfacing later as an operation failure.
 func (s *Server) requireDestination(requested string) *jsonRPCError {
-	if requested != "" || s.resolvedWorkspace.Config().DefaultRegistry != "" {
-		return nil
+	if _, err := publishops.ResolveDestination(
+		requested, s.resolvedWorkspace.Config().DefaultRegistry, daemonDestinationSupply,
+	); err != nil {
+		return invalidPublicationParam(err.Error())
 	}
-	return invalidPublicationParam("no destination registry: send registry, or set the workspace's " +
-		"default registry in its configuration")
+	return nil
 }
 
 // invalidPublicationParam builds the refusal a malformed publication request

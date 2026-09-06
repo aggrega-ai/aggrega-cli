@@ -71,6 +71,11 @@ type SignerRequest struct {
 	// caller with nobody watching cannot hang on a flow nobody is watching.
 	// Supplying it is the caller's declaration that a person is watching.
 	AcquireIdentityToken signing.InteractiveIdentityTokenAcquirer
+
+	// IdentitySupply carries the caller's own vocabulary into the ladder's
+	// refusal, so a caller is told to supply something it can supply. Leaving it
+	// zero yields a refusal naming only the inputs every caller shares.
+	IdentitySupply signing.IdentityTokenSupply
 }
 
 // signerParams carries the resolved signing inputs buildSigner constructs a
@@ -149,7 +154,7 @@ func envLookup(look func(string) string) func(string) string {
 // caller with nobody watching — leaves the ladder to refuse.
 func resolveIdentity(req SignerRequest, cfg workspaceconfig.Config) (idToken string, source signing.IdentityTokenSource, err error) {
 	ambientClient, _ := egressClient(cfg)
-	return signing.ResolveIdentityToken(req.IDToken, envLookup(req.EnvLookup), checkIDTokenSubject, ambientClient, req.AcquireIdentityToken)
+	return signing.ResolveIdentityToken(req.IDToken, envLookup(req.EnvLookup), checkIDTokenSubject, ambientClient, req.AcquireIdentityToken, req.IdentitySupply)
 }
 
 // buildSigner is the single signer-construction path for every verb in this

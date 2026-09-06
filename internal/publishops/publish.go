@@ -77,6 +77,15 @@ type PushConfig struct {
 	// Nil reports false, so the unattended default cannot reach a prompt.
 	IsTTY func() bool
 
+	// IdentitySupply and DestinationSupply carry the caller's own vocabulary into
+	// the two refusals a caller can act on: no identity token was resolvable, and
+	// no destination registry was named. Each condition is decided in one place;
+	// what these carry is only how to say, to THIS caller, what it can supply.
+	// Leaving either zero yields a refusal that names only what every caller
+	// shares, which is shorter and still true.
+	IdentitySupply    signing.IdentityTokenSupply
+	DestinationSupply DestinationSupply
+
 	// PushTarget overrides the production remote-repository
 	// construction. A caller may inject an in-memory oras.Target via this
 	// field; nil in production. When nil and DryRun is false,
@@ -111,6 +120,7 @@ func (cfg PushConfig) signerRequest(registry string) SignerRequest {
 		IDToken:              cfg.IDToken,
 		EnvLookup:            cfg.EnvLookup,
 		AcquireIdentityToken: interactiveAcquirer(cfg.TokenGetter, cfg.IsTTY),
+		IdentitySupply:       cfg.IdentitySupply,
 	}
 }
 
@@ -302,12 +312,9 @@ func Push(cfg PushConfig) (PushResult, error) {
 	// egress client from the same resolution.
 	cfg.Workspace = rw
 
-	token := cfg.Registry
-	if token == "" {
-		token = wsCfg.DefaultRegistry
-	}
-	if token == "" {
-		return PushResult{}, fmt.Errorf("no destination registry; set --registry or workspace.default_registry")
+	token, err := resolveDestination(cfg.Registry, wsCfg.DefaultRegistry, cfg.DestinationSupply)
+	if err != nil {
+		return PushResult{}, err
 	}
 	registry, err := wsCfg.ResolveRegistry(token)
 	if err != nil {

@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/egress"
 )
@@ -144,6 +145,37 @@ func AmbientGitHubActionsSource(look func(string) string, client *http.Client, v
 // absence is what makes asking impossible rather than merely discouraged.
 type InteractiveIdentityTokenAcquirer func() (tok string, ok bool, err error)
 
+// IdentityTokenSupply names the inputs one particular caller can supply an
+// identity token through, in that caller's own vocabulary, so the refusal at the
+// end of the ladder names something the caller receiving it can actually act on.
+//
+// The ladder, and the refusal it ends in, keep one home. What varies between
+// callers is only the vocabulary: a command line flag is the right thing to name
+// at a terminal and unsayable to a caller that has no command line, and a caller
+// told to pass an option it cannot pass has been told nothing. So the phrasing
+// travels in as a parameter rather than the refusal being re-authored per caller.
+//
+// The zero value names no caller-specific input at all. That is deliberate and it
+// is the safe default: a caller that declared no vocabulary is told about the
+// environment variables and the ambient endpoint, which every caller shares, and
+// is told nothing that might be false of it.
+type IdentityTokenSupply struct {
+	// AbsentInput is the clause reporting that the caller's own input carried
+	// nothing, in that caller's words: "no --identity-token was passed".
+	AbsentInput string
+
+	// AbsentPrompt is the clause reporting that nobody could be asked, for a
+	// caller that has somewhere to ask: "stdin is not an interactive terminal".
+	// It is carried rather than inferred because a caller with no terminal at all
+	// is not reporting a terminal's absence — the clause would be meaningless
+	// rather than merely unhelpful. It is stated last.
+	AbsentPrompt string
+
+	// Remedy is the imperative naming what the caller can do about it, in that
+	// caller's words: "pass --identity-token".
+	Remedy string
+}
+
 // ResolveIdentityToken resolves the keyless identity as a token SOURCE — the
 // single home for identity-token precedence — in one strict precedence:
 //
@@ -169,8 +201,10 @@ type InteractiveIdentityTokenAcquirer func() (tok string, ok bool, err error)
 // from the network-egress gate, so a nil client means the workspace is offline
 // and the ambient source refuses when the signer invokes it. A nil acquire is
 // the unattended shape — see ResolveIdentityTokenNonInteractive, which is the
-// name to reach for when no human may be asked.
-func ResolveIdentityToken(flagToken string, look func(string) string, validate func(string) error, client *http.Client, acquire InteractiveIdentityTokenAcquirer) (idToken string, source IdentityTokenSource, err error) {
+// name to reach for when no human may be asked. supply carries the caller's own
+// vocabulary into the refusal at rung 6 and is read nowhere else, so it cannot
+// affect which rung resolves.
+func ResolveIdentityToken(flagToken string, look func(string) string, validate func(string) error, client *http.Client, acquire InteractiveIdentityTokenAcquirer, supply IdentityTokenSupply) (idToken string, source IdentityTokenSource, err error) {
 	if flagToken != "" {
 		return flagToken, nil, nil
 	}
@@ -192,27 +226,64 @@ func ResolveIdentityToken(flagToken string, look func(string) string, validate f
 			return t, nil, nil
 		}
 	}
-	return "", nil, noIdentityTokenRefusal()
+	return "", nil, noIdentityTokenRefusal(supply)
 }
 
 // ResolveIdentityTokenNonInteractive resolves the keyless identity from
 // supplied and ambient inputs alone: an explicit token, EnvIdentityToken, the
 // ambient GitHub Actions OIDC endpoint, or EnvSigstoreIDToken. When none of
-// them yields a token it refuses, naming what to supply.
+// them yields a token it refuses, naming what supply says this caller can offer.
 //
 // It is the entry point for a caller that must never block on a human — a
 // long-running service, or a machine-driven protocol server with no user
 // watching — where hanging on a federated login flow would be a silent failure
 // and a refusal is the honest one. It takes no acquirer, so such a caller has no
 // parameter through which an interactive flow could be introduced.
-func ResolveIdentityTokenNonInteractive(flagToken string, look func(string) string, validate func(string) error, client *http.Client) (idToken string, source IdentityTokenSource, err error) {
-	return ResolveIdentityToken(flagToken, look, validate, client, nil)
+func ResolveIdentityTokenNonInteractive(flagToken string, look func(string) string, validate func(string) error, client *http.Client, supply IdentityTokenSupply) (idToken string, source IdentityTokenSource, err error) {
+	return ResolveIdentityToken(flagToken, look, validate, client, nil, supply)
 }
 
 // noIdentityTokenRefusal builds the refusal returned when every rung of the
 // identity-token ladder declines. It names each input that would have satisfied
 // resolution, so the caller learns what to supply rather than being told only
 // that resolution failed.
-func noIdentityTokenRefusal() error {
-	return fmt.Errorf("keyless signing needs an identity token: no --identity-token was passed, no %s or %s is exported, no ambient GitHub Actions OIDC endpoint is available, and stdin is not an interactive terminal; on GitHub Actions the workflow OIDC token is used automatically, otherwise export one of those variables (for example a CI workflow OIDC token) or pass --identity-token", EnvIdentityToken, EnvSigstoreIDToken)
+//
+// The two shared inputs — the environment variables and the ambient endpoint —
+// are named for every caller, because every caller has them. The caller's own
+// input and its remedy come from supply, and an unstated one is omitted rather
+// than guessed: an omitted clause leaves a shorter true sentence, while a guessed
+// one leaves a caller reaching for something it does not have.
+func noIdentityTokenRefusal(supply IdentityTokenSupply) error {
+	absent := make([]string, 0, 4)
+	if supply.AbsentInput != "" {
+		absent = append(absent, supply.AbsentInput)
+	}
+	absent = append(absent,
+		fmt.Sprintf("no %s or %s is exported", EnvIdentityToken, EnvSigstoreIDToken),
+		"no ambient GitHub Actions OIDC endpoint is available")
+	if supply.AbsentPrompt != "" {
+		absent = append(absent, supply.AbsentPrompt)
+	}
+
+	remedy := "export one of those variables (for example a CI workflow OIDC token)"
+	if supply.Remedy != "" {
+		remedy += " or " + supply.Remedy
+	}
+
+	return fmt.Errorf("keyless signing needs an identity token: %s; on GitHub Actions the workflow "+
+		"OIDC token is used automatically, otherwise %s", joinWithFinalAnd(absent), remedy)
+}
+
+// joinWithFinalAnd renders clauses as an English list — comma-separated, with
+// "and" before the last. The final conjunction moves with the number of clauses,
+// which is why it is composed rather than written into any one clause: a caller
+// that states no terminal of its own must not be left with a dangling "and".
+func joinWithFinalAnd(clauses []string) string {
+	switch len(clauses) {
+	case 0:
+		return ""
+	case 1:
+		return clauses[0]
+	}
+	return strings.Join(clauses[:len(clauses)-1], ", ") + ", and " + clauses[len(clauses)-1]
 }

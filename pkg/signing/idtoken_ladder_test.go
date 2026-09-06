@@ -13,11 +13,25 @@ import (
 	"testing"
 )
 
+// wireCallerSupply stands in for a caller that reaches this ladder over a
+// protocol rather than from a terminal: it names a request field, and it reports
+// no terminal because it has none. It is what the test uses wherever a
+// caller-specific vocabulary is under test.
+var wireCallerSupply = IdentityTokenSupply{
+	AbsentInput: "no identityToken was sent",
+	Remedy:      "send identityToken",
+}
+
 // TestResolveIdentityTokenNonInteractiveRefuses proves the unattended entry
 // point refuses when nothing is supplied and nothing is ambient: it returns an
 // error rather than an empty resolution, and the error names every input that
 // would have satisfied it, so the caller learns what to supply instead of only
 // that resolution failed.
+//
+// The vocabulary half is asserted in both directions, because naming an input is
+// only useful if it is an input this caller HAS. So the refusal must carry what
+// the caller declared, and must not carry the terminal or the command line flag
+// belonging to a surface this caller is not.
 func TestResolveIdentityTokenNonInteractiveRefuses(t *testing.T) {
 	t.Parallel()
 
@@ -26,6 +40,7 @@ func TestResolveIdentityTokenNonInteractiveRefuses(t *testing.T) {
 		lookFrom(map[string]string{}),
 		nil,
 		nil,
+		wireCallerSupply,
 	)
 	if err == nil {
 		t.Fatal("want a refusal with nothing supplied and nothing ambient, got nil error")
@@ -40,12 +55,78 @@ func TestResolveIdentityTokenNonInteractiveRefuses(t *testing.T) {
 	for _, want := range []string{
 		EnvIdentityToken,
 		EnvSigstoreIDToken,
-		"--identity-token",
+		wireCallerSupply.AbsentInput,
+		wireCallerSupply.Remedy,
 		"ambient GitHub Actions OIDC endpoint",
 	} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("refusal does not name %q; got: %s", want, msg)
 		}
+	}
+	for _, unwanted := range []string{"--", "terminal", "stdin"} {
+		if strings.Contains(msg, unwanted) {
+			t.Errorf("refusal names %q, which belongs to a caller with a command line and a terminal, "+
+				"not to this one; got: %s", unwanted, msg)
+		}
+	}
+}
+
+// TestNoIdentityTokenRefusalReadsAsOneSentenceForEveryCaller pins the composition
+// itself, across the shapes a caller's vocabulary can take.
+//
+// The refusal is assembled from a variable number of clauses, so the conjunction
+// before the last one moves. That is exactly the kind of seam that produces a
+// dangling "and" or a doubled comma for one caller while reading correctly for the
+// caller whose text somebody checked — which no behavioural test would catch,
+// because the error is still an error.
+func TestNoIdentityTokenRefusalReadsAsOneSentenceForEveryCaller(t *testing.T) {
+	t.Parallel()
+
+	shared := "no " + EnvIdentityToken + " or " + EnvSigstoreIDToken +
+		" is exported, and no ambient GitHub Actions OIDC endpoint is available"
+
+	for _, tc := range []struct {
+		name   string
+		supply IdentityTokenSupply
+		want   string
+	}{
+		{
+			name:   "a caller that declared no vocabulary of its own",
+			supply: IdentityTokenSupply{},
+			want: "keyless signing needs an identity token: " + shared +
+				"; on GitHub Actions the workflow OIDC token is used automatically, otherwise " +
+				"export one of those variables (for example a CI workflow OIDC token)",
+		},
+		{
+			name:   "a caller that names an input but has no terminal",
+			supply: wireCallerSupply,
+			want: "keyless signing needs an identity token: no identityToken was sent, no " +
+				EnvIdentityToken + " or " + EnvSigstoreIDToken +
+				" is exported, and no ambient GitHub Actions OIDC endpoint is available" +
+				"; on GitHub Actions the workflow OIDC token is used automatically, otherwise " +
+				"export one of those variables (for example a CI workflow OIDC token) or send identityToken",
+		},
+		{
+			name: "a caller with a terminal, which reports the terminal last",
+			supply: IdentityTokenSupply{
+				AbsentInput:  "no --identity-token was passed",
+				AbsentPrompt: "stdin is not an interactive terminal",
+				Remedy:       "pass --identity-token",
+			},
+			want: "keyless signing needs an identity token: no --identity-token was passed, no " +
+				EnvIdentityToken + " or " + EnvSigstoreIDToken +
+				" is exported, no ambient GitHub Actions OIDC endpoint is available, and stdin is not " +
+				"an interactive terminal; on GitHub Actions the workflow OIDC token is used " +
+				"automatically, otherwise export one of those variables (for example a CI workflow " +
+				"OIDC token) or pass --identity-token",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := noIdentityTokenRefusal(tc.supply).Error(); got != tc.want {
+				t.Errorf("refusal text moved:\n got: %s\nwant: %s", got, tc.want)
+			}
+		})
 	}
 }
 
@@ -109,6 +190,7 @@ func TestResolveIdentityTokenNonInteractiveAcceptsSuppliedAndAmbient(t *testing.
 				lookFrom(tc.env),
 				nil,
 				&http.Client{},
+				wireCallerSupply,
 			)
 			if err != nil {
 				t.Fatalf("unexpected refusal: %v", err)
@@ -162,7 +244,7 @@ func TestResolveIdentityTokenAcquirerRungIsBelowEverySuppliedInput(t *testing.T)
 				t.Error("the acquirer was reached while a token was already available")
 				return "acquired", true, nil
 			}
-			if _, _, err := ResolveIdentityToken(tc.flagToken, lookFrom(tc.env), nil, &http.Client{}, acquire); err != nil {
+			if _, _, err := ResolveIdentityToken(tc.flagToken, lookFrom(tc.env), nil, &http.Client{}, acquire, wireCallerSupply); err != nil {
 				t.Fatalf("unexpected refusal: %v", err)
 			}
 		})
@@ -173,12 +255,16 @@ func TestResolveIdentityTokenAcquirerRungIsBelowEverySuppliedInput(t *testing.T)
 // refusal has one home: an acquirer that declines because there is nobody to
 // ask lands on exactly the message the unattended entry point produces. A
 // second refusal authored anywhere would diverge from this one.
+//
+// Both calls pass the same vocabulary, which is what makes the comparison mean
+// what it claims: the message varies with the CALLER and must not vary with which
+// rung ran out, so holding the caller fixed isolates the property under test.
 func TestResolveIdentityTokenDecliningAcquirerGetsTheSameRefusal(t *testing.T) {
 	t.Parallel()
 
 	declined := func() (string, bool, error) { return "", false, nil }
-	_, _, withAcquirer := ResolveIdentityToken("", lookFrom(map[string]string{}), nil, nil, declined)
-	_, _, unattended := ResolveIdentityTokenNonInteractive("", lookFrom(map[string]string{}), nil, nil)
+	_, _, withAcquirer := ResolveIdentityToken("", lookFrom(map[string]string{}), nil, nil, declined, wireCallerSupply)
+	_, _, unattended := ResolveIdentityTokenNonInteractive("", lookFrom(map[string]string{}), nil, nil, wireCallerSupply)
 
 	if withAcquirer == nil || unattended == nil {
 		t.Fatalf("want both paths to refuse, got withAcquirer=%v unattended=%v", withAcquirer, unattended)
@@ -198,7 +284,7 @@ func TestResolveIdentityTokenAcquirerFailureIsNotMasked(t *testing.T) {
 
 	sentinel := &acquisitionFailure{}
 	failing := func() (string, bool, error) { return "", false, sentinel }
-	idToken, source, err := ResolveIdentityToken("", lookFrom(map[string]string{}), nil, nil, failing)
+	idToken, source, err := ResolveIdentityToken("", lookFrom(map[string]string{}), nil, nil, failing, wireCallerSupply)
 	if err != sentinel {
 		t.Fatalf("err = %v, want the acquisition failure returned unchanged", err)
 	}

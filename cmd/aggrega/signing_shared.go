@@ -56,3 +56,23 @@ func ttyOrDefault(tty func() bool) func() bool {
 	}
 	return isTerminal
 }
+
+// commandLineIdentitySupply is how a refusal names an identity token to somebody
+// typing at a terminal: as the flag they can pass, and with the terminal's own
+// absence reported, because here there genuinely is a terminal to report on.
+//
+// The vocabulary belongs to this surface rather than to the operation, for the
+// same reason the command name does: a caller reaching the same operation from
+// elsewhere never typed a flag, and telling it to pass one names something it
+// cannot do. The operation states the condition; this states what to do about it
+// here.
+var commandLineIdentitySupply = signing.IdentityTokenSupply{
+	AbsentInput:  "no --identity-token was passed",
+	AbsentPrompt: "stdin is not an interactive terminal",
+	Remedy:       "pass --identity-token",
+}
+
+// commandLineDestinationSupply is how a refusal names a publication's missing
+// destination to somebody typing at a terminal: the flag, or the workspace
+// setting spelled as it is written in the workspace file.
+const commandLineDestinationSupply = "set --registry or workspace.default_registry"

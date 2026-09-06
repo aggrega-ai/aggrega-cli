@@ -27,8 +27,12 @@ const (
 // composing them into the ladder's optional interactive rung exactly as a surface
 // adapter does, then calling the shared ladder. It therefore exercises the real
 // composition rather than standing in for it.
+//
+// The caller's vocabulary is left zero: these cases are about which RUNG resolves,
+// and the vocabulary reaches only the refusal's wording, so supplying one would
+// add a variable no case here varies.
 func resolveIdentityTokenSource(flagToken string, look func(string) string, tty func() bool, acquire func() (string, error), validate func(string) error, client *http.Client) (string, signing.IdentityTokenSource, error) {
-	return signing.ResolveIdentityToken(flagToken, look, validate, client, interactiveAcquirer(acquire, tty))
+	return signing.ResolveIdentityToken(flagToken, look, validate, client, interactiveAcquirer(acquire, tty), signing.IdentityTokenSupply{})
 }
 
 func lookMap(m map[string]string) func(string) string {

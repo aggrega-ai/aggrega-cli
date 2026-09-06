@@ -72,6 +72,7 @@ func signRun(cfg signConfig) error {
 	cfg.TokenGetter = tokenGetterOrDefault(cfg.TokenGetter)
 	cfg.IsTTY = ttyOrDefault(cfg.IsTTY)
 	cfg.EnvLookup = envLookupOrGetenv(cfg.EnvLookup)
+	cfg.IdentitySupply = commandLineIdentitySupply
 	if _, err := publishops.Sign(cfg); err != nil {
 		return fmt.Errorf("aggrega sign: %w", err)
 	}

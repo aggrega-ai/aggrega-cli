@@ -71,6 +71,7 @@ func newPushArtifactCmd() *cobra.Command {
 // publication operation: it names the command in any failure, which the
 // operation itself does not, because a caller elsewhere never typed one.
 func pushArtifactRun(cfg pushArtifactConfig) error {
+	cfg.DestinationSupply = commandLineDestinationSupply
 	if _, err := publishops.PushArtifact(cfg); err != nil {
 		return fmt.Errorf("aggrega push-artifact: %w", err)
 	}

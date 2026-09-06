@@ -65,6 +65,11 @@ type SignConfig struct {
 	// Nil reports false, so the unattended default cannot reach a prompt.
 	IsTTY func() bool
 
+	// IdentitySupply carries the caller's own vocabulary into the identity
+	// ladder's refusal, so a caller is told to supply something it can supply.
+	// Zero yields a refusal naming only the inputs every caller shares.
+	IdentitySupply signing.IdentityTokenSupply
+
 	// Out is the sink for the per-reference status line. Nil defaults to
 	// os.Stdout, so a caller that wants to capture the output passes a buffer
 	// rather than mutating a process global.
@@ -85,6 +90,7 @@ func (cfg SignConfig) signerRequest(registry string) SignerRequest {
 		IDToken:              cfg.IDToken,
 		EnvLookup:            cfg.EnvLookup,
 		AcquireIdentityToken: interactiveAcquirer(cfg.TokenGetter, cfg.IsTTY),
+		IdentitySupply:       cfg.IdentitySupply,
 	}
 }
 

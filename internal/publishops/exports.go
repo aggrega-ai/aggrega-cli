@@ -35,6 +35,18 @@ const ComponentCategoryLabel = componentCategoryLabel
 // supplies; these are the already-resolved values that contract reduces to.
 type SignerParams = signerParams
 
+// ResolveDestination returns the destination registry a publication will use and
+// refuses when the caller requested none and the workspace names no default,
+// naming what supply says this caller can set.
+//
+// A surface that wants to answer that refusal in its own error channel — an
+// invalid-argument response rather than an operation failure — calls this at its
+// own boundary and discards the registry. What it must not do is re-test the two
+// values itself: the condition has one home, and this is it.
+func ResolveDestination(requested, defaultRegistry string, supply DestinationSupply) (string, error) {
+	return resolveDestination(requested, defaultRegistry, supply)
+}
+
 // BuildSigner is the single signer-construction path: a non-empty KeyPath
 // selects the offline keyed signer, otherwise the live keyless signer is
 // constructed with the public-good endpoint defaults applied.

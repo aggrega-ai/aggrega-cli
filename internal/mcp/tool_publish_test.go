@@ -410,13 +410,36 @@ func TestPublicationToolsRefuseLoudlyWithNoCredentialAndDoNotHang(t *testing.T) 
 }
 
 // assertNamesTheMissingCredential holds a credential refusal to naming something
-// the caller can act on. A bare "failed" would leave a caller with nothing to do,
-// which on a surface with nobody watching is the same as silence.
+// the caller can act on, and to naming nothing it cannot.
+//
+// A bare "failed" would leave a caller with nothing to do, which on a surface with
+// nobody watching is the same as silence. Both halves are asserted because either
+// alone passes on a broken message: naming the environment variable is satisfied
+// by a message that ALSO tells the caller to pass a flag it has no way to pass,
+// and forbidding the flag is satisfied by a message that names nothing at all.
 func assertNamesTheMissingCredential(t *testing.T, message string) {
 	t.Helper()
-	for _, want := range []string{"identity token", signing.EnvIdentityToken} {
+	// A substring check against an empty string succeeds against anything, so an
+	// unset vocabulary would turn the loop below into a check that cannot fail
+	// while still reading as one. Refuse that before believing either verdict.
+	if toolIdentitySupply.AbsentInput == "" || toolIdentitySupply.Remedy == "" {
+		t.Fatalf("this surface declares no identity vocabulary (%+v), so the assertions below would "+
+			"pass against any message at all", toolIdentitySupply)
+	}
+	for _, want := range []string{
+		"identity token",
+		signing.EnvIdentityToken,
+		toolIdentitySupply.AbsentInput,
+		toolIdentitySupply.Remedy,
+	} {
 		if !strings.Contains(message, want) {
 			t.Errorf("the refusal must name %q; got %q", want, message)
+		}
+	}
+	for _, unwanted := range []string{"--", "terminal", "stdin"} {
+		if strings.Contains(message, unwanted) {
+			t.Errorf("the refusal names %q, which belongs to a caller with a command line and a "+
+				"terminal; a caller here has neither: %q", unwanted, message)
 		}
 	}
 	t.Logf("refusal: %s", message)

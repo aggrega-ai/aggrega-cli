@@ -38,6 +38,14 @@ type PushArtifactConfig struct {
 	// caller declares the workspace it resolved.
 	Workspace *workspaceconfig.ResolvedWorkspace
 
+	// DestinationSupply carries the caller's own vocabulary into the refusal a
+	// publication with nowhere to go draws. Zero yields the bare statement of what
+	// is missing, which is true for every caller.
+	//
+	// There is no identity supply beside it because this operation resolves no
+	// identity at all: a data artifact is signed afterwards, by reference.
+	DestinationSupply DestinationSupply
+
 	// PushTarget overrides the production remote-repository construction. A
 	// caller may inject an in-memory or file-backed oras.Target via this field;
 	// nil in production. When nil and DryRun is false, PushArtifact constructs
@@ -122,12 +130,9 @@ func PushArtifact(cfg PushArtifactConfig) (PushArtifactResult, error) {
 	}
 
 	wsCfg := rw.Config()
-	token := cfg.Registry
-	if token == "" {
-		token = wsCfg.DefaultRegistry
-	}
-	if token == "" {
-		return PushArtifactResult{}, fmt.Errorf("no destination registry; set --registry or workspace.default_registry")
+	token, err := resolveDestination(cfg.Registry, wsCfg.DefaultRegistry, cfg.DestinationSupply)
+	if err != nil {
+		return PushArtifactResult{}, err
 	}
 	registry, err := wsCfg.ResolveRegistry(token)
 	if err != nil {

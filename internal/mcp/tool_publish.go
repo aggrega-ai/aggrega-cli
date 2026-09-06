@@ -12,6 +12,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/publishops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/registryhost"
+	"github.com/aggrega-ai/aggrega-cli/pkg/signing"
 )
 
 // The four publication tools: publishing a catalog entity, publishing a
@@ -92,19 +93,37 @@ const (
 	deprecateArtifactToolName = "deprecate-artifact"
 )
 
-// missingDestination refuses a publication that has nowhere to go, in this
-// surface's own vocabulary.
+// The vocabulary this surface's refusals are written in. A caller here sends tool
+// arguments and has neither a command line nor a terminal, so a refusal that named
+// a flag would name something the caller cannot do — and one that reported a
+// terminal's absence would report on something the caller never had.
 //
-// The shared layer refuses the same condition, and it refuses it naming a command
-// line flag, which is correct where a person typed one and unusable here. Catching
-// it at this boundary is what keeps a caller from being told to pass an option it
-// has no way to pass.
+// These say only HOW to supply what is missing. WHETHER it is missing is decided
+// once, in the publication layer, and reached from here rather than re-tested.
+var (
+	toolDestinationSupply publishops.DestinationSupply = "send 'registry', or set the workspace's " +
+		"default registry in its configuration"
+
+	toolIdentitySupply = signing.IdentityTokenSupply{
+		AbsentInput: "no 'identity_token' was sent",
+		Remedy:      "send 'identity_token'",
+	}
+)
+
+// missingDestination refuses a publication that has nowhere to go, in this
+// surface's own vocabulary, and returns the empty string when it has somewhere.
+//
+// The condition is the publication layer's and is asked there rather than
+// re-tested here — two copies of one two-value test agree only until one is
+// edited. What this boundary adds is the answer's CHANNEL and its address: an
+// argument fault is corrective text naming the tool it applies to, rather than an
+// operation failure a caller reads after the fact.
 func missingDestination(tool, requested string, tw *toolWorkspace) string {
-	if requested != "" || tw.cfg.DefaultRegistry != "" {
+	_, err := publishops.ResolveDestination(requested, tw.cfg.DefaultRegistry, toolDestinationSupply)
+	if err == nil {
 		return ""
 	}
-	return tool + " has no destination registry: send 'registry', or set the workspace's default " +
-		"registry in its configuration."
+	return tool + ": " + err.Error() + "."
 }
 
 // publishEntityArgs is the catalog-entity publication tool's argument shape.
@@ -263,18 +282,20 @@ func (s *server) publishEntityConfig(a publishEntityArgs) (publishops.PushConfig
 		pluginPath = tw.absWorkspacePath(strings.TrimSpace(a.Plugin))
 	}
 	return publishops.PushConfig{
-		EntityPath:   tw.absWorkspacePath(strings.TrimSpace(a.Entity)),
-		Registry:     a.Registry,
-		DryRun:       a.DryRun,
-		Sign:         a.Sign,
-		PluginPath:   pluginPath,
-		KeyPath:      a.KeyPath,
-		FulcioURL:    a.FulcioURL,
-		RekorURL:     a.RekorURL,
-		TimestampURL: a.TimestampURL,
-		IDToken:      a.IdentityToken,
-		Workspace:    tw.rw,
-		Out:          io.Discard,
+		EntityPath:        tw.absWorkspacePath(strings.TrimSpace(a.Entity)),
+		Registry:          a.Registry,
+		DryRun:            a.DryRun,
+		Sign:              a.Sign,
+		PluginPath:        pluginPath,
+		KeyPath:           a.KeyPath,
+		FulcioURL:         a.FulcioURL,
+		RekorURL:          a.RekorURL,
+		TimestampURL:      a.TimestampURL,
+		IDToken:           a.IdentityToken,
+		Workspace:         tw.rw,
+		IdentitySupply:    toolIdentitySupply,
+		DestinationSupply: toolDestinationSupply,
+		Out:               io.Discard,
 	}, ""
 }
 
@@ -439,14 +460,15 @@ func (s *server) publishArtifactConfig(a publishArtifactArgs) (publishops.PushAr
 		return publishops.PushArtifactConfig{}, refusal
 	}
 	return publishops.PushArtifactConfig{
-		FilePath:  tw.absWorkspacePath(strings.TrimSpace(a.File)),
-		Name:      strings.TrimSpace(a.Name),
-		Tag:       strings.TrimSpace(a.Tag),
-		MediaType: a.MediaType,
-		Registry:  a.Registry,
-		DryRun:    a.DryRun,
-		Workspace: tw.rw,
-		Out:       io.Discard,
+		FilePath:          tw.absWorkspacePath(strings.TrimSpace(a.File)),
+		Name:              strings.TrimSpace(a.Name),
+		Tag:               strings.TrimSpace(a.Tag),
+		MediaType:         a.MediaType,
+		Registry:          a.Registry,
+		DryRun:            a.DryRun,
+		Workspace:         tw.rw,
+		DestinationSupply: toolDestinationSupply,
+		Out:               io.Discard,
 	}, ""
 }
 
@@ -609,14 +631,15 @@ func (s *server) signArtifactsConfig(a signArtifactsArgs) (publishops.SignConfig
 		return publishops.SignConfig{}, explainToolError("Could not resolve the workspace to sign against.", err, "")
 	}
 	return publishops.SignConfig{
-		References:   a.References,
-		KeyPath:      a.KeyPath,
-		FulcioURL:    a.FulcioURL,
-		RekorURL:     a.RekorURL,
-		TimestampURL: a.TimestampURL,
-		IDToken:      a.IdentityToken,
-		Workspace:    tw.rw,
-		Out:          io.Discard,
+		References:     a.References,
+		KeyPath:        a.KeyPath,
+		FulcioURL:      a.FulcioURL,
+		RekorURL:       a.RekorURL,
+		TimestampURL:   a.TimestampURL,
+		IDToken:        a.IdentityToken,
+		Workspace:      tw.rw,
+		IdentitySupply: toolIdentitySupply,
+		Out:            io.Discard,
 	}, ""
 }
 
@@ -855,19 +878,20 @@ func (s *server) deprecateArtifactConfig(a deprecateArtifactArgs) (publishops.De
 		batchPath = tw.absWorkspacePath(from)
 	}
 	return publishops.DeprecateConfig{
-		Reference:    reference,
-		Severity:     strings.TrimSpace(a.Severity),
-		Reason:       strings.TrimSpace(a.Reason),
-		Replacement:  a.Replacement,
-		Message:      a.Message,
-		From:         batchPath,
-		KeyPath:      a.KeyPath,
-		FulcioURL:    a.FulcioURL,
-		RekorURL:     a.RekorURL,
-		TimestampURL: a.TimestampURL,
-		IDToken:      a.IdentityToken,
-		Workspace:    tw.rw,
-		Out:          io.Discard,
+		Reference:      reference,
+		Severity:       strings.TrimSpace(a.Severity),
+		Reason:         strings.TrimSpace(a.Reason),
+		Replacement:    a.Replacement,
+		Message:        a.Message,
+		From:           batchPath,
+		KeyPath:        a.KeyPath,
+		FulcioURL:      a.FulcioURL,
+		RekorURL:       a.RekorURL,
+		TimestampURL:   a.TimestampURL,
+		IDToken:        a.IdentityToken,
+		Workspace:      tw.rw,
+		IdentitySupply: toolIdentitySupply,
+		Out:            io.Discard,
 	}, ""
 }
 

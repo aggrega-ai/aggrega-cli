@@ -81,6 +81,11 @@ type DeprecateConfig struct {
 	// supply, rather than blocking on an answer that will never come.
 	IsTTY func() bool
 
+	// IdentitySupply carries the caller's own vocabulary into the identity
+	// ladder's refusal, so a caller is told to supply something it can supply.
+	// Zero yields a refusal naming only the inputs every caller shares.
+	IdentitySupply signing.IdentityTokenSupply
+
 	// Out is the sink for the status line. Nil defaults to os.Stdout, so a
 	// caller that wants to capture the output passes a buffer rather than
 	// mutating a process global.
@@ -110,6 +115,7 @@ func (cfg DeprecateConfig) signerRequest() SignerRequest {
 		IDToken:              cfg.IDToken,
 		EnvLookup:            cfg.EnvLookup,
 		AcquireIdentityToken: interactiveAcquirer(cfg.TokenGetter, cfg.IsTTY),
+		IdentitySupply:       cfg.IdentitySupply,
 	}
 }
 

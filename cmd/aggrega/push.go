@@ -154,6 +154,8 @@ func pushRun(cfg pushConfig) error {
 	cfg.TokenGetter = tokenGetterOrDefault(cfg.TokenGetter)
 	cfg.IsTTY = ttyOrDefault(cfg.IsTTY)
 	cfg.EnvLookup = envLookupOrGetenv(cfg.EnvLookup)
+	cfg.IdentitySupply = commandLineIdentitySupply
+	cfg.DestinationSupply = commandLineDestinationSupply
 	if _, err := publishops.Push(cfg); err != nil {
 		return fmt.Errorf("aggrega push: %w", err)
 	}
