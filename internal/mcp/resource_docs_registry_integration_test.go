@@ -27,6 +27,7 @@ import (
 
 	"github.com/google/go-containerregistry/pkg/registry"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/docsbundle"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 )
 
@@ -41,7 +42,7 @@ func TestDocsResourceServedFromARealRegistry(t *testing.T) {
 	host := strings.TrimPrefix(srv.URL, "http://")
 
 	// The reference the server will derive on its own: <registry>/docs/aggrega-docs.
-	ref := host + "/" + docsNamespace + "/" + docsBundleName
+	ref := host + "/" + docsbundle.Namespace + "/" + docsbundle.Name
 	const version = "9.9.9-fixture"
 
 	repo, err := oci.NewRemoteRepository(ref, srv.Client())

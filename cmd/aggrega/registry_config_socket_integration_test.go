@@ -75,7 +75,7 @@ spec:
   exports:
     - name: `+export+`
 `)
-	if err := pushRun(pushConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: entityDir}), EntityPath: entityPath, PluginPath: pluginPath, Registry: host}); err != nil {
+	if err := pushRun(pushConfig{Workspace: resolveTempWorkspace(t, tempWorkspaceOptions{Root: entityDir}), EntityPath: entityPath, PluginPath: pluginPath, Registry: host}); err != nil {
 		t.Fatalf("publish socket plugin entity %s:%s: %v", socketName, version, err)
 	}
 	return contentDigest

@@ -23,7 +23,7 @@ func pushCatalogEntitySigned(t *testing.T, host, entityPath string, signer signi
 	t.Helper()
 	sign := true
 	if err := pushRun(pushConfig{
-		ws:         resolveTempWorkspace(t, tempWorkspaceOptions{}),
+		Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{}),
 		EntityPath: entityPath,
 		Registry:   host,
 		Sign:       &sign,
@@ -165,7 +165,7 @@ func TestIntegration_PullCommandVerifiesSignedCatalogEntity_Keyed(t *testing.T) 
 		pushCatalogEntitySigned(t, host, entityPath, signer)
 	}
 	unsignedPush := func(t *testing.T, host, entityPath string) {
-		if perr := pushRun(pushConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{}), EntityPath: entityPath, Registry: host}); perr != nil {
+		if perr := pushRun(pushConfig{Workspace: resolveTempWorkspace(t, tempWorkspaceOptions{}), EntityPath: entityPath, Registry: host}); perr != nil {
 			t.Fatalf("publish unsigned catalog entity %s: %v", entityPath, perr)
 		}
 	}

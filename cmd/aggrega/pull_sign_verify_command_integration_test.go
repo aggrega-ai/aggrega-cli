@@ -53,7 +53,7 @@ spec:
 `)
 	sign := true
 	if err := pushRun(pushConfig{
-		ws:         resolveTempWorkspace(t, tempWorkspaceOptions{Root: entityDir}),
+		Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{Root: entityDir}),
 		EntityPath: entityPath,
 		PluginPath: pluginPath,
 		Registry:   host,

@@ -64,7 +64,7 @@ func TestIntegration_PushRefusesUnsignedUnderOrgPolicy(t *testing.T) {
 		writeEntityFixture(t, entityPath, orgSignPluginBody)
 
 		noSign := false
-		err := pushRun(pushConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), EntityPath: entityPath, Registry: host, Sign: &noSign})
+		err := pushRun(pushConfig{Workspace: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), EntityPath: entityPath, Registry: host, Sign: &noSign})
 		if !errors.Is(err, signing.ErrSigningPolicyRequiresSignature()) {
 			t.Fatalf("want ErrSigningPolicyRequiresSignature for an unsigned in-scope Plugin, got %v", err)
 		}
@@ -82,7 +82,7 @@ func TestIntegration_PushRefusesUnsignedUnderOrgPolicy(t *testing.T) {
 		writeEntityFixture(t, entityPath, signComponentBody)
 
 		noSign := false
-		err := pushRun(pushConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), EntityPath: entityPath, Registry: host, Sign: &noSign})
+		err := pushRun(pushConfig{Workspace: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), EntityPath: entityPath, Registry: host, Sign: &noSign})
 		if !errors.Is(err, signing.ErrSigningPolicyRequiresSignature()) {
 			t.Fatalf("want ErrSigningPolicyRequiresSignature for an unsigned in-scope Component, got %v", err)
 		}
@@ -99,7 +99,7 @@ func TestIntegration_PushRefusesUnsignedUnderOrgPolicy(t *testing.T) {
 		fake := &signingtest.FakeSigner{}
 		// Sign left nil: the org policy makes signing the default; the signer
 		// satisfies the requirement.
-		if err := pushRun(pushConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), EntityPath: entityPath, Registry: host, Signer: fake}); err != nil {
+		if err := pushRun(pushConfig{Workspace: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), EntityPath: entityPath, Registry: host, Signer: fake}); err != nil {
 			t.Fatalf("a signed push of an in-scope kind must succeed, got %v", err)
 		}
 		if len(fake.Signed) != 1 {
@@ -115,7 +115,7 @@ func TestIntegration_PushRefusesUnsignedUnderOrgPolicy(t *testing.T) {
 		entityPath := filepath.Join(root, "1.0.0", "component.yaml")
 		writeEntityFixture(t, entityPath, signComponentBody)
 
-		if err := pushRun(pushConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), EntityPath: entityPath, Registry: host}); err != nil {
+		if err := pushRun(pushConfig{Workspace: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), EntityPath: entityPath, Registry: host}); err != nil {
 			t.Fatalf("an out-of-scope kind must push unsigned without refusal, got %v", err)
 		}
 	})
@@ -128,7 +128,7 @@ func TestIntegration_PushRefusesUnsignedUnderOrgPolicy(t *testing.T) {
 		entityPath := filepath.Join(root, "1.0.0", "component.yaml")
 		writeEntityFixture(t, entityPath, signComponentBody)
 
-		if err := pushRun(pushConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), EntityPath: entityPath, Registry: host}); err != nil {
+		if err := pushRun(pushConfig{Workspace: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), EntityPath: entityPath, Registry: host}); err != nil {
 			t.Fatalf("with the org policy off, an unsigned push must succeed, got %v", err)
 		}
 	})
@@ -152,7 +152,7 @@ func TestIntegration_PushOrgPolicyUnremovableViaCIOverlay(t *testing.T) {
 	writeEntityFixture(t, entityPath, signComponentBody)
 
 	noSign := false
-	err := pushRun(pushConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), EntityPath: entityPath, Registry: host, Sign: &noSign})
+	err := pushRun(pushConfig{Workspace: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), EntityPath: entityPath, Registry: host, Sign: &noSign})
 	if !errors.Is(err, signing.ErrSigningPolicyRequiresSignature()) {
 		t.Fatalf("a CI-overlay-enabled org policy must still refuse an unsigned in-scope push through the enforcement site, got %v", err)
 	}
@@ -215,7 +215,7 @@ spec:
 	// the push discover a workspace also keeps the unsigned publish independent of
 	// whichever directory the calling test happens to be standing in.
 	for _, p := range []string{componentPath, recipePath} {
-		if err := pushRun(pushConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{}), EntityPath: p, Registry: host}); err != nil {
+		if err := pushRun(pushConfig{Workspace: resolveTempWorkspace(t, tempWorkspaceOptions{}), EntityPath: p, Registry: host}); err != nil {
 			t.Fatalf("publish unsigned entity %s: %v", p, err)
 		}
 	}

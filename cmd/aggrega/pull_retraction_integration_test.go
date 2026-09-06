@@ -158,7 +158,7 @@ func newRetractionFixtureFor(t *testing.T, subject retractionSubject, markers ma
 	markerWorkspace := resolveTempWorkspace(t, tempWorkspaceOptions{})
 	for version, severity := range markers {
 		if derr := deprecateRun(deprecateConfig{
-			ws:        markerWorkspace,
+			Workspace: markerWorkspace,
 			Reference: host + "/" + subject.repoPath + ":" + version,
 			Severity:  severity,
 			Reason:    "withdrawn in favour of a successor",

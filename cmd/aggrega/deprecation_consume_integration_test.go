@@ -171,7 +171,7 @@ func TestIntegration_ConsumeRetroactiveDeprecation(t *testing.T) {
 			markerSigner = signer
 		}
 		if derr := deprecateRun(deprecateConfig{
-			ws:        resolveTempWorkspace(t, tempWorkspaceOptions{}),
+			Workspace: resolveTempWorkspace(t, tempWorkspaceOptions{}),
 			Reference: componentDeprecateRef(host),
 			Severity:  severity,
 			Reason:    message,

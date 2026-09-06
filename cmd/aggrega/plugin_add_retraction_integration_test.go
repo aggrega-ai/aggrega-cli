@@ -137,7 +137,7 @@ func newPluginRetractionFixture(t *testing.T, guests map[string]string, markers 
 	markerWorkspace := resolveTempWorkspace(t, tempWorkspaceOptions{})
 	for version, severity := range markers {
 		if derr := deprecateRun(deprecateConfig{
-			ws:        markerWorkspace,
+			Workspace: markerWorkspace,
 			Reference: host + "/" + pluginRetractionRepoPath + ":" + version,
 			Severity:  severity,
 			Reason:    "withdrawn in favour of a successor",

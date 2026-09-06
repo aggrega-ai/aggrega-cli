@@ -232,7 +232,7 @@ func pushCatalog(t *testing.T, host, catalogDir string) map[string]int {
 		if !publishableKinds[kind] {
 			return nil // non-entity YAML (recipe fragment, source/) or non-publishable
 		}
-		if perr := pushRun(pushConfig{ws: rw, EntityPath: path, Registry: host}); perr != nil {
+		if perr := pushRun(pushConfig{Workspace: rw, EntityPath: path, Registry: host}); perr != nil {
 			t.Fatalf("push %s (%s): %v", path, kind, perr)
 		}
 		counts[kind]++
@@ -643,7 +643,7 @@ spec:
       operates: patch
       scope: own
 `+runtimeBlock)
-	if err := pushRun(pushConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: entityDir}), EntityPath: entityPath, PluginPath: pluginPath, Registry: host}); err != nil {
+	if err := pushRun(pushConfig{Workspace: resolveTempWorkspace(t, tempWorkspaceOptions{Root: entityDir}), EntityPath: entityPath, PluginPath: pluginPath, Registry: host}); err != nil {
 		t.Fatalf("publish plugin entity %s/%s:%s: %v", pipelineStepPluginType, name, version, err)
 	}
 	return contentDigest

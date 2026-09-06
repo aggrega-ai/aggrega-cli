@@ -131,7 +131,7 @@ func TestIntegration_LinterCacheMiss_PulledGuestUnreachableAtLint(t *testing.T) 
 	// The publish runs before the consumer workspace below exists, so it declares
 	// its own: the registry it pushes to is named explicitly and it needs no
 	// catalog of its own.
-	if err := pushRun(pushConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{}), EntityPath: entityPath, PluginPath: pluginPath, Registry: host}); err != nil {
+	if err := pushRun(pushConfig{Workspace: resolveTempWorkspace(t, tempWorkspaceOptions{}), EntityPath: entityPath, PluginPath: pluginPath, Registry: host}); err != nil {
 		t.Fatalf("publish non-embedded linter %s: %v", linterURI, err)
 	}
 
