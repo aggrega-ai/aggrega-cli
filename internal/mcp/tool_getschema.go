@@ -6,11 +6,13 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
 	schemas "github.com/aggrega-ai/aggrega-schemas"
-	"go.yaml.in/yaml/v3"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/scaffoldops"
 )
 
 // getSchemaArgs is the get-schema tool's argument shape.
@@ -72,19 +74,10 @@ var getSchemaToolSpec = toolSpec{
 		}
 		schema, ok := schemas.SchemaByKind(kind)
 		if !ok {
-			return errorResult(unknownSchemaKindGuidance(kind))
+			return errorResult(scaffoldops.UnknownKindGuidance(kind))
 		}
 		return textResult(schema, getSchemaResult{Kind: kind, Schema: json.RawMessage(schema)})
 	},
-}
-
-// unknownSchemaKindGuidance renders the corrective text for a kind token no
-// schema answers to: the token as it was sent, and the full valid set so the
-// caller corrects a typo without a second call. Both schema-driven tools reach
-// the same set through the same route, so the two failures cannot phrase the
-// same rejection differently.
-func unknownSchemaKindGuidance(kind string) string {
-	return fmt.Sprintf("unknown schema kind %q. Valid kinds: %s", kind, strings.Join(schemas.Kinds(), ", "))
 }
 
 // scaffoldArgs is the scaffold tool's argument shape.
@@ -133,177 +126,15 @@ var scaffoldToolSpec = toolSpec{
 		if kind == "" {
 			return errorResult("scaffold requires a 'kind' argument")
 		}
-		schema, ok := schemas.SchemaByKind(kind)
-		if !ok {
-			return errorResult(unknownSchemaKindGuidance(kind))
-		}
-		skeleton, err := schemaSkeleton([]byte(schema), strings.TrimSpace(a.Name))
+		skeleton, err := scaffoldops.Skeleton(kind, a.Name)
 		if err != nil {
+			var unknown *scaffoldops.UnknownKindError
+			if errors.As(err, &unknown) {
+				return errorResult(unknown.Error())
+			}
 			return errorResult(explainToolError(
 				fmt.Sprintf("Could not derive a skeleton for kind %q from its schema.", kind), err, kind))
 		}
 		return textResult(skeleton, scaffoldResult{Kind: kind, Skeleton: skeleton})
 	},
-}
-
-// jsonSchemaNode is the minimal view of a JSON Schema object the skeleton
-// generator walks: the fields that decide what a required entry's placeholder
-// looks like. Type is decoded raw because JSON Schema permits it to be either a
-// single string or an array of strings.
-type jsonSchemaNode struct {
-	Type       json.RawMessage            `json:"type"`
-	Const      json.RawMessage            `json:"const"`
-	Enum       []json.RawMessage          `json:"enum"`
-	Required   []string                   `json:"required"`
-	Properties map[string]json.RawMessage `json:"properties"`
-	Items      json.RawMessage            `json:"items"`
-}
-
-// schemaSkeleton derives a minimal YAML starter skeleton from a JSON Schema.
-// The skeleton carries exactly the schema's required properties, recursively:
-// a property with a fixed value (const, or a single-valued enum) is filled with
-// that value; every other required leaf gets a type-appropriate placeholder.
-// Iteration follows the schema's ordered `required` lists, never a map range,
-// so the same schema yields byte-identical output on every run. When name is
-// non-empty and the skeleton carries a metadata.name field, it is seeded.
-func schemaSkeleton(raw []byte, name string) (string, error) {
-	node, err := skeletonNode(raw)
-	if err != nil {
-		return "", err
-	}
-	if name != "" {
-		seedMetadataName(node, name)
-	}
-	var b strings.Builder
-	enc := yaml.NewEncoder(&b)
-	enc.SetIndent(2)
-	if err := enc.Encode(node); err != nil {
-		_ = enc.Close()
-		return "", fmt.Errorf("encode skeleton: %w", err)
-	}
-	if err := enc.Close(); err != nil {
-		return "", fmt.Errorf("encode skeleton: %w", err)
-	}
-	return b.String(), nil
-}
-
-// skeletonNode builds the YAML node for one schema node. A fixed value (const
-// or single-valued enum) wins; otherwise the node is shaped by its declared
-// type. An object emits a mapping of its required children in declared order; an
-// array emits an empty sequence; a scalar type emits a placeholder of that type.
-func skeletonNode(raw []byte) (*yaml.Node, error) {
-	var sn jsonSchemaNode
-	if err := json.Unmarshal(raw, &sn); err != nil {
-		return nil, fmt.Errorf("parse schema node: %w", err)
-	}
-	if len(sn.Const) > 0 {
-		return scalarFromJSON(sn.Const)
-	}
-	if len(sn.Enum) == 1 {
-		return scalarFromJSON(sn.Enum[0])
-	}
-	switch schemaPrimaryType(sn.Type) {
-	case "object":
-		m := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
-		for _, key := range sn.Required {
-			child := sn.Properties[key]
-			var childNode *yaml.Node
-			if len(child) > 0 {
-				cn, err := skeletonNode(child)
-				if err != nil {
-					return nil, err
-				}
-				childNode = cn
-			} else {
-				childNode = placeholderScalar("")
-			}
-			m.Content = append(m.Content,
-				&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: key},
-				childNode)
-		}
-		return m, nil
-	case "array":
-		return &yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq"}, nil
-	case "integer", "number":
-		return &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!int", Value: "0"}, nil
-	case "boolean":
-		return &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!bool", Value: "false"}, nil
-	default:
-		return placeholderScalar(""), nil
-	}
-}
-
-// schemaPrimaryType reduces a JSON Schema `type` — a string or an array of
-// strings — to a single primary type, preferring the first non-null entry when
-// it is a union. An absent or unparseable type yields the empty string, which
-// the caller treats as a free scalar placeholder.
-func schemaPrimaryType(raw json.RawMessage) string {
-	if len(raw) == 0 {
-		return ""
-	}
-	var single string
-	if err := json.Unmarshal(raw, &single); err == nil {
-		return single
-	}
-	var many []string
-	if err := json.Unmarshal(raw, &many); err == nil {
-		for _, t := range many {
-			if t != "null" {
-				return t
-			}
-		}
-	}
-	return ""
-}
-
-// scalarFromJSON renders a JSON scalar (const or enum value) as a YAML scalar
-// node preserving the value's type.
-func scalarFromJSON(raw json.RawMessage) (*yaml.Node, error) {
-	var v any
-	if err := json.Unmarshal(raw, &v); err != nil {
-		return nil, fmt.Errorf("parse fixed value: %w", err)
-	}
-	n := &yaml.Node{}
-	if err := n.Encode(v); err != nil {
-		return nil, fmt.Errorf("encode fixed value: %w", err)
-	}
-	return n, nil
-}
-
-// placeholderScalar returns a quoted empty-string placeholder for a required
-// free-form field the author fills in.
-func placeholderScalar(v string) *yaml.Node {
-	return &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: v, Style: yaml.DoubleQuotedStyle}
-}
-
-// seedMetadataName sets metadata.name in a skeleton mapping when both the
-// metadata object and its name field are present, leaving every other
-// placeholder untouched.
-func seedMetadataName(root *yaml.Node, name string) {
-	metadata := mappingChild(root, "metadata")
-	if metadata == nil {
-		return
-	}
-	nameNode := mappingChild(metadata, "name")
-	if nameNode == nil {
-		return
-	}
-	nameNode.Kind = yaml.ScalarNode
-	nameNode.Tag = "!!str"
-	nameNode.Value = name
-	nameNode.Style = 0
-}
-
-// mappingChild returns the value node for key in a mapping node, or nil when
-// the node is not a mapping or the key is absent.
-func mappingChild(n *yaml.Node, key string) *yaml.Node {
-	if n == nil || n.Kind != yaml.MappingNode {
-		return nil
-	}
-	for i := 0; i+1 < len(n.Content); i += 2 {
-		if n.Content[i].Value == key {
-			return n.Content[i+1]
-		}
-	}
-	return nil
 }

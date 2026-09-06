@@ -106,14 +106,18 @@ const (
 	// not in the workspace: a machine-wide cache, the machine-wide credential
 	// store, the global configuration and the registries and plugins configured
 	// in it, a configured registry's index, the schema set compiled into the
-	// binary, a skeleton derived from one of those schemas for a kind named in
-	// the request, a guest module named by path, the binary's own identity. Every
-	// method the daemon answers is anchored to a document in the workspace it
-	// opened or to the workspace root it resolved at startup, so the session adds
-	// nothing such a request could address.
-	unavailabilityReasonOutsideTheWorkspace = "its subject is not in the workspace, and every method the daemon " +
-		"answers is anchored to a document in the workspace it opened or to the workspace root it resolved " +
-		"at startup"
+	// binary, a guest module named by path, the binary's own identity. A session
+	// is opened over a workspace and holds nothing besides, so it brings such a
+	// subject no closer than any other caller of this binary already has it.
+	//
+	// It deliberately claims nothing about where every method here is anchored.
+	// The drafting method is anchored to a kind named in the request rather than
+	// to the workspace, so a reason resting on the stronger claim would be false
+	// against the table below — and a reason that is false about the surface it
+	// describes decides nothing, whatever it happens to decide today.
+	unavailabilityReasonOutsideTheWorkspace = "its subject is not in the workspace, and the session the daemon " +
+		"holds over the workspace it opened brings such a subject no closer than any other caller of this " +
+		"binary already has it"
 
 	// unavailabilityReasonIsAStreamServer covers an operation that is itself a
 	// server owning a stream. The daemon already owns this one, and a second
@@ -177,6 +181,19 @@ var operationAvailability = map[string]serveAvailability{
 	// resolution, and a caller wanting those has the file.
 	"config-show": servedAt(at("aggrega/effectiveConfiguration", (*Server).dispatchEffectiveConfiguration)),
 
+	// The session drafts a starter document for an entity kind the request
+	// names. Its subject is not the workspace: the skeleton is derived from the
+	// schema set compiled into the binary, so the session contributes nothing to
+	// producing it, and the rows below decline several capabilities for exactly
+	// that property.
+	//
+	// It is carried anyway, and the reason is about who is on the other end
+	// rather than about where the subject lives. This is the surface a person
+	// drives, starting a new document is something a person does, and the answer
+	// lands in a buffer they can read before it is anything else. Nothing is
+	// written: the answer is text, and where it goes is the client's.
+	"scaffold-entity": servedAt(at("aggrega/scaffoldEntity", (*Server).dispatchScaffoldEntity)),
+
 	// Capabilities no method carries, each on a property of this daemon.
 	//
 	// The set is smaller than the capabilities the daemon lacks a method for,
@@ -189,7 +206,6 @@ var operationAvailability = map[string]serveAvailability{
 	"plugin-list":           notServed(unavailabilityReasonOutsideTheWorkspace),
 	"plugin-run-local":      notServed(unavailabilityReasonOutsideTheWorkspace),
 	"registry-list":         notServed(unavailabilityReasonOutsideTheWorkspace),
-	"scaffold-entity":       notServed(unavailabilityReasonOutsideTheWorkspace),
 	"search":                notServed(unavailabilityReasonOutsideTheWorkspace),
 	"version":               notServed(unavailabilityReasonOutsideTheWorkspace),
 	"deprecate":             notServed(unavailabilityReasonNoRegistryTransport),
