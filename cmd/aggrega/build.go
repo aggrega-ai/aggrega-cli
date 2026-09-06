@@ -19,6 +19,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 
 	"github.com/spf13/cobra"
@@ -44,6 +45,7 @@ type buildFlags struct {
 	upgrade                 bool
 	noUnsupportedFieldWarns bool
 	dryRun                  bool
+	irGraph                 bool
 }
 
 // Every command that renders offers the unsupported-field warning filter, so the
@@ -112,6 +114,7 @@ the rendered tree reviewable as a diff.`,
 	c.Flags().BoolVar(&opts.autoPull, "auto-pull", false, "Run the pull step before building: resolve the Release's dependencies into the lockfile and cache in-process, then build against them. This is the same in-process fill the workspace auto_pull setting performs, turned on for a single build without editing workspace config. On its own it is an incremental fill — existing pins are honored, and references with no pin are resolved and added")
 	c.Flags().BoolVar(&opts.upgrade, "upgrade", false, "Make the auto-pull step a full refresh: discard the existing lockfile and re-resolve every dependency from current registry state, floating each to the highest available version instead of honoring existing pins. Implies --auto-pull — on its own it runs a full-refresh pull before the build")
 	c.Flags().BoolVar(&opts.dryRun, "dry-run", false, "Render the Release and print what it would emit instead of writing it: each artifact's would-be path and its content go to stdout, and the output directory and the lockfile are left untouched. External inputs are frozen for the run, so a render that requests an unpinned external URL halts naming it rather than fetching and pinning it; pinned inputs are still served from the content-addressed store (and refilled by digest when the blob is missing). Refuses to combine with --auto-pull, --upgrade or --trace, each of which writes — run the dependency fill, or a traced build, as its own step")
+	c.Flags().BoolVar(&opts.irGraph, flagIRGraph, false, helpIRGraph+". The artifacts are still written and the summary is still printed; the graph is written ahead of both")
 	if err := c.MarkFlagRequired("release"); err != nil {
 		panic(err)
 	}
@@ -127,9 +130,23 @@ func runBuild(cmd *cobra.Command, args []string, opts *buildFlags) error {
 	if err != nil {
 		return err
 	}
+	// The graph shares the stream the build's own output already uses, named once
+	// here so the two cannot come to write to different places.
+	out := os.Stdout
+	run := buildops.RunOptions{Detail: opts.detail, NoAcquireInputs: opts.noAcquireInputs, DisablePluginCache: opts.disablePluginCache, VerifyDeterminism: opts.verifyDeterminism, AutoPull: opts.autoPull, Upgrade: opts.upgrade, SuppressUnsupportedFieldWarnings: opts.noUnsupportedFieldWarns, TraceUnredacted: opts.traceUnredacted, DryRun: opts.dryRun}
+	if opts.irGraph {
+		// The graph goes to the same stream the build's own output goes to, and
+		// through the one writer every command that offers the document shares.
+		// A build has no affordance for revealing the values an author declared
+		// sensitive on this stream — the one it carries reaches the trace files
+		// and nothing else — so the graph is withheld unconditionally here.
+		run.IRGraph = func(graph *types.IRGraph) error {
+			return writeIRGraph(out, "build", graph, false)
+		}
+	}
 	return dispatchBuildWithDiag(rw, opts.releasePath, opts.catalogDirs, opts.traceEnabled,
 		buildDiagOptions{quiet: opts.quiet, debug: opts.debug, progress: opts.progress, noColor: globalDisplay.colorOff, plain: globalDisplay.plain},
-		buildops.RunOptions{Detail: opts.detail, NoAcquireInputs: opts.noAcquireInputs, DisablePluginCache: opts.disablePluginCache, VerifyDeterminism: opts.verifyDeterminism, AutoPull: opts.autoPull, Upgrade: opts.upgrade, SuppressUnsupportedFieldWarnings: opts.noUnsupportedFieldWarns, TraceUnredacted: opts.traceUnredacted, DryRun: opts.dryRun}, os.Stderr, os.Stdout)
+		run, os.Stderr, out)
 }
 
 // dispatchBuild is the silent-diagnostics form of dispatchBuildWithDiag: it runs
@@ -160,8 +177,9 @@ func dispatchBuild(rw *workspaceconfig.ResolvedWorkspace, releasePath string, ca
 // output is invariant with respect to the diagnostic shape.
 //
 // run carries the non-diagnostic dispatch knobs: the external-input acquisition
-// switch, the output-directory override, and the acquired-pin callback the
-// acquire command reports through. The zero value is the plain build shape.
+// switch, the output-directory override, the acquired-pin callback the acquire
+// command reports through, and the graph hand-back a caller that asked for the
+// document supplies. The zero value is the plain build shape.
 func dispatchBuildWithDiag(rw *workspaceconfig.ResolvedWorkspace, releasePath string, catalogFlagDirs []string, traceEnabled bool, diag buildDiagOptions, run buildops.RunOptions, diagOut, out io.Writer) error {
 	// Wall-clock start of the whole build run, sourced independently of the
 	// progress reporter (whose clock is unset in silent mode and only spans the

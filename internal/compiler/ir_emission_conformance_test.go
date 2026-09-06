@@ -14,6 +14,8 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline/pipelinetest"
+	"github.com/aggrega-ai/aggrega-cli/internal/redact"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
 )
 
@@ -64,23 +66,37 @@ func TestEmittedIRConformsToSchema(t *testing.T) {
 			if result.IRGraph == nil {
 				t.Fatalf("%s: pipeline produced no IR graph", c.name)
 			}
-			raw, err := json.Marshal(result.IRGraph)
-			if err != nil {
-				t.Fatalf("%s: marshal IR: %v", c.name, err)
-			}
-			var instance any
-			if err := json.Unmarshal(raw, &instance); err != nil {
-				t.Fatalf("%s: re-decode IR: %v", c.name, err)
-			}
-			findings, err := envelope.ValidateInstance(envelope.KindIR, instance)
-			if err != nil {
-				t.Fatalf("%s: IR schema engine error: %v", c.name, err)
-			}
-			if len(findings) > 0 {
-				t.Errorf("%s: emitted IR violates ir-v1alpha1.schema.json (%d finding(s)); the ir.go hand-mirror has drifted from the schema:\n%s\n--- first findings ---\n%+v",
-					c.name, len(findings), raw, findings[:min(4, len(findings))])
-			}
+			assertIRConforms(t, c.name+" as built", result.IRGraph)
+
+			// The withheld shape is the one a command hands back, and it is a
+			// DIFFERENT document: the withholding replaces authored payload leaves
+			// with a marker object, so a schema that admitted the values and not
+			// the marker would accept every row above and reject everything a
+			// person can actually obtain.
+			assertIRConforms(t, c.name+" as a command emits it", redact.Graph(result.IRGraph))
 		})
+	}
+}
+
+// assertIRConforms marshals a graph the way every surface that emits one does
+// and validates it against the IR schema through the one validation component.
+func assertIRConforms(t *testing.T, subject string, graph *types.IRGraph) {
+	t.Helper()
+	raw, err := json.Marshal(graph)
+	if err != nil {
+		t.Fatalf("%s: marshal IR: %v", subject, err)
+	}
+	var instance any
+	if err := json.Unmarshal(raw, &instance); err != nil {
+		t.Fatalf("%s: re-decode IR: %v", subject, err)
+	}
+	findings, err := envelope.ValidateInstance(envelope.KindIR, instance)
+	if err != nil {
+		t.Fatalf("%s: IR schema engine error: %v", subject, err)
+	}
+	if len(findings) > 0 {
+		t.Errorf("%s: emitted IR violates ir-v1alpha1.schema.json (%d finding(s)); the ir.go hand-mirror has drifted from the schema:\n%s\n--- first findings ---\n%+v",
+			subject, len(findings), raw, findings[:min(4, len(findings))])
 	}
 }
 

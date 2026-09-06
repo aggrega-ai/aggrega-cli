@@ -421,6 +421,49 @@ func TestGeneratedCommandToolIsInvocableByName(t *testing.T) {
 	}
 }
 
+// TestGeneratedCommandToolReturnsTheCommandsBytesVerbatim pins the channel a
+// caller reads a DOCUMENT from, as opposed to the one it reads a report from.
+//
+// A capability whose product is a document — the serialized graph a run hands
+// back — reaches this surface by running the command that writes it, so the tool
+// returns whatever that command wrote. That makes the two surfaces' documents one
+// document by construction rather than by agreement, and this is what holds the
+// transport to it: the structured payload's output field carries the command's
+// stream byte for byte, trailing newline included.
+//
+// The text content is deliberately NOT that channel and is asserted here as
+// differing: it is trimmed and, when the command wrote diagnostics, has a block
+// appended. A caller parsing a document from the text form would be parsing a
+// presentation of it.
+func TestGeneratedCommandToolReturnsTheCommandsBytesVerbatim(t *testing.T) {
+	// Shapes a reshaping transport disturbs: two-space indentation, interior
+	// newlines, and a trailing newline the structured writer always emits.
+	const document = "{\n  \"apiVersion\": \"aggrega.ai/v1alpha1\",\n  \"kind\": \"IR\",\n  \"spec\": {\n    \"nodes\": {}\n  }\n}\n"
+
+	s := newCommandToolServer(t, func(_ context.Context, _ []string, stdout, stderr io.Writer) error {
+		_, _ = io.WriteString(stdout, document)
+		_, _ = io.WriteString(stderr, "notice: something advisory\n")
+		return nil
+	})
+
+	res := callTool(t, s, "cli-work", map[string]any{})
+	if res.IsError {
+		t.Fatalf("cli-work reported error: %s", res.Content[0].Text)
+	}
+	var payload commandToolResultPayload
+	if err := json.Unmarshal(res.StructuredContent, &payload); err != nil {
+		t.Fatalf("unmarshal structured payload: %v", err)
+	}
+	if payload.Output != document {
+		t.Errorf("the tool reshaped the command's stream\n--- returned ---\n%q\n--- written ---\n%q",
+			payload.Output, document)
+	}
+	if res.Content[0].Text == document {
+		t.Error("the text content equals the document, so the distinction this pins does not exist and a caller " +
+			"cannot be told which channel to read")
+	}
+}
+
 // TestGeneratedCommandToolSurfacesAFailure asserts a command that exits non-zero
 // comes back as a tool-level failure carrying the command's own diagnostics,
 // rather than as an opaque protocol error.

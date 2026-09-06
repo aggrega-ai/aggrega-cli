@@ -131,14 +131,19 @@ func TestInspectRelease_Raw_Golden(t *testing.T) {
 	compareGoldenKind(t, "release", "raw.golden", []byte(got))
 }
 
-// TestInspectRelease_YAML_Subject proves --output yaml emits the resolved IR
-// graph (the pipeline result is the resolved subject): the dump carries the IR
-// graph shape rather than the authored Release shape.
-func TestInspectRelease_YAML_Subject(t *testing.T) {
+// TestInspectRelease_IRGraph_Subject proves the graph is asked for by its own
+// flag: the emission carries the graph shape rather than the authored Release
+// shape.
+//
+// It is the same assertion that was made of the format flag before the graph had
+// a flag of its own, re-pointed rather than retired: what is worth pinning is
+// that a Release's graph is reachable from the command line at all, and only the
+// spelling of the request moved.
+func TestInspectRelease_IRGraph_Subject(t *testing.T) {
 	t.Parallel()
-	got := inspectInstance(t, fullstackRelease, func(o *inspectOptions) { o.output = outputYAML })
-	if !strings.Contains(got, "nodes:") {
-		t.Errorf("--output yaml should emit the resolved IR graph subject; got:\n%s", got[:min(len(got), 400)])
+	got := inspectInstance(t, fullstackRelease, func(o *inspectOptions) { o.irGraph = true })
+	if !strings.Contains(got, `"nodes"`) {
+		t.Errorf("--ir-graph should emit the resolved IR graph; got:\n%s", got[:min(len(got), 400)])
 	}
 }
 

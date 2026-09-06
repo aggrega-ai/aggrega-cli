@@ -233,8 +233,13 @@ func TestDeferredLintInvocableViaToolsCall(t *testing.T) {
 // generated tool's name and the command path alone — so filling them with
 // invented help text would put bytes into a measurement that production never
 // has.
+// One entry per PATH rather than per record. A path can be named by more than
+// one record — a capability several commands offer under a flag is exposed at
+// each of their paths — and a command tree carries each command once, so a
+// per-record walk would stand in for a surface no session serves.
 func commandBackedSurface() []CommandSurface {
 	table := clisurface.OperationAvailability()
+	seen := map[string]bool{}
 	var out []CommandSurface
 	for _, op := range opsurface.Operations() {
 		a, ok := table[op.ID]
@@ -242,6 +247,10 @@ func commandBackedSurface() []CommandSurface {
 			continue
 		}
 		for _, path := range a.Names {
+			if seen[path] {
+				continue
+			}
+			seen[path] = true
 			out = append(out, CommandSurface{
 				Descriptor: clisurface.Descriptor{Path: path},
 				Runnable:   true,

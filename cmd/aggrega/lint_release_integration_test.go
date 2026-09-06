@@ -39,7 +39,7 @@ func TestIntegration_LintRelease_ClosureScoped(t *testing.T) {
 	t.Chdir(ws)
 
 	// Clean closure → exit 0.
-	if err := validateRelease(resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release-compose.yaml", nil, compilerops.VerbosityDetailed, os.Stderr, os.Stdout); err != nil {
+	if err := validateRelease(resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release-compose.yaml", nil, compilerops.VerbosityDetailed, false, os.Stderr, os.Stdout); err != nil {
 		t.Fatalf("lint --release over a clean closure must pass; got %v", err)
 	}
 
@@ -59,7 +59,7 @@ spec:
       storage:
         $ref: "Nonexistent#/schemas/Storage"
 `)
-	if err := validateRelease(resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release-compose.yaml", nil, compilerops.VerbosityDetailed, os.Stderr, os.Stdout); err != nil {
+	if err := validateRelease(resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release-compose.yaml", nil, compilerops.VerbosityDetailed, false, os.Stderr, os.Stdout); err != nil {
 		t.Errorf("an out-of-closure broken entity must not fail closure-scoped lint --release; got %v", err)
 	}
 

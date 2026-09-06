@@ -44,6 +44,7 @@ func newInspectCmd() *cobra.Command {
 		showImplementsFlag bool
 		flatFlag           bool
 		unredactedFlag     bool
+		irGraphFlag        bool
 	)
 	c := &cobra.Command{
 		Use:   "inspect [identifier]",
@@ -68,12 +69,13 @@ also mutually exclusive.
 Note that --raw reproduces the file as written, so a value the author declared
 sensitive appears as authored. That is what as-authored means; handle such
 output as you would the entity file itself. --output yaml reproduces the file
-the same way for every kind that has one to reproduce.
+the same way for every kind, a Release included.
 
-A Release inspected without --raw is the exception: it has no authored form to
-reproduce, so --output yaml emits the graph this command computed. Values an
-author declared sensitive are withheld from that graph, as they are from the
-readable layouts. Pass --unredacted to print them instead.`,
+--ir-graph asks for a different document: the IR graph a Release resolves to,
+written to stdout as JSON in addition to whatever else this command produces.
+It is orthogonal to --output, which picks the format of the command's own view.
+Values an author declared sensitive are withheld from the graph, as they are
+from the readable layouts. Pass --unredacted to print them instead.`,
 		Example: `  # A catalog entity by name
   aggrega inspect core/compute/api-server
 
@@ -84,7 +86,10 @@ readable layouts. Pass --unredacted to print them instead.`,
   aggrega inspect ./releases/production.yaml --detail
 
   # A Release exactly as authored, with no resolution
-  aggrega inspect ./releases/production.yaml --raw`,
+  aggrega inspect ./releases/production.yaml --raw
+
+  # The IR graph that Release resolves to, as JSON
+  aggrega inspect ./releases/production.yaml --ir-graph`,
 		// Arg-count contract enforced before RunE (so genuine misuse surfaces the
 		// Usage block): exactly one identifier in the normal path; zero when
 		// --plugin names a raw .wasm to derive host functions from.
@@ -104,6 +109,9 @@ readable layouts. Pass --unredacted to print them instead.`,
 			// derivation primitive the record-sync tooling writes with and the loader
 			// registers from. It takes no identifier argument.
 			if pluginFlag != "" {
+				if irGraphFlag {
+					return refuseIRGraph("a raw plugin artifact")
+				}
 				return inspectRawPlugin(out, pluginFlag)
 			}
 			rw, err := workspaceFromContext(cmd.Context())
@@ -142,6 +150,7 @@ readable layouts. Pass --unredacted to print them instead.`,
 				showImplements: showImplementsFlag,
 				flat:           flatFlag,
 				unredacted:     unredactedFlag,
+				irGraph:        irGraphFlag,
 			}
 			return dispatchInspect(rw, args[0], catalogDirs, opts)
 		},
@@ -157,6 +166,7 @@ readable layouts. Pass --unredacted to print them instead.`,
 	c.Flags().BoolVar(&showImplementsFlag, "show-implements", false, "For a Recipe or FeatureRecipe, resolve spec.implements against the catalog and render the bound Component or Feature.")
 	c.Flags().BoolVar(&flatFlag, "flat", false, "Render a tree-shaped entity (Aggregate, Release) as a flat list, each node prefixed with its full dotted path. No effect on tabular kinds.")
 	c.Flags().BoolVar(&unredactedFlag, "unredacted", false, "Print the values an author declared sensitive instead of withholding them. Anything the output reaches — a terminal, a pipe, a file, a screen recording — then carries those values in the clear.")
+	c.Flags().BoolVar(&irGraphFlag, flagIRGraph, false, helpIRGraph+". Applies to a Release, the one kind that resolves to a graph; any other kind refuses the request rather than silently dropping it. Pass --unredacted to print the withheld values instead")
 	c.Flags().StringVar(&pluginFlag, "plugin", "", "Filesystem path to a raw .wasm artifact; derives and prints the host functions it imports, before `aggrega plugin sync` records them in a Plugin entity. Takes no identifier argument.")
 	c.MarkFlagsMutuallyExclusive("list", "detail")
 	c.MarkFlagsMutuallyExclusive("raw", "resolved")
@@ -190,7 +200,27 @@ func dispatchInspect(rw *workspaceconfig.ResolvedWorkspace, identifier string, c
 		return inspectPath(rw, identifier, catalogDirs, opts)
 	}
 
+	// A bare identifier resolves against the catalog, and no catalog kind is a
+	// Release: a Release names an Aggregate and a Manifest beside it, so it is
+	// reached as a file. Refusing here rather than rendering the entity and
+	// dropping the request is what keeps the flag from quietly doing nothing.
+	if opts.irGraph {
+		return refuseIRGraph("a catalog entity")
+	}
 	return inspectCatalogEntity(rw, identifier, catalogDirs, opts)
+}
+
+// refuseIRGraph reports a request for the IR graph made of a subject that
+// resolves to none, naming what does resolve to one.
+//
+// It is one function rather than a sentence at each branch, so the three places
+// that can meet the request answer it identically. The refusal is loud because
+// the alternative is a flag that renders the subject's own view and silently
+// omits the document the caller asked for, which reads to that caller exactly
+// like a Release with an empty graph.
+func refuseIRGraph(subject string) error {
+	return fmt.Errorf("OPS_ERROR: --%s applies to a Release, and %s resolves to no graph; point inspect at a Release file to read one",
+		flagIRGraph, subject)
 }
 
 // isPathInput returns true when the identifier names a filesystem path
@@ -319,6 +349,10 @@ func inspectPath(rw *workspaceconfig.ResolvedWorkspace, path string, catalogDirs
 	}
 	if preamble.Kind == "" {
 		return fmt.Errorf("couldn't determine entity kind from %q; expected apiVersion/kind preamble", path)
+	}
+
+	if opts.irGraph && preamble.Kind != "Release" {
+		return refuseIRGraph("a " + preamble.Kind)
 	}
 
 	if render, ok := kindRenderers[preamble.Kind]; ok {
@@ -544,12 +578,12 @@ func renderCatalogMatch(rw *workspaceconfig.ResolvedWorkspace, id entityIdentity
 // The catalog directory comes from the --catalog flag (default `.`),
 // mirroring `aggrega build`'s catalog discovery.
 //
-// Release is a resolved instance kind: its render subject is the pipeline
-// result.
+// Release is a resolved instance kind, and two independent choices shape what
+// this writes:
 //
-//   - --raw: the Release as authored (no pipeline), via the YAML round-trip.
-//   - --output yaml: the resolved IR graph re-emitted as YAML (the pipeline
-//     result is the resolved subject).
+//   - --raw and --output yaml each select the Release as authored, emitted
+//     verbatim via the YAML round-trip, which is what every other kind's
+//     --output yaml does too. Neither runs the resolution on its own account.
 //   - default / --resolved: a boundary-organised text layout — each boundary
 //     carries its output directory, sync-wave, and a two-way annotation split
 //     (aggrega.ai/* provider-consumed vs. other pass-through); each component
@@ -557,14 +591,25 @@ func renderCatalogMatch(rw *workspaceconfig.ResolvedWorkspace, id entityIdentity
 //     (cross-boundary edges marked), and its Feature attachments with the
 //     preserved provenance brackets. --flat collapses the boundary tree to one
 //     section per boundary keyed by its full path.
+//   - --ir-graph asks, independently of both, for the IR graph this run
+//     resolved, written first and in JSON. It is additive: whichever document
+//     the choices above select is still written after it.
+//
+// The graph leads the stream deliberately. It is one JSON document followed by
+// a newline, so a consumer decoding the stream reads it and stops, whatever the
+// command writes afterwards; behind the command's own view it would have to be
+// found first.
 //
 // This function threads opts.out as the output sink and reaches the graph
 // through the compiler's one graph-construction entry, so the picture it draws
 // cannot drift from what a build of the same Release would render.
 func renderReleaseFile(rw *workspaceconfig.ResolvedWorkspace, releasePath string, data []byte, catalogDirs []string, opts inspectOptions) error {
-	// --raw is the as-authored bypass: emit the Release file verbatim, no
-	// pipeline, regardless of level.
-	if opts.mode == modeForcedRaw {
+	// The as-authored selection. --raw is the explicit one; --output yaml is the
+	// same document reached through the format flag, which is what that flag
+	// means for every other kind. Only a caller that also asked for the graph
+	// pays for a resolution here.
+	authored := opts.mode == modeForcedRaw || opts.output == outputYAML
+	if authored && !opts.irGraph {
 		return emitYAMLRoundTrip(opts, releasePath, data)
 	}
 	// wsRoot is the resolved workspace root; the catalog renders its entity
@@ -636,6 +681,14 @@ func renderReleaseFile(rw *workspaceconfig.ResolvedWorkspace, releasePath string
 		cat.RecipeLookupWithManifest(manifest).Recipe,
 		cat.SubAggregateLoader(),
 		func(gs *pipeline.GraphScope) error {
+			if opts.irGraph {
+				if err := writeIRGraph(opts.out, "inspect", gs.IRGraph, opts.unredacted); err != nil {
+					return err
+				}
+			}
+			if authored {
+				return emitYAMLRoundTrip(opts, releasePath, data)
+			}
 			return renderReleaseResolved(opts, rel, releasePath, gs.IRGraph, gs.ResolveResult, catalogLookup)
 		},
 	)

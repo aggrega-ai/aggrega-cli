@@ -5,11 +5,11 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"strings"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/redact"
-	"go.yaml.in/yaml/v3"
 )
 
 // The fixture is the one the per-authored-leaf marking is proved against, so the
@@ -44,77 +44,45 @@ var authoredSecrets = []struct {
 // and is the failure in this axis with no cheap undo.
 var authoredPublic = []string{"demo", "not-a-secret", "visible", "boundary-wide"}
 
-// inspectYAML runs the real inspect dispatch over the fixture Release and
-// returns everything the emission carries as searchable text: the YAML itself,
-// plus every byte-sequence in it decoded back to the text those bytes spell.
+// inspectGraph runs the real inspect dispatch over the fixture Release with the
+// graph requested, and returns the emitted document as searchable text.
 //
-// THE DECODE IS LOAD-BEARING AND THIS TEST IS WRONG WITHOUT IT. A node's own
-// values and infra travel as raw JSON, which this encoder writes as a sequence
-// of byte values rather than as a nested document — so the authored text
-// appears nowhere in the emitted characters, and a plain substring search over
-// them reports every one of those secrets absent whether or not it was
-// withheld. Asserting on the raw characters would therefore pass on a build
-// that withholds nothing at all, which is the one failure an absence assertion
-// exists to catch.
-func inspectYAML(t *testing.T, unredacted bool) string {
+// A plain substring search is sound over this emission and would NOT have been
+// over the one this test was first written against. A node's own values and
+// infra travel as raw JSON: a JSON encoder writes them as the nested document
+// they already are, so an authored value that survived appears verbatim in the
+// characters, while the encoder this surface used before wrote them as a
+// sequence of byte values in which no authored text appeared at all — under
+// which an absence assertion passed whether or not anything was withheld.
+//
+// The public values asserted below are the standing positive control for that
+// claim: they are in the same payloads and must be found as plain text, so a
+// search that could not see into the emission fails there rather than passing
+// everywhere.
+func inspectGraph(t *testing.T, unredacted bool) string {
 	t.Helper()
 	var buf bytes.Buffer
 	opts := testInspectOptions(&buf)
-	opts.output = outputYAML
+	opts.irGraph = true
 	opts.mode = modeForcedResolved
 	opts.unredacted = unredacted
 	if err := dispatchInspect(resolveTempWorkspace(t, tempWorkspaceOptions{}), yamlRedactionRelease, []string{yamlRedactionCatalog}, opts); err != nil {
 		t.Fatalf("dispatchInspect(%q, unredacted=%v): %v", yamlRedactionRelease, unredacted, err)
 	}
-	emitted := buf.String()
+	// The graph leads the stream and the readable view follows it, so what is
+	// searched below is the document alone. Searching the whole stream would let
+	// a value that survived in the readable layout satisfy an assertion about the
+	// graph, and vice versa.
+	document, _ := splitLeadingGraph(t, buf.String())
 
 	var tree any
-	if err := yaml.Unmarshal([]byte(emitted), &tree); err != nil {
-		t.Fatalf("the emitted graph is not YAML: %v", err)
+	if err := json.Unmarshal([]byte(document), &tree); err != nil {
+		t.Fatalf("the emitted graph is not JSON: %v", err)
 	}
-	var b strings.Builder
-	b.WriteString(emitted)
-	for _, decoded := range decodeByteSequences(tree) {
-		b.WriteString("\n")
-		b.WriteString(decoded)
-	}
-	return b.String()
+	return document
 }
 
-// decodeByteSequences walks a decoded YAML tree and returns the text of every
-// sequence that is entirely small non-negative integers — the shape a raw-JSON
-// payload takes on the way through this encoder.
-func decodeByteSequences(node any) []string {
-	switch n := node.(type) {
-	case map[string]any:
-		var out []string
-		for _, v := range n {
-			out = append(out, decodeByteSequences(v)...)
-		}
-		return out
-	case []any:
-		raw := make([]byte, 0, len(n))
-		for _, item := range n {
-			i, ok := item.(int)
-			if !ok || i < 0 || i > 255 {
-				var out []string
-				for _, v := range n {
-					out = append(out, decodeByteSequences(v)...)
-				}
-				return out
-			}
-			raw = append(raw, byte(i))
-		}
-		if len(raw) == 0 {
-			return nil
-		}
-		return []string{string(raw)}
-	default:
-		return nil
-	}
-}
-
-// TestInspectReleaseYAML_WithholdsDeclaredValues is the defect this surface
+// TestInspectReleaseGraph_WithholdsDeclaredValues is the defect this surface
 // carried: the structured emission of the resolved graph printed every authored
 // value, including the ones an author declared sensitive, while the readable
 // layouts over the same declarations withheld them.
@@ -123,9 +91,13 @@ func decodeByteSequences(node any) []string {
 // that is the sharper direction: a marker can be present at one coordinate while
 // a secret is still emitted at another, and only the absence assertion fails on
 // that.
-func TestInspectReleaseYAML_WithholdsDeclaredValues(t *testing.T) {
+//
+// It follows the graph onto the flag that now asks for it rather than being
+// retired with the format value that used to. What is worth pinning is that the
+// document a person can obtain withholds; which flag obtains it is a spelling.
+func TestInspectReleaseGraph_WithholdsDeclaredValues(t *testing.T) {
 	t.Parallel()
-	got := inspectYAML(t, false)
+	got := inspectGraph(t, false)
 
 	for _, secret := range authoredSecrets {
 		if strings.Contains(got, secret.value) {
@@ -142,14 +114,14 @@ func TestInspectReleaseYAML_WithholdsDeclaredValues(t *testing.T) {
 	}
 }
 
-// TestInspectReleaseYAML_UnredactedEmitsThem is the other direction, and it is
+// TestInspectReleaseGraph_UnredactedEmitsThem is the other direction, and it is
 // what makes the withholding above a decision rather than a limitation. A reader
 // who needs the graph as the compiler produced it has a way to ask for it on the
 // command that produces it, rather than being sent to a different command that
 // answers a different question.
-func TestInspectReleaseYAML_UnredactedEmitsThem(t *testing.T) {
+func TestInspectReleaseGraph_UnredactedEmitsThem(t *testing.T) {
 	t.Parallel()
-	got := inspectYAML(t, true)
+	got := inspectGraph(t, true)
 
 	for _, secret := range authoredSecrets {
 		if !strings.Contains(got, secret.value) {

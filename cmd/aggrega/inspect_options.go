@@ -36,8 +36,10 @@ const (
 	modeForcedResolved
 )
 
-// outputFormat selects the serialization of a render subject. outputText is the
-// per-kind pretty-print; outputYAML emits the render subject as YAML.
+// outputFormat selects the serialization of the command's own document.
+// outputText is the per-kind pretty-print; outputYAML reproduces the entity as
+// authored. It selects a FORMAT and never a subject: the IR graph is a
+// different document and is asked for by its own flag.
 type outputFormat int
 
 const (
@@ -87,6 +89,14 @@ type inspectOptions struct {
 	// It reaches the surfaces that carry authored pillar data. A surface that
 	// prints no such data has nothing to reveal and is unaffected by it.
 	unredacted bool
+	// irGraph asks for the IR graph this run computed, in addition to the view
+	// the command would render anyway. It is orthogonal to output: that field
+	// says in what format the command's own document is written, and this one
+	// says that a second document is written beside it.
+	//
+	// Only a Release resolves to a graph. Every other kind refuses the request
+	// rather than rendering its own view and quietly dropping it.
+	irGraph bool
 }
 
 // parseColorMode maps the --color string to a colorMode, returning a clear

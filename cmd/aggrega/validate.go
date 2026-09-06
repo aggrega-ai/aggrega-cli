@@ -43,6 +43,7 @@ func newValidateCmd() *cobra.Command {
 	var pluginType string
 	var responseFormat string
 	var noUnsupportedFieldWarnings bool
+	var irGraph bool
 	c := &cobra.Command{
 		Use:   "validate [entity-path]",
 		Short: "Check correctness across the catalog, a Release, or one entity",
@@ -64,6 +65,14 @@ func newValidateCmd() *cobra.Command {
 			path := ""
 			if len(args) > 0 {
 				path = args[0]
+			}
+			// The graph is a Release's, and --release is the one scope that
+			// resolves one: the whole-catalog and single-entity scopes drive a
+			// synthesized harness rather than a Release, and the plugin scope
+			// inspects one artifact. Refusing here keeps the flag from rendering a
+			// verdict and silently dropping the document that was asked for.
+			if irGraph && releasePath == "" {
+				return fmt.Errorf("OPS_ERROR: --%s applies to the --release scope, the one scope that resolves a Release to a graph; pass --release <path-to-release.yaml>", flagIRGraph)
 			}
 			// --type declares the plugin type for a binary-only .wasm check and is
 			// meaningful only alongside --plugin; reject it on its own so it never
@@ -91,7 +100,7 @@ func newValidateCmd() *cobra.Command {
 				if path != "" {
 					return fmt.Errorf("OPS_ERROR: --release is mutually exclusive with an entity argument; pass one or the other")
 				}
-				return validateRelease(rw, releasePath, catalogDirs, compilerops.ParseVerbosity(responseFormat), os.Stderr, cmd.OutOrStdout())
+				return validateRelease(rw, releasePath, catalogDirs, compilerops.ParseVerbosity(responseFormat), irGraph, os.Stderr, cmd.OutOrStdout())
 			}
 			if path == "" {
 				// No entity argument → whole-catalog correctness.
@@ -112,6 +121,11 @@ func newValidateCmd() *cobra.Command {
 	// named in prose instead, and the placeholder stays the type.
 	c.Flags().StringVar(&responseFormat, "response-format", compilerops.VerbosityDetailed, "Output volume for the --release scope: detailed (default) reports every diagnostic plus advisory lines; concise reports the diagnostic count and the first diagnostic only. The verdict and exit code are identical for both.")
 	c.Flags().BoolVar(&noUnsupportedFieldWarnings, flagNoUnsupportedFieldWarnings, false, helpNoUnsupportedFieldWarnings+". Applies to the entity scope, the one scope that renders")
+	// --response-format sits next to this one and answers a different question:
+	// that flag sets how much of this command's OWN report is written, and this
+	// one asks for a second document beside it. Saying so in the help is what
+	// keeps a reader from reading them as two spellings of one knob.
+	c.Flags().BoolVar(&irGraph, flagIRGraph, false, helpIRGraph+". Applies to the --release scope, the one scope that resolves a Release to a graph. It selects a DOCUMENT, where --response-format sets how much of this command's own report is written; neither affects the verdict or the exit code")
 	return c
 }
 

@@ -84,21 +84,36 @@ const (
 // anything.
 var operationAvailability = map[string]opsurface.OperationAvailability{
 	// Capabilities a command carries.
-	"acquire":            opsurface.Exposed("aggrega acquire"),
-	"auth-token":         opsurface.Exposed("aggrega auth token"),
-	"build":              opsurface.Exposed("aggrega build"),
-	"cache-clear":        opsurface.Exposed("aggrega cache clear"),
-	"cache-evict":        opsurface.Exposed("aggrega cache evict"),
-	"cache-prune":        opsurface.Exposed("aggrega cache prune"),
-	"cache-status":       opsurface.Exposed("aggrega cache status"),
-	"config-capture":     opsurface.Exposed("aggrega config capture"),
-	"config-init":        opsurface.Exposed("aggrega config init"),
-	"config-show":        opsurface.Exposed("aggrega config show"),
-	"deprecate":          opsurface.Exposed("aggrega deprecate"),
-	"explain-error":      opsurface.Exposed("aggrega explain"),
-	"get-schema":         opsurface.Exposed("aggrega get-schema"),
-	"import":             opsurface.Exposed("aggrega import"),
-	"inspect":            opsurface.Exposed("aggrega inspect"),
+	"acquire":        opsurface.Exposed("aggrega acquire"),
+	"auth-token":     opsurface.Exposed("aggrega auth token"),
+	"build":          opsurface.Exposed("aggrega build"),
+	"cache-clear":    opsurface.Exposed("aggrega cache clear"),
+	"cache-evict":    opsurface.Exposed("aggrega cache evict"),
+	"cache-prune":    opsurface.Exposed("aggrega cache prune"),
+	"cache-status":   opsurface.Exposed("aggrega cache status"),
+	"config-capture": opsurface.Exposed("aggrega config capture"),
+	"config-init":    opsurface.Exposed("aggrega config init"),
+	"config-show":    opsurface.Exposed("aggrega config show"),
+	"deprecate":      opsurface.Exposed("aggrega deprecate"),
+	"explain-error":  opsurface.Exposed("aggrega explain"),
+	"get-schema":     opsurface.Exposed("aggrega get-schema"),
+	"import":         opsurface.Exposed("aggrega import"),
+	"inspect":        opsurface.Exposed("aggrega inspect"),
+	// Three commands resolve a Release far enough to hold the graph, and each
+	// hands it back under one flag. So this row names three paths — the record
+	// admits several, because one capability can be reachable under more than one
+	// name on the same surface — rather than picking one of the three and leaving
+	// the other two undeclared.
+	//
+	// The paths are the commands rather than the flag spellings, because a path
+	// here is compared against the command catalog: a flag-qualified string names
+	// nothing the catalog carries, so it would report as an exposure the surface
+	// does not have. The consequence is that these three paths are each claimed by
+	// two operations — the capability the command IS, and this one it offers — and
+	// which of the two a command CARRIES is settled where that question is asked
+	// rather than by the order this table or the operation set happens to be
+	// written in.
+	"ir-graph":           opsurface.Exposed("aggrega build", "aggrega inspect", "aggrega validate"),
 	"lint":               opsurface.Exposed("aggrega lint"),
 	"login":              opsurface.Exposed("aggrega login"),
 	"logout":             opsurface.Exposed("aggrega logout"),

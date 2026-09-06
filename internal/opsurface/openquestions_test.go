@@ -141,7 +141,25 @@ import (
 // The daemon's row for the same capability is a different row and is untouched:
 // it asks whether the surface that emits a diagnostic owes the expansion of it,
 // which is a question about that surface and not about this one.
-const boundCeiling = 22
+//
+// It came down by TWO when a run began handing back the graph it resolved. Two
+// rows left in one edit — the command line's and the tool protocol's — and the
+// argument for taking both together is that they were one question asked about
+// two surfaces: on each, the graph was produced and not offered.
+//
+// What settled them is that neither absence rested on a property of its surface.
+// The command line's row observed that a command resolves the graph to draw a
+// readable view of a Release and stops there; the tool protocol's observed that a
+// build cannot render without the graph and returns the files instead. Both are
+// observations that the document was reachable and unoffered, which is the
+// unexamined absence this bound exists to keep visible rather than a reason.
+//
+// Disposing of one and leaving the other would have split that, and it would have
+// split it in the sharpest way available: the tool protocol reaches the capability
+// by running the command, so the command line's answer IS the tool protocol's
+// answer. A row left standing on one surface would have asked a question the other
+// surface's disposal had already settled.
+const boundCeiling = 20
 
 // TestTheBoundOnlyShrinks is the ratchet. See boundCeiling for why both
 // directions refuse.

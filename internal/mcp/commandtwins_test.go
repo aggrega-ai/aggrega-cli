@@ -118,6 +118,70 @@ func TestTwiceExposedOperationsDiscloseEachOther(t *testing.T) {
 	}
 }
 
+// TestACommandCarriesTheOperationItIsRatherThanOneItOffers pins the tie-break
+// the pairing depends on, and it exists because a command path is no longer
+// claimed by exactly one operation.
+//
+// A capability several commands hand back under a flag is exposed at each of
+// their paths. It is OFFERED by each and is the identity of none, so the record
+// naming a path and no other wins. Resolving the tie by declaration order would
+// work today and silently stop working the day the operation set is reordered —
+// and the only symptom would be a pairing disclosure quietly going missing, which
+// every assertion above is a "contains" over and would therefore report.
+//
+// The rows are read from the availability records rather than listed, so this
+// follows a rename instead of pinning one.
+func TestACommandCarriesTheOperationItIsRatherThanOneItOffers(t *testing.T) {
+	table := clisurface.OperationAvailability()
+
+	// Every path claimed by more than one record, with the record that names it
+	// alone — the command the path IS.
+	claims := map[string][]string{}
+	soleClaimant := map[string]string{}
+	for id, a := range table {
+		if !a.IsExposed() {
+			continue
+		}
+		for _, path := range a.Names {
+			claims[path] = append(claims[path], id)
+			if len(a.Names) == 1 {
+				soleClaimant[path] = id
+			}
+		}
+	}
+
+	var contested int
+	for path, ids := range claims {
+		if len(ids) < 2 {
+			continue
+		}
+		contested++
+		want, ok := soleClaimant[path]
+		if !ok {
+			t.Errorf("%q is claimed by %v and by no record naming it alone, so which operation the command "+
+				"carries is undecidable from the table", path, ids)
+			continue
+		}
+		if got := commandOperation(path); got != want {
+			t.Errorf("the command at %q carries %q; it was resolved to %q (claimants: %v)", path, want, got, ids)
+		}
+	}
+	if contested == 0 {
+		t.Skip("no command path is claimed by more than one operation, so the tie-break has nothing to resolve")
+	}
+
+	// The uncontested direction still has to hold, or the tie-break has broken
+	// the ordinary case while fixing the contested one.
+	for path, id := range soleClaimant {
+		if len(claims[path]) != 1 {
+			continue
+		}
+		if got := commandOperation(path); got != id {
+			t.Errorf("the command at %q is the only claimant of %q, and it was resolved to %q", path, id, got)
+		}
+	}
+}
+
 // TestAToolWithNoCommandTwinDisclosesNothing is the negative control. Every
 // assertion above is a "contains", and a note appended unconditionally would
 // satisfy all of them while telling a caller about a tool that does not exist.

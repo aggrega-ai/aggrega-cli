@@ -68,14 +68,10 @@ func OpenQuestions() []OpenQuestion {
 // The rows are grouped by surface and follow the operation set's order within a
 // surface, so a reader meets them in the same sequence the checks report them.
 var openQuestions = []OpenQuestion{
-	// The command line. One row, and the group heading is kept for the reason the
-	// others are: the rows are grouped by surface, and a surface with one row is
-	// still a surface a reader meets in the same sequence the checks report it.
-	{SurfaceCLI, "ir-graph",
-		"No command emits the serialized graph, and the command layer resolves the same graph to render a " +
-			"readable view of a Release. So the resolution is reached and the document is not offered. Is the " +
-			"readable view the intended extent of what a command gives, or does the command that already " +
-			"resolves the graph owe the document as one of its output shapes?"},
+	// The command line holds no undecided pair. Its last one asked whether the
+	// readable view was the intended extent of what a command gives, or whether a
+	// command that already resolves the graph owed the document too; the answer is
+	// that it owes it, and three commands now hand it back.
 
 	// The JSON-RPC daemon.
 	//
@@ -209,10 +205,6 @@ var openQuestions = []OpenQuestion{
 			"produced the diagnostic owe the expansion of it?"},
 
 	// The tool protocol.
-	{SurfaceMCP, "ir-graph",
-		"The build result carries the rendered files and the Release they came from, not the graph the render " +
-			"consumed. The graph is built on this surface — the render cannot proceed without it — so it is " +
-			"produced and not returned. Is it withheld on purpose, or is the absence one nobody has examined?"},
 	{SurfaceMCP, "feature-attach-candidates",
 		"The label-matching result exists so that a caller offering attach targets offers the same set the " +
 			"compiler would match. Nothing on this surface offers attach targets today, which is why the " +

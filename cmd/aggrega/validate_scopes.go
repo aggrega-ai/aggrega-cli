@@ -99,7 +99,15 @@ func validateCatalogWide(wsRoot, cacheDir string, dirs []string, diagOut, out io
 // Advisory (`notice:`) and error diagnostics are written to diagOut (os.Stderr in
 // production); the final success summary is written to out (os.Stdout in
 // production).
-func validateRelease(rw *workspaceconfig.ResolvedWorkspace, releasePath string, catalogFlagDirs []string, verbosity string, diagOut, out io.Writer) error {
+//
+// irGraph asks for the graph this validation resolved, written to out ahead of
+// everything else this verb produces. The graph is the one the run already
+// holds — the validation core carries it on its result — so asking for it costs
+// no second resolution and cannot disagree with what was validated. It changes
+// neither the checks, the verdict nor the exit code. A run whose gates refused
+// before the graph was built has none to hand back, and says so on diagOut
+// rather than emitting an empty document.
+func validateRelease(rw *workspaceconfig.ResolvedWorkspace, releasePath string, catalogFlagDirs []string, verbosity string, irGraph bool, diagOut, out io.Writer) error {
 	rw, err := workspaceOrResolve(rw)
 	if err != nil {
 		return fmt.Errorf("workspaceconfig: %w", err)
@@ -172,6 +180,18 @@ func validateRelease(rw *workspaceconfig.ResolvedWorkspace, releasePath string, 
 	// withdrawn". An unreadable record is reported rather than skipped, for the same
 	// reason the record's loader refuses one: a damaged record must not be able to
 	// pass as an empty one.
+	// The graph the run already resolved, handed back before any of this verb's
+	// own output. It is read off the result rather than rebuilt: the validation
+	// core holds the graph it validated, and a second resolution here could
+	// answer a different question than the verdict below reports on.
+	if irGraph {
+		if vr.Tier4 == nil || vr.Tier4.IRGraph == nil {
+			fmt.Fprintf(diagOut, "  no graph: validation stopped before the graph was resolved, so there is none to hand back\n")
+		} else if err := writeIRGraph(out, "validate", vr.Tier4.IRGraph, false); err != nil {
+			return err
+		}
+	}
+
 	trustRecord, _, trustErr := pluginstrust.LoadOrStart(pluginstrust.PathFor(releasePath))
 	if trustErr != nil {
 		return trustErr

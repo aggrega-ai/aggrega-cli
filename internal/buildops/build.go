@@ -20,6 +20,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/externalinputs"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
@@ -113,6 +114,16 @@ func (r Reporter) note(format string, args ...any) {
 	}
 }
 
+// irGraph hands the run's graph to a caller that asked for one. A caller that
+// asked for none is silent and reports no error, which is what keeps the
+// callback its own request rather than needing a switch beside it.
+func (o RunOptions) irGraph(graph *types.IRGraph) error {
+	if o.IRGraph == nil {
+		return nil
+	}
+	return o.IRGraph(graph)
+}
+
 // Pull runs the dependency fill the build's automatic-pull step performs:
 // resolving the Release's dependencies into the lockfile and cache in-process.
 // upgrade makes that fill a full refresh; detail asks it for the per-entity
@@ -193,6 +204,23 @@ type RunOptions struct {
 	// external-input records this run newly pinned (empty when the run
 	// pinned nothing). The acquisition operation reports through it.
 	OnAcquired func([]lockfile.ExternalInput)
+	// IRGraph, when non-nil, is handed the graph this run resolved, once, after
+	// the render succeeded and before anything else the run writes to its status
+	// stream. Nil means the caller did not ask for it — the presence of the
+	// callback IS the request, so there is no second switch beside it that could
+	// disagree with it.
+	//
+	// It hands over the graph rather than bytes, for the same reason the advisory
+	// reports hand over their records: how a graph is serialized, and whether the
+	// values an author declared sensitive are withheld from it, belong to the
+	// surface that writes it. Serializing one here would be a second emission
+	// beside the one the surfaces already share.
+	//
+	// It is the one callback here that returns an error, because it is the one
+	// whose failure is a failed write to the caller's own stream: a run that could
+	// not hand back the document it was asked for has not done what was asked, and
+	// swallowing that would leave a truncated document behind a successful build.
+	IRGraph func(graph *types.IRGraph) error
 }
 
 // Config is the build operation's input contract. A caller assembles it from
@@ -524,6 +552,15 @@ func Run(cfg Config) (Result, error) {
 	report.note("closure entities: %d", len(cl.Entities))
 	report.note("schema libraries: %d, mapping libraries: %d, workload libraries: %d", len(cl.SchemaLibraries), len(cl.MappingLibraries), len(cl.WorkloadLibraries))
 	result := preview.Pipeline
+
+	// The graph this build resolved, handed back before anything else reaches the
+	// status stream — ahead of the dry run's artifact report and ahead of the
+	// completion summary the caller writes when Run returns. A build already holds
+	// the graph it rendered from, so handing it back costs no second resolution
+	// and cannot disagree with the artifacts written below.
+	if err := run.irGraph(result.IRGraph); err != nil {
+		return Result{}, err
+	}
 
 	outDir := run.OutDir
 	if outDir == "" {
