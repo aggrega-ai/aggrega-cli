@@ -222,7 +222,7 @@ func (a OperationAvailability) IsExposed() bool { return len(a.Names) > 0 }
 // malformed classes and lexically for the stale classes, so a failing check
 // reports the same text across runs.
 func CheckAvailability(surface Surface, table map[string]OperationAvailability) []string {
-	return checkAvailability(surface, table, openQuestions)
+	return checkAvailability(surface, table, undecidedPairs)
 }
 
 // checkAvailability is the whole of CheckAvailability with the bound supplied
@@ -232,17 +232,17 @@ func CheckAvailability(surface Surface, table map[string]OperationAvailability) 
 // against a bound built for it. The exported form above is a one-line
 // delegation passing the real bound, which is what makes a test of this
 // function a test of what the surfaces actually call.
-func checkAvailability(surface Surface, table map[string]OperationAvailability, bound []OpenQuestion) []string {
+func checkAvailability(surface Surface, table map[string]OperationAvailability, bound []UndecidedPair) []string {
 	var findings []string
 
 	for _, op := range operations {
 		a, ok := table[op.ID]
-		if isOpen(bound, surface, op.ID) {
+		if isUndecided(bound, surface, op.ID) {
 			if ok {
 				findings = append(findings, fmt.Sprintf(
 					"%s declares the availability of the %q operation, and %s names it as undecided. One of the "+
 						"two is wrong. If the declaration stands, delete the bound row: a capability that has "+
-						"been ruled on reads, from the bound, as a question nobody need answer, and the bound "+
+						"been ruled on reads, from the bound, as a pair nobody has decided, and the bound "+
 						"only shrinks.",
 					surface, op.ID, boundLocation))
 			}

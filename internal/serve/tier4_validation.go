@@ -216,9 +216,7 @@ func (s *Server) runTier4Validation(ctx context.Context, releasePath, file strin
 	// the one recorded at the last resolution, so the editor would stop reflecting
 	// the workspace configuration in front of them.
 	//
-	// Whether the editor should hold a per-edit validation to the record is a
-	// separate question from identity handling, and it is not settled here. Leave
-	// the field unset.
+	// Leave the field unset.
 	vr := compilerops.Validate(ctx, compilerops.ValidateInputs{
 		View:            view,
 		Closure:         resolved.Closure,

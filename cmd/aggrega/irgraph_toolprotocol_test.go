@@ -119,12 +119,12 @@ func TestToolProtocolCarriesTheGraphOnEveryToolThatOffersIt(t *testing.T) {
 
 	// The bound no longer excuses the pair, which is what makes the availability
 	// record above the thing carrying it rather than a row saying nobody decided.
-	for _, q := range opsurface.OpenQuestions() {
+	for _, q := range opsurface.UndecidedPairs() {
 		if q.Surface == opsurface.SurfaceMCP && q.ID == "ir-graph" {
 			t.Error("the tool protocol still names the graph capability as undecided, and it now serves it")
 		}
 	}
-	for _, q := range opsurface.OpenQuestions() {
+	for _, q := range opsurface.UndecidedPairs() {
 		if q.Surface == opsurface.SurfaceCLI && q.ID == "ir-graph" {
 			t.Error("the command line still names the graph capability as undecided, and it now carries it")
 		}

@@ -4,6 +4,7 @@
 package opsurface
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -74,8 +75,7 @@ import (
 // never the retired one, and no row was moved onto it because it looked close
 // enough.
 //
-// The number goes down as each row is settled, one capability at a time, and
-// each of the sixteen states the fork that settles it.
+// The number goes down as each row is settled, one capability at a time.
 //
 // It came down by one when the command line began drafting a starter document
 // for an entity kind. That row asked whether a command was withheld on purpose
@@ -247,33 +247,55 @@ const boundCeiling = 10
 // directions refuse.
 func TestTheBoundOnlyShrinks(t *testing.T) {
 	switch {
-	case len(openQuestions) > boundCeiling:
+	case len(undecidedPairs) > boundCeiling:
 		t.Fatalf("the bound GREW: it enumerates %d pair(s) and its ceiling is %d.\n"+
 			"An undecided pair was added to the bound instead of being disposed of. Dispose of it — "+
 			"Exposed(name…) or Unavailable(reason) on the surface — or raise boundCeiling in this file "+
-			"deliberately and say why in review.", len(openQuestions), boundCeiling)
-	case len(openQuestions) < boundCeiling:
+			"deliberately and say why in review.", len(undecidedPairs), boundCeiling)
+	case len(undecidedPairs) < boundCeiling:
 		t.Fatalf("the bound SHRANK: it enumerates %d pair(s) and its ceiling is %d.\n"+
 			"A pair was decided without the ceiling following it down. Lower boundCeiling to %d so the "+
-			"room does not stay open.", len(openQuestions), boundCeiling, len(openQuestions))
+			"room does not stay open.", len(undecidedPairs), boundCeiling, len(undecidedPairs))
 	}
+}
+
+// dispositionFinding reports what is wrong with a row's disposition, or the
+// empty string when nothing is.
+//
+// The comparison is exact, and that is the whole of the rule: the token says
+// which state the pair is in, so anything else in the field is either a reason
+// — which is what an availability record carries and what a row must never be
+// mistaken for — or an argument about what the answer should be, which does not
+// belong in source that ships. An exact comparison is what makes both
+// impossible to express, where a shape test would admit whichever wording
+// happened to fit it.
+//
+// It is a function rather than four lines inside the loop below so the real
+// bound and the legs that drive the check to its own failure read the same rule
+// rather than two copies of it.
+func dispositionFinding(q UndecidedPair) string {
+	if q.Disposition == pending {
+		return ""
+	}
+	return fmt.Sprintf("the bound's row for %q on %s carries %q, and the only disposition a row may carry is %q",
+		q.ID, q.Surface, q.Disposition, pending)
 }
 
 // TestTheBoundIsWellFormed pins the properties every row has to have for the
 // bound to mean anything: a surface the checks actually run over, an operation
-// that exists, a question that poses one, and one row per pair.
+// that exists, the one disposition a row may carry, and one row per pair.
 //
-// The question-mark assertion is the shape that keeps a bound row
-// distinguishable from an availability record. A declined operation carries a
-// reason — a clause a finding embeds, which the surfaces' own tests hold to that
-// shape — and a bound row carries a question. A row that had drifted into
+// The disposition assertion is what keeps a bound row distinguishable from an
+// availability record. A declined operation carries a reason — a clause a
+// finding embeds, which the surfaces' own tests hold to that shape — and a
+// bound row carries a state and nothing else. A row that had drifted into
 // asserting a reason would be an unexamined absence wearing the clothes of a
 // deliberate one, which is the whole thing this bound exists to keep visible.
 func TestTheBoundIsWellFormed(t *testing.T) {
 	known := map[Surface]bool{SurfaceCLI: true, SurfaceServe: true, SurfaceMCP: true}
 	seen := map[string]bool{}
 
-	for _, q := range openQuestions {
+	for _, q := range undecidedPairs {
 		pair := string(q.Surface) + "\x00" + q.ID
 
 		if !known[q.Surface] {
@@ -288,14 +310,50 @@ func TestTheBoundIsWellFormed(t *testing.T) {
 		}
 		seen[pair] = true
 
-		if !strings.Contains(q.Question, "?") {
-			t.Errorf("the bound's row for %q on %s poses no question, so it reads as a reason: %q",
-				q.ID, q.Surface, q.Question)
+		if f := dispositionFinding(q); f != "" {
+			t.Error(f)
 		}
-		if len(q.Question) < 80 {
-			t.Errorf("the bound's row for %q on %s carries too little to settle: %q",
-				q.ID, q.Surface, q.Question)
-		}
+	}
+}
+
+// TestTheDispositionCheckRefusesAnythingButTheToken drives the assertion above
+// to its own failure, because a gate whose failure mode nobody has seen fire is
+// decoration.
+//
+// The refused rows are the ways a disposition stops being a state: nothing at
+// all, a sentence, a paragraph, the token with a hedge hung off it, and the
+// token in the wrong case. The last two are why the comparison is exact rather
+// than a prefix or a fold — each would pass a looser test while carrying
+// something the row has no business carrying. The token itself is the positive
+// control, without which a check that refused everything would satisfy every
+// other row here.
+func TestTheDispositionCheckRefusesAnythingButTheToken(t *testing.T) {
+	id := IDs()[0]
+
+	for _, tc := range []struct {
+		name        string
+		disposition string
+		refused     bool
+	}{
+		{"the token itself", pending, false},
+		{"nothing at all", "", true},
+		{"whitespace", " ", true},
+		{"a stray sentence", "Is this wanted here?", true},
+		{"a paragraph", "The daemon carries the correctness check and not the publishing-conventions " +
+			"check. Its subject is in the workspace and it writes nothing, so none of this surface's " +
+			"grounds for declining applies.", true},
+		{"the token with a hedge hung off it", pending + ", probably", true},
+		{"the token in the wrong case", "Pending", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := dispositionFinding(UndecidedPair{SurfaceCLI, id, tc.disposition})
+			switch {
+			case tc.refused && got == "":
+				t.Fatalf("a row carrying %q was not refused", tc.disposition)
+			case !tc.refused && got != "":
+				t.Fatalf("a row carrying the token was refused: %s", got)
+			}
+		})
 	}
 }
 
@@ -322,14 +380,14 @@ func TestTheBoundIsHeldFromBothEnds(t *testing.T) {
 	}
 
 	t.Run("an excused pair produces no finding", func(t *testing.T) {
-		bound := []OpenQuestion{{SurfaceCLI, first, "is it wanted here?"}}
+		bound := []UndecidedPair{{SurfaceCLI, first, pending}}
 		if findings := checkAvailability(SurfaceCLI, tableWithout(first), bound); len(findings) != 0 {
 			t.Fatalf("the bound did not excuse the pair: %v", findings)
 		}
 	})
 
 	t.Run("the bound is per surface, not global", func(t *testing.T) {
-		bound := []OpenQuestion{{SurfaceCLI, first, "is it wanted here?"}}
+		bound := []UndecidedPair{{SurfaceCLI, first, pending}}
 		findings := checkAvailability(SurfaceServe, tableWithout(first), bound)
 		joined := strings.Join(findings, "\n")
 		if !strings.Contains(joined, "declares nothing about") || !strings.Contains(joined, first) {
@@ -338,7 +396,7 @@ func TestTheBoundIsHeldFromBothEnds(t *testing.T) {
 	})
 
 	t.Run("a row for an operation that has since been disposed of", func(t *testing.T) {
-		bound := []OpenQuestion{{SurfaceCLI, second, "is it wanted here?"}}
+		bound := []UndecidedPair{{SurfaceCLI, second, pending}}
 		findings := checkAvailability(SurfaceCLI, tableWithout(first), bound)
 		joined := strings.Join(findings, "\n")
 		if !strings.Contains(joined, "One of the two is wrong") || !strings.Contains(joined, second) {
@@ -350,7 +408,7 @@ func TestTheBoundIsHeldFromBothEnds(t *testing.T) {
 	})
 
 	t.Run("a row naming something that is not an operation", func(t *testing.T) {
-		bound := []OpenQuestion{{SurfaceCLI, "retired-operation", "is it wanted here?"}}
+		bound := []UndecidedPair{{SurfaceCLI, "retired-operation", pending}}
 		findings := checkAvailability(SurfaceCLI, tableWithout(""), bound)
 		joined := strings.Join(findings, "\n")
 		if !strings.Contains(joined, "retired-operation") || !strings.Contains(joined, "is not an operation") {
@@ -372,15 +430,15 @@ func TestTheBoundIsHeldFromBothEnds(t *testing.T) {
 // operation the bound does NOT name is dropped. Both directions, because a
 // check that excused everything would pass the first on its own.
 func TestTheExportedCheckReadsTheRealBound(t *testing.T) {
-	if len(openQuestions) == 0 {
+	if len(undecidedPairs) == 0 {
 		t.Skip("the bound is empty, so there is no delegation to observe")
 	}
-	surface := openQuestions[0].Surface
+	surface := undecidedPairs[0].Surface
 
 	table := map[string]OperationAvailability{}
 	var notNamed string
 	for _, op := range operations {
-		if isOpen(openQuestions, surface, op.ID) {
+		if isUndecided(undecidedPairs, surface, op.ID) {
 			continue
 		}
 		table[op.ID] = Exposed(op.ID)
@@ -422,12 +480,12 @@ func TestTheBoundReportsItsOwnReach(t *testing.T) {
 	})
 
 	t.Run("a surface with rows names them and disclaims them", func(t *testing.T) {
-		surface := openQuestions[0].Surface
+		surface := undecidedPairs[0].Surface
 		got := BoundStatement(surface)
 		if !strings.Contains(got, "asserts") || !strings.Contains(got, "NOTHING") {
 			t.Errorf("the statement does not disclaim what it did not cover:\n%s", got)
 		}
-		for _, q := range openQuestions {
+		for _, q := range undecidedPairs {
 			if q.Surface != surface {
 				continue
 			}
@@ -438,7 +496,7 @@ func TestTheBoundReportsItsOwnReach(t *testing.T) {
 	})
 
 	t.Run("a stale row is counted rather than dropped from the census", func(t *testing.T) {
-		got := boundStatement(SurfaceCLI, []OpenQuestion{{SurfaceCLI, "retired-operation", "is it wanted?"}})
+		got := boundStatement(SurfaceCLI, []UndecidedPair{{SurfaceCLI, "retired-operation", pending}})
 		if !strings.Contains(got, "retired-operation") {
 			t.Fatalf("a row naming no operation vanished from the census:\n%s", got)
 		}

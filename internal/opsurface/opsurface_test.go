@@ -85,7 +85,7 @@ func TestLookupResolvesAndRefuses(t *testing.T) {
 func TestCheckAvailabilityNamesEveryDisagreement(t *testing.T) {
 	var ids []string
 	for _, op := range operations {
-		if isOpen(openQuestions, SurfaceCLI, op.ID) {
+		if isUndecided(undecidedPairs, SurfaceCLI, op.ID) {
 			continue
 		}
 		ids = append(ids, op.ID)
