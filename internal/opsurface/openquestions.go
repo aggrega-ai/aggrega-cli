@@ -82,7 +82,6 @@ var undecidedPairs = []UndecidedPair{
 	{SurfaceServe, "config-capture", pending},
 	{SurfaceServe, "config-init", pending},
 	{SurfaceServe, "import", pending},
-	{SurfaceServe, "lint", pending},
 	{SurfaceServe, "logout", pending},
 	{SurfaceServe, "plugin-add", pending},
 	{SurfaceServe, "plugin-gen-catalog", pending},

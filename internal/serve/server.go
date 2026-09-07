@@ -37,11 +37,16 @@
 //	aggrega/validate               parses one file and returns its
 //	                               diagnostics, adding the semantic checks
 //	                               when the request names a Release to run
-//	                               them against
+//	                               them against, and the publishing-conventions
+//	                               findings when serve.lint_on_validate is on
 //	aggrega/invalidate             drops cached state for one file or for
 //	                               the whole workspace
 //	aggrega/diagnostics            returns the diagnostics already cached
 //	                               for a file
+//	aggrega/lint                   checks catalog publishing conventions over
+//	                               one entity, over every entity a Release's
+//	                               closure reaches, or over every entity under
+//	                               the configured catalog directories
 //	aggrega/irGraph                returns the IR graph for a Release
 //	aggrega/build                  builds a Release with every gate on and
 //	                               writes the artifacts it rendered into the
@@ -275,11 +280,17 @@ func resolveBuildOnInspect(flag *bool, cfgValue bool) bool {
 // the fields and post-end-position clients consuming an envelope
 // without them fall through to point-style.
 //
-// Source names which of the daemon's two diagnostic layers raised the entry, so
-// a client can group them instead of showing one undifferentiated list. It is
-// always present: a client must never have to tell "no source" apart from "the
-// other layer", which is why it is stamped at each layer's own boundary rather
+// Source names which of the daemon's diagnostic layers raised the entry, so a
+// client can group them instead of showing one undifferentiated list. It is
+// always present: a client must never have to tell "no source" apart from one of
+// the layers, which is why it is stamped at each layer's own boundary rather
 // than at the construction sites.
+//
+// The layers answer different questions about one file, so an entry from each
+// can stand on the same line without either being a duplicate of the other: one
+// says the deployment is not correct, another that the entity is not
+// publishable. A client that showed them as one list would report a single
+// problem twice; reading Source is what separates them.
 //
 // Code carries a stable, machine-matchable code for what the entry reports,
 // independent of Message, so a client recognises it without matching prose. One
@@ -293,7 +304,11 @@ func resolveBuildOnInspect(flag *bool, cfgValue bool) bool {
 // wherever that advisory was raised, a rendering plugin or the render itself, so
 // the code names what the finding is and not who found it — and such a code names
 // a class of advisory rather than a registered condition, so it is not a value
-// errors.CodeOf ever reports.
+// errors.CodeOf ever reports. On the publishing-conventions layer it is the
+// identity of the rule that produced the finding, which is the same value the
+// structured output of `aggrega lint` carries for that finding, so one rule keeps
+// one identity across the two surfaces; that identity likewise names no
+// registered condition and is not a value errors.CodeOf reports.
 //
 // The wire name is the one a machine-matchable code independent of the message
 // already carries on the other structured surfaces here — the publishing linter's
@@ -359,14 +374,18 @@ func diagnosticCode(err error) string {
 	return code
 }
 
-// The two layer sources. DiagnosticSourceSemantic covers everything the
-// resolution and analysis stages report about the authored documents;
+// The layer sources. DiagnosticSourceSemantic covers everything the resolution
+// and analysis stages report about the authored documents;
 // DiagnosticSourceBuild covers the advisories a render raises, which are the
-// findings `aggrega build` prints — so the value names the command whose output
-// they are rather than an internal stage.
+// findings `aggrega build` prints; DiagnosticSourceConventions covers the
+// publishing-conventions findings, which are the findings `aggrega lint` prints.
+// So each value names the command whose output the findings are rather than an
+// internal stage, and a client that has run one of those commands already knows
+// what an entry under that source is about.
 const (
-	DiagnosticSourceSemantic = "aggrega"
-	DiagnosticSourceBuild    = "aggrega-build"
+	DiagnosticSourceSemantic    = "aggrega"
+	DiagnosticSourceBuild       = "aggrega-build"
+	DiagnosticSourceConventions = "aggrega-lint"
 )
 
 // stampSource sets src on every entry in diags and returns diags.
@@ -475,6 +494,24 @@ type Server struct {
 	// immutable snapshot needing no lock.
 	buildOnInspect bool
 
+	// lintOnValidate is the resolved serve.lint_on_validate dial. When false —
+	// the default — a validation reports the correctness layers alone and no
+	// publishing-conventions finding reaches a client. When true, a validation of
+	// a catalog entity also runs the conventions rules over the buffer it
+	// validated and publishes what they found as a third layer.
+	//
+	// It gates that layer and nothing else. aggrega/lint answers whatever the
+	// request asks for under either value, because a caller sending it has asked
+	// for the check by name; the dial decides only whether the check also runs
+	// where nobody asked for it. Written once at construction, then only read
+	// during handler execution — an immutable snapshot needing no lock.
+	//
+	// There is no flag counterpart, unlike buildOnInspect. The question the dial
+	// answers is about a workspace's own content, and whoever has that question
+	// is authoring the workspace rather than launching the daemon — an author
+	// never passes this process its arguments, their editor does.
+	lintOnValidate bool
+
 	// shuttingDown is set at the dispatch loop's acceptance of the first
 	// aggrega/shutdown message — on the single-threaded main loop, so
 	// every message accepted afterward strictly observes the flag. The
@@ -542,8 +579,17 @@ type Server struct {
 	// because the two layers refresh on different events — the semantic layer on
 	// every buffer validation, the render layer only when an inspection actually
 	// renders — so one overwriting the other would make each request erase the
-	// other's findings. Reads compose the two; writes only ever touch one.
+	// other's findings. Reads compose every layer; writes only ever touch one.
 	renderDiags map[string][]Diagnostic
+
+	// conventionDiags is the third diagnostic layer, guarded by the same diagMu:
+	// the publishing-conventions findings for one authored file, keyed by that
+	// file. It is kept apart from the semantic layer even though both refresh on
+	// the same event, and what separates them is the source stamp rather than the
+	// refresh schedule: the semantic write stamps its whole slice, so a
+	// conventions finding appended to it would be published as a finding about
+	// correctness and a client could no longer tell the two questions apart.
+	conventionDiags map[string][]Diagnostic
 
 	in     *bufio.Reader
 	out    io.Writer
@@ -663,18 +709,45 @@ func (s *Server) dropDiagnostics(file string) {
 	delete(s.diagnostics, s.canonicalFile(file))
 }
 
-// snapshotDiagnostics returns a copy of file's composed diagnostics taken under
-// diagMu: the semantic layer first, then the render layer. The copy is what
-// callers marshal or return on the wire, so the marshal runs off the lock and
-// never races a concurrent writer's whole-slice reassignment. Composition
-// happens here, at the single read entry point, so no caller can publish one
-// layer and silently drop the other. Both layers empty returns nil.
+// setConventionDiagnostics records the publishing-conventions findings for file
+// under diagMu, replacing whatever that layer held for it. A nil or empty slice
+// clears the entry rather than storing one, so a document whose findings were all
+// fixed stops carrying them — and so does a document validated while the dial is
+// off, which is what keeps the off position an absence rather than a stale
+// memory of an earlier on position.
 //
-// Both layers are read at the one key canonicalFile fixes, so they are looked
-// up in a single coordinate system. That matters here more than at any other
-// site: the two layers are written by different requests — the semantic layer
-// by a validation, the render layer by an inspection — and each request names
-// the file in whatever spelling its sender chose, so a key carrying a
+// It is the single write entry point for that layer, which is why the layer's
+// source is stamped here rather than at the mapping site: the stamp is a fact
+// about which layer published the entry, and a construction site is not entitled
+// to claim otherwise.
+func (s *Server) setConventionDiagnostics(file string, diags []Diagnostic) {
+	key := s.canonicalFile(file)
+	stampSource(diags, DiagnosticSourceConventions)
+	s.diagMu.Lock()
+	defer s.diagMu.Unlock()
+	if s.conventionDiags == nil {
+		s.conventionDiags = map[string][]Diagnostic{}
+	}
+	if len(diags) == 0 {
+		delete(s.conventionDiags, key)
+		return
+	}
+	s.conventionDiags[key] = diags
+}
+
+// snapshotDiagnostics returns a copy of file's composed diagnostics taken under
+// diagMu: the semantic layer first, then the render layer, then the
+// publishing-conventions layer. The copy is what callers marshal or return on
+// the wire, so the marshal runs off the lock and never races a concurrent
+// writer's whole-slice reassignment. Composition happens here, at the single
+// read entry point, so no caller can publish one layer and silently drop
+// another. Every layer empty returns nil.
+//
+// The layers are read at the one key canonicalFile fixes, so they are looked up
+// in a single coordinate system. That matters here more than at any other site:
+// the layers are written by different requests — the semantic and conventions
+// layers by a validation, the render layer by an inspection — and each request
+// names the file in whatever spelling its sender chose, so a key carrying a
 // per-request spelling would compose one layer with nothing.
 func (s *Server) snapshotDiagnostics(file string) []Diagnostic {
 	key := s.canonicalFile(file)
@@ -682,12 +755,14 @@ func (s *Server) snapshotDiagnostics(file string) []Diagnostic {
 	defer s.diagMu.Unlock()
 	semantic := s.diagnostics[key]
 	render := s.renderDiags[key]
-	if len(semantic)+len(render) == 0 {
+	conventions := s.conventionDiags[key]
+	if len(semantic)+len(render)+len(conventions) == 0 {
 		return nil
 	}
-	out := make([]Diagnostic, 0, len(semantic)+len(render))
+	out := make([]Diagnostic, 0, len(semantic)+len(render)+len(conventions))
 	out = append(out, semantic...)
 	out = append(out, render...)
+	out = append(out, conventions...)
 	return out
 }
 
@@ -729,18 +804,22 @@ func (s *Server) setRenderDiagnostics(byFile map[string][]Diagnostic) []string {
 	return files
 }
 
-// diagnosticsFiles returns the keys of both diagnostic layers, deduplicated and
+// diagnosticsFiles returns the keys of every diagnostic layer, deduplicated and
 // sorted, under diagMu. Used by the initialize startup-flush so the whole-map
-// range does not race a concurrent writer. Both layers are walked so a file
-// carrying only render advisories is flushed like any other.
+// range does not race a concurrent writer. Every layer is walked so a file
+// carrying only render advisories, or only conventions findings, is flushed like
+// any other.
 func (s *Server) diagnosticsFiles() []string {
 	s.diagMu.Lock()
 	defer s.diagMu.Unlock()
-	seen := make(map[string]bool, len(s.diagnostics)+len(s.renderDiags))
+	seen := make(map[string]bool, len(s.diagnostics)+len(s.renderDiags)+len(s.conventionDiags))
 	for f := range s.diagnostics {
 		seen[f] = true
 	}
 	for f := range s.renderDiags {
+		seen[f] = true
+	}
+	for f := range s.conventionDiags {
 		seen[f] = true
 	}
 	files := make([]string, 0, len(seen))
@@ -845,10 +924,12 @@ func Run(cfg RunConfig) error {
 		wsConfig:          wsCfg,
 		resolvedWorkspace: resolved,
 		buildOnInspect:    resolveBuildOnInspect(cfg.BuildOnInspect, wsCfg.Serve.BuildOnInspect),
+		lintOnValidate:    wsCfg.Serve.LintOnValidate,
 		lazyCatalog:       lazyCatalog,
 		parseCache:        newCache(wsCfg.ParseCache.MaxEntries, wsCfg.ParseCache.MaxBytes),
 		diagnostics:       map[string][]Diagnostic{},
 		renderDiags:       map[string][]Diagnostic{},
+		conventionDiags:   map[string][]Diagnostic{},
 		in:                bufio.NewReader(cfg.Stdin),
 		out:               cfg.Stdout,
 		stderr:            stderr,

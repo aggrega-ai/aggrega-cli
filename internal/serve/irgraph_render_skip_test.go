@@ -167,9 +167,25 @@ func TestResolveBuildOnInspectPrecedence(t *testing.T) {
 // graph JSON. Fails the test if the response carries an error envelope.
 func irGraphWithDial(t *testing.T, ws, releaseRel string, buildOnInspect bool) json.RawMessage {
 	t.Helper()
+	graph := irGraphWithDials(t, ws, releaseRel, func(srv *Server) { srv.buildOnInspect = buildOnInspect })
+	if graph == nil {
+		t.Fatalf("irGraph (buildOnInspect=%v) produced no graph", buildOnInspect)
+	}
+	return graph
+}
+
+// irGraphWithDials drives one irGraph request to completion at pool=1 over a
+// server whose session dials configure has set, returning the response's graph
+// JSON.
+//
+// The dials are set through a callback rather than through one parameter per
+// dial, so a test about one dial names that dial alone and a test about a dial
+// added later needs no change here.
+func irGraphWithDials(t *testing.T, ws, releaseRel string, configure func(*Server)) json.RawMessage {
+	t.Helper()
 	var in, out bytes.Buffer
 	srv := newPinIsolationServer(t, ws, &in, &out, 1)
-	srv.buildOnInspect = buildOnInspect
+	configure(srv)
 	in.Write(framedRequest(1, "aggrega/irGraph", irGraphParams{Release: releaseRel}))
 	srv.in = bufio.NewReader(&in)
 	srv.out = &out
@@ -182,11 +198,7 @@ func irGraphWithDial(t *testing.T, ws, releaseRel string, buildOnInspect bool) j
 		t.Fatalf("unmarshal request: %v", err)
 	}
 	driveHandle(t, srv, &req, &out)
-	graph := extractGraph(t, &out)
-	if graph == nil {
-		t.Fatalf("irGraph (buildOnInspect=%v) produced no graph", buildOnInspect)
-	}
-	return graph
+	return extractGraph(t, &out)
 }
 
 // TestServeIrGraphByteIdenticalRenderDialOnVsOff proves the irGraph

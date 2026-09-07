@@ -438,6 +438,7 @@ func originFields() []originField {
 		sc("parse_cache.max_bytes", func(c Config) string { return strconv.Itoa(c.ParseCache.MaxBytes) }),
 		sc("concurrency.pool_size", func(c Config) string { return strconv.Itoa(c.Concurrency.PoolSize) }),
 		sc("serve.build_on_inspect", func(c Config) string { return strconv.FormatBool(c.Serve.BuildOnInspect) }),
+		sc("serve.lint_on_validate", func(c Config) string { return strconv.FormatBool(c.Serve.LintOnValidate) }),
 		sc("signing.fulcio_url", func(c Config) string { return c.Signing.FulcioURL }),
 		sc("signing.rekor_url", func(c Config) string { return c.Signing.RekorURL }),
 		sc("signing.timestamp_url", func(c Config) string { return c.Signing.TimestampURL }),

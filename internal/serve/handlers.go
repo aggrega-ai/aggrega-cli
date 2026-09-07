@@ -385,6 +385,10 @@ func (s *Server) handleValidate(ctx context.Context, params validateParams) (val
 		// from the same value would leave the returned one unstamped.
 		diags := []Diagnostic{yamlErrorToDiagnostic(err)}
 		s.setDiagnostics(file, diags)
+		// A buffer no parser will read is not a catalog entity the conventions rules
+		// can be asked about, so whatever they last said about this file is cleared
+		// rather than left standing beside a parse failure.
+		s.setConventionDiagnostics(file, nil)
 		s.parseCache.Drop(file)
 		return validateResult{Diagnostics: diags, Checked: checked}, nil
 	}
@@ -399,8 +403,26 @@ func (s *Server) handleValidate(ctx context.Context, params validateParams) (val
 	// documents fall through to the existing flow unchanged.
 	if diags, hasFindings := s.envelopeDiagnosticsForBuffer(file, releasePath, []byte(params.Content), &doc); hasFindings {
 		s.setDiagnostics(file, diags)
+		// The document's own shape was rejected, so it is not yet a document the
+		// publishing conventions have anything to say about: a name that is wrong
+		// where the envelope is broken is the second problem, and reporting it here
+		// would bury the first. The layer is cleared rather than left standing.
+		s.setConventionDiagnostics(file, nil)
 		return validateResult{Diagnostics: diags, Checked: checked}, nil
 	}
+	// The publishing-conventions layer, refreshed on every validation of this file
+	// — including the ones that find nothing, since an author who corrected a name
+	// has to stop being told about it, and a document that stopped being a catalog
+	// entity has to stop carrying an entity's findings. It is gated on the
+	// serve.lint_on_validate dial, which defaults off; with the dial off the
+	// refresh clears the layer and runs no rule.
+	//
+	// It sits above the two answers below rather than inside either, because a
+	// catalog entity is ordinarily validated with no Release named and the
+	// conventions are a question about the document itself. Both answers compose
+	// the layer through the snapshot, so the findings reach the reply whichever of
+	// the two the request asked for.
+	s.refreshConventionDiagnostics(file, []byte(params.Content), &doc)
 	if releasePath == "" {
 		// The request named no Release, so the half above is the whole answer.
 		// The semantic layer is cleared rather than left standing: this file may

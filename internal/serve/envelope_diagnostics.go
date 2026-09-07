@@ -51,20 +51,43 @@ var entityKindByName = map[string]envelope.Kind{
 // envelope leg never touches foreign YAML (chart templates, compose
 // files, Kubernetes manifests, arbitrary YAML).
 func classifyAggregaDocument(doc *yaml.Node) (envelope.Kind, bool) {
-	if doc == nil {
+	_, kind, ok := peekDocumentHeader(doc)
+	if !ok {
 		return "", false
+	}
+	k, known := entityKindByName[kind]
+	return k, known
+}
+
+// peekDocumentHeader reads the apiVersion and kind scalars off the top level of
+// a parsed buffer, reporting ok only for a single mapping document carrying an
+// aggrega.ai apiVersion — the non-aggrega guard. Foreign YAML (chart templates,
+// compose files, Kubernetes manifests, arbitrary documents) reports not-ok, so
+// nothing keyed on the header reaches it.
+//
+// It is separate from the classification above because two questions are asked
+// of the same two scalars and they resolve them in different vocabularies: the
+// envelope gate maps the kind onto the schema that validates it, while the
+// publishing-conventions layer asks the entity-kind vocabulary whether the
+// conventions apply to that kind at all. A second walk per question is how one
+// of them would come to disagree about which document it is looking at.
+//
+// The kind is returned as authored rather than as any resolved token, because a
+// caller resolving it is the one that knows which vocabulary it means.
+func peekDocumentHeader(doc *yaml.Node) (apiVersion, kind string, ok bool) {
+	if doc == nil {
+		return "", "", false
 	}
 	root := doc
 	if root.Kind == yaml.DocumentNode {
 		if len(root.Content) == 0 {
-			return "", false
+			return "", "", false
 		}
 		root = root.Content[0]
 	}
 	if root.Kind != yaml.MappingNode {
-		return "", false
+		return "", "", false
 	}
-	var apiVersion, kind string
 	for i := 0; i+1 < len(root.Content); i += 2 {
 		key := root.Content[i]
 		val := root.Content[i+1]
@@ -79,10 +102,9 @@ func classifyAggregaDocument(doc *yaml.Node) (envelope.Kind, bool) {
 		}
 	}
 	if !strings.HasPrefix(apiVersion, "aggrega.ai/") {
-		return "", false
+		return "", "", false
 	}
-	k, ok := entityKindByName[kind]
-	return k, ok
+	return apiVersion, kind, true
 }
 
 // classifyByFilename classifies the two flat-top-level aggrega documents

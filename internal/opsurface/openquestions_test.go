@@ -241,7 +241,29 @@ import (
 // the write: it is the only method the daemon carries that goes out to a
 // registry, and it does so without prompting, which is what the credential
 // posture already required of every surface with nobody watching.
-const boundCeiling = 10
+//
+// It came down by ONE when the daemon began answering whether an entity is
+// publishable. Its row asked whether the publishing conventions belong to the
+// moment of publication alone, so that a session carries no answer about them;
+// measured, they do not. The mode that reads only local content consults no
+// registry, never refuses, and already produces every finding's severity, rule
+// identity, message and file — which is a per-edit answer's exact shape — so the
+// absence was unexamined rather than reasoned, and a reason written for it would
+// have been that unexamined absence dressed as a deliberate one.
+//
+// The row's own second half is what fixed the shape. The mode that compares an
+// entity against its previously published version does reach a registry, so it
+// cannot ride on a validation; it is reachable by naming it in a request, which
+// is the same rule every reaching operation on this surface already runs under.
+// One capability, two ways in, and no half left undecided.
+//
+// 🔴 A dial that defaults OFF does not make the exposure partial, and this is the
+// ground a later reader is most likely to re-open the row on. What a disposition
+// records is that the capability is reachable, which it is: the request answers
+// whatever it is asked whether or not the per-validation layer is turned on. What
+// any one workspace has configured is a fact about that workspace and not about
+// this surface, so no configuration of it can put the pair back into the bound.
+const boundCeiling = 9
 
 // TestTheBoundOnlyShrinks is the ratchet. See boundCeiling for why both
 // directions refuse.

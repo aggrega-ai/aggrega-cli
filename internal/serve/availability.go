@@ -348,6 +348,29 @@ var operationAvailability = map[string]serveAvailability{
 	// written: the answer is text, and where it goes is the client's.
 	"scaffold-entity": servedAt(at("aggrega/scaffoldEntity", (*Server).dispatchScaffoldEntity)),
 
+	// The session checks catalog publishing conventions: one entity, every entity
+	// a Release's closure reaches, or every entity under the configured catalog
+	// directories. The same rules also run as a diagnostic layer on every
+	// validation, behind a configuration dial that defaults off — but that layer
+	// is not what this row records. A row records that the capability is
+	// reachable, and it is reachable at this method whatever a workspace has
+	// configured: a caller sending this request has asked for the check by name.
+	//
+	// It needs a method of its own, and the table is what forces that: two rows
+	// cannot claim one method, and the validation method already answers the
+	// correctness capability. Folding the conventions findings onto it as a third
+	// diagnostic layer — which is exactly what the dial does — therefore leaves
+	// this capability with no row it could legally occupy, and a capability with
+	// no row is one this table says nothing about.
+	//
+	// The mode that compares an entity against its previously published version
+	// reaches a registry and is carried here on the rule the writing methods above
+	// run under: what admits such an operation is that a caller invoked it. It is
+	// unreachable from the per-validation layer by construction, because a check
+	// running on every edit is precisely where a registry must not be reached.
+	// Nothing is written to disk under any mode.
+	"lint": servedAt(at("aggrega/lint", (*Server).dispatchLint)),
+
 	// The session reports a kind's schema, and the set of kinds when the request
 	// names none. Its subject is the same one the drafting method above answers
 	// from — a skeleton is derived from these very bytes — so a surface carrying

@@ -744,6 +744,30 @@ type ServeConfig struct {
 	// serve --build-on-inspect flag overrides this key for one daemon
 	// invocation.
 	BuildOnInspect bool `yaml:"build_on_inspect"`
+
+	// LintOnValidate selects whether a validation request also runs the
+	// publishing-conventions check over the document it validated, so the
+	// findings `aggrega lint` reports on a catalog entity reach the editor as a
+	// third diagnostic layer. The default (false) runs the correctness checks
+	// alone.
+	//
+	// It gates the per-validation layer and nothing else. The dedicated lint
+	// request answers whatever the caller asks for under either value, because a
+	// caller sending it has asked for the check; what this key decides is whether
+	// the check also runs where nobody asked for it by name.
+	//
+	// Only the mode that reads local content runs on that layer, whatever this key
+	// says: the pre-publication comparison consults a registry, and a check
+	// running on every keystroke is exactly where a registry must not be reached.
+	//
+	// The findings are advisory under either value — a document that draws them
+	// still validates and its Release still renders — so turning the key on adds a
+	// layer and never a refusal.
+	//
+	// There is no flag counterpart. The dial answers a question about a
+	// workspace's own content, and the person who has that question is the one
+	// authoring the workspace rather than whoever launched the daemon.
+	LintOnValidate bool `yaml:"lint_on_validate"`
 }
 
 // Default returns a Config populated with the documented defaults.

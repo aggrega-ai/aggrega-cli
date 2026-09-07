@@ -499,7 +499,7 @@ func maximalAggregaConfig() workspaceconfig.Config {
 		},
 		ParseCache:  workspaceconfig.ParseCacheConfig{MaxEntries: 1000, MaxBytes: 100_000_000},
 		Concurrency: workspaceconfig.ConcurrencyConfig{PoolSize: 4},
-		Serve:       workspaceconfig.ServeConfig{BuildOnInspect: true},
+		Serve:       workspaceconfig.ServeConfig{BuildOnInspect: true, LintOnValidate: true},
 		Signing:     signing,
 		Registries: []workspaceconfig.RegistryConfig{{
 			Host:                         "hub.aggrega.ai",

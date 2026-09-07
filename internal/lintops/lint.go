@@ -66,6 +66,22 @@ type Config struct {
 	// report, for a caller that renders them structurally. Nil collects nothing
 	// and leaves every other behaviour untouched.
 	Collect *FindingCollector
+
+	// ProposedBytes optionally supplies the entity document to lint, in place of
+	// reading EntityPath off disk. Nil reads the file, which is what every
+	// terminal invocation does.
+	//
+	// It exists for a caller holding a copy of the document the filesystem does
+	// not have yet — an editor session linting the buffer someone is typing in.
+	// EntityPath is still required and is still what the rules are told about,
+	// because a rule that compares an entity's identity against the directory it
+	// sits in is asking about the path rather than about the bytes; supplying the
+	// bytes changes what is read, never where the document is said to be.
+	//
+	// A caller supplying an empty (but non-nil) document gets whatever the rules
+	// make of an empty document, rather than a silent re-read: the two cases are
+	// different questions and reading the file back would answer the wrong one.
+	ProposedBytes []byte
 }
 
 // workspaceOrResolve returns ws when set — the production path, where a caller
@@ -218,9 +234,12 @@ func RunEntity(cfg Config) error {
 		return err
 	}
 
-	proposedBytes, err := os.ReadFile(cfg.EntityPath)
-	if err != nil {
-		return fmt.Errorf("aggrega lint: read %s: %w", cfg.EntityPath, err)
+	proposedBytes := cfg.ProposedBytes
+	if proposedBytes == nil {
+		proposedBytes, err = os.ReadFile(cfg.EntityPath)
+		if err != nil {
+			return fmt.Errorf("aggrega lint: read %s: %w", cfg.EntityPath, err)
+		}
 	}
 	proposedJSON, header, err := yamlToLinterJSON(proposedBytes)
 	if err != nil {
