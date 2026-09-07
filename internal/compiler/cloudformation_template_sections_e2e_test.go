@@ -190,13 +190,13 @@ func TestCloudFormationTemplateSections_UnfoldableSectionsAreNamedNotDropped(t *
 	}
 
 	byRef := map[string]renderer.Diagnostic{}
-	for _, d := range result.RenderDiagnostics {
+	for _, d := range result.Advisories {
 		byRef[d.SourceRef] = d
 	}
 	for _, section := range []string{"Description", "Transform"} {
 		d, ok := byRef[section]
 		if !ok {
-			t.Errorf("no diagnostic names the dropped %s section; got %+v", section, result.RenderDiagnostics)
+			t.Errorf("no diagnostic names the dropped %s section; got %+v", section, result.Advisories)
 			continue
 		}
 		if d.Severity != abi.SeverityWarn {
@@ -295,7 +295,7 @@ func TestCloudFormationTemplateSections_EverySectionTheFixtureAuthorsIsAccounted
 
 	authoredAndNamed := []string{"Description", "Transform"}
 	reported := map[string]bool{}
-	for _, d := range result.RenderDiagnostics {
+	for _, d := range result.Advisories {
 		reported[d.SourceRef] = true
 	}
 	for _, section := range authoredAndNamed {
@@ -303,7 +303,7 @@ func TestCloudFormationTemplateSections_EverySectionTheFixtureAuthorsIsAccounted
 			t.Errorf("the assembled stack carries %s", section)
 		}
 		if !reported[section] {
-			t.Errorf("the fixture authors %s and nothing reported it; diagnostics = %+v", section, result.RenderDiagnostics)
+			t.Errorf("the fixture authors %s and nothing reported it; diagnostics = %+v", section, result.Advisories)
 		}
 	}
 }

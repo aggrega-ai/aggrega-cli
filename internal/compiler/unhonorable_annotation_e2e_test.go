@@ -68,7 +68,7 @@ func annotationAdvisories(diags []renderer.Diagnostic) map[string][]string {
 func TestUnhonorableAnnotation_ThreeOutcomesFromOneBuild(t *testing.T) {
 	t.Parallel()
 	result := pipelinetest.Build(t, advisoryInput())
-	byNode := annotationAdvisories(result.RenderDiagnostics)
+	byNode := annotationAdvisories(result.Advisories)
 
 	// Every node under both annotated boundaries is advised about the uncovered
 	// key, and about that key ALONE.
@@ -104,7 +104,7 @@ func TestUnhonorableAnnotation_DisplayedLineNamesKeyTargetAndInputKind(t *testin
 	result := pipelinetest.Build(t, advisoryInput())
 
 	var lines []string
-	for _, d := range result.RenderDiagnostics {
+	for _, d := range result.Advisories {
 		if d.Code == renderer.UnsupportedFieldCode && d.SourceRef == "aggrega.ai/namespace" {
 			lines = append(lines, renderer.RenderDiagnosticText(d))
 		}
@@ -134,7 +134,7 @@ func TestUnhonorableAnnotation_NeverHalts(t *testing.T) {
 	if len(result.Artifacts) == 0 {
 		t.Fatal("build emitted no artifacts; the advisory is not out-of-band")
 	}
-	if len(annotationAdvisories(result.RenderDiagnostics)) == 0 {
+	if len(annotationAdvisories(result.Advisories)) == 0 {
 		t.Fatal("build raised no advisory, so it does not exercise the non-halting path")
 	}
 }
@@ -177,7 +177,7 @@ func multiKindInput() pipelinetest.Input {
 func TestUnhonorableAnnotation_MultiKindNodeIsJudgedOnEveryDeclaredKind(t *testing.T) {
 	t.Parallel()
 	result := pipelinetest.Build(t, multiKindInput())
-	byNode := annotationAdvisories(result.RenderDiagnostics)
+	byNode := annotationAdvisories(result.Advisories)
 
 	for _, tc := range []struct {
 		node     string
@@ -230,7 +230,7 @@ func TestUnhonorableAnnotation_MultiKindAdvisoryNamesEveryDeclaredKind(t *testin
 	result := pipelinetest.Build(t, multiKindInput())
 
 	var multi, single []string
-	for _, d := range result.RenderDiagnostics {
+	for _, d := range result.Advisories {
 		if d.Code != renderer.UnsupportedFieldCode || d.Location == nil {
 			continue
 		}
@@ -337,7 +337,7 @@ func TestUnhonorableAnnotation_AdvisedWhicheverCrossingRendersTheOutput(t *testi
 		t.Run(tc.crossing, func(t *testing.T) {
 			t.Parallel()
 			result := pipelinetest.Build(t, crossingInput(tc.release))
-			got := annotationAdvisories(result.RenderDiagnostics)
+			got := annotationAdvisories(result.Advisories)
 
 			if len(got) != len(tc.want) {
 				t.Fatalf("%s: advisories = %v; want %v", tc.crossing, got, tc.want)
@@ -377,7 +377,7 @@ func TestUnhonorableAnnotation_AttachmentAdvisoryNamesTheKindTheAttachmentDeclar
 			result := pipelinetest.Build(t, crossingInput(release))
 
 			var lines []string
-			for _, d := range result.RenderDiagnostics {
+			for _, d := range result.Advisories {
 				if d.Code == renderer.UnsupportedFieldCode && d.SourceRef == "aggrega.ai/namespace" {
 					lines = append(lines, renderer.RenderDiagnosticText(d))
 				}
@@ -427,7 +427,7 @@ func TestUnhonorableAnnotation_AttachmentCrossingNeverHalts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("an annotation an attachment's target cannot act on halted the build: %v", err)
 	}
-	if len(annotationAdvisories(result.RenderDiagnostics)) == 0 {
+	if len(annotationAdvisories(result.Advisories)) == 0 {
 		t.Fatal("build raised no advisory, so it does not exercise the non-halting path")
 	}
 	const emitted = "dist/app/helm/app--art--aux-config.yaml"
