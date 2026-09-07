@@ -50,4 +50,40 @@
 // declared in that tool's own input schema wherever the schema language
 // can express it, so a caller reading the schema does not have to make the
 // call to learn it.
+//
+// # What a failure carries
+//
+// The section above decides which channel a failure travels on. This one
+// decides what travels with it, and the two are independent: a failure
+// routed correctly can still arrive at a lower fidelity than the run that
+// produced it had to offer.
+//
+// A refusal is not a reason to drop to a lower fidelity. Whatever findings
+// an operation had in hand when it refused are carried in the failing
+// result's structured payload, in the same shape a success reports them —
+// so the payload is assembled before the verdict is read rather than after
+// it. An operation whose findings are readable on success and only prose on
+// failure reports the same findings two ways, and the failing case is the
+// one a caller most needs to act on programmatically: it is the run whose
+// output the caller has to change something about.
+//
+// Three consequences follow, and they are the whole of the rule:
+//
+//   - A failure result carries a structured payload whenever the operation
+//     produced one. structuredErrorResult is the one route for that, and
+//     errorResult is that same route with no payload — so a prose-only
+//     failure is a statement that the operation had nothing structured to
+//     report, not a shortcut past reporting it.
+//   - The payload is built before the verdict is read. Built after a
+//     success check, every field in it would be populated only on the path
+//     where the caller needs it least.
+//   - A field a refusal genuinely cannot fill is left absent rather than
+//     filled with an empty value, because absent and empty are different
+//     statements to a reader and only one of them is true.
+//
+// The rule is stated here once and not restated at the sites that follow
+// it: two statements of one rule drift, nothing reads a comment, and no
+// gate can fail on the copy that went stale. What holds the sites to it is
+// a guard over this package's failure returns, which enumerates the ones
+// carrying no structured payload and fails on any addition to that set.
 package mcp

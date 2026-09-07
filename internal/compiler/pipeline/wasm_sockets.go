@@ -260,7 +260,15 @@ func runPolicySocket(ctx context.Context, inputs Inputs, catalogLookup resolver.
 				// stream, which is displayed and recorded together further down the
 				// run. It is deliberately NOT recorded here as well: one advisory
 				// recorded at two points is one advisory delivered twice.
-				analysis.Warnings = append(analysis.Warnings, policyWarnMessage(ref.URI, r))
+				//
+				// It joins that stream as the diagnostic the guest emitted, keeping
+				// the location the guest set, and only its message is replaced by the
+				// attributed line the display shows. The stream carries the diagnostic
+				// shape precisely so this conversion loses nothing: flattening the
+				// verdict to a sentence here would destroy a position the guest
+				// computed, one layer before any channel could carry it.
+				analysis.Warnings = append(analysis.Warnings,
+					advisoryFromPolicyVerdict(r, policyWarnMessage(ref.URI, r)))
 			case analyzer.SeverityInfo:
 				emitPolicyInfo(inputs.AdvisoryLog, ref.URI, r)
 			}

@@ -596,13 +596,17 @@ func runStepsOneToFour(
 
 		// The advisory stream static analysis produced: displayed, and recorded on
 		// the one advisory channel in the same loop so the recorded order is the
-		// displayed order by construction. The stream arrives as finished sentences,
-		// so an entry carries the line verbatim and no location — see
-		// advisoryFromDisplayLine for why that absence is the producer's shape
-		// rather than a shortcut.
+		// displayed order by construction.
+		//
+		// The stream already carries the channel's own element type, so an entry is
+		// recorded as it arrived and nothing is converted here. The display writes
+		// the entry's message and nothing else, which is what keeps the printed line
+		// byte-identical whatever else the entry carries: a producer that computed an
+		// authoring key puts it on the entry's location, where a surface holding the
+		// parsed document reads it, and leaves the message alone.
 		for _, w := range analysis.Warnings {
-			fmt.Fprintf(os.Stderr, "  %s\n", w)
-			inputs.AdvisoryLog.record(advisoryFromDisplayLine(w))
+			fmt.Fprintf(os.Stderr, "  %s\n", w.Message)
+			inputs.AdvisoryLog.record(w)
 		}
 		return use(out)
 	})

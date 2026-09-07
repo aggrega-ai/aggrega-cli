@@ -59,11 +59,13 @@ func keyPathSpan(doc *yaml.Node, idx yamlpos.LineIndex, keyPath string) (line, c
 // head of the file.
 //
 // An advisory whose producer had no such path is positioned at the head of the
-// file. That covers two real cases and both are properties of the producer: a
-// render advisory names a component and a delivery key, which are graph
-// coordinates, and mapping those back to a position in the authoring document is
-// a separate capability the daemon does not have; and the static-analysis
-// advisory stream arrives as finished sentences with no locator on them at all.
+// file, and that is a property of the producer rather than a shortcut here. The
+// case that remains is the render advisory: it names a component and a delivery
+// key, which are graph coordinates, and mapping those back to a position in the
+// authoring document is a separate capability the daemon does not have. A
+// governance verdict is positioned only where the plugin that raised it set a
+// location, since nothing else knows what its rule was about.
+//
 // The head of the file is also the fallback when a path walks to somewhere the
 // document does not contain, which is what happens when the advisory concerns a
 // different file from the one being positioned against.

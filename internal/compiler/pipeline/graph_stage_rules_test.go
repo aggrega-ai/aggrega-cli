@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
+
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/analyzer"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
@@ -479,9 +481,9 @@ func TestAnnotationOverrideAdvisoryRaisesOverAContestedWorkspace(t *testing.T) {
 	out := compileContestedOverride(t)
 
 	registered := analyzer.ErrOverriddenAnnotation().Error()
-	var raised []string
+	var raised []abi.Diagnostic
 	for _, reported := range out.Analysis.Warnings {
-		if strings.Contains(reported, registered) {
+		if strings.Contains(reported.Message, registered) {
 			raised = append(raised, reported)
 		}
 	}
@@ -495,9 +497,25 @@ func TestAnnotationOverrideAdvisoryRaisesOverAContestedWorkspace(t *testing.T) {
 	// would read identically for every displacement in every workspace.
 	for _, reported := range raised {
 		for _, want := range []string{`"db-pool"`, overrideAggregatePath} {
-			if !strings.Contains(reported, want) {
-				t.Errorf("the finding does not name %s: %q", want, reported)
+			if !strings.Contains(reported.Message, want) {
+				t.Errorf("the finding does not name %s: %q", want, reported.Message)
 			}
+		}
+	}
+
+	// And the same position as a field, which is what a surface holding the parsed
+	// document navigates by. The sentence above carries it for a reader; this
+	// carries it for a consumer, and a whole real compilation is the only place
+	// both can be shown to survive together.
+	for _, reported := range raised {
+		if reported.Location == nil || reported.Location.KeyPath == "" {
+			t.Errorf("the finding carries no authoring key as a field, so a consumer must place it at "+
+				"the head of the file while the message names the key: %q", reported.Message)
+			continue
+		}
+		if !strings.Contains(reported.Message, reported.Location.KeyPath) {
+			t.Errorf("the field position %q and the displayed position disagree: %q",
+				reported.Location.KeyPath, reported.Message)
 		}
 	}
 
@@ -520,8 +538,8 @@ func TestAnnotationOverrideAdvisoryRaisesOverAContestedWorkspace(t *testing.T) {
 func TestAnnotationOverrideAdvisorySaysNothingOnTheUncontestedWorkspace(t *testing.T) {
 	out := compileFixture(t, readAggregate(t))
 	for _, reported := range out.Analysis.Warnings {
-		if strings.Contains(reported, analyzer.ErrOverriddenAnnotation().Error()) {
-			t.Errorf("the rule reported a displacement on a workspace that authors none: %q", reported)
+		if strings.Contains(reported.Message, analyzer.ErrOverriddenAnnotation().Error()) {
+			t.Errorf("the rule reported a displacement on a workspace that authors none: %q", reported.Message)
 		}
 	}
 }

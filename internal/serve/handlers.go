@@ -15,6 +15,7 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/externalinputs"
@@ -708,6 +709,17 @@ func (s *Server) irGraphPipelineOptions() pipeline.Options {
 func (s *Server) handleIrGraph(ctx context.Context, params irGraphParams) (irGraphResult, *jsonRPCError) {
 	preview, errEnvelope := s.previewRelease(ctx, params.Release, s.irGraphPipelineOptions())
 	if errEnvelope != nil {
+		// The panel is republished from whatever the run reached, and BEFORE the
+		// refusal is returned. A gate that halted still found everything ahead of it,
+		// and a reader who loses those findings has to re-run to see them — so the
+		// failure path is the one they are most needed on, and the refusal envelope
+		// carries only what refused.
+		//
+		// Publishing an empty layer is a real answer here rather than a wasted call:
+		// the entries on screen belong to the request before this one, and leaving
+		// them standing would show a reader findings that this run could not confirm
+		// with nothing to say which is which.
+		s.publishPreviewAdvisories(ctx, preview)
 		return irGraphResult{}, errEnvelope
 	}
 
@@ -735,9 +747,7 @@ func (s *Server) handleIrGraph(ctx context.Context, params irGraphParams) (irGra
 	//    second one, and that is load-bearing: the publication replaces the whole
 	//    layer, so a second call would erase whichever layer the first one wrote.
 	//    One call, one layer, every advisory class.
-	s.publishRenderDiagnostics(ctx, preview.resolved.AggregatePath, preview.pipeline.Advisories,
-		externalInputDivergenceDiagnostics(preview.fetchSeam.Declined(), preview.releasePath),
-		preview.resolved.AggBytes)
+	s.publishPreviewAdvisories(ctx, preview)
 
 	graphBytes, err := json.Marshal(preview.pipeline.IRGraph)
 	if err != nil {
@@ -754,12 +764,15 @@ func (s *Server) handleIrGraph(ctx context.Context, params irGraphParams) (irGra
 // loaded, the external-input seam it rendered through, the closure it
 // computed and the pipeline result it ended with.
 //
-// It exists because two request surfaces need the same computation and must
+// It exists because several request surfaces need the same computation and must
 // not each build it. A second construction of this sequence would agree on
 // the ordinary case and part company on the awkward one — a differently
 // ordered pin seed, a lockfile loaded at a different moment — and the
 // divergence would be invisible until a preview and a graph query disagreed
-// about the same Release.
+// about the same Release. The count of those surfaces is deliberately not
+// written here: a number beside the thing it counts is a second copy of what the
+// call sites already say, and correcting it merely resets the clock until the
+// next one is added.
 type releasePreview struct {
 	releasePath  string
 	lockfilePath string
@@ -772,14 +785,36 @@ type releasePreview struct {
 // gate, forks a request-scoped catalog view seeded with this request's pins,
 // and runs the one preview computation in its inspection posture.
 //
+// # A refusal still hands back what the run reached
+//
+// When the preview computation fails, the returned envelope is non-nil AND the
+// returned preview carries whatever the run had produced before it stopped — the
+// document it resolved, the references the render had to decline, and the
+// pipeline result where the run got far enough to hand one back. The two are not
+// alternatives: discarding the preview here would destroy all of that one level
+// below every caller, so no caller could publish any of it however it was
+// written.
+//
+// A caller that has nothing to do with a partial run ignores it and returns the
+// envelope, which is what the callers answering questions about attachment
+// candidacy do. A caller that owes a reader the Problems panel publishes from it
+// first. Both readings are correct because the value is offered rather than
+// imposed.
+//
+// The preview is nil only where nothing ran at all — an unresolvable release
+// parameter, or the lockfile gate refusing before any resolution — because there
+// is genuinely nothing to hand back in those cases rather than something being
+// withheld.
+//
 // # What it deliberately does NOT do
 //
-// It publishes nothing. Drift diagnostics and render advisories are a
-// property of the surface that asked, not of the computation: a graph query
-// draws a picture a reader then reasons about and owes them the Problems
-// panel, while a question about which Features may attach to a node owes
-// nothing to that panel and would, by publishing, replace a layer another
-// request wrote. So the publications stay with the caller that wants them.
+// It publishes nothing. Drift diagnostics and advisories are a property of the
+// surface that asked, not of the computation: a graph query draws a picture a
+// reader then reasons about and owes them the Problems panel, while a question
+// about which Features may attach to a node owes nothing to that panel and
+// would, by publishing, replace a layer another request wrote. So the
+// publications stay with the caller that wants them — which is exactly why the
+// partial result above must survive the refusal.
 //
 // # Why the pipeline options are the caller's
 //
@@ -867,17 +902,53 @@ func (s *Server) previewRelease(ctx context.Context, release string, opts pipeli
 		s.irGraphPreviewInputs(view, releasePath, lf, fetchSeam),
 		opts,
 	)
-	if err != nil {
-		return nil, s.previewFailureEnvelope(view, releasePath, preview, err)
-	}
 
-	return &releasePreview{
+	// Assembled once, before the verdict is read, so the refusal and the success
+	// hand back the same shape built the same way. A second literal on the failure
+	// branch would be free to populate a different subset of the fields, and the
+	// two would agree until one was edited.
+	out := &releasePreview{
 		releasePath:  releasePath,
 		lockfilePath: lockfilePath,
 		fetchSeam:    fetchSeam,
-		resolved:     preview.Resolved,
-		pipeline:     preview.Pipeline,
-	}, nil
+	}
+	if preview != nil {
+		out.resolved = preview.Resolved
+		out.pipeline = preview.Pipeline
+	}
+
+	if err != nil {
+		return out, s.previewFailureEnvelope(view, releasePath, preview, err)
+	}
+	return out, nil
+}
+
+// publishPreviewAdvisories replaces the build diagnostic layer with the
+// advisories one preview raised, positioned against the Aggregate it resolved.
+//
+// It exists because two call sites need it and they are the SUCCESS and FAILURE
+// paths of one request. Written twice, the failure path would be free to publish
+// a different set from the success path — a subset, a different file, or the
+// advisories without the declined references — and nothing would compare them,
+// because each reads correctly alone. One body means a refusal publishes exactly
+// what a success publishes, and the only difference between the two paths is what
+// is returned afterwards.
+//
+// A preview that reached no resolution publishes nothing rather than an empty
+// layer: with no Aggregate path there is no file to attribute findings to, and
+// replacing the layer with nothing would clear entries an earlier request wrote
+// while having learned nothing about them.
+func (s *Server) publishPreviewAdvisories(ctx context.Context, preview *releasePreview) {
+	if preview == nil || preview.resolved == nil {
+		return
+	}
+	var advisories []renderer.Diagnostic
+	if preview.pipeline != nil {
+		advisories = preview.pipeline.Advisories
+	}
+	s.publishRenderDiagnostics(ctx, preview.resolved.AggregatePath, advisories,
+		externalInputDivergenceDiagnostics(preview.fetchSeam.Declined(), preview.releasePath),
+		preview.resolved.AggBytes)
 }
 
 // MarkupContent matches the LSP shape for hover content.

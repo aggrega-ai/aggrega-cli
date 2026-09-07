@@ -4,6 +4,8 @@
 package analyzer
 
 import (
+	"github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
+
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
@@ -72,31 +74,57 @@ func ErrorsFromObjections(objections []constraint.Objection) []AnalysisError {
 // violation conversion reads, so one rule carries one wording whichever side it
 // reports on.
 //
-// A warning is a plain string and carries no locator field, so the locator is
-// composed into the text rather than dropped: it is the only thing naming which
-// authored key the finding is about, and an advisory that cannot be navigated
-// to is an advisory the author cannot act on. The file precedes it where the
-// finding carries one, so the pair reads as a position. A finding whose
-// provenance names neither is rendered as its message alone, rather than as a
-// message with an empty position hanging off it.
+// # The position travels twice, and both copies are deliberate
+//
+// The locator is composed into the message text AND carried on the location,
+// which reads like saying one thing twice and is not: the two copies serve
+// surfaces that cannot use each other's.
+//
+// The composed prefix is what a terminal reads. A terminal has nowhere but the
+// sentence to put a position, and the prefix is the line every existing reader
+// already knows, so rewriting it would change what a build prints for no gain
+// to anyone.
+//
+// The location is what a surface holding the parsed document reads. It walks
+// the key path to a real line and column and draws the finding on the offending
+// key, which no amount of parsing the prefix would let it do reliably. Carrying
+// the key rather than a resolved line is what keeps position recovery with the
+// surface that holds the document, which is the only place it can happen.
+//
+// So a reader in an editor meets a sentence whose prefix repeats a position the
+// editor is also showing structurally. That redundancy is the whole cost, and it
+// is strictly better than the alternative it replaces: an entry with no location
+// at all lands at the head of the file, where the reader can see the position in
+// the text and cannot navigate to it.
+//
+// The severity is warn on every entry, because this is the advisory side of the
+// boundary by construction — a finding that halts is converted by
+// [ErrorsFromObjections] instead, and the two never cross.
+//
+// A finding whose provenance names neither a file nor a locator carries its
+// message alone and no location, rather than a message with an empty position
+// hanging off it. That is a property of the finding rather than a shortcut: there
+// is no key for a consumer to walk to.
 //
 // Advisories come back in the order the objections were raised, which is the
 // order the check was invoked in.
 //
 // Returns nil when nothing was raised.
-func AdvisoriesFromObjections(objections []constraint.Objection) []string {
+func AdvisoriesFromObjections(objections []constraint.Objection) []abi.Diagnostic {
 	if len(objections) == 0 {
 		return nil
 	}
-	out := make([]string, 0, len(objections))
+	out := make([]abi.Diagnostic, 0, len(objections))
 	for _, o := range objections {
 		message := constraint.ObjectionMessage(o)
-		switch position := advisoryPosition(o.SourceFile(), o.Locator()); position {
-		case "":
-			out = append(out, message)
-		default:
-			out = append(out, position+": "+message)
+		if position := advisoryPosition(o.SourceFile(), o.Locator()); position != "" {
+			message = position + ": " + message
 		}
+		d := abi.Diagnostic{Severity: abi.SeverityWarn, Message: message}
+		if locator := o.Locator(); locator != "" {
+			d.Location = &abi.Location{KeyPath: locator}
+		}
+		out = append(out, d)
 	}
 	return out
 }

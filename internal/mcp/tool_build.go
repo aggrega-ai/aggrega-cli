@@ -34,14 +34,42 @@ type buildFile struct {
 // buildResultPayload is the build tool's structured payload. The render happens
 // entirely in memory: Files are the artifacts the pipeline produced, and
 // nothing is written to disk.
+//
+// # It is returned on a refusal too
+//
+// A build that refused answers in this same shape, with the failure flagged on
+// the result envelope rather than by a field here. Whatever findings the run
+// held when it stopped are populated exactly as they would be on a success,
+// because a refusal is not a reason to drop to a lower fidelity and the caller
+// that has to act programmatically is the one holding the refusal. That is why
+// the fields below are filled before the verdict is read rather than after it.
+//
+// What a refusal HOLDS is narrower than what a success holds, and the difference
+// belongs to the producers rather than to this shape. The recorded deprecation
+// markers and the declined external references accumulate alongside the render
+// rather than inside its result, so they survive the verdict either way.
+// Advisories are read off the pipeline result, and a run that stopped part-way
+// returns no result at all — so a refusal reports no advisories: one that
+// stopped at a gate ahead of the pipeline had raised none, and one that stopped
+// inside it raised findings that do not travel out with the failure. A caller
+// that needs the advisories for a Release that will not build reads them from
+// the validate tool, which reports without rendering.
+//
+// Files is the one field a refusal leaves absent by decision rather than for
+// want of a value. The tool emits nothing on a refusal, so there are no
+// artifacts to report; an empty list would assert that the build ran and
+// produced none, which is a different fact. A caller distinguishes the two from
+// the failure flag on the envelope, which is the protocol's own discriminator
+// and not something this shape restates.
 type buildResultPayload struct {
 	Release string      `json:"release"`
 	Files   []buildFile `json:"files"`
 	// Deprecations names each pinned reference carrying a recorded deprecation
-	// marker, from the shared report every surface reads. It is present on a
-	// successful build for the same reason the command line prints the notices on
-	// one: reporting is unconditional and only halting is configured, so raising
-	// the halt threshold never reduces what the caller is told.
+	// marker, from the shared report every surface reads. It is present whatever
+	// the outcome, for the same reason the command line prints the notices on a
+	// build that succeeded: reporting is unconditional and only halting is
+	// configured, so raising the halt threshold never reduces what the caller is
+	// told.
 	Deprecations []string `json:"deprecations,omitempty"`
 
 	// DeclinedExternalInputs names each external reference the render asked for
@@ -55,11 +83,14 @@ type buildResultPayload struct {
 	// Advisories carries every exit-code-neutral finding the build raised, in the
 	// order it raised them — the same findings, in the same order, a command-line
 	// build prints. None of them changes the outcome: a build carrying advisories
-	// still succeeded, and the files above are the files it produced.
+	// and nothing else still succeeded, and the files above are the files it
+	// produced.
 	//
-	// They are reported on a successful build for the same reason the deprecation
-	// notices are: a caller with no terminal has no other way to receive them, and
-	// a finding nobody is told about is a finding that was not made.
+	// They are reported for the same reason the deprecation notices are: a caller
+	// with no terminal has no other way to receive them, and a finding nobody is
+	// told about is a finding that was not made. None of them is ever the reason a
+	// build refused — what refused travels in the guidance text instead — and a
+	// refused build reports none of them, for the reason given on this type.
 	Advisories []buildAdvisory `json:"advisories,omitempty"`
 }
 
@@ -198,13 +229,19 @@ func buildInvoke(s *server, ctx context.Context, args json.RawMessage) (*callToo
 	// stricter threshold never costs the caller a finding.
 	deprecationNotices := previewDeprecationNotices(preview)
 
-	if err != nil {
-		return errorResult(explainToolError(
-			previewFailureSummary(preview, deprecationNotices), err, previewFailureKind(preview, err)))
+	// The findings are assembled BEFORE the verdict is read, and that ordering is
+	// the whole point rather than a tidying. Assembled after a success check, every
+	// field below would be populated only on the path where the caller needs it
+	// least: a run that finished cleanly. The run that refused is the one whose
+	// findings a caller most needs to read field by field, because it has to decide
+	// what to change, and reporting them as prose there while reporting them
+	// structurally on success would be one capability answering at two fidelities
+	// depending on its verdict.
+	var pipelineResult *pipeline.Result
+	if preview != nil {
+		pipelineResult = preview.Pipeline
 	}
-
-	detail := parseResponseFormat(a.ResponseFormat) == responseFormatDetailed
-	payload := buildResultPayload{Release: releasePath, Files: renderedFiles(preview.Pipeline, detail)}
+	payload := buildResultPayload{Release: releasePath}
 	if len(deprecationNotices) > 0 {
 		payload.Deprecations = deprecationNotices
 	}
@@ -212,12 +249,23 @@ func buildInvoke(s *server, ctx context.Context, args json.RawMessage) (*callToo
 	// survived it. The decline is owed because a reference was declined, not
 	// because the run happened to end badly: a guest that renders around the
 	// refusal produces output that stops short of what a build would emit, and a
-	// caller cannot tell that from an accurate render unless it is told.
+	// caller cannot tell that from an accurate render unless it is told. A decline
+	// also HALTS the render in the ordinary case, so the refusal is where this field
+	// earns its keep and the success is the incidental path for it.
 	payload.DeclinedExternalInputs = fetchSeam.Declined()
 	// The advisories the build raised travel in the answer, so a caller driving the
 	// compiler through this surface receives every finding a command-line build
 	// prints rather than only the ones that stopped it.
-	payload.Advisories = buildAdvisories(preview.Pipeline)
+	payload.Advisories = buildAdvisories(pipelineResult)
+
+	if err != nil {
+		return structuredErrorResult(
+			explainToolError(previewFailureSummary(preview, deprecationNotices), err, previewFailureKind(preview, err)),
+			payload)
+	}
+
+	detail := parseResponseFormat(a.ResponseFormat) == responseFormatDetailed
+	payload.Files = renderedFiles(preview.Pipeline, detail)
 	text := renderBuildText(payload)
 	return textResult(text, payload)
 }

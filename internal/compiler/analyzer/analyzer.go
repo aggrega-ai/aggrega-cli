@@ -6,6 +6,8 @@ package analyzer
 import (
 	"context"
 
+	"github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
+
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
@@ -25,13 +27,24 @@ import (
 //     caller reads it.
 //     Build flow gates on len(Errors) > 0; see the package doc Pipeline
 //     Integration subsection for the gating semantics.
-//   - Warnings — one advisory string per finding an advisory rule raised,
+//   - Warnings — one structured advisory per finding an advisory rule raised,
 //     appended by the same holder and never reaching the Errors gate: a
 //     warning does not make the emitted output wrong, so a result carrying
 //     warnings and no errors proceeds.
+//
+// Warnings carries the diagnostic shape rather than a plain sentence, and that
+// is the load-bearing part of it. An advisory rule names the authoring key its
+// finding is about, and a plain sentence has nowhere to put that key but inside
+// the text — so a consumer holding the parsed document could not walk to the
+// finding without unpicking a composed sentence, and the position the rule
+// computed was destroyed one layer before any channel saw it. Each entry
+// therefore carries the displayed sentence on Message and the authoring key on
+// the location, independently: a terminal prints the sentence, and a surface
+// drawing the finding on its key reads the location. Both halves come from the
+// same entry, so neither surface has to reconstruct what the other shows.
 type AnalysisResult struct {
 	Errors      []AnalysisError
-	Warnings    []string
+	Warnings    []abi.Diagnostic
 	Paths       []PrecalculatedPath
 	PolicyInput *PolicyInput
 }

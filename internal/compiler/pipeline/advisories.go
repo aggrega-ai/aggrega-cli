@@ -4,8 +4,6 @@
 package pipeline
 
 import (
-	"github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
-
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
@@ -106,23 +104,6 @@ func advisoryFromResolverFinding(e *resolver.ResolverError, severity string) ren
 		d.Location = &renderer.DiagnosticLocation{KeyPath: e.Field}
 	}
 	return d
-}
-
-// advisoryFromDisplayLine renders one already-composed advisory line as a
-// structured advisory at warn severity.
-//
-// It is the shape for a producer that hands the pipeline a finished sentence
-// rather than a structured finding: the static-analysis advisory stream is a
-// string slice, so the sentence is all there is by the time it arrives here. The
-// entry therefore carries no location, and that absence is a measured property of
-// the producer rather than a shortcut — there is no entity, no locator and no
-// position on the value to carry.
-//
-// The message is the displayed line VERBATIM. Rewriting it here would give one
-// advisory two wordings, and the displayed one is the wording every existing
-// reader already knows.
-func advisoryFromDisplayLine(line string) renderer.Diagnostic {
-	return renderer.Diagnostic{Severity: abi.SeverityWarn, Message: line}
 }
 
 // advisoryFromPolicyVerdict renders one non-halting governance verdict as a

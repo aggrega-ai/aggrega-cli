@@ -206,8 +206,12 @@ func TestTheOverriddenAnnotationAdvisoryNamesTheCoordinatesThePositionGaveUp(t *
 			// Through the conversion the build uses, so the position an author sees
 			// is part of what is asserted rather than something read separately.
 			got := AdvisoriesFromObjections(raised)
-			if len(got) != 1 || got[0] != tc.want {
-				t.Errorf("the advisory reads\n  %s\nwant\n  %s", strings.Join(got, "\n  "), tc.want)
+			lines := make([]string, 0, len(got))
+			for _, d := range got {
+				lines = append(lines, d.Message)
+			}
+			if len(got) != 1 || got[0].Message != tc.want {
+				t.Errorf("the advisory reads\n  %s\nwant\n  %s", strings.Join(lines, "\n  "), tc.want)
 			}
 		})
 	}

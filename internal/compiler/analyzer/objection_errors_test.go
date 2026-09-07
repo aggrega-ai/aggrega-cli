@@ -7,6 +7,8 @@ import (
 	"context"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
+
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 )
 
@@ -34,7 +36,7 @@ func objectsAboutEveryNode(detail ...string) constraint.Check[constraint.GraphVi
 // advisoriesRaisedOver runs the check above over the supplied node axis and
 // converts what it raised, which is the whole path an advisory takes from a
 // rule to the warning slice a caller reads.
-func advisoriesRaisedOver(t *testing.T, nodes enumeratedNodes, detail ...string) []string {
+func advisoriesRaisedOver(t *testing.T, nodes enumeratedNodes, detail ...string) []abi.Diagnostic {
 	t.Helper()
 	objections, err := constraint.RunOnNodes(
 		context.Background().Err,
@@ -51,16 +53,34 @@ func advisoriesRaisedOver(t *testing.T, nodes enumeratedNodes, detail ...string)
 	return AdvisoriesFromObjections(objections)
 }
 
-// TestAnAdvisoryNamesItsDocumentItsKeyAndItsFinding pins the whole string an
-// advisory reaches a caller as, for each shape of provenance a finding can
-// carry.
+// advisoryMessagesRaisedOver is advisoriesRaisedOver reduced to the displayed
+// sentences, so the whole-string equalities below read the line a terminal
+// prints and nothing else.
+func advisoryMessagesRaisedOver(t *testing.T, nodes enumeratedNodes, detail ...string) []string {
+	t.Helper()
+	raised := advisoriesRaisedOver(t, nodes, detail...)
+	out := make([]string, 0, len(raised))
+	for _, d := range raised {
+		out = append(out, d.Message)
+	}
+	return out
+}
+
+// TestAnAdvisoryNamesItsDocumentItsKeyAndItsFinding pins the whole sentence an
+// advisory displays, for each shape of provenance a finding can carry.
 //
 // The assertions are whole-string equalities rather than substring checks, and
-// that is the point of this test existing at all. A warning has no fields: its
-// document, its authored key and its wording are one string by the time anything
-// reads it, so every defect in how those three are composed — a missing
-// separator, a swapped order, a dropped half — leaves each part still present
-// and a substring check still green.
+// that is the point of this test existing at all. The displayed sentence is what
+// a terminal has to work with: its document, its authored key and its wording are
+// one string there, so every defect in how those three are composed — a missing
+// separator, a swapped order, a dropped half — leaves each part still present and
+// a substring check still green.
+//
+// The entry's own position field is asserted separately, by
+// [TestAnAdvisoryCarriesItsAuthoredKeyOnItsLocation]. Splitting the two is what
+// keeps this one honest about what it covers: an entry could carry a correct
+// location and a mangled sentence, or the reverse, and one assertion over both
+// would let either defect hide behind the other half passing.
 func TestAnAdvisoryNamesItsDocumentItsKeyAndItsFinding(t *testing.T) {
 	t.Parallel()
 
@@ -68,7 +88,7 @@ func TestAnAdvisoryNamesItsDocumentItsKeyAndItsFinding(t *testing.T) {
 
 	t.Run("a finding carrying both reads as a document, a key and the wording", func(t *testing.T) {
 		t.Parallel()
-		got := advisoriesRaisedOver(t, enumeratedNodes{{
+		got := advisoryMessagesRaisedOver(t, enumeratedNodes{{
 			ID:                   "backend",
 			SourceFile:           "/workspace/aggregate.yaml",
 			AuthoredName:         "backend",
@@ -83,7 +103,7 @@ func TestAnAdvisoryNamesItsDocumentItsKeyAndItsFinding(t *testing.T) {
 
 	t.Run("a finding with no document names the key alone", func(t *testing.T) {
 		t.Parallel()
-		got := advisoriesRaisedOver(t, enumeratedNodes{{
+		got := advisoryMessagesRaisedOver(t, enumeratedNodes{{
 			ID:                   "backend",
 			AuthoredName:         "backend",
 			SubsystemPath:        "default",
@@ -97,7 +117,7 @@ func TestAnAdvisoryNamesItsDocumentItsKeyAndItsFinding(t *testing.T) {
 
 	t.Run("a finding carrying no detail reads as the wording alone", func(t *testing.T) {
 		t.Parallel()
-		got := advisoriesRaisedOver(t, enumeratedNodes{{
+		got := advisoryMessagesRaisedOver(t, enumeratedNodes{{
 			ID:                   "backend",
 			SourceFile:           "/workspace/aggregate.yaml",
 			AuthoredName:         "backend",
@@ -112,7 +132,7 @@ func TestAnAdvisoryNamesItsDocumentItsKeyAndItsFinding(t *testing.T) {
 
 	t.Run("advisories keep the order the rule raised them in", func(t *testing.T) {
 		t.Parallel()
-		got := advisoriesRaisedOver(t, enumeratedNodes{
+		got := advisoryMessagesRaisedOver(t, enumeratedNodes{
 			{ID: "b", SourceFile: "/workspace/aggregate.yaml", AuthoredName: "b", SubsystemPath: "default", SynthesizedSubsystem: true},
 			{ID: "a", SourceFile: "/workspace/aggregate.yaml", AuthoredName: "a", SubsystemPath: "default", SynthesizedSubsystem: true},
 		}, "replicas")
@@ -133,19 +153,19 @@ func TestAnAdvisoryNamesItsDocumentItsKeyAndItsFinding(t *testing.T) {
 	t.Run("nothing raised converts to nothing", func(t *testing.T) {
 		t.Parallel()
 		if got := AdvisoriesFromObjections(nil); got != nil {
-			t.Errorf("advisories = %q, want nil", got)
+			t.Errorf("advisories = %+v, want nil", got)
 		}
 	})
 }
 
 // TestAnAdvisoryPositionReadsAsAFileAndAKey pins the composition of the two
-// halves an advisory's position is built from.
+// halves an advisory's DISPLAYED position is built from.
 //
-// A warning is a plain string, so its position is composed into the text rather
-// than carried on fields of its own — which is exactly why the join matters: a
-// locator opens with a separator, so running the pair together produces one
-// string that reads as a single file name with a nonsense extension and gives a
-// reader no way to see where the document ends and the authored key begins.
+// The displayed position is composed into the sentence, which is why the join
+// matters: a locator opens with a separator, so running the pair together
+// produces one string that reads as a single file name with a nonsense extension
+// and gives a reader no way to see where the document ends and the authored key
+// begins.
 func TestAnAdvisoryPositionReadsAsAFileAndAKey(t *testing.T) {
 	t.Parallel()
 
@@ -187,4 +207,95 @@ func TestAnAdvisoryPositionReadsAsAFileAndAKey(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestAnAdvisoryCarriesItsAuthoredKeyOnItsLocation proves the half a displayed
+// sentence cannot deliver: the authored key as a field a consumer reads, so a
+// surface holding the parsed document walks to the offending key instead of
+// placing the finding at the head of the file.
+//
+// It is asserted alongside the sentence in every case rather than instead of it,
+// because carrying the key structurally is only correct if the printed line is
+// untouched — a conversion that moved the position out of the message would
+// satisfy the location assertion and change what a build prints.
+func TestAnAdvisoryCarriesItsAuthoredKeyOnItsLocation(t *testing.T) {
+	t.Parallel()
+
+	const registered = "annotation contribution overridden by an explicit value"
+
+	t.Run("a finding naming an authored key carries it as a field and in the sentence", func(t *testing.T) {
+		t.Parallel()
+		got := advisoriesRaisedOver(t, enumeratedNodes{{
+			ID:                   "backend",
+			SourceFile:           "/workspace/aggregate.yaml",
+			AuthoredName:         "backend",
+			SubsystemPath:        "default",
+			SynthesizedSubsystem: true,
+		}}, "replicas")
+		if len(got) != 1 {
+			t.Fatalf("advisories = %d, want 1", len(got))
+		}
+		if got[0].Location == nil {
+			t.Fatalf("the advisory carries no location; the rule computed an authored key, so the position was available and was lost")
+		}
+		if want := ".spec.components.backend"; got[0].Location.KeyPath != want {
+			t.Errorf("key path = %q, want %q", got[0].Location.KeyPath, want)
+		}
+		if want := `/workspace/aggregate.yaml at .spec.components.backend: ` + registered + ` ("replicas")`; got[0].Message != want {
+			t.Errorf("message = %q, want %q — the displayed line must not move when the key is carried structurally", got[0].Message, want)
+		}
+		if got[0].Severity != abi.SeverityWarn {
+			t.Errorf("severity = %q, want %q", got[0].Severity, abi.SeverityWarn)
+		}
+	})
+
+	t.Run("a finding with no document still carries the authored key", func(t *testing.T) {
+		t.Parallel()
+		got := advisoriesRaisedOver(t, enumeratedNodes{{
+			ID:                   "backend",
+			AuthoredName:         "backend",
+			SubsystemPath:        "default",
+			SynthesizedSubsystem: true,
+		}}, "replicas")
+		if len(got) != 1 || got[0].Location == nil {
+			t.Fatalf("advisories = %+v; want one carrying a location, because the key is what a consumer navigates by and the document is not", got)
+		}
+		if want := ".spec.components.backend"; got[0].Location.KeyPath != want {
+			t.Errorf("key path = %q, want %q", got[0].Location.KeyPath, want)
+		}
+	})
+
+	// A finding about a component the author never named still has a position,
+	// because the container block holding that component is itself a key the
+	// document spells. The locator gives up only the segment it cannot name and
+	// keeps the ones it can, so what reaches the entry is the most specific
+	// authored key that exists rather than nothing at all.
+	//
+	// Withholding the location here is the tempting reading and it is wrong: an
+	// entry carrying no location lands at the head of the file, which is the one
+	// position a reader cannot navigate anywhere from. A container key resolves,
+	// so it beats the head of the file even though it is coarser than a leaf. The
+	// case that genuinely carries no location is the one whose provenance names
+	// no file and no locator, where there is no key to walk to at all — a
+	// different input, not a coarser one.
+	//
+	// The halting side of the boundary positions the same finding at the same
+	// container key, so withholding it on this side would also split one
+	// provenance into two different positions depending on severity.
+	t.Run("a finding naming no component carries the container key the document does spell", func(t *testing.T) {
+		t.Parallel()
+		got := advisoriesRaisedOver(t, enumeratedNodes{{ID: "backend"}}, "replicas")
+		if len(got) != 1 {
+			t.Fatalf("advisories = %d, want 1", len(got))
+		}
+		if got[0].Location == nil {
+			t.Fatalf("the advisory carries no location; the container block is an authored key a consumer can walk to, so the position was available and was lost")
+		}
+		if want := ".spec.components"; got[0].Location.KeyPath != want {
+			t.Errorf("key path = %q, want %q", got[0].Location.KeyPath, want)
+		}
+		if want := `.spec.components: ` + registered + ` ("replicas")`; got[0].Message != want {
+			t.Errorf("message = %q, want %q — the displayed line must not move when the key is carried structurally", got[0].Message, want)
+		}
+	})
 }
