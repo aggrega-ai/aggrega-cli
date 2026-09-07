@@ -21,6 +21,7 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/authoredcontent"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/embedded"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/entitysynth"
@@ -42,17 +43,31 @@ const genCatalogHeader = "# generated; DO NOT EDIT\n" +
 const genCatalogPluginFilename = "plugin.yaml"
 
 // Options carries the inputs to a catalog-generation run: the selection mode
-// (FromEmbedded or a single PluginPath), the output directory, and the authored
-// overlay path (a directory for FromEmbedded, a file for a single plugin).
+// (FromEmbedded or a single PluginPath), the output directory, the authored
+// overlay path (a directory for FromEmbedded, a file for a single plugin), and
+// the delivery.
+//
+// Delivery selects whether the generated entities are written under OutputDir or
+// reported as content for the caller to place. The zero value writes, so a
+// caller that says nothing about delivery generates exactly as before.
 type Options struct {
 	FromEmbedded bool
 	PluginPath   string
 	OutputDir    string
 	OverlayPath  string
+	Delivery     authoredcontent.Delivery
 }
 
-// Run validates the option combination and dispatches to the embedded or
-// single-guest generation path, writing a per-entity listing to out.
+// Run validates the option combination, composes an entity for every selected
+// guest, then delivers the result: under a writing delivery each entity is
+// written beneath OutputDir and a per-entity listing goes to out; under a
+// reporting delivery the entities are reported to out and nothing is written.
+//
+// Composition finishes before any delivery begins. A generated Plugin entity is
+// content a catalog author will own and go on editing, so the reporting delivery
+// hands it back rather than putting it on disk behind their back; composing the
+// whole set first is also what lets an authoring halt on the fifth guest leave
+// none of the first four on disk.
 func Run(ctx context.Context, opts Options, out io.Writer) error {
 	switch {
 	case opts.FromEmbedded && opts.PluginPath != "":
@@ -67,13 +82,44 @@ func Run(ctx context.Context, opts Options, out io.Writer) error {
 		return fmt.Errorf("aggrega plugin gen-catalog: --overlay is required (a directory for --from-embedded, a file for --plugin)")
 	}
 
+	var docs []authoredcontent.Document
+	var err error
 	if opts.FromEmbedded {
-		return genCatalogFromEmbedded(ctx, opts, out)
+		docs, err = composeFromEmbedded(ctx, opts)
+	} else {
+		docs, err = composeFromPlugin(ctx, opts)
 	}
-	return genCatalogFromPlugin(ctx, opts, out)
+	if err != nil {
+		return err
+	}
+
+	if opts.Delivery.Reports() {
+		return authoredcontent.Report(out, docs)
+	}
+	return writeEntities(docs, out)
 }
 
-// genCatalogFromEmbedded generates an entity for every embedded guest, matching
+// writeEntities puts each composed entity at its own path, creating the
+// per-coordinate directory, and names what it wrote.
+//
+// It consumes the composed documents rather than composing anything itself,
+// which is what makes the reported content and the bytes on disk one
+// computation: there is a single producer of an entity's bytes and both
+// deliveries read its output.
+func writeEntities(docs []authoredcontent.Document, out io.Writer) error {
+	for _, doc := range docs {
+		if err := os.MkdirAll(filepath.Dir(doc.Path), 0o755); err != nil {
+			return fmt.Errorf("aggrega plugin gen-catalog: create %s: %w", filepath.Dir(doc.Path), err)
+		}
+		if err := os.WriteFile(doc.Path, []byte(doc.Content), 0o644); err != nil {
+			return fmt.Errorf("aggrega plugin gen-catalog: write %s: %w", doc.Path, err)
+		}
+		fmt.Fprintf(out, "generated %s\n", doc.Path)
+	}
+	return nil
+}
+
+// composeFromEmbedded composes an entity for every embedded guest, matching
 // each guest to its overlay by the guest's bare name — the final segment of the
 // embed-tier identity coordinate <pluginType>/<name>, which is the identity an
 // overlay authors as metadata.name. The coordinate the guest's own pluginType
@@ -82,15 +128,19 @@ func Run(ctx context.Context, opts Options, out io.Writer) error {
 // guest with no matching overlay halts loudly: the overlay set is the authored
 // input the generator merges, so a missing one is an authoring gap, not a value
 // to invent.
-func genCatalogFromEmbedded(ctx context.Context, opts Options, out io.Writer) error {
+//
+// The documents come back in the embedded set's own order, so a report and a
+// write name the entities in the same sequence on every run.
+func composeFromEmbedded(ctx context.Context, opts Options) ([]authoredcontent.Document, error) {
 	overlays, err := loadOverlaysByPlugin(opts.OverlayPath)
 	if err != nil {
-		return err
+		return nil, err
 	}
+	var docs []authoredcontent.Document
 	for _, uri := range embedded.URIs() {
 		desc, description, err := embeddedDescriptor(ctx, uri)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		// The host-function set is derived from the guest's own .wasm import
 		// section — the same primitive publish and pull verify against — so the
@@ -99,25 +149,27 @@ func genCatalogFromEmbedded(ctx context.Context, opts Options, out io.Writer) er
 		// available instantiation-free from the embedded set.
 		wasmBytes, ok := embedded.Lookup(uri)
 		if !ok {
-			return fmt.Errorf("aggrega plugin gen-catalog: embedded guest %q has no artifact", uri)
+			return nil, fmt.Errorf("aggrega plugin gen-catalog: embedded guest %q has no artifact", uri)
 		}
 		hostFunctions, err := wasm.DeriveHostFunctions(uri, wasmBytes)
 		if err != nil {
-			return fmt.Errorf("aggrega plugin gen-catalog: %w", err)
+			return nil, fmt.Errorf("aggrega plugin gen-catalog: %w", err)
 		}
 		bareName := coordinateLeaf(uri)
 		overlay, ok := overlays[bareName]
 		if !ok {
-			return fmt.Errorf("aggrega plugin gen-catalog: no overlay in %q has metadata.name %q for embedded guest %q; author the overlay before generating", opts.OverlayPath, bareName, uri)
+			return nil, fmt.Errorf("aggrega plugin gen-catalog: no overlay in %q has metadata.name %q for embedded guest %q; author the overlay before generating", opts.OverlayPath, bareName, uri)
 		}
 		if got := types.PluginCoordinate(string(desc.PluginType), overlay.Metadata.Name); got != uri {
-			return fmt.Errorf("aggrega plugin gen-catalog: overlay for %q derives identity coordinate %q, which does not match embedded guest %q; fix the overlay's metadata.name or socket", bareName, got, uri)
+			return nil, fmt.Errorf("aggrega plugin gen-catalog: overlay for %q derives identity coordinate %q, which does not match embedded guest %q; fix the overlay's metadata.name or socket", bareName, got, uri)
 		}
-		if err := generateAndWrite(opts.OutputDir, desc, description, hostFunctions, overlay, uri, out); err != nil {
-			return err
+		doc, err := composeEntity(opts.OutputDir, desc, description, hostFunctions, overlay, uri)
+		if err != nil {
+			return nil, err
 		}
+		docs = append(docs, doc)
 	}
-	return nil
+	return docs, nil
 }
 
 // coordinateLeaf returns the bare name segment of an identity coordinate — the
@@ -131,44 +183,54 @@ func coordinateLeaf(coordinate string) string {
 	return coordinate
 }
 
-// genCatalogFromPlugin generates a single entity for one non-embedded guest read
+// composeFromPlugin composes a single entity for one non-embedded guest read
 // from disk, described through the Wasm loader, and merged with the single
 // overlay file.
-func genCatalogFromPlugin(ctx context.Context, opts Options, out io.Writer) error {
+func composeFromPlugin(ctx context.Context, opts Options) ([]authoredcontent.Document, error) {
 	wasmBytes, err := os.ReadFile(opts.PluginPath)
 	if err != nil {
-		return fmt.Errorf("aggrega plugin gen-catalog: read .wasm %s: %w", opts.PluginPath, err)
+		return nil, fmt.Errorf("aggrega plugin gen-catalog: read .wasm %s: %w", opts.PluginPath, err)
 	}
 	desc, err := describeWasmBytes(ctx, opts.PluginPath, wasmBytes)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	overlay, err := loadOverlayFile(opts.OverlayPath)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	// The host-function set is derived from the guest's own .wasm import section
 	// — the same primitive publish and pull verify against — so the generated
 	// entity is publish-ready with no separate recording step.
 	hostFunctions, err := wasm.DeriveHostFunctions(opts.PluginPath, wasmBytes)
 	if err != nil {
-		return fmt.Errorf("aggrega plugin gen-catalog: %w", err)
+		return nil, fmt.Errorf("aggrega plugin gen-catalog: %w", err)
 	}
 	// A single .wasm has no repository identity of its own; the loader-returned
 	// descriptor carries no plugin-level description field until the ABI grows
 	// one, so the single-guest path emits a description only once that field
 	// lands. The embedded path reads the description from the build-extracted
 	// descriptor JSON.
-	return generateAndWrite(opts.OutputDir, desc, "", hostFunctions, overlay, opts.PluginPath, out)
+	doc, err := composeEntity(opts.OutputDir, desc, "", hostFunctions, overlay, opts.PluginPath)
+	if err != nil {
+		return nil, err
+	}
+	return []authoredcontent.Document{doc}, nil
 }
 
-// generateAndWrite merges one descriptor with its overlay and writes the entity
-// to <outputDir>/<pluginType>/<name>/<version>/plugin.yaml — the plugin
-// coordinate path that mirrors the catalog filesystem layout.
-func generateAndWrite(outputDir string, desc wasm.PluginDescriptor, description string, hostFunctions []string, overlay types.Plugin, identity string, out io.Writer) error {
+// composeEntity merges one descriptor with its overlay and returns the entity as
+// content addressed to <outputDir>/<pluginType>/<name>/<version>/plugin.yaml —
+// the plugin coordinate path that mirrors the catalog filesystem layout.
+//
+// It is the only producer of a generated entity's bytes and of the path those
+// bytes belong at. Both deliveries read what it returns, so a reported entity
+// and a written one cannot differ: there is no second composition to drift from,
+// and a caller cannot be handed content addressed to a path the write would not
+// have used.
+func composeEntity(outputDir string, desc wasm.PluginDescriptor, description string, hostFunctions []string, overlay types.Plugin, identity string) (authoredcontent.Document, error) {
 	entity, err := entitysynth.MergeForPublish(desc, description, hostFunctions, overlay, identity)
 	if err != nil {
-		return fmt.Errorf("aggrega plugin gen-catalog: %w", err)
+		return authoredcontent.Document{}, fmt.Errorf("aggrega plugin gen-catalog: %w", err)
 	}
 	coordinate := entity.Coordinate()
 	dir := filepath.Join(outputDir, filepath.FromSlash(coordinate), entity.Metadata.Version)
@@ -180,21 +242,16 @@ func generateAndWrite(outputDir string, desc wasm.PluginDescriptor, description 
 	// with the load-time gate, so the generator is structurally incapable of
 	// shipping a workloadSchema the loader would later reject — an authoring
 	// defect in the overlay halts generation loudly instead of riding through.
+	// The gate runs before either delivery, so content reported to a caller has
+	// cleared the same validation content written to disk has.
 	if errs := validator.ValidatePluginProviderSchemas(entity.Metadata.Name, path, &entity.Spec); len(errs) > 0 {
-		return fmt.Errorf("aggrega plugin gen-catalog: %s has an invalid spec.provider.workloadSchema; fix the overlay: %w", entity.Metadata.Name, errors.Join(errs...))
+		return authoredcontent.Document{}, fmt.Errorf("aggrega plugin gen-catalog: %s has an invalid spec.provider.workloadSchema; fix the overlay: %w", entity.Metadata.Name, errors.Join(errs...))
 	}
 	body, err := emitGenCatalogEntity(entity)
 	if err != nil {
-		return fmt.Errorf("aggrega plugin gen-catalog: encode %s: %w", entity.Metadata.Name, err)
+		return authoredcontent.Document{}, fmt.Errorf("aggrega plugin gen-catalog: encode %s: %w", entity.Metadata.Name, err)
 	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return fmt.Errorf("aggrega plugin gen-catalog: create %s: %w", dir, err)
-	}
-	if err := os.WriteFile(path, body, 0o644); err != nil {
-		return fmt.Errorf("aggrega plugin gen-catalog: write %s: %w", path, err)
-	}
-	fmt.Fprintf(out, "generated %s\n", path)
-	return nil
+	return authoredcontent.Document{Path: path, Content: string(body)}, nil
 }
 
 // emitGenCatalogEntity marshals a Plugin entity to deterministic YAML with the

@@ -22,6 +22,15 @@ type genCatalogRunner func(ctx context.Context, opts gencatalog.Options, out io.
 
 // genCatalogArgs is the gen-catalog tool's argument shape, mirroring the
 // catalog-generation subcommand's inputs.
+//
+// It carries no delivery selector, and that is a budget decision rather than an
+// omission. A generated entity is content a catalog author owns, so the
+// capability does carry a reporting delivery — and this protocol reaches it
+// through the tool generated from that command, which derives its arguments from
+// the command's documented flags and sits in the deferred set, where it costs a
+// session's up-front definition budget nothing. Spelling the selector again here
+// would be a second hand-written copy of a derived argument, paid for out of the
+// default budget whose ceiling deliberately leaves almost no headroom.
 type genCatalogArgs struct {
 	FromEmbedded bool   `json:"from_embedded"`
 	Plugin       string `json:"plugin"`

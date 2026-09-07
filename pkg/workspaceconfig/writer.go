@@ -43,7 +43,38 @@ func UpsertRegistry(path string, reg RegistryConfig) error {
 	if reg.Host == "" {
 		return fmt.Errorf("workspaceconfig: UpsertRegistry: registry host is required")
 	}
-	return mutateConfigDocument(path, func(mapping *yaml.Node) error {
+	return mutateConfigDocument(path, registryMutation(reg))
+}
+
+// RegistryDocument returns the bytes UpsertRegistry would write for reg at path,
+// without writing anything and without creating a directory.
+//
+// It exists so a caller that reports a document instead of writing one is not
+// composing its own version of the file. It routes through the same mutation and
+// the same composition UpsertRegistry does, so the two cannot produce different
+// bytes for the same inputs — including the schema gate, which runs here too: a
+// document reported to a caller has passed the same validation a written one
+// would, so no caller is handed content the loader would later reject.
+//
+// A registry entry that is already present and identical composes to the file's
+// existing bytes, so the reported document is what the file would hold either
+// way rather than an empty answer.
+func RegistryDocument(path string, reg RegistryConfig) ([]byte, error) {
+	if reg.Host == "" {
+		return nil, fmt.Errorf("workspaceconfig: RegistryDocument: registry host is required")
+	}
+	out, _, err := composeConfigDocument(path, registryMutation(reg))
+	return out, err
+}
+
+// registryMutation builds the node surgery that records reg in a config
+// document's registries list: an existing entry for the same host is replaced in
+// place so its list position is preserved, and a new host is appended.
+//
+// It is a factory rather than an inline closure so the composition and the write
+// share one mutation instead of each carrying a copy that agrees today.
+func registryMutation(reg RegistryConfig) func(mapping *yaml.Node) error {
+	return func(mapping *yaml.Node) error {
 		registries := readRegistries(mapping)
 		// A non-empty alias is unique across entries: registering one already
 		// bound to a different host halts loudly rather than shadowing it.
@@ -75,59 +106,29 @@ func UpsertRegistry(path string, reg RegistryConfig) error {
 		}
 		setMappingKey(mapping, "registries", &regNode)
 		return nil
-	})
+	}
 }
 
 // mutateConfigDocument is the single config-file write scaffold every by-key
-// writer routes through. It reads the workspace config at path (schema-validating
-// the existing content before it parses, or seeding a fresh `workspace: {}`
-// document when no file exists yet), hands the root mapping node to mutate for
-// the caller's targeted node surgery, then validates the merged document against
-// the config schema before writing it back — so a malformed result never reaches
-// disk and the read-guard, seed, schema-gate, and ordered-write discipline live
-// in one place rather than being re-derived per writer. A missing parent
-// directory is created before the write, so seeding a fresh config at a path
-// whose directory does not yet exist (the global config under a not-yet-created
-// home config dir) succeeds.
+// writer routes through. It composes the merged document — the read-guard, the
+// fresh-file seed, the caller's targeted node surgery and the schema gate, all
+// below in one place rather than re-derived per writer — and puts the result on
+// disk, so a malformed result never reaches it. A missing parent directory is
+// created before the write, so seeding a fresh config at a path whose directory
+// does not yet exist (the global config under a not-yet-created home config dir)
+// succeeds. A mutation that changed nothing writes nothing, leaving the file
+// byte-for-byte as it was.
+//
+// It is the write half only. Everything that decides the bytes lives in the
+// composition below, which a caller reporting a document instead of writing one
+// reaches directly — so both deliveries are one computation.
 func mutateConfigDocument(path string, mutate func(mapping *yaml.Node) error) error {
-	var root yaml.Node
-	data, rerr := os.ReadFile(path)
-	switch {
-	case rerr == nil:
-		if verr := validateBytes(data, path); verr != nil {
-			return verr
-		}
-		if uerr := yaml.Unmarshal(data, &root); uerr != nil {
-			return fmt.Errorf("workspaceconfig: parse existing %s: %w", path, uerr)
-		}
-	case os.IsNotExist(rerr):
-		// A fresh file: a document whose root mapping carries a
-		// `workspace: {}` marker so discovery anchors here.
-		if err := root.Encode(map[string]any{"workspace": map[string]any{}}); err != nil {
-			return fmt.Errorf("workspaceconfig: seed fresh config: %w", err)
-		}
-	default:
-		return fmt.Errorf("workspaceconfig: read %s: %w", path, rerr)
-	}
-
-	mapping := rootMapping(&root)
-	if mapping == nil {
-		return fmt.Errorf("workspaceconfig: %s: top-level document is not a mapping", path)
-	}
-
-	if err := mutate(mapping); err != nil {
-		if errors.Is(err, errNoConfigChange) {
-			return nil
-		}
+	out, changed, err := composeConfigDocument(path, mutate)
+	if err != nil {
 		return err
 	}
-
-	out, merr := yaml.Marshal(&root)
-	if merr != nil {
-		return fmt.Errorf("workspaceconfig: marshal %s: %w", path, merr)
-	}
-	if verr := validateBytes(out, path); verr != nil {
-		return fmt.Errorf("workspaceconfig: merged config failed validation: %w", verr)
+	if !changed {
+		return nil
 	}
 	if derr := os.MkdirAll(filepath.Dir(path), 0o755); derr != nil {
 		return fmt.Errorf("workspaceconfig: create config dir for %s: %w", path, derr)
@@ -136,6 +137,63 @@ func mutateConfigDocument(path string, mutate func(mapping *yaml.Node) error) er
 		return fmt.Errorf("workspaceconfig: write %s: %w", path, werr)
 	}
 	return nil
+}
+
+// composeConfigDocument is every part of mutateConfigDocument except putting the
+// result on disk: it reads-or-seeds the document at path, hands the root mapping
+// to mutate, marshals the result and schema-validates it, and returns the bytes
+// together with whether the mutation changed anything.
+//
+// The split is what makes a reported document and a written one the same
+// computation rather than two that agree. Composition has one implementation, so
+// a caller asking what the write would produce and a caller performing the write
+// pass through identical read-guard, seed, surgery, marshal and schema-gate
+// steps; there is no second path that could drift.
+//
+// An unchanged document reports changed=false and returns the file's existing
+// bytes, so a caller reporting the result still has the document's content and a
+// caller writing it leaves the file byte-for-byte as it was.
+func composeConfigDocument(path string, mutate func(mapping *yaml.Node) error) ([]byte, bool, error) {
+	var root yaml.Node
+	data, rerr := os.ReadFile(path)
+	switch {
+	case rerr == nil:
+		if verr := validateBytes(data, path); verr != nil {
+			return nil, false, verr
+		}
+		if uerr := yaml.Unmarshal(data, &root); uerr != nil {
+			return nil, false, fmt.Errorf("workspaceconfig: parse existing %s: %w", path, uerr)
+		}
+	case os.IsNotExist(rerr):
+		// A fresh file: a document whose root mapping carries a
+		// `workspace: {}` marker so discovery anchors here.
+		if err := root.Encode(map[string]any{"workspace": map[string]any{}}); err != nil {
+			return nil, false, fmt.Errorf("workspaceconfig: seed fresh config: %w", err)
+		}
+	default:
+		return nil, false, fmt.Errorf("workspaceconfig: read %s: %w", path, rerr)
+	}
+
+	mapping := rootMapping(&root)
+	if mapping == nil {
+		return nil, false, fmt.Errorf("workspaceconfig: %s: top-level document is not a mapping", path)
+	}
+
+	if err := mutate(mapping); err != nil {
+		if errors.Is(err, errNoConfigChange) {
+			return data, false, nil
+		}
+		return nil, false, err
+	}
+
+	out, merr := yaml.Marshal(&root)
+	if merr != nil {
+		return nil, false, fmt.Errorf("workspaceconfig: marshal %s: %w", path, merr)
+	}
+	if verr := validateBytes(out, path); verr != nil {
+		return nil, false, fmt.Errorf("workspaceconfig: merged config failed validation: %w", verr)
+	}
+	return out, true, nil
 }
 
 // UpsertProviderBinding adds or updates the `plugins.providers` entry for

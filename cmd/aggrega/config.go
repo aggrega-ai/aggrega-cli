@@ -15,6 +15,7 @@ import (
 	"github.com/spf13/cobra"
 	"go.yaml.in/yaml/v3"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/authoredcontent"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
@@ -238,6 +239,7 @@ func newConfigInitCmd() *cobra.Command {
 	var force bool
 	var global bool
 	var workspace bool
+	var report bool
 
 	c := &cobra.Command{
 		Use:   "init",
@@ -258,7 +260,16 @@ The entry is written to the global config shared across every workspace by
 default; pass --workspace to write it to this project's workspace config
 instead. If the target config file already exists, init refuses rather than
 overwrite it — pass --force to write anyway (the registry entry is merged into
-the existing file, other settings preserved).`,
+the existing file, other settings preserved).
+
+A seeded configuration is a document you own and go on editing, so --report hands
+the content back instead of writing it: nothing is created or modified, and the
+answer names the file the content is for — which matters here, because the target
+is the machine-wide global config unless --workspace selects this project's own.
+A caller that keeps its own document model puts the content there, where it is
+visible before it is saved and can be amended or undone. --report needs no
+--force: an existing file is never overwritten because nothing is written at all,
+and the content reported is the merge a forced write would produce.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// init writes the global config, so it resolves the workspace WITHOUT
@@ -277,6 +288,7 @@ the existing file, other settings preserved).`,
 				Force:     force,
 				Global:    global,
 				Workspace: workspace,
+				Report:    report,
 				ws:        rw,
 				Out:       cmd.OutOrStdout(),
 			})
@@ -286,6 +298,7 @@ the existing file, other settings preserved).`,
 	c.Flags().BoolVar(&force, "force", false, "Overwrite an existing config file. Without it, init refuses when the target file already exists.")
 	c.Flags().BoolVar(&global, "global", false, "Write the entry to the global config shared across every workspace. This is the default.")
 	c.Flags().BoolVar(&workspace, "workspace", false, "Write the entry to this project's workspace config instead of the global config.")
+	c.Flags().BoolVar(&report, "report", false, "Report the seeded configuration as content, naming the file it is for, and write nothing. Without it the entry is written to the resolved config file.")
 	return c
 }
 
@@ -303,6 +316,10 @@ type configInitConfig struct {
 	// usage error.
 	Global    bool
 	Workspace bool
+	// Report asks for the seeded configuration as content rather than as a write.
+	// A seeded configuration is a document its owner goes on editing, so a caller
+	// holding a document model takes the content and decides where it lands.
+	Report bool
 
 	ws  *workspaceconfig.ResolvedWorkspace
 	Out io.Writer
@@ -317,6 +334,12 @@ type configInitConfig struct {
 // place. It resolves the write destination first and refuses to overwrite an
 // existing file unless Force is set — the refuse-if-exists guard is local to
 // init; the shared writer merges by design.
+//
+// Under Report the guard does not run, and that is not a relaxation of it. The
+// guard's whole subject is an existing file being overwritten, and reporting
+// writes nothing, so there is no file for it to protect; the content reported is
+// the merge a forced write would produce. A guard that halted here would refuse
+// to describe a document it was never going to touch.
 func configInitRun(cfg configInitConfig) error {
 	rw, err := workspaceOrResolve(cfg.ws)
 	if err != nil {
@@ -327,7 +350,7 @@ func configInitRun(cfg configInitConfig) error {
 	if err != nil {
 		return err
 	}
-	if !cfg.Force {
+	if !cfg.Force && !cfg.Report {
 		switch _, statErr := os.Stat(dest); {
 		case statErr == nil:
 			return fmt.Errorf("aggrega config init: %s already exists; pass --force to overwrite it", dest)
@@ -341,6 +364,7 @@ func configInitRun(cfg configInitConfig) error {
 		FetchTrust:  true,
 		Global:      cfg.Global,
 		Workspace:   cfg.Workspace,
+		Delivery:    authoredcontent.DeliveryFor(cfg.Report),
 		ws:          rw,
 		Out:         cfg.Out,
 		trustClient: cfg.trustClient,

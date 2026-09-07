@@ -11,6 +11,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/authoredcontent"
 	"github.com/aggrega-ai/aggrega-cli/pkg/registryhost"
 	"github.com/aggrega-ai/aggrega-cli/pkg/registrytrust"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
@@ -86,6 +87,9 @@ func resolveWriteTarget(rw *workspaceconfig.ResolvedWorkspace, global, workspace
 // RequireValue carries what it was stated as, because "not stated" and "stated
 // as false" are different: the hub baseline turns the requirement on by default,
 // and an unstated flag must not switch it back off.
+// Delivery selects whether the registration writes the configuration file or
+// reports the content that write would have produced. The zero value writes, so
+// a caller that says nothing about delivery registers exactly as before.
 type AddOptions struct {
 	Host              string
 	Name              string
@@ -98,6 +102,8 @@ type AddOptions struct {
 	FetchTrust        bool
 	Global            bool
 	Workspace         bool
+
+	Delivery authoredcontent.Delivery
 
 	// TrustClient transports the advertised-trust fetch. Nil selects a default
 	// client in the fetch path; a test injects one so no live network is reached.
@@ -127,10 +133,15 @@ type TrustFetchOutcome struct {
 // token the caller supplied. Target carries the file and its reach, so a caller
 // is told the scope of what it just changed rather than left to infer it from
 // the absence of a flag it did not send.
+// Content is the configuration document the write would have produced, filled
+// only under a reporting delivery and empty under a writing one. The file it is
+// for is Target.Path — the one write-target resolution already on this result —
+// so nothing here carries a second copy of the path.
 type AddResult struct {
-	Host   string            `json:"host"`
-	Target WriteTarget       `json:"target"`
-	Trust  TrustFetchOutcome `json:"trust"`
+	Host    string            `json:"host"`
+	Target  WriteTarget       `json:"target"`
+	Trust   TrustFetchOutcome `json:"trust"`
+	Content []byte            `json:"content,omitempty"`
 }
 
 // Add registers a registry host and its signature trust policy in the resolved
@@ -153,6 +164,12 @@ type AddResult struct {
 //
 // The write target is resolved before any fetch, so a write-target misuse or an
 // unresolvable global path fails before the network is reached.
+//
+// Under a reporting delivery it composes the same document and returns it on the
+// result instead of writing it, touching no file and creating no directory. The
+// trust-policy precedence above is unchanged by the delivery: the fetch is a read
+// and happens either way, so the reported content is the content a write would
+// have produced rather than a different document assembled for reporting.
 func Add(rw *workspaceconfig.ResolvedWorkspace, opts AddOptions) (AddResult, error) {
 	var res AddResult
 	host := registryhost.Of(opts.Host)
@@ -219,6 +236,18 @@ func Add(rw *workspaceconfig.ResolvedWorkspace, opts AddOptions) (AddResult, err
 		reg.Advisory = true
 	}
 
+	// A reporting delivery composes the document and stops there. Seeding a
+	// configuration produces content an operator will own and go on editing, so a
+	// caller holding a document model is handed the content rather than finding
+	// the file already changed underneath it.
+	if opts.Delivery.Reports() {
+		body, derr := workspaceconfig.RegistryDocument(target.Path, reg)
+		if derr != nil {
+			return res, derr
+		}
+		res.Content = body
+		return res, nil
+	}
 	if err := workspaceconfig.UpsertRegistry(target.Path, reg); err != nil {
 		return res, err
 	}

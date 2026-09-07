@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 	"oras.land/oras-go/v2/registry/remote/credentials"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/authoredcontent"
 	"github.com/aggrega-ai/aggrega-cli/internal/registryops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
@@ -389,6 +390,17 @@ type registryAddConfig struct {
 	Global    bool
 	Workspace bool
 
+	// Delivery selects whether the registration writes the config file or reports
+	// the content that write would have produced. The zero value writes.
+	//
+	// `registry add` itself never sets it: registering a registry is not one of
+	// the capabilities whose product is content an author composes, so its command
+	// offers no reporting mode. It is here because seeding a configuration
+	// delegates its whole registration through this path, and that capability does
+	// carry the mode — so the delivery travels with the request rather than being
+	// re-decided by a second registration path written for the reporting case.
+	Delivery authoredcontent.Delivery
+
 	ws  *workspaceconfig.ResolvedWorkspace
 	Out interface{ Write([]byte) (int, error) }
 	// trustClient transports the well-known trust fetch. Nil selects a default
@@ -423,16 +435,41 @@ func registryAddRun(cfg registryAddConfig) error {
 		FetchTrust:        cfg.FetchTrust,
 		Global:            cfg.Global,
 		Workspace:         cfg.Workspace,
+		Delivery:          cfg.Delivery,
 		TrustClient:       cfg.trustClient,
 	})
 	// The trust-fetch notice is written whether or not the registration went on to
 	// succeed, because the fetch happened either way and a reader who is told
 	// nothing about it cannot tell a skipped fetch from a failed one.
-	if cfg.Out != nil {
+	//
+	// A reported answer carries no prose at all: the stream holds one parseable
+	// document and nothing else, so a notice on it would leave a caller unable to
+	// read the answer it asked for.
+	//
+	// The two outcomes are not equally recoverable from the content, and the
+	// difference is worth stating rather than averaging over. A pinned policy IS
+	// in the reported content — it is the trust policy the notice would have
+	// described. The not-advertised outcome is not: it reports an absence and
+	// names the flags that supply a policy by hand, and content that simply
+	// carries no identities conveys neither. Which stream should carry that
+	// outcome under a reporting delivery is not decided here.
+	if cfg.Out != nil && !cfg.Delivery.Reports() {
 		writeTrustFetchNotice(cfg.Out, res.Host, res.Trust)
 	}
 	if addErr != nil {
 		return addErr
+	}
+	if cfg.Delivery.Reports() {
+		if cfg.Out == nil {
+			return nil
+		}
+		// The path comes from the write-target resolution the registration already
+		// performed, so the file the content is addressed to is the file the write
+		// would have gone to rather than a second resolution taken here.
+		return authoredcontent.Report(cfg.Out, []authoredcontent.Document{{
+			Path:    res.Target.Path,
+			Content: string(res.Content),
+		}})
 	}
 	if cfg.Out != nil {
 		fmt.Fprintf(cfg.Out, "Registered registry %s in %s\n", res.Host, res.Target.Path)
