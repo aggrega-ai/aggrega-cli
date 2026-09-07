@@ -21,11 +21,16 @@ import (
 // Both are resolved inside the workspace this session opened, so neither can
 // name a location of the request's own choosing.
 //
-// outputDir is the caller's to name — this surface does not choose a destination
-// on the caller's behalf and does not refuse for the lack of one. An absent
-// value writes at the workspace root, which is where the same import performed in
-// the workspace on the command line would put its files; a caller wanting a
-// subdirectory names one.
+// outputDir is required and is the caller's to name: this surface chooses no
+// destination on the caller's behalf, so an absent value is refused rather than
+// resolved to one. Every path here is resolved against the workspace root rather
+// than against a directory this process happens to be sitting in, so there is no
+// "here" an absent value could mean.
+//
+// It is required under both deliveries, and reporting does not excuse it. Under
+// report nothing is written, but each drafted file still names the path it is
+// FOR, and that path is relative to this directory — so a report without it
+// would answer with drafts belonging to nowhere.
 //
 // format names the source format explicitly. An absent value means the format is
 // recognised from the source's own shape, which is the same default the command
@@ -139,6 +144,17 @@ func (s *Server) dispatchImport(ctx context.Context, req *jsonRPCRequest) error 
 			"import: source is required and must name the file to convert, "+
 				"relative to the root of the workspace this session opened")
 	}
+	// outputDir is required under BOTH deliveries, and reporting does not excuse
+	// it. Under the reporting delivery nothing is written, but each drafted file
+	// still names the path it is FOR, and that path is relative to this directory
+	// — so a report without it would answer with drafts belonging to nowhere.
+	if params.OutputDir == "" {
+		return s.writeError(ctx, req.ID, jsonRPCInvalidParams,
+			"import: outputDir is required and must name the directory the drafted files go in, "+
+				"relative to the root of the workspace this session opened — the caller chooses "+
+				"where the drafts land and this surface picks no destination (under report nothing "+
+				"is written, but the drafted paths are still relative to it)")
+	}
 	if s.resolvedWorkspace == nil {
 		return s.writeError(ctx, req.ID, jsonRPCInternalError,
 			"the daemon holds no resolved workspace to resolve an importer against")
@@ -153,16 +169,7 @@ func (s *Server) dispatchImport(ctx context.Context, req *jsonRPCRequest) error 
 		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "import: "+err.Error())
 	}
 
-	// An absent outputDir writes at the workspace root, which is the same place
-	// the command line's own default lands for an import run in this workspace.
-	// It is normalised to "." here rather than inside the shared resolution,
-	// because "the empty string means the root" is a meaning this surface holds
-	// and not one every caller of that resolution should inherit.
-	rawOutput := params.OutputDir
-	if rawOutput == "" {
-		rawOutput = "."
-	}
-	outputDir, err := s.workspacePath("outputDir", rawOutput)
+	outputDir, err := s.workspacePath("outputDir", params.OutputDir)
 	if err != nil {
 		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "import: "+err.Error())
 	}
