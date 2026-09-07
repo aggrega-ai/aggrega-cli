@@ -146,6 +146,33 @@ spec:
       service_port: { type: string, required: true }
 `
 
+// serveUnusablePillarOverlayComponent declares a pillar whose body COMPILES and
+// then builds no validator: `items` carries a bare scalar where a schema
+// belongs.
+//
+// It is the companion of servePillarOverlayComponent above and not a duplicate
+// of it. That one carries a body the compile itself rejects; this one carries a
+// body the compile accepts, so the two exercise the two faults the
+// declared-contract condition covers. A row for only the first would leave the
+// editor's handling of the second unproven, and the second is the one that used
+// to reach no gate at all.
+const serveUnusablePillarOverlayComponent = `apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: core/compute/api-server
+  version: "1.0.0"
+  labels:
+    component.aggrega.ai/type: "server"
+spec:
+  inject: ["env"]
+  schema:
+    infra:
+      storage: { type: array, items: nonsense }
+    provides:
+      host: { type: string, required: true }
+      service_port: { type: string, required: true }
+`
+
 const serveResolveFailingAggregate = `apiVersion: aggrega.ai/v1alpha1
 kind: Aggregate
 metadata:
@@ -218,6 +245,8 @@ func serveReleaseParityCases() []serveReleaseParityCase {
 			overlay: map[string]string{"components/api-server.yaml": serveExtendsOverlayComponent}},
 		{name: "pillar-invalid", aggregate: serveBackendAggregate, manifest: serveCleanManifest,
 			overlay: map[string]string{"components/api-server.yaml": servePillarOverlayComponent}},
+		{name: "pillar-unusable", aggregate: serveBackendAggregate, manifest: serveCleanManifest,
+			overlay: map[string]string{"components/api-server.yaml": serveUnusablePillarOverlayComponent}},
 		{name: "resolve-failing", aggregate: serveResolveFailingAggregate, manifest: serveEmptyManifest,
 			release: serveEmptyBoundaryRelease},
 		{name: "resolution-incomplete", aggregate: serveBackendAggregate, manifest: serveEmptyManifest},
@@ -294,7 +323,7 @@ func serveExpectedFinding(t *testing.T, name string, vr *compilerops.ValidateRes
 	switch name {
 	case "extends-broken":
 		return vr.ClosureExtendsErrors[0].Error()
-	case "pillar-invalid":
+	case "pillar-invalid", "pillar-unusable":
 		return vr.PillarError.Error()
 	case "resolve-failing":
 		return vr.Tier4.ResolveDiagnostics[0].Message

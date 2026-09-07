@@ -356,25 +356,17 @@ func schemaSubSchemaAtPath(schema compactform.Schema, pillar, path string) (sub 
 
 // subkeyConformanceFailure validates a single bound value against subSchema —
 // the terminal sub-schema located at the binding path — through the shared
-// pillar-conformance machinery: a one-key wrapper {seg: subSchema} validated
-// over {seg: value}, carrying the compiled schema's $defs/definitions so a
-// $ref/allOf/oneOf in subSchema resolves. Unlike the prior type-only check this
-// enforces the full JSON Schema 2020-12 constraint set (enum, pattern, numeric
-// range, nested object/array shape). Returns the leaf-most finding's message
-// and true on a violation; ("", false) when the value conforms or the wrapper
-// does not compile (a malformed schema is surfaced at catalog load, not here).
+// one-property validator assembly: {seg: subSchema} validated over {seg: value},
+// carrying the enclosing schema's definitional context so a $ref/allOf/oneOf in
+// subSchema resolves. That assembly has one home, so this surface and the pillar
+// conformance beside it cannot come to disagree about which schemas are usable.
+// Unlike a type-only check this enforces the full JSON Schema 2020-12 constraint
+// set (enum, pattern, numeric range, nested object/array shape). Returns the
+// leaf-most finding's message and true on a violation; ("", false) when the value
+// conforms or no validator could be built — a declared schema nothing can be
+// built from is refused as the catalog loads, so it does not arrive here.
 func subkeyConformanceFailure(compiled compactform.Schema, subSchema map[string]any, seg string, value any) (string, bool) {
-	wrapper := map[string]any{
-		"type":       "object",
-		"properties": map[string]any{seg: subSchema},
-	}
-	if defs, ok := compiled["$defs"]; ok {
-		wrapper["$defs"] = defs
-	}
-	if defs, ok := compiled["definitions"]; ok {
-		wrapper["definitions"] = defs
-	}
-	v, err := newPillarValidator(wrapper)
+	v, err := jsonvalidator.NewUnderProperty(seg, subSchema, compiled)
 	if err != nil {
 		return "", false
 	}

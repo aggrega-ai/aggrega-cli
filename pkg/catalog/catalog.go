@@ -667,6 +667,51 @@ func newSkippedEntity(path string, data []byte, err error) SkippedEntity {
 // provider-rendering Plugin is NOT a load error — a federated catalog is legal;
 // the ambiguity halts at the point of use (pull resolution / build render) when no
 // plugins.providers entry selects one.
+// UnusablePillarContractErrors refuses each declared pillar of a Component or
+// Feature whose contract compiles and then builds no validator, under the same
+// condition the conformance rules raise for a contract that does not compile at
+// all.
+//
+// One condition covers both because they are one fault with two spellings: a
+// subject declaring a contract nothing can be measured against. The reading
+// itself carries no condition, because it is performed a layer below the one
+// that declares it; attaching it here is what makes the refusal matchable, and
+// keeping the attachment in a single exported composer is what stops the load
+// surface and the entity-validation surface reporting the same fault under
+// different identities.
+//
+// The refusal is located at the pillar's own authored field and source line, and
+// attributed to the entity that DECLARED the contract rather than to any
+// document configuring it — an application author handed a component type whose
+// contract is unusable has nothing to change in their own file. The validator's
+// own text is carried verbatim, since re-deriving what is wrong with the schema
+// would be a second answer to keep in step.
+func UnusablePillarContractErrors(
+	entityKind, entityName, filePath, extends string,
+	schemaNode *yaml.Node,
+	sockets types.OrderedMap[types.UsesSchemaEntry],
+	libraries map[string]types.SchemaLibrary,
+) []error {
+	unusable := validator.UnusableSchemaContracts(filePath, extends, schemaNode, sockets, libraries)
+	if len(unusable) == 0 {
+		return nil
+	}
+	out := make([]error, 0, len(unusable))
+	for _, u := range unusable {
+		out = append(out, cerrors.Wrap(
+			resolver.ErrSchemaContractCompileFailure(),
+			cerrors.CatalogError,
+			cerrors.SourceLocation{File: filePath, Line: u.Line},
+			cerrors.ComposeMessage(resolver.ErrSchemaContractCompileFailure(), nil, fmt.Sprintf(
+				"%s %q: %s declares a schema no validator can be built from, so the %s it "+
+					"constrains would go unmeasured: %s",
+				entityKind, entityName, u.Field, u.Pillar, u.Err.Error(),
+			)),
+		))
+	}
+	return out
+}
+
 func (c *Catalog) validateSchemaPillarsPass() error {
 	// Clear what this pass contributed on the last run. A second run over the
 	// same catalog would otherwise report every pillar-overlap advisory twice.
@@ -690,6 +735,15 @@ func (c *Catalog) validateSchemaPillarsPass() error {
 		); err != nil {
 			validationErrors = append(validationErrors, err)
 		}
+		validationErrors = append(validationErrors, UnusablePillarContractErrors(
+			"Component",
+			name,
+			c.componentSources[name],
+			comp.Spec.Extends,
+			&comp.Spec.Schema,
+			comp.Spec.UsesSchema,
+			c.SchemaLibraries,
+		)...)
 		c.pillarLintWarnings = append(c.pillarLintWarnings, validator.ValidateSchemaPillarOverlap(
 			"Component",
 			name,
@@ -715,6 +769,15 @@ func (c *Catalog) validateSchemaPillarsPass() error {
 		); err != nil {
 			validationErrors = append(validationErrors, err)
 		}
+		validationErrors = append(validationErrors, UnusablePillarContractErrors(
+			"Feature",
+			name,
+			c.featureSources[name],
+			feat.Spec.Extends,
+			&feat.Spec.Schema,
+			feat.Spec.UsesSchema,
+			c.SchemaLibraries,
+		)...)
 		c.pillarLintWarnings = append(c.pillarLintWarnings, validator.ValidateSchemaPillarOverlap(
 			"Feature",
 			name,
@@ -823,6 +886,10 @@ func ValidateClosurePillars(
 		); err != nil {
 			validationErrors = append(validationErrors, err)
 		}
+		validationErrors = append(validationErrors, UnusablePillarContractErrors(
+			"Component", name, componentSources[name], comp.Spec.Extends,
+			&comp.Spec.Schema, comp.Spec.UsesSchema, libs,
+		)...)
 	}
 
 	featNames := make([]string, 0, len(features))
@@ -837,6 +904,10 @@ func ValidateClosurePillars(
 		); err != nil {
 			validationErrors = append(validationErrors, err)
 		}
+		validationErrors = append(validationErrors, UnusablePillarContractErrors(
+			"Feature", name, featureSources[name], feat.Spec.Extends,
+			&feat.Spec.Schema, feat.Spec.UsesSchema, libs,
+		)...)
 	}
 
 	if len(validationErrors) == 0 {

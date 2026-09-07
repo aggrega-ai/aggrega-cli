@@ -44,6 +44,34 @@ type UsesSchemaEntry struct {
 	InfraSchema yaml.Node `json:"infraSchema,omitempty" yaml:"infraSchema,omitempty"`
 }
 
+// PillarNode returns the authored per-edge contract this socket declares for one
+// pillar, and nil for a pillar no socket can constrain.
+//
+// It is the home of the pillar-to-field mapping, so a reader asking which field
+// carries a socket's contract for a pillar asks here rather than switching on
+// the pillar name in place. Two readers that each spelled out the mapping could
+// come to disagree about it, and the disagreement would be silent: a pillar
+// mapped to no field in one reader is indistinguishable there from a socket
+// declaring no contract, which is the one case that is correct to pass over.
+//
+// A socket constrains only the two per-edge pillars. `provides` is a producer's
+// published surface rather than a consumer's authored block, so an edge has
+// nothing to write there and a socket has no contract to declare over it — that
+// absence is why the nil case exists rather than being an omission.
+//
+// The returned node is the entry's own, not a copy, so a caller reads it and
+// does not retain it past the entry's lifetime.
+func (e *UsesSchemaEntry) PillarNode(pillar string) *yaml.Node {
+	switch pillar {
+	case "values":
+		return &e.ValueSchema
+	case "infra":
+		return &e.InfraSchema
+	default:
+		return nil
+	}
+}
+
 // AttachmentSlot declares one named attachment slot on a Component or Feature.
 // A slot is a place an attachment is expected: the entity declares it, and a
 // deployment fills it by attaching a Feature under the slot's name. Declaring a

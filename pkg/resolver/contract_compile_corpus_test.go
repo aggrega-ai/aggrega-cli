@@ -412,3 +412,353 @@ func TestContractCorpus_TheBuildAndValidationSurfacesAgree(t *testing.T) {
 			"build then refuses it.", validateErr)
 	}
 }
+
+// contractCorpusUnusableBody is a contract body that COMPILES cleanly and then
+// builds no validator: `items` carries a bare scalar where a schema belongs.
+//
+// It is deliberately not a compile fault. A body the compile rejects is already
+// refused by the pass beside this one, so a fixture that failed to compile would
+// exercise that refusal instead and this corpus would pass without ever reaching
+// its subject.
+//
+// It is ONE authored entry, on one line. The templates splice a body into three
+// fields at two different indents, so a body carrying its own line breaks would
+// be valid YAML in one field and malformed in another — and a malformed document
+// is skipped as it is read, which sends the build to a missing-component fault
+// that has nothing to do with what the row asserts.
+const contractCorpusUnusableBody = "bad: { type: array, items: nonsense }"
+
+// contractCorpusSchemalessComponent is a Component declaring no contract at all
+// — no spec.schema and no per-edge socket schema.
+//
+// It is the negative control for the refusal below: a subject declaring nothing
+// has nothing to check and must build. Without it, the refusal could be firing
+// on the presence of a socket or of a schema field rather than on a contract
+// nothing can be built from, and every positive row would still pass.
+const contractCorpusSchemalessComponent = `apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: core/server
+  version: "1.0.0"
+  labels:
+    component.aggrega.ai/type: server
+spec:
+  usesSchema:
+    peer:
+      selector: "component.aggrega.ai/type=server"
+`
+
+// contractCorpusAggregateWithValues is the corpus Aggregate with the component's
+// authored values block replaced, so a row can supply a payload that violates a
+// contract the row's Component declares. The rest of the workspace is untouched,
+// which is what keeps a row's verdict attributable to the payload it wrote.
+func contractCorpusAggregateWithValues(values string) string {
+	return `apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: contract-corpus-app
+  version: "1.0.0"
+spec:
+  components:
+    api:
+      type: core/server
+      values:
+` + values
+}
+
+// contractCorpusWorkspaceWith writes the corpus workspace with both the
+// Component and the Aggregate supplied, reusing every other document and the
+// same layout contractCorpusWorkspace writes.
+//
+// It exists because the two negative controls need a payload the base Aggregate
+// does not author, and a row that wrote its own whole workspace could differ in
+// something the diff does not show.
+func contractCorpusWorkspaceWith(t *testing.T, component, aggregate string) pipelinetest.Input {
+	t.Helper()
+	dir := t.TempDir()
+	write := func(rel, content string) {
+		p := filepath.Join(dir, rel)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", rel, err)
+		}
+		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+			t.Fatalf("write %s: %v", rel, err)
+		}
+	}
+	write("aggregate.yaml", aggregate)
+	write("manifest.yaml", contractCorpusManifest)
+	write("release.yaml", contractCorpusRelease)
+	write("catalog/components/server.yaml", component)
+	write("catalog/recipes/server.yaml", contractCorpusRecipe)
+	write("catalog/plugins/compose-renderer.yaml", contractCorpusPlugin)
+	return pipelinetest.Input{
+		ReleasePath:  filepath.Join(dir, "release.yaml"),
+		CatalogPaths: []string{filepath.Join(dir, "catalog")},
+	}
+}
+
+// TestContractCorpus_AnUnusableContractRefusesTheBuild is the claim: a real
+// build over a real workspace refuses a declared contract that compiles and then
+// builds no validator, and the refusal names the authored field it was declared
+// in.
+//
+// The three rows are the three fields a contract can be declared in, each with
+// its own reading site, so a row covering one says nothing about the others. All
+// three are asserted against the CONDITION rather than against message text,
+// because a consumer matches the condition and text is not an interface.
+//
+// INVARIANT: a build refuses a declared contract no validator can be built from,
+// under the same condition a contract that does not compile is refused with.
+// CONSEQUENCE: were a row to stop refusing, the configuration that contract
+// covers would go unmeasured behind a green build — the silence this refusal
+// exists to end, and the one a reader cannot distinguish from a passing check.
+func TestContractCorpus_AnUnusableContractRefusesTheBuild(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		// component is the Component document the row authors.
+		component string
+		// wantField is the authored field the diagnostic must name.
+		wantField string
+	}{
+		{
+			name:      "entity contract",
+			component: contractCorpusComponent("", "", contractCorpusUnusableBody),
+			wantField: "spec.schema.values",
+		},
+		{
+			name:      "socket developer contract",
+			component: contractCorpusComponent(contractCorpusUnusableBody, "", ""),
+			wantField: "spec.usesSchema.peer.valueSchema",
+		},
+		{
+			name:      "socket operator contract",
+			component: contractCorpusComponent("", contractCorpusUnusableBody, ""),
+			wantField: "spec.usesSchema.peer.infraSchema",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			_, err := pipelinetest.BuildE(t, contractCorpusWorkspace(t, tc.component))
+			if err == nil {
+				t.Fatalf("the build accepted a contract no validator can be built from.\n" +
+					"INVARIANT: a declared contract nothing can be measured against refuses the build.\n" +
+					"CONSEQUENCE: the payload it covers is unvalidated and the build says so " +
+					"nowhere — a check retired in silence.")
+			}
+			if !errors.Is(err, resolver.ErrSchemaContractCompileFailure()) {
+				t.Fatalf("the build refused with %v; want the compile-failure condition.\n"+
+					"INVARIANT: the refusal carries the identity of the condition it met.\n"+
+					"CONSEQUENCE: a caller matching on the condition stops seeing this refusal, "+
+					"and the row passes on an unrelated fault.", cerrors.CauseChain(err))
+			}
+			if chain := cerrors.CauseChain(err); !strings.Contains(chain, tc.wantField) {
+				t.Errorf("the refusal does not name %q: %v\n"+
+					"INVARIANT: the refusal locates the contract at the authored field it was "+
+					"declared in.\n"+
+					"CONSEQUENCE: an author is sent to the wrong one of the three fields a "+
+					"contract can be declared in.", tc.wantField, chain)
+			}
+		})
+	}
+}
+
+// TestContractCorpus_AnUnusableContractIsRefusedOnEverySurface drives one
+// violating workspace through both entries that run the semantic checks.
+//
+// A refusal the build reports and a pre-flight check swallows is not one
+// behaviour with two presentations — it is a divergence, and it is worse than
+// the silence being removed, because the author would be told twice that nothing
+// is wrong.
+//
+// INVARIANT: the build entry and the validation entry reach the same verdict on
+// one workspace carrying an unusable contract.
+// CONSEQUENCE: were this to fail, a workspace would pass validation and fail the
+// build on a condition validation is positioned to catch.
+func TestContractCorpus_AnUnusableContractIsRefusedOnEverySurface(t *testing.T) {
+	t.Parallel()
+
+	in := contractCorpusWorkspace(t,
+		contractCorpusComponent("", "", contractCorpusUnusableBody))
+
+	_, buildErr := pipelinetest.BuildE(t, in)
+	if !errors.Is(buildErr, resolver.ErrSchemaContractCompileFailure()) {
+		t.Fatalf("the build entry refused with %v; want the compile-failure condition.\n"+
+			"INVARIANT: the fixture reaches the refusal on the build entry.\n"+
+			"CONSEQUENCE: the agreement below is asserted over a fixture that does not "+
+			"exercise it.", cerrors.CauseChain(buildErr))
+	}
+
+	_, validateErr := pipelinetest.Tier4E(t, in)
+	if !errors.Is(validateErr, resolver.ErrSchemaContractCompileFailure()) {
+		t.Errorf("the validation entry answered %v; want the same condition the build "+
+			"refused with.\n"+
+			"INVARIANT: both entries reach the same verdict on one workspace.\n"+
+			"CONSEQUENCE: an author's pre-flight check reports a workspace fine and the "+
+			"build then refuses it.", cerrors.CauseChain(validateErr))
+	}
+}
+
+// TestContractCorpus_TheRefusalDoesNotOverFire is the pair of negative controls,
+// and they fail in opposite directions.
+//
+// The first is a subject declaring NO contract: nothing to build a validator
+// from, nothing to refuse, and it must build. The second is a subject declaring
+// a contract that IS usable, handed a payload that violates it: the refusal must
+// stay out of the way and the ordinary conformance verdict must arrive
+// unchanged. Without the second, a refusal that swallowed every payload verdict
+// would pass the first control and every positive row.
+//
+// INVARIANT: the refusal fires on a contract nothing can be built from, and on
+// nothing else.
+// CONSEQUENCE: were the first to fail, declaring no contract would have become
+// an error and every entity that leaves configuration unconstrained would be
+// refused. Were the second to fail, the payload verdict a usable contract earns
+// would have been replaced by a verdict about the contract.
+func TestContractCorpus_TheRefusalDoesNotOverFire(t *testing.T) {
+	t.Parallel()
+
+	t.Run("a subject declaring no contract still builds", func(t *testing.T) {
+		t.Parallel()
+
+		in := contractCorpusWorkspaceWith(t,
+			contractCorpusSchemalessComponent,
+			contractCorpusAggregateWithValues("        port: 8080\n"))
+		if _, err := pipelinetest.BuildE(t, in); err != nil {
+			t.Fatalf("a Component declaring no contract was refused: %v\n"+
+				"INVARIANT: a subject declaring nothing has nothing to check and builds.\n"+
+				"CONSEQUENCE: declaring no contract has become an error, refusing every "+
+				"entity that leaves its configuration unconstrained.", cerrors.CauseChain(err))
+		}
+	})
+
+	t.Run("a usable contract still measures its payload", func(t *testing.T) {
+		t.Parallel()
+
+		// The base Component declares `port: { type: integer }`; the payload
+		// writes a string. The verdict must be the conformance one, about the
+		// payload, and must NOT be the contract-compile one.
+		in := contractCorpusWorkspaceWith(t,
+			contractCorpusComponent("", "", ""),
+			contractCorpusAggregateWithValues("        port: \"not-an-integer\"\n"))
+		_, err := pipelinetest.BuildE(t, in)
+		if err == nil {
+			t.Fatalf("a payload violating a usable contract was accepted.\n" +
+				"INVARIANT: a usable contract still measures the payload written against it.\n" +
+				"CONSEQUENCE: the refusal has replaced conformance validation rather than " +
+				"adding a case to it, and every payload now passes.")
+		}
+		if !errors.Is(err, resolver.ErrSchemaConformance()) {
+			t.Errorf("the payload violation was refused with %v; want the conformance "+
+				"condition.\n"+
+				"INVARIANT: a payload fault is reported as a payload fault.\n"+
+				"CONSEQUENCE: an author is told their contract is unreadable when what is "+
+				"wrong is the value they wrote.", cerrors.CauseChain(err))
+		}
+		if errors.Is(err, resolver.ErrSchemaContractCompileFailure()) {
+			t.Errorf("a usable contract was reported as unusable: %v\n"+
+				"INVARIANT: the refusal does not fire on a contract a validator was built "+
+				"from.\n"+
+				"CONSEQUENCE: the refusal over-fires on correct authoring, and the halt "+
+				"cannot be trusted to mean what it says.", cerrors.CauseChain(err))
+		}
+	})
+}
+
+// TestContractCorpus_APillarLocalDefinitionalBlockIsMeasured pins that a pillar
+// carrying its own reusable-sub-schema block is validated rather than passed
+// over.
+//
+// The shape is ordinary compact-form authoring: a definitional block beside the
+// property declarations, referenced by a document-root pointer. Assembling the
+// validator has to lift that block to the root of the document it assembles, or
+// the pointer resolves against a root that does not carry it, no validator is
+// built, and the WHOLE pillar goes unmeasured — including the plainly-declared
+// siblings that have nothing to do with the block.
+//
+// Both halves are asserted because they fail apart. The sibling proves the
+// pillar is measured at all; the referenced constraint proves the reference
+// itself resolved rather than being skipped.
+//
+// INVARIANT: a pillar declaring a definitional block is measured, and the
+// constraints reached through it are enforced.
+// CONSEQUENCE: were this to fail, adding a reusable sub-schema to a pillar would
+// silently switch that pillar's validation off behind a green build.
+func TestContractCorpus_APillarLocalDefinitionalBlockIsMeasured(t *testing.T) {
+	t.Parallel()
+
+	const withLocalDefs = `$defs:
+        Port: { type: integer, minimum: 1024 }
+      altPort: { $ref: "#/$defs/Port" }`
+
+	cases := []struct {
+		name string
+		// values is the authored payload, violating in exactly one way.
+		values string
+		// wantField is the locator the conformance violation must name.
+		wantField string
+	}{
+		{
+			name:      "a plainly-declared sibling is still measured",
+			values:    "        port: \"not-an-integer\"\n",
+			wantField: "values.port",
+		},
+		{
+			name:      "the constraint reached through the reference is measured",
+			values:    "        port: 8080\n        altPort: 80\n",
+			wantField: "values.altPort",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			in := contractCorpusWorkspaceWith(t,
+				contractCorpusComponent("", "", withLocalDefs),
+				contractCorpusAggregateWithValues(tc.values))
+			_, err := pipelinetest.BuildE(t, in)
+			if err == nil {
+				t.Fatalf("the build accepted a payload violating a pillar that declares a "+
+					"definitional block.\n"+
+					"INVARIANT: such a pillar is measured like any other.\n"+
+					"CONSEQUENCE: declaring a reusable sub-schema switches the pillar's "+
+					"validation off, and %q goes unmeasured behind a green build.", tc.wantField)
+			}
+			if !errors.Is(err, resolver.ErrSchemaConformance()) {
+				t.Fatalf("the refusal carries %v; want the conformance condition.\n"+
+					"INVARIANT: the payload fault is reported as a payload fault.\n"+
+					"CONSEQUENCE: the row would pass on a refusal about the contract, which "+
+					"is the opposite of what it asserts.", cerrors.CauseChain(err))
+			}
+			// The locator is read off the structured per-violation slice rather
+			// than out of the group text, for the reason the socket rows above
+			// record: a group renders as a header and a count, so a substring
+			// assertion over it would pass on a violation naming another leaf
+			// entirely.
+			var group *resolver.MultiResolverError
+			if !errors.As(err, &group) {
+				t.Fatalf("the refusal carries no per-violation slice: %v\n"+
+					"INVARIANT: a resolution refusal carries its findings structurally.\n"+
+					"CONSEQUENCE: the locator assertion below cannot run.", err)
+			}
+			found := false
+			for _, v := range group.Violations {
+				if errors.Is(v, resolver.ErrSchemaConformance()) &&
+					strings.Contains(v.Field, tc.wantField) {
+					found = true
+				}
+			}
+			if !found {
+				t.Errorf("no conformance violation names %q; the slice holds %v.\n"+
+					"INVARIANT: the finding locates the leaf that failed.\n"+
+					"CONSEQUENCE: the row would pass on a violation of the other leaf, so "+
+					"neither half of the claim would be covered.", tc.wantField, group.Violations)
+			}
+		})
+	}
+}

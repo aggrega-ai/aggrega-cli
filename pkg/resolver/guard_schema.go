@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"strings"
 
-	libschema "github.com/google/jsonschema-go/jsonschema"
 	"go.yaml.in/yaml/v3"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/redact"
@@ -136,16 +135,8 @@ func compileSocketPillarSchema(
 	if !ok {
 		return nil, false, nil
 	}
-	var node *yaml.Node
-	switch pillar {
-	case "values":
-		node = &sock.ValueSchema
-	case "infra":
-		node = &sock.InfraSchema
-	default:
-		return nil, false, nil
-	}
-	if node.Kind == 0 {
+	node := sock.PillarNode(pillar)
+	if node == nil || node.Kind == 0 {
 		return nil, false, nil
 	}
 	wrapper := &yaml.Node{
@@ -217,9 +208,13 @@ func socketPillarCompileError(err error, pillar string) error {
 // that would reproduce the withheld value is dropped.
 //
 // Returns nil when compiled declares no such pillar (nothing to validate), when
-// the instance does not marshal, or when the instance conforms. The returned
-// slice is NOT sorted — callers that aggregate across multiple instances
-// canonicalise the combined output.
+// the instance does not marshal, or when the instance conforms. A declared
+// pillar whose contract builds no validator is not among them: that contract is
+// refused as the catalog loads, where the entity declaring it and the line it
+// was declared on are known, so no payload is measured against an unreadable
+// contract and none is passed over for having one. The returned slice is NOT
+// sorted — callers that aggregate across multiple instances canonicalise the
+// combined output.
 func ValidatePillarConformance(
 	compiled compactform.Schema,
 	pillar string,
@@ -407,8 +402,9 @@ type pillarFinding struct {
 // their single home rather than recomputed.
 //
 // Returns nil when the schema declares no such pillar, when the instance does
-// not marshal, when the wrapper does not compile, or when the instance
-// conforms.
+// not marshal, or when the instance conforms. A declared pillar whose contract
+// builds no validator does not reach here: it is refused as the catalog loads,
+// so the branch guarding it is a backstop rather than a case a build produces.
 func pillarConformanceFindings(
 	compiled compactform.Schema,
 	pillar string,
@@ -426,32 +422,20 @@ func pillarConformanceFindings(
 		return nil // a non-marshalable instance is not a conformance violation
 	}
 
-	wrapper := map[string]any{
-		"type":       "object",
-		"properties": map[string]any{pillar: pillarSchema},
-	}
-	// Carry the root definitional context so a single-document $ref/allOf in the
-	// pillar schema resolves within the wrapper document (2020-12 $defs and the
-	// draft-07 definitions alias, whichever the compiled schema carries).
-	if defs, present := compiled["$defs"]; present {
-		wrapper["$defs"] = defs
-	}
-	if defs, present := compiled["definitions"]; present {
-		wrapper["definitions"] = defs
-	}
 	wrapped := map[string]any{pillar: normalised}
 
-	v, err := newPillarValidator(wrapper)
+	v, err := jsonvalidator.NewUnderProperty(pillar, pillarSchema, compiled)
 	if err != nil {
-		// A declared pillar schema that will not build a validator is passed over
-		// here, so the values it was meant to constrain go unmeasured and nothing
-		// reports that they were. No earlier stage catches it either: reading an
-		// entity compiles its pillar bodies but never builds a validator from
-		// them, so a body that compiles into something no validator accepts —
-		// a bare scalar where a property's schema belongs, say — reaches this
-		// point and is dropped. Whether such a contract should halt is a question
-		// about how strictly a declared-but-unusable contract is treated, and it
-		// is not settled here.
+		// A declared pillar schema that builds no validator is refused as the
+		// catalog loads, where the declaring entity, the pillar, the authored
+		// field and the source line are all in hand. So this branch is a backstop
+		// for a path reaching conformance without that validation, and it is
+		// unreachable from a build.
+		//
+		// It returns nil rather than reporting, because a conformance read has no
+		// contract to measure against here and the refusal that does have one has
+		// already run. Reporting a violation would name the payload for a fault in
+		// the declaration.
 		return nil
 	}
 
@@ -581,20 +565,6 @@ func pillarProperties(compiled compactform.Schema, pillar string) (map[string]an
 		return nil, false
 	}
 	return props, true
-}
-
-// newPillarValidator round-trips a compiled schema into the library schema type
-// and constructs the validator.
-func newPillarValidator(schema map[string]any) (jsonvalidator.Validator, error) {
-	schemaJSON, err := json.Marshal(schema)
-	if err != nil {
-		return nil, err
-	}
-	libSchema := &libschema.Schema{}
-	if err := json.Unmarshal(schemaJSON, libSchema); err != nil {
-		return nil, err
-	}
-	return jsonvalidator.New(libSchema)
 }
 
 // normalisePillarInstance converts an authored OrderedMap pillar into the

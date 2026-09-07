@@ -174,27 +174,39 @@ var errSchemaConformance = cerrors.Register("resolver/schema-conformance", cerro
 })
 
 // ErrSchemaContractCompileFailure wraps a schema contract that was declared and
-// could not be compiled: a Component type's own spec.schema, or the per-edge
-// valueSchema / infraSchema one of its dependency sockets declares. The
-// conformance rules measure a payload against a compiled contract, so a contract
-// that does not compile leaves its subject with nothing to measure against —
-// which is why this halts rather than passing the payload through unchecked.
+// yielded nothing a payload can be measured against: a Component or Feature's
+// own spec.schema, or the per-edge valueSchema / infraSchema one of its
+// dependency sockets declares. The conformance rules measure a payload against a
+// compiled contract, so a contract that yields none leaves its subject with
+// nothing to measure against — which is why this halts rather than passing the
+// payload through unchecked.
+//
+// Two faults reach it, and they are one condition because the remedy is the same
+// and the consequence of passing either over is identical. A contract may fail
+// to compile at all, and a contract may compile and then build no validator — a
+// body readable as compact form that is not a schema anything can validate
+// against. Splitting them would give one authoring mistake two identities to
+// match on while telling the author the same thing.
 //
 // It is the counterpart of [ErrSchemaConformance] one step earlier: that
 // condition reports a payload failing a contract, this one reports that there is
 // no readable contract to fail. The pair is what keeps the two absences apart. A
 // subject declaring no contract is skipped, deliberately and silently, because
-// there is nothing to check; a subject declaring one that does not compile is
+// there is nothing to check; a subject declaring one that cannot be read is
 // refused, because skipping it would retire a check with nothing to show that it
 // had gone.
+//
+// It is raised as the catalog loads, where the entity that declared the contract,
+// the pillar, the authored field and the source line are all known, and at
+// resolution for a contract that reached it without that reading.
 func ErrSchemaContractCompileFailure() error { return errSchemaContractCompileFailure }
 
 var errSchemaContractCompileFailure = cerrors.Register(
 	"resolver/schema-contract-compile-failure", cerrors.Meta{
 		ShortCode: "E0257",
-		Message: "declared schema contract failed to compile, so nothing was validated against it: " +
-			"correct the contract where it is declared, or remove it if the configuration it " +
-			"covers needs no validation",
+		Message: "declared schema contract could not be compiled into a usable schema, so nothing " +
+			"was validated against it: correct the contract where it is declared, or remove it " +
+			"if the configuration it covers needs no validation",
 	})
 
 // ErrAttachmentSlotShape wraps an attachment that binds a declared slot

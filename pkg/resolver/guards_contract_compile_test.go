@@ -192,7 +192,16 @@ func TestADeclaredContractThatDoesNotCompileHaltsTheBuild(t *testing.T) {
 }
 
 // TestTheRefusalTellsTheTwoAbsencesApart is the distinction the whole condition
-// exists for, asserted on the emitted text rather than on the classification.
+// exists for: the classification is asserted on the condition's identity, and
+// the occurrence detail — the offending keyword and the key it was written on —
+// on the emitted text, because no identity carries either.
+//
+// The split is deliberate. An earlier form asserted the classification by
+// looking for a fragment of the condition's registered sentence in the message,
+// which reads like a stronger check and is a weaker one: it fails the day the
+// sentence is reworded, when nothing about the behaviour has moved, and it would
+// equally pass on any other condition whose sentence happened to share the
+// fragment.
 //
 // "Nothing was declared" and "something was declared and cannot be read" are
 // different situations for an author: the first is a socket they may leave alone,
@@ -226,12 +235,19 @@ func TestTheRefusalTellsTheTwoAbsencesApart(t *testing.T) {
 			"CONSEQUENCE: the distinction this condition exists for is not observable.")
 	}
 
+	if !errors.Is(got, ErrSchemaContractCompileFailure()) {
+		t.Errorf("the refusal does not carry the compile-failure condition: %v\n"+
+			"INVARIANT: the refusal is matchable as the condition it met.\n"+
+			"CONSEQUENCE: a caller routing on the condition cannot tell this refusal from "+
+			"any other, and the two absences stop being distinguishable programmatically.", got)
+	}
+
 	text := got.Error()
-	for _, want := range []string{"failed to compile", "minimun", "timeout"} {
+	for _, want := range []string{"minimun", "timeout"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("the emitted diagnostic does not carry %q: %s\n"+
-				"INVARIANT: the refusal names the condition, the offending keyword and the key "+
-				"it was written on.\n"+
+				"INVARIANT: the refusal names the offending keyword and the key it was "+
+				"written on.\n"+
 				"CONSEQUENCE: an author is told a contract is unreadable and not which part of "+
 				"it to correct.", want, text)
 		}

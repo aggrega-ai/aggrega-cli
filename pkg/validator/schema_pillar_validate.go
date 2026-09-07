@@ -9,6 +9,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/compactform"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
+	jsonvalidator "github.com/aggrega-ai/aggrega-cli/pkg/validator/jsonschema"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -146,6 +147,163 @@ func ValidateSchemaPillars(
 	}
 
 	return nil
+}
+
+// UnusableContract is one declared schema contract whose body compiles and then
+// builds no validator, so nothing can be measured against it.
+//
+// It carries no condition identity. The condition this reading feeds is declared
+// where the conformance rules live, which this package sits beneath, so the
+// caller attaches it — see [UnusableSchemaContracts].
+type UnusableContract struct {
+	// Field is the authored field the contract was declared in, relative to the
+	// entity — "spec.schema.values", or "spec.usesSchema.<socket>.valueSchema".
+	// It is the key the correction goes in.
+	Field string
+
+	// Pillar is the pillar the contract covers (values / infra / provides).
+	Pillar string
+
+	// Line is the source line the body was declared on, so a diagnostic sends an
+	// author to the fragment rather than to the file.
+	Line int
+
+	// Err is why no validator could be built, as the validator reported it.
+	Err error
+}
+
+// UnusableSchemaContracts reports every schema contract a Component or Feature
+// declares whose body compiles cleanly and then builds no validator — a body
+// readable as compact form that is not a schema anything can validate against,
+// such as a bare scalar where a property's schema belongs.
+//
+// Both places an entity declares one are read: the entity's own spec.schema
+// pillars, and the per-edge valueSchema / infraSchema of each socket in
+// spec.usesSchema. Covering only the first would leave the socket contracts
+// measured nowhere until conformance, which is the stage that cannot attribute
+// the fault to the entity that declared it — so a reading that stopped at
+// spec.schema would refuse one half of the class and pass the other silently.
+//
+// It is separate from [ValidateSchemaPillars] because it answers a different
+// question, and because the two faults are refused under different conditions:
+// an unreadable body is a catalog-shape fault, while a readable body that yields
+// no validator is the declared-contract-does-not-compile condition the
+// conformance rules already raise. This returns findings rather than an error so
+// the caller can attach that condition, which is declared above this package and
+// therefore not nameable here.
+//
+// A body that does not compile yields no finding: an entity pillar has already
+// been refused by [ValidateSchemaPillars] and a socket body is refused at
+// resolution, and reporting either twice would name one fault under two
+// conditions. A schema-less entity, and an extending entity carrying the
+// inherited marker, yield none for the same reason they pass there — there is no
+// authored body to read.
+//
+// Findings come back in authored order — the entity's pillars as written, then
+// each socket in declared order — so a diagnostic built from them is
+// deterministic.
+func UnusableSchemaContracts(
+	filePath, extends string,
+	schemaNode *yaml.Node,
+	sockets types.OrderedMap[types.UsesSchemaEntry],
+	libraries map[string]types.SchemaLibrary,
+) []UnusableContract {
+	var out []UnusableContract
+	out = append(out, unusableEntityPillars(filePath, extends, schemaNode, libraries)...)
+	for socket, entry := range sockets.All() {
+		for _, pillar := range socketPillarFields {
+			node := entry.PillarNode(pillar.pillar)
+			if node == nil || node.Kind == 0 {
+				continue
+			}
+			if u, bad := unusableContractAt(
+				fmt.Sprintf("spec.usesSchema.%s.%s", socket, pillar.field),
+				pillar.pillar, filePath, node, libraries,
+			); bad {
+				out = append(out, u)
+			}
+		}
+	}
+	return out
+}
+
+// socketPillarFields pairs each pillar a socket may constrain with the field it
+// is declared in, so the two are named together rather than derived apart.
+var socketPillarFields = [...]struct {
+	pillar string
+	field  string
+}{
+	{pillar: "values", field: "valueSchema"},
+	{pillar: "infra", field: "infraSchema"},
+}
+
+// unusableEntityPillars is the spec.schema half of [UnusableSchemaContracts].
+func unusableEntityPillars(
+	filePath, extends string,
+	schemaNode *yaml.Node,
+	libraries map[string]types.SchemaLibrary,
+) []UnusableContract {
+	if schemaNode == nil || schemaNode.Kind == 0 {
+		return nil
+	}
+	node := schemaNode
+	if node.Kind == yaml.DocumentNode && len(node.Content) > 0 {
+		node = node.Content[0]
+	}
+	if extends != "" && node.Kind == yaml.ScalarNode && node.Value == InheritedSchemaMarker {
+		return nil
+	}
+	if node.Kind != yaml.MappingNode {
+		return nil
+	}
+
+	var out []UnusableContract
+	for i := 0; i+1 < len(node.Content); i += 2 {
+		keyNode := node.Content[i]
+		valueNode := node.Content[i+1]
+		if !allowedSchemaPillars[keyNode.Value] {
+			continue
+		}
+		if u, bad := unusableContractAt(
+			"spec.schema."+keyNode.Value, keyNode.Value, filePath, valueNode, libraries,
+		); bad {
+			out = append(out, u)
+		}
+	}
+	return out
+}
+
+// unusableContractAt compiles one authored contract body and reports whether a
+// validator can be built from it, which is the whole predicate.
+//
+// The compiled body of one pillar is exactly the subtree a whole-entity compile
+// exposes for that pillar, and a socket's body is what its own compile exposes
+// beneath the key that compile wraps it in — so building the validator from the
+// body here asks the same question the conformance read asks later, of the same
+// bytes. Were the two shapes to differ, this refusal would either pass what that
+// read drops or refuse what it accepts.
+func unusableContractAt(
+	field, pillar, filePath string,
+	body *yaml.Node,
+	libraries map[string]types.SchemaLibrary,
+) (UnusableContract, bool) {
+	opts := []compactform.CompileOption{compactform.WithConsumerFile(filePath)}
+	if libraries != nil {
+		opts = append(opts, compactform.WithSchemaLibraries(libraries))
+	}
+	compiled, err := compactform.Compile(body, opts...)
+	if err != nil {
+		return UnusableContract{}, false
+	}
+	if _, err := jsonvalidator.NewUnderProperty(pillar, compiled, nil); err != nil {
+		return UnusableContract{
+			Field:  field,
+			Pillar: pillar,
+			Line:   body.Line,
+			Err:    err,
+		}, true
+	}
+	return UnusableContract{}, false
 }
 
 func yamlNodeKindName(k yaml.Kind) string {

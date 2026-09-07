@@ -5,6 +5,7 @@ package validateops
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"sort"
@@ -180,6 +181,11 @@ func validateComponentEntity(res *EntityResult, wsRoot, cacheDir string, dirs []
 	if err := validator.ValidateSchemaPillars("Component", comp.Metadata.Name, path, comp.Spec.Extends, &comp.Spec.Schema, cat.SchemaLibraries); err != nil {
 		return fmt.Errorf("pillars: %w", err)
 	}
+	if errs := catalog.UnusablePillarContractErrors(
+		"Component", comp.Metadata.Name, path, comp.Spec.Extends, &comp.Spec.Schema, comp.Spec.UsesSchema, cat.SchemaLibraries,
+	); len(errs) > 0 {
+		return fmt.Errorf("pillars: %w", errors.Join(errs...))
+	}
 	res.Diagnostics = append(res.Diagnostics, "Pillars: valid")
 	res.Valid = true
 	return nil
@@ -202,6 +208,11 @@ func validateFeatureEntity(res *EntityResult, wsRoot, cacheDir string, dirs []st
 	}
 	if err := validator.ValidateSchemaPillars("Feature", feat.Metadata.Name, path, feat.Spec.Extends, &feat.Spec.Schema, cat.SchemaLibraries); err != nil {
 		return fmt.Errorf("pillars: %w", err)
+	}
+	if errs := catalog.UnusablePillarContractErrors(
+		"Feature", feat.Metadata.Name, path, feat.Spec.Extends, &feat.Spec.Schema, feat.Spec.UsesSchema, cat.SchemaLibraries,
+	); len(errs) > 0 {
+		return fmt.Errorf("pillars: %w", errors.Join(errs...))
 	}
 	res.Diagnostics = append(res.Diagnostics, "Pillars: valid")
 	res.Valid = true
