@@ -242,6 +242,19 @@ func alignmentCases() []alignmentCase {
 			maximals:   []any{maximalWorkloadLibrary()},
 		},
 		{
+			// The bundle shape needs no exception: a bundle and its file bodies
+			// are declared through additionalProperties rather than as named
+			// properties, so the schema contributes no property name below
+			// spec.artifacts, and ArtifactsLibraryEntry's verbatim-capture
+			// field is deliberately yaml:"-" — the filenames are data, not
+			// struct fields.
+			kind:       envelope.KindArtifactsLibrary,
+			schema:     schemas.ArtifactsLibraryV1alpha1,
+			roots:      []reflect.Type{reflect.TypeOf(types.ArtifactsLibrary{})},
+			exceptions: map[string]string{},
+			maximals:   []any{maximalArtifactsLibrary()},
+		},
+		{
 			kind:   envelope.KindAggregate,
 			schema: schemas.AggregateV1alpha1,
 			// ParameterContract folded in: Aggregate.Spec.Parameters is

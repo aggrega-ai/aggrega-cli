@@ -51,20 +51,6 @@ var alignmentExclusions = map[envelope.Kind]string{
 	// non-1:1 positions. Emitted IR is validated against its schema on the
 	// emission side instead, where the instance is real rather than reflected.
 	envelope.KindIR: "IR types are json-tagged; the schema-to-Go direction reads yaml tags, so the walk cannot see the IR surface. Emitted IR is schema-validated on the emission side.",
-
-	// The artifacts-library kind's standing as a distinct published kind is
-	// still being settled. An alignment case would assert it is live, which is
-	// the open question, so the kind is held out deliberately rather than
-	// because anything is known to be wrong: its schema and struct do align
-	// today. Promote it to a case once the kind's standing is fixed.
-	//
-	// Whoever fixes that standing also owes the documentation, and this comment
-	// is where they will be standing when they do: the authoring catalog has no
-	// page for this kind, and the reading-order page links none, both because
-	// publishing one would assert here what this exclusion holds open. Removing
-	// this entry without adding them leaves a kind a reader can author and
-	// cannot look up.
-	envelope.KindArtifactsLibrary: "the kind's standing as a distinct published kind is unsettled; a case would assert it is live. Its schema and struct align today, so this is a hold, not a known gap.",
 }
 
 // TestAlignmentSuiteCoversEveryEnvelopeKind walks the declared kind population

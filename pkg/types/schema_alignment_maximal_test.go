@@ -237,6 +237,34 @@ func maximalWorkloadLibrary() types.WorkloadLibrary {
 	}
 }
 
+// maximalArtifactsLibrary carries a two-file bundle rather than the single body
+// its sibling libraries hold, because a bundle addressing many files under one
+// reference is the shape that distinguishes this kind. One body spans lines and
+// one does not, so marshalling exercises both arms of the entry's literal-style
+// choice; the whole metadata surface is populated so Direction-1 validates every
+// optional field the schema must admit rather than only the required two.
+func maximalArtifactsLibrary() types.ArtifactsLibrary {
+	return types.ArtifactsLibrary{
+		APIVersion: "aggrega.ai/v1alpha1",
+		Kind:       "ArtifactsLibrary",
+		Metadata: types.ArtifactsLibraryMetadata{
+			Name:        "BaseArtifacts",
+			Version:     "1.0.0",
+			Description: "maximal artifacts library",
+			Labels:      om[string]("l", "v"),
+			Annotations: om[string]("a", "b"),
+		},
+		Spec: types.ArtifactsLibrarySpec{
+			Artifacts: om[types.ArtifactsLibraryEntry]("OperatorSupport", types.ArtifactsLibraryEntry{
+				Files: om[string](
+					"crd.yaml", "apiVersion: apiextensions.k8s.io/v1\nkind: CustomResourceDefinition",
+					"rbac.yaml", "kind: Role",
+				),
+			}),
+		},
+	}
+}
+
 func maximalAggregate() types.Aggregate {
 	return types.Aggregate{
 		APIVersion: "aggrega.ai/v1alpha1",
