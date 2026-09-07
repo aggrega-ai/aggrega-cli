@@ -16,12 +16,12 @@ import (
 
 // The graph request's failure path.
 //
-// A refusal used to publish nothing: the preview computation handed the caller
-// nothing back when it failed, so the caller could not have published anything
-// however it was written. It now hands back what the run reached, and the
-// refusal path publishes from it — which means the Problems panel a reader is
-// looking at is recomputed by the refused request rather than left holding
-// whatever the request before it wrote.
+// A refusal publishes too, and it can only do so because the preview
+// computation hands back what the run reached instead of nothing: a caller
+// cannot publish what it is never given, so the partial result is what makes
+// this path publishable at all. The Problems panel a reader is looking at is
+// therefore recomputed by the refused request rather than left holding whatever
+// the request before it wrote.
 //
 // That property is the subject here, and it is asserted over the FRAMES the
 // server pushed rather than over its own diagnostic map. A client cannot see the
@@ -138,7 +138,7 @@ func TestGraphRefusalRepublishesTheLayerFromWhatTheRunReached(t *testing.T) {
 			"not compute rather than the one this run reached.\npushed:\n%s", refused)
 	}
 
-	// And the layer itself no longer carries it, which is what the reader sees.
+	// And the layer itself does not carry it, which is what the reader sees.
 	if got := srv.snapshotDiagnostics(aggPath); len(got) != 0 {
 		t.Errorf("the layer for %s still carries %d entry(ies) after the refusal: %v",
 			aggPath, len(got), diagMessages(got))
