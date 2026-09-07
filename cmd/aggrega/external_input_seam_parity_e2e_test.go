@@ -112,7 +112,6 @@ import (
 	"sort"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
@@ -772,10 +771,20 @@ func renderThroughServeDaemon(t *testing.T, root string) map[string]string {
 		_ = cmd.Wait()
 	})
 
+	// One ceiling for the handshake read and for the build read below, even
+	// though the two answers cost wildly different work: the bound is not a
+	// budget for either of them, so sizing it per request would be pricing
+	// work the reads do not measure. The build leg is the demanding one — a
+	// render that fetches an external input — and the derivation's cap sits
+	// well above what that costs, while its floor applies only when the
+	// runner's own deadline is closer than the floor itself, at which point
+	// the runner ends the package before any longer bound here could fire.
+	ceiling := responseLivenessCeiling(t)
+
 	if _, err := stdin.Write(framed(1, "aggrega/initialize", map[string]any{})); err != nil {
 		t.Fatalf("write initialize: %v", err)
 	}
-	if resp := readOneResponse(t, stdout, 30*time.Second); resp["error"] != nil {
+	if resp := readOneResponse(t, stdout, ceiling); resp["error"] != nil {
 		t.Fatalf("the daemon's initialize failed: %+v", resp)
 	}
 
@@ -786,7 +795,7 @@ func renderThroughServeDaemon(t *testing.T, root string) map[string]string {
 	// the framed message carrying this request's id arrives.
 	var result map[string]any
 	for i := 0; i < 20; i++ {
-		resp := readOneResponse(t, stdout, 120*time.Second)
+		resp := readOneResponse(t, stdout, ceiling)
 		if resp["id"] == nil {
 			continue
 		}

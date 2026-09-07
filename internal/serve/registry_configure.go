@@ -11,20 +11,21 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/registryops"
 )
 
-// registryWriteScope states how far a registry mutation reached.
+// configWriteScope states how far a write to a configuration file reached.
 //
-// Every registry-mutating response carries one, and it is the whole answer to
-// the question a caller cannot otherwise ask: a session is opened over a
-// workspace, so an answer with no scope on it reads as being about that
-// workspace — and for a registry entry that reading is wrong by default. The
-// configuration a registration writes is the global file every workspace on the
-// machine resolves through, so the reach is stated rather than left to be
-// inferred from the absence of a flag the caller did not send.
+// Every response whose operation resolved a configuration write target carries
+// one, and it is the whole answer to a question a caller cannot otherwise ask: a
+// session is opened over a workspace, so an answer with no scope on it reads as
+// being about that workspace — and for an operation that defaults to the global
+// file that reading is wrong. Registering a registry and seeding a configuration
+// both default there, because a registry and the identities trusted on it are
+// machine-wide tooling, so the reach is stated rather than left to be inferred
+// from the absence of a flag the caller did not send.
 //
 // MachineWide is derived from the file the write actually resolved to, not from
 // the request, so a response cannot describe a machine-wide change as a local
 // one by consulting the wrong input.
-type registryWriteScope struct {
+type configWriteScope struct {
 	// ConfigFile is the configuration file the write landed in.
 	ConfigFile string `json:"configFile"`
 	// MachineWide is true when that file is the global one, which every workspace
@@ -37,8 +38,8 @@ type registryWriteScope struct {
 
 // scopeOfWriteTarget projects the shared layer's write target onto the wire
 // shape, adding the workspace this session holds.
-func (s *Server) scopeOfWriteTarget(t registryops.WriteTarget) registryWriteScope {
-	return registryWriteScope{
+func (s *Server) scopeOfWriteTarget(t registryops.WriteTarget) configWriteScope {
+	return configWriteScope{
 		ConfigFile:    t.Path,
 		MachineWide:   t.Scope == registryops.ScopeMachine,
 		WorkspaceRoot: s.workspaceRoot,
@@ -79,7 +80,7 @@ type registryAddParams struct {
 // which, and a registry that advertises nothing is not a failure.
 type registryAddResult struct {
 	Host  string                        `json:"host"`
-	Scope registryWriteScope            `json:"scope"`
+	Scope configWriteScope              `json:"scope"`
 	Trust registryops.TrustFetchOutcome `json:"trust"`
 }
 
@@ -94,8 +95,8 @@ type registryRemoveParams struct {
 
 // registryRemoveResult is the aggrega/registryRemove response.
 type registryRemoveResult struct {
-	Host  string             `json:"host"`
-	Scope registryWriteScope `json:"scope"`
+	Host  string           `json:"host"`
+	Scope configWriteScope `json:"scope"`
 }
 
 // registryUpdateParams narrows an index refresh. An absent registry refreshes

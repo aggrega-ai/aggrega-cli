@@ -448,30 +448,41 @@ func registryAddRun(cfg registryAddConfig) error {
 		Delivery:          cfg.Delivery,
 		TrustClient:       cfg.trustClient,
 	})
-	// The trust-fetch notice is emitted whether or not the registration went on to
-	// succeed, because the fetch happened either way and a reader who is told
-	// nothing about it cannot tell a skipped fetch from a failed one. Which stream
-	// carries it — and which outcomes are worth carrying at all — is decided by
-	// the notice writer, where the reason for the asymmetry lives with the branch
-	// that acts on it.
-	writeTrustFetchNotice(cfg, res)
+	return writeRegistrationOutcome(cfg.Out, cfg.ErrOut, cfg.Delivery, res, addErr)
+}
+
+// writeRegistrationOutcome renders what a registration did on the two streams a
+// terminal offers, and returns whatever the registration itself returned.
+//
+// It is the one rendering of that result. `aggrega registry add` performs the
+// registration directly and `aggrega config init` reaches the same registration
+// through the configuration-seeding operation, so both print one set of sentences
+// rather than two that agree on the day they are written and drift afterwards.
+//
+// The notice goes out before the error is consulted, because the fetch happened
+// either way and a reader who is told nothing about it cannot tell a skipped
+// fetch from a failed one. Which stream carries it — and which outcomes are worth
+// carrying at all — is decided by the notice writer, where the reason for the
+// asymmetry lives with the branch that acts on it.
+func writeRegistrationOutcome(out, errOut io.Writer, delivery authoredcontent.Delivery, res registryops.AddResult, addErr error) error {
+	writeTrustFetchNotice(out, errOut, delivery, res)
 	if addErr != nil {
 		return addErr
 	}
-	if cfg.Delivery.Reports() {
-		if cfg.Out == nil {
+	if delivery.Reports() {
+		if out == nil {
 			return nil
 		}
 		// The path comes from the write-target resolution the registration already
 		// performed, so the file the content is addressed to is the file the write
 		// would have gone to rather than a second resolution taken here.
-		return authoredcontent.Report(cfg.Out, []authoredcontent.Document{{
+		return authoredcontent.Report(out, []authoredcontent.Document{{
 			Path:    res.Target.Path,
 			Content: string(res.Content),
 		}})
 	}
-	if cfg.Out != nil {
-		fmt.Fprintf(cfg.Out, "Registered registry %s in %s\n", res.Host, res.Target.Path)
+	if out != nil {
+		fmt.Fprintf(out, "Registered registry %s in %s\n", res.Host, res.Target.Path)
 	}
 	return nil
 }
@@ -498,17 +509,16 @@ func registryAddRun(cfg registryAddConfig) error {
 // cost of leaving the reported document's shape alone, and the alternative —
 // carrying the advisory inside the document — would change a contract callers
 // parse.
-func writeTrustFetchNotice(cfg registryAddConfig, res registryops.AddResult) {
+func writeTrustFetchNotice(out, errOut io.Writer, delivery authoredcontent.Delivery, res registryops.AddResult) {
 	notice := trustFetchNotice(res.Host, res.Trust)
 	if notice == "" {
 		return
 	}
-	out := cfg.Out
-	if cfg.Delivery.Reports() {
+	if delivery.Reports() {
 		if !res.Trust.NotAdvertised {
 			return
 		}
-		out = cfg.ErrOut
+		out = errOut
 	}
 	if out == nil {
 		return

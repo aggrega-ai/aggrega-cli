@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 )
 
 // TestServeAggregaTier4ValidateEndToEnd exercises the daemon's live
@@ -94,10 +93,16 @@ func TestServeAggregaTier4ValidateEndToEnd(t *testing.T) {
 	// before the validate request goes out. The daemon emits an
 	// aggrega/initialize response carrying configSource +
 	// workspaceRoot; skip past it.
+	//
+	// One ceiling covers the handshake read and every read in the loop below.
+	// Both are liveness questions about the same daemon, and the loop reads
+	// messages of a single exchange, so recomputing a remaining-time bound per
+	// read would vary the value across reads of one exchange for no gain.
+	ceiling := responseLivenessCeiling(t)
 	if _, err := stdin.Write(framed(1, "aggrega/initialize", map[string]any{})); err != nil {
 		t.Fatalf("write initialize: %v", err)
 	}
-	initResp := readOneResponse(t, stdout, 5*time.Second)
+	initResp := readOneResponse(t, stdout, ceiling)
 	if _, hasErr := initResp["error"]; hasErr {
 		t.Fatalf("initialize returned error: %+v", initResp)
 	}
@@ -128,7 +133,7 @@ func TestServeAggregaTier4ValidateEndToEnd(t *testing.T) {
 	// for the message carrying our request id.
 	var validateResp map[string]any
 	for i := 0; i < 5; i++ {
-		msg := readOneResponse(t, stdout, 10*time.Second)
+		msg := readOneResponse(t, stdout, ceiling)
 		idAny, hasID := msg["id"]
 		if !hasID {
 			// Notification (no id); skip.

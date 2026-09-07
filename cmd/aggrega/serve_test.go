@@ -123,11 +123,21 @@ func framed(id int, method string, params any) []byte {
 // separates "the daemon answered" from "the daemon will never answer" and
 // says nothing about how long answering ought to take: a run that crosses
 // it is evidence of a hang or a deadlock, and never evidence that the
-// pipeline became slower. So callers pass a value far above whatever the
-// work itself costs, and nobody reads a crossing as a timing regression.
-// Where the work is a whole pipeline round trip, a fixed number cannot
-// stay far enough above it under a parallel battery — see
-// responseLivenessCeiling.
+// pipeline became slower.
+//
+// The value comes from responseLivenessCeiling at every call site in this
+// package, so the bound named in the expiry message below is always the
+// derived one. That is what keeps the message's own claim true: a fixed
+// number cannot stay far above a whole pipeline round trip under a
+// parallel battery, so a message reporting a hand-picked wall-clock figure
+// would be accusing the daemon of a hang whenever the battery was merely
+// busy.
+//
+// The parameter stays rather than the ceiling being computed here, because
+// a caller reading several messages of one exchange takes the ceiling once
+// and shares it across those reads: computing it per read would vary the
+// bound within a single exchange, and a bound that differs between reads
+// is one nobody can reason about from the failure text.
 func readOneResponse(t *testing.T, r io.Reader, deadline time.Duration) map[string]any {
 	t.Helper()
 	type result struct {
@@ -270,6 +280,12 @@ func TestServeLifecycle(t *testing.T) {
 		_ = cmd.Wait()
 	})
 
+	// One ceiling for all four reads below. They are one daemon's answers to
+	// one sequence of requests, so a bound that changed between them would be
+	// unreasonable from the failure text, and each read is a liveness question
+	// — did the daemon answer at all — rather than a timing measurement.
+	ceiling := responseLivenessCeiling(t)
+
 	// Request 1: validate.
 	if _, err := stdin.Write(framed(1, "aggrega/validate", map[string]any{
 		"file":    "x.yaml",
@@ -277,7 +293,7 @@ func TestServeLifecycle(t *testing.T) {
 	})); err != nil {
 		t.Fatalf("write request 1: %v", err)
 	}
-	resp1 := readOneResponse(t, stdout, 5*time.Second)
+	resp1 := readOneResponse(t, stdout, ceiling)
 	if _, ok := resp1["error"]; ok {
 		t.Fatalf("request 1 returned error envelope: %+v", resp1["error"])
 	}
@@ -293,7 +309,7 @@ func TestServeLifecycle(t *testing.T) {
 	})); err != nil {
 		t.Fatalf("write request 2: %v", err)
 	}
-	resp2 := readOneResponse(t, stdout, 5*time.Second)
+	resp2 := readOneResponse(t, stdout, ceiling)
 	if _, ok := resp2["error"]; ok {
 		t.Fatalf("request 2 returned error envelope: %+v", resp2["error"])
 	}
@@ -302,7 +318,7 @@ func TestServeLifecycle(t *testing.T) {
 	if _, err := stdin.Write(framed(3, "aggrega/invalidate", map[string]any{"file": "x.yaml"})); err != nil {
 		t.Fatalf("write request 3: %v", err)
 	}
-	resp3 := readOneResponse(t, stdout, 5*time.Second)
+	resp3 := readOneResponse(t, stdout, ceiling)
 	if _, ok := resp3["error"]; ok {
 		t.Fatalf("request 3 returned error envelope: %+v", resp3["error"])
 	}
@@ -311,7 +327,7 @@ func TestServeLifecycle(t *testing.T) {
 	if _, err := stdin.Write(framed(4, "aggrega/diagnostics", map[string]any{"file": "x.yaml"})); err != nil {
 		t.Fatalf("write request 4: %v", err)
 	}
-	resp4 := readOneResponse(t, stdout, 5*time.Second)
+	resp4 := readOneResponse(t, stdout, ceiling)
 	errEnv, ok := resp4["error"].(map[string]any)
 	if !ok {
 		t.Fatalf("request 4 missing error envelope after invalidate; got %+v", resp4)
@@ -558,6 +574,11 @@ func TestServeAggregaResolveEndToEnd(t *testing.T) {
 		_ = cmd.Wait()
 	})
 
+	// One ceiling for both reads below: the validate that seeds the parse
+	// cache and the resolve that reads it are one exchange with one daemon,
+	// and neither read asserts anything about how long its answer took.
+	ceiling := responseLivenessCeiling(t)
+
 	// Validate the child file (seeds the parse cache).
 	if _, err := stdin.Write(framed(1, "aggrega/validate", map[string]any{
 		"file":    childPath,
@@ -565,7 +586,7 @@ func TestServeAggregaResolveEndToEnd(t *testing.T) {
 	})); err != nil {
 		t.Fatalf("write validate request: %v", err)
 	}
-	if resp := readOneResponse(t, stdout, 10*time.Second); resp["error"] != nil {
+	if resp := readOneResponse(t, stdout, ceiling); resp["error"] != nil {
 		t.Fatalf("aggrega/validate returned error envelope: %+v", resp["error"])
 	}
 
@@ -577,7 +598,7 @@ func TestServeAggregaResolveEndToEnd(t *testing.T) {
 	})); err != nil {
 		t.Fatalf("write resolve request: %v", err)
 	}
-	resp := readOneResponse(t, stdout, 10*time.Second)
+	resp := readOneResponse(t, stdout, ceiling)
 	if errEnv, ok := resp["error"]; ok && errEnv != nil {
 		t.Fatalf("aggrega/resolve returned error envelope: %+v", errEnv)
 	}

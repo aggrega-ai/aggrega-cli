@@ -335,6 +335,34 @@ var operationAvailability = map[string]serveAvailability{
 	// resolution, and a caller wanting those has the file.
 	"config-show": servedAt(at("aggrega/effectiveConfiguration", (*Server).dispatchEffectiveConfiguration)),
 
+	// The session also seeds a configuration and freezes one. Both write, and they
+	// are admitted on the rule every writing method here runs under: a caller that
+	// sent one has asked for the change, exactly as a caller sending a build has
+	// asked for artifacts. What stays out of bounds is a write performed while
+	// validating or inspecting, where nobody asked, and neither of these is that.
+	//
+	// Both produce a configuration document, and each writes it rather than handing
+	// the content back for the caller to place: the surface that produces a document
+	// owes the document, so the answer names the file it wrote and opening it is the
+	// client's follow-up. The seeding carries the one exception, as a request field
+	// rather than as a default — a client that keeps its own document model can ask
+	// for the content instead, because which of the two it wants is a property of
+	// the caller rather than of this surface.
+	//
+	// The two differ in reach and each answer says which. Seeding writes the GLOBAL
+	// configuration file by default, since a registry and the identities trusted on
+	// it are machine-wide tooling, so its response carries the file it wrote and
+	// whether that file is the shared one. Freezing has no such default and no
+	// override: its whole purpose is to make one workspace self-contained, so it
+	// always writes that workspace's own file and reaches nothing outside it.
+	//
+	// The seeding reaches a registry to read the trust policy it advertises; the
+	// freeze reaches none. Nothing is prompted for on either: a registry that
+	// advertises nothing is reported as advertising nothing and the seeding proceeds
+	// on the built-in baseline.
+	"config-init":    servedAt(at("aggrega/configInit", (*Server).dispatchConfigInit)),
+	"config-capture": servedAt(at("aggrega/configCapture", (*Server).dispatchConfigCapture)),
+
 	// The session drafts a starter document for an entity kind the request
 	// names. Its subject is not the workspace: the skeleton is derived from the
 	// schema set compiled into the binary, so the session contributes nothing to

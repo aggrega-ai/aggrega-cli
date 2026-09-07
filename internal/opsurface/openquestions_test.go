@@ -298,7 +298,43 @@ import (
 // guard reads the freshly built command tree — a second enumeration of the
 // built-ins would drift from the tree that decides them — so both surfaces install
 // through one implementation rather than two that agree today.
-const boundCeiling = 5
+//
+// It came down by TWO when the daemon took on the configuration operations:
+// seeding a working configuration with a registry and its trust policy, and
+// freezing the effective build-critical configuration into a workspace. Both
+// write, and both are admitted by the rule the rows themselves pointed at — a
+// caller that sent one has asked for the change — so neither had a reason to
+// write down.
+//
+// The two ship together because the obstacle was one obstacle and it was
+// structural rather than a matter of effort: the logic sat in the command-line
+// package, which is package main, so no other package could import it however the
+// availability question was answered. Settling one and leaving the other would
+// have split a single rehoming across two rows while the same bar stood in front
+// of each.
+//
+// 🔴 What these two decided is the posture for a capability whose product is a
+// document, and it is the part a later reader is most likely to re-open. Both
+// WRITE the document rather than handing the content back for the caller to
+// place: the surface that produces a document owes the document, so the answer
+// names the file it wrote and opening it is the client's follow-up. Returning the
+// content and leaving the write to the caller would have been a different
+// capability wearing the same name, and it would have made the daemon the one
+// surface where seeding a configuration seeds nothing. The seeding carries the one
+// exception as a request field rather than as a default, because which of a write
+// and a report a caller wants is a property of the caller rather than of the
+// surface — the same shape the catalog generation above settled on.
+//
+// Their reach differs and that difference is why neither row could be answered
+// from the other's argument. Seeding resolves a write target and defaults to the
+// GLOBAL configuration file, since a registry and the identities trusted on it are
+// machine-wide tooling — so its response carries the file and whether that file is
+// the shared one, exactly as the registration rows above required. Freezing
+// resolves no target at all: its whole purpose is to make one workspace
+// self-contained, so it always writes that workspace's own file, and an answer
+// claiming a machine-wide scope there would be describing a reach the operation
+// does not have.
+const boundCeiling = 3
 
 // TestTheBoundOnlyShrinks is the ratchet. See boundCeiling for why both
 // directions refuse.

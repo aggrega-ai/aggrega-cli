@@ -16,6 +16,7 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/authoredcontent"
+	"github.com/aggrega-ai/aggrega-cli/internal/configops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
@@ -342,48 +343,27 @@ type configInitConfig struct {
 	trustClient *http.Client
 }
 
-// configInitRun seeds the config by registering cfg.Registry and its trust
-// policy through the same add path `aggrega registry add` uses, so the fetch,
-// offline-baseline fallback, schema gate, and write-target policy live in one
-// place. It resolves the write destination first and refuses to overwrite an
-// existing file unless Force is set — the refuse-if-exists guard is local to
-// init; the shared writer merges by design.
-//
-// Under Report the guard does not run, and that is not a relaxation of it. The
-// guard's whole subject is an existing file being overwritten, and reporting
-// writes nothing, so there is no file for it to protect; the content reported is
-// the merge a forced write would produce. A guard that halted here would refuse
-// to describe a document it was never going to touch.
+// configInitRun binds the command's flags to the seeding operation and renders
+// what it did on the terminal's two streams. The seeding itself — the
+// write-target resolution, the refuse-if-exists guard, and the registration the
+// trust policy comes from — lives in internal/configops, so this surface and the
+// daemon perform one seeding rather than each performing its own.
 func configInitRun(cfg configInitConfig) error {
 	rw, err := workspaceOrResolve(cfg.ws)
 	if err != nil {
 		return fmt.Errorf("workspaceconfig: %w", err)
 	}
 
-	dest, err := rw.WriteDestination(workspaceconfig.OpRegistry, cfg.Global, cfg.Workspace)
-	if err != nil {
-		return err
-	}
-	if !cfg.Force && !cfg.Report {
-		switch _, statErr := os.Stat(dest); {
-		case statErr == nil:
-			return fmt.Errorf("aggrega config init: %s already exists; pass --force to overwrite it", dest)
-		case !os.IsNotExist(statErr):
-			return fmt.Errorf("aggrega config init: stat %s: %w", dest, statErr)
-		}
-	}
-
-	return registryAddRun(registryAddConfig{
-		Host:        cfg.Registry,
-		FetchTrust:  true,
+	delivery := authoredcontent.DeliveryFor(cfg.Report)
+	res, initErr := configops.Init(rw, configops.InitOptions{
+		Registry:    cfg.Registry,
+		Force:       cfg.Force,
 		Global:      cfg.Global,
 		Workspace:   cfg.Workspace,
-		Delivery:    authoredcontent.DeliveryFor(cfg.Report),
-		ws:          rw,
-		Out:         cfg.Out,
-		ErrOut:      cfg.ErrOut,
-		trustClient: cfg.trustClient,
+		Delivery:    delivery,
+		TrustClient: cfg.trustClient,
 	})
+	return writeRegistrationOutcome(cfg.Out, cfg.ErrOut, delivery, res.Registration, initErr)
 }
 
 // newConfigCaptureCmd builds the `config capture` command: it freezes the
@@ -442,32 +422,32 @@ type configCaptureConfig struct {
 	Out        io.Writer
 }
 
-// configCaptureRun writes the effective build-critical configuration subset into
-// the resolved workspace's config file and reports what it captured and where.
-// The destination is always the workspace config file — capture's whole purpose
-// is to make the workspace self-contained, so it never targets the global config.
+// configCaptureRun binds the command's flags to the freezing operation and
+// prints what it froze. The write and the captured set live in
+// internal/configops, so this surface and the daemon freeze one subset rather
+// than each deciding its own.
 func configCaptureRun(cfg configCaptureConfig) error {
 	rw, err := workspaceOrResolve(cfg.ws)
 	if err != nil {
 		return fmt.Errorf("workspaceconfig: %w", err)
 	}
-	dest := filepath.Join(rw.Root(), workspaceconfig.ConfigFilename)
-	effective := rw.Config()
-
-	if err := workspaceconfig.CaptureBuildCritical(dest, effective, cfg.allPlugins); err != nil {
-		return fmt.Errorf("aggrega config capture: write %s: %w", dest, err)
+	res, err := configops.Capture(rw, configops.CaptureOptions{AllPlugins: cfg.allPlugins})
+	if err != nil {
+		return err
 	}
-	reportCapture(cfg.Out, effective, dest, cfg.allPlugins)
+	reportCapture(cfg.Out, res)
 	return nil
 }
 
-// reportCapture prints the build-critical fields captured into dest, in a fixed
-// field order so the output is deterministic. Only the sockets in scope for the
-// capture are reported, on the same byte-determining-vs-all axis as the write:
-// by default the sockets that shape the rendered output, widened to every plugin
-// socket when allPlugins is set. A field with no effective value is omitted. When
-// nothing was build-critical, it says so rather than printing an empty capture.
-func reportCapture(out io.Writer, cfg workspaceconfig.Config, dest string, allPlugins bool) {
+// reportCapture prints what a capture froze, in the order the operation reports
+// it so the output is deterministic. When nothing was build-critical it says so
+// rather than printing an empty capture.
+//
+// It renders and decides nothing. Which sockets were in scope, and which
+// attachments within them, is the operation's answer and arrives on the result —
+// so this cannot name a socket the write did not freeze, where a second
+// enumeration here would have been able to.
+func reportCapture(out io.Writer, res configops.CaptureResult) {
 	if out == nil {
 		return
 	}
@@ -477,7 +457,7 @@ func reportCapture(out io.Writer, cfg workspaceconfig.Config, dest string, allPl
 			return
 		}
 		if !wrote {
-			fmt.Fprintf(out, "Captured build-critical configuration into %s:\n", dest)
+			fmt.Fprintf(out, "Captured build-critical configuration into %s:\n", res.Path)
 			wrote = true
 		}
 		fmt.Fprintf(out, "  %s:\n", header)
@@ -486,26 +466,20 @@ func reportCapture(out io.Writer, cfg workspaceconfig.Config, dest string, allPl
 		}
 	}
 
-	// The socket scope reads from the same tier classification the writer uses,
-	// so the report can never name a socket capture did not freeze.
-	for _, ps := range cfg.PluginSockets() {
-		refs := ps.Refs
-		if !allPlugins {
-			refs = ps.RefsByTier(workspaceconfig.SocketTierMutating)
-			if len(refs) == 0 {
-				continue
-			}
-		}
-		if ps.Socket == workspaceconfig.SocketProvider {
-			section("providers", providerLines(refs))
+	// The provider socket binds a capability to a plugin while the others attach a
+	// plugin to a list, so the two read differently to a person; which renderer a
+	// socket takes is the only decision left here.
+	for _, cs := range res.Sockets {
+		if cs.Socket == workspaceconfig.SocketProvider {
+			section(cs.Field, providerLines(cs.Refs))
 			continue
 		}
-		section(string(ps.Socket), socketLines(refs))
+		section(cs.Field, socketLines(cs.Refs))
 	}
-	section("catalog_dirs", cfg.Workspace.CatalogDirs)
+	section("catalog_dirs", res.CatalogDirs)
 
 	if !wrote {
-		fmt.Fprintf(out, "No build-critical configuration to capture into %s.\n", dest)
+		fmt.Fprintf(out, "No build-critical configuration to capture into %s.\n", res.Path)
 	}
 }
 

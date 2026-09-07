@@ -28,7 +28,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
 )
@@ -109,10 +108,15 @@ spec:
 		_ = stdin.Close()
 		_ = cmd.Wait()
 	})
+	// One ceiling for the handshake read and for every read in the scan loop
+	// below. Both ask whether the daemon answered at all; neither asserts how
+	// long an answer took, and the loop reads messages of one exchange.
+	ceiling := responseLivenessCeiling(t)
+
 	if _, err := stdin.Write(framed(1, "aggrega/initialize", map[string]any{})); err != nil {
 		t.Fatalf("write initialize: %v", err)
 	}
-	if initResp := readOneResponse(t, stdout, 5*time.Second); initResp["error"] != nil {
+	if initResp := readOneResponse(t, stdout, ceiling); initResp["error"] != nil {
 		t.Fatalf("initialize returned error: %+v", initResp)
 	}
 	// Asking which Release the workspace points at is what runs the cascade,
@@ -131,7 +135,7 @@ spec:
 	wantText := envelope.ErrEntityEnvelope().Error()
 	found := false
 	for i := 0; i < 6 && !found; i++ {
-		msg := readOneResponse(t, stdout, 10*time.Second)
+		msg := readOneResponse(t, stdout, ceiling)
 		// Match the publishDiagnostics NOTIFICATION specifically — not any
 		// message containing the text. The answer to this very request carries
 		// a per-step account of the exhausted cascade, and that account names
@@ -276,10 +280,15 @@ spec:
 		_ = cmd.Wait()
 	})
 
+	// One ceiling for the handshake read and for every read in the scan loop
+	// below. Both ask whether the daemon answered at all; neither asserts how
+	// long an answer took, and the loop reads messages of one exchange.
+	ceiling := responseLivenessCeiling(t)
+
 	if _, err := stdin.Write(framed(1, "aggrega/initialize", map[string]any{})); err != nil {
 		t.Fatalf("write initialize: %v", err)
 	}
-	if initResp := readOneResponse(t, stdout, 5*time.Second); initResp["error"] != nil {
+	if initResp := readOneResponse(t, stdout, ceiling); initResp["error"] != nil {
 		t.Fatalf("initialize returned error: %+v", initResp)
 	}
 
@@ -302,7 +311,7 @@ spec:
 	want := envelope.ErrEntityEnvelope().Error()
 	found := false
 	for i := 0; i < 6 && !found; i++ {
-		msg := readOneResponse(t, stdout, 10*time.Second)
+		msg := readOneResponse(t, stdout, ceiling)
 		if strings.Contains(serializeForScan(msg), want) {
 			found = true
 		}
@@ -430,10 +439,14 @@ func serveValidateScanBuffer(t *testing.T, files map[string]string, validateFile
 		t.Fatalf("start daemon: %v", err)
 	}
 	t.Cleanup(func() { _ = stdin.Close(); _ = cmd.Wait() })
+	// One ceiling for the handshake read and for every read in the scan loop
+	// below. Both ask whether the daemon answered at all; neither asserts how
+	// long an answer took, and the loop reads messages of one exchange.
+	ceiling := responseLivenessCeiling(t)
 	if _, err := stdin.Write(framed(1, "aggrega/initialize", map[string]any{})); err != nil {
 		t.Fatalf("write initialize: %v", err)
 	}
-	if initResp := readOneResponse(t, stdout, 5*time.Second); initResp["error"] != nil {
+	if initResp := readOneResponse(t, stdout, ceiling); initResp["error"] != nil {
 		t.Fatalf("initialize returned error: %+v", initResp)
 	}
 	vfPath := filepath.Join(ws, validateFile)
@@ -446,7 +459,7 @@ func serveValidateScanBuffer(t *testing.T, files map[string]string, validateFile
 	}
 	var all strings.Builder
 	for i := 0; i < 4; i++ {
-		msg := readOneResponse(t, stdout, 10*time.Second)
+		msg := readOneResponse(t, stdout, ceiling)
 		all.WriteString(serializeForScan(msg))
 		all.WriteByte('\n')
 		if id, ok := msg["id"].(float64); ok && id == 2 {
