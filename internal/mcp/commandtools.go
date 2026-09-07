@@ -75,6 +75,26 @@ func CommandExemptions() []CommandExemption {
 // such is what keeps the signing verbs off this list: push, sign and deprecate
 // all resolve an identity from supplied or ambient inputs and refuse loudly
 // when none is available, so they are usable here and are exposed.
+//
+// `plugin run-local` is on the first ground, and which half of that ground it
+// sits on is worth stating, because the other half is where a reader looks
+// first. It is not what the module might do once it runs: a guest holds no
+// preopened directories and no sockets and its environment is empty, so every
+// capability it could reach for is denied at the call boundary. It is that the
+// command opens and reads a file at a path the caller chose, which happens
+// before there is a guest at all and which none of those limits bears on. The
+// subject IS the path — the module is addressed by --plugin rather than
+// resolved through the workspace — and that is what puts it beside `logout`
+// rather than beside the signing verbs, where a key path is one of the inputs
+// identifying who signs a published artifact rather than the subject being
+// addressed. So naming a path is not the test; being constituted by one is.
+//
+// Which is why `plugin gen-catalog` and `plugin sync` are absent from this list
+// while also taking a module path, and why adding them to match would not be
+// the tidy-up it looks like. For those two the subject is a document — the
+// entities to generate, the entity file to bring into step — and the module is
+// an input read to derive it, the same shape a signing key has. Of the three,
+// only the command above has the module itself as its subject.
 var commandExemptions = []CommandExemption{
 	{
 		Path:   "aggrega serve",
@@ -91,6 +111,10 @@ var commandExemptions = []CommandExemption{
 	{
 		Path:   "aggrega logout",
 		Reason: "removes a credential from the shared machine-wide store, outside any workspace the caller named",
+	},
+	{
+		Path:   "aggrega plugin run-local",
+		Reason: "reads a guest module at a filesystem path the caller chose, outside any workspace the caller named",
 	},
 	{
 		Path:   "aggrega auth token",

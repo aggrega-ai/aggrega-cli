@@ -9,7 +9,73 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/clisurface"
 	"github.com/aggrega-ai/aggrega-cli/internal/opsurface"
+	"github.com/aggrega-ai/aggrega-cli/internal/serve"
 )
+
+// TestASubjectAddressedByAHostPathIsDeclinedOnBothMachineDrivenSurfaces pins the
+// agreement between the two surfaces nobody types at: the operation whose subject
+// is a guest module addressed by a filesystem path of the caller's own is carried
+// by neither, and each declines it on that addressing.
+//
+// It is the assertion neither surface can make alone, which is why it is written
+// across both. An availability record is internally coherent read by itself — a
+// declined row on one surface and an exposed row on the other each read as
+// deliberate from inside their own package — so the two disagreeing is visible
+// only from a check that holds both at once.
+//
+// The two reasons are compared for the ground they rest on rather than for their
+// text. They address different callers and are meant to read differently, so
+// asserting they match would pin a coincidence and fail the first time either is
+// reworded; what has to hold is that both name the addressing.
+//
+// The command line is asserted in the same run, and it is not decoration. What
+// was decided is that this capability stays reachable where a person names the
+// path at their own terminal, so a change that withdrew it there would leave
+// every other assertion here green.
+func TestASubjectAddressedByAHostPathIsDeclinedOnBothMachineDrivenSurfaces(t *testing.T) {
+	const id = "plugin-run-local"
+
+	tool, declared := OperationAvailability()[id]
+	if !declared {
+		t.Fatalf("the tool protocol declares nothing about the %q operation", id)
+	}
+	if tool.IsExposed() {
+		t.Fatalf("the tool protocol exposes the %q operation as %v, and the daemon declines it: the two "+
+			"surfaces disagree over one capability, which is invisible from either one alone", id, tool.Names)
+	}
+
+	daemon, declared := serve.OperationAvailability()[id]
+	if !declared {
+		t.Fatalf("the daemon declares nothing about the %q operation", id)
+	}
+	if daemon.IsExposed() {
+		t.Fatalf("the daemon exposes the %q operation as %v, and the tool protocol declines it: the two "+
+			"surfaces disagree over one capability, which is invisible from either one alone", id, daemon.Names)
+	}
+
+	for _, r := range []struct{ surface, reason string }{
+		{"the tool protocol", tool.UnavailabilityReason},
+		{"the daemon", daemon.UnavailabilityReason},
+	} {
+		if !strings.Contains(r.reason, "filesystem path") {
+			t.Errorf("%s declines the %q operation without naming the addressing the decline rests on, so "+
+				"the two surfaces no longer state one ground: %q", r.surface, id, r.reason)
+		}
+		if !strings.Contains(r.reason, "workspace") {
+			t.Errorf("%s declines the %q operation without naming the scope that path falls outside, so "+
+				"the two surfaces no longer state one ground: %q", r.surface, id, r.reason)
+		}
+	}
+
+	cli, declared := clisurface.OperationAvailability()[id]
+	if !declared {
+		t.Fatalf("the command line declares nothing about the %q operation", id)
+	}
+	if !cli.IsExposed() {
+		t.Fatalf("the command line declines the %q operation. A person naming a path at their own terminal "+
+			"is the case the two declines above are not about, and it keeps the capability", id)
+	}
+}
 
 // TestEveryOperationIsDeclaredOnTheToolProtocol is the tool protocol's half of
 // the operation-completeness guard: every operation the compiler exposes is

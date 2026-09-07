@@ -401,3 +401,100 @@ func TestTwiceExposedCapabilitiesDiscloseEachOtherOverTheWire(t *testing.T) {
 		}
 	}
 }
+
+// TestNoToolRunsAGuestFromACallerSuppliedPath is the acceptance an exemption
+// entry cannot supply on its own: a list entry declares an intent, and what has
+// to hold is that no tool exists.
+//
+// Two halves run over the real transport against the live command tree, and
+// neither covers the other. The enumeration proves the name is absent from
+// everything a client can discover — the default listing and the on-demand long
+// tail, which are different sets answered by different calls. The call proves a
+// client naming it anyway is refused, which the enumeration says nothing about: a
+// name absent from every listing is still a name a caller can send, and the
+// refusal is what stops the send reaching a command. So the refusal is not a
+// courtesy on top of the exemption; it is the mechanism the exemption acts
+// through.
+//
+// Three sibling subcommands of the same group are asserted present, and they are
+// what stops this going quiet. Without them the absence would be
+// indistinguishable from a derivation that reached the plugin group not at all,
+// or from a transport that answered nothing — both of which read as success.
+//
+// 🔴 The two halves are deliberately separate sessions with a fatal between them,
+// and the reason is measured rather than stylistic. A generated command tool's
+// handler re-invokes the running binary as a subprocess, and this package's
+// binary is the test binary, so a call that RESOLVES here re-enters the suite
+// instead of running a command. Sending the call unconditionally therefore turns
+// a regression from a legible red into a hang that expires on the suite's own
+// timeout. Establishing the absence first, and stopping if it does not hold,
+// keeps the send on the one path where nothing can be dispatched.
+func TestNoToolRunsAGuestFromACallerSuppliedPath(t *testing.T) {
+	withCLIRegistrations(t, nil)
+	root := executingRootCmd()
+	surface := commandSurface(root)
+
+	const withheld = "cli-plugin-run-local"
+
+	// Every name a client can reach: the default listing plus the long tail the
+	// capability tool surfaces on demand.
+	reachable := map[string]bool{}
+	for name := range servedToolDescriptions(t, surface) {
+		reachable[name] = true
+	}
+
+	for _, sibling := range []string{"cli-plugin-list", "cli-plugin-sync", "cli-plugin-add"} {
+		if !reachable[sibling] {
+			t.Fatalf("%q is not reachable, so the enumeration did not reach the plugin group and the "+
+				"absence of %q measures nothing", sibling, withheld)
+		}
+	}
+
+	if reachable[withheld] {
+		// Fatal rather than an error: the call below must not be sent while a
+		// tool of this name resolves, for the reason in the doc comment.
+		t.Fatalf("%q is reachable, so the exemption is declared and a tool is generated anyway", withheld)
+	}
+
+	var stdin bytes.Buffer
+	stdin.WriteString(rpcLine(1, "initialize", `{"protocolVersion":"2025-06-18"}`))
+	stdin.WriteString(rpcLine(2, "tools/call", `{"name":"`+withheld+`","arguments":{}}`))
+
+	var stdout, stderr bytes.Buffer
+	if err := mcp.Run(mcp.Config{
+		Stdin:         &stdin,
+		Stdout:        &stdout,
+		Stderr:        &stderr,
+		ServerVersion: "test",
+		Commands:      surface,
+	}); err != nil {
+		t.Fatalf("mcp.Run: %v (stderr: %s)", err, stderr.String())
+	}
+	lines := strings.Split(strings.TrimSpace(stdout.String()), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("got %d response lines, want 2:\n%s", len(lines), stdout.String())
+	}
+
+	var callResp struct {
+		Result json.RawMessage `json:"result"`
+		Error  *struct {
+			Code    int    `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(lines[1]), &callResp); err != nil {
+		t.Fatalf("unmarshal tools/call %s: %v", withheld, err)
+	}
+	if callResp.Error == nil {
+		t.Fatalf("calling %q was answered rather than refused: %s", withheld, string(callResp.Result))
+	}
+	if !strings.Contains(callResp.Error.Message, withheld) {
+		t.Errorf("the refusal does not name what was refused: %q", callResp.Error.Message)
+	}
+	for _, pointer := range []string{"available tools", "describe-capabilities"} {
+		if !strings.Contains(callResp.Error.Message, pointer) {
+			t.Errorf("the refusal does not point the caller at %s, so an assistant meeting it learns only "+
+				"that something failed: %q", pointer, callResp.Error.Message)
+		}
+	}
+}
