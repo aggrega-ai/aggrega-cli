@@ -49,7 +49,7 @@ func TestLoginStoresCredentialAndLogoutRemoves(t *testing.T) {
 		t.Errorf("stored credential = {user:%q pass-set:%v}; want alice/s3cret", got.Username, got.Password != "")
 	}
 
-	if err := logoutRun(logoutConfig{Registry: reg, Out: io.Discard}); err != nil {
+	if err := logoutRun(context.Background(), logoutConfig{Registry: reg, Out: io.Discard}); err != nil {
 		t.Fatalf("logoutRun: %v", err)
 	}
 	got, err = freshDockerStore(t).Get(context.Background(), reg)
@@ -65,7 +65,7 @@ func TestLoginStoresCredentialAndLogoutRemoves(t *testing.T) {
 // not an error.
 func TestLogoutAbsentIsIdempotent(t *testing.T) {
 	t.Setenv("DOCKER_CONFIG", t.TempDir())
-	if err := logoutRun(logoutConfig{Registry: "never.seen.example", Out: io.Discard}); err != nil {
+	if err := logoutRun(context.Background(), logoutConfig{Registry: "never.seen.example", Out: io.Discard}); err != nil {
 		t.Errorf("logout of an absent credential should be a no-op; got %v", err)
 	}
 }

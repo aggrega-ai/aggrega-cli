@@ -359,7 +359,40 @@ import (
 // failure. An import that could not convert everything still drafts what it
 // could, and its diagnostics are what the caller acts on, so they travel on the
 // result rather than replacing it with a refusal.
-const boundCeiling = 2
+//
+// It came down by ONE when the daemon took on removing a stored registry
+// credential. It changes state, and it is admitted by the rule the row itself
+// pointed at — a caller that sent it has asked for the removal — so it had no
+// reason to write down. The obstacle was the same structural one every row above
+// met: the logic sat in the command-line package, which is package main, so no
+// other package could import it however the availability question was answered.
+//
+// 🔴 What this row decided, and it is the part a later reader is most likely to
+// re-open, is where the line falls between a capability declined for having
+// nobody to ask and a capability carried because somebody asked. Two
+// neighbouring capabilities are declined for needing a secret typed at a
+// terminal this surface does not have — acquiring a credential, and acquiring an
+// identity token — and this row sits beside them on the same subject. It parts
+// from them on whether the operation must obtain INPUT from a person, not on
+// whether a person is involved: a person is involved in both, and here their
+// involvement is the whole reason the row is carried, because the request
+// carries the one value the operation takes and the client puts the choice in
+// front of whoever is driving it.
+//
+// Its reach is deliberately not the argument, and that is recorded because the
+// reach is the widest anything stopping at this machine has: the credential
+// store is shared by every project on the machine and by every other tool
+// addressing the same registries. But reach has never been the line — the
+// registration rows settled above write the configuration file every project on
+// the machine resolves through, on this same rule — so the reach is reported in
+// the answer, where a session-scoped reply would otherwise be read as denying
+// it, and it decides nothing about admissibility.
+//
+// What the neighbouring declines protect is untouched: the store holds nothing
+// on the daemon's behalf. This removes what a person already put there, at their
+// request, so the row makes the daemon no more a holder of credentials than the
+// registry listing already makes it a reader of them.
+const boundCeiling = 1
 
 // TestTheBoundOnlyShrinks is the ratchet. See boundCeiling for why both
 // directions refuse.

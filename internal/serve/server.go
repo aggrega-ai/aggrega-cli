@@ -110,6 +110,10 @@
 //	                               catalog resolves for the source's format,
 //	                               writing them into a directory the request names
 //	                               or handing the content back
+//	aggrega/logout                 removes the stored credential for the registry
+//	                               the request names, from the store every project
+//	                               on the machine shares; a host the store holds
+//	                               nothing for is removed successfully
 //	aggrega/resolve                position to the definition it names
 //	aggrega/findReferences         position to the sites referencing it
 //	aggrega/findImplementations    position to the entities implementing it

@@ -79,7 +79,6 @@ func UndecidedPairs() []UndecidedPair {
 // surface, so a reader meets them in the same sequence the checks report them.
 var undecidedPairs = []UndecidedPair{
 	// The JSON-RPC daemon.
-	{SurfaceServe, "logout", pending},
 	{SurfaceServe, "explain-error", pending},
 }
 

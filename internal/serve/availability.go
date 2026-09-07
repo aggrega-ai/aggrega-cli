@@ -284,6 +284,38 @@ var operationAvailability = map[string]serveAvailability{
 	"registry-remove": servedAt(at("aggrega/registryRemove", (*Server).dispatchRegistryRemove)),
 	"registry-update": servedAt(at("aggrega/registryUpdate", (*Server).dispatchRegistryUpdate)),
 
+	// The session also removes a stored registry credential. It changes state, and
+	// it is admitted on the rule every changing method here runs under: a caller
+	// that sent it has asked for the removal, exactly as a caller sending a build
+	// has asked for artifacts. What stays out of bounds is a change performed while
+	// validating or inspecting, where nobody asked, and this is not that.
+	//
+	// 🔴 The ground is that somebody asked, and it is worth separating from a
+	// neighbouring ground it is easy to mistake it for. The rows below decline
+	// acquiring a credential and acquiring an identity token because those need a
+	// secret typed at a terminal, and this surface has none — a decision the surface
+	// would have to obtain. Removal obtains nothing: the request carries the one
+	// value it takes, and the client puts the choice in front of whoever is driving
+	// it. So the two rows part on whether the operation needs INPUT from a person,
+	// not on whether a person is involved — a person is involved in both, and in
+	// this one their involvement is the whole reason it is carried.
+	//
+	// Its reach is not the argument either, and that is worth writing down because
+	// the reach is the widest of any row here that stops at this machine. The store
+	// is shared by every project on the machine and by every other tool addressing
+	// the same registries. But scope has never been the line: the registration rows
+	// above write the configuration file every project on the machine resolves
+	// through, on this same rule. So the reach is REPORTED — every response carries
+	// it, since a session-scoped answer would otherwise be read as denying it — and
+	// it is not what admits the row.
+	//
+	// The credential store still holds nothing on this daemon's behalf, which is the
+	// property the neighbouring declines actually protect. This removes what a
+	// person already put there, at their request, so carrying it makes the daemon no
+	// more a holder of credentials than the listing above already makes it a reader
+	// of them.
+	"logout": servedAt(at("aggrega/logout", (*Server).dispatchLogout)),
+
 	// The session publishes to a registry, signs what is already published there,
 	// and withdraws it. These four write further than anything else here: what
 	// they land is what every consumer of that registry resolves, and neither a

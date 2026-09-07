@@ -11,6 +11,8 @@ import (
 
 	"github.com/spf13/cobra"
 	"oras.land/oras-go/v2/registry/remote/credentials"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/registryops"
 )
 
 func newLogoutCmd() *cobra.Command {
@@ -21,7 +23,7 @@ func newLogoutCmd() *cobra.Command {
 			"Removing an absent credential is not an error.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return logoutRun(logoutConfig{Registry: args[0]})
+			return logoutRun(cmd.Context(), logoutConfig{Registry: args[0]})
 		},
 	}
 	return c
@@ -37,27 +39,22 @@ type logoutConfig struct {
 	Out   io.Writer         // nil → os.Stdout
 }
 
-// logoutRun deletes the stored credential for the registry. Deletion is
-// idempotent: removing a credential that is not present is not an error.
-func logoutRun(cfg logoutConfig) error {
-	if cfg.Registry == "" {
-		return fmt.Errorf("aggrega logout: registry argument required")
-	}
-	store := cfg.Store
-	if store == nil {
-		s, err := credentials.NewStoreFromDocker(credentials.StoreOptions{})
-		if err != nil {
-			return fmt.Errorf("aggrega logout: credential store: %w", err)
-		}
-		store = s
-	}
-	if err := store.Delete(context.Background(), cfg.Registry); err != nil {
-		return fmt.Errorf("aggrega logout: remove credential for %s: %w", cfg.Registry, err)
+// logoutRun removes the stored credential and reports it at the terminal.
+//
+// The removal itself lives in the shared registry-operations layer, which the
+// daemon reaches too, so this holds only the sentence a terminal reader gets.
+func logoutRun(ctx context.Context, cfg logoutConfig) error {
+	res, err := registryops.Logout(ctx, registryops.LogoutOptions{
+		Registry: cfg.Registry,
+		Store:    cfg.Store,
+	})
+	if err != nil {
+		return err
 	}
 	out := cfg.Out
 	if out == nil {
 		out = os.Stdout
 	}
-	fmt.Fprintf(out, "Logged out of %s\n", cfg.Registry)
+	fmt.Fprintf(out, "Logged out of %s\n", res.Registry)
 	return nil
 }
