@@ -346,6 +346,7 @@ Existing settings in the target config file are preserved.`,
 				Workspace:         workspace,
 				ws:                rw,
 				Out:               cmd.OutOrStdout(),
+				ErrOut:            cmd.ErrOrStderr(),
 			})
 		},
 	}
@@ -401,8 +402,17 @@ type registryAddConfig struct {
 	// re-decided by a second registration path written for the reporting case.
 	Delivery authoredcontent.Delivery
 
-	ws  *workspaceconfig.ResolvedWorkspace
+	ws *workspaceconfig.ResolvedWorkspace
+	// Out carries the answer: the confirmation of what was registered under a
+	// writing delivery, and the one parseable document under a reporting one.
 	Out interface{ Write([]byte) (int, error) }
+	// ErrOut carries an advisory the answer on Out cannot convey.
+	//
+	// It exists because a reporting delivery leaves Out holding one parseable
+	// document and nothing else, so an advisory has nowhere on that stream to go
+	// and would simply be dropped. Which advisory qualifies, and why only one of
+	// the fetch outcomes does, is writeTrustFetchNotice's decision.
+	ErrOut interface{ Write([]byte) (int, error) }
 	// trustClient transports the well-known trust fetch. Nil selects a default
 	// client in the fetch path; tests inject an httptest client so no live
 	// network is contacted.
@@ -438,24 +448,13 @@ func registryAddRun(cfg registryAddConfig) error {
 		Delivery:          cfg.Delivery,
 		TrustClient:       cfg.trustClient,
 	})
-	// The trust-fetch notice is written whether or not the registration went on to
+	// The trust-fetch notice is emitted whether or not the registration went on to
 	// succeed, because the fetch happened either way and a reader who is told
-	// nothing about it cannot tell a skipped fetch from a failed one.
-	//
-	// A reported answer carries no prose at all: the stream holds one parseable
-	// document and nothing else, so a notice on it would leave a caller unable to
-	// read the answer it asked for.
-	//
-	// The two outcomes are not equally recoverable from the content, and the
-	// difference is worth stating rather than averaging over. A pinned policy IS
-	// in the reported content — it is the trust policy the notice would have
-	// described. The not-advertised outcome is not: it reports an absence and
-	// names the flags that supply a policy by hand, and content that simply
-	// carries no identities conveys neither. Which stream should carry that
-	// outcome under a reporting delivery is not decided here.
-	if cfg.Out != nil && !cfg.Delivery.Reports() {
-		writeTrustFetchNotice(cfg.Out, res.Host, res.Trust)
-	}
+	// nothing about it cannot tell a skipped fetch from a failed one. Which stream
+	// carries it — and which outcomes are worth carrying at all — is decided by
+	// the notice writer, where the reason for the asymmetry lives with the branch
+	// that acts on it.
+	writeTrustFetchNotice(cfg, res)
 	if addErr != nil {
 		return addErr
 	}
@@ -477,15 +476,63 @@ func registryAddRun(cfg registryAddConfig) error {
 	return nil
 }
 
-// writeTrustFetchNotice states what the advertised-trust fetch did, in the two
-// cases that have something to say. A skipped fetch says nothing: the operator
-// either supplied a policy outright or asked for no fetch, so there is no
-// outcome to report and a line saying so would be noise on every manual add.
-func writeTrustFetchNotice(out interface{ Write([]byte) (int, error) }, host string, t registryops.TrustFetchOutcome) {
+// writeTrustFetchNotice puts the trust-fetch notice on whichever stream the
+// delivery leaves free for prose, and says nothing where the outcome is already
+// recoverable from the answer.
+//
+// Under a writing delivery both outcomes go to Out, which is where a person
+// watching a terminal reads them.
+//
+// Under a reporting delivery Out holds one parseable document and nothing else,
+// so a notice there would leave a caller unable to read the answer it asked for.
+// The two outcomes are not equally recoverable from that document, and it is the
+// difference between them — not the delivery alone — that decides this. A pinned
+// policy IS the reported content: it is the trust policy the notice would have
+// described, so a notice about it would be a duplicate, and it is dropped. The
+// not-advertised outcome is not in the content at all — it reports an absence and
+// names the flags that supply a policy by hand, and content that simply carries
+// no identities conveys neither — so it goes to ErrOut, where it is beside the
+// answer instead of inside it.
+//
+// A caller that discards ErrOut still loses that advisory. That is the accepted
+// cost of leaving the reported document's shape alone, and the alternative —
+// carrying the advisory inside the document — would change a contract callers
+// parse.
+func writeTrustFetchNotice(cfg registryAddConfig, res registryops.AddResult) {
+	notice := trustFetchNotice(res.Host, res.Trust)
+	if notice == "" {
+		return
+	}
+	out := cfg.Out
+	if cfg.Delivery.Reports() {
+		if !res.Trust.NotAdvertised {
+			return
+		}
+		out = cfg.ErrOut
+	}
+	if out == nil {
+		return
+	}
+	_, _ = io.WriteString(out, notice)
+}
+
+// trustFetchNotice composes what the advertised-trust fetch did, in the two cases
+// that have something to say. A skipped fetch says nothing: the operator either
+// supplied a policy outright or asked for no fetch, so there is no outcome to
+// report and a line saying so would be noise on every manual add.
+//
+// It is the one composition of these sentences, and every stream that carries
+// one consumes what it returns. A second phrasing written for another stream
+// would agree with this one right up to the first edit of either, and the
+// agreement is what would hide the divergence — so the words a reader needs,
+// the flags that supply a policy by hand among them, exist here and nowhere
+// else.
+func trustFetchNotice(host string, t registryops.TrustFetchOutcome) string {
 	switch {
 	case t.Pinned:
-		fmt.Fprintf(out, "Pinned advertised trust policy from %s (%d identities)\n", host, t.Identities)
+		return fmt.Sprintf("Pinned advertised trust policy from %s (%d identities)\n", host, t.Identities)
 	case t.NotAdvertised:
-		fmt.Fprintf(out, "Notice: registry %s advertises no trust config (%s); pin identities manually with --identity/--key\n", host, t.Reason)
+		return fmt.Sprintf("Notice: registry %s advertises no trust config (%s); pin identities manually with --identity/--key\n", host, t.Reason)
 	}
+	return ""
 }

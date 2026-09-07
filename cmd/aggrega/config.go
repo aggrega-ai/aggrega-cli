@@ -269,7 +269,12 @@ is the machine-wide global config unless --workspace selects this project's own.
 A caller that keeps its own document model puts the content there, where it is
 visible before it is saved and can be amended or undone. --report needs no
 --force: an existing file is never overwritten because nothing is written at all,
-and the content reported is the merge a forced write would produce.`,
+and the content reported is the merge a forced write would produce.
+
+Under --report standard output carries that content and nothing else, so it stays
+parseable. A registry that advertises no trust policy still produces its notice,
+on standard error: read that stream too, or a configuration seeded with no trust
+policy arrives without the advice to pin identities by hand.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// init writes the global config, so it resolves the workspace WITHOUT
@@ -291,6 +296,7 @@ and the content reported is the merge a forced write would produce.`,
 				Report:    report,
 				ws:        rw,
 				Out:       cmd.OutOrStdout(),
+				ErrOut:    cmd.ErrOrStderr(),
 			})
 		},
 	}
@@ -321,8 +327,16 @@ type configInitConfig struct {
 	// holding a document model takes the content and decides where it lands.
 	Report bool
 
-	ws  *workspaceconfig.ResolvedWorkspace
-	Out io.Writer
+	ws *workspaceconfig.ResolvedWorkspace
+	// Out carries the answer, and ErrOut an advisory the answer cannot convey.
+	//
+	// The pair exists because under Report the answer on Out is one parseable
+	// document and nothing else, so a trust-policy advisory the reported
+	// configuration cannot express — that the registry advertised no policy and
+	// identities must be pinned by hand — would be dropped rather than merely
+	// moved. It goes to ErrOut, which leaves the document's shape alone.
+	Out    io.Writer
+	ErrOut io.Writer
 	// trustClient transports the advertised-trust fetch. Nil selects a default
 	// client; tests inject one so no live network is contacted.
 	trustClient *http.Client
@@ -367,6 +381,7 @@ func configInitRun(cfg configInitConfig) error {
 		Delivery:    authoredcontent.DeliveryFor(cfg.Report),
 		ws:          rw,
 		Out:         cfg.Out,
+		ErrOut:      cfg.ErrOut,
 		trustClient: cfg.trustClient,
 	})
 }

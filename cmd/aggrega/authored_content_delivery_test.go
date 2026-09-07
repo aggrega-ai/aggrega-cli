@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io/fs"
+	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
@@ -339,6 +340,140 @@ func TestMachineStateCapabilitiesWriteDirectly(t *testing.T) {
 			t.Errorf("the entity does not carry the machine-owned host-function record:\n%s", body)
 		}
 	})
+}
+
+// trustAdvisoryStreams drives the seeding capability once and returns what each
+// of its two streams carried separately.
+//
+// The streams are kept apart rather than merged into one buffer because the
+// property under test is the split itself: a merged buffer would report the same
+// bytes whichever stream had carried them, which is exactly the distinction these
+// assertions exist to make.
+func trustAdvisoryStreams(t *testing.T, report bool, registry string, client *http.Client) (answer, advisory string) {
+	t.Helper()
+	root := t.TempDir()
+	globalPath := filepath.Join(root, "home", "aggrega", "config.yaml")
+	lookup := frozenEnv(map[string]string{workspaceconfig.EnvConfigOverride: globalPath})
+	wsRoot := filepath.Join(root, "ws")
+	if err := os.MkdirAll(wsRoot, 0o755); err != nil {
+		t.Fatalf("mkdir workspace: %v", err)
+	}
+	rw := resolveTempWorkspaceAgainst(t, tempWorkspaceOptions{Root: wsRoot}, lookup)
+
+	var out, errOut bytes.Buffer
+	if err := configInitRun(configInitConfig{
+		Registry:    registry,
+		Report:      report,
+		ws:          rw,
+		Out:         &out,
+		ErrOut:      &errOut,
+		trustClient: client,
+	}); err != nil {
+		t.Fatalf("seeding %s (report=%v): %v", registry, report, err)
+	}
+	return out.String(), errOut.String()
+}
+
+// TestTheTrustAdvisoryReachesTheErrorStreamOnlyWhereItIsUnrecoverable holds the
+// trust-fetch notice to the stream each of its outcomes belongs on, across both
+// deliveries.
+//
+// The grid is what matters, not the two axes separately. Delivery and fetch
+// outcome are independent, so there are four cells, and the notice's behaviour
+// differs in three ways across them:
+//
+//   - writing, either outcome — the notice is on the answer stream, where a
+//     person watching a terminal reads it, and the error stream is silent;
+//   - reporting, policy not advertised — the answer stream holds one parseable
+//     document and nothing else, and the advisory is on the error stream, still
+//     naming the flags that supply a policy by hand;
+//   - reporting, policy pinned — nothing is emitted anywhere, because the pinned
+//     policy IS the reported content and a notice about it would be a duplicate.
+//
+// That last cell is the one that fails a notice emitted on the delivery alone: an
+// implementation that moved BOTH outcomes to the error stream under a reporting
+// delivery satisfies every other assertion here.
+func TestTheTrustAdvisoryReachesTheErrorStreamOnlyWhereItIsUnrecoverable(t *testing.T) {
+	t.Parallel()
+
+	// The remedy is the half of the advisory that cannot be recovered from
+	// content: an absence conveys neither that a policy is missing nor what to do.
+	const remedy = "--identity/--key"
+	const absence = "advertises no trust config"
+
+	pinnedHost, pinnedClient := advertisedTrustServer(t, `{
+  "requires_signatures": true,
+  "trusted_identities": [
+    {"identity": "dev@acme.example", "issuer": "https://accounts.google.com"}
+  ]
+}`)
+
+	// Cell 1 — writing, policy not advertised.
+	writeAbsentAnswer, writeAbsentAdvisory := trustAdvisoryStreams(t, false, workspaceconfig.HubBaselineHost, offlineTrustClient())
+	if !strings.Contains(writeAbsentAnswer, absence) || !strings.Contains(writeAbsentAnswer, remedy) {
+		t.Errorf("a writing delivery must keep the advisory on the answer stream, remedy included; it carried:\n%s", writeAbsentAnswer)
+	}
+	if writeAbsentAdvisory != "" {
+		t.Errorf("a writing delivery has a free answer stream, so nothing belongs on the error stream; it carried:\n%s", writeAbsentAdvisory)
+	}
+
+	// Cell 2 — writing, policy pinned.
+	writePinnedAnswer, writePinnedAdvisory := trustAdvisoryStreams(t, false, pinnedHost, pinnedClient)
+	if !strings.Contains(writePinnedAnswer, "Pinned advertised trust policy") {
+		t.Errorf("a writing delivery must report a pinned policy on the answer stream; it carried:\n%s", writePinnedAnswer)
+	}
+	if writePinnedAdvisory != "" {
+		t.Errorf("a pinned policy under a writing delivery must leave the error stream empty; it carried:\n%s", writePinnedAdvisory)
+	}
+
+	// Cell 3 — reporting, policy not advertised. The advisory moves to the error
+	// stream and the answer stream keeps its contract.
+	reportAbsentAnswer, reportAbsentAdvisory := trustAdvisoryStreams(t, true, workspaceconfig.HubBaselineHost, offlineTrustClient())
+	if !strings.Contains(reportAbsentAdvisory, absence) {
+		t.Errorf("the unrecoverable outcome must reach the error stream under a reporting delivery; it carried:\n%s", reportAbsentAdvisory)
+	}
+	if !strings.Contains(reportAbsentAdvisory, remedy) {
+		t.Errorf("the advisory reached the error stream without its remedy, which is the half a caller cannot recover from content:\n%s", reportAbsentAdvisory)
+	}
+	if strings.Contains(reportAbsentAnswer, absence) {
+		t.Errorf("prose reached the reported answer stream, which must hold one parseable document and nothing else:\n%s", reportAbsentAnswer)
+	}
+
+	// The reported stream held one report and nothing else, asserted by
+	// re-encoding what was decoded through the format's own writer and comparing
+	// bytes. A containment check cannot make this claim: an unknown key beside
+	// `documents:` still decodes, so a stream carrying prose as well as the
+	// document would satisfy a decode and a substring test both.
+	docs := reportedDocuments(t, []byte(reportAbsentAnswer))
+	var reencoded bytes.Buffer
+	if err := authoredcontent.Report(&reencoded, docs); err != nil {
+		t.Fatalf("re-encode the decoded report: %v", err)
+	}
+	if reencoded.String() != reportAbsentAnswer {
+		t.Errorf("the reported stream is not exactly one report:\nstream:\n%s\nthe report alone:\n%s", reportAbsentAnswer, reencoded.String())
+	}
+
+	// One composition, two streams: the advisory a reader gets on the error stream
+	// is the SAME sentence the answer stream carries under a writing delivery. A
+	// second phrasing written for the new stream would make these differ, and the
+	// remedy is exactly what such a rewrite tends to shorten away.
+	writtenAdvisoryLine := strings.SplitAfter(writeAbsentAnswer, "\n")[0]
+	if reportAbsentAdvisory != writtenAdvisoryLine {
+		t.Errorf("the advisory is phrased twice rather than composed once\non the error stream:\n%q\non the answer stream:\n%q", reportAbsentAdvisory, writtenAdvisoryLine)
+	}
+
+	// Cell 4 — reporting, policy pinned. Nothing is emitted on either stream, and
+	// this is the assertion a both-outcomes implementation cannot pass.
+	reportPinnedAnswer, reportPinnedAdvisory := trustAdvisoryStreams(t, true, pinnedHost, pinnedClient)
+	if reportPinnedAdvisory != "" {
+		t.Errorf("a pinned policy is the reported content, so a notice about it is a duplicate and belongs on no stream; the error stream carried:\n%s", reportPinnedAdvisory)
+	}
+	if strings.Contains(reportPinnedAnswer, "Pinned advertised trust policy") {
+		t.Errorf("prose reached the reported answer stream:\n%s", reportPinnedAnswer)
+	}
+	if pinnedDocs := reportedDocuments(t, []byte(reportPinnedAnswer)); len(pinnedDocs) != 1 {
+		t.Errorf("seeding reported %d documents; it writes one file, so it reports one", len(pinnedDocs))
+	}
 }
 
 // TestTheProductClassificationIsCarriedByTheCommandSurface asserts the rule's
