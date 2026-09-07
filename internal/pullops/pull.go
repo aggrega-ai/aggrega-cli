@@ -843,7 +843,7 @@ func Run(cfg Config) (Result, error) {
 			// than silently passing as unverified; a closure with nothing registry-
 			// resolved needs no fetch and is unaffected.
 			verifyHTTPClient, _ := egress.HTTPClient(wsCfg)
-			if err := verifyClosureSignatures(context.Background(), lf, cl, wsCfg, cacheDir, cfg.DiagOut, pluginfetchverify.RemoteTargetFor(verifyHTTPClient)); err != nil {
+			if err := VerifyClosureSignatures(context.Background(), lf, cl, wsCfg, cacheDir, cfg.DiagOut, pluginfetchverify.RemoteTargetFor(verifyHTTPClient)); err != nil {
 				return fmt.Errorf("verify signatures: %w", err)
 			}
 			report.phase(PhaseLockfile)

@@ -22,7 +22,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
-// verifyClosureSignatures runs the pull-time signature verification pass over
+// VerifyClosureSignatures runs the pull-time signature verification pass over
 // every registry-resolved reference in the closure — catalog entities, the four
 // library sections, and Wasm plugins — and folds the verified facts into the
 // lockfile, caching each verified signature bundle as a content-addressed blob for
@@ -55,7 +55,12 @@ import (
 //
 // targetFor resolves each verifiable item's OCI target for referrer discovery;
 // production passes remoteTargetFor (a real remote repository per registry).
-func verifyClosureSignatures(ctx context.Context, lf *lockfile.Lockfile, cl closure.Closure, wsCfg workspaceconfig.Config, cacheDir string, diagOut io.Writer, targetFor pullverify.TargetFor) error {
+//
+// It is the one home of this pass, and it stays the one home now that it is
+// reachable by name: the primitives it composes are not exported, so a caller
+// outside this package can run the pass and cannot assemble a second copy of it
+// from the parts.
+func VerifyClosureSignatures(ctx context.Context, lf *lockfile.Lockfile, cl closure.Closure, wsCfg workspaceconfig.Config, cacheDir string, diagOut io.Writer, targetFor pullverify.TargetFor) error {
 	axes := cl.VerifiableAxes()
 	total := 0
 	for _, axis := range axes {

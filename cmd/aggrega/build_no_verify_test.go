@@ -72,7 +72,7 @@ func TestBuildPathNeverVerifiesSignatures(t *testing.T) {
 	if rerr != nil {
 		t.Fatalf("read build.go: %v", rerr)
 	}
-	for _, token := range []string{"pullverify", "verifyClosureSignatures", "VerifyKeyedBundle", "VerifyKeylessBundle", "VerifyKeylessLive"} {
+	for _, token := range []string{"pullverify", "VerifyClosureSignatures", "VerifyKeyedBundle", "VerifyKeylessBundle", "VerifyKeylessLive"} {
 		if strings.Contains(string(src), token) {
 			t.Errorf("build.go references %q; build must not verify signatures (verification is a pull-time recorded fact)", token)
 		}

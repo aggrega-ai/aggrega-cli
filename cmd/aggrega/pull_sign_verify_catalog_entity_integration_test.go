@@ -142,7 +142,7 @@ spec:
 // A Component is addressed by its bare identity from the Aggregate; the closure
 // resolves it via a Tier-3 registry pull that binds the identity to the workspace
 // registry from default_registry. The three arms drive the whole spine
-// (resolution → closure descent → buildLockfile → verifyClosureSignatures →
+// (resolution → closure descent → buildLockfile → VerifyClosureSignatures →
 // pullverify.Verify) through the exact code path production runs: no hand-built
 // closure, no hand-set digest, no skip flag.
 //

@@ -4,13 +4,13 @@
 package pullops
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/embedded"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginstrust"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
@@ -49,7 +49,7 @@ type verdictPluginResolution struct {
 	Deprecation *pluginstrust.Deprecation
 }
 
-// errVerdictPluginIdentityChanged reports that a pull resolved an attachment
+// ErrVerdictPluginIdentityChanged reports that a pull resolved an attachment
 // returning an accept-or-reject verdict to a plugin identity the record beside
 // the lockfile does not hold for it, without the run having asked for that
 // identity to be re-resolved.
@@ -69,7 +69,24 @@ type verdictPluginResolution struct {
 // or re-record; this one refuses to ADOPT a new identity silently, and its
 // remediation is to name the plugin in an upgrade. Two remediations, two
 // conditions.
-var errVerdictPluginIdentityChanged = errors.New("the plugin identity recorded as trusted no longer matches what this resolution reports")
+//
+// It is reached through this accessor, and it carries both of a halting
+// condition's identifiers, because the condition has to be nameable wherever a
+// halt is reported rather than only where it is raised. Every surface that
+// resolves a build maps a halt to the diagnostic a caller reads — a terminal
+// quotes the short code, and a structured diagnostic carries the descriptive
+// code as a field of its own — so a condition registering neither is one those
+// surfaces can report and cannot identify. Its sibling condition over the same
+// record, which refuses a configuration that no longer attaches a recorded gate,
+// is registered and reachable the same way; these two halts are read by the same
+// consumers and a caller able to name one and not the other has no way to tell
+// which of them stopped a run.
+func ErrVerdictPluginIdentityChanged() error { return errVerdictPluginIdentityChanged }
+
+var errVerdictPluginIdentityChanged = cerrors.Register("pullops/verdict-plugin-identity-changed", cerrors.Meta{
+	ShortCode: "E0274",
+	Message:   "the plugin identity recorded as trusted no longer matches what this resolution reports",
+})
 
 // splitAttachmentRef splits an attachment's authored reference into its bare
 // identity and the version suffix it named, which is empty when it named none.
@@ -253,7 +270,7 @@ func holdVerdictPluginsToTheirRecord(releasePath string, resolutions []verdictPl
 			"plugin %q: %s records version %s with digest %s as trusted for it, but this resolution reports version %s with digest %s; "+
 				"review what changed and adopt it with `aggrega pull --upgrade --release %s %s`, or restore the recorded identity: %w",
 			r.Coordinate, path, held.ResolvedVersion, held.Digest, r.Version, r.Digest,
-			releasePath, r.BareURI, errVerdictPluginIdentityChanged)
+			releasePath, r.BareURI, ErrVerdictPluginIdentityChanged())
 	}
 	return nil
 }

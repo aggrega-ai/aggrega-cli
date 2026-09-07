@@ -108,8 +108,8 @@ func TestSignVerifyRunRealLinter(t *testing.T) {
 		},
 	}
 
-	if err := verifyClosureSignatures(context.Background(), lf, cl, wsCfg, t.TempDir(), nil, pluginTargetFor(store, "1.0.0")); err != nil {
-		t.Fatalf("verifyClosureSignatures: %v", err)
+	if err := VerifyClosureSignatures(context.Background(), lf, cl, wsCfg, t.TempDir(), nil, pluginTargetFor(store, "1.0.0")); err != nil {
+		t.Fatalf("VerifyClosureSignatures: %v", err)
 	}
 	if lf.Plugins[0].Signature == nil {
 		t.Fatal("plugin signature fact was not recorded on the lockfile row")
@@ -170,7 +170,7 @@ func TestSignVerifyRealLinterWrongKeyHalts(t *testing.T) {
 		},
 	}
 
-	err := verifyClosureSignatures(context.Background(), lf, cl, wsCfg, t.TempDir(), nil, pluginTargetFor(store, "1.0.0"))
+	err := VerifyClosureSignatures(context.Background(), lf, cl, wsCfg, t.TempDir(), nil, pluginTargetFor(store, "1.0.0"))
 	if !errors.Is(err, signing.ErrSignatureVerificationFailed()) {
 		t.Fatalf("want ErrSignatureVerificationFailed, got %v", err)
 	}

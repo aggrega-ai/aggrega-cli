@@ -147,7 +147,7 @@ spec:
 // mysub, discover referrers against the fetched manifest digest, verify the
 // bundle — needs its own end-to-end proof. It exercises the whole spine
 // (resolution -> sub-aggregate descent -> buildLockfile ->
-// verifyClosureSignatures -> pullverify.Verify) through the exact code path
+// VerifyClosureSignatures -> pullverify.Verify) through the exact code path
 // production runs: no hand-built closure, no hand-set digest, no skip flag.
 func TestIntegration_PullCommandVerifiesSignedSubAggregate_Keyed(t *testing.T) {
 	privPEM, pubPEM, err := signing.GenerateKeyedPEM()

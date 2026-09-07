@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/pluginfetchverify"
+	"github.com/aggrega-ai/aggrega-cli/internal/pullops"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
@@ -22,6 +23,15 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/signing"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
+
+// The proofs in this file call the closure signature pass directly, with a
+// hand-built closure and lockfile, rather than reaching it through a command.
+// What they add over the equivalent proofs sitting beside the pass itself is the
+// fixture, not the entry point: they publish through the real push path onto a
+// real in-process registry, so the bytes verified here carry a genuine manifest
+// digest and a genuine signature referrer. That registry is the reason they live
+// in this package; the command path is not, because no command drives the pass in
+// these tests. Read the publish as a fixture and the verify as the subject.
 
 // signedPluginPublication captures the coordinates of a Plugin published to a
 // real in-process registry under the single-manifest model: the entity and .wasm
@@ -206,7 +216,7 @@ func TestIntegration_PluginSignedClosure_ManifestSignatureVerifies(t *testing.T)
 		},
 	}
 
-	if verr := verifyClosureSignatures(ctx, lf, cl, wsCfg, t.TempDir(), nil, pluginfetchverify.RemoteTargetFor(&http.Client{})); verr != nil {
+	if verr := pullops.VerifyClosureSignatures(ctx, lf, cl, wsCfg, t.TempDir(), nil, pluginfetchverify.RemoteTargetFor(&http.Client{})); verr != nil {
 		t.Fatalf("the single manifest signature must verify under the pinned key; got: %v", verr)
 	}
 	if lf.Entities[0].Signature == nil {
@@ -240,7 +250,7 @@ func TestIntegration_PluginSignedClosure_PolicyHaltsOnMissingSig(t *testing.T) {
 			{Host: p.host, Signing: workspaceconfig.SigningConfig{Required: true}, PublicKey: string(pubPEM)},
 		},
 	}
-	verr := verifyClosureSignatures(ctx, lf, cl, wsCfg, t.TempDir(), nil, pluginfetchverify.RemoteTargetFor(&http.Client{}))
+	verr := pullops.VerifyClosureSignatures(ctx, lf, cl, wsCfg, t.TempDir(), nil, pluginfetchverify.RemoteTargetFor(&http.Client{}))
 	if !errors.Is(verr, signing.ErrNoSignatureFound()) {
 		t.Fatalf("a signature-requiring policy must HALT with ErrNoSignatureFound when the single manifest carries no signature; got: %v", verr)
 	}
@@ -276,7 +286,7 @@ func TestIntegration_PluginSignedClosure_PolicyHaltsOnWrongKey(t *testing.T) {
 		},
 	}
 
-	verr := verifyClosureSignatures(ctx, lf, cl, wsCfg, t.TempDir(), nil, pluginfetchverify.RemoteTargetFor(&http.Client{}))
+	verr := pullops.VerifyClosureSignatures(ctx, lf, cl, wsCfg, t.TempDir(), nil, pluginfetchverify.RemoteTargetFor(&http.Client{}))
 	if !errors.Is(verr, signing.ErrSignatureVerificationFailed()) {
 		t.Fatalf("a wrong pinned key must HALT with ErrSignatureVerificationFailed; got: %v", verr)
 	}
@@ -298,7 +308,7 @@ func TestIntegration_PluginUnsignedClosure_NonRequiringNoHalt(t *testing.T) {
 			{Host: p.host, Signing: workspaceconfig.SigningConfig{Required: false}, PublicKey: ""},
 		},
 	}
-	if verr := verifyClosureSignatures(ctx, lf, cl, wsCfg, t.TempDir(), nil, pluginfetchverify.RemoteTargetFor(&http.Client{})); verr != nil {
+	if verr := pullops.VerifyClosureSignatures(ctx, lf, cl, wsCfg, t.TempDir(), nil, pluginfetchverify.RemoteTargetFor(&http.Client{})); verr != nil {
 		t.Fatalf("a non-requiring policy must NOT halt on an unsigned plugin; got: %v", verr)
 	}
 	if lf.Entities[0].Signature != nil || lf.Plugins[0].Signature != nil {

@@ -17,6 +17,7 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/buildops"
+	"github.com/aggrega-ai/aggrega-cli/internal/pullops"
 	"github.com/aggrega-ai/aggrega-cli/internal/verdicttest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
@@ -574,7 +575,7 @@ func TestIntegration_VerdictTrustRefusesAChangedRecordedIdentity(t *testing.T) {
 		}
 
 		err := pull(t, pullConfig{})
-		if !errors.Is(err, errVerdictPluginIdentityChanged) {
+		if !errors.Is(err, pullops.ErrVerdictPluginIdentityChanged()) {
 			t.Fatalf("a recorded version the resolution does not report must halt with the changed-identity condition; got %v", err)
 		}
 		for _, want := range []string{published.Coordinate, pluginstrust.FileName, "0.9.0", "1.0.0"} {
@@ -602,7 +603,7 @@ func TestIntegration_VerdictTrustRefusesAChangedRecordedIdentity(t *testing.T) {
 		rerecordVerdictIdentity(t, releasePath, published.Coordinate, "1.0.0", bogusDigest)
 
 		err := pull(t, pullConfig{})
-		if !errors.Is(err, errVerdictPluginIdentityChanged) {
+		if !errors.Is(err, pullops.ErrVerdictPluginIdentityChanged()) {
 			t.Fatalf("a recorded digest the resolution does not report must halt with the changed-identity condition; got %v", err)
 		}
 		for _, want := range []string{published.Coordinate, bogusDigest, published.WasmDigest} {
@@ -617,7 +618,7 @@ func TestIntegration_VerdictTrustRefusesAChangedRecordedIdentity(t *testing.T) {
 		// verify-only run writes nothing — so this proves the comparison sits above
 		// the verify-only return rather than inside the write path.
 		err := pull(t, pullConfig{Verify: true})
-		if !errors.Is(err, errVerdictPluginIdentityChanged) {
+		if !errors.Is(err, pullops.ErrVerdictPluginIdentityChanged()) {
 			t.Fatalf("--verify must cover the record beside the lockfile it verifies; got %v", err)
 		}
 	})
@@ -654,7 +655,7 @@ func TestIntegration_VerdictTrustRefusesAChangedRecordedIdentity(t *testing.T) {
 		if !strings.Contains(err.Error(), "is not pinned in the lockfile") {
 			t.Errorf("the halt must name the unmatched target's absence; got %v", err)
 		}
-		if errors.Is(err, errVerdictPluginIdentityChanged) {
+		if errors.Is(err, pullops.ErrVerdictPluginIdentityChanged()) {
 			t.Errorf("an unmatched target is not a changed identity; the two conditions must stay distinct: %v", err)
 		}
 	})

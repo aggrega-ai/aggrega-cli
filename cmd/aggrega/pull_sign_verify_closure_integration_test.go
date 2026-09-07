@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/pluginfetchverify"
+	"github.com/aggrega-ai/aggrega-cli/internal/pullops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
@@ -21,6 +22,15 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/signing"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
+
+// The proofs in this file call the closure signature pass directly, with a
+// hand-built closure and lockfile, rather than reaching it through a command.
+// What they add over the equivalent proofs sitting beside the pass itself is the
+// fixture, not the entry point: they publish through the real push path onto a
+// real in-process registry, so the bytes verified here carry a genuine manifest
+// digest and a genuine signature referrer. That registry is the reason they live
+// in this package; the command path is not, because no command drives the pass in
+// these tests. Read the publish as a fixture and the verify as the subject.
 
 // signedCatalogComponentBody is a minimal Component the publish flow can sign
 // and push without a recipe / .wasm. Its bytes drive a real content digest that
@@ -113,7 +123,7 @@ func TestIntegration_EntitySignatureVerifiesAgainstManifestDigest(t *testing.T) 
 
 	// ARM 1 (the fix): the closure row carries the content digest as Digest and
 	// the manifest digest as ManifestDigest. The production verify entrypoint
-	// (verifyClosureSignatures → pluginfetchverify.RemoteTargetFor(&http.Client{})) discovers the real referrer and
+	// (VerifyClosureSignatures → pluginfetchverify.RemoteTargetFor(&http.Client{})) discovers the real referrer and
 	// verifies the entity signature against ManifestDigest — it PASSES.
 	cl := closure.Closure{
 		Entities: []closure.ResolvedRef{
@@ -123,7 +133,7 @@ func TestIntegration_EntitySignatureVerifiesAgainstManifestDigest(t *testing.T) 
 	lf := &lockfile.Lockfile{
 		Entities: []lockfile.Entity{{URI: entityURI, Digest: contentDg, ManifestDigest: manifestDigest}},
 	}
-	if verr := verifyClosureSignatures(ctx, lf, cl, wsCfg, t.TempDir(), nil, pluginfetchverify.RemoteTargetFor(&http.Client{})); verr != nil {
+	if verr := pullops.VerifyClosureSignatures(ctx, lf, cl, wsCfg, t.TempDir(), nil, pluginfetchverify.RemoteTargetFor(&http.Client{})); verr != nil {
 		t.Fatalf("verify against the recorded manifest digest should PASS, got: %v", verr)
 	}
 	if lf.Entities[0].Signature == nil {

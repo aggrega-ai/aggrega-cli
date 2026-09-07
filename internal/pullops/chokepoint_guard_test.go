@@ -175,7 +175,7 @@ func TestPluginFetchVerificationChokepoint(t *testing.T) {
 		},
 		{
 			callee: "pullverify.Verify",
-			want:   []string{"pluginfetchverify.Verify", "pullops.verifyClosureSignatures"},
+			want:   []string{"pluginfetchverify.Verify", "pullops.VerifyClosureSignatures"},
 		},
 		{
 			callee: "pluginfetchverify.VerifyHostFunctionStamp",

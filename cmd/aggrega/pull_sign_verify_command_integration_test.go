@@ -200,7 +200,7 @@ func signedPluginWorkspaceConfigBody(host string, pinnedPubPEM []byte) string {
 // manifest digest = the single manifest digest — and its verify pass verifies
 // that manifest's signature against the pinned key, folding the verified fact
 // onto the lockfile. This exercises the whole spine (resolution → closure
-// descent → buildLockfile → verifyClosureSignatures → pullverify.Verify) through
+// descent → buildLockfile → VerifyClosureSignatures → pullverify.Verify) through
 // the exact code path production runs: no hand-built closure, no hand-set
 // digest, no skip flag.
 //
