@@ -1,0 +1,23 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: tier4-required-attachment-slot
+  version: "1.0.0"
+spec:
+  components:
+    # Fills the required slot correctly, then attaches one name that is a single
+    # insertion away from the declared optional slot `user_password`. That near
+    # miss is an ADVISORY rather than a refusal: an author may deliberately name
+    # an attachment one edit from a declared one, so naming both spellings is the
+    # compensation and halting would refuse legal authoring.
+    bound:
+      type: example/slotted-db
+      features:
+        root_password:
+          type: example/pw
+          values:
+            origin: pw-value
+        user_passwrod:
+          type: example/pw
+          values:
+            origin: pw-value

@@ -848,19 +848,23 @@ func (s *Server) snapshotDiagnostics(file string) []Diagnostic {
 	return out
 }
 
-// setRenderDiagnostics replaces the whole render layer with byFile and returns
-// the sorted set of files whose entry the replacement touched — the union of the
-// files that had render diagnostics and the files that now do — so the caller
-// republishes exactly the files whose composed state changed, clearing a stale
-// advisory as reliably as it publishes a new one. Whole-layer replacement is
-// what a whole-closure render calls for: a per-file merge would strand an
+// setRenderDiagnostics replaces the whole build-advisory layer with byFile and
+// returns the sorted set of files whose entry the replacement touched — the union
+// of the files that had an advisory on this layer and the files that now do — so
+// the caller republishes exactly the files whose composed state changed, clearing
+// a stale advisory as reliably as it publishes a new one. Whole-layer replacement
+// is what a whole-closure build calls for: a per-file merge would strand an
 // advisory on a file that stopped raising one.
 //
+// The layer carries every advisory a build raised, not the render's alone, which
+// is what the source it publishes under names. Read the layer's contents from the
+// source it publishes under rather than from this identifier.
+//
 // Each incoming key is canonicalised, so this layer and the semantic one are
-// keyed alike however the render attributed its advisories. The returned file
-// set is therefore in the canonical spelling too, which is what the caller
-// publishes — the notification's file identifier and the store's key are then
-// the same string, rather than two spellings of one document.
+// keyed alike however an advisory was attributed. The returned file set is
+// therefore in the canonical spelling too, which is what the caller publishes —
+// the notification's file identifier and the store's key are then the same
+// string, rather than two spellings of one document.
 func (s *Server) setRenderDiagnostics(byFile map[string][]Diagnostic) []string {
 	s.diagMu.Lock()
 	defer s.diagMu.Unlock()

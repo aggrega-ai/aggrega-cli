@@ -308,13 +308,19 @@ func (s *Server) runTier4Validation(ctx context.Context, releasePath, file strin
 		})
 	}
 
-	// Advisory findings — exit-code-neutral, so they publish at warning
-	// severity and never contribute to the verdict. They ride the same
-	// position-recovery path as the halting violations above, so the editor
-	// squiggles the offending authoring key rather than the head of the file.
+	// Advisory findings — exit-code-neutral, so they never contribute to the
+	// verdict. They arrive on the compiler's one advisory channel, carrying their
+	// own severity, and ride the same position recovery the halting violations
+	// above do: an advisory that named an authoring key squiggles that key rather
+	// than the head of the file.
+	//
+	// The severity is the ADVISORY's, not this call site's. A halting violation is
+	// published at the error tier by the surface that knows it halted; an advisory
+	// carries the tier its producer chose, so a warn and an info stay
+	// distinguishable in the editor instead of being flattened to one tier here.
 	if tier4 != nil {
-		for _, a := range tier4.LintAdvisories {
-			diags = append(diags, resolverFindingToDiagnostic(a, editorSeverityWarning, doc, idx))
+		for _, a := range tier4.Advisories {
+			diags = append(diags, advisoryToDiagnostic(a, doc, idx))
 		}
 	}
 
@@ -390,11 +396,7 @@ func analyzerErrorsToDiagnostics(errs []analyzer.AnalysisError, file string, doc
 		if errs[i].OriginFile != file {
 			continue
 		}
-		line, col := 1, 1
-		var endLine, endCol int
-		if span, ok := yamlpos.FieldRange(doc, idx, errs[i].Field); ok {
-			line, col, endLine, endCol = span.Line, span.Column, span.EndLine, span.EndColumn
-		}
+		line, col, endLine, endCol := keyPathSpan(doc, idx, errs[i].Field)
 		out = append(out, Diagnostic{
 			Line:      line,
 			Column:    col,
@@ -434,11 +436,7 @@ func analyzerErrorsToDiagnostics(errs []analyzer.AnalysisError, file string, doc
 // constraint framework, its detail values with no sentence at all — while the
 // same failure on a terminal named the condition.
 func resolverFindingToDiagnostic(ve *resolver.ResolverError, severity string, doc *yaml.Node, idx yamlpos.LineIndex) Diagnostic {
-	line, col := 1, 1
-	var endLine, endCol int
-	if span, ok := yamlpos.FieldRange(doc, idx, ve.Field); ok {
-		line, col, endLine, endCol = span.Line, span.Column, span.EndLine, span.EndColumn
-	}
+	line, col, endLine, endCol := keyPathSpan(doc, idx, ve.Field)
 	return Diagnostic{
 		Line:      line,
 		Column:    col,

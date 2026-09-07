@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 )
 
@@ -50,6 +51,57 @@ type buildResultPayload struct {
 	// lets a caller tell an incomplete render from an accurate one; without it the
 	// difference is invisible in the returned files.
 	DeclinedExternalInputs []string `json:"declined_external_inputs,omitempty"`
+
+	// Advisories carries every exit-code-neutral finding the build raised, in the
+	// order it raised them — the same findings, in the same order, a command-line
+	// build prints. None of them changes the outcome: a build carrying advisories
+	// still succeeded, and the files above are the files it produced.
+	//
+	// They are reported on a successful build for the same reason the deprecation
+	// notices are: a caller with no terminal has no other way to receive them, and
+	// a finding nobody is told about is a finding that was not made.
+	Advisories []buildAdvisory `json:"advisories,omitempty"`
+}
+
+// buildAdvisory is one exit-code-neutral finding a build raised.
+//
+// Severity distinguishes a finding that wants attention from one that merely
+// records an observation; neither affects the build's outcome. Code is a stable
+// string a caller can match on, present when the finding's class carries one.
+// KeyPath is the path to the offending key in the authored document, present when
+// the finding names one — a finding about the shape of the deployed topology
+// rather than about a line of authoring names no key, and its message says what it
+// concerns instead.
+type buildAdvisory struct {
+	Severity string `json:"severity"`
+	Message  string `json:"message"`
+	Code     string `json:"code,omitempty"`
+	KeyPath  string `json:"key_path,omitempty"`
+}
+
+// buildAdvisories maps the advisories a run raised onto the tool's wire shape,
+// preserving their order.
+//
+// The message is rendered through the compiler's own advisory formatter — the one
+// formatter every surface that displays this channel reads — so an advisory reads
+// identically here, in an editor, and on a terminal.
+func buildAdvisories(result *pipeline.Result) []buildAdvisory {
+	if result == nil || len(result.Advisories) == 0 {
+		return nil
+	}
+	out := make([]buildAdvisory, 0, len(result.Advisories))
+	for _, d := range result.Advisories {
+		entry := buildAdvisory{
+			Severity: d.Severity,
+			Message:  renderer.RenderDiagnosticText(d),
+			Code:     d.Code,
+		}
+		if d.Location != nil {
+			entry.KeyPath = d.Location.KeyPath
+		}
+		out = append(out, entry)
+	}
+	return out
 }
 
 var buildToolSpec = toolSpec{
@@ -162,6 +214,10 @@ func buildInvoke(s *server, ctx context.Context, args json.RawMessage) (*callToo
 	// refusal produces output that stops short of what a build would emit, and a
 	// caller cannot tell that from an accurate render unless it is told.
 	payload.DeclinedExternalInputs = fetchSeam.Declined()
+	// The advisories the build raised travel in the answer, so a caller driving the
+	// compiler through this surface receives every finding a command-line build
+	// prints rather than only the ones that stopped it.
+	payload.Advisories = buildAdvisories(preview.Pipeline)
 	text := renderBuildText(payload)
 	return textResult(text, payload)
 }
@@ -269,11 +325,23 @@ func renderedFiles(result *pipeline.Result, includeContent bool) []buildFile {
 // the remedy, because the caller has to know WHICH reference is missing to
 // supply it. Their absence prints nothing, so a fully-pinned render reads exactly
 // as it did before.
+//
+// The advisories print for the same reason and in the same shape: a caller
+// reading the text form rather than the structured one must not receive fewer
+// findings for that choice. They are listed in the order the build raised them,
+// which is the order a command-line build prints them, and their absence prints
+// nothing.
 func renderBuildText(p buildResultPayload) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Build of %s rendered %d file(s) in memory (nothing written to disk):\n", p.Release, len(p.Files))
 	for _, f := range p.Files {
 		fmt.Fprintf(&b, "  %s\n", f.Path)
+	}
+	if len(p.Advisories) > 0 {
+		fmt.Fprintf(&b, "\nThe build raised %d advisory finding(s). None of them changed the outcome:\n", len(p.Advisories))
+		for _, a := range p.Advisories {
+			fmt.Fprintf(&b, "  %s: %s\n", a.Severity, a.Message)
+		}
 	}
 	if len(p.DeclinedExternalInputs) > 0 {
 		fmt.Fprintf(&b, "\nThis render is frozen, so it declined %d external reference(s) the lockfile does not pin. "+

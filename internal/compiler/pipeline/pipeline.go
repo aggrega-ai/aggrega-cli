@@ -23,6 +23,8 @@ import (
 	"sort"
 	"time"
 
+	"github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
+
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/analyzer"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/ir"
@@ -152,6 +154,20 @@ type Inputs struct {
 	// each step's guest; a nil lookup reaching the renderer leaves pipelines
 	// validated-but-not-executed.
 	PluginPathLookup pluginpath.Lookup
+
+	// AdvisoryLog collects the exit-code-neutral advisories the phases raise, in
+	// the order they raise them. It is an OUT channel carried in with the inputs,
+	// which is what lets one log span phases whose signatures are otherwise
+	// unrelated: the advisories are produced inside the resolve scope, after static
+	// analysis, around the governance sockets and after the render, and threading a
+	// parameter through every one of those would put the same value in four
+	// signatures for one purpose.
+	//
+	// The entry points set it for themselves and surface the result — RunPipeline
+	// on Result.Advisories, RunTier4Pipeline on Tier4Result.Advisories — so an
+	// ordinary caller never assigns it. A caller driving a single phase directly
+	// leaves it nil, which records nothing and changes no display.
+	AdvisoryLog *AdvisoryLog
 }
 
 // Options carries per-invocation flags. IncludeTrace, when true, causes
@@ -309,26 +325,44 @@ type Result struct {
 	Artifacts map[string][]byte
 	IRGraph   *types.IRGraph
 	Trace     map[string][]byte
-	// RenderDiagnostics carries EVERY advisory the render raised, so a caller that
-	// does not read the terminal can surface them itself — the daemon turns them
-	// into editor problems. The terminal display already happened by the time this
-	// returns; carrying them here is what stops that display from being the only
-	// place they exist. Empty when the render was skipped, and out-of-band in
-	// every case: no entry affects Artifacts.
+	// Advisories carries EVERY exit-code-neutral advisory the run raised — the
+	// binding-lint findings, the static-analysis advisory stream, the governance
+	// sockets' warn and info verdicts, and the render's own warnings — so a caller
+	// that reads no terminal receives all of them as structured entries rather
+	// than depending on a redirect of the process diagnostic stream. Out-of-band
+	// in every case: no entry affects Artifacts, and no entry moves a verdict.
 	//
-	// The render keeps two advisory streams because a display treats them
-	// differently — one prints unconditionally, the other is suppressible by class
-	// code — and they arrive here as ONE list, in the order the display prints
-	// them: the uncoded stream first, then the coded one. A caller reading this
-	// needs the distinction for nothing, and holding two lists here would ask
-	// every such caller to merge them or, worse, to read one and silently miss
-	// the other. The display keeps its two groups because it reads the render's
-	// own result, where the streams are still separate fields.
+	// This is ONE channel and deliberately not one field per class. A second
+	// advisory field beside this one would leave every consuming surface deciding
+	// which to read, and the two would disagree the first time an advisory moved
+	// between them. A consumer that wants to tell the classes apart reads each
+	// entry's own severity and code.
 	//
-	// An entry carries a class code where its raising site had one to carry and
-	// carries none where it did not, so a consumer matching on code matches the
-	// classes that exist rather than a code invented at this boundary.
-	RenderDiagnostics []renderer.Diagnostic
+	// # The order is the display's order, and it is a contract
+	//
+	// Entries arrive in the sequence a terminal prints them, because each is
+	// recorded beside the display that shows it rather than assembled afterwards.
+	// Whoever compares what a run printed against what it returned finds the same
+	// entries in the same sequence.
+	//
+	// # What an entry carries, and what it deliberately does not
+	//
+	// An entry carries a class code where its raising site had one and none where
+	// it did not, so a consumer matching on code matches the classes that exist
+	// rather than a code invented at this boundary. An entry carries a LOCATION
+	// where its producer had one to carry: a finding about an authored document
+	// carries the path into that document, leaving the position to be recovered by
+	// the surface holding the parsed file, and a finding about a graph coordinate
+	// carries the node it names. An entry whose producer has neither carries no
+	// location at all, and a surface that must show one places it at the head of
+	// the file.
+	//
+	// A trace-file close failure is NOT here, and that is deliberate rather than an
+	// omission: it reports that a side effect the caller asked for did not
+	// complete, which is housekeeping rather than a finding about the author's
+	// Release. An advisory list an author reads must not fill with entries they
+	// cannot act on.
+	Advisories []renderer.Diagnostic
 }
 
 // Tier4Result carries the outputs of Steps 1-4 of the compiler pipeline,
@@ -349,16 +383,21 @@ type Result struct {
 // chain carries no *ResolverError at all. Tier-4 position-recovery
 // walks the slice with a uniform code path regardless of cardinality.
 //
-// LintAdvisories carries the exit-code-neutral advisory findings the resolve
-// scope produced — presently the attachment-slot near-miss lint. They are
-// structurally identical to ResolveDiagnostics (entity, field locator, message)
-// so a front end reuses one position-recovery path for both, but they never
-// contribute to a verdict: a caller renders them as warnings and proceeds.
+// Advisories carries the exit-code-neutral advisories the phases raised, in the
+// order they raised them, and never contributes to a verdict: a caller renders
+// them as warnings and proceeds. It is the SAME channel and the same element type
+// RunPipeline returns on Result.Advisories, so a surface that consumes advisories
+// from a validation and from a build reads one shape rather than two.
+//
+// An advisory about an authored document carries the path into that document on
+// its location, so the position is recovered by the surface holding the parsed
+// file — the same recovery ResolveDiagnostics gets, which is what keeps an
+// advisory on its authoring key rather than at the head of the file.
 type Tier4Result struct {
 	IRGraph            *types.IRGraph
 	Analysis           *analyzer.AnalysisResult
 	ResolveDiagnostics []*resolver.ResolverError
-	LintAdvisories     []*resolver.ResolverError
+	Advisories         []renderer.Diagnostic
 }
 
 // stepsOneToFourOutput bundles the outputs runStepsOneToFour produces inside
@@ -555,8 +594,15 @@ func runStepsOneToFour(
 			out.AssertionErr = renderer.EvaluateComponentAndFeatureAssertions(graph, catalogLookup)
 		}
 
+		// The advisory stream static analysis produced: displayed, and recorded on
+		// the one advisory channel in the same loop so the recorded order is the
+		// displayed order by construction. The stream arrives as finished sentences,
+		// so an entry carries the line verbatim and no location — see
+		// advisoryFromDisplayLine for why that absence is the producer's shape
+		// rather than a shortcut.
 		for _, w := range analysis.Warnings {
 			fmt.Fprintf(os.Stderr, "  %s\n", w)
+			inputs.AdvisoryLog.record(advisoryFromDisplayLine(w))
 		}
 		return use(out)
 	})
@@ -672,8 +718,18 @@ func ResolveAndValidate(
 			return err
 		}
 		resolveResult.LintAdvisories = append(resolveResult.LintAdvisories, declaredAdvisories...)
+		// The drain: displayed, and recorded on the one advisory channel in the same
+		// loop so the recorded order is the displayed order by construction.
+		//
+		// The display shows the finding's subject-bearing rendering because a
+		// terminal has nowhere else to put the subject; the recorded entry carries
+		// the subject-free rendering plus the subject structurally, so a surface that
+		// draws the finding on its authoring key does not spell the same path twice.
+		// Both renderings come from one composer in the resolver, so a condition
+		// keeps one wording however many surfaces report it.
 		for _, a := range resolveResult.LintAdvisories {
 			fmt.Fprintf(os.Stderr, "  lint: %s\n", a)
+			inputs.AdvisoryLog.record(advisoryFromResolverFinding(a, abi.SeverityWarn))
 		}
 
 		// ctx.Err is the cancellation signal the rule walks read once per
@@ -925,6 +981,9 @@ func RunTier4Pipeline(
 	recipeFor resolver.RecipeBinding,
 	subAggregateLoader topology.SubAggregateLoader,
 ) (*Tier4Result, error) {
+	// The entry point owns the log, for the reason RunPipeline's does: one log per
+	// run, so a caller cannot hand two runs the same accumulator.
+	inputs.AdvisoryLog = &AdvisoryLog{}
 	out := &Tier4Result{}
 	var assertionErr error
 	err := runStepsOneToFour(ctx, inputs, catalogLookup, recipeFor, subAggregateLoader, func(stepsOut *stepsOneToFourOutput) error {
@@ -935,11 +994,18 @@ func RunTier4Pipeline(
 		out.IRGraph = stepsOut.IRGraph
 		out.Analysis = stepsOut.Analysis
 		assertionErr = stepsOut.AssertionErr
-		if stepsOut.ResolveResult != nil {
-			out.LintAdvisories = stepsOut.ResolveResult.LintAdvisories
-		}
 		return nil
 	})
+
+	// The advisories are read off the log OUTSIDE the resolve scope, and that is
+	// safe where reading the phase outputs above is not: the log holds recorded
+	// entries — copies of what each display showed — rather than a view the resolve
+	// scope owns and closes.
+	//
+	// Read unconditionally, including when a phase failed. The phases that ran
+	// before the failure still found what they found, and a reader who loses those
+	// findings has to fix the failure and re-run to see them.
+	out.Advisories = inputs.AdvisoryLog.Entries()
 
 	// A failing Component or Feature assertion is a fatal verdict on this
 	// document, so it surfaces here as the run error — the same class the render
@@ -982,13 +1048,16 @@ func RunTier4Pipeline(
 // any filesystem-side effects (writing artifacts to dist/, writing the
 // trace map to .trace/).
 //
-// Mid-pipeline warnings (binding-lint advisories, analyzer warnings,
-// renderer warnings) are written to os.Stderr inline by this function;
-// daemons that need to capture or silence them redirect os.Stderr at the
-// process boundary. The renderer's warnings ALSO ride out on
-// Result.RenderDiagnostics, so a caller that reads no terminal receives them as
-// structured entries rather than depending on the redirect; the binding-lint and
-// analyzer advisories reach the stream and nothing else.
+// Mid-run advisories — the binding-lint findings, the static-analysis advisory
+// stream, the governance sockets' warn and info verdicts, and the renderer's
+// warnings — are displayed on os.Stderr inline by this function AND ride out on
+// Result.Advisories, so a caller that reads no terminal receives every one of
+// them as a structured entry rather than having to redirect a process stream to
+// see them. The entries arrive in the order the display printed them, because
+// each is recorded beside its own display.
+//
+// A trace-file close failure is displayed and is deliberately not an advisory:
+// see Result.Advisories for why.
 //
 // The parameter map merged from Release.spec.parameters flows through to
 // the renderer (for orchestrator-time path-template evaluation). RunPipeline
@@ -1152,6 +1221,12 @@ func RunPipeline(
 	subAggregateLoader topology.SubAggregateLoader,
 	opts Options,
 ) (*Result, error) {
+	// The entry point owns the log, so every phase below records into one of them
+	// and a caller never has to supply it. Assigned unconditionally rather than
+	// honoured-if-set: a caller-supplied log would let two runs share an
+	// accumulator, and the second run's Result would then carry the first run's
+	// advisories.
+	inputs.AdvisoryLog = &AdvisoryLog{}
 	var result *Result
 	err := runStepsOneToFour(ctx, inputs, catalogLookup, recipeLookup.Recipe, subAggregateLoader, func(stepsOut *stepsOneToFourOutput) error {
 		// Step 4: convert analyzer errors to the joined-error shape that
@@ -1198,8 +1273,14 @@ func RunPipeline(
 		// compilation cache, provider engines) is constructed — so no rendering
 		// plugin loads. The graph is already final after Step 4b; render never
 		// mutates it, so this returns the same graph a full run would.
+		//
+		// The advisories the phases that DID run raised travel out even though no
+		// render happened: a render-skipping caller still resolved and analysed the
+		// document, so the findings from those phases exist and are exactly as
+		// useful to it. Only the render's own advisories are absent, because the
+		// render did not run.
 		if opts.SkipRender {
-			result = &Result{IRGraph: graph}
+			result = &Result{IRGraph: graph, Advisories: inputs.AdvisoryLog.Entries()}
 			return nil
 		}
 
@@ -1220,6 +1301,13 @@ func RunPipeline(
 		} else {
 			traceWriter = trace.New("", traceMode)
 		}
+		// A close failure is reported on the diagnostic stream and reaches the
+		// advisory channel deliberately NOT AT ALL. It says that a side effect the
+		// caller asked for did not complete — the compiler's own housekeeping — and
+		// nothing whatever about the author's Release, so it does not belong in a
+		// list a client renders as problems with the reader's workspace, where it
+		// would be both unactionable and misleading. Do not sweep it onto the channel
+		// for symmetry with the advisories around it.
 		defer func() {
 			if cerr := traceWriter.Close(); cerr != nil {
 				fmt.Fprintf(os.Stderr, "  trace: close: %s\n", cerr)
@@ -1336,6 +1424,16 @@ func RunPipeline(
 
 		emitRenderWarnings(os.Stderr, renderResult, opts.SuppressUnsupportedFieldWarnings)
 
+		// The render's own advisories join the channel here, immediately after their
+		// display and before the render-verdict socket's, so the channel's order is
+		// the display's order across the render boundary too. They are recorded
+		// verbatim: they are already this channel's element type, so there is no
+		// conversion and nothing to lose — a render advisory keeps the node and
+		// provider its location names.
+		for _, d := range mergeRenderDiagnostics(renderResult) {
+			inputs.AdvisoryLog.record(d)
+		}
+
 		// Render-verdict governance role. Config-driven off the render-verdict
 		// attachments in WorkspaceConfig.Plugins.Governance — a no-op when
 		// unconfigured, and it runs those attachments over the rendered artifacts
@@ -1346,13 +1444,14 @@ func RunPipeline(
 			return err
 		}
 
-		// The two advisory streams join here, in the order the display above
-		// printed them, so a caller that reads no terminal receives everything the
-		// render had to say through one field.
+		// Every advisory the run raised is read off the log rather than re-collected
+		// from the phases, which is what makes the returned order the displayed
+		// order: the log was appended to beside each display, and a second collection
+		// here would be free to disagree with those displays.
 		result = &Result{
-			Artifacts:         renderResult.FileBytes(),
-			IRGraph:           graph,
-			RenderDiagnostics: mergeRenderDiagnostics(renderResult),
+			Artifacts:  renderResult.FileBytes(),
+			IRGraph:    graph,
+			Advisories: inputs.AdvisoryLog.Entries(),
 		}
 		if memWriter != nil {
 			result.Trace = memWriter.Entries()

@@ -256,9 +256,13 @@ func runPolicySocket(ctx context.Context, inputs Inputs, catalogLookup resolver.
 		for _, r := range po.Results {
 			switch r.Severity {
 			case analyzer.SeverityWarn:
+				// A warn verdict at this role joins the static-analysis advisory
+				// stream, which is displayed and recorded together further down the
+				// run. It is deliberately NOT recorded here as well: one advisory
+				// recorded at two points is one advisory delivered twice.
 				analysis.Warnings = append(analysis.Warnings, policyWarnMessage(ref.URI, r))
 			case analyzer.SeverityInfo:
-				emitPolicyInfo(ref.URI, r)
+				emitPolicyInfo(inputs.AdvisoryLog, ref.URI, r)
 			}
 		}
 	}
@@ -333,9 +337,15 @@ func runRenderPolicySocket(ctx context.Context, inputs Inputs, catalogLookup res
 		for _, r := range po.Results {
 			switch r.Severity {
 			case analyzer.SeverityWarn:
-				fmt.Fprintf(os.Stderr, "  warning: %s\n", policyWarnMessage(ref.URI, r))
+				// Displayed and recorded together, so the recorded order is the
+				// displayed order. Unlike the ir-verdict role's warn, this one has no
+				// advisory stream to join — it is displayed here directly — so here is
+				// where it joins the channel.
+				line := policyWarnMessage(ref.URI, r)
+				fmt.Fprintf(os.Stderr, "  warning: %s\n", line)
+				inputs.AdvisoryLog.record(advisoryFromPolicyVerdict(r, line))
 			case analyzer.SeverityInfo:
-				emitPolicyInfo(ref.URI, r)
+				emitPolicyInfo(inputs.AdvisoryLog, ref.URI, r)
 			}
 		}
 	}
@@ -578,8 +588,14 @@ func policyWarnMessage(pluginURI string, r abi.Diagnostic) string {
 // routes generally: each route's printed label is its own literal, so a label
 // cannot be read off the severity that selected it, nor the severity off the
 // label.
-func emitPolicyInfo(pluginURI string, r abi.Diagnostic) {
-	fmt.Fprintf(os.Stderr, "  info: policy plugin %q: %s%s\n", pluginRefName(pluginURI), r.Message, policyVerdictDetail(r))
+// The verdict is recorded on the advisory channel beside its display, so a
+// caller that reads no terminal receives it too. The recorded entry keeps the
+// location the guest set; see advisoryFromPolicyVerdict for why its message
+// carries the plugin attribution rather than leaving it to the display.
+func emitPolicyInfo(log *AdvisoryLog, pluginURI string, r abi.Diagnostic) {
+	line := fmt.Sprintf("policy plugin %q: %s%s", pluginRefName(pluginURI), r.Message, policyVerdictDetail(r))
+	fmt.Fprintf(os.Stderr, "  info: %s\n", line)
+	log.record(advisoryFromPolicyVerdict(r, line))
 }
 
 // policyVerdictDetail renders the optional fields a fired verdict carried beside

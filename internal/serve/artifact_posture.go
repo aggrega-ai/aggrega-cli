@@ -158,12 +158,13 @@ func (s *Server) renderUnderArtifactPosture(ctx context.Context, release string)
 	// One call carries both classes because the publication replaces the whole
 	// layer: a second call would erase the first one's entries.
 	if preview != nil && preview.Resolved != nil {
-		var renderDiags []renderer.Diagnostic
+		var advisories []renderer.Diagnostic
 		if preview.Pipeline != nil {
-			renderDiags = preview.Pipeline.RenderDiagnostics
+			advisories = preview.Pipeline.Advisories
 		}
-		s.publishRenderDiagnostics(ctx, preview.Resolved.AggregatePath, renderDiags,
-			externalInputDivergenceDiagnostics(fetchSeam.Declined(), releasePath))
+		s.publishRenderDiagnostics(ctx, preview.Resolved.AggregatePath, advisories,
+			externalInputDivergenceDiagnostics(fetchSeam.Declined(), releasePath),
+			preview.Resolved.AggBytes)
 	}
 
 	if err != nil {

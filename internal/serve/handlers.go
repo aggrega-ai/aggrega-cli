@@ -719,21 +719,25 @@ func (s *Server) handleIrGraph(ctx context.Context, params irGraphParams) (irGra
 	//    which is why it runs here rather than as one of the preview's own gates.
 	s.verifyDriftAndPublish(ctx, preview.lockfilePath, preview.resolved.Closure)
 
-	// 5. Render advisories to the Problems panel. The render step's coded
-	//    diagnostics — a target that cannot honor an authored field, an
-	//    attachment delivering a declared-sensitive datum as a literal — reach
-	//    the terminal on a CLI build and would otherwise reach nothing here, so
-	//    they are published on the file the daemon attributes semantic findings
-	//    to. Non-blocking, like drift: the graph is returned regardless. The
-	//    render only runs when the build-on-inspect dial is on, so with it off
-	//    this replaces an empty layer with an empty layer.
+	// 5. Advisories to the Problems panel. Every exit-code-neutral finding the run
+	//    raised — the binding-lint findings, the static-analysis advisory stream,
+	//    the governance sockets' non-halting verdicts, and the render's own coded
+	//    diagnostics — reaches the terminal on a command-line build and would
+	//    otherwise reach nothing here, so they are published on the file the daemon
+	//    attributes semantic findings to. Non-blocking, like drift: the graph is
+	//    returned regardless.
+	//
+	//    The authored bytes are parsed so an advisory that named an authoring key
+	//    lands on that key rather than at the head of the file; one that named a
+	//    graph coordinate has no key to land on and stays at the head.
 	//
 	//    The declined external references travel in the SAME call rather than a
 	//    second one, and that is load-bearing: the publication replaces the whole
-	//    render layer, so a second call would erase whichever layer the first one
-	//    wrote. One call, one layer, both advisory classes.
-	s.publishRenderDiagnostics(ctx, preview.resolved.AggregatePath, preview.pipeline.RenderDiagnostics,
-		externalInputDivergenceDiagnostics(preview.fetchSeam.Declined(), preview.releasePath))
+	//    layer, so a second call would erase whichever layer the first one wrote.
+	//    One call, one layer, every advisory class.
+	s.publishRenderDiagnostics(ctx, preview.resolved.AggregatePath, preview.pipeline.Advisories,
+		externalInputDivergenceDiagnostics(preview.fetchSeam.Declined(), preview.releasePath),
+		preview.resolved.AggBytes)
 
 	graphBytes, err := json.Marshal(preview.pipeline.IRGraph)
 	if err != nil {
