@@ -3,7 +3,7 @@
 
 //go:build integration
 
-package main
+package pullops
 
 import (
 	"context"

@@ -168,7 +168,7 @@ func TestIntegration_VerdictTrustFullRefreshPrunesTheLastDetachedGate(t *testing
 	}
 	recorded := readRecord(t, releasePath)
 	t.Logf("record after the seeding pull:\n%s", recorded)
-	if _, held := trustRecordAt(t, releasePath).Find(published.Coordinate); !held {
+	if _, held := verdicttest.TrustRecordAt(t, releasePath).Find(published.Coordinate); !held {
 		t.Fatalf("precondition: the seeding pull must record %s", published.Coordinate)
 	}
 	if err := buildAt(t, root, releasePath); err != nil {
@@ -216,9 +216,9 @@ func TestIntegration_VerdictTrustFullRefreshPrunesTheLastDetachedGate(t *testing
 	}
 	// It reads back through the loader every consumer uses, so an emptied record that
 	// no longer satisfies its schema fails here.
-	emptied := trustRecordAt(t, releasePath)
+	emptied := verdicttest.TrustRecordAt(t, releasePath)
 	if len(emptied.Plugins) != 0 {
-		t.Fatalf("the emptied record still holds %v", recordedCoordinates(emptied))
+		t.Fatalf("the emptied record still holds %v", verdicttest.RecordedCoordinates(emptied))
 	}
 	if err := buildAt(t, root, releasePath); err != nil {
 		t.Fatalf("with the entry gone the build must go silent; got %v", err)
@@ -247,10 +247,10 @@ func TestIntegration_VerdictTrustFullRefreshPrunesOnlyTheDetachedOne(t *testing.
 		t.Fatalf("seeding pullRun: %v", err)
 	}
 	t.Logf("record after the seeding pull:\n%s", readRecord(t, releasePath))
-	seeded := trustRecordAt(t, releasePath)
+	seeded := verdicttest.TrustRecordAt(t, releasePath)
 	for _, want := range []string{kept.Coordinate, detached.Coordinate} {
 		if _, held := seeded.Find(want); !held {
-			t.Fatalf("precondition: the seeding pull must record %s; it holds %v", want, recordedCoordinates(seeded))
+			t.Fatalf("precondition: the seeding pull must record %s; it holds %v", want, verdicttest.RecordedCoordinates(seeded))
 		}
 	}
 
@@ -271,12 +271,12 @@ func TestIntegration_VerdictTrustFullRefreshPrunesOnlyTheDetachedOne(t *testing.
 		t.Fatalf("the explicit full refresh must complete; got %v", err)
 	}
 	t.Logf("record after `aggrega pull --upgrade`:\n%s", readRecord(t, releasePath))
-	pruned := trustRecordAt(t, releasePath)
+	pruned := verdicttest.TrustRecordAt(t, releasePath)
 	if _, held := pruned.Find(detached.Coordinate); held {
-		t.Errorf("the detached gate's entry must be gone; record holds %v", recordedCoordinates(pruned))
+		t.Errorf("the detached gate's entry must be gone; record holds %v", verdicttest.RecordedCoordinates(pruned))
 	}
 	if _, held := pruned.Find(kept.Coordinate); !held {
-		t.Errorf("the attached gate's entry must remain; record holds %v", recordedCoordinates(pruned))
+		t.Errorf("the attached gate's entry must remain; record holds %v", verdicttest.RecordedCoordinates(pruned))
 	}
 	if err := buildAt(t, root, releasePath); err != nil {
 		t.Fatalf("with the stale entry gone the build must go silent; got %v", err)
@@ -327,12 +327,12 @@ func TestIntegration_VerdictTrustTargetedUpgradePrunesOnlyItsTarget(t *testing.T
 	}
 	t.Logf("record after `aggrega pull --upgrade %s`:\n%s", named.Coordinate, readRecord(t, releasePath))
 
-	pruned := trustRecordAt(t, releasePath)
+	pruned := verdicttest.TrustRecordAt(t, releasePath)
 	if _, held := pruned.Find(named.Coordinate); held {
-		t.Errorf("the named target's entry must be gone; record holds %v", recordedCoordinates(pruned))
+		t.Errorf("the named target's entry must be gone; record holds %v", verdicttest.RecordedCoordinates(pruned))
 	}
 	if _, held := pruned.Find(unnamed.Coordinate); !held {
-		t.Fatalf("an entry the upgrade did not name must be held; record holds %v", recordedCoordinates(pruned))
+		t.Fatalf("an entry the upgrade did not name must be held; record holds %v", verdicttest.RecordedCoordinates(pruned))
 	}
 	err = buildAt(t, root, releasePath)
 	if !errors.Is(err, pluginstrust.ErrVerdictAttachmentNotConfigured()) {
@@ -371,10 +371,10 @@ func TestIntegration_VerdictTrustPullRecordsAnAcquiredPlugin(t *testing.T) {
 		t.Fatalf("pullRun: %v (stderr=%q)", err, stderr.String())
 	}
 
-	trust := trustRecordAt(t, releasePath)
+	trust := verdicttest.TrustRecordAt(t, releasePath)
 	got, held := trust.Find(published.Coordinate)
 	if !held {
-		t.Fatalf("expected a record for the acquired plugin %s; record holds %v", published.Coordinate, recordedCoordinates(trust))
+		t.Fatalf("expected a record for the acquired plugin %s; record holds %v", published.Coordinate, verdicttest.RecordedCoordinates(trust))
 	}
 	if got.Digest != published.WasmDigest {
 		t.Errorf("recorded digest = %s; want the .wasm layer content digest %s", got.Digest, published.WasmDigest)
@@ -403,7 +403,7 @@ func TestIntegration_VerdictTrustPullRecordsAnAcquiredPlugin(t *testing.T) {
 	if strings.Contains(stderr.String(), pluginstrust.FileName) {
 		t.Errorf("the record already existed, so the second pull must not announce a creation; stderr = %q", stderr.String())
 	}
-	again, _ := trustRecordAt(t, releasePath).Find(published.Coordinate)
+	again, _ := verdicttest.TrustRecordAt(t, releasePath).Find(published.Coordinate)
 	if again.Digest != published.WasmDigest {
 		t.Errorf("second pull changed the recorded digest to %s; want %s held", again.Digest, published.WasmDigest)
 	}
@@ -475,9 +475,9 @@ func TestIntegration_VerdictTrustAutoPullBuildWritesTheRecord(t *testing.T) {
 		t.Fatalf("build --auto-pull: %v (diag=%q)", err, diagBuf.String())
 	}
 
-	trust := trustRecordAt(t, releasePath)
+	trust := verdicttest.TrustRecordAt(t, releasePath)
 	if _, held := trust.Find(published.Coordinate); !held {
-		t.Fatalf("build --auto-pull runs the pull path, so it must write the record; record holds %v", recordedCoordinates(trust))
+		t.Fatalf("build --auto-pull runs the pull path, so it must write the record; record holds %v", verdicttest.RecordedCoordinates(trust))
 	}
 
 	// The other half: with the lockfile now present the build's own resolution path
@@ -508,7 +508,7 @@ func rerecordVerdictIdentity(t *testing.T, releasePath, coordinate, version, dig
 	}
 	if _, held := trust.Find(coordinate); !held {
 		t.Fatalf("record %s does not hold %s, so editing it would prove nothing; it holds %v",
-			path, coordinate, recordedCoordinates(trust))
+			path, coordinate, verdicttest.RecordedCoordinates(trust))
 	}
 	trust.Upsert(pluginstrust.TrustedPlugin{Plugin: coordinate, ResolvedVersion: version, Digest: digest})
 	if err := pluginstrust.Write(path, trust); err != nil {
@@ -553,7 +553,7 @@ func TestIntegration_VerdictTrustRefusesAChangedRecordedIdentity(t *testing.T) {
 	if err := pull(t, pullConfig{}); err != nil {
 		t.Fatalf("seeding pullRun: %v", err)
 	}
-	seeded, held := trustRecordAt(t, releasePath).Find(published.Coordinate)
+	seeded, held := verdicttest.TrustRecordAt(t, releasePath).Find(published.Coordinate)
 	if !held {
 		t.Fatalf("precondition: the seeding pull must record %s", published.Coordinate)
 	}
@@ -630,7 +630,7 @@ func TestIntegration_VerdictTrustRefusesAChangedRecordedIdentity(t *testing.T) {
 		if err := pull(t, pullConfig{Upgrade: true, UpgradeTargets: []string{published.Coordinate}}); err != nil {
 			t.Fatalf("naming the plugin in a targeted upgrade must adopt the resolved identity; got %v", err)
 		}
-		adopted, held := trustRecordAt(t, releasePath).Find(published.Coordinate)
+		adopted, held := verdicttest.TrustRecordAt(t, releasePath).Find(published.Coordinate)
 		if !held {
 			t.Fatalf("the upgrade dropped the record for %s", published.Coordinate)
 		}

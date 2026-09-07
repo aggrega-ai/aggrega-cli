@@ -24,27 +24,6 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
-// trustRecordAt loads the trust record beside releasePath, failing the test when
-// it is absent or unreadable.
-func trustRecordAt(t *testing.T, releasePath string) *pluginstrust.Trust {
-	t.Helper()
-	trust, err := pluginstrust.Load(pluginstrust.PathFor(releasePath))
-	if err != nil {
-		t.Fatalf("load trust record beside %s: %v", releasePath, err)
-	}
-	return trust
-}
-
-// recordedCoordinates returns the coordinates a trust record holds, sorted.
-func recordedCoordinates(trust *pluginstrust.Trust) []string {
-	var out []string
-	for _, p := range trust.Plugins {
-		out = append(out, p.Plugin)
-	}
-	sort.Strings(out)
-	return out
-}
-
 // attachingVerdictPlugins builds the verdict attachment set for the authored
 // references given, at the linter socket, whose every attachment is a verdict
 // attachment.
@@ -178,9 +157,9 @@ func TestVerdictTrustDeclinesWhatTheBinaryCarries(t *testing.T) {
 	if recorded != 1 {
 		t.Errorf("recorded count = %d; want 1 (the carried coordinate is declined)", recorded)
 	}
-	trust := trustRecordAt(t, releasePath)
-	if want := []string{"linter/acquired-probe"}; strings.Join(recordedCoordinates(trust), ",") != strings.Join(want, ",") {
-		t.Errorf("record holds %v; want exactly %v", recordedCoordinates(trust), want)
+	trust := verdicttest.TrustRecordAt(t, releasePath)
+	if want := []string{"linter/acquired-probe"}; strings.Join(verdicttest.RecordedCoordinates(trust), ",") != strings.Join(want, ",") {
+		t.Errorf("record holds %v; want exactly %v", verdicttest.RecordedCoordinates(trust), want)
 	}
 }
 
@@ -279,10 +258,10 @@ func TestVerdictTrustFillsAMissingEntryAndHoldsAPresentOne(t *testing.T) {
 		t.Fatalf("recordVerdictPluginTrust: %v", err)
 	}
 
-	trust := trustRecordAt(t, releasePath)
+	trust := verdicttest.TrustRecordAt(t, releasePath)
 	got, ok := trust.Find("linter/held-probe")
 	if !ok {
-		t.Fatalf("the present entry disappeared; record holds %v", recordedCoordinates(trust))
+		t.Fatalf("the present entry disappeared; record holds %v", verdicttest.RecordedCoordinates(trust))
 	}
 	if got.Digest != held {
 		t.Errorf("present entry digest = %s; want the held %s (an ordinary pull must not overwrite it)", got.Digest, held)
@@ -292,7 +271,7 @@ func TestVerdictTrustFillsAMissingEntryAndHoldsAPresentOne(t *testing.T) {
 	}
 	addedRec, ok := trust.Find("linter/added-probe")
 	if !ok {
-		t.Fatalf("the missing entry was not filled; record holds %v", recordedCoordinates(trust))
+		t.Fatalf("the missing entry was not filled; record holds %v", verdicttest.RecordedCoordinates(trust))
 	}
 	if addedRec.Digest != added {
 		t.Errorf("filled entry digest = %s; want %s", addedRec.Digest, added)
@@ -350,7 +329,7 @@ func TestVerdictTrustRewritesOnlyWhenTheRunReresolves(t *testing.T) {
 				t.Fatalf("recordVerdictPluginTrust: %v", err)
 			}
 
-			got, ok := trustRecordAt(t, releasePath).Find("linter/held-probe")
+			got, ok := verdicttest.TrustRecordAt(t, releasePath).Find("linter/held-probe")
 			if !ok {
 				t.Fatal("the entry disappeared")
 			}
@@ -591,7 +570,7 @@ func TestVerdictTrustRefusesAChangedIdentityUnlessTheRunAsksForIt(t *testing.T) 
 				}
 				// Anti-needle: a halt asserted against a record that was never written
 				// would be a halt on nothing.
-				if _, held := trustRecordAt(t, releasePath).Find(coordinate); !held {
+				if _, held := verdicttest.TrustRecordAt(t, releasePath).Find(coordinate); !held {
 					t.Fatalf("seeded record does not hold %s; every halt below would be unattributable", coordinate)
 				}
 			}
@@ -820,11 +799,11 @@ func seedTrustRecord(t *testing.T, releasePath string, coordinates ...string) {
 	if err := pluginstrust.Write(pluginstrust.PathFor(releasePath), seed); err != nil {
 		t.Fatalf("seed record: %v", err)
 	}
-	written := trustRecordAt(t, releasePath)
+	written := verdicttest.TrustRecordAt(t, releasePath)
 	for _, coordinate := range coordinates {
 		if _, held := written.Find(coordinate); !held {
 			t.Fatalf("seeded record does not hold %s; every assertion below would be unattributable (it holds %v)",
-				coordinate, recordedCoordinates(written))
+				coordinate, verdicttest.RecordedCoordinates(written))
 		}
 	}
 }
@@ -873,7 +852,7 @@ func TestVerdictTrustPrunesOnlyOnAnExplicitUpgrade(t *testing.T) {
 				t.Fatalf("recordVerdictPluginTrust: %v", err)
 			}
 
-			_, held := trustRecordAt(t, releasePath).Find(stale)
+			_, held := verdicttest.TrustRecordAt(t, releasePath).Find(stale)
 			if held != tc.wantHeld {
 				t.Errorf("entry held = %t; want %t", held, tc.wantHeld)
 			}
@@ -917,7 +896,7 @@ func TestVerdictTrustPruneSubjectIsTheAttachmentSetNotTheRecordableSet(t *testin
 			t.Fatalf("recordVerdictPluginTrust: %v", err)
 		}
 
-		if _, held := trustRecordAt(t, releasePath).Find(carried); !held {
+		if _, held := verdicttest.TrustRecordAt(t, releasePath).Find(carried); !held {
 			t.Error("an entry whose plugin is still attached must survive a full refresh, even though the record declines to write it")
 		}
 	})
@@ -948,7 +927,7 @@ func TestVerdictTrustPruneSubjectIsTheAttachmentSetNotTheRecordableSet(t *testin
 			t.Fatalf("recordVerdictPluginTrust: %v", err)
 		}
 
-		held := trustRecordAt(t, releasePath)
+		held := verdicttest.TrustRecordAt(t, releasePath)
 		if _, isHeld := held.Find("linter/stale-probe"); isHeld {
 			t.Error("a plugin the binary carries is still identified, so the answer is complete and an unrelated stale entry must be pruned")
 		}
@@ -969,7 +948,7 @@ func TestVerdictTrustPruneSubjectIsTheAttachmentSetNotTheRecordableSet(t *testin
 			catalog.PinReuseMode{Upgrade: true}, io.Discard); err != nil {
 			t.Fatalf("recordVerdictPluginTrust: %v", err)
 		}
-		if _, held := trustRecordAt(t, releasePath).Find("linter/stale-probe"); !held {
+		if _, held := verdicttest.TrustRecordAt(t, releasePath).Find("linter/stale-probe"); !held {
 			t.Error("an attachment whose plugin cannot be identified must suppress the prune; dropping an entry on the strength of a failed read names the wrong cause")
 		}
 
@@ -980,7 +959,7 @@ func TestVerdictTrustPruneSubjectIsTheAttachmentSetNotTheRecordableSet(t *testin
 			catalog.PinReuseMode{Upgrade: true}, io.Discard); err != nil {
 			t.Fatalf("recordVerdictPluginTrust: %v", err)
 		}
-		if _, held := trustRecordAt(t, releasePath).Find("linter/stale-probe"); held {
+		if _, held := verdicttest.TrustRecordAt(t, releasePath).Find("linter/stale-probe"); held {
 			t.Fatal("the prune never fires at all, so the suppression above proves nothing")
 		}
 	})
@@ -1006,9 +985,9 @@ func TestVerdictTrustPruneEmptiesTheRecordAndLeavesNoNewOne(t *testing.T) {
 			t.Fatalf("recordVerdictPluginTrust: %v", err)
 		}
 
-		emptied := trustRecordAt(t, releasePath)
+		emptied := verdicttest.TrustRecordAt(t, releasePath)
 		if len(emptied.Plugins) != 0 {
-			t.Fatalf("the record still holds %v", recordedCoordinates(emptied))
+			t.Fatalf("the record still holds %v", verdicttest.RecordedCoordinates(emptied))
 		}
 		if pins := emptied.PinMaps(); len(pins.Pins) != 0 {
 			t.Errorf("an emptied record pins nothing; got %+v", pins.Pins)

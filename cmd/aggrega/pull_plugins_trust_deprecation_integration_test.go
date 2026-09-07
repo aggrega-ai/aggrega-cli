@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/buildops"
+	"github.com/aggrega-ai/aggrega-cli/internal/verdicttest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/deprecation"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
@@ -155,11 +156,11 @@ func TestIntegration_TrustPinnedPluginWithdrawalIsRecordedAndReported(t *testing
 	}
 
 	// What this item adds: the withdrawal is recorded on the plugin's own store.
-	record := trustRecordAt(t, "release.yaml")
+	record := verdicttest.TrustRecordAt(t, "release.yaml")
 	t.Logf("trust record:\n%s", readRecord(t, "release.yaml"))
 	held, isHeld := record.Find(published.Coordinate)
 	if !isHeld {
-		t.Fatalf("precondition: the pull must record %s; it holds %v", published.Coordinate, recordedCoordinates(record))
+		t.Fatalf("precondition: the pull must record %s; it holds %v", published.Coordinate, verdicttest.RecordedCoordinates(record))
 	}
 	if held.Deprecation == nil {
 		t.Fatal("the trust entry carries no withdrawal: marker discovery did not reach a trust-pinned plugin, " +
@@ -279,7 +280,7 @@ func TestIntegration_TrustPinnedWithdrawalFollowsTheTrustFileLifecycle(t *testin
 
 	// The entry is recorded first, with no marker attached anywhere yet.
 	pull(t, false)
-	seeded, isHeld := trustRecordAt(t, "release.yaml").Find(published.Coordinate)
+	seeded, isHeld := verdicttest.TrustRecordAt(t, "release.yaml").Find(published.Coordinate)
 	if !isHeld {
 		t.Fatalf("precondition: the seeding pull must record %s", published.Coordinate)
 	}
@@ -306,10 +307,10 @@ func TestIntegration_TrustPinnedWithdrawalFollowsTheTrustFileLifecycle(t *testin
 	// is where the feature would go inert — the entry is already held, so no later
 	// plain pull would ever record a withdrawal.
 	pull(t, false)
-	afterPlain, isHeld := trustRecordAt(t, "release.yaml").Find(published.Coordinate)
+	afterPlain, isHeld := verdicttest.TrustRecordAt(t, "release.yaml").Find(published.Coordinate)
 	if !isHeld {
 		t.Fatalf("a plain pull must not remove the entry; it holds %v",
-			recordedCoordinates(trustRecordAt(t, "release.yaml")))
+			verdicttest.RecordedCoordinates(verdicttest.TrustRecordAt(t, "release.yaml")))
 	}
 	if afterPlain.ResolvedVersion != seeded.ResolvedVersion || afterPlain.Digest != seeded.Digest {
 		t.Fatalf("a plain pull must leave the recorded IDENTITY exactly as it was;\nbefore: %+v\nafter:  %+v", seeded, afterPlain)
@@ -326,9 +327,9 @@ func TestIntegration_TrustPinnedWithdrawalFollowsTheTrustFileLifecycle(t *testin
 	// together. Nothing clears a marker on its own.
 	writeWorkspaceConfig(t, wsRoot, trustDeprecationConfigBody(host, pubPEM, ""))
 	pull(t, true)
-	pruned := trustRecordAt(t, "release.yaml")
+	pruned := verdicttest.TrustRecordAt(t, "release.yaml")
 	if _, stillHeld := pruned.Find(published.Coordinate); stillHeld {
 		t.Fatalf("an explicit upgrade over a detached plugin must drop the entry, marker and all; it holds %v",
-			recordedCoordinates(pruned))
+			verdicttest.RecordedCoordinates(pruned))
 	}
 }
