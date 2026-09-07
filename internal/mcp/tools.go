@@ -156,10 +156,37 @@ func textResult(text string, structured any) (*callToolResult, *rpcError) {
 // in the package documentation, and is not restated here — two statements of one
 // rule drift, and nothing fails when they do.
 func errorResult(guidance string) (*callToolResult, *rpcError) {
-	return &callToolResult{
+	return structuredErrorResult(guidance, nil)
+}
+
+// structuredErrorResult is errorResult for a failure that still has a
+// machine-readable result to hand back: an operation that ran, produced findings,
+// and then refused. The guidance text is what an assistant reads to correct the
+// call; the structured payload is the same findings in the shape the other
+// surfaces render them in.
+//
+// A nil structured payload omits structuredContent, which is why errorResult
+// delegates here rather than the other way round: one construction site for the
+// failure envelope, and the two routes cannot drift into disagreeing about what a
+// failing result looks like.
+//
+// It exists because a refusal is not a reason to drop to a lower fidelity. An
+// operation whose findings are readable on success and only prose on failure
+// reports the same findings two ways, and the failing case is the one a caller
+// most needs to act on programmatically.
+func structuredErrorResult(guidance string, structured any) (*callToolResult, *rpcError) {
+	res := &callToolResult{
 		Content: []toolTextContent{{Type: "text", Text: guidance}},
 		IsError: true,
-	}, nil
+	}
+	if structured != nil {
+		b, err := json.Marshal(structured)
+		if err != nil {
+			return nil, &rpcError{Code: codeInternalError, Message: "marshal tool result: " + err.Error()}
+		}
+		res.StructuredContent = b
+	}
+	return res, nil
 }
 
 // payload names in the corrective text a decode failure produces: what the
