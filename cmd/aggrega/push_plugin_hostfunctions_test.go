@@ -15,6 +15,7 @@ import (
 
 	"oras.land/oras-go/v2/content/memory"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/pluginops"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -45,9 +46,9 @@ spec:
 // untouched.
 func TestSpliceHostFunctions_PreservesCommentsAndBlanks(t *testing.T) {
 	t.Parallel()
-	out, changed, err := spliceHostFunctions([]byte(stampCommentedEntity), []string{"aggrega_emit_warning", "aggrega_log"})
+	out, changed, err := pluginops.SpliceHostFunctions([]byte(stampCommentedEntity), []string{"aggrega_emit_warning", "aggrega_log"})
 	if err != nil {
-		t.Fatalf("spliceHostFunctions: %v", err)
+		t.Fatalf("pluginops.SpliceHostFunctions: %v", err)
 	}
 	if !changed {
 		t.Fatal("recording a new set should report a change")
@@ -102,9 +103,9 @@ spec:
   plugin: "oci://hub.aggrega.ai/plugin/frp/patch" # bare identity
   abiVersion: v1alpha1
 `
-	out, changed, err := spliceHostFunctions([]byte(noRuntime), []string{"aggrega_log"})
+	out, changed, err := pluginops.SpliceHostFunctions([]byte(noRuntime), []string{"aggrega_log"})
 	if err != nil {
-		t.Fatalf("spliceHostFunctions: %v", err)
+		t.Fatalf("pluginops.SpliceHostFunctions: %v", err)
 	}
 	if !changed {
 		t.Fatal("creating the runtime block should report a change")
@@ -130,9 +131,9 @@ spec:
 // present rather than absent.
 func TestSpliceHostFunctions_EmptySetExplicit(t *testing.T) {
 	t.Parallel()
-	out, changed, err := spliceHostFunctions([]byte(stampCommentedEntity), nil)
+	out, changed, err := pluginops.SpliceHostFunctions([]byte(stampCommentedEntity), nil)
 	if err != nil {
-		t.Fatalf("spliceHostFunctions: %v", err)
+		t.Fatalf("pluginops.SpliceHostFunctions: %v", err)
 	}
 	if !changed {
 		t.Fatal("recording an explicit empty set into a file without one should change it")
@@ -148,14 +149,14 @@ func TestSpliceHostFunctions_EmptySetExplicit(t *testing.T) {
 func TestSpliceHostFunctions_Idempotent(t *testing.T) {
 	t.Parallel()
 	derived := []string{"aggrega_emit_warning", "aggrega_log"}
-	first, changed, err := spliceHostFunctions([]byte(stampCommentedEntity), derived)
+	first, changed, err := pluginops.SpliceHostFunctions([]byte(stampCommentedEntity), derived)
 	if err != nil {
 		t.Fatalf("first splice: %v", err)
 	}
 	if !changed {
 		t.Fatal("first splice should change the file")
 	}
-	second, changed, err := spliceHostFunctions(first, derived)
+	second, changed, err := pluginops.SpliceHostFunctions(first, derived)
 	if err != nil {
 		t.Fatalf("second splice: %v", err)
 	}
@@ -166,7 +167,7 @@ func TestSpliceHostFunctions_Idempotent(t *testing.T) {
 		t.Errorf("re-recording the same set must be byte-identical;\nfirst:\n%s\nsecond:\n%s", first, second)
 	}
 	// A set-equal record in a different order is also a no-op.
-	_, changed, err = spliceHostFunctions(first, []string{"aggrega_log", "aggrega_emit_warning"})
+	_, changed, err = pluginops.SpliceHostFunctions(first, []string{"aggrega_log", "aggrega_emit_warning"})
 	if err != nil {
 		t.Fatalf("reordered splice: %v", err)
 	}
@@ -221,7 +222,7 @@ func TestStampPluginFile_WritesHostFunctionsAndCommands(t *testing.T) {
 	if err := yaml.Unmarshal(after, &wp); err != nil {
 		t.Fatalf("re-parse: %v", err)
 	}
-	if wp.Spec.Runtime == nil || !canonicalHostFunctionsEqual(wp.Spec.Runtime.HostFunctions, []string{"aggrega_cli_write_stdout"}) {
+	if wp.Spec.Runtime == nil || !pluginops.CanonicalHostFunctionsEqual(wp.Spec.Runtime.HostFunctions, []string{"aggrega_cli_write_stdout"}) {
 		t.Fatalf("recorded host functions %+v; want [aggrega_cli_write_stdout]", wp.Spec.Runtime)
 	}
 	// The command mirror is recorded in describe()-declared order with each

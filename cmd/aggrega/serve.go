@@ -74,6 +74,13 @@ func runServe(cmd *cobra.Command, args []string) error {
 		CompilerVersion: provenanceCompilerVersion(),
 		Toolchain:       toolchainStamp(),
 		BuildOnInspect:  buildOnInspect,
+		// Supplied for the same reason the compiler version and the toolchain stamp
+		// are: the value belongs to this package and the daemon lives below it. The
+		// install's collision guard reads the freshly built command tree, which is
+		// what authoritatively decides the built-in command names, so handing the
+		// daemon this one implementation is what keeps both surfaces installing
+		// under the same guard instead of one of them under a copy of it.
+		InstallCLIPlugin: installCLIPlugin,
 	})
 }
 

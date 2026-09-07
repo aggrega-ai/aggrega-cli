@@ -5,11 +5,10 @@ package main
 
 import (
 	"context"
-	"errors"
 	"path"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/pluginops"
 	"github.com/aggrega-ai/aggrega-cli/internal/registryops"
-	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
@@ -39,33 +38,15 @@ func searchRegistry(ctx context.Context, reg registryRepoLister, query string, s
 	return registryops.EnumerateRepositories(ctx, reg, query, scope)
 }
 
-// registrySearchTarget resolves the registry to search from the resolved
-// workspace's default registry. Production returns an authenticated oras remote
-// registry; a test substitutes an in-memory lister so search runs without a
-// network. It is a package-level seam because the live path needs registry
-// credentials the sandbox does not carry: the search logic is proven against a
-// fake target, and the live registry resolution is operator-gated.
-var registrySearchTarget = func(cfg workspaceconfig.Config) (registryRepoLister, string, error) {
-	host := cfg.DefaultRegistry
-	if host == "" {
-		return nil, "", errors.New("no default registry is configured to search")
-	}
-	httpClient, err := workspaceEgressClient(cfg)
-	if err != nil {
-		// The network-egress gate refused (the workspace is offline); the caller
-		// decides whether that is loud (registry search / plugin add) or silent
-		// (the best-effort install hint).
-		return nil, host, err
-	}
-	// Construction routes through the one registry home so the loopback
-	// plain-HTTP handling and the Docker-credential authentication match the
-	// repository client exactly.
-	reg, err := oci.NewRemoteRegistry(host, httpClient)
-	if err != nil {
-		return nil, host, err
-	}
-	return reg, host, nil
-}
+// The registry-target seam is deliberately NOT re-declared here. It lives in the
+// plugin operations layer, which is where every surface that resolves the default
+// registry to enumerate reaches it, and the sites below name it there.
+//
+// A local spelling of it would have to be either a copy of the resolution or a
+// variable initialized from the seam, and both are the same defect: a test points
+// at one of the two while production reads the other, so the fake silently stops
+// applying and the enumeration goes to the live registry. Naming the one seam at
+// the call site cannot come apart that way.
 
 // productionPluginDiscoverable is the live-registry backing for the
 // unknown-command install hint: it resolves the workspace registry and reports
@@ -82,10 +63,10 @@ func productionPluginDiscoverable(name string) bool {
 		return false
 	}
 	cfg := rw.Config()
-	// The offline decision lives at the egress gate: registrySearchTarget derives
+	// The offline decision lives at the egress gate: the registry target derives
 	// its client there and returns an error for an offline workspace, which this
 	// best-effort hint treats as "not discoverable" (silent).
-	reg, _, err := registrySearchTarget(cfg)
+	reg, _, err := pluginops.RegistryTarget(cfg)
 	if err != nil {
 		return false
 	}

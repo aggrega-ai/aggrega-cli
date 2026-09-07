@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/pluginops"
 	"github.com/aggrega-ai/aggrega-cli/internal/registryindex"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/deprecation"
@@ -63,11 +64,11 @@ func resolvedTestWorkspaceAgainst(t *testing.T, look func(string) string) *works
 // their own withdrawals through withWithdrawals.
 func withTagLister(t *testing.T, tags []string) {
 	t.Helper()
-	prev := pluginRepoTagLister
-	pluginRepoTagLister = func(context.Context, workspaceconfig.Config, string, string) ([]string, error) {
+	prev := pluginops.RepoTagLister
+	pluginops.RepoTagLister = func(context.Context, workspaceconfig.Config, string, string) ([]string, error) {
 		return tags, nil
 	}
-	t.Cleanup(func() { pluginRepoTagLister = prev })
+	t.Cleanup(func() { pluginops.RepoTagLister = prev })
 	withWithdrawals(t, nil)
 }
 
@@ -82,8 +83,8 @@ func withTagLister(t *testing.T, tags []string) {
 func withWithdrawals(t *testing.T, withdrawn map[string]string) *[]string {
 	t.Helper()
 	asked := &[]string{}
-	prev := pluginRepoWithdrawalLister
-	pluginRepoWithdrawalLister = func(_ context.Context, _ workspaceconfig.Config, _, _ string, versions []string, _ io.Writer) ([]registryindex.VersionDeprecation, error) {
+	prev := pluginops.RepoWithdrawalLister
+	pluginops.RepoWithdrawalLister = func(_ context.Context, _ workspaceconfig.Config, _, _ string, versions []string, _ io.Writer) ([]registryindex.VersionDeprecation, error) {
 		*asked = append(*asked, versions...)
 		var deps []registryindex.VersionDeprecation
 		for _, v := range oci.SortedSemverTags(keysOf(withdrawn)) {
@@ -98,7 +99,7 @@ func withWithdrawals(t *testing.T, withdrawn map[string]string) *[]string {
 		}
 		return deps, nil
 	}
-	t.Cleanup(func() { pluginRepoWithdrawalLister = prev })
+	t.Cleanup(func() { pluginops.RepoWithdrawalLister = prev })
 	return asked
 }
 
@@ -303,7 +304,7 @@ func TestPluginAddRun_CapabilityFlagsRejectedOffCLI(t *testing.T) {
 // local index by default: with a built index carrying the repository, the headline
 // version is resolved from the snapshot and the live tag lister is never consulted.
 func TestResolveLatestPluginVersion_IndexDefault(t *testing.T) {
-	// Not parallel: mutates the process-global pluginRepoTagLister seam other tests read.
+	// Not parallel: mutates the process-global pluginops.RepoTagLister seam other tests read.
 	rw := resolvedTestWorkspace(t)
 	const host = "hub.aggrega.ai"
 	const repoPath = "plugin/governance/tag-injector"
@@ -319,17 +320,17 @@ func TestResolveLatestPluginVersion_IndexDefault(t *testing.T) {
 	}, "2026-07-16T12:00:00Z\n")
 
 	// The live tag lister must NOT be consulted when the index answers.
-	prev := pluginRepoTagLister
-	pluginRepoTagLister = func(context.Context, workspaceconfig.Config, string, string) ([]string, error) {
+	prev := pluginops.RepoTagLister
+	pluginops.RepoTagLister = func(context.Context, workspaceconfig.Config, string, string) ([]string, error) {
 		t.Fatalf("live tag lister called; discovery must read the local index by default")
 		return nil, nil
 	}
-	t.Cleanup(func() { pluginRepoTagLister = prev })
+	t.Cleanup(func() { pluginops.RepoTagLister = prev })
 
 	var out bytes.Buffer
-	got, err := resolveLatestPluginVersion(context.Background(), rw, host, repoPath, &out)
+	got, err := pluginops.ResolveLatestVersion(context.Background(), rw, host, repoPath, &out)
 	if err != nil {
-		t.Fatalf("resolveLatestPluginVersion: %v", err)
+		t.Fatalf("pluginops.ResolveLatestVersion: %v", err)
 	}
 	if got != "1.2.0" {
 		t.Errorf("resolved version = %q; want 1.2.0 from the index headline", got)
@@ -343,7 +344,7 @@ func TestResolveLatestPluginVersion_IndexDefault(t *testing.T) {
 // no local index entry fails loudly, pointing at 'registry update', rather than
 // silently networking for discovery.
 func TestResolveLatestPluginVersion_OfflineNoIndex(t *testing.T) {
-	// Not parallel: mutates the process-global pluginRepoTagLister seam other tests read.
+	// Not parallel: mutates the process-global pluginops.RepoTagLister seam other tests read.
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, workspaceconfig.ConfigFilename)
 	if err := os.WriteFile(cfgPath, []byte("workspace: {}\ndefault_registry: hub.aggrega.ai\noffline: true\n"), 0o644); err != nil {
@@ -354,14 +355,14 @@ func TestResolveLatestPluginVersion_OfflineNoIndex(t *testing.T) {
 		t.Fatalf("resolve workspace: %v", err)
 	}
 
-	prev := pluginRepoTagLister
-	pluginRepoTagLister = func(context.Context, workspaceconfig.Config, string, string) ([]string, error) {
+	prev := pluginops.RepoTagLister
+	pluginops.RepoTagLister = func(context.Context, workspaceconfig.Config, string, string) ([]string, error) {
 		t.Fatalf("offline discovery must not network for a live tag list")
 		return nil, nil
 	}
-	t.Cleanup(func() { pluginRepoTagLister = prev })
+	t.Cleanup(func() { pluginops.RepoTagLister = prev })
 
-	_, err = resolveLatestPluginVersion(context.Background(), rw, "hub.aggrega.ai", "plugin/governance/tag-injector", &bytes.Buffer{})
+	_, err = pluginops.ResolveLatestVersion(context.Background(), rw, "hub.aggrega.ai", "plugin/governance/tag-injector", &bytes.Buffer{})
 	if err == nil || !strings.Contains(err.Error(), "registry update") {
 		t.Fatalf("want a loud offline error pointing at 'registry update'; got %v", err)
 	}
@@ -425,13 +426,13 @@ func keysOf(m map[string]string) []string {
 // proven is the local-index resolution itself.
 func resolvePluginVersionFromIndexOnly(t *testing.T, rw *workspaceconfig.ResolvedWorkspace, out *bytes.Buffer) (string, error) {
 	t.Helper()
-	prev := pluginRepoTagLister
-	pluginRepoTagLister = func(context.Context, workspaceconfig.Config, string, string) ([]string, error) {
+	prev := pluginops.RepoTagLister
+	pluginops.RepoTagLister = func(context.Context, workspaceconfig.Config, string, string) ([]string, error) {
 		t.Fatalf("live tag lister called; the local index must answer")
 		return nil, nil
 	}
-	t.Cleanup(func() { pluginRepoTagLister = prev })
-	return resolveLatestPluginVersion(context.Background(), rw, screenedIndexHost, screenedIndexRepo, out)
+	t.Cleanup(func() { pluginops.RepoTagLister = prev })
+	return pluginops.ResolveLatestVersion(context.Background(), rw, screenedIndexHost, screenedIndexRepo, out)
 }
 
 // TestResolveLatestPluginVersion_WithdrawalScreening is the discriminating pair the
@@ -443,7 +444,7 @@ func resolvePluginVersionFromIndexOnly(t *testing.T, rw *workspaceconfig.Resolve
 // the higher version withdrawn and once without — and only the DIFFERENCE between
 // the two outcomes is evidence.
 func TestResolveLatestPluginVersion_WithdrawalScreening(t *testing.T) {
-	// Not parallel: these arms mutate the process-global pluginRepoTagLister seam.
+	// Not parallel: these arms mutate the process-global pluginops.RepoTagLister seam.
 	t.Run("withdrawn_higher_version_is_excluded_and_announced", func(t *testing.T) {
 		rw := resolvedTestWorkspace(t)
 		writeScreenedPluginIndex(t, rw, []string{"1.0.0", "2.0.0"},
@@ -603,14 +604,14 @@ func TestResolveLatestPluginVersion_WithdrawalScreening(t *testing.T) {
 		writeScreenedPluginIndex(t, rw, []string{"1.0.0", "2.0.0"},
 			map[string]string{"2.0.0": "withdrawn in favour of a successor"})
 
-		prev := pluginRepoTagLister
-		pluginRepoTagLister = func(context.Context, workspaceconfig.Config, string, string) ([]string, error) {
+		prev := pluginops.RepoTagLister
+		pluginops.RepoTagLister = func(context.Context, workspaceconfig.Config, string, string) ([]string, error) {
 			t.Fatalf("live tag lister called; the local index must answer")
 			return nil, nil
 		}
-		t.Cleanup(func() { pluginRepoTagLister = prev })
+		t.Cleanup(func() { pluginops.RepoTagLister = prev })
 
-		got, err := resolveLatestPluginVersion(context.Background(), rw, screenedIndexHost, screenedIndexRepo, nil)
+		got, err := pluginops.ResolveLatestVersion(context.Background(), rw, screenedIndexHost, screenedIndexRepo, nil)
 		if err != nil {
 			t.Fatalf("resolution with no writer must succeed: %v", err)
 		}
@@ -649,7 +650,7 @@ func TestResolveLatestPluginVersion_WithdrawalScreening(t *testing.T) {
 // screening.
 func resolvePluginVersionFromFallback(t *testing.T, rw *workspaceconfig.ResolvedWorkspace, out io.Writer) (string, error) {
 	t.Helper()
-	return resolveLatestPluginVersion(context.Background(), rw, screenedIndexHost, screenedIndexRepo, out)
+	return pluginops.ResolveLatestVersion(context.Background(), rw, screenedIndexHost, screenedIndexRepo, out)
 }
 
 // TestResolveLatestPluginVersion_FallbackWithdrawalScreening is the discriminating
@@ -723,15 +724,15 @@ func TestResolveLatestPluginVersion_FallbackWithdrawalScreening(t *testing.T) {
 		// this very repository, and only the SEVERITY differs from the excluding arm.
 		rw := resolvedTestWorkspace(t)
 		withTagLister(t, []string{"1.0.0", "2.0.0"})
-		prev := pluginRepoWithdrawalLister
-		pluginRepoWithdrawalLister = func(_ context.Context, _ workspaceconfig.Config, _, _ string, _ []string, _ io.Writer) ([]registryindex.VersionDeprecation, error) {
+		prev := pluginops.RepoWithdrawalLister
+		pluginops.RepoWithdrawalLister = func(_ context.Context, _ workspaceconfig.Config, _, _ string, _ []string, _ io.Writer) ([]registryindex.VersionDeprecation, error) {
 			return []registryindex.VersionDeprecation{{
 				Version: "2.0.0",
 				Marker:  deprecation.Marker{Severity: deprecation.SeverityWarning, Reason: "superseded"},
 				Signer:  &lockfile.VerifiedSignature{Identity: "publisher", Mode: "keyed"},
 			}}, nil
 		}
-		t.Cleanup(func() { pluginRepoWithdrawalLister = prev })
+		t.Cleanup(func() { pluginops.RepoWithdrawalLister = prev })
 
 		var out bytes.Buffer
 		got, err := resolvePluginVersionFromFallback(t, rw, &out)
@@ -748,14 +749,14 @@ func TestResolveLatestPluginVersion_FallbackWithdrawalScreening(t *testing.T) {
 		// resolved would make an unauthenticated registry-side claim load-bearing.
 		rw := resolvedTestWorkspace(t)
 		withTagLister(t, []string{"1.0.0", "2.0.0"})
-		prev := pluginRepoWithdrawalLister
-		pluginRepoWithdrawalLister = func(_ context.Context, _ workspaceconfig.Config, _, _ string, _ []string, _ io.Writer) ([]registryindex.VersionDeprecation, error) {
+		prev := pluginops.RepoWithdrawalLister
+		pluginops.RepoWithdrawalLister = func(_ context.Context, _ workspaceconfig.Config, _, _ string, _ []string, _ io.Writer) ([]registryindex.VersionDeprecation, error) {
 			return []registryindex.VersionDeprecation{{
 				Version: "2.0.0",
 				Marker:  deprecation.Marker{Severity: deprecation.SeverityRetracted, Reason: "withdrawn"},
 			}}, nil
 		}
-		t.Cleanup(func() { pluginRepoWithdrawalLister = prev })
+		t.Cleanup(func() { pluginops.RepoWithdrawalLister = prev })
 
 		got, err := resolvePluginVersionFromFallback(t, rw, &bytes.Buffer{})
 		if err != nil {
@@ -793,7 +794,7 @@ func TestResolveLatestPluginVersion_FallbackWithdrawalScreening(t *testing.T) {
 		withTagLister(t, []string{"1.0.0", "2.0.0"})
 		asked := withWithdrawals(t, map[string]string{"2.0.0": "withdrawn"})
 
-		got, err := resolveLatestPluginVersion(context.Background(), rw, screenedIndexHost, screenedIndexRepo, nil)
+		got, err := pluginops.ResolveLatestVersion(context.Background(), rw, screenedIndexHost, screenedIndexRepo, nil)
 		if err != nil {
 			t.Fatalf("resolution with no writer must succeed: %v", err)
 		}
@@ -853,11 +854,11 @@ func TestResolveLatestPluginVersion_FallbackWithdrawalScreening(t *testing.T) {
 		// is the difference between a degraded result and a wrong one.
 		rw := resolvedTestWorkspace(t)
 		withTagLister(t, []string{"1.0.0", "2.0.0"})
-		prev := pluginRepoWithdrawalLister
-		pluginRepoWithdrawalLister = func(_ context.Context, _ workspaceconfig.Config, _, _ string, _ []string, _ io.Writer) ([]registryindex.VersionDeprecation, error) {
+		prev := pluginops.RepoWithdrawalLister
+		pluginops.RepoWithdrawalLister = func(_ context.Context, _ workspaceconfig.Config, _, _ string, _ []string, _ io.Writer) ([]registryindex.VersionDeprecation, error) {
 			return nil, errors.New("registry unreachable")
 		}
-		t.Cleanup(func() { pluginRepoWithdrawalLister = prev })
+		t.Cleanup(func() { pluginops.RepoWithdrawalLister = prev })
 
 		var out bytes.Buffer
 		got, err := resolvePluginVersionFromFallback(t, rw, &out)
@@ -892,20 +893,20 @@ func TestResolveLatestPluginVersion_FallbackWithdrawalScreening(t *testing.T) {
 		if err != nil {
 			t.Fatalf("resolve workspace: %v", err)
 		}
-		prevTags := pluginRepoTagLister
-		pluginRepoTagLister = func(context.Context, workspaceconfig.Config, string, string) ([]string, error) {
+		prevTags := pluginops.RepoTagLister
+		pluginops.RepoTagLister = func(context.Context, workspaceconfig.Config, string, string) ([]string, error) {
 			t.Fatalf("offline discovery must not network for a live tag list")
 			return nil, nil
 		}
-		t.Cleanup(func() { pluginRepoTagLister = prevTags })
-		prevMarkers := pluginRepoWithdrawalLister
-		pluginRepoWithdrawalLister = func(_ context.Context, _ workspaceconfig.Config, _, _ string, _ []string, _ io.Writer) ([]registryindex.VersionDeprecation, error) {
+		t.Cleanup(func() { pluginops.RepoTagLister = prevTags })
+		prevMarkers := pluginops.RepoWithdrawalLister
+		pluginops.RepoWithdrawalLister = func(_ context.Context, _ workspaceconfig.Config, _, _ string, _ []string, _ io.Writer) ([]registryindex.VersionDeprecation, error) {
 			t.Fatalf("offline discovery must not network for withdrawal markers")
 			return nil, nil
 		}
-		t.Cleanup(func() { pluginRepoWithdrawalLister = prevMarkers })
+		t.Cleanup(func() { pluginops.RepoWithdrawalLister = prevMarkers })
 
-		_, err = resolveLatestPluginVersion(context.Background(), rw, screenedIndexHost, screenedIndexRepo, &bytes.Buffer{})
+		_, err = pluginops.ResolveLatestVersion(context.Background(), rw, screenedIndexHost, screenedIndexRepo, &bytes.Buffer{})
 		// The wording is the only guidance an offline workspace with no snapshot gets,
 		// so it is asserted verbatim rather than by keyword.
 		const wantOffline = "offline workspace has no local index entry for " + screenedIndexRepo + "; " +
@@ -937,9 +938,9 @@ func TestPluginAddRun_HasNoVersionArgument(t *testing.T) {
 // share a substring, an exact plugin-name (final segment) match is selected.
 func TestResolveSinglePluginRepo_ExactNameWins(t *testing.T) {
 	matches := []string{"plugin/governance/tag", "plugin/governance/tag-injector"}
-	got, err := resolveSinglePluginRepo(matches, "tag", "governance")
+	got, err := pluginops.ResolveSingleRepo(matches, "tag", "governance")
 	if err != nil {
-		t.Fatalf("resolveSinglePluginRepo: %v", err)
+		t.Fatalf("pluginops.ResolveSingleRepo: %v", err)
 	}
 	if got != "plugin/governance/tag" {
 		t.Errorf("exact-name match = %q; want plugin/governance/tag", got)

@@ -27,6 +27,14 @@
 //
 // # The method and notification set
 //
+// 🔴 The listing below is a READING AID and is not the enumeration to trust. The
+// authoritative one is the availability table in availability.go, which the
+// routing index is built from and which Methods() reports — so a method exists
+// because a row there names it, and nothing here decides anything. This prose is a
+// second copy of that table's method column, and it has drifted from it before:
+// treat a method absent here as an omission in this comment rather than as a
+// method the daemon does not carry, and read the table when the answer matters.
+//
 // Requests, each answered with a result or a JSON-RPC error envelope:
 //
 //	aggrega/initialize             handshake: negotiates the position
@@ -82,6 +90,21 @@
 //	aggrega/effectiveConfiguration reports the configuration resolved for
 //	                               this session and, per setting, the layer
 //	                               that determined it
+//	aggrega/pluginAdd              searches the configured registry for a plugin
+//	                               of the named type and adds it to the
+//	                               configuration — a socket attachment, a
+//	                               provider capability binding, or a
+//	                               command-extension install
+//	aggrega/pluginRemove           drops a configured plugin's entry from the
+//	                               configuration, failing rather than reporting
+//	                               success when the query matches nothing
+//	aggrega/pluginSync             aligns a plugin entity's machine-owned records
+//	                               — its host-function set and its command mirror
+//	                               — with the module those are derived from,
+//	                               leaving an already-current file untouched
+//	aggrega/pluginGenCatalog       generates one Plugin entity per selected guest
+//	                               from its self-report plus an authored overlay,
+//	                               writing them or handing the content back
 //	aggrega/resolve                position to the definition it names
 //	aggrega/findReferences         position to the sites referencing it
 //	aggrega/findImplementations    position to the entities implementing it
@@ -188,6 +211,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/pluginops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
@@ -245,6 +269,23 @@ type RunConfig struct {
 	// written by the command line carry the identical stamp rather than two
 	// derivations of it. A nil stamp records none.
 	Toolchain *lockfile.ToolchainStamp
+
+	// InstallCLIPlugin installs a command-extension plugin as a top-level command,
+	// supplied by the command layer for the same reason CompilerVersion is: the
+	// value describes the binary, which the daemon lives below and cannot read.
+	//
+	// What makes it an injected function rather than something the daemon does
+	// itself is the install's collision guard. Installing such a plugin refuses any
+	// command name that collides with a built-in, and the authoritative built-in set
+	// is the freshly built command tree — which lives in the main package. A second
+	// enumeration of it here would drift from the tree that decides them, so the
+	// daemon is handed the one implementation instead of reproducing it.
+	//
+	// Nil for a Server built as a struct literal, which is the in-memory test
+	// harness, and nil in any process that did not wire it. A request to add a
+	// command-extension plugin is then refused naming that, rather than reporting
+	// success over an install that did not happen.
+	InstallCLIPlugin pluginops.CLIInstaller
 
 	// BuildOnInspect, when non-nil, overrides the serve.build_on_inspect
 	// config-file key for this daemon invocation: the command layer sets it
@@ -483,6 +524,13 @@ type Server struct {
 	// Nil only for a Server built as a struct literal, which is the in-memory
 	// test harness rather than any production path: Run always sets it.
 	resolvedWorkspace *workspaceconfig.ResolvedWorkspace
+	// installCLIPlugin installs a command-extension plugin as a top-level command,
+	// injected from the command layer (RunConfig.InstallCLIPlugin) because the
+	// install's collision guard reads the freshly built command tree, which lives
+	// in the main package. Nil for a Server built as a struct literal, and nil in
+	// any process that did not wire it; the handler refuses rather than reporting
+	// an install that did not happen.
+	installCLIPlugin pluginops.CLIInstaller
 	// buildOnInspect is the resolved serve build-on-inspect dial (the
 	// --build-on-inspect flag overriding the serve.build_on_inspect config
 	// key). When false (the default), handleIrGraph returns the IR graph
@@ -923,6 +971,7 @@ func Run(cfg RunConfig) error {
 		workspaceMarker:   marker,
 		wsConfig:          wsCfg,
 		resolvedWorkspace: resolved,
+		installCLIPlugin:  cfg.InstallCLIPlugin,
 		buildOnInspect:    resolveBuildOnInspect(cfg.BuildOnInspect, wsCfg.Serve.BuildOnInspect),
 		lintOnValidate:    wsCfg.Serve.LintOnValidate,
 		lazyCatalog:       lazyCatalog,

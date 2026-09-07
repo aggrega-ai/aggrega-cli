@@ -371,6 +371,41 @@ var operationAvailability = map[string]serveAvailability{
 	// Nothing is written to disk under any mode.
 	"lint": servedAt(at("aggrega/lint", (*Server).dispatchLint)),
 
+	// The session configures the plugins the workspace attaches, aligns a plugin
+	// entity's machine-owned records with its module, and generates Plugin catalog
+	// entities from guest metadata plus an authored overlay.
+	//
+	// All four write, and they are admitted on the rule every writing method here
+	// runs under: a caller that sent one has asked for the change, exactly as a
+	// caller sending a build has asked for artifacts. What stays out of bounds is a
+	// write, or a reach for a registry, performed while validating or inspecting,
+	// where nobody asked, and none of these is that.
+	//
+	// Two of them write files an author owns and goes on editing, which is a
+	// narrower thing than it sounds and is stated on each method: the record
+	// alignment rewrites two machine-owned blocks and carries every other byte
+	// through verbatim, and the generation writes documents that are
+	// byte-identical when regenerated over unchanged inputs, or hands the content
+	// back untouched when the request asks it to report instead.
+	//
+	// The addition reaches a registry to resolve the query to one plugin and to
+	// pin a version; the other three reach none. Nothing is prompted for: the one
+	// decision the command line obtains at a terminal — accepting a
+	// command-extension plugin's declared capabilities — arrives as a request
+	// field, so the client asks whoever is driving it and this surface never blocks
+	// on a prompt nobody can answer.
+	//
+	// Because the command-extension type's default target is the global
+	// configuration file every workspace on the machine resolves through, each of
+	// these responses carries the file it wrote and whether that file is the shared
+	// one. A session is opened over a workspace, so an answer that said nothing
+	// would be read as being about that workspace, and for that default the
+	// reading is wrong.
+	"plugin-add":         servedAt(at("aggrega/pluginAdd", (*Server).dispatchPluginAdd)),
+	"plugin-remove":      servedAt(at("aggrega/pluginRemove", (*Server).dispatchPluginRemove)),
+	"plugin-sync":        servedAt(at("aggrega/pluginSync", (*Server).dispatchPluginSync)),
+	"plugin-gen-catalog": servedAt(at("aggrega/pluginGenCatalog", (*Server).dispatchPluginGenCatalog)),
+
 	// The session reports a kind's schema, and the set of kinds when the request
 	// names none. Its subject is the same one the drafting method above answers
 	// from — a skeleton is derived from these very bytes — so a surface carrying

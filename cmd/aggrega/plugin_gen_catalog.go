@@ -6,8 +6,7 @@ package main
 import (
 	"github.com/spf13/cobra"
 
-	"github.com/aggrega-ai/aggrega-cli/internal/authoredcontent"
-	"github.com/aggrega-ai/aggrega-cli/internal/gencatalog"
+	"github.com/aggrega-ai/aggrega-cli/internal/pluginops"
 )
 
 // genCatalogOptions carries the parsed gen-catalog flags.
@@ -63,13 +62,14 @@ entities are written, because a caller at a terminal has nowhere better to put
 them.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return gencatalog.Run(cmd.Context(), gencatalog.Options{
+			_, err := pluginops.GenCatalog(cmd.Context(), pluginops.GenCatalogOptions{
 				FromEmbedded: opts.fromEmbedded,
 				PluginPath:   opts.pluginPath,
 				OutputDir:    opts.outputDir,
 				OverlayPath:  opts.overlayPath,
-				Delivery:     authoredcontent.DeliveryFor(opts.report),
+				Report:       opts.report,
 			}, cmd.OutOrStdout())
+			return err
 		},
 	}
 	c.Flags().BoolVar(&opts.fromEmbedded, "from-embedded", false, "generate an entity for every guest embedded in this binary")

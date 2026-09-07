@@ -14,6 +14,7 @@ import (
 	"go.yaml.in/yaml/v3"
 	"oras.land/oras-go/v2/content/memory"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/pluginops"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -38,12 +39,12 @@ spec:
 // and other field untouched.
 func TestSpliceCommands_PreservesCommentsAndBlanks(t *testing.T) {
 	t.Parallel()
-	out, changed, err := spliceCommands([]byte(cliCommentedEntity), []wasm.PluginCLICommand{
+	out, changed, err := pluginops.SpliceCommands([]byte(cliCommentedEntity), []wasm.PluginCLICommand{
 		{Name: "greet-a", Description: "Greet in style A"},
 		{Name: "greet-b", Description: "Greet in style B"},
 	})
 	if err != nil {
-		t.Fatalf("spliceCommands: %v", err)
+		t.Fatalf("pluginops.SpliceCommands: %v", err)
 	}
 	if !changed {
 		t.Fatal("recording a new mirror should report a change")
@@ -88,9 +89,9 @@ func TestSpliceCommands_CarriesFlags(t *testing.T) {
 		},
 		{Name: "greet-b", Description: "Greet in style B"},
 	}
-	out, changed, err := spliceCommands([]byte(cliCommentedEntity), described)
+	out, changed, err := pluginops.SpliceCommands([]byte(cliCommentedEntity), described)
 	if err != nil {
-		t.Fatalf("spliceCommands: %v", err)
+		t.Fatalf("pluginops.SpliceCommands: %v", err)
 	}
 	if !changed {
 		t.Fatal("recording a new mirror should report a change")
@@ -106,14 +107,14 @@ func TestSpliceCommands_CarriesFlags(t *testing.T) {
 	if err := yaml.Unmarshal(out, &wp); err != nil {
 		t.Fatalf("re-parse: %v", err)
 	}
-	if !wasm.CommandMirrorsEqual(entityCommandMirror(wp), described) {
+	if !wasm.CommandMirrorsEqual(pluginops.EntityCommandMirror(wp), described) {
 		t.Errorf("round-tripped mirror diverges from the described commands;\n got %s\nwant %s",
-			wasm.FormatCommandMirror(entityCommandMirror(wp)), wasm.FormatCommandMirror(described))
+			wasm.FormatCommandMirror(pluginops.EntityCommandMirror(wp)), wasm.FormatCommandMirror(described))
 	}
 
-	second, changed, err := spliceCommands(out, described)
+	second, changed, err := pluginops.SpliceCommands(out, described)
 	if err != nil {
-		t.Fatalf("second spliceCommands: %v", err)
+		t.Fatalf("second pluginops.SpliceCommands: %v", err)
 	}
 	if changed {
 		t.Error("re-recording the same flag mirror should report no change")
@@ -128,9 +129,9 @@ func TestSpliceCommands_CarriesFlags(t *testing.T) {
 // byte-identical no-op.
 func TestSpliceCommands_EmptyExplicitAndIdempotent(t *testing.T) {
 	t.Parallel()
-	out, changed, err := spliceCommands([]byte(cliCommentedEntity), nil)
+	out, changed, err := pluginops.SpliceCommands([]byte(cliCommentedEntity), nil)
 	if err != nil {
-		t.Fatalf("spliceCommands: %v", err)
+		t.Fatalf("pluginops.SpliceCommands: %v", err)
 	}
 	if !changed {
 		t.Fatal("recording an explicit empty list into a file without one should change it")
@@ -138,9 +139,9 @@ func TestSpliceCommands_EmptyExplicitAndIdempotent(t *testing.T) {
 	if !strings.Contains(string(out), "commands: []") {
 		t.Errorf("an empty mirror should record an explicit empty list; result:\n%s", out)
 	}
-	second, changed, err := spliceCommands(out, nil)
+	second, changed, err := pluginops.SpliceCommands(out, nil)
 	if err != nil {
-		t.Fatalf("second spliceCommands: %v", err)
+		t.Fatalf("second pluginops.SpliceCommands: %v", err)
 	}
 	if changed {
 		t.Error("re-recording the same empty mirror should report no change")

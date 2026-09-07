@@ -263,7 +263,42 @@ import (
 // whatever it is asked whether or not the per-validation layer is turned on. What
 // any one workspace has configured is a fact about that workspace and not about
 // this surface, so no configuration of it can put the pair back into the bound.
-const boundCeiling = 9
+//
+// It came down by FOUR when the daemon took on the plugin operations: adding a
+// plugin of a named type, removing one, aligning a plugin entity's machine-owned
+// records with its module, and generating Plugin catalog entities from guest
+// metadata plus an authored overlay. All four write, and all four are admitted by
+// the rule the rows themselves pointed at — a caller that sent one has asked for
+// the change — so none of them had a reason to write down.
+//
+// The four ship together because the obstacle was one obstacle, and it was
+// structural rather than a matter of effort: the logic sat in the command-line
+// package, which is package main, so no other package could import it however the
+// availability question was answered. Settling one and leaving the others would
+// have split a single rehoming across four rows while the same bar stood in front
+// of each.
+//
+// Two of the four also decided the shape of the answer. The record alignment
+// writes a file the author owns, which is what a neighbouring set of declines used
+// to rest on; what makes it admissible is not that the write is small but that
+// somebody asked for it, and the write happens to be narrow anyway — two
+// machine-owned blocks change and every other byte carries through. The generation
+// is the one that could have been split into a writing capability and a reporting
+// one; it was not, because which of the two a caller wants is a property of the
+// caller rather than of the surface, so it is a request field and one row.
+//
+// 🔴 The command-extension type is the part a later reader is most likely to
+// re-open, so what settled it is recorded here. That type needs a decision the
+// command line obtains by asking at a terminal, and this surface has none — which
+// is the ground the no-terminal reason covers. It is not a reason to decline here,
+// because the decision does not have to be obtained by the surface that acts on
+// it: the request carries it, the client asks whoever is driving it, and a request
+// that does not consent is refused rather than installed. The install itself stays
+// in the command-line package and is handed to the daemon, because its collision
+// guard reads the freshly built command tree — a second enumeration of the
+// built-ins would drift from the tree that decides them — so both surfaces install
+// through one implementation rather than two that agree today.
+const boundCeiling = 5
 
 // TestTheBoundOnlyShrinks is the ratchet. See boundCeiling for why both
 // directions refuse.

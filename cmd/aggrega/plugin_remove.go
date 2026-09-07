@@ -8,7 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
+	"github.com/aggrega-ai/aggrega-cli/internal/pluginops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
@@ -76,55 +76,24 @@ type pluginRemoveConfig struct {
 	Out interface{ Write([]byte) (int, error) }
 }
 
-// pluginRemoveRun resolves the write destination for cfg.Socket — the same
-// nature-based default and --global/--workspace override policy `plugin add`
-// uses — and removes the matching config entry. It halts loudly when the type is
-// unknown or when the query matches no entry, so a removal is never a silent
-// no-op.
+// pluginRemoveRun runs the removal and renders the command line's own account of
+// what it did.
+//
+// The operation itself lives in the plugin operations layer, which every surface
+// reaches; this translates the command's flags into that layer's options and turns
+// the result into the sentence a terminal expects. The operation halts loudly when
+// the type is unknown or when the query matches no entry, so a removal reported
+// here is never a silent no-op.
 func pluginRemoveRun(cfg pluginRemoveConfig) error {
-	rw, err := workspaceOrResolve(cfg.ws)
-	if err != nil {
-		return fmt.Errorf("workspaceconfig: %w", err)
-	}
-
-	socket := cfg.Socket
-	isProvider := socket == providerSocketKind
-	isCLI := socket == string(wasm.PluginTypeCLI)
-	if !isProvider && !isCLI && !configSocketKinds[socket] {
-		return fmt.Errorf("aggrega plugin remove: unknown type %q; expected one of %s", socket, pluginKindsHint())
-	}
-
-	op := workspaceconfig.OpConfigSocket
-	switch {
-	case isProvider:
-		op = workspaceconfig.OpProviderBinding
-	case isCLI:
-		op = workspaceconfig.OpCLI
-	}
-	// Resolved off the resolution itself, so the removal is applied to the config
-	// file this run read rather than to whichever file the ambient environment
-	// names.
-	configPath, err := rw.WriteDestination(op, cfg.Global, cfg.Workspace)
+	res, err := pluginops.Remove(cfg.ws, pluginops.RemoveOptions{
+		Socket:    cfg.Socket,
+		Query:     cfg.Query,
+		Global:    cfg.Global,
+		Workspace: cfg.Workspace,
+	})
 	if err != nil {
 		return err
 	}
-
-	var removed bool
-	switch {
-	case isProvider:
-		removed, err = workspaceconfig.RemoveProviderBinding(configPath, cfg.Query)
-	case isCLI:
-		removed, err = workspaceconfig.RemoveCLIPluginRef(configPath, cfg.Query)
-	default:
-		removed, err = workspaceconfig.RemovePluginSocketRef(configPath, socket, cfg.Query)
-	}
-	if err != nil {
-		return fmt.Errorf("aggrega plugin remove: write %s: %w", configPath, err)
-	}
-	if !removed {
-		return fmt.Errorf("aggrega plugin remove: no %s plugin matching %q in %s", socket, cfg.Query, configPath)
-	}
-
-	fmt.Fprintf(cfg.Out, "Removed %s plugin %q from %s\n", socket, cfg.Query, configPath)
+	fmt.Fprintf(cfg.Out, "Removed %s plugin %q from %s\n", res.Socket, res.Query, res.ConfigPath)
 	return nil
 }

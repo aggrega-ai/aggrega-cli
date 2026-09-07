@@ -5,64 +5,14 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
-	"path"
-	"strings"
 
 	"github.com/spf13/cobra"
 
-	"github.com/aggrega-ai/aggrega-cli/internal/registryindex"
-	"github.com/aggrega-ai/aggrega-cli/internal/registryops"
-	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
-	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
-	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
-	"github.com/aggrega-ai/aggrega-cli/pkg/plugintype"
+	"github.com/aggrega-ai/aggrega-cli/internal/pluginops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
-
-// providerSocketKind is the socket argument that binds a capability to a
-// provider-rendering plugin (the `plugins.providers` list), as opposed to the
-// config sockets that take a bare plugin attachment.
-const providerSocketKind = "provider"
-
-// configSocketKinds is the set of workspace-level config sockets a plugin
-// attaches to by its bare entity identity. It is the plugin-type registry's
-// socket-attached subset minus the provider socket, which is handled separately
-// because it binds a capability rather than attaching a plugin to a socket list.
-var configSocketKinds = buildConfigSocketKinds()
-
-// buildConfigSocketKinds derives the config-socket membership set from the
-// canonical plugin-type registry so the socket vocabulary lives once: every
-// plugin type that names a workspace socket, except the provider socket. The
-// result is a membership set read by key, never range-iterated for output.
-func buildConfigSocketKinds() map[string]bool {
-	kinds := map[string]bool{}
-	for _, e := range plugintype.Entries() {
-		if e.Socket != "" && e.Socket != providerSocketKind {
-			kinds[e.Socket] = true
-		}
-	}
-	return kinds
-}
-
-// pluginKindsHint is the ordered list of accepted <type> arguments the plugin
-// add and remove commands name in their unknown-type errors: the provider
-// socket, the config sockets, then the cli type. The kind names are sourced from
-// the plugin-type registry (via the workspace socket constants and the cli plugin
-// type) so the vocabulary lives once; the order is the fixed presentation order
-// the surface has always shown, which differs from the registry's author order.
-func pluginKindsHint() string {
-	kinds := []string{
-		providerSocketKind,
-		string(workspaceconfig.SocketGovernance),
-		string(workspaceconfig.SocketLinter),
-		string(workspaceconfig.SocketImporter),
-		string(wasm.PluginTypeCLI),
-	}
-	return strings.Join(kinds, ", ")
-}
 
 // newPluginAddCmd builds the `plugin add` command: it searches the configured
 // registry for a plugin of the named type, resolves the match to one plugin
@@ -165,358 +115,55 @@ type pluginAddConfig struct {
 	Out interface{ Write([]byte) (int, error) }
 }
 
-// pluginAddRun searches the workspace registry for a plugin serving cfg.Socket,
-// resolves the query to a single plugin repository, and writes the attachment
-// into the workspace config file. A config socket attaches the bare plugin
-// entity identity at its latest published version; the provider socket binds
-// cfg.Capability to the plugin's oci:// identity.
+// pluginAddRun runs the addition and renders the command line's own account of
+// what it did.
+//
+// The operation itself lives in the plugin operations layer, which every surface
+// reaches; this translates the command's flags into that layer's options and turns
+// the result into the sentence a terminal expects. Which field the result filled
+// is what says what landed — a bare version-pinned identity for a config socket, an
+// oci:// artifact identity for a provider binding — so the sentence is chosen from
+// the answer rather than re-derived from the arguments.
+//
+// The cli type prints nothing here: installing a command extension is performed by
+// the installer this command supplies, which reports the commands it registered as
+// part of doing so, and a second sentence would announce the same install twice.
 func pluginAddRun(ctx context.Context, cfg pluginAddConfig) error {
-	rw, err := workspaceOrResolve(cfg.ws)
-	if err != nil {
-		return fmt.Errorf("workspaceconfig: %w", err)
-	}
-
-	socket := cfg.Socket
-	isProvider := socket == providerSocketKind
-	isCLI := socket == string(wasm.PluginTypeCLI)
-	if !isProvider && !isCLI && !configSocketKinds[socket] {
-		return fmt.Errorf("aggrega plugin add: unknown type %q; expected one of %s", socket, pluginKindsHint())
-	}
-	if isProvider && cfg.Capability == "" {
-		return fmt.Errorf("aggrega plugin add: the provider type requires --capability naming the capability the binding serves")
-	}
-	if !isProvider && cfg.Capability != "" {
-		return fmt.Errorf("aggrega plugin add: --capability applies only to the provider type")
-	}
-	isGovernance := socket == string(workspaceconfig.SocketGovernance)
-	if isGovernance {
-		if _, ok := plugintype.GovernanceRoleTier(plugintype.Role(cfg.Role)); !ok {
-			return fmt.Errorf("aggrega plugin add: the governance type requires --role naming the attachment role (label-transform, ir-verdict, or render-verdict)")
-		}
-	} else if cfg.Role != "" {
-		return fmt.Errorf("aggrega plugin add: --role applies only to the governance type")
-	}
-	if !isCLI && (cfg.AcceptCaps || cfg.AssumeYes) {
-		return fmt.Errorf("aggrega plugin add: --accept-capabilities and --yes apply only to the cli type")
-	}
-
-	// The cli type installs a top-level command rather than writing a config
-	// attachment, so it dispatches to the install path before the config
-	// write-destination resolution the socket and provider types share.
-	if isCLI {
-		return pluginAddCLIRun(ctx, rw, cfg)
-	}
-
-	// Resolve the write destination up front — it does not depend on the search,
-	// so a write-target flag misuse (both --global and --workspace) or an
-	// unresolvable global path fails fast, before any registry search. It is
-	// resolved off the resolution itself, so the attachment lands in the config
-	// file this run read rather than in whichever file the ambient environment
-	// names.
-	op := workspaceconfig.OpConfigSocket
-	if isProvider {
-		op = workspaceconfig.OpProviderBinding
-	}
-	configPath, err := rw.WriteDestination(op, cfg.Global, cfg.Workspace)
+	res, err := pluginops.Add(ctx, cfg.ws, pluginops.AddOptions{
+		Socket:             cfg.Socket,
+		Query:              cfg.Query,
+		Capability:         cfg.Capability,
+		Role:               cfg.Role,
+		Global:             cfg.Global,
+		Workspace:          cfg.Workspace,
+		AcceptCapabilities: cfg.AcceptCaps,
+		AssumeYes:          cfg.AssumeYes,
+		InstallCLIPlugin:   installCLIPlugin,
+		In:                 cfg.In,
+		Notices:            cfg.Out,
+	})
 	if err != nil {
 		return err
 	}
-
-	reg, host, err := registrySearchTarget(rw.Config())
-	if err != nil {
-		return fmt.Errorf("aggrega plugin add: %w", err)
+	switch {
+	case res.URI != "":
+		fmt.Fprintf(cfg.Out, "Bound capability %q to %s in %s\n", res.Capability, res.URI, res.ConfigPath)
+	case res.Identity != "":
+		fmt.Fprintf(cfg.Out, "Added %s as a %s plugin in %s\n", res.Identity, res.Socket, res.ConfigPath)
 	}
-	matches, err := searchRegistry(ctx, reg, cfg.Query, socketSearchScope(socket))
-	if err != nil {
-		return err
-	}
-	repoPath, err := resolveSinglePluginRepo(matches, cfg.Query, socket)
-	if err != nil {
-		return err
-	}
-
-	if isProvider {
-		// The provider binding carries the oci:// artifact identity built from the
-		// repository path; a config-socket attachment instead carries the bare
-		// entity identity, which an oci:// reference is refused for.
-		uri := "oci://" + host + "/" + repoPath
-		if err := workspaceconfig.UpsertProviderBinding(configPath, cfg.Capability, uri); err != nil {
-			return fmt.Errorf("aggrega plugin add: write %s: %w", configPath, err)
-		}
-		fmt.Fprintf(cfg.Out, "Bound capability %q to %s in %s\n", cfg.Capability, uri, configPath)
-		return nil
-	}
-
-	// Config socket: strip the plugin/ path prefix to the plugin coordinate
-	// identity (<pluginType>/<name>) and pin the latest published version so the
-	// attachment is version-pinned.
-	entity := strings.TrimPrefix(repoPath, catalog.KindPathSegment("Plugin")+"/")
-	version, err := resolveLatestPluginVersion(ctx, rw, host, repoPath, cfg.Out)
-	if err != nil {
-		return fmt.Errorf("aggrega plugin add: %w", err)
-	}
-	if version == "" {
-		return fmt.Errorf("aggrega plugin add: %s has no published version tag to attach; publish a version first", repoPath)
-	}
-	identity := entity + ":" + version
-	if err := workspaceconfig.UpsertPluginSocketRef(configPath, socket, identity, plugintype.Role(cfg.Role)); err != nil {
-		return fmt.Errorf("aggrega plugin add: write %s: %w", configPath, err)
-	}
-	fmt.Fprintf(cfg.Out, "Added %s as a %s plugin in %s\n", identity, socket, configPath)
 	return nil
 }
 
-// pluginAddCLIRun resolves the cli-scoped query to a single plugin repository,
-// pins its latest published version into an oci:// reference, and installs it as
-// a top-level aggrega command through the shared install path. It reuses the same
-// registry-search and version-resolution primitives the config-socket path uses,
-// so a cli plugin is resolved exactly as any other type; only the terminal action
-// differs — a command is installed rather than a config attachment written.
-func pluginAddCLIRun(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, cfg pluginAddConfig) error {
-	reg, host, err := registrySearchTarget(rw.Config())
-	if err != nil {
-		return fmt.Errorf("aggrega plugin add: %w", err)
-	}
-	matches, err := searchRegistry(ctx, reg, cfg.Query, socketSearchScope(string(wasm.PluginTypeCLI)))
-	if err != nil {
-		return err
-	}
-	repoPath, err := resolveSinglePluginRepo(matches, cfg.Query, string(wasm.PluginTypeCLI))
-	if err != nil {
-		return err
-	}
-	version, err := resolveLatestPluginVersion(ctx, rw, host, repoPath, cfg.Out)
-	if err != nil {
-		return fmt.Errorf("aggrega plugin add: %w", err)
-	}
-	if version == "" {
-		return fmt.Errorf("aggrega plugin add: %s has no published version tag to install; publish a version first", repoPath)
-	}
-	ref := "oci://" + host + "/" + repoPath + ":" + version
-	return pluginInstallRun(ctx, rw, ref, cfg.Global, cfg.Workspace, cfg.AcceptCaps, cfg.AssumeYes, cfg.In, cfg.Out)
-}
-
-// socketSearchScope admits only the repository paths a plugin serving socket
-// publishes under — the plugin/<socket>/ path prefix — so a search for one
-// socket never returns a plugin bound for another.
-func socketSearchScope(socket string) searchScope {
-	prefix := catalog.KindPathSegment("Plugin") + "/" + socket + "/"
-	return func(repoPath string) bool {
-		return strings.HasPrefix(repoPath, prefix)
-	}
-}
-
-// resolveSinglePluginRepo reduces the scoped search matches to exactly one
-// plugin repository. A single match is used directly; when several match the
-// substring an exact plugin-name (final path segment) hit is preferred; a query
-// that still resolves to zero or more than one plugin halts loudly with the
-// candidates rather than guessing which the operator meant.
-func resolveSinglePluginRepo(matches []string, query, socket string) (string, error) {
-	switch len(matches) {
-	case 0:
-		return "", fmt.Errorf("aggrega plugin add: no %s plugin in the registry matches %q", socket, query)
-	case 1:
-		return matches[0], nil
-	}
-	var exact []string
-	for _, m := range matches {
-		if path.Base(m) == query {
-			exact = append(exact, m)
-		}
-	}
-	if len(exact) == 1 {
-		return exact[0], nil
-	}
-	return "", fmt.Errorf("aggrega plugin add: %q matches %d %s plugins (%s); narrow the query to one",
-		query, len(matches), socket, strings.Join(matches, ", "))
-}
-
-// pluginRepoTagLister lists the tags a registry serves for a plugin repository.
-// It is a package-level seam so config-socket version resolution runs against a
-// fake in tests; production lists live tags through the shared repository client
-// so the loopback plain-HTTP and credential wiring match every other pull.
-var pluginRepoTagLister = func(ctx context.Context, cfg workspaceconfig.Config, host, repoPath string) ([]string, error) {
-	httpClient, err := workspaceEgressClient(cfg)
-	if err != nil {
-		return nil, err
-	}
-	repo, err := oci.NewRemoteRepository(host+"/"+repoPath, httpClient)
-	if err != nil {
-		return nil, err
-	}
-	return oci.ListTags(ctx, repo)
-}
-
-// pluginRepoWithdrawalLister reads the deprecation markers published against a
-// plugin repository's versions and returns the ones whose own signature verifies,
-// so a reference the local index does not carry can still be screened against a
-// signed withdrawal rather than pinning one blind.
+// installCLIPlugin is the command-extension installer the operations layer is
+// handed.
 //
-// It is a package-level seam so version resolution runs against a fake in tests;
-// production reads through the shared repository client, so the loopback plain-HTTP
-// and credential wiring match every other registry read. It is separate from the
-// tag-listing seam above rather than folded into it because the two are wanted
-// independently: the offline path takes neither, and a caller with nowhere to
-// announce a substitution takes the tags and skips the markers entirely.
-//
-// The marker read, its trust policy and its verification are the ones the local
-// index build performs, reached through that same single home — so a version's
-// withdrawal is judged identically whether the index recorded it earlier or this
-// command reads it now, and the two cannot drift apart.
-var pluginRepoWithdrawalLister = func(ctx context.Context, cfg workspaceconfig.Config, host, repoPath string, versions []string, out io.Writer) ([]registryindex.VersionDeprecation, error) {
-	httpClient, err := workspaceEgressClient(cfg)
-	if err != nil {
-		return nil, err
-	}
-	repo, err := oci.NewRemoteRepository(host+"/"+repoPath, httpClient)
-	if err != nil {
-		return nil, err
-	}
-	policy, _ := cfg.RegistryTrustPolicy(host)
-	// The structured per-marker notes are for a surface that answers with values;
-	// this path announces its substitutions in prose on the writer it was given.
-	markers, _ := registryops.CollectVersionDeprecations(ctx, cfg, policy, repo, repoPath, versions, out)
-	return markers, nil
-}
-
-// livePluginRetractionScreen builds the withdrawal screen for a plugin repository
-// the local index does not carry, from markers read during this command. It returns
-// nil — leaving selection unscreened — whenever no screen can be formed, and each
-// of those cases is a deliberate posture rather than a fallthrough:
-//
-// With no writer there is nowhere to announce a substitution, and excluding a
-// version nobody can be told about is the silent substitution this exists to
-// prevent; the marker reads are skipped along with it, so nothing is paid for a
-// screen that would not be used. With no strict-SemVer tag there is no version the
-// discovery step could select, so there is nothing to screen. And when the marker
-// read itself fails, selection proceeds unscreened rather than halting: the same
-// best-effort posture the index build takes on the same failure, which keeps a
-// transient registry fault from failing an attach that would otherwise succeed.
-// Degrading can only ever fail to exclude a version, never exclude one on evidence
-// that did not verify.
-//
-// The failure is reported rather than swallowed. A caller told that markers could
-// not be read knows the selection was not screened, which is the difference between
-// a degraded result and a wrong one. It reports on the exclusion channel rather than
-// the advisory one, because what it states is what happened to selection — the same
-// event the exclusion notices carry — and the two channels stay distinct precisely so
-// a reader can tell "you are being told something" from "you did not get something".
-func livePluginRetractionScreen(ctx context.Context, cfg workspaceconfig.Config, host, repoPath, reference string, tags []string, out io.Writer) catalog.RetractionScreen {
-	if out == nil {
-		return nil
-	}
-	versions := oci.SortedSemverTags(tags)
-	if len(versions) == 0 {
-		return nil
-	}
-	deps, err := pluginRepoWithdrawalLister(ctx, cfg, host, repoPath, versions, out)
-	if err != nil {
-		fmt.Fprintf(out, "  retraction: %s: markers could not be read (%v); published versions were not screened for retraction\n",
-			repoPath, err)
-		return nil
-	}
-	return registryindex.NewLiveScreen(reference, deps, out)
-}
-
-// resolveLatestPluginVersion returns the highest strict-SemVer version published
-// for the plugin repository that has not been withdrawn, or the empty string when
-// no conforming version is found. Discovery reads the local registry index by
-// default — the snapshot a `registry update` builds — so version resolution costs
-// no network round-trip on the common path. Pre-release versions are excluded, the
-// same rule the publishing and deprecation paths apply. A version a verified marker
-// records as withdrawn is skipped and the substitution announced on out; out is
-// also where an announcement would go for a screened selection, so a nil writer
-// leaves selection unscreened rather than skipping a version silently.
-//
-// When the local index does not carry the repository — never built, or the
-// repository is absent from the snapshot — resolution falls back to a live tag
-// list, except in an offline workspace, where discovery must not network: it
-// fails loudly, pointing at `registry update`. That fallback screens too: having
-// no recorded withdrawal to read, it reads the repository's markers from the
-// registry before selecting, so a withdrawn version is skipped there exactly as it
-// is on the snapshot path. The actual plugin fetch/add is always live regardless;
-// only this version discovery prefers the snapshot.
-//
-// A tag set with no strict-SemVer version resolves to the empty string rather than
-// an error, which is what lets the caller name the missing publication in its own
-// words. A repository whose every selectable version is withdrawn is the different
-// case and does halt: nothing is left to attach, and the withdrawal is the reason.
-func resolveLatestPluginVersion(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, host, repoPath string, out io.Writer) (string, error) {
-	if version, ok, err := pluginVersionFromIndex(rw, host, repoPath, out); err != nil {
-		return "", err
-	} else if ok {
-		return version, nil
-	}
-	cfg := rw.Config()
-	if cfg.Offline {
-		return "", fmt.Errorf("offline workspace has no local index entry for %s; run 'aggrega registry update' to build the discovery index", repoPath)
-	}
-	tags, err := pluginRepoTagLister(ctx, cfg, host, repoPath)
-	if err != nil {
-		return "", fmt.Errorf("list versions for %s: %w", repoPath, err)
-	}
-	// The screen and the selection key off this one reference, and the screen is
-	// populated before selection runs so selection itself still reaches no registry.
-	reference := host + "/" + repoPath
-	screen := livePluginRetractionScreen(ctx, cfg, host, repoPath, reference, tags, out)
-	version, err := catalog.SelectScreenedVersion(screen, reference, tags)
-	if err != nil {
-		// No conforming tag is the caller's empty-version case, not a failure: it
-		// reports the absent publication naming this repository. Every other halt —
-		// a fully-withdrawn repository above all — carries a reason of its own and
-		// must not be flattened into "no version published".
-		if errors.Is(err, oci.ErrFetchNotFound()) {
-			return "", nil
-		}
-		return "", err
-	}
-	return version, nil
-}
-
-// pluginVersionFromIndex resolves a plugin repository's version from the host's
-// local discovery index, screened against the withdrawal records that same index
-// carries. It reports the version and whether the repository was present. An index
-// that has not been built reports (absent) so the caller can fall back to a live
-// lookup; a genuine read or parse fault of a built index surfaces as an error
-// rather than a silent fallback.
-//
-// Selection runs over the record's published-version set rather than taking its
-// headline, because the headline is recorded from an unscreened selection: it names
-// the highest published version whether or not that version has since been
-// withdrawn. Running the shared screened selection over the set instead is what
-// makes a withdrawn version skipped here exactly as it is skipped when an entity is
-// pulled, with the substitution announced on out. Absent a withdrawal the two
-// resolve the same version, because the set retains the headline and selection
-// applies the same rule the headline was recorded with.
-//
-// A record carrying no version set holds only its headline: there is nothing to
-// select over, so the headline stands. A nil out leaves selection unscreened, which
-// is the honest posture — an exclusion nobody can be told about is the silent
-// substitution this exists to prevent.
-func pluginVersionFromIndex(rw *workspaceconfig.ResolvedWorkspace, host, repoPath string, out io.Writer) (string, bool, error) {
-	loaded, err := registryindex.LoadHost(rw.Root(), rw.Config().ResolvedArtifactCacheDir(), host)
-	if err != nil {
-		if registryindex.IsNotBuilt(err) {
-			return "", false, nil
-		}
-		return "", false, err
-	}
-	// The record lookup and the screen both key off this one reference through the
-	// single index-URI mapping, so they cannot disagree about which record they mean.
-	reference := host + "/" + repoPath
-	uri := registryindex.URIForReference(reference)
-	for _, rec := range loaded.Records {
-		if rec.URI != uri {
-			continue
-		}
-		if len(rec.Versions) == 0 {
-			return rec.Version, true, nil
-		}
-		version, serr := catalog.SelectScreenedVersion(registryindex.NewScreen(rw, host, out), reference, rec.Versions)
-		if serr != nil {
-			return "", true, serr
-		}
-		return version, true, nil
-	}
-	return "", false, nil
+// It exists as a named adapter rather than a closure at the call site because it
+// is supplied from two places — this command, and the daemon's wiring — and a
+// closure written twice is the same function written twice. The install itself
+// stays in this package because its collision guard reads the freshly built
+// command tree, which is what authoritatively decides the built-in names and
+// cannot be enumerated from outside package main without becoming a second copy
+// that drifts from the tree.
+func installCLIPlugin(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, req pluginops.CLIInstallRequest) error {
+	return pluginInstallRun(ctx, rw, req.Reference, req.Global, req.Workspace, req.AcceptCapabilities, req.AssumeYes, req.In, req.Out)
 }

@@ -15,6 +15,7 @@ import (
 
 	"oras.land/oras-go/v2/registry/remote"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/pluginops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
@@ -48,8 +49,8 @@ var searchFixtureRepos = []string{
 // the duration of the test, so a search runs without a network.
 func withSearchTarget(t *testing.T, reg registryRepoLister, err error) {
 	t.Helper()
-	prev := registrySearchTarget
-	registrySearchTarget = func(workspaceconfig.Config) (registryRepoLister, string, error) {
+	prev := pluginops.RegistryTarget
+	pluginops.RegistryTarget = func(workspaceconfig.Config) (registryRepoLister, string, error) {
 		if err != nil {
 			return nil, "hub.aggrega.ai", err
 		}
@@ -60,7 +61,7 @@ func withSearchTarget(t *testing.T, reg registryRepoLister, err error) {
 	prevLookup := newRepoDeprecationLookup
 	newRepoDeprecationLookup = func(*workspaceconfig.ResolvedWorkspace, string) repoDeprecationLookup { return nil }
 	t.Cleanup(func() {
-		registrySearchTarget = prev
+		pluginops.RegistryTarget = prev
 		newRepoDeprecationLookup = prevLookup
 	})
 }

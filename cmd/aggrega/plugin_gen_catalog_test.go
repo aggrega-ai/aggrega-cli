@@ -15,6 +15,7 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/gencatalog"
+	"github.com/aggrega-ai/aggrega-cli/internal/pluginops"
 	"github.com/aggrega-ai/aggrega-cli/internal/publishops"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/embedded"
@@ -156,7 +157,7 @@ spec:
 	}
 	// The generator must have stamped the derived set — the exact record push
 	// re-derives and compares against.
-	if entity.Spec.Runtime == nil || !canonicalHostFunctionsEqual(entity.Spec.Runtime.HostFunctions, wantHF) {
+	if entity.Spec.Runtime == nil || !pluginops.CanonicalHostFunctionsEqual(entity.Spec.Runtime.HostFunctions, wantHF) {
 		t.Fatalf("generated entity did not stamp the derived host functions: %+v, want %v", entity.Spec.Runtime, wantHF)
 	}
 
@@ -175,7 +176,7 @@ spec:
 // embedded guest contributes commands today, so the mapping is exercised directly
 // over a command-bearing descriptor: descriptorCommands maps the describe()
 // command set onto the entity's machine-owned record in describe()-declared
-// order, and entityCommandMirror maps it back; the two must agree under the same
+// order, and pluginops.EntityCommandMirror maps it back; the two must agree under the same
 // full-equality rule publish enforces, with order preserved element-wise.
 func TestGenCatalogCommandMirrorRoundTrips(t *testing.T) {
 	described := []wasm.PluginCLICommand{
@@ -198,9 +199,9 @@ func TestGenCatalogCommandMirrorRoundTrips(t *testing.T) {
 	// Stamp the mapping onto an entity and re-derive the mirror the way publish
 	// does; the round-trip must be equal under the shared equality rule.
 	entity := types.Plugin{Spec: types.PluginSpec{Commands: mapped}}
-	if !wasm.CommandMirrorsEqual(entityCommandMirror(entity), described) {
+	if !wasm.CommandMirrorsEqual(pluginops.EntityCommandMirror(entity), described) {
 		t.Errorf("round-trip mirror diverges: entity records %s, describe reports %s",
-			wasm.FormatCommandMirror(entityCommandMirror(entity)), wasm.FormatCommandMirror(described))
+			wasm.FormatCommandMirror(pluginops.EntityCommandMirror(entity)), wasm.FormatCommandMirror(described))
 	}
 
 	// Empty describe() set yields an omitted (nil) field, which the mirror
@@ -209,7 +210,7 @@ func TestGenCatalogCommandMirrorRoundTrips(t *testing.T) {
 		t.Errorf("entitysynth.DescriptorCommands(nil) = %v, want nil", got)
 	}
 	empty := types.Plugin{}
-	if !wasm.CommandMirrorsEqual(entityCommandMirror(empty), nil) {
+	if !wasm.CommandMirrorsEqual(pluginops.EntityCommandMirror(empty), nil) {
 		t.Errorf("empty entity command mirror is not equal to an empty described set")
 	}
 }
@@ -238,9 +239,9 @@ func TestGenCatalogMergeStampsCommandMirror(t *testing.T) {
 	if entity.Metadata.Version != "v0.0.0-test" {
 		t.Errorf("entity version = %q, want the guest's describe() version %q", entity.Metadata.Version, "v0.0.0-test")
 	}
-	if !wasm.CommandMirrorsEqual(entityCommandMirror(entity), desc.Commands) {
+	if !wasm.CommandMirrorsEqual(pluginops.EntityCommandMirror(entity), desc.Commands) {
 		t.Errorf("entity command mirror diverges from describe(): entity records %s, describe reports %s",
-			wasm.FormatCommandMirror(entityCommandMirror(entity)), wasm.FormatCommandMirror(desc.Commands))
+			wasm.FormatCommandMirror(pluginops.EntityCommandMirror(entity)), wasm.FormatCommandMirror(desc.Commands))
 	}
 	// Order preserved element-wise.
 	for i, c := range desc.Commands {

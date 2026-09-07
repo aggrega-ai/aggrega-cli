@@ -19,6 +19,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/pluginops"
 	"github.com/aggrega-ai/aggrega-cli/internal/registryindex"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
@@ -296,7 +297,7 @@ func TestIntegration_PluginAddExcludesWithdrawnAtSelection(t *testing.T) {
 		// It is what makes the arm above evidence — the fixture did not change, the
 		// screen did.
 		f := newPluginRetractionFixture(t, guests, map[string]string{"2.0.0": "retracted"})
-		version, err := resolveLatestPluginVersion(context.Background(), f.rw, f.host, pluginRetractionRepoPath, nil)
+		version, err := pluginops.ResolveLatestVersion(context.Background(), f.rw, f.host, pluginRetractionRepoPath, nil)
 		if err != nil {
 			t.Fatalf("unscreened resolution must succeed: %v", err)
 		}
