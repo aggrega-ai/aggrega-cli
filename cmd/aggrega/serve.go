@@ -81,6 +81,11 @@ func runServe(cmd *cobra.Command, args []string) error {
 		// daemon this one implementation is what keeps both surfaces installing
 		// under the same guard instead of one of them under a copy of it.
 		InstallCLIPlugin: installCLIPlugin,
+		// Supplied on the same ground: the plugin cascade this binds is assembled
+		// in this package and shared with the install path, the plugin listing and
+		// the runtime plugin runner, so an importer URI the daemon resolves is
+		// resolved by the identical cascade the command line resolves it by.
+		ResolveImportPlugin: importPluginBytes,
 	})
 }
 

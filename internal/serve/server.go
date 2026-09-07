@@ -105,6 +105,11 @@
 //	aggrega/pluginGenCatalog       generates one Plugin entity per selected guest
 //	                               from its self-report plus an authored overlay,
 //	                               writing them or handing the content back
+//	aggrega/import                 converts a foreign source description into
+//	                               draft authoring files through the importer the
+//	                               catalog resolves for the source's format,
+//	                               writing them into a directory the request names
+//	                               or handing the content back
 //	aggrega/resolve                position to the definition it names
 //	aggrega/findReferences         position to the sites referencing it
 //	aggrega/findImplementations    position to the entities implementing it
@@ -211,6 +216,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/importops"
 	"github.com/aggrega-ai/aggrega-cli/internal/pluginops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
@@ -286,6 +292,23 @@ type RunConfig struct {
 	// command-extension plugin is then refused naming that, rather than reporting
 	// success over an install that did not happen.
 	InstallCLIPlugin pluginops.CLIInstaller
+
+	// ResolveImportPlugin resolves an importer or parser plugin URI to its module
+	// bytes, supplied by the command layer for the same reason InstallCLIPlugin
+	// is: the resolution it performs is assembled there.
+	//
+	// The plugin cascade it binds — the entity-fronted resolution, the
+	// content-cache tier, and the per-URI pins the installed command-extension
+	// plugins carry — is the one the install path, the plugin listing and the
+	// runtime plugin runner all build from, so a URI one path accepts every other
+	// path resolves identically. A second cascade built here would agree with that
+	// one on the day it was written and drift silently afterwards.
+	//
+	// Nil for a Server built as a struct literal, which is the in-memory test
+	// harness, and nil in any process that did not wire it. An import request is
+	// then refused naming that, rather than reporting a conversion that did not
+	// happen.
+	ResolveImportPlugin importops.PluginBytesResolver
 
 	// BuildOnInspect, when non-nil, overrides the serve.build_on_inspect
 	// config-file key for this daemon invocation: the command layer sets it
@@ -531,6 +554,13 @@ type Server struct {
 	// any process that did not wire it; the handler refuses rather than reporting
 	// an install that did not happen.
 	installCLIPlugin pluginops.CLIInstaller
+	// resolveImportPlugin resolves an importer or parser plugin URI to its module
+	// bytes, injected from the command layer (RunConfig.ResolveImportPlugin)
+	// because the plugin cascade it binds is assembled there and shared with the
+	// install path, the listing and the runtime plugin runner. Nil for a Server
+	// built as a struct literal, and nil in any process that did not wire it; the
+	// handler refuses rather than reporting a conversion that did not happen.
+	resolveImportPlugin importops.PluginBytesResolver
 	// buildOnInspect is the resolved serve build-on-inspect dial (the
 	// --build-on-inspect flag overriding the serve.build_on_inspect config
 	// key). When false (the default), handleIrGraph returns the IR graph
@@ -964,24 +994,25 @@ func Run(cfg RunConfig) error {
 	// the worker pool. It is a process-lifetime singleton the daemon neither
 	// creates, injects, nor closes — it is reclaimed at process exit.
 	srv := &Server{
-		workspaceRoot:     root,
-		configSource:      source.String(),
-		compilerVersion:   cfg.CompilerVersion,
-		toolchain:         cfg.Toolchain,
-		workspaceMarker:   marker,
-		wsConfig:          wsCfg,
-		resolvedWorkspace: resolved,
-		installCLIPlugin:  cfg.InstallCLIPlugin,
-		buildOnInspect:    resolveBuildOnInspect(cfg.BuildOnInspect, wsCfg.Serve.BuildOnInspect),
-		lintOnValidate:    wsCfg.Serve.LintOnValidate,
-		lazyCatalog:       lazyCatalog,
-		parseCache:        newCache(wsCfg.ParseCache.MaxEntries, wsCfg.ParseCache.MaxBytes),
-		diagnostics:       map[string][]Diagnostic{},
-		renderDiags:       map[string][]Diagnostic{},
-		conventionDiags:   map[string][]Diagnostic{},
-		in:                bufio.NewReader(cfg.Stdin),
-		out:               cfg.Stdout,
-		stderr:            stderr,
+		workspaceRoot:       root,
+		configSource:        source.String(),
+		compilerVersion:     cfg.CompilerVersion,
+		toolchain:           cfg.Toolchain,
+		workspaceMarker:     marker,
+		wsConfig:            wsCfg,
+		resolvedWorkspace:   resolved,
+		installCLIPlugin:    cfg.InstallCLIPlugin,
+		resolveImportPlugin: cfg.ResolveImportPlugin,
+		buildOnInspect:      resolveBuildOnInspect(cfg.BuildOnInspect, wsCfg.Serve.BuildOnInspect),
+		lintOnValidate:      wsCfg.Serve.LintOnValidate,
+		lazyCatalog:         lazyCatalog,
+		parseCache:          newCache(wsCfg.ParseCache.MaxEntries, wsCfg.ParseCache.MaxBytes),
+		diagnostics:         map[string][]Diagnostic{},
+		renderDiags:         map[string][]Diagnostic{},
+		conventionDiags:     map[string][]Diagnostic{},
+		in:                  bufio.NewReader(cfg.Stdin),
+		out:                 cfg.Stdout,
+		stderr:              stderr,
 	}
 	srv.setPositionEncoding(yamlpos.PositionEncodingUTF16)
 

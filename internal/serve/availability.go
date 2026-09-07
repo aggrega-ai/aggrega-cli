@@ -363,6 +363,37 @@ var operationAvailability = map[string]serveAvailability{
 	"config-init":    servedAt(at("aggrega/configInit", (*Server).dispatchConfigInit)),
 	"config-capture": servedAt(at("aggrega/configCapture", (*Server).dispatchConfigCapture)),
 
+	// The session converts a foreign source description into draft authoring
+	// files. It writes, and it is admitted on the rule every writing method here
+	// runs under: a caller that sent it has asked for the drafts, exactly as a
+	// caller sending a build has asked for artifacts.
+	//
+	// It is the one writing method whose destination the CALLER names, and that is
+	// the property worth stating rather than leaving to be inferred. Every other
+	// write here lands somewhere the operation resolves — a configuration file, a
+	// lockfile, the output root a build derives from the session — while an import
+	// has no such place to derive: which directory a set of drafts belongs in is a
+	// decision only whoever asked for them can make, so the request names it and
+	// an absent value writes where the same import run in this workspace on the
+	// command line would.
+	//
+	// Naming a destination is not a widening of what the daemon may reach.
+	// The directory resolves inside the workspace the session opened, like every
+	// other path a request names here; and the paths the IMPORTER returns are
+	// separately required to stay under that directory, because those come from a
+	// plugin rather than from the caller and a plugin's relative path can climb.
+	// The refusal is the same one the rendered-artifact write is judged by, so the
+	// two writes cannot come to disagree about what escaping means.
+	//
+	// A source it could not fully convert is an answer rather than a failure: the
+	// drafts it did produce are written and the diagnostics say what it could not
+	// convert, because those diagnostics are the operation's most useful output
+	// and a response reducing them to a verdict would discard what the caller
+	// needs. It reaches no registry: the importer and the parser it draws on come
+	// from the workspace's own catalog through the shared plugin cascade, which
+	// fetches nothing.
+	"import": servedAt(at("aggrega/import", (*Server).dispatchImport)),
+
 	// The session drafts a starter document for an entity kind the request
 	// names. Its subject is not the workspace: the skeleton is derived from the
 	// schema set compiled into the binary, so the session contributes nothing to

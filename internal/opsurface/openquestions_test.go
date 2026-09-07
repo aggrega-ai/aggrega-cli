@@ -334,7 +334,32 @@ import (
 // self-contained, so it always writes that workspace's own file, and an answer
 // claiming a machine-wide scope there would be describing a reach the operation
 // does not have.
-const boundCeiling = 3
+//
+// It came down by ONE when the daemon took on turning a foreign source
+// description into draft authoring files. It writes, and it is admitted by the
+// rule the row itself pointed at — a caller that sent it has asked for the
+// drafts — so it had no reason to write down. The obstacle was the same
+// structural one the configuration rows above met: the logic sat in the
+// command-line package, which is package main, so no other package could import
+// it however the availability question was answered.
+//
+// 🔴 What this row decided, and it is the part a later reader is most likely to
+// re-open, is the posture for a capability whose destination the CALLER names.
+// Every other writing capability lands somewhere the operation itself resolves,
+// so this is the first row where the request carries a directory — and the answer
+// is that naming a destination is not the same as widening what the surface may
+// reach. The named directory resolves inside the session's own workspace like
+// every other path a request carries, and the paths the plugin returns are
+// separately held inside that directory. Answering it the other way — deriving a
+// destination the caller cannot choose — would have been a different capability
+// wearing the same name, since a set of drafts belongs wherever whoever asked for
+// them intends to edit them, which is not a property this surface can know.
+//
+// The row also settled that a partial conversion is an answer rather than a
+// failure. An import that could not convert everything still drafts what it
+// could, and its diagnostics are what the caller acts on, so they travel on the
+// result rather than replacing it with a refusal.
+const boundCeiling = 2
 
 // TestTheBoundOnlyShrinks is the ratchet. See boundCeiling for why both
 // directions refuse.
