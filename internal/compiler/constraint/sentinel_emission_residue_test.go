@@ -63,15 +63,21 @@ import (
 // is that the residue can be counted off against the code, and a capped
 // enumeration cannot do that job at all.
 //
-// # The reasons are judgements, and three entries rest on an unconfirmed one
+// # The reasons are judgements, and three of them are settled rulings
 //
 // Each reason states why its site was judged liftable or left, in the words of
 // the reading that judged it. Three entries — the rendered-document collision,
-// and both arms of the governing-service cardinality pair — record a reading
-// that a provider-vocabulary bound reaches them, and that reading has not been
-// confirmed. Their disposition says so in its own name and in every line this
-// file prints, because a hedge dropped in transit is how an unconfirmed reading
-// becomes a settled exclusion nobody re-examines.
+// and both arms of the governing-service cardinality pair — are settled: each
+// site stays in the provider's own guest core because what its predicate reads
+// is provider knowledge, and the Go host carries none. Only two placements are
+// consistent with that, a provider-neutral fact in the shared registry or the
+// provider's own code, and each of the three was read on its own before landing
+// on the second — the cardinality pair's arms are separate entries precisely so
+// they could have parted.
+//
+// What each reason keeps is what its predicate reads, because that is what
+// makes the ruling checkable. A placement stated without its input is a claim a
+// reader has to take on trust, and the input is the whole of the argument.
 //
 // # Why a sentinel named here does not pollute the census
 //
@@ -118,26 +124,33 @@ const (
 	// entry records. The reason is specific to the entry and is not a blanket.
 	dispositionLeftInline
 
-	// dispositionPermanentProposed means the site is proposed as permanently
-	// outside the framework's reach, on the ground that a declared fact naming
-	// what its predicate reads would put provider-specific vocabulary into the
-	// shared fact registry. 🔴 This is a reading extending that bound to a site
-	// no ruling names. It must not be read as settled, and it must not be
-	// "completed" by declaring the fact it argues against.
-	dispositionPermanentProposed
+	// dispositionProviderOwned means the site belongs to the provider's own
+	// guest core and is therefore outside the framework's reach for good: what
+	// its predicate reads is provider knowledge, and the Go host carries none.
+	//
+	// It is a ruling with a reason rather than a deferral. Two placements are
+	// consistent with the architecture — a provider-neutral fact in the shared
+	// registry, or the provider's own code — so a predicate that reads a
+	// platform-native resource shape, or bytes that exist only inside a render,
+	// takes the second. 🔴 It must not be "completed" by declaring the fact it
+	// argues against: a fact naming what these predicates read would carry
+	// provider vocabulary into the registry every provider shares, which is the
+	// thing the ruling refuses.
+	dispositionProviderOwned
 )
 
-// String renders a disposition for the report. The unsettled one carries its own
-// hedge here rather than in the prose around it, so no line this file prints can
-// state the judgement without also stating that it is unconfirmed.
+// String renders a disposition for the report. Each one names the placement it
+// records and nothing about how firmly it is held: a disposition here is a
+// judgement already made, and the reason beside it in the report is where a
+// reader checks it.
 func (d residueDisposition) String() string {
 	switch d {
 	case dispositionLiftable:
 		return "liftable into a named check"
 	case dispositionLeftInline:
 		return "left inline"
-	case dispositionPermanentProposed:
-		return "proposed permanently out of reach (a reading, NOT a ruling — confirm, do not inherit)"
+	case dispositionProviderOwned:
+		return "owned by the provider's guest core, out of the framework's reach"
 	}
 	return "unrecorded disposition"
 }
@@ -190,32 +203,47 @@ var inlineCheckResidue = []inlineResidueEntry{
 		vehicleKind: vehicleSentinel,
 		host:        "RenderLoadedChart",
 		file:        "plugins/internal/helmcore/render_core.go",
-		disposition: dispositionPermanentProposed,
+		disposition: dispositionProviderOwned,
 		reason: "A duplicate test with a byte-equality escape, whose predicate reads Helm rendered-document " +
-			"identity — the resource kind and name pair the output key derives from. A declared fact naming " +
-			"that would put provider-specific vocabulary into the shared fact registry, which is the bound " +
-			"that keeps the provider-internal rules outside the framework's reach. Extending that bound to " +
-			"THIS site is a reading and not a ruling: confirm it rather than inheriting it.",
+			"identity — the resource kind and name pair the output key derives from — against the output map " +
+			"the render is still filling, comparing the document's post-injection bytes with the bytes " +
+			"already at that key. Two things place it in the provider, and either alone would. A declared " +
+			"fact naming that identity would put provider-specific vocabulary into the shared fact registry, " +
+			"which is the bound that keeps the provider-internal rules outside the framework's reach. And no " +
+			"declared fact could carry this predicate's input in any case: a view exposes facts complete at " +
+			"one point in the compilation, while this map is mid-render in guest memory and the export hands " +
+			"back one value per key — so the contention two sources had over a key is gone before the host " +
+			"ever sees the output, and the rule can only be asked where the bytes still are.",
 	},
 	{
 		vehicle:     "ErrStatefulSetNoHeadlessService",
 		vehicleKind: vehicleSentinel,
 		host:        "statefulSetGoverningService",
 		file:        "plugins/internal/helmcore/synth_core.go",
-		disposition: dispositionPermanentProposed,
+		disposition: dispositionProviderOwned,
 		reason: "A cardinality test over the headless services declared on the synthesized workload, " +
-			"cleanly self-contained — but the predicate reads Kubernetes Service shape, so the same " +
-			"provider-vocabulary bound applies as for the rendered-document collision above. Again a " +
-			"reading rather than a ruling.",
+			"cleanly self-contained — the predicate reads Kubernetes Service shape, counting the " +
+			"translated services whose clusterIP is None, and the site returns the single one's rendered " +
+			"name for the StatefulSet's serviceName. The same provider-vocabulary bound applies as for the " +
+			"rendered-document collision above, and two further things hold it here. The requirement exists " +
+			"only because this provider synthesizes a StatefulSet, so a host-side check over the authored " +
+			"facts — which are host-visible — would halt a workload that is valid for whichever provider it " +
+			"is actually rendered through, which is the core policing a provider's convention. And the " +
+			"rendered name this site hands back does not exist host-side at all, so a check there could " +
+			"only duplicate the counting half and leave the resolution where it already is.",
 	},
 	{
 		vehicle:     "ErrStatefulSetAmbiguousHeadlessService",
 		vehicleKind: vehicleSentinel,
 		host:        "statefulSetGoverningService",
 		file:        "plugins/internal/helmcore/synth_core.go",
-		disposition: dispositionPermanentProposed,
+		disposition: dispositionProviderOwned,
 		reason: "The ambiguous arm of the same cardinality test in the same host, recorded as its own entry " +
-			"so that lifting one arm and leaving the other is representable.",
+			"so that lifting one arm and leaving the other is representable. It reads the same count of the " +
+			"same Kubernetes Service shape and was judged on its own rather than by inheritance, reaching " +
+			"the same placement as the zero arm. The entry stays separate because that is what keeps the " +
+			"agreement a finding: two entries that could have parted and did not say more than one entry " +
+			"covering both, which could not have parted at all.",
 	},
 }
 
