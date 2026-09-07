@@ -106,6 +106,22 @@ const (
 	KindSetValue Kind = "set-value"
 )
 
+// Kinds returns the admissible edits, in a fixed order.
+//
+// It exists so a surface that has to NAME the bound — a refusal telling a caller
+// which edits it may ask for, a schema declaring the values a field takes — reads
+// the enumeration rather than restating it. A restatement is a second statement
+// of the bound, and the two would agree until a kind was added to one of them.
+//
+// The order is the declaration order above and nothing derives behaviour from it;
+// it is fixed so a refusal naming the set reads the same across runs.
+//
+// It returns a copy, so a caller enumerating the set cannot alter what checkRequest
+// admits.
+func Kinds() []Kind {
+	return []Kind{KindAddComponent, KindAttachFeature, KindWireEdge, KindSetValue}
+}
+
 // Options is one edit request.
 //
 // # Why the node is a path rather than a name

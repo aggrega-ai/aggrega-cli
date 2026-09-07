@@ -111,6 +111,68 @@ func addedLines(before, after string) (added, removed []string) {
 	return added, removed
 }
 
+// TestEveryEnumeratedKindReachesTheWholeEditPath pins that the enumeration a
+// surface reads is the same set the request check admits and the composition
+// handles.
+//
+// A surface that has to NAME the bound — a refusal telling a caller which edits
+// it may ask for — reads Kinds rather than restating the set, so the enumeration
+// becoming a superset of what the switches handle would advertise an edit that is
+// then refused. Each member is driven through checkRequest, containerFor and
+// entryValue, which are the three places a kind is switched on.
+//
+// 🔴 It sees one direction and not the other. A kind declared as a constant and
+// omitted from Kinds is not caught here — the enumeration is what this reads, so
+// a member missing from it is invisible to it — and Go offers no way to walk the
+// constants of a string-based kind. What that direction costs is a surface
+// advertising less than the layer applies, which is the safer of the two
+// failures; the direction asserted here is the one that would advertise more.
+func TestEveryEnumeratedKindReachesTheWholeEditPath(t *testing.T) {
+	kinds := Kinds()
+	if len(kinds) == 0 {
+		t.Fatal("Kinds enumerates nothing, so every assertion below is vacuous")
+	}
+
+	for _, kind := range kinds {
+		t.Run(string(kind), func(t *testing.T) {
+			opts := Options{
+				Kind:   kind,
+				Node:   []string{"spec", "components", "web"},
+				Socket: "database",
+				Name:   "probe",
+				Value:  "core/api-server:1.0.0",
+			}
+			if err := checkRequest(opts); err != nil {
+				t.Fatalf("checkRequest refuses an enumerated kind: %v", err)
+			}
+			container, err := containerFor(opts)
+			if err != nil {
+				t.Fatalf("containerFor refuses an enumerated kind: %v", err)
+			}
+			if len(container) == 0 {
+				t.Error("containerFor returns no container for an enumerated kind")
+			}
+			if _, err := entryValue(opts); err != nil {
+				t.Fatalf("entryValue refuses an enumerated kind: %v", err)
+			}
+		})
+	}
+}
+
+// TestKindsReturnsACopy pins that a caller enumerating the bound cannot alter
+// what a later reader sees.
+func TestKindsReturnsACopy(t *testing.T) {
+	first := Kinds()
+	if len(first) == 0 {
+		t.Fatal("Kinds enumerates nothing")
+	}
+	first[0] = Kind("clobbered")
+
+	if again := Kinds(); again[0] == Kind("clobbered") {
+		t.Fatal("mutating the returned slice reached the enumeration")
+	}
+}
+
 // TestEachEditKindLandsInTheDocument drives all four edits against a real file
 // on disk and asserts the document reads back carrying what was asked for.
 //

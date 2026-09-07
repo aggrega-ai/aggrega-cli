@@ -109,6 +109,13 @@ var runtimeErrorCommands = []struct {
 	// its own work reading the non-existent source file, before format detection
 	// or workspace resolution.
 	{path: "aggrega import", args: []string{"import", "/nonexistent-aggrega-xyz/source.json"}},
+	// edit-document reaches its RunE with a well-formed edit-and-document pair —
+	// both positionals present, so cobra's own argument check passes and the
+	// failure is not a usage one — then fails in its own work: the document it was
+	// asked to edit is not there to read. The refusal comes before anything is
+	// composed, so nothing is written and the case needs no arrangement and leaves
+	// no file behind.
+	{path: "aggrega edit-document", args: []string{"edit-document", "add-component", "no-such-document.aggregate.yaml", "--node", "spec", "--node", "components", "--name", "web", "--value", "core/api-server:1.0.0"}},
 	// get-schema reaches its RunE with a well-formed single argument, then
 	// fails in its own work: no schema matches the unknown kind.
 	{path: "aggrega get-schema", args: []string{"get-schema", "bogus"}},

@@ -97,6 +97,7 @@ func newRootCmd() *cobra.Command {
 	mustAttach(root, newPullCmd(), "pull")
 	mustAttach(root, newInspectCmd(), "inspect")
 	mustAttach(root, newImportCmd(), "import")
+	mustAttach(root, newEditDocumentCmd(), "document-edit")
 	mustAttach(root, newGetSchemaCmd(), "get-schema")
 	mustAttach(root, newScaffoldCmd(), "scaffold-entity")
 	mustAttach(root, newExplainCmd(), "explain-error")

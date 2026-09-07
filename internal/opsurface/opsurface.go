@@ -23,6 +23,27 @@
 // CheckMembers, which is what makes an omission declared rather than accidental:
 // a capability a surface simply forgot has no entry, and the check names it.
 //
+// # Adding an operation is atomic across every surface
+//
+// Because each surface's CheckAvailability walks the whole set, adding an entry
+// to operations obliges a declaration on every surface at once. There is no
+// intermediate state in which one surface has ruled and another has not: the
+// moment an operation exists, a surface that says nothing about it is reported,
+// so a capability cannot be landed one surface at a time as a sequence of
+// green commits.
+//
+// That is a property of the design rather than a limitation of it, and it is the
+// same property the omission check buys. A set that let a surface stay silent
+// while another shipped would make "nobody has decided yet" and "this surface
+// declines" indistinguishable, which is exactly what having no third state above
+// prevents. The bound is the one deliberate exception, and it is not a staging
+// area: a pair named there records that nobody has decided, so using it to park
+// a capability that HAS been ruled on is refused by the finding text itself.
+//
+// The consequence for whoever plans such work: the entry point on each surface
+// is part of adding the operation, not a follow-on. A plan that sequences one
+// surface after another reads as feasible and is not.
+//
 // The package deliberately holds no dependency on any surface, and none on the
 // operations layer that implements the capabilities. A surface reads the set;
 // the set reads nothing. That is what lets a projection package with a handful
@@ -141,6 +162,7 @@ var operations = []Operation{
 	{"connection-candidates", "Report an entity's dependency sockets and the components whose declared labels satisfy each one."},
 	{"document-insertion-point", "Report where in an authored document a new entry under a named container belongs."},
 	{"attachment-container", "Report which document and which container a graph node's Feature attachment belongs in."},
+	{"document-edit", "Apply one bounded structured edit to an authored document, preserving every byte it does not touch."},
 	{"release-candidates", "Report every Release-kind document under the workspace root, by content."},
 	{"active-release", "Report the Release the workspace's disambiguation cascade selected."},
 

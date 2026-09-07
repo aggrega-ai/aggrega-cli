@@ -360,6 +360,36 @@ var operationAvailability = map[string]serveAvailability{
 	"release-candidates":          servedAt(at("aggrega/releaseCandidates", (*Server).dispatchReleaseCandidates)),
 	"active-release":              servedAt(at("aggrega/activeRelease", (*Server).dispatchActiveRelease)),
 
+	// The session applies one bounded structured edit to a document the
+	// workspace carries, and it writes. It is admitted on the rule every
+	// writing method here runs under: a caller that sent it has asked for the
+	// edit, exactly as a caller sending a build has asked for artifacts.
+	//
+	// It is the counterpart to the two locating rows above, and the division
+	// between them is deliberate rather than an accident of what shipped when.
+	// Those answer where an entry belongs and leave composing and applying it to
+	// the caller that owns the buffer; this composes and applies one, for a
+	// caller that would rather the document be edited than be told where to edit
+	// it. Both remain reachable, because a client holding an unsaved buffer and a
+	// client editing what is on disk want different halves.
+	//
+	// What may be applied is fixed by the shared layer's own enumeration of the
+	// edits, and it is not restated here: one call adds one entry under one
+	// container or sets one scalar, and a shape absent from that set has no path
+	// through it. The bound on the RESULT is the same one a hand-typed document
+	// meets — the composed document is validated against its own kind's schema
+	// and reaches disk only if that passes — so this cannot write what the
+	// authoring schema refuses, and the refusal comes from where that rule
+	// already lives rather than from a copy of it here.
+	//
+	// A refused edit leaves the file byte-for-byte as it was, so a caller can
+	// retry a corrected request against the document it started with. After a
+	// write the session's view of that document is dropped, so the next
+	// validation, hover or graph request is answered from the bytes the edit
+	// produced rather than from the version it replaced. It reaches no registry
+	// and no network under either delivery.
+	"document-edit": servedAt(at("aggrega/editDocument", (*Server).dispatchDocumentEdit)),
+
 	// The session reports the configuration it resolved at startup and the layer
 	// each setting came from. It reports no other part of this capability: the
 	// command line's single-layer verbatim dumps preserve a file's own comments
