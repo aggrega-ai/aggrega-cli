@@ -45,9 +45,8 @@ const (
 	// build, so it defaults to the workspace config.
 	OpConfigSocket
 	// OpCLI installs a CLI-extension plugin. A CLI extension is machine-wide
-	// tooling and defaults to the global scope. No config-file write serves
-	// this operation today — it is recorded here so its nature is classified in
-	// one place with the rest.
+	// tooling and defaults to the global scope, so an install naming neither
+	// override registers the command for every project on the machine.
 	OpCLI
 )
 
