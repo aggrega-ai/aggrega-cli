@@ -158,7 +158,7 @@ func TestRunPipelineResolvesRemoteSourceThroughProductionPath(t *testing.T) {
 	}
 	cat := loadRemoteSrcCatalog(t)
 
-	result, err := pipeline.RunPipeline(
+	result, err := runPipelineCompleted(
 		context.Background(),
 		pipeline.Inputs{
 			Release:           rel,
@@ -216,7 +216,7 @@ func TestRunPipelineRemoteSourceFailsWithoutLockfile(t *testing.T) {
 	}
 	cat := loadRemoteSrcCatalog(t)
 
-	_, err = pipeline.RunPipeline(
+	_, err = runPipelineCompleted(
 		context.Background(),
 		pipeline.Inputs{
 			Release:           rel,

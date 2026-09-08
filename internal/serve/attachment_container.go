@@ -245,7 +245,9 @@ func (s *Server) attachmentContainerForGraphNode(ctx context.Context, node, rele
 		return AttachmentContainerResult{}, errEnvelope
 	}
 
-	result, refusal := AttachmentContainer(preview.pipeline.IRGraph, node)
+	// The graph comes off the finished payload: the envelope above answered every
+	// refusal, so the run this reads the reach from is one that ended.
+	result, refusal := AttachmentContainer(preview.pipeline.Completed().IRGraph, node)
 	if refusal != AttachmentContainerReported {
 		// Named the graph rather than the workspace, because that is what the
 		// caller addressed.

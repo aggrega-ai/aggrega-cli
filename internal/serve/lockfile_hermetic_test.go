@@ -285,7 +285,7 @@ func TestServeByteIdenticalSingleProviderRender(t *testing.T) {
 		if err != nil {
 			t.Fatalf("BuildToBuffer (lockfile=%v): %v", withLockfile != nil, err)
 		}
-		return res.Artifacts
+		return res.Completed().Artifacts
 	}
 
 	hermetic := render(lf) // provider resolution reads the lockfile bindings

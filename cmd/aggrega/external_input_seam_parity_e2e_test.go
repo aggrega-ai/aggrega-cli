@@ -635,7 +635,7 @@ func renderWithoutSeam(t *testing.T, root, releasePath string, ws *workspaceconf
 		t.Fatalf("the no-seam render failed; it is supposed to SUCCEED with different bytes, "+
 			"which is what makes it a discriminator rather than an error: %v", err)
 	}
-	for name, content := range preview.Pipeline.Artifacts {
+	for name, content := range preview.PipelineOutcome().Completed().Artifacts {
 		if strings.HasSuffix(name, seamFixtureFile) {
 			return string(content)
 		}

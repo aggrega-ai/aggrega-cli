@@ -99,7 +99,7 @@ func TestSharedOperationsAgainstFixture(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildToBuffer: %v", err)
 	}
-	if res == nil || res.IRGraph == nil {
+	if completed := res.Completed(); completed == nil || completed.IRGraph == nil {
 		t.Fatalf("BuildToBuffer produced no IR graph: %+v", res)
 	}
 }

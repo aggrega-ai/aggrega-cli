@@ -551,7 +551,10 @@ func Run(cfg Config) (Result, error) {
 	cl := preview.Resolved.Closure
 	report.note("closure entities: %d", len(cl.Entities))
 	report.note("schema libraries: %d, mapping libraries: %d, workload libraries: %d", len(cl.SchemaLibraries), len(cl.MappingLibraries), len(cl.WorkloadLibraries))
-	result := preview.Pipeline
+	// The run finished — the failure above returned — so this reports from the
+	// finished payload. A command-line build writes artifacts and hands back the
+	// graph it rendered from, and a run that stopped has neither.
+	result := preview.PipelineOutcome().Completed()
 
 	// The graph this build resolved, handed back before anything else reaches the
 	// status stream — ahead of the dry run's artifact report and ahead of the

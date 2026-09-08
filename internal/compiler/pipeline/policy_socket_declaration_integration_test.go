@@ -194,5 +194,5 @@ func runRegorusPolicyOn(
 	inputs.PluginPathLookup = fixtureSocketLookup(t, buildLookup, map[string]string{
 		"proof://policy-regorus": "policy-regorus-rust.wasm",
 	})
-	return pipeline.RunPipeline(context.Background(), inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
+	return runPipelineCompleted(context.Background(), inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
 }

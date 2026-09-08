@@ -45,7 +45,7 @@ func runOpaWasmPolicy(t *testing.T, settings map[string]any) (*pipeline.Result, 
 	inputs.PluginPathLookup = fixtureSocketLookup(t, buildLookup, map[string]string{
 		"proof://policy-opa-wasm": "policy-opa-wasm-rust.wasm",
 	})
-	return pipeline.RunPipeline(context.Background(), inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
+	return runPipelineCompleted(context.Background(), inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
 }
 
 // runOpaWasmPolicyResult is runOpaWasmPolicy plus a fatal on error, for the

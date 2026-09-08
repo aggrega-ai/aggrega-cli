@@ -46,7 +46,7 @@ func TestPolicySocketSettingsConformE2E(t *testing.T) {
 	var res *pipeline.Result
 	stderr := captureStderr(t, func() {
 		inputs, buildLookup, recipeLookup, subAgg := settingsPolicyInputs(t, map[string]any{"max_replicas": 5})
-		r, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
+		r, err := runPipelineCompleted(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
 		if err != nil {
 			t.Fatalf("conforming settings: unexpected halt: %v", err)
 		}
@@ -81,7 +81,7 @@ func TestPolicySocketSettingsViolationE2E(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			inputs, buildLookup, recipeLookup, subAgg := settingsPolicyInputs(t, tc.settings)
-			_, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
+			_, err := runPipelineCompleted(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
 			if err == nil {
 				t.Fatalf("violating settings %v: expected a halt, got nil", tc.settings)
 			}
@@ -119,7 +119,7 @@ func TestPolicySocketNoSettingsSchemaFreeFormE2E(t *testing.T) {
 		"proof://policy-allow": "policy-allow-go.wasm",
 	})
 
-	res, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
+	res, err := runPipelineCompleted(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
 	if err != nil {
 		t.Fatalf("no-schema guest with arbitrary settings: unexpected halt: %v", err)
 	}

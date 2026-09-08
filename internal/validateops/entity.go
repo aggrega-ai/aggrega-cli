@@ -551,7 +551,7 @@ func runRenderTiers(res *EntityResult, h entityHarness, lookup resolver.CatalogL
 	// catalog enables it upstream), so a core-provider recipe resolves its
 	// provider from the binary's embedded set and renders even in a workspace
 	// with no local catalog — matching how a real build resolves the provider.
-	result, err := pipeline.RunPipeline(ctx, inputs, lookup, recipeLookup, subAggregateLoader, pipeline.Options{
+	outcome, err := pipeline.RunPipeline(ctx, inputs, lookup, recipeLookup, subAggregateLoader, pipeline.Options{
 		SuppressUnsupportedFieldWarnings: suppressUnsupportedFieldWarnings,
 	})
 	if err != nil {
@@ -570,6 +570,8 @@ func runRenderTiers(res *EntityResult, h entityHarness, lookup resolver.CatalogL
 			"  render diagnostic below.")
 		return fmt.Errorf("render: %w", err)
 	}
+	// The render completed, so the finished payload is what this reports from.
+	result := outcome.Completed()
 	keys := artifactKeysSorted(result.Artifacts)
 	res.Diagnostics = append(res.Diagnostics, fmt.Sprintf("Render: %d artifact(s)", len(keys)))
 	for _, k := range keys {

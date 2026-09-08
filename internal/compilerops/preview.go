@@ -386,11 +386,23 @@ const (
 	GateRender
 )
 
-// PreviewResult carries everything a preview produces. Pipeline is nil when a
-// gate halted before the render; Resolved and Warnings are populated as far as
-// the run reached, so a caller can still report what was found before the halt.
+// PreviewResult carries everything a preview produces. Resolved and Warnings are
+// populated as far as the run reached, so a caller can still report what was
+// found before a halt.
+//
+// The pipeline run's outcome is reached through [PreviewResult.PipelineOutcome]
+// rather than read off a field. A gate that halted before the render leaves the
+// zero outcome, which reports no completed payload; a gate that halted inside the
+// run leaves the run's own outcome, which reports the advisories it raised. Both
+// cases are the same accessor, so a caller cannot tell them apart by accident and
+// cannot mistake either for a finished run.
 type PreviewResult struct {
-	Pipeline *pipeline.Result
+	// pipeline is unexported deliberately. Handed out as a field, a partial run's
+	// payload is indistinguishable from a finished one at every consuming
+	// surface, and a nil check standing in for the verdict compiles perfectly
+	// well while discriminating nothing.
+	pipeline pipeline.Outcome
+
 	Resolved *ResolvedClosure
 	Warnings []Warning
 
@@ -402,6 +414,23 @@ type PreviewResult struct {
 	// as well as on Resolved so a caller reaching a non-halting verdict reads it
 	// from the result it already holds.
 	ManifestConsistencyFindings []error
+}
+
+// PipelineOutcome returns the pipeline run's outcome. It is nil-receiver safe and
+// answers with the zero outcome for a preview that is absent or never reached the
+// run, so a caller reads one shape whatever happened and needs no guard of its
+// own before asking.
+//
+// The name is deliberately not the bare noun. A method named for the field it
+// replaces would leave a comparison of that selector against nil compiling as a
+// comparison of a method value — legal Go, always false — so a guard written that
+// way would silently stop discriminating with nothing to reveal it. This name
+// makes the same expression a compile error instead.
+func (p *PreviewResult) PipelineOutcome() pipeline.Outcome {
+	if p == nil {
+		return pipeline.Outcome{}
+	}
+	return p.pipeline
 }
 
 // resolutionFailure marks a preview failure that a catalog-skip record can
@@ -652,7 +681,7 @@ func runPreview(ctx context.Context, in PreviewInputs, pol previewPolicy, opts p
 	if pol.verifyRecipeResolution {
 		opts.RecipeResolutionVerifier = in.view.VerifyRecipeResolution
 	}
-	result, err := BuildToBuffer(ctx, BuildInputs{
+	outcome, err := BuildToBuffer(ctx, BuildInputs{
 		View:                             in.view,
 		Resolved:                         resolved,
 		ReleasePath:                      in.releasePath,
@@ -662,11 +691,18 @@ func runPreview(ctx context.Context, in PreviewInputs, pol previewPolicy, opts p
 		CompilerVersion:                  in.compilerVersion,
 		TolerateCatalogViewInconsistency: pol.tolerateCatalogViewInconsistency,
 	}, opts)
+	// Assigned BEFORE the verdict is read, and that ordering is the whole point
+	// rather than a tidying. Assigned after the error check, the outcome would
+	// reach a caller only on the path where it needs it least — a run that
+	// finished cleanly — and the run that stopped, whose findings a reader has to
+	// act on, would arrive with nothing to read. The outcome carries its own
+	// verdict, so handing it over on both paths tells a caller no less than the
+	// error does.
+	out.pipeline = outcome
 	if err != nil {
 		out.FailedGate = GateRender
 		return out, err
 	}
-	out.Pipeline = result
 	return out, nil
 }
 

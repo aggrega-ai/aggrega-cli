@@ -600,7 +600,7 @@ func TestTheDaemonsAttachmentContainerIsTheSharedLayers(t *testing.T) {
 	if errEnvelope != nil {
 		t.Fatalf("preview the Release: %+v", errEnvelope)
 	}
-	encoded, err := json.Marshal(preview.pipeline.IRGraph)
+	encoded, err := json.Marshal(preview.pipeline.Completed().IRGraph)
 	if err != nil {
 		t.Fatalf("marshal the graph: %v", err)
 	}

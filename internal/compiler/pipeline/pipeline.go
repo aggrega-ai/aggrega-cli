@@ -365,6 +365,67 @@ type Result struct {
 	Advisories []renderer.Diagnostic
 }
 
+// Outcome is what a run hands back: its payload together with the verdict on
+// whether the run finished. The payload is unexported, so a consumer reaches it
+// only through the accessors below and cannot read it without having said which
+// verdict it is reading under.
+//
+// # Why the payload is not a field
+//
+// A run that stops partway still holds findings worth reporting, so the
+// advisories have to survive a failure. Handing back the whole payload beside
+// the error would make a partial one indistinguishable from a finished one at
+// every call site, and a site that branched on the value rather than on the
+// error would read a half-built run as a complete one — writing an empty
+// artifact set, or dereferencing a graph the run never reached. Naming the
+// accessor is what closes that: there is no spelling that yields the payload
+// without stating the verdict, and no second return value to discard.
+//
+// # The zero value is the safe one
+//
+// An Outcome nobody filled reports no completed payload and no advisories, so a
+// caller that constructs one and forgets to set it is refused rather than
+// trusted. The unsafe default — a value whose zero state reads as "finished" —
+// is unrepresentable here.
+type Outcome struct {
+	// result is what the run produced. On a finished run it is the whole
+	// payload; on a run that stopped it carries the findings the phases that DID
+	// run raised, and nothing else, because nothing else is reachable from a
+	// partial and dead data on a partial is worse than none.
+	result *Result
+
+	// finished records that the run reached its end. Only a finished run's
+	// payload is handed out as a Result, because artifacts and a graph are
+	// meaningful only from a run that produced them.
+	finished bool
+}
+
+// Completed returns the finished payload, or nil when the run stopped before it
+// ended. Artifacts, the IR graph and the trace are read from here and nowhere
+// else, so a run that produced none cannot supply them.
+func (o Outcome) Completed() *Result {
+	if !o.finished {
+		return nil
+	}
+	return o.result
+}
+
+// Advisories returns every exit-code-neutral advisory the run raised, whether or
+// not it finished. It is the one thing a run that stopped still reports in full:
+// the phases ahead of the halt found what they found, and a reader who loses
+// those findings has to re-run to see them.
+//
+// The order is the order a terminal printed them, for the reason
+// [Result.Advisories] gives. A finished run's entries are the same slice that
+// field carries; there is one accumulation and this is the route to it that does
+// not depend on the verdict.
+func (o Outcome) Advisories() []renderer.Diagnostic {
+	if o.result == nil {
+		return nil
+	}
+	return o.result.Advisories
+}
+
 // Tier4Result carries the outputs of Steps 1-4 of the compiler pipeline,
 // produced by RunTier4Pipeline. The daemon's runTier4Validation consumes
 // this shape to surface structured per-violation diagnostics through
@@ -1046,19 +1107,29 @@ func RunTier4Pipeline(
 }
 
 // RunPipeline executes the 5-step compiler pipeline against caller-supplied
-// inputs and returns the rendered artifact map plus the IR graph. The
-// function performs no filesystem reads or writes beyond the operations
-// the supplied lookup callbacks perform; the caller is responsible for
+// inputs and returns an [Outcome] carrying the rendered artifact map plus the IR
+// graph. The function performs no filesystem reads or writes beyond the
+// operations the supplied lookup callbacks perform; the caller is responsible for
 // any filesystem-side effects (writing artifacts to dist/, writing the
 // trace map to .trace/).
 //
 // Mid-run advisories — the binding-lint findings, the static-analysis advisory
 // stream, the governance sockets' warn and info verdicts, and the renderer's
 // warnings — are displayed on os.Stderr inline by this function AND ride out on
-// Result.Advisories, so a caller that reads no terminal receives every one of
-// them as a structured entry rather than having to redirect a process stream to
-// see them. The entries arrive in the order the display printed them, because
-// each is recorded beside its own display.
+// the Outcome, so a caller that reads no terminal receives every one of them as a
+// structured entry rather than having to redirect a process stream to see them.
+// The entries arrive in the order the display printed them, because each is
+// recorded beside its own display.
+//
+// # A run that stops still reports what it found
+//
+// The returned error and the returned Outcome are not alternatives. A halt any
+// phase raises comes back with the advisories the phases ahead of it had already
+// raised, so a caller that renders findings has them on the path where a reader
+// needs them most. Which of the two the caller is holding is not left to a
+// convention: [Outcome.Completed] answers with the payload only for a run that
+// finished, and [Outcome.Advisories] answers on either, so there is no spelling
+// that reads a stopped run as a finished one.
 //
 // A trace-file close failure is displayed and is deliberately not an advisory:
 // see Result.Advisories for why.
@@ -1224,7 +1295,7 @@ func RunPipeline(
 	recipeLookup renderer.RecipeLookup,
 	subAggregateLoader topology.SubAggregateLoader,
 	opts Options,
-) (*Result, error) {
+) (Outcome, error) {
 	// The entry point owns the log, so every phase below records into one of them
 	// and a caller never has to supply it. Assigned unconditionally rather than
 	// honoured-if-set: a caller-supplied log would let two runs share an
@@ -1463,7 +1534,16 @@ func RunPipeline(
 		return nil
 	})
 	if err != nil {
-		return nil, err
+		// The run stopped, and the findings it had already raised are handed back
+		// with it. The log lives on this function's own inputs rather than inside
+		// the continuation, so it is readable here whichever phase refused — which
+		// is what lets one site cover every halt instead of each halt remembering.
+		//
+		// Only the advisories travel. Artifacts and the graph are reachable from no
+		// accessor on a run that did not finish, so carrying them would be data
+		// nothing can read; a consumer that later needs the graph a stopped run
+		// reached gets an accessor added for it, with the reader that wanted it.
+		return Outcome{result: &Result{Advisories: inputs.AdvisoryLog.Entries()}}, err
 	}
-	return result, nil
+	return Outcome{result: result, finished: true}, nil
 }

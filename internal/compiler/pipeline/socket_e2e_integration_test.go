@@ -186,7 +186,7 @@ func TestAnnotationTransformSocketInjectsFeatureE2E(t *testing.T) {
 		inputs, buildLookup, recipeLookup, subAgg := loadFullstackWithProofBinding(t)
 		inputs.WorkspaceConfig.Plugins.Governance = []workspaceconfig.PluginRef{{URI: pluginURI, Role: plugintype.RoleAnnotationTransform}}
 		inputs.PluginPathLookup = fixtureSocketLookup(t, buildLookup, map[string]string{pluginURI: "annotation-injector-go.wasm"})
-		res, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
+		res, err := runPipelineCompleted(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
 		if err != nil {
 			t.Fatalf("RunPipeline with annotation-transform: %v", err)
 		}
@@ -267,7 +267,7 @@ func TestMutatorSocketInjectsLabelE2E(t *testing.T) {
 		inputs, buildLookup, recipeLookup, subAgg := loadFullstackForSockets(t)
 		inputs.WorkspaceConfig.Plugins.Governance = []workspaceconfig.PluginRef{{URI: "proof://mutator", Role: plugintype.RoleLabelTransform}}
 		inputs.PluginPathLookup = fixtureSocketLookup(t, buildLookup, map[string]string{"proof://mutator": "mutator-proof-go.wasm"})
-		res, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg,
+		res, err := runPipelineCompleted(ctx, inputs, buildLookup, recipeLookup, subAgg,
 			pipeline.Options{})
 		if err != nil {
 			t.Fatalf("RunPipeline with mutator: %v", err)
@@ -309,7 +309,7 @@ func TestPolicySocketAllowE2E(t *testing.T) {
 	inputs.WorkspaceConfig.Plugins.Governance = []workspaceconfig.PluginRef{{URI: "proof://policy-allow", Role: plugintype.RoleIRVerdict}}
 	inputs.PluginPathLookup = fixtureSocketLookup(t, buildLookup, map[string]string{"proof://policy-allow": "policy-allow-go.wasm"})
 
-	res, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg,
+	res, err := runPipelineCompleted(ctx, inputs, buildLookup, recipeLookup, subAgg,
 		pipeline.Options{})
 	if err != nil {
 		t.Fatalf("RunPipeline with all-pass policy: unexpected halt: %v", err)
@@ -328,7 +328,7 @@ func TestPolicySocketHaltE2E(t *testing.T) {
 	inputs.WorkspaceConfig.Plugins.Governance = []workspaceconfig.PluginRef{{URI: "proof://policy", Role: plugintype.RoleIRVerdict}}
 	inputs.PluginPathLookup = fixtureSocketLookup(t, buildLookup, map[string]string{"proof://policy": "policy-go.wasm"})
 
-	_, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg,
+	_, err := runPipelineCompleted(ctx, inputs, buildLookup, recipeLookup, subAgg,
 		pipeline.Options{})
 	if err == nil {
 		t.Fatalf("RunPipeline with failing policy: expected a halt, got nil")
@@ -376,7 +376,7 @@ func TestPolicySocketGuestReportedErrorE2E(t *testing.T) {
 	}}
 	inputs.PluginPathLookup = fixtureSocketLookup(t, buildLookup, map[string]string{"proof://policy": "policy-go.wasm"})
 
-	_, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
+	_, err := runPipelineCompleted(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
 	if err == nil {
 		t.Fatalf("a guest that reported an error on its output: expected a halt, got nil")
 	}
@@ -413,7 +413,7 @@ func TestVerdictRoleConfinesMutateOnlyGuestE2E(t *testing.T) {
 	inputs.WorkspaceConfig.Plugins.Governance = []workspaceconfig.PluginRef{{URI: "proof://mutate-only-at-verdict", Role: plugintype.RoleIRVerdict}}
 	inputs.PluginPathLookup = fixtureSocketLookup(t, buildLookup, map[string]string{"proof://mutate-only-at-verdict": "mutator-proof-go.wasm"})
 
-	_, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg,
+	_, err := runPipelineCompleted(ctx, inputs, buildLookup, recipeLookup, subAgg,
 		pipeline.Options{})
 	if err == nil {
 		t.Fatalf("a mutate-only guest at a verdict role: expected a loud halt (the verdict role has no mutate path), got nil")
@@ -446,7 +446,7 @@ func TestSocketsEmptyConfigNoOp(t *testing.T) {
 		return provLookup(uri)
 	}
 
-	res, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg,
+	res, err := runPipelineCompleted(ctx, inputs, buildLookup, recipeLookup, subAgg,
 		pipeline.Options{})
 	if err != nil {
 		t.Fatalf("empty-config build halted: %v", err)
@@ -494,7 +494,7 @@ func TestPolicySocketSeverityHaltE2E(t *testing.T) {
 	ctx := context.Background()
 	inputs, buildLookup, recipeLookup, subAgg, srcPath, srcContent := observePolicyInputs(t, analyzer.SeverityHalt)
 
-	_, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
+	_, err := runPipelineCompleted(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
 	if err == nil {
 		t.Fatalf("halt verdict: expected a halt, got nil")
 	}
@@ -522,7 +522,7 @@ func TestPolicySocketSeverityWarnE2E(t *testing.T) {
 	var res *pipeline.Result
 	stderr := captureStderr(t, func() {
 		inputs, buildLookup, recipeLookup, subAgg, _, _ := observePolicyInputs(t, analyzer.SeverityWarn)
-		r, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
+		r, err := runPipelineCompleted(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
 		if err != nil {
 			t.Fatalf("warn verdict: unexpected halt: %v", err)
 		}
@@ -537,7 +537,7 @@ func TestPolicySocketSeverityWarnE2E(t *testing.T) {
 
 	// Determinism: a second build of identical input yields byte-identical output.
 	inputs2, buildLookup2, recipeLookup2, subAgg2, _, _ := observePolicyInputs(t, analyzer.SeverityWarn)
-	res2, err := pipeline.RunPipeline(ctx, inputs2, buildLookup2, recipeLookup2, subAgg2, pipeline.Options{})
+	res2, err := runPipelineCompleted(ctx, inputs2, buildLookup2, recipeLookup2, subAgg2, pipeline.Options{})
 	if err != nil {
 		t.Fatalf("warn verdict (second build): %v", err)
 	}
@@ -552,7 +552,7 @@ func TestPolicySocketSeverityInfoE2E(t *testing.T) {
 	var res *pipeline.Result
 	stderr := captureStderr(t, func() {
 		inputs, buildLookup, recipeLookup, subAgg, _, _ := observePolicyInputs(t, analyzer.SeverityInfo)
-		r, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
+		r, err := runPipelineCompleted(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
 		if err != nil {
 			t.Fatalf("info verdict: unexpected halt: %v", err)
 		}
@@ -566,7 +566,7 @@ func TestPolicySocketSeverityInfoE2E(t *testing.T) {
 	}
 
 	inputs2, buildLookup2, recipeLookup2, subAgg2, _, _ := observePolicyInputs(t, analyzer.SeverityInfo)
-	res2, err := pipeline.RunPipeline(ctx, inputs2, buildLookup2, recipeLookup2, subAgg2, pipeline.Options{})
+	res2, err := runPipelineCompleted(ctx, inputs2, buildLookup2, recipeLookup2, subAgg2, pipeline.Options{})
 	if err != nil {
 		t.Fatalf("info verdict (second build): %v", err)
 	}
@@ -598,7 +598,7 @@ func TestRenderStagePolicySocketDenyE2E(t *testing.T) {
 	ctx := context.Background()
 	inputs, buildLookup, recipeLookup, subAgg := renderPolicyInputs(t, analyzer.SeverityHalt)
 
-	_, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
+	_, err := runPipelineCompleted(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
 	if err == nil {
 		t.Fatalf("render-stage halt: expected a halt, got nil")
 	}
@@ -622,7 +622,7 @@ func TestRenderStagePolicySocketInfoE2E(t *testing.T) {
 	var res *pipeline.Result
 	stderr := captureStderr(t, func() {
 		inputs, buildLookup, recipeLookup, subAgg := renderPolicyInputs(t, analyzer.SeverityInfo)
-		r, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
+		r, err := runPipelineCompleted(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
 		if err != nil {
 			t.Fatalf("render-stage info: unexpected halt: %v", err)
 		}
@@ -636,7 +636,7 @@ func TestRenderStagePolicySocketInfoE2E(t *testing.T) {
 	}
 
 	inputs2, buildLookup2, recipeLookup2, subAgg2 := renderPolicyInputs(t, analyzer.SeverityInfo)
-	res2, err := pipeline.RunPipeline(ctx, inputs2, buildLookup2, recipeLookup2, subAgg2, pipeline.Options{})
+	res2, err := runPipelineCompleted(ctx, inputs2, buildLookup2, recipeLookup2, subAgg2, pipeline.Options{})
 	if err != nil {
 		t.Fatalf("render-stage info (second build): %v", err)
 	}
@@ -688,7 +688,7 @@ func TestGovernanceEngineAllFourRolesE2E(t *testing.T) {
 	var res *pipeline.Result
 	stderr := captureStderr(t, func() {
 		inputs, buildLookup, recipeLookup, subAgg := governanceMultiroleInputs(t, analyzer.SeverityInfo, analyzer.SeverityInfo)
-		r, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
+		r, err := runPipelineCompleted(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
 		if err != nil {
 			t.Fatalf("one engine at all four roles (verdicts info): unexpected halt: %v", err)
 		}
@@ -760,7 +760,7 @@ func TestGovernanceEngineAllFourRolesE2E(t *testing.T) {
 
 	// Determinism: a second build of identical input is byte-identical.
 	inputs2, buildLookup2, recipeLookup2, subAgg2 := governanceMultiroleInputs(t, analyzer.SeverityInfo, analyzer.SeverityInfo)
-	res2, err := pipeline.RunPipeline(ctx, inputs2, buildLookup2, recipeLookup2, subAgg2, pipeline.Options{})
+	res2, err := runPipelineCompleted(ctx, inputs2, buildLookup2, recipeLookup2, subAgg2, pipeline.Options{})
 	if err != nil {
 		t.Fatalf("four-role build (second run): %v", err)
 	}
@@ -776,7 +776,7 @@ func TestGovernanceEngineAllFourRolesIRVerdictHaltsE2E(t *testing.T) {
 	var err error
 	stderr := captureStderr(t, func() {
 		inputs, buildLookup, recipeLookup, subAgg := governanceMultiroleInputs(t, analyzer.SeverityHalt, analyzer.SeverityInfo)
-		_, err = pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
+		_, err = runPipelineCompleted(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
 	})
 	if err == nil {
 		t.Fatalf("ir-verdict halt: expected a halt, got nil")
@@ -804,7 +804,7 @@ func TestGovernanceEngineAllFourRolesRenderVerdictHaltsE2E(t *testing.T) {
 	var err error
 	stderr := captureStderr(t, func() {
 		inputs, buildLookup, recipeLookup, subAgg := governanceMultiroleInputs(t, analyzer.SeverityInfo, analyzer.SeverityHalt)
-		_, err = pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
+		_, err = runPipelineCompleted(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
 	})
 	if err == nil {
 		t.Fatalf("render-verdict halt: expected a halt, got nil")
@@ -874,7 +874,7 @@ func TestVerdictRoleRefusesForeignExportOutputE2E(t *testing.T) {
 		var res *pipeline.Result
 		stderr := captureStderr(t, func() {
 			inputs, buildLookup, recipeLookup, subAgg := verdictExportOverrideInputs(t, "verdict_ir")
-			r, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
+			r, err := runPipelineCompleted(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
 			if err != nil {
 				t.Fatalf("the role's own verdict export: unexpected halt: %v", err)
 			}
@@ -905,7 +905,7 @@ func TestVerdictRoleRefusesForeignExportOutputE2E(t *testing.T) {
 			var err error
 			stderr := captureStderr(t, func() {
 				inputs, buildLookup, recipeLookup, subAgg := verdictExportOverrideInputs(t, tc.export)
-				_, err = pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
+				_, err = runPipelineCompleted(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
 			})
 			if err == nil {
 				t.Fatalf("export %q does not serve the verdict role: expected a halt, got a clean build.\nstderr was:\n%s",
@@ -950,7 +950,7 @@ func TestLabelTransformRoleRefusesForeignExportOutputE2E(t *testing.T) {
 
 	t.Run("the role's own export shapes the build", func(t *testing.T) {
 		inputs, buildLookup, recipeLookup, subAgg := labelTransformExportOverrideInputs(t, "mutate")
-		res, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
+		res, err := runPipelineCompleted(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
 		if err != nil {
 			t.Fatalf("the role's own label-transform export: unexpected halt: %v", err)
 		}
@@ -970,7 +970,7 @@ func TestLabelTransformRoleRefusesForeignExportOutputE2E(t *testing.T) {
 
 	t.Run("verdict_ir", func(t *testing.T) {
 		inputs, buildLookup, recipeLookup, subAgg := labelTransformExportOverrideInputs(t, "verdict_ir")
-		_, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
+		_, err := runPipelineCompleted(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
 		if err == nil {
 			t.Fatal("the verdict export returns a verdict envelope, which is not the label-transform shape: expected a halt, got a clean build")
 		}

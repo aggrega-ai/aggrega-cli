@@ -65,8 +65,10 @@ func (s *Server) handleBuildPreview(ctx context.Context, params buildPreviewPara
 	if errEnvelope != nil {
 		return buildPreviewResult{}, errEnvelope
 	}
+	// The envelope above answered every refusal, so the finished payload is what
+	// names the artifact set this method reports and then drops.
 	return buildPreviewResult{
-		Files:   renderedArtifactNames(preview.Pipeline),
+		Files:   renderedArtifactNames(preview.PipelineOutcome().Completed()),
 		Notices: buildNotices(preview),
 	}, nil
 }

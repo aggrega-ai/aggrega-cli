@@ -351,8 +351,10 @@ func (s *Server) attachCandidatesForGraphNode(ctx context.Context, node, release
 		return AttachCandidatesResult{}, errEnvelope
 	}
 
+	// The graph comes off the finished payload: the envelope above answered every
+	// refusal, so the run this reads labels from is one that ended.
 	result, found := attachCandidatesForGraphNodeIn(ctx, s.workspaceRoot, s.lazyCatalog, s.overlayDocs(),
-		preview.pipeline.IRGraph, node)
+		preview.pipeline.Completed().IRGraph, node)
 	if !found {
 		// Named the graph rather than the workspace, because that is what the
 		// caller addressed. A client told "no workspace entity is named X"

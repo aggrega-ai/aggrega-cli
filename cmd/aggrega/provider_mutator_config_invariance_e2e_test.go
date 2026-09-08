@@ -106,7 +106,7 @@ func serveRenderArtifacts(t *testing.T, ws, releaseRel string, catDirs []string,
 	if berr != nil {
 		return nil, berr
 	}
-	return res.Artifacts, nil
+	return res.Completed().Artifacts, nil
 }
 
 func artifactsEqual(a, b map[string][]byte) bool {

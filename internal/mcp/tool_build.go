@@ -47,13 +47,15 @@ type buildFile struct {
 // What a refusal HOLDS is narrower than what a success holds, and the difference
 // belongs to the producers rather than to this shape. The recorded deprecation
 // markers and the declined external references accumulate alongside the render
-// rather than inside its result, so they survive the verdict either way.
-// Advisories are read off the pipeline result, and a run that stopped part-way
-// returns no result at all — so a refusal reports no advisories: one that
-// stopped at a gate ahead of the pipeline had raised none, and one that stopped
-// inside it raised findings that do not travel out with the failure. A caller
-// that needs the advisories for a Release that will not build reads them from
-// the validate tool, which reports without rendering.
+// rather than inside its result, so they survive the verdict either way. The
+// advisories survive it too: a run that stopped hands back the findings the
+// phases ahead of the halt raised, so a caller acting on a refusal receives the
+// same entries a command-line build printed before it stopped. A refusal reports
+// none of them only where the run stopped before any phase had raised one — a
+// call that never reached the compiler, or one that stopped at closure
+// resolution — and that is a fact about how far the run got rather than about
+// what this shape carries. A caller that wants the findings for a Release
+// without rendering it reads them from the validate tool instead.
 //
 // Files is the one field a refusal leaves absent by decision rather than for
 // want of a value. The tool emits nothing on a refusal, so there are no
@@ -90,7 +92,8 @@ type buildResultPayload struct {
 	// with no terminal has no other way to receive them, and a finding nobody is
 	// told about is a finding that was not made. None of them is ever the reason a
 	// build refused — what refused travels in the guidance text instead — and a
-	// refused build reports none of them, for the reason given on this type.
+	// refusal carries whichever of them the run had raised before it stopped, for
+	// the reason given on this type.
 	Advisories []buildAdvisory `json:"advisories,omitempty"`
 }
 
@@ -116,12 +119,12 @@ type buildAdvisory struct {
 // The message is rendered through the compiler's own advisory formatter — the one
 // formatter every surface that displays this channel reads — so an advisory reads
 // identically here, in an editor, and on a terminal.
-func buildAdvisories(result *pipeline.Result) []buildAdvisory {
-	if result == nil || len(result.Advisories) == 0 {
+func buildAdvisories(advisories []renderer.Diagnostic) []buildAdvisory {
+	if len(advisories) == 0 {
 		return nil
 	}
-	out := make([]buildAdvisory, 0, len(result.Advisories))
-	for _, d := range result.Advisories {
+	out := make([]buildAdvisory, 0, len(advisories))
+	for _, d := range advisories {
 		entry := buildAdvisory{
 			Severity: d.Severity,
 			Message:  renderer.RenderDiagnosticText(d),
@@ -237,10 +240,6 @@ func buildInvoke(s *server, ctx context.Context, args json.RawMessage) (*callToo
 	// what to change, and reporting them as prose there while reporting them
 	// structurally on success would be one capability answering at two fidelities
 	// depending on its verdict.
-	var pipelineResult *pipeline.Result
-	if preview != nil {
-		pipelineResult = preview.Pipeline
-	}
 	payload := buildResultPayload{Release: releasePath}
 	if len(deprecationNotices) > 0 {
 		payload.Deprecations = deprecationNotices
@@ -255,8 +254,11 @@ func buildInvoke(s *server, ctx context.Context, args json.RawMessage) (*callToo
 	payload.DeclinedExternalInputs = fetchSeam.Declined()
 	// The advisories the build raised travel in the answer, so a caller driving the
 	// compiler through this surface receives every finding a command-line build
-	// prints rather than only the ones that stopped it.
-	payload.Advisories = buildAdvisories(pipelineResult)
+	// prints rather than only the ones that stopped it. Read through the accessor
+	// that answers on either verdict — a run that halted raised whatever the phases
+	// ahead of it found, and those are exactly the findings a caller has to act on
+	// to get past the halt.
+	payload.Advisories = buildAdvisories(preview.PipelineOutcome().Advisories())
 
 	if err != nil {
 		return structuredErrorResult(
@@ -264,8 +266,10 @@ func buildInvoke(s *server, ctx context.Context, args json.RawMessage) (*callToo
 			payload)
 	}
 
+	// The rendered set comes off the finished payload: the refusal above returned,
+	// so the run whose files this reports is one that ended.
 	detail := parseResponseFormat(a.ResponseFormat) == responseFormatDetailed
-	payload.Files = renderedFiles(preview.Pipeline, detail)
+	payload.Files = renderedFiles(preview.PipelineOutcome().Completed(), detail)
 	text := renderBuildText(payload)
 	return textResult(text, payload)
 }

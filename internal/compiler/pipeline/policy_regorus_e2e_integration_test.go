@@ -111,7 +111,7 @@ func runRegorusPolicy(t *testing.T, rego string, settings map[string]any) (*pipe
 	t.Helper()
 	wasmtest.EnsureFixtureBuilt(t, "policy-regorus-rust.wasm")
 	inputs, buildLookup, recipeLookup, subAgg := regorusPolicyInputs(t, rego, settings)
-	return pipeline.RunPipeline(context.Background(), inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
+	return runPipelineCompleted(context.Background(), inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
 }
 
 // TestRegorusPolicyDenyHaltsE2E proves a normal Rego deny policy attached via

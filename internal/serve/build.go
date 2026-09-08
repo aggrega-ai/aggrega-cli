@@ -115,7 +115,13 @@ func (s *Server) handleBuild(ctx context.Context, params buildParams) (buildResu
 	if errEnvelope != nil {
 		return buildResult{}, errEnvelope
 	}
-	if preview == nil || preview.Pipeline == nil {
+	// The envelope above has already answered every refusal, so what is left is a
+	// run that reported no failure. Its finished payload is therefore what a write
+	// draws on, and the guard below is the one case that leaves: no failure and no
+	// render. The accessor is nil-receiver safe, so an absent preview arrives here
+	// as an absent payload and needs no separate clause.
+	completed := preview.PipelineOutcome().Completed()
+	if completed == nil {
 		// A run that reported no failure and produced no render. Nothing here can
 		// be written, and clearing the output directory to write an empty set
 		// would destroy the previous build's output in order to report that this
@@ -130,7 +136,7 @@ func (s *Server) handleBuild(ctx context.Context, params buildParams) (buildResu
 	}
 
 	outRoot := s.buildOutputRoot()
-	if err := artifactout.WriteBuildOutput(outRoot, preview.Pipeline.Artifacts); err != nil {
+	if err := artifactout.WriteBuildOutput(outRoot, completed.Artifacts); err != nil {
 		// A write failure is reported as the workspace-not-resolvable class the
 		// daemon already carries for a workspace it cannot read as expected, and
 		// the wrapped error is kept as the cause so a client matching on the
@@ -146,7 +152,7 @@ func (s *Server) handleBuild(ctx context.Context, params buildParams) (buildResu
 
 	return buildResult{
 		OutputDirectory: outRoot,
-		Files:           renderedArtifactNames(preview.Pipeline),
+		Files:           renderedArtifactNames(completed),
 		Notices:         buildNotices(preview),
 	}, nil
 }

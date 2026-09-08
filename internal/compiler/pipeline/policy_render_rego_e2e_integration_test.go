@@ -153,7 +153,7 @@ func runRegorusRenderPolicy(t *testing.T, rego string) (*pipeline.Result, error)
 	t.Helper()
 	wasmtest.EnsureFixtureBuilt(t, "policy-regorus-render-rust.wasm")
 	inputs, buildLookup, recipeLookup, subAgg := regorusRenderPolicyInputs(t, rego)
-	return pipeline.RunPipeline(context.Background(), inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
+	return runPipelineCompleted(context.Background(), inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
 }
 
 // TestRegorusRenderPolicyDenyHaltsE2E proves the adapter evaluates operator Rego

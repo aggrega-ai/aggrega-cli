@@ -141,7 +141,7 @@ func TestGovernanceFreeAttachmentDenyE2E(t *testing.T) {
 	ctx := context.Background()
 	inputs, buildLookup, recipeLookup, subAgg := governanceFactsInputs(t, "both", "no-free-attachments", analyzer.SeverityHalt)
 
-	_, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
+	_, err := runPipelineCompleted(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
 	if err == nil {
 		t.Fatalf("free-attachment halt: expected a halt, got nil")
 	}
@@ -170,7 +170,7 @@ func TestGovernanceFreeAttachmentPassE2E(t *testing.T) {
 	ctx := context.Background()
 	inputs, buildLookup, recipeLookup, subAgg := governanceFactsInputs(t, "no-free", "no-free-attachments", analyzer.SeverityHalt)
 
-	res, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
+	res, err := runPipelineCompleted(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
 	if err != nil {
 		t.Fatalf("free-attachment control: unexpected halt: %v", err)
 	}
@@ -188,7 +188,7 @@ func TestGovernanceSensitiveByValueDenyE2E(t *testing.T) {
 	ctx := context.Background()
 	inputs, buildLookup, recipeLookup, subAgg := governanceFactsInputs(t, "both", "no-sensitive-by-value", analyzer.SeverityHalt)
 
-	_, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
+	_, err := runPipelineCompleted(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
 	if err == nil {
 		t.Fatalf("sensitive-by-value halt: expected a halt, got nil")
 	}
@@ -235,7 +235,7 @@ func TestGovernanceSensitiveByValueAuthoredLeafDenyE2E(t *testing.T) {
 	ctx := context.Background()
 	inputs, buildLookup, recipeLookup, subAgg := governanceFactsInputs(t, "no-marked-delivery", "no-sensitive-by-value", analyzer.SeverityHalt)
 
-	_, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
+	_, err := runPipelineCompleted(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
 	if err == nil {
 		t.Fatalf("authored-leaf halt: expected a halt, got nil")
 	}
@@ -278,7 +278,7 @@ func TestGovernanceSensitiveByValuePassE2E(t *testing.T) {
 	ctx := context.Background()
 	inputs, buildLookup, recipeLookup, subAgg := governanceFactsInputs(t, "no-sensitive-datum", "no-sensitive-by-value", analyzer.SeverityHalt)
 
-	res, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
+	res, err := runPipelineCompleted(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
 	if err != nil {
 		t.Fatalf("sensitive-by-value control: unexpected halt: %v", err)
 	}
@@ -297,7 +297,7 @@ func TestGovernanceSecretKindFromLabelsDenyE2E(t *testing.T) {
 	ctx := context.Background()
 	inputs, buildLookup, recipeLookup, subAgg := governanceFactsInputs(t, "both", "deny-secret-kind", analyzer.SeverityHalt)
 
-	_, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
+	_, err := runPipelineCompleted(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
 	if err == nil {
 		t.Fatalf("secret-kind halt: expected a halt, got nil")
 	}
@@ -325,7 +325,7 @@ func TestGovernanceSecretKindPassesWithoutTheFamilyLabelE2E(t *testing.T) {
 	ctx := context.Background()
 	inputs, buildLookup, recipeLookup, subAgg := governanceFactsInputs(t, "only-free", "deny-secret-kind", analyzer.SeverityHalt)
 
-	res, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
+	res, err := runPipelineCompleted(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
 	if err != nil {
 		t.Fatalf("secret-kind control: unexpected halt: %v", err)
 	}
@@ -349,7 +349,7 @@ func TestGovernanceCatalogAnnotationDenyE2E(t *testing.T) {
 	ctx := context.Background()
 	inputs, buildLookup, recipeLookup, subAgg := governanceFactsInputs(t, "both", "deny-unreviewed-attachment", analyzer.SeverityHalt)
 
-	_, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
+	_, err := runPipelineCompleted(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
 	if err == nil {
 		t.Fatalf("catalog-annotation halt: expected a halt, got nil")
 	}
@@ -384,7 +384,7 @@ func TestGovernanceCatalogAnnotationPassesWhenReviewedE2E(t *testing.T) {
 	ctx := context.Background()
 	inputs, buildLookup, recipeLookup, subAgg := governanceFactsInputs(t, "only-free", "deny-unreviewed-attachment", analyzer.SeverityHalt)
 
-	res, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
+	res, err := runPipelineCompleted(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
 	if err != nil {
 		t.Fatalf("catalog-annotation control: unexpected halt: %v", err)
 	}
@@ -403,7 +403,7 @@ func TestGovernanceAttachmentFactsObservedAtTheGuest(t *testing.T) {
 	var res *pipeline.Result
 	stderr := captureStderr(t, func() {
 		inputs, buildLookup, recipeLookup, subAgg := governanceFactsInputs(t, "both", "observe", analyzer.SeverityInfo)
-		r, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
+		r, err := runPipelineCompleted(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
 		if err != nil {
 			t.Fatalf("observe run: unexpected halt: %v", err)
 		}
@@ -449,7 +449,7 @@ func TestGovernanceVerdictMovesNoRenderedByte(t *testing.T) {
 	ctx := context.Background()
 
 	inputs, buildLookup, recipeLookup, subAgg := loadGovernanceWire(t, "both")
-	bare, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
+	bare, err := runPipelineCompleted(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
 	if err != nil {
 		t.Fatalf("build without a governance attachment: %v", err)
 	}
@@ -457,7 +457,7 @@ func TestGovernanceVerdictMovesNoRenderedByte(t *testing.T) {
 	// A rule that finds nothing to object to, so the build completes with the
 	// guest in the pipeline.
 	withGuest, buildLookup2, recipeLookup2, subAgg2 := governanceFactsInputs(t, "both", "observe", analyzer.SeverityInfo)
-	guested, err := pipeline.RunPipeline(ctx, withGuest, buildLookup2, recipeLookup2, subAgg2, pipeline.Options{})
+	guested, err := runPipelineCompleted(ctx, withGuest, buildLookup2, recipeLookup2, subAgg2, pipeline.Options{})
 	if err != nil {
 		t.Fatalf("build with the governance attachment: %v", err)
 	}

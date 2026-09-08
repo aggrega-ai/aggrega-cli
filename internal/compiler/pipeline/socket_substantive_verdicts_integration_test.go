@@ -76,7 +76,7 @@ func TestGraphRuleIRVerdictDenyE2E(t *testing.T) {
 	ctx := context.Background()
 	inputs, buildLookup, recipeLookup, subAgg := graphRuleInputs(t, missingGovernanceLabel, analyzer.SeverityHalt)
 
-	_, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
+	_, err := runPipelineCompleted(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
 	if err == nil {
 		t.Fatalf("graph-rule halt: expected a halt, got nil")
 	}
@@ -101,7 +101,7 @@ func TestGraphRuleIRVerdictSatisfiedE2E(t *testing.T) {
 	ctx := context.Background()
 	inputs, buildLookup, recipeLookup, subAgg := graphRuleInputs(t, presentGovernanceLabel, analyzer.SeverityHalt)
 
-	res, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
+	res, err := runPipelineCompleted(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
 	if err != nil {
 		t.Fatalf("graph-rule satisfied: unexpected halt: %v", err)
 	}
@@ -118,7 +118,7 @@ func TestGraphRuleIRVerdictWarnE2E(t *testing.T) {
 	var res *pipeline.Result
 	stderr := captureStderr(t, func() {
 		inputs, buildLookup, recipeLookup, subAgg := graphRuleInputs(t, missingGovernanceLabel, analyzer.SeverityWarn)
-		r, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
+		r, err := runPipelineCompleted(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
 		if err != nil {
 			t.Fatalf("graph-rule warn: unexpected halt: %v", err)
 		}
@@ -132,7 +132,7 @@ func TestGraphRuleIRVerdictWarnE2E(t *testing.T) {
 	}
 
 	inputs2, buildLookup2, recipeLookup2, subAgg2 := graphRuleInputs(t, missingGovernanceLabel, analyzer.SeverityWarn)
-	res2, err := pipeline.RunPipeline(ctx, inputs2, buildLookup2, recipeLookup2, subAgg2, pipeline.Options{})
+	res2, err := runPipelineCompleted(ctx, inputs2, buildLookup2, recipeLookup2, subAgg2, pipeline.Options{})
 	if err != nil {
 		t.Fatalf("graph-rule warn (second build): %v", err)
 	}
@@ -147,7 +147,7 @@ func TestGraphRuleIRVerdictInfoE2E(t *testing.T) {
 	var res *pipeline.Result
 	stderr := captureStderr(t, func() {
 		inputs, buildLookup, recipeLookup, subAgg := graphRuleInputs(t, missingGovernanceLabel, analyzer.SeverityInfo)
-		r, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
+		r, err := runPipelineCompleted(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
 		if err != nil {
 			t.Fatalf("graph-rule info: unexpected halt: %v", err)
 		}
@@ -161,7 +161,7 @@ func TestGraphRuleIRVerdictInfoE2E(t *testing.T) {
 	}
 
 	inputs2, buildLookup2, recipeLookup2, subAgg2 := graphRuleInputs(t, missingGovernanceLabel, analyzer.SeverityInfo)
-	res2, err := pipeline.RunPipeline(ctx, inputs2, buildLookup2, recipeLookup2, subAgg2, pipeline.Options{})
+	res2, err := runPipelineCompleted(ctx, inputs2, buildLookup2, recipeLookup2, subAgg2, pipeline.Options{})
 	if err != nil {
 		t.Fatalf("graph-rule info (second build): %v", err)
 	}
@@ -180,7 +180,7 @@ func TestContentRuleRenderVerdictDenyE2E(t *testing.T) {
 	ctx := context.Background()
 	inputs, buildLookup, recipeLookup, subAgg := contentRuleInputs(t, renderContentForbiddenToken, analyzer.SeverityHalt)
 
-	_, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
+	_, err := runPipelineCompleted(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
 	if err == nil {
 		t.Fatalf("content-rule halt: expected a halt, got nil")
 	}
@@ -208,7 +208,7 @@ func TestContentRuleRenderVerdictSatisfiedE2E(t *testing.T) {
 	ctx := context.Background()
 	inputs, buildLookup, recipeLookup, subAgg := contentRuleInputs(t, "token-that-appears-in-no-rendered-artifact-xyz", analyzer.SeverityHalt)
 
-	res, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
+	res, err := runPipelineCompleted(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
 	if err != nil {
 		t.Fatalf("content-rule satisfied: unexpected halt: %v", err)
 	}
@@ -225,7 +225,7 @@ func TestContentRuleRenderVerdictWarnE2E(t *testing.T) {
 	var res *pipeline.Result
 	stderr := captureStderr(t, func() {
 		inputs, buildLookup, recipeLookup, subAgg := contentRuleInputs(t, renderContentForbiddenToken, analyzer.SeverityWarn)
-		r, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
+		r, err := runPipelineCompleted(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
 		if err != nil {
 			t.Fatalf("content-rule warn: unexpected halt: %v", err)
 		}
@@ -239,7 +239,7 @@ func TestContentRuleRenderVerdictWarnE2E(t *testing.T) {
 	}
 
 	inputs2, buildLookup2, recipeLookup2, subAgg2 := contentRuleInputs(t, renderContentForbiddenToken, analyzer.SeverityWarn)
-	res2, err := pipeline.RunPipeline(ctx, inputs2, buildLookup2, recipeLookup2, subAgg2, pipeline.Options{})
+	res2, err := runPipelineCompleted(ctx, inputs2, buildLookup2, recipeLookup2, subAgg2, pipeline.Options{})
 	if err != nil {
 		t.Fatalf("content-rule warn (second build): %v", err)
 	}
@@ -254,7 +254,7 @@ func TestContentRuleRenderVerdictInfoE2E(t *testing.T) {
 	var res *pipeline.Result
 	stderr := captureStderr(t, func() {
 		inputs, buildLookup, recipeLookup, subAgg := contentRuleInputs(t, renderContentForbiddenToken, analyzer.SeverityInfo)
-		r, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
+		r, err := runPipelineCompleted(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
 		if err != nil {
 			t.Fatalf("content-rule info: unexpected halt: %v", err)
 		}
@@ -268,7 +268,7 @@ func TestContentRuleRenderVerdictInfoE2E(t *testing.T) {
 	}
 
 	inputs2, buildLookup2, recipeLookup2, subAgg2 := contentRuleInputs(t, renderContentForbiddenToken, analyzer.SeverityInfo)
-	res2, err := pipeline.RunPipeline(ctx, inputs2, buildLookup2, recipeLookup2, subAgg2, pipeline.Options{})
+	res2, err := runPipelineCompleted(ctx, inputs2, buildLookup2, recipeLookup2, subAgg2, pipeline.Options{})
 	if err != nil {
 		t.Fatalf("content-rule info (second build): %v", err)
 	}
@@ -313,7 +313,7 @@ func TestLabelTransformToVerdictChainE2E(t *testing.T) {
 		inputs, buildLookup, recipeLookup, subAgg := loadFullstackForSockets(t)
 		inputs.WorkspaceConfig.Plugins.Governance = attach(true)
 		inputs.PluginPathLookup = fixtureSocketLookup(t, buildLookup, lookup)
-		res, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
+		res, err := runPipelineCompleted(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
 		if err != nil {
 			t.Fatalf("chain (label-transform attached): expected the stamped label to satisfy the rule, got halt: %v", err)
 		}
@@ -328,7 +328,7 @@ func TestLabelTransformToVerdictChainE2E(t *testing.T) {
 	inputs, buildLookup, recipeLookup, subAgg := loadFullstackForSockets(t)
 	inputs.WorkspaceConfig.Plugins.Governance = attach(false)
 	inputs.PluginPathLookup = fixtureSocketLookup(t, buildLookup, lookup)
-	_, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
+	_, err := runPipelineCompleted(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
 	if err == nil {
 		t.Fatalf("chain (label-transform detached): expected a halt (no stamped label), got nil")
 	}

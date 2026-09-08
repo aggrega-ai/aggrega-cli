@@ -57,7 +57,7 @@ func runKubewardenRenderPolicy(t *testing.T, requiredLabel string) (*pipeline.Re
 	t.Helper()
 	wasmtest.EnsureFixtureBuilt(t, "policy-kubewarden-render-rust.wasm")
 	inputs, buildLookup, recipeLookup, subAgg := kubewardenRenderPolicyInputs(t, requiredLabel)
-	return pipeline.RunPipeline(context.Background(), inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
+	return runPipelineCompleted(context.Background(), inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
 }
 
 // TestKubewardenRenderPolicyDenyHaltsE2E proves the adapter runs a real

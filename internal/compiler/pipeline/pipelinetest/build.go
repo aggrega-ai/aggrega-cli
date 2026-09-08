@@ -206,7 +206,7 @@ func compile(in Input) (*pipeline.Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	result, err := pipeline.RunPipeline(
+	outcome, err := pipeline.RunPipeline(
 		context.Background(),
 		loaded.inputs,
 		loaded.catalogLookup,
@@ -223,5 +223,8 @@ func compile(in Input) (*pipeline.Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	return result, nil
+	// A harness asks for the build a command line would have produced, so it
+	// reports from the finished payload and nothing else: a test handed a partial
+	// would assert over an artifact set the run never emitted.
+	return outcome.Completed(), nil
 }

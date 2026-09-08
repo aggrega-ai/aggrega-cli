@@ -47,15 +47,19 @@ type BuildInputs struct {
 }
 
 // BuildToBuffer runs the full compiler pipeline for the resolved Release and
-// returns the result in memory — the IR graph and, unless opts.SkipRender is
-// set, the rendered artifact buffers. It performs no filesystem writes; a
+// returns the run's outcome in memory — the IR graph and, unless opts.SkipRender
+// is set, the rendered artifact buffers. It performs no filesystem writes; a
 // caller that persists artifacts writes the returned buffers itself.
+//
+// The outcome is the pipeline's own, handed on unchanged, so a run that stopped
+// arrives here carrying the advisories the phases ahead of the halt raised and a
+// caller reads them through the same accessors whichever surface it is on.
 //
 // The three lookups the pipeline needs — the Component/Feature catalog lookup,
 // the Manifest-aware recipe lookup, and the sub-aggregate loader — all come
 // from the request view, so no eager whole-catalog load is required and a
 // broken out-of-closure entity never fails the build.
-func BuildToBuffer(ctx context.Context, in BuildInputs, opts pipeline.Options) (*pipeline.Result, error) {
+func BuildToBuffer(ctx context.Context, in BuildInputs, opts pipeline.Options) (pipeline.Outcome, error) {
 	view := in.View
 	r := in.Resolved
 	catLookup := view.AsCatalogLookup()
@@ -103,7 +107,9 @@ func BuildToBuffer(ctx context.Context, in BuildInputs, opts pipeline.Options) (
 	// command-line build calls the same helper. Composing them here rather than at
 	// each surface is what keeps a surface from acquiring one without the other.
 	if err := ApplyGovernanceComposition(&inputs, view, in.ReleasePath); err != nil {
-		return nil, err
+		// A composition failure happens before the pipeline runs, so there is no
+		// run to report findings from and the zero outcome is the truthful answer.
+		return pipeline.Outcome{}, err
 	}
 
 	return pipeline.RunPipeline(

@@ -237,7 +237,9 @@ func (s *server) attachCandidatesForGraphNode(ctx context.Context, tw *toolWorks
 			err, previewFailureKind(preview, err)))
 	}
 
-	result, found := serve.AttachCandidatesForGraphNode(ctx, tw.root, view, preview.Pipeline.IRGraph, a.GraphNode)
+	// The graph comes off the finished payload: the refusal above returned, so the
+	// run this reports candidates from is one that ended.
+	result, found := serve.AttachCandidatesForGraphNode(ctx, tw.root, view, preview.PipelineOutcome().Completed().IRGraph, a.GraphNode)
 	if !found {
 		// Named the graph rather than the workspace, because that is what the
 		// caller addressed. A caller told "no workspace entity is named X" after

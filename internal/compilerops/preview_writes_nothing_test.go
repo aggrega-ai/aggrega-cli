@@ -141,7 +141,7 @@ func TestPreviewWritesNothingToTheWorkspace(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the preview over the fixture workspace: %v", err)
 	}
-	if preview.Pipeline == nil || len(preview.Pipeline.Artifacts) == 0 {
+	if completed := preview.PipelineOutcome().Completed(); completed == nil || len(completed.Artifacts) == 0 {
 		t.Fatal("the render must actually produce artifacts, or 'it wrote nothing' says nothing")
 	}
 

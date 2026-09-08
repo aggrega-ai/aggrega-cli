@@ -65,7 +65,7 @@ func TestRunPipelineSkipRenderMatchesFullRenderGraph(t *testing.T) {
 
 	// Full render: the render stage runs and emits artifacts.
 	inFull, lookupFull, recipeFull, catFull := loadFullstackInputs(t)
-	full, err := pipeline.RunPipeline(
+	full, err := runPipelineCompleted(
 		context.Background(), inFull, lookupFull, recipeFull,
 		catFull.SubAggregateLoader(), pipeline.Options{},
 	)
@@ -76,7 +76,7 @@ func TestRunPipelineSkipRenderMatchesFullRenderGraph(t *testing.T) {
 	// Skip render: the render stage must not run. The run stops after Step 4b,
 	// so no artifacts are emitted.
 	inSkip, lookupSkip, recipeSkip, catSkip := loadFullstackInputs(t)
-	skip, err := pipeline.RunPipeline(
+	skip, err := runPipelineCompleted(
 		context.Background(), inSkip, lookupSkip, recipeSkip,
 		catSkip.SubAggregateLoader(), pipeline.Options{SkipRender: true},
 	)

@@ -10,7 +10,6 @@ import (
 	"sort"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
-	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
@@ -158,10 +157,11 @@ func (s *Server) renderUnderArtifactPosture(ctx context.Context, release string)
 	// One call carries both classes because the publication replaces the whole
 	// layer: a second call would erase the first one's entries.
 	if preview != nil && preview.Resolved != nil {
-		var advisories []renderer.Diagnostic
-		if preview.Pipeline != nil {
-			advisories = preview.Pipeline.Advisories
-		}
+		// Read through the accessor that answers on either verdict, so a run that
+		// halted publishes the findings the phases ahead of it raised rather than an
+		// empty layer. That is what makes the sentence above true of the failure path
+		// and not only of the success one.
+		advisories := preview.PipelineOutcome().Advisories()
 		s.publishRenderDiagnostics(ctx, preview.Resolved.AggregatePath, advisories,
 			externalInputDivergenceDiagnostics(fetchSeam.Declined(), releasePath),
 			preview.Resolved.AggBytes)

@@ -15,7 +15,6 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
-	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/externalinputs"
@@ -749,7 +748,9 @@ func (s *Server) handleIrGraph(ctx context.Context, params irGraphParams) (irGra
 	//    One call, one layer, every advisory class.
 	s.publishPreviewAdvisories(ctx, preview)
 
-	graphBytes, err := json.Marshal(preview.pipeline.IRGraph)
+	// The graph comes off the finished payload: the refusal above returned, so the
+	// run this marshals from is one that ended.
+	graphBytes, err := json.Marshal(preview.pipeline.Completed().IRGraph)
 	if err != nil {
 		return irGraphResult{}, &jsonRPCError{
 			Code:    jsonRPCInternalError,
@@ -778,7 +779,12 @@ type releasePreview struct {
 	lockfilePath string
 	fetchSeam    *externalinputs.DeclineRecorder
 	resolved     *compilerops.ResolvedClosure
-	pipeline     *pipeline.Result
+
+	// pipeline is the run's outcome rather than its payload, so the two paths
+	// below it — the refusal that publishes findings and the success that returns
+	// a graph — each read what their own verdict entitles them to and neither can
+	// read the other's.
+	pipeline pipeline.Outcome
 }
 
 // previewRelease resolves the release parameter, applies the lockfile-absent
@@ -914,7 +920,7 @@ func (s *Server) previewRelease(ctx context.Context, release string, opts pipeli
 	}
 	if preview != nil {
 		out.resolved = preview.Resolved
-		out.pipeline = preview.Pipeline
+		out.pipeline = preview.PipelineOutcome()
 	}
 
 	if err != nil {
@@ -942,10 +948,11 @@ func (s *Server) publishPreviewAdvisories(ctx context.Context, preview *releaseP
 	if preview == nil || preview.resolved == nil {
 		return
 	}
-	var advisories []renderer.Diagnostic
-	if preview.pipeline != nil {
-		advisories = preview.pipeline.Advisories
-	}
+	// Read through the accessor that answers on either verdict, which is what
+	// makes one body serve both paths: a run that halted publishes the findings
+	// the phases ahead of it raised, and a run that finished publishes the same
+	// set it returned.
+	advisories := preview.pipeline.Advisories()
 	s.publishRenderDiagnostics(ctx, preview.resolved.AggregatePath, advisories,
 		externalInputDivergenceDiagnostics(preview.fetchSeam.Declined(), preview.releasePath),
 		preview.resolved.AggBytes)

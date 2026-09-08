@@ -26,6 +26,17 @@ import (
 // it is here for the same reason the others are — a second walk would answer
 // the same question about the same document differently.
 //
+// The list names DIRECT callers, which is not the same as the list of surfaces
+// that position findings — and the difference is worth reading before editing an
+// entry. A surface reaching the walk through a shared helper appears here as that
+// helper rather than under its own name, so the daemon's render-diagnostic file
+// stands for every class routing through the one fall-back it owns: the halting
+// resolver violations, the static-analysis violations and the advisories alike.
+// Consolidating a caller behind that helper therefore MOVES an entry rather than
+// removing one, and a surface disappearing from this list has either stopped
+// positioning findings or started sharing — which is a distinction to establish
+// from the tree rather than infer from the diff.
+//
 // The two entries named in theTwoSurfaces matter most. One is the terminal
 // diagnostic a developer reads; the other is the editor diagnostic for the
 // same document. They were measurably unequal — the editor positioned its
@@ -34,7 +45,7 @@ import (
 var fieldPathCallers = []string{
 	"internal/serve/closure_resolve.go",
 	"internal/serve/envelope_diagnostics.go",
-	"internal/serve/tier4_validation.go",
+	"internal/serve/render_diagnostics.go",
 	"pkg/validator/envelope/envelope.go",
 	"pkg/workspaceconfig/origin.go",
 	"pkg/yamlpos/fieldpath.go",

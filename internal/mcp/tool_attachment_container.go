@@ -134,7 +134,9 @@ func attachmentContainerInvoke(s *server, ctx context.Context, args json.RawMess
 			err, previewFailureKind(preview, err)))
 	}
 
-	result, refusal := serve.AttachmentContainer(preview.Pipeline.IRGraph, a.GraphNode)
+	// The graph comes off the finished payload: the refusal above returned, so the
+	// run this reports a container from is one that ended.
+	result, refusal := serve.AttachmentContainer(preview.PipelineOutcome().Completed().IRGraph, a.GraphNode)
 	if refusal != serve.AttachmentContainerReported {
 		return errorResult(explainDiagnostic(fmt.Sprintf(
 			"No container is reported for %q on the compiled graph of %s: %s.",
