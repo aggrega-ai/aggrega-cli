@@ -57,13 +57,19 @@ type effectiveConfigurationResult struct {
 // one implementation answers both surfaces and neither can drift from the
 // other.
 //
-// The attributed set is narrower than the configuration schema, and a client
-// must not read this response as covering every setting. It is a fixed
-// enumeration, so a setting can be real, documented and carry a default while
-// appearing nowhere here; a list or map is attributed as a whole to the layer
-// that last changed it rather than per entry; and the signing requirement,
-// which composes so that any layer turning it on wins, is attributed to the
-// first layer that turned it on rather than the last that mentioned it.
+// The response accounts for every setting the configuration schema declares,
+// though not with a row for each. A setting whose value folds into another
+// field's is reported through the field it folds into: a list's additive
+// companion folds into that list, so a layer contributing only through the
+// companion is named on the base list's row and the companion carries no row
+// of its own.
+//
+// Two properties bound what a row means, and neither is a gap in that
+// accounting. A list or map is attributed as a whole to the layer that last
+// changed it, so a property inside a list's entries is covered by that list's
+// row and is never reported per entry. And the signing requirement, which
+// composes so that any layer turning it on wins, is attributed to the first
+// layer that turned it on rather than the last that mentioned it.
 func (s *Server) dispatchEffectiveConfiguration(ctx context.Context, req *jsonRPCRequest) error {
 	if s.resolvedWorkspace == nil {
 		return s.writeError(ctx, req.ID, jsonRPCInternalError,

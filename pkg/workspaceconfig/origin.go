@@ -436,6 +436,9 @@ func originFields() []originField {
 		}),
 		sc("parse_cache.max_entries", func(c Config) string { return strconv.Itoa(c.ParseCache.MaxEntries) }),
 		sc("parse_cache.max_bytes", func(c Config) string { return strconv.Itoa(c.ParseCache.MaxBytes) }),
+		sc("compiled_module_cache.max_bytes", func(c Config) string {
+			return strconv.FormatInt(c.CompiledModuleCache.MaxBytes, 10)
+		}),
 		sc("concurrency.pool_size", func(c Config) string { return strconv.Itoa(c.Concurrency.PoolSize) }),
 		sc("serve.build_on_inspect", func(c Config) string { return strconv.FormatBool(c.Serve.BuildOnInspect) }),
 		sc("serve.lint_on_validate", func(c Config) string { return strconv.FormatBool(c.Serve.LintOnValidate) }),
