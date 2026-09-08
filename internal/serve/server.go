@@ -137,8 +137,8 @@
 // file-not-validated application code when it is absent, so a client
 // sends validate for a file before any of them. Entries are keyed by
 // the document's canonical path alone — see Paths on the wire below for
-// which spelling that is: one daemon serves one workspace and one
-// client, so no per-client dimension is needed.
+// which spelling that is: one daemon holds one workspace and one client
+// at a time, so the cache key needs no per-client dimension.
 //
 // # Paths on the wire
 //
