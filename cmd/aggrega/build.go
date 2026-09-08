@@ -241,8 +241,16 @@ func buildDispatchConfig(rw *workspaceconfig.ResolvedWorkspace, releasePath stri
 		// progress surface silenced so only the build's own surface shows during an
 		// implicit pull. The flag dirs (not the resolved list) are forwarded so the
 		// pull re-derives the identical stack with the same config.
+		//
+		// The fill is told whether this build's own render acquires, read from the
+		// one place that decides it. Where it does, the fill stands its external-input
+		// discovery render down: the render immediately after it reaches the same
+		// references and pins them, so discovering here would render this Release
+		// twice and leave the build's render nothing to pin. Where the render is
+		// frozen, the fill is the only thing that can pin what that render will ask
+		// for, so it discovers.
 		Pull: func(upgrade, detail bool, pullDiagOut, pullOut io.Writer) error {
-			return pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: catalogFlagDirs, Upgrade: upgrade, Detail: detail, ws: rw, DiagOut: pullDiagOut, Out: pullOut, diag: buildDiagOptions{quiet: true}})
+			return pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: catalogFlagDirs, Upgrade: upgrade, Detail: detail, ws: rw, DiagOut: pullDiagOut, Out: pullOut, diag: buildDiagOptions{quiet: true}, callerRendersAndAcquires: run.AcquiresDuringRender()})
 		},
 		AnnotateResolutionFailure: withSkipContext,
 		DiagOut:                   diagOut,

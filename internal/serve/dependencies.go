@@ -267,7 +267,10 @@ func (s *Server) dispatchAcquireExternalInputs(ctx context.Context, req *jsonRPC
 // The dependency fill the run may need is the resolution operation itself,
 // supplied here rather than reimplemented: a build that fills its own lockfile
 // runs the same resolution every other surface runs, so a workspace configured to
-// fill automatically behaves identically whichever surface asked.
+// fill automatically behaves identically whichever surface asked. The fill is
+// told that this run's own render acquires, so it resolves the dependencies and
+// leaves the external inputs to that render rather than rendering the Release a
+// second time to discover them.
 // It reports what it is doing while it does it, on the same terms the
 // resolution above does: the acquisition's own account of itself reaches a
 // request that asked to be reported on, and the answer's notices are the same
@@ -279,11 +282,17 @@ func (s *Server) handleAcquireExternalInputs(ctx context.Context, params acquire
 	}
 	progress.begin("Acquiring external inputs")
 
+	// The options this acquisition's own render runs under, named here rather than
+	// left implicit, because the fill below has to be told whether that render
+	// acquires and the answer is read from the one place that decides it.
+	runOpts := buildops.RunOptions{}
+
 	var notices bytes.Buffer
 	acquired, err := buildops.Acquire(buildops.Config{
 		Workspace:       s.resolvedWorkspace,
 		ReleasePath:     releasePath,
 		CompilerVersion: s.compilerVersion,
+		Options:         runOpts,
 		DiagOut:         io.MultiWriter(&notices, progress.writer()),
 		Out:             io.Discard,
 		Pull: func(upgrade, _ bool, pullDiagOut, _ io.Writer) error {
@@ -294,6 +303,13 @@ func (s *Server) handleAcquireExternalInputs(ctx context.Context, params acquire
 				CompilerVersion: s.compilerVersion,
 				Toolchain:       s.toolchain,
 				DiagOut:         pullDiagOut,
+				// Where this run's own render acquires, the fill stands its
+				// external-input discovery render down: the render immediately after
+				// it reaches the same references and pins them, so discovering here
+				// would render this Release twice and leave that render nothing to
+				// pin. Where a render is frozen instead, the fill is the only thing
+				// that can pin what it will ask for, so it discovers.
+				CallerRendersAndAcquires: runOpts.AcquiresDuringRender(),
 			})
 			return perr
 		},

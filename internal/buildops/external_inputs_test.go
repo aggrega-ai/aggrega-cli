@@ -32,7 +32,7 @@ func TestNewExternalInputsServiceAcquires(t *testing.T) {
 	defer srv.Close()
 
 	cacheDir := t.TempDir()
-	svc := newExternalInputsService(cacheDir, &lockfile.Lockfile{}, false, workspaceconfig.Config{})
+	svc := newExternalInputsService(cacheDir, &lockfile.Lockfile{}, true, workspaceconfig.Config{})
 
 	got, err := svc.Fetch(context.Background(), srv.URL+"/a", "unit-test")
 	if err != nil {
@@ -57,7 +57,7 @@ func TestNewExternalInputsServiceAcquires(t *testing.T) {
 // acquisition-disabled diagnostic instead of being fetched.
 func TestNewExternalInputsServiceFrozenRefusesUnpinned(t *testing.T) {
 	t.Parallel()
-	svc := newExternalInputsService(t.TempDir(), &lockfile.Lockfile{}, true, workspaceconfig.Config{})
+	svc := newExternalInputsService(t.TempDir(), &lockfile.Lockfile{}, false, workspaceconfig.Config{})
 
 	_, err := svc.Fetch(context.Background(), "https://example.com/never-pinned", "unit-test")
 	if !errors.Is(err, externalinputs.ErrAcquisitionDisabled()) {
@@ -92,7 +92,7 @@ func TestNewExternalInputsServiceSeedsLockfilePins(t *testing.T) {
 	}}}
 
 	// Frozen mode AND an unresolvable host: only the store can serve this.
-	svc := newExternalInputsService(cacheDir, lf, true, workspaceconfig.Config{})
+	svc := newExternalInputsService(cacheDir, lf, false, workspaceconfig.Config{})
 	got, err := svc.Fetch(context.Background(), pinnedURL, "unit-test")
 	if err != nil {
 		t.Fatalf("pinned URL must be served from the store without network: %v", err)

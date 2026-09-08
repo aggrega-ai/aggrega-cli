@@ -223,6 +223,31 @@ type RunOptions struct {
 	IRGraph func(graph *types.IRGraph) error
 }
 
+// AcquiresDuringRender reports whether this build's own render acquires an
+// unpinned external input — fetching it and pinning it — rather than refusing it.
+//
+// It is the single home of that decision, and both reasons a render is frozen
+// are read here rather than anywhere else: the closure dial, and a dry run,
+// which persists nothing and therefore cannot pin anything. A dry run adopting
+// the dial's behaviour by assigning to it would put the same decision in two
+// places, and the second reader would then be reading a value rather than the
+// decision.
+//
+// Two consumers need the answer for different reasons, which is why it is a
+// question rather than a field. The render's service is composed from it, so a
+// frozen render gets the consumption posture. And the surface that supplies the
+// build's dependency fill reads it to tell that fill whether the build will
+// acquire during its own render — because where the build acquires, a discovery
+// render inside the fill would render the same Release a second time and leave
+// the build's own render nothing to pin, and where the build is frozen, the fill
+// is the only thing that can pin what the frozen render will ask for. Two
+// independent readings of the dial would agree today and disagree the first time
+// a third condition freezes a render, at which point the fill would stand down
+// and nothing would acquire at all.
+func (o RunOptions) AcquiresDuringRender() bool {
+	return !o.NoAcquireInputs && !o.DryRun
+}
+
 // Config is the build operation's input contract. A caller assembles it from
 // whatever state it holds — flag values, a tool request — and hands it to Run.
 type Config struct {
@@ -330,6 +355,11 @@ func Run(cfg Config) (Result, error) {
 	// typed, which is why --upgrade is tested before the promotion below folds it
 	// into --auto-pull — a reader told their --auto-pull conflicts, when what they
 	// passed was --upgrade, has to guess the connection.
+	//
+	// What a dry run does to the external-input closure is decided in
+	// AcquiresDuringRender rather than by freezing the dial here, so that a
+	// caller asking the same question from its own copy of these options reads
+	// the same answer this run acts on.
 	if run.DryRun {
 		switch {
 		case run.Upgrade:
@@ -339,10 +369,6 @@ func Run(cfg Config) (Result, error) {
 		case cfg.TraceEnabled:
 			return Result{}, fmt.Errorf("aggrega build: --dry-run conflicts with --trace; a dry run writes nothing and --trace writes per-node files to .trace/. Drop --trace to preview the render, or drop --dry-run to write a trace")
 		}
-		// The frozen-input behaviour is adopted, not reimplemented: the same switch
-		// --no-acquire-inputs sets is the one thing that makes a dry run inert, and
-		// a second frozen-input semantic would be free to drift from it.
-		run.NoAcquireInputs = true
 	}
 
 	// wsRoot is the resolved workspace root; the catalog renders source-file
@@ -434,7 +460,7 @@ func Run(cfg Config) (Result, error) {
 	// and pinned when acquisition is on (the default), refused loudly when
 	// the closure is frozen. Seeded with the lockfile's pinned view;
 	// newly-acquired pins merge back after a successful build below.
-	extInputs := newExternalInputsService(cacheDir, lf, run.NoAcquireInputs, wsCfg)
+	extInputs := newExternalInputsService(cacheDir, lf, run.AcquiresDuringRender(), wsCfg)
 
 	// The seam the render sees is the service behind a recorder, so a reference
 	// declined for want of a pin is remembered by the host that declined it. The
@@ -669,15 +695,20 @@ func previewPhase(p compilerops.PreviewPhase) Phase {
 // the workspace artifact cache's inputs store, seeded with the lockfile's
 // pinned view.
 //
-// This is where the build reads its own closure dial and nowhere else: a frozen
-// closure gets the consumption posture and an unfrozen one the acquisition
-// posture, each composed by the store package. What each posture sets — whether
-// an unpinned reference is fetched, and whether there is a transport to fetch it
-// with — is that package's single description of it, so the build states which
-// posture it wants rather than assembling one, and cannot come to hold a second
-// copy that agrees today and drifts later.
-func newExternalInputsService(cacheDir string, lf *lockfile.Lockfile, noAcquire bool, wsCfg workspaceconfig.Config) *externalinputs.Service {
-	if noAcquire {
+// This is where the build turns its render's acquisition verdict into a posture
+// and nowhere else: a frozen render gets the consumption posture and an
+// acquiring one the acquisition posture, each composed by the store package.
+// What each posture sets — whether an unpinned reference is fetched, and whether
+// there is a transport to fetch it with — is that package's single description
+// of it, so the build states which posture it wants rather than assembling one,
+// and cannot come to hold a second copy that agrees today and drifts later.
+//
+// acquire is the verdict rather than the dial, and the parameter is named for
+// the verdict deliberately: RunOptions.AcquiresDuringRender is where the reasons
+// a render is frozen are weighed, and a parameter named for one of those reasons
+// would invite a caller to pass that one reason instead of the verdict.
+func newExternalInputsService(cacheDir string, lf *lockfile.Lockfile, acquire bool, wsCfg workspaceconfig.Config) *externalinputs.Service {
+	if !acquire {
 		return externalinputs.NewFrozen(cacheDir, lf)
 	}
 	return externalinputs.NewAcquiring(cacheDir, wsCfg, lf)

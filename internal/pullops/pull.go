@@ -52,6 +52,9 @@ const (
 	PhaseValidate
 	// PhaseSources is the per-component source descent.
 	PhaseSources
+	// PhaseExternalInputs is the render that discovers which external inputs the
+	// Release consumes, and pins them.
+	PhaseExternalInputs
 	// PhaseLockfile is the lockfile write.
 	PhaseLockfile
 )
@@ -141,6 +144,21 @@ type Config struct {
 	// writing anything at all, and reports what the lockfile records.
 	Verify bool
 
+	// CallerRendersAndAcquires is the caller's declaration that it renders this
+	// same Release itself, immediately after this run, with acquisition on. Set,
+	// it stands the external-input discovery render down: the caller's render
+	// reaches the identical set of remote references and pins them, so a
+	// discovery render here would render the same Release a second time and
+	// leave its own render nothing to acquire.
+	//
+	// It is a statement about the CALLER rather than a setting on this run, and
+	// that distinction is what keeps it from becoming a way to skip pinning. It
+	// is true only where the caller genuinely renders and genuinely acquires, so
+	// a caller whose render is frozen against its lockfile leaves it false and
+	// this run pins the references its frozen render will need. There is no
+	// reachable combination in which nobody acquires.
+	CallerRendersAndAcquires bool
+
 	// IncludePrerelease is accepted and not yet honored, so a caller that passes
 	// it keeps working when it starts having an effect.
 	IncludePrerelease bool
@@ -222,6 +240,22 @@ type Result struct {
 	// TrustedPlugins is how many plugin identities the record beside the lockfile
 	// covers after this run.
 	TrustedPlugins int
+
+	// ExternalInputs is how many external inputs the lockfile pins after this run,
+	// across the ones carried forward and the ones this run discovered.
+	ExternalInputs int
+
+	// ExternalInputDiscovery is the failure that stopped the discovery render,
+	// or nil where it completed or was stood down.
+	//
+	// It rides back on a SUCCESSFUL result rather than being returned as the
+	// run's error, and that is the shape of the outcome rather than a softening
+	// of it: the dependency resolution finished and its pins are on disk, so
+	// reporting the whole run as failed would tell a reader to redo work that is
+	// already correct. What the caller owes is to say so — the pins that landed,
+	// and the references that were not reached — which is why the failure is
+	// handed over rather than only written to a diagnostic stream.
+	ExternalInputDiscovery error
 }
 
 // requireWorkspace returns the workspace a caller threaded in from its own
@@ -706,7 +740,16 @@ func Run(cfg Config) (Result, error) {
 	report.phase(PhaseSources)
 	aggBytes := aggRes.Bytes
 	pullLookup := lazyView.AsCatalogLookup()
-	trustedCount := 0
+	// The lockfile this run assembles is carried out of the source-descent scope
+	// and written further down, once the external-input discovery below has had its
+	// chance to add to it. Assembling and writing are separate steps for two
+	// reasons that point the same way. The discovery pass renders the Release,
+	// which is a resolve scope of its own and does not belong nested inside the
+	// one the descent holds open. And a write here followed by a second write
+	// afterwards would put a lockfile on disk that is missing pins this run is
+	// about to acquire, so anything reading the file in between would read a
+	// closure this run never produced.
+	var assembled *lockfile.Lockfile
 	// The graph entry scopes the resolved view + parameter map to this
 	// callback, so the entire source-descent runs while parameters are live
 	// and nothing here can hold them past it. The descent reads BoundaryInfra
@@ -826,12 +869,13 @@ func Run(cfg Config) (Result, error) {
 			// and mask a deprecated dependency.
 			carryForwardDeprecation(lf, pinReuse.Prior)
 			// Carry forward the prior lockfile's external-input pins. These are
-			// render-time remote-input pins recorded by build and by the acquisition
-			// operation, not part of the catalog closure buildLockfile materialises, so
-			// this operation would otherwise rewrite the lockfile with an empty list and
-			// force the next build to re-acquire from the network. A full refresh reads
-			// no prior lockfile, so this carries nothing and the pins refresh on the
-			// next build.
+			// render-time external-input pins, not part of the catalog closure
+			// buildLockfile materialises, so this operation would otherwise assemble a
+			// lockfile with an empty list and discard pins whose content is already in
+			// the store. The discovery render below adds whatever this Release now
+			// requests on top of what is carried here. A full refresh reads no prior
+			// lockfile, so it carries nothing and the discovery render re-pins the set
+			// from scratch.
 			carryForwardExternalInputs(lf, pinReuse.Prior)
 			// Lock-time signature verification: verify each registry-resolved
 			// entity's signature against the registry's trust policy, record
@@ -846,35 +890,69 @@ func Run(cfg Config) (Result, error) {
 			if err := VerifyClosureSignatures(context.Background(), lf, cl, wsCfg, cacheDir, cfg.DiagOut, pluginfetchverify.RemoteTargetFor(verifyHTTPClient)); err != nil {
 				return fmt.Errorf("verify signatures: %w", err)
 			}
-			report.phase(PhaseLockfile)
-			if err := lockfile.WriteLockfilePreservingTimestamp(lockfilePath, lf); err != nil {
-				return fmt.Errorf("write lockfile: %w", err)
-			}
-			// Record the identity resolved for each verdict-returning attachment,
-			// beside the lockfile just written, and drop any entry the configuration
-			// no longer accounts for when this run asked for that. This runs only
-			// here, past the verify-only return above, so a verify-only run neither
-			// records nor drops anything.
-			//
-			// The attachment set goes in alongside the resolutions because the two
-			// answer different halves of one question. The resolutions say what was
-			// acquired, which is what gets recorded; the attachments say what the
-			// configuration still names, which is what keeps an entry from being
-			// dropped — and a detached plugin is precisely the case with an entry and
-			// no resolution.
-			recorded, err := recordVerdictPluginTrust(cfg.ReleasePath, wsCfg.VerdictAttachments(), verdictResolutions, pinMode, cfg.DiagOut)
-			if err != nil {
-				return err
-			}
-			trustedCount = recorded
+			assembled = lf
 			return nil
 		}); err != nil {
 		return Result{}, err
 	}
+	// The graph callback above is the only thing that assembles this, so a nil here
+	// means the graph build reported success without ever running its callback. That
+	// is a wiring error rather than a state this run can repair — a lockfile
+	// invented at this point would record a closure no descent produced — so it is
+	// reported, on the same terms a nil workspace is.
+	if assembled == nil {
+		return Result{}, fmt.Errorf("internal: no lockfile was assembled — the graph build reported success without running its callback")
+	}
+
+	// External-input discovery. Which URLs a build consumes is a product of the
+	// render rather than a declaration in any document, so this run renders the
+	// Release to find out, fetches what it asks for, and pins it beside the
+	// component pins — one command, one moment, one rule for a reader to learn.
+	//
+	// A failure here does not fail the run. The dependency resolution above
+	// finished and its pins are correct whatever stopped the render, so the pins
+	// are written and the failure is reported: a resolution that names what it
+	// could not reach is more use than one that throws away work a reader would
+	// only redo. It is reported rather than passed over, and there is no dial to
+	// turn it off, because an option to skip it would preserve exactly the
+	// surprise it exists to remove — a Release that resolves cleanly while an
+	// input it needs is still unpinned.
+	var discoveryErr error
+	if !cfg.CallerRendersAndAcquires {
+		report.phase(PhaseExternalInputs)
+		var pins []lockfile.ExternalInput
+		pins, discoveryErr = discoverExternalInputs(cfg, wsCfg, workspaceRoot, cacheDir, lazyView, assembled)
+		assembled.ExternalInputs = pins
+		if discoveryErr != nil {
+			reportExternalInputDiscoveryFailure(cfg.DiagOut, lockfilePath, len(pins), discoveryErr)
+		}
+	}
+
+	report.phase(PhaseLockfile)
+	if err := lockfile.WriteLockfilePreservingTimestamp(lockfilePath, assembled); err != nil {
+		return Result{}, fmt.Errorf("write lockfile: %w", err)
+	}
+	// Record the identity resolved for each verdict-returning attachment, beside
+	// the lockfile just written, and drop any entry the configuration no longer
+	// accounts for when this run asked for that. This runs only here, past the
+	// verify-only return above, so a verify-only run neither records nor drops
+	// anything.
+	//
+	// The attachment set goes in alongside the resolutions because the two answer
+	// different halves of one question. The resolutions say what was acquired,
+	// which is what gets recorded; the attachments say what the configuration
+	// still names, which is what keeps an entry from being dropped — and a
+	// detached plugin is precisely the case with an entry and no resolution.
+	trustedCount, err := recordVerdictPluginTrust(cfg.ReleasePath, wsCfg.VerdictAttachments(), verdictResolutions, pinMode, cfg.DiagOut)
+	if err != nil {
+		return Result{}, err
+	}
 	return Result{
-		LockfilePath:   lockfilePath,
-		Closure:        cl,
-		TrustedPlugins: trustedCount,
+		LockfilePath:           lockfilePath,
+		Closure:                cl,
+		TrustedPlugins:         trustedCount,
+		ExternalInputs:         len(assembled.ExternalInputs),
+		ExternalInputDiscovery: discoveryErr,
 	}, nil
 }
 

@@ -125,6 +125,17 @@ type pullConfig struct {
 	IncludePrerelease bool
 	Detail            bool
 
+	// callerRendersAndAcquires is the build's automatic-fill integration
+	// declaring that it renders this same Release itself, immediately after this
+	// run, with acquisition on — so the external-input discovery render stands
+	// down and the build's own render does the pinning.
+	//
+	// Unexported and lowercase because no flag sets it and none should: it is a
+	// statement about what happens next in the same process, which a person
+	// typing a command has no way to make. The pull command leaves it false, so
+	// `aggrega pull` always discovers.
+	callerRendersAndAcquires bool
+
 	// ws is the resolved workspace, threaded in by the command's RunE from the
 	// shared resolution chokepoint. Required: the shared layer refuses a nil, so a
 	// test invoking pullRun directly declares the workspace it resolves.
@@ -167,23 +178,29 @@ const (
 	pullPhaseLibraries
 	pullPhaseValidate
 	pullPhaseSources
+	pullPhaseExternalInputs
 	pullPhaseLockfile
 )
 
-// pullProgressSpine returns the ordered pull phase spine. This operation has no
-// render phase (renderIdx -1), so it carries no per-node counter and no
-// plugin-compile step — just the phases the closure walk and lockfile write
-// cross.
+// pullProgressSpine returns the ordered pull phase spine.
+//
+// It carries no per-node counter and no plugin-compile step (renderIdx -1),
+// which is a statement about this surface rather than about the operation: the
+// resolution does render, to find out which external inputs the Release consumes,
+// but that render's artifacts are discarded and its rows would put a per-node
+// counter in the middle of a spine whose last step is the lockfile write. The
+// external-input step therefore draws as one row like the others.
 func pullProgressSpine() progressSpine {
 	return progressSpine{
 		labels: []string{
-			pullPhaseLoadCatalog:  "loading catalog",
-			pullPhaseDependencies: "resolving dependencies",
-			pullPhaseClosure:      "resolving dependencies",
-			pullPhaseLibraries:    "resolving libraries",
-			pullPhaseValidate:     "validating",
-			pullPhaseSources:      "resolving sources",
-			pullPhaseLockfile:     "writing lockfile",
+			pullPhaseLoadCatalog:    "loading catalog",
+			pullPhaseDependencies:   "resolving dependencies",
+			pullPhaseClosure:        "resolving dependencies",
+			pullPhaseLibraries:      "resolving libraries",
+			pullPhaseValidate:       "validating",
+			pullPhaseSources:        "resolving sources",
+			pullPhaseExternalInputs: "pinning external inputs",
+			pullPhaseLockfile:       "writing lockfile",
 		},
 		renderIdx: -1,
 	}
@@ -207,6 +224,8 @@ func pullPhaseStep(p pullops.Phase) int {
 		return pullPhaseValidate
 	case pullops.PhaseSources:
 		return pullPhaseSources
+	case pullops.PhaseExternalInputs:
+		return pullPhaseExternalInputs
 	case pullops.PhaseLockfile:
 		return pullPhaseLockfile
 	}
@@ -246,6 +265,7 @@ func pullRun(cfg pullConfig) error {
 		Upgrade:                   cfg.Upgrade,
 		UpgradeTargets:            cfg.UpgradeTargets,
 		Verify:                    cfg.Verify,
+		CallerRendersAndAcquires:  cfg.callerRendersAndAcquires,
 		IncludePrerelease:         cfg.IncludePrerelease,
 		CompilerVersion:           provenanceCompilerVersion(),
 		Toolchain:                 toolchainStamp(),
@@ -294,9 +314,17 @@ func pullRun(cfg pullConfig) error {
 	// Clear the in-place surface before the stdout summary so the progress lines
 	// never linger beside the final output.
 	progress.finish()
-	fmt.Fprintf(out, "Pull complete: %s (entities=%d, source_artifacts=%d%s)\n",
-		res.LockfilePath, len(res.Closure.Entities), len(res.Closure.SourceArtifacts),
+	fmt.Fprintf(out, "Pull complete: %s (entities=%d, source_artifacts=%d, external_inputs=%d%s)\n",
+		res.LockfilePath, len(res.Closure.Entities), len(res.Closure.SourceArtifacts), res.ExternalInputs,
 		trustedPluginsSummary(res.TrustedPlugins))
+	// A completion line that says nothing about a discovery that did not finish
+	// would read as a complete pin set, which is the one thing this run cannot
+	// promise. The detail — what stopped, what landed, what a build will do about
+	// it — is already on the diagnostic stream, so what belongs beside the
+	// completion is the fact that the two streams disagree about completeness.
+	if res.ExternalInputDiscovery != nil {
+		fmt.Fprintf(out, "External inputs were not fully discovered: dependency pins are complete, external-input pins may not be (see the diagnostics above)\n")
+	}
 	return nil
 }
 

@@ -321,9 +321,15 @@ func TestPullUpgradeFailureLeavesPriorLockfileIntact(t *testing.T) {
 }
 
 // seedExternalInput loads the lockfile at path, records one external-input pin,
-// and rewrites it — simulating a pin a prior build or acquire wrote. External
-// inputs are not part of the catalog closure, so a plain pull never produces
-// them; this is the only way to place one for the carry-forward tests.
+// and rewrites it by hand.
+//
+// It is written by hand rather than pinned by the product because the fixture
+// these cases use renders a Release that asks for no external input at all, so
+// the resolution's own discovery has nothing to pin. That is what makes it the
+// right fixture here: the pin under test cannot have come from this run, so a
+// pin that survives was carried and a pin that vanishes was dropped. The cases
+// that watch the resolution DISCOVER a pin use a Release whose render genuinely
+// requests one, and observe the fetch at the endpoint.
 func seedExternalInput(t *testing.T, path string) lockfile.ExternalInput {
 	t.Helper()
 	lf, _, err := lockfile.LoadLockfile(path)
@@ -343,12 +349,13 @@ func seedExternalInput(t *testing.T, path string) lockfile.ExternalInput {
 	return pin
 }
 
-// TestPullPreservesExternalInputsWarm proves a warm pull (no --upgrade)
-// carries forward the external-input pins a prior build or acquire recorded.
-// The pull path materialises the lockfile from the catalog closure alone, which
-// contains no external inputs; without the carry-forward it would rewrite the
-// lockfile with an empty external_inputs list, forcing the next build to
-// re-acquire from the network.
+// TestPullPreservesExternalInputsWarm proves a warm resolution (no --upgrade)
+// carries an already-recorded external-input pin forward.
+//
+// The lockfile is materialised from the catalog closure, which carries no remote
+// inputs, and this Release's render asks for none — so without the carry-forward
+// the rewritten lockfile would drop a pin whose bytes are already in the store
+// and the next build would refetch them.
 func TestPullPreservesExternalInputsWarm(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
@@ -381,11 +388,16 @@ func TestPullPreservesExternalInputsWarm(t *testing.T) {
 	}
 }
 
-// TestPullUpgradeDropsExternalInputs proves --upgrade refreshes the pins: a full
-// refresh reads no prior pin set, so the carry-forward finds nothing and the
-// rewritten lockfile carries an empty external_inputs list. This is the intended
-// "re-acquire from scratch" behavior.
-func TestPullUpgradeDropsExternalInputs(t *testing.T) {
+// TestPullUpgradeDropsAStalePinNoRenderAsksFor proves what a full refresh does
+// to a external-input pin nothing needs: it goes. A refresh reads no prior pin
+// set, so nothing is carried, and the refreshed set is whatever the render asks
+// for — which for this Release is nothing at all.
+//
+// It is the half a refresh over a Release that DOES ask for a external input
+// cannot show, because there the pin reappears and a reader cannot tell a
+// carried pin from a re-discovered one. Here there is nothing to re-discover, so
+// an empty list is the only outcome consistent with the pin having been dropped.
+func TestPullUpgradeDropsAStalePinNoRenderAsksFor(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
 	releasePath := authoringFixture(t, root)

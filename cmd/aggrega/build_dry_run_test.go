@@ -473,11 +473,16 @@ func TestBuildDryRunDeclinesAnUnpinnedExternalReference(t *testing.T) {
 // and without it the case above reads as "a dry run cannot render a chart with a
 // remote reference at all", which is the opposite of the behaviour.
 //
-// The pin is established by the product's own acquisition rather than by hand-
+// The pin is established by the product's own resolution rather than by hand-
 // writing lockfile content, so what the dry run then consumes is exactly what a
-// real build leaves behind. The server is closed before the dry run: a render
+// real workflow leaves behind. The server is closed before the dry run: a render
 // that still succeeds can only have been served from the store, which is what
 // makes "no network call" an observation rather than an assumption.
+//
+// The real build that follows the resolution is asserted to fetch NOTHING, which
+// is the assertion that says the pin took effect. It replaces a weaker one — that
+// something, somewhere, fetched — which stopped discriminating once the
+// resolution became the run that pins.
 func TestBuildDryRunServesAPinnedExternalReferenceFromTheStore(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
@@ -491,19 +496,27 @@ func TestBuildDryRunServesAPinnedExternalReferenceFromTheStore(t *testing.T) {
 	schemaURL := srv.URL + "/values-schema.json"
 
 	releasePath, catalogDir := dryRunFixture(t, root, schemaURL)
+	// The resolution is what pins: it renders the Release to discover the
+	// reference, fetches it, and stores its bytes.
 	primeDryRunLockfile(t, root, releasePath, catalogDir)
+	if served == 0 {
+		srv.Close()
+		t.Fatal("the resolution never fetched the reference, so the fixture does not exercise an external input at all")
+	}
+	fetchesAfterResolution := served
 	ws := resolveTempWorkspace(t, tempWorkspaceOptions{Root: root})
 
-	// A real build with acquisition on pins the reference and stores its bytes.
+	// A real build over the resolved Release must render the reference from the
+	// store without going back to the endpoint.
 	var acqOut, acqDiag bytes.Buffer
 	if err := dispatchBuildWithDiag(ws, releasePath, []string{catalogDir}, false,
 		buildDiagOptions{}, buildops.RunOptions{}, &acqDiag, &acqOut); err != nil {
 		srv.Close()
-		t.Fatalf("the priming build must acquire and pin the reference: %v\ndiagnostics:\n%s", err, acqDiag.String())
+		t.Fatalf("the build over a resolved Release must render: %v\ndiagnostics:\n%s", err, acqDiag.String())
 	}
-	if served == 0 {
+	if served != fetchesAfterResolution {
 		srv.Close()
-		t.Fatal("the priming build never fetched the reference, so the fixture does not exercise an external input at all")
+		t.Errorf("the build refetched a reference the resolution had already pinned: fetch count moved from %d to %d", fetchesAfterResolution, served)
 	}
 
 	lf, _, err := lockfile.LoadLockfile(lockfile.PathFor(releasePath))
