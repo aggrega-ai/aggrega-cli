@@ -41,14 +41,15 @@ that block is what marks the root — holds how this project builds: its catalog
 directories, its provider bindings, which lint rules it relaxes. It is
 committed, so a teammate who clones the project builds it the same way.
 
-One machine-wide file at ~/.config/aggrega/config.yaml holds what belongs to
-the machine rather than to any one project: the registries you pull from and
-the signature trust policy for each, how large the compiled-module store may
-grow, any command extension you have installed. It loads automatically when it
-is there, and nothing breaks when it is not.
+One global file at ~/.config/aggrega/config.yaml is shared across every
+workspace on this machine. It holds what belongs to the machine rather than to
+any one project: the registries you pull from and the signature trust policy
+for each, how large the compiled-module store may grow, any command extension
+you have installed. It loads automatically when it is there, and nothing
+breaks when it is not.
 
-Your project's file wins over the machine-wide one, an environment variable
-wins over both, and a flag wins over everything.
+Your project's file wins over the global one, an environment variable wins
+over both, and a flag wins over everything.
 
 Secrets are not configuration. A registry password or a signing identity token
 is never a field in either file; it is supplied by environment variable or flag
@@ -59,7 +60,7 @@ Because the effective configuration is assembled rather than written anywhere,
 you find out which layer each setting came from. "aggrega config init" seeds a
 working configuration, and "aggrega config capture" freezes the effective
 build-critical settings into this workspace so a build does not depend on a
-machine-wide file that is not committed.
+global file that is not committed.
 
 Larger projects have more to work with. None of it is needed to start, and each
 piece exists for the shape it solves:
@@ -95,18 +96,18 @@ piece exists for the shape it solves:
   directory; failing everything, your working directory is used.
   --workspace-root skips discovery entirely.
 
-  Naming the machine-wide file. --config <path> wins over $AGGREGA_CONFIG,
-  which wins over the default location. Both name a file deliberately, so a
-  path either gives that does not exist is a loud error rather than a silent
+  Naming the global file. --config <path> wins over $AGGREGA_CONFIG, which
+  wins over the default location. Both name a file deliberately, so a path
+  either gives that does not exist is a loud error rather than a silent
   fallback. Whichever file resolves is also the one a config-writing command
-  writes when it writes machine-wide.`,
+  writes when it writes globally.`,
 		Example: `  # What applies right now
   aggrega config show
 
   # Which layer each setting came from
   aggrega config show --origin
 
-  # Seed the machine-wide configuration with a registry and its trust policy
+  # Seed the global configuration with a registry and its trust policy
   aggrega config init
 
   # Seed this project's own configuration instead
@@ -324,11 +325,11 @@ the existing file, other settings preserved).
 A seeded configuration is a document you own and go on editing, so --report hands
 the content back instead of writing it: nothing is created or modified, and the
 answer names the file the content is for — which matters here, because the target
-is the machine-wide global config unless --workspace selects this project's own.
-A caller that keeps its own document model puts the content there, where it is
-visible before it is saved and can be amended or undone. --report needs no
---force: an existing file is never overwritten because nothing is written at all,
-and the content reported is the merge a forced write would produce.
+is the global config unless --workspace selects this project's own. A caller that
+keeps its own document model puts the content there, where it is visible before
+it is saved and can be amended or undone. --report needs no --force: an existing
+file is never overwritten because nothing is written at all, and the content
+reported is the merge a forced write would produce.
 
 Under --report standard output carries that content and nothing else, so it stays
 parseable. A registry that advertises no trust policy still produces its notice,
