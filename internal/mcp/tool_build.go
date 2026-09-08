@@ -57,12 +57,13 @@ type buildFile struct {
 // what this shape carries. A caller that wants the findings for a Release
 // without rendering it reads them from the validate tool instead.
 //
-// Files is the one field a refusal leaves absent by decision rather than for
-// want of a value. The tool emits nothing on a refusal, so there are no
-// artifacts to report; an empty list would assert that the build ran and
-// produced none, which is a different fact. A caller distinguishes the two from
-// the failure flag on the envelope, which is the protocol's own discriminator
-// and not something this shape restates.
+// Files reports nothing on a refusal, and its key is NOT a signal a caller may
+// branch on: the field carries no omit option, so it is encoded whatever the
+// outcome, and an empty list therefore cannot distinguish a build that refused
+// from one that ran and emitted nothing. What distinguishes them is the failure
+// flag on the envelope, which is the protocol's own discriminator and not
+// something this shape restates. Read this field for what was written, and read
+// the flag for whether anything was going to be.
 type buildResultPayload struct {
 	Release string      `json:"release"`
 	Files   []buildFile `json:"files"`
