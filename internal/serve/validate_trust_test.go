@@ -105,7 +105,7 @@ func TestServeValidationRefusesAGateTheConfigurationDropped(t *testing.T) {
 	if len(diags) == 0 {
 		t.Fatal("a record naming a gate the configuration attaches nowhere must refuse; got no diagnostics")
 	}
-	want := diagnosticCode(pluginstrust.ErrVerdictAttachmentNotConfigured())
+	want := conditionCodesOf(pluginstrust.ErrVerdictAttachmentNotConfigured()).Code
 	if want == "" {
 		t.Fatal("the not-configured condition carries no diagnostic code; the assertion below would be vacuous")
 	}

@@ -58,6 +58,79 @@ const docsTreePrefix = "aggrega-docs/"
 // published documentation.
 func PublishedPath(page string) string { return docsTreePrefix + page }
 
+// publishedSiteBase is where the documentation is served for a reader who has no
+// checkout and no cached bundle — a browser. It ends in a separator so a page
+// path appends directly.
+//
+// It is the counterpart of [docsTreePrefix]: one names where a page sits for
+// somebody holding the repository, and this names where the same page is served.
+// Both are here rather than at the surfaces that point at a page, because a
+// second spelling of either is a second answer to where the documentation is.
+const publishedSiteBase = "https://aggrega.ai/docs/"
+
+// PublishedURL renders a bundle-internal page path as the address the published
+// documentation serves it at.
+//
+// The transformation is the served layout's own: the extension is dropped and the
+// result is a directory, because that is how the page is addressed once published
+// rather than once checked out. A caller handing this a path it did not get from
+// one of the page constants above is composing an address for a page that may not
+// exist; the constants are the paths this is for.
+func PublishedURL(page string) string {
+	return publishedSiteBase + strings.TrimSuffix(page, ".md") + "/"
+}
+
+// ExplanationHeading is the heading on [ReferencePagePath] that opens the section
+// resolving a short code to the condition it names.
+//
+// It is declared because [ExplanationAnchor] is derived from it, and a reworded
+// heading silently moves that anchor: the published page still renders, the link
+// still resolves to the page, and the reader simply lands somewhere else. Pinning
+// the wording is what makes the rewording fail loudly instead.
+const ExplanationHeading = "Every condition, by short code"
+
+// ExplanationAnchor is the id of the section [ExplanationHeading] opens, as the
+// published page addresses it.
+//
+// The published site derives a heading's id from its own words — lowercased, with
+// punctuation dropped and the spaces between them becoming separators — so this is
+// that heading in that form rather than a value the page declares. It is written
+// out rather than computed here on purpose: computing it would be a second
+// implementation of the site's own derivation, which would agree until the site
+// changed the rule, and the disagreement would be a link that resolves to the page
+// and lands nowhere. The published prose already addresses the section by this id
+// from several pages, so what is written here is the spelling in use rather than
+// one derived for this purpose.
+const ExplanationAnchor = "every-condition-by-short-code"
+
+// ExplanationURL is the address a reader opens for more about a condition a
+// diagnostic named.
+//
+// # It lands on the resolving section, not on a per-condition entry
+//
+// It is one address for every condition rather than one per condition, and the
+// reason is what a surface emitting a diagnostic can know without reading
+// anything. Per-condition prose sits under a heading whose words are the entry's
+// own, so addressing an entry means reading the page that carries it — and a
+// diagnostic is emitted on every edit, so a surface resolving an address per
+// diagnostic would read the documentation on every keystroke. The short code
+// travels beside this address, so a reader arrives holding what the section takes.
+//
+// # Why the reference page rather than the walk-through
+//
+// It is [ReferencePagePath] and not [PagePath], and the difference is whether the
+// link can be dead. The reference resolves EVERY condition the compiler declares,
+// so a short code that exists resolves there by construction; the
+// halting-conditions page documents the conditions an author is taught to repair,
+// which is a subset — a warning-severity condition, or one no entry covers yet,
+// has nothing there. Pointing at the subset would render a link that lands on a
+// page not describing what the diagnostic reported, which is worse than no link.
+// The reference's own prose carries the reader onward to the walk-through, so
+// nothing is lost by arriving at the resolving page first.
+func ExplanationURL() string {
+	return PublishedURL(ReferencePagePath) + "#" + ExplanationAnchor
+}
+
 // Entry is one entry on the halting-conditions page: the heading that opens it
 // and the prose beneath, up to the next heading of the same or higher level.
 type Entry struct {

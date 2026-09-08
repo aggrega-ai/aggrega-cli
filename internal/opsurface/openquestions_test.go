@@ -238,9 +238,9 @@ import (
 // workspace, which is why search itself is declined"; the index is written under
 // the workspace's own configured cache directory, and search was exposed on that
 // very ground. What is genuinely distinctive about the refresh is the reach, not
-// the write: it is the only method the daemon carries that goes out to a
-// registry, and it does so without prompting, which is what the credential
-// posture already required of every surface with nobody watching.
+// the write: it goes out to a registry, and it does so without prompting, which
+// is what the credential posture already required of every surface with nobody
+// watching.
 //
 // It came down by ONE when the daemon began answering whether an entity is
 // publishable. Its row asked whether the publishing conventions belong to the
@@ -392,7 +392,35 @@ import (
 // on the daemon's behalf. This removes what a person already put there, at their
 // request, so the row makes the daemon no more a holder of credentials than the
 // registry listing already makes it a reader of them.
-const boundCeiling = 1
+//
+// It came down by ONE, to zero, when the daemon began expanding a code a
+// diagnostic carried. That row asked whether the surface that EMITS a diagnostic
+// owes the expansion of it, which is a question about this surface and not about
+// the two that already carried the capability — so it could not be answered from
+// either of their dispositions.
+//
+// The answer is that it does, and what settles it is a property of this surface
+// rather than a general preference for exposure. A diagnostic published here
+// carries the condition's quotable code, so this surface hands its own reader an
+// identifier; a surface that hands out an identifier it will not expand has left
+// that reader with a code and nowhere to take it. The two surfaces already
+// carrying the capability serve readers who arrived holding a code from somewhere
+// else, which is a different reader with a different problem.
+//
+// It is a request of its own rather than prose riding on each diagnostic, and the
+// row's own subject is what forces that: a diagnostic is emitted on every edit, so
+// an expansion travelling on each one would republish the same paragraphs on every
+// keystroke. The diagnostic carries the identifier and the pointer; the request
+// carries the text, for a client that cannot follow a pointer itself.
+//
+// 🔴 A bound of zero is not this bound's retirement, and that is the reading a
+// later reader is most likely to take. Nothing here becomes unnecessary: the check
+// still refuses every pair that is neither disposed of nor named, and the ratchet
+// still refuses a disagreement in either direction. What zero says is that no pair
+// is currently excused — so the next capability whose disposition nobody has
+// settled has to raise this number deliberately and argue for it, which is exactly
+// the cost the bound exists to impose.
+const boundCeiling = 0
 
 // TestTheBoundOnlyShrinks is the ratchet. See boundCeiling for why both
 // directions refuse.
@@ -631,6 +659,10 @@ func TestTheBoundReportsItsOwnReach(t *testing.T) {
 	})
 
 	t.Run("a surface with rows names them and disclaims them", func(t *testing.T) {
+		if len(undecidedPairs) == 0 {
+			t.Skip("the bound excuses nothing, so there is no surface with rows to observe; the " +
+				"empty-bound wording is asserted by the leg above")
+		}
 		surface := undecidedPairs[0].Surface
 		got := BoundStatement(surface)
 		if !strings.Contains(got, "asserts") || !strings.Contains(got, "NOTHING") {

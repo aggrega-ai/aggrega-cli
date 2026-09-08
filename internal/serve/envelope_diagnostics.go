@@ -197,9 +197,9 @@ func (s *Server) envelopeDiagnosticsForBuffer(file, releasePath string, content 
 	}
 	idx := yamlpos.BuildLineIndexWithEncoding(content, s.positionEncoding())
 	// One rejection, one condition: every finding beneath it reports the same
-	// code and opens with the same sentence, and what separates them is the key
-	// each one points at.
-	code := diagnosticCode(envErr)
+	// identifiers and opens with the same sentence, and what separates them is the
+	// key each one points at.
+	codes := conditionCodesOf(envErr)
 	// The sentence is read off the condition rather than written here, and the
 	// message a terminal shows for the same rejection reads it from that same
 	// place, so the two surfaces cannot disagree about which condition they are
@@ -228,13 +228,13 @@ func (s *Server) envelopeDiagnosticsForBuffer(file, releasePath string, content 
 			line, col, endLine, endCol = span.Line, span.Column, span.EndLine, span.EndColumn
 		}
 		diags = append(diags, Diagnostic{
-			Line:      line,
-			Column:    col,
-			EndLine:   endLine,
-			EndColumn: endCol,
-			Severity:  editorSeverityError,
-			Message:   header + ": " + f.Message,
-			Code:      code,
+			Line:           line,
+			Column:         col,
+			EndLine:        endLine,
+			EndColumn:      endCol,
+			Severity:       editorSeverityError,
+			Message:        header + ": " + f.Message,
+			ConditionCodes: codes,
 		})
 	}
 	return diags, true

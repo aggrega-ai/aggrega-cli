@@ -137,11 +137,11 @@ func (s *Server) runTier4Validation(ctx context.Context, releasePath, file strin
 		// they were decided before this resolution ran and a withdrawn pin can be
 		// why it failed.
 		return append(deprecationDiags, Diagnostic{
-			Line:     1,
-			Column:   1,
-			Severity: editorSeverityError,
-			Message:  "Dependencies: " + envelope.Message,
-			Code:     diagnosticCode(envelope.cause),
+			Line:           1,
+			Column:         1,
+			Severity:       editorSeverityError,
+			Message:        "Dependencies: " + envelope.Message,
+			ConditionCodes: conditionCodesOf(envelope.cause),
 		})
 	}
 
@@ -191,11 +191,11 @@ func (s *Server) runTier4Validation(ctx context.Context, releasePath, file strin
 	mappingDiags := deprecationDiags
 	for _, f := range resolved.ManifestConsistencyFindings {
 		mappingDiags = append(mappingDiags, Diagnostic{
-			Line:     1,
-			Column:   1,
-			Severity: editorSeverityError,
-			Message:  "Dependencies: " + f.Error(),
-			Code:     diagnosticCode(f),
+			Line:           1,
+			Column:         1,
+			Severity:       editorSeverityError,
+			Message:        "Dependencies: " + f.Error(),
+			ConditionCodes: conditionCodesOf(f),
 		})
 	}
 
@@ -235,11 +235,11 @@ func (s *Server) runTier4Validation(ctx context.Context, releasePath, file strin
 	// resolved.
 	if len(vr.ClosureExtendsErrors) > 0 {
 		return append(mappingDiags, Diagnostic{
-			Line:     1,
-			Column:   1,
-			Severity: editorSeverityError,
-			Message:  fmt.Sprintf("Dependencies: catalog extends: %v", vr.ClosureExtendsErrors[0]),
-			Code:     diagnosticCode(vr.ClosureExtendsErrors[0]),
+			Line:           1,
+			Column:         1,
+			Severity:       editorSeverityError,
+			Message:        fmt.Sprintf("Dependencies: catalog extends: %v", vr.ClosureExtendsErrors[0]),
+			ConditionCodes: conditionCodesOf(vr.ClosureExtendsErrors[0]),
 		})
 	}
 
@@ -249,11 +249,11 @@ func (s *Server) runTier4Validation(ctx context.Context, releasePath, file strin
 	// explaining a missing library. build remains the authoritative validator.
 	if vr.PillarError != nil {
 		return append(mappingDiags, Diagnostic{
-			Line:     1,
-			Column:   1,
-			Severity: editorSeverityError,
-			Message:  "Dependencies: " + s.skipContext(view, vr.PillarError.Error()),
-			Code:     diagnosticCode(vr.PillarError),
+			Line:           1,
+			Column:         1,
+			Severity:       editorSeverityError,
+			Message:        "Dependencies: " + s.skipContext(view, vr.PillarError.Error()),
+			ConditionCodes: conditionCodesOf(vr.PillarError),
 		})
 	}
 
@@ -265,11 +265,11 @@ func (s *Server) runTier4Validation(ctx context.Context, releasePath, file strin
 	// footing the two gates above use.
 	if vr.VerdictTrustError != nil {
 		return append(mappingDiags, Diagnostic{
-			Line:     1,
-			Column:   1,
-			Severity: editorSeverityError,
-			Message:  "Dependencies: " + vr.VerdictTrustError.Error(),
-			Code:     diagnosticCode(vr.VerdictTrustError),
+			Line:           1,
+			Column:         1,
+			Severity:       editorSeverityError,
+			Message:        "Dependencies: " + vr.VerdictTrustError.Error(),
+			ConditionCodes: conditionCodesOf(vr.VerdictTrustError),
 		})
 	}
 
@@ -300,11 +300,11 @@ func (s *Server) runTier4Validation(ctx context.Context, releasePath, file strin
 		// Non-resolver pre-analyzer phase error (topology / IR / guards
 		// without per-violation structure). Tier-D fall-back at file:1:1.
 		diags = append(diags, Diagnostic{
-			Line:     1,
-			Column:   1,
-			Severity: editorSeverityError,
-			Message:  tier4PhaseErrorMessage(vr.RunErr),
-			Code:     diagnosticCode(vr.RunErr),
+			Line:           1,
+			Column:         1,
+			Severity:       editorSeverityError,
+			Message:        tier4PhaseErrorMessage(vr.RunErr),
+			ConditionCodes: conditionCodesOf(vr.RunErr),
 		})
 	}
 
@@ -338,11 +338,11 @@ func (s *Server) runTier4Validation(ctx context.Context, releasePath, file strin
 	// match the build's exactly.
 	for _, ferr := range vr.ResolutionFindings {
 		diags = append(diags, Diagnostic{
-			Line:     1,
-			Column:   1,
-			Severity: editorSeverityError,
-			Message:  "Dependencies: " + ferr.Error(),
-			Code:     diagnosticCode(ferr),
+			Line:           1,
+			Column:         1,
+			Severity:       editorSeverityError,
+			Message:        "Dependencies: " + ferr.Error(),
+			ConditionCodes: conditionCodesOf(ferr),
 		})
 	}
 
@@ -351,11 +351,11 @@ func (s *Server) runTier4Validation(ctx context.Context, releasePath, file strin
 	// reaches the same verdict as the other front ends.
 	for _, e := range vr.InputKindErrors {
 		diags = append(diags, Diagnostic{
-			Line:     1,
-			Column:   1,
-			Severity: editorSeverityError,
-			Message:  "Dependencies: input-kind: " + e.Error(),
-			Code:     diagnosticCode(e),
+			Line:           1,
+			Column:         1,
+			Severity:       editorSeverityError,
+			Message:        "Dependencies: input-kind: " + e.Error(),
+			ConditionCodes: conditionCodesOf(e),
 		})
 	}
 
@@ -407,8 +407,8 @@ func analyzerErrorsToDiagnostics(errs []analyzer.AnalysisError, file string, doc
 			// AnalysisError reports its own Message and does not unwrap to the
 			// condition it names, so a chain walk over the entry itself finds
 			// nothing to report.
-			Message: "Dependencies: " + errs[i].Error(),
-			Code:    diagnosticCode(errs[i].Sentinel),
+			Message:        "Dependencies: " + errs[i].Error(),
+			ConditionCodes: conditionCodesOf(errs[i].Sentinel),
 		})
 	}
 	return out
@@ -438,23 +438,22 @@ func analyzerErrorsToDiagnostics(errs []analyzer.AnalysisError, file string, doc
 func resolverFindingToDiagnostic(ve *resolver.ResolverError, severity string, doc *yaml.Node, idx yamlpos.LineIndex) Diagnostic {
 	line, col, endLine, endCol := keyPathSpan(doc, idx, ve.Field)
 	return Diagnostic{
-		Line:      line,
-		Column:    col,
-		EndLine:   endLine,
-		EndColumn: endCol,
-		Severity:  severity,
-		Message:   ve.MessageWithoutSubject(),
-		Code:      diagnosticCode(ve),
+		Line:           line,
+		Column:         col,
+		EndLine:        endLine,
+		EndColumn:      endCol,
+		Severity:       severity,
+		Message:        ve.MessageWithoutSubject(),
+		ConditionCodes: conditionCodesOf(ve),
 	}
 }
 
-// The field-path-to-position walk this file used to carry lives at
-// yamlpos.FieldNode / yamlpos.FieldRange. It was moved rather than shared
-// from here because the envelope layer needs the same walk and must not
-// depend on the daemon: with one implementation, a violation reported to an
-// editor and the same violation reported on a terminal cannot point at
-// different keys. Do not reintroduce a local walker — the guard test in
-// yamlpos pins the caller set for exactly that reason.
+// The field-path-to-position walk lives at yamlpos.FieldNode /
+// yamlpos.FieldRange rather than here, because the envelope layer needs the
+// same walk and must not depend on the daemon: with one implementation, a
+// violation reported to an editor and the same violation reported on a
+// terminal cannot point at different keys. Do not add a local walker — the
+// guard test in yamlpos pins the caller set for exactly that reason.
 
 // tier4PhaseErrorMessage formats a non-resolver pre-analyzer phase
 // error into the Tier-D message shape. RunTier4Pipeline wraps phase

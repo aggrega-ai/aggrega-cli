@@ -220,6 +220,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/haltref"
 	"github.com/aggrega-ai/aggrega-cli/internal/importops"
 	"github.com/aggrega-ai/aggrega-cli/internal/pluginops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
@@ -393,15 +394,154 @@ func resolveBuildOnInspect(flag *bool, cfgValue bool) bool {
 //
 // It is not the numeric code on a JSON-RPC error envelope, which names a state
 // of the workspace rather than a condition and travels on a different object.
+//
+// ShortCode and CodeDescription are what the entry carries for the READER rather
+// than for the program, and they are documented on [ConditionCodes], where the
+// division between the three keys is stated once.
 type Diagnostic struct {
-	Line      int    `json:"line"`
-	Column    int    `json:"column"`
-	Severity  string `json:"severity"`
-	Message   string `json:"message"`
-	Code      string `json:"code,omitempty"`
+	Line     int    `json:"line"`
+	Column   int    `json:"column"`
+	Severity string `json:"severity"`
+	Message  string `json:"message"`
+
+	// The identifiers of what the entry reports. Embedded so the keys sit on the
+	// entry itself rather than nested under one of their own, and so the only way
+	// to fill them is a constructor that decides all three together.
+	ConditionCodes
+
 	Source    string `json:"source"`
 	EndLine   int    `json:"end_line,omitempty"`
 	EndColumn int    `json:"end_column,omitempty"`
+}
+
+// ConditionCodes are the identifiers a [Diagnostic] carries for what it reports:
+// the one a program matches on, the one a reader quotes, and where a reader goes
+// for more.
+//
+// # Why there are three keys and not one
+//
+// A condition carries two identifiers and they are shaped for two jobs. The
+// descriptive code is qualified and hyphenated, so it says what the condition is
+// and is what a consumer branches on. The short code is the letter E and four
+// digits, so it fits at the head of a printed line and is what a reader can quote
+// in a report, type into a search, or look up. Neither replaces the other, and a
+// single key carrying whichever one the layer happened to have would be one key
+// answering two questions — so a client holding it could not tell which it had.
+//
+// CodeDescription is the third because it answers neither question: it is where
+// the condition is explained, which is a fact about the documentation rather than
+// about the entry. It is the protocol's own structure for exactly this, so a
+// protocol-aware client renders a "learn more" affordance without being taught
+// anything about this compiler, and no client needs its own copy of the
+// explanations.
+//
+// # When each key is absent
+//
+// All three are optional, and what decides their presence is what UNDERLIES the
+// entry rather than which layer published it. That distinction is worth stating
+// because the layer is nearly a proxy for it and is not one: an entry whose code
+// names a registered halting condition carries all three keys wherever it is
+// published, and an entry whose code names something else carries the descriptive
+// code alone.
+//
+// An entry naming no condition at all carries no key. A buffer no YAML parser will
+// read has none behind it, and every key would be a claim about a condition that
+// does not exist.
+//
+// The codes that are NOT conditions are a class of render advisory and the
+// identity of a conventions rule. Neither is registered, so neither has a short
+// code, and neither is documented on the page the pointer resolves to — a short
+// code minted for them would be an identifier no lookup resolves, and a pointer
+// would resolve to a page that does not describe what the entry reported. Those
+// are the ordinary content of the build and publishing-conventions layers, which
+// is why the layer nearly predicts the keys; the build layer nonetheless carries
+// one entry that does name a registered condition, and it carries all three.
+//
+// So a client tells the three cases apart from the keys alone, and does it without
+// knowing anything about the layers: no code at all, a code that resolves to
+// nothing further, and a code with a quotable form and somewhere to read about it.
+type ConditionCodes struct {
+	// Code is the machine-matchable code, described in full on [Diagnostic].
+	Code string `json:"code,omitempty"`
+
+	// ShortCode is the condition's compact code — the letter E and four digits —
+	// which is the identifier a reader quotes and looks up.
+	//
+	// It travels beside Code rather than replacing it because the two reach
+	// different consumers, and because Code's contract is that a client matches on
+	// it: changing what that key carried would break every consumer of it without
+	// a single one failing loudly.
+	//
+	// The key is spelled the way this wire spells a name of more than one word,
+	// which is how nearly every key on it is spelled. The two position keys on the
+	// diagnostic are the exception and not the rule — they predate the convention
+	// and are the shape a client already binds to — so a new key follows the wire
+	// rather than its two nearest neighbours, and sits beside the protocol's own
+	// key below without introducing a third spelling into one object.
+	ShortCode string `json:"shortCode,omitempty"`
+
+	// CodeDescription is where the condition is explained.
+	//
+	// The key is spelled as the protocol spells it, rather than in this wire's own
+	// convention for its own keys, because it IS the protocol's field: a client
+	// that knows the protocol and nothing about this compiler renders it, and a
+	// key renamed to match the neighbours would be a bespoke field wearing the
+	// protocol's meaning.
+	CodeDescription *CodeDescription `json:"codeDescription,omitempty"`
+}
+
+// CodeDescription is the protocol's structure for a reference to open for more
+// information about a diagnostic.
+type CodeDescription struct {
+	// Href is the address the reference resolves to.
+	Href string `json:"href"`
+}
+
+// conditionCodesOf returns the identifiers of the condition err's chain names, or
+// the zero value when the chain names none.
+//
+// It is the one place the three keys are decided together, and that is what it is
+// for. Reading the codes at each construction site would let a site report a code
+// while omitting the quotable one — which is a diagnostic a reader cannot look up,
+// reported by a surface that had the answer in hand. Deciding all three here means
+// a site cannot report a partial answer by omission.
+//
+// The pointer is present exactly when the short code is, because the page it
+// resolves to is keyed on the short code: an entry with no short code has nothing
+// to look up there, and a pointer sent anyway would resolve to a page that does
+// not document what the entry reports.
+//
+// The second return of each read is deliberately dropped here rather than at each
+// caller. On this wire the empty string and the omitted key are the same statement
+// — the entry names no condition — so a boolean beside it would carry nothing a
+// client could act on, and a per-site choice about it is a choice every
+// construction site would have to make the same way.
+func conditionCodesOf(err error) ConditionCodes {
+	code, _ := cerrors.CodeOf(err)
+	shortCode, _ := cerrors.ShortCodeOf(err)
+	codes := ConditionCodes{Code: code, ShortCode: shortCode}
+	if shortCode != "" {
+		codes.CodeDescription = &CodeDescription{Href: haltref.ExplanationURL()}
+	}
+	return codes
+}
+
+// classCode returns the identifiers for an entry whose code names a CLASS rather
+// than a registered condition: a render advisory's class, or the identity of a
+// publishing-conventions rule.
+//
+// It carries the descriptive code and nothing else, and the omission is the
+// statement rather than a gap. Such a code names no registered condition, so
+// there is no short code to quote and nothing on the halting-conditions page to
+// point at — an identifier or a pointer invented for it would be one no lookup
+// resolves.
+//
+// It exists as a named constructor rather than as a bare literal so that the
+// decision is made once and reads as a decision. The keys cannot be filled in a
+// [Diagnostic] literal, so every site that has a code states which of the two
+// kinds it holds.
+func classCode(code string) ConditionCodes {
+	return ConditionCodes{Code: code}
 }
 
 // The editor wire's severity tiers: the closed set a [Diagnostic]'s Severity
@@ -428,19 +568,6 @@ const (
 	editorSeverityWarning = "warning"
 	editorSeverityInfo    = "info"
 )
-
-// diagnosticCode returns the code of the condition err's chain names, or the
-// empty string when the chain names none.
-//
-// CodeOf's second return is deliberately dropped here rather than at each caller.
-// On this wire the empty string and the omitted key are the same statement — the
-// entry names no condition — so a boolean beside it would carry nothing a client
-// could act on, and a per-site choice about it is a choice eleven construction
-// sites would each have to make the same way.
-func diagnosticCode(err error) string {
-	code, _ := cerrors.CodeOf(err)
-	return code
-}
 
 // The layer sources. DiagnosticSourceSemantic covers everything the resolution
 // and analysis stages report about the authored documents;

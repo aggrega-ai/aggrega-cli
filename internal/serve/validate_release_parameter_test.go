@@ -131,7 +131,7 @@ func TestValidateAnswersAboutTheReleaseEachRequestNames(t *testing.T) {
 	// The condition the contract violation is registered under. Read from the
 	// declaration rather than matched as text, so the assertion keeps holding
 	// when the sentence is reworded.
-	want := diagnosticCode(resolver.ErrParameterContractViolation())
+	want := conditionCodesOf(resolver.ErrParameterContractViolation()).Code
 	if want == "" {
 		t.Fatal("the parameter-contract condition carries no diagnostic code; both assertions below would be vacuous")
 	}
@@ -193,7 +193,7 @@ func TestValidateReversedOrderStillAnswersAboutTheReleaseNamed(t *testing.T) {
 	content := string(aggBytes)
 
 	srv := newTestServer(t, ws, nil, nil)
-	want := diagnosticCode(resolver.ErrParameterContractViolation())
+	want := conditionCodesOf(resolver.ErrParameterContractViolation()).Code
 	if want == "" {
 		t.Fatal("the parameter-contract condition carries no diagnostic code; the assertions below would be vacuous")
 	}
@@ -241,7 +241,7 @@ func TestValidateWithNoReleaseRunsTheDocumentHalfAndNotTheSemanticOne(t *testing
 
 	srv := newTestServer(t, ws, nil, nil)
 
-	want := diagnosticCode(resolver.ErrParameterContractViolation())
+	want := conditionCodesOf(resolver.ErrParameterContractViolation()).Code
 	if want == "" {
 		t.Fatal("the parameter-contract condition carries no diagnostic code; the assertions below would be vacuous")
 	}

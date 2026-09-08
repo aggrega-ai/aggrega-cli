@@ -31,6 +31,12 @@ import (
 // code, because the key is about what the finding is and not about who named it;
 // carrying both would be two keys for one question.
 //
+// It is published as a CLASS code, which is what fixes the entry's other two
+// identifier keys at absent. A rule identity is not a registered halting
+// condition, so there is no short code for a reader to quote and nothing on the
+// halting-conditions page for a pointer to resolve to — see ConditionCodes, where
+// that division is stated for every layer.
+//
 // Position defaults to the head of the file, which is where a finding whose rule
 // located nothing belongs: the rules run over one entity document, so the file is
 // always known while a line is known only when the rule computed one. That is the
@@ -38,15 +44,16 @@ import (
 // entry does not depend on which layer produced it. The end position is carried
 // only alongside a start, since a span with no start locates nothing.
 func conventionDiagnostic(f lintops.Finding) Diagnostic {
-	d := Diagnostic{
-		Line:     1,
-		Column:   1,
-		Severity: editorSeverity(f.Severity),
-		Message:  f.Message,
-		Code:     f.RuleID,
+	identity := f.RuleID
+	if identity == "" {
+		identity = f.Code
 	}
-	if d.Code == "" {
-		d.Code = f.Code
+	d := Diagnostic{
+		Line:           1,
+		Column:         1,
+		Severity:       editorSeverity(f.Severity),
+		Message:        f.Message,
+		ConditionCodes: classCode(identity),
 	}
 	if f.Location != nil && f.Location.Line > 0 {
 		d.Line = f.Location.Line

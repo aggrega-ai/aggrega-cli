@@ -8,7 +8,6 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
-	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/externalinputs"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 )
@@ -78,16 +77,23 @@ func (s *Server) irGraphExternalInputs(lf *lockfile.Lockfile) *externalinputs.De
 // worth reading, and the reference is a pin the reader can supply. Empty input
 // returns nil, so a fully-pinned render adds nothing.
 //
-// The code is read off the condition that declined the reference rather than
-// spelled here, so the advisory and the refusal a terminal reports name one
+// The identifiers are read off the condition that declined the reference rather
+// than spelled here, so the advisory and the refusal a terminal reports name one
 // identity. A literal would keep compiling after the condition was re-registered
 // under a different code, at which point the two surfaces would silently
 // disagree about what the reader is looking at.
+//
+// It is the one entry on the build layer that names a REGISTERED condition, so it
+// carries the quotable code and the pointer as well — which is why the keys are
+// read through the condition-code constructor rather than the class one. The
+// distinction is what underlies the entry and never which layer publishes it: an
+// advisory's class code and a conventions rule's identity have no condition behind
+// them, and this one does.
 func externalInputDivergenceDiagnostics(declined []string, releasePath string) []Diagnostic {
 	if len(declined) == 0 {
 		return nil
 	}
-	code, _ := cerrors.CodeOf(externalinputs.ErrAcquisitionDisabled())
+	codes := conditionCodesOf(externalinputs.ErrAcquisitionDisabled())
 	out := make([]Diagnostic, 0, len(declined))
 	for _, url := range declined {
 		out = append(out, Diagnostic{
@@ -99,7 +105,7 @@ func externalInputDivergenceDiagnostics(declined []string, releasePath string) [
 					"cannot show what a build would emit; run `aggrega acquire --release %s` to pin the "+
 					"inputs the render needs",
 				url, releasePath),
-			Code: code,
+			ConditionCodes: codes,
 		})
 	}
 	return out

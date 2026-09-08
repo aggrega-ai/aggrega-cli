@@ -92,6 +92,12 @@ func keyPathSpan(doc *yaml.Node, idx yamlpos.LineIndex, keyPath string) (line, c
 // spelling for a single identity — so the entry publishes whatever the advisory
 // arrived carrying, verbatim, and carries nothing where the advisory carried
 // nothing, the empty string and the omitted key being the same statement here.
+//
+// The code is published as a CLASS code, which is what fixes the entry's other two
+// identifier keys at absent. What an advisory names is a class of advisory rather
+// than a registered halting condition, so there is no short code for a reader to
+// quote and nothing on the halting-conditions page for a pointer to resolve to —
+// see ConditionCodes, where that division is stated for every layer.
 func advisoryToDiagnostic(d renderer.Diagnostic, doc *yaml.Node, idx yamlpos.LineIndex) Diagnostic {
 	var keyPath string
 	if d.Location != nil {
@@ -99,13 +105,13 @@ func advisoryToDiagnostic(d renderer.Diagnostic, doc *yaml.Node, idx yamlpos.Lin
 	}
 	line, col, endLine, endCol := keyPathSpan(doc, idx, keyPath)
 	return Diagnostic{
-		Line:      line,
-		Column:    col,
-		EndLine:   endLine,
-		EndColumn: endCol,
-		Severity:  editorSeverity(d.Severity),
-		Message:   renderer.RenderDiagnosticText(d),
-		Code:      d.Code,
+		Line:           line,
+		Column:         col,
+		EndLine:        endLine,
+		EndColumn:      endCol,
+		Severity:       editorSeverity(d.Severity),
+		Message:        renderer.RenderDiagnosticText(d),
+		ConditionCodes: classCode(d.Code),
 	}
 }
 

@@ -45,16 +45,14 @@ func indexOfAdvisory(advisories []renderer.Diagnostic, want string) int {
 // The one advisory channel, proved as a property of what a run RETURNS rather
 // than of what it declares.
 //
-// Two advisory classes are raised by different phases, reported by different
-// displays, and were previously carried by different things: a binding-lint
-// finding reached one result shape and nothing on the other, and the
-// static-analysis advisory stream reached no result shape at all. A caller with
-// no terminal could therefore receive one, the other, or neither depending on
-// which entry point it drove — which is the defect these proofs close.
+// Two advisory classes are raised by different phases and reported by different
+// displays — a binding-lint finding and the static-analysis advisory stream —
+// and both reach the same channel on the result. That is what lets a caller with
+// no terminal receive either class whichever entry point it drove.
 //
 // Each assertion below reads the CHANNEL. A test asserting only that a display
-// printed something would pass just as happily against the shape that existed
-// before, where the display was the only place the finding existed.
+// printed something would pass just as happily where the display were the only
+// place a finding existed, which is the arrangement these proofs rule out.
 
 const (
 	advisoryOverrideAggregatePath = "../../../internal/compiler/testdata/fullstack-app/aggregates/annotation-values-binding-annotation.yaml"
@@ -244,8 +242,8 @@ func TestBothAdvisoryClassesTravelOnTheOneChannel(t *testing.T) {
 		}
 	}
 
-	// The static-analysis advisory stream, which reached no result shape at all
-	// before.
+	// The static-analysis advisory stream, which reaches the result's channel
+	// rather than only a display.
 	analyzerSentence := analyzer.ErrOverriddenAnnotation().Error()
 	stream := advisoryNaming(out.Advisories, analyzerSentence)
 	if len(stream) == 0 {

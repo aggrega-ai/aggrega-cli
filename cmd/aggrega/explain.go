@@ -5,16 +5,12 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 
 	"github.com/spf13/cobra"
 
-	"github.com/aggrega-ai/aggrega-cli/internal/docsbundle"
-	"github.com/aggrega-ai/aggrega-cli/internal/haltref"
-	"github.com/aggrega-ai/aggrega-cli/pkg/docscache"
-	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
+	"github.com/aggrega-ai/aggrega-cli/internal/explainops"
 )
 
 // newExplainCmd builds the explain command, which turns a code a build printed
@@ -31,6 +27,11 @@ import (
 // A code that resolves therefore always produces an answer, and the two ways the
 // prose can be missing are reported as themselves: a condition the published page
 // does not document yet, and a bundle this workspace has no copy of.
+//
+// The composition itself is not here. It is shared with every other surface that
+// answers this question, so this command supplies the workspace and the streams
+// and renders what comes back — which is what keeps two surfaces from answering
+// one code two ways.
 func newExplainCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "explain <code>",
@@ -65,185 +66,31 @@ func newExplainCmd() *cobra.Command {
 // runExplain writes the explanation for code to out, and whatever could not be
 // expanded to notes.
 //
-// Two conditions have to be met before anything is written, and they are reached
-// in the order that costs the least. The compiler's own declarations answer first
-// and answer offline; the published reference answers for the rest, which are the
-// conditions a provider guest declares and the host that loads it therefore never
-// registers. Only once neither resolves is the code refused.
-//
-// The condition is then written before the walk-through, so an unreachable bundle
-// costs the walk-through rather than the whole reply.
-//
-// Three shapes report failure. A code neither side resolves is refused as a code
-// that names nothing, which the reply may say outright because both sides were
-// searched. A code this binary does not declare, where the reference could not be
-// searched at all, is refused as undetermined instead — the reply states what it
-// measured and leaves both repairs standing. And a number that named a condition
-// once is refused with what it named, because what a reader needs is that the
-// number is spent.
+// The condition is written before whatever the composition refused, so an
+// unreachable bundle costs the walk-through rather than the whole reply, and a
+// page that resolved a code and then could not be read still reports the
+// condition it resolved.
 func runExplain(ctx context.Context, out, notes io.Writer, code string) error {
-	condition, declaredErr := haltref.Resolve(code)
-
-	// A retired number is answered without reading anything. It is absent from
-	// the published reference by construction — the reference refuses to carry a
-	// number that is both retired and registered — so consulting it could only
-	// spend a round trip to learn what the retirement record already said.
-	var retired *haltref.RetiredCodeError
-	if errors.As(declaredErr, &retired) {
-		return declaredErr
+	explanation, err := explainops.Compose(code, func() (explainops.Pages, error) {
+		return explainPages(ctx, notes)
+	})
+	if werr := explainops.Write(out, notes, explanation); werr != nil {
+		return werr
 	}
-
-	page, pageErr := haltPage(ctx, notes)
-
-	if declaredErr != nil {
-		if pageErr != nil {
-			// Nothing here declares the code and the published reference could not
-			// be consulted, so this cannot tell a code that names nothing from one
-			// a guest declares. Both halves are reported, because the repair
-			// differs: one is a correction to the code, the other is getting the
-			// documentation.
-			return fmt.Errorf("%w\n\n%v", withoutTheReference(declaredErr), pageErr)
-		}
-		published, perr := haltref.ResolveIn(page.reference, code)
-		if perr != nil {
-			var unknown *haltref.UnknownCodeError
-			if errors.As(perr, &unknown) {
-				// The reference was read and carries no such code. Every place a
-				// condition is declared has now been searched, so the refusal is
-				// entitled to the definitive negative it states.
-				return declaredErr
-			}
-			// The reference arrived and could not be read as the page it is, which
-			// leaves the code as undetermined as an unreachable bundle does. Both
-			// halves are reported for the reason the branch above reports both.
-			return fmt.Errorf("%w\n\n%v", withoutTheReference(declaredErr), perr)
-		}
-		condition = published
-	}
-
-	if err := writeCondition(out, condition); err != nil {
-		return err
-	}
-	if pageErr != nil {
-		return note(notes, pageErr)
-	}
-
-	entries, err := haltref.Entries(page.halts, condition.ShortCode)
-	if err != nil {
-		// A condition the page does not document is an ordinary fact about the
-		// published reference and leaves the reply above standing. Anything else
-		// from this read means the page is not the one it resolves against, which
-		// is a defect rather than an answer.
-		var undocumented *haltref.UndocumentedConditionError
-		if errors.As(err, &undocumented) {
-			return note(notes, err)
-		}
-		return err
-	}
-	for _, e := range entries {
-		if _, werr := fmt.Fprintf(out, "\n%s\n", e.Body); werr != nil {
-			return werr
-		}
-	}
-	return nil
-}
-
-// withoutTheReference narrows a refusal to what was actually measured, for the
-// paths where the published reference could not be consulted.
-//
-// The narrowing is the whole point. A code missing from this binary's own
-// declarations is not thereby a code that names nothing: a provider's conditions
-// are declared inside the guest that raises them, so the host registers none of
-// them, and only the reference tells a mistyped code from one of those. Carrying
-// the definitive negative into this path would assert something no read
-// established, and it would assert it hardest against a provider author: a
-// provider's conditions are precisely the ones the host cannot see for itself.
-//
-// A refusal of any other kind passes through unchanged, because it already
-// reports what it measured.
-func withoutTheReference(declaredErr error) error {
-	var unknown *haltref.UnknownCodeError
-	if errors.As(declaredErr, &unknown) {
-		return &haltref.UnresolvedCodeError{Code: unknown.Code}
-	}
-	return declaredErr
-}
-
-// writeCondition writes the part of the answer the binary declares: the two codes
-// the condition carries and the sentence a diagnostic naming it opens with.
-func writeCondition(out io.Writer, c cerrors.Condition) error {
-	_, err := fmt.Fprintf(out, "%s  %s\n\nA diagnostic naming this condition opens with:\n  %s\n",
-		c.ShortCode, c.Code, c.Message)
 	return err
 }
 
-// note writes a reason the walk-through is missing, and reports success: the
-// reply above it is the answer, and the reason is a note about what could not be
-// added to it.
-func note(notes io.Writer, reason error) error {
-	_, err := fmt.Fprintf(notes, "\n%s\n", reason)
-	return err
-}
-
-// explainPages are the two published pages an explanation is read from: the one
-// that resolves every declared condition, and the one that documents the
-// authoring fix for the conditions it covers.
+// explainPages reads the published pages for the workspace this invocation
+// resolved, reporting acquisition warnings on notes.
 //
-// They travel together because they come from one bundle and one read: fetching
-// them separately would let a reply resolve a code against one version of the
-// documentation and take its prose from another.
-type explainPages struct {
-	reference []byte
-	halts     []byte
-}
-
-// haltPage returns the published pages for this workspace, acquiring the
-// documentation bundle when the workspace has no copy.
-//
-// Acquisition happens here rather than at process start because this is the only
-// command that needs the bundle: a fetch wired earlier would put a registry
-// round-trip in front of every other command. The reads that follow it are
-// offline by construction — they take no target — so a warm cache reaches for
-// nothing.
-//
-// Every failure it reports names the artifact and the version it looked for, so a
-// reader who cannot get the documentation is told what was missing rather than
-// that something was not found.
-func haltPage(ctx context.Context, notes io.Writer) (explainPages, error) {
+// It is here rather than in the shared composition because resolving the
+// workspace is this surface's own act: the command line discovers a workspace per
+// invocation, where a session opened over one already holds it.
+func explainPages(ctx context.Context, notes io.Writer) (explainops.Pages, error) {
 	ws, err := workspaceFromContext(ctx)
 	if err != nil {
-		return explainPages{}, fmt.Errorf("the published documentation is not available: %w", err)
+		return explainops.Pages{}, fmt.Errorf("the published documentation is not available: %w", err)
 	}
-	cfg := ws.Config()
-	root := ws.Root()
-	cacheDir := cfg.ResolvedArtifactCacheDir()
-	ref := docsbundle.Ref(cfg.DefaultRegistry)
-	version := provenanceCompilerVersion()
-
 	warn := func(notice string) { fmt.Fprintf(notes, "warning: %s\n", notice) }
-	if _, aerr := docsbundle.EnsureCached(ctx, cfg, root, cacheDir, ref, version, nil, warn); aerr != nil {
-		return explainPages{}, fmt.Errorf("the published documentation is not available: the documentation "+
-			"bundle %s@%s is not cached for this workspace and could not be acquired (%v). The conditions "+
-			"this binary declares are still answered; every condition, including the ones a provider "+
-			"declares, is published at %s, and the walk-through of each authoring fix at %s",
-			ref, version, aerr,
-			haltref.PublishedPath(haltref.ReferencePagePath), haltref.PublishedPath(haltref.PagePath))
-	}
-
-	var pages explainPages
-	for _, p := range []struct {
-		path string
-		into *[]byte
-	}{
-		{haltref.ReferencePagePath, &pages.reference},
-		{haltref.PagePath, &pages.halts},
-	} {
-		data, _, rerr := docscache.ReadPage(root, cacheDir, ref, version, p.path)
-		if rerr != nil {
-			return explainPages{}, fmt.Errorf("the published documentation is not available: the "+
-				"documentation bundle %s@%s carries no readable %s (%v)", ref, version, p.path, rerr)
-		}
-		*p.into = data
-	}
-	return pages, nil
+	return explainops.LoadPages(ctx, ws.Config(), ws.Root(), provenanceCompilerVersion(), warn)
 }

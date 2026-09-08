@@ -505,7 +505,7 @@ func (s *Server) publishCascadeFailureDiagnostics(ctx context.Context, attempt c
 	failed := attempt.failedReleaseCandidates()
 	for _, fc := range failed {
 		s.setDiagnostics(fc.Path, []Diagnostic{
-			{Line: 1, Column: 1, Severity: editorSeverityError, Message: fc.Err.Error(), Code: diagnosticCode(fc.Err)},
+			{Line: 1, Column: 1, Severity: editorSeverityError, Message: fc.Err.Error(), ConditionCodes: conditionCodesOf(fc.Err)},
 		})
 		_ = s.publishDiagnostics(ctx, fc.Path)
 	}
@@ -529,11 +529,11 @@ func yamlErrorToDiagnostic(err error) Diagnostic {
 		}
 	}
 	return Diagnostic{
-		Line:     line,
-		Column:   1,
-		Severity: editorSeverityError,
-		Message:  err.Error(),
-		Code:     diagnosticCode(err),
+		Line:           line,
+		Column:         1,
+		Severity:       editorSeverityError,
+		Message:        err.Error(),
+		ConditionCodes: conditionCodesOf(err),
 	}
 }
 

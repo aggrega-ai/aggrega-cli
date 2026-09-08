@@ -274,9 +274,9 @@ var operationAvailability = map[string]serveAvailability{
 	// over a workspace, so an answer that said nothing would be read as being
 	// about that workspace, and for the default target that reading is wrong.
 	//
-	// A refresh is the other way round: it is the only method the daemon carries
-	// that goes out to a registry, and what it writes is the index under this
-	// workspace's own configured cache directory. Nothing is prompted for — a
+	// A refresh is the other way round: it reaches out to a registry, and what it
+	// writes is the index under this workspace's own configured cache directory.
+	// Nothing is prompted for — a
 	// registry needing a credential no ambient source carries is refused with the
 	// credential named, which is what makes it safe on a stream with nobody
 	// watching.
@@ -526,6 +526,39 @@ var operationAvailability = map[string]serveAvailability{
 	"plugin-remove":      servedAt(at("aggrega/pluginRemove", (*Server).dispatchPluginRemove)),
 	"plugin-sync":        servedAt(at("aggrega/pluginSync", (*Server).dispatchPluginSync)),
 	"plugin-gen-catalog": servedAt(at("aggrega/pluginGenCatalog", (*Server).dispatchPluginGenCatalog)),
+
+	// The session expands a code a diagnostic carried into what the compiler
+	// declares about that condition and the published entries that teach the
+	// authoring fix.
+	//
+	// It is the one method here whose subject is a code this surface itself
+	// emitted, and that is why it belongs here rather than being left to whichever
+	// surface a reader happens to reach for. A diagnostic published from this
+	// session carries the condition's quotable code and the protocol's own pointer
+	// to where conditions are explained; a client that can follow that pointer
+	// needs nothing more, and one that cannot — anything without a browser beside
+	// it — asks here for the text. A surface that emits an identifier and cannot
+	// expand it leaves its own reader with a code and nowhere to take it.
+	//
+	// The expansion is a request rather than something riding on each diagnostic,
+	// and the diagnostics are why: one is emitted on every edit, so prose carried
+	// on each would republish the same paragraphs on every keystroke to a reader
+	// who has usually already read them. Asking once is the shape that matches how
+	// often the question is actually asked.
+	//
+	// It reaches the documentation bundle and acquires it when the workspace has no
+	// copy, and it is admitted on the rule every reaching method here runs under: a
+	// caller that sent it has asked for the expansion. It is unreachable from a
+	// validation by construction — no diagnostic path expands anything — so the
+	// posture that keeps a registry out of an edit is untouched. Nothing is written
+	// to the workspace, and a bundle that cannot be acquired still answers what the
+	// binary declares and says why the prose is missing.
+	//
+	// Nothing about the answer is decided here. The composition is the shared one
+	// every surface answering this question composes through, so a code expanded
+	// here and the same code expanded at the command line are one answer in two
+	// renderings rather than two answers that agree today.
+	"explain-error": servedAt(at("aggrega/explainError", (*Server).dispatchExplainError)),
 
 	// The session reports a kind's schema, and — when the request names none —
 	// which kinds can be named: every token this binary answers to, and the
