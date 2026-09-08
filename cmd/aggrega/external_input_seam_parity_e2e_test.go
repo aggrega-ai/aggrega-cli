@@ -325,7 +325,7 @@ spec:
 // The two halves are separate because the pull resolves the closure and the
 // acquire records external inputs, and this fixture needs both without reaching
 // the network for either.
-func seedPinnedExternalInput(t *testing.T, root, releasePath string, cacheDir string) {
+func seedPinnedExternalInput(t *testing.T, root, releasePath string, workspaceRoot, cacheDir string) {
 	t.Helper()
 
 	if err := pullRun(pullConfig{
@@ -347,7 +347,7 @@ func seedPinnedExternalInput(t *testing.T, root, releasePath string, cacheDir st
 	body := []byte(seamFixtureBody)
 	sum := sha256.Sum256(body)
 	digest := hex.EncodeToString(sum[:])
-	blobDir := filepath.Join(externalinputs.StoreRoot(cacheDir), "sha256")
+	blobDir := filepath.Join(externalinputs.StoreRoot(workspaceRoot, cacheDir), "sha256")
 	if err := os.MkdirAll(blobDir, 0o755); err != nil {
 		t.Fatalf("mkdir store: %v", err)
 	}
@@ -530,16 +530,13 @@ func TestThreeSurfacesEmitByteIdenticalArtifactSets(t *testing.T) {
 	// directory has no checkout above it.
 	releasePath := writeFetchingProviderWorkspace(t, root)
 
-	// And the chdir comes before ANY cache-dir resolution. The resolved artifact
-	// cache directory is workspace-relative, so resolving it from the test's own
-	// working directory would seed the pinned blob beside this source file instead
-	// of inside the fixture — and every surface would then miss the pin and reach
-	// for the network. The daemon subprocess is anchored the same way, by its
-	// working directory.
+	// The command line writes its render under its working directory, and the
+	// daemon subprocess is anchored by its own, so the fixture root is where both
+	// have to be standing for their outputs to be comparable below.
 	t.Chdir(root)
 
 	ws := resolveTempWorkspace(t, tempWorkspaceOptions{Root: root})
-	seedPinnedExternalInput(t, root, releasePath, ws.Config().ResolvedArtifactCacheDir())
+	seedPinnedExternalInput(t, root, releasePath, ws.Root(), ws.Config().ResolvedArtifactCacheDir())
 
 	want := seamFixtureServedContent()
 

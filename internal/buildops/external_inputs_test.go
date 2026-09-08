@@ -25,6 +25,17 @@ import (
 // hold the build's own wiring rather than a service assembled for the test. A
 // build has no acquiring posture to exercise: acquisition is the pull step's,
 // and the acquiring composition is asserted where it is composed.
+//
+// Each fixture below supplies a workspace root and a RELATIVE cache directory,
+// which is what a build resolves: the configured directory names a location
+// inside the workspace, so a fixture handing over an absolute one would let a
+// seam that ignored the root pass. The store path an assertion looks at is read
+// from the same derivation the seam locates it by, so the layout is spelled in
+// one place and a fixture cannot come to disagree with the store it inspects.
+
+// testCacheDir is the workspace-relative artifact cache directory these fixtures
+// configure — the same default shape a workspace carries.
+const testCacheDir = ".aggrega/cache"
 
 // TestBuildFetchSeamRefusesUnpinned proves the frozen-closure wiring the build
 // renders through: an unpinned URL is refused with the acquisition-disabled
@@ -32,7 +43,7 @@ import (
 // so the surface can name it.
 func TestBuildFetchSeamRefusesUnpinned(t *testing.T) {
 	t.Parallel()
-	seam := compilerops.FrozenExternalInputs(t.TempDir(), &lockfile.Lockfile{})
+	seam := compilerops.FrozenExternalInputs(t.TempDir(), testCacheDir, &lockfile.Lockfile{})
 
 	_, err := seam.Fetch(context.Background(), "https://example.com/never-pinned", "unit-test")
 	if !errors.Is(err, externalinputs.ErrAcquisitionDisabled()) {
@@ -56,8 +67,8 @@ func TestBuildFetchSeamNeverAcquires(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	cacheDir := t.TempDir()
-	seam := compilerops.FrozenExternalInputs(cacheDir, &lockfile.Lockfile{})
+	wsRoot := t.TempDir()
+	seam := compilerops.FrozenExternalInputs(wsRoot, testCacheDir, &lockfile.Lockfile{})
 
 	if _, err := seam.Fetch(context.Background(), srv.URL+"/a", "unit-test"); err == nil {
 		t.Fatal("a build's render must refuse an unpinned reference even when the endpoint is reachable")
@@ -66,7 +77,7 @@ func TestBuildFetchSeamNeverAcquires(t *testing.T) {
 		t.Errorf("the endpoint was reached %d time(s); a build's render must not acquire", got)
 	}
 	sum := sha256.Sum256([]byte("must never be served to a build"))
-	blobPath := filepath.Join(cacheDir, "inputs", "sha256", hex.EncodeToString(sum[:]))
+	blobPath := filepath.Join(externalinputs.StoreRoot(wsRoot, testCacheDir), "sha256", hex.EncodeToString(sum[:]))
 	if _, err := os.Stat(blobPath); !os.IsNotExist(err) {
 		t.Errorf("a build's render wrote a blob into the store: %v", err)
 	}
@@ -82,8 +93,8 @@ func TestBuildFetchSeamSeedsLockfilePins(t *testing.T) {
 	sum := sha256.Sum256(payload)
 	digest := hex.EncodeToString(sum[:])
 
-	cacheDir := t.TempDir()
-	storeDir := filepath.Join(cacheDir, "inputs", "sha256")
+	wsRoot := t.TempDir()
+	storeDir := filepath.Join(externalinputs.StoreRoot(wsRoot, testCacheDir), "sha256")
 	if err := os.MkdirAll(storeDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -99,7 +110,7 @@ func TestBuildFetchSeamSeedsLockfilePins(t *testing.T) {
 	}}}
 
 	// A build's seam AND an unresolvable host: only the store can serve this.
-	seam := compilerops.FrozenExternalInputs(cacheDir, lf)
+	seam := compilerops.FrozenExternalInputs(wsRoot, testCacheDir, lf)
 	got, err := seam.Fetch(context.Background(), pinnedURL, "unit-test")
 	if err != nil {
 		t.Fatalf("pinned URL must be served from the store without network: %v", err)

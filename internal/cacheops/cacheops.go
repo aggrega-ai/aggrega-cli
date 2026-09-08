@@ -170,7 +170,7 @@ func (l Locations) inputsRoot() string {
 	if l.WorkspaceRoot == "" {
 		return ""
 	}
-	return externalinputs.StoreRoot(filepath.Join(l.WorkspaceRoot, l.CacheDir))
+	return externalinputs.StoreRoot(l.WorkspaceRoot, l.CacheDir)
 }
 
 // docsBundlesRoot returns the workspace documentation-bundle-cache subtree root,

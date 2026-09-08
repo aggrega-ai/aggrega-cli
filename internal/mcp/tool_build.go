@@ -207,7 +207,7 @@ func buildInvoke(s *server, ctx context.Context, args json.RawMessage) (*callToo
 	// these bytes the bytes a build emits — and an unpinned one is declined and
 	// named in the answer rather than quietly rendering a not-available envelope
 	// the caller cannot tell from real content.
-	fetchSeam := compilerops.FrozenExternalInputs(tw.cacheDir, lf)
+	fetchSeam := compilerops.FrozenExternalInputs(tw.root, tw.cacheDir, lf)
 
 	// This tool renders from the pins the workspace already carries. It neither
 	// requires a lockfile nor fills one — the two other artifact-producing

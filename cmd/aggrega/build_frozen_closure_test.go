@@ -40,7 +40,7 @@ func TestBuildHaltsOnAnUnpinnedExternalReference(t *testing.T) {
 	primeDryRunLockfile(t, root, releasePath, catalogDir)
 	ws := resolveTempWorkspace(t, tempWorkspaceOptions{Root: root})
 
-	storeRoot := externalinputs.StoreRoot(ws.Config().ResolvedArtifactCacheDir())
+	storeRoot := externalinputs.StoreRoot(ws.Root(), ws.Config().ResolvedArtifactCacheDir())
 	storeBefore := treeSnapshot(t, storeRoot)
 
 	var out, diag bytes.Buffer

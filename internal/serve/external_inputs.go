@@ -63,7 +63,7 @@ func (s *Server) irGraphPreviewInputs(
 // cannot be handed no seam at all, but it can be handed the wrong one, and this
 // is what a test compares against.
 func (s *Server) irGraphExternalInputs(lf *lockfile.Lockfile) *externalinputs.DeclineRecorder {
-	return compilerops.FrozenExternalInputs(s.wsConfig.ResolvedArtifactCacheDir(), lf)
+	return compilerops.FrozenExternalInputs(s.workspaceRoot, s.wsConfig.ResolvedArtifactCacheDir(), lf)
 }
 
 // externalInputDivergenceDiagnostics renders the advisory an inspection owes

@@ -70,17 +70,26 @@ type Service struct {
 	acquired map[string]bool
 }
 
-// StoreRoot returns the external-input store root beneath a workspace's
-// artifact cache directory:
+// StoreRoot returns the root of the external-input subtree of the workspace's
+// artifact cache:
 //
-//	<cacheDir>/inputs/
+//	<workspaceRoot>/<cacheDir>/inputs/
 //
 // It is the single site that names the `inputs/` segment; the build wires the
 // service over it and cache-inspection tools enumerate the store from it, so
 // the segment is spelled once. The `sha256/<digest>` layout beneath it is
 // owned privately by the service.
-func StoreRoot(cacheDir string) string {
-	return filepath.Join(cacheDir, "inputs")
+//
+// The workspace root is a parameter rather than left to the caller to prepend
+// because the configured cache directory is workspace-relative: it names a
+// location inside the workspace, so it resolves to a real path only against
+// that root. A signature taking the directory alone can be called correctly
+// only by a caller that already joined the two, and one that has not gets a
+// relative path — which the process working directory then resolves, giving the
+// same workspace as many stores as the places a command was run from. Taking
+// both is what makes that call impossible to write.
+func StoreRoot(workspaceRoot, cacheDir string) string {
+	return filepath.Join(workspaceRoot, cacheDir, "inputs")
 }
 
 // NewService constructs the external-inputs service over the store rooted at

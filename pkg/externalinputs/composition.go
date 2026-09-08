@@ -10,7 +10,7 @@ import (
 )
 
 // NewFrozen constructs the service for the consumption moment: a pinned
-// reference is served from the content-addressed store beneath cacheDir, and an
+// reference is served from the workspace's content-addressed store, and an
 // unpinned one refuses loudly. Nothing is fetched and nothing is written.
 //
 // Serving a pinned reference from a local content-addressed store is a read of
@@ -23,12 +23,16 @@ import (
 // transport, so this posture cannot reach the network by construction. A later
 // edit cannot turn fetching on here without first widening the signature, which
 // is a change a reader sees.
-func NewFrozen(cacheDir string, lf *lockfile.Lockfile) *Service {
-	return NewService(StoreRoot(cacheDir), false, nil, pinnedFrom(lf))
+//
+// The store is located from the workspace root and the workspace's configured
+// artifact cache directory together, which is what makes it the same store for
+// one workspace whatever directory the caller is standing in.
+func NewFrozen(workspaceRoot, cacheDir string, lf *lockfile.Lockfile) *Service {
+	return NewService(StoreRoot(workspaceRoot, cacheDir), false, nil, pinnedFrom(lf))
 }
 
 // NewAcquiring constructs the service for the acquisition moment: a pinned
-// reference is served from the content-addressed store beneath cacheDir, and an
+// reference is served from the workspace's content-addressed store, and an
 // unpinned one is fetched, pinned under its digest, and recorded for the
 // lockfile.
 //
@@ -40,9 +44,14 @@ func NewFrozen(cacheDir string, lf *lockfile.Lockfile) *Service {
 // from what is already pinned, never silently widened. An offline workspace is
 // the refusal a reader will meet, and it means offline dominates acquisition
 // mechanically, without a separate consult.
-func NewAcquiring(cacheDir string, wsCfg workspaceconfig.Config, lf *lockfile.Lockfile) *Service {
+//
+// The store is located the same way the consumption posture locates it, from the
+// workspace root and the configured cache directory together — so what a run
+// acquires into is the store a later build reads from, whatever directory either
+// was run from.
+func NewAcquiring(workspaceRoot, cacheDir string, wsCfg workspaceconfig.Config, lf *lockfile.Lockfile) *Service {
 	client, _ := egress.HTTPClient(wsCfg)
-	return NewService(StoreRoot(cacheDir), true, client, pinnedFrom(lf))
+	return NewService(StoreRoot(workspaceRoot, cacheDir), true, client, pinnedFrom(lf))
 }
 
 // pinnedFrom reads the pinned view out of a lockfile, tolerating the absence of

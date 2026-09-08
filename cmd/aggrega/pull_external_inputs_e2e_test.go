@@ -139,7 +139,7 @@ func TestPullPinsTheExternalInputsTheRenderRequests(t *testing.T) {
 		t.Errorf("pin records no provenance, so the lockfile cannot say which plugin asked for it: %+v", rec)
 	}
 
-	blob := filepath.Join(externalinputs.StoreRoot(ws.Config().ResolvedArtifactCacheDir()), "sha256", wantDigest)
+	blob := filepath.Join(externalinputs.StoreRoot(ws.Root(), ws.Config().ResolvedArtifactCacheDir()), "sha256", wantDigest)
 	if _, err := os.Stat(blob); err != nil {
 		t.Errorf("the pinned bytes are not in the store, so an offline build cannot serve them: %v", err)
 	}

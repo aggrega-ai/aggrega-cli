@@ -59,8 +59,8 @@ func cacheParityWorkspace(t *testing.T) string {
 	t.Helper()
 
 	ws := makeWorkspace(t)
-	cacheDir := filepath.Join(ws, workspaceconfig.Default().ResolvedArtifactCacheDir())
-	store := filepath.Join(externalinputs.StoreRoot(cacheDir), "sha256")
+	store := filepath.Join(
+		externalinputs.StoreRoot(ws, workspaceconfig.Default().ResolvedArtifactCacheDir()), "sha256")
 	if err := os.MkdirAll(store, 0o755); err != nil {
 		t.Fatalf("create the external-input store: %v", err)
 	}

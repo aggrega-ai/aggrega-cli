@@ -35,26 +35,31 @@ import (
 )
 
 // pinnedInputWorkspace seeds a workspace artifact cache with one external input
-// pinned into the content-addressed store, and returns the cache directory and
-// the lockfile pinning it.
+// pinned into the content-addressed store, and returns the workspace root, the
+// cache directory configured within it, and the lockfile pinning the input.
+//
+// The cache directory is RELATIVE, which is the shape a workspace configures and
+// therefore the shape production resolves: a helper handing back an absolute one
+// would let a seam that ignored the workspace root pass every assertion below.
 //
 // The blob is written under the digest the service will recompute, so a read
 // that verifies against the record succeeds. Size is recorded too: the service
 // checks it, so a record carrying the wrong one fails for the wrong reason.
-func pinnedInputWorkspace(t *testing.T, url string, body []byte) (cacheDir string, lf *lockfile.Lockfile) {
+func pinnedInputWorkspace(t *testing.T, url string, body []byte) (workspaceRoot, cacheDir string, lf *lockfile.Lockfile) {
 	t.Helper()
-	cacheDir = filepath.Join(t.TempDir(), ".aggrega", "cache")
+	workspaceRoot = t.TempDir()
+	cacheDir = ".aggrega/cache"
 	sum := sha256.Sum256(body)
 	hexDigest := hex.EncodeToString(sum[:])
 
-	blobDir := filepath.Join(externalinputs.StoreRoot(cacheDir), "sha256")
+	blobDir := filepath.Join(externalinputs.StoreRoot(workspaceRoot, cacheDir), "sha256")
 	if err := os.MkdirAll(blobDir, 0o755); err != nil {
 		t.Fatalf("mkdir store: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(blobDir, hexDigest), body, 0o644); err != nil {
 		t.Fatalf("seed store blob: %v", err)
 	}
-	return cacheDir, &lockfile.Lockfile{
+	return workspaceRoot, cacheDir, &lockfile.Lockfile{
 		Version: 1,
 		ExternalInputs: []lockfile.ExternalInput{{
 			URL:        url,
@@ -67,9 +72,9 @@ func pinnedInputWorkspace(t *testing.T, url string, body []byte) (cacheDir strin
 
 // storeEntries lists the store's blob names, so an assertion about what a Fetch
 // wrote names what appeared rather than reporting a count.
-func storeEntries(t *testing.T, cacheDir string) []string {
+func storeEntries(t *testing.T, workspaceRoot, cacheDir string) []string {
 	t.Helper()
-	dir := filepath.Join(externalinputs.StoreRoot(cacheDir), "sha256")
+	dir := filepath.Join(externalinputs.StoreRoot(workspaceRoot, cacheDir), "sha256")
 	items, err := os.ReadDir(dir)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -95,9 +100,9 @@ func TestFrozenSeamServesAPinnedReference(t *testing.T) {
 	t.Parallel()
 	const url = "https://example.com/chart-values.yaml"
 	body := []byte("replicaCount: 3\nimage: demo:1.0.0\n")
-	cacheDir, lf := pinnedInputWorkspace(t, url, body)
+	wsRoot, cacheDir, lf := pinnedInputWorkspace(t, url, body)
 
-	seam := FrozenExternalInputs(cacheDir, lf)
+	seam := FrozenExternalInputs(wsRoot, cacheDir, lf)
 	got, err := seam.Fetch(context.Background(), url, "test-node")
 	if err != nil {
 		t.Fatalf("a pinned reference must be served from the store: %v", err)
@@ -125,9 +130,9 @@ func TestFrozenSeamDeclinesAnUnpinnedReference(t *testing.T) {
 	t.Parallel()
 	const pinned = "https://example.com/pinned.yaml"
 	const unpinned = "https://example.com/not-pinned.yaml"
-	cacheDir, lf := pinnedInputWorkspace(t, pinned, []byte("pinned: true\n"))
+	wsRoot, cacheDir, lf := pinnedInputWorkspace(t, pinned, []byte("pinned: true\n"))
 
-	seam := FrozenExternalInputs(cacheDir, lf)
+	seam := FrozenExternalInputs(wsRoot, cacheDir, lf)
 	_, err := seam.Fetch(context.Background(), unpinned, "test-node")
 	if err == nil {
 		t.Fatal("an unpinned reference must refuse loudly under a frozen closure")
@@ -166,14 +171,14 @@ func TestFrozenSeamWritesNothingAndCannotReachTheNetwork(t *testing.T) {
 	const pinned = "https://example.com/pinned.yaml"
 	const unpinned = "https://example.com/not-pinned.yaml"
 	body := []byte("pinned: true\n")
-	cacheDir, lf := pinnedInputWorkspace(t, pinned, body)
+	wsRoot, cacheDir, lf := pinnedInputWorkspace(t, pinned, body)
 
-	before := storeEntries(t, cacheDir)
+	before := storeEntries(t, wsRoot, cacheDir)
 	if len(before) != 1 {
 		t.Fatalf("precondition: the store must hold exactly the seeded blob; got %v", before)
 	}
 
-	seam := FrozenExternalInputs(cacheDir, lf)
+	seam := FrozenExternalInputs(wsRoot, cacheDir, lf)
 	if _, err := seam.Fetch(context.Background(), pinned, "n"); err != nil {
 		t.Fatalf("serve a pinned reference: %v", err)
 	}
@@ -181,7 +186,7 @@ func TestFrozenSeamWritesNothingAndCannotReachTheNetwork(t *testing.T) {
 		t.Fatal("the unpinned reference must refuse, or the write assertion below covers nothing")
 	}
 
-	after := storeEntries(t, cacheDir)
+	after := storeEntries(t, wsRoot, cacheDir)
 	if strings.Join(after, ",") != strings.Join(before, ",") {
 		t.Errorf("the frozen seam changed the store:\nbefore %v\nafter  %v", before, after)
 	}
@@ -201,7 +206,7 @@ func TestFrozenSeamWithNoLockfileDeclinesEverything(t *testing.T) {
 	t.Parallel()
 	const url = "https://example.com/anything.yaml"
 
-	seam := FrozenExternalInputs(t.TempDir(), nil)
+	seam := FrozenExternalInputs(t.TempDir(), ".aggrega/cache", nil)
 	if seam == nil {
 		t.Fatal("a nil lockfile must still yield a seam")
 	}

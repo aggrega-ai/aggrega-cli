@@ -430,7 +430,7 @@ func TestBuildDryRunDeclinesAnUnpinnedExternalReference(t *testing.T) {
 	primeDryRunLockfile(t, root, releasePath, catalogDir)
 	ws := resolveTempWorkspace(t, tempWorkspaceOptions{Root: root})
 
-	storeRoot := externalinputs.StoreRoot(ws.Config().ResolvedArtifactCacheDir())
+	storeRoot := externalinputs.StoreRoot(ws.Root(), ws.Config().ResolvedArtifactCacheDir())
 	storeBefore := treeSnapshot(t, storeRoot)
 
 	var out, diag bytes.Buffer
@@ -540,7 +540,7 @@ func TestBuildDryRunServesAPinnedExternalReferenceFromTheStore(t *testing.T) {
 	srv.Close()
 	fetchesBeforeDryRun := served
 
-	storeRoot := externalinputs.StoreRoot(ws.Config().ResolvedArtifactCacheDir())
+	storeRoot := externalinputs.StoreRoot(ws.Root(), ws.Config().ResolvedArtifactCacheDir())
 	storeBefore := treeSnapshot(t, storeRoot)
 	if len(storeBefore) == 0 {
 		t.Fatal("the input store is empty, so 'the store is unchanged' says nothing")

@@ -70,7 +70,7 @@ func writeSourceSlot(t *testing.T, wsRoot, kind, srcURL, version, dg string, blo
 // writeInputBlob writes an external-input store blob named by its hex digest.
 func writeInputBlob(t *testing.T, wsRoot, hexDigest string, blob []byte) string {
 	t.Helper()
-	dir := filepath.Join(externalinputs.StoreRoot(filepath.Join(wsRoot, cacheTestCacheDir)), "sha256")
+	dir := filepath.Join(externalinputs.StoreRoot(wsRoot, cacheTestCacheDir), "sha256")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatalf("mkdir inputs: %v", err)
 	}

@@ -19,6 +19,13 @@ var _ wasm.FetchService = (*externalinputs.DeclineRecorder)(nil)
 // over the workspace artifact cache's inputs store and seeded with the Release
 // lockfile's pinned view.
 //
+// The workspace root travels with the cache directory because the store is
+// anchored to the workspace rather than to the caller's working directory, and
+// every surface here already holds the root it renders against. Passing the pair
+// is what makes all three surfaces read one store: a surface that passed only
+// the configured directory would render against whichever store happened to sit
+// beneath where it was launched.
+//
 // It lives beside the computation every rendering surface calls rather than
 // inside any one of them. That placement is the point: the seam a rendering
 // surface attaches is one description, so two surfaces cannot come to hold two
@@ -35,6 +42,6 @@ var _ wasm.FetchService = (*externalinputs.DeclineRecorder)(nil)
 // Returning the recorder rather than the service is deliberate — the caller
 // needs to know which references were declined in order to say so, and the
 // service does not keep that list.
-func FrozenExternalInputs(cacheDir string, lf *lockfile.Lockfile) *externalinputs.DeclineRecorder {
-	return externalinputs.NewDeclineRecorder(externalinputs.NewFrozen(cacheDir, lf))
+func FrozenExternalInputs(workspaceRoot, cacheDir string, lf *lockfile.Lockfile) *externalinputs.DeclineRecorder {
+	return externalinputs.NewDeclineRecorder(externalinputs.NewFrozen(workspaceRoot, cacheDir, lf))
 }

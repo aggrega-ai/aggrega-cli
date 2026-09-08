@@ -67,7 +67,7 @@ func discoverExternalInputs(
 	// network-egress gate, which leaves the service able to serve what is pinned
 	// and unable to fetch what is not — so offline needs no separate consult and
 	// cannot be answered differently here than it is at a build.
-	svc := externalinputs.NewAcquiring(cacheDir, wsCfg, lf)
+	svc := externalinputs.NewAcquiring(workspaceRoot, cacheDir, wsCfg, lf)
 
 	_, err := compilerops.PreviewForArtifact(
 		context.Background(),

@@ -20,15 +20,25 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
-// seedPinnedBlob writes payload into the store beneath cacheDir at the layout
-// the composed postures own, and returns the lockfile view pinning url to it.
-// It seeds the store directly rather than through an acquisition so that a test
+// testCacheDir is the workspace-relative artifact cache directory these tests
+// configure. It is relative because that is what a workspace configures, so the
+// postures below are exercised on the input production hands them rather than on
+// a pre-resolved one that would mask a missing workspace root.
+const testCacheDir = ".aggrega/cache"
+
+// seedPinnedBlob writes payload into the workspace's store at the layout the
+// composed postures own, and returns the lockfile view pinning url to it. It
+// seeds the store directly rather than through an acquisition so that a test
 // asserting a store read cannot pass by having fetched.
-func seedPinnedBlob(t *testing.T, cacheDir, url string, payload []byte) *lockfile.Lockfile {
+//
+// The store location is read from the exported derivation the postures use, not
+// spelled here, so the fixture and the code under test cannot disagree about
+// where the store is.
+func seedPinnedBlob(t *testing.T, workspaceRoot, cacheDir, url string, payload []byte) *lockfile.Lockfile {
 	t.Helper()
 	sum := sha256.Sum256(payload)
 	digest := hex.EncodeToString(sum[:])
-	dir := filepath.Join(cacheDir, "inputs", "sha256")
+	dir := filepath.Join(externalinputs.StoreRoot(workspaceRoot, cacheDir), "sha256")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -58,7 +68,7 @@ func TestNewFrozenRefusesAnUnpinnedReference(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			svc := externalinputs.NewFrozen(t.TempDir(), tc.lf)
+			svc := externalinputs.NewFrozen(t.TempDir(), testCacheDir, tc.lf)
 			_, err := svc.Fetch(context.Background(), "https://example.com/never-pinned", "unit-test")
 			if !errors.Is(err, externalinputs.ErrAcquisitionDisabled()) {
 				t.Fatalf("the consumption posture must refuse an unpinned reference with the frozen-closure condition; got %v", err)
@@ -74,10 +84,10 @@ func TestNewFrozenServesAPinnedReferenceFromTheStore(t *testing.T) {
 	t.Parallel()
 	const url = "https://unreachable.invalid/pinned.txt"
 	payload := []byte("already pinned")
-	cacheDir := t.TempDir()
-	lf := seedPinnedBlob(t, cacheDir, url, payload)
+	wsRoot := t.TempDir()
+	lf := seedPinnedBlob(t, wsRoot, testCacheDir, url, payload)
 
-	svc := externalinputs.NewFrozen(cacheDir, lf)
+	svc := externalinputs.NewFrozen(wsRoot, testCacheDir, lf)
 	got, err := svc.Fetch(context.Background(), url, "unit-test")
 	if err != nil {
 		t.Fatalf("a pinned reference must be served from the store: %v", err)
@@ -103,8 +113,8 @@ func TestNewAcquiringPinsUnderTheStoreRoot(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	cacheDir := t.TempDir()
-	svc := externalinputs.NewAcquiring(cacheDir, workspaceconfig.Config{}, nil)
+	wsRoot := t.TempDir()
+	svc := externalinputs.NewAcquiring(wsRoot, testCacheDir, workspaceconfig.Config{}, nil)
 
 	got, err := svc.Fetch(context.Background(), srv.URL+"/a", "unit-test")
 	if err != nil {
@@ -115,7 +125,7 @@ func TestNewAcquiringPinsUnderTheStoreRoot(t *testing.T) {
 	}
 
 	sum := sha256.Sum256(served)
-	blob := filepath.Join(cacheDir, "inputs", "sha256", hex.EncodeToString(sum[:]))
+	blob := filepath.Join(externalinputs.StoreRoot(wsRoot, testCacheDir), "sha256", hex.EncodeToString(sum[:]))
 	if _, err := os.Stat(blob); err != nil {
 		t.Errorf("the pinned blob is not under the store root the posture owns: %v", err)
 	}
@@ -138,10 +148,10 @@ func TestNewAcquiringWithoutEgressStillServesPinnedBytes(t *testing.T) {
 	t.Parallel()
 	const pinnedURL = "https://unreachable.invalid/pinned.txt"
 	payload := []byte("pinned before the workspace went offline")
-	cacheDir := t.TempDir()
-	lf := seedPinnedBlob(t, cacheDir, pinnedURL, payload)
+	wsRoot := t.TempDir()
+	lf := seedPinnedBlob(t, wsRoot, testCacheDir, pinnedURL, payload)
 
-	svc := externalinputs.NewAcquiring(cacheDir, workspaceconfig.Config{Offline: true}, lf)
+	svc := externalinputs.NewAcquiring(wsRoot, testCacheDir, workspaceconfig.Config{Offline: true}, lf)
 
 	got, err := svc.Fetch(context.Background(), pinnedURL, "unit-test")
 	if err != nil {
