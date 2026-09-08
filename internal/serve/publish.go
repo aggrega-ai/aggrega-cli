@@ -264,10 +264,13 @@ func (s *Server) dispatchPublishEntity(ctx context.Context, req *jsonRPCRequest)
 			return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
 		}
 	}
-	cfg, paramErr := s.publishEntityConfig(params)
+	progress := s.progressFor(ctx)
+	defer progress.done()
+	cfg, paramErr := s.publishEntityConfig(params, progress.writer())
 	if paramErr != nil {
 		return s.writeErrorEnvelope(ctx, req.ID, paramErr)
 	}
+	progress.begin("Publishing a catalog entity")
 	result, errEnvelope := runPublishEntity(cfg)
 	if ctx.Err() != nil {
 		return nil
@@ -287,7 +290,12 @@ func (s *Server) dispatchPublishEntity(ctx context.Context, req *jsonRPCRequest)
 // and that is the mechanism rather than an omission — a nil token getter means the
 // shared identity ladder has no rung that needs a person, so it refuses instead of
 // blocking on an answer nobody can give.
-func (s *Server) publishEntityConfig(params publishEntityParams) (publishops.PushConfig, *jsonRPCError) {
+// progressOut is where the publication writes its own account of itself. It is
+// a parameter rather than a discard fixed here because the caller decides
+// whether it is watching: a request that asked to be reported on gets those
+// lines as they are written, and one that did not passes a writer that drops
+// them.
+func (s *Server) publishEntityConfig(params publishEntityParams, progressOut io.Writer) (publishops.PushConfig, *jsonRPCError) {
 	if s.resolvedWorkspace == nil {
 		return publishops.PushConfig{}, &jsonRPCError{
 			Code:    jsonRPCInternalError,
@@ -324,15 +332,17 @@ func (s *Server) publishEntityConfig(params publishEntityParams) (publishops.Pus
 		Workspace:         s.resolvedWorkspace,
 		IdentitySupply:    daemonIdentitySupply,
 		DestinationSupply: daemonDestinationSupply,
-		Out:               io.Discard,
+		Out:               progressOut,
 	}, nil
 }
 
 // runPublishEntity runs the publication and shapes the answer.
 //
-// The operation's status lines are discarded rather than folded into the response.
-// They are prose written for a person watching a terminal, and this surface answers
-// with the facts themselves.
+// The operation's status lines are not folded into the response. They are prose
+// written for a person watching, and the response answers with the facts
+// themselves; a caller that wants the prose asks to be reported on and reads it
+// as it is written, on the progress channel, rather than as a field of the
+// answer.
 func runPublishEntity(cfg publishops.PushConfig) (publishEntityResult, *jsonRPCError) {
 	res, err := publishops.Push(cfg)
 	if err != nil {
@@ -381,10 +391,13 @@ func (s *Server) dispatchPublishArtifact(ctx context.Context, req *jsonRPCReques
 			return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
 		}
 	}
-	cfg, paramErr := s.publishArtifactConfig(params)
+	progress := s.progressFor(ctx)
+	defer progress.done()
+	cfg, paramErr := s.publishArtifactConfig(params, progress.writer())
 	if paramErr != nil {
 		return s.writeErrorEnvelope(ctx, req.ID, paramErr)
 	}
+	progress.begin("Publishing a data artifact")
 	result, errEnvelope := runPublishArtifact(cfg)
 	if ctx.Err() != nil {
 		return nil
@@ -397,7 +410,10 @@ func (s *Server) dispatchPublishArtifact(ctx context.Context, req *jsonRPCReques
 
 // publishArtifactConfig projects the request onto the data-artifact publication's
 // input contract, refusing everything that cannot be turned into one.
-func (s *Server) publishArtifactConfig(params publishArtifactParams) (publishops.PushArtifactConfig, *jsonRPCError) {
+//
+// progressOut carries the operation's own account of itself, on the same terms
+// as the catalog-entity publication above.
+func (s *Server) publishArtifactConfig(params publishArtifactParams, progressOut io.Writer) (publishops.PushArtifactConfig, *jsonRPCError) {
 	if s.resolvedWorkspace == nil {
 		return publishops.PushArtifactConfig{}, &jsonRPCError{
 			Code:    jsonRPCInternalError,
@@ -429,7 +445,7 @@ func (s *Server) publishArtifactConfig(params publishArtifactParams) (publishops
 		DryRun:            params.DryRun,
 		Workspace:         s.resolvedWorkspace,
 		DestinationSupply: daemonDestinationSupply,
-		Out:               io.Discard,
+		Out:               progressOut,
 	}, nil
 }
 
@@ -478,10 +494,13 @@ func (s *Server) dispatchSignArtifacts(ctx context.Context, req *jsonRPCRequest)
 			return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
 		}
 	}
-	cfg, paramErr := s.signArtifactsConfig(params)
+	progress := s.progressFor(ctx)
+	defer progress.done()
+	cfg, paramErr := s.signArtifactsConfig(params, progress.writer())
 	if paramErr != nil {
 		return s.writeErrorEnvelope(ctx, req.ID, paramErr)
 	}
+	progress.begin("Signing published artifacts")
 	result, errEnvelope := runSignArtifacts(cfg)
 	if ctx.Err() != nil {
 		return nil
@@ -494,7 +513,11 @@ func (s *Server) dispatchSignArtifacts(ctx context.Context, req *jsonRPCRequest)
 
 // signArtifactsConfig projects the request onto the signing operation's input
 // contract.
-func (s *Server) signArtifactsConfig(params signArtifactsParams) (publishops.SignConfig, *jsonRPCError) {
+//
+// progressOut carries the operation's own account of itself, on the same terms
+// as the publications above. A batch walks its references one at a time, so what
+// reaches a watching caller is which reference is being signed as it is signed.
+func (s *Server) signArtifactsConfig(params signArtifactsParams, progressOut io.Writer) (publishops.SignConfig, *jsonRPCError) {
 	if s.resolvedWorkspace == nil {
 		return publishops.SignConfig{}, &jsonRPCError{
 			Code:    jsonRPCInternalError,
@@ -519,7 +542,7 @@ func (s *Server) signArtifactsConfig(params signArtifactsParams) (publishops.Sig
 		IDToken:        params.IdentityToken,
 		Workspace:      s.resolvedWorkspace,
 		IdentitySupply: daemonIdentitySupply,
-		Out:            io.Discard,
+		Out:            progressOut,
 	}, nil
 }
 
@@ -567,10 +590,13 @@ func (s *Server) dispatchDeprecateArtifact(ctx context.Context, req *jsonRPCRequ
 			return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
 		}
 	}
-	cfg, paramErr := s.deprecateArtifactConfig(params)
+	progress := s.progressFor(ctx)
+	defer progress.done()
+	cfg, paramErr := s.deprecateArtifactConfig(params, progress.writer())
 	if paramErr != nil {
 		return s.writeErrorEnvelope(ctx, req.ID, paramErr)
 	}
+	progress.begin("Withdrawing published artifacts")
 	result, errEnvelope := runDeprecateArtifact(cfg)
 	if ctx.Err() != nil {
 		return nil
@@ -588,7 +614,10 @@ func (s *Server) dispatchDeprecateArtifact(ctx context.Context, req *jsonRPCRequ
 // layer's terminal fork unreachable: with nobody watching there is nothing to
 // prompt, so the request must carry what a person would have been asked for, and a
 // request that does not is refused naming the fields it is missing.
-func (s *Server) deprecateArtifactConfig(params deprecateArtifactParams) (publishops.DeprecateConfig, *jsonRPCError) {
+//
+// progressOut carries the operation's own account of itself, on the same terms
+// as the publications above.
+func (s *Server) deprecateArtifactConfig(params deprecateArtifactParams, progressOut io.Writer) (publishops.DeprecateConfig, *jsonRPCError) {
 	if s.resolvedWorkspace == nil {
 		return publishops.DeprecateConfig{}, &jsonRPCError{
 			Code:    jsonRPCInternalError,
@@ -632,7 +661,7 @@ func (s *Server) deprecateArtifactConfig(params deprecateArtifactParams) (publis
 		IDToken:        params.IdentityToken,
 		Workspace:      s.resolvedWorkspace,
 		IdentitySupply: daemonIdentitySupply,
-		Out:            io.Discard,
+		Out:            progressOut,
 	}, nil
 }
 

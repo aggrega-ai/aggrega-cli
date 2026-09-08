@@ -24,16 +24,19 @@ import (
 )
 
 // initializeParams is the request shape for `aggrega/initialize`. The
-// daemon reads positionEncodings off the client's capabilities; other
-// LSP initialize fields are accepted but ignored today.
+// daemon reads positionEncodings and workDoneProgress off the client's
+// capabilities; other LSP initialize fields are accepted but ignored
+// today.
 type initializeParams struct {
 	Capabilities clientCapabilities `json:"capabilities"`
 }
 
 // clientCapabilities mirrors a tiny slice of LSP's client capabilities
-// shape — only the position-encoding negotiation surface.
+// shape — the position-encoding negotiation surface, and whether the
+// client can handle work-in-progress notifications.
 type clientCapabilities struct {
 	General *generalCapabilities `json:"general,omitempty"`
+	Window  *windowCapabilities  `json:"window,omitempty"`
 }
 
 // generalCapabilities carries LSP 3.17's general capability bag. The
@@ -42,12 +45,26 @@ type generalCapabilities struct {
 	PositionEncodings []string `json:"positionEncodings,omitempty"`
 }
 
+// windowCapabilities carries LSP 3.17's window capability bag. The
+// daemon consumes workDoneProgress, which says whether the client can
+// handle the notifications a request's progress token would produce;
+// everything else is ignored.
+type windowCapabilities struct {
+	WorkDoneProgress bool `json:"workDoneProgress,omitempty"`
+}
+
 // serverCapabilities is the daemon's reply on initialize. The wire
-// shape is intentionally compact — only the position-encoding
-// negotiation result. Future capabilities extend this struct without
-// breaking existing clients.
+// shape is intentionally compact — the position-encoding negotiation
+// result, and whether the daemon will report work in progress to this
+// client. Future capabilities extend this struct without breaking
+// existing clients.
+//
+// WorkDoneProgress is omitted when the client declared nothing, so a
+// client that does not negotiate progress reads exactly the reply it
+// read before the field existed.
 type serverCapabilities struct {
 	PositionEncoding string `json:"positionEncoding"`
+	WorkDoneProgress bool   `json:"workDoneProgress,omitempty"`
 }
 
 // initializeResult is the response shape for aggrega/initialize.
@@ -179,6 +196,12 @@ func (s *Server) dispatchActiveRelease(ctx context.Context, req *jsonRPCRequest)
 // negotiation occurs (s.positionEncoding is initialized to UTF-16
 // in Run before dispatchInitialize ever runs). Unknown encoding
 // strings in the client's list are ignored.
+//
+// It also records whether the client can handle work-in-progress
+// notifications, and echoes that back. There is nothing to select
+// between here — the client either handles them or it does not — so
+// what the reply carries is the client's own declaration, which is what
+// tells a client its tokens will be honoured before it sends one.
 func (s *Server) dispatchInitialize(ctx context.Context, req *jsonRPCRequest) error {
 	var params initializeParams
 	if err := json.Unmarshal(req.Params, &params); err != nil {
@@ -186,9 +209,12 @@ func (s *Server) dispatchInitialize(ctx context.Context, req *jsonRPCRequest) er
 	}
 	selected := selectPositionEncoding(params.Capabilities)
 	s.setPositionEncoding(selected)
+	progress := clientHandlesWorkDoneProgress(params.Capabilities)
+	s.setWorkDoneProgress(progress)
 	if err := s.writeResult(ctx, req.ID, initializeResult{
 		Capabilities: serverCapabilities{
 			PositionEncoding: string(selected),
+			WorkDoneProgress: progress,
 		},
 		WorkspaceRoot:   s.workspaceRoot,
 		ConfigSource:    s.configSource,
@@ -212,6 +238,15 @@ func (s *Server) dispatchInitialize(ctx context.Context, req *jsonRPCRequest) er
 		}
 	}
 	return nil
+}
+
+// clientHandlesWorkDoneProgress reports whether the client declared it
+// can handle work-in-progress notifications. A client that sent no
+// window capability, or sent one without the field, has declared
+// nothing — which reads as unsupported, so the daemon never pushes a
+// notification such a client has no handler for.
+func clientHandlesWorkDoneProgress(caps clientCapabilities) bool {
+	return caps.Window != nil && caps.Window.WorkDoneProgress
 }
 
 // selectPositionEncoding applies the server-preference dispatch over

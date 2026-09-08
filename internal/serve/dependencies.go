@@ -130,7 +130,9 @@ func (s *Server) dispatchResolveDependencies(ctx context.Context, req *jsonRPCRe
 	if err := json.Unmarshal(req.Params, &params); err != nil {
 		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
 	}
-	result, errEnvelope := s.handleResolveDependencies(ctx, params)
+	progress := s.progressFor(ctx)
+	defer progress.done()
+	result, errEnvelope := s.handleResolveDependencies(ctx, params, progress)
 	if ctx.Err() != nil {
 		// Cancelled mid-resolution (shutdown). Drop the response; the dispatcher
 		// exits via the drain timer.
@@ -175,11 +177,20 @@ func (s *Server) dispatchResolveDependencies(ctx context.Context, req *jsonRPCRe
 // source, and a fork that would have been put to a person halts loudly naming
 // what to supply. A hang would be the observable failure otherwise, and a caller
 // on this surface has no way to answer.
-func (s *Server) handleResolveDependencies(ctx context.Context, params resolveDependenciesParams) (resolveDependenciesResult, *jsonRPCError) {
+// # It reports what it is doing while it does it
+//
+// The resolution writes its own account of itself as it works — which pin was
+// reused, which signature was checked, which version was skipped — and that
+// stream is what fills the answer's notices. A request that asked to be reported
+// on gets each of those lines as it is raised, on the progress channel, in the
+// resolution's own words. Nothing is composed here: the answer's notices and the
+// reported lines are one stream read twice, so the two cannot disagree.
+func (s *Server) handleResolveDependencies(ctx context.Context, params resolveDependenciesParams, progress *progressRun) (resolveDependenciesResult, *jsonRPCError) {
 	releasePath, paramErr := resolveReleaseParam(s.workspaceRoot, params.Release)
 	if paramErr != nil {
 		return resolveDependenciesResult{}, paramErr
 	}
+	progress.begin("Resolving dependencies")
 
 	var notices bytes.Buffer
 	res, err := pullops.Run(pullops.Config{
@@ -190,7 +201,7 @@ func (s *Server) handleResolveDependencies(ctx context.Context, params resolveDe
 		Verify:          params.Verify,
 		CompilerVersion: s.compilerVersion,
 		Toolchain:       s.toolchain,
-		DiagOut:         &notices,
+		DiagOut:         io.MultiWriter(&notices, progress.writer()),
 		// No prompt is supplied, and that is the posture rather than an omission:
 		// see the method documentation above.
 	})
@@ -228,7 +239,9 @@ func (s *Server) dispatchAcquireExternalInputs(ctx context.Context, req *jsonRPC
 	if err := json.Unmarshal(req.Params, &params); err != nil {
 		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
 	}
-	result, errEnvelope := s.handleAcquireExternalInputs(ctx, params)
+	progress := s.progressFor(ctx)
+	defer progress.done()
+	result, errEnvelope := s.handleAcquireExternalInputs(ctx, params, progress)
 	if ctx.Err() != nil {
 		return nil
 	}
@@ -253,18 +266,23 @@ func (s *Server) dispatchAcquireExternalInputs(ctx context.Context, req *jsonRPC
 // supplied here rather than reimplemented: a build that fills its own lockfile
 // runs the same resolution every other surface runs, so a workspace configured to
 // fill automatically behaves identically whichever surface asked.
-func (s *Server) handleAcquireExternalInputs(ctx context.Context, params acquireExternalInputsParams) (acquireExternalInputsResult, *jsonRPCError) {
+// It reports what it is doing while it does it, on the same terms the
+// resolution above does: the acquisition's own account of itself reaches a
+// request that asked to be reported on, and the answer's notices are the same
+// stream read a second time.
+func (s *Server) handleAcquireExternalInputs(ctx context.Context, params acquireExternalInputsParams, progress *progressRun) (acquireExternalInputsResult, *jsonRPCError) {
 	releasePath, paramErr := resolveReleaseParam(s.workspaceRoot, params.Release)
 	if paramErr != nil {
 		return acquireExternalInputsResult{}, paramErr
 	}
+	progress.begin("Acquiring external inputs")
 
 	var notices bytes.Buffer
 	acquired, err := buildops.Acquire(buildops.Config{
 		Workspace:       s.resolvedWorkspace,
 		ReleasePath:     releasePath,
 		CompilerVersion: s.compilerVersion,
-		DiagOut:         &notices,
+		DiagOut:         io.MultiWriter(&notices, progress.writer()),
 		Out:             io.Discard,
 		Pull: func(upgrade, _ bool, pullDiagOut, _ io.Writer) error {
 			_, perr := pullops.Run(pullops.Config{

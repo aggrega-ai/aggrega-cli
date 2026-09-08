@@ -6,6 +6,7 @@ package serve
 import (
 	"context"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -411,7 +412,7 @@ func TestPublicationRefusesLoudlyWithNoCredentialAndDoesNotHang(t *testing.T) {
 	// different refusal and would have made the assertion below pass for the wrong
 	// reason. So the destination is present and the credential is what is missing.
 	t.Run("a publication that must sign", func(t *testing.T) {
-		cfg, paramErr := srv.publishEntityConfig(publishEntityParams{Entity: "1.0.0/entity.yaml"})
+		cfg, paramErr := srv.publishEntityConfig(publishEntityParams{Entity: "1.0.0/entity.yaml"}, io.Discard)
 		if paramErr != nil {
 			t.Fatalf("publishEntityConfig: %s", paramErr.Message)
 		}
@@ -508,7 +509,7 @@ func TestPublishEntityOnTheDaemonRefusesUnsignedWhereASignatureIsRequired(t *tes
 
 	// The same request against a destination this test holds, so what the refusal
 	// did to the registry is readable rather than assumed.
-	cfg, paramErr := srv.publishEntityConfig(publishEntityParams{Entity: "1.0.0/entity.yaml", Sign: &unsigned})
+	cfg, paramErr := srv.publishEntityConfig(publishEntityParams{Entity: "1.0.0/entity.yaml", Sign: &unsigned}, io.Discard)
 	if paramErr != nil {
 		t.Fatalf("publishEntityConfig: %s", paramErr.Message)
 	}
@@ -546,7 +547,7 @@ func TestSignatureTheDaemonAttachedDoesNotVerifyAgainstAnotherKey(t *testing.T) 
 	workspaceYAML, pubPEM := keyedSigningWorkspace(t)
 	srv, _ := publishFixture(t, workspaceYAML)
 
-	cfg, paramErr := srv.publishEntityConfig(publishEntityParams{Entity: "1.0.0/entity.yaml"})
+	cfg, paramErr := srv.publishEntityConfig(publishEntityParams{Entity: "1.0.0/entity.yaml"}, io.Discard)
 	if paramErr != nil {
 		t.Fatalf("publishEntityConfig: %s", paramErr.Message)
 	}
@@ -629,7 +630,7 @@ func TestSignArtifactsOnTheDaemonSignsWhatIsPublishedAndRefusesWhatIsNot(t *test
 
 	// Publish WITHOUT a signature so the signing method is what attaches one.
 	unsigned := false
-	cfg, paramErr := srv.publishEntityConfig(publishEntityParams{Entity: "1.0.0/entity.yaml", Sign: &unsigned})
+	cfg, paramErr := srv.publishEntityConfig(publishEntityParams{Entity: "1.0.0/entity.yaml", Sign: &unsigned}, io.Discard)
 	if paramErr != nil {
 		t.Fatalf("publishEntityConfig: %s", paramErr.Message)
 	}
@@ -643,7 +644,7 @@ func TestSignArtifactsOnTheDaemonSignsWhatIsPublishedAndRefusesWhatIsNot(t *test
 	}
 
 	reference := published.Reference + ":1.0.0"
-	signCfg, signParamErr := srv.signArtifactsConfig(signArtifactsParams{References: []string{reference}})
+	signCfg, signParamErr := srv.signArtifactsConfig(signArtifactsParams{References: []string{reference}}, io.Discard)
 	if signParamErr != nil {
 		t.Fatalf("signArtifactsConfig: %s", signParamErr.Message)
 	}
@@ -664,7 +665,7 @@ func TestSignArtifactsOnTheDaemonSignsWhatIsPublishedAndRefusesWhatIsNot(t *test
 	}
 
 	absent := publishTestRegistry + "/component/core/absent:9.9.9"
-	missCfg, missParamErr := srv.signArtifactsConfig(signArtifactsParams{References: []string{absent}})
+	missCfg, missParamErr := srv.signArtifactsConfig(signArtifactsParams{References: []string{absent}}, io.Discard)
 	if missParamErr != nil {
 		t.Fatalf("signArtifactsConfig: %s", missParamErr.Message)
 	}
@@ -696,7 +697,7 @@ func TestDeprecateArtifactOnTheDaemonAttachesAMarkerAndRefusesAnAbsentSubject(t 
 		Reference: reference,
 		Severity:  "warning",
 		Reason:    "superseded by 2.0.0",
-	})
+	}, io.Discard)
 	if paramErr != nil {
 		t.Fatalf("deprecateArtifactConfig: %s", paramErr.Message)
 	}
@@ -719,7 +720,7 @@ func TestDeprecateArtifactOnTheDaemonAttachesAMarkerAndRefusesAnAbsentSubject(t 
 	absent := publishTestRegistry + "/component/core/absent:9.9.9"
 	missCfg, missParamErr := srv.deprecateArtifactConfig(deprecateArtifactParams{
 		Reference: absent, Severity: "warning", Reason: "never published",
-	})
+	}, io.Discard)
 	if missParamErr != nil {
 		t.Fatalf("deprecateArtifactConfig: %s", missParamErr.Message)
 	}
@@ -736,7 +737,7 @@ func TestDeprecateArtifactOnTheDaemonAttachesAMarkerAndRefusesAnAbsentSubject(t 
 // gets there by the path under test rather than by a hand-built push.
 func publishThroughDaemon(t *testing.T, srv *Server, store oras.Target) publishEntityResult {
 	t.Helper()
-	cfg, paramErr := srv.publishEntityConfig(publishEntityParams{Entity: "1.0.0/entity.yaml"})
+	cfg, paramErr := srv.publishEntityConfig(publishEntityParams{Entity: "1.0.0/entity.yaml"}, io.Discard)
 	if paramErr != nil {
 		t.Fatalf("publishEntityConfig: %s", paramErr.Message)
 	}

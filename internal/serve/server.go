@@ -688,6 +688,19 @@ type Server struct {
 	// the read sites run on different worker goroutines under the pool.
 	positionEncodingValue atomic.Value
 
+	// workDoneProgressValue holds whether the client said it can handle
+	// the work-in-progress notifications a progress token would produce.
+	// Defaults to false — an undeclared capability is an unsupported one,
+	// which is the protocol's own reading — so a session that negotiates
+	// nothing is never sent a notification it did not ask for. The
+	// aggrega/initialize handler stores it from the client's
+	// window.workDoneProgress capability, and the dispatch path loads it
+	// via the workDoneProgress accessor to decide whether a request may
+	// carry a token at all. Held in an atomic value for the same reason
+	// the position encoding is: the initialize handler that stores it and
+	// the read site run on different worker goroutines under the pool.
+	workDoneProgressValue atomic.Bool
+
 	// testInDispatchHook, when non-nil, runs at the top of handle()
 	// before per-method dispatch. The production setup never sets
 	// this field — it is the test seam tests use to inject
@@ -720,6 +733,20 @@ func (s *Server) positionEncoding() yamlpos.PositionEncoding {
 // by the initialize handler when the client negotiates an encoding.
 func (s *Server) setPositionEncoding(enc yamlpos.PositionEncoding) {
 	s.positionEncodingValue.Store(enc)
+}
+
+// workDoneProgress reports whether this session may be sent
+// work-in-progress notifications. A Server that never handled an
+// initialize, or one whose client declared nothing, reports false.
+func (s *Server) workDoneProgress() bool {
+	return s.workDoneProgressValue.Load()
+}
+
+// setWorkDoneProgress stores whether the client can handle
+// work-in-progress notifications. Called by the initialize handler with
+// what the client declared.
+func (s *Server) setWorkDoneProgress(supported bool) {
+	s.workDoneProgressValue.Store(supported)
 }
 
 // canonicalFile renders a path naming a document into the one spelling every

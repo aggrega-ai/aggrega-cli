@@ -452,6 +452,35 @@ func (s *Server) handle(ser *serializer, seq int64, req *jsonRPCRequest) []byte 
 		s.testCtxHook(ctx, req.ID)
 	}
 
+	// The optional progress token is accepted HERE rather than in each
+	// handler, and that is a property of the routing rather than a
+	// convenience: the routing index pairs a wire method with a handler
+	// and never with a params shape, so one field carrying one meaning on
+	// every method has exactly one place it can be read without being
+	// read fifty times. A request that carries none — the ordinary case —
+	// installs nothing, and every handler then reports into a discard.
+	//
+	// Only an id-bearing request is read for a token. A notification has
+	// no response channel to refuse on, which is the same reason the
+	// cancellation notification drops malformed params silently rather
+	// than reporting them.
+	if !isNotification(req) {
+		token, tokenErr := workDoneTokenFrom(req.Params)
+		if tokenErr == nil && len(token) > 0 && !s.workDoneProgress() {
+			tokenErr = errProgressNotNegotiated
+		}
+		if tokenErr != nil {
+			if err := s.writeError(ctx, req.ID, jsonRPCInvalidParams, tokenErr.Error()); err != nil {
+				fmt.Fprintf(s.stderr, "  handle %s: %v\n", req.Method, err)
+				return nil
+			}
+			return sink.response
+		}
+		if len(token) > 0 {
+			ctx = withProgressToken(ctx, token)
+		}
+	}
+
 	if err := s.dispatch(ctx, req); err != nil {
 		// The only errors reaching here are genuine marshal failures of
 		// an otherwise-valid response — they cannot be reported to the
