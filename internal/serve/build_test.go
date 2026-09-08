@@ -8,17 +8,19 @@ package serve
 //
 // aggrega/build renders under the posture of a surface that emits an artifact,
 // so every gate is on and a drifted lockfile halts it. No fixture in this
-// package carries a lockfile that matches its own closure — each writes a
-// minimal one and relies on the graph inspection tolerating the divergence — and
-// producing one means running the dependency-resolution pass, which lives above
-// this package. So the SUCCEEDING write is not reachable from here and is proved
-// end to end against the real binary instead.
+// package carries a lockfile that matches its own closure: each writes a minimal
+// one and relies on the graph inspection tolerating the divergence. So every
+// request driven from THIS file refuses, and what it asserts is the half a
+// succeeding run cannot show — that the write sits downstream of every gate, so
+// a build that refuses writes nothing at all, and that the destination is
+// derived from the workspace this session anchored to rather than from anything
+// a request carries.
 //
-// What is reachable, and is what this file asserts, is the half that a
-// succeeding run cannot show: that the write sits downstream of every gate, so a
-// build that refuses writes nothing at all — and that the destination is derived
-// from the workspace this session anchored to rather than from anything a
-// request carries.
+// The succeeding write is reachable from this package, and it is asserted in
+// build_auto_pull_test.go rather than here: a build asked to resolve its
+// dependencies first renders against a lockfile derived from its own closure, so
+// the gates that halt every run below are satisfied. That file carries the
+// fixture such a run needs, which is why the two are kept apart.
 
 import (
 	"bufio"

@@ -280,9 +280,9 @@ type previewPolicy struct {
 	// property of the operation rather than of the posture: the question "has the
 	// closure drifted from the lockfile?" presupposes that the operation holds
 	// the Release to a lockfile at all. Two of the three artifact-producing
-	// operations do — the command-line build fills a missing lockfile, the
-	// daemon refuses a Release without one — and the third does not, which is why
-	// there are three entry points over two postures.
+	// operations do — each fills a missing one where its caller asked for that
+	// and refuses otherwise — and the third does not, which is why there are
+	// three entry points over two postures.
 	verifyLockfileDrift bool
 
 	// resolveExtends resolves extends inheritance for the closure's Components

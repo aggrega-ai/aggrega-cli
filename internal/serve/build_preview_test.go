@@ -8,12 +8,14 @@ package serve
 //
 // The build preview renders under the posture of a surface that emits an
 // artifact, so every gate is on and a drifted lockfile halts it. No fixture in
-// this package carries a lockfile that matches its own closure — each writes a
-// minimal one and relies on the graph inspection tolerating the divergence — and
-// producing one means running the dependency-resolution pass, which lives above
-// this package. A lockfile derived here from the closure the preview just
-// computed would agree with the implementation by construction and could no
-// longer witness anything.
+// this package carries a lockfile that matches its own closure: each writes a
+// minimal one and relies on the graph inspection tolerating the divergence. A
+// lockfile derived here from the closure the preview just computed would agree
+// with the implementation by construction and could no longer witness anything.
+//
+// The dependency resolution that would produce a matching one is reachable from
+// this package, but not from this request: the preview refuses to perform it,
+// which is asserted in build_auto_pull_test.go alongside the build that does.
 //
 // So the assertions here are about the REFUSING path and the pure conversions,
 // and the discriminating one is that this method refuses precisely where the
@@ -199,8 +201,9 @@ func TestBuildPreviewWritesNothingOnTheRefusingPath(t *testing.T) {
 
 // TestBuildPreviewRefusesAWorkspaceWithNoLockfile asserts the gate fires on this
 // method's own path rather than only on the graph inspection's. A build renders
-// against pinned dependencies and this daemon fills no lockfile, so the absence
-// is named together with the command that generates one.
+// against pinned dependencies and this method fills none — it refuses the
+// dependency fill outright — so the absence is named together with the command
+// that generates one.
 func TestBuildPreviewRefusesAWorkspaceWithNoLockfile(t *testing.T) {
 	ws, releaseRel := renderDialWorkspace(t)
 	if err := os.Remove(lockfile.PathFor(filepath.Join(ws, releaseRel))); err != nil {

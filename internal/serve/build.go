@@ -4,12 +4,14 @@
 package serve
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"path/filepath"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/artifactout"
+	"github.com/aggrega-ai/aggrega-cli/internal/pullops"
 )
 
 // buildParams is the request shape for `aggrega/build`. The release field is a
@@ -29,6 +31,22 @@ import (
 // build writes is not the caller's to say.
 type buildParams struct {
 	Release string `json:"release"`
+
+	// AutoPull resolves the Release's dependencies before the render, as this
+	// build's first step: the same resolution aggrega/resolveDependencies
+	// performs, so a workspace filled by a build and one filled by that request
+	// are filled identically. It reaches a registry and writes the lockfile.
+	//
+	// Absent — the zero value, and the default the command line carries for the
+	// same choice — the build renders against the lockfile as it stands and
+	// refuses a Release that has none. So what the field decides is whether a
+	// Release whose dependencies are not yet resolved is filled or refused.
+	//
+	// It does not widen what the render itself may reach. The resolution
+	// carries forward the external-input pins the lockfile already records and
+	// adds none, so an external reference the lockfile does not pin is declined
+	// after a fill exactly as it is without one.
+	AutoPull bool `json:"autoPull,omitempty"`
 }
 
 // buildResult is the response shape for `aggrega/build`.
@@ -101,23 +119,54 @@ func (s *Server) dispatchBuild(ctx context.Context, req *jsonRPCRequest) error {
 // outside the output root. Both belong to what a build's write is, so both
 // happen here exactly as they happen on the command line.
 //
-// # The lockfile is not filled, and an unpinned reference is declined
+// # Whether the lockfile is filled is the request's to say
 //
-// The shared render fills no lockfile and reaches no network, so this performs
-// what the command line performs with its external-input set frozen: a pinned
-// reference is served from the content-addressed store, and an unpinned one is
-// declined. It is a real difference from an unfrozen command-line build, which
-// may acquire such a reference and pin it.
+// Asked for, the resolution runs here, before the render — so the gates the
+// render opens with read the lockfile this build just wrote rather than the
+// absence they would otherwise refuse. A lockfile filled this run is not
+// drift-verified, because a resolution and the closure it was derived from
+// cannot disagree, and comparing them would hold a set against itself. Left
+// off, the render is held to the lockfile as it stands and a Release without one
+// is refused.
 //
-// What a decline does to the render is the guest's decision — the host answers
-// the fetch with an error envelope rather than aborting — so a render that
-// carries on produces bytes an unfrozen build would not have produced, and those
-// bytes are what gets written. That is why the decline is published as a
-// positioned finding naming the reference and the command that pins it: the
-// divergence is reported to the reader rather than left to be inferred from the
-// output.
+// # An unpinned external reference is declined either way
+//
+// The render reaches no network of its own under either setting: a reference the
+// lockfile pins is served from the content-addressed store and one it does not
+// pin is declined. Filling does not change that — the resolution carries forward
+// the external-input pins already recorded and acquires none — so the freeze is
+// a property of the render rather than of the fill.
+//
+// A declined reference is published as a positioned finding naming the reference
+// and what pins it, and that publication happens whatever the render then makes
+// of the decline. What it makes of it is the requesting guest's decision, because
+// the host answers the fetch with an error envelope rather than aborting: the
+// providers this binary carries hand that refusal back, so the render fails and
+// the write below is never reached. A guest that carried on instead would
+// produce bytes a fully-pinned render would not have, which is why the finding is
+// published rather than left to be inferred from an output directory.
 func (s *Server) handleBuild(ctx context.Context, params buildParams) (buildResult, *jsonRPCError) {
-	preview, errEnvelope := s.renderUnderArtifactPosture(ctx, params.Release)
+	// The fill, before the render, because what it writes is what the render's
+	// opening gates read. Its own account of itself is kept for the answer's
+	// notices: a caller that asked for the fill is owed what the fill did, and
+	// nothing here is watching a stream it could have been written to instead.
+	var fillNotices []string
+	lockfileFilled := false
+	if params.AutoPull {
+		notices, errEnvelope := s.fillDependencies(params.Release)
+		if errEnvelope != nil {
+			return buildResult{}, errEnvelope
+		}
+		fillNotices = notices
+		// Recorded as a fact about what just happened rather than read back off
+		// the request, because what the render needs to know is that a lockfile
+		// WAS written and not that one was asked for. The two part on the
+		// refusal above, and a render told the wrong one would stand down a
+		// drift verify that had something to check.
+		lockfileFilled = true
+	}
+
+	preview, errEnvelope := s.renderUnderArtifactPosture(ctx, params.Release, lockfileFilled)
 	if errEnvelope != nil {
 		return buildResult{}, errEnvelope
 	}
@@ -159,8 +208,67 @@ func (s *Server) handleBuild(ctx context.Context, params buildParams) (buildResu
 	return buildResult{
 		OutputDirectory: outRoot,
 		Files:           renderedArtifactNames(completed),
-		Notices:         buildNotices(preview),
+		Notices:         append(dependencyResolutionNotices(fillNotices), buildNotices(preview)...),
 	}, nil
+}
+
+// fillDependencies resolves the Release's dependencies and returns the
+// resolution's own account of itself, line by line.
+//
+// It is the operation aggrega/resolveDependencies answers with rather than a
+// second resolution written for a build, which is what makes a workspace filled
+// by a build and one filled by that request the same workspace. A build that
+// filled its own lockfile some other way would be free to resolve differently
+// from every other surface, and the two would agree until they did not.
+//
+// The lines are returned rather than written anywhere because this request
+// reports no progress: nothing on this path opens a progress run, so a stream
+// the caller is watching does not exist and the answer's notices are where the
+// account can still reach whoever asked for it.
+func (s *Server) fillDependencies(release string) ([]string, *jsonRPCError) {
+	releasePath, paramErr := resolveReleaseParam(s.workspaceRoot, release)
+	if paramErr != nil {
+		return nil, paramErr
+	}
+	if s.resolvedWorkspace == nil {
+		return nil, &jsonRPCError{
+			Code:    jsonRPCInternalError,
+			Message: "the daemon holds no resolved workspace to resolve dependencies against",
+		}
+	}
+
+	var notices bytes.Buffer
+	if _, err := pullops.Run(pullops.Config{
+		Workspace:       s.resolvedWorkspace,
+		ReleasePath:     releasePath,
+		CompilerVersion: s.compilerVersion,
+		Toolchain:       s.toolchain,
+		DiagOut:         &notices,
+		// No prompt is supplied, on the same terms every operation here runs
+		// under: nobody is watching this stream, so a fork that would have been
+		// put to a person halts naming what to supply.
+	}); err != nil {
+		return nil, &jsonRPCError{
+			Code:    errEntityNotResolvable,
+			Message: err.Error(),
+			cause:   err,
+		}
+	}
+	return noticeLines(notices.String()), nil
+}
+
+// dependencyResolutionNotices carries the fill's own lines onto the answer under
+// the surface that raised them, so a client renders them beside the render's
+// advisories without having to parse either.
+func dependencyResolutionNotices(lines []string) []buildNotice {
+	if len(lines) == 0 {
+		return nil
+	}
+	out := make([]buildNotice, 0, len(lines))
+	for _, line := range lines {
+		out = append(out, buildNotice{Class: noticeClassDependencyResolution, Text: line})
+	}
+	return out
 }
 
 // buildOutputRoot is the directory a build performed by this daemon writes to:

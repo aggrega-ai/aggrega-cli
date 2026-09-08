@@ -415,9 +415,9 @@ func Run(cfg Config) (Result, error) {
 		report.CatalogShadows(cat)
 	}
 
-	// Ensure the per-Release lockfile exists (fill when missing + permitted),
-	// returning whether it pre-existed — drift is verified only for a pre-existing
-	// lockfile; a freshly filled one matches the closure by construction.
+	// Ensure the per-Release lockfile exists (filled when the pull step is asked
+	// for, else required), returning whether it pre-existed — drift is verified
+	// only for a pre-existing lockfile; a filled one matches the closure already.
 	report.phase(PhaseLockfile)
 	lockfilePreexisted, err := ensureLockfile(cfg, wsCfg, run, diagOut, out)
 	if err != nil {
@@ -679,15 +679,15 @@ func newExternalInputsService(cacheDir string, lf *lockfile.Lockfile, noAcquire 
 
 // ensureLockfile ensures the per-Release lockfile exists before the build wires
 // its lazy lookup + runs closure-scoped Pass-2, returning whether it PRE-EXISTED.
-// A present lockfile is left as-is — drift against it is verified later, against
-// the resolved closure. Build is read-only by default: a missing lockfile halts
-// with the pull-first remediation and no lockfile or source pins are written.
+// Build is read-only by default: a present lockfile is left as-is — drift
+// against it is verified later against the resolved closure — and a missing one
+// halts with the pull-first remediation, writing no lockfile or source pins.
 // When the pull step is requested — the caller's AutoPull knob or workspace
-// auto_pull — a missing lockfile is instead filled in-process (populating the
-// lockfile + cache) before the build proceeds; Upgrade makes that fill a full
-// refresh (float every dependency to the highest satisfying version rather than
-// honoring existing pins). Under offline a missing lockfile always halts,
-// regardless of the pull step, because the fill itself needs network access.
+// auto_pull — the fill runs in-process before the build proceeds whether or not
+// one is present, honoring existing pins and resolving what has none; Upgrade
+// makes it a full refresh, floating every dependency to the highest satisfying
+// version instead. Under offline a missing lockfile always halts, regardless of
+// the pull step, because the fill itself needs network access.
 //
 // DryRun suppresses the fill outright: the fill writes, and a dry run writes
 // nothing. It is read here rather than inferred from AutoPull because the two

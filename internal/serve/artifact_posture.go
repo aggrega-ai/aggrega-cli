@@ -42,6 +42,12 @@ const (
 	noticeClassCatalog     = "catalog"
 	noticeClassCatalogLint = "catalog-lint"
 	noticeClassExtends     = "extends"
+
+	// noticeClassDependencyResolution covers the lines a build's own dependency
+	// fill raised. It names a surface this daemon does have a name for, which is
+	// why the lines travel under it rather than under the empty class the
+	// conversion below falls back to.
+	noticeClassDependencyResolution = "dependency-resolution"
 )
 
 // renderUnderArtifactPosture renders the Release at release through the one
@@ -68,12 +74,20 @@ const (
 //
 // # What it does not do
 //
-// It reaches no network and it fills no lockfile. External references are served
-// from the workspace's content-addressed store where the lockfile pins them and
-// declined where it does not, and each decline is reported rather than silently
-// shortening the output. So the rendered bytes match a build's for a fully-pinned
-// Release, and where they cannot the reader is told which reference is missing
-// and what to run.
+// It reaches no network. External references are served from the workspace's
+// content-addressed store where the lockfile pins them and declined where it
+// does not, and each decline is reported rather than silently shortening the
+// output. So the rendered bytes match a build's for a fully-pinned Release, and
+// where they cannot the reader is told which reference is missing and what to
+// run.
+//
+// It fills no lockfile either, and lockfileFilled is how it is told that its
+// caller already did. The parameter reports a fact rather than requesting an
+// action: a caller that resolved the dependencies before calling holds a
+// lockfile derived from the closure this run is about to compute, so the drift
+// verify below is stood down for it. Passing true without having filled would
+// suppress a real drift verdict, which is why the only caller that passes it is
+// the one that performs the fill.
 //
 // # Where its findings go
 //
@@ -84,16 +98,17 @@ const (
 // are returned on the result instead. Sending those to the same layer would put a
 // second copy of a withdrawn-pin notice beside the one a validation already
 // publishes on the semantic layer, and two copies of one fact read as two facts.
-func (s *Server) renderUnderArtifactPosture(ctx context.Context, release string) (*compilerops.PreviewResult, *jsonRPCError) {
+func (s *Server) renderUnderArtifactPosture(ctx context.Context, release string, lockfileFilled bool) (*compilerops.PreviewResult, *jsonRPCError) {
 	releasePath, paramErr := resolveReleaseParam(s.workspaceRoot, release)
 	if paramErr != nil {
 		return nil, paramErr
 	}
 
 	// The lockfile-absent gate, before anything is resolved. A build renders
-	// against pinned dependencies, and this daemon fills no lockfile, so a
+	// against pinned dependencies, and this computation fills no lockfile, so a
 	// workspace without one is told to generate it rather than shown a render
-	// resolved from whatever happened to be on disk.
+	// resolved from whatever happened to be on disk. A caller that filled one
+	// first passes the gate on what the fill wrote.
 	lockfilePath := lockfile.PathFor(releasePath)
 	if _, err := os.Stat(lockfilePath); err != nil {
 		if os.IsNotExist(err) {
@@ -146,7 +161,7 @@ func (s *Server) renderUnderArtifactPosture(ctx context.Context, release string)
 	// the drift verify has something to hold it to.
 	preview, err := compilerops.PreviewForArtifact(
 		ctx,
-		s.irGraphPreviewInputs(view, releasePath, lf, fetchSeam),
+		s.irGraphPreviewInputs(view, releasePath, lf, fetchSeam, lf != nil && !lockfileFilled),
 		pipeline.Options{},
 	)
 

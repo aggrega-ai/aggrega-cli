@@ -13,6 +13,18 @@ import (
 // same contract every Release-naming parameter here carries.
 type buildPreviewParams struct {
 	Release string `json:"release"`
+
+	// AutoPull is accepted here in order to be REFUSED, and the difference
+	// between refusing it and ignoring it is the whole reason the field exists.
+	// The field the build beside this one carries resolves dependencies and
+	// writes the lockfile; this request writes nothing, so the two cannot both
+	// be honoured. A request sending it is answered with what to send instead.
+	//
+	// Declining to decode it would leave the refusal to the caller, and a caller
+	// is not where a contract is kept: a client that sent the field would be
+	// told nothing and get a preview whose dependencies were never filled,
+	// which reads exactly like a preview whose dependencies were.
+	AutoPull bool `json:"autoPull,omitempty"`
 }
 
 // buildPreviewResult is the response shape for `aggrega/buildPreview`.
@@ -60,8 +72,32 @@ func (s *Server) dispatchBuildPreview(ctx context.Context, req *jsonRPCRequest) 
 // deliberate omission: the artifact set it was handed is reported by name and
 // then dropped. That is the whole difference between this request and the build
 // beside it, which is what makes a reader's choice between them meaningful.
+//
+// # Why the dependency fill is refused rather than ignored
+//
+// The omission is what makes it incompatible: a fill writes the lockfile, and a
+// request that reports without writing cannot perform one and still be what it
+// says it is. The command line refuses the same pairing between the flag that
+// previews and the flag that fills, so the refusal is the shared behaviour
+// rather than a rule this surface invented.
+//
+// It is enforced here, on the answering side, because a caller is not a trust
+// boundary: a client that sent the field and was quietly given an unfilled
+// preview could not tell that from a filled one, and the contract would hold
+// only for clients that already knew.
 func (s *Server) handleBuildPreview(ctx context.Context, params buildPreviewParams) (buildPreviewResult, *jsonRPCError) {
-	preview, errEnvelope := s.renderUnderArtifactPosture(ctx, params.Release)
+	if params.AutoPull {
+		return buildPreviewResult{}, &jsonRPCError{
+			Code: jsonRPCInvalidParams,
+			Message: "invalid params: autoPull is not accepted on aggrega/buildPreview, which reports what a " +
+				"build would write and writes none of it, while resolving dependencies writes the lockfile. " +
+				"Send aggrega/resolveDependencies for this Release, then aggrega/buildPreview",
+		}
+	}
+
+	// The fill is refused above, so nothing on this path can have filled a
+	// lockfile: one the render finds was on disk before the request.
+	preview, errEnvelope := s.renderUnderArtifactPosture(ctx, params.Release, false)
 	if errEnvelope != nil {
 		return buildPreviewResult{}, errEnvelope
 	}

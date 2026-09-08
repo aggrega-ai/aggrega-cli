@@ -219,6 +219,15 @@ var operationAvailability = map[string]serveAvailability{
 	// produced. Both are named, because a caller enumerating this table is asking
 	// what the daemon can be asked for, and a capability reachable two ways under
 	// one name would be described as reachable one way.
+	//
+	// The writing method additionally takes a request field that resolves the
+	// Release's dependencies first, and with it set the build reaches a registry
+	// and writes the lockfile — on the same rule the resolution row below runs
+	// under, which is about when an operation runs rather than which surface runs
+	// it: a caller that asked for the fill asked for it by name. Unasked, the
+	// build reaches no registry and writes only artifacts. The reporting method
+	// refuses that field, because a request that writes nothing cannot fill a
+	// lockfile and remain what it says it is.
 	"build": servedAt(
 		at("aggrega/build", (*Server).dispatchBuild),
 		at("aggrega/buildPreview", (*Server).dispatchBuildPreview),

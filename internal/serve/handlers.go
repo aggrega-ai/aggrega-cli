@@ -1033,7 +1033,9 @@ func (s *Server) previewRelease(ctx context.Context, release string, opts pipeli
 	//    leaves the reader with nothing, where a build leaves them a diagnostic.
 	preview, err := compilerops.PreviewForInspection(
 		ctx,
-		s.irGraphPreviewInputs(view, releasePath, lf, fetchSeam),
+		// An inspection fills nothing, so a lockfile it holds was on disk before
+		// the request.
+		s.irGraphPreviewInputs(view, releasePath, lf, fetchSeam, lf != nil),
 		opts,
 	)
 

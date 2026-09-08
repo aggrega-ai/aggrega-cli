@@ -28,11 +28,20 @@ import (
 // shortening the output. Nothing is written and nothing is fetched: acquisition
 // is off and the transport client is nil, so the inspection cannot reach the
 // network.
+//
+// lockfilePreexisted is the caller's own answer to whether the lockfile was on
+// disk before the run rather than derived from it, and it is a parameter because
+// only the caller knows: this computation neither fills a lockfile nor sees a
+// caller that did. The flag states that fact rather than its consequence, and
+// what reads it is the drift verify — which is off entirely under the inspection
+// posture, where drift reaches the reader as a published finding rather than as
+// a refusal, and on under the artifact one, where a build is held to its pins.
 func (s *Server) irGraphPreviewInputs(
 	view *catalog.LazyLookup,
 	releasePath string,
 	lf *lockfile.Lockfile,
 	fetchSeam *externalinputs.DeclineRecorder,
+	lockfilePreexisted bool,
 ) compilerops.PreviewInputs {
 	return compilerops.NewPreviewInputs(
 		fetchSeam,
@@ -41,11 +50,7 @@ func (s *Server) irGraphPreviewInputs(
 		s.workspaceRoot,
 		s.wsConfig,
 		s.compilerVersion,
-		// The daemon never fills a lockfile, so one it holds was on disk before
-		// the request. The drift verify is off under this posture regardless —
-		// drift reaches the reader through the Problems panel above, not as a
-		// refusal — and the flag states the fact rather than the consequence.
-		compilerops.WithLockfile(lf, lf != nil),
+		compilerops.WithLockfile(lf, lockfilePreexisted),
 	)
 }
 

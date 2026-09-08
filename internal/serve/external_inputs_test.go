@@ -162,7 +162,7 @@ func TestIrGraphPreviewInputsCarryTheSeam(t *testing.T) {
 			if seam == nil {
 				t.Fatal("the inspection built no external-input seam")
 			}
-			in := srv.irGraphPreviewInputs(srv.lazyCatalog.ForRequest(nil), "release.yaml", tc.lf, seam)
+			in := srv.irGraphPreviewInputs(srv.lazyCatalog.ForRequest(nil), "release.yaml", tc.lf, seam, tc.lf != nil)
 			if in.ExternalInputs() == nil {
 				t.Fatal("the inspection hands the shared computation no external-input seam; " +
 					"a guest asking for an external input would receive a not-available envelope " +
