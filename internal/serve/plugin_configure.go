@@ -49,20 +49,31 @@ func (s *Server) pluginScope(configPath string, machineWide bool) pluginWriteSco
 	}
 }
 
-// workspacePath resolves a path a plugin request names, inside the workspace this
-// session opened, and refuses every other form.
+// workspacePath resolves a path confined to the workspace this session opened,
+// and refuses every other form.
 //
 // 🔴 It is deliberately NOT the canonical-file resolution the document methods
 // use. That one accepts an absolute value and leaves it standing, which is right
 // for a document the client already holds open and names by whatever spelling it
-// holds. These paths are different: the operation READS and WRITES the file they
-// name, so accepting a location of the request's own choosing is exactly the
-// addressing this surface declines — it is the ground on which running a guest
-// from a caller-named path is not carried here at all. Accepting it for these
-// would decline that capability for a property these methods then had too.
+// holds.
 //
-// Resolution runs through the one home for the relative-to-absolute direction, so
-// an absolute value, a value climbing out of the root, and an empty value are all
+// 🔴 What this confines without exception is where an operation WRITES. A
+// destination of the request's own choosing would let a session create or
+// overwrite files in a tree it was never opened over, and no request here may
+// name one: every outputDir, and every file a method edits in place, is judged
+// here.
+//
+// A path an operation only READS is a separate question, decided per parameter
+// rather than by one rule over all of them, because a file the person driving the
+// client selected is not a workspace-scoped path at all — those parameters go
+// through selectedPath instead. A read input stays here until that case
+// has actually been asked for on the request that carries it, so confinement is
+// this surface's default rather than a claim that a selection could not be
+// admitted: the alignment method's module path is confined for that reason and
+// not because reading it anywhere would be unsound.
+//
+// Resolution runs through the one home for workspace-scoped paths, so an
+// absolute value, a value climbing out of the root, and an empty value are all
 // refused by the same rule every other workspace-scoped path is judged by, rather
 // than by a comparison written here.
 func (s *Server) workspacePath(what, raw string) (string, error) {
@@ -70,6 +81,36 @@ func (s *Server) workspacePath(what, raw string) (string, error) {
 	if !ok {
 		return "", fmt.Errorf("%s must name a path inside the workspace this session opened (%s), "+
 			"relative to its root; %q is absolute or climbs out of it", what, s.workspaceRoot, raw)
+	}
+	return resolved, nil
+}
+
+// selectedPath resolves a path the person driving the client chose, which may
+// name anywhere on this machine.
+//
+// 🔴 It confines nothing, and that is the contract rather than a hole in it. Its
+// subject is a file someone picked out of a dialog — a module built under a
+// toolchain's own output directory, a description exported by another tool — and
+// such a file sits wherever they put it, which is frequently outside the
+// workspace a session was opened over. Judging it by the workspace-scoped rule
+// would refuse the request for the shape it exists to serve, and would refuse it
+// for no gain: this process runs as the person who selected the path and already
+// reads whatever they can read.
+//
+// It is reached only by a parameter an operation READS. Where an operation
+// writes, workspacePath decides, and a write is confined whatever the
+// caller sends — so a request may point a read at a file it chose and can still
+// not point a write out of the workspace.
+//
+// The refusals belong to the value rather than to its location: an empty value
+// names no file, and a relative value with no workspace to resolve against would
+// silently address whatever directory this process happens to be sitting in.
+func (s *Server) selectedPath(what, raw string) (string, error) {
+	resolved, ok := pathscope.ResolveSelected(s.workspaceRoot, raw)
+	if !ok {
+		return "", fmt.Errorf("%s must name a file to read: either an absolute path, or one relative "+
+			"to the root of the workspace this session opened (%s); %q names no file",
+			what, s.workspaceRoot, raw)
 	}
 	return resolved, nil
 }
@@ -372,6 +413,14 @@ func (s *Server) dispatchPluginSync(ctx context.Context, req *jsonRPCRequest) er
 // but each reported document still names the file it is for, and that path is
 // composed from this directory: reporting changes where the content goes, not
 // which file it is content for.
+//
+// 🔴 The three paths are not judged by one rule, and the split is read/write
+// rather than per-field taste. plugin and overlay are READ, and both are files
+// the author selected — a module sits under whatever directory its toolchain
+// builds into, and its overlay is authored beside it — so each is accepted as an
+// absolute path naming wherever it actually is. outputDir is WRITTEN to and stays
+// confined to the workspace this session opened, so a generation cannot create
+// entities in a tree the session was never opened over.
 type pluginGenCatalogParams struct {
 	FromEmbedded bool   `json:"fromEmbedded"`
 	Plugin       string `json:"plugin"`
@@ -436,6 +485,18 @@ func generatedDocuments(docs []authoredcontent.Document) []pluginGeneratedDocume
 // field rather than a property of this surface, because a caller at either end may
 // want either.
 //
+// 🔴 Where it writes is confined and what it reads is not. The output directory
+// resolves inside the workspace this session opened, so the entities land in a
+// tree the session was opened over whatever the request names. The module and its
+// overlay are inputs the author selected, and both are accepted as absolute
+// paths: a module built by a toolchain sits under that toolchain's own output
+// directory, which is routinely outside the workspace, and an operation that
+// refused to read it there could not serve the case it exists for. Reading a
+// selected module means this process loads a guest from a path the caller named
+// in order to read its self-report — deliberately, because the self-report is the
+// ground truth the generation exists to transcribe, and the caller naming the
+// path is the person the process is already running as.
+//
 // Regenerating over unchanged inputs yields byte-identical files, so a client may
 // run it freely without producing a diff it has to explain.
 func (s *Server) dispatchPluginGenCatalog(ctx context.Context, req *jsonRPCRequest) error {
@@ -469,24 +530,36 @@ func (s *Server) dispatchPluginGenCatalog(ctx context.Context, req *jsonRPCReque
 		FromEmbedded: params.FromEmbedded,
 		Report:       params.Report,
 	}
-	for _, f := range []struct {
-		what string
-		raw  string
-		dst  *string
-	}{
-		{"plugin gen-catalog: plugin", params.Plugin, &opts.PluginPath},
-		{"plugin gen-catalog: outputDir", params.OutputDir, &opts.OutputDir},
-		{"plugin gen-catalog: overlay", params.Overlay, &opts.OverlayPath},
-	} {
-		if f.raw == "" {
-			continue
-		}
-		resolved, err := s.workspacePath(f.what, f.raw)
+	// The three paths are resolved by TWO rules, and which rule a path takes
+	// follows from whether the generation reads it or writes to it. The module and
+	// its overlay are read, and both are files the author selected — a module
+	// arrives under whatever output directory its toolchain writes to, and the
+	// overlay is authored beside it — so each is resolved as a selection. The
+	// output directory is written to, so it stays confined to the workspace this
+	// session opened whatever the request sends.
+	//
+	// They are resolved by three separate calls rather than by a table walked with
+	// a per-row resolver, because a resolver held as a value is invisible to a
+	// walk over the source: the guard that keeps a selection out of a
+	// workspace-scoped parameter matches the resolver at its call site, and a
+	// method value carries no call for it to match.
+	if params.Plugin != "" {
+		plugin, err := s.selectedPath("plugin gen-catalog: plugin", params.Plugin)
 		if err != nil {
 			return s.writeError(ctx, req.ID, jsonRPCInvalidParams, err.Error())
 		}
-		*f.dst = resolved
+		opts.PluginPath = plugin
 	}
+	overlay, err := s.selectedPath("plugin gen-catalog: overlay", params.Overlay)
+	if err != nil {
+		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, err.Error())
+	}
+	opts.OverlayPath = overlay
+	outputDir, err := s.workspacePath("plugin gen-catalog: outputDir", params.OutputDir)
+	if err != nil {
+		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, err.Error())
+	}
+	opts.OutputDir = outputDir
 
 	// The generation's prose goes nowhere: this surface answers with the values,
 	// and the result carries whatever the generation said.

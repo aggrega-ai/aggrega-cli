@@ -163,15 +163,22 @@ func TestThePluginMethodsRefuseAMissingRequiredField(t *testing.T) {
 	}
 }
 
-// TestThePluginMethodsRefuseAPathOutsideTheWorkspace pins the addressing this
-// surface declines, and it is the assertion that keeps a neighbouring decline
-// honest.
+// TestThePluginMethodsRefuseAPathOutsideTheWorkspace pins the confinement, over
+// the parameters that still carry it.
 //
-// Running a guest from a caller-named path is not carried on this surface at all,
-// on the ground that a session locates what it reads inside the workspace it
-// opened. A method here that accepted an arbitrary filesystem path would have
-// exactly the property that decline rests on — and these methods READ and WRITE
-// the file they name, so accepting one would be the sharper case.
+// Two things are confined here and they are confined for different reasons. A
+// generation's output directory is WRITTEN to, and no request may name a
+// destination outside the workspace the session was opened over — that one holds
+// on every method, and widening a read never widens it. The alignment method's
+// two paths are the other reason: both stay confined because a selection has not
+// been asked for on that request, so the confining rule is still the right answer
+// for them rather than the only available one.
+//
+// 🔴 It is the CONTRAST case for the sibling test below, and the pair is the
+// point. Read alone, an acceptance test is consistent with a surface that stopped
+// confining anything, and a refusal test is consistent with one that accepts
+// nothing; only the two over the same fixture say which parameter took which
+// rule.
 func TestThePluginMethodsRefuseAPathOutsideTheWorkspace(t *testing.T) {
 	t.Parallel()
 	srv, _ := pluginWriteFixture(t)
@@ -192,10 +199,10 @@ func TestThePluginMethodsRefuseAPathOutsideTheWorkspace(t *testing.T) {
 			map[string]any{"entity": "plugins/greet.yaml", "plugin": outside}},
 		{"a relative path climbing out", "aggrega/pluginSync",
 			map[string]any{"entity": "../escape.yaml", "plugin": "plugins/greet.wasm"}},
-		{"an absolute overlay directory", "aggrega/pluginGenCatalog",
-			map[string]any{"fromEmbedded": true, "overlay": outside, "outputDir": "generated"}},
 		{"an absolute output directory", "aggrega/pluginGenCatalog",
 			map[string]any{"fromEmbedded": true, "overlay": "overlays", "outputDir": filepath.Dir(outside)}},
+		{"an output directory climbing out", "aggrega/pluginGenCatalog",
+			map[string]any{"fromEmbedded": true, "overlay": "overlays", "outputDir": "../generated"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			resp := callDaemonMethod(t, srv, tc.method, tc.params)
@@ -206,6 +213,53 @@ func TestThePluginMethodsRefuseAPathOutsideTheWorkspace(t *testing.T) {
 				t.Errorf("refusal = %q; want it to name the workspace bound", resp.Error.Message)
 			}
 		})
+	}
+}
+
+// TestPluginGenCatalogReadsAModuleAndOverlayTheAuthorSelected is the acceptance
+// half, and it is driven with BOTH read paths absolute and outside the workspace
+// at once.
+//
+// That is the shape the operation exists to serve: a module lands under whatever
+// directory its toolchain builds into, the overlay describing it is authored
+// beside that module, and neither sits in the workspace an editor has open. An
+// accepted module with a refused overlay would move the operation without making
+// it work, so the pair travels together.
+//
+// What is asserted is that the module was OPENED, not merely that the request got
+// past a gate. The generation reads the module's own bytes to parse its import
+// section, so a refusal naming that parse is proof the file at the absolute path
+// was read — a fixture module that is not a real module is what makes the read
+// observable without standing up a guest.
+func TestPluginGenCatalogReadsAModuleAndOverlayTheAuthorSelected(t *testing.T) {
+	t.Parallel()
+	srv, _ := pluginWriteFixture(t)
+
+	built := filepath.Join(t.TempDir(), "built.wasm")
+	if err := os.WriteFile(built, []byte("not a module"), 0o644); err != nil {
+		t.Fatalf("seed the selected module: %v", err)
+	}
+	overlay := filepath.Join(t.TempDir(), "overlay.yaml")
+	if err := os.WriteFile(overlay, []byte("metadata: {}\n"), 0o644); err != nil {
+		t.Fatalf("seed the selected overlay: %v", err)
+	}
+
+	resp := callDaemonMethod(t, srv, "aggrega/pluginGenCatalog", map[string]any{
+		"plugin":    built,
+		"overlay":   overlay,
+		"outputDir": "generated",
+	})
+	if resp.Error == nil {
+		t.Fatal("the fixture module is not a real module, so the generation cannot have completed")
+	}
+	if strings.Contains(resp.Error.Message, "inside the workspace this session opened") {
+		t.Fatalf("an absolute module or overlay the author selected was refused as a workspace-scoped path: %q", resp.Error.Message)
+	}
+	if !strings.Contains(resp.Error.Message, "wasm binary magic mismatch") {
+		t.Fatalf("the generation did not reach the module's bytes, so nothing here shows the selected path was read: %q", resp.Error.Message)
+	}
+	if !strings.Contains(resp.Error.Message, built) {
+		t.Errorf("the answer does not name the module that was read: %q, want it to name %q", resp.Error.Message, built)
 	}
 }
 

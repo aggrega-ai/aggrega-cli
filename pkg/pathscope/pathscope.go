@@ -1,32 +1,47 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Cognitio S.r.l.
 
-// Package pathscope answers one question — does this path stay inside the
-// directory it is relative to — and answers it in the two path algebras the
-// compiler actually uses.
+// Package pathscope is the one home for deciding a path's scope. Two questions
+// live here: does a path stay inside the directory it is relative to, and where
+// does a path somebody chose for themselves land.
 //
-// A path that escapes its root is a defect wherever it appears: a rendered
-// artifact name that writes outside the output directory, an archive entry that
-// unpacks over a neighbouring tree, a plugin selection that reads source the
-// plugin was never given. Every one of those is the same predicate, and a
-// hand-rolled copy of it is how one call site comes to disagree with the next.
-// This package is that predicate's only home.
+// Containment is the first question. A path that escapes its root is a defect
+// wherever it appears: a rendered artifact name that writes outside the output
+// directory, an archive entry that unpacks over a neighbouring tree, a plugin
+// selection that reads source the plugin was never given. Every one of those is
+// the same predicate, and a hand-rolled copy of it is how one call site comes to
+// disagree with the next. This package is that predicate's only home.
 //
-// # The two algebras, and why they are separate entry points
+// Resolution is the second, and its subject is a path whose reach is not this
+// product's to bound — a file the person driving a client picked out of a
+// dialog. Such a path names wherever they pointed, so it has no root to stay
+// inside, and containment is the wrong question of it rather than a relaxed one.
 //
-// [Resolve] works in operating-system path arithmetic, for a caller holding a
-// root it will open files under. [IsLocalSlash] works in slash-separated logical
-// names, for a caller holding a name that is not a filesystem path yet — an
-// archive entry, a rendered output name — and may never become one on the
-// machine that is judging it.
+// # The three entry points, and why they are three
 //
-// The distinction is not cosmetic. A backslash is an ordinary character in a
-// logical name and a separator in a Windows filesystem path, so judging a
-// logical name with filesystem arithmetic gives one answer on Windows and
-// another on Linux for identical input. Deciding the two algebras with one
+// [Resolve] and [IsLocalSlash] answer containment, in the two path algebras the
+// compiler actually uses. Resolve works in operating-system path arithmetic, for
+// a caller holding a root it will open files under. IsLocalSlash works in
+// slash-separated logical names, for a caller holding a name that is not a
+// filesystem path yet — an archive entry, a rendered output name — and may never
+// become one on the machine that is judging it.
+//
+// The distinction between those two is not cosmetic. A backslash is an ordinary
+// character in a logical name and a separator in a Windows filesystem path, so
+// judging a logical name with filesystem arithmetic gives one answer on Windows
+// and another on Linux for identical input. Deciding the two algebras with one
 // function and a mode argument would put that hazard one wrong argument away, so
 // the two are separate names over one unexported core and there is no mode to
 // pass.
+//
+// [ResolveSelected] answers the second question, for an operating-system path a
+// person selected. It is a third name rather than an option on Resolve for the
+// same reason the two algebras are two names: which question applies is a
+// property of where the path came from, and no argument at a call site can be
+// trusted to carry that. Written as one function with a switch, the permissive
+// answer would be one wrong argument away from every workspace-scoped path in
+// the tree; written as three names, a reader of a call site sees which class was
+// chosen.
 //
 // # What this package deliberately does not do
 //
@@ -88,6 +103,61 @@ func Resolve(root, rel string) (string, bool) {
 		return "", false
 	}
 	return filepath.Clean(filepath.Join(filepath.Clean(root), rel)), true
+}
+
+// ResolveSelected reports where a path somebody selected lands.
+//
+// It performs no containment check at all, and that is the contract rather than
+// a gap in it. Its subject is a path the person driving a client chose — a file
+// picked out of a dialog — and such a path names wherever they pointed, on any
+// part of the machine. There is no root for it to stay inside, so asking whether
+// it does would answer a question nobody posed. Nor would refusing a selection
+// outside the root make a caller safer: the process runs as the person who
+// selected the path and already reads whatever they can read, so the refusal
+// would buy nothing and would make the operation unusable for exactly the case
+// it exists to serve.
+//
+// [Resolve] remains the entry point for a workspace-scoped path, and every path
+// the product composed, or was handed as relative to a root it will confine
+// writes to, still goes through it. The two are separate because the classes are
+// separate: a path belongs to one or the other by virtue of where it came from,
+// so a call site reaching for this one is stating that a person chose the value.
+//
+// root and selected are operating-system paths, and selected is interpreted
+// relative to root only when it is not already absolute. On success the returned
+// path is cleaned and ok is true. On refusal the returned path is empty.
+//
+// Two inputs are accepted that Resolve refuses:
+//
+//   - An absolute selected, returned cleaned. root is not consulted at all,
+//     because an absolute path names a location of its own — which is the whole
+//     point of this entry point, and the reason an empty root is no obstacle
+//     here.
+//   - A relative selected that climbs out of root, resolved against it and
+//     landing outside. Climbing is PERMITTED, because refusing
+//     "../build/plugin.wasm" while accepting the same file named absolutely
+//     would be a distinction no caller could explain to its reader.
+//
+// Two inputs are refused, each for the reason Resolve refuses it:
+//
+//   - An empty selected, because an empty path names nothing. A caller for which
+//     the empty string means the root itself normalises it to "." before
+//     calling, which keeps that meaning at the site that holds it.
+//   - A relative selected with an empty root. Joining against an empty root
+//     silently resolves against the process working directory, which is a
+//     different directory than the caller named. A caller that means the working
+//     directory says so, with ".".
+func ResolveSelected(root, selected string) (string, bool) {
+	if selected == "" {
+		return "", false
+	}
+	if filepath.IsAbs(selected) {
+		return filepath.Clean(selected), true
+	}
+	if root == "" {
+		return "", false
+	}
+	return filepath.Clean(filepath.Join(filepath.Clean(root), selected)), true
 }
 
 // IsLocalSlash reports whether name — a slash-separated logical name, such as an

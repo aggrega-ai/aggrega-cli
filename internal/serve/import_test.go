@@ -4,8 +4,14 @@
 package serve
 
 import (
+	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
+	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
 // importFixture is a Server over a scratch workspace with the machine-wide layer
@@ -20,6 +26,115 @@ func importFixture(t *testing.T) *Server {
 	t.Helper()
 	srv, _, _ := registryWriteFixture(t, "{}\n")
 	return srv
+}
+
+// importReadableFixture is importFixture with an importer resolver wired, so a
+// request reaches the path resolution and the read.
+//
+// The plain fixture stops at the resolver-wiring check, which sits AHEAD of both
+// — deliberately, since the refusals it asserts are raised before an importer is
+// resolved. That ordering makes it useless for asserting anything about a path:
+// a request would be refused before the path was looked at, and a test reading
+// that refusal would report a path verdict the code never reached. The resolver
+// wired here fails when called, which is far enough: the format is selected from
+// the source's own bytes before any importer is asked for, so a request that
+// reaches format selection has already had its source opened and read.
+func importReadableFixture(t *testing.T) *Server {
+	t.Helper()
+	srv := importFixture(t)
+	srv.resolveImportPlugin = func(*workspaceconfig.ResolvedWorkspace, string) (pluginpath.ResolvedPlugin, error) {
+		return pluginpath.ResolvedPlugin{}, fmt.Errorf("this fixture resolves no importer module")
+	}
+	return srv
+}
+
+// TestImportReadsASourceTheAuthorSelectedOutsideTheWorkspace is the acceptance
+// half of the source's path class, driven over the wire.
+//
+// The source is a file the person driving the client chose, so it sits wherever
+// they saved it — a description exported by another tool lands in a downloads
+// directory, not in the workspace an editor happens to have open. The file here
+// is created in a sibling of the workspace root for exactly that reason: a test
+// that put it inside the root would pass under the confining rule too and prove
+// nothing about which rule ran.
+//
+// What is asserted is that the bytes were READ, not merely that the request got
+// past a gate. Format selection reads the source's own content, so a
+// format-detection refusal naming that file is proof the read happened — and it
+// is a sharper assertion than "some other error came back", which a refusal
+// raised for an unrelated reason would also satisfy.
+func TestImportReadsASourceTheAuthorSelectedOutsideTheWorkspace(t *testing.T) {
+	t.Parallel()
+	srv := importReadableFixture(t)
+
+	outside := filepath.Join(t.TempDir(), "exported-flow.json")
+	if err := os.WriteFile(outside, []byte("{\"nodes\": []}\n"), 0o644); err != nil {
+		t.Fatalf("seed the selected source: %v", err)
+	}
+
+	resp := callDaemonMethod(t, srv, "aggrega/import", map[string]any{
+		"source":    outside,
+		"outputDir": "drafts",
+	})
+	if resp.Error == nil {
+		t.Fatal("this fixture resolves no importer, so the request cannot have completed")
+	}
+	if strings.Contains(resp.Error.Message, "inside the workspace this session opened") {
+		t.Fatalf("an absolute source the author selected was refused as a workspace-scoped path: %q", resp.Error.Message)
+	}
+	if !strings.Contains(resp.Error.Message, "was not recognised from its shape") {
+		t.Fatalf("the request did not reach format selection, so nothing here shows the source was read: %q", resp.Error.Message)
+	}
+	if !strings.Contains(resp.Error.Message, outside) {
+		t.Errorf("the answer does not name the file that was read: %q, want it to name %q", resp.Error.Message, outside)
+	}
+}
+
+// TestImportStillConfinesItsDestination is the other direction over the same
+// method, and the two together are what make the split attributable.
+//
+// Widening what an operation reads must not widen where it writes. Read alone,
+// the acceptance above is consistent with a method that stopped confining
+// anything, so the destination is asserted on the same surface: an absolute
+// outputDir is refused exactly as before, with the workspace bound named.
+func TestImportStillConfinesItsDestination(t *testing.T) {
+	t.Parallel()
+	srv := importReadableFixture(t)
+
+	elsewhere := t.TempDir()
+	source := filepath.Join(elsewhere, "exported-flow.json")
+	if err := os.WriteFile(source, []byte("{\"nodes\": []}\n"), 0o644); err != nil {
+		t.Fatalf("seed the selected source: %v", err)
+	}
+
+	// The source is the accepted absolute path, so a refusal here can only be
+	// about the destination.
+	resp := callDaemonMethod(t, srv, "aggrega/import", map[string]any{
+		"source":    source,
+		"outputDir": elsewhere,
+	})
+	if resp.Error == nil {
+		t.Fatal("an absolute outputDir outside the workspace was accepted")
+	}
+	if !strings.Contains(resp.Error.Message, "outputDir must name a path inside the workspace this session opened") {
+		t.Errorf("the refusal does not name the destination bound: %q", resp.Error.Message)
+	}
+	if !strings.Contains(resp.Error.Message, "is absolute or climbs out of it") {
+		t.Errorf("the refusal does not say what was wrong with the value: %q", resp.Error.Message)
+	}
+
+	// A destination climbing out of the root is refused on the same rule, so the
+	// refusal above is not merely about the leading separator.
+	resp = callDaemonMethod(t, srv, "aggrega/import", map[string]any{
+		"source":    source,
+		"outputDir": "../drafts",
+	})
+	if resp.Error == nil {
+		t.Fatal("an outputDir climbing out of the workspace was accepted")
+	}
+	if !strings.Contains(resp.Error.Message, "inside the workspace this session opened") {
+		t.Errorf("the refusal does not name the destination bound: %q", resp.Error.Message)
+	}
 }
 
 // TestImportRefusesARequestNamingNoOutputDirectory drives the required-field
