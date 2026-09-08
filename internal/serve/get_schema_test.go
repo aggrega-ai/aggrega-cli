@@ -102,9 +102,15 @@ func TestGetSchemaAnswersWithTheEmbeddedSchema(t *testing.T) {
 			}
 			// A schema request asks about one kind, so the enumeration is the other
 			// answer and must not ride along: a client reading both halves could not
-			// tell which question it asked.
+			// tell which question it asked. Both widths of the enumeration are held
+			// to that, because either alone would be a client's cue that it received
+			// the enumeration.
 			if len(got.Kinds) != 0 {
 				t.Errorf("the answer for a named kind also carried the enumeration: %v", got.Kinds)
+			}
+			if len(got.EntityKinds) != 0 {
+				t.Errorf("the answer for a named kind also carried the authorable-kind enumeration: %v",
+					got.EntityKinds)
 			}
 		})
 	}
@@ -151,6 +157,52 @@ func TestGetSchemaEnumeratesEveryKindWhenNoneIsNamed(t *testing.T) {
 					got.Kind, got.Schema)
 			}
 		})
+	}
+}
+
+// TestGetSchemaEnumeratesTheAuthorableKindsWhenNoneIsNamed is the invocation
+// proof for the narrow half of the enumeration: a real request goes through the
+// production dispatch and serializer, and the answer that comes back carries the
+// kinds an author may write, in both registers.
+//
+// It is the answer a client populates a drafting control from, so it is held to
+// three properties a client depends on. Every entry resolves to a schema, so a
+// client can walk the list and ask about each entry without meeting a refusal.
+// Every entry is also in the wide enumeration, so the narrow set is a narrowing
+// of the same vocabulary rather than a second one. And every entry carries both
+// registers filled, because a client handed one of them empty has nothing to send
+// back or nothing to write.
+func TestGetSchemaEnumeratesTheAuthorableKindsWhenNoneIsNamed(t *testing.T) {
+	srv := newTestServer(t, t.TempDir(), nil, nil)
+
+	got := decodeGetSchemaResult(t, callGetSchema(t, srv, map[string]any{}))
+	if len(got.EntityKinds) == 0 {
+		t.Fatal("the enumeration carried no authorable kinds, so a client has nothing to offer an author")
+	}
+	if len(got.EntityKinds) >= len(got.Kinds) {
+		t.Errorf("the authorable set holds %d of the %d tokens the binary answers to; it is meant to be "+
+			"the narrower of the two, and a set that is not narrower is not a narrowing",
+			len(got.EntityKinds), len(got.Kinds))
+	}
+
+	wide := map[string]bool{}
+	for _, kind := range got.Kinds {
+		wide[kind] = true
+	}
+	for _, d := range got.EntityKinds {
+		switch {
+		case d.Kind == "":
+			t.Errorf("an authorable-kind entry carries no token to send back: %+v", d)
+		case d.DocumentKind == "":
+			t.Errorf("an authorable-kind entry carries no value to write in a document: %+v", d)
+		}
+		if _, ok := schemas.SchemaByKind(d.Kind); !ok {
+			t.Errorf("the authorable set offers the token %q, which resolves to no schema", d.Kind)
+		}
+		if !wide[d.Kind] {
+			t.Errorf("the authorable set offers the token %q, which the wide enumeration does not hold: "+
+				"the two are answering out of different vocabularies", d.Kind)
+		}
 	}
 }
 

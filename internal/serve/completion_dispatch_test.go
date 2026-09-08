@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/serve/standalonekind"
+	"github.com/aggrega-ai/aggrega-cli/pkg/entitykind"
 	"github.com/aggrega-ai/aggrega-cli/pkg/yamlpos"
 )
 
@@ -54,17 +56,30 @@ func TestCompletionDispatchKindCursor(t *testing.T) {
 	validateFile(t, srv, path, content)
 
 	// Cursor on "Aggregate" value at line 1, char 10.
+	//
+	// The expectation is the set of kinds an author writes a document of, rather
+	// than a count and a sample written here. A count says nothing a reader can
+	// reconstruct later, and a sample passes over exactly the kind that was
+	// dropped.
 	result := completionRequest(t, srv, path, 1, 10)
-	if len(result.Items) != 12 {
-		t.Errorf("kind completion returned %d items; want 12 entity kinds", len(result.Items))
+	standalone := standalonekind.Kinds()
+	if len(standalone) == 0 {
+		t.Fatal("no kind is written as a document of its own, so the comparisons below assert nothing")
 	}
 	labels := map[string]bool{}
 	for _, it := range result.Items {
 		labels[it.Label] = true
 	}
-	for _, want := range []string{"Component", "Feature", "Recipe", "Aggregate", "Manifest", "Release", "Plugin", "FeatureRecipe", "SchemaLibrary", "MappingLibrary"} {
-		if !labels[want] {
-			t.Errorf("kind candidate %q missing from output", want)
+	want := map[entitykind.Kind]bool{}
+	for _, k := range standalone {
+		want[k] = true
+		if !labels[string(k)] {
+			t.Errorf("an author writes a document of kind %s and the cursor offered no such candidate", k)
+		}
+	}
+	for label := range labels {
+		if !want[entitykind.Kind(label)] {
+			t.Errorf("the cursor offered %q, which is not a kind an author writes a document of", label)
 		}
 	}
 }

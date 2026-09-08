@@ -9,29 +9,79 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/serve/standalonekind"
+	"github.com/aggrega-ai/aggrega-cli/pkg/entitykind"
 	"github.com/aggrega-ai/aggrega-cli/pkg/yamlpos"
 )
 
 // --- Per-context unit tests ---
 
-func TestCompletionKindReturnsAllEntityKinds(t *testing.T) {
+// TestCompletionKindOffersEveryStandaloneKind holds the candidate list to the
+// kinds an author writes a document of, which is where the offered set is read
+// from.
+//
+// The expectation is that set rather than a list written here: a restated list
+// would agree on the day it was typed and pass while the surface and the
+// vocabulary disagreed. Two further questions are asked elsewhere, and keeping
+// them apart is what lets each of the three fail on its own subject. Whether the
+// vocabulary is itself right is asked against the shipped schemas in the
+// daemon's own package. Whether each declared kind's disposition has been
+// decided at all is asked against the roll-call held there.
+func TestCompletionKindOffersEveryStandaloneKind(t *testing.T) {
 	t.Parallel()
 	items := Kind()
-	if len(items) != 12 {
-		t.Fatalf("Kind() returned %d items; want 12 entity kinds", len(items))
+	standalone := standalonekind.Kinds()
+	if len(standalone) == 0 {
+		t.Fatal("no kind is written as a document of its own, so the comparisons below assert nothing")
 	}
-	// First item should be the authoring-progression's natural starting point: Aggregate.
-	if items[0].Label != "Aggregate" {
-		t.Errorf("first item = %q; want Aggregate (Operator-layer authoring entry point)", items[0].Label)
+	if len(items) != len(standalone) {
+		t.Errorf("Kind() returned %d items and %d kinds are written as a document of their own",
+			len(items), len(standalone))
 	}
-	// Every kind in the closed set should be present.
 	got := map[string]bool{}
 	for _, item := range items {
 		got[item.Label] = true
 	}
-	for _, want := range []string{"Aggregate", "Manifest", "Release", "Component", "Feature", "Recipe", "FeatureRecipe", "Plugin", "SchemaLibrary", "MappingLibrary", "WorkloadLibrary", "ArtifactsLibrary"} {
-		if !got[want] {
-			t.Errorf("kind %q missing from Kind() output", want)
+	for _, k := range standalone {
+		if !got[string(k)] {
+			t.Errorf("an author writes a document of kind %s and Kind() does not offer it: typing it is "+
+				"answered with nothing, which reads as the kind not existing", k)
+		}
+	}
+	offered := map[entitykind.Kind]bool{}
+	for _, k := range standalone {
+		offered[k] = true
+	}
+	for label := range got {
+		if !offered[entitykind.Kind(label)] {
+			t.Errorf("Kind() offers %q, which is not a kind an author writes a document of: accepting it "+
+				"writes a document nothing validates or one there is nowhere to put", label)
+		}
+	}
+	// The first entry is the ordering preference's own claim: an author starting a
+	// document reaches for an Aggregate more often than anything else, so it is
+	// offered first whatever order the vocabulary declares.
+	if len(items) > 0 && items[0].Label != string(entitykind.Aggregate) {
+		t.Errorf("first item = %q; want %s", items[0].Label, entitykind.Aggregate)
+	}
+}
+
+// TestEntryPointKindsAreDeclaredKinds holds the ordering preference to the
+// vocabulary.
+//
+// The preference fixes where a few kinds sit and says nothing about membership,
+// so a name that stops being a kind changes no offered set — it simply stops
+// taking its intended place, in silence. Naming it is what makes the ordering
+// intent falsifiable.
+func TestEntryPointKindsAreDeclaredKinds(t *testing.T) {
+	t.Parallel()
+	if len(entryPointKinds) == 0 {
+		t.Fatal("the ordering preference names no kind, so the walk below asserts nothing")
+	}
+	for _, k := range entryPointKinds {
+		if !entitykind.IsKind(k) {
+			t.Errorf("the offered order prefers %q first, and it is not a declared kind: it takes no "+
+				"position, so the intended order is silently not applied", k)
 		}
 	}
 }
@@ -510,10 +560,31 @@ func TestClassifyForCompletionReturnsUnknownForUnrecognized(t *testing.T) {
 
 // --- Closed-set table verification ---
 
-func TestEntityKindsTableContainsExpectedTwelve(t *testing.T) {
+// TestEntityKindsTableIsTheStandaloneVocabulary holds the offered table to the
+// set it is projected from — the kinds an author writes a document of — by set
+// difference rather than by count: two sets each short one entry agree on their
+// counts.
+func TestEntityKindsTableIsTheStandaloneVocabulary(t *testing.T) {
 	t.Parallel()
-	if len(EntityKinds) != 12 {
-		t.Errorf("EntityKinds has %d entries; want 12", len(EntityKinds))
+	standalone := standalonekind.Kinds()
+	if len(standalone) == 0 {
+		t.Fatal("no kind is written as a document of its own, so the comparisons below assert nothing")
+	}
+	offered := map[string]bool{}
+	for _, name := range EntityKinds {
+		offered[name] = true
+	}
+	want := map[entitykind.Kind]bool{}
+	for _, k := range standalone {
+		want[k] = true
+		if !offered[string(k)] {
+			t.Errorf("an author writes a document of kind %s and the offered table omits it", k)
+		}
+	}
+	for name := range offered {
+		if !want[entitykind.Kind(name)] {
+			t.Errorf("the offered table holds %q, which is not a kind an author writes a document of", name)
+		}
 	}
 }
 

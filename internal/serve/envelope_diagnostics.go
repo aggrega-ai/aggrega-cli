@@ -10,6 +10,7 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/serve/standalonekind"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
@@ -18,29 +19,58 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/yamlpos"
 )
 
-// entityKindByName maps an authored aggrega entity kind string to its
-// envelope.Kind. All twelve editor-authored entity kinds appear here, and
-// the set matches completion.EntityKinds exactly — a kind the daemon
-// offers as a `kind:` completion is a kind whose documents it also
-// validates. AggregaConfig / Lockfile / Workload / IR are deliberately
-// absent — the first two carry no apiVersion+kind envelope to classify on
-// (they are flat-top-level documents, so this apiVersion+kind mechanism
-// structurally cannot reach them — those two are classified by filename
-// instead, see classifyByFilename), and Workload/IR are not
-// editor-authored standalone documents.
-var entityKindByName = map[string]envelope.Kind{
-	"Component":        envelope.KindComponent,
-	"Feature":          envelope.KindFeature,
-	"Recipe":           envelope.KindRecipe,
-	"FeatureRecipe":    envelope.KindFeatureRecipe,
-	"Plugin":           envelope.KindPlugin,
-	"SchemaLibrary":    envelope.KindSchemaLibrary,
-	"MappingLibrary":   envelope.KindMappingLibrary,
-	"WorkloadLibrary":  envelope.KindWorkloadLibrary,
-	"ArtifactsLibrary": envelope.KindArtifactsLibrary,
-	"Aggregate":        envelope.KindAggregate,
-	"Manifest":         envelope.KindManifest,
-	"Release":          envelope.KindRelease,
+// entityKindByName maps the value an author writes in a document's `kind:`
+// field to the envelope family that validates documents of that kind.
+//
+// It is built from the declared entity-kind vocabulary rather than written out,
+// so the kinds the daemon offers as a `kind:` completion and the kinds whose
+// documents it validates are one set by construction. Offering a kind and then
+// declining to validate documents of it is a divergence invisible in either
+// surface read alone, and a hand-written list on this side is how a kind comes to
+// be dropped from one of them.
+//
+// The envelope families are the wider set — they cover generated and
+// configuration documents as well as authored entities — so this is a narrowing
+// of them, and it narrows to what an author writes as a document of their own. A
+// family with no entity kind behind it contributes nothing here; a kind with no
+// family behind it likewise contributes nothing, so this cannot name a family
+// that has no schema to validate against, and a test reports either gap rather
+// than leaving it silent.
+//
+// Two kinds of aggrega content are absent for two different reasons, and both
+// reasons hold whatever the vocabulary declares.
+//
+// The workspace configuration and the lockfile are unreachable by any
+// apiVersion+kind classification: they carry no such header at all, being
+// flat-top-level documents, so classifyByFilename classifies those instead.
+//
+// Content written inside another kind's document is a different case. It does
+// carry a header, and its schema fixes both halves of it, but the header names
+// the content for validation where it sits rather than making it a document of
+// its own — so an editor buffer is not where such content is read from, and the
+// kind is not one this classification reaches. What a buffer of it classifies as
+// is foreign YAML, which is the same answer the surrounding document's own
+// classification already gives for the region the content occupies.
+var entityKindByName = authoredEnvelopeKindsByName()
+
+// authoredEnvelopeKindsByName pairs every kind an author writes a document of
+// with its envelope family, in the vocabulary's own terms: a kind and its family
+// carry the same name, so the pairing is the name itself rather than a per-kind
+// decision.
+func authoredEnvelopeKindsByName() map[string]envelope.Kind {
+	families := make(map[envelope.Kind]bool)
+	for _, family := range envelope.Kinds() {
+		families[family] = true
+	}
+	declared := standalonekind.Kinds()
+	out := make(map[string]envelope.Kind, len(declared))
+	for _, k := range declared {
+		family := envelope.Kind(string(k))
+		if families[family] {
+			out[string(k)] = family
+		}
+	}
+	return out
 }
 
 // classifyAggregaDocument peeks apiVersion + kind from the parsed buffer
@@ -143,7 +173,7 @@ func classifyByFilename(file, releasePath string) (envelope.Kind, bool) {
 // its findings as per-file diagnostics. Classification is by filename
 // first (the workspace config and the named Release's lockfile, which
 // carry no apiVersion+kind envelope) and then by the document's
-// apiVersion+kind (the twelve authored entity kinds). The second return is
+// apiVersion+kind (every kind an author writes a document of). The second return is
 // true only when the document classifies AND the envelope rejected it —
 // the signal the caller uses to early-return (which short-circuits the
 // semantic pass for the named Release's Aggregate and is the coverage for

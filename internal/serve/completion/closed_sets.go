@@ -3,36 +3,90 @@
 
 package completion
 
-// EntityKinds enumerates the entity kinds the daemon recognizes.
-// Order follows the typical operator-authoring sequence — the most
-// common entry-point kinds come first; sortText generation uses the
-// slice index so the client's lexicographic sort matches this order.
+import (
+	"github.com/aggrega-ai/aggrega-cli/internal/serve/standalonekind"
+	"github.com/aggrega-ai/aggrega-cli/pkg/entitykind"
+)
+
+// entryPointKinds are the kinds whose position in the offered list is a
+// deliberate choice rather than the vocabulary's own order: an author starting a
+// new document most often reaches for one of these, so they are offered first.
 //
-// The set is closed: these twelve are every value an author may write in
-// an entity document's kind field. Two kinds an author might expect are
-// deliberately absent. A credential is not a kind of its own — it is a
-// Feature carrying the label feature.aggrega.ai/kind: secret, realized by
-// a FeatureRecipe. Neither is Provider a kind: it has no schema and no Go
-// type, and the word names a provider by name and a Plugin's spec.provider
-// block.
+// It fixes positions and says nothing about membership. A kind absent from it is
+// still offered — it takes the vocabulary's own place behind these — so a kind
+// the offered set gains reaches this surface with no edit here. A name it holds
+// that the offered set does not is passed over rather than placed, so the
+// preference can reorder the set and never add to it.
+var entryPointKinds = []entitykind.Kind{
+	entitykind.Aggregate,
+	entitykind.Manifest,
+	entitykind.Release,
+}
+
+// EntityKinds enumerates the values an author writes in the kind field of a
+// document of their own, ordered with the kinds a new document most often starts
+// from first; sortText generation uses the slice index, so a client's
+// lexicographic sort reproduces this order.
 //
-// Derive an authoring-kind list from this slice rather than from
-// envelope.Kind. That type is deliberately wider — beyond these twelve it
-// carries AggregaConfig, Lockfile, Workload and IR, so a switch generated
-// from it would offer an author four values no entity document accepts.
-var EntityKinds = []string{
-	"Aggregate",
-	"Manifest",
-	"Release",
-	"Component",
-	"Feature",
-	"Recipe",
-	"FeatureRecipe",
-	"Plugin",
-	"SchemaLibrary",
-	"MappingLibrary",
-	"WorkloadLibrary",
-	"ArtifactsLibrary",
+// Membership follows the declared entity-kind vocabulary rather than being
+// written out here. A list written here would agree with that vocabulary on the
+// day it was typed and disagree silently the day a kind was declared, and what
+// an author would then see is their kind missing from the one surface meant to
+// offer it to them.
+//
+// Three sets of values an author might expect are absent, for three different
+// reasons.
+//
+// Two are absent because neither is a kind. A credential is not a kind of its
+// own — it is a Feature carrying the label feature.aggrega.ai/kind: secret,
+// realized by a FeatureRecipe. Neither is Provider a kind: it has no schema, and
+// the word names a provider by name and a Plugin's spec.provider block.
+//
+// A kind whose content is written inside another kind's document is absent
+// because completing it here would complete a document there is nowhere to put.
+// Such content carries a kind field of its own and its schema fixes the value,
+// so it is a real kind with a real schema — what the fixed value does is
+// identify the content where it sits, not make it a file to write.
+//
+// The envelope families are the wrong set to derive an authoring list from, and
+// the reason is worth keeping in view: that set is deliberately wider, covering
+// generated and configuration documents as well as authored entities, so a list
+// taken from it whole would offer an author values no entity document accepts.
+var EntityKinds = offeredEntityKinds()
+
+// offeredEntityKinds projects the kinds written as a document of their own into
+// the order this surface offers them: the entry-point kinds first, then every
+// remaining kind in the vocabulary's own declared order.
+//
+// An entry-point name that is not among them contributes nothing, so a name that
+// stops being a kind — or stops being one an author writes a document of —
+// cannot inject a value no document accepts; a test reports such a name rather
+// than leaving it to be dropped in silence.
+func offeredEntityKinds() []string {
+	declared := standalonekind.Kinds()
+	offered := make(map[entitykind.Kind]bool, len(declared))
+	for _, k := range declared {
+		offered[k] = true
+	}
+	// An entry-point name is checked against the offered set rather than against
+	// the whole vocabulary, so the ordering preference can move a kind's position
+	// and never add one. Checked against the vocabulary it would place a kind that
+	// this surface does not offer, which is the one way an ordering preference
+	// could change membership.
+	out := make([]string, 0, len(declared))
+	placed := make(map[entitykind.Kind]bool, len(entryPointKinds))
+	for _, k := range entryPointKinds {
+		if offered[k] {
+			out = append(out, string(k))
+			placed[k] = true
+		}
+	}
+	for _, k := range declared {
+		if !placed[k] {
+			out = append(out, string(k))
+		}
+	}
+	return out
 }
 
 // APIVersions enumerates the known apiVersion values. Single-item
@@ -103,8 +157,8 @@ var SchemaTypePrimitives = []string{
 // sortText prefix places them AFTER vanilla JSON Schema keywords so
 // operators see them grouped at the bottom of completion lists.
 //
-// Grep-discoverable from the codebase. New extensions added in future
-// schema work require updating this table.
+// The keywords are readable from the schemas that declare them. A new
+// extension keyword requires an entry here before it is offered.
 var AggregaSchemaExtensions = []string{
 	"x-aggrega-anything-at-all",
 	"x-aggrega-discouragement",

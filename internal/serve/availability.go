@@ -527,11 +527,18 @@ var operationAvailability = map[string]serveAvailability{
 	"plugin-sync":        servedAt(at("aggrega/pluginSync", (*Server).dispatchPluginSync)),
 	"plugin-gen-catalog": servedAt(at("aggrega/pluginGenCatalog", (*Server).dispatchPluginGenCatalog)),
 
-	// The session reports a kind's schema, and the set of kinds when the request
-	// names none. Its subject is the same one the drafting method above answers
-	// from — a skeleton is derived from these very bytes — so a surface carrying
-	// the derived document while declining its source would be describing one
-	// subject two ways.
+	// The session reports a kind's schema, and — when the request names none —
+	// which kinds can be named: every token this binary answers to, and the
+	// narrower set an author may write a document of. Its subject is the same one
+	// the drafting method above answers from — a skeleton is derived from these
+	// very bytes — so a surface carrying the derived document while declining its
+	// source would be describing one subject two ways.
+	//
+	// The narrow set rides on this answer rather than on a method of its own for
+	// the same reason. A client learns what it may name here, and which of those
+	// names an author writes documents of is the same question at a second width;
+	// two methods answering it would be two answers to keep in agreement, which is
+	// the arrangement a single-sourced vocabulary exists to avoid.
 	//
 	// It is carried on the same ground, and that ground is about who is on the
 	// other end. A client drawing an editor's schema association, or holding a

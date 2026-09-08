@@ -298,21 +298,39 @@ spec:
 	}
 }
 
-// TestEntityKindByNameCoversEveryCompletedKind pins the two editor registries
-// against each other: every entity kind the daemon offers as a `kind:`
-// completion must also be classifiable for the per-file envelope leg. Offering
-// a kind and then declining to validate documents of it is the divergence this
-// guards — it is invisible in either registry read alone, and it is what
-// dropping a kind from one side leaves behind.
+// TestEntityKindByNameCoversEveryCompletedKind pins the two editor-facing
+// registries against each other: every kind the daemon offers as a `kind:`
+// completion is classifiable for the per-file envelope leg, and the reverse.
+// Offering a kind and then declining to validate documents of it is invisible in
+// either registry read alone.
+//
+// What this can and cannot catch is worth stating, because both sides read one
+// narrowing of one vocabulary and a reader could take the pass for more than it
+// is. It catches a RE-DIVERGENCE: a later edit that writes either side out by
+// hand again, or that narrows one projection and not the other. It cannot catch
+// a defect in what the two share — a kind wrongly declared, or one wrongly
+// included in or excluded from the narrowing — because such a defect moves both
+// sides together. That question is asked against the shipped schemas and the
+// decided roll-call instead, where the expectation comes from somewhere neither
+// side reads.
 func TestEntityKindByNameCoversEveryCompletedKind(t *testing.T) {
 	t.Parallel()
+	if len(completion.EntityKinds) == 0 || len(entityKindByName) == 0 {
+		t.Fatal("one of the two registries is empty, so the comparisons below assert nothing")
+	}
 	for _, kind := range completion.EntityKinds {
 		if _, ok := entityKindByName[kind]; !ok {
-			t.Errorf("kind %q is offered as a completion but is not envelope-classifiable", kind)
+			t.Errorf("kind %q is offered as a completion but is not envelope-classifiable: a document "+
+				"of it classifies as foreign YAML, so nothing checks its shape", kind)
 		}
 	}
-	if len(entityKindByName) != len(completion.EntityKinds) {
-		t.Errorf("the two registries must enumerate the same kinds; envelope-classifiable=%d, completion-offered=%d",
-			len(entityKindByName), len(completion.EntityKinds))
+	offered := map[string]bool{}
+	for _, kind := range completion.EntityKinds {
+		offered[kind] = true
+	}
+	for kind := range entityKindByName {
+		if !offered[kind] {
+			t.Errorf("kind %q is envelope-classifiable and is not offered as a completion", kind)
+		}
 	}
 }

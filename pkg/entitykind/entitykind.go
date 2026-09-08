@@ -55,7 +55,8 @@ const (
 	// Plugin is the authoring surface that pins a WebAssembly plugin artifact by
 	// digest.
 	Plugin Kind = "Plugin"
-	// Workload is a standalone workload document.
+	// Workload is the platform-owned workload document, written inside a Recipe
+	// or a FeatureRecipe rather than addressed on its own.
 	Workload Kind = "Workload"
 	// Manifest is the operator's deployment-target document.
 	Manifest Kind = "Manifest"
