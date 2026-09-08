@@ -93,7 +93,6 @@ func newRootCmd() *cobra.Command {
 	// nothing and carry no capability, so they are attached as the groups they
 	// are; their children name their own operations where they are built.
 	mustAttach(root, newBuildCmd(), "build")
-	mustAttach(root, newAcquireCmd(), "acquire")
 	mustAttach(root, newPullCmd(), "pull")
 	mustAttach(root, newInspectCmd(), "inspect")
 	mustAttach(root, newImportCmd(), "import")

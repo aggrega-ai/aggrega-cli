@@ -249,21 +249,20 @@ var operationAvailability = map[string]serveAvailability{
 		at("aggrega/releaseClosure", (*Server).dispatchReleaseClosure),
 	),
 
-	// The session resolves a Release's dependencies and pins the external inputs
-	// its render consumes. Both reach registries and both write — the lockfile and
-	// the content-addressed cache for the first, the input store and the lockfile's
-	// external-input pins for the second — and neither is a question about the
-	// workspace: a caller sending either has asked for the work, exactly as a
+	// The session resolves a Release's dependencies, which is also where the
+	// external inputs its render consumes are pinned: one request, one acquisition
+	// moment. It reaches registries and it writes — the lockfile, the
+	// content-addressed cache, and the input store — and it is not a question about
+	// the workspace: a caller sending it has asked for the work, exactly as a
 	// caller sending a build has asked for artifacts.
 	//
-	// That is the whole of what admits them here. The rule they run under is a
+	// That is the whole of what admits it here. The rule it runs under is a
 	// property of when an operation runs rather than of which surface runs it — a
 	// registry-reaching or state-writing operation runs on explicit invocation and
 	// never while something is being validated or inspected — and it is stated over
 	// the shared resolution layer's own invocation path rather than restated on
 	// each row that happens to reach it.
-	"pull":    servedAt(at("aggrega/resolveDependencies", (*Server).dispatchResolveDependencies)),
-	"acquire": servedAt(at("aggrega/acquireExternalInputs", (*Server).dispatchAcquireExternalInputs)),
+	"pull": servedAt(at("aggrega/resolveDependencies", (*Server).dispatchResolveDependencies)),
 
 	// The session reports and maintains the caches that serve the work. One of
 	// them is the workspace's own artifact cache; two are shared across every

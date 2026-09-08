@@ -11,10 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/aggrega-ai/aggrega-cli/internal/buildops"
-	"github.com/aggrega-ai/aggrega-cli/internal/cacheops"
 	"github.com/aggrega-ai/aggrega-cli/internal/pullops"
-	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 )
 
 // resolveDependenciesParams is the request shape for
@@ -87,43 +84,6 @@ type toolchainReport struct {
 type toolchainCorePluginRow struct {
 	Plugin  string `json:"plugin"`
 	Version string `json:"version"`
-}
-
-// acquireExternalInputsParams is the request shape for
-// `aggrega/acquireExternalInputs`: the Release whose render's external inputs are
-// pinned, under the same workspace-relative contract every Release-naming
-// parameter here carries.
-type acquireExternalInputsParams struct {
-	Release string `json:"release"`
-}
-
-// acquireExternalInputsResult is the response shape for
-// `aggrega/acquireExternalInputs`.
-//
-// Pinned names every external input this run newly pinned, in the order the
-// render requested them, and is empty when the run pinned nothing — which is the
-// ordinary outcome for a Release whose inputs are already recorded. The pins are
-// already merged into the lockfile the operation names, so reporting them is what
-// tells a caller which of its inputs moved.
-type acquireExternalInputsResult struct {
-	Lockfile string                `json:"lockfile"`
-	Pinned   []pinnedExternalInput `json:"pinned"`
-	Notices  []string              `json:"notices,omitempty"`
-}
-
-// pinnedExternalInput is one newly-pinned external input: the URL the render
-// requested, the content digest it was pinned at, and the size of the bytes
-// stored.
-//
-// SizeText is that size written in the binary-unit vocabulary every surface
-// spells sizes in, carried beside the number rather than instead of it, so a
-// caller displaying what was pinned does not have to reproduce the rounding rule
-// to spell it the way the rest of the product does.
-type pinnedExternalInput struct {
-	URL      string `json:"url"`
-	Sha256   string `json:"sha256"`
-	Size     int64  `json:"size"`
-	SizeText string `json:"sizeText"`
 }
 
 // dispatchResolveDependencies unmarshals params and answers the request.
@@ -233,109 +193,6 @@ func (s *Server) handleResolveDependencies(ctx context.Context, params resolveDe
 		}
 	}
 	return out, nil
-}
-
-// dispatchAcquireExternalInputs unmarshals params and answers the request.
-func (s *Server) dispatchAcquireExternalInputs(ctx context.Context, req *jsonRPCRequest) error {
-	var params acquireExternalInputsParams
-	if err := json.Unmarshal(req.Params, &params); err != nil {
-		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
-	}
-	progress := s.progressFor(ctx)
-	defer progress.done()
-	result, errEnvelope := s.handleAcquireExternalInputs(ctx, params, progress)
-	if ctx.Err() != nil {
-		return nil
-	}
-	if errEnvelope != nil {
-		return s.writeErrorEnvelope(ctx, req.ID, errEnvelope)
-	}
-	return s.writeResult(ctx, req.ID, result)
-}
-
-// handleAcquireExternalInputs runs the Release's render in acquisition mode, so
-// every external input the render requests is fetched, pinned into the
-// content-addressed store and recorded in the lockfile, and reports the pins this
-// run added.
-//
-// It reaches the network and writes for the same reason the resolution above
-// does, under the same rule: a caller sending this has asked for the inputs to be
-// pinned. The rendered artifacts are discarded — the shared operation points the
-// render at a temporary directory it removes — so the workspace's own output tree
-// is untouched by an acquisition, on this surface exactly as on the command line.
-//
-// The dependency fill the run may need is the resolution operation itself,
-// supplied here rather than reimplemented: a build that fills its own lockfile
-// runs the same resolution every other surface runs, so a workspace configured to
-// fill automatically behaves identically whichever surface asked. The fill is
-// told that this run's own render acquires, so it resolves the dependencies and
-// leaves the external inputs to that render rather than rendering the Release a
-// second time to discover them.
-// It reports what it is doing while it does it, on the same terms the
-// resolution above does: the acquisition's own account of itself reaches a
-// request that asked to be reported on, and the answer's notices are the same
-// stream read a second time.
-func (s *Server) handleAcquireExternalInputs(ctx context.Context, params acquireExternalInputsParams, progress *progressRun) (acquireExternalInputsResult, *jsonRPCError) {
-	releasePath, paramErr := resolveReleaseParam(s.workspaceRoot, params.Release)
-	if paramErr != nil {
-		return acquireExternalInputsResult{}, paramErr
-	}
-	progress.begin("Acquiring external inputs")
-
-	// The options this acquisition's own render runs under, named here rather than
-	// left implicit, because the fill below has to be told whether that render
-	// acquires and the answer is read from the one place that decides it.
-	runOpts := buildops.RunOptions{}
-
-	var notices bytes.Buffer
-	acquired, err := buildops.Acquire(buildops.Config{
-		Workspace:       s.resolvedWorkspace,
-		ReleasePath:     releasePath,
-		CompilerVersion: s.compilerVersion,
-		Options:         runOpts,
-		DiagOut:         io.MultiWriter(&notices, progress.writer()),
-		Out:             io.Discard,
-		Pull: func(upgrade, _ bool, pullDiagOut, _ io.Writer) error {
-			_, perr := pullops.Run(pullops.Config{
-				Workspace:       s.resolvedWorkspace,
-				ReleasePath:     releasePath,
-				Upgrade:         upgrade,
-				CompilerVersion: s.compilerVersion,
-				Toolchain:       s.toolchain,
-				DiagOut:         pullDiagOut,
-				// Where this run's own render acquires, the fill stands its
-				// external-input discovery render down: the render immediately after
-				// it reaches the same references and pins them, so discovering here
-				// would render this Release twice and leave that render nothing to
-				// pin. Where a render is frozen instead, the fill is the only thing
-				// that can pin what it will ask for, so it discovers.
-				CallerRendersAndAcquires: runOpts.AcquiresDuringRender(),
-			})
-			return perr
-		},
-	})
-	if err != nil {
-		return acquireExternalInputsResult{}, &jsonRPCError{
-			Code:    errEntityNotResolvable,
-			Message: err.Error(),
-			cause:   err,
-		}
-	}
-
-	pinned := make([]pinnedExternalInput, 0, len(acquired))
-	for _, rec := range acquired {
-		pinned = append(pinned, pinnedExternalInput{
-			URL:      rec.URL,
-			Sha256:   rec.Sha256,
-			Size:     rec.Size,
-			SizeText: cacheops.HumanSize(rec.Size),
-		})
-	}
-	return acquireExternalInputsResult{
-		Lockfile: s.workspaceRelative(lockfile.PathFor(releasePath)),
-		Pinned:   pinned,
-		Notices:  noticeLines(notices.String()),
-	}, nil
 }
 
 // noticeLines splits a captured diagnostic stream into the lines a client

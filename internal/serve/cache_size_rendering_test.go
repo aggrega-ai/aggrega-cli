@@ -258,16 +258,6 @@ func TestEveryCacheResultCarriesItsRenderedSizes(t *testing.T) {
 				ReclaimedBytesText: cacheops.HumanSize(n),
 			},
 		},
-		{
-			name:  "a newly-pinned external input",
-			pairs: map[string]string{"size": "sizeText"},
-			payload: pinnedExternalInput{
-				URL:      "https://example.invalid/an-input",
-				Sha256:   "0000000000000000000000000000000000000000000000000000000000000000",
-				Size:     n,
-				SizeText: cacheops.HumanSize(n),
-			},
-		},
 	}
 
 	for _, tc := range cases {

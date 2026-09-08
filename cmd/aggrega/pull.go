@@ -125,17 +125,6 @@ type pullConfig struct {
 	IncludePrerelease bool
 	Detail            bool
 
-	// callerRendersAndAcquires is the build's automatic-fill integration
-	// declaring that it renders this same Release itself, immediately after this
-	// run, with acquisition on — so the external-input discovery render stands
-	// down and the build's own render does the pinning.
-	//
-	// Unexported and lowercase because no flag sets it and none should: it is a
-	// statement about what happens next in the same process, which a person
-	// typing a command has no way to make. The pull command leaves it false, so
-	// `aggrega pull` always discovers.
-	callerRendersAndAcquires bool
-
 	// ws is the resolved workspace, threaded in by the command's RunE from the
 	// shared resolution chokepoint. Required: the shared layer refuses a nil, so a
 	// test invoking pullRun directly declares the workspace it resolves.
@@ -265,7 +254,6 @@ func pullRun(cfg pullConfig) error {
 		Upgrade:                   cfg.Upgrade,
 		UpgradeTargets:            cfg.UpgradeTargets,
 		Verify:                    cfg.Verify,
-		CallerRendersAndAcquires:  cfg.callerRendersAndAcquires,
 		IncludePrerelease:         cfg.IncludePrerelease,
 		CompilerVersion:           provenanceCompilerVersion(),
 		Toolchain:                 toolchainStamp(),

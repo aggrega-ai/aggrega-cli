@@ -38,7 +38,6 @@ type buildFlags struct {
 	quiet                   bool
 	progress                bool
 	debug                   bool
-	noAcquireInputs         bool
 	disablePluginCache      bool
 	verifyDeterminism       bool
 	autoPull                bool
@@ -103,17 +102,16 @@ the rendered tree reviewable as a diff.`,
 	c.Flags().StringArrayVar(&opts.catalogDirs, "catalog", nil, "Catalog directory; repeatable. Each --catalog is prepended to the workspace catalog_dirs search stack (first match wins). Defaults to the current directory.")
 	c.Flags().BoolVar(&opts.traceEnabled, "trace", false, "write per-node intermediate files to .trace/ (sibling to dist/) for post-mortem inspection")
 	c.Flags().BoolVar(&opts.traceUnredacted, "trace-unredacted", false, helpTraceUnredacted)
-	c.Flags().BoolVar(&opts.detail, "detail", false, "Build is read-only by default and prints no resolution detail. When workspace auto_pull is enabled and no lockfile is present, build fills the lockfile in-process; this flag then prints per resolved entity what that fill did — fetched fresh from a registry, reused a cache slot, found in a local catalog, served from inside the compiler binary, or external. Stdout only; not persisted. No-op when a lockfile already exists (no fill this build)")
+	c.Flags().BoolVar(&opts.detail, "detail", false, "Build is read-only by default and prints no resolution detail. When the pull step runs — because --auto-pull was passed or the workspace enables auto_pull — build fills the lockfile in-process whether or not one is already present, and this flag prints per resolved entity what that fill did: fetched fresh from a registry, reused a cache slot, found in a local catalog, served from inside the compiler binary, or external. When no pull step runs, it prints one line saying so instead of the per-entity rows. Stdout only; not persisted")
 	c.Flags().BoolVar(&opts.quiet, "quiet", false, "Silence the build-progress surface on stderr. Does not affect stdout. Takes precedence over --progress")
 	c.Flags().BoolVar(&opts.progress, "progress", false, "Force the build-progress surface on even when stderr is not a terminal, printing plain static phase lines. The default is auto: the interactive phase checklist is shown only when stderr is a terminal. --quiet and --debug both override --progress")
 	c.Flags().BoolVar(&opts.debug, "debug", false, "Emit human-readable verbose diagnostics on stderr — per-phase wall-clock timing and entity/dependency counts. Wins over --quiet: verbose output always emits. Distinct from --trace, which writes machine-readable per-node intermediate files to .trace/")
-	c.Flags().BoolVar(&opts.noAcquireInputs, "no-acquire-inputs", false, "Freeze the external-input set: a render that requests an unpinned external URL halts with a diagnostic instead of fetching and pinning it. Pinned inputs are still served from the content-addressed store (and refilled by digest when the blob is missing)")
 	c.Flags().BoolVar(&opts.noUnsupportedFieldWarns, flagNoUnsupportedFieldWarnings, false, helpNoUnsupportedFieldWarnings)
 	c.Flags().BoolVar(&opts.disablePluginCache, "disable-plugin-cache", false, "Skip the persistent on-disk plugin compile cache for this build and compile plugin guests fresh in an in-memory cache that is discarded when the build ends. Off by default, which reuses the shared on-disk cache across builds. Does not change rendered output")
 	c.Flags().BoolVar(&opts.verifyDeterminism, "verify-determinism", false, "Render every node twice and compare the emitted bytes, halting the build if any node's two renders differ. Off by default. Use it to confirm a provider renders deterministically — identical input yields byte-identical output — which the GitOps-diff and byte-identical-output guarantees rely on")
 	c.Flags().BoolVar(&opts.autoPull, "auto-pull", false, "Run the pull step before building: resolve the Release's dependencies into the lockfile and cache in-process, then build against them. This is the same in-process fill the workspace auto_pull setting performs, turned on for a single build without editing workspace config. On its own it is an incremental fill — existing pins are honored, and references with no pin are resolved and added")
 	c.Flags().BoolVar(&opts.upgrade, "upgrade", false, "Make the auto-pull step a full refresh: discard the existing lockfile and re-resolve every dependency from current registry state, floating each to the highest available version instead of honoring existing pins. Implies --auto-pull — on its own it runs a full-refresh pull before the build")
-	c.Flags().BoolVar(&opts.dryRun, "dry-run", false, "Render the Release and print what it would emit instead of writing it: each artifact's would-be path and its content go to stdout, and the output directory and the lockfile are left untouched. External inputs are frozen for the run, so a render that requests an unpinned external URL halts naming it rather than fetching and pinning it; pinned inputs are still served from the content-addressed store (and refilled by digest when the blob is missing). Refuses to combine with --auto-pull, --upgrade or --trace, each of which writes — run the dependency fill, or a traced build, as its own step")
+	c.Flags().BoolVar(&opts.dryRun, "dry-run", false, "Render the Release and print what it would emit instead of writing it: each artifact's would-be path and its content go to stdout, and the output directory and the lockfile are left untouched. External inputs behave exactly as they do in an ordinary build — pinned inputs are served from the content-addressed store (and refilled by digest when the blob is missing), and a render that requests an unpinned external URL halts naming it — so what a dry run shows is what a build would write. Refuses to combine with --auto-pull, --upgrade or --trace, each of which writes — run the dependency fill, or a traced build, as its own step")
 	c.Flags().BoolVar(&opts.irGraph, flagIRGraph, false, helpIRGraph+". The artifacts are still written and the summary is still printed; the graph is written ahead of both")
 	if err := c.MarkFlagRequired("release"); err != nil {
 		panic(err)
@@ -133,7 +131,7 @@ func runBuild(cmd *cobra.Command, args []string, opts *buildFlags) error {
 	// The graph shares the stream the build's own output already uses, named once
 	// here so the two cannot come to write to different places.
 	out := os.Stdout
-	run := buildops.RunOptions{Detail: opts.detail, NoAcquireInputs: opts.noAcquireInputs, DisablePluginCache: opts.disablePluginCache, VerifyDeterminism: opts.verifyDeterminism, AutoPull: opts.autoPull, Upgrade: opts.upgrade, SuppressUnsupportedFieldWarnings: opts.noUnsupportedFieldWarns, TraceUnredacted: opts.traceUnredacted, DryRun: opts.dryRun}
+	run := buildops.RunOptions{Detail: opts.detail, DisablePluginCache: opts.disablePluginCache, VerifyDeterminism: opts.verifyDeterminism, AutoPull: opts.autoPull, Upgrade: opts.upgrade, SuppressUnsupportedFieldWarnings: opts.noUnsupportedFieldWarns, TraceUnredacted: opts.traceUnredacted, DryRun: opts.dryRun}
 	if opts.irGraph {
 		// The graph goes to the same stream the build's own output goes to, and
 		// through the one writer every command that offers the document shares.
@@ -242,15 +240,15 @@ func buildDispatchConfig(rw *workspaceconfig.ResolvedWorkspace, releasePath stri
 		// implicit pull. The flag dirs (not the resolved list) are forwarded so the
 		// pull re-derives the identical stack with the same config.
 		//
-		// The fill is told whether this build's own render acquires, read from the
-		// one place that decides it. Where it does, the fill stands its external-input
-		// discovery render down: the render immediately after it reaches the same
-		// references and pins them, so discovering here would render this Release
-		// twice and leave the build's render nothing to pin. Where the render is
-		// frozen, the fill is the only thing that can pin what that render will ask
-		// for, so it discovers.
+		// The fill discovers and pins the external inputs, because the build's own
+		// render will not: a build renders the closure the lockfile records. So a
+		// build that fills its own lockfile renders the Release twice — once here to
+		// find out which remote references it consumes, and once to build against
+		// what that render pinned. That is the cost of there being one acquisition
+		// moment; running the pull as its own step pays it once instead of on every
+		// build.
 		Pull: func(upgrade, detail bool, pullDiagOut, pullOut io.Writer) error {
-			return pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: catalogFlagDirs, Upgrade: upgrade, Detail: detail, ws: rw, DiagOut: pullDiagOut, Out: pullOut, diag: buildDiagOptions{quiet: true}, callerRendersAndAcquires: run.AcquiresDuringRender()})
+			return pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: catalogFlagDirs, Upgrade: upgrade, Detail: detail, ws: rw, DiagOut: pullDiagOut, Out: pullOut, diag: buildDiagOptions{quiet: true}})
 		},
 		AnnotateResolutionFailure: withSkipContext,
 		DiagOut:                   diagOut,
@@ -304,11 +302,10 @@ func writePreviewWarnings(preview *compilerops.PreviewResult, diagOut io.Writer)
 	}
 }
 
-// writeDryRunDivergenceNote reports the one way a dry run can diverge from the
-// build it stands in for: it declined an external reference the lockfile does
-// not pin, so the render stopped short of the bytes a real build — which would
-// have fetched and pinned it — would have produced. The references are named
-// from the record of what was declined, not read out of a diagnostic.
+// writeDryRunDivergenceNote names every external reference a dry run declined
+// for want of a pin, so the reader sees the whole set rather than only the one
+// the render stopped on. The references are named from the record of what was
+// declined, not read out of a diagnostic.
 //
 // The note goes to the diagnostic stream beside the failure rather than being
 // wrapped around it, because the diagnostic formatter renders a failure from the
@@ -316,18 +313,19 @@ func writePreviewWarnings(preview *compilerops.PreviewResult, diagOut io.Writer)
 // text wrapped on here would reach the reader only while the failure happened to
 // carry no envelope.
 //
-// It is reached only for a dry run that declined something. A real build says
-// nothing: acquisition is on there unless the operator froze the closure
-// themselves, in which case they know why it refused.
+// It is reached only for a dry run that declined something. An ordinary build
+// meeting the same reference halts on it identically — no build's render
+// acquires — so this adds the full set and the remedy rather than reporting a
+// difference between the two.
 func writeDryRunDivergenceNote(declined []string, releasePath string, diagOut io.Writer) {
 	if len(declined) == 0 {
 		return
 	}
-	fmt.Fprint(diagOut, "  note: the lockfile does not pin every external reference this render requested, so the dry run declined the following and cannot show what a real build would emit:\n")
+	fmt.Fprint(diagOut, "  note: the lockfile does not pin every external reference this render requested, so the following were declined and the render stopped short of the artifacts it would otherwise emit:\n")
 	for _, url := range declined {
 		fmt.Fprintf(diagOut, "    - %s\n", url)
 	}
-	fmt.Fprintf(diagOut, "  Run `aggrega acquire --release %s` to pin the inputs the render needs, then run the dry run again\n", releasePath)
+	fmt.Fprintf(diagOut, "  Run `aggrega pull --release %s` to pin the inputs the render needs, then run the dry run again\n", releasePath)
 }
 
 // formatTotalBuildTimeLine renders the successful-build summary's total line with

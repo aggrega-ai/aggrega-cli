@@ -48,7 +48,7 @@ func TestDivergenceAdvisoryNamesTheReferenceAndTheRemedy(t *testing.T) {
 		t.Fatalf("one declined reference must produce one advisory; got %d", len(diags))
 	}
 	d := diags[0]
-	for _, want := range []string{url, "cannot show what a build would emit", "aggrega acquire", "app-release.yaml"} {
+	for _, want := range []string{url, "cannot show what a build would emit", "aggrega pull", "app-release.yaml"} {
 		if !strings.Contains(d.Message, want) {
 			t.Errorf("the advisory does not carry %q:\n%s", want, d.Message)
 		}

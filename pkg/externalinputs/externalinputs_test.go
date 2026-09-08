@@ -68,8 +68,7 @@ func TestHermeticMiss(t *testing.T) {
 	if !strings.Contains(err.Error(), inputURL) {
 		t.Errorf("error should name the URL, got: %v", err)
 	}
-	if !strings.Contains(err.Error(), "re-run with acquisition enabled") ||
-		!strings.Contains(err.Error(), "acquisition pass") {
+	if !strings.Contains(err.Error(), "aggrega pull --release") {
 		t.Errorf("error should name the remedy, got: %v", err)
 	}
 	if got := calls.Load(); got != 0 {

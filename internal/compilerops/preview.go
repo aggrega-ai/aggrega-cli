@@ -315,9 +315,9 @@ type previewPolicy struct {
 }
 
 // artifactPolicy is the posture of a surface that produces a deployable
-// artifact — the command-line build, the acquisition pass, and the in-memory
-// build tool. Every gate is on and the divergences halt, because the output is
-// something a person will apply.
+// artifact — the command-line build, the pull's discovery render, and the
+// in-memory build tool. Every gate is on and the divergences halt, because the
+// output is something a person will apply.
 func artifactPolicy() previewPolicy {
 	return previewPolicy{
 		verifyPinnedIntegrity:            true,
@@ -454,8 +454,8 @@ func IsResolutionFailure(err error) bool {
 
 // PreviewForArtifact renders a Release the way a surface that emits something a
 // person will apply must: every gate on, every divergence a halt. It is the
-// operation the command-line build, the acquisition pass and the daemon's build
-// methods run.
+// operation the command-line build, the pull's discovery render and the daemon's
+// build methods run.
 //
 // It holds the Release to its lockfile, and its callers establish that before
 // calling — the command line by filling a missing lockfile, the daemon by

@@ -100,9 +100,6 @@ var runtimeErrorCommands = []struct {
 	setup func(t *testing.T)
 }{
 	{path: "aggrega build", args: []string{"build", "--release", "/nonexistent-aggrega-xyz/release.yaml", "--catalog", "/nonexistent-aggrega-xyz/catalog"}},
-	// acquire runs the build dispatch, so the same non-existent-path
-	// invocation reaches its RunE and fails locally.
-	{path: "aggrega acquire", args: []string{"acquire", "--release", "/nonexistent-aggrega-xyz/release.yaml", "--catalog", "/nonexistent-aggrega-xyz/catalog"}},
 	{path: "aggrega pull", args: []string{"pull", "--release", "/nonexistent-aggrega-xyz/release.yaml", "--catalog", "/nonexistent-aggrega-xyz/catalog"}},
 	{path: "aggrega inspect", args: []string{"inspect", "/nonexistent-aggrega-xyz/release.yaml"}},
 	// import reaches its RunE with a well-formed single argument, then fails in

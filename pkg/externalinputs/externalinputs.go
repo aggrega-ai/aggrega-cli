@@ -87,13 +87,21 @@ func StoreRoot(cacheDir string) string {
 // root; the caller passes its artifact cache's inputs directory, and the
 // service owns the `sha256/<digest>` layout beneath it. acquire enables
 // acquisition of unpinned URLs; when false the closure is frozen — pinned
-// inputs are served (and refilled when their blob is missing) but an unpinned
-// URL is an error. client transports plain HTTP(S) fetches and is obtained from
-// the network-egress gate (pkg/egress) by the caller; it is nil for an offline
-// workspace, in which case pinned inputs are still served from cache but any
-// fetch (acquisition or a missing-blob refill) refuses with ErrOfflineEgress —
-// offline forbids the fetch, not the cache read. pinned is the lockfile's
-// external-inputs view; when it carries duplicate URLs the last record wins.
+// inputs are served, but an unpinned URL is an error.
+//
+// client transports plain HTTP(S) fetches and is obtained from the
+// network-egress gate (pkg/egress) by the caller. It is nil in two distinct
+// cases, and a nil client means the same thing in both: pinned inputs are still
+// served from the store, while any fetch — an acquisition or a missing-blob
+// refill — refuses with ErrOfflineEgress. The gate returns none for an offline
+// workspace, which is the case that error names; and the consumption posture
+// passes none at all, by construction, so it cannot reach the network however
+// the workspace is configured. **A caller composing the consumption posture
+// therefore has no missing-blob refill**, and a pinned entry whose store blob
+// has gone missing refuses there rather than being repaired.
+//
+// pinned is the lockfile's external-inputs view; when it carries duplicate URLs
+// the last record wins.
 func NewService(root string, acquire bool, client *http.Client, pinned []lockfile.ExternalInput) *Service {
 	if client != nil {
 		client.Timeout = defaultFetchTimeout
@@ -116,10 +124,11 @@ func NewService(root string, acquire bool, client *http.Client, pinned []lockfil
 //
 //   - A pinned URL is served from the store blob named by its recorded
 //     digest; the blob is verified on every read, and a mismatch is a loud
-//     store-corruption error. A missing blob is refilled from the network in
-//     any mode — the refill is verified against the recorded digest before
-//     anything is written or returned, so it cannot change output. A pinned
-//     entry never re-pins.
+//     store-corruption error. A missing blob is refilled from the network
+//     wherever this service holds a transport — the refill is verified against
+//     the recorded digest before anything is written or returned, so it cannot
+//     change output — and refuses where it holds none. A pinned entry never
+//     re-pins.
 //   - An unpinned URL with acquisition enabled is fetched, pinned into the
 //     store under its digest, and recorded.
 //   - An unpinned URL with acquisition disabled is an error naming the URL
@@ -141,7 +150,7 @@ func (s *Service) Fetch(ctx context.Context, rawURL string, requiredBy string) (
 	}
 	if !s.acquire {
 		return nil, fmt.Errorf(
-			"externalinputs: %q is not pinned in the lockfile; re-run with acquisition enabled or run the standalone acquisition pass to pin it: %w",
+			"%q is not pinned in the lockfile; run `aggrega pull --release <release>` to pin every external input this Release's render consumes, then build again: %w",
 			rawURL, ErrAcquisitionDisabled())
 	}
 	return s.acquireAndPin(ctx, kind, rawURL, requiredBy)

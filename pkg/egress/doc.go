@@ -59,13 +59,13 @@
 // workspace makes by setting skip_signature_verification; it is not something
 // being offline decides on the user's behalf.
 //
-// Offline also dominates the acquisition switch. External-input acquisition has
-// its own control, the --no-acquire-inputs flag, which is orthogonal to being
-// offline. Because the acquiring service takes its HTTP client from this gate,
-// an offline workspace hands it no client at all, so acquisition and any
-// missing-blob refill are mechanically impossible whatever that flag says. The
-// flag stays the online "freeze the closure" knob, and nothing consults the
-// offline decision a second time.
+// Offline also dominates external-input acquisition, and there is no switch
+// beside it to reconcile: acquisition happens at the pull step and nowhere else,
+// and a build renders the closure the lockfile records. Because the acquiring
+// service takes its HTTP client from this gate, an offline workspace hands it no
+// client at all, so acquisition and any missing-blob refill are mechanically
+// impossible rather than merely declined — and nothing consults the offline
+// decision a second time.
 //
 // # Transports this gate does not construct
 //

@@ -65,13 +65,11 @@
 //	                               artifacts a build would emit without
 //	                               writing any of them
 //	aggrega/resolveDependencies    resolves a Release's catalog and source
-//	                               dependencies into the cache, writes the
+//	                               dependencies into the cache, pins the
+//	                               external inputs its render consumes into
+//	                               the content-addressed store, writes the
 //	                               per-Release lockfile, and reports what it
 //	                               pinned
-//	aggrega/acquireExternalInputs  pins the external inputs a Release's
-//	                               render consumes into the content-addressed
-//	                               store and records them in the lockfile,
-//	                               reporting the pins it added
 //	aggrega/catalogIndex           lists every workspace-local entity's
 //	                               kind, name, description, labels and
 //	                               source file

@@ -107,7 +107,7 @@ func externalInputDivergenceDiagnostics(declined []string, releasePath string) [
 			Severity: editorSeverityWarning,
 			Message: fmt.Sprintf(
 				"the lockfile does not pin the external reference %s, so it was declined and this render "+
-					"cannot show what a build would emit; run `aggrega acquire --release %s` to pin the "+
+					"cannot show what a build would emit; run `aggrega pull --release %s` to pin the "+
 					"inputs the render needs",
 				url, releasePath),
 			ConditionCodes: codes,

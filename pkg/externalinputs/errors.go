@@ -17,10 +17,10 @@ var errSchemeNotAllowed = cerrors.Register("externalinputs/scheme-not-allowed", 
 	Message:   "externalinputs: URL scheme is not allowed",
 })
 
-// ErrAcquisitionDisabled reports that an unpinned URL was requested while
-// acquisition is disabled — the frozen-closure guarantee working as intended.
-// The wrapping error names the URL and the remedy: re-run with acquisition
-// enabled, or run the standalone acquisition pass to pin the input.
+// ErrAcquisitionDisabled reports that an unpinned URL was requested by a render
+// that may not acquire — the frozen-closure guarantee working as intended. The
+// wrapping error names the URL and the remedy: run the pull step, which pins
+// every external input a Release's render consumes.
 func ErrAcquisitionDisabled() error { return errAcquisitionDisabled }
 
 var errAcquisitionDisabled = cerrors.Register("externalinputs/acquisition-disabled", cerrors.Meta{

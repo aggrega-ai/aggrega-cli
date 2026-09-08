@@ -458,7 +458,7 @@ func TestBuildDryRunDeclinesAnUnpinnedExternalReference(t *testing.T) {
 	for _, want := range []string{
 		"the lockfile does not pin every external reference this render requested",
 		"- " + unpinned,
-		"aggrega acquire --release",
+		"aggrega pull --release",
 	} {
 		if !strings.Contains(note, want) {
 			t.Errorf("the diagnostics do not carry %q; got:\n%s", want, note)

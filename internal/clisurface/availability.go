@@ -84,7 +84,6 @@ const (
 // anything.
 var operationAvailability = map[string]opsurface.OperationAvailability{
 	// Capabilities a command carries.
-	"acquire":        opsurface.Exposed("aggrega acquire"),
 	"auth-token":     opsurface.Exposed("aggrega auth token"),
 	"build":          opsurface.Exposed("aggrega build"),
 	"cache-clear":    opsurface.Exposed("aggrega cache clear"),

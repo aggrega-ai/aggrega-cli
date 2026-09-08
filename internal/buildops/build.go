@@ -96,9 +96,9 @@ type Reporter struct {
 	// has to re-run to see them.
 	Advisories func(preview *compilerops.PreviewResult)
 	// DryRunDivergence is handed the external references a dry run declined for
-	// want of a pin, so a caller can say that the render stopped short of the
-	// bytes a real build would have produced. It fires only for a dry run that
-	// declined something.
+	// want of a pin, so a caller can name which references the render could not
+	// reach and what pins them. It fires only for a dry run that declined
+	// something.
 	DryRunDivergence func(declined []string, releasePath string)
 }
 
@@ -137,13 +137,13 @@ func (o RunOptions) irGraph(graph *types.IRGraph) error {
 type Pull func(upgrade, detail bool, diagOut, out io.Writer) error
 
 // RunOptions carries the build knobs that are not diagnostics. The zero value is
-// the plain build shape: acquisition on, rendered output to the default output
-// directory, no acquisition report.
+// the plain build shape: rendered output to the default output directory.
+//
+// A build's render never acquires an external input, and that is not a knob here
+// or anywhere else. Acquisition happens at the pull step, which pins every
+// external input a Release's render consumes; a build is held to the closure the
+// lockfile records, so an unpinned reference at build time halts naming it.
 type RunOptions struct {
-	// NoAcquireInputs freezes the external-input closure: a render that
-	// requests an unpinned external URL halts with a diagnostic instead
-	// of fetching and pinning it.
-	NoAcquireInputs bool
 	// DisablePluginCache skips the persistent on-disk plugin compile cache
 	// for this build, compiling guests fresh in an in-memory cache that is
 	// discarded when the build ends. It changes only compilation cost, not
@@ -187,23 +187,14 @@ type RunOptions struct {
 	SuppressUnsupportedFieldWarnings bool
 	// DryRun reports the render instead of persisting it: each artifact goes out
 	// as path-and-content on the same stream the build summary uses, and the
-	// output directory is neither cleaned nor written. It also freezes the
-	// external-input closure,
-	// which is what keeps the run inert rather than merely output-less — a
-	// render that met an unpinned external reference would otherwise fetch it
-	// and write a blob into the content-addressed store on its way to producing
-	// buffers nobody persists. The flags that fill dependencies are refused
-	// alongside it rather than silently ignored.
+	// output directory is neither cleaned nor written. The external-input closure
+	// needs no separate freeze here — no build's render acquires — so a dry run is
+	// inert in the same way an ordinary build is, and the flags that fill
+	// dependencies are refused alongside it rather than silently ignored.
 	DryRun bool
 	// OutDir overrides the rendered-artifact output directory; empty
-	// renders to the default output directory. The acquisition operation points
-	// it at a discard directory so an acquisition pass never touches the real
-	// output directory.
+	// renders to the default output directory.
 	OutDir string
-	// OnAcquired, when non-nil, runs after a successful build with the
-	// external-input records this run newly pinned (empty when the run
-	// pinned nothing). The acquisition operation reports through it.
-	OnAcquired func([]lockfile.ExternalInput)
 	// IRGraph, when non-nil, is handed the graph this run resolved, once, after
 	// the render succeeded and before anything else the run writes to its status
 	// stream. Nil means the caller did not ask for it — the presence of the
@@ -221,31 +212,6 @@ type RunOptions struct {
 	// not hand back the document it was asked for has not done what was asked, and
 	// swallowing that would leave a truncated document behind a successful build.
 	IRGraph func(graph *types.IRGraph) error
-}
-
-// AcquiresDuringRender reports whether this build's own render acquires an
-// unpinned external input — fetching it and pinning it — rather than refusing it.
-//
-// It is the single home of that decision, and both reasons a render is frozen
-// are read here rather than anywhere else: the closure dial, and a dry run,
-// which persists nothing and therefore cannot pin anything. A dry run adopting
-// the dial's behaviour by assigning to it would put the same decision in two
-// places, and the second reader would then be reading a value rather than the
-// decision.
-//
-// Two consumers need the answer for different reasons, which is why it is a
-// question rather than a field. The render's service is composed from it, so a
-// frozen render gets the consumption posture. And the surface that supplies the
-// build's dependency fill reads it to tell that fill whether the build will
-// acquire during its own render — because where the build acquires, a discovery
-// render inside the fill would render the same Release a second time and leave
-// the build's own render nothing to pin, and where the build is frozen, the fill
-// is the only thing that can pin what the frozen render will ask for. Two
-// independent readings of the dial would agree today and disagree the first time
-// a third condition freezes a render, at which point the fill would stand down
-// and nothing would acquire at all.
-func (o RunOptions) AcquiresDuringRender() bool {
-	return !o.NoAcquireInputs && !o.DryRun
 }
 
 // Config is the build operation's input contract. A caller assembles it from
@@ -355,11 +321,6 @@ func Run(cfg Config) (Result, error) {
 	// typed, which is why --upgrade is tested before the promotion below folds it
 	// into --auto-pull — a reader told their --auto-pull conflicts, when what they
 	// passed was --upgrade, has to guess the connection.
-	//
-	// What a dry run does to the external-input closure is decided in
-	// AcquiresDuringRender rather than by freezing the dial here, so that a
-	// caller asking the same question from its own copy of these options reads
-	// the same answer this run acts on.
 	if run.DryRun {
 		switch {
 		case run.Upgrade:
@@ -454,20 +415,15 @@ func Run(cfg Config) (Result, error) {
 		return Result{}, fmt.Errorf("load lockfile: %w", err)
 	}
 
-	// External-input gate for render-time guest fetches: the service serves
-	// every aggrega_fetch_external_input call under the pin discipline —
-	// pinned URLs from the content-addressed store, unpinned URLs fetched
-	// and pinned when acquisition is on (the default), refused loudly when
-	// the closure is frozen. Seeded with the lockfile's pinned view;
-	// newly-acquired pins merge back after a successful build below.
-	extInputs := newExternalInputsService(cacheDir, lf, run.AcquiresDuringRender(), wsCfg)
-
-	// The seam the render sees is the service behind a recorder, so a reference
-	// declined for want of a pin is remembered by the host that declined it. The
-	// service itself is still held directly, because the acquisition records the
-	// lockfile write below reads are the service's own and the recorder does not
-	// carry them.
-	fetchSeam := externalinputs.NewDeclineRecorder(extInputs)
+	// External-input gate for render-time guest fetches, and it is the same seam
+	// every other rendering surface attaches: the frozen posture behind the
+	// decline recorder, taken from the one composition that describes it. A build
+	// renders the closure the lockfile records — a pinned URL is served from the
+	// content-addressed store (refilled by its pinned digest if the blob has gone
+	// missing, which cannot change what the render sees) and an unpinned one is
+	// refused loudly, naming it. Acquisition belongs to the pull step, so there is
+	// nothing for a build to merge back afterwards and no posture for it to choose.
+	fetchSeam := compilerops.FrozenExternalInputs(cacheDir, lf)
 
 	// The build's determinism-wired lazy lookup: EVERY catalog consumer this run
 	// has — guards, triad aggregate resolution, manifest-implements gate,
@@ -634,27 +590,10 @@ func Run(cfg Config) (Result, error) {
 		}
 	}
 
-	// Persist newly-pinned external inputs into the lockfile after the
-	// build succeeded. The service's full record view is the canonical
-	// URL-deduplicated merge of the lockfile's pinned view with this run's
-	// acquisitions; the canonical writer keeps the file byte-deterministic.
-	// A run that pinned nothing leaves the lockfile untouched.
-	//
-	// A dry run needs no guard here, and this is the stronger case rather than the
-	// same argument again: acquisition is off, so the service refuses an unpinned
-	// reference instead of pinning one, and the acquired set is empty by
-	// construction. The write is unreachable because nothing can have been
-	// acquired — not because a flag was checked.
-	acquired := extInputs.AcquiredRecords()
-	if len(acquired) > 0 {
-		lf.ExternalInputs = extInputs.Records()
-		if err := lockfile.WriteLockfilePreservingTimestamp(lockfile.PathFor(releasePath), lf); err != nil {
-			return Result{}, fmt.Errorf("write lockfile external inputs: %w", err)
-		}
-	}
-	if run.OnAcquired != nil {
-		run.OnAcquired(acquired)
-	}
+	// Nothing to merge back into the lockfile: a build's render acquires nothing,
+	// so the external-input section is written by the pull step alone. That is
+	// what makes a build a read of the closure rather than an extension of it —
+	// the lockfile a build was held to is the lockfile it leaves behind.
 
 	return Result{Summary: summary}, nil
 }
@@ -689,29 +628,6 @@ func previewPhase(p compilerops.PreviewPhase) Phase {
 		return PhaseRender
 	}
 	return PhaseClosure
-}
-
-// newExternalInputsService constructs the per-build external-input gate over
-// the workspace artifact cache's inputs store, seeded with the lockfile's
-// pinned view.
-//
-// This is where the build turns its render's acquisition verdict into a posture
-// and nowhere else: a frozen render gets the consumption posture and an
-// acquiring one the acquisition posture, each composed by the store package.
-// What each posture sets — whether an unpinned reference is fetched, and whether
-// there is a transport to fetch it with — is that package's single description
-// of it, so the build states which posture it wants rather than assembling one,
-// and cannot come to hold a second copy that agrees today and drifts later.
-//
-// acquire is the verdict rather than the dial, and the parameter is named for
-// the verdict deliberately: RunOptions.AcquiresDuringRender is where the reasons
-// a render is frozen are weighed, and a parameter named for one of those reasons
-// would invite a caller to pass that one reason instead of the verdict.
-func newExternalInputsService(cacheDir string, lf *lockfile.Lockfile, acquire bool, wsCfg workspaceconfig.Config) *externalinputs.Service {
-	if !acquire {
-		return externalinputs.NewFrozen(cacheDir, lf)
-	}
-	return externalinputs.NewAcquiring(cacheDir, wsCfg, lf)
 }
 
 // ensureLockfile ensures the per-Release lockfile exists before the build wires
@@ -799,7 +715,11 @@ func ensureLockfile(cfg Config, wsCfg workspaceconfig.Config, run RunOptions, di
 	// with the pull-first remediation.
 	if preexisted {
 		if run.Detail {
-			fmt.Fprintf(out, "aggrega build --detail: resolution detail is a pull-time surface; lockfile %s already present, so no pull ran this build\n", lockfilePath)
+			// The reason no detail follows is that no pull step was ASKED for, not
+			// that a lockfile happens to be present: a pull step runs whether or not
+			// one is, so naming the file as the cause would misdescribe the one case
+			// this note is printed in.
+			fmt.Fprintf(out, "aggrega build --detail: resolution detail is a pull-time surface; no pull step ran this build, so there is nothing to report. Pass --auto-pull (or enable auto_pull) to fill %s during the build and report what the fill did\n", lockfilePath)
 		}
 		return true, nil
 	}

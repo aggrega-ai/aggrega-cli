@@ -267,51 +267,43 @@ func TestPullOfflineCannotPinAndSaysSo(t *testing.T) {
 	}
 }
 
-// TestBuildAutoPullRendersOnce establishes what the automatic fill does after the
-// pinning moment moved, which is the cost question this change owes an answer to.
+// TestBuildAutoPullFetchesOncePerFill establishes what the automatic fill does,
+// which is the cost question the single acquisition moment owes an answer to.
 //
-// The two cells are the grid the acquisition verdict draws, and each is asserted
-// rather than reasoned about. With the build acquiring, the fill stands its
-// discovery render down and the build's own render does the pinning — one render,
-// one fetch. With the build frozen, the fill is the only thing that can pin, so
-// it discovers and the frozen render is served from the store — still one fetch.
-// Neither cell fetches twice, and in neither cell does nothing acquire.
-func TestBuildAutoPullRendersOnce(t *testing.T) {
-	for _, tc := range []struct {
-		name   string
-		run    buildops.RunOptions
-		frozen bool
-	}{
-		{name: "the build acquires", run: buildops.RunOptions{AutoPull: true}},
-		{name: "the build is frozen", run: buildops.RunOptions{AutoPull: true, NoAcquireInputs: true}, frozen: true},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			root := t.TempDir()
-			t.Chdir(root)
+// There is one behaviour rather than a grid: no build's render acquires, so the
+// fill is always the only thing that can pin what that render will ask for. It
+// discovers, and the build's render is then served from the store. The fetch
+// count is the observable that pins both halves at once — more than one would
+// mean the remote document was acquired twice, and none would mean nothing
+// acquired and the build somehow rendered anyway.
+//
+// It is deliberately a plain test rather than a one-row table: the row that made
+// this a table was the build-acquires cell, which no invocation can now reach.
+func TestBuildAutoPullFetchesOncePerFill(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
 
-			schemaURL, fetches, closeSrv := remoteSchemaServer(t)
-			defer closeSrv()
+	schemaURL, fetches, closeSrv := remoteSchemaServer(t)
+	defer closeSrv()
 
-			releasePath, catalogDir := dryRunFixture(t, root, schemaURL)
-			ws := resolveTempWorkspace(t, tempWorkspaceOptions{Root: root})
+	releasePath, catalogDir := dryRunFixture(t, root, schemaURL)
+	ws := resolveTempWorkspace(t, tempWorkspaceOptions{Root: root})
 
-			var diag, out bytes.Buffer
-			if err := dispatchBuildWithDiag(ws, releasePath, []string{catalogDir}, false,
-				buildDiagOptions{}, tc.run, &diag, &out); err != nil {
-				t.Fatalf("build with the automatic fill: %v\ndiagnostics:\n%s", err, diag.String())
-			}
-			if got := fetches(); got != 1 {
-				t.Errorf("the remote document was fetched %d time(s), want exactly 1: a second fetch means the Release was rendered twice, and none means nothing acquired", got)
-			}
+	var diag, out bytes.Buffer
+	if err := dispatchBuildWithDiag(ws, releasePath, []string{catalogDir}, false,
+		buildDiagOptions{}, buildops.RunOptions{AutoPull: true}, &diag, &out); err != nil {
+		t.Fatalf("build with the automatic fill: %v\ndiagnostics:\n%s", err, diag.String())
+	}
+	if got := fetches(); got != 1 {
+		t.Errorf("the remote document was fetched %d time(s), want exactly 1: more means it was acquired twice, and none means nothing acquired", got)
+	}
 
-			lf, _, err := lockfile.LoadLockfile(lockfile.PathFor(releasePath))
-			if err != nil {
-				t.Fatalf("load lockfile: %v", err)
-			}
-			if _, found := findExternalInput(lf, schemaURL); !found {
-				t.Fatalf("nothing pinned %s; recorded: %+v", schemaURL, lf.ExternalInputs)
-			}
-		})
+	lf, _, err := lockfile.LoadLockfile(lockfile.PathFor(releasePath))
+	if err != nil {
+		t.Fatalf("load lockfile: %v", err)
+	}
+	if _, found := findExternalInput(lf, schemaURL); !found {
+		t.Fatalf("nothing pinned %s; recorded: %+v", schemaURL, lf.ExternalInputs)
 	}
 }
 

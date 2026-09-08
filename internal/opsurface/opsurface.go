@@ -110,7 +110,6 @@ func Lookup(id string) (Operation, bool) {
 // about which surfaces may expose it.
 var operations = []Operation{
 	// Capabilities the command line originated.
-	{"acquire", "Pin the external inputs a Release's render consumes."},
 	{"auth-token", "Acquire an identity token interactively and print it."},
 	{"build", "Compile an Aggregate and Release into provider-native artifacts."},
 	{"cache-clear", "Wipe every on-disk cache, compiled modules included."},

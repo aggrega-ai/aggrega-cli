@@ -76,11 +76,11 @@ type buildResultPayload struct {
 	Deprecations []string `json:"deprecations,omitempty"`
 
 	// DeclinedExternalInputs names each external reference the render asked for
-	// that the lockfile does not pin. The render is frozen, so such a reference is
-	// refused rather than fetched, and the emitted files stop short of what a
-	// build — which would acquire and pin it — would produce. Naming them is what
-	// lets a caller tell an incomplete render from an accurate one; without it the
-	// difference is invisible in the returned files.
+	// that the lockfile does not pin. Such a reference is refused rather than
+	// fetched, so the emitted files stop short of the artifacts the render would
+	// otherwise produce, and a command-line build meeting the same reference halts
+	// on it. Naming them is what lets a caller tell an incomplete render from an
+	// accurate one; without it the difference is invisible in the returned files.
 	DeclinedExternalInputs []string `json:"declined_external_inputs,omitempty"`
 
 	// Advisories carries every exit-code-neutral finding the build raised, in the
@@ -397,8 +397,8 @@ func renderBuildText(p buildResultPayload) string {
 		}
 	}
 	if len(p.DeclinedExternalInputs) > 0 {
-		fmt.Fprintf(&b, "\nThis render is frozen, so it declined %d external reference(s) the lockfile does not pin. "+
-			"The files above stop short of what a build would emit; run `aggrega acquire --release %s` to pin them:\n",
+		fmt.Fprintf(&b, "\nThis render declined %d external reference(s) the lockfile does not pin. "+
+			"The files above stop short of what a build would emit; run `aggrega pull --release %s` to pin them:\n",
 			len(p.DeclinedExternalInputs), p.Release)
 		for _, url := range p.DeclinedExternalInputs {
 			fmt.Fprintf(&b, "  %s\n", url)

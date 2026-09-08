@@ -144,21 +144,6 @@ type Config struct {
 	// writing anything at all, and reports what the lockfile records.
 	Verify bool
 
-	// CallerRendersAndAcquires is the caller's declaration that it renders this
-	// same Release itself, immediately after this run, with acquisition on. Set,
-	// it stands the external-input discovery render down: the caller's render
-	// reaches the identical set of remote references and pins them, so a
-	// discovery render here would render the same Release a second time and
-	// leave its own render nothing to acquire.
-	//
-	// It is a statement about the CALLER rather than a setting on this run, and
-	// that distinction is what keeps it from becoming a way to skip pinning. It
-	// is true only where the caller genuinely renders and genuinely acquires, so
-	// a caller whose render is frozen against its lockfile leaves it false and
-	// this run pins the references its frozen render will need. There is no
-	// reachable combination in which nobody acquires.
-	CallerRendersAndAcquires bool
-
 	// IncludePrerelease is accepted and not yet honored, so a caller that passes
 	// it keeps working when it starts having an effect.
 	IncludePrerelease bool
@@ -909,23 +894,25 @@ func Run(cfg Config) (Result, error) {
 	// Release to find out, fetches what it asks for, and pins it beside the
 	// component pins — one command, one moment, one rule for a reader to learn.
 	//
+	// It runs unconditionally, and that is the whole of the acquisition rule: this
+	// is the only moment anything acquires. No render anywhere else does — a build
+	// is held to the closure this write records, whichever surface asked for it —
+	// so a run that skipped discovery would leave nothing else to pin what a build
+	// will ask for. There is consequently no caller declaration to consult and no
+	// dial to turn it off, because either would preserve exactly the surprise the
+	// single moment exists to remove: a Release that resolves cleanly while an
+	// input it needs is still unpinned.
+	//
 	// A failure here does not fail the run. The dependency resolution above
 	// finished and its pins are correct whatever stopped the render, so the pins
 	// are written and the failure is reported: a resolution that names what it
 	// could not reach is more use than one that throws away work a reader would
-	// only redo. It is reported rather than passed over, and there is no dial to
-	// turn it off, because an option to skip it would preserve exactly the
-	// surprise it exists to remove — a Release that resolves cleanly while an
-	// input it needs is still unpinned.
-	var discoveryErr error
-	if !cfg.CallerRendersAndAcquires {
-		report.phase(PhaseExternalInputs)
-		var pins []lockfile.ExternalInput
-		pins, discoveryErr = discoverExternalInputs(cfg, wsCfg, workspaceRoot, cacheDir, lazyView, assembled)
-		assembled.ExternalInputs = pins
-		if discoveryErr != nil {
-			reportExternalInputDiscoveryFailure(cfg.DiagOut, lockfilePath, len(pins), discoveryErr)
-		}
+	// only redo.
+	report.phase(PhaseExternalInputs)
+	pins, discoveryErr := discoverExternalInputs(cfg, wsCfg, workspaceRoot, cacheDir, lazyView, assembled)
+	assembled.ExternalInputs = pins
+	if discoveryErr != nil {
+		reportExternalInputDiscoveryFailure(cfg.DiagOut, lockfilePath, len(pins), discoveryErr)
 	}
 
 	report.phase(PhaseLockfile)
