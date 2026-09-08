@@ -10,15 +10,44 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/opsurface"
 )
 
-// methodBinding binds one wire method to the handler that answers it.
+// methodBinding binds one wire method to the handler that answers it, and
+// records whether that method's subject is a workspace.
 type methodBinding struct {
 	method  string
 	handler methodHandler
+
+	// workspaceFree marks a method whose subject is not a workspace, so no
+	// `workspace` parameter is required of it and none is resolved for it. It is
+	// routing information rather than a handler input — the routing path has to
+	// know it before any params shape is decoded — which is why it sits on the
+	// binding beside the handler rather than being reached for by the handler.
+	//
+	// The default is false, and that default is the safe direction: a method
+	// added without a thought about its subject requires a workspace and refuses
+	// a request that names none, which is loud. The opposite default would let
+	// such a method answer from an empty workspace and report an empty result,
+	// which reads exactly like a workspace with nothing in it.
+	workspaceFree bool
 }
 
-// at binds a wire method to its handler, for one row of the table below.
+// at binds a wire method to its handler, for one row of the table below. The
+// method's subject is a workspace, so a request must name one.
 func at(method string, handler methodHandler) methodBinding {
 	return methodBinding{method: method, handler: handler}
+}
+
+// atWorkspaceFree binds a wire method whose subject is NOT a workspace: it
+// requires no `workspace` parameter and none is resolved for it.
+//
+// Three methods qualify and each for its own reason. The schema report and the
+// document skeleton are derived from the schema set compiled into the binary, so
+// a workspace contributes nothing to producing either — which is what lets both
+// answer in a directory nobody has prepared. The handshake DECLARES a workspace
+// rather than acting on one, so requiring the parameter it exists to receive
+// would be circular, and a client that declares none must still complete a
+// handshake.
+func atWorkspaceFree(method string, handler methodHandler) methodBinding {
+	return methodBinding{method: method, handler: handler, workspaceFree: true}
 }
 
 // serveAvailability is what the daemon does with one operation: the request
@@ -98,12 +127,12 @@ const (
 
 	// unavailabilityReasonAboutTheToolchain covers an operation whose subject is
 	// the toolchain rather than the work: this binary's own identity, and the guest
-	// modules it can load or is configured with. A session is opened over a
-	// workspace to work on that workspace's documents and the caches that serve
-	// them, and holds nothing about the binary running it — so such a subject is no
-	// nearer here than to any other caller of it.
+	// modules it can load or is configured with. Every request here is about one
+	// workspace — that workspace's documents and the caches that serve them — and
+	// carries nothing about the binary running it, so such a subject is no nearer
+	// here than to any other caller of it.
 	//
-	// It is deliberately about what a session HOLDS rather than about where a
+	// It is deliberately about what a REQUEST is about rather than about where a
 	// subject sits on disk, and the two come apart in a way that decides real rows.
 	// The compiled-module store sits outside every workspace and is nonetheless one
 	// of the caches that serve the work — this daemon fills it, once per guest, for
@@ -124,28 +153,32 @@ const (
 	// subjects named above, for the same reason. Both of those methods answer out
 	// of it, so naming it here would decline a subject this surface carries.
 	unavailabilityReasonAboutTheToolchain = "its subject is the toolchain rather than the work — this binary and " +
-		"the guest modules it can load — and a session is opened over a workspace to work on that " +
-		"workspace's documents and the caches that serve them"
+		"the guest modules it can load — and every request here is about a workspace, its documents " +
+		"and the caches that serve them"
 
 	// unavailabilityReasonAddressedByAHostPath covers an operation whose subject is
 	// a file the request names by a filesystem path of its own, for the daemon to
-	// locate and read. A session resolves a path it must locate inside the
-	// workspace it opened and refuses every other form — an absolute value, or one
-	// resolving outside that root — so an operation constituted by a path chosen
-	// outside that root asks for the addressing this surface declines.
+	// locate and read. A path a request must locate is resolved inside the
+	// workspace that request named, and every other form is refused — an absolute
+	// value, or one resolving outside that root — so an operation constituted by a
+	// path chosen outside that root asks for the addressing this surface declines.
+	//
+	// The workspace parameter is not an opening for it. That parameter names the
+	// tree a request is about, and every path the request then carries is resolved
+	// inside that tree, so naming a workspace widens which tree may be read and
+	// never widens what may be read outside one.
 	//
 	// It rests on the addressing rather than on what the named file turns out to
-	// be. This daemon already loads and runs guest modules — every build a session
+	// be. This daemon already loads and runs guest modules — every build it
 	// performs does, drawing on the shared compiled-module store this process fills
 	// — so a reason resting on execution would be false of the surface it
-	// describes. What a session does not do is locate a file the workspace does not
-	// hold.
+	// describes. What it does not do is locate a file no workspace holds.
 	//
 	// Confining such an operation to the workspace would not narrow it but replace
 	// it: a guest resolved through the workspace is what a build already runs, and
 	// the capability here is the one addressed outside that resolution.
 	unavailabilityReasonAddressedByAHostPath = "its subject is a file the request names by a filesystem path of " +
-		"its own, and a session locates what it reads inside the workspace it opened"
+		"its own, and what a request reads is located inside the workspace it names"
 
 	// unavailabilityReasonIsAStreamServer covers an operation that is itself a
 	// server owning a stream. The daemon already owns this one, and a second
@@ -173,7 +206,7 @@ const (
 // routing index is built.
 var operationAvailability = map[string]serveAvailability{
 	// Capabilities a request method carries.
-	"session-initialize": servedAt(at("aggrega/initialize", (*Server).dispatchInitialize)),
+	"session-initialize": servedAt(atWorkspaceFree("aggrega/initialize", (*Server).dispatchInitialize)),
 	"validate":           servedAt(at("aggrega/validate", (*Server).dispatchValidate)),
 	"session-invalidate": servedAt(at("aggrega/invalidate", (*Server).dispatchInvalidate)),
 	"cached-diagnostics": servedAt(at("aggrega/diagnostics", (*Server).dispatchDiagnostics)),
@@ -270,9 +303,9 @@ var operationAvailability = map[string]serveAvailability{
 	// default — a registry is machine-wide tooling, so that is the operation's
 	// own default rather than something a request opted into. Every workspace on
 	// the machine resolves through the entry, so those two responses name the
-	// file they wrote and whether it is the machine-wide one. A session is opened
-	// over a workspace, so an answer that said nothing would be read as being
-	// about that workspace, and for the default target that reading is wrong.
+	// file they wrote and whether it is the machine-wide one. A request names one
+	// workspace, so an answer that said nothing would be read as being about that
+	// workspace, and for the default target that reading is wrong.
 	//
 	// A refresh is the other way round: it reaches out to a registry, and what it
 	// writes is the index under this workspace's own configured cache directory.
@@ -390,7 +423,7 @@ var operationAvailability = map[string]serveAvailability{
 	// and no network under either delivery.
 	"document-edit": servedAt(at("aggrega/editDocument", (*Server).dispatchDocumentEdit)),
 
-	// The session reports the configuration it resolved at startup and the layer
+	// The session reports the configuration it resolved for the workspace a request
 	// each setting came from. It reports no other part of this capability: the
 	// command line's single-layer verbatim dumps preserve a file's own comments
 	// and formatting, which is a reading of the bytes on disk rather than of the
@@ -467,7 +500,11 @@ var operationAvailability = map[string]serveAvailability{
 	// drives, starting a new document is something a person does, and the answer
 	// lands in a buffer they can read before it is anything else. Nothing is
 	// written: the answer is text, and where it goes is the client's.
-	"scaffold-entity": servedAt(at("aggrega/scaffoldEntity", (*Server).dispatchScaffoldEntity)),
+	//
+	// It names no workspace, which follows from the subject: the skeleton is
+	// derived from the compiled-in schema set, so there is nothing for a
+	// workspace to contribute and nothing a request could point it at.
+	"scaffold-entity": servedAt(atWorkspaceFree("aggrega/scaffoldEntity", (*Server).dispatchScaffoldEntity)),
 
 	// The session checks catalog publishing conventions: one entity, every entity
 	// a Release's closure reaches, or every entity under the configured catalog
@@ -519,9 +556,9 @@ var operationAvailability = map[string]serveAvailability{
 	// Because the command-extension type's default target is the global
 	// configuration file every workspace on the machine resolves through, each of
 	// these responses carries the file it wrote and whether that file is the shared
-	// one. A session is opened over a workspace, so an answer that said nothing
-	// would be read as being about that workspace, and for that default the
-	// reading is wrong.
+	// one. A request names one workspace, so an answer that said nothing would be
+	// read as being about that workspace, and for that default the reading is
+	// wrong.
 	"plugin-add":         servedAt(at("aggrega/pluginAdd", (*Server).dispatchPluginAdd)),
 	"plugin-remove":      servedAt(at("aggrega/pluginRemove", (*Server).dispatchPluginRemove)),
 	"plugin-sync":        servedAt(at("aggrega/pluginSync", (*Server).dispatchPluginSync)),
@@ -579,8 +616,9 @@ var operationAvailability = map[string]serveAvailability{
 	// process that answers for THIS binary rather than for whichever copy is
 	// installed elsewhere. Nothing is written, no registry is reached, and the
 	// workspace is not consulted, so it answers where a session has nothing
-	// prepared yet.
-	"get-schema": servedAt(at("aggrega/getSchema", (*Server).dispatchGetSchema)),
+	// prepared yet — which is also why it names no workspace: a request cannot
+	// point at something the answer does not read.
+	"get-schema": servedAt(atWorkspaceFree("aggrega/getSchema", (*Server).dispatchGetSchema)),
 
 	// Capabilities no method carries, each on a property of this daemon.
 	//
@@ -599,9 +637,13 @@ var operationAvailability = map[string]serveAvailability{
 	"describe-capabilities": notServed(unavailabilityReasonProtocolLocalMeta),
 }
 
-// methodIndex resolves a method name to its handler in one lookup, and it is the
+// methodIndex resolves a method name to its route in one lookup, and it is the
 // whole of the daemon's routing. It is built from the availability table and
 // from nothing else, so a method exists exactly because a row names it.
+//
+// The route carries the handler AND whether the method's subject is a workspace,
+// because the routing path needs both: it resolves the named workspace before
+// the handler runs, and only the row knows whether there is one to resolve.
 var methodIndex = buildMethodIndex(operationAvailability)
 
 // buildMethodIndex projects the availability table into the routing index,
@@ -617,8 +659,8 @@ var methodIndex = buildMethodIndex(operationAvailability)
 // It panics because the table is a compile-time literal: every refusal here is a
 // programming error a reader can fix by editing the row, and a daemon that
 // started anyway would serve a surface nobody declared.
-func buildMethodIndex(table map[string]serveAvailability) map[string]methodHandler {
-	idx := map[string]methodHandler{}
+func buildMethodIndex(table map[string]serveAvailability) map[string]methodBinding {
+	idx := map[string]methodBinding{}
 	claimed := map[string]string{}
 
 	for _, id := range sortedOperationIDs(table) {
@@ -647,7 +689,7 @@ func buildMethodIndex(table map[string]serveAvailability) map[string]methodHandl
 					"one wire method answers one capability", b.method, other, id))
 			}
 			claimed[b.method] = id
-			idx[b.method] = b.handler
+			idx[b.method] = b
 		}
 	}
 	return idx

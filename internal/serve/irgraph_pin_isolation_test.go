@@ -163,12 +163,13 @@ spec:
 
 func newPinIsolationServer(t *testing.T, ws string, in io.Reader, out io.Writer, poolSize int) *Server {
 	t.Helper()
-	srv := newPoolTestServer(in, out, poolSize, nil)
+	srv := newPoolTestServer(t, in, out, poolSize, nil)
 	srv.workspaceRoot = ws
 	cacheDir := ".aggrega/cache"
 	srv.wsConfig.ArtifactCacheDir = cacheDir
 	srv.wsConfig.Workspace.CatalogDirs = []string{filepath.Join(ws, "catalog")}
 	srv.lazyCatalog = catalog.NewLazyLookup(ws, cacheDir, []string{filepath.Join(ws, "catalog")}, nil)
+	reanchorTestWorkspace(t, srv)
 	// driveHandle (the serial path) derives per-request contexts from serverCtx;
 	// dispatchLoop initializes it on the concurrent path, but the serial path
 	// bypasses that, so seed it here.
@@ -185,7 +186,7 @@ func serialIrGraph(t *testing.T, ws, releaseRel string) json.RawMessage {
 	t.Helper()
 	var in, out bytes.Buffer
 	srv := newPinIsolationServer(t, ws, &in, &out, 1)
-	in.Write(framedRequest(1, "aggrega/irGraph", irGraphParams{Release: releaseRel}))
+	in.Write(framedRequestIn(t, srv, 1, "aggrega/irGraph", irGraphParams{Release: releaseRel}))
 	srv.in = bufio.NewReader(&in)
 	srv.out = &out
 	body, err := readMessage(srv.in)
@@ -274,13 +275,13 @@ func TestServeIrGraphPinIsolationUnderConcurrency(t *testing.T) {
 			const rounds = 80
 			// Even ids -> Release A, odd ids -> Release B.
 			var feed [][]byte
-			feed = append(feed, framedRequest(1, "aggrega/initialize", initializeParams{}))
+			feed = append(feed, framedRequestIn(t, srv, 1, "aggrega/initialize", initializeParams{}))
 			for i := 0; i < rounds; i++ {
 				idA := 100 + i*2
 				idB := 101 + i*2
 				feed = append(feed,
-					framedRequest(idA, "aggrega/irGraph", irGraphParams{Release: relA}),
-					framedRequest(idB, "aggrega/irGraph", irGraphParams{Release: relB}),
+					framedRequestIn(t, srv, idA, "aggrega/irGraph", irGraphParams{Release: relA}),
+					framedRequestIn(t, srv, idB, "aggrega/irGraph", irGraphParams{Release: relB}),
 				)
 			}
 			// Interleave an invalidate to also exercise Reset racing the views.
@@ -288,7 +289,7 @@ func TestServeIrGraphPinIsolationUnderConcurrency(t *testing.T) {
 			// to completion (teardown waits for in-flight workers), so every
 			// submitted irGraph response flushes and the per-id assertions below
 			// see the full batch rather than a drain-dropped subset.
-			feed = append(feed, framedRequest(99, "aggrega/invalidate", invalidateParams{Granularity: "workspace"}))
+			feed = append(feed, framedRequestIn(t, srv, 99, "aggrega/invalidate", invalidateParams{Granularity: "workspace"}))
 
 			go func() {
 				for _, msg := range feed {

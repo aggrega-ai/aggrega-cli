@@ -67,6 +67,9 @@ func insertionWireBody(t *testing.T, s *Server, params insertionPointParams) []b
 	sink := &requestSink{}
 	ctx := withRequestSink(context.Background(), sink)
 	req := &jsonRPCRequest{JSONRPC: "2.0", ID: []byte("1"), Method: "aggrega/insertionPoint", Params: raw}
+	// The routing path resolves the workspace the request names, so the request
+	// names one — the way a client sends it.
+	req.Params = declareWorkspace(t, req, s.workspaceRoot)
 	if derr := s.dispatch(ctx, req); derr != nil {
 		t.Fatalf("dispatch: %v", derr)
 	}

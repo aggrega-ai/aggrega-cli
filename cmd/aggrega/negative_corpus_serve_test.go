@@ -122,7 +122,7 @@ spec:
 	// Asking which Release the workspace points at is what runs the cascade,
 	// and the malformed candidate it finds surfaces via publishDiagnostics on
 	// the Release file before the answer is written.
-	if _, err := stdin.Write(framed(2, "aggrega/activeRelease", map[string]any{})); err != nil {
+	if _, err := stdin.Write(framedFor(t, cmd, 2, "aggrega/activeRelease", map[string]any{})); err != nil {
 		t.Fatalf("write activeRelease: %v", err)
 	}
 	// This leg publishes the LOAD ERROR's own rendered text, so the expected
@@ -293,7 +293,7 @@ spec:
 	}
 
 	aggPath := filepath.Join(ws, "aggregate.yaml")
-	if _, err := stdin.Write(framed(2, "aggrega/validate", map[string]any{
+	if _, err := stdin.Write(framedFor(t, cmd, 2, "aggrega/validate", map[string]any{
 		"file":    aggPath,
 		"content": agg,
 	})); err != nil {
@@ -450,7 +450,7 @@ func serveValidateScanBuffer(t *testing.T, files map[string]string, validateFile
 		t.Fatalf("initialize returned error: %+v", initResp)
 	}
 	vfPath := filepath.Join(ws, validateFile)
-	if _, err := stdin.Write(framed(2, "aggrega/validate", map[string]any{
+	if _, err := stdin.Write(framedFor(t, cmd, 2, "aggrega/validate", map[string]any{
 		"file":    vfPath,
 		"content": buffer,
 		"release": release,

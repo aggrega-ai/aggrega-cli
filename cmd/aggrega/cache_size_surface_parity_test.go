@@ -127,7 +127,7 @@ func cacheResultViaDaemon(t *testing.T, bin, ws, method string, params map[strin
 		_ = cmd.Wait()
 	})
 
-	if _, err := stdin.Write(framed(1, method, params)); err != nil {
+	if _, err := stdin.Write(framedFor(t, cmd, 1, method, params)); err != nil {
 		t.Fatalf("write the daemon request for %s: %v", method, err)
 	}
 	resp := readOneResponse(t, stdout, responseLivenessCeiling(t))

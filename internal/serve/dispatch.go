@@ -172,7 +172,7 @@ type incomingMessage struct {
 //     loop continues.
 //   - Handler internal error: returns the -32603 internal-error
 //     envelope or an application-code envelope; loop continues.
-func (s *Server) dispatchLoop(drainTimeout time.Duration) error {
+func (s *session) dispatchLoop(drainTimeout time.Duration) error {
 	// serverCtx is the session-level context every per-request context
 	// derives from. It is initialised HERE, before the reader goroutine
 	// below is spawned and before any handle() call — that ordering is
@@ -209,7 +209,7 @@ func (s *Server) dispatchLoop(drainTimeout time.Duration) error {
 	// from workspace config, clamped to a minimum of one. Each worker
 	// closes the request's ordered serializer slot exactly once after
 	// the handler returns.
-	pool := newWorkerPool(s.wsConfig.Concurrency.PoolSize, func(q queuedRequest) {
+	pool := newWorkerPool(s.launchCfg.Concurrency.PoolSize, func(q queuedRequest) {
 		body := s.handle(ser, q.seq, q.req)
 		ser.emit(q.seq, body)
 	})
@@ -418,7 +418,23 @@ func (s *Server) dispatchLoop(drainTimeout time.Duration) error {
 // handler reaches reads it back, so there is a single route from any
 // handler to stdout. Response surfaces record their body on the sink;
 // notification surfaces emit immediately through the serializer.
-func (s *Server) handle(ser *serializer, seq int64, req *jsonRPCRequest) []byte {
+//
+// # The workspace is resolved HERE, once, for every method
+//
+// A request that acts on a workspace names one, and this is where that name
+// becomes the workspace the handler is answered against. It is read on the
+// routing path for the same reason the progress token is: the routing index
+// pairs a wire method with a handler and never with a params shape, so one field
+// carrying one meaning on every method has exactly one place it can be read
+// without being read once per method. A handler therefore receives a receiver
+// already pointed at its workspace and has no resolution of its own to get
+// wrong.
+//
+// A method whose subject is not a workspace — the schema report, the document
+// skeleton, and the handshake, which declares a workspace rather than acting on
+// one — is declared workspace-free in the availability table and receives a
+// receiver whose workspace fields are the zero value.
+func (s *session) handle(ser *serializer, seq int64, req *jsonRPCRequest) []byte {
 	if s.testInDispatchHook != nil {
 		s.testInDispatchHook()
 	}
@@ -495,8 +511,70 @@ func (s *Server) handle(ser *serializer, seq int64, req *jsonRPCRequest) []byte 
 // methodHandler answers one request method.
 type methodHandler func(*Server, context.Context, *jsonRPCRequest) error
 
+// workspaceParams is the workspace field every request that acts on one carries.
+//
+// # The spelling is the one this wire already uses for a workspace root
+//
+// `workspaceRoot` is what six response shapes here already call the absolute
+// path of a workspace, and it is what the command line calls the same thing.
+// Reusing it is the point: one concept keeps one spelling across every surface
+// that names it, so a caller that learned it from a reply sends it back under
+// the name it read.
+//
+// It is emphatically NOT `workspace`, and the reason is worth stating because
+// the shorter name reads better. `workspace` is already taken on this wire, by
+// the BOOLEAN write-target override the configuration-writing methods carry —
+// the one that says a registration or an attachment belongs in this project's
+// configuration rather than in the machine-wide one, single-sourced from the
+// command-line option of the same name. Two different concepts under one key
+// would be one key answering two questions, and a caller holding it could not
+// tell which it had.
+//
+// # Why it is decoded on its own
+//
+// Off the raw params, rather than as a field on each method's own params shape.
+// Two reasons, and the second is the operative one. The field carries one
+// meaning on every method, so one declaration of it is one statement of that
+// meaning. And the routing path has to read it before it knows which params
+// shape the request even has — the index pairs a method with a handler, never
+// with a shape — so a field living on each shape could not be read there at all.
+type workspaceParams struct {
+	WorkspaceRoot string `json:"workspaceRoot"`
+}
+
+// workspaceFrom reads the workspace root out of a request's raw params.
+//
+// Params that are absent, or are not an object, yield the empty string rather
+// than an error: what follows is the missing-parameter refusal, which names the
+// parameter and what to send, and that is a better answer than a decode
+// complaint about the shape of the whole params object. A params object whose
+// workspaceRoot value is not a string is a decode failure and is reported as one.
+func workspaceFrom(raw json.RawMessage) (string, error) {
+	if len(raw) == 0 {
+		return "", nil
+	}
+	var params workspaceParams
+	if err := json.Unmarshal(raw, &params); err != nil {
+		// Not an object at all, or a workspaceRoot value of the wrong type. Only
+		// the second is worth reporting: the first is answered by the
+		// missing-parameter refusal, and each method's own decode reports the
+		// shape fault against the shape it expected.
+		var probe map[string]json.RawMessage
+		if json.Unmarshal(raw, &probe) != nil {
+			return "", nil
+		}
+		return "", fmt.Errorf("the `workspaceRoot` parameter must be a string: %w", err)
+	}
+	return params.WorkspaceRoot, nil
+}
+
 // dispatch routes a parsed request to the appropriate per-method handler,
-// through the routing index the availability table produces.
+// through the routing index the availability table produces, against the
+// workspace the request named.
+//
+// The workspace resolution happens here rather than in handle so that the one
+// lookup that decides which handler answers also decides whether that handler
+// needs a workspace: the routing row carries both, so the two cannot come apart.
 //
 // The aggrega/shutdown message never reaches dispatch: the main loop
 // intercepts it at the acceptance boundary to drive the drain-then-abort
@@ -504,11 +582,23 @@ type methodHandler func(*Server, context.Context, *jsonRPCRequest) error
 // sets s.shuttingDown when it accepts the first shutdown and drops every
 // message it accepts afterward — so dispatch only ever sees
 // pre-shutdown-accepted messages, which process normally.
-func (s *Server) dispatch(ctx context.Context, req *jsonRPCRequest) error {
-	if handler, ok := methodIndex[req.Method]; ok {
-		return handler(s, ctx, req)
+func (s *session) dispatch(ctx context.Context, req *jsonRPCRequest) error {
+	route, ok := methodIndex[req.Method]
+	if !ok {
+		return s.writeError(ctx, req.ID, jsonRPCMethodNotFound, "method not found: "+req.Method)
 	}
-	return s.writeError(ctx, req.ID, jsonRPCMethodNotFound, "method not found: "+req.Method)
+	if route.workspaceFree {
+		return route.handler(s.workspaceFree(), ctx, req)
+	}
+	root, decodeErr := workspaceFrom(req.Params)
+	if decodeErr != nil {
+		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+decodeErr.Error())
+	}
+	ws, wsErr := s.workspaceFor(root)
+	if wsErr != nil {
+		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+wsErr.Error())
+	}
+	return route.handler(ws, ctx, req)
 }
 
 // isNotification reports whether req is a JSON-RPC 2.0 notification
@@ -530,14 +620,14 @@ func isNotification(req *jsonRPCRequest) bool {
 // arrival-sequence order once the handler returns, so workers never
 // race the writer and responses emit in request order regardless of
 // which worker finishes first.
-func (s *Server) emitResponse(ctx context.Context, body []byte) error {
+func (s *session) emitResponse(ctx context.Context, body []byte) error {
 	sinkFromContext(ctx).response = body
 	return nil
 }
 
 // writeResult marshals result as the response Result field and routes
 // the message through the request's serializer slot.
-func (s *Server) writeResult(ctx context.Context, id json.RawMessage, result any) error {
+func (s *session) writeResult(ctx context.Context, id json.RawMessage, result any) error {
 	resultBytes, err := json.Marshal(result)
 	if err != nil {
 		return s.writeError(ctx, id, jsonRPCInternalError, "marshal result: "+err.Error())
@@ -579,7 +669,7 @@ func marshalErrorResponse(id json.RawMessage, code int, message string) ([]byte,
 // handler return — including envelopes carrying a populated Data
 // field — use writeErrorEnvelope instead so the Data reaches the
 // wire.
-func (s *Server) writeError(ctx context.Context, id json.RawMessage, code int, message string) error {
+func (s *session) writeError(ctx context.Context, id json.RawMessage, code int, message string) error {
 	respBytes, err := marshalErrorResponse(id, code, message)
 	if err != nil {
 		return err
@@ -598,7 +688,7 @@ func (s *Server) writeError(ctx context.Context, id json.RawMessage, code int, m
 // omitempty drops the Data field from the JSON encoding, so the wire
 // is byte-identical to today for envelopes that did not populate
 // Data.
-func (s *Server) writeErrorEnvelope(ctx context.Context, id json.RawMessage, env *jsonRPCError) error {
+func (s *session) writeErrorEnvelope(ctx context.Context, id json.RawMessage, env *jsonRPCError) error {
 	resp := jsonRPCResponse{
 		JSONRPC: "2.0",
 		ID:      id,
@@ -632,7 +722,7 @@ type jsonRPCNotification struct {
 // them for arrival-sequence ordering. Routing still goes through the
 // serializer so it remains the sole owner of stdout and no worker races
 // the writer.
-func (s *Server) writeNotification(ctx context.Context, method string, params any) error {
+func (s *session) writeNotification(ctx context.Context, method string, params any) error {
 	body, err := json.Marshal(jsonRPCNotification{
 		JSONRPC: "2.0",
 		Method:  method,
@@ -656,13 +746,40 @@ type publishDiagnosticsParams struct {
 	Diagnostics []Diagnostic `json:"diagnostics"`
 }
 
-// publishDiagnostics fires the aggrega/publishDiagnostics
-// notification carrying the current s.diagnostics[file] state.
-// Missing entries publish an empty diagnostics array (the standard
-// "clear" signal). Callers invoke this after every state mutation
-// to s.diagnostics so the extension's DiagnosticCollection stays
-// in sync with the daemon's cache.
+// publishDiagnostics fires the aggrega/publishDiagnostics notification carrying
+// the current composed state for file. Missing entries publish an empty
+// diagnostics array (the standard "clear" signal). Callers invoke this after
+// every state mutation to a diagnostic layer so the extension's
+// DiagnosticCollection stays in sync with what the daemon holds.
+//
+// # A push is confined to the workspace the client declared at connect
+//
+// The daemon pushes for that workspace and no other. A request about any other
+// workspace produces its findings and returns them in its own RESPONSE; nothing
+// is pushed, and this returns without emitting a frame.
+//
+// The rule is about who asked. Pushing is what makes an editor's problem list
+// update while somebody types, and it is exactly the wrong thing to do with an
+// answer nobody asked to see: an assistant asking about a second workspace would
+// otherwise fill a developer's problem list with findings about files they never
+// opened. Confining the push is what keeps one client's question out of another
+// client's problem list.
+//
+// With a single connected client this is indistinguishable from pushing
+// unconditionally, because that client's declared workspace is the one it asks
+// about — which is why the equivalence is what the behaviour is tested against
+// rather than a side effect of it.
+//
+// It is the single chokepoint for the rule: every publication site in the
+// package routes through here, so no caller has the decision to make and none
+// can forget it. The other notification this daemon sends is a running
+// operation's own progress, which is not confined and must not be — it is
+// correlated to a token the caller minted on a request it made, so it is that
+// request's own account of itself rather than an unasked-for finding.
 func (s *Server) publishDiagnostics(ctx context.Context, file string) error {
+	if !s.pushesAllowed() {
+		return nil
+	}
 	diags := s.snapshotDiagnostics(file)
 	if diags == nil {
 		diags = []Diagnostic{}

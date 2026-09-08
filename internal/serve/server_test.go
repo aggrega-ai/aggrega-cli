@@ -21,35 +21,101 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/yamlpos"
 )
 
-// newTestServer constructs a Server suitable for in-memory unit
-// tests. The supplied workspaceRoot is used for catalog lookup
-// triggers; stdin/stdout are bytes.Buffer values the test caller
-// populates and inspects.
-func newTestServer(t *testing.T, workspaceRoot string, stdin io.Reader, stdout io.Writer) *Server {
+// newTestSession constructs the process-level session an in-memory test drives,
+// with launchRoot naming the workspace the harness declares for pushes.
+//
+// It does NOT call workspaceconfig.Resolve. The production launch path does, but
+// a resolution here would read whatever configuration the machine running the
+// test happens to carry — a global file, an AGGREGA_CONFIG pointing somewhere —
+// and the settings under test would then vary by machine. The built-in defaults
+// are what every test wants unless it says otherwise, so they are supplied
+// directly.
+func newTestSession(t *testing.T, launchRoot string, stdin io.Reader, stdout io.Writer) *session {
 	t.Helper()
-	srv := &Server{
-		workspaceRoot: workspaceRoot,
-		wsConfig:      workspaceconfig.Default(),
-		// lazyCatalog is populated with empty configuration so
-		// handleInvalidate's Reset() call doesn't panic on a nil
-		// pointer. Tests that exercise lazy-lookup behavior populate
-		// their own configured instance; this default suffices for
-		// every test that doesn't touch the lookup directly.
-		lazyCatalog: catalog.NewLazyLookup(workspaceRoot, "", nil, nil),
-		parseCache:  newCache(0, 0),
-		diagnostics: map[string][]Diagnostic{},
-		in:          bufio.NewReader(stdin),
-		out:         stdout,
-		stderr:      io.Discard,
+	sess := &session{
+		launchRoot: launchRoot,
+		launchCfg:  workspaceconfig.Default(),
+		workspaces: newWorkspaceRegistry(),
+		in:         bufio.NewReader(stdin),
+		out:        stdout,
+		stderr:     io.Discard,
 	}
 	// Production initializes serverCtx in dispatchLoop before spawning the
 	// reader goroutine. Tests that drive handle() directly bypass that
 	// path, so initialize here; the per-request contexts handle() derives
 	// then have a live parent.
-	srv.serverCtx, srv.serverCancel = context.WithCancel(context.Background())
-	srv.cancelTracker = newCancelRegistry()
-	t.Cleanup(srv.serverCancel)
-	return srv
+	sess.serverCtx, sess.serverCancel = context.WithCancel(context.Background())
+	sess.cancelTracker = newCancelRegistry()
+	// The harness stands in for a client that declared its workspace at connect,
+	// which is what makes a pushed diagnostic reach the test's own buffer. A test
+	// asserting the confinement declares something else and reads the silence.
+	sess.setPushRoot(launchRoot)
+	t.Cleanup(sess.serverCancel)
+	return sess
+}
+
+// newTestWorkspace registers a workspace entry under root on sess and returns it,
+// built from the built-in default configuration for the reason newTestSession
+// gives. An entry already held for root is returned as it stands, so a test can
+// reach the same warm caches a second request would.
+func newTestWorkspace(sess *session, root string) *Server {
+	key := filepath.Clean(root)
+	sess.workspaces.mu.Lock()
+	defer sess.workspaces.mu.Unlock()
+	if ws := sess.workspaces.byRoot[key]; ws != nil {
+		return ws
+	}
+	cfg := workspaceconfig.Default()
+	ws := &Server{
+		session:       sess,
+		workspaceRoot: root,
+		wsConfig:      cfg,
+		// lazyCatalog is populated with empty configuration so
+		// handleInvalidate's Reset() call doesn't panic on a nil
+		// pointer. Tests that exercise lazy-lookup behavior populate
+		// their own configured instance; this default suffices for
+		// every test that doesn't touch the lookup directly.
+		lazyCatalog:     catalog.NewLazyLookup(root, "", nil, nil),
+		parseCache:      newCache(0, 0),
+		diagnostics:     map[string][]Diagnostic{},
+		renderDiags:     map[string][]Diagnostic{},
+		conventionDiags: map[string][]Diagnostic{},
+	}
+	sess.workspaces.byRoot[key] = ws
+	return ws
+}
+
+// reanchorTestWorkspace re-publishes ws under its CURRENT root and returns it,
+// pointing the session's push declaration at that root too.
+//
+// A test that changes a workspace entry's root after building it calls this. The
+// registry is keyed on the root and a request names that key, so an entry left
+// under its old key is invisible to the request naming its new one — and that
+// request is then answered from a workspace resolved fresh off disk, carrying
+// none of the test's catalog configuration. The symptom is a handler reporting
+// that no entity matches a URI the fixture plainly declares, which reads like a
+// resolution defect rather than a harness one.
+func reanchorTestWorkspace(t *testing.T, ws *Server) *Server {
+	t.Helper()
+	if ws.workspaceRoot == "" {
+		t.Fatalf("reanchorTestWorkspace: the entry carries no workspace root to key it by")
+	}
+	ws.session.launchRoot = ws.workspaceRoot
+	ws.setPushRoot(ws.workspaceRoot)
+	ws.workspaces.mu.Lock()
+	defer ws.workspaces.mu.Unlock()
+	ws.workspaces.byRoot[filepath.Clean(ws.workspaceRoot)] = ws
+	return ws
+}
+
+// newTestServer constructs a Server suitable for in-memory unit
+// tests: a session whose launch and declared-push workspace is
+// workspaceRoot, plus the workspace entry for that root. stdin/stdout are
+// bytes.Buffer values the test caller populates and inspects.
+func newTestServer(t *testing.T, workspaceRoot string, stdin io.Reader, stdout io.Writer) *Server {
+	t.Helper()
+	sess := newTestSession(t, workspaceRoot, stdin, stdout)
+	return newTestWorkspace(sess, workspaceRoot)
 }
 
 // serializerContext returns a context carrying a per-request sink over
@@ -66,16 +132,74 @@ func serializerContext(t *testing.T, out io.Writer) (context.Context, func()) {
 	return ctx, func() { ser.closeAndWait() }
 }
 
+// declareWorkspace returns req's params carrying a `workspaceRoot` key naming root,
+// which is what a well-behaved client sends on every request that acts on a
+// workspace.
+//
+// It is a harness convenience and it is bounded in three ways, because a harness
+// that supplied more than a client does would blind the assertions that matter.
+//
+// It supplies the parameter only for a method the routing table says needs one,
+// read from that table rather than from a list here — so the harness mirrors the
+// rule instead of holding a second copy of it, and the handshake, whose own
+// workspaceRoot field means something else entirely, is left untouched.
+//
+// It never overwrites a value the test set, so a test naming its own workspace —
+// a second one, or a deliberately bad one — is sent exactly what it wrote.
+//
+// And it is absent from the verbatim helpers below, which put the test's bytes
+// on the wire as written. Every assertion about the parameter itself goes
+// through those: a refusal cannot be proved through a helper that supplies the
+// thing being refused.
+func declareWorkspace(t *testing.T, req *jsonRPCRequest, root string) json.RawMessage {
+	t.Helper()
+	route, known := methodIndex[req.Method]
+	if !known || route.workspaceFree {
+		return req.Params
+	}
+	fields := map[string]json.RawMessage{}
+	if len(req.Params) > 0 {
+		if err := json.Unmarshal(req.Params, &fields); err != nil {
+			// Not an object: a malformed-params test. Leave it exactly as written.
+			return req.Params
+		}
+	}
+	if _, already := fields["workspaceRoot"]; already {
+		return req.Params
+	}
+	encoded, err := json.Marshal(root)
+	if err != nil {
+		t.Fatalf("marshal workspace root: %v", err)
+	}
+	fields["workspaceRoot"] = encoded
+	merged, err := json.Marshal(fields)
+	if err != nil {
+		t.Fatalf("marshal params with workspace: %v", err)
+	}
+	return merged
+}
+
 // driveHandle runs a single parsed request through the production
 // serializer path, writing its framed response to out. It mirrors the
 // dispatch loop's per-request flow (install a serializer, run the
 // handler under arrival sequence 1, close the slot, flush) so tests
 // that need to inspect raw stdout exercise the one write path.
+//
+// The request is sent naming srv's workspace, per declareWorkspace.
 func driveHandle(t *testing.T, srv *Server, req *jsonRPCRequest, out io.Writer) {
+	t.Helper()
+	req.Params = declareWorkspace(t, req, srv.workspaceRoot)
+	driveHandleVerbatim(t, srv.session, req, out)
+}
+
+// driveHandleVerbatim is driveHandle with the request put on the wire exactly as
+// written: no workspace is supplied for it. Tests about the workspace parameter
+// itself use this.
+func driveHandleVerbatim(t *testing.T, sess *session, req *jsonRPCRequest, out io.Writer) {
 	t.Helper()
 	ser := newSerializer(out)
 	go ser.run()
-	frame := srv.handle(ser, 1, req)
+	frame := sess.handle(ser, 1, req)
 	ser.emit(1, frame)
 	ser.closeAndWait()
 	select {
@@ -95,6 +219,41 @@ func framedRequest(id int, method string, params any) []byte {
 		"method":  method,
 		"params":  json.RawMessage(paramBytes),
 	})
+	return append([]byte(fmt.Sprintf("Content-Length: %d\r\n\r\n", len(body))), body...)
+}
+
+// framedRequestIn is framedRequest with the workspace the request acts on named
+// in its params, the way a client sends it.
+//
+// A test that writes framed bytes straight onto the daemon's stdin drives the
+// real dispatch loop, so nothing sits between those bytes and the router that
+// could supply the parameter — the bytes ARE the request. Such a test names the
+// workspace here.
+func framedRequestIn(t *testing.T, srv *Server, id int, method string, params any) []byte {
+	t.Helper()
+	return framedRequestAt(t, srv.workspaceRoot, id, method, params)
+}
+
+// framedRequestAt is framedRequestIn against a workspace root the caller holds
+// rather than one read off a Server. A test that writes its request script
+// before the server exists uses it.
+func framedRequestAt(t *testing.T, root string, id int, method string, params any) []byte {
+	t.Helper()
+	paramBytes, err := json.Marshal(params)
+	if err != nil {
+		t.Fatalf("marshal params: %v", err)
+	}
+	req := &jsonRPCRequest{Method: method, Params: paramBytes}
+	withRoot := declareWorkspace(t, req, root)
+	body, err := json.Marshal(map[string]any{
+		"jsonrpc": "2.0",
+		"id":      id,
+		"method":  method,
+		"params":  withRoot,
+	})
+	if err != nil {
+		t.Fatalf("marshal request: %v", err)
+	}
 	return append([]byte(fmt.Sprintf("Content-Length: %d\r\n\r\n", len(body))), body...)
 }
 
@@ -126,11 +285,20 @@ func decodeOneResponse(t *testing.T, out *bytes.Buffer) jsonRPCResponse {
 // closes the handler's ordered slot with the returned body, and waits
 // for the serializer to flush before decoding — so the in-memory
 // harness exercises the one write path rather than a bypass.
+// The request is sent naming srv's workspace, per declareWorkspace.
 func runOneRequest(t *testing.T, srv *Server, in *bytes.Buffer, out *bytes.Buffer) jsonRPCResponse {
 	t.Helper()
-	srv.in = bufio.NewReader(in)
-	srv.out = out
-	body, err := readMessage(srv.in)
+	return runOneRequestIn(t, srv.session, srv.workspaceRoot, in, out)
+}
+
+// runOneRequestIn is runOneRequest sending the request against the workspace
+// root named here rather than the one the Server carries. Tests driving one
+// daemon over two workspaces use it.
+func runOneRequestIn(t *testing.T, sess *session, root string, in *bytes.Buffer, out *bytes.Buffer) jsonRPCResponse {
+	t.Helper()
+	sess.in = bufio.NewReader(in)
+	sess.out = out
+	body, err := readMessage(sess.in)
 	if err != nil {
 		t.Fatalf("readMessage: %v", err)
 	}
@@ -138,9 +306,35 @@ func runOneRequest(t *testing.T, srv *Server, in *bytes.Buffer, out *bytes.Buffe
 	if err := json.Unmarshal(body, &req); err != nil {
 		t.Fatalf("unmarshal request: %v", err)
 	}
+	req.Params = declareWorkspace(t, &req, root)
+	return dispatchOne(t, sess, &req, out)
+}
+
+// runOneRequestVerbatim is runOneRequest with the request put on the wire
+// exactly as written: no workspace is supplied for it. Tests about the workspace
+// parameter itself use this.
+func runOneRequestVerbatim(t *testing.T, sess *session, in *bytes.Buffer, out *bytes.Buffer) jsonRPCResponse {
+	t.Helper()
+	sess.in = bufio.NewReader(in)
+	sess.out = out
+	body, err := readMessage(sess.in)
+	if err != nil {
+		t.Fatalf("readMessage: %v", err)
+	}
+	var req jsonRPCRequest
+	if err := json.Unmarshal(body, &req); err != nil {
+		t.Fatalf("unmarshal request: %v", err)
+	}
+	return dispatchOne(t, sess, &req, out)
+}
+
+// dispatchOne runs req through the production per-request flow and decodes the
+// one response it produced.
+func dispatchOne(t *testing.T, sess *session, req *jsonRPCRequest, out *bytes.Buffer) jsonRPCResponse {
+	t.Helper()
 	ser := newSerializer(out)
 	go ser.run()
-	frame := srv.handle(ser, 1, &req)
+	frame := sess.handle(ser, 1, req)
 	ser.emit(1, frame)
 	ser.closeAndWait()
 	select {
@@ -157,20 +351,8 @@ func runOneRequest(t *testing.T, srv *Server, in *bytes.Buffer, out *bytes.Buffe
 // workspaceRoot — the production behavior under test here.
 func newLazyCascadeServer(t *testing.T, workspaceRoot string, in io.Reader, out io.Writer) *Server {
 	t.Helper()
-	srv := &Server{
-		workspaceRoot: workspaceRoot,
-		wsConfig:      workspaceconfig.Default(),
-		lazyCatalog:   catalog.NewLazyLookup(workspaceRoot, "", nil, nil),
-		parseCache:    newCache(0, 0),
-		diagnostics:   map[string][]Diagnostic{},
-		in:            bufio.NewReader(in),
-		out:           out,
-		stderr:        io.Discard,
-	}
-	srv.serverCtx, srv.serverCancel = context.WithCancel(context.Background())
-	srv.cancelTracker = newCancelRegistry()
-	t.Cleanup(srv.serverCancel)
-	return srv
+	sess := newTestSession(t, workspaceRoot, in, out)
+	return newTestWorkspace(sess, workspaceRoot)
 }
 
 // TestValidateWithNoReleaseAnswersForTheDocumentAlone pins the contract for a

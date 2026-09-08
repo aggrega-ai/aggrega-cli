@@ -19,7 +19,7 @@ import (
 // pluginWriteScope states how far a plugin mutation reached.
 //
 // Every plugin-mutating response carries one, for the reason the registry
-// methods' scope carries one: a session is opened over a workspace, so an answer
+// methods' scope carries one: a request names one workspace, so an answer
 // with no scope on it reads as being about that workspace — and for a
 // command-extension plugin that reading is wrong by default, since a command
 // extension is machine-wide tooling and defaults to the global configuration file

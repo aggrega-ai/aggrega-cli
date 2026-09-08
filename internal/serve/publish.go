@@ -38,8 +38,8 @@ import (
 //
 // # What every answer states, and why it is on every answer
 //
-// A reach. A session is opened over a workspace, so an answer that said nothing
-// would be read as being about that workspace, and for a publication that reading
+// A reach. A request names one workspace, so an answer that said nothing would be
+// read as being about that workspace, and for a publication that reading
 // is wrong by the widest margin of anything here. So each response names the
 // registry host it addressed and whether the call reached beyond this machine —
 // which a dry run did not, and everything else did.
@@ -57,13 +57,13 @@ import (
 // # No request names a key
 //
 // The command line takes a path to a held signing key. A request here does not,
-// and that is an addressing decision rather than an omission: a session locates
-// what it reads inside the workspace it opened — the ground on which this table
-// declines an operation whose subject is a file the request names by a filesystem
-// path of its own — and a private key is never kept inside a workspace, so such a
-// field could only ever name a path outside the root. Keyed signing on this
-// surface resolves its key from the workspace's own configured signing block,
-// which is where a key path belongs.
+// and that is an addressing decision rather than an omission: what a request
+// reads is located inside the workspace it names — the ground on which this
+// table declines an operation whose subject is a file the request names by a
+// filesystem path of its own — and a private key is never kept inside a
+// workspace, so such a field could only ever name a path outside the root. Keyed
+// signing on this surface resolves its key from the named workspace's own
+// configured signing block, which is where a key path belongs.
 //
 // Every path a request DOES name — the entity document, its executable, the
 // artifact file, a batch file — is relative to the workspace root and is refused

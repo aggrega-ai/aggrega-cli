@@ -120,7 +120,7 @@ func TestServeAggregaTier4ValidateEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read aggregate: %v", err)
 	}
-	if _, err := stdin.Write(framed(2, "aggrega/validate", map[string]any{
+	if _, err := stdin.Write(framedFor(t, cmd, 2, "aggrega/validate", map[string]any{
 		"file":    aggPath,
 		"content": string(aggBytes),
 		"release": "release.yaml",

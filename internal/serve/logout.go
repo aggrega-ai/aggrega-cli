@@ -22,10 +22,10 @@ type logoutParams struct {
 
 // credentialStoreScope states how far a change to the credential store reached.
 //
-// A session is opened over one workspace, so an answer with no scope on it reads
-// as being about that workspace — and for the credential store that reading is
-// always wrong, because the store is shared by every project on the machine and
-// by every other tool that speaks to the same registries. MachineWide is
+// A request names one workspace, so an answer with no scope on it reads as being
+// about that workspace — and for the credential store that reading is always
+// wrong, because the store is shared by every project on the machine and by
+// every other tool that speaks to the same registries. MachineWide is
 // therefore true on every one of these answers rather than derived from an
 // override, since this operation has no workspace-scoped form to resolve to.
 //

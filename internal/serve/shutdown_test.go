@@ -13,9 +13,6 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
-
-	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
-	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
 // shortDrain is the drain timeout integration-style shutdown tests
@@ -44,16 +41,7 @@ func startServerWithPipes(t *testing.T) (stdinW io.WriteCloser, stdoutR io.Reade
 	t.Helper()
 	stdinR, stdinWriter := io.Pipe()
 	stdoutBuf := &bytes.Buffer{}
-	srv := &Server{
-		workspaceRoot: "/tmp/test-workspace",
-		wsConfig:      workspaceconfig.Default(),
-		lazyCatalog:   catalog.NewLazyLookup("/tmp/test-workspace", "", nil, nil),
-		parseCache:    newCache(0, 0),
-		diagnostics:   map[string][]Diagnostic{},
-		in:            bufio.NewReader(stdinR),
-		out:           stdoutBuf,
-		stderr:        io.Discard,
-	}
+	srv := newTestServer(t, t.TempDir(), stdinR, stdoutBuf)
 	ch := make(chan error, 1)
 	go func() {
 		ch <- srv.dispatchLoop(shortDrain)
@@ -101,7 +89,7 @@ func TestShutdownFirstSignalDrainsInFlight(t *testing.T) {
 
 	stdinR, stdinW := io.Pipe()
 	stdout := &syncBuffer{}
-	srv := newPoolTestServer(stdinR, stdout, 1, nil)
+	srv := newPoolTestServer(t, stdinR, stdout, 1, nil)
 	srv.testCtxHook = func(ctx context.Context, id json.RawMessage) {
 		if len(id) == 0 {
 			return // the shutdown notification carries no id
@@ -119,7 +107,7 @@ func TestShutdownFirstSignalDrainsInFlight(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { done <- srv.dispatchLoop(shortDrain) }()
 
-	if _, err := stdinW.Write(framedRequest(1, "aggrega/releaseCandidates", map[string]any{})); err != nil {
+	if _, err := stdinW.Write(framedRequestIn(t, srv, 1, "aggrega/releaseCandidates", map[string]any{})); err != nil {
 		t.Fatalf("write request: %v", err)
 	}
 	select {
@@ -165,7 +153,7 @@ func TestShutdownSecondNotificationAborts(t *testing.T) {
 
 	stdinR, stdinW := io.Pipe()
 	stdout := &syncBuffer{}
-	srv := newPoolTestServer(stdinR, stdout, 1, nil)
+	srv := newPoolTestServer(t, stdinR, stdout, 1, nil)
 	srv.testCtxHook = func(ctx context.Context, id json.RawMessage) {
 		if len(id) == 0 {
 			return
@@ -181,7 +169,7 @@ func TestShutdownSecondNotificationAborts(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { done <- srv.dispatchLoop(shortDrain) }()
 
-	if _, err := stdinW.Write(framedRequest(1, "aggrega/releaseCandidates", map[string]any{})); err != nil {
+	if _, err := stdinW.Write(framedRequestIn(t, srv, 1, "aggrega/releaseCandidates", map[string]any{})); err != nil {
 		t.Fatalf("write request: %v", err)
 	}
 	select {
@@ -253,7 +241,7 @@ func TestShutdownAbortIsPromptOnSecondSignal(t *testing.T) {
 
 	stdinR, stdinW := io.Pipe()
 	stdout := &syncBuffer{}
-	srv := newPoolTestServer(stdinR, stdout, 1, nil)
+	srv := newPoolTestServer(t, stdinR, stdout, 1, nil)
 	srv.testCtxHook = func(ctx context.Context, id json.RawMessage) {
 		if len(id) == 0 {
 			return
@@ -268,7 +256,7 @@ func TestShutdownAbortIsPromptOnSecondSignal(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { done <- srv.dispatchLoop(shortDrain) }()
 
-	if _, err := stdinW.Write(framedRequest(1, "aggrega/releaseCandidates", map[string]any{})); err != nil {
+	if _, err := stdinW.Write(framedRequestIn(t, srv, 1, "aggrega/releaseCandidates", map[string]any{})); err != nil {
 		t.Fatalf("write request: %v", err)
 	}
 	select {
@@ -315,7 +303,7 @@ func TestShutdownRejectsSubsequentRequests(t *testing.T) {
 
 	stdinR, stdinW := io.Pipe()
 	stdout := &syncBuffer{}
-	srv := newPoolTestServer(stdinR, stdout, 4, nil)
+	srv := newPoolTestServer(t, stdinR, stdout, 4, nil)
 	srv.testCtxHook = func(_ context.Context, id json.RawMessage) {
 		var n int
 		if json.Unmarshal(id, &n) != nil || n != 1 {
@@ -329,7 +317,7 @@ func TestShutdownRejectsSubsequentRequests(t *testing.T) {
 	go func() { done <- srv.dispatchLoop(500 * time.Millisecond) }()
 
 	// Hold request 1 in-flight.
-	if _, err := stdinW.Write(framedRequest(1, "aggrega/releaseCandidates", map[string]any{})); err != nil {
+	if _, err := stdinW.Write(framedRequestIn(t, srv, 1, "aggrega/releaseCandidates", map[string]any{})); err != nil {
 		t.Fatalf("write held request: %v", err)
 	}
 	select {
@@ -345,7 +333,7 @@ func TestShutdownRejectsSubsequentRequests(t *testing.T) {
 		close(release)
 		t.Fatalf("write shutdown: %v", err)
 	}
-	if _, err := stdinW.Write(framedRequest(42, "aggrega/validate", map[string]string{
+	if _, err := stdinW.Write(framedRequestIn(t, srv, 42, "aggrega/validate", map[string]string{
 		"file":    "/dev/null",
 		"content": "",
 	})); err != nil {
@@ -413,18 +401,7 @@ func TestShutdownDropsSubsequentNotifications(t *testing.T) {
 	// regresses against only surfaces under a multi-worker pool. The
 	// default is 4 today, but pinning here keeps the guard sharp if the
 	// default ever changes.
-	cfg := workspaceconfig.Default()
-	cfg.Concurrency.PoolSize = 4
-	srv := &Server{
-		workspaceRoot: "/tmp/test-workspace",
-		wsConfig:      cfg,
-		lazyCatalog:   catalog.NewLazyLookup("/tmp/test-workspace", "", nil, nil),
-		parseCache:    newCache(0, 0),
-		diagnostics:   map[string][]Diagnostic{},
-		in:            bufio.NewReader(stdinR),
-		out:           stdoutBuf,
-		stderr:        io.Discard,
-	}
+	srv := newPoolTestServer(t, stdinR, stdoutBuf, 4, nil)
 	done := make(chan error, 1)
 	go func() {
 		done <- srv.dispatchLoop(500 * time.Millisecond)

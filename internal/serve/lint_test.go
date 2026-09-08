@@ -96,7 +96,7 @@ func conventionsWorkspace(t *testing.T, content string) (root, rel string) {
 // It resolves a real workspace rather than leaving the field nil, because the
 // conventions layer refuses to run without one — resolving inside the handler
 // would lint whatever directory the test process happens to sit in rather than
-// the workspace the session was opened over.
+// the workspace the request named.
 func conventionsServer(t *testing.T, root string, lintOnValidate bool) *Server {
 	t.Helper()
 	rw, err := workspaceconfig.Resolve(root, root)
@@ -104,21 +104,12 @@ func conventionsServer(t *testing.T, root string, lintOnValidate bool) *Server {
 		t.Fatalf("resolve the workspace at %s: %v", root, err)
 	}
 	catalogDirs := workspaceconfig.ResolveCatalogDirs(nil, rw.Config(), root)
-	srv := &Server{
-		workspaceRoot:     root,
-		wsConfig:          rw.Config(),
-		resolvedWorkspace: rw,
-		lintOnValidate:    lintOnValidate,
-		lazyCatalog:       catalog.NewLazyLookup(root, rw.Config().ResolvedArtifactCacheDir(), catalogDirs, nil),
-		parseCache:        newCache(0, 0),
-		diagnostics:       map[string][]Diagnostic{},
-		renderDiags:       map[string][]Diagnostic{},
-		conventionDiags:   map[string][]Diagnostic{},
-		out:               &bytes.Buffer{},
-	}
-	srv.serverCtx, srv.serverCancel = context.WithCancel(context.Background())
-	srv.cancelTracker = newCancelRegistry()
-	t.Cleanup(srv.serverCancel)
+	sess := newTestSession(t, root, &bytes.Buffer{}, &bytes.Buffer{})
+	srv := newTestWorkspace(sess, root)
+	srv.wsConfig = rw.Config()
+	srv.resolvedWorkspace = rw
+	srv.lintOnValidate = lintOnValidate
+	srv.lazyCatalog = catalog.NewLazyLookup(root, rw.Config().ResolvedArtifactCacheDir(), catalogDirs, nil)
 	return srv
 }
 

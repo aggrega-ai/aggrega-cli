@@ -17,10 +17,16 @@ import (
 // Release-naming parameter here carries.
 //
 // There is no output-directory parameter, and its absence is the contract rather
-// than an omission. The daemon writes into the workspace it opened at startup
-// and nowhere else, so a caller cannot name a destination; a request carrying
-// one would make the daemon a general-purpose writer pointed by whoever is on
-// the other end of the pipe.
+// than an omission. The daemon writes into the workspace the request named and
+// nowhere else, so a caller cannot name a destination; a request carrying one
+// would make the daemon a general-purpose writer pointed by whoever is on the
+// other end of the pipe.
+//
+// Naming the workspace is not naming a destination, and the difference is what
+// keeps that bound intact. A workspace root is the tree the request is about, and
+// the output directory is derived from it by the shared arithmetic the command
+// line derives it by — so the caller says which workspace, and where inside it a
+// build writes is not the caller's to say.
 type buildParams struct {
 	Release string `json:"release"`
 }
@@ -83,11 +89,11 @@ func (s *Server) dispatchBuild(ctx context.Context, req *jsonRPCRequest) error {
 //
 // # Where it writes, and why the caller does not choose
 //
-// Into the default output directory under the workspace root the daemon
-// resolved at startup. That is the same location the command line writes to when
-// it is run in that workspace, which is what makes the two surfaces produce one
-// tree rather than two; the directory name has one home so neither surface can
-// move without the other.
+// Into the default output directory under the workspace root the request named.
+// That is the same location the command line writes to when it is run in that
+// workspace, which is what makes the two surfaces produce one tree rather than
+// two; the directory name has one home so neither surface can move without the
+// other.
 //
 // The destination is therefore derived rather than requested, and the write goes
 // through the shared build-output entry point, which clears the boundaries

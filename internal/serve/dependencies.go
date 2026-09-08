@@ -28,9 +28,11 @@ import (
 // resolves today and writes nothing at all.
 //
 // There is no catalog-directory parameter, and its absence is the contract rather
-// than an omission. The daemon resolves against the workspace it opened at
-// startup and the search stack that workspace configures, so a caller cannot
-// point it at a directory the workspace does not name.
+// than an omission. The daemon resolves against the workspace the request named
+// and the search stack that workspace configures, so a caller cannot point it at
+// a directory the workspace does not name. Naming the workspace is what selects
+// that search stack, not a way around it: the stack is the named workspace's own
+// configuration, read the way the command line reads it.
 type resolveDependenciesParams struct {
 	Release string   `json:"release"`
 	Upgrade bool     `json:"upgrade,omitempty"`
@@ -343,10 +345,10 @@ func noticeLines(stream string) []string {
 // coordinate: relative to the workspace root, which is the form every
 // Release-naming parameter uses.
 //
-// A path outside the root, and a daemon holding no root, are returned as they
-// are. Neither can arise for a file this daemon wrote — every write is anchored
-// to the workspace it opened — so the fallback exists to keep the answer honest
-// rather than to serve a case any request can reach.
+// A path outside the root, and a request carrying no root, are returned as they
+// are. Neither can arise for a file this daemon wrote — every write lands inside
+// the workspace the request named — so the fallback exists to keep the answer
+// honest rather than to serve a case any request can reach.
 func (s *Server) workspaceRelative(path string) string {
 	if s.workspaceRoot == "" {
 		return path

@@ -175,7 +175,7 @@ func TestShutdownCancelsConcurrentInFlightHandlers(t *testing.T) {
 			// capacity at both pool sizes, so submission never blocks on
 			// a drain and no concurrent reader is needed.
 			stdout := &syncBuffer{}
-			srv := newPoolTestServer(stdinR, stdout, pool, nil)
+			srv := newPoolTestServer(t, stdinR, stdout, pool, nil)
 			srv.testCtxHook = func(ctx context.Context, id json.RawMessage) {
 				// Only the first inFlight id-bearing handlers block; the
 				// shutdown notification (no id) and any later request fall
@@ -200,7 +200,7 @@ func TestShutdownCancelsConcurrentInFlightHandlers(t *testing.T) {
 			go func() { loopDone <- srv.dispatchLoop(200 * time.Millisecond) }()
 
 			for i := 0; i < inFlight; i++ {
-				if _, err := stdinW.Write(framedRequest(i+1, "aggrega/releaseCandidates", map[string]any{})); err != nil {
+				if _, err := stdinW.Write(framedRequestIn(t, srv, i+1, "aggrega/releaseCandidates", map[string]any{})); err != nil {
 					t.Fatalf("write request: %v", err)
 				}
 			}
@@ -252,14 +252,15 @@ func TestPerRequestCancelFiresOnCompletion(t *testing.T) {
 	var mu sync.Mutex
 	captured := map[string]context.Context{}
 
+	root := t.TempDir()
 	var stdin, stdout bytes.Buffer
 	ids := []int{1, 2, 3}
 	for _, id := range ids {
-		stdin.Write(framedRequest(id, "aggrega/releaseCandidates", map[string]any{}))
+		stdin.Write(framedRequestAt(t, root, id, "aggrega/releaseCandidates", map[string]any{}))
 	}
 	stdin.Write(framedNotification("aggrega/shutdown", nil))
 
-	srv := newPoolTestServer(&stdin, &stdout, 4, nil)
+	srv := newPoolTestServerAt(t, root, &stdin, &stdout, 4, nil)
 	srv.testCtxHook = func(ctx context.Context, id json.RawMessage) {
 		if len(id) == 0 {
 			return
@@ -295,14 +296,15 @@ func TestPerRequestCancelFiresOnCompletion(t *testing.T) {
 func TestCancelTrackerEmptyAfterBurst(t *testing.T) {
 	t.Parallel()
 
+	root := t.TempDir()
 	var stdin, stdout bytes.Buffer
 	const n = 50
 	for i := 0; i < n; i++ {
-		stdin.Write(framedRequest(i+1, "aggrega/releaseCandidates", map[string]any{}))
+		stdin.Write(framedRequestAt(t, root, i+1, "aggrega/releaseCandidates", map[string]any{}))
 	}
 	stdin.Write(framedNotification("aggrega/shutdown", nil))
 
-	srv := newPoolTestServer(&stdin, &stdout, 16, nil)
+	srv := newPoolTestServerAt(t, root, &stdin, &stdout, 16, nil)
 	if err := srv.dispatchLoop(500 * time.Millisecond); err != nil {
 		t.Fatalf("dispatchLoop: %v", err)
 	}
@@ -328,7 +330,7 @@ func TestCancelRequestByIdInterruptsHandler(t *testing.T) {
 
 	stdinR, stdinW := io.Pipe()
 	stdout := &syncBuffer{}
-	srv := newPoolTestServer(stdinR, stdout, 4, nil)
+	srv := newPoolTestServer(t, stdinR, stdout, 4, nil)
 	srv.testCtxHook = func(ctx context.Context, id json.RawMessage) {
 		var n int
 		if json.Unmarshal(id, &n) != nil || n != targetID {
@@ -345,7 +347,7 @@ func TestCancelRequestByIdInterruptsHandler(t *testing.T) {
 	loopDone := make(chan error, 1)
 	go func() { loopDone <- srv.dispatchLoop(500 * time.Millisecond) }()
 
-	if _, err := stdinW.Write(framedRequest(targetID, "aggrega/releaseCandidates", map[string]any{})); err != nil {
+	if _, err := stdinW.Write(framedRequestIn(t, srv, targetID, "aggrega/releaseCandidates", map[string]any{})); err != nil {
 		t.Fatalf("write request: %v", err)
 	}
 
@@ -399,7 +401,7 @@ func TestCancelRequestNotificationInterruptsHandler(t *testing.T) {
 
 			stdinR, stdinW := io.Pipe()
 			stdout := &syncBuffer{}
-			srv := newPoolTestServer(stdinR, stdout, pool, nil)
+			srv := newPoolTestServer(t, stdinR, stdout, pool, nil)
 			srv.testCtxHook = func(ctx context.Context, id json.RawMessage) {
 				var n int
 				if json.Unmarshal(id, &n) != nil || n != targetID {
@@ -416,7 +418,7 @@ func TestCancelRequestNotificationInterruptsHandler(t *testing.T) {
 			loopDone := make(chan error, 1)
 			go func() { loopDone <- srv.dispatchLoop(500 * time.Millisecond) }()
 
-			if _, err := stdinW.Write(framedRequest(targetID, "aggrega/releaseCandidates", map[string]any{})); err != nil {
+			if _, err := stdinW.Write(framedRequestIn(t, srv, targetID, "aggrega/releaseCandidates", map[string]any{})); err != nil {
 				t.Fatalf("write request: %v", err)
 			}
 
@@ -465,11 +467,12 @@ func TestCancelRequestUnknownIdIsNoOp(t *testing.T) {
 	var stdin, stdout bytes.Buffer
 	// A cancel for an id that is not (and never was) in flight, then a
 	// real request whose response must still appear, then shutdown.
+	root := t.TempDir()
 	stdin.Write(framedNotification("$/cancelRequest", map[string]any{"id": 999}))
-	stdin.Write(framedRequest(1, "aggrega/releaseCandidates", map[string]any{}))
+	stdin.Write(framedRequestAt(t, root, 1, "aggrega/releaseCandidates", map[string]any{}))
 	stdin.Write(framedNotification("aggrega/shutdown", nil))
 
-	srv := newPoolTestServer(&stdin, &stdout, 4, nil)
+	srv := newPoolTestServerAt(t, root, &stdin, &stdout, 4, nil)
 	if err := srv.dispatchLoop(500 * time.Millisecond); err != nil {
 		t.Fatalf("dispatchLoop: %v", err)
 	}
@@ -507,7 +510,7 @@ func TestCancelRequestNormalizesIdWhitespace(t *testing.T) {
 
 	stdinR, stdinW := io.Pipe()
 	stdout := &syncBuffer{}
-	srv := newPoolTestServer(stdinR, stdout, 4, nil)
+	srv := newPoolTestServer(t, stdinR, stdout, 4, nil)
 	srv.testCtxHook = func(ctx context.Context, id json.RawMessage) {
 		var n int
 		if json.Unmarshal(id, &n) != nil || n != targetID {
@@ -524,7 +527,7 @@ func TestCancelRequestNormalizesIdWhitespace(t *testing.T) {
 	loopDone := make(chan error, 1)
 	go func() { loopDone <- srv.dispatchLoop(500 * time.Millisecond) }()
 
-	if _, err := stdinW.Write(framedRequest(targetID, "aggrega/releaseCandidates", map[string]any{})); err != nil {
+	if _, err := stdinW.Write(framedRequestIn(t, srv, targetID, "aggrega/releaseCandidates", map[string]any{})); err != nil {
 		t.Fatalf("write request: %v", err)
 	}
 

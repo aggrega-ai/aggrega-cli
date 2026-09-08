@@ -217,7 +217,7 @@ func silentClient(id int) sessionRequest {
 // completion with no destination and no network — it computes the bundle,
 // writes its own three status lines, and returns before a remote target is
 // constructed.
-func dryRunArtifact(id int, extra map[string]any) sessionRequest {
+func dryRunArtifact(t *testing.T, srv *Server, id int, extra map[string]any) sessionRequest {
 	params := map[string]any{
 		"file":   "bundle.txt",
 		"name":   "handbook",
@@ -227,7 +227,7 @@ func dryRunArtifact(id int, extra map[string]any) sessionRequest {
 	for k, v := range extra {
 		params[k] = v
 	}
-	return send(id, framedRequest(id, "aggrega/publishArtifact", params))
+	return send(id, framedRequestIn(t, srv, id, "aggrega/publishArtifact", params))
 }
 
 // The three lines the dry-run publication writes, spelled out here rather than
@@ -257,7 +257,7 @@ func TestProgressReachesTheWireCorrelatedByTheCallersToken(t *testing.T) {
 
 	frames := driveSession(t, srv,
 		negotiatingClient(1),
-		dryRunArtifact(2, map[string]any{"workDoneToken": "handbook-publish"}),
+		dryRunArtifact(t, srv, 2, map[string]any{"workDoneToken": "handbook-publish"}),
 	)
 
 	payloads := progressPayloads(t, frames)
@@ -332,7 +332,7 @@ func TestProgressTokenMayBeANumber(t *testing.T) {
 
 	frames := driveSession(t, srv,
 		negotiatingClient(1),
-		dryRunArtifact(2, map[string]any{"workDoneToken": 7}),
+		dryRunArtifact(t, srv, 2, map[string]any{"workDoneToken": 7}),
 	)
 
 	payloads := progressPayloads(t, frames)
@@ -359,10 +359,10 @@ func TestAClientThatNegotiatesNoTokenIsUnaffected(t *testing.T) {
 	t.Parallel()
 
 	silentSrv, _ := publishFixture(t, defaultRegistryWorkspace)
-	silent := driveSession(t, silentSrv, silentClient(1), dryRunArtifact(2, nil))
+	silent := driveSession(t, silentSrv, silentClient(1), dryRunArtifact(t, silentSrv, 2, nil))
 
 	declaredSrv, _ := publishFixture(t, defaultRegistryWorkspace)
-	declared := driveSession(t, declaredSrv, negotiatingClient(1), dryRunArtifact(2, nil))
+	declared := driveSession(t, declaredSrv, negotiatingClient(1), dryRunArtifact(t, declaredSrv, 2, nil))
 
 	for label, frames := range map[string][]wireFrame{"silent": silent, "declared": declared} {
 		if got := progressPayloads(t, frames); len(got) != 0 {
@@ -405,7 +405,7 @@ func TestAnOperationThatReportsNothingIsUnaffected(t *testing.T) {
 	withToken, _ := publishFixture(t, defaultRegistryWorkspace)
 	tokened := driveSession(t, withToken,
 		negotiatingClient(1),
-		send(2, framedRequest(2, "aggrega/releaseCandidates", map[string]any{"workDoneToken": "unreported"})),
+		send(2, framedRequestIn(t, withToken, 2, "aggrega/releaseCandidates", map[string]any{"workDoneToken": "unreported"})),
 	)
 	if got := progressPayloads(t, tokened); len(got) != 0 {
 		t.Errorf("an unreported operation must push nothing; got %d frames: %+v", len(got), got)
@@ -419,7 +419,7 @@ func TestAnOperationThatReportsNothingIsUnaffected(t *testing.T) {
 	withoutToken, _ := publishFixture(t, defaultRegistryWorkspace)
 	plain := driveSession(t, withoutToken,
 		negotiatingClient(1),
-		send(2, framedRequest(2, "aggrega/releaseCandidates", map[string]any{})),
+		send(2, framedRequestIn(t, withoutToken, 2, "aggrega/releaseCandidates", map[string]any{})),
 	)
 	if got, want := string(tokenedAnswer.Result), string(responseTo(t, plain, "2").Result); got != want {
 		t.Errorf("a token must not change an unreported operation's answer:\n with:    %s\n without: %s", got, want)
@@ -439,7 +439,7 @@ func TestATokenWithoutTheCapabilityIsRefusedLoudly(t *testing.T) {
 
 	frames := driveSession(t, srv,
 		silentClient(1),
-		dryRunArtifact(2, map[string]any{"workDoneToken": "unnegotiated"}),
+		dryRunArtifact(t, srv, 2, map[string]any{"workDoneToken": "unnegotiated"}),
 	)
 
 	resp := responseTo(t, frames, "2")
@@ -480,7 +480,7 @@ func TestATokenThatIsNotOneIsRefusedByShape(t *testing.T) {
 			srv, _ := publishFixture(t, defaultRegistryWorkspace)
 			frames := driveSession(t, srv,
 				negotiatingClient(1),
-				dryRunArtifact(2, map[string]any{"workDoneToken": tc.token}),
+				dryRunArtifact(t, srv, 2, map[string]any{"workDoneToken": tc.token}),
 			)
 			resp := responseTo(t, frames, "2")
 			if resp.Error == nil {
@@ -508,7 +508,7 @@ func TestARequestRefusedOnItsParamsReportsNothing(t *testing.T) {
 
 	frames := driveSession(t, srv,
 		negotiatingClient(1),
-		dryRunArtifact(2, map[string]any{
+		dryRunArtifact(t, srv, 2, map[string]any{
 			"workDoneToken": "refused",
 			"file":          filepath.Join(root, "bundle.txt"),
 		}),
@@ -581,7 +581,7 @@ func TestProgressLinesSplitAndTrimTheOperationsOwnOutput(t *testing.T) {
 
 	var out bytes.Buffer
 	ctx, flush := serializerContext(t, &out)
-	srv := &Server{stderr: io.Discard}
+	srv := &Server{session: &session{stderr: io.Discard}}
 	run := srv.progressFor(withProgressToken(ctx, json.RawMessage(`"tok"`)))
 	run.begin("Doing the thing")
 	// One line arriving in three writes, then two lines in one write with an
@@ -631,7 +631,7 @@ func TestProgressWriterDiscardsWhenNothingAskedForAReport(t *testing.T) {
 
 	var out bytes.Buffer
 	ctx, flush := serializerContext(t, &out)
-	srv := &Server{stderr: io.Discard}
+	srv := &Server{session: &session{stderr: io.Discard}}
 	run := srv.progressFor(ctx)
 	run.begin("Doing the thing")
 	if _, err := run.writer().Write([]byte("a line that must not travel\n")); err != nil {

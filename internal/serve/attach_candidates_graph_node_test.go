@@ -255,12 +255,13 @@ spec:
 // catalog has.
 func graphNodeServer(t *testing.T, ws string, catalogDirs ...string) *Server {
 	t.Helper()
-	srv := newPoolTestServer(&bytes.Buffer{}, &bytes.Buffer{}, 1, nil)
+	srv := newPoolTestServer(t, &bytes.Buffer{}, &bytes.Buffer{}, 1, nil)
 	srv.workspaceRoot = ws
 	cacheDir := ".aggrega/cache"
 	srv.wsConfig.ArtifactCacheDir = cacheDir
 	srv.wsConfig.Workspace.CatalogDirs = catalogDirs
 	srv.lazyCatalog = catalog.NewLazyLookup(ws, cacheDir, catalogDirs, nil)
+	reanchorTestWorkspace(t, srv)
 	srv.serverCtx, srv.serverCancel = context.WithCancel(context.Background())
 	srv.cancelTracker = newCancelRegistry()
 	t.Cleanup(srv.serverCancel)

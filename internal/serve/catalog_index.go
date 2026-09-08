@@ -54,16 +54,17 @@ type catalogIndexResult struct {
 	Entities []CatalogEntity `json:"entities"`
 }
 
-// dispatchCatalogIndex returns the workspace's entity index — kind,
-// name, apiVersion, description, labels and source file for every
-// aggrega document under the workspace root. An editor building a
-// palette of the entities available to drag onto a canvas asks for it
-// here rather than walking the workspace itself, so its idea of what the
-// workspace contains matches the daemon's exactly.
+// dispatchCatalogIndex returns the entity index of the workspace the request
+// named — kind, name, apiVersion, description, labels and source file for every
+// aggrega document under that root. An editor building a palette of the entities
+// available to drag onto a canvas asks for it here rather than walking the
+// workspace itself, so its idea of what the workspace contains matches the
+// daemon's exactly.
 //
-// Takes no params: the index is a property of the daemon's workspace
-// root, which it resolved at startup. Read-only — it mutates nothing,
-// resolves nothing, and reaches no registry or network.
+// The index is a property of one workspace, so the request names which. Two
+// requests naming two workspaces are answered from two trees, and neither
+// entity set reaches the other. Read-only — it mutates nothing, resolves
+// nothing, and reaches no registry or network.
 func (s *Server) dispatchCatalogIndex(ctx context.Context, req *jsonRPCRequest) error {
 	if err := ctx.Err(); err != nil {
 		return s.writeError(ctx, req.ID, jsonRPCInternalError, err.Error())

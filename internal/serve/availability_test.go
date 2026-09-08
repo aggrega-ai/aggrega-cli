@@ -99,7 +99,7 @@ func TestTheAvailabilityTableIsTheWholeRoutingSurface(t *testing.T) {
 		}
 	}
 	for method, id := range fromTable {
-		if methodIndex[method] == nil {
+		if _, routed := methodIndex[method]; !routed {
 			t.Errorf("the availability table exposes the %q operation at %q, which the dispatcher does not "+
 				"resolve", id, method)
 		}
@@ -216,7 +216,9 @@ func TestAnUnroutedMethodIsRefused(t *testing.T) {
 	ctx := withRequestSink(context.Background(), sink)
 	req := &jsonRPCRequest{JSONRPC: "2.0", ID: []byte("1"), Method: "aggrega/notAMethod"}
 
-	s := &Server{}
+	// A bare session: an unrouted method is refused before any workspace is
+	// resolved, so nothing here needs one.
+	s := &session{}
 	if err := s.dispatch(ctx, req); err != nil {
 		t.Fatalf("dispatch: %v", err)
 	}

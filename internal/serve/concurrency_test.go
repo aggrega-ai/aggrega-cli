@@ -43,9 +43,10 @@ func newConcurrencyServer(t *testing.T, in io.Reader, out io.Writer, poolSize in
 	if err := os.WriteFile(compPath, []byte(concurrencyComponentYAML), 0o644); err != nil {
 		t.Fatalf("write component fixture: %v", err)
 	}
-	srv := newPoolTestServer(in, out, poolSize, nil)
+	srv := newPoolTestServer(t, in, out, poolSize, nil)
 	srv.workspaceRoot = tmp
 	srv.lazyCatalog = catalog.NewLazyLookup(tmp, "", []string{tmp}, nil)
+	reanchorTestWorkspace(t, srv)
 	return srv, compPath
 }
 
@@ -100,12 +101,12 @@ func TestConcurrentSharedFileDispatchRaceClean(t *testing.T) {
 			// Reset). All target the SAME file/workspace so the handlers
 			// genuinely contend.
 			var feed [][]byte
-			feed = append(feed, framedRequest(1, "aggrega/initialize", initializeParams{}))
+			feed = append(feed, framedRequestIn(t, srv, 1, "aggrega/initialize", initializeParams{}))
 			for i := 0; i < 60; i++ {
 				feed = append(feed,
-					framedRequest(i+2, "aggrega/validate", validateParams{File: file, Content: content}),
-					framedRequest(i+2, "aggrega/diagnostics", diagnosticsParams{File: file}),
-					framedRequest(i+2, "aggrega/invalidate", invalidateParams{File: file, Granularity: "workspace"}),
+					framedRequestIn(t, srv, i+2, "aggrega/validate", validateParams{File: file, Content: content}),
+					framedRequestIn(t, srv, i+2, "aggrega/diagnostics", diagnosticsParams{File: file}),
+					framedRequestIn(t, srv, i+2, "aggrega/invalidate", invalidateParams{File: file, Granularity: "workspace"}),
 				)
 			}
 			feed = append(feed, framedNotification("aggrega/shutdown", nil))
@@ -159,11 +160,11 @@ func TestConcurrentValidateAndReadHandlersRaceClean(t *testing.T) {
 	var feed [][]byte
 	for i := 0; i < 50; i++ {
 		feed = append(feed,
-			framedRequest(i, "aggrega/validate", validateParams{File: file, Content: content}),
-			framedRequest(i, "aggrega/resolve", map[string]any{"uri": file, "position": pos()}),
-			framedRequest(i, "aggrega/hover", map[string]any{"uri": file, "position": pos()}),
-			framedRequest(i, "aggrega/completion", map[string]any{"uri": file, "position": pos()}),
-			framedRequest(i, "aggrega/findReferences", map[string]any{"uri": file, "position": pos()}),
+			framedRequestIn(t, srv, i, "aggrega/validate", validateParams{File: file, Content: content}),
+			framedRequestIn(t, srv, i, "aggrega/resolve", map[string]any{"uri": file, "position": pos()}),
+			framedRequestIn(t, srv, i, "aggrega/hover", map[string]any{"uri": file, "position": pos()}),
+			framedRequestIn(t, srv, i, "aggrega/completion", map[string]any{"uri": file, "position": pos()}),
+			framedRequestIn(t, srv, i, "aggrega/findReferences", map[string]any{"uri": file, "position": pos()}),
 		)
 	}
 	feed = append(feed, framedNotification("aggrega/shutdown", nil))
@@ -218,7 +219,7 @@ func TestConcurrentIrGraphValidateInvalidateRaceClean(t *testing.T) {
 			go func() { readDone <- drainResponses(bufio.NewReader(stdoutR)) }()
 
 			var feed [][]byte
-			feed = append(feed, framedRequest(1, "aggrega/initialize", initializeParams{}))
+			feed = append(feed, framedRequestIn(t, srv, 1, "aggrega/initialize", initializeParams{}))
 			aggA := filepath.Join(ws, "release-a-agg.yaml")
 			// Both validations name the same file and different Releases, so
 			// the two run the whole Tier-4 path against two Releases at once.
@@ -227,12 +228,12 @@ func TestConcurrentIrGraphValidateInvalidateRaceClean(t *testing.T) {
 			// on its own request.
 			for i := 0; i < 40; i++ {
 				feed = append(feed,
-					framedRequest(i+2, "aggrega/irGraph", irGraphParams{Release: relA}),
-					framedRequest(i+2, "aggrega/irGraph", irGraphParams{Release: relB}),
-					framedRequest(i+2, "aggrega/validate", validateParams{File: aggA, Content: "", Release: relA}),
-					framedRequest(i+2, "aggrega/validate", validateParams{File: aggA, Content: "", Release: relB}),
-					framedRequest(i+2, "aggrega/diagnostics", diagnosticsParams{File: aggA}),
-					framedRequest(i+2, "aggrega/invalidate", invalidateParams{Granularity: "workspace"}),
+					framedRequestIn(t, srv, i+2, "aggrega/irGraph", irGraphParams{Release: relA}),
+					framedRequestIn(t, srv, i+2, "aggrega/irGraph", irGraphParams{Release: relB}),
+					framedRequestIn(t, srv, i+2, "aggrega/validate", validateParams{File: aggA, Content: "", Release: relA}),
+					framedRequestIn(t, srv, i+2, "aggrega/validate", validateParams{File: aggA, Content: "", Release: relB}),
+					framedRequestIn(t, srv, i+2, "aggrega/diagnostics", diagnosticsParams{File: aggA}),
+					framedRequestIn(t, srv, i+2, "aggrega/invalidate", invalidateParams{Granularity: "workspace"}),
 				)
 			}
 			feed = append(feed, framedNotification("aggrega/shutdown", nil))

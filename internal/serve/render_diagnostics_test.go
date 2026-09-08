@@ -16,10 +16,33 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 )
 
+// layeredWorkspaceRoot is the root layeredServer's entry stands for. The files
+// these tests publish about sit under it, so the entry and its declared push
+// workspace are one workspace — the ordinary single-client arrangement.
+const layeredWorkspaceRoot = "/w"
+
+// layeredServer builds a workspace entry carrying the diagnostic layers, for the
+// tests that exercise how the layers compose.
+//
+// It carries a session because the position encoding a publication reads is the
+// session's, not the workspace's — an entry with none nil-dereferences at the
+// first publication rather than at construction, which is a failure a long way
+// from its cause.
+//
+// The session declares this entry's own root for pushes, which is what lets a
+// test here read a pushed notification off the wire. A publication is confined
+// to the declared workspace, so an entry standing for no workspace would emit
+// nothing and a test asserting the push would read an empty buffer — a silence
+// that looks like a wiring fault rather than the rule working. The confinement
+// itself is asserted elsewhere, by driving two workspaces.
 func layeredServer() *Server {
+	sess := &session{}
+	sess.setPushRoot(layeredWorkspaceRoot)
 	return &Server{
-		diagnostics: map[string][]Diagnostic{},
-		renderDiags: map[string][]Diagnostic{},
+		session:       sess,
+		workspaceRoot: layeredWorkspaceRoot,
+		diagnostics:   map[string][]Diagnostic{},
+		renderDiags:   map[string][]Diagnostic{},
 	}
 }
 

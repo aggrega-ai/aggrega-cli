@@ -27,8 +27,35 @@ import (
 // daemon reads positionEncodings and workDoneProgress off the client's
 // capabilities; other LSP initialize fields are accepted but ignored
 // today.
+//
+// Workspace is where a client DECLARES the workspace it wants unasked-for
+// diagnostics pushed for. It is not the workspace anything is answered against
+// — a request that acts on a workspace names its own, on every call — so
+// declaring one here buys exactly one thing: findings about that workspace
+// arrive as they are produced, instead of only on the response to whichever
+// request produced them.
+//
+// It is a pointer so that three cases are distinguishable, and each is a
+// different thing a client can mean:
+//
+//   - Absent. The client has said nothing about pushes, so the workspace this
+//     process was launched over is pushed for. That is what the operator
+//     declared by pointing the process at it, and it is what a client that
+//     predates this field reads: such a client keeps receiving exactly the
+//     diagnostics it received before, which is what keeps adding the field from
+//     silently switching them off.
+//   - Present and non-empty. Pushes are confined to that workspace.
+//   - Present and empty. No workspace is pushed for at all. A client that would
+//     rather read every finding on the response that produced it says so this
+//     way, and it is the honest shape for a caller that is not an editor and has
+//     no problem list to keep in sync.
+//
+// A declared workspace is resolved exactly as a request-named one is, so a
+// declaration naming a relative path, or a path that is not a directory, is
+// refused here rather than quietly leaving pushes pointed somewhere else.
 type initializeParams struct {
-	Capabilities clientCapabilities `json:"capabilities"`
+	Capabilities  clientCapabilities `json:"capabilities"`
+	WorkspaceRoot *string            `json:"workspaceRoot,omitempty"`
 }
 
 // clientCapabilities mirrors a tiny slice of LSP's client capabilities
@@ -68,17 +95,23 @@ type serverCapabilities struct {
 }
 
 // initializeResult is the response shape for aggrega/initialize.
-// Capabilities carries the negotiated position encoding. WorkspaceRoot
-// reports the absolute path the daemon resolved as the workspace
-// anchor (via discovery or explicit --workspace-root). ConfigSource
-// names the highest-precedence configuration layer that contributed
-// to the effective Config: "workspace" | "global" | "defaults".
-// WorkspaceMarker names the marker tier that anchored the workspace
-// root: "config" | "directory" | "aggregate-glob" | "release-glob" |
-// "manifest-glob"; the field is omitted on the wire when the daemon
-// anchored via an explicit --workspace-root (no marker consulted).
-// Additive only: clients that read only Capabilities continue to
-// work; the new fields are opt-in for clients that surface them.
+// Capabilities carries the negotiated position encoding.
+//
+// The three workspace fields describe ONE workspace: the one this client
+// declared for pushes, or — when it declared none — the one the process was
+// launched over. They are not a statement about what any request will be
+// answered against, because that is the workspace each request names.
+//
+// WorkspaceRoot reports that workspace's absolute path. ConfigSource names the
+// highest-precedence configuration layer that contributed to its effective
+// configuration: "workspace" | "global" | "defaults". WorkspaceMarker names the
+// marker tier that anchored it: "config" | "directory" | "aggregate-glob" |
+// "release-glob" | "manifest-glob"; the field is omitted on the wire when the
+// root was supplied explicitly, since no marker was consulted in that path.
+//
+// A client that declared the empty workspace — asking for no pushes at all —
+// reads an empty WorkspaceRoot, which is the honest answer: there is no
+// workspace these fields could be about.
 type initializeResult struct {
 	Capabilities    serverCapabilities `json:"capabilities"`
 	WorkspaceRoot   string             `json:"workspaceRoot"`
@@ -97,11 +130,14 @@ type releaseCandidatesResult struct {
 	Releases []string `json:"releases"`
 }
 
-// dispatchReleaseCandidates returns the workspace's Release-candidate set —
-// the content-kind walk the active-Release cascade already performs, surfaced
-// as a list so the IDE delegates Release detection to the daemon rather than
-// reimplementing it. Takes no params: the set is a property of the daemon's
-// workspace root, which it resolved at startup.
+// dispatchReleaseCandidates returns the Release-candidate set of the workspace
+// the request named — the content-kind walk the active-Release cascade already
+// performs, surfaced as a list so the IDE delegates Release detection to the
+// daemon rather than reimplementing it.
+//
+// The set is a property of one workspace, so the request names which: the walk
+// runs over the root it carries, and two requests naming two workspaces are
+// answered from two trees.
 func (s *Server) dispatchReleaseCandidates(ctx context.Context, req *jsonRPCRequest) error {
 	releases := walkForReleases(s.workspaceRoot)
 	if releases == nil {
@@ -146,17 +182,17 @@ type activeReleaseResult struct {
 // the cascade's inputs, because an input the cascade did not end up using
 // names a different Release than the one it chose.
 //
-// Takes no params: the answer is a property of the daemon's workspace root.
+// The answer is a property of one workspace, so the request names which.
 //
 // The cascade runs on every call, and that is the point rather than an
-// oversight. The daemon holds no Release of its own, so this answer is a
-// reading of the workspace as it stands at the moment of asking: a client that
-// asks again after writing a marker, editing the configuration or adding a
-// Release file gets the new answer, where an answer computed once for the life
-// of the process would keep reporting the workspace the daemon started in. The
-// walk this performs is also why it is a request rather than part of the
-// handshake, which deliberately answers before any workspace-wide walk so a
-// large tree cannot delay it.
+// oversight. The daemon holds neither a Release nor a workspace of its own, so
+// this answer is a reading of the named workspace as it stands at the moment of
+// asking: a client that asks again after writing a marker, editing the
+// configuration or adding a Release file gets the new answer, where an answer
+// computed once for the life of the process would keep reporting the workspace
+// the daemon started in. The walk this performs is also why it is a request
+// rather than part of the handshake, which deliberately answers before any
+// workspace-wide walk so a large tree cannot delay it.
 //
 // A workspace with no Release to offer is a successful answer carrying an
 // empty path, never an error. A client refreshes an active-Release indicator
@@ -202,6 +238,21 @@ func (s *Server) dispatchActiveRelease(ctx context.Context, req *jsonRPCRequest)
 // between here — the client either handles them or it does not — so
 // what the reply carries is the client's own declaration, which is what
 // tells a client its tokens will be honoured before it sends one.
+//
+// # It is where a client declares the workspace it wants pushes for
+//
+// The handshake is the one exchange in the protocol that is about the
+// connection rather than about a workspace, which is exactly why the push
+// declaration belongs on it: a declaration is a standing fact about this client,
+// and every other message is a question about one workspace. So this method
+// takes no `workspace` parameter of the required kind — it is declared
+// workspace-free in the availability table — and reads the optional declaration
+// instead.
+//
+// What it does NOT do is anchor anything. The declared workspace decides where
+// unasked-for diagnostics go and nothing else; no later request is answered
+// against it, and a request naming a different workspace is answered from that
+// one with no reference to this declaration.
 func (s *Server) dispatchInitialize(ctx context.Context, req *jsonRPCRequest) error {
 	var params initializeParams
 	if err := json.Unmarshal(req.Params, &params); err != nil {
@@ -211,33 +262,75 @@ func (s *Server) dispatchInitialize(ctx context.Context, req *jsonRPCRequest) er
 	s.setPositionEncoding(selected)
 	progress := clientHandlesWorkDoneProgress(params.Capabilities)
 	s.setWorkDoneProgress(progress)
+
+	// The workspace pushes are confined to, and the one the three workspace
+	// fields below describe. A client that declared nothing leaves the launch
+	// resolution in force, which is what it read before this field existed.
+	declared, declaredErr := s.declaredPushWorkspace(params.WorkspaceRoot)
+	if declaredErr != nil {
+		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+declaredErr.Error())
+	}
+	s.setPushRoot(declared.workspaceRoot)
+
 	if err := s.writeResult(ctx, req.ID, initializeResult{
 		Capabilities: serverCapabilities{
 			PositionEncoding: string(selected),
 			WorkDoneProgress: progress,
 		},
-		WorkspaceRoot:   s.workspaceRoot,
-		ConfigSource:    s.configSource,
-		WorkspaceMarker: s.workspaceMarker.String(),
+		WorkspaceRoot:   declared.workspaceRoot,
+		ConfigSource:    declared.configSource,
+		WorkspaceMarker: declared.workspaceMarker.String(),
 	}); err != nil {
 		return err
 	}
 
-	// Post-response flush of any diagnostics already populated. The
-	// LSP-canonical pattern is to push diagnostics AFTER the initialize
-	// response so the client's handshake completes before unsolicited
-	// notifications start arriving. Nothing populates diagnostics before a
-	// request asks for them, so at handshake time the map is normally
-	// empty; the loop is a no-op then and flushes only what a prior
+	// Post-response flush of any diagnostics already populated for the workspace
+	// pushes are confined to. The LSP-canonical pattern is to push diagnostics
+	// AFTER the initialize response so the client's handshake completes before
+	// unsolicited notifications start arriving. Nothing populates diagnostics
+	// before a request asks for them, so at handshake time the layers are
+	// normally empty; the loop is a no-op then and flushes only what a prior
 	// request already produced.
-	// diagnosticsFiles returns the keys sorted for deterministic
-	// ordering across daemon runs (Go map iteration is randomized).
-	for _, file := range s.diagnosticsFiles() {
-		if err := s.publishDiagnostics(ctx, file); err != nil {
+	//
+	// It flushes that workspace's layers and no other's, which follows from the
+	// push rule rather than being a second statement of it: a reconnecting client
+	// is owed the problem list of the workspace it just declared, and a workspace
+	// some earlier request asked about is not that.
+	//
+	// diagnosticsFiles returns the keys sorted for deterministic ordering across
+	// daemon runs (Go map iteration is randomized).
+	for _, file := range declared.diagnosticsFiles() {
+		if err := declared.publishDiagnostics(ctx, file); err != nil {
 			fmt.Fprintf(s.stderr, "  publishDiagnostics %s: %v\n", file, err)
 		}
 	}
 	return nil
+}
+
+// declaredPushWorkspace resolves the workspace a client declared for pushes into
+// the state held for it.
+//
+// The three cases are the three things a client can mean by the field, and each
+// is answered with a Server the reply and the startup flush are read off:
+//
+//   - Declared non-empty: that workspace, resolved through the same chokepoint a
+//     request-named one is, so a bad declaration is refused here rather than
+//     leaving pushes pointed at something else.
+//   - Declared empty: no workspace, so the reply's workspace fields are empty
+//     and nothing is ever pushed. The workspace-free Server is exactly that
+//     statement — its root is the empty string, which is what the push predicate
+//     reads as "push nowhere".
+//   - Not declared: the workspace the process was launched over, which keeps a
+//     client that predates the field reading the reply and receiving the pushes
+//     it read and received before.
+func (s *Server) declaredPushWorkspace(declared *string) (*Server, error) {
+	if declared == nil {
+		return s.workspaceFor(s.launchRoot)
+	}
+	if *declared == "" {
+		return s.workspaceFree(), nil
+	}
+	return s.workspaceFor(*declared)
 }
 
 // clientHandlesWorkDoneProgress reports whether the client declared it

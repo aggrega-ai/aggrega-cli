@@ -788,7 +788,7 @@ func renderThroughServeDaemon(t *testing.T, root string) map[string]string {
 		t.Fatalf("the daemon's initialize failed: %+v", resp)
 	}
 
-	if _, err := stdin.Write(framed(2, "aggrega/build", map[string]any{"release": "release.yaml"})); err != nil {
+	if _, err := stdin.Write(framedFor(t, cmd, 2, "aggrega/build", map[string]any{"release": "release.yaml"})); err != nil {
 		t.Fatalf("write build: %v", err)
 	}
 	// The daemon pushes diagnostic notifications alongside its answer; read until

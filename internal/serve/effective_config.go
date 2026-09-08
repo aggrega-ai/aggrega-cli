@@ -43,14 +43,15 @@ type effectiveConfigurationResult struct {
 	Settings []effectiveConfigurationSetting `json:"settings"`
 }
 
-// dispatchEffectiveConfiguration reports the configuration in force for this
-// session and where each setting came from.
+// dispatchEffectiveConfiguration reports the configuration in force for the
+// workspace the request named and where each setting came from.
 //
-// Takes no params: the answer is a property of the workspace the daemon
-// resolved at startup. It reports that startup resolution rather than resolving
-// again, so what a client reads is the configuration the daemon is itself
-// acting on — the same resolution the handshake's workspace root and
-// configuration layer describe.
+// The answer is a property of one workspace, so the request names which. It
+// reports the resolution that workspace's own state was built from rather than
+// resolving again, so what a client reads is the configuration every other
+// request about that workspace is answered under — and, for the workspace a
+// client declared at the handshake, the same resolution the handshake's
+// workspace root and configuration layer describe.
 //
 // The attribution is not computed here. It is the workspace resolution's own
 // per-value provenance, which the command line reports under the same call, so

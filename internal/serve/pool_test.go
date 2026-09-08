@@ -15,7 +15,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
@@ -23,21 +22,28 @@ import (
 // run with the supplied worker-pool size and stdin/stdout streams. The
 // hook, when non-nil, runs at the top of every handler — tests use it to
 // hold workers and exercise queue back-pressure.
-func newPoolTestServer(in io.Reader, out io.Writer, poolSize int, hook func()) *Server {
+func newPoolTestServer(t *testing.T, in io.Reader, out io.Writer, poolSize int, hook func()) *Server {
+	t.Helper()
+	// A real directory, because a request naming a workspace root is refused
+	// unless that root is one — so a pool test driving real requests needs a
+	// workspace that exists rather than a plausible-looking path.
+	return newPoolTestServerAt(t, t.TempDir(), in, out, poolSize, hook)
+}
+
+// newPoolTestServerAt is newPoolTestServer over a workspace root the caller
+// already holds.
+//
+// A test that writes its request script BEFORE building the server needs the
+// root first, because each request in that script names the workspace it acts
+// on — so the root cannot be something the constructor invents.
+func newPoolTestServerAt(t *testing.T, root string, in io.Reader, out io.Writer, poolSize int, hook func()) *Server {
+	t.Helper()
 	cfg := workspaceconfig.Default()
 	cfg.Concurrency.PoolSize = poolSize
-	srv := &Server{
-		workspaceRoot:      "/tmp/test-workspace",
-		wsConfig:           cfg,
-		lazyCatalog:        catalog.NewLazyLookup("/tmp/test-workspace", "", nil, nil),
-		parseCache:         newCache(0, 0),
-		diagnostics:        map[string][]Diagnostic{},
-		in:                 bufio.NewReader(in),
-		out:                out,
-		stderr:             io.Discard,
-		testInDispatchHook: hook,
-	}
-	return srv
+	sess := newTestSession(t, root, in, out)
+	sess.launchCfg = cfg
+	sess.testInDispatchHook = hook
+	return newTestWorkspace(sess, root)
 }
 
 // readResponses reads exactly n Content-Length-framed responses from r.
@@ -147,15 +153,16 @@ func TestSerializerOrdersByArrivalSequence(t *testing.T) {
 // asserts each response is well-formed and id-correlated to its request.
 func TestDispatchIDCorrelatedResponsesThroughSerializer(t *testing.T) {
 	t.Parallel()
+	root := t.TempDir()
 	var stdin bytes.Buffer
 	ids := []int{7, 8, 9}
 	for _, id := range ids {
-		stdin.Write(framedRequest(id, "aggrega/releaseCandidates", map[string]any{}))
+		stdin.Write(framedRequestAt(t, root, id, "aggrega/releaseCandidates", map[string]any{}))
 	}
 	stdin.Write(framedNotification("aggrega/shutdown", nil))
 
 	var stdout bytes.Buffer
-	srv := newPoolTestServer(&stdin, &stdout, 1, nil)
+	srv := newPoolTestServerAt(t, root, &stdin, &stdout, 1, nil)
 	if err := srv.dispatchLoop(500 * time.Millisecond); err != nil {
 		t.Fatalf("dispatchLoop: %v", err)
 	}
@@ -233,7 +240,7 @@ func TestDispatchIDCorrelatedUnderOutOfOrderCompletion(t *testing.T) {
 			// handlers can exceed in-flight capacity; reading concurrently
 			// keeps submission from deadlocking on a full queue.
 			stdoutR, stdoutW := io.Pipe()
-			srv := newPoolTestServer(stdinR, stdoutW, pool, nil)
+			srv := newPoolTestServer(t, stdinR, stdoutW, pool, nil)
 			srv.testCtxHook = func(ctx context.Context, id json.RawMessage) {
 				var n int
 				if json.Unmarshal(id, &n) != nil {
@@ -313,7 +320,7 @@ func TestDispatchIDCorrelatedUnderOutOfOrderCompletion(t *testing.T) {
 
 			go func() {
 				for _, id := range ids {
-					stdinW.Write(framedRequest(id, "aggrega/releaseCandidates", map[string]any{}))
+					stdinW.Write(framedRequestIn(t, srv, id, "aggrega/releaseCandidates", map[string]any{}))
 				}
 				stdinW.Write(framedNotification("aggrega/shutdown", nil))
 				stdinW.Close()
@@ -407,7 +414,7 @@ func TestBoundedQueueBackpressureBlocks(t *testing.T) {
 	total := 1 + queueDepthFactor + 1
 	stdinR, stdinW := io.Pipe()
 	var stdout bytes.Buffer
-	srv := newPoolTestServer(stdinR, &stdout, 1, hook)
+	srv := newPoolTestServer(t, stdinR, &stdout, 1, hook)
 
 	loopDone := make(chan error, 1)
 	go func() { loopDone <- srv.dispatchLoop(500 * time.Millisecond) }()
@@ -416,7 +423,7 @@ func TestBoundedQueueBackpressureBlocks(t *testing.T) {
 	// held, then confirm one more submission is in flight but blocked.
 	go func() {
 		for i := 0; i < total; i++ {
-			stdinW.Write(framedRequest(i+1, "aggrega/releaseCandidates", map[string]any{}))
+			stdinW.Write(framedRequestIn(t, srv, i+1, "aggrega/releaseCandidates", map[string]any{}))
 		}
 	}()
 
@@ -465,10 +472,11 @@ func TestBoundedQueueBackpressureBlocks(t *testing.T) {
 func TestByteIdenticalToSequentialAtConcurrencyOne(t *testing.T) {
 	t.Parallel()
 
+	root := t.TempDir()
 	script := [][]byte{
-		framedRequest(1, "aggrega/releaseCandidates", map[string]any{}),
-		framedRequest(2, "aggrega/bogus-method", map[string]any{}),
-		framedRequest(3, "aggrega/releaseCandidates", map[string]any{}),
+		framedRequestAt(t, root, 1, "aggrega/releaseCandidates", map[string]any{}),
+		framedRequestAt(t, root, 2, "aggrega/bogus-method", map[string]any{}),
+		framedRequestAt(t, root, 3, "aggrega/releaseCandidates", map[string]any{}),
 	}
 
 	// Reference bytes: drive each request straight through handle via the
@@ -480,7 +488,7 @@ func TestByteIdenticalToSequentialAtConcurrencyOne(t *testing.T) {
 		if err := json.Unmarshal(framed[bodyStart:], &req); err != nil {
 			t.Fatalf("unmarshal script request: %v", err)
 		}
-		srv := newPoolTestServer(nil, &reference, 1, nil)
+		srv := newPoolTestServer(t, nil, &reference, 1, nil)
 		srv.serverCtx, srv.serverCancel = context.WithCancel(context.Background())
 		srv.cancelTracker = newCancelRegistry()
 		ser := newSerializer(&reference)
@@ -497,7 +505,7 @@ func TestByteIdenticalToSequentialAtConcurrencyOne(t *testing.T) {
 		stdin.Write(framed)
 	}
 	stdin.Write(framedNotification("aggrega/shutdown", nil))
-	srv := newPoolTestServer(&stdin, &stdout, 1, nil)
+	srv := newPoolTestServer(t, &stdin, &stdout, 1, nil)
 	if err := srv.dispatchLoop(500 * time.Millisecond); err != nil {
 		t.Fatalf("dispatchLoop: %v", err)
 	}

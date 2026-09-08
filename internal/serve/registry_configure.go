@@ -15,7 +15,7 @@ import (
 //
 // Every response whose operation resolved a configuration write target carries
 // one, and it is the whole answer to a question a caller cannot otherwise ask: a
-// session is opened over a workspace, so an answer with no scope on it reads as
+// request names one workspace, so an answer with no scope on it reads as
 // being about that workspace — and for an operation that defaults to the global
 // file that reading is wrong. Registering a registry and seeding a configuration
 // both default there, because a registry and the identities trusted on it are

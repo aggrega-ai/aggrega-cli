@@ -105,6 +105,10 @@ func makeWorkspace(t *testing.T) string {
 
 // framed writes one Content-Length-framed JSON-RPC request body for
 // the supplied method + params.
+//
+// It names no workspace, so it is what the three requests whose subject is not a
+// workspace use: the handshake, the schema report and the document skeleton.
+// Every other request names one — see framedFor.
 func framed(id int, method string, params any) []byte {
 	paramBytes, _ := json.Marshal(params)
 	body, _ := json.Marshal(map[string]any{
@@ -114,6 +118,34 @@ func framed(id int, method string, params any) []byte {
 		"params":  json.RawMessage(paramBytes),
 	})
 	return append([]byte(fmt.Sprintf("Content-Length: %d\r\n\r\n", len(body))), body...)
+}
+
+// framedFor is framed with the workspace the request acts on named in its
+// params, which every request that acts on one carries.
+//
+// The workspace is read off the daemon's own working directory, which is where
+// these tests put the workspace and which is what an editor sets it to. That is
+// the honest source rather than a convenience: the client is saying which
+// workspace it is working in, and for a daemon launched over one, that is the
+// directory it was launched in.
+//
+// A params map already carrying the field is left as it is, so a test naming a
+// second workspace — or a deliberately bad one — is sent exactly what it wrote.
+func framedFor(t *testing.T, cmd *exec.Cmd, id int, method string, params any) []byte {
+	t.Helper()
+	if cmd.Dir == "" {
+		t.Fatalf("framedFor: the daemon has no working directory to read a workspace root from")
+	}
+	fields, ok := params.(map[string]any)
+	if !ok {
+		t.Fatalf("framedFor: params for %s is %T, not a parameter map", method, params)
+	}
+	withRoot := make(map[string]any, len(fields)+1)
+	withRoot["workspaceRoot"] = cmd.Dir
+	for k, v := range fields {
+		withRoot[k] = v
+	}
+	return framed(id, method, withRoot)
 }
 
 // readOneResponse reads one Content-Length-framed response from r and
@@ -287,7 +319,7 @@ func TestServeLifecycle(t *testing.T) {
 	ceiling := responseLivenessCeiling(t)
 
 	// Request 1: validate.
-	if _, err := stdin.Write(framed(1, "aggrega/validate", map[string]any{
+	if _, err := stdin.Write(framedFor(t, cmd, 1, "aggrega/validate", map[string]any{
 		"file":    "x.yaml",
 		"content": "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\n",
 	})); err != nil {
@@ -303,7 +335,7 @@ func TestServeLifecycle(t *testing.T) {
 
 	// Request 2: validate again (cache-hit observable via result-shape
 	// equivalence — second validate succeeds with the same shape).
-	if _, err := stdin.Write(framed(2, "aggrega/validate", map[string]any{
+	if _, err := stdin.Write(framedFor(t, cmd, 2, "aggrega/validate", map[string]any{
 		"file":    "x.yaml",
 		"content": "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\n",
 	})); err != nil {
@@ -315,7 +347,7 @@ func TestServeLifecycle(t *testing.T) {
 	}
 
 	// Request 3: invalidate.
-	if _, err := stdin.Write(framed(3, "aggrega/invalidate", map[string]any{"file": "x.yaml"})); err != nil {
+	if _, err := stdin.Write(framedFor(t, cmd, 3, "aggrega/invalidate", map[string]any{"file": "x.yaml"})); err != nil {
 		t.Fatalf("write request 3: %v", err)
 	}
 	resp3 := readOneResponse(t, stdout, ceiling)
@@ -324,7 +356,7 @@ func TestServeLifecycle(t *testing.T) {
 	}
 
 	// Request 4: diagnostics on the invalidated file — expect code 1001.
-	if _, err := stdin.Write(framed(4, "aggrega/diagnostics", map[string]any{"file": "x.yaml"})); err != nil {
+	if _, err := stdin.Write(framedFor(t, cmd, 4, "aggrega/diagnostics", map[string]any{"file": "x.yaml"})); err != nil {
 		t.Fatalf("write request 4: %v", err)
 	}
 	resp4 := readOneResponse(t, stdout, ceiling)
@@ -444,7 +476,7 @@ func TestServeAggregaIrGraphEndToEnd(t *testing.T) {
 	})
 
 	// Send aggrega/irGraph with the workspace-relative Release path.
-	if _, err := stdin.Write(framed(1, "aggrega/irGraph", map[string]any{
+	if _, err := stdin.Write(framedFor(t, cmd, 1, "aggrega/irGraph", map[string]any{
 		"release": "release.yaml",
 	})); err != nil {
 		t.Fatalf("write irGraph request: %v", err)
@@ -580,7 +612,7 @@ func TestServeAggregaResolveEndToEnd(t *testing.T) {
 	ceiling := responseLivenessCeiling(t)
 
 	// Validate the child file (seeds the parse cache).
-	if _, err := stdin.Write(framed(1, "aggrega/validate", map[string]any{
+	if _, err := stdin.Write(framedFor(t, cmd, 1, "aggrega/validate", map[string]any{
 		"file":    childPath,
 		"content": child,
 	})); err != nil {
@@ -592,7 +624,7 @@ func TestServeAggregaResolveEndToEnd(t *testing.T) {
 
 	// Resolve the cursor at the spec.extends value: line 6 (0-based),
 	// char 14 (mid "core/web-server").
-	if _, err := stdin.Write(framed(2, "aggrega/resolve", map[string]any{
+	if _, err := stdin.Write(framedFor(t, cmd, 2, "aggrega/resolve", map[string]any{
 		"uri":      childPath,
 		"position": map[string]any{"line": 6, "character": 14},
 	})); err != nil {

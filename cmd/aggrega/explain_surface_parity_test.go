@@ -62,7 +62,9 @@ func explainOverTheDaemonWire(t *testing.T, workspaceRoot, code string) explainE
 		"jsonrpc": "2.0",
 		"id":      1,
 		"method":  "aggrega/explainError",
-		"params":  map[string]string{"code": code},
+		// Every request that acts on a workspace names it, and expanding a code
+		// reads the workspace to locate its documentation bundle.
+		"params": map[string]string{"code": code, "workspaceRoot": workspaceRoot},
 	})
 	if err != nil {
 		t.Fatalf("marshal the request: %v", err)
@@ -347,7 +349,9 @@ func explainRefusalOverTheDaemonWire(t *testing.T, workspaceRoot, code string) s
 		"jsonrpc": "2.0",
 		"id":      1,
 		"method":  "aggrega/explainError",
-		"params":  map[string]string{"code": code},
+		// Every request that acts on a workspace names it, and expanding a code
+		// reads the workspace to locate its documentation bundle.
+		"params": map[string]string{"code": code, "workspaceRoot": workspaceRoot},
 	})
 	if err != nil {
 		t.Fatalf("marshal the request: %v", err)

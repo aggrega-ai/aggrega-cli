@@ -38,10 +38,11 @@
 // Requests, each answered with a result or a JSON-RPC error envelope:
 //
 //	aggrega/initialize             handshake: negotiates the position
-//	                               encoding and reports the resolved
-//	                               workspace root, the configuration layer
-//	                               that supplied it, and the marker that
-//	                               anchored it
+//	                               encoding, receives the workspace the
+//	                               client declares for pushed diagnostics,
+//	                               and reports that workspace's root, the
+//	                               configuration layer that supplied it,
+//	                               and the marker that anchored it
 //	aggrega/validate               parses one file and returns its
 //	                               diagnostics, adding the semantic checks
 //	                               when the request names a Release to run
@@ -135,10 +136,42 @@
 // aggrega/completion, aggrega/resolve, aggrega/findReferences and
 // aggrega/findImplementations all read that state and refuse with the
 // file-not-validated application code when it is absent, so a client
-// sends validate for a file before any of them. Entries are keyed by
-// the document's canonical path alone — see Paths on the wire below for
-// which spelling that is: one daemon holds one workspace and one client
-// at a time, so the cache key needs no per-client dimension.
+// sends validate for a file before any of them. That state belongs to
+// the workspace the request named — each workspace holds its own parse
+// cache and its own diagnostic layers — and within a workspace the
+// entries are keyed by the document's canonical path alone; see Paths
+// on the wire below for which spelling that is. One daemon serves one
+// client at a time, so the key needs no per-client dimension.
+//
+// # The workspace is a parameter, not a property of the process
+//
+// Every request that acts on a workspace names one, in a `workspace`
+// parameter carrying that workspace's absolute root. The daemon holds no
+// workspace of its own and remembers none between requests, so the same
+// question asked about two workspaces gets two answers and neither can
+// see the other's entities, Releases or diagnostics. A request that
+// names none is refused, naming the parameter. Three methods take no
+// such parameter because their subject is not a workspace: the schema
+// report and the document skeleton, both derived from the schema set
+// compiled into this binary, and the handshake, which declares a
+// workspace rather than acting on one.
+//
+// The state each workspace earns is KEYED rather than replaced, so a
+// second workspace gets its own entry instead of evicting the first's.
+// A question about somewhere else therefore costs whoever is typing
+// nothing.
+//
+// # Where a pushed diagnostic goes
+//
+// The daemon pushes aggrega/publishDiagnostics only for the workspace
+// the client declared at the handshake — its optional `workspace`
+// field, defaulting to the workspace the process was launched over.
+// Every other request answers with its findings in its own response and
+// pushes nothing. Pushing is what keeps an editor's problem list current
+// while somebody types, and it is the wrong thing to do with an answer
+// nobody asked to see: without the confinement, a question about a
+// second workspace would fill a reader's problem list with findings
+// about files they never opened.
 //
 // # Paths on the wire
 //
@@ -597,58 +630,53 @@ func stampSource(diags []Diagnostic, src string) []Diagnostic {
 	return diags
 }
 
-// Server holds the daemon's per-session state. Constructed once in Run
-// after workspace-root discovery + workspace-config load; reused for
-// every JSON-RPC request the dispatch loop reads.
+// session is the daemon's process-level state: everything one running daemon
+// holds that is NOT about a workspace. One session exists per process, for the
+// life of the dispatch loop.
 //
-// Concurrency. The daemon dispatches handlers through a bounded worker
-// pool whose size is configurable via concurrency.pool_size (default
-// 4). When the pool size is greater than 1, handlers run concurrently,
-// so every Server field a handler touches is synchronized to support
-// that. The synchronized surfaces are:
+// The split between this and [Server] is the daemon's central shape. A workspace
+// is an argument to each request rather than a property of the process, so the
+// state a workspace owns cannot live here: putting it here is what would make
+// two callers asking about two workspaces share one answer. What lives here is
+// the transport, the negotiated protocol state, the injected build identity, and
+// the registry of the workspaces this process has been asked about.
 //
-//   - The parse cache and the session catalog lookup are each
-//     internally synchronized by their own mutex; callers need no
-//     external lock. A handler resolving a Release does NOT pin the
-//     session catalog: it forks a request-scoped view (ForRequest)
-//     carrying its own lockfile-pin snapshot and pin-dependent caches,
-//     so one request's pins can never interleave into another's
-//     multi-step resolution. The session catalog holds only the
-//     pin-independent, session-stable Tier-1 indexes, snapshotted into
-//     each view; it is reset only on workspace invalidation.
+// Concurrency. The daemon dispatches handlers through a bounded worker pool
+// whose size is configurable via concurrency.pool_size (default 4). When the
+// pool size is greater than 1, handlers run concurrently, so every field a
+// handler touches is synchronized to support that. The synchronized surfaces
+// here are:
 //
-//   - The per-file diagnostics map is guarded by diagMu. Publication
-//     copies the file's slice under the lock and marshals outside it.
+//   - positionEncoding is held in an atomic value: the handshake handler stores
+//     it, every position-mapping site loads it.
 //
-//   - positionEncoding is held in an atomic value: the initialize
-//     handler stores it, every position-mapping site loads it.
+//   - workDoneProgress is an atomic bool, for the same reason.
 //
-//   - shuttingDown is an atomic bool: the dispatch loop's acceptance
-//     gate and the shutdown handler store it, the acceptance gate loads
-//     it.
+//   - pushRoot is held in an atomic value: the handshake handler stores what the
+//     client declared, and every publication site loads it to decide whether the
+//     workspace it is about is the one pushes are allowed for.
+//
+//   - shuttingDown is an atomic bool: the dispatch loop's acceptance gate and
+//     the shutdown handler store it, the acceptance gate loads it.
 //
 //   - The per-request cancel registry (cancelTracker) is internally
-//     synchronized by its own mutex: each in-flight handler tracks and
-//     untracks its id under the lock, so concurrent track / untrack
-//     across the pool need no external lock.
+//     synchronized by its own mutex: each in-flight handler tracks and untracks
+//     its id under the lock, so concurrent track / untrack across the pool need
+//     no external lock.
 //
-// No field holds a Release. A request that acts on one names it, and the
-// resolution is request-scoped from end to end, so there is no shared
-// Release state for the pool to synchronize and none to invalidate when
-// the workspace changes underneath the daemon.
+//   - The workspace registry is internally synchronized by its own mutex, which
+//     it needs because it is the one map here that grows during handler
+//     execution: a request naming a workspace nothing has asked about yet
+//     installs an entry for it.
 //
-// The remaining fields (workspaceRoot, configSource, compilerVersion,
-// workspaceMarker, wsConfig, lazyCatalog pointer, serverCtx/serverCancel,
-// cancelTracker pointer) are written once at construction before the
-// worker pool starts, then only read during handler execution, so they
-// are immutable snapshots needing no lock (the registry the cancelTracker
-// pointer names carries its own lock for its mutable map). The reader
-// goroutine reads stdin and writes channels; it never touches Server
-// mutable state. The id-order stdout serializer is the sole owner of the
-// output writer, so no worker touches s.out directly.
-type Server struct {
-	workspaceRoot string
-	configSource  string
+// The remaining fields (compilerVersion, toolchain, the injected functions, the
+// launch resolution, serverCtx/serverCancel, the cancelTracker and registry
+// pointers, the streams) are written once at construction before the worker pool
+// starts, then only read during handler execution, so they are immutable
+// snapshots needing no lock. The reader goroutine reads stdin and writes
+// channels; it never touches mutable state. The id-order stdout serializer is
+// the sole owner of the output writer, so no worker touches out directly.
+type session struct {
 	// compilerVersion is the binary build identity injected from the command
 	// layer (RunConfig.CompilerVersion) and stamped into the IR provenance the
 	// daemon produces, so inspect and Tier-4 output report the same version the
@@ -657,27 +685,39 @@ type Server struct {
 	// toolchain is the stamp a dependency resolution performed here records into
 	// the lockfile it writes, injected from the command layer
 	// (RunConfig.Toolchain) for the same reason compilerVersion is. Nil for a
-	// Server built as a struct literal, which is the in-memory test harness: the
+	// session built as a struct literal, which is the in-memory test harness: the
 	// stamp is advisory, so a lockfile written without one is complete and simply
 	// records nothing about which binary produced it.
 	toolchain *lockfile.ToolchainStamp
-	// workspaceMarker names the marker tier that anchored the
-	// workspace root via discovery. The zero value (no marker) when
-	// --workspace-root was supplied explicitly, since no marker was
-	// consulted in that path. Surfaced on aggrega/initialize via its
-	// String() wire token.
-	workspaceMarker workspaceconfig.Marker
-	wsConfig        workspaceconfig.Config
-	// resolvedWorkspace is the workspace resolution the daemon performed at
-	// startup, kept whole rather than only as the values derived from it above.
-	// It is what answers a request for the effective configuration and each
-	// setting's originating layer, so that answer is the same resolution the
-	// handshake's workspace root and configuration layer already report and
-	// cannot disagree with them.
+
+	// launchRoot and launchCfg are the workspace resolution the process performed
+	// when it started, from --workspace-root or from discovery upward out of the
+	// working directory.
 	//
-	// Nil only for a Server built as a struct literal, which is the in-memory
-	// test harness rather than any production path: Run always sets it.
-	resolvedWorkspace *workspaceconfig.ResolvedWorkspace
+	// This is NOT the workspace any request acts on: a request names its own, and
+	// neither field is consulted to answer one. Between them they have exactly
+	// two jobs. launchCfg sizes the worker pool, which is a property of the
+	// process and cannot be a property of a request — a pool cannot be resized
+	// per request, so a request naming a workspace whose configuration asks for a
+	// different pool would be asking for one. And launchRoot is the DEFAULT
+	// DECLARATION for pushes: a client that declares no workspace at the
+	// handshake is pushed the diagnostics of the workspace the process was
+	// pointed at, which is what the operator declared by pointing it there.
+	//
+	// They are the resolution's two derived values rather than the resolution
+	// itself, because nothing at this level needs the whole of it: each workspace
+	// entry keeps its own, which is what answers a request for the effective
+	// configuration.
+	launchRoot string
+	launchCfg  workspaceconfig.Config
+
+	// buildOnInspectFlag is the --build-on-inspect flag as the operator passed
+	// it, or nil when they did not. It is a property of how the process was
+	// launched rather than of a workspace, which is why it lives here while the
+	// dial it resolves into lives on each workspace: the flag overrides whatever
+	// that workspace's own configuration says.
+	buildOnInspectFlag *bool
+
 	// installCLIPlugin installs a command-extension plugin as a top-level command,
 	// injected from the command layer (RunConfig.InstallCLIPlugin) because the
 	// install's collision guard reads the freshly built command tree, which lives
@@ -692,34 +732,6 @@ type Server struct {
 	// built as a struct literal, and nil in any process that did not wire it; the
 	// handler refuses rather than reporting a conversion that did not happen.
 	resolveImportPlugin importops.PluginBytesResolver
-	// buildOnInspect is the resolved serve build-on-inspect dial (the
-	// --build-on-inspect flag overriding the serve.build_on_inspect config
-	// key). When false (the default), handleIrGraph returns the IR graph
-	// without running the artifact-rendering stage; when true that stage runs,
-	// so the advisories it raises surface as an additional diagnostic layer.
-	// It selects that stage and nothing else: the preview posture is the
-	// inspection one under either value, so the dial turns no gate on. Written
-	// once at construction, then only read during handler execution — an
-	// immutable snapshot needing no lock.
-	buildOnInspect bool
-
-	// lintOnValidate is the resolved serve.lint_on_validate dial. When false —
-	// the default — a validation reports the correctness layers alone and no
-	// publishing-conventions finding reaches a client. When true, a validation of
-	// a catalog entity also runs the conventions rules over the buffer it
-	// validated and publishes what they found as a third layer.
-	//
-	// It gates that layer and nothing else. aggrega/lint answers whatever the
-	// request asks for under either value, because a caller sending it has asked
-	// for the check by name; the dial decides only whether the check also runs
-	// where nobody asked for it. Written once at construction, then only read
-	// during handler execution — an immutable snapshot needing no lock.
-	//
-	// There is no flag counterpart, unlike buildOnInspect. The question the dial
-	// answers is about a workspace's own content, and whoever has that question
-	// is authoring the workspace rather than launching the daemon — an author
-	// never passes this process its arguments, their editor does.
-	lintOnValidate bool
 
 	// shuttingDown is set at the dispatch loop's acceptance of the first
 	// aggrega/shutdown message — on the single-threaded main loop, so
@@ -753,52 +765,34 @@ type Server struct {
 	// construct it earlier.
 	cancelTracker *cancelRegistry
 
-	// lazyCatalog is the session-scoped catalog lookup: the per-URI Tier-1/2/3
-	// cascade for the WHOLE catalog surface — Component + Feature (on-demand
-	// cascade) plus the tolerantly-enumerated Recipe / FeatureRecipe / Aggregate /
-	// Plugin / SchemaLibrary / MappingLibrary / WorkloadLibrary / ArtifactsLibrary shell. Constructed once at startup
-	// via catalog.NewLazyLookup; no per-request reconstruction, no eager
-	// whole-catalog load. It holds the session-stable, pin-independent Tier-1
-	// filesystem indexes; Reset() on invalidation re-walks a changed workspace.
+	// pushRootValue holds the workspace root the daemon may push diagnostics
+	// for: the one the client declared at the handshake, or the launch
+	// resolution's root when it declared none.
 	//
-	// A Release-resolving handler does NOT read or pin this lookup directly. It
-	// forks a request-scoped view via ForRequest, seeded with that request's
-	// lockfile pins and snapshotting the session Tier-1 indexes, and threads the
-	// view through closure compute and the render pipeline (AsCatalogLookup,
-	// RecipeLookupWithManifest, SubAggregateLoader, MappingLibraries, ClosureLookup,
-	// the closure-scoped extends + Pass-2). Each request therefore resolves against
-	// its own immutable pin snapshot, so a concurrent request's pins never perturb
-	// it — the consistency the worker pool depends on.
-	lazyCatalog *catalog.LazyLookup
+	// It is the whole of the push rule, and the rule is about who asked. A
+	// diagnostic that arrives unasked-for belongs on the problem list of the
+	// workspace whoever is reading has open; a diagnostic about some other
+	// workspace, produced because a second caller asked a question, does not. So
+	// a publication whose workspace is not this one is dropped and the findings
+	// travel on that request's own response instead — which keeps one client's
+	// question out of another client's problem list.
+	//
+	// The empty string means no workspace may be pushed for, which is what a
+	// client that declares the empty root has asked for. Held in an atomic value
+	// because the handshake handler that stores it and the publication sites that
+	// load it run on different worker goroutines under the pool.
+	pushRootValue atomic.Value
 
-	parseCache *cache
-
-	// diagMu guards every read and write of the diagnostics map. The
-	// critical section is O(1) map work plus, at publish time, a copy
-	// of one file's slice header; it never spans a pipeline run or any
-	// I/O. Writers always reassign a whole slice (never mutate one in
-	// place), so a header copy taken under the lock is a safe snapshot
-	// to marshal after releasing it.
-	diagMu      sync.Mutex
-	diagnostics map[string][]Diagnostic
-
-	// renderDiags is the second diagnostic layer, guarded by the same diagMu:
-	// the coded advisories the render step raises, keyed by the file they are
-	// attributed to. It is kept apart from diagnostics rather than merged into it
-	// because the two layers refresh on different events — the semantic layer on
-	// every buffer validation, the render layer only when an inspection actually
-	// renders — so one overwriting the other would make each request erase the
-	// other's findings. Reads compose every layer; writes only ever touch one.
-	renderDiags map[string][]Diagnostic
-
-	// conventionDiags is the third diagnostic layer, guarded by the same diagMu:
-	// the publishing-conventions findings for one authored file, keyed by that
-	// file. It is kept apart from the semantic layer even though both refresh on
-	// the same event, and what separates them is the source stamp rather than the
-	// refresh schedule: the semantic write stamps its whole slice, so a
-	// conventions finding appended to it would be published as a finding about
-	// correctness and a client could no longer tell the two questions apart.
-	conventionDiags map[string][]Diagnostic
+	// workspaces is every workspace this process has been asked about, each with
+	// the state held for it. It is the one map here that grows during handler
+	// execution, and it carries its own lock for that reason.
+	//
+	// Entries are KEYED rather than replaced, which is the difference between
+	// this and anchoring. A second workspace gets its own entry; it does not
+	// evict the first's. So a developer whose editor has been open for an hour
+	// does not pay a cold start because something else asked a question about
+	// somewhere else.
+	workspaces *workspaceRegistry
 
 	in     *bufio.Reader
 	out    io.Writer
@@ -844,11 +838,214 @@ type Server struct {
 	testCtxHook func(ctx context.Context, id json.RawMessage)
 }
 
+// Server is what one request is answered against: the process-level [session],
+// shared by every request, together with the ONE workspace that request named.
+//
+// It is constructed per request, from the workspace the request carries, and it
+// is where every handler's receiver points. **Nothing here is a property of the
+// process.** The daemon remembers no workspace between requests and holds none
+// as the answer to "which workspace is this about" — a request that acts on a
+// workspace names it, so two requests naming two workspaces are answered
+// against two of these and cannot see each other's entities, Releases or
+// diagnostics.
+//
+// Concurrency. The workspace fields are written once when the workspace's entry
+// is created, before it is published into the registry, then only read during
+// handler execution — so they are immutable snapshots needing no lock, exactly
+// as they were when there was one of them. What each entry owns and synchronizes
+// for itself:
+//
+//   - The parse cache and the catalog lookup are each internally synchronized by
+//     their own mutex; callers need no external lock. A handler resolving a
+//     Release does NOT pin the workspace's catalog: it forks a request-scoped
+//     view (ForRequest) carrying its own lockfile-pin snapshot and pin-dependent
+//     caches, so one request's pins can never interleave into another's
+//     multi-step resolution. The workspace's catalog holds only the
+//     pin-independent, workspace-stable Tier-1 indexes, snapshotted into each
+//     view; it is reset only on invalidation of that workspace.
+//
+//   - The per-file diagnostics maps are guarded by diagMu, which is this
+//     workspace's own. Publication copies the file's slice under the lock and
+//     marshals outside it. Two workspaces answered concurrently take two
+//     different locks, so neither waits on the other.
+//
+// No field holds a Release. A request that acts on one names it, and the
+// resolution is request-scoped from end to end, so there is no shared Release
+// state for the pool to synchronize.
+type Server struct {
+	*session
+
+	// workspaceRoot is the absolute, cleaned root of the workspace this request
+	// acts on: the value the request named, resolved through the same chokepoint
+	// the process's own launch resolution runs through. Empty only for a request
+	// whose subject is not a workspace at all.
+	workspaceRoot string
+
+	// configSource names the configuration layer that supplied this workspace's
+	// settings. Surfaced on the handshake for the workspace a client declared.
+	configSource string
+
+	// workspaceMarker names the marker tier that anchored this root via
+	// discovery. The zero value (no marker) when the root was supplied
+	// explicitly, since no marker was consulted in that path. Surfaced on the
+	// handshake via its String() wire token.
+	workspaceMarker workspaceconfig.Marker
+
+	wsConfig workspaceconfig.Config
+
+	// resolvedWorkspace is this workspace's resolution kept whole rather than
+	// only as the values derived from it above. It is what answers a request for
+	// the effective configuration and each setting's originating layer, so that
+	// answer is the same resolution the handshake's workspace root and
+	// configuration layer report for the same root and cannot disagree with it.
+	//
+	// Nil only for a Server built as a struct literal, which is the in-memory
+	// test harness, and for a request whose subject is not a workspace.
+	resolvedWorkspace *workspaceconfig.ResolvedWorkspace
+
+	// buildOnInspect is the resolved serve build-on-inspect dial (the
+	// --build-on-inspect flag overriding this workspace's serve.build_on_inspect
+	// config key). When false (the default), handleIrGraph returns the IR graph
+	// without running the artifact-rendering stage; when true that stage runs,
+	// so the advisories it raises surface as an additional diagnostic layer.
+	// It selects that stage and nothing else: the preview posture is the
+	// inspection one under either value, so the dial turns no gate on.
+	//
+	// It is resolved per workspace because the config key is a workspace's own,
+	// while the flag that overrides it is the process's — so two workspaces
+	// answered by one daemon read their own key and both honour the flag.
+	buildOnInspect bool
+
+	// lintOnValidate is the resolved serve.lint_on_validate dial for this
+	// workspace. When false — the default — a validation reports the correctness
+	// layers alone and no publishing-conventions finding reaches a client. When
+	// true, a validation of a catalog entity also runs the conventions rules over
+	// the buffer it validated and publishes what they found as a third layer.
+	//
+	// It gates that layer and nothing else. aggrega/lint answers whatever the
+	// request asks for under either value, because a caller sending it has asked
+	// for the check by name; the dial decides only whether the check also runs
+	// where nobody asked for it.
+	//
+	// There is no flag counterpart, unlike buildOnInspect. The question the dial
+	// answers is about a workspace's own content, and whoever has that question
+	// is authoring the workspace rather than launching the daemon — an author
+	// never passes this process its arguments, their editor does.
+	lintOnValidate bool
+
+	// lazyCatalog is this workspace's catalog lookup: the per-URI Tier-1/2/3
+	// cascade for the WHOLE catalog surface — Component + Feature (on-demand
+	// cascade) plus the tolerantly-enumerated Recipe / FeatureRecipe / Aggregate /
+	// Plugin / SchemaLibrary / MappingLibrary / WorkloadLibrary / ArtifactsLibrary shell. Constructed once when
+	// the workspace's entry is created, via catalog.NewLazyLookup; no
+	// per-request reconstruction, no eager whole-catalog load. It holds the
+	// workspace-stable, pin-independent Tier-1 filesystem indexes; Reset() on
+	// invalidation re-walks that changed workspace and leaves every other
+	// workspace's indexes standing.
+	//
+	// A Release-resolving handler does NOT read or pin this lookup directly. It
+	// forks a request-scoped view via ForRequest, seeded with that request's
+	// lockfile pins and snapshotting this workspace's Tier-1 indexes, and threads
+	// the view through closure compute and the render pipeline (AsCatalogLookup,
+	// RecipeLookupWithManifest, SubAggregateLoader, MappingLibraries, ClosureLookup,
+	// the closure-scoped extends + Pass-2). Each request therefore resolves against
+	// its own immutable pin snapshot, so a concurrent request's pins never perturb
+	// it — the consistency the worker pool depends on.
+	lazyCatalog *catalog.LazyLookup
+
+	parseCache *cache
+
+	// diagMu guards every read and write of this workspace's diagnostics maps.
+	// The critical section is O(1) map work plus, at publish time, a copy of one
+	// file's slice header; it never spans a pipeline run or any I/O. Writers
+	// always reassign a whole slice (never mutate one in place), so a header copy
+	// taken under the lock is a safe snapshot to marshal after releasing it.
+	diagMu      sync.Mutex
+	diagnostics map[string][]Diagnostic
+
+	// renderDiags is the second diagnostic layer, guarded by the same diagMu:
+	// the coded advisories the render step raises, keyed by the file they are
+	// attributed to. It is kept apart from diagnostics rather than merged into it
+	// because the two layers refresh on different events — the semantic layer on
+	// every buffer validation, the render layer only when an inspection actually
+	// renders — so one overwriting the other would make each request erase the
+	// other's findings. Reads compose every layer; writes only ever touch one.
+	renderDiags map[string][]Diagnostic
+
+	// conventionDiags is the third diagnostic layer, guarded by the same diagMu:
+	// the publishing-conventions findings for one authored file, keyed by that
+	// file. It is kept apart from the semantic layer even though both refresh on
+	// the same event, and what separates them is the source stamp rather than the
+	// refresh schedule: the semantic write stamps its whole slice, so a
+	// conventions finding appended to it would be published as a finding about
+	// correctness and a client could no longer tell the two questions apart.
+	conventionDiags map[string][]Diagnostic
+}
+
+// workspaceRegistry holds the state the daemon keeps for each workspace it has
+// been asked about, keyed by that workspace's root.
+//
+// # The key, and where it is derived
+//
+// The key is the workspace root in ONE canonical spelling: its cleaned absolute
+// path. It is derived at the request boundary, in [session.workspaceFor], from
+// the value the request named — and nowhere else, for the same reason the
+// per-file stores fix their key at the boundary rather than per handler. Two
+// spellings of one root would otherwise install two entries, and a client would
+// then be answered from a cold cache for a workspace the daemon already had warm.
+//
+// A relative or empty value is refused rather than resolved. A file parameter has
+// a workspace root to be relative to, so resolving one is lossless; a workspace
+// root has nothing, so a relative value names no workspace and repairing it would
+// mean guessing which one.
+//
+// # Why keyed rather than cleared
+//
+// Each entry holds a catalog lookup with its Tier-1 filesystem indexes, a parse
+// cache and three diagnostic layers — all of it earned by walking a tree. An
+// entry that were replaced whenever a different workspace was named would turn
+// one question about somewhere else into a cold start for whoever is typing.
+type workspaceRegistry struct {
+	// mu guards byRoot. The critical section is a map read plus, on a miss, the
+	// workspace resolution and the construction of one entry. That resolution
+	// reads configuration files, so the lock is held across I/O — deliberately:
+	// two concurrent first requests for one root would otherwise each build an
+	// entry and one would be discarded along with whatever it had already cached.
+	mu     sync.Mutex
+	byRoot map[string]*Server
+}
+
+// newWorkspaceRegistry returns an empty registry.
+func newWorkspaceRegistry() *workspaceRegistry {
+	return &workspaceRegistry{byRoot: map[string]*Server{}}
+}
+
+// get returns the entry held for key, or nil when none is.
+func (r *workspaceRegistry) get(key string) *Server {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.byRoot[key]
+}
+
+// roots returns every key the registry holds, sorted, so a caller enumerating
+// the workspaces reports the same sequence on every run rather than one
+// reshuffled by map iteration.
+func (r *workspaceRegistry) roots() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([]string, 0, len(r.byRoot))
+	for root := range r.byRoot {
+		out = append(out, root)
+	}
+	sort.Strings(out)
+	return out
+}
+
 // positionEncoding returns the negotiated position encoding. It loads
-// the atomic value the initialize handler set; an unset value (a Server
+// the atomic value the initialize handler set; an unset value (a session
 // constructed without setPositionEncoding) reports the UTF-16 protocol
 // default rather than an empty encoding.
-func (s *Server) positionEncoding() yamlpos.PositionEncoding {
+func (s *session) positionEncoding() yamlpos.PositionEncoding {
 	v, ok := s.positionEncodingValue.Load().(yamlpos.PositionEncoding)
 	if !ok {
 		return yamlpos.PositionEncodingUTF16
@@ -858,22 +1055,161 @@ func (s *Server) positionEncoding() yamlpos.PositionEncoding {
 
 // setPositionEncoding stores the negotiated position encoding. Called
 // by the initialize handler when the client negotiates an encoding.
-func (s *Server) setPositionEncoding(enc yamlpos.PositionEncoding) {
+func (s *session) setPositionEncoding(enc yamlpos.PositionEncoding) {
 	s.positionEncodingValue.Store(enc)
 }
 
 // workDoneProgress reports whether this session may be sent
-// work-in-progress notifications. A Server that never handled an
+// work-in-progress notifications. A session that never handled an
 // initialize, or one whose client declared nothing, reports false.
-func (s *Server) workDoneProgress() bool {
+func (s *session) workDoneProgress() bool {
 	return s.workDoneProgressValue.Load()
 }
 
 // setWorkDoneProgress stores whether the client can handle
 // work-in-progress notifications. Called by the initialize handler with
 // what the client declared.
-func (s *Server) setWorkDoneProgress(supported bool) {
+func (s *session) setWorkDoneProgress(supported bool) {
 	s.workDoneProgressValue.Store(supported)
+}
+
+// pushRoot returns the workspace root the daemon may push diagnostics for: the
+// one the client declared at the handshake, or the launch resolution's root when
+// it declared none.
+//
+// The empty string means none may be pushed for. That is what a client asking
+// for no pushes gets, and it is also what a session holding no launch
+// resolution reports — the in-memory test harness, where a push has no declared
+// workspace to belong to until a test declares one.
+func (s *session) pushRoot() string {
+	root, _ := s.pushRootValue.Load().(string)
+	return root
+}
+
+// setPushRoot stores the workspace root pushes are confined to. Called by the
+// initialize handler with what the client declared, and at construction with the
+// launch resolution's root as the default declaration.
+func (s *session) setPushRoot(root string) {
+	s.pushRootValue.Store(root)
+}
+
+// pushesAllowed reports whether this workspace is the one the client declared at
+// the handshake, and therefore whether an unasked-for diagnostic about it
+// belongs on that client's problem list.
+//
+// A workspace-free request reports false, since there is no workspace for a
+// publication to be about.
+func (s *Server) pushesAllowed() bool {
+	return s.workspaceRoot != "" && s.workspaceRoot == s.pushRoot()
+}
+
+// workspaceFor returns the state held for the workspace root a request named,
+// creating it on first use.
+//
+// This is the single place a workspace root becomes a workspace, and the single
+// place the registry key is derived — the cleaned absolute path. A handler never
+// resolves one for itself, which is what keeps two handlers from installing two
+// entries for one root under two spellings.
+//
+// The resolution goes through workspaceconfig.Resolve, the same chokepoint every
+// aggrega command and the process's own launch resolution use, with the root
+// supplied explicitly so discovery is not consulted: the caller named a root, so
+// walking upward from somewhere else to find a different one would answer a
+// question nobody asked. A root whose tree carries its own configuration file
+// therefore contributes that file's settings exactly as it would on the command
+// line.
+//
+// Three refusals, each naming what to send instead:
+//
+//   - An empty value. The parameter states which workspace the request is about,
+//     and no value states none.
+//   - A relative value. A file parameter has a workspace root to be relative to,
+//     so resolving one is lossless; a workspace root has nothing, so a relative
+//     value names no workspace and repairing it would mean guessing which one.
+//   - A value that is not an existing directory. A workspace is a tree, so a
+//     path naming a file or naming nothing cannot be one, and answering from it
+//     would report an empty workspace where the fault is a mistyped path.
+func (s *session) workspaceFor(root string) (*Server, error) {
+	if root == "" {
+		return nil, fmt.Errorf("the `workspaceRoot` parameter is required: send the absolute path of " +
+			"the workspace root this request is about")
+	}
+	if !filepath.IsAbs(root) {
+		return nil, fmt.Errorf("the `workspaceRoot` parameter must be an absolute path, and %q is "+
+			"relative: a workspace root has nothing to be relative to", root)
+	}
+	key := filepath.Clean(root)
+	if ws := s.workspaces.get(key); ws != nil {
+		return ws, nil
+	}
+	st, statErr := os.Stat(key)
+	if statErr != nil {
+		return nil, fmt.Errorf("the `workspaceRoot` parameter names %s, which cannot be read: %w", key, statErr)
+	}
+	if !st.IsDir() {
+		return nil, fmt.Errorf("the `workspaceRoot` parameter names %s, which is not a directory: a "+
+			"workspace root is a tree", key)
+	}
+
+	s.workspaces.mu.Lock()
+	defer s.workspaces.mu.Unlock()
+	// Re-check under the lock: two concurrent first requests for one root both
+	// reach here, and the second must be handed the entry the first installed
+	// rather than a fresh one whose caches start cold.
+	if ws := s.workspaces.byRoot[key]; ws != nil {
+		return ws, nil
+	}
+	resolved, err := workspaceconfig.Resolve("", key)
+	if err != nil {
+		return nil, fmt.Errorf("resolve the workspace at %s: %w", key, err)
+	}
+	ws := s.newWorkspace(resolved)
+	s.workspaces.byRoot[key] = ws
+	return ws, nil
+}
+
+// newWorkspace builds the state held for one resolved workspace. Every field is
+// written here, before the entry is published into the registry, which is what
+// makes the entry an immutable snapshot a concurrent reader needs no lock for.
+//
+// The catalog lookup takes a nil puller, so Tier-3 is disabled and no resolution
+// through it reaches a registry — the same posture the command-line build
+// resolves under, and the same one the daemon's two other acquisition seams
+// hold. An editor session inspects a workspace as it stands; acquiring is what
+// the verbs a user runs deliberately are for. Pins are deliberately not threaded
+// here either: this lookup is shared across concurrently-served requests for
+// this workspace, so a pin set installed on it would resolve another request's
+// reads against the wrong Release. Each request forks its own pinned view via
+// ForRequest.
+func (s *session) newWorkspace(resolved *workspaceconfig.ResolvedWorkspace) *Server {
+	cfg := resolved.Config()
+	root := resolved.Root()
+	return &Server{
+		session:           s,
+		workspaceRoot:     root,
+		configSource:      resolved.Source().String(),
+		workspaceMarker:   resolved.Marker(),
+		wsConfig:          cfg,
+		resolvedWorkspace: resolved,
+		buildOnInspect:    resolveBuildOnInspect(s.buildOnInspectFlag, cfg.Serve.BuildOnInspect),
+		lintOnValidate:    cfg.Serve.LintOnValidate,
+		lazyCatalog:       catalog.NewLazyLookup(root, cfg.ArtifactCacheDir, cfg.Workspace.CatalogDirs, nil),
+		parseCache:        newCache(cfg.ParseCache.MaxEntries, cfg.ParseCache.MaxBytes),
+		diagnostics:       map[string][]Diagnostic{},
+		renderDiags:       map[string][]Diagnostic{},
+		conventionDiags:   map[string][]Diagnostic{},
+	}
+}
+
+// workspaceFree returns a Server for a request whose subject is not a workspace
+// at all — the schema report, the document skeleton, and the handshake, which
+// declares a workspace rather than acting on one.
+//
+// Its workspace fields are the zero value, so a handler that read one would read
+// an empty root rather than some other caller's workspace. Which methods reach
+// it is declared in the availability table and nowhere else.
+func (s *session) workspaceFree() *Server {
+	return &Server{session: s}
 }
 
 // canonicalFile renders a path naming a document into the one spelling every
@@ -1070,33 +1406,44 @@ func (s *Server) diagnosticsFiles() []string {
 	return files
 }
 
-// Run anchors the workspace root, loads the merged workspace +
-// global config, constructs a Server, and enters the JSON-RPC
-// dispatch loop. Returns when stdin reaches EOF, the drain-then-abort
-// shutdown sequence completes (the first aggrega/shutdown drains
-// accepted in-flight work; a second aborts it), or an unrecoverable I/O
-// error occurs.
+// Run resolves the workspace the process was launched over, constructs the
+// process-level session, and enters the JSON-RPC dispatch loop. Returns when
+// stdin reaches EOF, the drain-then-abort shutdown sequence completes (the first
+// aggrega/shutdown drains accepted in-flight work; a second aborts it), or an
+// unrecoverable I/O error occurs.
 //
-// Workspace-root anchoring:
-//   - When cfg.WorkspaceRoot is non-empty, Run uses the explicit
-//     path as the root and skips discovery. The cobra wiring is
-//     expected to have validated the path; Run re-validates as
-//     defense-in-depth.
-//   - When cfg.WorkspaceRoot is empty, Run walks upward from the
-//     daemon's cwd looking for any of the five marker types per
-//     discoverWorkspaceRoot.
+// # The launch resolution is not the workspace requests act on
+//
+// A request that acts on a workspace names one, and the state held for it is
+// created when that root is first named. So this resolution anchors nothing: no
+// handler reads it, and a request naming a workspace other than this one is
+// answered from that workspace with no reference to this one.
+//
+// It has two jobs and no others. It sizes the worker pool, which is a property
+// of the process — a pool cannot be resized per request. And it is the default
+// declaration for pushes: a client that declares no workspace at the handshake
+// is pushed the diagnostics of the workspace the process was pointed at, which
+// is the workspace the operator declared by pointing it there.
+//
+// Launch anchoring itself is unchanged:
+//   - When cfg.WorkspaceRoot is non-empty, Run uses the explicit path and skips
+//     discovery. The cobra wiring is expected to have validated the path; Run
+//     re-validates as defense-in-depth.
+//   - When cfg.WorkspaceRoot is empty, Run walks upward from the daemon's cwd
+//     looking for any of the five marker types per discoverWorkspaceRoot.
 //
 // Config loading uses the three-level precedence cascade per
-// workspaceconfig.LoadWithGlobal — workspace file > global file >
-// built-in defaults. The resolved Source is recorded on Server as
-// configSource and surfaced in the aggrega/initialize response.
+// workspaceconfig.LoadWithGlobal — workspace file > global file > built-in
+// defaults — and every workspace a request later names is resolved through that
+// same call, so one workspace's settings are read the way the command line reads
+// them rather than inherited from whichever tree the process happened to start
+// in.
 //
-// On unrecoverable startup failure (root not discoverable, config
-// malformed, explicit AGGREGA_CONFIG pointing at a missing file),
-// Run returns an error before entering the dispatch loop. The cobra
-// entry point surfaces that error to the process exit code; the IDE
-// client interprets non-zero exit as a "language server failed to
-// start" condition.
+// On unrecoverable startup failure (root not discoverable, config malformed,
+// explicit AGGREGA_CONFIG pointing at a missing file), Run returns an error
+// before entering the dispatch loop. The cobra entry point surfaces that error
+// to the process exit code; the IDE client interprets non-zero exit as a
+// "language server failed to start" condition.
 func Run(cfg RunConfig) error {
 	if cfg.WorkspaceRoot != "" {
 		st, statErr := os.Stat(cfg.WorkspaceRoot)
@@ -1108,75 +1455,49 @@ func Run(cfg RunConfig) error {
 		}
 	}
 
-	// Single resolution path shared with the CLI: discover the root
-	// (or honor the explicit one), cascade-merge the config tree, and
-	// report the marker tier for the aggrega/initialize wire token.
+	// Single resolution path shared with the CLI and with every workspace a
+	// request names: discover the root (or honor the explicit one) and
+	// cascade-merge the config tree.
 	resolved, err := workspaceconfig.Resolve("", cfg.WorkspaceRoot)
 	if err != nil {
 		return fmt.Errorf("workspaceconfig: %w", err)
 	}
-	root := resolved.Root()
-	wsCfg := resolved.Config()
-	source := resolved.Source()
-	marker := resolved.Marker()
 
 	stderr := cfg.Stderr
 	if stderr == nil {
 		stderr = os.Stderr
 	}
-	// The daemon's session catalog reads only what is already on disk. Nil
-	// puller: Tier-3 is disabled, so no resolution through this lookup reaches a
-	// registry — the same posture the command-line build resolves under, and the
-	// same one this daemon already holds on its two other acquisition seams (the
-	// external-input seam serves pinned references from the local store with
-	// acquisition off, and the closure reconstruction carries a nil puller). An
-	// editor session inspects the workspace as it stands; acquiring is what the
-	// verbs a user runs deliberately are for. A daemon that fetched on its own
-	// would pull content no command asked for and preview bytes a build of the
-	// same Release would not produce.
-	//
-	// Pins are deliberately NOT threaded here. This lookup is shared across
-	// concurrently-served requests, so a pin set installed on it would resolve
-	// another request's reads against the wrong Release; each request forks its
-	// own pinned view via ForRequest, which is where verify-on-read takes its
-	// pins. The nil puller is what keeps that fork honest: a request that finds
-	// no lockfile threads no pins, and an unpinned Tier-2 slot is then reported
-	// unavailable for that request rather than re-fetched and previewed
-	// unverified.
-	lazyCatalog := catalog.NewLazyLookup(
-		root,
-		wsCfg.ArtifactCacheDir,
-		wsCfg.Workspace.CatalogDirs,
-		nil,
-	)
 	// The render pipeline's per-request Loaders draw on the process-wide shared
 	// compilation cache (see wasm.NewCachingLoaderFromContext): a guest's
 	// expensive compilation is paid once for the daemon's life and served warm on
 	// every later request, and the single cache is safe for concurrent use across
 	// the worker pool. It is a process-lifetime singleton the daemon neither
-	// creates, injects, nor closes — it is reclaimed at process exit.
-	srv := &Server{
-		workspaceRoot:       root,
-		configSource:        source.String(),
+	// creates, injects, nor closes — it is reclaimed at process exit. It keys on
+	// the guest bytes, so it is shared across workspaces for the same reason it is
+	// shared across requests: it memoizes a pure function of those bytes.
+	sess := &session{
 		compilerVersion:     cfg.CompilerVersion,
 		toolchain:           cfg.Toolchain,
-		workspaceMarker:     marker,
-		wsConfig:            wsCfg,
-		resolvedWorkspace:   resolved,
+		launchRoot:          resolved.Root(),
+		launchCfg:           resolved.Config(),
+		buildOnInspectFlag:  cfg.BuildOnInspect,
 		installCLIPlugin:    cfg.InstallCLIPlugin,
 		resolveImportPlugin: cfg.ResolveImportPlugin,
-		buildOnInspect:      resolveBuildOnInspect(cfg.BuildOnInspect, wsCfg.Serve.BuildOnInspect),
-		lintOnValidate:      wsCfg.Serve.LintOnValidate,
-		lazyCatalog:         lazyCatalog,
-		parseCache:          newCache(wsCfg.ParseCache.MaxEntries, wsCfg.ParseCache.MaxBytes),
-		diagnostics:         map[string][]Diagnostic{},
-		renderDiags:         map[string][]Diagnostic{},
-		conventionDiags:     map[string][]Diagnostic{},
+		workspaces:          newWorkspaceRegistry(),
 		in:                  bufio.NewReader(cfg.Stdin),
 		out:                 cfg.Stdout,
 		stderr:              stderr,
 	}
-	srv.setPositionEncoding(yamlpos.PositionEncodingUTF16)
+	sess.setPositionEncoding(yamlpos.PositionEncodingUTF16)
+	// The default push declaration. A client that declares a workspace at the
+	// handshake replaces it; one that declares nothing keeps it, and is pushed
+	// the diagnostics of the workspace this process was pointed at.
+	sess.setPushRoot(resolved.Root())
+	// The launch workspace's entry is installed eagerly, and only so that the
+	// default push declaration names a workspace that exists. It walks nothing:
+	// the catalog lookup is lazy and the caches start empty, exactly as they do
+	// for a workspace a request names later.
+	sess.workspaces.byRoot[filepath.Clean(resolved.Root())] = sess.newWorkspace(resolved)
 
 	// No workspace-wide walk runs here. The daemon holds no Release of
 	// its own, so there is nothing to resolve at construction: a request
@@ -1188,5 +1509,5 @@ func Run(cfg RunConfig) error {
 	if drainTimeout == 0 {
 		drainTimeout = defaultDrainTimeout
 	}
-	return srv.dispatchLoop(drainTimeout)
+	return sess.dispatchLoop(drainTimeout)
 }
