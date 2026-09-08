@@ -79,6 +79,18 @@ func IndentJSONDocument(compact []byte) ([]byte, error) {
 // marked input, each carrying `sensitive: true` and nothing else — so it
 // overrides only the sensitivity of an existing declaration and leaves that
 // declaration's type, default and description as the module authored them.
+//
+// Nothing in the override format refuses a second attribute, and `default` is the
+// nearest slot for carrying a computed value into a vendored module without
+// editing its bytes. It would not arrive: a `default` in the JSON configuration
+// syntax is not a position Terraform evaluates, so a value written there carrying
+// a `${ ... }` pointer reaches the module as the literal characters of the
+// pointer. Nothing refuses it — the plan succeeds and issues no diagnostic, so the
+// defect reads as correct in every diff. The same pointer written into a `default`
+// in native HCL is rejected outright, which places the silence in this syntax
+// rather than in override files as such. So the emitted block carries `sensitive`
+// alone: its meaning does not depend on being evaluated, and that narrowness is a
+// deliberate bound rather than one the format imposes.
 func SensitivityOverride(values types.OrderedMap[any], sensitiveRenderedKeys map[string]string) ([]byte, error) {
 	if len(sensitiveRenderedKeys) == 0 {
 		return nil, nil
