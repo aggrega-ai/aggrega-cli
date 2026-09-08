@@ -667,14 +667,20 @@ func previewPhase(p compilerops.PreviewPhase) Phase {
 
 // newExternalInputsService constructs the per-build external-input gate over
 // the workspace artifact cache's inputs store, seeded with the lockfile's
-// pinned view. Acquisition is on unless the caller froze the closure. The HTTP
-// client comes from the network-egress gate; it is nil for an offline workspace,
-// so pinned inputs are still served from the cache but any fetch (acquisition or
-// a missing-blob refill) refuses loudly — offline dominates acquire
-// mechanically, without a separate consult.
+// pinned view.
+//
+// This is where the build reads its own closure dial and nowhere else: a frozen
+// closure gets the consumption posture and an unfrozen one the acquisition
+// posture, each composed by the store package. What each posture sets — whether
+// an unpinned reference is fetched, and whether there is a transport to fetch it
+// with — is that package's single description of it, so the build states which
+// posture it wants rather than assembling one, and cannot come to hold a second
+// copy that agrees today and drifts later.
 func newExternalInputsService(cacheDir string, lf *lockfile.Lockfile, noAcquire bool, wsCfg workspaceconfig.Config) *externalinputs.Service {
-	httpClient, _ := egress.HTTPClient(wsCfg)
-	return externalinputs.NewService(externalinputs.StoreRoot(cacheDir), !noAcquire, httpClient, lf.ExternalInputs)
+	if noAcquire {
+		return externalinputs.NewFrozen(cacheDir, lf)
+	}
+	return externalinputs.NewAcquiring(cacheDir, wsCfg, lf)
 }
 
 // ensureLockfile ensures the per-Release lockfile exists before the build wires
