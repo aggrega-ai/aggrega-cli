@@ -229,7 +229,7 @@ func UpsertProviderBinding(path, target, plugin string) error {
 // UpsertPluginSocketRef adds the config-socket plugin attachment uri to the
 // `plugins.<socket>` list in the workspace config file at path, preserving every
 // other setting, and writes the result back. socket is the config-socket key
-// (mutator, policy, linter, importer); uri is the bare plugin entity identity
+// (governance, linter, importer); uri is the bare plugin entity identity
 // (`<socket>/<name>:<version>`). An entry whose URI already matches is left in
 // place — the add is idempotent and never clobbers an existing attachment's
 // other members; a new URI is appended. A file that does not yet exist is
@@ -367,7 +367,7 @@ func RemoveCLIPluginRef(path, query string) (bool, error) {
 
 // RemovePluginSocketRef removes the `plugins.<socket>` entry matching query from
 // the workspace config file at path, preserving every other setting, and writes
-// the result back. socket is the config-socket key (mutator, policy, linter,
+// the result back. socket is the config-socket key (governance, linter,
 // importer). It reports whether an entry matched: false leaves the file
 // untouched so the calling command can fail loudly. When the removal empties the
 // list its `<socket>` key is dropped rather than left as an empty list.

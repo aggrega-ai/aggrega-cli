@@ -34,25 +34,83 @@ func attachConfigCommands(parent *cobra.Command) {
 		Short: "Inspect and manage the workspace configuration",
 		Long: `Inspect and manage the configuration Aggrega reads.
 
-Configuration comes from a cascade rather than from one file: a global config,
-then every .aggrega-config.yaml from the workspace root down, then environment
-overrides. Later layers win over earlier ones. The workspace root is the nearest
-ancestor directory whose .aggrega-config.yaml carries a workspace: block.
+Most projects need two files.
+
+One .aggrega-config.yaml at your project root, carrying a "workspace:" block —
+that block is what marks the root — holds how this project builds: its catalog
+directories, its provider bindings, which lint rules it relaxes. It is
+committed, so a teammate who clones the project builds it the same way.
+
+One machine-wide file at ~/.config/aggrega/config.yaml holds what belongs to
+the machine rather than to any one project: the registries you pull from and
+the signature trust policy for each, how large the compiled-module store may
+grow, any command extension you have installed. It loads automatically when it
+is there, and nothing breaks when it is not.
+
+Your project's file wins over the machine-wide one, an environment variable
+wins over both, and a flag wins over everything.
+
+Secrets are not configuration. A registry password or a signing identity token
+is never a field in either file; it is supplied by environment variable or flag
+at the moment it is needed.
 
 Because the effective configuration is assembled rather than written anywhere,
 "aggrega config show" is how you see what actually applies, and --origin is how
 you find out which layer each setting came from. "aggrega config init" seeds a
 working configuration, and "aggrega config capture" freezes the effective
 build-critical settings into this workspace so a build does not depend on a
-global file that is not committed.`,
+machine-wide file that is not committed.
+
+Larger projects have more to work with. None of it is needed to start, and each
+piece exists for the shape it solves:
+
+  More than one file inside a project. Every .aggrega-config.yaml from the
+  project root down to the directory you run in contributes, a nearer file
+  overriding a farther one. Only a file carrying "workspace:" marks the root;
+  one without it contributes settings without anchoring anything.
+
+  Extending a list instead of replacing it. A nearer file's list replaces the
+  farther one's. The companions catalog_dirs_append, governance_append,
+  linter_append, importer_append and providers_append concatenate onto the
+  resolved list at each layer instead of shadowing it.
+
+  A file your pipeline owns. .aggrega-config-append-ci.yaml may sit beside the
+  hand-authored file in any of those directories, so automation can overwrite
+  it wholesale without touching what a person wrote. It is additive only: it
+  removes nothing and overrides no scalar, and a scalar key written in it is
+  ignored and named in a warning. It never marks a root.
+
+  A relative path anchors to the file that declared it. A catalog directory, a
+  local plugin path, or an entry under a plugin's with.sources resolves against
+  the directory of the config file it was written in — not the project root,
+  and not the directory you ran the command from. So the same "./catalog" names
+  a different directory depending on which file carries it. Two settings sit
+  outside this rule: artifact_cache_dir is interpreted relative to the project
+  root wherever you run from, and AGGREGA_CATALOG_DIRS has no declaring file at
+  all, so supply absolute paths in it.
+
+  The other root markers. A "workspace:" block wins outright at whatever depth
+  it sits. Failing one, the nearest .aggrega/ directory or aggregate*.yaml,
+  release*.yaml or manifest*.yaml file anchors the root, in that order within a
+  directory; failing everything, your working directory is used.
+  --workspace-root skips discovery entirely.
+
+  Naming the machine-wide file. --config <path> wins over $AGGREGA_CONFIG,
+  which wins over the default location. Both name a file deliberately, so a
+  path either gives that does not exist is a loud error rather than a silent
+  fallback. Whichever file resolves is also the one a config-writing command
+  writes when it writes machine-wide.`,
 		Example: `  # What applies right now
   aggrega config show
 
   # Which layer each setting came from
   aggrega config show --origin
 
-  # Seed a workspace configuration
+  # Seed the machine-wide configuration with a registry and its trust policy
   aggrega config init
+
+  # Seed this project's own configuration instead
+  aggrega config init --workspace
 
   # Freeze the effective build-critical settings into this workspace
   aggrega config capture`,

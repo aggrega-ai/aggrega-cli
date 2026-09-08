@@ -40,8 +40,8 @@ const (
 	// plugins.providers list). A provider binding is part of how a project
 	// builds, so it defaults to the workspace config.
 	OpProviderBinding
-	// OpConfigSocket attaches a plugin to a workspace config socket (mutator,
-	// policy, linter, or importer). A socket attachment shapes a project's
+	// OpConfigSocket attaches a plugin to a workspace config socket (governance,
+	// linter, or importer). A socket attachment shapes a project's
 	// build, so it defaults to the workspace config.
 	OpConfigSocket
 	// OpCLI installs a CLI-extension plugin. A CLI extension is machine-wide
