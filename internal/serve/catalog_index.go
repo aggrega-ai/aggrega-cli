@@ -10,6 +10,7 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
 )
 
 // CatalogEntity is one workspace-local entity in the aggrega/catalogIndex
@@ -140,7 +141,7 @@ func WorkspaceEntityIndex(ctx context.Context, root string, view *catalog.LazyLo
 func ReleaseCandidates(root string) []string {
 	out := []string{}
 	for _, abs := range walkForReleases(root) {
-		rel, inside := relInsideRoot(root, abs)
+		rel, inside := pathscope.Relative(root, abs)
 		if !inside {
 			continue
 		}
@@ -166,7 +167,7 @@ func workspaceEntityIndex(ctx context.Context, root string, view *catalog.LazyLo
 		if name == "" {
 			return true
 		}
-		rel, inside := relInsideRoot(root, doc.path)
+		rel, inside := pathscope.Relative(root, doc.path)
 		if !inside {
 			// The parse cache holds whatever file the editor last sent,
 			// which need not be a workspace file at all. A document outside

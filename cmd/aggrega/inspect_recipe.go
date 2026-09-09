@@ -40,7 +40,7 @@ func renderRecipeFile(rw *workspaceconfig.ResolvedWorkspace, path string, data [
 		return nil
 	}
 
-	renderHeader(opts, "Recipe", identifier)
+	renderIdentityBlock(opts, "Recipe", identifier, rec.Metadata.Description)
 	fmt.Fprintf(opts.out, "Implements: %s\n", opts.colorize.uri(rec.Spec.Implements))
 	fmt.Fprintf(opts.out, "Capability: %s\n", rec.Spec.Capability)
 

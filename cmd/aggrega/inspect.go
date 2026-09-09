@@ -477,13 +477,29 @@ func inspectCatalogEntity(rw *workspaceconfig.ResolvedWorkspace, identifier stri
 	// resolved entity, never from the typed identifier, which may carry a version
 	// the published location has none.
 	id := entityIdentity{kind: match.Kind, provider: match.Scope, name: match.Name}
+	// What is rendered is titled by the identity the resolution settled on, not by
+	// the string a person typed. The two differ whenever a bare name resolves to a
+	// version, which is the ordinary case: titling the output with the typed string
+	// leaves the reader unable to tell which version they are looking at, and it
+	// reads differently from the same entity reached as a file, where every kind's
+	// renderer already titles it name:version. A resolution that settled on no
+	// identity falls back to the typed string, so the title never reads as an
+	// entity with no name.
+	resolvedIdentifier := identifierVersion(match.Name, match.Version)
+	if match.Name == "" {
+		resolvedIdentifier = identifier
+	}
 
 	switch match.Kind {
 	case "Component":
 		// Component keeps its own render path: the structured schema view. Its
 		// withdrawal advisory is the shared one every other kind gets.
+		//
+		// The description is handed down beside the identity because that renderer
+		// takes both from its caller, and here the caller is the resolution: the
+		// entity it returned is the authority on what the name describes.
 		comp, _ := match.Definition.(types.Component)
-		if err := renderComponentStructured(comp, identifier, opts); err != nil {
+		if err := renderComponentStructured(comp, resolvedIdentifier, match.Description, opts); err != nil {
 			return err
 		}
 		reportEntityWithdrawal(rw, id, opts)
@@ -510,7 +526,7 @@ func inspectCatalogEntity(rw *workspaceconfig.ResolvedWorkspace, identifier stri
 		reportEntityWithdrawal(rw, id, opts)
 		return nil
 	default:
-		return renderCatalogMatch(rw, id, identifier, match.Definition, catalogDirs, opts)
+		return renderCatalogMatch(rw, id, resolvedIdentifier, match.Definition, catalogDirs, opts)
 	}
 }
 

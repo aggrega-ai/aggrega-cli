@@ -41,7 +41,7 @@ func renderFeatureFile(_ *workspaceconfig.ResolvedWorkspace, path string, data [
 		return nil
 	}
 
-	renderHeader(opts, "Feature", identifier)
+	renderIdentityBlock(opts, "Feature", identifier, feat.Metadata.Description)
 
 	if kind, ok := feat.Metadata.Labels.Get(types.FeatureKindLabel); ok && kind == types.FeatureKindSecret {
 		fmt.Fprintln(opts.out, "Credential Feature — fills a featuresSchema slot")

@@ -41,7 +41,7 @@ func renderFeatureRecipeFile(rw *workspaceconfig.ResolvedWorkspace, path string,
 		return nil
 	}
 
-	renderHeader(opts, "FeatureRecipe", identifier)
+	renderIdentityBlock(opts, "FeatureRecipe", identifier, fr.Metadata.Description)
 	fmt.Fprintf(opts.out, "Implements: %s\n", opts.colorize.uri(fr.Spec.Implements))
 	fmt.Fprintf(opts.out, "Capability: %s\n", fr.Spec.Capability)
 

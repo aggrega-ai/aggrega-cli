@@ -162,7 +162,7 @@ func renderPluginFile(_ *workspaceconfig.ResolvedWorkspace, path string, data []
 		return nil
 	}
 
-	renderHeader(opts, "Plugin", identifier)
+	renderIdentityBlock(opts, "Plugin", identifier, wp.Metadata.Description)
 
 	plugin := wp.ArtifactReference()
 	if plugin == "" {

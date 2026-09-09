@@ -17,7 +17,7 @@
 // dialog. Such a path names wherever they pointed, so it has no root to stay
 // inside, and containment is the wrong question of it rather than a relaxed one.
 //
-// # The three entry points, and why they are three
+// # The four entry points, and why they are four
 //
 // [Resolve] and [IsLocalSlash] answer containment, in the two path algebras the
 // compiler actually uses. Resolve works in operating-system path arithmetic, for
@@ -25,6 +25,14 @@
 // slash-separated logical names, for a caller holding a name that is not a
 // filesystem path yet — an archive entry, a rendered output name — and may never
 // become one on the machine that is judging it.
+//
+// [Relative] answers containment in the other direction, for a caller that holds
+// a path and needs the name to report for it rather than the path to open. Resolve
+// composes a root and a relative name into the location to open; Relative decomposes
+// a path into the name it has relative to that root, and refuses one that has no
+// such name because it lies outside. It is a separate entry point rather than a
+// second return value on Resolve because the callers are separate: one is about to
+// read a file, the other is about to put a name in an answer.
 //
 // The distinction between those two is not cosmetic. A backslash is an ordinary
 // character in a logical name and a separator in a Windows filesystem path, so
@@ -103,6 +111,72 @@ func Resolve(root, rel string) (string, bool) {
 		return "", false
 	}
 	return filepath.Clean(filepath.Join(filepath.Clean(root), rel)), true
+}
+
+// Relative reports the name path has relative to root, in slash form, and
+// whether it lies inside that root at all.
+//
+// It is the one home for that question, so every caller that asks where a path
+// sits relative to a root shares one coordinate system — and every caller that
+// reports such a name to a reader outside this process shares one rule about
+// which names may be reported at all. A path that lies outside the root has no
+// name relative to it that the reader could use: a climb above the root does not
+// resolve from where that reader stands, and the location it names is the running
+// machine's own layout rather than anything the reader asked about.
+//
+// root and path are operating-system paths, and path may arrive in either
+// spelling. An absolute one is decomposed against root. One that is already
+// relative to root is taken as it stands, which is the form a recorded
+// provenance string is held in — so a caller holding one does not have to anchor
+// it first, that being the step which gets forgotten, and forgetting it yields a
+// refusal that reads like a containment verdict.
+//
+// Three inputs are refused, and the returned name is empty for each:
+//
+//   - An empty root, and an empty path. Neither names anything, and joining
+//     against an empty root would silently address the process working directory
+//     rather than the root the caller named.
+//   - A path that resolves to the root itself. The root is not a name inside
+//     itself, and a caller reporting "." for it would be answering with a
+//     directory where its reader expects a file.
+//   - A path outside the root, whether it climbs above it or names an absolute
+//     location elsewhere. A sibling directory whose name merely extends root's is
+//     outside it, which a bare string-prefix comparison would accept.
+//
+// A relative path is judged on the climb it spells rather than on where
+// anchoring it would land, exactly as [Resolve] judges one: "../app/ok" against a
+// root of "/srv/app" is refused even though joining it lands back inside, because
+// the verdict is a property of the value being judged and not of what the root
+// happens to be called. Anchoring first would launder such a value into a name
+// that looks contained, which is the one answer a caller must never be given.
+// An interior climb is not a climb out — "a/../b" resolves to "b" and is
+// accepted — and a name that merely begins with two dots is an ordinary name.
+//
+// The analysis is lexical, as everything here is: it resolves no symbolic link,
+// so a root that can contain a link out of the tree needs a filesystem-level
+// check as well as this one.
+func Relative(root, path string) (string, bool) {
+	if root == "" || path == "" {
+		return "", false
+	}
+	if !filepath.IsAbs(path) {
+		if !staysInside(filepath.ToSlash(path)) {
+			return "", false
+		}
+		rel := filepath.ToSlash(filepath.Clean(path))
+		if rel == "." {
+			return "", false
+		}
+		return rel, true
+	}
+	rel, err := filepath.Rel(root, path)
+	if err != nil || rel == "." {
+		return "", false
+	}
+	if !staysInside(filepath.ToSlash(rel)) {
+		return "", false
+	}
+	return filepath.ToSlash(rel), true
 }
 
 // ResolveSelected reports where a path somebody selected lands.

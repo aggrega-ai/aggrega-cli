@@ -39,10 +39,7 @@ func renderArtifactsLibraryFile(_ *workspaceconfig.ResolvedWorkspace, path strin
 		return nil
 	}
 
-	renderHeader(opts, "ArtifactsLibrary", identifierVersion(name, lib.Metadata.Version))
-	if lib.Metadata.Description != "" {
-		fmt.Fprintf(opts.out, "Description: %s\n", lib.Metadata.Description)
-	}
+	renderIdentityBlock(opts, "ArtifactsLibrary", identifierVersion(name, lib.Metadata.Version), lib.Metadata.Description)
 
 	fmt.Fprintln(opts.out, "Artifacts:")
 	for bundle, entry := range lib.Spec.Artifacts.All() {

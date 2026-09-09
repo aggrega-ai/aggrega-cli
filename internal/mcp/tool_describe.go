@@ -11,6 +11,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
 )
 
 // describeArgs is the describe tool's argument shape. Exactly one of name or
@@ -24,16 +25,62 @@ type describeArgs struct {
 }
 
 // describeEntityPayload is the structured payload for a catalog entity subject:
-// its kind, its identity, and its resolved definition.
+// its kind, its identity, what it says about itself, where it publishes to, the
+// authored document behind it, and its resolved definition.
 //
 // Kind is whichever kind the name resolved to, read off the resolved entity
 // rather than assumed from the request — a caller that names a Recipe is
 // answered about a Recipe.
+//
+// Description is what the entity says about itself, omitted where it declares
+// none. It is on the payload rather than only in the summary line, because a
+// caller reading the structured answer should not have to parse prose to learn
+// what a building block is for.
+//
+// PublishScope is the segment the entity's published location is scoped by — a
+// Recipe's or FeatureRecipe's capability, a Plugin's plugin type — and is omitted
+// for every kind that carries none.
+//
+// It is not called `scope` in the payload, and the longer name is deliberate: an
+// author already writes `scope` on a Plugin's well-known annotations, where it
+// says which render paths an annotation reaches. One word carrying two unrelated
+// meanings across entity-facing surfaces is the confusion a caller cannot resolve
+// from the payload alone, so this one names what it scopes.
+//
+// AuthoredPath and AuthoredLength describe the authored document behind the
+// match, and only a match the resolution retained one for has them. The name
+// avoids `source` for the same reason as above — an author writes `source` on a
+// Recipe, where it names the upstream artifact that Recipe renders, which is a
+// different thing from the file an entity was declared in.
+//
+// AuthoredPath is reported only where that document lies inside the workspace the
+// call named, and then as a path relative to it, which is the coordinate a caller
+// can resolve against the root it supplied. A document outside that root is
+// reported as no path at all: the only forms it has either climb above the root,
+// which does not resolve from where the caller stands, or name a location on the
+// machine this process runs on, which answers a question the call did not ask.
+// That is the same containment judgement the daemon's answers go through, so one
+// resolution reports one authored document the same way whichever surface is
+// asked.
+//
+// AuthoredLength is that document's length in bytes and is reported either way,
+// so a caller is told an authored document was retained even where its path is not
+// one this answer can carry.
+//
+// The authored bytes themselves are deliberately not carried. Definition already
+// answers what the entity IS, with inheritance applied, and a second copy of the
+// one file that declared it would spend the caller's payload on a document the
+// path lets it read for itself. The path and the length say whether there is one
+// to read and how large it is, which is what a caller can act on.
 type describeEntityPayload struct {
-	Kind       string          `json:"kind"`
-	Name       string          `json:"name"`
-	Version    string          `json:"version"`
-	Definition json.RawMessage `json:"definition"`
+	Kind           string          `json:"kind"`
+	Name           string          `json:"name"`
+	Version        string          `json:"version"`
+	Description    string          `json:"description,omitempty"`
+	PublishScope   string          `json:"publish_scope,omitempty"`
+	AuthoredPath   string          `json:"authored_path,omitempty"`
+	AuthoredLength int             `json:"authored_length"`
+	Definition     json.RawMessage `json:"definition"`
 }
 
 // describeReleasePayload is the structured payload for a Release subject: the
@@ -176,10 +223,14 @@ func (s *server) describeCatalogEntity(a describeArgs, name string) (*callToolRe
 		return nil, &rpcError{Code: codeInternalError,
 			Message: "marshal " + strings.ToLower(match.Kind) + ": " + mErr.Error()}
 	}
+	authored, _ := pathscope.Relative(tw.root, match.Source)
 	payload := describeEntityPayload{
-		Kind: match.Kind, Name: match.Name, Version: match.Version, Definition: def,
+		Kind: match.Kind, Name: match.Name, Version: match.Version,
+		Description: match.Description, PublishScope: match.Scope,
+		AuthoredPath: authored, AuthoredLength: len(match.Bytes),
+		Definition: def,
 	}
-	return textResult(renderDescribeEntityText(payload, match.Description), payload)
+	return textResult(renderDescribeEntityText(payload), payload)
 }
 
 // describeRelease resolves a Release's catalog closure and returns a summary of
@@ -263,10 +314,16 @@ func describeLibraryRefs(cl closure.Closure) []closureRef {
 
 // renderDescribeEntityText renders the human-readable one-line summary of a
 // catalog entity, with its description when it carries one.
-func renderDescribeEntityText(p describeEntityPayload, description string) string {
+//
+// It reads the description off the payload rather than taking it separately, so
+// the summary and the structured answer cannot come to disagree about what the
+// entity says of itself. The summary states less than the payload — it names
+// neither the publishing scope nor the authored document — which is a difference
+// in how one line is written for a reader, not in what the answer carries.
+func renderDescribeEntityText(p describeEntityPayload) string {
 	line := fmt.Sprintf("%s %s (version %s)", p.Kind, p.Name, p.Version)
-	if strings.TrimSpace(description) != "" {
-		line += ": " + description
+	if strings.TrimSpace(p.Description) != "" {
+		line += ": " + p.Description
 	}
 	return line
 }

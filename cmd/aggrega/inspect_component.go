@@ -33,7 +33,7 @@ func renderComponentFile(_ *workspaceconfig.ResolvedWorkspace, path string, data
 	if comp.Metadata.Name == "" {
 		identifier = path
 	}
-	return renderComponentStructured(comp, identifier, opts)
+	return renderComponentStructured(comp, identifier, comp.Metadata.Description, opts)
 }
 
 // renderComponentStructured prints a parsed Component at the requested detail
@@ -42,12 +42,21 @@ func renderComponentFile(_ *workspaceconfig.ResolvedWorkspace, path string, data
 // source path for an unnamed file).
 //
 //   - levelList: the identifier plus its usesSchema socket names.
-//   - levelDefault: header, schema body, and the usesSchema sockets (selector).
+//   - levelDefault: header, description, schema body, and the usesSchema
+//     sockets (selector).
 //   - levelDetail: adds inject mechanisms, the declared presence mandates,
 //     featuresSchema, and metadata labels.
 //
+// identifier and description are the caller's rather than derived here, which is
+// this renderer's standing contract for identity and now covers the description
+// beside it. Each caller supplies them from the authority it holds: the
+// catalog-name path from the entity the by-name resolution returned, the file
+// path from the document it parsed. A renderer that re-derived them would be a
+// second statement of the same facts, free to disagree with the resolution about
+// which entity is being described.
+//
 // All map iteration uses OrderedMap.All() for author-order determinism.
-func renderComponentStructured(comp types.Component, identifier string, opts inspectOptions) error {
+func renderComponentStructured(comp types.Component, identifier, description string, opts inspectOptions) error {
 	if opts.level == levelList {
 		fmt.Fprintln(opts.out, opts.colorize.uri(identifier))
 		for socket := range comp.Spec.UsesSchema.All() {
@@ -56,7 +65,7 @@ func renderComponentStructured(comp types.Component, identifier string, opts ins
 		return nil
 	}
 
-	renderHeader(opts, "Component", identifier)
+	renderIdentityBlock(opts, "Component", identifier, description)
 
 	if err := renderSchemaBody(opts, "Schema:", comp.Spec.Schema); err != nil {
 		return err

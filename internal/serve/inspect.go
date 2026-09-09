@@ -16,6 +16,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
 )
 
 // The two requests here answer questions the daemon's positional surfaces
@@ -64,11 +65,56 @@ type entityDefinitionParams struct {
 // comes from a base — and the document reproduces whichever one resolution
 // arrived at, in the author's own key order, rather than flattening them into a
 // shape none of them has.
+//
+// Description is what the resolved entity says about itself, omitted where it
+// declares none. It is carried as its own field rather than left inside the
+// definition document, because a client showing a one-line summary beside a name
+// would otherwise have to parse the document to find it.
+//
+// PublishScope is the segment the entity's published location is scoped by — a
+// Recipe's or FeatureRecipe's capability, a Plugin's plugin type — and is omitted
+// for every kind that carries none. It is the resolution's own reading of the
+// typed entity, so a client reporting where an entity publishes to does not
+// re-derive it from the name a person wrote.
+//
+// It is not called `scope` on the wire, and the longer name is deliberate: an
+// author already writes `scope` on a Plugin's well-known annotations, where it
+// says which render paths an annotation reaches. One word carrying two unrelated
+// meanings across entity-facing surfaces is the confusion a client author cannot
+// resolve from the payload alone, so this one names what it scopes.
+//
+// AuthoredPath and AuthoredLength describe the authored document behind the
+// match, and only a match the resolution retained one for has them. The name
+// avoids `source` for the same reason: an author writes `source` on a Recipe,
+// where it names the upstream artifact that Recipe renders, which is a different
+// thing entirely from the file an entity was declared in.
+//
+// AuthoredPath is reported only where that document lies inside the workspace
+// root, and then as a path relative to it — the coordinate every other path in
+// this daemon's answers uses, and one the client can open. A document outside the
+// root is reported as no path at all, because the only honest form for it either
+// climbs above the root, which the client cannot resolve, or names a location on
+// the machine the daemon runs on, which would disclose that machine's layout for
+// no gain. That is the containment judgement every path this daemon reports goes
+// through, rather than a rule for this response.
+//
+// AuthoredLength is that document's length in bytes and is reported either way,
+// so a client is told an authored document was retained even where its path is
+// not one this connection can carry.
+//
+// The authored bytes themselves are deliberately not carried. Definition is the
+// answer to what the entity IS, and a second document beside it — the one file
+// that happened to declare it — would answer a question this request was not
+// asked, at the cost of the payload.
 type entityDefinitionResult struct {
-	Kind       string `json:"kind"`
-	Name       string `json:"name"`
-	Version    string `json:"version"`
-	Definition string `json:"definition"`
+	Kind           string `json:"kind"`
+	Name           string `json:"name"`
+	Version        string `json:"version"`
+	Description    string `json:"description,omitempty"`
+	PublishScope   string `json:"publishScope,omitempty"`
+	AuthoredPath   string `json:"authoredPath,omitempty"`
+	AuthoredLength int    `json:"authoredLength"`
+	Definition     string `json:"definition"`
 }
 
 // dispatchEntityDefinition answers with the definition the named entity
@@ -150,11 +196,16 @@ func (s *Server) entityDefinition(ctx context.Context, name string) (entityDefin
 			cause:   err,
 		}
 	}
+	authored, _ := pathscope.Relative(s.workspaceRoot, match.Source)
 	return entityDefinitionResult{
-		Kind:       match.Kind,
-		Name:       match.Name,
-		Version:    match.Version,
-		Definition: string(definition),
+		Kind:           match.Kind,
+		Name:           match.Name,
+		Version:        match.Version,
+		Description:    match.Description,
+		PublishScope:   match.Scope,
+		AuthoredPath:   authored,
+		AuthoredLength: len(match.Bytes),
+		Definition:     string(definition),
 	}, nil
 }
 
@@ -210,7 +261,7 @@ func (s *Server) workspaceDeclarationOf(ctx context.Context, identity string) (f
 		if name != identity {
 			return true
 		}
-		rel, inside := relInsideRoot(s.workspaceRoot, doc.path)
+		rel, inside := pathscope.Relative(s.workspaceRoot, doc.path)
 		if !inside {
 			return true
 		}

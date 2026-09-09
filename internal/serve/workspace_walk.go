@@ -148,29 +148,11 @@ func (w *gitignoreWalker) matchesAny(path string, isDir bool) bool {
 // `..cache` beside the workspace files — is an ordinary directory and
 // is walked; only one that climbs above the root is dropped.
 func (w *gitignoreWalker) relComponents(path string) []string {
-	rel, ok := relInsideRoot(w.root, path)
+	rel, ok := pathscope.Relative(w.root, path)
 	if !ok {
 		return nil
 	}
 	return strings.Split(rel, "/")
-}
-
-// relInsideRoot reports path's location relative to root, in slash
-// form, and whether it lies inside that root at all. It is the single
-// home for the containment judgement, so every caller that asks where a
-// path sits relative to the workspace shares one coordinate system.
-//
-// A path equal to the root, or one that climbs above it, is reported as
-// not contained rather than as a relative path with a leading climb.
-func relInsideRoot(root, path string) (string, bool) {
-	rel, err := filepath.Rel(root, path)
-	if err != nil || rel == "." {
-		return "", false
-	}
-	if _, ok := pathscope.Resolve(root, rel); !ok {
-		return "", false
-	}
-	return filepath.ToSlash(rel), true
 }
 
 // ancestorsToRoot returns the directory chain from the file's

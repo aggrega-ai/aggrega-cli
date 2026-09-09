@@ -42,10 +42,7 @@ func renderSchemaLibraryFile(_ *workspaceconfig.ResolvedWorkspace, path string, 
 		return nil
 	}
 
-	renderHeader(opts, "SchemaLibrary", identifierVersion(name, lib.Metadata.Version))
-	if lib.Metadata.Description != "" {
-		fmt.Fprintf(opts.out, "Description: %s\n", lib.Metadata.Description)
-	}
+	renderIdentityBlock(opts, "SchemaLibrary", identifierVersion(name, lib.Metadata.Version), lib.Metadata.Description)
 
 	fmt.Fprintln(opts.out, "Schemas:")
 	for def, entry := range lib.Spec.Schemas.All() {

@@ -39,10 +39,7 @@ func renderMappingLibraryFile(_ *workspaceconfig.ResolvedWorkspace, path string,
 		return nil
 	}
 
-	renderHeader(opts, "MappingLibrary", identifierVersion(name, lib.Metadata.Version))
-	if lib.Metadata.Description != "" {
-		fmt.Fprintf(opts.out, "Description: %s\n", lib.Metadata.Description)
-	}
+	renderIdentityBlock(opts, "MappingLibrary", identifierVersion(name, lib.Metadata.Version), lib.Metadata.Description)
 
 	fmt.Fprintln(opts.out, "Mappings:")
 	for entry, mapping := range lib.Spec.Mappings.All() {

@@ -68,7 +68,7 @@ func renderAggregateFile(rw *workspaceconfig.ResolvedWorkspace, path string, dat
 	}
 
 	identifier := identifierVersion(agg.Metadata.Name, agg.Metadata.Version)
-	renderHeader(opts, "Aggregate", identifier)
+	renderIdentityBlock(opts, "Aggregate", identifier, agg.Metadata.Description)
 
 	renderAggregateParameters(opts, agg.Spec.Parameters)
 

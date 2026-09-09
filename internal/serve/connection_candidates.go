@@ -9,6 +9,7 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/selector"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
@@ -260,7 +261,7 @@ func connectionCandidatesIn(ctx context.Context, root string, overlay []workspac
 		if name == "" {
 			return true
 		}
-		rel, inside := relInsideRoot(root, doc.path)
+		rel, inside := pathscope.Relative(root, doc.path)
 		if !inside {
 			// The parse cache holds whatever file the editor last sent,
 			// which need not be a workspace file at all. An entity outside

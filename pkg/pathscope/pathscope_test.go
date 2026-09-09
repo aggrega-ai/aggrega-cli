@@ -96,6 +96,107 @@ func TestResolveRefusesPrefixSibling(t *testing.T) {
 	}
 }
 
+// TestRelative pins the name a path has relative to a root, which is the form a
+// caller reports rather than the form it opens.
+//
+// Both input spellings are in the table: an absolute path is decomposed against
+// the root, and one already relative to the root is taken as it stands. They are
+// one entry point because a caller holding a recorded provenance string does not
+// know which spelling it holds, and anchoring at the call site is the step that
+// gets forgotten.
+func TestRelative(t *testing.T) {
+	const root = "/srv/app"
+	tests := []struct {
+		name string
+		root string
+		path string
+		want string // empty means refusal
+	}{
+		// An absolute path inside the root, decomposed.
+		{"absolute inside", root, "/srv/app/config.yaml", "config.yaml"},
+		{"absolute nested", root, "/srv/app/a/b/c.yaml", "a/b/c.yaml"},
+		{"absolute unclean", root, "/srv/app/a/../b.yaml", "b.yaml"},
+		{"unclean root", "/srv/app/", "/srv/app/x.yaml", "x.yaml"},
+
+		// A path already relative to the root, taken as it stands. This is the
+		// form a catalog records an authored document's location in.
+		{"relative inside", root, "catalog/base/x.yaml", "catalog/base/x.yaml"},
+		{"relative unclean", root, "catalog/../x.yaml", "x.yaml"},
+		{"relative two dots then a letter is an ordinary name", root, "..config/x.yaml", "..config/x.yaml"},
+
+		// Outside the root: no name relative to it that a reader could use.
+		{"relative climb", root, "../elsewhere/catalog/x.yaml", ""},
+		{"relative bare climb", root, "..", ""},
+		{"absolute outside", root, "/etc/passwd", ""},
+		{"absolute prefix sibling", root, "/srv/app-old/secret.yaml", ""},
+		{"relative prefix sibling", root, "../app-old/secret.yaml", ""},
+
+		// The root itself is not a name inside itself. A caller reporting "." for
+		// it would answer with a directory where its reader expects a file.
+		{"absolute root itself", root, "/srv/app", ""},
+		{"relative root itself", root, ".", ""},
+		{"relative resolving to the root", root, "a/..", ""},
+
+		// Neither an empty root nor an empty path names anything, and joining
+		// against an empty root would address the process working directory.
+		{"empty root", "", "/srv/app/x.yaml", ""},
+		{"empty path", root, "", ""},
+		{"both empty", "", "", ""},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, ok := pathscope.Relative(tc.root, filepath.FromSlash(tc.path))
+			if tc.want == "" {
+				if ok {
+					t.Fatalf("Relative(%q, %q) = %q, accepted; want refusal", tc.root, tc.path, got)
+				}
+				if got != "" {
+					t.Fatalf("Relative(%q, %q) refused but returned %q; a refusal returns the empty name",
+						tc.root, tc.path, got)
+				}
+				return
+			}
+			if !ok {
+				t.Fatalf("Relative(%q, %q) refused; want %q", tc.root, tc.path, tc.want)
+			}
+			if got != tc.want {
+				t.Fatalf("Relative(%q, %q) = %q; want %q", tc.root, tc.path, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestRelativeAndResolveAgreeOnContainment is the property that lets one of these
+// answer a caller about to read a file and the other a caller about to report a
+// name: they must not disagree about which paths are inside the root at all.
+//
+// A disagreement would mean a path the product opens but will not name, or names
+// but will not open — and either is a state no caller could explain to its reader.
+func TestRelativeAndResolveAgreeOnContainment(t *testing.T) {
+	const root = "/srv/app"
+	rels := []string{
+		"config.yaml", "a/b/c.yaml", "a/../b", "..config", "..cache/x",
+		"..", "../elsewhere", "a/../../elsewhere", "../app/ok", "../app-old/secret",
+		"/etc/passwd", "",
+	}
+	for _, rel := range rels {
+		// The root itself is deliberately excluded: Resolve accepts "." because
+		// the root is a directory it can open, and Relative refuses it because the
+		// root has no name inside itself. That difference is a property of what
+		// each answers, not a disagreement about containment, and it is asserted
+		// as its own row in the table above.
+		if rel == "." || rel == "a/.." {
+			continue
+		}
+		_, resolveOK := pathscope.Resolve(root, rel)
+		_, relativeOK := pathscope.Relative(root, rel)
+		if resolveOK != relativeOK {
+			t.Errorf("Resolve(%q, %q) accepted=%v but Relative accepted=%v; the two disagree about "+
+				"whether that path is inside the root", root, rel, resolveOK, relativeOK)
+		}
+	}
+}
+
 func TestResolveSelected(t *testing.T) {
 	const root = "/srv/app"
 	tests := []struct {
@@ -289,14 +390,16 @@ func TestIsLocalSlashImpliesContainedJoin(t *testing.T) {
 // that does not know which arithmetic applies.
 //
 // The count is pinned because it is the assertion a mode in disguise trips. Each
-// of the three entry points answers a question the other two do not, and the
-// names say which: Resolve confines a workspace-scoped path in operating-system
-// arithmetic, IsLocalSlash confines a logical name in slash arithmetic, and
-// ResolveSelected resolves a path a person chose and confines nothing. A fourth
-// export is either one of those three wearing a second name or a class nobody
-// named — and if a genuinely new class is being added, this count moves in the
-// same change that names it, which is exactly the deliberation the pin exists to
-// force.
+// entry point answers a question the others do not, and the names say which:
+// Resolve confines a workspace-scoped path in operating-system arithmetic,
+// IsLocalSlash confines a logical name in slash arithmetic, ResolveSelected
+// resolves a path a person chose and confines nothing, and Relative answers with
+// the name a path has relative to a root rather than the location to open it at —
+// the question a caller about to report a path asks, where the other three serve a
+// caller about to use one. A further export is either one of those four wearing a
+// second name or a class nobody named — and if a genuinely new class is being
+// added, this count moves in the same change that names it, which is exactly the
+// deliberation the pin exists to force.
 func TestNoExportedSymbolTakesAMode(t *testing.T) {
 	fset := token.NewFileSet()
 	pkgs, err := parser.ParseDir(fset, ".", func(fi fs.FileInfo) bool {
@@ -331,8 +434,8 @@ func TestNoExportedSymbolTakesAMode(t *testing.T) {
 			}
 		}
 	}
-	if exported != 3 {
-		t.Errorf("package exports %d functions; the three classes are meant to be exactly three entry points (Resolve, IsLocalSlash, ResolveSelected), so a fourth is either a mode in disguise or a class nobody named", exported)
+	if exported != 4 {
+		t.Errorf("package exports %d functions; the classes are meant to be exactly four entry points (Resolve, IsLocalSlash, ResolveSelected, Relative), so a fifth is either a mode in disguise or a class nobody named", exported)
 	}
 }
 

@@ -38,10 +38,7 @@ func renderWorkloadLibraryFile(_ *workspaceconfig.ResolvedWorkspace, path string
 		return nil
 	}
 
-	renderHeader(opts, "WorkloadLibrary", identifierVersion(name, lib.Metadata.Version))
-	if lib.Metadata.Description != "" {
-		fmt.Fprintf(opts.out, "Description: %s\n", lib.Metadata.Description)
-	}
+	renderIdentityBlock(opts, "WorkloadLibrary", identifierVersion(name, lib.Metadata.Version), lib.Metadata.Description)
 
 	fmt.Fprintln(opts.out, "Workloads:")
 	for entry, workload := range lib.Spec.Workloads.All() {

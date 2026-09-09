@@ -41,6 +41,26 @@ func renderHeader(opts inspectOptions, kind, identifier string) {
 	fmt.Fprintln(opts.out, opts.colorize.header(kind+": "+identifier))
 }
 
+// renderIdentityBlock writes the header followed by the entity's own
+// description, which is omitted when the entity declares none.
+//
+// It is the one home for the rule that an entity's description is reported
+// immediately under its header. Written out at each renderer instead, the rule
+// held for some kinds and not others: a reader who saw a description for one
+// kind had no way to tell whether another kind carried none or merely reported
+// none, and a kind added later inherited whichever of the two its author
+// happened to copy.
+//
+// An entity declaring no description prints no line rather than an empty one,
+// because a description that is absent and one that is empty are different
+// statements and only the first is ever true here.
+func renderIdentityBlock(opts inspectOptions, kind, identifier, description string) {
+	renderHeader(opts, kind, identifier)
+	if strings.TrimSpace(description) != "" {
+		fmt.Fprintf(opts.out, "Description: %s\n", description)
+	}
+}
+
 // identifierVersion formats a `name:version` identifier, falling back to the
 // name alone when no version is authored.
 func identifierVersion(name, version string) string {

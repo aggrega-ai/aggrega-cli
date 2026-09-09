@@ -160,19 +160,15 @@ func insertionPointIn(root, file string, container []string, enc yamlpos.Positio
 		return InsertionPointResult{}, errInsertionNoFile
 	}
 
-	abs := file
-	if !filepath.IsAbs(abs) {
-		resolved, ok := pathscope.Resolve(root, file)
-		if !ok {
-			return InsertionPointResult{}, errInsertionFileOutsideWorkspace
-		}
-		abs = resolved
-	}
-	abs = filepath.Clean(abs)
-	rel, inside := relInsideRoot(root, abs)
+	// The caller may name the file either way, so the containment judgement takes
+	// it in whichever form it arrived and answers with the workspace-relative name.
+	// The absolute form is rebuilt from that name rather than from the argument,
+	// which is what makes it the cleaned path the parse cache is keyed by.
+	rel, inside := pathscope.Relative(root, file)
 	if !inside {
 		return InsertionPointResult{}, errInsertionFileOutsideWorkspace
 	}
+	abs := filepath.Join(root, rel)
 
 	var content []byte
 	if overlay != nil {
