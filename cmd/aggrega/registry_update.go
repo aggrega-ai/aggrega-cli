@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -120,6 +121,11 @@ type registryUpdateConfig struct {
 // stream, so the walk's notices are written to it as they happen rather than
 // collected and rendered at the end — a network walk over several registries is
 // exactly the case where a silent wait is the wrong answer.
+//
+// The walk's own result is then stated as a closing summary. The commentary is
+// per-event and says each thing at the moment it happens, which on a walk over
+// several registries leaves the outcome spread across the stream — and leaves
+// parts of it out of the stream altogether.
 func registryUpdateRun(cfg registryUpdateConfig) error {
 	rw, err := workspaceOrResolve(cfg.ws)
 	if err != nil {
@@ -133,10 +139,93 @@ func registryUpdateRun(cfg registryUpdateConfig) error {
 	if len(cfg.Args) == 1 {
 		token = cfg.Args[0]
 	}
-	_, err = registryops.Update(rw, registryops.UpdateOptions{
+	res, walkErr := registryops.Update(rw, registryops.UpdateOptions{
 		Registry: token,
 		Upgrade:  cfg.Upgrade,
 		Now:      cfg.now,
 	}, out)
-	return err
+	reportRegistryUpdate(out, res)
+	return walkErr
+}
+
+// reportRegistryUpdate writes the closing summary of an index build: how many of
+// the selected registries were indexed, what each indexed registry's walk found,
+// which registries were not indexed, and the directory the index was written to.
+//
+// The running commentary carries none of them. It names a repository as it skips
+// it but never says how many a registry could not read; it names a registry as it
+// fails but never gathers them, so a reader watching a walk over several
+// registries has to scroll back to find which are missing; and it never names the
+// directory the index was written to, which is what says a refresh changed
+// nothing another project on this machine resolves through. What is deliberately
+// not restated is the reason a registry could not be indexed: the walk states
+// that where it happens.
+//
+// Whether each registry was indexed is read from that registry's own record
+// rather than from the walk's gathered list of failures, because the list is
+// filled only on the path that walks every configured registry: a build asked
+// for one registry by name records the failure on that registry and returns, so
+// a count taken from the list would report the named registry as indexed.
+//
+// projection-omits UpdateResult.Failed: it gathers a subset of the registries
+// whose own record already carries the error that stopped them, and it is empty
+// on the path that indexes a single named registry, so the per-registry records
+// are the only complete account of what was and was not indexed.
+func reportRegistryUpdate(out io.Writer, res registryops.UpdateResult) {
+	if res.NoRegistriesConfigured {
+		// The walk says so as it starts, and there is no index to describe: the
+		// index directory is resolved only once there is a registry to walk.
+		return
+	}
+	if len(res.Hosts) == 0 {
+		// Nothing was walked, so there is no outcome to summarize.
+		return
+	}
+
+	var indexed, notIndexed []registryops.HostUpdate
+	for _, host := range res.Hosts {
+		if host.Err != "" {
+			notIndexed = append(notIndexed, host)
+			continue
+		}
+		indexed = append(indexed, host)
+	}
+
+	selected := countOfNoun(len(indexed)+len(notIndexed), "registry", "registries")
+	if len(notIndexed) == 0 {
+		fmt.Fprintf(out, "Indexed %s.\n", selected)
+	} else {
+		fmt.Fprintf(out, "Indexed %d of %s.\n", len(indexed), selected)
+	}
+	for _, host := range indexed {
+		line := fmt.Sprintf("  %s: %s", host.Host, countOfNoun(host.Indexed, "entity", "entities"))
+		if unread := len(host.Skipped); unread > 0 {
+			line += fmt.Sprintf(", %s could not be read", countOfNoun(unread, "repository", "repositories"))
+		}
+		fmt.Fprintln(out, line)
+	}
+	if len(notIndexed) > 0 {
+		names := make([]string, 0, len(notIndexed))
+		for _, host := range notIndexed {
+			names = append(names, host.Host)
+		}
+		fmt.Fprintf(out, "Not indexed: %s\n", strings.Join(names, ", "))
+	}
+	if len(indexed) > 0 && res.IndexRoot != "" {
+		fmt.Fprintf(out, "Index written to %s\n", res.IndexRoot)
+	}
+}
+
+// countOfNoun renders a count with the singular or plural form of its noun, so a
+// summary line reads correctly for one registry as well as for several.
+//
+// It is deliberately local to this package. Several packages carry an equivalent
+// of their own, none of them exported, and reaching for one of those would mean
+// exporting a formatting detail from a package that has no other reason to
+// publish it.
+func countOfNoun(n int, singular, plural string) string {
+	if n == 1 {
+		return fmt.Sprintf("%d %s", n, singular)
+	}
+	return fmt.Sprintf("%d %s", n, plural)
 }
