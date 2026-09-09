@@ -154,6 +154,11 @@ var curatedToolNames = map[string][]string{
 // It panics because the registries are package-level literals: a refusal here is
 // a programming error a reader fixes by editing the table or the registry, and a
 // server that started anyway would advertise a tool nobody declared.
+//
+// projection-omits Operation: the lookup is an existence test. What this reads is
+// whether the identifier names an operation at all, which is the yes-or-no the
+// refusal above turns on; the operation itself is not an answer being reported to
+// anyone, and there is no reader here for one to be owed to.
 func curated(id string, spec toolSpec) toolSpec {
 	if _, known := opsurface.Lookup(id); !known {
 		panic(fmt.Sprintf("mcp: %q is not an operation, so no tool can be registered for it: either the "+

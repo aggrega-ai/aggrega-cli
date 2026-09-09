@@ -132,6 +132,12 @@ func newValidateCmd() *cobra.Command {
 // validatePluginBinary runs the plugin scope core and renders its structured
 // result: the header, per-check status lines, and advisory notices go to out;
 // the first blocking error (if any) is returned so the exit code reflects it.
+//
+// projection-omits PluginBinaryResult.Notices: the advisory notice lines are
+// already inside Diagnostics, which is the ordered report this prints in full.
+// Notices repeats those same lines as bare strings for a caller that summarizes
+// rather than prints, so the content is carried here and reading the repeat
+// would print every notice twice.
 func validatePluginBinary(pluginPath, declaredType, entityPath string, out io.Writer) error {
 	res, err := validateops.ValidatePluginBinary(pluginPath, declaredType, entityPath, wasm.DescribeMaxMemoryPages)
 	for _, line := range res.Diagnostics {

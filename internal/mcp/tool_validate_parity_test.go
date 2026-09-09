@@ -7,10 +7,7 @@ package mcp
 // scopes each dispatch to a shared, importable core in internal/validateops —
 // the SAME core the CLI validate verb calls. The CLI-side test proves the CLI
 // adapter surfaces that core faithfully (byte-identical CLI output); these tests
-// prove the other half: the MCP adapter surfaces the SAME core verbatim. Because
-// the MCP payload carries the core's verdict and diagnostics unaltered (here) and
-// the CLI output does too, the two front doors cannot diverge — they are
-// single-sourced through internal/validateops.
+// prove the other half: the MCP adapter surfaces the SAME core verbatim.
 //
 // Each parity test invokes the MCP tool over a fixture, then calls the shared
 // core DIRECTLY over the same fixture with the same resolved inputs the tool
@@ -20,11 +17,34 @@ package mcp
 // failing case; the failing case — where the exact diagnostic text must match —
 // is the strongest single-source evidence.
 //
-// Per-surface DECORATION differs by design and is NOT what these tests assert:
-// the CLI prefixes catalog diagnostics with two leading spaces and writes them to
-// stderr, while the MCP carries them as bare payload entries. The parity proven
-// here is at the underlying core-diagnostic level — the verdict and the
-// error .Error() texts — which is the single-source guarantee.
+// # What these tests assert, and what they do not
+//
+// ASSERTED: the verdict, and the ordered diagnostic texts character for
+// character. The payload carries the core's own error strings rather than a
+// re-wording of them, so a change to a diagnostic moves both front doors at
+// once or fails here.
+//
+// NOT ASSERTED, and legitimately so: the FORM each surface gives one fact. The
+// CLI prefixes a catalog diagnostic with two leading spaces and writes it to
+// stderr, while the MCP carries it as a bare payload entry. That is one
+// diagnostic in two renderings for two readers, and neither rendering is the
+// fact.
+//
+// 🔴 NOT ASSERTED, and NOT thereby excused: whether each surface carries every
+// structured fact the core computed. Every assertion above reads the verdict and
+// the diagnostic list and nothing else, so a field the core fills and one front
+// door never looks at leaves all of them green. Sharing the core is what makes
+// the two agree on the verdict and the diagnostic texts — it is not what makes
+// them agree on the whole result, and no test in this file asks whether they do.
+//
+// The line between the two is what a fact IS against how it is spelled. A count,
+// a verdict, a classification, an advisory or a hint is owed on every surface
+// that can carry structure; an indentation, an output stream and a field
+// spelling are not. That second axis has its own instrument — the projection
+// read driven from internal/opsurface, which compares the field set each surface
+// reads from a shared result — so the "decoration differs by design" note above
+// is bounded to rendering and is never a licence for a per-surface difference in
+// what the result says.
 
 import (
 	"os"

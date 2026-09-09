@@ -667,6 +667,11 @@ var methodIndex = buildMethodIndex(operationAvailability)
 // It panics because the table is a compile-time literal: every refusal here is a
 // programming error a reader can fix by editing the row, and a daemon that
 // started anyway would serve a surface nobody declared.
+//
+// projection-omits Operation: the lookup is an existence test. What this reads is
+// whether the row's key names an operation at all, which is the yes-or-no the
+// first refusal turns on; the operation itself is not an answer being reported to
+// anyone, and there is no reader here for one to be owed to.
 func buildMethodIndex(table map[string]serveAvailability) map[string]methodBinding {
 	idx := map[string]methodBinding{}
 	claimed := map[string]string{}

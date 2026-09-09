@@ -126,14 +126,14 @@ type ValidateInputs struct {
 // whose entries contribute to a non-zero verdict alongside the pipeline
 // diagnostics.
 //
-// LintWarnings and NarrowingWarnings are advisory, exit-code-neutral lines: the
-// schema-pillar-overlap advisories for the closure's Components and Features, and
-// the narrowing-on-extend advisories accumulated while composing the closure's
-// extends chains. A caller surfaces them informationally; they never change the
-// verdict.
+// LintWarnings and NarrowingWarnings are the advisory lines: the
+// schema-pillar-overlap advisories for the closure's Components and Features,
+// and the narrowing-on-extend advisories accumulated while composing the
+// closure's extends chains. Nothing here folds them into the outcome, so they
+// are exit-code-neutral wherever they are read.
 //
-// Each field's producer is single-sourced here so every front end maps the same
-// outcome into its own diagnostics.
+// Each field's producer is single-sourced here, so the outcome is assembled in
+// one place rather than in each caller.
 type ValidateResult struct {
 	ClosureExtendsErrors []error
 	PillarError          error
