@@ -108,20 +108,14 @@ func (s *Server) runTier4Validation(ctx context.Context, releasePath, file strin
 	// Release's Aggregate, so the notice reaches the author while the Aggregate is
 	// open rather than on whatever document they happen to be editing.
 	//
-	// They publish at warning severity and never as errors. The daemon reaches no
-	// verdict to contribute to, and the marker's own severity is named in the
-	// message text, so mapping a recorded severity onto the editor's error tier
-	// would put a policy stance in the editor that the product deliberately leaves
-	// to a build-time dial. A withdrawn pin surfaces without the editor asserting
-	// the buffer is broken.
+	// The shape is closureAdvisoryDiagnostic's, shared with the other advisory
+	// classes below. One reason is this class's alone: the marker's own severity is
+	// named in the message text, so mapping a recorded severity onto the editor's
+	// error tier would put a policy stance in the editor that the product
+	// deliberately leaves to a build-time dial.
 	var deprecationDiags []Diagnostic
 	for _, f := range lf.DeprecationFindings() {
-		deprecationDiags = append(deprecationDiags, Diagnostic{
-			Line:     1,
-			Column:   1,
-			Severity: editorSeverityWarning,
-			Message:  "Dependencies: " + f.Notice(),
-		})
+		deprecationDiags = append(deprecationDiags, closureAdvisoryDiagnostic(f.Notice()))
 	}
 
 	// Quiet load — pins only, no drift verify, and no lockfile reaches the
@@ -359,7 +353,56 @@ func (s *Server) runTier4Validation(ctx context.Context, releasePath, file strin
 		})
 	}
 
+	// The closure-scoped advisory lines: the schema-pillar overlap advisories for
+	// the closure's Components and Features, then the narrowing-on-extend
+	// advisories accumulated while composing its extends chains. Both are
+	// exit-code-neutral, so neither contributes to a verdict.
+	//
+	// They are closure-level rather than positioned, and that is a fact about the
+	// findings rather than a limitation here: each names a catalog entity by URI,
+	// which is the only locator a registry-pinned entity has, so there is no path
+	// into the edited document for a walk to recover. Every other class naming an
+	// entity instead of a position sits on the same footing.
+	//
+	// The order is the shared validation core's own, where the two accessors are
+	// read together after the input-kind check. Taking it from there rather than
+	// choosing one here is what keeps the daemon from becoming a second opinion
+	// about which advisory was decided first.
+	for _, w := range vr.LintWarnings {
+		diags = append(diags, closureAdvisoryDiagnostic(w))
+	}
+	for _, w := range vr.NarrowingWarnings {
+		diags = append(diags, closureAdvisoryDiagnostic(w))
+	}
+
 	return diags
+}
+
+// closureAdvisoryDiagnostic shapes one exit-code-neutral, closure-level advisory
+// into the entry the editor publishes.
+//
+// Every class reaching it names a catalog entity rather than a position in the
+// edited document — a withdrawn pin, a Component declaring one property name in
+// two pillars, a child replacing a constraint it inherited — so none has a
+// position to lose, and all sit at the head of the file behind the same prefix the
+// other entity-scoped classes use. The text is the producer's own, carried
+// verbatim, so an advisory reads the same here as it does on a terminal.
+//
+// They publish at the warning tier and never as errors. The daemon reaches no
+// verdict for them to contribute to, and an advisory published as an error would
+// have the editor assert the buffer is broken over authoring the compiler
+// deliberately permits.
+//
+// It is one function rather than the same literal written out per class so that a
+// class added later cannot acquire a different position, prefix or tier simply by
+// being written again.
+func closureAdvisoryDiagnostic(text string) Diagnostic {
+	return Diagnostic{
+		Line:     1,
+		Column:   1,
+		Severity: editorSeverityWarning,
+		Message:  "Dependencies: " + text,
+	}
 }
 
 // analyzerErrorsToDiagnostics maps the analyzer's structured
