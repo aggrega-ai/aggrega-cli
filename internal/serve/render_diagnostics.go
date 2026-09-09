@@ -98,6 +98,20 @@ func keyPathSpan(doc *yaml.Node, idx yamlpos.LineIndex, keyPath string) (line, c
 // than a registered halting condition, so there is no short code for a reader to
 // quote and nothing on the halting-conditions page for a pointer to resolve to —
 // see ConditionCodes, where that division is stated for every layer.
+//
+// # The structured path is BOTH resolved and published
+//
+// The path is walked to a position, and it is also carried on the entry. The two
+// are not one fact twice: the position says where the entry is drawn, and the path
+// says what the producer named, which is what a client needs to re-anchor an entry
+// after an edit or to group entries by the element they concern. Publishing only
+// the position would discard a coordinate the producer computed; publishing only
+// the path would leave every advisory at the head of the file.
+//
+// The remedy and the version-impact verdict are carried through for the same
+// reason the code is: they mean the same thing on both sides of this boundary, and
+// the message formatter folds neither of them into its text, so an entry that
+// dropped them would report less than the advisory said.
 func advisoryToDiagnostic(d renderer.Diagnostic, doc *yaml.Node, idx yamlpos.LineIndex) Diagnostic {
 	var keyPath string
 	if d.Location != nil {
@@ -112,6 +126,9 @@ func advisoryToDiagnostic(d renderer.Diagnostic, doc *yaml.Node, idx yamlpos.Lin
 		Severity:       editorSeverity(d.Severity),
 		Message:        renderer.RenderDiagnosticText(d),
 		ConditionCodes: classCode(d.Code),
+		Classification: d.Classification,
+		Suggest:        d.Suggest,
+		KeyPath:        keyPath,
 	}
 }
 

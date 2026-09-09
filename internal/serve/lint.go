@@ -43,6 +43,13 @@ import (
 // same fallback the render advisories use, so a client's handling of a positionless
 // entry does not depend on which layer produced it. The end position is carried
 // only alongside a start, since a span with no start locates nothing.
+//
+// The remedy, the version-impact verdict and the rule's structured coordinate are
+// carried through rather than left behind. Each is a fact the rule computed and
+// none of them is recoverable from the message, so a surface that dropped them
+// would answer a narrower question than the one the rules answered — and the
+// remedy is the part a reader acts on, so its absence costs the reader a second
+// diagnosis of a finding this surface had already explained.
 func conventionDiagnostic(f lintops.Finding) Diagnostic {
 	identity := f.RuleID
 	if identity == "" {
@@ -54,14 +61,19 @@ func conventionDiagnostic(f lintops.Finding) Diagnostic {
 		Severity:       editorSeverity(f.Severity),
 		Message:        f.Message,
 		ConditionCodes: classCode(identity),
+		Classification: f.Classification,
+		Suggest:        f.Suggest,
 	}
-	if f.Location != nil && f.Location.Line > 0 {
-		d.Line = f.Location.Line
-		if f.Location.Column > 0 {
-			d.Column = f.Location.Column
+	if f.Location != nil {
+		d.KeyPath = f.Location.KeyPath
+		if f.Location.Line > 0 {
+			d.Line = f.Location.Line
+			if f.Location.Column > 0 {
+				d.Column = f.Location.Column
+			}
+			d.EndLine = f.Location.EndLine
+			d.EndColumn = f.Location.EndColumn
 		}
-		d.EndLine = f.Location.EndLine
-		d.EndColumn = f.Location.EndColumn
 	}
 	return d
 }
@@ -201,6 +213,18 @@ type lintFileFindings struct {
 // readable as a corpus rather than only as an empty list: no findings over
 // forty entities and no findings over none are different answers.
 //
+// Findings, Errors, Warnings and Infos are the run's own counts, one per severity
+// plus the total, derived by the lint operation from the findings it produced and
+// passed through here rather than recounted. They are carried for the same reason
+// Checked is: a caller reading a corpus-sized answer wants the shape of it before
+// it walks the groups, and a caller that only wants the shape need not walk them at
+// all. Recounting them at this boundary would be a second derivation that agrees
+// with the operation's until one of them is edited.
+//
+// They are spelled as the lint operation's own summary spells them, so one count
+// keeps one name wherever it is read. Checked is the exception and keeps its own
+// spelling because it is a key on this wire that a client already binds to.
+//
 // Files carries the findings grouped by the document each concerns, ordered by
 // path, so two runs over one workspace answer in the same order. It is never null.
 //
@@ -218,11 +242,15 @@ type lintFileFindings struct {
 // diagnostics is a successful response. An error envelope is reserved for a run
 // that could not produce a verdict at all.
 type lintResult struct {
-	Entity  string             `json:"entity,omitempty"`
-	Release string             `json:"release,omitempty"`
-	Checked int                `json:"checked"`
-	Files   []lintFileFindings `json:"files"`
-	Halted  bool               `json:"halted"`
+	Entity   string             `json:"entity,omitempty"`
+	Release  string             `json:"release,omitempty"`
+	Checked  int                `json:"checked"`
+	Findings int                `json:"findings"`
+	Errors   int                `json:"errors"`
+	Warnings int                `json:"warnings"`
+	Infos    int                `json:"infos"`
+	Files    []lintFileFindings `json:"files"`
+	Halted   bool               `json:"halted"`
 }
 
 // resolveEntityParam turns the `entity` request parameter into the absolute path
@@ -314,11 +342,15 @@ func (s *Server) dispatchLint(ctx context.Context, req *jsonRPCRequest) error {
 	}
 	report := collect.Report()
 	return s.writeResult(ctx, req.ID, lintResult{
-		Entity:  entity,
-		Release: release,
-		Checked: report.Summary.EntitiesChecked,
-		Files:   s.lintFindingsByFile(report.Findings),
-		Halted:  runErr != nil,
+		Entity:   entity,
+		Release:  release,
+		Checked:  report.Summary.EntitiesChecked,
+		Findings: report.Summary.Findings,
+		Errors:   report.Summary.Errors,
+		Warnings: report.Summary.Warnings,
+		Infos:    report.Summary.Infos,
+		Files:    s.lintFindingsByFile(report.Findings),
+		Halted:   runErr != nil,
 	})
 }
 

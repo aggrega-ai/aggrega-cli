@@ -429,6 +429,12 @@ func resolveBuildOnInspect(flag *bool, cfgValue bool) bool {
 // ShortCode and CodeDescription are what the entry carries for the READER rather
 // than for the program, and they are documented on [ConditionCodes], where the
 // division between the three keys is stated once.
+//
+// Classification, Suggest and KeyPath are the facts a producer computed that the
+// message does not contain, and they are documented at their declarations below.
+// They are keys rather than sentences folded into Message for the reason Message
+// itself is carried verbatim: a fact a program can read is worth more than the
+// same fact spelled inside prose a program would have to parse.
 type Diagnostic struct {
 	Line     int    `json:"line"`
 	Column   int    `json:"column"`
@@ -439,6 +445,35 @@ type Diagnostic struct {
 	// entry itself rather than nested under one of their own, and so the only way
 	// to fill them is a constructor that decides all three together.
 	ConditionCodes
+
+	// Classification is the version-impact verdict the entry reports, when the
+	// diagnostic it was projected from carried one. It is the producer's verdict
+	// passed through rather than recomputed here: deciding what a change does to a
+	// version is a rule's judgement, and a second derivation at this boundary
+	// would be a copy that agrees until it does not.
+	Classification string `json:"classification,omitempty"`
+
+	// Suggest is the remediation the producer offered alongside the diagnostic,
+	// carried through as the producer worded it.
+	//
+	// It is the part of a finding a reader ACTS on, so dropping it leaves a client
+	// showing what is wrong and withholding what to do — which makes the reader
+	// diagnose the same finding a second time on a surface that already had the
+	// answer. It is absent where the producer offered no hint, which is a fact
+	// about that producer rather than a gap here.
+	Suggest string `json:"suggest,omitempty"`
+
+	// KeyPath is the dotted path into the authored document that the diagnostic's
+	// own location carried, when its producer located the issue structurally
+	// rather than by line.
+	//
+	// It is the producer's coordinate, and it answers a different question from
+	// the position keys above: those say where the entry is DRAWN, this says what
+	// the producer NAMED. A client that re-anchors an entry after an edit, or
+	// groups entries by the document element they concern, needs the coordinate
+	// and cannot recover it from a line. An entry whose producer carried no such
+	// location — a Go condition reported through this wire — carries none.
+	KeyPath string `json:"keyPath,omitempty"`
 
 	Source    string `json:"source"`
 	EndLine   int    `json:"end_line,omitempty"`

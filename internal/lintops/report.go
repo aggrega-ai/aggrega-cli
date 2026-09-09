@@ -23,9 +23,17 @@ type FindingLocation struct {
 	KeyPath string `json:"keyPath,omitempty"`
 }
 
-// Finding is one lint finding in the shape every surface renders it in — the
-// command line, the tool interface, and any later request/response surface —
-// so a finding has one field vocabulary rather than one per surface.
+// Finding is one lint finding as the operation produces it. It is the single
+// declared shape of a finding and the only place a finding's field vocabulary
+// is decided, so a surface that projects findings onto a wire of its own
+// projects from here and the facts a rule computed have one set of names at
+// their source.
+//
+// That is a statement about this type and not a claim about any surface. What a
+// given projection carries is a property of that projection, asserted where the
+// projection lives — because a sentence here promising that every surface
+// carries every field would be unfalsifiable from this package and would read
+// as a warrant for the next projection that quietly drops one.
 //
 // Message is the producing rule's diagnostic text carried through byte for byte.
 // It is never re-worded, truncated, or re-wrapped on the way here: a surface
