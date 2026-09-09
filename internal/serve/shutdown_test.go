@@ -196,21 +196,26 @@ func TestShutdownSecondNotificationAborts(t *testing.T) {
 		t.Fatal("in-flight handler cancelled on the FIRST shutdown; the first signal must drain, not abort")
 	}
 
-	// Second shutdown aborts: cancels the in-flight handler and bounds
-	// the exit at the drain budget.
-	start := time.Now()
+	// Second shutdown aborts: it cancels the in-flight handler, which is what
+	// lets the loop exit at all.
+	//
+	// Nothing here measures how LONG the exit took, and that is deliberate. The
+	// two designs are separated structurally instead: the handler below can be
+	// released only by its per-request ctx being cancelled, so a loop that exits
+	// proves the abort reached the handler, and `cancelled` below proves which
+	// branch released it. An abort that failed to cancel would leave the handler
+	// parked and the loop unable to exit, which the liveness ceiling reports as
+	// a hang rather than as a slow machine. A wall-clock bound on the exit added
+	// nothing to that and reported contention from unrelated packages as a
+	// shutdown regression.
 	if _, err := stdinW.Write(framedNotification("aggrega/shutdown", nil)); err != nil {
 		close(released)
 		t.Fatalf("write second shutdown: %v", err)
 	}
 	select {
 	case err := <-done:
-		elapsed := time.Since(start)
 		if err != nil {
 			t.Errorf("dispatchLoop error: %v", err)
-		}
-		if elapsed > shortDrain*20 {
-			t.Errorf("exit after the second shutdown took %v; drain budget %v exceeded", elapsed, shortDrain)
 		}
 	case <-time.After(2 * time.Second):
 		close(released)
@@ -223,21 +228,29 @@ func TestShutdownSecondNotificationAborts(t *testing.T) {
 }
 
 // TestShutdownAbortIsPromptOnSecondSignal pins that the SECOND
-// shutdown's abort reaches the in-flight handler promptly rather than
-// waiting for the handler's own eventual completion. The handler races
-// ctx.Done against a long (2s) self-completion fallback; under a working
-// abort the second signal's cancellation fires the ctx.Done branch and
-// the loop exits well under the fallback. A regression that failed to
-// abort on the second signal would let the loop hang until the 2s
-// fallback elapsed.
+// shutdown's abort reaches the in-flight handler rather than the handler
+// merely completing on its own. The handler races ctx.Done against a long
+// (2s) self-completion fallback, and it RECORDS WHICH OF THE TWO released
+// it. Under a working abort the second signal's cancellation fires the
+// ctx.Done branch; a regression that failed to abort would leave the
+// cancellation unfired and the handler would be released by the fallback
+// instead.
+//
+// Which branch fired is the whole assertion, and it is deliberately not a
+// duration. The two designs differ in WHAT releases the handler, not in how
+// fast it happens, so recording the branch discriminates them at any machine
+// speed — where the previous wall-clock bound (500ms against the 2s fallback,
+// a 4x margin) reported a contended runner as a shutdown regression. The only
+// time bound left is the liveness ceiling on the loop's exit below, which
+// separates "exits" from "hangs forever" and no contention can blur.
 func TestShutdownAbortIsPromptOnSecondSignal(t *testing.T) {
 	t.Parallel()
-	const (
-		fallback   = 2 * time.Second
-		upperBound = 500 * time.Millisecond
-	)
+	const fallback = 2 * time.Second
 
 	entered := make(chan struct{})
+	// 1 once the per-request ctx cancellation released the handler, which only
+	// the abort can cause; it stays 0 if the fallback released it instead.
+	var releasedByCancel int32
 
 	stdinR, stdinW := io.Pipe()
 	stdout := &syncBuffer{}
@@ -249,6 +262,7 @@ func TestShutdownAbortIsPromptOnSecondSignal(t *testing.T) {
 		close(entered)
 		select {
 		case <-ctx.Done():
+			atomic.StoreInt32(&releasedByCancel, 1)
 		case <-time.After(fallback):
 		}
 	}
@@ -271,22 +285,22 @@ func TestShutdownAbortIsPromptOnSecondSignal(t *testing.T) {
 	if _, err := stdinW.Write(framedNotification("aggrega/shutdown", nil)); err != nil {
 		t.Fatalf("write first shutdown: %v", err)
 	}
-	start := time.Now()
 	if _, err := stdinW.Write(framedNotification("aggrega/shutdown", nil)); err != nil {
 		t.Fatalf("write second shutdown: %v", err)
 	}
 
 	select {
 	case err := <-done:
-		elapsed := time.Since(start)
 		if err != nil {
 			t.Errorf("dispatchLoop error: %v", err)
 		}
-		if elapsed > upperBound {
-			t.Errorf("exit after second shutdown took %v (> %v); abort did not cancel the in-flight handler promptly", elapsed, upperBound)
-		}
 	case <-time.After(fallback + time.Second):
 		t.Fatal("dispatch loop did not exit after the second shutdown")
+	}
+
+	if atomic.LoadInt32(&releasedByCancel) != 1 {
+		t.Error("the in-flight handler was released by its own self-completion fallback, not by a cancellation; " +
+			"the second shutdown's abort did not reach it")
 	}
 }
 

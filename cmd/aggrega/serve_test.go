@@ -219,8 +219,22 @@ func readOneResponse(t *testing.T, r io.Reader, deadline time.Duration) map[stri
 		}
 		return r.body
 	case <-time.After(deadline):
-		t.Fatalf("readOneResponse: no response within the liveness ceiling of %s — "+
-			"the daemon is hung or deadlocked; this bound is not a performance budget", deadline)
+		// WHICH of the two situations this is, is read at the moment of expiry
+		// rather than asserted from the duration. A ceiling derived from a
+		// nearly-exhausted runner deadline expires because the PACKAGE ran out
+		// of time, not because this daemon stopped answering, and reporting
+		// that as a hang sends a reader to debug working code. The runner's own
+		// remaining time is what separates them, and it is only knowable here.
+		if dl, ok := t.Deadline(); ok && time.Until(dl) < 30*time.Second {
+			t.Fatalf("readOneResponse: no response within %s, but the test runner's own deadline "+
+				"is also about to expire — this package ran out of time before the daemon was shown "+
+				"to be unresponsive, so this is NOT evidence of a hang. Nothing here is a performance "+
+				"budget: look at what made the package slow, not at the daemon.", deadline)
+			return nil
+		}
+		t.Fatalf("readOneResponse: no response within the liveness ceiling of %s, with the test "+
+			"runner's deadline still far off — the daemon is hung or deadlocked; this bound is not "+
+			"a performance budget", deadline)
 		return nil
 	}
 }
