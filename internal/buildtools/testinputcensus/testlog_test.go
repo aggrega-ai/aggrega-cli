@@ -20,15 +20,24 @@ import (
 // writes, so a fixture cannot accidentally exercise the missing-marker path.
 func writeLog(t *testing.T, entries ...string) string {
 	t.Helper()
-	p := filepath.Join(t.TempDir(), "testlog.txt")
+	return writeLogAt(t, filepath.Join(t.TempDir(), "testlog.txt"), entries...)
+}
+
+// writeLogAt is writeLog at a caller-chosen path, for the cases that need the log
+// to sit exactly where the census will look for it.
+func writeLogAt(t *testing.T, path string, entries ...string) string {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("making the log fixture's directory: %v", err)
+	}
 	body := logMagic + "\n"
 	for _, e := range entries {
 		body += e + "\n"
 	}
-	if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatalf("writing the log fixture: %v", err)
 	}
-	return p
+	return path
 }
 
 func TestClassifyBothDirections(t *testing.T) {
@@ -290,6 +299,150 @@ func TestReachComponentsNameTheCorpusNotTheFile(t *testing.T) {
 				t.Errorf("reach components = %q, want %q", got, tc.want)
 			}
 		})
+	}
+}
+
+// TestTestLogPathMirrorsThePackageDirectory pins the derivation the collecting
+// shim holds the other half of.
+//
+// The injectivity row is the one that matters and it is why this test exists: the
+// obvious simplification is to flatten the package path into a single filename by
+// replacing separators, and that is not injective — two different packages can
+// flatten to one name, share one log file, truncate each other, and leave the
+// census reading one package's inputs as the other's. That is a silently WRONG
+// measurement, which no refusal anywhere else would catch, so the property is
+// asserted here rather than left to a comment.
+func TestTestLogPathMirrorsThePackageDirectory(t *testing.T) {
+	root := t.TempDir()
+	logRoot := filepath.Join(root, "logs")
+
+	t.Run("the log sits under the log root and is named for the toolchain's file", func(t *testing.T) {
+		pkg := filepath.Join(root, "mod", "pkg")
+		if err := os.MkdirAll(pkg, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		got := testLogPath(logRoot, pkg)
+		if !strings.HasPrefix(got, logRoot+string(filepath.Separator)) {
+			t.Errorf("the log path %q should sit under the log root %q", got, logRoot)
+		}
+		if filepath.Base(got) != "testlog.txt" {
+			t.Errorf("the log should be named testlog.txt, got %q", filepath.Base(got))
+		}
+	})
+
+	t.Run("two packages a flattened name would collide are kept apart", func(t *testing.T) {
+		// These two paths differ only in where the separator falls, so any scheme
+		// substituting a single character for the separator maps them to one name.
+		a := filepath.Join(root, "a", "b_c")
+		b := filepath.Join(root, "a_b", "c")
+		for _, d := range []string{a, b} {
+			if err := os.MkdirAll(d, 0o755); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if testLogPath(logRoot, a) == testLogPath(logRoot, b) {
+			t.Fatalf("two distinct package directories map to one log path: %q", testLogPath(logRoot, a))
+		}
+	})
+}
+
+// TestCensusPackageTellsAnUnmeasuredPackageFromAMeasuredZero is the fail-loud
+// contract, asserted in both directions because only the pair pins it.
+//
+// A package that ran and read nothing writes a log with the marker line and no
+// entries, which is a MEASURED zero. A package whose log is absent was not
+// measured at all. Reading the second as the first would report a confident zero
+// for a package nobody looked at — and since the gate compares sets, a carrier
+// reporting zero reads as a carrier that stopped carrying, which moves no exit
+// code. A test asserting only the zero case would pass on an implementation that
+// makes exactly that mistake.
+func TestCensusPackageTellsAnUnmeasuredPackageFromAMeasuredZero(t *testing.T) {
+	tree := t.TempDir()
+	logRoot := filepath.Join(tree, "logs")
+	modRoot := filepath.Join(tree, "mod")
+	pkgDir := filepath.Join(modRoot, "pkg")
+	if err := os.MkdirAll(pkgDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	p := listedPackage{ImportPath: "example.test/mod/pkg", Dir: pkgDir, Root: modRoot}
+	o := runOpts{treeRoot: tree}
+
+	t.Run("an absent log is an error naming the package, never an empty result", func(t *testing.T) {
+		got := censusPackage(p, logRoot, o)
+		if got.Err == nil {
+			t.Fatal("censusPackage reported a package whose log was never written as measured")
+		}
+		if !strings.Contains(got.Err.Error(), p.ImportPath) {
+			t.Errorf("the error should name the package it could not measure, got %v", got.Err)
+		}
+		if !strings.Contains(got.Err.Error(), "NOT measured") {
+			t.Errorf("the error should say the package was not measured, got %v", got.Err)
+		}
+		// The refusal has to travel, not merely be returned: unmeasured is what
+		// the report and the recording path both read.
+		problems := unmeasured([]modResult{{Rel: "mod", Packages: []pkgResult{got}}})
+		if len(problems) != 1 {
+			t.Fatalf("unmeasured problems = %d, want 1 — the refusal did not reach the gate", len(problems))
+		}
+	})
+
+	t.Run("a marker-only log is a measured zero", func(t *testing.T) {
+		writeLogAt(t, testLogPath(logRoot, pkgDir))
+		got := censusPackage(p, logRoot, o)
+		if got.Err != nil {
+			t.Fatalf("a log holding only the marker line should measure as zero, got %v", got.Err)
+		}
+		if len(got.SharedTree) != 0 || got.Inputs != 0 {
+			t.Errorf("shared=%v inputs=%d, want no reads at all", got.SharedTree, got.Inputs)
+		}
+	})
+
+	t.Run("a shared read in the collected log is classified", func(t *testing.T) {
+		writeLogAt(t, testLogPath(logRoot, pkgDir), "open "+filepath.Join(tree, "sibling", "golden.json"))
+		got := censusPackage(p, logRoot, o)
+		if got.Err != nil {
+			t.Fatalf("classifying the collected log: %v", got.Err)
+		}
+		if len(got.SharedTree) != 1 {
+			t.Fatalf("shared reads = %v, want the one read outside the module root", got.SharedTree)
+		}
+	})
+}
+
+// TestReportKeepsAnUnmeasuredCarrierApartFromAStaleOne pins the reporting half of
+// the same contract. Both an unmeasured package and a measured-clean one carry
+// zero, and the recorded set's two directions are asymmetric — growth fails,
+// shrinkage is only reported — so calling an unmeasured carrier stale would
+// invite deleting the record entry that this run's refusal was protecting.
+func TestReportKeepsAnUnmeasuredCarrierApartFromAStaleOne(t *testing.T) {
+	results := []modResult{{
+		Rel:  "m",
+		Root: "/w/m",
+		Packages: []pkgResult{
+			{ImportPath: "m/unread", Err: errors.New("no test log was collected for m/unread")},
+			{ImportPath: "m/clean", Inputs: 3},
+		},
+	}}
+	expect := set(recorded("m", false, "m/unread", "m/clean"))
+
+	var buf bytes.Buffer
+	err := report(&buf, "/w", results, expect, false, "m")
+	if err == nil {
+		t.Fatal("a census that could not read part of its scope must not pass")
+	}
+	out := buf.String()
+	if !strings.Contains(out, "m/unread") {
+		t.Fatalf("the report should name the package it could not read:\n%s", out)
+	}
+	if !strings.Contains(out, "were NOT measured by this run") {
+		t.Errorf("the report should say the unread carrier was not measured:\n%s", out)
+	}
+	// m/clean WAS read and found to carry nothing, so it is legitimately stale;
+	// m/unread must not appear in that same sentence.
+	for _, line := range strings.Split(out, "\n") {
+		if strings.Contains(line, "no longer read a shared input") && strings.Contains(line, "m/unread") {
+			t.Errorf("an unmeasured carrier was reported as having stopped carrying:\n  %s", line)
+		}
 	}
 }
 

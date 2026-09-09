@@ -35,23 +35,45 @@
 // test that declares its root once and builds several escaping paths from it by
 // concatenation scores as one site, or as none.
 //
-// So this command asks the toolchain instead. Each test package runs once with
-// caching defeated and with -test.testlogfile, the file the toolchain itself
-// consumes to decide whether a cached result is still valid. Every file the
-// binary opened or stat'd is in there, whether the path was written as a
+// So this command asks the toolchain instead. Each test package is run once
+// with caching defeated and with -test.testlogfile, the file the toolchain
+// itself consumes to decide whether a cached result is still valid. Every file
+// the binary opened or stat'd is in there, whether the path was written as a
 // literal, concatenated, computed, or read from somewhere else entirely. The
 // classification of each entry — see classify — is transcribed from the
 // toolchain's own reading of that file, so the census has no criterion of its
 // own to get wrong.
 //
-// # What it costs, and what it therefore cannot be
+// # Where the logs come from, and what that costs
 //
-// The measurement requires the tests to run, and a cached package does not run
-// its binary and so writes no log at all. A census over a cached suite would
-// measure nothing and report a confident zero. So every package runs with the
-// cache defeated, which makes this a whole-suite execution and not a cheap
-// check: it belongs in the authoritative, deliberately-slow run, never in a
-// per-change gate.
+// The measurement requires the tests to have RUN. A cached package does not
+// execute its binary and so writes no log at all, so a census over a cached
+// suite would measure nothing and report a confident zero.
+//
+// This command does not run them. It READS the per-package logs the
+// authoritative run's own cache-defeated test leg already collected, which the
+// caller arranges by handing that leg a `go test -exec` shim that appends
+// -test.testlogfile to each test binary's arguments. The logs are a by-product
+// of an execution that was happening anyway, so the census itself costs a
+// directory scan rather than a second execution of every Go test package in the
+// tree.
+//
+// 🔴 It is still bound to the authoritative run and must not be wired into a
+// per-change gate, and the reason is no longer cost. It can only speak for
+// packages whose tests actually ran with the cache defeated, so a caller that
+// collected no logs — or collected a partial set — must be refused rather than
+// reported clean. An absent log is an UNMEASURED package, never a package that
+// read nothing; censusPackage is where that refusal lives.
+//
+// # What the caller has to get right
+//
+// The log for a package is found by name, and the name is derived from the
+// package's own directory — see testLogPath, which is the one home of that
+// derivation and states the contract the shim has to satisfy. A caller whose
+// shim keys logs differently will present the census with a directory full of
+// logs it cannot match to any package, and every package will read as
+// unmeasured: a loud refusal rather than a quiet zero, which is the direction
+// this whole command is built to fail in.
 //
 // # Scope, and what it deliberately leaves out
 //
@@ -83,9 +105,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
-	"sync"
 	"time"
 )
 
@@ -267,17 +287,14 @@ const expectationSite = "aggrega-cli/internal/buildtools/testinputcensus/expecta
 
 func main() {
 	root := flag.String("root", "", "workspace root the module paths are reported relative to (required)")
-	// Both parallelism defaults are the safe floor rather than a fast one. Each
-	// test package is its own process holding its own copy of whatever the tests
-	// load, so the two axes MULTIPLY into memory, and running a whole suite at
-	// the machine's core count has taken this container down. A caller that
-	// budgets memory passes its own numbers; a caller that forgets gets a slow
-	// census rather than an unsafe one.
-	jobs := flag.Int("jobs", 2, "how many test packages to run at once")
-	parallel := flag.Int("parallel", 2, "how many tests each package may run at once (go test -parallel)")
-	timeout := flag.String("timeout", "30m", "per-package bound that tells a stuck package from a slow one; deliberately above the suite's own bound, because a census runs a package at lower in-package parallelism and the same package therefore takes longer here")
+	// Required rather than defaulted to a temporary directory, because a default
+	// would point at an empty directory and every package would then read as
+	// unmeasured — a refusal whose cause is invisible from its message. There is
+	// no parallelism knob any more: this command runs nothing, so the two axes
+	// that used to multiply into memory belong to the test leg that collects the
+	// logs and are set there.
+	logDir := flag.String("log-dir", "", "directory holding the per-package test logs the caller's test leg collected (required)")
 	reportOnly := flag.Bool("report-only", false, "print the census and exit 0 even when the carrier set has grown")
-	keepLogs := flag.String("keep-logs", "", "directory to write the collected test logs into and leave behind, for inspection")
 	cacheDefeated := flag.String("cache-defeated", "", "comma-separated module paths the caller already runs with caching defeated; when empty, the census says the enrolment was not supplied rather than implying none")
 	// Writing is deliberately NOT gating: it accepts the measurement rather than
 	// judging it, so it reports what moved and exits 0. It refuses when part of the
@@ -291,11 +308,8 @@ func main() {
 	opts := runOpts{
 		root:             *root,
 		modules:          modules,
-		jobs:             *jobs,
-		parallel:         *parallel,
-		timeout:          *timeout,
+		logDir:           *logDir,
 		reportOnly:       *reportOnly,
-		keepLogs:         *keepLogs,
 		cacheDefeated:    *cacheDefeated,
 		writeExpectation: *writeExpectation,
 	}
@@ -364,13 +378,11 @@ type runOpts struct {
 	root string
 	// treeRoot is the absolute form of root, resolved once so every
 	// classification uses the same string.
-	treeRoot         string
-	modules          []string
-	jobs             int
-	parallel         int
-	timeout          string
+	treeRoot string
+	modules  []string
+	// logDir holds the per-package test logs the caller's test leg collected.
+	logDir           string
 	reportOnly       bool
-	keepLogs         string
 	cacheDefeated    string
 	writeExpectation bool
 }
@@ -389,23 +401,20 @@ func run(o runOpts) error {
 		// pass: it would report zero growth over an empty corpus.
 		return errors.New("no -module given: a census with no modules certifies nothing")
 	}
-	if o.jobs < 1 {
-		return fmt.Errorf("-jobs must be at least 1, got %d", o.jobs)
+	if o.logDir == "" {
+		return errors.New("-log-dir is required: the census reads the per-package test logs the caller's test leg collected, and it runs no tests of its own")
 	}
-	if o.parallel < 1 {
-		return fmt.Errorf("-parallel must be at least 1, got %d", o.parallel)
+	// A missing directory is refused HERE rather than being left to surface as a
+	// missing log per package. The two conditions have different causes — a
+	// caller that collected nothing versus a caller whose shim keyed one log
+	// differently — and reporting the first as a hundred instances of the second
+	// buries it.
+	if fi, err := os.Stat(o.logDir); err != nil {
+		return fmt.Errorf("the collected test logs are not readable at %s, so nothing can be measured: %w", o.logDir, err)
+	} else if !fi.IsDir() {
+		return fmt.Errorf("-log-dir must be a directory holding one test log per test package, and %s is not one", o.logDir)
 	}
-
-	logRoot := o.keepLogs
-	if logRoot == "" {
-		logRoot, err = os.MkdirTemp("", "testinputcensus-")
-		if err != nil {
-			return err
-		}
-		defer os.RemoveAll(logRoot)
-	} else if err := os.MkdirAll(logRoot, 0o755); err != nil {
-		return err
-	}
+	logRoot := o.logDir
 
 	workspaceUse, err := workspaceUseSet(absRoot)
 	if err != nil {
@@ -511,26 +520,52 @@ func censusModule(absRoot, module string, workspaceUse map[string]bool, logRoot 
 		return res
 	}
 
-	modLogDir := filepath.Join(logRoot, strings.ReplaceAll(res.Rel, string(filepath.Separator), "_"))
-	if err := os.MkdirAll(modLogDir, 0o755); err != nil {
-		res.Err = err
-		return res
-	}
-
+	// Sequential, and not because ordering matters: this is a file read and a
+	// path walk per package now, where it used to be a test binary per package.
+	// The fan-out that used to be here was bounding memory across concurrent test
+	// processes, and there are none left to bound.
 	res.Packages = make([]pkgResult, len(pkgs))
-	sem := make(chan struct{}, o.jobs)
-	var wg sync.WaitGroup
 	for i, p := range pkgs {
-		wg.Add(1)
-		go func(i int, p listedPackage) {
-			defer wg.Done()
-			sem <- struct{}{}
-			defer func() { <-sem }()
-			res.Packages[i] = censusPackage(dir, res.Workspace, p, filepath.Join(modLogDir, strconv.Itoa(i)+".log"), o)
-		}(i, p)
+		res.Packages[i] = censusPackage(p, logRoot, o)
 	}
-	wg.Wait()
 	return res
+}
+
+// testLogPath is where the log for one test package is expected to be found. It
+// is this side of a correspondence the caller's `go test -exec` shim holds the
+// other half of, so it is the one home of the derivation here and the contract is
+// written out rather than left to be inferred from the shim.
+//
+// THE CONTRACT. The toolchain runs a test binary with its working directory set
+// to the package's own source directory, so the shim mirrors that directory's
+// PHYSICAL path — every symbolic link resolved — beneath the log root, and writes
+// "testlog.txt" in it. Three properties of that choice are load-bearing:
+//
+//   - it keys on the directory and never on the binary's name, because the
+//     toolchain names every test binary "<pkg>.test" and those collide across a
+//     real tree, which would leave one package's log overwritten by another's;
+//   - it keys on the PHYSICAL path, because a process whose working directory its
+//     parent set inherits the parent's own idea of the logical path, so the
+//     logical form would name the wrong directory entirely;
+//   - 🔴 it MIRRORS the path rather than flattening it into one filename.
+//     Flattening by separator substitution is not injective — "/a/b_c" and
+//     "/a_b/c" collapse to the same name — so two packages could share one log,
+//     each truncating the other, and this census would then read one package's
+//     inputs as the other's. That is a silently WRONG measurement rather than a
+//     missing one, and it is the only failure here that no refusal would catch.
+//     A mirrored path cannot collide because it is still a path.
+//
+// The derivation is therefore plain concatenation on both sides, with no encoding
+// for either to get wrong. The package directory the toolchain reports is
+// resolved the same way here; a path that cannot be resolved is used as given, so
+// a mismatch surfaces as a missing log, which is a refusal, rather than as a
+// silent zero.
+func testLogPath(logRoot, pkgDir string) string {
+	physical := pkgDir
+	if resolved, err := filepath.EvalSymlinks(pkgDir); err == nil {
+		physical = resolved
+	}
+	return filepath.Join(logRoot, physical, "testlog.txt")
 }
 
 func listTestPackages(dir string, workspace bool) ([]listedPackage, error) {
@@ -557,35 +592,39 @@ func listTestPackages(dir string, workspace bool) ([]listedPackage, error) {
 	return pkgs, nil
 }
 
-// censusPackage runs one test package and classifies what it read.
+// censusPackage classifies what one test package read, from the log the caller's
+// test leg collected for it. It runs nothing.
 //
-// -count=1 is not optional. A cached package does not execute its binary and so
-// writes no log, and an absent log would be indistinguishable from a package
-// that read nothing. It has a second effect worth knowing: the toolchain treats
-// an uncacheable test flag as a reason to disable caching for the run, so it
-// passes no test-log path of its own and stores no result — which is why each
-// package is invoked separately here. Every binary in one invocation would be
-// handed the SAME log path, and each opens that path with truncation, so all but
-// one package's inputs would be destroyed before they could be read.
-func censusPackage(moduleDir string, workspace bool, p listedPackage, logPath string, o runOpts) pkgResult {
+// 🔴 AN ABSENT LOG IS A REFUSAL AND NEVER AN EMPTY RESULT. This is the one
+// failure the whole command exists not to make, and the asymmetry that makes it
+// dangerous is worth spelling out: a package that ran and read nothing writes a
+// log holding the toolchain's marker line and no entries, while a package whose
+// log is missing was not measured at all. Reading the second as the first would
+// report a confident zero for a package nobody looked at — and because the gate
+// compares SETS, a carrier silently reporting zero reads as a carrier that
+// stopped carrying, which the report calls a stale record and which moves no
+// exit code. A false green, in other words, in the exact direction the recorded
+// set is asymmetric.
+//
+// So a missing log becomes this package's Err, which is the refusal path already
+// in place: unmeasured collects it, report fails on a non-empty result, and the
+// recording path refuses to record from one.
+//
+// The two states a log can be missing in are named separately, because their
+// remedies differ. Absent means the collecting test leg never ran this package —
+// a narrowed selection, an aborted leg, or a shim keying its logs by some other
+// name. Present but not a test log means something overwrote it, which classify
+// names through its marker-line check.
+func censusPackage(p listedPackage, logRoot string, o runOpts) pkgResult {
 	res := pkgResult{ImportPath: p.ImportPath, Dir: p.Dir}
 
-	// The test-binary flag goes AFTER the package argument. Put it before and the
-	// go command stops parsing its own flags at the first thing it does not
-	// recognise, swallows the package argument as an argument to the test binary,
-	// and tests the current directory instead — which fails in a way that looks
-	// like the flag is unsupported.
-	args := []string{"test", p.ImportPath, "-count=1", "-parallel", strconv.Itoa(o.parallel)}
-	if o.timeout != "" {
-		args = append(args, "-timeout", o.timeout)
-	}
-	args = append(args, "-test.testlogfile="+logPath)
-	cmd := exec.Command("go", args...)
-	cmd.Dir = moduleDir
-	cmd.Env = goEnv(workspace)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		res.Err = fmt.Errorf("running %s: %w\n%s", p.ImportPath, err, strings.TrimSpace(string(out)))
+	logPath := testLogPath(logRoot, p.Dir)
+	if _, err := os.Stat(logPath); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			res.Err = fmt.Errorf("no test log was collected for %s at %s, so it was NOT measured: either its tests did not run under the collecting test leg, or that leg keyed its log by another name", p.ImportPath, logPath)
+			return res
+		}
+		res.Err = fmt.Errorf("the test log collected for %s is not readable at %s: %w", p.ImportPath, logPath, err)
 		return res
 	}
 
@@ -778,9 +817,30 @@ func carrierTotal(e testInputExpectation) int {
 // module is the exposure SHRINKING, and failing on it would leave no way to keep
 // the record honest. It is still worth saying, because a record left wider than
 // the truth quietly buys room for the next addition.
-func reportStale(w io.Writer, rec expectedModule, measured map[string]bool) {
+//
+// 🔴 A recorded carrier the run could not MEASURE is not stale, and separating
+// the two is the whole reason unmeasured is a parameter here. Nothing looked at
+// such a package, so calling it stale would report a shrink that was never
+// observed — and it would invite dropping the record entry, which is the one
+// edit that converts this run's owed refusal into a recorded fact. The same
+// reasoning is applied to a whole module the census could not read; this is that
+// rule at package granularity, where the missing-log failure lands.
+func reportStale(w io.Writer, rec expectedModule, measured, unmeasured map[string]bool) {
+	var held []string
+	for _, c := range rec.Carriers {
+		if unmeasured[c.ImportPath] {
+			held = append(held, c.ImportPath)
+		}
+	}
+	if len(held) > 0 {
+		fmt.Fprintf(w, "      %d recorded carrier(s) were NOT measured by this run, so nothing here says they stopped carrying: %s\n",
+			len(held), strings.Join(held, ", "))
+	}
 	var gone []string
 	for _, c := range rec.Carriers {
+		if unmeasured[c.ImportPath] {
+			continue
+		}
 		if !measured[c.ImportPath] {
 			gone = append(gone, c.ImportPath)
 		}
@@ -855,13 +915,22 @@ func report(w io.Writer, absRoot string, results []modResult, expect testInputEx
 			carries[c.ImportPath] = true
 			reach[c.ImportPath] = c.Reach
 		}
+		// The packages this run could not read, kept apart from the ones it read
+		// and found clean. Both contribute zero carriers, and conflating them is
+		// what would let an unmeasured carrier read as one that stopped carrying.
+		unread := make(map[string]bool)
+		for _, p := range m.Packages {
+			if p.Err != nil {
+				unread[p.ImportPath] = true
+			}
+		}
 
 		if len(m.Packages) == 0 {
 			empty = append(empty, m.Rel)
 			// Measured, and found to carry nothing, so anything recorded for it is
 			// stale. Said rather than skipped: a module that lost its last test
 			// package is exactly the case the one-line shortcut above would hide.
-			reportStale(w, rec, carries)
+			reportStale(w, rec, carries, unread)
 			continue
 		}
 
@@ -871,6 +940,14 @@ func report(w io.Writer, absRoot string, results []modResult, expect testInputEx
 		totalOutside += outside
 		fmt.Fprintf(w, "  %-24s %d of %d test packages read shared inputs from elsewhere in the tree (%d recorded)\n",
 			m.Rel, len(carriers), len(m.Packages), len(rec.Carriers))
+		// Immediately under the count, because without it that count reads as a
+		// measurement of every package in the module. A run that could not read
+		// part of its scope refuses below; this is what keeps the line above from
+		// being quoted as a finding in the meantime.
+		if len(unread) > 0 {
+			fmt.Fprintf(w, "      %d of those %d packages could NOT be read, so the count above is over the rest and certifies nothing for them\n",
+				len(unread), len(m.Packages))
+		}
 		for _, p := range m.Packages {
 			if len(p.SharedTree) == 0 {
 				continue
@@ -890,7 +967,7 @@ func report(w io.Writer, absRoot string, results []modResult, expect testInputEx
 			added = append(added, fmt.Sprintf("%s: %s — reaches %s",
 				m.Rel, c.ImportPath, strings.Join(c.Reach, ", ")))
 		}
-		reportStale(w, rec, carries)
+		reportStale(w, rec, carries, unread)
 
 		if len(carriers) > 0 {
 			switch {
