@@ -328,7 +328,24 @@ func TestDefaultDefinitionTokenBudget(t *testing.T) {
 	// discriminates more sharply after the raise than before it, which is the
 	// property that matters — a ceiling raised to a round number with room to spare
 	// would have bought the two tools by retiring the check.
-	const ceiling = 19700
+	//
+	// It was raised a second time, for the tool that resolves a Release's
+	// dependencies, and that raise owes the same argument. The tool is the opposite
+	// of a narrow case: it is the PRECONDITION of a tool the default set already
+	// carries. A build renders only from the pins a workspace already holds, and it
+	// answers an unpinned external reference, and a drifted lockfile, by saying so
+	// and stopping — so a caller that meets either has to resolve the dependencies
+	// before its build can produce anything. Deferring it would leave the remedy for
+	// a refusal the default set can produce reachable only by a caller who already
+	// knew to go looking for it, which is the same ground the enumeration tools were
+	// admitted on.
+	//
+	// The bound is held the same way rather than relaxed: the headroom after this
+	// raise is the twelve bytes it was before, so the gate still trips on a
+	// long-tail definition creeping in and still discriminates that from ordinary
+	// drift. What the raise admits is one definition's worth of bytes, argued above;
+	// it buys no room for a second.
+	const ceiling = 22522
 	if bytesTotal > ceiling {
 		t.Errorf("default definition budget %d bytes exceeds %d; move long-tail tools to the deferred set", bytesTotal, ceiling)
 	}

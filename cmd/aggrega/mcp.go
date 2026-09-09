@@ -48,7 +48,13 @@ func runMCP(cmd *cobra.Command, args []string) error {
 		Stdout:        cmd.OutOrStdout(),
 		Stderr:        cmd.ErrOrStderr(),
 		ServerVersion: provenanceCompilerVersion(),
-		Commands:      commandSurface(cmd.Root()),
+		// Supplied for the same reason the command surface below is: the value
+		// belongs to this package and the server lives under it. Both halves of the
+		// stamp are read through the derivations this package already owns, so a
+		// lockfile a tool call writes records the same compiler and the same core
+		// plugin versions a lockfile written at a terminal records for this binary.
+		Toolchain: toolchainStamp(),
+		Commands:  commandSurface(cmd.Root()),
 	})
 }
 

@@ -35,23 +35,16 @@ type describeEntityPayload struct {
 	Definition json.RawMessage `json:"definition"`
 }
 
-// describeEntity is one entity in a Release closure summary.
-type describeEntity struct {
-	URI     string `json:"uri"`
-	Version string `json:"version,omitempty"`
-	Kind    string `json:"kind,omitempty"`
-}
-
 // describeReleasePayload is the structured payload for a Release subject: the
 // resolved Release/Manifest/Aggregate identities and the entities its catalog
 // closure reaches.
 type describeReleasePayload struct {
-	Release     string           `json:"release"`
-	Aggregate   string           `json:"aggregate"`
-	Manifest    string           `json:"manifest"`
-	Environment string           `json:"environment"`
-	EntityCount int              `json:"entity_count"`
-	Entities    []describeEntity `json:"entities"`
+	Release     string       `json:"release"`
+	Aggregate   string       `json:"aggregate"`
+	Manifest    string       `json:"manifest"`
+	Environment string       `json:"environment"`
+	EntityCount int          `json:"entity_count"`
+	Entities    []closureRef `json:"entities"`
 	// MappingDiagnostics names each Manifest mapping whose target recipe does not
 	// implement the mapped type. This tool reports on a Release rather than
 	// producing anything from it, so a fault is described alongside the closure
@@ -207,12 +200,12 @@ func (s *server) describeRelease(a describeArgs, release string) (*callToolResul
 	}
 	if detail {
 		for _, e := range resolved.Closure.Entities {
-			// The kind is rendered as an author writes it rather than as the walk
-			// recorded it, through the same translation every other surface reporting
-			// a closure applies — so one entry reads the same wherever it is read.
-			payload.Entities = append(payload.Entities, describeEntity{
-				URI: e.URI, Version: e.ResolvedVersion, Kind: compilerops.EntityKindForHint(e.KindHint),
-			})
+			// The entity axis mixes kinds, so it states none and each reference
+			// carries its own hint. The kind is rendered as an author writes it
+			// rather than as the walk recorded it, through the shared projection
+			// every tool here reports a resolved reference through — so one entry
+			// reads the same whichever tool returned it.
+			payload.Entities = append(payload.Entities, closureRefOf(e.URI, e.ResolvedVersion, "", e.KindHint))
 		}
 	}
 	return textResult(renderDescribeReleaseText(payload), payload)

@@ -61,6 +61,12 @@ var proseOnlyFailureReturns = map[string]int{
 	// The lint tool's argument refusals. Its post-run refusal carries the
 	// findings the run collected.
 	"tool_lint.go": 2,
+	// The dependency-resolution tool's pre-flight refusals — a missing release
+	// argument, an empty or blank upgrade target, the refused argument combination,
+	// and a workspace that could not be resolved. None of them ran the resolution,
+	// so none has findings. Its post-run refusal carries the resolution the run had
+	// computed, which is what makes a drift verdict readable field by field.
+	"tool_pull.go": 5,
 	// The generated command-tool surface. Its post-run failure path holds both
 	// captured streams and concatenates them into prose, so the bytes survive
 	// and the separation between output and diagnostics does not.

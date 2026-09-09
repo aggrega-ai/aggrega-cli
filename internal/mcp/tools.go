@@ -77,6 +77,7 @@ func init() {
 		curated("release-candidates", listReleasesToolSpec),
 		curated("validate", validateToolSpec),
 		curated("build", buildToolSpec),
+		curated("pull", pullToolSpec),
 		curated("inspect", describeToolSpec),
 		curated("get-schema", getSchemaToolSpec),
 		curated("explain-error", explainErrorToolSpec),

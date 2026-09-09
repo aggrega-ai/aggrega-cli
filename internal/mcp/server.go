@@ -12,6 +12,8 @@ import (
 	"io"
 	"os"
 	"sync"
+
+	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 )
 
 // Config carries the I/O streams the server reads from and writes to plus
@@ -30,6 +32,21 @@ type Config struct {
 	// connected assistant can record which server version it spoke to. An
 	// empty value reports an empty version.
 	ServerVersion string
+
+	// Toolchain is the versions a dependency resolution records into the
+	// lockfile it writes: the compiler, and each core plugin this binary
+	// carries. The command layer supplies it for the same reason it supplies
+	// the command surface — it is the only layer that can see both the
+	// binary's own identity and this server, and the halves of the stamp are
+	// derived where the version command derives them, so a lockfile written
+	// through this server records what a lockfile written at a terminal
+	// records for the same binary and the same input.
+	//
+	// A nil stamp records none. That is the honest value for a caller with no
+	// binary identity to report, and it is not the same statement as a stamp
+	// carrying an empty core-plugin list, which says the binary compiles its
+	// guests out.
+	Toolchain *lockfile.ToolchainStamp
 
 	// Commands is the command surface the long-tail command tools are derived
 	// from, in catalog order. The command layer supplies it because it is the
@@ -55,6 +72,11 @@ type server struct {
 	out           io.Writer
 	logw          io.Writer
 	serverVersion string
+
+	// toolchain is the stamp a dependency resolution driven through this
+	// server records into the lockfile it writes. Nil records none; a test
+	// that does not assert on the stamp leaves it unset.
+	toolchain *lockfile.ToolchainStamp
 
 	// startDir is where workspace resolution begins for a tool call that
 	// supplies no explicit workspace_root. Empty resolves from the process
@@ -132,6 +154,7 @@ func Run(cfg Config) error {
 		out:           stdout,
 		logw:          logw,
 		serverVersion: cfg.ServerVersion,
+		toolchain:     cfg.Toolchain,
 		commandTools:  deriveCommandTools(cfg.Commands),
 	}
 	return s.serve(stdin)

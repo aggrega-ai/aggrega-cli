@@ -149,6 +149,24 @@ func TestDeclaredSchemasStateTheArgumentRulesTheToolsEnforce(t *testing.T) {
 		{"explain-error", "no diagnostic", `{}`, false},
 		{"explain-error", "a blank diagnostic", `{"message":""}`, false},
 
+		// pull: a Release, optionally compared rather than written, or narrowed to
+		// named upgrade targets — and never both, because one writes nothing and the
+		// other rewrites the lockfile. There is deliberately no argument that
+		// re-resolves every pin at once, so the wholesale form cannot be composed
+		// here at all rather than being accepted and then refused.
+		{"pull", "a Release", `{"release":"r.yaml"}`, true},
+		{"pull", "compare only", `{"release":"r.yaml","verify":true}`, true},
+		{"pull", "named upgrade targets", `{"release":"r.yaml","upgrade_targets":["core/database"]}`, true},
+		{"pull", "comparison explicitly declined alongside targets", `{"release":"r.yaml","verify":false,"upgrade_targets":["core/database"]}`, true},
+		{"pull", "a Release with every optional argument", `{"release":"r.yaml","workspace_root":"/w","catalog_dirs":["c"],"verify":true}`, true},
+		{"pull", "no Release", `{}`, false},
+		{"pull", "a blank Release", `{"release":""}`, false},
+		{"pull", "a Release of the wrong type", `{"release":5}`, false},
+		{"pull", "comparing and upgrading together", `{"release":"r.yaml","verify":true,"upgrade_targets":["core/database"]}`, false},
+		{"pull", "an upgrade naming no target", `{"release":"r.yaml","upgrade_targets":[]}`, false},
+		{"pull", "a blank upgrade target", `{"release":"r.yaml","upgrade_targets":[""]}`, false},
+		{"pull", "upgrade targets sent as a bare string", `{"release":"r.yaml","upgrade_targets":"core/database"}`, false},
+
 		// gen-catalog: one source of guests, plus the two outputs it always
 		// needs.
 		{"gen-catalog", "every embedded guest", `{"from_embedded":true,"output_dir":"o","overlay":"v"}`, true},
@@ -301,7 +319,7 @@ func TestDeclaredSchemasStateTheArgumentRulesTheToolsEnforce(t *testing.T) {
 func TestDeclaredSchemasCoverEveryToolWithACombinationRule(t *testing.T) {
 	withCombinationRules := []string{
 		"validate", "describe", "lint", "get-schema", "gen-catalog", "attach-candidates",
-		deprecateArtifactToolName,
+		"pull", deprecateArtifactToolName,
 	}
 	s := newGuidanceServer(t)
 	for _, name := range withCombinationRules {

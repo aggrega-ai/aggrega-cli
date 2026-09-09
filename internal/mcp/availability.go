@@ -88,6 +88,7 @@ func OperationAvailability() map[string]opsurface.OperationAvailability {
 var curatedToolNames = map[string][]string{
 	"validate":               {"validate"},
 	"build":                  {"build"},
+	"pull":                   {"pull"},
 	"inspect":                {"describe"},
 	"get-schema":             {"get-schema"},
 	"plugin-gen-catalog":     {"gen-catalog"},
