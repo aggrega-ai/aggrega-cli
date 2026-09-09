@@ -84,6 +84,11 @@ type pluginRemoveConfig struct {
 // the result into the sentence a terminal expects. The operation halts loudly when
 // the type is unknown or when the query matches no entry, so a removal reported
 // here is never a silent no-op.
+//
+// The sentence carries how far the write reached, for the reason an addition's
+// does: a cli command is removed from the machine-wide file by default, so a
+// reader standing in one workspace would otherwise take a change every workspace
+// on the machine sees for a local one.
 func pluginRemoveRun(cfg pluginRemoveConfig) error {
 	res, err := pluginops.Remove(cfg.ws, pluginops.RemoveOptions{
 		Socket:    cfg.Socket,
@@ -94,6 +99,7 @@ func pluginRemoveRun(cfg pluginRemoveConfig) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(cfg.Out, "Removed %s plugin %q from %s\n", res.Socket, res.Query, res.ConfigPath)
+	fmt.Fprintf(cfg.Out, "Removed %s plugin %q from %s (%s)\n",
+		res.Socket, res.Query, res.ConfigPath, pluginWriteReach(res.ConfigIsMachineWide))
 	return nil
 }

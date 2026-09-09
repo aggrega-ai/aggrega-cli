@@ -122,12 +122,18 @@ type pluginAddConfig struct {
 // reaches; this translates the command's flags into that layer's options and turns
 // the result into the sentence a terminal expects. Which field the result filled
 // is what says what landed — a bare version-pinned identity for a config socket, an
-// oci:// artifact identity for a provider binding — so the sentence is chosen from
-// the answer rather than re-derived from the arguments.
+// oci:// artifact identity for a provider binding, a pinned reference for a
+// command extension — so the sentence is chosen from the answer rather than
+// re-derived from the arguments.
 //
-// The cli type prints nothing here: installing a command extension is performed by
-// the installer this command supplies, which reports the commands it registered as
-// part of doing so, and a second sentence would announce the same install twice.
+// Every sentence carries how far the write reached, because the file a mutation
+// lands in is not something a reader should have to recognise from its path.
+//
+// The command-extension sentence is the short one, and deliberately: the installer
+// this command supplies has already named the reference it pinned, the commands it
+// registered and the file it wrote, so restating those would announce one install
+// twice. What the installer cannot report is the reach, which the operation
+// computes and only its result carries — so that is what is added here.
 func pluginAddRun(ctx context.Context, cfg pluginAddConfig) error {
 	res, err := pluginops.Add(ctx, cfg.ws, pluginops.AddOptions{
 		Socket:             cfg.Socket,
@@ -147,9 +153,13 @@ func pluginAddRun(ctx context.Context, cfg pluginAddConfig) error {
 	}
 	switch {
 	case res.URI != "":
-		fmt.Fprintf(cfg.Out, "Bound capability %q to %s in %s\n", res.Capability, res.URI, res.ConfigPath)
+		fmt.Fprintf(cfg.Out, "Bound capability %q to %s in %s (%s)\n",
+			res.Capability, res.URI, res.ConfigPath, pluginWriteReach(res.ConfigIsMachineWide))
 	case res.Identity != "":
-		fmt.Fprintf(cfg.Out, "Added %s as a %s plugin in %s\n", res.Identity, res.Socket, res.ConfigPath)
+		fmt.Fprintf(cfg.Out, "Added %s as a %s plugin in %s (%s)\n",
+			res.Identity, res.Socket, res.ConfigPath, pluginWriteReach(res.ConfigIsMachineWide))
+	case res.Reference != "":
+		fmt.Fprintf(cfg.Out, "Pinned %s (%s)\n", res.Reference, pluginWriteReach(res.ConfigIsMachineWide))
 	}
 	return nil
 }

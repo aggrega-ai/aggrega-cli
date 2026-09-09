@@ -72,6 +72,27 @@ catalog entities from a guest's own metadata.`,
 	mustAttach(c, newPluginRunLocalCmd(), "plugin-run-local")
 }
 
+// pluginWriteReach names how far a plugin mutation's write reached, for the
+// trailing parenthetical of a confirmation line.
+//
+// It is stated on every mutation rather than only on a machine-wide one, and the
+// command-extension default is the reason: that type writes the file every
+// workspace on this machine resolves through, so a person who passed no
+// write-target flag is exactly the person most likely to read a machine-wide
+// change as being about the project they are standing in. Naming the file alone
+// does not settle it — that would ask the reader to recognise a path — which is
+// why the reach is computed where the write target is resolved and reported
+// rather than left to be inferred.
+//
+// Both mutations render it through here so the two cannot come to describe one
+// reach in two wordings.
+func pluginWriteReach(machineWide bool) string {
+	if machineWide {
+		return "machine-wide — every project on this machine resolves through it"
+	}
+	return "this project only"
+}
+
 func newPluginListCmd() *cobra.Command {
 	var output string
 	c := &cobra.Command{

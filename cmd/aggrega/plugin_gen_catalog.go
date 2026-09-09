@@ -62,6 +62,13 @@ entities are written, because a caller at a terminal has nowhere better to put
 them.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// The generation copies every byte it emits to the writer handed in
+			// below, so this command has the whole output already. Both halves of
+			// the result are a second form of those same bytes — the notices are
+			// that text, and the documents are that text decoded for a surface
+			// that answers with values instead of prose — so projecting either
+			// would print in full what the terminal has just been shown.
+			// projection-omits GenCatalogResult: the generation already wrote every byte of it to this command's own writer, so both halves are a second form of output the terminal has in full
 			_, err := pluginops.GenCatalog(cmd.Context(), pluginops.GenCatalogOptions{
 				FromEmbedded: opts.fromEmbedded,
 				PluginPath:   opts.pluginPath,
