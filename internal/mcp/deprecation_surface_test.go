@@ -19,6 +19,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
+	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
 // unmarshalBuildPayload decodes the build tool's structured payload, failing the
@@ -34,54 +35,90 @@ func unmarshalBuildPayload(t *testing.T, res *callToolResult) buildResultPayload
 
 const (
 	mcpDeprecationStamp = "2026-08-01T09:30:00Z"
-	mcpDeprecatedURI    = "oci://reg.example/plugins/helm-renderer:1.4.0"
+
+	// mcpDeprecatedURI is a synthetic reference for the cases that build a lockfile
+	// value inline and never resolve a workspace. It is deliberately NOT what the
+	// workspace fixture below marks: there, the marker has to sit on a reference the
+	// Release genuinely reaches, so the fixture returns whichever one the resolution
+	// pinned rather than asserting a name of its own choosing.
+	mcpDeprecatedURI = "oci://reg.example/plugins/helm-renderer:1.4.0"
 )
 
-// deprecatedPinWorkspace materialises the clean release-parity fixture — so the
-// only thing wrong with it is the recorded marker — plus a lockfile recording a
-// withdrawal and, optionally, the build halt dial.
+// deprecatedPinWorkspace materialises a workspace whose lockfile is one a real
+// resolution produced, with a recorded withdrawal added to one of its rows and,
+// optionally, the build halt dial. It returns the reference the marker sits on,
+// because that reference is whatever the resolution pinned rather than a name
+// this fixture chose.
 //
-// The report reads the lockfile's marker-bearing rows, which in a workspace pulled
-// by the product are exactly the references the Release consumes: a pull composes
-// the row set from a freshly computed closure and carries no prior row forward.
-// The fixture writes the row directly because the test is about what each surface
-// does with a recorded marker, not about how one comes to be recorded.
-func deprecatedPinWorkspace(t *testing.T, haltSeverity string) (root string, dirs []string, releasePath string) {
+// The lockfile is RESOLVED rather than hand-written, and that is load-bearing.
+// Every surface that produces an artifact verifies the lockfile against the
+// closure it just computed, so a hand-written file pinning only the
+// marker-bearing row describes a closure the Release does not have: such a
+// fixture is refused for DRIFT, ahead of the gate these cases are about, and the
+// cases then stop covering their subject while still looking like they refuse.
+// Putting the marker on a resolved row is also the truer shape of the fact — a
+// withdrawal is registry state recorded against a pin already taken — and it is
+// invisible to the drift comparison, which joins rows on the reference and its
+// pinned pair and reads no marker.
+//
+// The fixture is COPIED rather than resolved in place. A resolution writes: the
+// lockfile, the artifact cache, and the resolved content digests it freezes into
+// each writable recipe file. Resolving against the tracked fixture would modify
+// tracked files as a side effect of running.
+func deprecatedPinWorkspace(t *testing.T, haltSeverity string) (root string, dirs []string, releasePath, deprecatedURI string) {
 	t.Helper()
-	root, dirs = writeReleaseParityWorkspace(t, releaseParityCase{
-		aggregate: releaseParityBackendAggregate,
-		manifest:  releaseParityCleanManifest,
-	})
+	src := filepath.Join(moduleRoot(t), "internal", "compiler", "testdata", "fullstack-app")
+	root = t.TempDir()
+	if err := os.CopyFS(root, os.DirFS(src)); err != nil {
+		t.Fatalf("copy the fixture workspace: %v", err)
+	}
+	dirs = []string{filepath.Join(root, "catalog")}
 	releasePath = filepath.Join(root, "release.yaml")
 
 	// An empty build block is not a legal config, so the unconfigured case writes a
 	// config carrying no build key at all — which is the shipped default the control
-	// case is asserting against.
-	config := "offline: false\n"
+	// case is asserting against. The workspace block anchors the root here rather
+	// than letting discovery walk up into the checkout the suite runs inside.
+	config := "workspace: {}\n"
 	if haltSeverity != "" {
 		config += "build:\n  halt_on_deprecated_severity: \"" + haltSeverity + "\"\n"
 	}
-	if err := os.WriteFile(filepath.Join(root, ".aggrega-config.yaml"), []byte(config), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(root, workspaceconfig.ConfigFilename), []byte(config), 0o644); err != nil {
 		t.Fatalf("write workspace config: %v", err)
 	}
 
-	lf := &lockfile.Lockfile{
-		Version:     1,
-		Release:     "./release.yaml",
-		GeneratedAt: mcpDeprecationStamp,
-		Plugins: []lockfile.Plugin{{
-			URI:             mcpDeprecatedURI,
-			ResolvedVersion: "1.4.0",
-			Deprecation: &lockfile.DeprecationRecord{
-				Severity: "retracted",
-				Message:  "withdrawn: unsound renderer",
-			},
-		}},
+	// The resolution runs through the product's own tool, so the row set is one the
+	// product composes rather than one this fixture predicts. A hand-built row set
+	// would have to carry each reference's digest, which is content-dependent, and
+	// would silently describe the wrong closure the moment the fixture catalog moved.
+	prep := newTestServer(t)
+	res := callPull(t, prep, pullArgs{Release: releasePath, WorkspaceRoot: root, CatalogDirs: dirs})
+	if res.IsError {
+		t.Fatalf("the preparing resolution refused, so this fixture has no lockfile to record a marker on: %s",
+			res.Content[0].Text)
 	}
-	if err := lockfile.WriteLockfile(lockfile.PathFor(releasePath), lf); err != nil {
+	lockPath := unmarshalPullPayload(t, res).Lockfile
+
+	lf, _, err := lockfile.LoadLockfile(lockPath)
+	if err != nil {
+		t.Fatalf("load the resolved lockfile: %v", err)
+	}
+	if len(lf.Entities) == 0 {
+		t.Fatal("the resolution pinned no entity, so there is no row to record a marker on and every case " +
+			"built on this fixture would assert against a lockfile carrying no marker")
+	}
+	// The producer sorts rows by reference, so "the first" is a determinate row
+	// rather than whichever a map happened to yield.
+	lf.GeneratedAt = mcpDeprecationStamp
+	lf.Entities[0].Deprecation = &lockfile.DeprecationRecord{
+		Severity: "retracted",
+		Message:  "withdrawn: unsound renderer",
+	}
+	deprecatedURI = lf.Entities[0].URI
+	if err := lockfile.WriteLockfile(lockPath, lf); err != nil {
 		t.Fatalf("WriteLockfile: %v", err)
 	}
-	return root, dirs, releasePath
+	return root, dirs, releasePath, deprecatedURI
 }
 
 // TestBuildTool_DeprecatedPinRefusesUnderAConfiguredHalt pins the artifact verb's
@@ -92,7 +129,7 @@ func deprecatedPinWorkspace(t *testing.T, haltSeverity string) (root string, dir
 // possible outcome — a configured policy that does not apply.
 func TestBuildTool_DeprecatedPinRefusesUnderAConfiguredHalt(t *testing.T) {
 	s := newTestServer(t)
-	root, dirs, releasePath := deprecatedPinWorkspace(t, "retracted")
+	root, dirs, releasePath, deprecatedURI := deprecatedPinWorkspace(t, "retracted")
 
 	res := callTool(t, s, "build", buildArgs{
 		Release:       releasePath,
@@ -105,8 +142,14 @@ func TestBuildTool_DeprecatedPinRefusesUnderAConfiguredHalt(t *testing.T) {
 	text := res.Content[0].Text
 	// The refusal carries the whole report, not only the halting sentence: choosing
 	// a stricter threshold must never cost the caller a finding.
+	//
+	// It must also be the DEPRECATION gate's refusal. The lockfile is verified
+	// against the computed closure ahead of this gate, so a fixture whose lockfile
+	// described a different closure would refuse for drift and satisfy an
+	// any-error assertion while covering nothing here — which is why the report's
+	// own tokens are what is asserted rather than the fact of a refusal.
 	for _, want := range []string{
-		mcpDeprecatedURI, "is retracted", "withdrawn: unsound renderer",
+		deprecatedURI, "is retracted", "withdrawn: unsound renderer",
 		"as of " + mcpDeprecationStamp, "aggrega pull", `halt_on_deprecated_severity is "retracted"`,
 	} {
 		if !strings.Contains(text, want) {
@@ -122,7 +165,7 @@ func TestBuildTool_DeprecatedPinRefusesUnderAConfiguredHalt(t *testing.T) {
 // refused every recorded marker regardless of configuration.
 func TestBuildTool_DeprecatedPinReportsAndBuildsWithNoConfiguredHalt(t *testing.T) {
 	s := newTestServer(t)
-	root, dirs, releasePath := deprecatedPinWorkspace(t, "")
+	root, dirs, releasePath, deprecatedURI := deprecatedPinWorkspace(t, "")
 
 	res := callTool(t, s, "build", buildArgs{
 		Release:       releasePath,
@@ -137,7 +180,7 @@ func TestBuildTool_DeprecatedPinReportsAndBuildsWithNoConfiguredHalt(t *testing.
 		t.Fatalf("reporting is unconditional: a successful build must still carry the report; payload: %+v", payload)
 	}
 	joined := strings.Join(payload.Deprecations, "\n")
-	for _, want := range []string{mcpDeprecatedURI, "is retracted", "as of " + mcpDeprecationStamp} {
+	for _, want := range []string{deprecatedURI, "is retracted", "as of " + mcpDeprecationStamp} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("the report drops %q:\n%s", want, joined)
 		}
@@ -150,7 +193,7 @@ func TestBuildTool_DeprecatedPinReportsAndBuildsWithNoConfiguredHalt(t *testing.
 // only the first, which is the state this closes.
 func TestDescribeTool_DeprecatedPinIsDescribedNotRefused(t *testing.T) {
 	s := newTestServer(t)
-	root, dirs, releasePath := deprecatedPinWorkspace(t, "retracted")
+	root, dirs, releasePath, deprecatedURI := deprecatedPinWorkspace(t, "retracted")
 
 	res := callTool(t, s, "describe", describeArgs{
 		Release:       releasePath,
@@ -165,7 +208,7 @@ func TestDescribeTool_DeprecatedPinIsDescribedNotRefused(t *testing.T) {
 	if !strings.Contains(text, "closure entities:") {
 		t.Errorf("describe must still deliver the Release description; got:\n%s", text)
 	}
-	if !strings.Contains(text, mcpDeprecatedURI) {
+	if !strings.Contains(text, deprecatedURI) {
 		t.Errorf("describe must name the withdrawn pin; got:\n%s", text)
 	}
 	// The halt dial is configured in this fixture and must not reach a report verb:
@@ -182,7 +225,7 @@ func TestDescribeTool_DeprecatedPinIsDescribedNotRefused(t *testing.T) {
 // and a recorded marker neither creates nor suppresses a verdict.
 func TestValidateTool_DeprecatedPinTravelsAsAnAdvisoryNotice(t *testing.T) {
 	s := newTestServer(t)
-	root, dirs, releasePath := deprecatedPinWorkspace(t, "retracted")
+	root, dirs, releasePath, deprecatedURI := deprecatedPinWorkspace(t, "retracted")
 
 	res := callTool(t, s, "validate", validateArgs{
 		Release:       releasePath,
@@ -194,7 +237,7 @@ func TestValidateTool_DeprecatedPinTravelsAsAnAdvisoryNotice(t *testing.T) {
 	}
 	payload := unmarshalValidatePayload(t, res)
 	joined := strings.Join(payload.Notices, "\n")
-	if !strings.Contains(joined, mcpDeprecatedURI) {
+	if !strings.Contains(joined, deprecatedURI) {
 		t.Errorf("validate must name the withdrawn pin among its notices; notices: %#v", payload.Notices)
 	}
 	for _, d := range payload.Diagnostics {

@@ -15,6 +15,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/pullops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
+	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
 // The tool surface's leg of the dependency resolution.
@@ -51,6 +52,15 @@ var pullToolchainStamp = &lockfile.ToolchainStamp{
 // network-egress gate refuses before any dial, so no registry tier exists and the
 // resolution answers from the copied catalog alone. A proof that resolved against a
 // registry would measure that registry's availability as well as this transport.
+//
+// It is written through the loader's own constant, at the key the setting is
+// declared under. Both halves are the assertion rather than tidiness: a setting
+// written to a filename the loader does not read, or nested under a block that
+// carries only the root-defining directories, parses as nothing and leaves the
+// egress gate open — and because this fixture's catalog is local, the resolution
+// would still succeed, so the proof would report itself hermetic while nothing
+// enforced it. The workspace block is present separately, to anchor the root here
+// rather than letting discovery walk up into the checkout the suite runs inside.
 func pullWorkspace(t *testing.T) (s *server, root string, dirs []string, releasePath string) {
 	t.Helper()
 	src := filepath.Join(moduleRoot(t), "internal", "compiler", "testdata", "fullstack-app")
@@ -58,8 +68,8 @@ func pullWorkspace(t *testing.T) (s *server, root string, dirs []string, release
 	if err := os.CopyFS(root, os.DirFS(src)); err != nil {
 		t.Fatalf("copy fixture workspace: %v", err)
 	}
-	cfg := "workspace:\n  offline: true\n"
-	if err := os.WriteFile(filepath.Join(root, "aggrega.yaml"), []byte(cfg), 0o644); err != nil {
+	cfg := "workspace: {}\noffline: true\n"
+	if err := os.WriteFile(filepath.Join(root, workspaceconfig.ConfigFilename), []byte(cfg), 0o644); err != nil {
 		t.Fatalf("write workspace config: %v", err)
 	}
 	s = newTestServer(t)

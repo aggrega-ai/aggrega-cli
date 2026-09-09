@@ -203,19 +203,31 @@ func buildInvoke(s *server, ctx context.Context, args json.RawMessage) (*callToo
 	// content-addressed store as a side effect of what the caller asked to be a
 	// preview that writes nothing.
 	//
-	// A pinned reference is therefore served from the store — which is what makes
-	// these bytes the bytes a build emits — and an unpinned one is declined and
-	// named in the answer rather than quietly rendering a not-available envelope
-	// the caller cannot tell from real content.
+	// A pinned reference is therefore served from the store, and an unpinned one is
+	// declined and named in the answer rather than quietly rendering a
+	// not-available envelope the caller cannot tell from real content.
+	//
+	// Serving a pinned reference from the store is HALF of what makes these bytes
+	// the bytes a build emits. The other half is that the pins served from still
+	// describe the closure the Release resolves to, which the operation below
+	// verifies: reading frozen bytes out of the store says nothing about whether
+	// they were the right bytes to read.
 	fetchSeam := compilerops.FrozenExternalInputs(tw.root, tw.cacheDir, lf)
 
-	// This tool renders from the pins the workspace already carries. It neither
-	// requires a lockfile nor fills one — the two other artifact-producing
-	// surfaces do one or the other before they render — so it runs the operation
-	// shaped for that contract: every gate that judges the closure or the entities
-	// is on, and the drift verify, whose question presupposes a lockfile the
-	// operation asked for, is not this operation's to ask.
-	preview, err := compilerops.PreviewForArtifactFromAvailablePins(
+	// This tool renders from the pins the workspace already carries: it neither
+	// requires a lockfile nor fills one, unlike the two other artifact-producing
+	// surfaces, which do one or the other before they render. It runs the strict
+	// operation all the same, drift verify included, because what it publishes is
+	// the claim that these are the bytes a build emits — and a build refuses a
+	// lockfile that has drifted, so rendering from one here would publish that
+	// claim exactly where it does not hold.
+	//
+	// The absent case pays nothing for that, and it needs no condition of its own:
+	// the drift verify reads the lockfile from the inputs and stands down when
+	// there is none, so a Release carrying no lockfile renders as it always did.
+	// What is refused is the single input on which this surface would otherwise
+	// assert something false — a lockfile that exists and no longer matches.
+	preview, err := compilerops.PreviewForArtifact(
 		ctx,
 		compilerops.NewPreviewInputs(
 			fetchSeam,
@@ -297,6 +309,15 @@ func previewDeprecationNotices(preview *compilerops.PreviewResult) []string {
 // chosen by the gate that refused rather than by matching the failure's text.
 // Each one names what the build did and what the reader is looking at, because
 // an agent consuming this has only the sentence to route on.
+//
+// The drift arm additionally names how to CLEAR the refusal from here, and that
+// split is deliberate rather than a duplication: the condition is single-sourced
+// in the shared preview and reaches every surface identically, while the
+// invocation that clears it is per-surface. A caller here receives both, since
+// the shared diagnostic travels in the same guidance and names the command line
+// — so the sentence says the two are one operation at two invocation sites,
+// rather than leaving an agent to choose between what look like rival
+// instructions.
 func previewFailureSummary(preview *compilerops.PreviewResult, deprecationNotices []string) string {
 	gate := compilerops.GateNone
 	if preview != nil {
@@ -312,7 +333,13 @@ func previewFailureSummary(preview *compilerops.PreviewResult, deprecationNotice
 		return "The build refused: a pinned entry in the cache no longer matches the digest the lockfile records for it. " +
 			"Re-pull the Release to refill the cache from the registry."
 	case compilerops.GateLockfileDrift:
-		return "The build refused: the lockfile no longer matches the dependencies this Release resolves to."
+		return "The build refused: the lockfile no longer matches the dependencies this Release resolves to, " +
+			"so it would have rendered from pins a build would not have used. Resolving the dependencies " +
+			"again clears it. Through this protocol that is the pull tool, called with this same 'release' " +
+			"path and no 'upgrade_targets': it reconciles the lockfile against what the Release resolves to " +
+			"today, which is what this condition needs. The command line the diagnostic names is that same " +
+			"operation at a terminal, asked additionally to re-resolve every pin to the highest available " +
+			"version — more than this refusal requires, and it clears it too."
 	case compilerops.GateClosurePillars:
 		return "The build refused: an entity this Release reaches does not satisfy its schema."
 	case compilerops.GateExtends:

@@ -201,13 +201,18 @@ func attachCandidatesInvoke(s *server, ctx context.Context, args json.RawMessage
 // # Which preview it runs, and why it needs no lockfile
 //
 // It runs the operation shaped for a surface that neither requires a lockfile
-// nor fills one — the same operation this server's build tool runs — so a
-// Release carrying no lockfile is answered from whatever pins the workspace
-// already holds rather than refused. That is a property of the operation this
-// server performs, not a relaxation of anything: a lockfile contract belongs to
-// the operation rather than being a degree of strictness a surface picks. A
-// surface that draws a graph for a person to reason about takes a stricter
-// contract, and it keeps it.
+// nor fills one, so a Release carrying no lockfile — and one carrying a stale
+// one — is answered from whatever pins the workspace already holds rather than
+// refused. That is a property of the operation this question performs, not a
+// relaxation of anything: a lockfile contract belongs to the operation rather
+// than being a degree of strictness a surface picks.
+//
+// What makes accepting a stale lockfile right HERE is that the answer is not a
+// claim about the closure. This reports which recipes a node's labels could
+// match, and a matching table read off slightly stale pins is still the answer
+// to that question; refusing would withhold it rather than qualify it. A surface
+// that emits an artifact, or that draws a graph for a person to reason about,
+// takes a stricter contract and keeps it.
 //
 // The render is skipped. This reads the node's labels out of the graph and
 // discards everything else, and the graph is byte-identical whether or not the

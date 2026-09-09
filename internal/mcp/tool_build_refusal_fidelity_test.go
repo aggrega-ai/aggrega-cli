@@ -32,7 +32,7 @@ import (
 // has to change.
 func TestBuildToolRefusalCarriesItsFindingsStructurally(t *testing.T) {
 	s := newTestServer(t)
-	root, dirs, releasePath := deprecatedPinWorkspace(t, "retracted")
+	root, dirs, releasePath, deprecatedURI := deprecatedPinWorkspace(t, "retracted")
 
 	res := callTool(t, s, "build", buildArgs{
 		Release:       releasePath,
@@ -58,7 +58,7 @@ func TestBuildToolRefusalCarriesItsFindingsStructurally(t *testing.T) {
 			"before it stopped; payload: %+v", payload)
 	}
 	joined := strings.Join(payload.Deprecations, "\n")
-	for _, want := range []string{mcpDeprecatedURI, "withdrawn: unsound renderer"} {
+	for _, want := range []string{deprecatedURI, "withdrawn: unsound renderer"} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("the refusal's recorded markers drop %q:\n%s", want, joined)
 		}
@@ -85,8 +85,8 @@ func TestBuildToolRefusalCarriesItsFindingsStructurally(t *testing.T) {
 // Without this pairing the case above would also pass on a surface that reported
 // markers only when it refused, which is the same defect facing the other way.
 func TestBuildToolReportsTheSameFindingsWhicheverWayItEnds(t *testing.T) {
-	refusedRoot, refusedDirs, refusedRelease := deprecatedPinWorkspace(t, "retracted")
-	builtRoot, builtDirs, builtRelease := deprecatedPinWorkspace(t, "")
+	refusedRoot, refusedDirs, refusedRelease, _ := deprecatedPinWorkspace(t, "retracted")
+	builtRoot, builtDirs, builtRelease, _ := deprecatedPinWorkspace(t, "")
 
 	refused := callTool(t, newTestServer(t), "build", buildArgs{
 		Release:       refusedRelease,

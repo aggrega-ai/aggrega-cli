@@ -276,13 +276,17 @@ type previewPolicy struct {
 	// leaves it off and reports drift through its own non-blocking channel,
 	// because inspection is not a deploy gate.
 	//
-	// It carries a PRECONDITION the other nine do not, and the precondition is a
-	// property of the operation rather than of the posture: the question "has the
-	// closure drifted from the lockfile?" presupposes that the operation holds
-	// the Release to a lockfile at all. Two of the three artifact-producing
-	// operations do — each fills a missing one where its caller asked for that
-	// and refuses otherwise — and the third does not, which is why there are
-	// three entry points over two postures.
+	// It carries a PRECONDITION the other nine do not: the question "has the
+	// closure drifted from the lockfile?" presupposes a lockfile to ask it of.
+	// The gate satisfies that itself rather than leaning on the operation — it
+	// reads the lockfile from the inputs and stands down when there is none — and
+	// that is what lets every artifact-producing surface verify drift on the same
+	// terms, the one that neither requires a lockfile nor fills one included.
+	//
+	// So the third entry point over these two postures is not a third drift
+	// posture. It survives for the tools that answer a question ABOUT a closure
+	// rather than emitting an artifact from one, where refusing on a stale
+	// lockfile would withhold the answer instead of qualifying it.
 	verifyLockfileDrift bool
 
 	// resolveExtends resolves extends inheritance for the closure's Components
@@ -454,13 +458,17 @@ func IsResolutionFailure(err error) bool {
 
 // PreviewForArtifact renders a Release the way a surface that emits something a
 // person will apply must: every gate on, every divergence a halt. It is the
-// operation the command-line build, the pull's discovery render and the daemon's
-// build methods run.
+// operation the command-line build, the pull's discovery render, the daemon's
+// build methods and the in-memory build tool run.
 //
-// It holds the Release to its lockfile, and its callers establish that before
-// calling — the command line by filling a missing lockfile, the daemon by
-// refusing a Release that carries none. A drifted lockfile therefore contradicts
-// something the caller already guaranteed, and the drift verify halts on it.
+// It holds the Release to its lockfile wherever one is present. Some of its
+// callers establish that a lockfile exists before calling — the command line by
+// filling a missing one, the daemon by refusing a Release that carries none — so
+// for those a drifted lockfile contradicts something already guaranteed. A caller
+// that does NEITHER still renders when none is present, and needs no relaxation
+// to: the drift verify stands down on its own inputs, because the question it
+// asks is about a lockfile and there is none to ask it of. What halts, on every
+// caller alike, is a lockfile that exists and no longer matches.
 func PreviewForArtifact(ctx context.Context, in PreviewInputs, opts pipeline.Options) (*PreviewResult, error) {
 	return runPreview(ctx, in, artifactPolicy(), opts)
 }
@@ -479,11 +487,11 @@ func PreviewForArtifact(ctx context.Context, in PreviewInputs, opts pipeline.Opt
 // a source of pins rather than a statement about the closure, and there is
 // nothing for the drift verify to contradict.
 //
-// Holding the verify off is what keeps the contract monotone. The gate reads the
-// lockfile from the inputs and stands down when there is none, so a Release with
-// no lockfile at all renders. Halting on a stale one would leave less pinning
-// information as the more permissive input, which is not a coherent thing to
-// offer a caller.
+// The gate reads the lockfile from the inputs and stands down when there is
+// none, so a Release with no lockfile at all renders. Holding the verify off
+// additionally accepts a STALE one, which is coherent only where the answer is
+// not a claim about what a build would emit — an operation that emits one
+// refuses it instead.
 func PreviewForArtifactFromAvailablePins(ctx context.Context, in PreviewInputs, opts pipeline.Options) (*PreviewResult, error) {
 	pol := artifactPolicy()
 	pol.verifyLockfileDrift = false
