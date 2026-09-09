@@ -125,8 +125,13 @@ func TestEditingADocumentFromTheCommandLineLandsTheEntryAndPreservesEveryOtherBy
 	if err != nil {
 		t.Fatalf("editDocumentRun: %v", err)
 	}
-	if got := out.String(); got != "wrote storefront.aggregate.yaml\n" {
-		t.Errorf("the writing outcome reads %q; a caller has to be told which file reached disk", got)
+	// The first line is pinned exactly, and only the first: what a caller has to
+	// be told here is which file reached disk. The placement sentences that
+	// follow it are held to the shared operation's own result elsewhere, so
+	// pinning the whole stream here would be a second, weaker statement of that
+	// parity — one that moves with this surface rather than against it.
+	if got := firstLineOf(out.String()); got != "wrote storefront.aggregate.yaml" {
+		t.Errorf("the writing outcome opens with %q; a caller has to be told which file reached disk", got)
 	}
 
 	onDisk := readFileForEdit(t, abs)

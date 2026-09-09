@@ -230,6 +230,14 @@ func editDocumentValue(text string, given bool) (any, error) {
 // entry was already there, carrying what was asked, wrote nothing — and saying
 // nothing at all would leave that indistinguishable from a write that failed
 // quietly, so it says which document already carried the entry.
+//
+// Both writing outcomes then say where the entry sits, and an edit that had to
+// bring container levels into being says which ones. A person at a terminal has
+// nothing else that will tell them: the answer stream is all they are shown, and
+// an edit that quietly wrote two nested blocks the document did not carry is
+// otherwise indistinguishable from one that added a single entry to a block the
+// author wrote. Where the whole container path was already there — the ordinary
+// case — there is nothing created to name and the second sentence is absent.
 func writeEditDocumentOutcome(out io.Writer, delivery authoredcontent.Delivery, res editops.Result) error {
 	if out == nil {
 		return nil
@@ -241,12 +249,34 @@ func writeEditDocumentOutcome(out io.Writer, delivery authoredcontent.Delivery, 
 		for _, doc := range res.Documents {
 			fmt.Fprintf(out, "%s already carries that entry; nothing was written\n", doc.Path)
 		}
-		return nil
+	} else {
+		for _, name := range res.Written {
+			fmt.Fprintf(out, "wrote %s\n", name)
+		}
 	}
-	for _, name := range res.Written {
-		fmt.Fprintf(out, "wrote %s\n", name)
+	if len(res.Container) != 0 {
+		fmt.Fprintf(out, "  the entry sits under %s\n", editDocumentPathText(res.Container))
+	}
+	if len(res.CreatedContainers) != 0 {
+		fmt.Fprintf(out, "  this edit created %s, which the document did not carry\n",
+			editDocumentPathText(res.CreatedContainers))
 	}
 	return nil
+}
+
+// editDocumentPathText renders a structural path for a person to read.
+//
+// The segments are joined with dots, which is the spelling every other sentence
+// about a place in a document already uses — a refusal naming the container an
+// entry could not go in spells it that way, so a reader who has seen one
+// recognises the other rather than learning a second notation.
+//
+// Requesting a path is the opposite case and takes segments one at a time, since
+// a dot is legal inside a name an author types and a joined request could
+// address a key nobody wrote. Nothing is parsed back out of this, so the reading
+// aid costs no ambiguity: it is shown, never taken.
+func editDocumentPathText(segments []string) string {
+	return strings.Join(segments, ".")
 }
 
 // editDocumentKindList renders the admissible edits for the help text, so the
