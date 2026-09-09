@@ -78,11 +78,17 @@ deterministic: identical cache state produces byte-identical output.`,
 }
 
 // runCacheStatus prints every class's elements one per line and a global
-// summary. Output is a pure function of on-disk cache state.
+// summary, each class heading carrying how far that class is shared and the
+// summary followed by the machine-wide classes the listing covered. Output is a
+// pure function of on-disk cache state.
+//
+// The reach is on a reading that changes nothing because a reader consults this
+// before deciding whether to reclaim, and that is the moment the reach decides
+// something.
 func runCacheStatus(w io.Writer, loc cacheops.Locations) error {
 	report := cacheops.Status(loc)
 	for _, cl := range report.Classes {
-		fmt.Fprintf(w, "%s:\n", cl.Name)
+		fmt.Fprintf(w, "%s%s:\n", cl.Name, reachMarker(cl.Reach))
 		if len(cl.Elements) == 0 {
 			fmt.Fprintln(w, "  (empty)")
 			continue
@@ -97,7 +103,42 @@ func runCacheStatus(w io.Writer, loc cacheops.Locations) error {
 	}
 	printProvenance(w, report.Provenance)
 	fmt.Fprintf(w, "\n%d elements, %s\n", report.TotalCount, cacheops.HumanSize(report.TotalSize))
+	printMachineWideReach(w, cacheops.MachineWideClasses(report.Classes))
 	return nil
+}
+
+// reachMarker renders how far a class's or an element's contents are shared, as
+// the marker that trails the thing it qualifies.
+//
+// The word inside it is the shared layer's own reach value, so a reader meets
+// one vocabulary for this fact wherever the operation was invoked from rather
+// than a per-surface rewording of it. It is carried on every class and every
+// removal, not only the machine-wide ones: an unmarked line would leave the
+// reach to be inferred from a convention the reader has to know first, and that
+// inference is exactly what stating the reach exists to remove.
+func reachMarker(r cacheops.Reach) string {
+	return " [" + string(r) + "]"
+}
+
+// printMachineWideReach names the classes an operation acted on whose contents
+// are shared across every project on the machine, and says what that means for
+// a removal.
+//
+// The list is not written here: it is the shared layer's own computation over
+// the classes the operation touched, so this cannot describe a machine-wide
+// reclamation as workspace-local. An operation that touched no machine-wide
+// class prints nothing, rather than a statement with an empty list in it.
+//
+// The sentence is about the content rather than about this run, which is what
+// makes it true of a trim that removed nothing as well as of one that did: the
+// class is shared either way, and that is what a reader deciding whether to
+// reclaim needs before acting.
+func printMachineWideReach(w io.Writer, machineWide []string) {
+	if len(machineWide) == 0 {
+		return
+	}
+	fmt.Fprintf(w, "machine-wide: %s — content there is shared with every project on this machine, so a removal is felt by all of them\n",
+		strings.Join(machineWide, ", "))
 }
 
 // printProvenance lists the resolved-plugin identities the provenance index
@@ -152,11 +193,17 @@ Prune needs a pulled workspace: it fails when no lockfile is present.`,
 // runCachePrune renders what the shared prune removed. On a removal failure the
 // elements removed before it are still named, so a partial prune is never
 // silent, and the summary is withheld because the pass did not complete.
+//
+// The reach statement is printed before the failure is returned, for the same
+// reason the removals are: a partial prune that reached a machine-wide class
+// reached it, and withholding that alongside the incomplete summary would leave
+// the loudest half of the answer unsaid.
 func runCachePrune(w io.Writer, loc cacheops.Locations) error {
 	res, err := cacheops.Prune(loc)
 	for _, r := range res.Removed {
-		fmt.Fprintf(w, "removed %s: %s\n", r.Class, r.Label)
+		fmt.Fprintf(w, "removed %s: %s%s\n", r.Class, r.Label, reachMarker(r.Reach))
 	}
+	printMachineWideReach(w, res.MachineWide)
 	if err != nil {
 		return err
 	}
@@ -234,21 +281,33 @@ no-op and removes nothing.`,
 //
 // A removal failure is reported loudly, after naming the leaves that were
 // removed before it, so a partial trim is never silent.
+// The cap is read back off the shared result rather than off the argument this
+// function was handed. The two hold the same quantity, and reading the result's
+// is what keeps them unable to disagree: the trim applied the cap the result
+// reports, so that is the cap the answer names.
 func runCacheEvict(w io.Writer, loc cacheops.Locations, capBytes int64) error {
 	res, err := cacheops.Evict(loc, capBytes)
 	if res.WithinCapBefore && err == nil {
 		fmt.Fprintf(w, "compiled-module cache is %s, within cap %s; nothing evicted\n",
-			cacheops.HumanSize(res.TotalBefore), cacheops.HumanSize(capBytes))
+			cacheops.HumanSize(res.TotalBefore), cacheops.HumanSize(res.CapBytes))
+		printMachineWideReach(w, res.MachineWide)
 		return nil
 	}
 	for _, l := range res.Removed {
-		fmt.Fprintf(w, "evicted %s (%s)\n", l.Label, cacheops.HumanSize(l.Size))
+		fmt.Fprintf(w, "evicted %s (%s)%s\n", l.Label, cacheops.HumanSize(l.Size), reachMarker(l.Reach))
 	}
 	if err != nil {
+		// A trim that removed leaves before it failed reached what it reached, so
+		// the reach statement travels with the partial answer. A refusal that
+		// removed nothing has no reach to report and states only why it refused.
+		if len(res.Removed) > 0 {
+			printMachineWideReach(w, res.MachineWide)
+		}
 		return err
 	}
 	fmt.Fprintf(w, "evicted %d leaf(s), %s reclaimed; %s retained (cap %s)\n",
-		len(res.Removed), cacheops.HumanSize(res.ReclaimedBytes), cacheops.HumanSize(res.RemainingBytes), cacheops.HumanSize(capBytes))
+		len(res.Removed), cacheops.HumanSize(res.ReclaimedBytes), cacheops.HumanSize(res.RemainingBytes), cacheops.HumanSize(res.CapBytes))
+	printMachineWideReach(w, res.MachineWide)
 	return nil
 }
 
@@ -331,12 +390,15 @@ func confirmCacheClear(w io.Writer, r io.Reader, assumeYes bool) error {
 }
 
 // runCacheClear renders what the shared wipe removed. On a removal failure the
-// subtrees cleared before it are still named, and the summary is withheld.
+// subtrees cleared before it are still named, and the summary is withheld — but
+// the reach statement is not, for the same reason it is not withheld from a
+// partial prune.
 func runCacheClear(w io.Writer, loc cacheops.Locations) error {
 	res, err := cacheops.Clear(loc)
 	for _, c := range res.Cleared {
-		fmt.Fprintf(w, "cleared %s (%s)\n", c.Class, cacheops.HumanSize(c.Size))
+		fmt.Fprintf(w, "cleared %s (%s)%s\n", c.Class, cacheops.HumanSize(c.Size), reachMarker(c.Reach))
 	}
+	printMachineWideReach(w, res.MachineWide)
 	if err != nil {
 		return err
 	}

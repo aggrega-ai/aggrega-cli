@@ -127,10 +127,10 @@ type publishEntityParams struct {
 // and landed nothing.
 //
 // Each size is carried twice: as the byte count a caller computes with, and as
-// the same quantity written in the binary-unit vocabulary every surface spells
-// sizes in, so a caller displaying it does not have to reproduce the rounding
-// rule. PluginSizeText is absent exactly when PluginSize is, so the pair is never
-// half-present.
+// the same quantity written by the shared byte-size formatter, so a caller
+// displaying it does not have to reproduce the rounding rule that formatter
+// owns. PluginSizeText is absent exactly when PluginSize is, so the pair is
+// never half-present.
 type publishEntityResult struct {
 	Reference        string           `json:"reference"`
 	Tag              string           `json:"tag"`

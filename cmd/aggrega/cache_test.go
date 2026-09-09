@@ -232,8 +232,13 @@ func TestCacheStatusListsDocsBundleClass(t *testing.T) {
 	if a.String() != b.String() {
 		t.Fatalf("status not byte-identical:\n--- a ---\n%s\n--- b ---\n%s", a.String(), b.String())
 	}
-	if !bytes.Contains(a.Bytes(), []byte("workspace docs-bundle cache:")) {
-		t.Fatalf("status missing docs-bundle class header:\n%s", a.String())
+	// The header carries the class's reach, so the expected text is built from
+	// the shared layer's own reach value rather than spelled here: a class
+	// reclassified in the assembly moves this assertion with it instead of
+	// leaving it asserting a reach the class no longer has.
+	wantHeader := "workspace docs-bundle cache [" + string(cacheops.ReachWorkspace) + "]:"
+	if !bytes.Contains(a.Bytes(), []byte(wantHeader)) {
+		t.Fatalf("status missing docs-bundle class header %q:\n%s", wantHeader, a.String())
 	}
 	if !bytes.Contains(a.Bytes(), []byte("reg.example.com/docs/aggrega-docs@1.0.0")) {
 		t.Fatalf("status missing docs-bundle element label:\n%s", a.String())

@@ -29,14 +29,18 @@ type cacheScope struct {
 
 // cacheElementResult is one enumerated cache element on the wire.
 //
-// SizeText is the byte count written in the binary-unit vocabulary every surface
-// spells sizes in, and it is the display half of a round trip: the same
-// vocabulary is what [cacheops.ParseHumanSize] reads, so a quantity a caller
-// shows can be handed straight back to an operation that takes a size. It is
-// carried beside the number rather than instead of it — a caller that computes
-// needs the number, and a caller that displays needs the text — so that no
-// consumer has to reproduce the rounding rule to spell a size the way the rest
-// of the product spells it.
+// SizeText is the byte count as [cacheops.HumanSize] writes it, and it is the
+// display half of a round trip: [cacheops.ParseHumanSize] reads back what that
+// formatter writes, so a quantity a caller shows can be handed straight back to
+// an operation that takes a size.
+//
+// The formatter is the single home of the rounding rule, and carrying its output
+// is what keeps it single: a consumer that composed its own text would be a
+// second implementation of that rule, agreeing on every value anyone thought to
+// try on the day it was written. The text is carried beside the number rather
+// than instead of it — a caller that computes needs the number, a caller that
+// displays needs the text — and neither is derivable from the other by anything
+// but the formatter itself.
 type cacheElementResult struct {
 	Label    string `json:"label"`
 	Size     int64  `json:"size"`

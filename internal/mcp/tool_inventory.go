@@ -33,11 +33,34 @@ type cacheStatusArgs struct {
 }
 
 // cacheStatusElement is one enumerated cache element.
+//
+// SizeText is the byte count as the shared formatter writes it, carried beside
+// the number rather than instead of it. An assistant that totals or compares
+// sizes needs the number; one that shows a size needs the text, and composing
+// that text itself would mean reproducing the rounding rule the formatter owns.
+// The vocabulary it is written in is the one the size-taking operations parse,
+// so a quantity read out of this answer can be sent back unrewritten.
 type cacheStatusElement struct {
-	Label  string `json:"label"`
-	Size   int64  `json:"size"`
-	Digest string `json:"digest,omitempty"`
-	Note   string `json:"note,omitempty"`
+	Label    string `json:"label"`
+	Size     int64  `json:"size"`
+	SizeText string `json:"size_text"`
+	Digest   string `json:"digest,omitempty"`
+	Note     string `json:"note,omitempty"`
+}
+
+// cacheStatusProvenance is one recorded content digest's resolved plugin
+// identities — every URI@version the resolver loaded those exact guest bytes
+// for. SharedBy is present only where more than one identity resolves to the
+// same bytes.
+//
+// It is carried apart from the classes and excluded from the totals, on the
+// same ground the shared inventory keeps it apart: an identity is metadata
+// about a compiled module rather than a reclaimable element, so counting it
+// would report a size nothing can reclaim. It is what gives a compiled module a
+// name an assistant can reason about instead of the runtime's opaque leaf key.
+type cacheStatusProvenance struct {
+	Identities []string `json:"identities"`
+	SharedBy   int      `json:"shared_by,omitempty"`
 }
 
 // cacheStatusClass is one cache class, carrying how far its contents are shared.
@@ -54,23 +77,35 @@ type cacheStatusClass struct {
 }
 
 // cacheStatusResult is the cache-status tool's structured payload.
+//
+// Every collection is an array rather than a null, so a caller iterates
+// unconditionally instead of special-casing an empty cache. TotalSizeText
+// carries the total in the shared spelling, on the same terms as every other
+// rendered size here.
 type cacheStatusResult struct {
-	WorkspaceRoot      string             `json:"workspace_root"`
-	Classes            []cacheStatusClass `json:"classes"`
-	TotalCount         int                `json:"total_count"`
-	TotalSize          int64              `json:"total_size"`
-	MachineWideClasses []string           `json:"machine_wide_classes"`
+	WorkspaceRoot      string                  `json:"workspace_root"`
+	Classes            []cacheStatusClass      `json:"classes"`
+	Provenance         []cacheStatusProvenance `json:"provenance"`
+	TotalCount         int                     `json:"total_count"`
+	TotalSize          int64                   `json:"total_size"`
+	TotalSizeText      string                  `json:"total_size_text"`
+	MachineWideClasses []string                `json:"machine_wide_classes"`
 }
 
 var cacheStatusToolSpec = toolSpec{
 	description: "Report what the on-disk caches hold, reading them and writing nothing. Returns one entry per cached " +
 		"element with its size and, where it has one, its content digest — so you can total, compare or select without " +
-		"parsing a table. Each class carries a `reach`: `workspace` for the artifact cache under this workspace's own " +
-		"cache directory, `machine` for the compiled-module and plugin-describe stores, which every project on this " +
-		"machine shares. Read `reach` before proposing any reclamation: removing a machine-wide element affects " +
-		"workspaces nobody in this conversation has named. `machine_wide_classes` names those classes directly. " +
-		"Optional `workspace_root` overrides discovery; without a resolvable workspace only the machine-wide classes " +
-		"are reported.",
+		"parsing a table. Every size is reported twice: `size` as the byte count to calculate with, and `size_text` as " +
+		"the same quantity written in binary units to display, which is also the vocabulary the size-taking operations " +
+		"accept, so a quantity read here can be sent back unrewritten. Each class carries a `reach`: `workspace` for " +
+		"the artifact cache under this workspace's own cache directory, `machine` for the compiled-module and " +
+		"plugin-describe stores, which every project on this machine shares. Read `reach` before proposing any " +
+		"reclamation: removing a machine-wide element affects workspaces nobody in this conversation has named. " +
+		"`machine_wide_classes` names those classes directly. `provenance` names the plugin identities each recorded " +
+		"guest digest resolved for, marking a digest more than one identity shares — it is what gives a compiled " +
+		"module a name rather than an opaque key, and it is metadata rather than reclaimable content, so it is " +
+		"excluded from the totals. Optional `workspace_root` overrides discovery; without a resolvable workspace only " +
+		"the machine-wide classes are reported.",
 	inputSchema: `{
   "type": "object",
   "properties": {
@@ -101,16 +136,37 @@ func cacheStatusInvoke(s *server, ctx context.Context, args json.RawMessage) (*c
 		cacheDir = tw.cacheDir
 	}
 
+	// The inventory is bound to a name before it is projected rather than passed
+	// inline. A result handed straight into a call is a value nothing here holds,
+	// so what this surface takes from it stops being readable at this site — and
+	// a projection nobody can read is indistinguishable from one that drops
+	// everything.
 	report := cacheops.Status(cacheops.ResolveLocations(root, cacheDir))
+	payload := cacheStatusPayload(root, report)
+	return textResult(renderCacheStatusText(payload), payload)
+}
+
+// cacheStatusPayload projects the shared inventory onto this surface's shape.
+//
+// It is a function of the report rather than of the machine so the projection
+// can be driven over a report supplied to it. The machine-wide classes are
+// shared by every process on the machine, so anything that had to enumerate
+// them a second time in order to check this projection could not be reading a
+// fixed answer; handed the report, the projection is checkable exactly.
+//
+// Every collection is materialised as an empty slice rather than left nil, so a
+// caller iterates unconditionally instead of special-casing an empty cache.
+func cacheStatusPayload(root string, report cacheops.Report) cacheStatusResult {
 	classes := make([]cacheStatusClass, 0, len(report.Classes))
 	for _, cl := range report.Classes {
 		elements := make([]cacheStatusElement, 0, len(cl.Elements))
 		for _, el := range cl.Elements {
 			elements = append(elements, cacheStatusElement{
-				Label:  el.Label,
-				Size:   el.Size,
-				Digest: el.DigestHex,
-				Note:   el.Note,
+				Label:    el.Label,
+				Size:     el.Size,
+				SizeText: cacheops.HumanSize(el.Size),
+				Digest:   el.DigestHex,
+				Note:     el.Note,
 			})
 		}
 		classes = append(classes, cacheStatusClass{
@@ -120,23 +176,33 @@ func cacheStatusInvoke(s *server, ctx context.Context, args json.RawMessage) (*c
 			Elements: elements,
 		})
 	}
+	provenance := make([]cacheStatusProvenance, 0, len(report.Provenance))
+	for _, p := range report.Provenance {
+		provenance = append(provenance, cacheStatusProvenance{Identities: p.Identities, SharedBy: p.SharedBy})
+	}
 	machineWide := cacheops.MachineWideClasses(report.Classes)
 	if machineWide == nil {
 		machineWide = []string{}
 	}
 
-	payload := cacheStatusResult{
+	return cacheStatusResult{
 		WorkspaceRoot:      root,
 		Classes:            classes,
+		Provenance:         provenance,
 		TotalCount:         report.TotalCount,
 		TotalSize:          report.TotalSize,
+		TotalSizeText:      cacheops.HumanSize(report.TotalSize),
 		MachineWideClasses: machineWide,
 	}
-	return textResult(renderCacheStatusText(payload), payload)
 }
 
 // renderCacheStatusText renders the readable listing: one heading per class,
-// marked where the class is machine-wide, then its elements.
+// marked where the class is machine-wide, then its elements, then the recorded
+// plugin identities and the totals.
+//
+// Every size it prints is the payload's own rendered field rather than a fresh
+// call to the formatter, so the text and the structured half of this answer
+// cannot spell one quantity two ways.
 func renderCacheStatusText(p cacheStatusResult) string {
 	var b strings.Builder
 	if p.WorkspaceRoot != "" {
@@ -155,14 +221,25 @@ func renderCacheStatusText(p cacheStatusResult) string {
 			continue
 		}
 		for _, el := range cl.Elements {
-			fmt.Fprintf(&b, "    %s  %s", el.Label, cacheops.HumanSize(el.Size))
+			fmt.Fprintf(&b, "    %s  %s", el.Label, el.SizeText)
 			if el.Note != "" {
 				fmt.Fprintf(&b, "  %s", el.Note)
 			}
 			b.WriteByte('\n')
 		}
 	}
-	fmt.Fprintf(&b, "\n%d elements, %s\n", p.TotalCount, cacheops.HumanSize(p.TotalSize))
+	b.WriteString("  plugin provenance:\n")
+	if len(p.Provenance) == 0 {
+		b.WriteString("    (empty)\n")
+	}
+	for _, entry := range p.Provenance {
+		b.WriteString("    " + strings.Join(entry.Identities, ", "))
+		if entry.SharedBy > 0 {
+			fmt.Fprintf(&b, "  shared by %d", entry.SharedBy)
+		}
+		b.WriteByte('\n')
+	}
+	fmt.Fprintf(&b, "\n%d elements, %s\n", p.TotalCount, p.TotalSizeText)
 	if len(p.MachineWideClasses) > 0 {
 		fmt.Fprintf(&b, "Machine-wide: %s. Reclaiming from these reaches workspaces this session has not named.\n",
 			strings.Join(p.MachineWideClasses, ", "))
