@@ -908,6 +908,14 @@ type releasePreview struct {
 	fetchSeam    *externalinputs.DeclineRecorder
 	resolved     *compilerops.ResolvedClosure
 
+	// lockfile is the record of pinned versions this computation was seeded with,
+	// or nil where it could not be loaded. A caller needing a fact the record holds
+	// — the recorded withdrawal markers being the case that wants it — reads it here
+	// rather than loading the record again, because a second read is a second value:
+	// the operator may re-pull between the two, at which point a caller would report
+	// markers from a record the listing beside them was not resolved against.
+	lockfile *lockfile.Lockfile
+
 	// pipeline is the run's outcome rather than its payload, so the two paths
 	// below it — the refusal that publishes findings and the success that returns
 	// a graph — each read what their own verdict entitles them to and neither can
@@ -1047,6 +1055,7 @@ func (s *Server) previewRelease(ctx context.Context, release string, opts pipeli
 		releasePath:  releasePath,
 		lockfilePath: lockfilePath,
 		fetchSeam:    fetchSeam,
+		lockfile:     lf,
 	}
 	if preview != nil {
 		out.resolved = preview.Resolved

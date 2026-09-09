@@ -37,11 +37,11 @@ const (
 // reached without appearing as a node, and a node does not carry the version its
 // type resolved to.
 //
-// The resolution is the shared one every surface that reports a closure runs, so
-// what this prints and what a session or a tool call reports for the same Release
-// come from one computation rather than from three that agree today. Nothing is
-// rendered here beyond the listing: no provider guest is loaded and no artifact is
-// produced.
+// The resolution is the shared one, so what this prints comes from a single
+// computation rather than from a second one written beside it that agrees today.
+// Nothing is rendered here beyond the listing: no provider guest is loaded and no
+// artifact is produced, so the listing reports what the resolution reached and
+// nothing the reconstruction of a recorded pin set would add to it.
 //
 // A record of pinned versions is read where the workspace has one and the view is
 // seeded with it, so the versions reported are the ones this deployment resolves
@@ -81,7 +81,7 @@ func renderReleaseClosure(rw *workspaceconfig.ResolvedWorkspace, releasePath str
 		return withSkipContext(cerr, view.SkippedEntities())
 	}
 
-	renderClosureListing(opts, releasePath, resolved)
+	renderClosureListing(opts, lf, resolved)
 	return nil
 }
 
@@ -95,7 +95,17 @@ func renderReleaseClosure(rw *workspaceconfig.ResolvedWorkspace, releasePath str
 // function of the Release's content rather than of anything ambient, so imposing
 // a second order here would be a second statement of the same thing, free to
 // disagree with the first.
-func renderClosureListing(opts inspectOptions, releasePath string, resolved *compilerops.ResolvedClosure) {
+//
+// lf is the record of pinned versions the resolution was seeded with, or nil where
+// the workspace has none and equally where one is there and did not load. It is
+// read for the withdrawal markers it recorded, which is a fact about the record
+// rather than about the walk, so those are reported beside the closure. The read is
+// nil-safe; what a nil means differs by cause, and only one of the two is free — a
+// workspace with no record has no recorded marker either, while a record that did
+// not load has markers this listing cannot report. The second is the degradation
+// the resolution above already takes on an unreadable record rather than one this
+// listing introduces.
+func renderClosureListing(opts inspectOptions, lf *lockfile.Lockfile, resolved *compilerops.ResolvedClosure) {
 	if opts.level == levelList {
 		for _, e := range resolved.Closure.Entities {
 			fmt.Fprintf(opts.out, "%s\n", e.URI)
@@ -130,16 +140,39 @@ func renderClosureListing(opts inspectOptions, releasePath string, resolved *com
 
 	renderClosureLibraries(opts, resolved.Closure)
 
-	// The mapping findings follow the closure they were found in rather than
-	// preceding it, so the listing the caller asked for arrives first and is not
-	// mistaken for an error report. This command reports on a Release rather than
-	// producing anything from it, so a fault is described beside the closure
-	// rather than replacing it with a refusal — the same reading every other
-	// surface that reports a closure applies to the same findings.
+	// The findings follow the closure they were found in rather than preceding it,
+	// so the listing the caller asked for arrives first and is not mistaken for an
+	// error report. This command reports on a Release rather than producing
+	// anything from it, so a fault is described beside the closure rather than
+	// replacing it with a refusal — the verdict is the reporting caller's, which is
+	// exactly why the resolution carries these back as findings instead of failing
+	// on them.
+	renderClosureFindings(opts, lf, resolved)
+}
+
+// renderClosureFindings writes what is wrong with the closure just listed: the
+// Manifest mappings whose target does not implement the mapped type, and the
+// pinned references a withdrawal marker was recorded against.
+//
+// The two are separate sections because they are separate populations decided at
+// separate moments — one by this resolution, one by the record it was seeded with —
+// and a reader acting on either needs to know which. Each section is omitted where
+// its population is empty, on the same footing as an axis the closure reached
+// nothing on.
+func renderClosureFindings(opts inspectOptions, lf *lockfile.Lockfile, resolved *compilerops.ResolvedClosure) {
 	if len(resolved.ManifestConsistencyFindings) > 0 {
 		fmt.Fprintln(opts.out, "\nMapping findings:")
 		for _, f := range resolved.ManifestConsistencyFindings {
 			fmt.Fprintf(opts.out, "  %s\n", f.Error())
+		}
+	}
+	// Read through the shared report rather than off the record's rows, so the set
+	// of references reported here is the set every reader of that report sees and
+	// only the framing around it is this command's.
+	if findings := lf.DeprecationFindings(); len(findings) > 0 {
+		fmt.Fprintln(opts.out, "\nDeprecations:")
+		for _, f := range findings {
+			fmt.Fprintf(opts.out, "  %s\n", f.Notice())
 		}
 	}
 }
@@ -147,24 +180,23 @@ func renderClosureListing(opts inspectOptions, releasePath string, resolved *com
 // renderClosureLibraries writes the shared documents a Release draws on, one
 // section per axis, omitting an axis the closure reached nothing on.
 //
-// The axes are written in the order the resolution declares them, which is the
-// order every other surface reports them in.
+// It ranges over the closure's own declared axis set rather than naming the axes
+// here. That set is the single enumeration of them, so an axis added to it is
+// listed by construction — whereas a listing that named the axes itself would go
+// on reporting the old set, with nothing failing to say an axis had stopped being
+// reported. Each axis is labelled with the kind its members publish under, which
+// the declaration carries, so the label is not a second spelling of it either.
+//
+// The order is the declared one, which is what makes the order one statement
+// rather than one per listing, free to disagree with the others.
 func renderClosureLibraries(opts inspectOptions, cl closure.Closure) {
-	axes := []struct {
-		label string
-		libs  []closure.ResolvedLibrary
-	}{
-		{"MappingLibrary", cl.MappingLibraries},
-		{"SchemaLibrary", cl.SchemaLibraries},
-		{"WorkloadLibrary", cl.WorkloadLibraries},
-		{"ArtifactsLibrary", cl.ArtifactsLibraries},
-	}
-	for _, axis := range axes {
-		if len(axis.libs) == 0 {
+	for _, axis := range closure.LibraryAxes() {
+		libs := axis.Libraries(&cl)
+		if len(libs) == 0 {
 			continue
 		}
-		fmt.Fprintf(opts.out, "\n%s (%d):\n", axis.label, len(axis.libs))
-		for _, l := range axis.libs {
+		fmt.Fprintf(opts.out, "\n%s (%d):\n", axis.Kind, len(libs))
+		for _, l := range libs {
 			fmt.Fprintf(opts.out, "  %s\n", closureLine(opts, l.URI, l.ResolvedVersion))
 		}
 	}

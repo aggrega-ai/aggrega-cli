@@ -391,9 +391,17 @@ func TestReleaseClosureReportsWhatTheReleaseReaches(t *testing.T) {
 		t.Errorf("the entity listing is not what the resolution reached.\n got: %+v\nwant: %+v",
 			got.Entities, wantEntities)
 	}
-	if !sameClosureListing(got.Libraries, closureLibraries(preview.resolved.Closure)) {
-		t.Errorf("the library listing is not what the resolution reached.\n got: %+v\nwant: %+v",
-			got.Libraries, closureLibraries(preview.resolved.Closure))
+	// The library expectation is read off the closure's own DECLARED axis set
+	// rather than off the projection under test. Deriving both sides from that
+	// projection compares a value with itself: an axis the projection stopped
+	// reading would be missing from the expectation too, and the comparison would
+	// go on passing with nothing to say a whole class had stopped being reported.
+	// That blindness is exactly how the same listing came to be complete on one
+	// surface and short on another.
+	wantLibraries := declaredLibraryListing(preview.resolved.Closure)
+	if !sameClosureListing(got.Libraries, wantLibraries) {
+		t.Errorf("the library listing is not what the declared axes hold.\n got: %+v\nwant: %+v",
+			got.Libraries, wantLibraries)
 	}
 	if !sameClosureListing(got.Plugins, closurePlugins(preview.resolved.Closure)) {
 		t.Errorf("the guest listing is not what the resolution reached.\n got: %+v\nwant: %+v",

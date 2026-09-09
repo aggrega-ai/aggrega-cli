@@ -15,6 +15,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
+	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 )
 
 // The two requests here answer questions the daemon's positional surfaces
@@ -255,12 +256,23 @@ type ClosureEntity struct {
 // Manifest are the identities the Release's two pointers resolved to, which is
 // the fact a reader wants and not the paths they were written as.
 //
-// The three collections are always arrays on the wire, empty rather than null,
-// so a client iterates them without a null check. They are separate because
-// they are different populations answering to different questions — what the
-// deployment is built from, which shared documents it draws on, and which
+// Every collection is always an array on the wire, empty rather than null, so a
+// client iterates them without a null check. The three listings are separate
+// because they are different populations answering to different questions — what
+// the deployment is built from, which shared documents it draws on, and which
 // guests shape its output — and a client that wants one of the three should not
 // have to filter a merged list to find it.
+//
+// MappingDiagnostics and Deprecations are what is wrong with the closure just
+// listed, and they are reported rather than turned into a refusal: this request
+// reports on a Release rather than producing anything from it, so a client asking
+// what a deployment depends on is answered AND told what is wrong with it. A
+// listing that carried neither would report a closure as sound that another reader
+// of the same facts reports as broken.
+//
+// They are kept apart because they are decided at different moments and by
+// different things — one by this resolution, one by the record of pinned versions
+// it was seeded with — so a client acting on either knows which it is holding.
 type releaseClosureResult struct {
 	Release     string          `json:"release"`
 	Aggregate   string          `json:"aggregate"`
@@ -269,6 +281,13 @@ type releaseClosureResult struct {
 	Entities    []ClosureEntity `json:"entities"`
 	Libraries   []ClosureEntity `json:"libraries"`
 	Plugins     []ClosureEntity `json:"plugins"`
+	// MappingDiagnostics names each Manifest mapping whose target does not
+	// implement the mapped type, as the resolution reported it.
+	MappingDiagnostics []string `json:"mappingDiagnostics"`
+	// Deprecations names each pinned reference a withdrawal marker was recorded
+	// against, from the shared report — so the set of references named here is the
+	// set every reader of that report sees, and only the framing differs.
+	Deprecations []string `json:"deprecations"`
 }
 
 // dispatchReleaseClosure answers with the dependency closure of the Release the
@@ -331,21 +350,65 @@ func (s *Server) dispatchReleaseClosure(ctx context.Context, req *jsonRPCRequest
 }
 
 // handleReleaseClosure runs the shared Release inspection and projects the
-// closure it resolved onto the wire shape.
+// closure it resolved, plus the findings decided about it, onto the wire shape.
+//
+// The findings are read from the same computation the listing is read from — the
+// resolution's own mapping verdict, and the shared withdrawal report over the
+// record that computation was seeded with — so nothing here re-derives a fact that
+// already has a producer.
 func (s *Server) handleReleaseClosure(ctx context.Context, params releaseClosureParams) (releaseClosureResult, *jsonRPCError) {
 	preview, errEnvelope := s.previewRelease(ctx, params.Release, pipeline.Options{SkipRender: true})
 	if errEnvelope != nil {
 		return releaseClosureResult{}, errEnvelope
 	}
 	return releaseClosureResult{
-		Release:     params.Release,
-		Aggregate:   preview.resolved.Aggregate.Metadata.Name,
-		Manifest:    preview.resolved.Manifest.Metadata.Name,
-		Environment: preview.resolved.Release.Metadata.Environment,
-		Entities:    closureEntities(preview.resolved.Closure),
-		Libraries:   closureLibraries(preview.resolved.Closure),
-		Plugins:     closurePlugins(preview.resolved.Closure),
+		Release:            params.Release,
+		Aggregate:          preview.resolved.Aggregate.Metadata.Name,
+		Manifest:           preview.resolved.Manifest.Metadata.Name,
+		Environment:        preview.resolved.Release.Metadata.Environment,
+		Entities:           closureEntities(preview.resolved.Closure),
+		Libraries:          closureLibraries(preview.resolved.Closure),
+		Plugins:            closurePlugins(preview.resolved.Closure),
+		MappingDiagnostics: closureMappingDiagnostics(preview.resolved.ManifestConsistencyFindings),
+		Deprecations:       closureDeprecations(preview.lockfile),
 	}, nil
+}
+
+// closureMappingDiagnostics renders the resolution's mapping verdict onto the wire
+// shape, in the order the resolution reported it.
+//
+// The result is an empty slice rather than nil for a sound Manifest, matching every
+// other collection in this response: a client iterates it without a null check, and
+// an absent finding set and an empty one are the same statement here.
+func closureMappingDiagnostics(findings []error) []string {
+	out := make([]string, 0, len(findings))
+	for _, f := range findings {
+		out = append(out, f.Error())
+	}
+	return out
+}
+
+// closureDeprecations renders the withdrawal markers recorded against the pinned
+// references onto the wire shape.
+//
+// It reads the shared report rather than the record's rows, so a reference reported
+// here is reported by every reader of that report and the wording of the notice has
+// one home.
+//
+// The report is nil-safe by contract, so no guard is needed here for a nil record.
+// What that means differs by why the record is nil, and only one of the two cases is
+// free: a workspace with no record has no recorded marker either, while a record
+// present but unreadable has markers this answer cannot report. The second is the
+// same degradation the surrounding computation already takes on an unreadable record
+// — it proceeds with no pins — rather than one introduced here, and the answer says
+// nothing about it either way.
+func closureDeprecations(lf *lockfile.Lockfile) []string {
+	findings := lf.DeprecationFindings()
+	out := make([]string, 0, len(findings))
+	for _, f := range findings {
+		out = append(out, f.Notice())
+	}
+	return out
 }
 
 // closureEntities projects the catalog-entity axis onto the wire shape, in the
@@ -364,26 +427,34 @@ func closureEntities(cl closure.Closure) []ClosureEntity {
 	return out
 }
 
-// closureLibraries projects the four shared-document axes onto one collection,
-// each entry carrying the kind of library it is.
+// closureLibraries projects the shared-document axes onto one collection, each
+// entry carrying the kind of library it is.
 //
-// They are joined rather than reported as four fields because a client asking
-// what shared documents a Release draws on is asking one question; the kind is
-// carried on the entry, so nothing is lost by joining them. The axes are
-// appended in the order the resolution declares them, which is the order every
-// other surface reports them in.
+// They are joined rather than reported as one field per axis because a client
+// asking what shared documents a Release draws on is asking one question; the kind
+// is carried on the entry, so nothing is lost by joining them.
+//
+// It ranges over the closure's own declared axis set rather than naming the axes
+// here. That set is the single enumeration of them, so an axis added to it is
+// carried into this answer by construction — whereas a projection that named the
+// axes itself would go on reporting the old set, with nothing failing to say an
+// axis had stopped being reported. The kind comes off the declaration for the same
+// reason: spelled here, it would be a second spelling free to disagree with it.
+//
+// The axes are appended in the declared order, which is what makes that order one
+// statement rather than one per projection.
 func closureLibraries(cl closure.Closure) []ClosureEntity {
-	out := make([]ClosureEntity, 0,
-		len(cl.MappingLibraries)+len(cl.SchemaLibraries)+len(cl.WorkloadLibraries)+len(cl.ArtifactsLibraries))
-	appendAxis := func(kind string, libs []closure.ResolvedLibrary) {
-		for _, l := range libs {
-			out = append(out, ClosureEntity{URI: l.URI, Version: l.ResolvedVersion, Kind: kind})
+	axes := closure.LibraryAxes()
+	total := 0
+	for _, axis := range axes {
+		total += len(axis.Libraries(&cl))
+	}
+	out := make([]ClosureEntity, 0, total)
+	for _, axis := range axes {
+		for _, l := range axis.Libraries(&cl) {
+			out = append(out, ClosureEntity{URI: l.URI, Version: l.ResolvedVersion, Kind: axis.Kind})
 		}
 	}
-	appendAxis("MappingLibrary", cl.MappingLibraries)
-	appendAxis("SchemaLibrary", cl.SchemaLibraries)
-	appendAxis("WorkloadLibrary", cl.WorkloadLibraries)
-	appendAxis("ArtifactsLibrary", cl.ArtifactsLibraries)
 	return out
 }
 

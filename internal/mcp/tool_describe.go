@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
+	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 )
 
 // describeArgs is the describe tool's argument shape. Exactly one of name or
@@ -36,15 +37,36 @@ type describeEntityPayload struct {
 }
 
 // describeReleasePayload is the structured payload for a Release subject: the
-// resolved Release/Manifest/Aggregate identities and the entities its catalog
-// closure reaches.
+// resolved Release/Manifest/Aggregate identities, everything its catalog closure
+// reaches, and what is wrong with it.
+//
+// The two listings are separate because they are different populations answering
+// different questions — what the deployment is built from, and which shared
+// documents it draws on — and a caller that wants one of them should not have to
+// filter a merged list to find it.
+//
+// Each listing carries a count as well as its members, because the concise format
+// answers with counts and no members: the count is the only carrier there, so a
+// listing added here owes one too.
 type describeReleasePayload struct {
-	Release     string       `json:"release"`
-	Aggregate   string       `json:"aggregate"`
-	Manifest    string       `json:"manifest"`
-	Environment string       `json:"environment"`
-	EntityCount int          `json:"entity_count"`
-	Entities    []closureRef `json:"entities"`
+	Release      string       `json:"release"`
+	Aggregate    string       `json:"aggregate"`
+	Manifest     string       `json:"manifest"`
+	Environment  string       `json:"environment"`
+	EntityCount  int          `json:"entity_count"`
+	LibraryCount int          `json:"library_count"`
+	Entities     []closureRef `json:"entities"`
+	// Libraries names the shared documents the closure reaches, each entry carrying
+	// the kind of library it is. They are joined across the axes rather than
+	// reported one field per axis: the kind is on the entry, so nothing is lost by
+	// joining them, and a caller meets one entry shape rather than one per axis.
+	//
+	// It carries no omission tag, matching the entity listing beside it: the two are
+	// the same population class, so a caller reading both meets one presence rule
+	// rather than one per listing. The finding sets below do carry one, which is the
+	// split a reader can act on — a listing is always answered, a finding only
+	// appears when there is one.
+	Libraries []closureRef `json:"libraries"`
 	// MappingDiagnostics names each Manifest mapping whose target recipe does not
 	// implement the mapped type. This tool reports on a Release rather than
 	// producing anything from it, so a fault is described alongside the closure
@@ -65,10 +87,10 @@ var describeToolSpec = toolSpec{
 		"catalog entity of any kind by its type URI and get its fully-resolved definition (schema, uses-schema, provides, " +
 		"labels) with inheritance applied; or pass `release` (a Release path) to get its dependency closure — what a " +
 		"deployment is built FROM, not its shape — the resolved Aggregate and Manifest identities plus every catalog " +
-		"entity the Release reaches, with resolved versions. Use `name` to understand a building block before wiring it " +
-		"into an Aggregate, and `release` to see what a deployment depends on before building it. Optional " +
-		"`workspace_root` and `catalog_dirs` override discovery; `response_format` chooses detailed (full definition / " +
-		"every entity) or concise (identity and counts).",
+		"entity and shared library it reaches, with resolved versions. Use `name` to understand a building block " +
+		"before wiring it into an Aggregate, and `release` to see what a deployment depends on before building it. " +
+		"Optional `workspace_root` and `catalog_dirs` override discovery; `response_format` chooses detailed (full " +
+		"definition / every reference) or concise (identity and counts).",
 	inputSchema: `{
   "type": "object",
   "properties": {
@@ -94,7 +116,7 @@ var describeToolSpec = toolSpec{
     "response_format": {
       "type": "string",
       "enum": ["detailed", "concise"],
-      "description": "detailed returns the full definition or every closure entity; concise returns identity and counts. Defaults to detailed."
+      "description": "detailed returns the full definition or every closure reference; concise returns identity and counts. Defaults to detailed."
     }
   },
   "anyOf": [
@@ -185,12 +207,17 @@ func (s *server) describeRelease(a describeArgs, release string) (*callToolResul
 	}
 
 	detail := parseResponseFormat(a.ResponseFormat) == responseFormatDetailed
+	// Collected whatever the format, and reported only at the detailed one. The
+	// count is the length of the listing rather than a second traversal, so the two
+	// cannot come to disagree about how many references were reached.
+	libraries := describeLibraryRefs(resolved.Closure)
 	payload := describeReleasePayload{
-		Release:     releasePath,
-		Aggregate:   resolved.Aggregate.Metadata.Name,
-		Manifest:    resolved.Manifest.Metadata.Name,
-		Environment: resolved.Release.Metadata.Environment,
-		EntityCount: len(resolved.Closure.Entities),
+		Release:      releasePath,
+		Aggregate:    resolved.Aggregate.Metadata.Name,
+		Manifest:     resolved.Manifest.Metadata.Name,
+		Environment:  resolved.Release.Metadata.Environment,
+		EntityCount:  len(resolved.Closure.Entities),
+		LibraryCount: len(libraries),
 	}
 	for _, f := range resolved.ManifestConsistencyFindings {
 		payload.MappingDiagnostics = append(payload.MappingDiagnostics, f.Error())
@@ -207,8 +234,31 @@ func (s *server) describeRelease(a describeArgs, release string) (*callToolResul
 			// reads the same whichever tool returned it.
 			payload.Entities = append(payload.Entities, closureRefOf(e.URI, e.ResolvedVersion, "", e.KindHint))
 		}
+		payload.Libraries = libraries
 	}
 	return textResult(renderDescribeReleaseText(payload), payload)
+}
+
+// describeLibraryRefs renders every shared document the closure reaches into the
+// reported shape, joined across the axes in the order they are declared.
+//
+// It ranges over the closure's own declared axis set rather than naming the axes
+// here. That set is the single enumeration of them, so an axis added to it is
+// reported by construction — whereas a listing that named the axes itself would go
+// on reporting the old set, with nothing failing to say an axis had stopped being
+// reported. A library axis fixes the kind its members publish under, so the kind
+// comes off the declaration and no reference carries a hint.
+//
+// An axis with no members contributes nothing, so the result describes what this
+// closure reached rather than the shape of the axis set.
+func describeLibraryRefs(cl closure.Closure) []closureRef {
+	var out []closureRef
+	for _, axis := range closure.LibraryAxes() {
+		for _, l := range axis.Libraries(&cl) {
+			out = append(out, closureRefOf(l.URI, l.ResolvedVersion, axis.Kind, ""))
+		}
+	}
+	return out
 }
 
 // renderDescribeEntityText renders the human-readable one-line summary of a
@@ -232,10 +282,14 @@ func renderDescribeReleaseText(p describeReleasePayload) string {
 	}
 	fmt.Fprintf(&b, "  closure entities: %d\n", p.EntityCount)
 	for _, e := range p.Entities {
-		if e.Version != "" {
-			fmt.Fprintf(&b, "    - %s (%s)\n", e.URI, e.Version)
-		} else {
-			fmt.Fprintf(&b, "    - %s\n", e.URI)
+		fmt.Fprintf(&b, "    - %s\n", describeClosureRefLine(e))
+	}
+	// The shared documents follow the entities and are omitted where the closure
+	// reaches none, so a Release drawing on no library reads the same as it did.
+	if p.LibraryCount > 0 {
+		fmt.Fprintf(&b, "  shared documents: %d\n", p.LibraryCount)
+		for _, l := range p.Libraries {
+			fmt.Fprintf(&b, "    - %s\n", describeClosureRefLine(l))
 		}
 	}
 	// The mapping faults follow the closure they were found in rather than
@@ -248,4 +302,19 @@ func renderDescribeReleaseText(p describeReleasePayload) string {
 		fmt.Fprintf(&b, "  deprecation: %s\n", d)
 	}
 	return strings.TrimRight(b.String(), "\n")
+}
+
+// describeClosureRefLine renders one reached reference for the human-readable
+// summary: its identity, and the version it resolved to where it resolved to one.
+//
+// A reference that resolved to no version prints its identity alone rather than an
+// empty pair of brackets, because a reference resolving to nothing and one
+// resolving to the empty string are different statements and only one is true.
+// Both listings render through this, so an entry reads the same whichever listing
+// it came from.
+func describeClosureRefLine(r closureRef) string {
+	if r.Version == "" {
+		return r.URI
+	}
+	return fmt.Sprintf("%s (%s)", r.URI, r.Version)
 }
