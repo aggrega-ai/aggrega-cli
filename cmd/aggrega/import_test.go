@@ -5,6 +5,7 @@ package main
 
 import (
 	"bytes"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -64,6 +65,33 @@ func TestWriteImportStdoutEmitsNothingForAnEmptySet(t *testing.T) {
 	}
 	if out.Len() != 0 {
 		t.Fatalf("writeImportStdout(nil) wrote %q; want nothing", out.String())
+	}
+}
+
+// TestReportImportPreambleNamesBothFactsFromTheResult pins the terminal's
+// framing line against the shared result's own fields: the format the import
+// ran for, and the root the drafted paths are relative to. Neither is
+// recoverable from the drafted output, and the format is not recoverable at all
+// when --format is omitted and the shape decides it.
+//
+// 🔴 The expectation is derived from the result's fields rather than restated as
+// a literal, and the rows vary BOTH fields independently. One row would pass on
+// a renderer that printed constants and read neither field; rows varying one
+// field would pass on a renderer that had stopped reading the other.
+func TestReportImportPreambleNamesBothFactsFromTheResult(t *testing.T) {
+	t.Parallel()
+
+	for _, res := range []importops.Result{
+		{Format: "demo", OutputDir: "."},
+		{Format: "langflow", OutputDir: "drafts/generated"},
+	} {
+		var errOut bytes.Buffer
+		reportImportPreamble(&errOut, res)
+		want := "read as the " + res.Format + " format, with drafted paths relative to " +
+			strconv.Quote(res.OutputDir) + "\n"
+		if errOut.String() != want {
+			t.Fatalf("reportImportPreamble(%+v) = %q; want %q", res, errOut.String(), want)
+		}
 	}
 }
 

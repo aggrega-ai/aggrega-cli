@@ -51,6 +51,12 @@ top-level shape to recognize the format; if the shape is not recognized, import
 stops and asks for --format rather than guessing. Detection reads only the
 named file — no other files, no network.
 
+Before the drafted output, import names on standard error the format it read
+the source as and the directory the drafted paths are relative to, alongside
+any diagnostics the importer reported. Standard output carries only the result
+— the paths written, or the drafted files themselves under --stdout — so it can
+be piped unchanged.
+
 With --stdout, the drafted files are written to standard output — a header
 line naming each file's path followed by its content — instead of to disk, so
 the result can be reviewed or piped before anything is written.`,
@@ -94,6 +100,13 @@ the result can be reviewed or piped before anything is written.`,
 				return err
 			}
 
+			// The import's commentary — how the source was read, then what the
+			// importer reported about it — goes to the error stream. Under
+			// --stdout the standard output stream is the drafted files
+			// themselves, so a commentary line there would corrupt what a caller
+			// is piping; putting both on one stream is also what lets a reader
+			// see which importer raised an unmapped-node warning.
+			reportImportPreamble(cmd.ErrOrStderr(), res)
 			reportImportDiagnostics(cmd.ErrOrStderr(), res.Diagnostics)
 
 			if opts.stdout {
@@ -146,6 +159,34 @@ func writeImportStdout(w io.Writer, files []abi.ScaffoldFile) error {
 		}
 	}
 	return nil
+}
+
+// reportImportPreamble writes the one line that says how to read everything the
+// import prints after it: the source format it ran for, and the directory the
+// drafted paths are relative to.
+//
+// The format is what says which importer read the file, and it is the one fact
+// the drafted output does not already carry — with --format omitted the format
+// is recognised from the source's own shape, and nothing else says which shape
+// was recognised. It is named on every run rather than only on a recognised
+// one: conditioning the line on how the format was arrived at would make the
+// output depend on the route to the fact rather than on the fact, and would put
+// a second reading of "was this named explicitly" at a surface whose job is to
+// report what the import did.
+//
+// The output root is named because every drafted path is relative to it and
+// carries no anchor of its own — the wrote lines under a writing delivery and
+// the path headers under --stdout are both root-relative. It is therefore true
+// under both deliveries, which is why the line frames the paths rather than
+// claiming a destination: under --stdout nothing is written anywhere, and a
+// line announcing a directory the run never touched would be worse than no line
+// at all.
+//
+// Both are read from the result rather than from the values passed to the call,
+// so the line names what the import actually ran with and the two cannot come
+// to disagree.
+func reportImportPreamble(w io.Writer, res importops.Result) {
+	fmt.Fprintf(w, "read as the %s format, with drafted paths relative to %q\n", res.Format, res.OutputDir)
 }
 
 // reportImportDiagnostics writes each importer diagnostic to w as a
