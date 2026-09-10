@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
-	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -169,13 +168,21 @@ func TestTheAbsentCatalogEntryReadsTheSameWhicheverSurfaceReportsIt(t *testing.T
 // raised at, because that is where the walk was, and the conversion is what
 // decides that the coordinate is not reported.
 //
-// 🔴 The category is asserted alongside, and it is asserted to be UNCHANGED. A
-// finding naming no document classifies to the developer domain by the documented
-// conservative default, which is the same domain a finding naming the application
-// classified to — so the domain is not what moved here, and a later change that
-// moved it would be a re-attribution wearing this repair's clothes. Reading that
-// as a defect to "fix" by inventing a domain for a fault that is nobody's is the
-// thing this assertion exists to catch.
+// 🔴 The category is asserted alongside, and it is asserted to be ABSENT. A
+// category answers "which authoring surface do I fix", so a fault that is
+// nobody's has none to name, and the head prints the condition without one. The
+// assertion is written as "no category" rather than as "not the developer's"
+// deliberately: what it has to exclude is any surface at all, since sending a
+// reader to the catalog would be the same misdirection as sending them to the
+// Aggregate.
+//
+// 🔴 It does NOT invent a domain for the condition, and the difference matters
+// because the two repairs look alike from the outside. Filing this under a
+// category of its own would be a new answer to "which surface do I fix" for a
+// failure that has no surface; filing it under none is the answer the question
+// actually has. So a later change that gave this condition a category — any
+// category — is a re-attribution rather than a continuation of this one, and
+// this assertion is what makes it fail rather than pass quietly.
 func TestNeitherSurfaceSendsAReaderToAnAuthoredCoordinate(t *testing.T) {
 	t.Parallel()
 
@@ -209,13 +216,13 @@ func TestNeitherSurfaceSendsAReaderToAnAuthoredCoordinate(t *testing.T) {
 				"CONSEQUENCE: an editor draws the diagnostic on an authoring key the author must not change.",
 				surface, finding.Field)
 		}
-		if got, want := finding.ToCompilerError().Category, cerrors.DeveloperError; got != want {
-			t.Errorf("%s files the condition under %v; want %v.\n"+
-				"INVARIANT: dropping the subject is a message change, not a re-attribution — the "+
-				"domain this condition is filed under does not move.\n"+
-				"CONSEQUENCE: a category change here is a behaviour change nobody asked for, and "+
-				"inventing a domain for a fault that is nobody's is out of scope by design.",
-				surface, got, want)
+		if got := finding.ToCompilerError().Category; got != "" {
+			t.Errorf("%s files the condition under %v; want no category at all.\n"+
+				"INVARIANT: a category answers which authoring surface to fix, so a fault in the "+
+				"compiler carries none — not the developer's, and not a domain of its own either.\n"+
+				"CONSEQUENCE: the head sends the reader to a surface that is not at fault, and the "+
+				"reader believes it, because the head is the part of a diagnostic they act on first.",
+				surface, got)
 		}
 		if !strings.Contains(finding.Message, typeRef) {
 			t.Errorf("%s does not name the type the two views disagree on.\n"+

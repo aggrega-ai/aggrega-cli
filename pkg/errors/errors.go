@@ -10,7 +10,7 @@ import (
 )
 
 // Category names which authoring artifact is at fault for a given
-// CompilerError. The six values partition the compiler's error surface
+// CompilerError. The values partition the compiler's error surface
 // by who must act to resolve the failure: developer (Aggregate), operator
 // (Release / Manifest), catalog author (Recipe / Component / Feature /
 // FeatureRecipe / Plugin), provider engine (translation cannot express the requested
@@ -19,9 +19,20 @@ import (
 // policy plugin (a governance verdict rejected the build — the
 // fix is to satisfy the enforced policy or reconsider its attachment,
 // not to edit an authoring file).
+//
+// The values are deliberately not counted here. The block below is the
+// statement of how many there are, and a number written beside it reads as
+// current while lagging the set it counts.
+//
+// The zero value is the absence of a category, and it is a meaningful state
+// rather than an unset field: not every failure the compiler reports is a
+// fault in an authored artifact, and one that is not has no surface to name.
+// A failure whose cause lies in the compiler itself is the case that arises
+// today. The rendered head omits an absent category the same way it omits an
+// absent short code, so nothing stands in for it.
 type Category string
 
-// The six error categories.
+// The error categories.
 const (
 	DeveloperError   Category = "DEVELOPER_ERROR"
 	OpsError         Category = "OPS_ERROR"
@@ -141,15 +152,26 @@ type CompilerError struct {
 // rich shape would leak into contexts that expect one line per error. The
 // multi-line rendering therefore belongs to the formatter, which knows it is
 // writing to a terminal, and not to this method, which does not.
+//
+// An absent Category is omitted along with its brackets, the same way the
+// terminal formatter omits it. Empty brackets would assert that a category was
+// expected and is missing, which is a different claim from a failure that has
+// no authoring surface to name — and this string is re-wrapped into enclosing
+// frames, so the wrong claim would be carried up rather than left where it was
+// made.
 func (e *CompilerError) Error() string {
 	if e == nil {
 		return "<nil>"
 	}
+	var head string
+	if e.Category != "" {
+		head = fmt.Sprintf("[%s] ", e.Category)
+	}
 	src := e.Source.String()
 	if src == "" {
-		return fmt.Sprintf("[%s] %s", e.Category, e.Message)
+		return head + e.Message
 	}
-	return fmt.Sprintf("[%s] %s: %s", e.Category, src, e.Message)
+	return fmt.Sprintf("%s%s: %s", head, src, e.Message)
 }
 
 // CauseChain renders err together with every cause beneath it as ONE line,

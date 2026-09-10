@@ -123,9 +123,14 @@ func TestCompilerError_Unwrap_PreservesChain(t *testing.T) {
 
 func TestCompilerError_CategoryPartitions(t *testing.T) {
 	t.Parallel()
-	// Validates that the six-Category enum is distinct and stable. If a
+	// Validates that the Category values are distinct and stable. If a
 	// future change collapses or renames a category, this test surfaces
 	// the rename before it propagates through the audit-slice surface.
+	//
+	// The list below is the statement of what is covered, so a category
+	// added to the package and not added here is one this test does not
+	// check — and it keeps passing, because agreeing on a shorter list is
+	// still agreement.
 	all := []cerrors.Category{
 		cerrors.DeveloperError,
 		cerrors.OpsError,

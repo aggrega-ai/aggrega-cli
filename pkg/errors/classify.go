@@ -54,25 +54,41 @@ func ClassifyEntityKind(kind string) (Category, bool) {
 // ClassifyEntityCategory returns the Category for an entity reference
 // rendered in the "<Kind> <metadata.name>" shape — resolver.ResolverError
 // builds its Entity strings that way — by reading the leading kind word and
-// classifying it through ClassifyEntityKind.
+// classifying it through ClassifyEntityKind, and reports whether the mapping
+// covered that word.
 //
 // It exists for callers whose only handle on the entity is that rendered
 // reference. A caller holding the kind as a value calls ClassifyEntityKind
 // instead: the kind is then a field it cannot forget to set, rather than a
 // word it has to remember to prepend.
 //
-// A reference whose leading word is not a mapped kind yields DeveloperError.
-// That is conservative rather than correct, and deliberately so: from a
-// rendered string alone there is no way to tell an unrecognised kind from a
-// reference that carries no kind at all, so the fault is reported at the
-// developer's authoring surface rather than misrouted to ops.
-func ClassifyEntityCategory(entity string) Category {
+// It decides nothing beyond what the mapping says, and that is the whole of
+// its contract. A reference the mapping does not cover — an unmapped leading
+// word, or no word at all — is reported as uncovered, exactly as
+// ClassifyEntityKind reports an unmapped kind, so the two functions answer the
+// same question the same way and there is one mapping rather than a mapping
+// and a default.
+//
+// # Why it reports rather than choosing
+//
+// A category answers "which authoring surface do I fix", so a category chosen
+// for a reference that names no surface is an answer to a question that has
+// none — and the reader acts on it, because acting on the head is what the
+// printed head is for. The value it would have to choose is the developer's
+// authoring surface, which is the one surface a reader can always be sent to
+// and can least afford to be sent to wrongly: a compiler fault filed there
+// sends its reader to read their own document looking for a mistake that is
+// not there.
+//
+// Reporting instead moves that decision to the caller, which is the only place
+// where the reference and the meaning of the failure are both in hand, and
+// makes it a decision somebody wrote rather than one nobody made. A caller
+// cannot acquire a category by omission: the signature will not let it ignore
+// the uncovered case.
+func ClassifyEntityCategory(entity string) (Category, bool) {
 	parts := strings.Fields(entity)
 	if len(parts) == 0 {
-		return DeveloperError
+		return "", false
 	}
-	if category, ok := ClassifyEntityKind(parts[0]); ok {
-		return category
-	}
-	return DeveloperError
+	return ClassifyEntityKind(parts[0])
 }

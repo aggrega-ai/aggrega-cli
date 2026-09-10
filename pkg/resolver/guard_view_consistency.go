@@ -95,10 +95,13 @@ func catalogEntryAbsentMessage(typeRef string) string {
 // A reader sent to an authoring key for a fault their file cannot cause reads the
 // key as the accusation and the wording as boilerplate around it.
 //
-// Leaving both empty does not move the condition into another domain: an entity
-// reference whose leading word names no entity kind classifies to the developer
-// domain, which is the domain a reference naming the application already
-// classified to, so what the reader loses is the misdirection and not the filing.
+// Leaving both empty is also what keeps the condition out of an authoring
+// domain it does not belong to. A finding that names no subject is filed under
+// no category, so the printed head names the condition and says nothing about
+// which surface to fix — which is the only true answer for a fault that is
+// nobody's. The wording carries the rest: it says plainly that there is nothing
+// to correct in the Aggregate, the Release or the catalog, and asks for a
+// report instead.
 func guardEntityViewInconsistency(typeRef string) *ResolverError {
 	if isRelativePathRef(typeRef) {
 		return nil

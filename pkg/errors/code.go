@@ -333,11 +333,15 @@ type Meta struct {
 	//
 	// Short codes are globally unique across every category. They have to be: a
 	// condition has no category of its own. Which category a diagnostic prints
-	// is derived per occurrence from the entity kind involved — see
-	// ClassifyEntityKind — so one condition raised against two kinds prints two
-	// categories, and a per-category number would have to be two numbers for one
-	// condition. One flat space means a short code identifies a condition
-	// without needing its category to disambiguate it.
+	// is a property of the occurrence — read from the entity kind involved
+	// where the failure names one (see ClassifyEntityKind), and fixed by the
+	// boundary that builds the envelope where it does not — so one condition
+	// reported from two places prints two categories, and a per-category number
+	// would have to be two numbers for one condition. An occurrence that is not
+	// a fault in an authored artifact prints no category at all, which a
+	// per-category space could not have numbered. One flat space means a short
+	// code identifies a condition without needing its category to disambiguate
+	// it, and keeps identifying it when there is no category to read.
 	//
 	// # Allocation: what is enforced here, and what is convention
 	//

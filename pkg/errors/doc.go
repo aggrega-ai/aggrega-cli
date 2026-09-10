@@ -9,9 +9,10 @@
 // Expression (the failing template expression where applicable), and a
 // Context map (the per-pass pillar snapshot at the failure point).
 //
-// Six categories partition the error surface by origin — four name the
-// authoring artifact the operator must edit to fix the error, and two name
-// non-authoring faults:
+// Categories partition the error surface by origin. Some name the authoring
+// artifact the operator must edit to fix the error; the rest name non-authoring
+// faults. The list below is the statement of how many there are of each, and a
+// number written beside it would read as current while lagging what it counts:
 //   - DeveloperError: the Aggregate is at fault.
 //   - OpsError: the Release or the Manifest is at fault.
 //   - CatalogError: a Recipe, Component, Feature, FeatureRecipe, or
@@ -24,6 +25,13 @@
 //   - PolicyError: an operator-attached policy plugin rejected the
 //     build; the fix is to satisfy the enforced policy or reconsider its
 //     attachment, not to edit an authoring artifact.
+//
+// A CompilerError may also carry NO category, and that is a state rather than
+// an unset field: a failure whose cause lies in the compiler itself is a fault
+// in no authored artifact, so it has no surface for a category to name. The
+// rendered head omits an absent category rather than standing anything in for
+// it, and the kind-to-Category mapping reports an uncovered reference rather
+// than defaulting one — see ClassifyEntityKind and ClassifyEntityCategory.
 //
 // CompilerError implements the standard error interface plus Unwrap so
 // errors.Is and errors.As work against the carried inner error chain.

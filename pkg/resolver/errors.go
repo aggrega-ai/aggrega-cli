@@ -668,9 +668,9 @@ func (e *MultiResolverError) Unwrap() []error {
 
 // ToCompilerError converts the structured ResolverError into a
 // *cerrors.CompilerError carrying the appropriate Category. The category
-// is classified by the Entity prefix per cerrors.ClassifyEntityCategory:
-// Aggregate → DeveloperError, Release → OpsError, catalog entities →
-// CatalogError, unknown → DeveloperError (conservative).
+// comes from [ResolverError.category], which reads the Entity prefix through
+// cerrors.ClassifyEntityCategory: Aggregate → DeveloperError, Release →
+// OpsError, catalog entities → CatalogError.
 //
 // The Source location maps the JSON-path Field into the CompilerError's
 // SourceLocation.File. Field is a JSON-path-style locator (e.g.,
@@ -687,7 +687,39 @@ func (e *MultiResolverError) Unwrap() []error {
 // against the resolver's sentinel errors (ErrYAMLLoad, ErrSchemaConformance,
 // etc.) continues to match through the converted CompilerError.
 func (e *ResolverError) ToCompilerError() *cerrors.CompilerError {
-	cat := cerrors.ClassifyEntityCategory(e.Entity)
 	source := cerrors.SourceLocation{File: e.Field}
-	return cerrors.Wrap(e, cat, source, e.Error())
+	return cerrors.Wrap(e, e.category(), source, e.Error())
+}
+
+// category answers which authoring surface this finding is filed under, and
+// returns the empty Category for a finding that is filed under none.
+//
+// The mapping is asked first and its answer is taken whenever it has one. What
+// remains are the two references the mapping does not cover, and they are
+// different facts rather than one fallback — which is why they are answered
+// separately here rather than defaulted together in the classifier:
+//
+//   - A finding that named NO subject is filed under no surface. A raise site
+//     leaves Entity empty when the condition it reports is not a fault in an
+//     authored document — the views of the catalog disagreeing with each other
+//     is the case that exists today — and there is then no surface for a
+//     reader to fix. Naming one anyway sends them to a document that is not at
+//     fault, and the head is the part of a diagnostic a reader acts on first.
+//
+//   - A finding that named a subject the mapping does not cover is filed at
+//     the developer's authoring surface. Something WAS named: the references
+//     reaching this shape are the labels the placement and resolution walks
+//     supply for faults in the developer's own document, so that is where the
+//     reader is sent. This one is still a judgement rather than a derivation,
+//     and it is written here, at the one site that knows what its findings
+//     mean, rather than in the shared mapping where every future caller would
+//     inherit it without being asked.
+func (e *ResolverError) category() cerrors.Category {
+	if category, covered := cerrors.ClassifyEntityCategory(e.Entity); covered {
+		return category
+	}
+	if e.Entity == "" {
+		return ""
+	}
+	return cerrors.DeveloperError
 }

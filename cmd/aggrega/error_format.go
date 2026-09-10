@@ -21,9 +21,13 @@ import (
 // *CompilerError, falls back to err.Error() so non-CLI callers and
 // non-categorised errors retain their existing presentation.
 //
-// The bracketed head carries the category and, when the chain names a
-// registered condition, that condition's short code beside it. Which frames
-// carry the short code is decided by diagnosticPosition below, not here.
+// The bracketed head carries the category the failure was filed under and,
+// when the chain names a registered condition, that condition's short code
+// beside it. Which frames carry the short code is decided by
+// diagnosticPosition below, not here. Either token may be absent — a failure
+// that is not a fault in an authored artifact has no surface to name, and a
+// chain naming no registered condition has no code — and an absent token is
+// omitted rather than stood in for.
 //
 // Dispatch runs four detection branches in a fixed order, and that order is
 // part of the contract rather than an implementation detail:
@@ -202,8 +206,8 @@ func formatCompilerErrorAt(err error, pos diagnosticPosition) string {
 // Two reasons it can be empty, and the rendering treats them alike because the
 // reader cannot act on the difference: the diagnostic is a continuation, or the
 // chain names no registered condition. The second is a fact about the chain
-// rather than a failure, so the head prints the category on its own rather
-// than a placeholder standing in for an identifier that does not exist.
+// rather than a failure, so the head prints whatever else it has rather than a
+// placeholder standing in for an identifier that does not exist.
 //
 // It reads the whole error rather than the envelope alone. The condition's
 // identity usually sits below the envelope, but a caller may also wrap the
@@ -387,26 +391,47 @@ func indentCausedBy(block string, depth int) string {
 // formatCompilerError detection-and-render combo so the rendering stays
 // pure (no chain-walking) and the caller controls when rendering fires.
 //
-// The bracketed head holds the category, and holds the condition's short code
-// beside it when shortCode is non-empty. Deciding whether it should be is the
-// caller's job, not this function's: what to print depends on where the result
-// will sit and on what the whole chain names, and this function sees neither.
-// Passing the empty string prints the category alone.
+// The bracketed head holds whichever of the two tokens the diagnostic has: the
+// category, and the condition's short code. Deciding whether the short code
+// should be there is the caller's job, not this function's — what to print
+// depends on where the result will sit and on what the whole chain names, and
+// this function sees neither.
+//
+// Either token can be absent, and an absent one is omitted rather than stood
+// in for. A short code is absent when the chain names no registered condition;
+// a category is absent when the failure is not a fault in an authored artifact
+// and so has no surface to name. With both absent the brackets are omitted
+// too, because empty brackets assert that a head was expected and is missing,
+// which is a different thing from a head with nothing to say.
+//
+// The tokens are joined rather than formatted into a fixed shape, so a token
+// added beside them needs no new arm here and no count to keep in step.
 func renderCompilerError(ce *cerrors.CompilerError, shortCode string) string {
 	if ce == nil {
 		return ""
 	}
 	var b strings.Builder
-	if shortCode == "" {
-		fmt.Fprintf(&b, "[%s]", ce.Category)
-	} else {
-		fmt.Fprintf(&b, "[%s %s]", ce.Category, shortCode)
+	tokens := make([]string, 0, 2)
+	if ce.Category != "" {
+		tokens = append(tokens, string(ce.Category))
+	}
+	if shortCode != "" {
+		tokens = append(tokens, shortCode)
+	}
+	if len(tokens) > 0 {
+		fmt.Fprintf(&b, "[%s]", strings.Join(tokens, " "))
 	}
 	if src := ce.Source.String(); src != "" {
-		fmt.Fprintf(&b, " %s", src)
+		if b.Len() > 0 {
+			b.WriteString(" ")
+		}
+		b.WriteString(src)
 	}
 	if ce.Message != "" {
-		fmt.Fprintf(&b, "\n  %s", ce.Message)
+		if b.Len() > 0 {
+			b.WriteString("\n  ")
+		}
+		b.WriteString(ce.Message)
 	}
 	if ce.Expression != "" {
 		fmt.Fprintf(&b, "\n  expression: %s", ce.Expression)

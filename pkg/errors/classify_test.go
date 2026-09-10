@@ -9,7 +9,10 @@ import "testing"
 // prefix routes to DeveloperError. The Aggregate is the developer's
 // authoring surface; field violations on it are developer-domain.
 func TestClassifyEntityCategory_AggregateIsDeveloper(t *testing.T) {
-	got := ClassifyEntityCategory("Aggregate my-app")
+	got, covered := ClassifyEntityCategory("Aggregate my-app")
+	if !covered {
+		t.Fatal("ClassifyEntityCategory(\"Aggregate my-app\") reported the reference as uncovered")
+	}
 	if got != DeveloperError {
 		t.Errorf("ClassifyEntityCategory(\"Aggregate my-app\") = %v, want %v", got, DeveloperError)
 	}
@@ -25,7 +28,11 @@ func TestClassifyEntityCategory_OperatorEntities(t *testing.T) {
 		"Manifest prod-manifest",
 	}
 	for _, entity := range cases {
-		got := ClassifyEntityCategory(entity)
+		got, covered := ClassifyEntityCategory(entity)
+		if !covered {
+			t.Errorf("ClassifyEntityCategory(%q) reported the reference as uncovered", entity)
+			continue
+		}
 		if got != OpsError {
 			t.Errorf("ClassifyEntityCategory(%q) = %v, want %v", entity, got, OpsError)
 		}
@@ -43,7 +50,11 @@ func TestClassifyEntityCategory_CatalogEntities(t *testing.T) {
 		"FeatureRecipe core/dns-resolver-recipe",
 	}
 	for _, entity := range cases {
-		got := ClassifyEntityCategory(entity)
+		got, covered := ClassifyEntityCategory(entity)
+		if !covered {
+			t.Errorf("ClassifyEntityCategory(%q) reported the reference as uncovered", entity)
+			continue
+		}
 		if got != CatalogError {
 			t.Errorf("ClassifyEntityCategory(%q) = %v, want %v", entity, got, CatalogError)
 		}
@@ -99,19 +110,41 @@ func TestClassifyEntityKind_UncoveredKindIsReportedNotDefaulted(t *testing.T) {
 	}
 }
 
-// TestClassifyEntityCategory_UnknownIsDeveloper verifies unknown prefixes
-// fall back to DeveloperError (conservative — flag at the developer's
-// authoring surface rather than misroute to ops).
-func TestClassifyEntityCategory_UnknownIsDeveloper(t *testing.T) {
+// TestClassifyEntityCategory_UncoveredReferenceIsReportedNotDefaulted verifies
+// that a reference the mapping does not cover is reported as uncovered and
+// yields no category — the same answer ClassifyEntityKind gives for an
+// unmapped kind, so the pair has one mapping rather than a mapping and a
+// default.
+//
+// 🔴 The rows are the two facts a caller has to be able to tell apart, and
+// neither of them is a category. A reference naming a kind outside the mapping
+// and a reference naming nothing at all both arrive here as "the mapping has
+// no answer", and what each MEANS is the caller's to decide: a finding that
+// named nothing is filed under no surface, while one that named something
+// outside the mapping is filed where its raise sites sit. Deciding either of
+// those here would hand every future caller a verdict it was never asked for,
+// which is exactly how a compiler fault came to be reported as the author's.
+func TestClassifyEntityCategory_UncoveredReferenceIsReportedNotDefaulted(t *testing.T) {
 	cases := []string{
 		"WeirdKind something",
 		"sub-aggregate path", // free-form Entity (no Kind prefix capitalised)
-		"",                   // empty Entity
+		"component",          // a covered kind, wrongly cased
+		"",                   // named nothing at all
 	}
 	for _, entity := range cases {
-		got := ClassifyEntityCategory(entity)
-		if got != DeveloperError {
-			t.Errorf("ClassifyEntityCategory(%q) = %v, want %v (default DeveloperError)", entity, got, DeveloperError)
+		got, covered := ClassifyEntityCategory(entity)
+		if covered {
+			t.Errorf("ClassifyEntityCategory(%q) reported the reference as covered, want uncovered.\n"+
+				"INVARIANT: the classifier reports what the mapping says and decides nothing beyond it.\n"+
+				"CONSEQUENCE: a caller acquires a category by omission, and a raise site that named "+
+				"no document has one chosen for it.", entity)
+		}
+		if got != "" {
+			t.Errorf("ClassifyEntityCategory(%q) returned category %q, want the empty category.\n"+
+				"INVARIANT: an uncovered reference yields no category, so nothing reads a guess as "+
+				"a verdict.\n"+
+				"CONSEQUENCE: a caller that ignores the second result still gets a surface named, "+
+				"which is the silent guess this signature exists to prevent.", entity, got)
 		}
 	}
 }
