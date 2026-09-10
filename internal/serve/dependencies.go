@@ -37,11 +37,11 @@ type resolveDependenciesParams struct {
 	Verify  bool     `json:"verify,omitempty"`
 }
 
-// resolveDependenciesResult is the response shape for
-// `aggrega/resolveDependencies`.
+// dependencyResolutionReport is what a completed dependency resolution reports
+// on this surface, and it is the only projection of that result here.
 //
 // It reports what was written rather than only that something was: Lockfile is
-// the file this run wrote or verified, and the three axes name every reference it
+// the file the run wrote or verified, and the three axes name every reference it
 // pinned with the version each resolved to. A caller that asked for a resolution
 // is asking exactly that question, and answering with a bare acknowledgement
 // would leave it to re-read the file to find out.
@@ -50,11 +50,11 @@ type resolveDependenciesParams struct {
 // then carries what the recorded file says produced it — reported for audit and
 // never compared against this binary.
 //
-// Notices carry the resolution's own diagnostic lines, in the order it raised
-// them: the pin-reuse notices, the signature-verification warnings, the
-// withdrawal findings and the retraction skips. They reach no document position,
-// so they travel here rather than on the positioned-diagnostic channel.
-type resolveDependenciesResult struct {
+// It is one type rather than one per request because a resolution reached as a
+// build's own step and a resolution asked for directly are the same resolution,
+// so a caller that can read one report can read the other. Two shapes assembled
+// separately would agree until they did not.
+type dependencyResolutionReport struct {
 	Lockfile        string           `json:"lockfile"`
 	Verified        bool             `json:"verified,omitempty"`
 	Entities        []ClosureEntity  `json:"entities"`
@@ -63,7 +63,69 @@ type resolveDependenciesResult struct {
 	SourceArtifacts int              `json:"sourceArtifacts"`
 	TrustedPlugins  int              `json:"trustedPlugins"`
 	Toolchain       *toolchainReport `json:"toolchain,omitempty"`
-	Notices         []string         `json:"notices,omitempty"`
+
+	// ExternalInputs is how many external inputs the lockfile pins after the
+	// run, across the ones carried forward and the ones the run discovered.
+	ExternalInputs int `json:"externalInputs"`
+
+	// IncompleteExternalInputs is set when the run pinned its dependencies but
+	// could not finish discovering which external inputs the Release consumes,
+	// and carries what stopped the discovery.
+	//
+	// It rides on a SUCCESSFUL answer rather than turning the request into a
+	// failure, and that is the shape of the outcome rather than a softening of
+	// it: the dependency pins are complete and on disk, so reporting the whole
+	// request as failed would tell the caller to redo work that is already
+	// correct. What is owed instead is saying so, which is what this field is.
+	IncompleteExternalInputs string `json:"incompleteExternalInputs,omitempty"`
+}
+
+// dependencyResolutionReportOf projects a completed resolution onto the wire.
+//
+// It is the one place the resolution's result is read, so every request that
+// reports a resolution reports the same facts — a build's own fill step included.
+// The lockfile is rendered as the caller's own coordinate, relative to the
+// workspace root the request named, on the same contract every path here carries.
+//
+// It takes the workspace root rather than the server because the root is the only
+// server state a projection of a resolution needs, and naming it is what keeps
+// this a mapping from a result to a wire shape rather than a method with the whole
+// session in reach.
+func dependencyResolutionReportOf(res pullops.Result, workspaceRoot string) dependencyResolutionReport {
+	out := dependencyResolutionReport{
+		Lockfile:        workspaceRelative(workspaceRoot, res.LockfilePath),
+		Verified:        res.Verified,
+		Entities:        closureEntities(res.Closure),
+		Libraries:       closureLibraries(res.Closure),
+		Plugins:         closurePlugins(res.Closure),
+		SourceArtifacts: len(res.Closure.SourceArtifacts),
+		TrustedPlugins:  res.TrustedPlugins,
+		ExternalInputs:  res.ExternalInputs,
+	}
+	if res.ExternalInputDiscovery != nil {
+		out.IncompleteExternalInputs = res.ExternalInputDiscovery.Error()
+	}
+	if res.Toolchain != nil {
+		out.Toolchain = &toolchainReport{CompilerVersion: res.Toolchain.CompilerVersion}
+		for _, p := range res.Toolchain.CorePlugins {
+			out.Toolchain.CorePlugins = append(out.Toolchain.CorePlugins,
+				toolchainCorePluginRow{Plugin: p.Plugin, Version: p.Version})
+		}
+	}
+	return out
+}
+
+// resolveDependenciesResult is the response shape for
+// `aggrega/resolveDependencies`: the resolution's report, plus the account it
+// wrote of itself.
+//
+// Notices carry the resolution's own diagnostic lines, in the order it raised
+// them: the pin-reuse notices, the signature-verification warnings, the
+// withdrawal findings and the retraction skips. They reach no document position,
+// so they travel here rather than on the positioned-diagnostic channel.
+type resolveDependenciesResult struct {
+	dependencyResolutionReport
+	Notices []string `json:"notices,omitempty"`
 }
 
 // toolchainReport is the toolchain stamp a verified lockfile records: the
@@ -175,24 +237,10 @@ func (s *Server) handleResolveDependencies(ctx context.Context, params resolveDe
 		}
 	}
 
-	out := resolveDependenciesResult{
-		Lockfile:        s.workspaceRelative(res.LockfilePath),
-		Verified:        res.Verified,
-		Entities:        closureEntities(res.Closure),
-		Libraries:       closureLibraries(res.Closure),
-		Plugins:         closurePlugins(res.Closure),
-		SourceArtifacts: len(res.Closure.SourceArtifacts),
-		TrustedPlugins:  res.TrustedPlugins,
-		Notices:         noticeLines(notices.String()),
-	}
-	if res.Toolchain != nil {
-		out.Toolchain = &toolchainReport{CompilerVersion: res.Toolchain.CompilerVersion}
-		for _, p := range res.Toolchain.CorePlugins {
-			out.Toolchain.CorePlugins = append(out.Toolchain.CorePlugins,
-				toolchainCorePluginRow{Plugin: p.Plugin, Version: p.Version})
-		}
-	}
-	return out, nil
+	return resolveDependenciesResult{
+		dependencyResolutionReport: dependencyResolutionReportOf(res, s.workspaceRoot),
+		Notices:                    noticeLines(notices.String()),
+	}, nil
 }
 
 // noticeLines splits a captured diagnostic stream into the lines a client
@@ -222,11 +270,11 @@ func noticeLines(stream string) []string {
 // are. Neither can arise for a file this daemon wrote — every write lands inside
 // the workspace the request named — so the fallback exists to keep the answer
 // honest rather than to serve a case any request can reach.
-func (s *Server) workspaceRelative(path string) string {
-	if s.workspaceRoot == "" {
+func workspaceRelative(workspaceRoot, path string) string {
+	if workspaceRoot == "" {
 		return path
 	}
-	rel, err := filepath.Rel(s.workspaceRoot, path)
+	rel, err := filepath.Rel(workspaceRoot, path)
 	if err != nil || strings.HasPrefix(rel, "..") {
 		return path
 	}

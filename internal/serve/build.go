@@ -63,10 +63,21 @@ type buildParams struct {
 // that DO carry one travel on aggrega/publishDiagnostics instead, under the
 // build layer's source, so a client puts them on its problems surface beside the
 // findings the same layer raises while a graph is inspected.
+//
+// DependencyResolution is what the build's own fill step resolved, in the shape
+// aggrega/resolveDependencies answers with, and it is absent on a build that did
+// not fill. A caller that asked for the fill asked for a resolution as part of
+// this request, so the facts that resolution computed are owed here rather than
+// only on the request that does nothing else — which the caller would have to
+// send a second time to find out what its own build just pinned. The notices
+// beside it are the same resolution's prose account: the two are parallel
+// complete accounts rather than one summarising the other, so a caller reading
+// the report never has to parse a line of prose to recover a fact.
 type buildResult struct {
-	OutputDirectory string        `json:"outputDirectory"`
-	Files           []string      `json:"files"`
-	Notices         []buildNotice `json:"notices,omitempty"`
+	OutputDirectory      string                      `json:"outputDirectory"`
+	Files                []string                    `json:"files"`
+	Notices              []buildNotice               `json:"notices,omitempty"`
+	DependencyResolution *dependencyResolutionReport `json:"dependencyResolution,omitempty"`
 }
 
 // dispatchBuild unmarshals params and answers the request.
@@ -151,13 +162,15 @@ func (s *Server) handleBuild(ctx context.Context, params buildParams) (buildResu
 	// notices: a caller that asked for the fill is owed what the fill did, and
 	// nothing here is watching a stream it could have been written to instead.
 	var fillNotices []string
+	var fillReport *dependencyResolutionReport
 	lockfileFilled := false
 	if params.AutoPull {
-		notices, errEnvelope := s.fillDependencies(params.Release)
+		notices, report, errEnvelope := s.fillDependencies(params.Release)
 		if errEnvelope != nil {
 			return buildResult{}, errEnvelope
 		}
 		fillNotices = notices
+		fillReport = report
 		// Recorded as a fact about what just happened rather than read back off
 		// the request, because what the render needs to know is that a lockfile
 		// WAS written and not that one was asked for. The two part on the
@@ -206,39 +219,44 @@ func (s *Server) handleBuild(ctx context.Context, params buildParams) (buildResu
 	}
 
 	return buildResult{
-		OutputDirectory: outRoot,
-		Files:           renderedArtifactNames(completed),
-		Notices:         append(dependencyResolutionNotices(fillNotices), buildNotices(preview)...),
+		OutputDirectory:      outRoot,
+		Files:                renderedArtifactNames(completed),
+		Notices:              append(dependencyResolutionNotices(fillNotices), buildNotices(preview)...),
+		DependencyResolution: fillReport,
 	}, nil
 }
 
-// fillDependencies resolves the Release's dependencies and returns the
-// resolution's own account of itself, line by line.
+// fillDependencies resolves the Release's dependencies and returns what the
+// resolution reported, together with its own account of itself line by line.
 //
 // It is the operation aggrega/resolveDependencies answers with rather than a
 // second resolution written for a build, which is what makes a workspace filled
 // by a build and one filled by that request the same workspace. A build that
 // filled its own lockfile some other way would be free to resolve differently
-// from every other surface, and the two would agree until they did not.
+// from every other surface, and the two would agree until they did not. The
+// report is projected by that operation's own projection for the same reason:
+// the fill a build performs is reported in the shape a caller already reads.
 //
-// The lines are returned rather than written anywhere because this request
-// reports no progress: nothing on this path opens a progress run, so a stream
-// the caller is watching does not exist and the answer's notices are where the
-// account can still reach whoever asked for it.
-func (s *Server) fillDependencies(release string) ([]string, *jsonRPCError) {
+// Both are returned rather than written anywhere because this request reports no
+// progress: nothing on this path opens a progress run, so a stream the caller is
+// watching does not exist and the answer is where the account can still reach
+// whoever asked for it. The lines and the report are not alternatives — the lines
+// are prose for a person and the report is the facts themselves, and a caller
+// that asked for a fill is owed both.
+func (s *Server) fillDependencies(release string) ([]string, *dependencyResolutionReport, *jsonRPCError) {
 	releasePath, paramErr := resolveReleaseParam(s.workspaceRoot, release)
 	if paramErr != nil {
-		return nil, paramErr
+		return nil, nil, paramErr
 	}
 	if s.resolvedWorkspace == nil {
-		return nil, &jsonRPCError{
+		return nil, nil, &jsonRPCError{
 			Code:    jsonRPCInternalError,
 			Message: "the daemon holds no resolved workspace to resolve dependencies against",
 		}
 	}
 
 	var notices bytes.Buffer
-	if _, err := pullops.Run(pullops.Config{
+	res, err := pullops.Run(pullops.Config{
 		Workspace:       s.resolvedWorkspace,
 		ReleasePath:     releasePath,
 		CompilerVersion: s.compilerVersion,
@@ -247,14 +265,16 @@ func (s *Server) fillDependencies(release string) ([]string, *jsonRPCError) {
 		// No prompt is supplied, on the same terms every operation here runs
 		// under: nobody is watching this stream, so a fork that would have been
 		// put to a person halts naming what to supply.
-	}); err != nil {
-		return nil, &jsonRPCError{
+	})
+	if err != nil {
+		return nil, nil, &jsonRPCError{
 			Code:    errEntityNotResolvable,
 			Message: err.Error(),
 			cause:   err,
 		}
 	}
-	return noticeLines(notices.String()), nil
+	report := dependencyResolutionReportOf(res, s.workspaceRoot)
+	return noticeLines(notices.String()), &report, nil
 }
 
 // dependencyResolutionNotices carries the fill's own lines onto the answer under
