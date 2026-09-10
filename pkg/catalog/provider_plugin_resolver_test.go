@@ -193,6 +193,69 @@ func TestProviderPluginBindingDisambiguates(t *testing.T) {
 	}
 }
 
+// TestProviderPluginVersionPinIsUnsatisfiable proves the version-pin halt at the
+// resolution that raises it, rather than through a caller that hands the
+// condition back ready-made. A target pinned to a version the catalog cannot
+// serve is an explicit request the compiler cannot honor, so it halts loudly
+// instead of rendering through whatever version happens to serve the target.
+//
+// Both ways a pin goes unsatisfied are exercised, because they leave resolution
+// at different points and neither is reached by the other's input: a target no
+// plugin serves at all, and a target served at a version outside the pin (in
+// both the exact and the caret spelling). A satisfied pin and the pinless form
+// of the same missing target are asserted beside them, so each halt is
+// attributable to the pin rather than to a fixture that fails every way.
+//
+// The fictional provider names deliberately do NOT match any core provider the
+// binary embeds, so the pin is judged against this catalog's own plugins rather
+// than against the embedded-wins overlay a loaded catalog also applies.
+func TestProviderPluginVersionPinIsUnsatisfiable(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	writeYAMLToCatalog(t, dir, "plugins/acme-renderer.yaml", providerPlugin("acme-renderer", "1.0.0", "acme"))
+
+	cat, err := catalog.LoadAll("", dir)
+	if err != nil {
+		t.Fatalf("LoadAll: %v", err)
+	}
+
+	// A pin the catalog satisfies resolves. Asserted first, because it is what
+	// makes each halt below attributable to the pin it names.
+	if p, ok, rerr := cat.ProviderPluginForTarget("acme:1.0.0", nil); rerr != nil || !ok || p.Metadata.Version != "1.0.0" {
+		t.Errorf("acme:1.0.0 must resolve to the catalog's 1.0.0 plugin; got (ver=%q, ok=%v, err=%v)",
+			p.Metadata.Version, ok, rerr)
+	}
+
+	// A plugin serves the target at a version the exact pin excludes.
+	got, ok, rerr := cat.ProviderPluginForTarget("acme:2.0.0", nil)
+	if ok || !errors.Is(rerr, catalog.ErrProviderVersionUnsatisfiable()) {
+		t.Errorf("acme:2.0.0 against a catalog holding only 1.0.0 must return ErrProviderVersionUnsatisfiable; got (plugin=%q, ok=%v, err=%v)",
+			got.Metadata.Name, ok, rerr)
+	}
+	if rerr != nil && !strings.Contains(rerr.Error(), "2.0.0") {
+		t.Errorf("the halt must name the pin it could not satisfy; got:\n%s", rerr.Error())
+	}
+
+	// A caret pin no served version falls inside halts the same way.
+	if _, ok, rerr := cat.ProviderPluginForTarget("acme:^2.0.0", nil); ok || !errors.Is(rerr, catalog.ErrProviderVersionUnsatisfiable()) {
+		t.Errorf("acme:^2.0.0 against a catalog holding only 1.0.0 must return ErrProviderVersionUnsatisfiable; got (ok=%v, err=%v)",
+			ok, rerr)
+	}
+
+	// No plugin serves the target at all, and a pin is present. The pin is the
+	// explicit request, so this halts rather than reporting the bare miss.
+	if _, ok, rerr := cat.ProviderPluginForTarget("nonesuch:1.0.0", nil); ok || !errors.Is(rerr, catalog.ErrProviderVersionUnsatisfiable()) {
+		t.Errorf("a pinned target no plugin serves must return ErrProviderVersionUnsatisfiable; got (ok=%v, err=%v)",
+			ok, rerr)
+	}
+
+	// The pinless form of that same target is the bare miss the caller resolves,
+	// which is what distinguishes the halt above from a plain not-found.
+	if _, ok, rerr := cat.ProviderPluginForTarget("nonesuch", nil); ok || rerr != nil {
+		t.Errorf("an unpinned target no plugin serves is a bare miss; got (ok=%v, err=%v)", ok, rerr)
+	}
+}
+
 // TestProviderPluginBindingPreservesVersionCoexistence proves the binding selects
 // the plugin repository per target while the version is chosen per-recipe by the
 // target pin — so two recipes pinning different versions of one bound repository

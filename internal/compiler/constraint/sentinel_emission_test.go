@@ -243,8 +243,10 @@ const unemittedSentinelsBlock = true
 // [sentinelName] define it, for which the census finds no emission site and
 // whose declaration names no other sentinel of that population — the same
 // partition the assertion below computes, so the two cannot disagree about what
-// membership means. Measured 2026-09-10 at aggrega-cli 5ebaf069: these four and
-// no others.
+// membership means. The list below is the statement of who its members are, and
+// carries no count beside it: a number written here would have to be corrected
+// on every admission and removal, and correcting it is what resets the clock for
+// the next one.
 //
 // 🔴 THIS LIST IS A BRIDGE AND NOT THE HOME OF WHAT IT RECORDS, so it is worth
 // knowing what replaces it before adding anything to it.
@@ -260,9 +262,9 @@ const unemittedSentinelsBlock = true
 // whole module. That is the gap this assertion closes, and closing it does not
 // license storing the correspondence here.
 //
-// All four ARE registered identities, so DeclaredAhead can reach every one of
-// them; measured 2026-09-10, exactly one of the four carries such a note. The
-// list exists because the other three do not, and the note is a published
+// Every entry IS a registered identity, so DeclaredAhead can reach every one of
+// them, and none of them currently carries such a note. The list exists because
+// none of them does, and the note is a published
 // sentence naming the work that will raise the condition — content this
 // assertion cannot invent, since the census establishes only that nothing emits
 // them and says nothing about why. Until then their absence from the published
@@ -270,7 +272,7 @@ const unemittedSentinelsBlock = true
 // fails, which is the channel this assertion exists to replace.
 //
 // So an entry leaves this list when its condition gains a DeclaredAhead note or
-// a raise, and the list is deleted outright once none of the four needs it. Do
+// a raise, and the list is deleted outright once no entry needs it. Do
 // not grow it as the way of admitting a new unraised sentinel: that is what
 // DeclaredAhead is for, and an entry added here instead takes the correspondence
 // out of the one place it travels with the identity.
@@ -284,7 +286,6 @@ const unemittedSentinelsBlock = true
 // name for as long as it stands.
 var knownUnemittedSentinels = []string{
 	"ErrAmbiguousImporterPlugin",
-	"ErrCatalogLookup",
 	"ErrProviderBindingUnsatisfied",
 	"ErrProviderVersionUnsatisfiable",
 }

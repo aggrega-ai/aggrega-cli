@@ -533,6 +533,10 @@ type retirement struct {
 // frees the number for reuse, and reuse is the one thing the numbering promises
 // cannot happen.
 var retiredShortCodes = []retirement{
+	{"E0002", "It named a catalog lookup that fails while the graph's static contracts are checked — " +
+		"a fault in the compiler rather than in an authored document — and the condition raised when a " +
+		"build resolves a component type the catalog it reads then holds no entry for reports that " +
+		"state now, and its code is `E0154`."},
 	{"E0157", "It named an Aggregate key — a component, feature, subsystem or nested-module " +
 		"instance name — that did not match the authored-name pattern. Every one of those key " +
 		"surfaces is constrained to that same spelling by the Aggregate schema, which refuses " +
