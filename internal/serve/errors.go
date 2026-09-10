@@ -15,9 +15,9 @@ const (
 // Application-level error codes in the 1xxx range. Each code surfaces
 // a daemon-specific condition the IDE client can branch on.
 //
-//	1001 — File contents have not been validated yet; the requesting
-//	       operation depends on a parse-cache entry the client must
-//	       seed via aggrega/validate before retrying.
+//	1001 — The daemon holds no parse of the file and is producing none;
+//	       the requesting operation depends on a parse-cache entry the
+//	       client must seed via aggrega/validate before retrying.
 //	1003 — The lockfile for the Release the request named is absent;
 //	       the requested operation requires a generated lockfile.
 //	1004 — The requested entity could not be resolved from any
@@ -32,7 +32,7 @@ const (
 //	       needs is on its way.
 //
 // 1001 and 1006 report opposite states and are kept apart for that reason.
-// Under 1001 nothing has validated the file and nothing is validating it, so a
+// Under 1001 the daemon holds no parse of the file and is producing none, so a
 // client seeds the state with a validation. Under 1006 a validation is under way,
 // so sending another adds work and answers nothing — the client waits and asks
 // again. One code covering both would leave a client unable to tell which action
@@ -44,9 +44,8 @@ const (
 // choosing left for the daemon to fail at. A request that names none asks
 // for the work that needs no Release and is answered, not refused; a
 // request naming one that cannot be loaded is answered with a diagnostic
-// on the offending document, which is something its author can act on. The
-// number is left unused rather than reassigned, so a client holding the
-// old meaning cannot mistake a later condition for it.
+// on the offending document, which is something its author can act on.
+// The number is available for the next condition that needs a code.
 const (
 	errFileNotValidated    = 1001
 	errLockfileAbsent      = 1003
