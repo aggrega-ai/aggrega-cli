@@ -35,30 +35,47 @@ import (
 // needs. It is a useful shape template for which fields matter and an unusable
 // source for what their values are.
 //
-// # Enforcement is deliberately gated, and the gate is not a formality
+// # Enforcement is gated per population, because the two findings differ in kind
 //
-// The assertion CANNOT block yet, and the reason is structural rather than a
-// matter of confidence in it. Until the checks that raise these sentinels are
-// written against the framework and the paths that raise them today are removed,
-// every sentinel in the tree is emitted outside the framework's dispatch — so a
-// blocking assertion would fail on the shipped tree, every run, and would be
-// switched off rather than fixed. It therefore reports, and the change that
-// removes the last off-framework emission path flips [sentinelEmissionBlocks] to
-// true in the same edit that makes the flip pass.
+// This assertion answers the emitter question in four buckets, and two of them
+// carry findings. Those two cannot share one tier, and one constant gating both
+// gave the smaller finding the larger one's grace period. They are separate
+// constants for that reason.
+//
+// The off-framework bucket CANNOT block on its population, and the reason is
+// structural rather than a matter of confidence in it. Until the checks that
+// raise these sentinels are written against the framework and the paths that
+// raise them today are removed, most sentinels in the tree are emitted outside
+// the framework's dispatch — so an assertion blocking on the population itself
+// would fail on the shipped tree, every run, and would be switched off rather
+// than fixed. It is gated by [offFrameworkEmissionBlocks], which is false, and
+// the change that removes the last off-framework emission path flips it to true
+// in the same edit that makes the flip pass. What blocks meanwhile is
+// [offFrameworkEmissionCeiling]: the population may fall and may not rise.
+//
+// The no-emission-site bucket DOES block, gated by [unemittedSentinelsBlock].
+// Its population is small, enumerable and not a backlog the tree is working
+// through, so the names carrying it are recorded in [knownUnemittedSentinels]
+// and anything outside that set fails. There is nothing for a grace period to
+// protect: a sentinel arriving with no emission site is a rule removed without
+// its name, or a name minted for a check never written, and either is wrong at
+// the moment it lands rather than scheduled to be fixed.
 //
 // Reporting is weaker than it sounds, and saying so here is the point: nothing
 // about a report-only assertion distinguishes one whose finding reaches a reader
 // from one whose finding reaches nobody, because the code plainly writes the
 // message either way. A Go package that passes prints nothing in a routine run —
 // not the framework's log, not a write to standard error, not a write to
-// standard output — so while this constant is false the counts reach a reader
-// only under a verbose run (`go test -v`) of this package. The channel
-// measurement behind that claim is recorded once, beside
-// [codeLiteralGuardBlocks], rather than restated here.
+// standard output — so a count this assertion only logs reaches a reader only
+// under a verbose run (`go test -v`) of this package. The channel measurement
+// behind that claim is recorded once, beside [codeLiteralGuardBlocks], rather
+// than restated here. That property is why each bucket above carries a channel
+// that FAILS rather than a shared one that reports: a finding whose only channel
+// is a log line on a passing test has no channel at all.
 //
-// What still blocks at false is the instrument itself: a declared population of
-// zero is fatal below, so a census that has stopped working is loud even while a
-// population it reports is quiet.
+// What still blocks regardless of either constant is the instrument itself: a
+// declared population of zero is fatal below, so a census that has stopped
+// working is loud even while a population it reports is quiet.
 //
 // # What counts as the framework's dispatch, and why not by address
 //
@@ -169,7 +186,106 @@ import (
 // reads whether the declaration names another sentinel of this same population,
 // which is a syntactic question about the declaration rather than a question
 // about what any expression evaluates to.
-const sentinelEmissionBlocks = false
+const offFrameworkEmissionBlocks = false
+
+// offFrameworkEmissionCeiling is the ratchet that gives the off-framework
+// population a channel that fails while [offFrameworkEmissionBlocks] is false.
+//
+// That population is a MIGRATION METER and not a defect list: it measures how
+// much of the migration remains, so blocking on the population itself would
+// redden the shipped tree on every run. Blocking on an INCREASE costs nothing
+// while the number holds or falls, and it makes the one movement that matters —
+// the meter going backwards — loud instead of silent. Nothing weaker will do
+// that job here, because a passing Go package prints nothing: a rise that is
+// reported and not failed is a rise nobody learns about.
+//
+// Criterion, so that a later reading measures the same thing: the number of
+// distinct sentinel names, matching [sentinelName] and bound by a package-level
+// declaration in a non-test .go file under [scannedRoots], for which the census
+// attributes at least one emission site outside the framework's dispatch —
+// attribution exactly as [checkTypeName] and [frameworkPackageSuffix] decide it.
+// Measured 2026-09-10 at aggrega-cli 5ebaf069: 238, of 280 declared.
+//
+// The bound this leaves, recorded so the ceiling is never read as the
+// population: a FALL is deliberately not failed, so once the count drops this
+// constant carries slack the ratchet does not reclaim, and a regression inside
+// that slack is invisible. Reclaiming it is a one-line edit here, belonging to
+// whatever change lowers the count rather than to a later tidy-up.
+const offFrameworkEmissionCeiling = 238
+
+// unemittedSentinelsBlock decides whether a sentinel with no emission site at
+// all fails this test or is only reported. It is true.
+//
+// This population shared a constant with the off-framework meter until the two
+// were split, and the split is the substance rather than the bookkeeping: the
+// meter cannot block because its population is a backlog the tree is working
+// through, while this one is neither a backlog nor expected to grow. A sentinel
+// nothing emits is a rule removed without its name, or a name minted for a check
+// never written; both are decidable from the census alone, and both are wrong
+// when they land rather than scheduled. So the grace period the meter needs is
+// exactly what this population must not inherit.
+//
+// What makes blocking possible without reddening the shipped tree is
+// [knownUnemittedSentinels], which records the names carrying the population
+// today. This assertion fails on anything outside that set. That is a narrowing
+// of the corpus rather than an amnesty, and the set is asserted current in both
+// directions — see its own comment.
+const unemittedSentinelsBlock = true
+
+// knownUnemittedSentinels are the sentinels the census finds no emission site
+// for today. It is the recorded baseline [unemittedSentinelsBlock] blocks
+// against, and it is sorted so the failure messages below read in a stable
+// order.
+//
+// Criterion: a sentinel of the asserted population, as [scannedRoots] and
+// [sentinelName] define it, for which the census finds no emission site and
+// whose declaration names no other sentinel of that population — the same
+// partition the assertion below computes, so the two cannot disagree about what
+// membership means. Measured 2026-09-10 at aggrega-cli 5ebaf069: these four and
+// no others.
+//
+// 🔴 THIS LIST IS A BRIDGE AND NOT THE HOME OF WHAT IT RECORDS, so it is worth
+// knowing what replaces it before adding anything to it.
+//
+// The fact each entry stands for — nothing raises this condition yet, and here
+// is the work that will — already has a declared single home: the DeclaredAhead
+// note on the condition's own registration, documented in pkg/errors. That
+// declaration argues in writing against exactly the shape below, on the ground
+// that a side list is a second home for the correspondence and a second home is
+// what drifts when a condition is renamed, moved between packages or removed.
+// The same file records why nothing inside one registration can perform this
+// check: whether an unnoted condition is in fact raised is a property of the
+// whole module. That is the gap this assertion closes, and closing it does not
+// license storing the correspondence here.
+//
+// All four ARE registered identities, so DeclaredAhead can reach every one of
+// them; measured 2026-09-10, exactly one of the four carries such a note. The
+// list exists because the other three do not, and the note is a published
+// sentence naming the work that will raise the condition — content this
+// assertion cannot invent, since the census establishes only that nothing emits
+// them and says nothing about why. Until then their absence from the published
+// reference is reported by a WARN in the reference generator and by nothing that
+// fails, which is the channel this assertion exists to replace.
+//
+// So an entry leaves this list when its condition gains a DeclaredAhead note or
+// a raise, and the list is deleted outright once none of the four needs it. Do
+// not grow it as the way of admitting a new unraised sentinel: that is what
+// DeclaredAhead is for, and an entry added here instead takes the correspondence
+// out of the one place it travels with the identity.
+//
+// An entry is a standing permission, so it is guarded in both directions. A
+// sentinel absent from this list and missing an emission site fails. An entry
+// naming a sentinel that has since acquired an emission site, been renamed, or
+// been removed fails too, for the reason recorded at the view-accessor
+// exceptions in rawdocument_guard_test.go: a stale exception is worse than none,
+// because it reads as a known hole where there is none and goes on exempting its
+// name for as long as it stands.
+var knownUnemittedSentinels = []string{
+	"ErrAmbiguousImporterPlugin",
+	"ErrCatalogLookup",
+	"ErrProviderBindingUnsatisfied",
+	"ErrProviderVersionUnsatisfiable",
+}
 
 // sentinelName matches the declaration convention for a sentinel: an exported
 // package-level error variable named for the rule it stands for.
@@ -252,9 +368,9 @@ func TestSentinelEmissionSitesAreTheFrameworkDispatch(t *testing.T) {
 		}
 	}
 
-	report := t.Logf
-	if sentinelEmissionBlocks {
-		report = t.Errorf
+	reportOffFramework := t.Logf
+	if offFrameworkEmissionBlocks {
+		reportOffFramework = t.Errorf
 	}
 
 	t.Logf("sentinel census: %d declared; %d emitted only by the framework's dispatch; "+
@@ -270,7 +386,7 @@ func TestSentinelEmissionSitesAreTheFrameworkDispatch(t *testing.T) {
 	}
 
 	if len(offFramework) > 0 {
-		report("%d sentinel(s) are emitted outside the framework's dispatch.\n"+
+		reportOffFramework("%d sentinel(s) are emitted outside the framework's dispatch.\n"+
 			"INVARIANT: a sentinel's emission sites are exactly the framework's dispatch, because that is "+
 			"what makes a check written outside the framework detectable — reusing a sentinel shows up as "+
 			"a second emission site, and minting one shows up as a sentinel no registered check emits.\n"+
@@ -279,11 +395,14 @@ func TestSentinelEmissionSitesAreTheFrameworkDispatch(t *testing.T) {
 			"construction; a plain declared function is read by its path instead. That reads declarations "+
 			"and cannot observe invocation, so a check declared and never invoked is attributed to the "+
 			"dispatch too.\n"+
-			"CONSEQUENCE while this reports rather than blocks: an off-framework check gets no computed "+
-			"placement, no caller-coverage guarantee and no framework-supplied provenance, and nothing "+
-			"halts on its absence.\n"+
+			"CONSEQUENCE while this population reports rather than blocks: an off-framework check gets no "+
+			"computed placement, no caller-coverage guarantee and no framework-supplied provenance, and "+
+			"nothing halts on its absence. The population is not free to grow, though — see the ratchet "+
+			"below.\n"+
 			"Alphabetically: %s", len(offFramework), strings.Join(namedList(offFramework, 12), ", "))
 	}
+
+	assertOffFrameworkCeiling(t, len(offFramework), len(declared))
 
 	// The off-framework count above cannot tell a rule somebody examined and left
 	// inline from a rule nobody has looked at, and the listing is what separates
@@ -302,18 +421,144 @@ func TestSentinelEmissionSitesAreTheFrameworkDispatch(t *testing.T) {
 			"which is why it is reported apart from those.",
 			len(forwarding), strings.Join(namedList(namedWithForwards(forwarding, forwards), 12), "; "))
 	}
-	if len(unemitted) > 0 {
-		report("%d sentinel(s) have no emission site at all: %s.\n"+
-			"A sentinel nothing emits is either a rule that was removed without its name, or a name "+
-			"minted for a check that was never written.", len(unemitted), strings.Join(namedList(unemitted, 12), ", "))
-	}
+	assertUnemittedSentinels(t, unemitted)
 
-	if !sentinelEmissionBlocks {
-		t.Logf("this assertion reports and does not block. It becomes blocking when the last emission "+
-			"path outside the framework's dispatch is removed; until then it would fail on the shipped "+
-			"tree on every run. Off-framework population at this run: %d of %d sentinels.",
+	if !offFrameworkEmissionBlocks {
+		t.Logf("the off-framework population reports and does not block on its size. It becomes blocking "+
+			"when the last emission path outside the framework's dispatch is removed; until then it would "+
+			"fail on the shipped tree on every run. What does block is the ceiling above, which refuses an "+
+			"increase, and the no-emission-site population, which blocks against its recorded baseline. "+
+			"Off-framework population at this run: %d of %d sentinels.",
 			len(offFramework), len(declared))
 	}
+}
+
+// assertOffFrameworkCeiling is the increase-only ratchet over the off-framework
+// population, and it is the channel that fails while
+// [offFrameworkEmissionBlocks] is false.
+//
+// It is separate from the report above because the two answer different
+// questions. The report says how large the migration backlog is, which is a
+// figure a reader wants and no build should halt on. This says whether the
+// backlog GREW, which is the one movement that is a defect rather than a status.
+//
+// A fall is not failed, deliberately, and the slack that leaves is recorded at
+// [offFrameworkEmissionCeiling] rather than here, so the bound sits with the
+// number it bounds.
+func assertOffFrameworkCeiling(t *testing.T, offFramework, declared int) {
+	t.Helper()
+
+	switch {
+	case offFramework > offFrameworkEmissionCeiling:
+		t.Errorf("%d sentinel(s) are emitted outside the framework's dispatch, above the recorded ceiling "+
+			"of %d.\n"+
+			"INVARIANT: this population is a migration meter, so it may fall and may not rise.\n"+
+			"CONSEQUENCE: a new off-framework emission path has been added, or a check was expressed "+
+			"outside the framework. Either way the migration this figure measures moved backwards, and "+
+			"the ceiling is what makes that loud — the population itself cannot block, so without this "+
+			"the increase would reach a reader only under a verbose run.\n"+
+			"REMEDY: express the rule as a %s value so it is attributed to the dispatch. Raising the "+
+			"ceiling is not the remedy and is the one edit here that removes the guarantee: the number "+
+			"is only meaningful as a bound the tree has never exceeded.",
+			offFramework, offFrameworkEmissionCeiling, checkTypeName)
+	case offFramework < offFrameworkEmissionCeiling:
+		t.Logf("off-framework population is %d of %d declared, below the recorded ceiling of %d. The "+
+			"ratchet refuses an increase and does not refuse a fall, so this slack of %d is not reclaimed "+
+			"until offFrameworkEmissionCeiling is lowered — a one-line edit belonging to whatever change "+
+			"lowered the count. Within that slack a regression is not detected.",
+			offFramework, declared, offFrameworkEmissionCeiling, offFrameworkEmissionCeiling-offFramework)
+	default:
+		t.Logf("off-framework population is %d of %d declared, exactly at the recorded ceiling. The "+
+			"ratchet refuses an increase.", offFramework, declared)
+	}
+}
+
+// assertUnemittedSentinels blocks on a sentinel with no emission site that the
+// recorded baseline does not name, and on a baseline entry that no longer
+// describes anything.
+//
+// Both directions matter and only one of them is obvious. Failing on a NEW
+// unemitted sentinel is the point of promoting this population. Failing on a
+// STALE entry is what keeps the baseline from quietly becoming a permanent
+// exemption list: an entry whose sentinel has since acquired an emission site
+// reads as a known hole where there is none, and it goes on exempting that name
+// for as long as it stands.
+//
+// The baseline is asserted to be duplicate-free before it is believed, on the
+// reasoning the residue guard records: a name written twice makes the recorded
+// set smaller than it reads, so a reader counting entries and a reader counting
+// distinct names disagree, and the smaller set is the one that governs. That is
+// refused rather than normalised, because silently collapsing it would let the
+// list misdescribe its own size indefinitely.
+func assertUnemittedSentinels(t *testing.T, unemitted []string) {
+	t.Helper()
+
+	baseline := make(map[string]bool, len(knownUnemittedSentinels))
+	for _, name := range knownUnemittedSentinels {
+		baseline[name] = true
+	}
+	if len(baseline) != len(knownUnemittedSentinels) {
+		t.Fatalf("the recorded baseline of %d entries holds only %d distinct name(s), so one is written "+
+			"twice and the set does not say what it appears to",
+			len(knownUnemittedSentinels), len(baseline))
+	}
+
+	found := map[string]bool{}
+	var fresh []string
+	for _, name := range unemitted {
+		found[name] = true
+		if !baseline[name] {
+			fresh = append(fresh, name)
+		}
+	}
+	sort.Strings(fresh)
+
+	var stale []string
+	for _, name := range knownUnemittedSentinels {
+		if !found[name] {
+			stale = append(stale, name)
+		}
+	}
+	sort.Strings(stale)
+
+	report := t.Logf
+	if unemittedSentinelsBlock {
+		report = t.Errorf
+	}
+
+	if len(fresh) > 0 {
+		report("%d sentinel(s) have no emission site at all and are not in the recorded baseline: %s.\n"+
+			"INVARIANT: every declared sentinel is raised somewhere, or is recorded as a known exception "+
+			"with its criterion and date.\n"+
+			"CONSEQUENCE: a sentinel nothing emits is either a rule that was removed without its name, or "+
+			"a name minted for a check that was never written. A consumer can match against it forever "+
+			"and never see it.\n"+
+			"REMEDY: raise it from the check that owns the rule; or, if it is deliberately declared ahead "+
+			"of the work that will raise it, say so on its own registration with a DeclaredAhead note, "+
+			"which is where that fact belongs and where the published reference reads it; or delete the "+
+			"declaration. Adding the name to knownUnemittedSentinels is none of those — that list is a "+
+			"bridge for conditions registered before the note existed, and its own comment says so.",
+			len(fresh), strings.Join(namedList(fresh, 12), ", "))
+	}
+
+	if len(stale) > 0 {
+		report("the recorded baseline names %d sentinel(s) that DO have an emission site now, or that no "+
+			"longer exist: %s.\n"+
+			"A stale entry is worse than none: it reads as a known hole where there is none, and it "+
+			"exempts that name from this assertion for as long as it stands.\n"+
+			"REMEDY: remove the entry from knownUnemittedSentinels. That removal is part of the change "+
+			"that wired or deleted the sentinel, not a follow-up to it.",
+			len(stale), strings.Join(namedList(stale, 12), ", "))
+	}
+
+	tier := "reports and does not block"
+	if unemittedSentinelsBlock {
+		tier = "blocks"
+	}
+	t.Logf("no-emission-site population: %d sentinel(s) carry no emission site, %d recorded as a known "+
+		"baseline, %d not in that baseline, %d baseline entry/entries no longer applying. This assertion "+
+		"%s on either of the last two.",
+		len(unemitted), len(baseline), len(fresh), len(stale), tier)
 }
 
 // TestAssertedSentinelPopulationCoversTheModule asserts that [scannedRoots]
@@ -329,16 +574,19 @@ func TestSentinelEmissionSitesAreTheFrameworkDispatch(t *testing.T) {
 // root lists sees the population move and concludes sentinels were added or
 // removed, when the criterion changed underneath them.
 //
-// # Why this one blocks while the emission assertion does not
+// # Why this one blocks on its whole population
 //
-// [sentinelEmissionBlocks] gates the emission assertion because that assertion
-// fails on the shipped tree today: the migration it measures is under way and a
-// blocking form would be switched off rather than fixed. Coverage carries no such
-// backlog — the roots cover the module, so this assertion passes — and there is
-// nothing for a grace period to protect. It therefore fails rather than reports,
-// which matters more here than elsewhere in this file: a passing Go test's log
-// output is discarded unless the run asks for verbose output, so an assertion
-// that only logs is an assertion whose finding no build mode shows.
+// [offFrameworkEmissionBlocks] gates the off-framework population because that
+// population fails on the shipped tree today: the migration it measures is under
+// way and a blocking form would be switched off rather than fixed. Coverage
+// carries no such backlog — the roots cover the module, so this assertion passes
+// — and there is nothing for a grace period to protect. It therefore fails
+// rather than reports, which matters more here than elsewhere in this file: a
+// passing Go test's log output is discarded unless the run asks for verbose
+// output, so an assertion that only logs is an assertion whose finding no build
+// mode shows. That is the same reasoning behind
+// [offFrameworkEmissionCeiling] and [unemittedSentinelsBlock]: where a
+// population cannot block outright, something about it still has to.
 //
 // The remedy when it fails is one of two edits, and the failure names both: add
 // the tree to [scannedRoots] if its sentinels belong to the asserted population,
@@ -587,15 +835,19 @@ func forwardingDeclarations(files map[string]*ast.File, names map[string]string)
 type testFileScope bool
 
 const (
-	// excludeTestFiles is the sentinel census's scope. A sentinel declared in a
-	// test is scaffolding rather than a rule this module raises, which is the
-	// criterion recorded beside [sentinelEmissionBlocks].
+	// excludeTestFiles is the scope of every guard whose subject is what this
+	// module SHIPS: the sentinel census, the severity-literal guard and the
+	// code-literal guard. A sentinel declared in a test is scaffolding rather
+	// than a rule this module raises, which is the criterion recorded beside
+	// [offFrameworkEmissionBlocks]; the code-literal guard's own reason for
+	// excluding a test is different and is recorded beside
+	// [codeLiteralGuardBlocks].
 	excludeTestFiles testFileScope = false
 
-	// includeTestFiles is the code-literal guard's scope. That guard reads a
-	// match written against a registered code wherever it appears, and a test is
-	// where one is most likely to be written: asserting on the code string is
-	// the readiest way to reach for the wire identifier from Go.
+	// includeTestFiles is the rule-ordinal guard's scope. That guard's subject is
+	// a bare ordinal written into a Rule field, which is equally wrong in a test
+	// as in production: the field is the same field, and a test writing one is
+	// pinning the ordinal it happens to hold today.
 	includeTestFiles testFileScope = true
 )
 
@@ -651,7 +903,7 @@ func collectGoFiles(t *testing.T, roots []string, tests testFileScope) (map[stri
 
 // skipDir reports whether the walk stops at a directory. The exclusions are the
 // scope half of the census criterion and each is documented with its reason
-// beside [sentinelEmissionBlocks]; a root is never skipped for its own sake,
+// beside [offFrameworkEmissionBlocks]; a root is never skipped for its own sake,
 // which is what keeps a root spelled with a leading ".." from matching the
 // dot-prefix rule and emptying the walk.
 func skipDir(path, root, name string) bool {

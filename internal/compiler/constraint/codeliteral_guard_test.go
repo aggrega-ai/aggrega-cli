@@ -48,6 +48,25 @@ import (
 // remedy this guard prints — reach for the accessor — is not available to a
 // reader who cannot edit the file.
 //
+// A _test.go file is excluded, and this is the exclusion that carries an
+// argument rather than a convenience. What this guard hunts is a match that
+// stops matching SILENTLY: production code compiles across a re-registration,
+// the branch stops running, and nothing fails and nothing is logged. In a test
+// asserting the published wire value, the same re-registration makes the test
+// FAIL — the literal is the expected value, so its failure IS the alarm this
+// guard exists to substitute for. That is the opposite failure mode, and
+// refusing it would refuse the one place where writing the code down is the
+// point rather than a bypass.
+//
+// 🔴 The bound that exclusion leaves, recorded because it is not obvious and
+// because a reader is otherwise entitled to read the exclusion as total: a test
+// can carry the silent shape too, when the literal guards a FAILURE branch
+// rather than standing as the asserted value — `if code == "x" { t.Fatal(…) }`
+// stops matching after a re-registration and the test then passes vacuously.
+// That shape is not covered here. Separating it from the asserted-value shape
+// needs a heuristic about the test's intent, and a heuristic that refuses would
+// reject legal input on a guess, which is what gets a guard switched off.
+//
 // A string that merely looks code-shaped is outside by construction rather than
 // by exclusion. The guard's set is the registered codes and nothing else, so a
 // shaped-but-unregistered string is not a member and is never reported. That
@@ -65,40 +84,43 @@ import (
 // codeLiteralGuardBlocks decides whether a finding fails this test or is only
 // reported.
 //
-// It is false, so the guard reports and does not refuse. Two things a reader
-// deciding whether to flip it needs, neither of which is recoverable from the
-// constant alone.
+// It is true: the guard refuses a match. What made that possible is the
+// corpus, not a cleanup, and the history is kept because the figures are what a
+// reader would otherwise still be trusting.
 //
-// The population it would refuse is NOT empty, and it used to be. Criterion: a
-// string literal equal to a registered code, appearing as an operand of == or
-// !=, as a case expression, or as a map key. Scope: every Go file this module
-// holds, test files included, outside the declaring package and the generated
-// files. Measured 2026-08-08 over the 1515 files that scope admits: zero.
-// Re-measured 2026-08-20 over the 1695 files it now admits: six, every one of
-// them in the daemon's own diagnostic-code test, each asserting that the wire
-// field carries the code its condition is registered under.
+// Criterion, unchanged throughout: a string literal equal to a registered code,
+// appearing as an operand of == or !=, as a case expression, or as a map key.
 //
-// So the original argument for promoting this constant no longer stands, and it
-// is left recorded rather than quietly replaced, because the earlier figure is
-// what a reader would otherwise still be trusting. Whether those six are a
-// violation at all is a real question rather than a formality: this guard's
-// subject is production code that silently stops matching after a
-// re-registration, and its remedy — read the code off the error through the
-// accessor — is exactly what the production path already does and what a test of
-// the published wire value exists to check independently of it. A test whose
-// failure IS the alarm has the opposite failure mode from the one the guard
-// hunts. Promotion therefore waits on a decision about that, not on a cleanup.
+//   - Measured 2026-08-08, scope every Go file this module holds outside the
+//     declaring package and the generated files, test files INCLUDED, over the
+//     1515 files that scope admitted: zero.
+//   - Re-measured 2026-08-20 over the 1695 files it then admitted: six, every one
+//     in the daemon's own diagnostic-code test.
+//   - Re-measured 2026-09-10 at aggrega-cli 5ebaf069 over the 2198 files it then
+//     admitted: SEVEN, and no longer confined to one file — six in the daemon's
+//     diagnostic-code test and a seventh in the edit-operation refusal test.
+//     Every one of the seven asserts that a published identifier carries the
+//     code its condition is registered under.
 //
-// The cost of leaving it false is larger than it looks, and it is measured
-// rather than assumed. A passing Go package prints nothing in a routine run: not
-// t.Logf, not a write to standard error, not a write to standard output. All
-// three were probed and all three were swallowed. So while this constant is
-// false the guard's finding reaches a reader only under `go test -v`, and the
-// tier is effectively binary — there is no warn channel in this medium the way
-// there is in a shell check. What still blocks at false is the instrument
-// itself: the calibration and the index read below both fail the test, so a
-// broken guard is loud even though a violation it finds is quiet.
-const codeLiteralGuardBlocks = false
+// The population therefore grew, and its shape did not: each new site is the
+// same asserted-wire-value shape, in which the literal is the expected value and
+// a re-registration makes the test fail rather than pass quietly. Excluding
+// test files is what the argument recorded at the top of this file always
+// implied, and once they are excluded the refused population is empty —
+// re-measured 2026-09-10 at the same revision over the 869 non-test files that
+// scope admits: zero. So the guard blocks over a corpus it does not fail on,
+// which is the only shape in which promoting it is an improvement rather than a
+// gate somebody switches off.
+//
+// Why blocking rather than reporting, measured rather than assumed: a passing Go
+// package prints nothing in a routine run — not t.Logf, not a write to standard
+// error, not a write to standard output. All three were probed and all three
+// were swallowed. A reporting guard's finding therefore reaches a reader only
+// under `go test -v`, so the tier here is binary in a way it is not for a shell
+// check, and there is no warn channel to settle for. Independently of this
+// constant the instrument still blocks: the calibration and the index read below
+// are both fatal, so a guard that has stopped working is loud either way.
+const codeLiteralGuardBlocks = true
 
 // declaringCodePackage is the package that registers the codes, relative to the
 // module root. Its own files are outside the corpus.
@@ -124,16 +146,22 @@ type codeLiteralUse struct {
 // and the registered code cannot decay into a convention nothing reads.
 //
 // Whether a finding fails this test or is only reported is
-// [codeLiteralGuardBlocks], which is false today. The instrument itself blocks
-// either way: the calibration and the index read below are fatal, so a guard
-// that has stopped working is loud even while a match it finds is not.
+// [codeLiteralGuardBlocks], which is true, so a match is refused. The corpus it
+// refuses over is the non-test files, for the reason recorded at the top of this
+// file. The instrument blocks independently of that constant: the calibration
+// and the index read below are fatal, so a guard that has stopped working is
+// loud whatever tier the findings carry.
 func TestNoGoSourceMatchesAgainstARegisteredCode(t *testing.T) {
 	t.Parallel()
 
 	registered := registeredCodes(t)
 	calibrateCodeLiteralGuard(t, registered)
 
-	files, fset := collectGoFiles(t, []string{moduleRoot}, includeTestFiles)
+	// excludeTestFiles, for the reason recorded at the top of this file: a test
+	// asserting a published wire value writes the literal deliberately, and a
+	// re-registration makes such a test fail rather than stop matching in
+	// silence. The bound that leaves is recorded there too.
+	files, fset := collectGoFiles(t, []string{moduleRoot}, excludeTestFiles)
 
 	var found []codeLiteralUse
 	read := 0
@@ -162,8 +190,8 @@ func TestNoGoSourceMatchesAgainstARegisteredCode(t *testing.T) {
 	if !codeLiteralGuardBlocks {
 		tier, report = "reports a match and does not refuse it", t.Logf
 	}
-	t.Logf("code-literal guard: %d registered code(s) read from the identity index; %d file(s) in the "+
-		"corpus, test files included, outside %s and the generated files; %d match(es) found. "+
+	t.Logf("code-literal guard: %d registered code(s) read from the identity index; %d non-test file(s) "+
+		"in the corpus, outside %s and the generated files; %d match(es) found. "+
 		"This guard %s: see codeLiteralGuardBlocks.",
 		len(registered), read, declaringCodePackage, len(found), tier)
 

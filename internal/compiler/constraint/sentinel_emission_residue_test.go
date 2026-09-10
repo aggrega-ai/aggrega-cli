@@ -314,9 +314,9 @@ func reportInlineCheckResidue(t *testing.T, emitters map[string][]emissionSite) 
 //     skipped entry is exactly the rot this guard exists to prevent.
 //
 // It fails rather than reports, and it is deliberately NOT gated on
-// [sentinelEmissionBlocks]. That constant grants a grace period to a migration
-// backlog that is expected to be non-empty. Inventory staleness has no backlog:
-// an entry is either current or wrong.
+// [offFrameworkEmissionBlocks]. That constant grants a grace period to a
+// migration backlog that is expected to be non-empty. Inventory staleness has no
+// backlog: an entry is either current or wrong.
 //
 // The count of inspected entries is asserted, not merely printed. A guard that
 // walks a shape which has stopped existing inspects nothing, reports nothing and
