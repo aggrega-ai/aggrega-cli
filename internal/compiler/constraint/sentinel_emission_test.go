@@ -29,10 +29,10 @@ import (
 //
 // This is enforcement rather than documentation, which is why it lives with the
 // framework. It derives its data from the code — the sentinel declarations, the
-// function bodies and the check declarations — and never from a hand-maintained
-// inventory: that inventory marks its own coordinates approximate and asks to be
-// verified against the code, so it disclaims exactly the precision an assertion
-// needs. It is a useful shape template for which fields matter and an unusable
+// function bodies and the package-level value declarations — and never from a
+// hand-maintained inventory: that inventory marks its own coordinates
+// approximate and asks to be verified against the code, so it disclaims exactly
+// the precision an assertion needs. It is a useful shape template for which fields matter and an unusable
 // source for what their values are.
 //
 // # Enforcement is gated per population, because the two findings differ in kind
@@ -53,13 +53,16 @@ import (
 // in the same edit that makes the flip pass. What blocks meanwhile is
 // [offFrameworkEmissionCeiling]: the population may fall and may not rise.
 //
-// The no-emission-site bucket DOES block, gated by [unemittedSentinelsBlock].
-// Its population is small, enumerable and not a backlog the tree is working
-// through, so the names carrying it are recorded in [knownUnemittedSentinels]
-// and anything outside that set fails. There is nothing for a grace period to
-// protect: a sentinel arriving with no emission site is a rule removed without
-// its name, or a name minted for a check never written, and either is wrong at
-// the moment it lands rather than scheduled to be fixed.
+// The no-emission-site bucket DOES block, gated by [unemittedSentinelsBlock],
+// and its population is empty, so any sentinel arriving without an emission
+// site fails outright. There is nothing for a grace period to protect: such a
+// sentinel is a rule removed without its name, or a name minted for a check
+// never written, and either is wrong at the moment it lands rather than
+// scheduled to be fixed. Where a condition is deliberately declared ahead of
+// the work that will raise it, that fact belongs on its own registration as a
+// declared-ahead note, which is where the published reference reads it — not in
+// a side list here, which would be a second home for a correspondence that
+// travels with the identity.
 //
 // Reporting is weaker than it sounds, and saying so here is the point: nothing
 // about a report-only assertion distinguishes one whose finding reaches a reader
@@ -87,10 +90,13 @@ import (
 // traversal supplied, and the framework — not the check — builds whatever each
 // caller needs from it. The halting currency at that site is framework-issued by
 // construction, which is exactly what reading the declaring package's path was
-// standing in for. A plain declared function is still read by its path: written
-// inside this package it belongs to the dispatch, written anywhere else it does
-// not. So expressing a rule as a check is what moves it, and no rule is
-// amnestied by where its file sits.
+// standing in for. Every other host is still read by its path: a plain declared
+// function, and a package-level value that is not a check, belong to the
+// dispatch when written inside this package and not when written anywhere else.
+// So expressing a rule as a check is what moves it, and no rule is amnestied by
+// where its file sits — least of all by being assembled into a value instead of
+// written inline, which is the same rule at the same address wearing a
+// different shape.
 //
 // # The blind spot this admission carries
 //
@@ -205,15 +211,29 @@ const offFrameworkEmissionBlocks = false
 // distinct sentinel names, matching [sentinelName] and bound by a package-level
 // declaration in a non-test .go file under [scannedRoots], for which the census
 // attributes at least one emission site outside the framework's dispatch —
-// attribution exactly as [checkTypeName] and [frameworkPackageSuffix] decide it.
-// Measured 2026-09-10 at aggrega-cli 5ebaf069: 238, of 280 declared.
+// attribution exactly as [checkTypeName] and [frameworkPackageSuffix] decide it,
+// over the host shapes and the inner criterion [sentinelCensus] records.
+// Measured 2026-09-10, at aggrega-cli 9ee1c176 with the value-host walk this
+// file now performs: 241, of 279 declared.
+//
+// # This figure is not comparable with the recording above it
+//
+// It is three higher, and none of the three is the tree getting worse: the
+// change that recorded it edited no production file. The walk that produces it
+// enters every package-level var declaration rather than only a check
+// declaration, so three rules already raised from a package-level diagnostic
+// set are now counted as the off-framework emission paths they always were. The
+// meter did not move; it stopped understating itself by three. Two recordings
+// taken over different host sets measure different things, so the pair must not
+// be read as a trend. The denominator moved for an unrelated reason: a declared
+// condition was retired.
 //
 // The bound this leaves, recorded so the ceiling is never read as the
 // population: a FALL is deliberately not failed, so once the count drops this
 // constant carries slack the ratchet does not reclaim, and a regression inside
 // that slack is invisible. Reclaiming it is a one-line edit here, belonging to
 // whatever change lowers the count rather than to a later tidy-up.
-const offFrameworkEmissionCeiling = 238
+const offFrameworkEmissionCeiling = 241
 
 // unemittedSentinelsBlock decides whether a sentinel with no emission site at
 // all fails this test or is only reported. It is true.
@@ -227,68 +247,21 @@ const offFrameworkEmissionCeiling = 238
 // when they land rather than scheduled. So the grace period the meter needs is
 // exactly what this population must not inherit.
 //
-// What makes blocking possible without reddening the shipped tree is
-// [knownUnemittedSentinels], which records the names carrying the population
-// today. This assertion fails on anything outside that set. That is a narrowing
-// of the corpus rather than an amnesty, and the set is asserted current in both
-// directions — see its own comment.
+// What makes blocking possible without reddening the shipped tree is that the
+// population is empty: every declared sentinel is raised somewhere. So this
+// assertion fails on any member at all, with no recorded exception to narrow
+// the corpus and nothing standing between a new unraised sentinel and a red
+// build.
+//
+// No such exception list exists, and one must not be reintroduced as the way of
+// admitting a new unraised sentinel. A recorded exception outlives its subject
+// silently — once the sentinel it names acquires a raise, the entry reads as a
+// known hole where there is none and goes on exempting that name for as long as
+// it stands — so it needs guarding in both directions, and the moment it
+// describes nothing it is worse than absent. A condition genuinely declared
+// ahead of the work that will raise it says so on its own registration, where
+// the correspondence travels with the identity.
 const unemittedSentinelsBlock = true
-
-// knownUnemittedSentinels are the sentinels the census finds no emission site
-// for today. It is the recorded baseline [unemittedSentinelsBlock] blocks
-// against, and it is sorted so the failure messages below read in a stable
-// order.
-//
-// Criterion: a sentinel of the asserted population, as [scannedRoots] and
-// [sentinelName] define it, for which the census finds no emission site and
-// whose declaration names no other sentinel of that population — the same
-// partition the assertion below computes, so the two cannot disagree about what
-// membership means. The list below is the statement of who its members are, and
-// carries no count beside it: a number written here would have to be corrected
-// on every admission and removal, and correcting it is what resets the clock for
-// the next one.
-//
-// 🔴 THIS LIST IS A BRIDGE AND NOT THE HOME OF WHAT IT RECORDS, so it is worth
-// knowing what replaces it before adding anything to it.
-//
-// The fact each entry stands for — nothing raises this condition yet, and here
-// is the work that will — already has a declared single home: the DeclaredAhead
-// note on the condition's own registration, documented in pkg/errors. That
-// declaration argues in writing against exactly the shape below, on the ground
-// that a side list is a second home for the correspondence and a second home is
-// what drifts when a condition is renamed, moved between packages or removed.
-// The same file records why nothing inside one registration can perform this
-// check: whether an unnoted condition is in fact raised is a property of the
-// whole module. That is the gap this assertion closes, and closing it does not
-// license storing the correspondence here.
-//
-// Every entry IS a registered identity, so DeclaredAhead can reach every one of
-// them, and none of them currently carries such a note. The list exists because
-// none of them does, and the note is a published
-// sentence naming the work that will raise the condition — content this
-// assertion cannot invent, since the census establishes only that nothing emits
-// them and says nothing about why. Until then their absence from the published
-// reference is reported by a WARN in the reference generator and by nothing that
-// fails, which is the channel this assertion exists to replace.
-//
-// So an entry leaves this list when its condition gains a DeclaredAhead note or
-// a raise, and the list is deleted outright once no entry needs it. Do
-// not grow it as the way of admitting a new unraised sentinel: that is what
-// DeclaredAhead is for, and an entry added here instead takes the correspondence
-// out of the one place it travels with the identity.
-//
-// An entry is a standing permission, so it is guarded in both directions. A
-// sentinel absent from this list and missing an emission site fails. An entry
-// naming a sentinel that has since acquired an emission site, been renamed, or
-// been removed fails too, for the reason recorded at the view-accessor
-// exceptions in rawdocument_guard_test.go: a stale exception is worse than none,
-// because it reads as a known hole where there is none and goes on exempting its
-// name for as long as it stands.
-var knownUnemittedSentinels = []string{
-	"ErrAmbiguousImporterPlugin",
-	"ErrProviderBindingUnsatisfied",
-	"ErrProviderVersionUnsatisfiable",
-}
 
 // sentinelName matches the declaration convention for a sentinel: an exported
 // package-level error variable named for the rule it stands for.
@@ -395,9 +368,11 @@ func TestSentinelEmissionSitesAreTheFrameworkDispatch(t *testing.T) {
 			"a second emission site, and minting one shows up as a sentinel no registered check emits.\n"+
 			"ATTRIBUTION: a sentinel named in a package-level check declaration belongs to the dispatch "+
 			"wherever that declaration lives, because the halting currency there is framework-issued by "+
-			"construction; a plain declared function is read by its path instead. That reads declarations "+
-			"and cannot observe invocation, so a check declared and never invoked is attributed to the "+
-			"dispatch too.\n"+
+			"construction; a plain declared function and any other package-level value are read by their "+
+			"path instead. A function body is read for what it NAMES and a package-level value for what it "+
+			"OBTAINS, so a rule raised from a diagnostic set assembled at package level is counted here "+
+			"rather than reported as raised by nothing. That reads declarations and cannot observe "+
+			"invocation, so a check declared and never invoked is attributed to the dispatch too.\n"+
 			"CONSEQUENCE while this population reports rather than blocks: an off-framework check gets no "+
 			"computed placement, no caller-coverage guarantee and no framework-supplied provenance, and "+
 			"nothing halts on its absence. The population is not free to grow, though — see the ratchet "+
@@ -430,7 +405,7 @@ func TestSentinelEmissionSitesAreTheFrameworkDispatch(t *testing.T) {
 		t.Logf("the off-framework population reports and does not block on its size. It becomes blocking "+
 			"when the last emission path outside the framework's dispatch is removed; until then it would "+
 			"fail on the shipped tree on every run. What does block is the ceiling above, which refuses an "+
-			"increase, and the no-emission-site population, which blocks against its recorded baseline. "+
+			"increase, and the no-emission-site population, which is empty and blocks on any member. "+
 			"Off-framework population at this run: %d of %d sentinels.",
 			len(offFramework), len(declared))
 	}
@@ -476,92 +451,49 @@ func assertOffFrameworkCeiling(t *testing.T, offFramework, declared int) {
 	}
 }
 
-// assertUnemittedSentinels blocks on a sentinel with no emission site that the
-// recorded baseline does not name, and on a baseline entry that no longer
-// describes anything.
+// assertUnemittedSentinels blocks on any sentinel the census finds no emission
+// site for.
 //
-// Both directions matter and only one of them is obvious. Failing on a NEW
-// unemitted sentinel is the point of promoting this population. Failing on a
-// STALE entry is what keeps the baseline from quietly becoming a permanent
-// exemption list: an entry whose sentinel has since acquired an emission site
-// reads as a known hole where there is none, and it goes on exempting that name
-// for as long as it stands.
-//
-// The baseline is asserted to be duplicate-free before it is believed, on the
-// reasoning the residue guard records: a name written twice makes the recorded
-// set smaller than it reads, so a reader counting entries and a reader counting
-// distinct names disagree, and the smaller set is the one that governs. That is
-// refused rather than normalised, because silently collapsing it would let the
-// list misdescribe its own size indefinitely.
+// The population is empty, so there is no recorded set of permitted names and
+// no narrowing of the corpus — the reasoning is at [unemittedSentinelsBlock].
+// The remedy a failure names is therefore never "record it here": a condition
+// deliberately declared ahead of the work that will raise it says so on its own
+// registration, where the correspondence travels with the identity and the
+// published reference reads it.
 func assertUnemittedSentinels(t *testing.T, unemitted []string) {
 	t.Helper()
-
-	baseline := make(map[string]bool, len(knownUnemittedSentinels))
-	for _, name := range knownUnemittedSentinels {
-		baseline[name] = true
-	}
-	if len(baseline) != len(knownUnemittedSentinels) {
-		t.Fatalf("the recorded baseline of %d entries holds only %d distinct name(s), so one is written "+
-			"twice and the set does not say what it appears to",
-			len(knownUnemittedSentinels), len(baseline))
-	}
-
-	found := map[string]bool{}
-	var fresh []string
-	for _, name := range unemitted {
-		found[name] = true
-		if !baseline[name] {
-			fresh = append(fresh, name)
-		}
-	}
-	sort.Strings(fresh)
-
-	var stale []string
-	for _, name := range knownUnemittedSentinels {
-		if !found[name] {
-			stale = append(stale, name)
-		}
-	}
-	sort.Strings(stale)
 
 	report := t.Logf
 	if unemittedSentinelsBlock {
 		report = t.Errorf
 	}
 
-	if len(fresh) > 0 {
-		report("%d sentinel(s) have no emission site at all and are not in the recorded baseline: %s.\n"+
-			"INVARIANT: every declared sentinel is raised somewhere, or is recorded as a known exception "+
-			"with its criterion and date.\n"+
+	if len(unemitted) > 0 {
+		report("%d sentinel(s) have no emission site at all: %s.\n"+
+			"INVARIANT: every declared sentinel is raised somewhere, or says on its own registration that "+
+			"it is declared ahead of the work that will raise it.\n"+
 			"CONSEQUENCE: a sentinel nothing emits is either a rule that was removed without its name, or "+
 			"a name minted for a check that was never written. A consumer can match against it forever "+
 			"and never see it.\n"+
+			"ATTRIBUTION: a raise is read from a declared function body that names the sentinel and from a "+
+			"package-level value that obtains it, so a sentinel reached only as a function VALUE — an entry "+
+			"in a dispatch table something else calls — is not credited and lands here. That is the "+
+			"under-attributing direction on purpose: it is a false alarm somebody investigates rather than "+
+			"an unraised condition reported as raised.\n"+
 			"REMEDY: raise it from the check that owns the rule; or, if it is deliberately declared ahead "+
 			"of the work that will raise it, say so on its own registration with a DeclaredAhead note, "+
 			"which is where that fact belongs and where the published reference reads it; or delete the "+
-			"declaration. Adding the name to knownUnemittedSentinels is none of those — that list is a "+
-			"bridge for conditions registered before the note existed, and its own comment says so.",
-			len(fresh), strings.Join(namedList(fresh, 12), ", "))
-	}
-
-	if len(stale) > 0 {
-		report("the recorded baseline names %d sentinel(s) that DO have an emission site now, or that no "+
-			"longer exist: %s.\n"+
-			"A stale entry is worse than none: it reads as a known hole where there is none, and it "+
-			"exempts that name from this assertion for as long as it stands.\n"+
-			"REMEDY: remove the entry from knownUnemittedSentinels. That removal is part of the change "+
-			"that wired or deleted the sentinel, not a follow-up to it.",
-			len(stale), strings.Join(namedList(stale, 12), ", "))
+			"declaration. Recording the name in a list here is none of those, and no such list exists.",
+			len(unemitted), strings.Join(namedList(unemitted, 12), ", "))
 	}
 
 	tier := "reports and does not block"
 	if unemittedSentinelsBlock {
 		tier = "blocks"
 	}
-	t.Logf("no-emission-site population: %d sentinel(s) carry no emission site, %d recorded as a known "+
-		"baseline, %d not in that baseline, %d baseline entry/entries no longer applying. This assertion "+
-		"%s on either of the last two.",
-		len(unemitted), len(baseline), len(fresh), len(stale), tier)
+	t.Logf("no-emission-site population: %d sentinel(s) carry no emission site, against a population "+
+		"asserted to be empty with no recorded exception. This assertion %s on any member.",
+		len(unemitted), tier)
 }
 
 // TestAssertedSentinelPopulationCoversTheModule asserts that [scannedRoots]
@@ -658,11 +590,11 @@ func TestAssertedSentinelPopulationCoversTheModule(t *testing.T) {
 	}
 }
 
-// emissionSite is one place a sentinel is named, and whether that place is the
+// emissionSite is one place a sentinel is raised, and whether that place is the
 // framework's dispatch. Membership travels with the site rather than being
-// recomputed from its name, because the two kinds of site establish it
-// differently: a declared function by its package, a check declaration by what
-// it constructs.
+// recomputed from its name, because the kinds of site establish it differently:
+// a check declaration by what it constructs, and every other host — a declared
+// function, any other package-level value — by its package.
 type emissionSite struct {
 	name      string
 	framework bool
@@ -678,43 +610,87 @@ type emissionSite struct {
 // declaration into the site map would make a name that raises nothing count as
 // emitted, which is the one thing the emission counts must not say.
 //
-// Two shapes count as a site. A non-test declared function whose body names a
-// sentinel identifier — the criterion the covering measurement used — and a
-// package-level [Check] declaration whose value expression names one. Both count
+// Two host shapes count as a site. A non-test declared function whose body names
+// a sentinel identifier — the criterion the covering measurement used — and a
+// package-level var declaration whose value expression obtains one. Both count
 // the site rather than the occurrence, so naming one sentinel twice is one site,
 // and both are an upper bound on checks: a function that wraps a sentinel while
 // re-raising it counts as naming it.
 //
-// A check declaration is walked whole, from the composite literal down, rather
-// than only at the function literal holding the predicate. A check names its
-// sentinel on the value's own field as well as inside the predicate, so a walk
-// scoped to the predicate would see the second and miss the first — and would
-// break outright on a check that names its sentinel only on the field. Walking
-// the value expression also needs no knowledge of which field holds the
-// predicate, so the field set can grow without the census following it.
+// A value host is walked whole, from the composite literal down, rather than
+// only at a function literal inside it. A check names its sentinel on the
+// value's own field as well as inside the predicate, so a walk scoped to the
+// predicate would see the second and miss the first — and would break outright
+// on a check that names its sentinel only on the field. Walking the whole value
+// expression also needs no knowledge of which field holds a predicate, so the
+// field set can grow without the census following it.
 //
-// The walk stops at the check shape and does not extend to package-level
-// variables in general, which is a deliberate bound rather than an oversight. A
-// sentinel is routinely named in the declaration of another sentinel that wraps
-// it, and in diagnostic tables keyed by sentinel; counting those as emission
-// sites would answer a different question than the one this assertion asks, and
-// would reclassify sentinels on the strength of a declaration that raises
-// nothing.
+// # Why the value host is every package-level var and not only a check
+//
+// A rule raised from a diagnostic set assembled once at package level is raised
+// as surely as one raised inline, and a walk that enters only the check shape
+// cannot see it: the sentinel is obtained on a field of a package-level struct
+// value, and the function that reads the field back and wraps it names no
+// sentinel at all. Both halves of the raise are then outside the walk, and the
+// sentinel reads as raised by nothing while the shipped build raises it. That is
+// the one reading a census must never produce, because a name minted for a check
+// never written and a rule wired through a value are indistinguishable from the
+// outside and only the first is a defect. The host set is therefore every
+// package-level var, so that assembling a rule into a value rather than writing
+// it inline changes nothing about whether it is counted.
+//
+// # The inner criterion differs by host, and that is a property of the hosts
+//
+// A bare MENTION inside a package-level value establishes nothing: a sentinel is
+// routinely named in the declaration of another sentinel that wraps it, and in
+// diagnostic tables keyed by sentinel, and crediting those would reclassify a
+// sentinel on the strength of a declaration that raises nothing. So a value host
+// is read by the stronger question — does this expression OBTAIN the sentinel's
+// value, per [obtainedIn] — rather than by the naming question [namesIn]
+// answers.
+//
+// A declared function body is read by the naming question, and the asymmetry is
+// deliberate at both ends. A function body is a host that RUNS, where the two
+// questions coincide for every shape in this module and the naming reading is
+// already recorded above as an upper bound on checks; reading it the other way
+// would move the migration meter for reasons that have nothing to do with which
+// hosts are entered. A package-level value is not a host that runs — it is data,
+// and inside data a mention is routinely a key or a wrapped reference. The two
+// hosts are read by the two questions each can answer soundly, and the direction
+// of error at the value host is toward under-attribution: a value that merely
+// mentions a sentinel is not credited with raising it.
+//
+// One shape is under-attributed by that choice and is named so it is not
+// mistaken for a defect in the tree. A sentinel reached only as a function VALUE
+// — an accessor bound into a dispatch table something else calls — is obtained
+// by nothing this walk can see, so it lands among the sentinels nothing raises.
+// That is the safe direction: a false alarm somebody investigates, rather than an
+// unraised condition reported as raised.
+//
+// # Where the framework verdict comes from, per host
+//
+// A package-level [Check] declaration belongs to the dispatch wherever it is
+// declared, because its halting currency is framework-issued by construction.
+// Every other value host is read by its declaring package's path, exactly as a
+// plain declared function is — so a diagnostic set assembled in a consuming
+// package is attributed outside the dispatch, which is what it is.
 //
 // The value walk below admits a var declaration and not a const one, which is
 // where this reading is deliberately NARROWER than [declaredSentinels] beside it,
 // and the difference is a property of the shape being looked for rather than an
-// oversight to reconcile. This walk attributes a package-level check declaration
-// to the framework's dispatch, and a check is a composite literal, which cannot
-// be a Go constant. So a const specification can bind a sentinel — which is why
-// the population walk reads both — and can never hold a check, which is why
-// reading it here would only widen the walk to specifications that cannot match.
+// oversight to reconcile. A Go constant is limited to constant expressions, so it
+// can hold neither a composite literal, a function literal nor a call, and an
+// error value is not a constant — so a const specification can never obtain a
+// sentinel's value. A const can still BIND a sentinel, which is why the
+// population walk reads both, and reading it here would only widen the walk to
+// specifications that cannot match.
 func sentinelCensus(t *testing.T) (declared []string, emitters map[string][]emissionSite, forwards map[string][]string) {
 	t.Helper()
 
 	files, _ := collectGoFiles(t, scannedRoots, excludeTestFiles)
 	names := declaredSentinels(files)
 	forwards = forwardingDeclarations(files, names)
+	accessorPublished := accessorPublishedSentinels(files, names)
 
 	emitters = map[string][]emissionSite{}
 	for path, file := range files {
@@ -740,12 +716,12 @@ func sentinelCensus(t *testing.T) (declared []string, emitters map[string][]emis
 						continue
 					}
 					for i, value := range vs.Values {
-						if i >= len(vs.Names) || !isCheckValue(value) {
+						if i >= len(vs.Names) {
 							continue
 						}
-						recordNamed(emitters, names, emissionSite{
+						recordObtained(emitters, names, accessorPublished, emissionSite{
 							name:      dir + "." + vs.Names[i].Name,
-							framework: true,
+							framework: inFrameworkPackage || isCheckValue(value),
 						}, value)
 					}
 				}
@@ -1038,10 +1014,113 @@ func recordNamed(emitters map[string][]emissionSite, names map[string]string, si
 	}
 }
 
-// namedWithSites renders each sentinel beside the sites naming it, so a reader
-// can reach the declaration an attribution came from. A check declaration's site
-// carries the variable's own name, which is what a reader greps for; a declared
-// function's carries the function name.
+// obtainedIn returns the declared sentinels a subtree OBTAINS the value of, each
+// once however often it appears.
+//
+// It is the stronger sibling of [namesIn] and the criterion the value hosts are
+// read by, for the reason recorded at [sentinelCensus]: inside data a mention is
+// routinely a key or a wrapped reference rather than a raise, so crediting one
+// would reclassify a sentinel on the strength of a declaration that raises
+// nothing.
+//
+// The shape an obtain takes follows from how the sentinel's own declaration binds
+// it, which is why [accessorPublishedSentinels] is an argument rather than
+// something guessed at here.
+//
+//   - A sentinel published by an accessor is obtained by INVOKING it — `ErrX()`
+//     or `pkg.ErrX()`. The value cannot be reached any other way, so the empty
+//     argument list is the whole test: a same-prefixed helper taking arguments
+//     names no identity, and a bare mention of the accessor passes the function
+//     itself rather than the condition it publishes.
+//   - A sentinel bound to a value is obtained by NAMING it. There is no call to
+//     look for, so requiring one would drop every value-bound sentinel's sites
+//     and report a rule the tree raises as raised by nothing — the failure this
+//     criterion exists to remove, reintroduced from the other side.
+//
+// A qualified spelling is read for both shapes, and the qualifier is deliberately
+// not resolved to an import: the population is a set of bare names, so resolving
+// it would ask a question no count in this file is taken over. That admits a
+// same-named value from outside this module, which is the same admission
+// [namesIn] already makes beside it rather than a new one.
+func obtainedIn(names map[string]string, accessorPublished map[string]bool, subtree ast.Node) map[string]bool {
+	obtained := map[string]bool{}
+	record := func(name string, invoked bool) {
+		if _, ok := names[name]; !ok {
+			return
+		}
+		// The two shapes each admit exactly one occurrence form, so the test is
+		// that the form matches the declaration: an accessor obtained only by a
+		// call, a bound value only by a mention. Reading a call to a bound value
+		// or a mention of an accessor as an obtain is the over-attribution this
+		// refuses.
+		if accessorPublished[name] == invoked {
+			obtained[name] = true
+		}
+	}
+	ast.Inspect(subtree, func(node ast.Node) bool {
+		switch x := node.(type) {
+		case *ast.CallExpr:
+			if len(x.Args) != 0 {
+				return true
+			}
+			switch fun := x.Fun.(type) {
+			case *ast.Ident:
+				record(fun.Name, true)
+			case *ast.SelectorExpr:
+				record(fun.Sel.Name, true)
+			}
+		case *ast.Ident:
+			record(x.Name, false)
+		case *ast.SelectorExpr:
+			record(x.Sel.Name, false)
+		}
+		return true
+	})
+	return obtained
+}
+
+// recordObtained attributes site to every declared sentinel the subtree obtains
+// the value of.
+func recordObtained(emitters map[string][]emissionSite, names map[string]string, accessorPublished map[string]bool, site emissionSite, subtree ast.Node) {
+	for name := range obtainedIn(names, accessorPublished, subtree) {
+		emitters[name] = append(emitters[name], site)
+	}
+}
+
+// accessorPublishedSentinels reports, for each declared sentinel, whether its
+// declaration publishes it through an accessor rather than binding it to a value.
+//
+// It reads the same file set and the same population as the census, and the
+// population arrives as an argument, so there is no second criterion for what a
+// sentinel is — the same arrangement [forwardingDeclarations] beside it uses, and
+// for the same reason: this asks a question about the declaration rather than
+// about a rule, and a second walk free to recognise a shape the other does not
+// would move a sentinel between buckets for no reason a reader could find.
+//
+// A name declared in both shapes anywhere in the module counts as
+// accessor-published, because the accessor is the shape whose value can only be
+// reached by a call: reading such a name as value-bound would credit a mention of
+// the accessor as an obtain, which is the over-attribution [obtainedIn] refuses.
+func accessorPublishedSentinels(files map[string]*ast.File, names map[string]string) map[string]bool {
+	published := map[string]bool{}
+	for _, file := range files {
+		for _, decl := range file.Decls {
+			fd, ok := decl.(*ast.FuncDecl)
+			if !ok || fd.Recv != nil {
+				continue
+			}
+			if _, isSentinel := names[fd.Name.Name]; isSentinel {
+				published[fd.Name.Name] = true
+			}
+		}
+	}
+	return published
+}
+
+// namedWithSites renders each sentinel beside the sites raising it, so a reader
+// can reach the declaration an attribution came from. A value host's site
+// carries the variable's own name and a declared function's carries the function
+// name, so either one is a name the reader can look up directly.
 func namedWithSites(sentinels []string, emitters map[string][]emissionSite) []string {
 	out := make([]string, 0, len(sentinels))
 	for _, sentinel := range sentinels {
