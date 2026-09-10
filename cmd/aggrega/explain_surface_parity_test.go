@@ -34,6 +34,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/haltref"
 	"github.com/aggrega-ai/aggrega-cli/internal/mcp"
 	"github.com/aggrega-ai/aggrega-cli/internal/serve"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
 // explainErrorReply is the daemon's answer, decoded by field name rather than by
@@ -564,6 +565,134 @@ func TestExplainOnTheDaemonRefusesACodeNothingNames(t *testing.T) {
 			}
 		})
 	}
+}
+
+// explainRetiredProbe is a short code the retirement record holds.
+//
+// It is quoted rather than read off an accessor because there is nothing to read it
+// off: the record answers a lookup — is THIS number retired — and enumerates
+// nothing, deliberately, since a retired number is a positive declaration rather
+// than a gap in a sequence. The quote is checked against that record before it is
+// used, so a case pointed at a number that stopped being retired fails saying so
+// rather than quietly measuring nothing.
+const explainRetiredProbe = "E0157"
+
+// retiredRefusal returns the refusal a spent short code earns, built from the
+// retirement record and the refusal's own type.
+//
+// Neither input is anything the three surfaces read to compose an answer: the
+// record is the declaration all three resolve through, and the type is where the
+// sentence lives. So an expectation built here is independent of every composition
+// under comparison, and a change that reworded one surface's copy of the sentence
+// fails rather than moving both sides of the comparison at once.
+func retiredRefusal(t *testing.T) string {
+	t.Helper()
+	note, retired := cerrors.RetiredShortCode(explainRetiredProbe)
+	if !retired {
+		t.Fatalf("%s is not in the retirement record, so this case no longer exercises a spent "+
+			"number; point it at one that is retired", explainRetiredProbe)
+	}
+	return (&haltref.RetiredCodeError{ShortCode: explainRetiredProbe, Note: note}).Error()
+}
+
+// TestExplainAnswersARetiredNumberOnEverySurface is the parity case for the one
+// refusal that is a fact about the number rather than the absence of one.
+//
+// A number that named a condition once is answered as retired, with what it named,
+// wherever it is asked: the command line reports it as the command's error, the
+// daemon as a correction to the request, and the assistant-facing tool protocol as
+// the note on its answer. The asymmetry this exists to prevent is silent — a
+// surface that dropped the refusal would answer an old diagnostic with a pointer to
+// a document, and its reader would go looking for a condition that no longer
+// exists.
+//
+// No documentation is seeded and the workspace is pinned offline, and that is a
+// property under test rather than a convenience: a spent number is answered out of
+// a declaration, so no surface may make the answer wait on a bundle.
+func TestExplainAnswersARetiredNumberOnEverySurface(t *testing.T) {
+	// Not parallel: isolates the process environment and the working directory.
+	isolateCLIEnvironment(t)
+	t.Setenv("AGGREGA_OFFLINE", "1")
+	want := retiredRefusal(t)
+	ws := t.TempDir()
+
+	out, notes, cmdErr := runExplainCommand(t, "explain", explainRetiredProbe, "--workspace-root", ws)
+	if cmdErr == nil {
+		t.Fatalf("the command line answered %s as a live condition:\n%s\nnotes: %s",
+			explainRetiredProbe, out, notes)
+	}
+	if cmdErr.Error() != want {
+		t.Errorf("the command line's refusal is not the one the retirement record earns.\n"+
+			"--- got ---\n%s\n--- want ---\n%s", cmdErr.Error(), want)
+	}
+	if out != "" {
+		t.Errorf("a spent number still wrote an answer:\n%s", out)
+	}
+
+	if got := daemonRefusalMessage(t, ws, explainRetiredProbe); got != want {
+		t.Errorf("the daemon and the command line refuse %s differently.\n--- the daemon ---\n%s\n"+
+			"--- the command line ---\n%s", explainRetiredProbe, got, want)
+	}
+
+	// The assistant surface is handed the diagnostic a build would have printed,
+	// because that is what a caller there holds — pasting an old report is exactly
+	// how a spent number reaches it. This runs last: it moves the working directory
+	// to the workspace, which the two runs above do not want.
+	diagnostic := "[CATALOG_ERROR " + explainRetiredProbe + "] recipe.yaml: what the condition used to name"
+	fromAssistant, assistantText := explainOverTheAssistantWire(t, ws, diagnostic, assistantDiagnosticKind)
+
+	if fromAssistant.Note != want {
+		t.Errorf("the assistant surface does not carry the refusal the other two report.\n"+
+			"--- got ---\n%s\n--- want ---\n%s", fromAssistant.Note, want)
+	}
+	// Nothing resolved, so nothing about a condition may be reported. The failure
+	// this pins is a condition whose every value is blank, which a client would
+	// render as an answer.
+	if fromAssistant.Condition != nil {
+		t.Errorf("a spent number was reported as a condition: %+v", *fromAssistant.Condition)
+	}
+	if len(fromAssistant.Entries) != 0 {
+		t.Errorf("a spent number carried %d published entries: %+v",
+			len(fromAssistant.Entries), fromAssistant.Entries)
+	}
+	if fromAssistant.Reference != "" {
+		t.Errorf("a spent number carried the address a condition is published at: %q", fromAssistant.Reference)
+	}
+	// The prose is the diagnostic, the refusal and the pointer — re-composed here
+	// out of the text the COMMAND LINE actually reported, through a format written
+	// in this file.
+	if expect := renderAssistantGuidance(diagnostic, cmdErr.Error(), fromAssistant.DocPointer); fromAssistant.Guidance != expect {
+		t.Errorf("the assistant surface's prose is not the diagnostic, the refusal and the pointer.\n"+
+			"--- got ---\n%s\n--- want ---\n%s", fromAssistant.Guidance, expect)
+	}
+	if assistantText != fromAssistant.Guidance {
+		t.Errorf("the text block and the payload's prose differ.\n--- text ---\n%s\n--- payload ---\n%s",
+			assistantText, fromAssistant.Guidance)
+	}
+
+	// What an assistant ends up reading, so a reader of a PASSING run sees the
+	// answer rather than only that something was compared.
+	t.Logf("the assistant surface answers a diagnostic carrying %s with:\n%s",
+		explainRetiredProbe, fromAssistant.Guidance)
+}
+
+// daemonRefusalMessage drives one aggrega/explainError request and returns the
+// message of the error envelope it was refused with.
+//
+// The message is read out of the envelope by field name rather than the envelope
+// compared whole, because what the surfaces are compared on is the sentence a
+// reader is shown; the numeric code beside it belongs to the protocol rather than
+// to the answer.
+func daemonRefusalMessage(t *testing.T, workspaceRoot, code string) string {
+	t.Helper()
+	raw := explainRefusalOverTheDaemonWire(t, workspaceRoot, code)
+	var envelope struct {
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal([]byte(raw), &envelope); err != nil {
+		t.Fatalf("decode the error envelope: %v\nenvelope: %s", err, raw)
+	}
+	return envelope.Message
 }
 
 // explainRefusalOverTheDaemonWire drives one aggrega/explainError request and

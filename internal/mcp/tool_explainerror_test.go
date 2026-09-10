@@ -242,6 +242,115 @@ func TestExplainErrorSaysWhyTheWalkThroughIsMissing(t *testing.T) {
 	}
 }
 
+// explainRetiredProbe is a short code the retirement record holds, and
+// explainUnregisteredProbe one that is shaped like a code and is neither registered
+// nor retired.
+//
+// Both are quoted rather than read off an accessor because there is nothing to read
+// them off: the retirement record answers a lookup — is THIS number retired — and
+// enumerates nothing, deliberately, since a retired number is a positive
+// declaration rather than a gap in a sequence. Both quotes are checked against the
+// registry and the record before they are used, so a case pointed at a number whose
+// status changed fails saying so rather than quietly measuring nothing.
+const (
+	explainRetiredProbe      = "E0157"
+	explainUnregisteredProbe = "E0000"
+)
+
+// TestExplainErrorDiscriminatesASpentNumberFromAnUnrecognisedOne is the pin on what
+// the answer adds when nothing resolves, and the two codes are opposites.
+//
+// A short code that named a condition once is a fact about the number, and every
+// other surface reports it, so this one carries that refusal as its note. A run of
+// characters that merely looks like a code — under no registration and in no
+// retirement record — is not a fact about the diagnostic, so the answer adds nothing
+// to it. Both directions are pinned because a repair aimed at the first that also
+// fired on the second would start asserting something about every code-shaped token
+// a caller happened to paste.
+//
+// Each code runs twice, against a workspace holding the published pages and against
+// one holding nothing, and the pair discriminates rather than decorates: a spent
+// number is answered out of a declaration and reads no pages at all, so a change
+// that consulted the documentation first would reach the empty workspace with a
+// combined refusal and fail that row alone.
+func TestExplainErrorDiscriminatesASpentNumberFromAnUnrecognisedOne(t *testing.T) {
+	t.Parallel()
+	short, code, sentence := haltProbe(t)
+
+	note, retired := cerrors.RetiredShortCode(explainRetiredProbe)
+	if !retired {
+		t.Fatalf("%s is not in the retirement record, so this case no longer exercises a spent "+
+			"number; point it at one that is retired", explainRetiredProbe)
+	}
+	// Built from the retirement record and the refusal's own type, neither of which
+	// this surface reads to compose an answer — so a reworded sentence fails here
+	// instead of moving both sides of the comparison at once.
+	spent := (&haltref.RetiredCodeError{ShortCode: explainRetiredProbe, Note: note}).Error()
+
+	if _, err := haltref.Resolve(explainUnregisteredProbe); err == nil {
+		t.Fatalf("%s resolves to a condition, so the silent rows no longer exercise an unrecognised "+
+			"code; point them at one nothing declares", explainUnregisteredProbe)
+	}
+	if _, alsoRetired := cerrors.RetiredShortCode(explainUnregisteredProbe); alsoRetired {
+		t.Fatalf("%s is in the retirement record, so the silent rows are measuring the other case",
+			explainUnregisteredProbe)
+	}
+
+	for _, tc := range []struct {
+		name     string
+		code     string
+		seeded   bool
+		wantNote string
+	}{
+		{"a spent number, with the pages cached", explainRetiredProbe, true, spent},
+		{"a spent number, with no documentation at all", explainRetiredProbe, false, spent},
+		{"an unrecognised code, with the pages cached", explainUnregisteredProbe, true, ""},
+		{"an unrecognised code, with no documentation at all", explainUnregisteredProbe, false, ""},
+	} {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			s := pinnedDocsServer(t, t.TempDir())
+			if tc.seeded {
+				s = seedHaltDocsWorkspace(t, haltFixturePages(short, code, sentence))
+			}
+
+			diagnostic := haltDiagnostic(tc.code, "what a build reported")
+			payload, text := explainErrorPayload(t, s, explainErrorArgs{Message: diagnostic, Kind: "recipe"})
+
+			if payload.Note != tc.wantNote {
+				t.Errorf("note = %q\nwant %q", payload.Note, tc.wantNote)
+			}
+			// Nothing resolved on any row, so none of them may report a condition: a
+			// caller would render one whose every value is blank as an answer.
+			if payload.Condition != nil {
+				t.Errorf("%s was reported as a condition: %+v", tc.code, *payload.Condition)
+			}
+			if len(payload.Entries) != 0 {
+				t.Errorf("%s carried %d published entries: %+v", tc.code, len(payload.Entries), payload.Entries)
+			}
+			if payload.Reference != "" {
+				t.Errorf("%s carried the address a condition is published at: %q", tc.code, payload.Reference)
+			}
+
+			// The prose is the diagnostic, whatever the note carries, and the pointer,
+			// composed here rather than read back from the surface that wrote it.
+			want := diagnostic
+			if tc.wantNote != "" {
+				want += "\n\n" + tc.wantNote
+			}
+			want += "\n\nSee: " + docEntityDir + "recipe.md"
+			if payload.Guidance != want {
+				t.Errorf("the prose is not the diagnostic, the note and the pointer.\n--- got ---\n%s\n"+
+					"--- want ---\n%s", payload.Guidance, want)
+			}
+			if text != payload.Guidance {
+				t.Errorf("the text block and the payload's prose differ.\n--- text ---\n%s\n"+
+					"--- payload ---\n%s", text, payload.Guidance)
+			}
+		})
+	}
+}
+
 // TestExplainErrorReadsTheSessionsOwnBundle is the negative control that separates
 // a read at this session's coordinates from a read at coordinates derived a second
 // time.

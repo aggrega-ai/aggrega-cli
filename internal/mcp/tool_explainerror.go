@@ -6,6 +6,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -142,14 +143,19 @@ type explainErrorEntry struct {
 // prose, and DocPointer the language-reference page for the kind the diagnostic
 // concerns — where to read the authoring contract for the thing that failed.
 //
-// The rest is present only when the diagnostic named a condition something
-// resolves. Condition is what the compiler declares about it; Entries are the
-// published entries that teach the authoring fix, in the order the documentation
-// itself pairs them with the condition; Reference is where the condition is
-// published, for a caller that would rather send its reader to the documentation
-// than render prose. Note is the reason the entries are absent and is an ordinary
-// part of an answer rather than a failure — the condition resolved, and what is
-// missing is the walk-through. Entries and Note are never both present.
+// Condition, Entries and Reference are present only when the diagnostic named a
+// condition something resolves. Condition is what the compiler declares about it;
+// Entries are the published entries that teach the authoring fix, in the order the
+// documentation itself pairs them with the condition; Reference is where the
+// condition is published, for a caller that would rather send its reader to the
+// documentation than render prose.
+//
+// Note is the reason something is absent, and it is an ordinary part of an answer
+// rather than a failure. Usually the condition resolved and what is missing is the
+// walk-through. It also carries the one refusal that is a fact about the code
+// itself — a short code that named a condition once and never names another —
+// which arrives with no condition beside it, because there is none left to report.
+// Entries and Note are never both present.
 type explainErrorResult struct {
 	Message    string                 `json:"message"`
 	Guidance   string                 `json:"guidance"`
@@ -168,15 +174,21 @@ type explainErrorResult struct {
 // point of the type: the block a caller reads is the same bytes a terminal prints
 // for the same code, so the two cannot drift into two explanations of one
 // condition.
+//
+// Condition is nil where nothing resolved, which is an expansion carrying a Note
+// and nothing else. The pointer is what carries that distinction, so a reader of
+// this type has one thing to test rather than an empty field to interpret — and
+// the answer it assembles cannot present a condition whose every value is blank.
 type conditionExpansion struct {
 	Rendered  string
 	Note      string
-	Condition explainErrorCondition
+	Condition *explainErrorCondition
 	Entries   []explainErrorEntry
 }
 
 // explainCondition returns the shared explanation of the condition the given
-// diagnostic names, or nil when the text names none that anything resolves.
+// diagnostic names, or nil when the text names none and there is nothing to
+// report about the code it does carry.
 //
 // The code is read out of the message because that is what this surface is handed:
 // a caller here holds the diagnostic it got back from a build, not a bare code, so
@@ -188,12 +200,20 @@ type conditionExpansion struct {
 // place for every surface that answers this question. Nothing about the answer is
 // decided here — this supplies the workspace and renders what comes back.
 //
+// A composition that resolved nothing still answers where its refusal is a fact
+// about the number rather than the absence of one. A short code that named a
+// condition once and never names another is exactly that, and it is what a reader
+// quoting an old diagnostic needs to be told — so the refusal travels as the
+// expansion's note, with no condition beside it. The refusal is recognised by its
+// type, never by its wording, which is free to be reworded.
+//
 // A nil result is the case this surface answers as it always did: the diagnostic
-// and the pointer, with nothing asserted about a run of characters no condition
-// is registered under. A code that resolves against the published reference alone
-// — which is every condition a provider declares for itself, since those are
-// registered inside the guest that raises them — is not that case and is answered
-// in full.
+// and the pointer, with nothing asserted about a run of characters no condition is
+// registered under, or about a lookup left undetermined. Neither is a fact about
+// the diagnostic worth putting in front of a reader. A code that resolves against
+// the published reference alone — which is every condition a provider declares for
+// itself, since those are registered inside the guest that raises them — is not
+// that case and is answered in full.
 func (s *server) explainCondition(message string) (*conditionExpansion, *rpcError) {
 	code, ok := haltref.ShortCodeIn(message)
 	if !ok {
@@ -201,7 +221,14 @@ func (s *server) explainCondition(message string) (*conditionExpansion, *rpcErro
 	}
 
 	explanation, cerr := explainops.Compose(code, s.explainPages)
-	if explanation.Condition.ShortCode == "" && explanation.Condition.Code == "" {
+
+	// The same test the shared writer applies for "renders nothing", evaluated once
+	// and read from here on, so this surface and that one cannot come to disagree
+	// about whether there is a condition to report.
+	resolved := explanation.Condition.ShortCode != "" || explanation.Condition.Code != ""
+
+	var retired *haltref.RetiredCodeError
+	if !resolved && !errors.As(cerr, &retired) {
 		return nil, nil
 	}
 
@@ -209,6 +236,8 @@ func (s *server) explainCondition(message string) (*conditionExpansion, *rpcErro
 	// so the block is byte-identical to what the same explanation renders as
 	// elsewhere. The two channels are separated the way that writer separates
 	// them: the answer on one, the reason anything is missing from it on the other.
+	// An explanation that resolved nothing renders as nothing, which is what leaves
+	// the note as the whole of that answer.
 	var rendered, notes strings.Builder
 	if werr := explainops.Write(&rendered, &notes, explanation); werr != nil {
 		return nil, &rpcError{Code: codeInternalError, Message: "render the explanation: " + werr.Error()}
@@ -217,7 +246,8 @@ func (s *server) explainCondition(message string) (*conditionExpansion, *rpcErro
 	// A composition that resolved the condition and then failed reports both: the
 	// condition it did resolve, and why the rest is missing. That is the same
 	// pairing a terminal shows, and the reason travels as a note because the
-	// condition above it stands.
+	// condition above it stands — or, where none resolved, because the reason is
+	// the answer.
 	note := strings.TrimSpace(notes.String())
 	if note == "" && cerr != nil {
 		note = cerr.Error()
@@ -226,11 +256,13 @@ func (s *server) explainCondition(message string) (*conditionExpansion, *rpcErro
 	exp := &conditionExpansion{
 		Rendered: strings.TrimSpace(rendered.String()),
 		Note:     note,
-		Condition: explainErrorCondition{
+	}
+	if resolved {
+		exp.Condition = &explainErrorCondition{
 			ShortCode: explanation.Condition.ShortCode,
 			Code:      explanation.Condition.Code,
 			Message:   explanation.Condition.Message,
-		},
+		}
 	}
 	for _, entry := range explanation.Entries {
 		exp.Entries = append(exp.Entries, explainErrorEntry{Heading: entry.Heading, Body: entry.Body})
@@ -321,10 +353,16 @@ var explainErrorToolSpec = toolSpec{
 		result := explainErrorResult{
 			Message:    message,
 			DocPointer: docPointerFor(a.Kind),
-			Condition:  &expansion.Condition,
+			Condition:  expansion.Condition,
 			Entries:    expansion.Entries,
-			Reference:  haltref.ExplanationURL(),
 			Note:       expansion.Note,
+		}
+		// The address is where a condition is published, so it travels with one and
+		// not otherwise: an answer carrying a spent number's refusal has no condition
+		// to publish an address for, and naming one would send a reader looking for
+		// an entry the page does not carry.
+		if expansion.Condition != nil {
+			result.Reference = haltref.ExplanationURL()
 		}
 		result.Guidance = explainGuidance(message, expansion, result.DocPointer)
 		return textResult(result.Guidance, result)
@@ -345,10 +383,16 @@ var explainErrorToolSpec = toolSpec{
 // A missing walk-through is stated rather than left out. Omitting the reason would
 // leave a reader with a condition and no explanation and nothing saying an
 // explanation exists elsewhere, which reads as though none had ever been written.
+//
+// An absent block is left out rather than joined as an empty one, so an answer
+// about a spent number reads as the diagnostic, why the number names nothing now,
+// and the pointer — with no blank gap where an explanation would have been.
 func explainGuidance(message string, expansion *conditionExpansion, docPointer string) string {
-	blocks := []string{message, expansion.Rendered}
-	if expansion.Note != "" {
-		blocks = append(blocks, expansion.Note)
+	blocks := []string{message}
+	for _, block := range []string{expansion.Rendered, expansion.Note} {
+		if block != "" {
+			blocks = append(blocks, block)
+		}
 	}
 	return strings.Join(append(blocks, "See: "+docPointer), "\n\n")
 }
