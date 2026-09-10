@@ -3,19 +3,25 @@
 
 package main
 
-// One code, two surfaces, one answer.
+// One code, three surfaces, one answer.
 //
-// The command line and the daemon both expand a code a build printed, and the
-// contract between them is not that they agree today but that there is only one
-// answer to agree with. This drives BOTH surfaces over their real entry points —
-// the command tree, and the daemon's dispatch loop over its own framing — against
-// one seeded workspace, and compares what each produced.
+// The command line, the daemon and the assistant-facing tool protocol each expand
+// a code a build printed, and the contract between them is not that they agree
+// today but that there is only one answer to agree with. This drives ALL THREE
+// over their real entry points — the command tree, the daemon's dispatch loop over
+// its own framing, and the tool protocol's message loop over its own — against one
+// seeded workspace, and compares what each produced.
 //
-// The expectation is not read from the composition either surface uses. It is the
-// text one surface actually wrote, compared against the payload the other actually
-// returned, re-rendered here through a format written in this file. So a change
-// that made the two diverge cannot satisfy this by moving both sides at once
-// through the code they share.
+// The expectation is not read from the composition any surface uses. It is the
+// text one surface actually wrote, compared against the payloads the others
+// actually returned, re-rendered here through formats written in this file. So a
+// change that made two of them diverge cannot satisfy this by moving both sides at
+// once through the code they share.
+//
+// The third surface is handed a DIAGNOSTIC rather than a code, which is what a
+// caller there holds: it resolves the code out of the text it was given. So the
+// comparison is over the part of the answer that is about the condition, and the
+// case composes the surrounding prose from a format written here.
 
 import (
 	"bytes"
@@ -26,6 +32,7 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/haltref"
+	"github.com/aggrega-ai/aggrega-cli/internal/mcp"
 	"github.com/aggrega-ai/aggrega-cli/internal/serve"
 )
 
@@ -135,6 +142,121 @@ func decodeOneFrame(t *testing.T, out []byte) map[string]json.RawMessage {
 	return envelope
 }
 
+// assistantExplainReply is the assistant surface's answer, decoded by field name
+// rather than by importing that surface's own result type.
+//
+// Decoding into a local shape is what makes this a reading of the WIRE, for the
+// reason the daemon's reply is decoded that way: sharing the producer's struct
+// would make a renamed key invisible here, and the key names are part of what a
+// client binds to. The two surfaces spell their keys differently — one in the
+// casing its protocol uses, one in the casing its own does — so this shape is not
+// the daemon's with a different name, and a comparison across the two crosses that
+// difference deliberately.
+type assistantExplainReply struct {
+	Message    string `json:"message"`
+	Guidance   string `json:"guidance"`
+	DocPointer string `json:"doc_pointer"`
+	Reference  string `json:"reference"`
+	Note       string `json:"note"`
+	Condition  *struct {
+		ShortCode string `json:"short_code"`
+		Code      string `json:"code"`
+		Message   string `json:"message"`
+	} `json:"condition"`
+	Entries []struct {
+		Heading string `json:"heading"`
+		Body    string `json:"body"`
+	} `json:"entries"`
+}
+
+// explainOverTheAssistantWire starts the tool protocol over the workspace, calls
+// the explain-error tool with one diagnostic through its own message loop, and
+// returns the decoded structured payload beside the text block.
+//
+// It goes through mcp.Run rather than through a handler so the call is ROUTED: the
+// tool exists only because a registry entry names it, so an entry that was never
+// added fails here as an unknown tool rather than passing on a handler nothing can
+// reach.
+//
+// The session is given no command surface, deliberately. A tool derived from the
+// command tree re-invokes the running binary — which under test is this test
+// binary — so a session carrying one could re-enter the suite.
+//
+// The working directory is moved to the workspace because this surface resolves
+// the workspace it serves from where the process stands: the documentation a
+// session serves is a property of the session rather than of one call, so there is
+// no per-call root to pass. The other two surfaces are handed their root
+// explicitly and are unaffected.
+func explainOverTheAssistantWire(t *testing.T, workspaceRoot, diagnostic, kind string) (assistantExplainReply, string) {
+	t.Helper()
+	t.Chdir(workspaceRoot)
+
+	body, err := json.Marshal(map[string]any{
+		"jsonrpc": "2.0",
+		"id":      1,
+		"method":  "tools/call",
+		"params": map[string]any{
+			"name":      "explain-error",
+			"arguments": map[string]string{"message": diagnostic, "kind": kind},
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal the request: %v", err)
+	}
+
+	var stdin bytes.Buffer
+	stdin.Write(body)
+	stdin.WriteByte('\n')
+
+	var stdout, stderr bytes.Buffer
+	// Stdin is fully written before the session starts and is never appended to, so
+	// the loop reads one message and then reaches EOF, which is the clean exit.
+	if rerr := mcp.Run(mcp.Config{
+		Stdin:         &stdin,
+		Stdout:        &stdout,
+		Stderr:        &stderr,
+		ServerVersion: provenanceCompilerVersion(),
+	}); rerr != nil {
+		t.Fatalf("the session exited with an error: %v\nstderr: %s", rerr, stderr.String())
+	}
+
+	var envelope struct {
+		Result *struct {
+			Content []struct {
+				Type string `json:"type"`
+				Text string `json:"text"`
+			} `json:"content"`
+			StructuredContent json.RawMessage `json:"structuredContent"`
+			IsError           bool            `json:"isError"`
+		} `json:"result"`
+		Error json.RawMessage `json:"error"`
+	}
+	line := bytes.TrimSpace(stdout.Bytes())
+	if len(line) == 0 {
+		t.Fatalf("the session wrote no message\nstderr: %s", stderr.String())
+	}
+	if err := json.Unmarshal(line, &envelope); err != nil {
+		t.Fatalf("decode the reply: %v\nreply: %s", err, line)
+	}
+	if envelope.Error != nil {
+		t.Fatalf("explain-error was refused at the protocol level: %s\nstderr: %s", envelope.Error, stderr.String())
+	}
+	if envelope.Result == nil {
+		t.Fatalf("the reply carries neither a result nor an error: %s", line)
+	}
+	if envelope.Result.IsError {
+		t.Fatalf("explain-error reported a failure: %s", envelope.Result.Content[0].Text)
+	}
+	if len(envelope.Result.Content) == 0 || envelope.Result.Content[0].Type != "text" {
+		t.Fatalf("the result carries no text block: %s", line)
+	}
+	var reply assistantExplainReply
+	if err := json.Unmarshal(envelope.Result.StructuredContent, &reply); err != nil {
+		t.Fatalf("decode the structured payload: %v\npayload: %s", err, envelope.Result.StructuredContent)
+	}
+	return reply, envelope.Result.Content[0].Text
+}
+
 // renderReply composes the reply the way a terminal reads it, through a format
 // written HERE.
 //
@@ -156,13 +278,38 @@ func renderReply(reply explainErrorReply) string {
 	return b.String()
 }
 
-// TestExplainIsOneAnswerOnBothSurfaces is clause-level: the daemon's answer for a
-// code is the command line's answer for the same code, byte for byte.
+// assistantDiagnosticKind is the entity kind the diagnostic the assistant surface
+// is handed concerns. It selects that surface's pointer to the authoring
+// contract, which is a different question from the condition and is asserted as
+// its own fact below.
+const assistantDiagnosticKind = "recipe"
+
+// renderAssistantGuidance composes the prose the assistant surface is expected to
+// have written, through a format written HERE and out of the text the COMMAND LINE
+// actually produced.
+//
+// This is the whole point of the comparison below, and it is why the format is
+// duplicated rather than shared. A case that composed the expectation through the
+// same code the surface composes through would compare one implementation against
+// itself: both sides would move together and the comparison could never fail.
+// Written independently, and fed the other surface's real output, it fails when
+// either surface stops carrying what the other does.
+//
+// The command line's answer ends in the newline a terminal wants and the prose
+// here does not, so the trailing whitespace is normalised — the case's own
+// decision about a line ending, not a reading of what the surface did with it.
+func renderAssistantGuidance(diagnostic, fromCommand, docPointer string) string {
+	return diagnostic + "\n\n" + strings.TrimSpace(fromCommand) + "\n\nSee: " + docPointer
+}
+
+// TestExplainIsOneAnswerOnEverySurface is clause-level: the daemon's answer for a
+// code, the assistant surface's answer for a diagnostic carrying that code, and
+// the command line's answer for the same code are one answer.
 //
 // It runs against the COMMITTED published pages rather than a fixture, so what is
-// compared is two surfaces reading one real corpus. A fixture page is written by
-// whoever writes the test and would agree with both readers by construction.
-func TestExplainIsOneAnswerOnBothSurfaces(t *testing.T) {
+// compared is three surfaces reading one real corpus. A fixture page is written by
+// whoever writes the test and would agree with every reader by construction.
+func TestExplainIsOneAnswerOnEverySurface(t *testing.T) {
 	// The pages are read BEFORE the environment is isolated, and the order is
 	// load-bearing: isolation moves the working directory, and the pages are
 	// addressed relative to this package.
@@ -186,17 +333,17 @@ func TestExplainIsOneAnswerOnBothSurfaces(t *testing.T) {
 	}
 	fromDaemon := explainOverTheDaemonWire(t, ws, short)
 
-	// The condition itself, which neither surface reads from the documentation.
+	// The condition itself, which no surface reads from the documentation.
 	if fromDaemon.ShortCode != short || fromDaemon.Code != code || fromDaemon.Message != message {
 		t.Errorf("the daemon reports a different condition than the registry declares:\n"+
 			"got  %s / %s / %s\nwant %s / %s / %s",
 			fromDaemon.ShortCode, fromDaemon.Code, fromDaemon.Message, short, code, message)
 	}
 
-	// The precondition, without which the comparison below would hold over an
+	// The precondition, without which every comparison below would hold over an
 	// answer carrying no published prose at all.
 	if len(fromDaemon.Entries) == 0 {
-		t.Fatalf("the daemon returned no published entries for %s, so comparing the two answers would "+
+		t.Fatalf("the daemon returned no published entries for %s, so comparing the answers would "+
 			"compare the condition line alone; note: %q", short, fromDaemon.Note)
 	}
 	if fromDaemon.Note != "" {
@@ -205,9 +352,88 @@ func TestExplainIsOneAnswerOnBothSurfaces(t *testing.T) {
 	}
 
 	if got := renderReply(fromDaemon); got != fromCommand {
-		t.Errorf("the two surfaces answer %s differently.\n--- the daemon, rendered ---\n%s\n"+
+		t.Errorf("the daemon and the command line answer %s differently.\n--- the daemon, rendered ---\n%s\n"+
 			"--- the command line ---\n%s", short, got, fromCommand)
 	}
+
+	// The assistant surface is handed the diagnostic a build would have printed,
+	// because that is what a caller there holds. This runs last: it moves the
+	// working directory to the workspace, which the two runs above do not want.
+	diagnostic := "[CATALOG_ERROR " + short + "] recipe.yaml: " + message
+	fromAssistant, assistantText := explainOverTheAssistantWire(t, ws, diagnostic, assistantDiagnosticKind)
+
+	if fromAssistant.Condition == nil {
+		t.Fatalf("the assistant surface resolved no condition out of %q, so it answered with a pointer "+
+			"where the other two answered with the condition; note: %q", diagnostic, fromAssistant.Note)
+	}
+	// The same three facts the daemon reports, compared against the daemon's own
+	// values rather than against the registry a second time — which is what makes
+	// this a comparison of two surfaces and not two readings of one accessor.
+	if fromAssistant.Condition.ShortCode != fromDaemon.ShortCode ||
+		fromAssistant.Condition.Code != fromDaemon.Code ||
+		fromAssistant.Condition.Message != fromDaemon.Message {
+		t.Errorf("the assistant surface reports a different condition than the daemon:\n"+
+			"got  %s / %s / %s\nwant %s / %s / %s",
+			fromAssistant.Condition.ShortCode, fromAssistant.Condition.Code, fromAssistant.Condition.Message,
+			fromDaemon.ShortCode, fromDaemon.Code, fromDaemon.Message)
+	}
+	if fromAssistant.Reference != fromDaemon.Reference {
+		t.Errorf("the two structured surfaces publish the condition at different addresses: %q and %q",
+			fromAssistant.Reference, fromDaemon.Reference)
+	}
+	if fromAssistant.Note != "" {
+		t.Errorf("the assistant surface reports the walk-through missing while the daemon returned %d "+
+			"entries from the same workspace: %q", len(fromDaemon.Entries), fromAssistant.Note)
+	}
+
+	// The published entries, per entry rather than by count: two sides short by one
+	// still agree on a count, so the comparison names what is missing.
+	daemonEntries := map[string]string{}
+	for _, e := range fromDaemon.Entries {
+		daemonEntries[e.Heading] = e.Body
+	}
+	assistantEntries := map[string]string{}
+	for _, e := range fromAssistant.Entries {
+		assistantEntries[e.Heading] = e.Body
+	}
+	for heading, body := range daemonEntries {
+		got, carried := assistantEntries[heading]
+		if !carried {
+			t.Errorf("the assistant surface omits the entry %q that the daemon carries", heading)
+			continue
+		}
+		if got != body {
+			t.Errorf("the two surfaces carry different prose under %q.\n--- the assistant ---\n%s\n"+
+				"--- the daemon ---\n%s", heading, got, body)
+		}
+	}
+	for heading := range assistantEntries {
+		if _, carried := daemonEntries[heading]; !carried {
+			t.Errorf("the assistant surface carries the entry %q, which the daemon does not", heading)
+		}
+	}
+
+	// The prose an assistant reads carries the command line's whole answer inside
+	// it, unaltered. This is the assertion that would fail on a surface which
+	// resolved the condition and then rendered it its own way.
+	if want := renderAssistantGuidance(diagnostic, fromCommand, fromAssistant.DocPointer); fromAssistant.Guidance != want {
+		t.Errorf("the assistant surface's prose is not the diagnostic, the command line's answer and the "+
+			"pointer.\n--- got ---\n%s\n--- want ---\n%s", fromAssistant.Guidance, want)
+	}
+	if assistantText != fromAssistant.Guidance {
+		t.Errorf("the text block and the payload's prose differ.\n--- text ---\n%s\n--- payload ---\n%s",
+			assistantText, fromAssistant.Guidance)
+	}
+	// The pointer to the authoring contract answers a different question from the
+	// condition, so it is asserted as its own fact against a value written here.
+	if want := "aggrega-docs/language-reference/entities/" + assistantDiagnosticKind + ".md"; fromAssistant.DocPointer != want {
+		t.Errorf("doc pointer = %q, want the %s language-reference page (%q)",
+			fromAssistant.DocPointer, assistantDiagnosticKind, want)
+	}
+
+	// What an assistant ends up reading, so a reader of a PASSING run sees the
+	// answer rather than only that something was compared.
+	t.Logf("the assistant surface answers %s with:\n%s", short, fromAssistant.Guidance)
 }
 
 // TestExplainOnTheDaemonCarriesTheReferenceAndNoProseItDidNotRead pins the two

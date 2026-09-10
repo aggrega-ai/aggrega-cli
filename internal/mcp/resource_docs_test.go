@@ -34,20 +34,23 @@ const (
 	twoDotURI  = "langref://entities/component..draft.md"
 )
 
-// docsFixtureBundle builds the gzipped-tar documentation bundle every
-// documentation fixture in this package uses. One builder, so a warm-cache
-// fixture and a cold-workspace one can never disagree about what a bundle
-// contains — which is what lets a test assert the same page bytes on both.
-func docsFixtureBundle(t *testing.T) []byte {
+// docsFixturePage is one page inside a fixture documentation bundle: the path it
+// is carried under and its body.
+type docsFixturePage struct{ name, body string }
+
+// docsBundleTar writes a gzipped-tar documentation bundle carrying pages, in the
+// order given so a bundle built twice is the same bytes twice.
+//
+// It is the one writer every fixture bundle in this package goes through, so two
+// fixtures carrying different pages still agree about what a bundle IS — the
+// layout, the modes, the compression. What each fixture chooses is only its
+// content.
+func docsBundleTar(t *testing.T, pages []docsFixturePage) []byte {
 	t.Helper()
 	var buf bytes.Buffer
 	gz := gzip.NewWriter(&buf)
 	tw := tar.NewWriter(gz)
-	for _, e := range []struct{ name, body string }{
-		{"authoring/getting-started.md", authoringBody},
-		{"language-reference/entities/component.md", langrefBody},
-		{twoDotPage, twoDotBody},
-	} {
+	for _, e := range pages {
 		body := []byte(e.body)
 		if err := tw.WriteHeader(&tar.Header{Name: e.name, Mode: 0o644, Size: int64(len(body)), Typeflag: tar.TypeReg}); err != nil {
 			t.Fatalf("tar header: %v", err)
@@ -63,6 +66,19 @@ func docsFixtureBundle(t *testing.T) []byte {
 		t.Fatalf("gzip close: %v", err)
 	}
 	return buf.Bytes()
+}
+
+// docsFixtureBundle builds the gzipped-tar documentation bundle the
+// documentation-resource fixtures in this package use. One content set, so a
+// warm-cache fixture and a cold-workspace one can never disagree about what a
+// bundle contains — which is what lets a test assert the same page bytes on both.
+func docsFixtureBundle(t *testing.T) []byte {
+	t.Helper()
+	return docsBundleTar(t, []docsFixturePage{
+		{"authoring/getting-started.md", authoringBody},
+		{"language-reference/entities/component.md", langrefBody},
+		{twoDotPage, twoDotBody},
+	})
 }
 
 // seedDocsWorkspace builds a fixture documentation bundle, resolves it into a

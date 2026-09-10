@@ -214,6 +214,10 @@ func note(notes io.Writer, reason error) error {
 // are offline by construction — they take no target — so a warm cache reaches for
 // nothing.
 //
+// It is for a caller whose acquisition of the bundle is this call: a surface that
+// acquires on its own schedule reads through [ReadPages] instead, which is the
+// same read without the fetch.
+//
 // Every failure it reports names the artifact and the version it looked for, so a
 // reader who cannot get the documentation is told what was missing rather than
 // that something was not found. Warnings raised while acquiring go to warn, which
@@ -228,14 +232,26 @@ func LoadPages(
 	ref := docsbundle.Ref(cfg.DefaultRegistry)
 
 	if _, aerr := docsbundle.EnsureCached(ctx, cfg, root, cacheDir, ref, version, nil, warn); aerr != nil {
-		return Pages{}, fmt.Errorf("the published documentation is not available: the documentation "+
-			"bundle %s@%s is not cached for this workspace and could not be acquired (%v). The conditions "+
-			"this binary declares are still answered; every condition, including the ones a provider "+
-			"declares, is published at %s, and the walk-through of each authoring fix at %s",
-			ref, version, aerr,
-			haltref.PublishedPath(haltref.ReferencePagePath), haltref.PublishedPath(haltref.PagePath))
+		return Pages{}, uncachedBundle(ref, version, aerr)
 	}
+	return ReadPages(root, cacheDir, ref, version)
+}
 
+// ReadPages returns the published pages a workspace has cached, reaching for
+// nothing.
+//
+// It takes the bundle's coordinates already resolved, because which bundle a
+// caller serves is the caller's own decision — a session pinned to one reads that
+// one — while WHICH two pages an explanation is read from, and how their absence
+// is worded, belong here. A surface that read the pages itself would word a
+// missing bundle its own way, and a reader who could not get the documentation
+// would then be told a different thing depending on where they asked.
+//
+// It takes no target and cannot reach a registry. Acquiring the bundle is the
+// caller's act, performed before this or not at all, so a surface that only reads
+// never links the acquisition path — which is what lets a caller whose fetch
+// happens on its own schedule share this read rather than reimplement it.
+func ReadPages(root, cacheDir, ref, version string) (Pages, error) {
 	var pages Pages
 	for _, p := range []struct {
 		path string
@@ -246,10 +262,38 @@ func LoadPages(
 	} {
 		data, _, rerr := docscache.ReadPage(root, cacheDir, ref, version, p.path)
 		if rerr != nil {
+			// A bundle this workspace has no copy of is a different fact from a
+			// bundle that is here and does not carry the page, and a reader repairs
+			// them differently: one is documentation to obtain, the other a bundle
+			// that is not the one this reads.
+			if errors.Is(rerr, docscache.ErrFetchNotFound()) {
+				return Pages{}, uncachedBundle(ref, version, rerr)
+			}
 			return Pages{}, fmt.Errorf("the published documentation is not available: the "+
 				"documentation bundle %s@%s carries no readable %s (%v)", ref, version, p.path, rerr)
 		}
 		*p.into = data
 	}
 	return pages, nil
+}
+
+// uncachedBundle renders the reason a workspace with no cached documentation
+// cannot be given the walk-through.
+//
+// It has one home because two callers state it — the acquiring read and the
+// read-only one — and it is the sentence a reader sees most often, since a fresh
+// workspace and an offline one both arrive here. A second copy would agree on the
+// day it was written and diverge the first time either was edited, leaving two
+// answers to what "the documentation is not available" means.
+//
+// It names the artifact and the version rather than reporting that something was
+// not found, and it carries both published addresses, so the answer stands on its
+// own for a reader who has to go and read the pages instead.
+func uncachedBundle(ref, version string, cause error) error {
+	return fmt.Errorf("the published documentation is not available: the documentation "+
+		"bundle %s@%s is not cached for this workspace and could not be acquired (%v). The conditions "+
+		"this binary declares are still answered; every condition, including the ones a provider "+
+		"declares, is published at %s, and the walk-through of each authoring fix at %s",
+		ref, version, cause,
+		haltref.PublishedPath(haltref.ReferencePagePath), haltref.PublishedPath(haltref.PagePath))
 }
