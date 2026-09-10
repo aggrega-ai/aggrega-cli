@@ -30,11 +30,14 @@ import (
 // Origin names where the entity was read from, and File is read together
 // with it rather than alone. A workspace document reports its
 // workspace-relative path; an entity resolved from the configured catalog
-// directories reports an empty path, because the only path it has is an
-// absolute host path that would mean nothing on the client's side of the
-// connection. The origin is what makes that empty value readable instead of
-// ambiguous — it says the entity has no workspace file, rather than leaving a
-// client to wonder whether one was simply not filled in.
+// directories reports an empty path, because a catalog directory is wherever
+// the workspace configures it and need not sit under the workspace root at
+// all. Every File on this protocol is anchored to that root, which is the only
+// anchor the connection gives a client, so there is no value to report here
+// that a client could resolve — whether the configured directory was spelled
+// absolutely or relatively. The origin is what makes that empty value readable
+// instead of ambiguous — it says the entity has no workspace file, rather than
+// leaving a client to wonder whether one was simply not filled in.
 type CatalogEntity struct {
 	Kind        string            `json:"kind"`
 	Name        string            `json:"name"`
