@@ -406,6 +406,13 @@ func renderedFiles(result *pipeline.Result, includeContent bool) []buildFile {
 // supply it. Their absence prints nothing, so a fully-pinned render reads exactly
 // as it did before.
 //
+// That remedy names both invocation sites — the pull tool on this protocol, and
+// the same operation at a terminal — because a caller reaching this surface can
+// invoke the first without leaving the protocol, so naming only the command line
+// would point it somewhere it cannot go. The two are one operation and the
+// sentence says so, rather than leaving an agent to choose between what look like
+// rival instructions.
+//
 // The advisories print for the same reason and in the same shape: a caller
 // reading the text form rather than the structured one must not receive fewer
 // findings for that choice. They are listed in the order the build raised them,
@@ -425,7 +432,9 @@ func renderBuildText(p buildResultPayload) string {
 	}
 	if len(p.DeclinedExternalInputs) > 0 {
 		fmt.Fprintf(&b, "\nThis render declined %d external reference(s) the lockfile does not pin. "+
-			"The files above stop short of what a build would emit; run `aggrega pull --release %s` to pin them:\n",
+			"The files above stop short of what a build would emit; run `aggrega pull --release %s` to pin them. "+
+			"Through this protocol that is the pull tool, called with this same 'release' path — one operation "+
+			"at two invocation sites:\n",
 			len(p.DeclinedExternalInputs), p.Release)
 		for _, url := range p.DeclinedExternalInputs {
 			fmt.Fprintf(&b, "  %s\n", url)
