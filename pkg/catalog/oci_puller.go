@@ -25,7 +25,7 @@ import (
 // rather than surfacing later as a cryptic tag error.
 func ErrQualifiedPluginReference() error { return errQualifiedPluginReference }
 
-var errQualifiedPluginReference = cerrors.Register("catalog/qualified-plugin-reference", cerrors.Meta{
+var errQualifiedPluginReference = cerrors.Register("catalog/plugin-reference-must-not-be-registry-qualified", cerrors.Meta{
 	ShortCode: "E0102",
 	Message:   "wasm plugin reference must be the plugin coordinate identity (<pluginType>/<name>:<version>), not a registry-qualified or artifact path",
 })
@@ -39,7 +39,7 @@ var errQualifiedPluginReference = cerrors.Register("catalog/qualified-plugin-ref
 // here rather than surfacing later as a cryptic fetch failure.
 func ErrUnscopedPluginReference() error { return errUnscopedPluginReference }
 
-var errUnscopedPluginReference = cerrors.Register("catalog/unscoped-plugin-reference", cerrors.Meta{
+var errUnscopedPluginReference = cerrors.Register("catalog/plugin-reference-must-be-scoped", cerrors.Meta{
 	ShortCode: "E0104",
 	Message:   "wasm plugin reference must carry a pluginType scope (<pluginType>/<name>); an empty scope cannot bind to an OCI location",
 })
@@ -53,7 +53,7 @@ var errUnscopedPluginReference = cerrors.Register("catalog/unscoped-plugin-refer
 // than surfacing later as a cryptic fetch failure.
 func ErrUnscopedRecipeReference() error { return errUnscopedRecipeReference }
 
-var errUnscopedRecipeReference = cerrors.Register("catalog/unscoped-recipe-reference", cerrors.Meta{
+var errUnscopedRecipeReference = cerrors.Register("catalog/recipe-reference-must-be-scoped", cerrors.Meta{
 	ShortCode: "E0105",
 	Message:   "recipe reference must be provider-scoped (<provider>/<name>); an empty provider cannot bind to an OCI location",
 })

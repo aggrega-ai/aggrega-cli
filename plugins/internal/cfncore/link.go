@@ -44,7 +44,7 @@ var errLinkConsumerStackMissing = cerrors.Register("cloudformation-provider-cfnc
 // halts rather than emit a reference in the wrong shape.
 func ErrLinkSentinelInterpolated() error { return errLinkSentinelInterpolated }
 
-var errLinkSentinelInterpolated = cerrors.Register("cloudformation-provider-cfncore/link-sentinel-interpolated", cerrors.Meta{
+var errLinkSentinelInterpolated = cerrors.Register("cloudformation-provider-cfncore/link-placeholder-interpolated", cerrors.Meta{
 	ShortCode: "E0232",
 	Message:   "cloudformation-provider: cross-boundary link value is interpolated into a larger string; only a whole-scalar injection can carry a cross-stack reference",
 })

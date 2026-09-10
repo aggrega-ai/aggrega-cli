@@ -17,7 +17,7 @@ import (
 // patch match on it with errors.Is.
 func ErrTestFailed() error { return errTestFailed }
 
-var errTestFailed = cerrors.Register("compiler-jsonpatch/test-failed", cerrors.Meta{
+var errTestFailed = cerrors.Register("compiler-jsonpatch/patch-test-operation-failed", cerrors.Meta{
 	ShortCode: "E0016",
 	Message:   "jsonpatch: test operation failed",
 })

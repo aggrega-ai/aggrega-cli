@@ -19,7 +19,7 @@ import (
 // Workload against the embedded Workload JSON Schema.
 func ErrWorkloadValidation() error { return errWorkloadValidation }
 
-var errWorkloadValidation = cerrors.Register("validator/workload-validation", cerrors.Meta{
+var errWorkloadValidation = cerrors.Register("validator/workload-not-valid", cerrors.Meta{
 	ShortCode: "E0214",
 	Message:   "workload validation failed",
 })

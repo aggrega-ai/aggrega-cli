@@ -36,7 +36,7 @@ var errSignatureInvalid = cerrors.Register("signing/signature-invalid", cerrors.
 // or simulated result.
 func ErrKeylessLive() error { return errKeylessLive }
 
-var errKeylessLive = cerrors.Register("signing/keyless-live", cerrors.Meta{
+var errKeylessLive = cerrors.Register("signing/keyless-signing-requires-network", cerrors.Meta{
 	ShortCode: "E0176",
 	Message:   "signing: keyless signing requires a live identity provider, Fulcio, and Rekor",
 })
@@ -98,7 +98,7 @@ var errNoTrustedIdentities = cerrors.Register("signing/no-trusted-identities", c
 // back to a network fetch.
 func ErrTrustRootLoad() error { return errTrustRootLoad }
 
-var errTrustRootLoad = cerrors.Register("signing/trust-root-load", cerrors.Meta{
+var errTrustRootLoad = cerrors.Register("signing/trust-root-not-loadable", cerrors.Meta{
 	ShortCode: "E0182",
 	Message:   "signing: cannot load pinned trust root",
 })

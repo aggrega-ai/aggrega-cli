@@ -356,7 +356,7 @@ spec:
 		t.Fatalf("expected envelope findings; has=%v diags=%d", has, len(diags))
 	}
 	for i, d := range diags {
-		if d.Code != "validator-envelope/entity-envelope" {
+		if d.Code != "validator-envelope/entity-envelope-invalid" {
 			t.Errorf("diagnostic %d Code = %q; want the envelope condition's registered code", i, d.Code)
 		}
 	}
@@ -435,7 +435,7 @@ func TestDiagnosticCodeOnCascadeFailure(t *testing.T) {
 	if len(diags) != 1 {
 		t.Fatalf("expected one diagnostic on the unloadable Release; got %d", len(diags))
 	}
-	if diags[0].Code != "validator-envelope/entity-envelope" {
+	if diags[0].Code != "validator-envelope/entity-envelope-invalid" {
 		t.Errorf("Code = %q; want the envelope condition's registered code", diags[0].Code)
 	}
 }
@@ -466,7 +466,7 @@ func TestDiagnosticCodeOnClosureLevelFailure(t *testing.T) {
 		{
 			name:  "manifest sibling absent",
 			files: []string{"release.yaml", "aggregate.yaml"},
-			want:  "resolver/yaml-load",
+			want:  "resolver/document-not-loadable",
 		},
 		{
 			name:  "component type no catalog holds",
@@ -496,7 +496,7 @@ func TestDiagnosticCodeOnClosureExtendsFailure(t *testing.T) {
 		"release.yaml", "manifest.yaml", "aggregate.yaml", ".aggrega-config.yaml",
 		"catalog/components/broken-server.yaml",
 	})
-	findCodeOnWire(t, entries, "validator/inheritance-merge")
+	findCodeOnWire(t, entries, "validator/extends-merge-failed")
 }
 
 // TestClosureEnvelopeCarriesTheFailureItRendered pins the carrier itself, so a

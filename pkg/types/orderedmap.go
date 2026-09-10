@@ -22,7 +22,7 @@ import (
 // Wrapped via fmt.Errorf at the emission site with the offending depth.
 func ErrOrderedMapDecodeDepthExceeded() error { return errOrderedMapDecodeDepthExceeded }
 
-var errOrderedMapDecodeDepthExceeded = cerrors.Register("types/ordered-map-decode-depth-exceeded", cerrors.Meta{
+var errOrderedMapDecodeDepthExceeded = cerrors.Register("types/document-nesting-depth-exceeded", cerrors.Meta{
 	ShortCode: "E0192",
 	Message:   "OrderedMap: decode depth exceeded",
 })

@@ -156,7 +156,7 @@ var errNoTrustAdvertised = cerrors.Register("registrytrust/no-trust-advertised",
 // Decode and Fetch wrap this sentinel on a decode/validation failure.
 func ErrMalformedTrust() error { return errMalformedTrust }
 
-var errMalformedTrust = cerrors.Register("registrytrust/malformed-trust", cerrors.Meta{
+var errMalformedTrust = cerrors.Register("registrytrust/malformed-trust-policy", cerrors.Meta{
 	ShortCode: "E0147",
 	Message:   "registrytrust: advertised trust config is malformed",
 })

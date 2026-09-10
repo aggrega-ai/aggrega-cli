@@ -26,7 +26,7 @@ var errInvalidParameterRef = cerrors.Register("resolver/invalid-parameter-ref", 
 // single path supplied at Release.spec.parameters.$import:.
 func ErrParametersImportLoad() error { return errParametersImportLoad }
 
-var errParametersImportLoad = cerrors.Register("resolver/parameters-import-load", cerrors.Meta{
+var errParametersImportLoad = cerrors.Register("resolver/parameters-import-not-loadable", cerrors.Meta{
 	ShortCode: "E0166",
 	Message:   "parameters $import: load failed",
 })
@@ -35,7 +35,7 @@ var errParametersImportLoad = cerrors.Register("resolver/parameters-import-load"
 // three source documents (Aggregate, Release, Manifest).
 func ErrYAMLLoad() error { return errYAMLLoad }
 
-var errYAMLLoad = cerrors.Register("resolver/yaml-load", cerrors.Meta{
+var errYAMLLoad = cerrors.Register("resolver/document-not-loadable", cerrors.Meta{
 	ShortCode: "E0175",
 	Message:   "YAML load failed: check the file exists, is readable, and contains well-formed YAML",
 })
@@ -308,7 +308,7 @@ var errUnreadParameter = cerrors.Register("resolver/unread-parameter", cerrors.M
 // which legitimately have no catalog entity, are not this error.)
 func ErrGuardEntityViewInconsistency() error { return errGuardEntityViewInconsistency }
 
-var errGuardEntityViewInconsistency = cerrors.Register("resolver/guard-entity-view-inconsistency", cerrors.Meta{
+var errGuardEntityViewInconsistency = cerrors.Register("resolver/internal-catalog-view-disagreement", cerrors.Meta{
 	ShortCode: "E0154",
 	Message:   "the compiler's own views of the catalog disagree",
 })
@@ -445,7 +445,7 @@ var errDuplicateBoundaryComponent = cerrors.Register("resolver/duplicate-boundar
 // protects the whole pipeline, not just the renderer.
 func ErrUnnormalizedRelease() error { return errUnnormalizedRelease }
 
-var errUnnormalizedRelease = cerrors.Register("resolver/unnormalized-release", cerrors.Meta{
+var errUnnormalizedRelease = cerrors.Register("resolver/release-not-in-canonical-form", cerrors.Meta{
 	ShortCode: "E0172",
 	Message:   "release reached resolve un-normalized (non-empty root components alongside a synthesized default boundary)",
 })

@@ -215,7 +215,7 @@ var errUnusableComponentIdentity = cerrors.Register("compiler-analyzer/unusable-
 // the reservation is here, in the paragraph above, where nothing publishes it.
 func ErrCatalogLookup() error { return errCatalogLookup }
 
-var errCatalogLookup = cerrors.Register("compiler-analyzer/catalog-lookup", cerrors.Meta{
+var errCatalogLookup = cerrors.Register("compiler-analyzer/catalog-entity-not-found", cerrors.Meta{
 	ShortCode: "E0002",
 	Message:   "catalog lookup failed",
 	DeclaredAhead: "It will report a catalog lookup that fails during static analysis — a state that " +

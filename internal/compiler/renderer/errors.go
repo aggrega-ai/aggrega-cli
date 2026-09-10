@@ -59,7 +59,7 @@ func ErrLocalsUnknownReference() error { return gotmpl.ErrLocalsUnknownReference
 
 func ErrProvidesEvaluation() error { return errProvidesEvaluation }
 
-var errProvidesEvaluation = cerrors.Register("compiler-renderer/provides-evaluation", cerrors.Meta{
+var errProvidesEvaluation = cerrors.Register("compiler-renderer/provides-evaluation-failed", cerrors.Meta{
 	ShortCode: "E0056",
 	Message:   "provides template evaluation failed",
 })
@@ -80,7 +80,7 @@ var errAttachmentInjectKeyCollision = cerrors.Register("compiler-renderer/attach
 
 func ErrUnmappedCustomMechanism() error { return errUnmappedCustomMechanism }
 
-var errUnmappedCustomMechanism = cerrors.Register("compiler-renderer/unmapped-custom-mechanism", cerrors.Meta{
+var errUnmappedCustomMechanism = cerrors.Register("compiler-renderer/custom-mechanism-has-no-mapping", cerrors.Meta{
 	ShortCode: "E0062",
 	Message:   "custom inject mechanism has no matching key in injectMapping output; add the mechanism's key to the Recipe injectMapping",
 })
@@ -492,7 +492,7 @@ var errPathTemplateInvalidField = cerrors.Register("compiler-renderer/path-templ
 // references invalid context for its scope).
 func ErrFRTemplateInvalidField() error { return errFRTemplateInvalidField }
 
-var errFRTemplateInvalidField = cerrors.Register("compiler-renderer/fr-template-invalid-field", cerrors.Meta{
+var errFRTemplateInvalidField = cerrors.Register("compiler-renderer/featurerecipe-template-invalid-field", cerrors.Meta{
 	ShortCode: "E0039",
 	Message:   "FeatureRecipe template references a per-component-only field with executionScope: boundary",
 })
@@ -541,7 +541,7 @@ var errBoundaryScopeAttachmentNotDeclaredAtABoundary = cerrors.Register(
 // field also halts here.
 func ErrAssertionFailed() error { return errAssertionFailed }
 
-var errAssertionFailed = cerrors.Register("compiler-renderer/assertion-failed", cerrors.Meta{
+var errAssertionFailed = cerrors.Register("compiler-renderer/authored-assertion-failed", cerrors.Meta{
 	ShortCode: "E0033",
 	Message:   "assertion failed",
 })
@@ -613,7 +613,7 @@ var errPipelineHostScopeUnavailable = cerrors.Register("compiler-renderer/pipeli
 // output, move the step to /host, or remove it.
 func ErrPipelinePatchPreAssembly() error { return errPipelinePatchPreAssembly }
 
-var errPipelinePatchPreAssembly = cerrors.Register("compiler-renderer/pipeline-patch-pre-assembly", cerrors.Meta{
+var errPipelinePatchPreAssembly = cerrors.Register("compiler-renderer/pipeline-patch-targets-unassembled-fragments", cerrors.Meta{
 	ShortCode: "E0051",
 	Message:   "pipeline PATCH targets an assembler provider's pre-assembly fragments",
 })
@@ -663,7 +663,7 @@ var errPluginProviderIncompatible = cerrors.Register("compiler-renderer/plugin-p
 // Category: TRANSLATION_ERROR.
 func ErrBoundaryAssemblerMissing() error { return errBoundaryAssemblerMissing }
 
-var errBoundaryAssemblerMissing = cerrors.Register("compiler-renderer/boundary-assembler-missing", cerrors.Meta{
+var errBoundaryAssemblerMissing = cerrors.Register("compiler-renderer/boundary-assembly-not-provided", cerrors.Meta{
 	ShortCode: "E0035",
 	Message:   "provider expected to assemble its dispatch group provides no boundary assembler",
 })
@@ -755,7 +755,7 @@ var errRenderNondeterministic = cerrors.Register("compiler-renderer/render-nonde
 // errors.Is(err, ErrOrphanCrossBoundaryLinkSentinel()).
 func ErrOrphanCrossBoundaryLinkSentinel() error { return errOrphanCrossBoundaryLinkSentinel }
 
-var errOrphanCrossBoundaryLinkSentinel = cerrors.Register("compiler-renderer/orphan-cross-boundary-link-sentinel", cerrors.Meta{
+var errOrphanCrossBoundaryLinkSentinel = cerrors.Register("compiler-renderer/orphan-cross-boundary-link-placeholder", cerrors.Meta{
 	ShortCode: "E0047",
 	Message:   "assembled output retains an unresolved cross-boundary link placeholder",
 })
@@ -807,7 +807,7 @@ var errNestSegmentNotOneDirectory = cerrors.Register("compiler-renderer/nest-seg
 // errors.Is(err, ErrEmptySource()).
 func ErrEmptySource() error { return errEmptySource }
 
-var errEmptySource = cerrors.Register("compiler-renderer/empty-source", cerrors.Meta{
+var errEmptySource = cerrors.Register("compiler-renderer/recipe-source-is-empty", cerrors.Meta{
 	ShortCode: "E0251",
 	Message:   "recipe source is an empty string, which names neither sourceless mode nor sourced mode",
 })
@@ -900,7 +900,7 @@ var errComponentIdentityTargetRefuses = cerrors.Register("compiler-renderer/comp
 // anything an author wrote. Match with errors.Is(err, ErrNameBoundNotConverging()).
 func ErrNameBoundNotConverging() error { return errNameBoundNotConverging }
 
-var errNameBoundNotConverging = cerrors.Register("compiler-renderer/name-bound-not-converging", cerrors.Meta{
+var errNameBoundNotConverging = cerrors.Register("compiler-renderer/provider-refused-every-component-identity", cerrors.Meta{
 	ShortCode: "E0264",
 	Message:   "provider guest never accepted a component identity the compiler composed for it",
 })

@@ -327,7 +327,7 @@ func (c *reportedCondition) ErrorShortCode() string { return c.shortCode }
 // plugin emitted what and what it should have emitted instead.
 func ErrWasmDiagnosticSeverity() error { return errWasmDiagnosticSeverity }
 
-var errWasmDiagnosticSeverity = cerrors.Register("wasm/wasm-diagnostic-severity", cerrors.Meta{
+var errWasmDiagnosticSeverity = cerrors.Register("wasm/wasm-diagnostic-severity-invalid", cerrors.Meta{
 	ShortCode: "E0081",
 	Message:   "wasm: guest plugin returned a diagnostic whose severity the contract does not declare",
 })
@@ -405,7 +405,7 @@ var errWasmContractMismatch = cerrors.Register("wasm/wasm-contract-mismatch", ce
 // binary's imports.
 func ErrWasmHostFunctionsStampMismatch() error { return errWasmHostFunctionsStampMismatch }
 
-var errWasmHostFunctionsStampMismatch = cerrors.Register("wasm/wasm-host-functions-stamp-mismatch", cerrors.Meta{
+var errWasmHostFunctionsStampMismatch = cerrors.Register("wasm/wasm-host-function-set-mismatch", cerrors.Meta{
 	ShortCode: "E0084",
 	Message:   "wasm: stamped host-function record does not match .wasm imports",
 })
@@ -456,7 +456,7 @@ var errWasmPluginTypeMismatch = cerrors.Register("wasm/wasm-plugin-type-mismatch
 // against the plugin's describe() self-report.
 func ErrWasmCommandsMirrorMismatch() error { return errWasmCommandsMirrorMismatch }
 
-var errWasmCommandsMirrorMismatch = cerrors.Register("wasm/wasm-commands-mirror-mismatch", cerrors.Meta{
+var errWasmCommandsMirrorMismatch = cerrors.Register("wasm/wasm-command-set-mismatch", cerrors.Meta{
 	ShortCode: "E0079",
 	Message:   "wasm: recorded command mirror does not match plugin describe()",
 })
@@ -475,7 +475,7 @@ var errWasmCommandsMirrorMismatch = cerrors.Register("wasm/wasm-commands-mirror-
 // a single socket pair.
 func ErrProducerConsumptionReentry() error { return errProducerConsumptionReentry }
 
-var errProducerConsumptionReentry = cerrors.Register("wasm/producer-consumption-reentry", cerrors.Meta{
+var errProducerConsumptionReentry = cerrors.Register("wasm/wasm-nested-producer-consumption-denied", cerrors.Meta{
 	ShortCode: "E0078",
 	Message:   "producer-consumption re-entry denied: a producer reached through the host may not issue a further producer-consumption call",
 })

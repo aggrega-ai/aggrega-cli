@@ -14,7 +14,7 @@ import (
 
 func ErrInheritanceMerge() error { return errInheritanceMerge }
 
-var errInheritanceMerge = cerrors.Register("validator/inheritance-merge", cerrors.Meta{
+var errInheritanceMerge = cerrors.Register("validator/extends-merge-failed", cerrors.Meta{
 	ShortCode: "E0205",
 	Message:   "inheritance merge failed",
 })

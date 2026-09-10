@@ -16,7 +16,7 @@ import cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 // human-readable detail.
 func ErrMergeInvalid() error { return errMergeInvalid }
 
-var errMergeInvalid = cerrors.Register("validator-merger/merge-invalid", cerrors.Meta{
+var errMergeInvalid = cerrors.Register("validator-merger/schema-merge-input-invalid", cerrors.Meta{
 	ShortCode: "E0221",
 	Message:   "merger: invalid merge input",
 })

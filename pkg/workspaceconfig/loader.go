@@ -21,7 +21,7 @@ import (
 // validation diagnostic.
 func ErrConfigInvalid() error { return errConfigInvalid }
 
-var errConfigInvalid = cerrors.Register("workspaceconfig/config-invalid", cerrors.Meta{
+var errConfigInvalid = cerrors.Register("workspaceconfig/workspace-config-invalid", cerrors.Meta{
 	ShortCode: "E0224",
 	Message:   "file failed schema validation",
 })

@@ -14,7 +14,7 @@ import cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 // the author at the specific import that caused the failure.
 func ErrSubAggregateLoad() error { return errSubAggregateLoad }
 
-var errSubAggregateLoad = cerrors.Register("compiler-topology/sub-aggregate-load", cerrors.Meta{
+var errSubAggregateLoad = cerrors.Register("compiler-topology/sub-aggregate-not-loadable", cerrors.Meta{
 	ShortCode: "E0072",
 	Message:   "sub-aggregate load failed",
 })
@@ -27,7 +27,7 @@ var errSubAggregateLoad = cerrors.Register("compiler-topology/sub-aggregate-load
 // chain.
 func ErrMaxDepth() error { return errMaxDepth }
 
-var errMaxDepth = cerrors.Register("compiler-topology/max-depth", cerrors.Meta{
+var errMaxDepth = cerrors.Register("compiler-topology/sub-aggregate-nesting-depth-exceeded", cerrors.Meta{
 	ShortCode: "E0068",
 	Message:   "max sub-aggregate nesting depth exceeded",
 })
@@ -117,7 +117,7 @@ var errSubAggregateNameCollision = cerrors.Register("compiler-topology/sub-aggre
 // silently flattening a half-normalized graph.
 func ErrUnnormalizedAggregate() error { return errUnnormalizedAggregate }
 
-var errUnnormalizedAggregate = cerrors.Register("compiler-topology/unnormalized-aggregate", cerrors.Meta{
+var errUnnormalizedAggregate = cerrors.Register("compiler-topology/aggregate-not-in-canonical-form", cerrors.Meta{
 	ShortCode: "E0075",
 	Message:   "aggregate reached topology un-normalized (non-empty root components alongside a synthesized default subsystem)",
 })
@@ -139,7 +139,7 @@ var errUnnormalizedAggregate = cerrors.Register("compiler-topology/unnormalized-
 // it reads.
 func ErrInvalidActive() error { return errInvalidActive }
 
-var errInvalidActive = cerrors.Register("compiler-topology/invalid-active", cerrors.Meta{
+var errInvalidActive = cerrors.Register("compiler-topology/active-toggle-not-a-boolean", cerrors.Meta{
 	ShortCode: "E0067",
 	Message:   "active toggle did not resolve to a boolean",
 })
@@ -157,7 +157,7 @@ var errInvalidActive = cerrors.Register("compiler-topology/invalid-active", cerr
 // false so the author can either keep the target present or drop the edge.
 func ErrUsesPrunedComponent() error { return errUsesPrunedComponent }
 
-var errUsesPrunedComponent = cerrors.Register("compiler-topology/uses-pruned-component", cerrors.Meta{
+var errUsesPrunedComponent = cerrors.Register("compiler-topology/uses-target-not-active", cerrors.Meta{
 	ShortCode: "E0077",
 	Message:   "uses edge target was pruned because its active toggle resolved to false",
 })

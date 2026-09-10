@@ -154,7 +154,7 @@ type RecipeLoaderSource interface {
 // over it.
 func ErrNoRecipeLoader() error { return errNoRecipeLoader }
 
-var errNoRecipeLoader = cerrors.Register("closure/no-recipe-loader", cerrors.Meta{
+var errNoRecipeLoader = cerrors.Register("closure/catalog-cannot-load-recipe-bodies", cerrors.Meta{
 	ShortCode: "E0109",
 	Message:   "resolve: catalog lookup cannot load resolved recipe and plugin bodies",
 })
@@ -254,7 +254,7 @@ var errSourceTemplateAtLockTime = cerrors.Register("closure/source-template-at-l
 // this class also wrap ErrSourceTemplateAtLockTime.
 func ErrSourceTemplateParse() error { return errSourceTemplateParse }
 
-var errSourceTemplateParse = cerrors.Register("closure/source-template-parse", cerrors.Meta{
+var errSourceTemplateParse = cerrors.Register("closure/source-template-not-parsable", cerrors.Meta{
 	ShortCode: "E0111",
 	Message:   "resolve: source-template parse error",
 })
@@ -410,9 +410,9 @@ type LibraryResolution struct {
 // versions, and the consumer chain.
 func ErrMVSConflict() error { return errMVSConflict }
 
-var errMVSConflict = cerrors.Register("closure/mvs-conflict", cerrors.Meta{
+var errMVSConflict = cerrors.Register("closure/version-selection-conflict", cerrors.Meta{
 	ShortCode: "E0107",
-	Message:   "resolve: minimum version selection conflict — incompatible library version requirements",
+	Message:   "resolve: minimal version selection conflict — incompatible library version requirements",
 })
 
 // ErrUnresolvableURI reports a URI in the Release's closure that names

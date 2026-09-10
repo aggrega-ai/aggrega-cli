@@ -54,7 +54,7 @@ type AggregateLoader interface {
 // sub-aggregate bodies, so the sub-aggregate axis cannot be computed over it.
 func ErrNoAggregateLoader() error { return errNoAggregateLoader }
 
-var errNoAggregateLoader = cerrors.Register("closure/no-aggregate-loader", cerrors.Meta{
+var errNoAggregateLoader = cerrors.Register("closure/catalog-cannot-load-sub-aggregate-bodies", cerrors.Meta{
 	ShortCode: "E0108",
 	Message:   "resolve: catalog lookup cannot load resolved sub-aggregate bodies",
 })
