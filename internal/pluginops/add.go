@@ -11,6 +11,7 @@ import (
 	"path"
 	"strings"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/authoredcontent"
 	"github.com/aggrega-ai/aggrega-cli/internal/registryindex"
 	"github.com/aggrega-ai/aggrega-cli/internal/registryops"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
@@ -77,6 +78,11 @@ type CLIInstaller func(ctx context.Context, rw *workspaceconfig.ResolvedWorkspac
 // announced; a nil Notices leaves version selection unscreened rather than
 // skipping a withdrawn version silently, which is the honest posture when there
 // is nowhere to announce the substitution.
+//
+// Delivery selects whether the addition writes the configuration file or reports
+// the content that write would have produced. The zero value writes, so a caller
+// that says nothing about delivery adds exactly as before. It is refused on the
+// command-extension type, for the reason Add states at that refusal.
 type AddOptions struct {
 	Socket     string
 	Query      string
@@ -88,6 +94,8 @@ type AddOptions struct {
 
 	AcceptCapabilities bool
 	AssumeYes          bool
+
+	Delivery authoredcontent.Delivery
 
 	// InstallCLIPlugin performs the command-extension install. A request for that
 	// type with no installer supplied is refused rather than skipped: the caller
@@ -109,6 +117,13 @@ type AddOptions struct {
 //
 // ConfigIsMachineWide is stated rather than left to be inferred, for the reason
 // given on RemoveResult.
+//
+// Content is the configuration document the write would have produced, filled
+// only under a reporting delivery and empty under a writing one — under a write
+// the file is already on disk at ConfigPath, so filling it would duplicate on the
+// wire what was just persisted. The file the document is for is ConfigPath, the
+// one write-target resolution already on this result, so nothing here carries a
+// second copy of the path.
 type AddResult struct {
 	Socket string `json:"socket"`
 
@@ -119,6 +134,7 @@ type AddResult struct {
 
 	ConfigPath          string `json:"configPath"`
 	ConfigIsMachineWide bool   `json:"configIsMachineWide"`
+	Content             []byte `json:"content,omitempty"`
 }
 
 // Add searches the configured registry for a plugin of the named type, resolves
@@ -132,6 +148,25 @@ type AddResult struct {
 // resolved off the supplied resolution, so the attachment lands in the
 // configuration file that resolution read rather than in whichever file the
 // ambient environment names.
+//
+// Under a reporting delivery it composes the same document and returns it on the
+// result instead of writing it, touching no file and creating no directory. Every
+// step before the write is unchanged by the delivery, and that is the contract
+// rather than an implementation detail: the write target is resolved so the
+// document names the file the write would have gone to, and the registry is
+// reached so the identity in the document is the identity a write would have
+// pinned. A report is therefore not network-free, and a document composed without
+// resolving a version would not be the document a write produces.
+//
+// 🔴 There is no refuse-if-exists guard on this operation, so a reporting delivery
+// neither inherits nor skips one, and that is stated here so nobody adds a skip by
+// analogy with the configuration-seeding operation. Seeding refuses to touch a
+// file that already exists because its subject is a configuration that does not
+// exist yet; attaching a plugin merges into whatever configuration is already
+// there, which is the whole operation. Both deliveries therefore pass through
+// exactly the same guards — the type classification, the field-applicability
+// refusals, the write-target policy and the merged-document schema gate — and no
+// guard is conditional on which delivery was asked for.
 func Add(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts AddOptions) (AddResult, error) {
 	const command = "aggrega plugin add"
 
@@ -161,6 +196,26 @@ func Add(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts AddOpt
 	}
 	if !isCLI && (opts.AcceptCapabilities || opts.AssumeYes) {
 		return res, fmt.Errorf("%s: --accept-capabilities and --yes apply only to the cli type", command)
+	}
+	// 🔴 The command-extension type is the one type whose product is not content an
+	// author owns, so it is the one type this delivery is refused on — and it is
+	// refused rather than ignored, on the rule the type-specific fields above run
+	// under: an option that silently does nothing reads exactly like one that
+	// worked. What a command-extension addition records is the content digest of
+	// the bytes it verified, which is a record the machine maintains rather than
+	// text anyone edits; handing it to a caller to amend before saving would either
+	// break verification or defeat it. The addition also caches those bytes and the
+	// module's self-report as it goes, so a delivery promising to write nothing at
+	// all could not honour that promise here.
+	//
+	// The refusal is worded without naming any one surface's spelling for the
+	// delivery, because all three surfaces offer it and each would otherwise be
+	// told to change something it cannot reach.
+	if isCLI && opts.Delivery.Reports() {
+		return res, fmt.Errorf("%s: the cli type cannot report what it would write: installing a command extension "+
+			"records the content digest of the bytes it verified, which is a record the machine maintains rather than "+
+			"content an author edits, and it caches those bytes as it goes — so it is written rather than reported. "+
+			"Ask for a report on a provider or socket attachment, whose product is configuration you go on editing", command)
 	}
 
 	// The command-extension type installs a top-level command rather than writing
@@ -197,16 +252,28 @@ func Add(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts AddOpt
 		// repository path; a config-socket attachment instead carries the bare
 		// entity identity, which an oci:// reference is refused for.
 		uri := "oci://" + host + "/" + repoPath
-		if err := workspaceconfig.UpsertProviderBinding(configPath, opts.Capability, uri); err != nil {
-			return res, fmt.Errorf("%s: write %s: %w", command, configPath, err)
-		}
-		return AddResult{
+		out := AddResult{
 			Socket:              socket,
 			URI:                 uri,
 			Capability:          opts.Capability,
 			ConfigPath:          configPath,
 			ConfigIsMachineWide: machineWide,
-		}, nil
+		}
+		// The reporting delivery reaches the composition the write routes through,
+		// rather than a second one written for this branch: one computation, two
+		// deliveries, so the bytes reported and the bytes written cannot differ.
+		if opts.Delivery.Reports() {
+			body, derr := workspaceconfig.ProviderBindingDocument(configPath, opts.Capability, uri)
+			if derr != nil {
+				return res, fmt.Errorf("%s: compose %s: %w", command, configPath, derr)
+			}
+			out.Content = body
+			return out, nil
+		}
+		if err := workspaceconfig.UpsertProviderBinding(configPath, opts.Capability, uri); err != nil {
+			return res, fmt.Errorf("%s: write %s: %w", command, configPath, err)
+		}
+		return out, nil
 	}
 
 	// Config socket: strip the plugin/ path prefix to the plugin coordinate
@@ -221,15 +288,24 @@ func Add(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts AddOpt
 		return res, fmt.Errorf("%s: %s has no published version tag to attach; publish a version first", command, repoPath)
 	}
 	identity := entity + ":" + version
-	if err := workspaceconfig.UpsertPluginSocketRef(configPath, socket, identity, plugintype.Role(opts.Role)); err != nil {
-		return res, fmt.Errorf("%s: write %s: %w", command, configPath, err)
-	}
-	return AddResult{
+	out := AddResult{
 		Socket:              socket,
 		Identity:            identity,
 		ConfigPath:          configPath,
 		ConfigIsMachineWide: machineWide,
-	}, nil
+	}
+	if opts.Delivery.Reports() {
+		body, derr := workspaceconfig.PluginSocketRefDocument(configPath, socket, identity, plugintype.Role(opts.Role))
+		if derr != nil {
+			return res, fmt.Errorf("%s: compose %s: %w", command, configPath, derr)
+		}
+		out.Content = body
+		return out, nil
+	}
+	if err := workspaceconfig.UpsertPluginSocketRef(configPath, socket, identity, plugintype.Role(opts.Role)); err != nil {
+		return res, fmt.Errorf("%s: write %s: %w", command, configPath, err)
+	}
+	return out, nil
 }
 
 // addCLI resolves the command-extension query to a single plugin repository, pins

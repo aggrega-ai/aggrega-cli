@@ -8,6 +8,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io/fs"
 	"net/http"
@@ -491,39 +492,295 @@ func TestTheTrustAdvisoryReachesTheErrorStreamOnlyWhereItIsUnrecoverable(t *test
 // machine worked out, which is not authoring; and offered on a plugin's
 // machine-owned records it would hand a reader the compiler's own bookkeeping to
 // amend.
+//
+// 🔴 One command carries BOTH classes and its row cannot say so, which is why the
+// sibling test below exists rather than a second column here. Attaching a plugin
+// produces configuration its owner edits for every type but one; the command
+// extension records the content digest of the bytes it verified, which is machine
+// state by the same rule. So the flag is offered at the command and refused at
+// that one type, and the row asserts only the first half.
 func TestTheProductClassificationIsCarriedByTheCommandSurface(t *testing.T) {
-	const reportFlag = "report"
+	// The selector is named per row rather than once for the whole table, because
+	// a command spells the delivery in whatever words its own surface reads best
+	// and one constant would make a row assert a spelling its command never
+	// offered.
+	//
+	// 🔴 An absence row is checked against EVERY spelling in use, not against the
+	// one its neighbours happen to offer. Absence is the half that has to hold
+	// against all of them: a row checking one spelling passes unchanged for a
+	// command that grew a different one, which is precisely how machine state
+	// would come to carry this delivery without any row noticing.
+	everySpelling := []string{"report", "dry-run"}
 
 	for _, row := range []struct {
 		path    string
 		product string
-		offers  bool
+		// selector is the flag this command spells the delivery with, empty on a
+		// row whose product is machine state and must therefore offer none of them.
+		selector string
 	}{
-		{"aggrega config init", "a seeded configuration the operator goes on editing", true},
-		{"aggrega plugin gen-catalog", "catalog entities a catalog author goes on editing", true},
-		{"aggrega import", "draft authoring files the author goes on editing", true},
-		{"aggrega config capture", "a record of what the configuration resolved to", false},
-		{"aggrega plugin sync", "the compiler's own bookkeeping about a plugin module", false},
+		{"aggrega config init", "a seeded configuration the operator goes on editing", "report"},
+		{"aggrega plugin gen-catalog", "catalog entities a catalog author goes on editing", "report"},
+		{"aggrega import", "draft authoring files the author goes on editing", "report"},
+		{"aggrega plugin add", "a plugin attachment the operator goes on editing", "dry-run"},
+		{"aggrega config capture", "a record of what the configuration resolved to", ""},
+		{"aggrega plugin sync", "the compiler's own bookkeeping about a plugin module", ""},
 	} {
 		t.Run(row.path, func(t *testing.T) {
 			cmd, _, err := newRootCmd().Find(strings.Fields(row.path)[1:])
 			if err != nil {
 				t.Fatalf("the command tree does not carry %q: %v", row.path, err)
 			}
-			flag := cmd.Flags().Lookup(reportFlag)
+			if row.selector == "" {
+				for _, spelling := range everySpelling {
+					if cmd.Flags().Lookup(spelling) != nil {
+						t.Errorf("%s produces %s, which is machine state, so it must NOT offer --%s: reporting it invites a caller to edit what the machine keeps about itself",
+							row.path, row.product, spelling)
+					}
+				}
+				return
+			}
+			flag := cmd.Flags().Lookup(row.selector)
 			switch {
-			case row.offers && flag == nil:
-				t.Errorf("%s produces %s, which is content its owner edits, so it must offer --%s", row.path, row.product, reportFlag)
-			case !row.offers && flag != nil:
-				t.Errorf("%s produces %s, which is machine state, so it must NOT offer --%s: reporting it invites a caller to edit what the machine keeps about itself",
-					row.path, row.product, reportFlag)
-			case row.offers && flag.Hidden:
+			case flag == nil:
+				t.Errorf("%s produces %s, which is content its owner edits, so it must offer --%s", row.path, row.product, row.selector)
+			case flag.Hidden:
 				// A hidden flag is not part of the documented surface, and the
 				// machine-driven surfaces derive their arguments from the documented
 				// flags — so hiding it would leave the delivery reachable only by
 				// someone who already knew it was there.
-				t.Errorf("%s hides --%s, which withholds it from every surface derived from the documented flags", row.path, reportFlag)
+				t.Errorf("%s hides --%s, which withholds it from every surface derived from the documented flags", row.path, row.selector)
 			}
 		})
+	}
+}
+
+// attachmentFixture is a workspace whose machine-wide layer is redirected at a
+// path whose PARENT DIRECTORY DOES NOT EXIST, with the registry and version seams
+// pointed at fakes so an attachment runs without a network.
+//
+// The absent parent is the fixture's whole point rather than a convenience. The
+// writing delivery creates it, so a reporting delivery that leaked a directory
+// into existence is caught by the directory's own absence — an assertion a fixture
+// that pre-created the tree could not make at all, because there would be nothing
+// left for the report to wrongly create. It returns the two files an attachment
+// can resolve to, so a test names the target rather than re-deriving it.
+func attachmentFixture(t *testing.T) (rw *workspaceconfig.ResolvedWorkspace, root, workspaceFile, machineFile string) {
+	t.Helper()
+	withSearchTarget(t, fakeRepoLister{repos: []string{"plugin/governance/tag-injector"}}, nil)
+	withTagLister(t, []string{"1.0.0", "1.2.0", "2.0.0-rc1"})
+
+	root = t.TempDir()
+	wsRoot := filepath.Join(root, "ws")
+	if err := os.MkdirAll(wsRoot, 0o755); err != nil {
+		t.Fatalf("mkdir workspace: %v", err)
+	}
+	workspaceFile = filepath.Join(wsRoot, workspaceconfig.ConfigFilename)
+	// The seeded settings are what make "the merged whole document" falsifiable: a
+	// composition against an empty base would produce a document carrying only the
+	// attachment, and writing THAT to the reported path would erase these.
+	if err := os.WriteFile(workspaceFile, []byte("workspace: {}\ndefault_registry: hub.aggrega.ai\noffline: false\n"), 0o644); err != nil {
+		t.Fatalf("seed workspace config: %v", err)
+	}
+	machineFile = filepath.Join(root, "home", "aggrega", "config.yaml")
+	lookup := frozenEnv(map[string]string{workspaceconfig.EnvConfigOverride: machineFile})
+	resolved, err := workspaceconfig.ResolveWithoutGlobal(wsRoot, "", lookup)
+	if err != nil {
+		t.Fatalf("resolve the attachment fixture: %v", err)
+	}
+	return resolved, root, workspaceFile, machineFile
+}
+
+// attachPlugin drives one governance attachment through the command line and
+// returns what each of its two streams carried.
+//
+// The streams are kept apart rather than merged, because the property under test
+// includes which stream the answer is on: a merged buffer would report the same
+// bytes whichever had carried them.
+func attachPlugin(t *testing.T, rw *workspaceconfig.ResolvedWorkspace, dryRun, global bool) (answer, advisory string, err error) {
+	t.Helper()
+	var out, errOut bytes.Buffer
+	err = pluginAddRun(context.Background(), pluginAddConfig{
+		Socket: "governance",
+		Role:   "label-transform",
+		Query:  "tag-injector",
+		Global: global,
+		DryRun: dryRun,
+		ws:     rw,
+		Out:    &out,
+		ErrOut: &errOut,
+	})
+	return out.String(), errOut.String(), err
+}
+
+// TestAttachingAPluginReportsContentAndWritesNothing drives the attachment's
+// reporting delivery at BOTH write-target defaults and holds each to the
+// filesystem: the answer carries the configuration document, names the file it is
+// for, and the tree is byte-for-byte what it was before the call.
+//
+// Both targets are driven because the file an attachment resolves to is not a
+// property of the operation — a socket attachment lands in this project's own
+// configuration and the machine-wide override lands in the file every workspace on
+// the machine resolves through. A proof scoped to the workspace would report a
+// clean tree for a delivery that had written the machine-wide file, which is the
+// mistake that matters most here.
+func TestAttachingAPluginReportsContentAndWritesNothing(t *testing.T) {
+	// Not parallel: the registry and version seams are process-global.
+	for _, tc := range []struct {
+		name   string
+		global bool
+	}{
+		{"the workspace default", false},
+		{"the machine-wide override", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rw, root, workspaceFile, machineFile := attachmentFixture(t)
+			target := workspaceFile
+			if tc.global {
+				target = machineFile
+			}
+
+			before := treeFingerprint(t, root)
+
+			answer, _, err := attachPlugin(t, rw, true, tc.global)
+			if err != nil {
+				t.Fatalf("attaching under the reporting delivery: %v", err)
+			}
+
+			// Clause: nothing was created or modified, measured by content digest over
+			// the whole temporary tree rather than by size or timestamp.
+			if diffs := fingerprintDifferences(before, treeFingerprint(t, root)); len(diffs) != 0 {
+				t.Fatalf("the reporting delivery touched the filesystem:\n  %s", strings.Join(diffs, "\n  "))
+			}
+			// Clause: no parent directory was created. The fingerprint above already
+			// records directories, so this is the same claim said in the words the
+			// failure would be read in — and it is the assertion that fails loudest if
+			// the composition were ever routed through the write scaffold, which
+			// creates the directory before it writes.
+			if _, statErr := os.Stat(filepath.Dir(machineFile)); !os.IsNotExist(statErr) {
+				t.Errorf("the reporting delivery created %s; a report writes nothing, so it creates no directory to write into",
+					filepath.Dir(machineFile))
+			}
+
+			docs := reportedDocuments(t, []byte(answer))
+			if len(docs) != 1 {
+				t.Fatalf("the attachment reported %d documents; it writes one file, so it reports one", len(docs))
+			}
+			if docs[0].Path != target {
+				t.Errorf("reported document names %s; the write target is %s, and a caller that trusted a wrong path here would write a machine-wide configuration into a workspace",
+					docs[0].Path, target)
+			}
+			if !strings.Contains(docs[0].Content, "governance/tag-injector:1.2.0") {
+				t.Errorf("reported content does not carry the pinned attachment a write would have made:\n%s", docs[0].Content)
+			}
+			// Clause: the MERGED WHOLE document, not a minimal one. On the workspace
+			// target the file already carries settings, and a composition against an
+			// empty base would drop them — which, written to the reported path, would
+			// erase them. On the machine-wide target no file exists yet, so the honest
+			// answer is the freshly seeded document and there is nothing to preserve.
+			if !tc.global && !strings.Contains(docs[0].Content, "default_registry") {
+				t.Errorf("the reported document dropped a setting the file already carried, so writing it back would erase it:\n%s", docs[0].Content)
+			}
+
+			// Clause: the writing delivery puts exactly the reported bytes on disk, at
+			// the reported path. Each delivery is the other's control — a reporting
+			// delivery that quietly wrote would pass a stream-only assertion, and a
+			// writing delivery that quietly stopped writing would pass an
+			// untouched-tree one.
+			writeAnswer, _, werr := attachPlugin(t, rw, false, tc.global)
+			if werr != nil {
+				t.Fatalf("attaching under the writing delivery: %v", werr)
+			}
+			onDisk, rerr := os.ReadFile(target)
+			if rerr != nil {
+				t.Fatalf("the writing delivery did not produce the reported path %s: %v", target, rerr)
+			}
+			if string(onDisk) != docs[0].Content {
+				t.Errorf("the written bytes differ from the reported content\nreported:\n%s\nwritten:\n%s", docs[0].Content, onDisk)
+			}
+			// Clause: the writing delivery reports no document. It answers with the
+			// confirmation sentence a terminal expects, and that stream must not parse
+			// as a report — the file is on disk at the path the sentence already names,
+			// so carrying it again would duplicate what was just persisted.
+			if docs := decodedDocuments(writeAnswer); len(docs) > 0 {
+				t.Errorf("the writing delivery answered with %d document(s) as well as writing the file:\n%s", len(docs), writeAnswer)
+			}
+			if !strings.Contains(writeAnswer, "Added") {
+				t.Errorf("the writing delivery did not confirm what it added:\n%s", writeAnswer)
+			}
+		})
+	}
+}
+
+// decodedDocuments decodes a stream as the reported form and returns the
+// documents it carried, or none where the stream is not a report at all.
+//
+// It exists so the writing delivery's answer can be tested for the ABSENCE of
+// documents: a plain confirmation sentence can decode as a report carrying an
+// empty set, so "decoding failed" is not the assertion — "carried no document"
+// is.
+func decodedDocuments(answer string) []authoredcontent.Document {
+	docs, err := authoredcontent.Decode([]byte(answer))
+	if err != nil {
+		return nil
+	}
+	return docs
+}
+
+// TestTheCommandExtensionTypeRefusesToReport pins the one type this delivery is
+// refused on, and pins that the refusal is LOUD.
+//
+// It is the half of Clause 0's principle that a silent ignore would breach: a
+// caller that asked for a report, was written for instead, and told success would
+// read the answer as the report it asked for. The refusal is asserted to name what
+// to do instead, and the tree is read back afterwards.
+//
+// 🔴 The fetch seam is pointed at a fake that FAILS the test if it is reached, and
+// that is not belt-and-braces. Measured by disabling the refusal: the addition
+// then ran on through the production fetch and issued a live request to the real
+// registry host. So a test that relied on the refusal to stay network-free would
+// become a network test the moment the refusal regressed — which is the moment it
+// is most needed. The fake turns that into an assertion: reaching the fetch at all
+// means the refusal did not come first.
+func TestTheCommandExtensionTypeRefusesToReport(t *testing.T) {
+	// Not parallel: the registry, version and fetch seams are process-global.
+	withSearchTarget(t, fakeRepoLister{repos: []string{"plugin/cli/moo"}}, nil)
+	withTagLister(t, []string{"1.0.0"})
+	prevFetch := installPluginFetch
+	installPluginFetch = func(context.Context, *workspaceconfig.ResolvedWorkspace, string) (resolvedInstallable, error) {
+		t.Error("the install fetch was reached for a request the operation should have refused")
+		return resolvedInstallable{}, errors.New("the fetch seam must not be reached")
+	}
+	t.Cleanup(func() { installPluginFetch = prevFetch })
+	rw := resolvedTestWorkspace(t)
+
+	before := treeFingerprint(t, rw.Root())
+	var out, errOut bytes.Buffer
+	err := pluginAddRun(context.Background(), pluginAddConfig{
+		Socket:    "cli",
+		Query:     "moo",
+		AssumeYes: true,
+		DryRun:    true,
+		ws:        rw,
+		Out:       &out,
+		ErrOut:    &errOut,
+		In:        strings.NewReader(""),
+	})
+	if err == nil {
+		t.Fatal("the command-extension type accepted a reporting delivery; its product is a record the machine maintains")
+	}
+	for _, want := range []string{"cli type cannot report", "content digest", "provider or socket attachment"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal does not carry %q: %v", want, err)
+		}
+	}
+	// The refusal must not name any one surface's spelling for the delivery: all
+	// three offer it, and a message naming a flag tells a request-driven caller to
+	// change something it cannot reach.
+	if strings.Contains(err.Error(), "--dry-run") {
+		t.Errorf("the refusal names the command line's flag, which no request-driven caller can send: %v", err)
+	}
+	if diffs := fingerprintDifferences(before, treeFingerprint(t, rw.Root())); len(diffs) != 0 {
+		t.Errorf("the refused addition changed the filesystem:\n  %s", strings.Join(diffs, "\n  "))
 	}
 }

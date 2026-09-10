@@ -5,10 +5,14 @@ package pluginops
 
 import (
 	"context"
+	"io"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/authoredcontent"
+	"github.com/aggrega-ai/aggrega-cli/internal/registryindex"
 	"github.com/aggrega-ai/aggrega-cli/internal/registryops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
@@ -307,6 +311,9 @@ func TestTheTypeSpecificFieldsAreRefusedOnTheWrongType(t *testing.T) {
 			"requires --capability"},
 		{"governance with no role", AddOptions{Socket: "governance", Query: "x"},
 			"requires --role"},
+		{"a reporting delivery on the command-extension type",
+			AddOptions{Socket: "cli", Query: "x", Delivery: authoredcontent.DeliveryFor(true)},
+			"cannot report what it would write"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := Add(context.Background(), rw, tc.opts)
@@ -318,6 +325,143 @@ func TestTheTypeSpecificFieldsAreRefusedOnTheWrongType(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestTheWritingDeliveryLeavesTheDocumentFieldEmpty pins the half of the rule a
+// reporting test cannot reach, over BOTH attachment kinds.
+//
+// The field says what a caller was handed, not what the operation is capable of,
+// so a write must leave it empty: the file is on disk at the path the result
+// already names, and carrying the document as well would duplicate on the wire
+// what was just persisted. Filling it would be invisible to any assertion about
+// the file, which is why it is asserted here rather than left to the surfaces.
+//
+// Both kinds are driven because they take different branches to different writers,
+// and a branch that filled the field would be caught in one and missed in the
+// other.
+func TestTheWritingDeliveryLeavesTheDocumentFieldEmpty(t *testing.T) {
+	rw := resolveScratch(t, scratchConfig)
+	withFakeRegistry(t, []string{"plugin/provider/helm", "plugin/linter/style"}, []string{"1.0.0", "1.2.0"})
+
+	for _, tc := range []struct {
+		name string
+		opts AddOptions
+	}{
+		{"a provider binding", AddOptions{Socket: ProviderSocket, Query: "helm", Capability: "helm"}},
+		{"a config-socket attachment", AddOptions{Socket: "linter", Query: "style"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			res, err := Add(context.Background(), rw, tc.opts)
+			if err != nil {
+				t.Fatalf("Add under the writing delivery: %v", err)
+			}
+			if len(res.Content) != 0 {
+				t.Errorf("the writing delivery filled the document field with %d bytes; the file is already on disk at %s:\n%s",
+					len(res.Content), res.ConfigPath, res.Content)
+			}
+		})
+	}
+}
+
+// TestTheReportingDeliveryComposesThroughTheWritePath pins that the reported
+// document is the one the write produces, over both attachment kinds, by writing
+// afterwards and comparing bytes.
+//
+// Byte comparison is the assertion rather than a containment check, because a
+// second composition assembled for the reporting path would carry the attachment
+// too and pass every containment test — while differing in exactly the settings it
+// failed to merge.
+//
+// 🔴 The file is read back after the REPORT as well, and that assertion belongs
+// here rather than only on the surfaces. Comparing the reported bytes against the
+// later written bytes is satisfied by a report that also wrote — the two agree in
+// exactly that case — so without reading the file in between, the layer both
+// surfaces route through would carry no proof that a report writes nothing.
+func TestTheReportingDeliveryComposesThroughTheWritePath(t *testing.T) {
+	withFakeRegistry(t, []string{"plugin/provider/helm", "plugin/linter/style"}, []string{"1.0.0", "1.2.0"})
+
+	for _, tc := range []struct {
+		name string
+		opts AddOptions
+	}{
+		{"a provider binding", AddOptions{Socket: ProviderSocket, Query: "helm", Capability: "helm"}},
+		{"a config-socket attachment", AddOptions{Socket: "linter", Query: "style"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// A resolution per arm, so the write one arm performs is not a setting the
+			// next arm's composition has to account for.
+			rw := resolveScratch(t, scratchConfig)
+			targetBefore, berr := os.ReadFile(filepath.Join(rw.Root(), workspaceconfig.ConfigFilename))
+			if berr != nil {
+				t.Fatalf("read the seeded configuration: %v", berr)
+			}
+
+			reported := tc.opts
+			// Even a test states the delivery through the one mapper rather than by
+			// naming a constant, so the census that no site outside the single source
+			// names one stays literally clean.
+			reported.Delivery = authoredcontent.DeliveryFor(true)
+			got, err := Add(context.Background(), rw, reported)
+			if err != nil {
+				t.Fatalf("Add under the reporting delivery: %v", err)
+			}
+			if len(got.Content) == 0 {
+				t.Fatal("the reporting delivery returned no document")
+			}
+			// The report wrote nothing, asserted before the write below runs — after
+			// it, the two are indistinguishable.
+			afterReport, arerr := os.ReadFile(got.ConfigPath)
+			if arerr != nil {
+				t.Fatalf("read %s after the report: %v", got.ConfigPath, arerr)
+			}
+			if string(afterReport) != string(targetBefore) {
+				t.Errorf("the reporting delivery modified %s\nbefore:\n%s\nafter:\n%s", got.ConfigPath, targetBefore, afterReport)
+			}
+			// The document is the merged whole: the attachment the fixture already
+			// carries survives in it, which a composition against an empty base would
+			// have dropped.
+			if !strings.Contains(string(got.Content), "tag-injector") {
+				t.Errorf("the reported document dropped a setting the file already carried:\n%s", got.Content)
+			}
+
+			if _, err := Add(context.Background(), rw, tc.opts); err != nil {
+				t.Fatalf("Add under the writing delivery: %v", err)
+			}
+			onDisk, rerr := os.ReadFile(got.ConfigPath)
+			if rerr != nil {
+				t.Fatalf("read %s: %v", got.ConfigPath, rerr)
+			}
+			if string(onDisk) != string(got.Content) {
+				t.Errorf("the written bytes differ from the reported content\nreported:\n%s\nwritten:\n%s", got.Content, onDisk)
+			}
+		})
+	}
+}
+
+// withFakeRegistry points the registry-enumeration and tag-listing seams at fixed
+// answers for the duration of the test, so an addition resolves an identity with
+// no network. The version seams are pointed as a pair, because the fallback path
+// screens as well as selects and a test that fixed only the tags would leave the
+// withdrawal read pointing at a live registry.
+func withFakeRegistry(t *testing.T, repos, tags []string) {
+	t.Helper()
+	prevTarget := RegistryTarget
+	RegistryTarget = func(workspaceconfig.Config) (registryops.RepoLister, string, error) {
+		return fakeLister{repos: repos}, "hub.aggrega.ai", nil
+	}
+	prevTags := RepoTagLister
+	RepoTagLister = func(context.Context, workspaceconfig.Config, string, string) ([]string, error) {
+		return tags, nil
+	}
+	prevWithdrawals := RepoWithdrawalLister
+	RepoWithdrawalLister = func(_ context.Context, _ workspaceconfig.Config, _, _ string, _ []string, _ io.Writer) ([]registryindex.VersionDeprecation, error) {
+		return nil, nil
+	}
+	t.Cleanup(func() {
+		RegistryTarget = prevTarget
+		RepoTagLister = prevTags
+		RepoWithdrawalLister = prevWithdrawals
+	})
 }
 
 // TestResolveSingleRepoPrefersAnExactNameOverASubstring pins the reduction's one

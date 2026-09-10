@@ -10,6 +10,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/authoredcontent"
 	"github.com/aggrega-ai/aggrega-cli/internal/pluginops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
@@ -27,6 +28,7 @@ func newPluginAddCmd() *cobra.Command {
 	var workspace bool
 	var acceptCaps bool
 	var assumeYes bool
+	var dryRun bool
 	c := &cobra.Command{
 		Use:   "add <type> <query>",
 		Short: "Search the registry and add a plugin of the named type",
@@ -58,7 +60,23 @@ What add writes depends on the type:
     access. A cli plugin defaults to the global config, so its command is
     available in every workspace; --workspace pins it to this project instead.
     Its declared capabilities are confirmed before installing, and
-    --accept-capabilities or --yes skips that prompt for non-interactive use.`,
+    --accept-capabilities or --yes skips that prompt for non-interactive use.
+
+A provider or socket attachment is configuration you go on editing, so --dry-run
+does everything the plain command does except write: it hands back the
+configuration the write would have produced, creating and modifying nothing. The
+answer names the file that content is for — which matters here, because a
+--global attachment targets the config shared across every workspace. A caller
+that keeps its own document model puts the content there, where it is visible
+before it is saved and can be amended or undone. The registry is still searched
+and the version still resolved, since the returned document carries the identity
+a write would have pinned.
+
+Under --dry-run standard output carries that content and nothing else, so it stays
+parseable; a version substitution is announced on standard error instead. The cli
+type does not accept --dry-run: what it records is the content digest of the bytes
+it verified, which is a record the machine maintains rather than content you
+edit.`,
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			rw, err := workspaceFromContext(cmd.Context())
@@ -74,9 +92,11 @@ What add writes depends on the type:
 				Workspace:  workspace,
 				AcceptCaps: acceptCaps,
 				AssumeYes:  assumeYes,
+				DryRun:     dryRun,
 				ws:         rw,
 				In:         cmd.InOrStdin(),
 				Out:        cmd.OutOrStdout(),
+				ErrOut:     cmd.ErrOrStderr(),
 			})
 		},
 	}
@@ -86,6 +106,7 @@ What add writes depends on the type:
 	c.Flags().BoolVar(&workspace, "workspace", false, "Write the attachment to this project's workspace config. A provider or socket attachment defaults here; a cli plugin defaults to the global config.")
 	c.Flags().BoolVar(&acceptCaps, "accept-capabilities", false, "Accept a cli plugin's declared capabilities without the interactive prompt (cli type only)")
 	c.Flags().BoolVar(&assumeYes, "yes", false, "Skip the cli capability-confirmation prompt for non-interactive use (cli type only)")
+	c.Flags().BoolVar(&dryRun, "dry-run", false, "Do everything except write: hand back the resulting configuration as content, naming the file it is for, and create or modify nothing. Without it the attachment is written to the resolved config file. Not accepted with the cli type.")
 	return c
 }
 
@@ -110,9 +131,25 @@ type pluginAddConfig struct {
 	AcceptCaps bool
 	AssumeYes  bool
 
-	ws  *workspaceconfig.ResolvedWorkspace
-	In  io.Reader
-	Out interface{ Write([]byte) (int, error) }
+	// DryRun asks for the resulting configuration as content rather than as a
+	// write. A provider or socket attachment is configuration its owner goes on
+	// editing, so a caller holding a document model takes the content and decides
+	// where it lands. It is refused on the cli type, whose product is a record the
+	// machine maintains.
+	DryRun bool
+
+	ws *workspaceconfig.ResolvedWorkspace
+	In io.Reader
+	// Out carries the answer, and ErrOut whatever the answer cannot convey.
+	//
+	// The pair exists because under DryRun the answer on Out is one parseable
+	// document and nothing else, so the version-substitution notice the operation
+	// announces would break the document's shape rather than merely sit beside it.
+	// It goes to ErrOut, which leaves that shape alone — and it goes there rather
+	// than nowhere, because a writer of nil leaves version selection unscreened,
+	// which would skip a withdrawn version silently.
+	Out    interface{ Write([]byte) (int, error) }
+	ErrOut interface{ Write([]byte) (int, error) }
 }
 
 // pluginAddRun runs the addition and renders the command line's own account of
@@ -134,7 +171,24 @@ type pluginAddConfig struct {
 // registered and the file it wrote, so restating those would announce one install
 // twice. What the installer cannot report is the reach, which the operation
 // computes and only its result carries — so that is what is added here.
+//
+// Under a reporting delivery no sentence is rendered at all: the answer is the one
+// parseable document the operation composed, addressed to the file the write would
+// have gone to. That path comes off the result's own write-target resolution, so
+// the content is addressed to the file the write would have used rather than to a
+// second resolution taken here.
 func pluginAddRun(ctx context.Context, cfg pluginAddConfig) error {
+	// The request is mapped onto a delivery through the one mapper every surface
+	// routes through, and every branch below reads that delivery through its
+	// predicate — so this surface expresses the choice nowhere in its own terms.
+	delivery := authoredcontent.DeliveryFor(cfg.DryRun)
+	// A reporting delivery leaves Out holding one document, so the operation's
+	// prose is redirected rather than dropped: a nil writer would leave version
+	// selection unscreened.
+	notices := cfg.Out
+	if delivery.Reports() {
+		notices = cfg.ErrOut
+	}
 	res, err := pluginops.Add(ctx, cfg.ws, pluginops.AddOptions{
 		Socket:             cfg.Socket,
 		Query:              cfg.Query,
@@ -144,12 +198,22 @@ func pluginAddRun(ctx context.Context, cfg pluginAddConfig) error {
 		Workspace:          cfg.Workspace,
 		AcceptCapabilities: cfg.AcceptCaps,
 		AssumeYes:          cfg.AssumeYes,
+		Delivery:           delivery,
 		InstallCLIPlugin:   installCLIPlugin,
 		In:                 cfg.In,
-		Notices:            cfg.Out,
+		Notices:            notices,
 	})
 	if err != nil {
 		return err
+	}
+	if delivery.Reports() {
+		if cfg.Out == nil {
+			return nil
+		}
+		return authoredcontent.Report(cfg.Out, []authoredcontent.Document{{
+			Path:    res.ConfigPath,
+			Content: string(res.Content),
+		}})
 	}
 	switch {
 	case res.URI != "":

@@ -213,7 +213,46 @@ func UpsertProviderBinding(path, target, plugin string) error {
 	if target == "" || plugin == "" {
 		return fmt.Errorf("workspaceconfig: UpsertProviderBinding: target and plugin are required")
 	}
-	return mutateConfigDocument(path, func(mapping *yaml.Node) error {
+	return mutateConfigDocument(path, providerBindingMutation(target, plugin))
+}
+
+// ProviderBindingDocument returns the bytes UpsertProviderBinding would write for
+// target and plugin at path, without writing anything and without creating a
+// directory.
+//
+// It is the RegistryDocument of the provider socket and exists for the same
+// reason: a caller that reports a document instead of writing one must not
+// compose its own version of the file. It routes through the same mutation and
+// the same composition UpsertProviderBinding does, so the two cannot produce
+// different bytes for the same inputs — the schema gate included, so a document
+// reported to a caller has passed the validation a written one would.
+//
+// A binding that is already present and identical composes to the file's existing
+// bytes, so the reported document is what the file would hold either way rather
+// than an empty answer.
+func ProviderBindingDocument(path, target, plugin string) ([]byte, error) {
+	if target == "" || plugin == "" {
+		// The condition is stated in the words of what was authored — the capability
+		// a binding serves and the plugin it binds — rather than behind a package or
+		// function name, neither of which a reader can see, type or act on. The
+		// calling operation wraps this with the command and the file, so the
+		// diagnostic still says where it came from.
+		return nil, fmt.Errorf("a provider binding needs both the capability it serves and the plugin it binds")
+	}
+	out, _, err := composeConfigDocument(path, providerBindingMutation(target, plugin))
+	return out, err
+}
+
+// providerBindingMutation builds the node surgery that records the plugin URI for
+// target in a config document's plugins.providers list: an existing entry for the
+// same target has its URI updated in place so its list position and other members
+// are preserved, and a new target is appended.
+//
+// It is a factory rather than an inline closure for the reason registryMutation is
+// one — the composition and the write share this one mutation instead of each
+// carrying a copy that agrees today.
+func providerBindingMutation(target, plugin string) func(mapping *yaml.Node) error {
+	return func(mapping *yaml.Node) error {
 		pluginsNode := getOrCreateMapping(mapping, "plugins")
 		providers := UpsertProviderRef(readProviderBindings(pluginsNode), target, plugin)
 
@@ -223,7 +262,7 @@ func UpsertProviderBinding(path, target, plugin string) error {
 		}
 		setMappingKey(pluginsNode, "providers", &provNode)
 		return nil
-	})
+	}
 }
 
 // UpsertPluginSocketRef adds the config-socket plugin attachment uri to the
@@ -246,7 +285,41 @@ func UpsertPluginSocketRef(path, socket, uri string, role plugintype.Role) error
 	if socket == "" || uri == "" {
 		return fmt.Errorf("workspaceconfig: UpsertPluginSocketRef: socket and uri are required")
 	}
-	return mutateConfigDocument(path, func(mapping *yaml.Node) error {
+	return mutateConfigDocument(path, pluginSocketRefMutation(socket, uri, role))
+}
+
+// PluginSocketRefDocument returns the bytes UpsertPluginSocketRef would write for
+// uri at path, without writing anything and without creating a directory.
+//
+// It is the RegistryDocument of the config sockets and exists for the same
+// reason: a caller that reports a document instead of writing one must not
+// compose its own version of the file. It routes through the same mutation and
+// the same composition UpsertPluginSocketRef does, so the two cannot produce
+// different bytes for the same inputs — the schema gate included, so a socket key
+// the schema does not admit is rejected here exactly as it is on the write path
+// rather than reported to a caller as a usable document.
+//
+// An attachment already carrying this URI composes to the file's existing bytes,
+// matching the write's idempotent no-clobber semantic: the reported document is
+// what the file would hold either way rather than an empty answer.
+func PluginSocketRefDocument(path, socket, uri string, role plugintype.Role) ([]byte, error) {
+	if socket == "" || uri == "" {
+		return nil, fmt.Errorf("a plugin attachment needs both the socket it attaches to and the plugin identity to attach")
+	}
+	out, _, err := composeConfigDocument(path, pluginSocketRefMutation(socket, uri, role))
+	return out, err
+}
+
+// pluginSocketRefMutation builds the node surgery that records uri in a config
+// document's plugins.<socket> list: an entry whose URI already matches is left in
+// place, so the add is idempotent and never clobbers an existing attachment's
+// other members, and a new URI is appended.
+//
+// It is a factory rather than an inline closure for the reason registryMutation is
+// one — the composition and the write share this one mutation instead of each
+// carrying a copy that agrees today.
+func pluginSocketRefMutation(socket, uri string, role plugintype.Role) func(mapping *yaml.Node) error {
+	return func(mapping *yaml.Node) error {
 		pluginsNode := getOrCreateMapping(mapping, "plugins")
 		refs := upsertPluginRefURI(readPluginRefs(pluginsNode, socket), uri, role)
 
@@ -256,7 +329,7 @@ func UpsertPluginSocketRef(path, socket, uri string, role plugintype.Role) error
 		}
 		setMappingKey(pluginsNode, socket, &refsNode)
 		return nil
-	})
+	}
 }
 
 // UpsertCLIPluginRef adds or re-pins the CLI-extension plugin identified by uri

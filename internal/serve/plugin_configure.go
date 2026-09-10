@@ -128,6 +128,16 @@ func (s *Server) selectedPath(what, raw string) (string, error) {
 // client asks whoever is driving it and sends the answer. A request that does not
 // consent is refused with what to send named, rather than installing on a consent
 // nobody gave.
+//
+// dry_run does everything the plain request does except write: it answers with
+// the resulting configuration as content instead of putting it on disk. Which of
+// the two a caller wants is a property of the caller rather than of this
+// surface — a client that keeps its own document model puts the content where the
+// author can read it before it is saved — so it is a request field. It defaults
+// to writing, because the operation's product is a configuration file and a
+// surface that produces a document owes the document. Sent with the cli type it is
+// refused rather than ignored, for the reason the shared layer states: a silently
+// ignored argument reads to a caller as one that was honoured.
 type pluginAddParams struct {
 	Type               string `json:"type"`
 	Query              string `json:"query"`
@@ -136,6 +146,7 @@ type pluginAddParams struct {
 	Global             bool   `json:"global"`
 	Workspace          bool   `json:"workspace"`
 	AcceptCapabilities bool   `json:"acceptCapabilities"`
+	DryRun             bool   `json:"dry_run"`
 }
 
 // pluginAddResult is the aggrega/pluginAdd response.
@@ -146,6 +157,11 @@ type pluginAddParams struct {
 // a command-extension install reports the pinned reference whose commands were
 // registered. A caller reading the answer can tell which without re-deriving it
 // from the type it sent.
+//
+// Written is what a client branches on: under a write it names a file now on disk
+// that the client can open, and under a report it is false and Content carries the
+// document instead. The two are never both meaningful — the file Content is for is
+// Scope.ConfigFile, so nothing here carries a second copy of the path.
 type pluginAddResult struct {
 	Type       string           `json:"type"`
 	Identity   string           `json:"identity,omitempty"`
@@ -153,6 +169,8 @@ type pluginAddResult struct {
 	Capability string           `json:"capability,omitempty"`
 	Reference  string           `json:"reference,omitempty"`
 	Scope      pluginWriteScope `json:"scope"`
+	Written    bool             `json:"written"`
+	Content    string           `json:"content,omitempty"`
 }
 
 // dispatchPluginAdd searches the configured registry for a plugin of the named
@@ -176,6 +194,16 @@ type pluginAddResult struct {
 // a terminal — whether the caller accepts a command-extension plugin's declared
 // capabilities — arrives as a request field, so the client asks whoever is driving
 // it and this surface never blocks on a prompt no one can answer.
+//
+// 🔴 It WRITES unless the request asks it to report instead, and the reporting
+// posture is a request field rather than a property of this surface, because a
+// caller at either end may want either. Under a report nothing is created or
+// modified and the answer carries the configuration document the write would have
+// produced, addressed to the file it would have gone to — which for a --global
+// attachment is the machine-wide one, so the scope on the answer is what tells a
+// client how far the content it now holds would reach. It still reaches a
+// registry under a report, because the identity in that document is the identity a
+// write would have pinned.
 func (s *Server) dispatchPluginAdd(ctx context.Context, req *jsonRPCRequest) error {
 	var params pluginAddParams
 	if len(req.Params) > 0 {
@@ -221,6 +249,11 @@ func (s *Server) dispatchPluginAdd(ctx context.Context, req *jsonRPCRequest) err
 		}
 	}
 
+	// The request is mapped onto a delivery through the one mapper every surface
+	// routes through, and the answer's Written field is read back off it through the
+	// one predicate — so this surface expresses the choice nowhere in its own terms
+	// and needs no second field tracking whether a write happened.
+	delivery := authoredcontent.DeliveryFor(params.DryRun)
 	res, err := pluginops.Add(ctx, s.resolvedWorkspace, pluginops.AddOptions{
 		Socket:             params.Type,
 		Query:              params.Query,
@@ -229,6 +262,7 @@ func (s *Server) dispatchPluginAdd(ctx context.Context, req *jsonRPCRequest) err
 		Global:             params.Global,
 		Workspace:          params.Workspace,
 		AcceptCapabilities: params.AcceptCapabilities,
+		Delivery:           delivery,
 		InstallCLIPlugin:   s.installCLIPlugin,
 		// The install path reports the commands it registered on this writer, and a
 		// version substitution is announced on it too. Both are prose for a person
@@ -250,6 +284,8 @@ func (s *Server) dispatchPluginAdd(ctx context.Context, req *jsonRPCRequest) err
 		Capability: res.Capability,
 		Reference:  res.Reference,
 		Scope:      s.pluginScope(res.ConfigPath, res.ConfigIsMachineWide),
+		Written:    !delivery.Reports(),
+		Content:    string(res.Content),
 	})
 }
 

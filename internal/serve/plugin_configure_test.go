@@ -5,12 +5,15 @@ package serve
 
 import (
 	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/pluginops"
+	"github.com/aggrega-ai/aggrega-cli/internal/registryindex"
+	"github.com/aggrega-ai/aggrega-cli/internal/registryops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
@@ -306,6 +309,198 @@ func TestTheCommandExtensionTypeRequiresConsentAndAnInstaller(t *testing.T) {
 			t.Errorf("the refusal does not name the missing installer: %s", resp.Error.Message)
 		}
 	})
+}
+
+// withFakeRegistryForAttach points the plugin layer's registry-enumeration and
+// version seams at fixed answers, so an attachment driven through this surface
+// resolves an identity with no network.
+//
+// The version seams are pointed as a pair because the fallback resolution screens
+// as well as selects: a test that fixed only the tags would leave the
+// withdrawal-marker read pointing at a live registry.
+// A command-extension repository is in the set as well as a governance one, and
+// that is what makes the refusal test an ORDERING proof: without it, a disabled
+// refusal would stop at "no cli plugin matches" and the installer would stay
+// unreached for the wrong reason, so the assertion that it never ran would pass on
+// a surface that had stopped refusing. Measured — that is exactly what a
+// one-repository set did.
+func withFakeRegistryForAttach(t *testing.T) {
+	t.Helper()
+	prevTarget := pluginops.RegistryTarget
+	pluginops.RegistryTarget = func(workspaceconfig.Config) (registryops.RepoLister, string, error) {
+		return fixedRepoLister{repos: []string{"plugin/governance/tag-injector", "plugin/cli/greet"}}, "hub.aggrega.ai", nil
+	}
+	prevTags := pluginops.RepoTagLister
+	pluginops.RepoTagLister = func(context.Context, workspaceconfig.Config, string, string) ([]string, error) {
+		return []string{"1.0.0", "1.2.0"}, nil
+	}
+	prevWithdrawals := pluginops.RepoWithdrawalLister
+	pluginops.RepoWithdrawalLister = func(_ context.Context, _ workspaceconfig.Config, _, _ string, _ []string, _ io.Writer) ([]registryindex.VersionDeprecation, error) {
+		return nil, nil
+	}
+	t.Cleanup(func() {
+		pluginops.RegistryTarget = prevTarget
+		pluginops.RepoTagLister = prevTags
+		pluginops.RepoWithdrawalLister = prevWithdrawals
+	})
+}
+
+// fixedRepoLister hands the enumeration primitive a fixed repository set in one
+// page, so an attachment runs without a network.
+type fixedRepoLister struct{ repos []string }
+
+func (f fixedRepoLister) Repositories(_ context.Context, _ string, fn func(repos []string) error) error {
+	return fn(f.repos)
+}
+
+// TestPluginAddOnTheDaemonOffersBothDeliveries drives the method twice over one
+// fixture and holds each delivery to what it promises: the report answers with the
+// configuration document and leaves both configuration files byte-identical, and
+// the write puts the file on disk and answers with no document.
+//
+// Both are driven over the SAME fixture because each is the other's control. A
+// report that quietly wrote would pass an assertion about the answer alone, and a
+// write that quietly stopped writing would pass an assertion about an unchanged
+// file — only the pair says which delivery did which.
+//
+// 🔴 It reads both configuration files, not just the workspace one. The scope
+// override sends the attachment to the machine-wide file, and a comparison scoped
+// to the workspace would report an untouched tree for a report that had written
+// the machine's own configuration.
+func TestPluginAddOnTheDaemonOffersBothDeliveries(t *testing.T) {
+	// Not parallel: the plugin layer's registry seams are process-global.
+	withFakeRegistryForAttach(t)
+
+	for _, tc := range []struct {
+		name   string
+		global bool
+	}{
+		{"the workspace default", false},
+		{"the machine-wide override", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv, globalPath, wsPath := registryWriteFixture(t, `workspace:
+  catalog_dirs:
+    - catalog
+default_registry: hub.aggrega.ai
+`)
+			target := wsPath
+			if tc.global {
+				target = globalPath
+			}
+			params := map[string]any{"type": "governance", "query": "tag-injector", "role": "label-transform", "dry_run": true}
+			if tc.global {
+				params["global"] = true
+			}
+
+			wsBefore := readConfigBytes(t, wsPath)
+			globalBefore := readConfigBytes(t, globalPath)
+
+			var reported pluginAddResult
+			decodeDaemonResult(t, callDaemonMethod(t, srv, "aggrega/pluginAdd", params), &reported)
+
+			if reported.Written {
+				t.Error("the reporting delivery answered that it wrote")
+			}
+			if reported.Content == "" {
+				t.Fatal("the reporting delivery answered with no document")
+			}
+			if reported.Scope.ConfigFile != target {
+				t.Errorf("scope.configFile = %q; want %q — a client that trusted a wrong path here would write a machine-wide configuration into a workspace",
+					reported.Scope.ConfigFile, target)
+			}
+			if reported.Scope.MachineWide != tc.global {
+				t.Errorf("scope.machineWide = %v; want %v, so a client knows how far the content it now holds would reach",
+					reported.Scope.MachineWide, tc.global)
+			}
+			if !strings.Contains(reported.Content, "governance/tag-injector:1.2.0") {
+				t.Errorf("the reported document does not carry the pinned attachment a write would have made:\n%s", reported.Content)
+			}
+			// The MERGED WHOLE document: whatever the TARGET file already carried
+			// survives in it. Composing against an empty base would drop those
+			// settings, and writing that document back would erase them.
+			carried := "catalog_dirs"
+			if tc.global {
+				carried = "registries"
+			}
+			if !strings.Contains(reported.Content, carried) {
+				t.Errorf("the reported document dropped %q, which %s already carried:\n%s", carried, target, reported.Content)
+			}
+			if got := readConfigBytes(t, wsPath); got != wsBefore {
+				t.Errorf("the reporting delivery modified the workspace configuration:\nbefore:\n%s\nafter:\n%s", wsBefore, got)
+			}
+			if got := readConfigBytes(t, globalPath); got != globalBefore {
+				t.Errorf("the reporting delivery modified the machine-wide configuration:\nbefore:\n%s\nafter:\n%s", globalBefore, got)
+			}
+
+			params["dry_run"] = false
+			var written pluginAddResult
+			decodeDaemonResult(t, callDaemonMethod(t, srv, "aggrega/pluginAdd", params), &written)
+
+			if !written.Written {
+				t.Error("the writing delivery answered that it did not write")
+			}
+			if written.Content != "" {
+				t.Errorf("the writing delivery carried the document as well as writing it; the file is on disk at %s:\n%s",
+					written.Scope.ConfigFile, written.Content)
+			}
+			if got := readConfigBytes(t, target); got != reported.Content {
+				t.Errorf("the written bytes differ from the reported content\nreported:\n%s\nwritten:\n%s", reported.Content, got)
+			}
+		})
+	}
+}
+
+// readConfigBytes reads a configuration file, treating an absent file as empty so
+// a before-and-after comparison spans a file the write is about to create.
+func readConfigBytes(t *testing.T, path string) string {
+	t.Helper()
+	body, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return ""
+		}
+		t.Fatalf("read %s: %v", path, err)
+	}
+	return string(body)
+}
+
+// TestPluginAddOnTheDaemonRefusesAReportOnTheCommandExtensionType pins that the
+// refusal is LOUD on this surface and that it precedes the install.
+//
+// 🔴 A silently ignored field is the failure worth catching, and it is not
+// hypothetical: the neighbouring registry-registration method accepts a report
+// field, ignores it and answers success, which reads to a caller as an argument
+// that was honoured. An installer IS wired here, so a refusal can only be about
+// the delivery — and the installer asserts it never ran, which makes this a proof
+// that the refusal comes first rather than after the work. The fixture's
+// repository set carries a command-extension plugin precisely so that claim is
+// real: were the set governance-only, a disabled refusal would halt at "no cli
+// plugin matches" and this assertion would pass for the wrong reason.
+func TestPluginAddOnTheDaemonRefusesAReportOnTheCommandExtensionType(t *testing.T) {
+	// Not parallel: the plugin layer's registry seams are process-global.
+	withFakeRegistryForAttach(t)
+	srv, _ := pluginWriteFixture(t)
+	srv.installCLIPlugin = func(context.Context, *workspaceconfig.ResolvedWorkspace, pluginops.CLIInstallRequest) error {
+		t.Error("the installer ran for a request the surface should have refused")
+		return nil
+	}
+
+	resp := callDaemonMethod(t, srv, "aggrega/pluginAdd", map[string]any{
+		"type": "cli", "query": "greet", "acceptCapabilities": true, "dry_run": true,
+	})
+	if resp.Error == nil {
+		t.Fatal("a report on the command-extension type was accepted; its product is a record the machine maintains")
+	}
+	if !strings.Contains(resp.Error.Message, "cannot report what it would write") {
+		t.Errorf("the refusal does not say why: %s", resp.Error.Message)
+	}
+	// The refusal must name no surface's own spelling for the delivery: a message
+	// naming a command-line flag tells a request-driven caller to change something
+	// it cannot reach.
+	if strings.Contains(resp.Error.Message, "--dry-run") {
+		t.Errorf("the refusal names the command line's flag, which no request-driven caller can send: %s", resp.Error.Message)
+	}
 }
 
 // TestTheGeneratedDocumentWireShapeIsThisSurfacesOwn pins the projection, because
