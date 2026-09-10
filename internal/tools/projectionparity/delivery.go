@@ -134,8 +134,8 @@ func (f DeliveryFinding) String() string {
 	return b.String()
 }
 
-// DeliveryReport renders findings one per line.
-func DeliveryReport(findings []DeliveryFinding) string {
+// FormatDeliveryFindings renders findings one per line.
+func FormatDeliveryFindings(findings []DeliveryFinding) string {
 	var b strings.Builder
 	for _, f := range findings {
 		b.WriteString(f.String())

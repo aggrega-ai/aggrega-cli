@@ -284,7 +284,7 @@ func Run() error {
 			got := deliveryFindings(result)
 			if len(got) != len(tc.want) || (len(got) > 0 && strings.Join(got, "\n") != strings.Join(tc.want, "\n")) {
 				t.Errorf("findings:\n got %v\nwant %v\nreport:\n%s",
-					got, tc.want, projectionparity.DeliveryReport(result.Findings))
+					got, tc.want, projectionparity.FormatDeliveryFindings(result.Findings))
 			}
 		})
 	}

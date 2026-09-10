@@ -205,5 +205,5 @@ func TestEverySurfaceOffersEveryDeliveryItsCapabilitySupports(t *testing.T) {
 	}
 
 	t.Errorf("%d surface composition(s) decide a caller's delivery for it:\n%s",
-		len(result.Findings), projectionparity.DeliveryReport(result.Findings))
+		len(result.Findings), projectionparity.FormatDeliveryFindings(result.Findings))
 }
