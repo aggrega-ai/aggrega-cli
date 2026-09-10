@@ -126,13 +126,23 @@ const projectionReadDir = "internal/tools/projectionparity"
 // never accuse a surface that carries everything; and it is why a repair that
 // clears a finding still owes an assertion derived independently of this read.
 //
-// What is deliberately not done about it is pinning a floor under the census, a
-// minimum number of projections the read must reach. Such a number would be a
-// second copy of what the corpus derivation already computes, it would go stale
-// in the direction of silence the first time a surface was legitimately
-// restructured, and choosing it is a policy call rather than an engineering one.
-// The census is asserted non-empty and logged in full instead, so a collapse in
-// reach surfaces in the same place the findings do.
+// What is bounded and what deliberately is not, since the two sit one edit
+// apart and a reader has to be able to tell them apart. The number of findings
+// this classification EXCLUDES is bounded, by the increase-only ratchet at
+// [projectionExclusionCeiling]. That population is exactly the ground this gate
+// declines to certify, so its growth is a loss of coverage and nothing else,
+// and a loss of coverage that arrives as a green is the one failure this
+// scoping would otherwise hide. What is NOT bounded is a floor under the
+// census, a minimum number of projections the read must reach. Such a number
+// would be a second copy of what the corpus derivation already computes, it
+// would go stale in the direction of silence the first time a surface was
+// legitimately restructured, and choosing it is a policy call rather than an
+// engineering one. The census is asserted non-empty and logged in full instead.
+//
+// Those two are not one figure inverted, which is what makes one of them
+// bindable and the other not: the corpus may legitimately grow or shrink, which
+// moves the number of projections followed without moving the number this read
+// could not follow.
 var projectionKindBlocks = map[projectionparity.Kind]bool{
 	projectionparity.DroppedField:         true,
 	projectionparity.ResultDiscarded:      true,
@@ -152,6 +162,93 @@ var projectionKindBlocks = map[projectionparity.Kind]bool{
 func projectionFindingBlocks(kind projectionparity.Kind) bool {
 	blocks, classified := projectionKindBlocks[kind]
 	return !classified || blocks
+}
+
+// projectionExclusionCeiling bounds the findings the gate below passes over:
+// the population may fall and may not rise.
+//
+// Those findings report how far this read reached rather than anything about
+// the tree, so failing on the population itself would redden the shipped tree
+// for this read's own limits — which is why the classification above excludes
+// them at all. What IS a defect is the population growing. A refactor that puts
+// ten more projections beyond this read's reach shrinks what the gate checks by
+// ten, and every one of those losses arrives as a green. Refusing an increase
+// costs nothing while the number holds or falls, and it makes the one movement
+// that matters loud instead of silent.
+//
+// Nothing weaker will do that job, and the medium is the reason rather than a
+// preference: a passing Go package relays no output whatever — not a test log
+// line, not standard output, not standard error — so on a pass the count
+// reaches a reader only under a verbose run. A rise that is reported and not
+// refused is a rise nobody learns about. This constant is therefore also the
+// pass-visible statement of the count: it is readable here without running
+// anything, the assertion below is what keeps it from drifting above the truth,
+// and because a rise cannot be cleared without editing it, the movement lands
+// in a diff a reviewer reads rather than in a log a pass discards.
+//
+// Criterion, so that a later reading measures the same thing: the number of
+// findings the read reports over the shipped surfaces for which
+// [projectionFindingBlocks] answers false — the total across those kinds. NOT
+// the number of KINDS passed over, which the classification assertions below
+// hold from both ends. And NOT the total finding count, which mixes two
+// populations whose movements mean opposite things: a bound on that sum can be
+// held while an exclusion replaces a divergence, so it would constrain neither.
+// Measured 2026-09-10 at aggrega-cli adfcc2eb: 7 findings, all of one kind
+// (unreadable-site), which is the whole of the 7 the read reports, since no
+// finding currently accuses a surface. That coincidence is why the criterion
+// spells out which of the two is meant.
+//
+// The bound this leaves, recorded so the ceiling is never read as the
+// population: a FALL is deliberately not refused, so once the count drops this
+// constant carries slack the ratchet does not reclaim, and a reach regression
+// inside that slack is invisible. Reclaiming it is a one-line edit here,
+// belonging to whatever change lowers the count rather than to a later
+// tidy-up.
+const projectionExclusionCeiling = 7
+
+// assertProjectionExclusionCeiling is the increase-only ratchet over the
+// findings the gate below passes over.
+//
+// It is separate from the tally that gate logs because the two answer different
+// questions. That line says which kinds were passed over and how many of each,
+// which is a figure a reader wants and no build should halt on. This says
+// whether the population GREW, which is the one movement that is a defect
+// rather than a status: the read's reach shrank, and the ground the gate no
+// longer covers grew by the difference.
+//
+// A fall is not refused, deliberately, and the slack that leaves is recorded at
+// [projectionExclusionCeiling] rather than here, so the bound sits with the
+// number it bounds.
+func assertProjectionExclusionCeiling(t *testing.T, excluded, reported int) {
+	t.Helper()
+
+	switch {
+	case excluded > projectionExclusionCeiling:
+		t.Errorf("the gate passes over %d finding(s) reporting this read's own reach, above the "+
+			"recorded ceiling of %d.\n"+
+			"INVARIANT: this population measures the ground the gate declines to certify, so it may "+
+			"fall and may not rise.\n"+
+			"CONSEQUENCE: %d more projection(s) sit beyond this read's reach than when the ceiling was "+
+			"recorded, so the gate checks less than it did, and a loss of coverage arrives as a green. "+
+			"The findings themselves, with their sites, are printed by the live half of this gate — run "+
+			"this package verbosely to read them, since a passing package relays nothing.\n"+
+			"REMEDY: make the named projections readable — bind the shared result to a variable and "+
+			"read its fields in the same body, rather than handing the value whole to a call this read "+
+			"cannot follow. Where a legitimately new surface brought them instead, raise the ceiling "+
+			"here deliberately and say why in review. What must not happen is the raise being made to "+
+			"clear a red without either: the number is only meaningful as a bound the reach has never "+
+			"fallen below.",
+			excluded, projectionExclusionCeiling, excluded-projectionExclusionCeiling)
+	case excluded < projectionExclusionCeiling:
+		t.Logf("the gate passes over %d of the %d finding(s) reported, below the recorded ceiling of "+
+			"%d. The ratchet refuses an increase and does not refuse a fall, so this slack of %d is not "+
+			"reclaimed until projectionExclusionCeiling is lowered — a one-line edit belonging to "+
+			"whatever change lowered the count. Within that slack a reach regression is not detected.",
+			excluded, reported, projectionExclusionCeiling, projectionExclusionCeiling-excluded)
+	default:
+		t.Logf("the gate passes over %d of the %d finding(s) reported, exactly at the recorded ceiling "+
+			"of %d. The ratchet refuses an increase.", excluded, reported, projectionExclusionCeiling)
+	}
 }
 
 // projectionCorpus reads the module root and assembles the surface corpus,
@@ -319,6 +416,15 @@ func TestTheProjectionReadRunsOverTheShippedSurfaces(t *testing.T) {
 // through. What is excluded here is ground on which the read drew no verdict in
 // either direction, so there is no finding about the tree to have suppressed.
 //
+// The excluded ground is bounded rather than merely named, by
+// [projectionExclusionCeiling]. Passing a finding over is a decision about what
+// this gate certifies, and how much it passes over is a number that moves
+// whenever the surfaces are restructured — upward when a projection stops being
+// followable, which is a loss of coverage that would otherwise arrive as a
+// green and reach nobody. So the count may fall and may not rise. That is the
+// only reading of a green here that also covers the gate's own reach; the
+// verdict itself still covers only the projections the read could follow.
+//
 // What it cannot see, stated so a green is not read as more than it is. A
 // surface that answers a request with a second implementation of its own, taking
 // different input and calling nothing shared, has no shared result to project
@@ -332,13 +438,22 @@ func TestEverySurfaceCarriesWhatTheSharedComputationProduced(t *testing.T) {
 
 	var blocking []projectionparity.Finding
 	passedOver := map[projectionparity.Kind]int{}
+	excluded := 0
 	for _, finding := range result.Findings {
 		if projectionFindingBlocks(finding.Kind) {
 			blocking = append(blocking, finding)
 			continue
 		}
 		passedOver[finding.Kind]++
+		excluded++
 	}
+
+	// Bounded rather than only named. The tally below says how much ground this
+	// gate passed over; the ratchet says whether that ground GREW, which is the
+	// movement no other assertion here would notice, because it leaves the gate
+	// green. It runs unconditionally, since a fall to zero is a reading the
+	// ceiling must be able to record.
+	assertProjectionExclusionCeiling(t, excluded, len(result.Findings))
 
 	if len(passedOver) > 0 {
 		// Named on the way past, so a pass reads as a pass OVER something rather
