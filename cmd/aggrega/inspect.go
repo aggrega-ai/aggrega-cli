@@ -588,6 +588,22 @@ func (v catalogEntityView) ArtifactsLibrary(uri string) (types.ArtifactsLibrary,
 	return lib, ok
 }
 
+// LocalEntityPath reports no authored document, for any kind.
+//
+// The eager backing records a source path for the kinds its own load-time
+// validation names files in, keyed for that purpose and not exposed, so there is
+// no per-kind document index here to answer from. This command reports no such
+// path on any of its surfaces either: the one kind whose document it does read —
+// the Aggregate, whose inspector opens the file to run the topology pass — gets
+// it from that kind's own accessor, so nothing here goes unanswered.
+//
+// It is a truthful negative rather than a stub. The resolution takes a reported
+// path where there is one and leaves the field empty where there is not, which
+// is the same answer any backing gives for an entity it holds no document for.
+func (v catalogEntityView) LocalEntityPath(_, _, _, _ string) (string, bool) {
+	return "", false
+}
+
 // workspaceAnchoredPath resolves a catalog-recorded source path — which the
 // catalog stores relative to the workspace root — into a path a filesystem read
 // resolves the same way from anywhere. An already-absolute path is returned

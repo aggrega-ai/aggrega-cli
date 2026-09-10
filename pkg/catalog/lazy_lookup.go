@@ -467,12 +467,24 @@ type LazyLookup struct {
 	recipeSkips      map[string]error
 	recipeIndexBuilt bool
 
-	// localEntityPaths maps entityBytesKey(kind, identityKey) to the writable
-	// filesystem path a Recipe / FeatureRecipe was authored in, for Tier-1
-	// (catalog-directory) entities only. A registry-resolved (Tier-2) recipe
-	// lives in a content-addressed cache slot and is never recorded here, so the
-	// resolution-time pin freeze scopes its writes to author-owned files and
-	// never touches a pinned cache slot. Populated by the Tier-1 index walk.
+	// localEntityPaths maps entityBytesKey(kind, identityKey) to the filesystem
+	// path an enumerated entity was authored in, for Tier-1 (catalog-directory)
+	// entities only. A registry-resolved (Tier-2) entity lives in a
+	// content-addressed cache slot, which nobody authored, and is never recorded
+	// here.
+	//
+	// That Tier-1-only rule serves two consumers at once. A caller writing back
+	// into an entity — the resolution-time pin freeze — is scoped to author-owned
+	// files and never touches a pinned cache slot. A caller reporting where an
+	// entity was declared is answered with a document that exists on this machine
+	// as a document, rather than with a cache slot's location.
+	//
+	// It spans the enumerated kinds, keyed as entityBytes keys them for each:
+	// Recipe and FeatureRecipe by capability-scoped identity, Plugin by its
+	// versioned coordinate, and the mapping / workload / artifacts / schema
+	// libraries by bare name. Component and Feature are not here — their paths are
+	// componentIndex and featureIndex, which are the maps the per-URI cascade
+	// reads to find the file in the first place. Populated by the Tier-1 walks.
 	localEntityPaths map[string]string
 
 	// entityBytes retains the RAW authored bytes of every enumerated /
@@ -1062,6 +1074,7 @@ func (l *LazyLookup) buildSchemaLibraries() error {
 			}
 			l.schemaLibraries[lib.Metadata.Name] = lib
 			l.entityBytes[entityBytesKey("SchemaLibrary", lib.Metadata.Name)] = data
+			l.localEntityPaths[entityBytesKey("SchemaLibrary", lib.Metadata.Name)] = path
 			return nil
 		})
 	}
@@ -1072,11 +1085,106 @@ func (l *LazyLookup) buildSchemaLibraries() error {
 	return firstErr
 }
 
+// LocalRecipePath returns the writable filesystem path a Tier-1 (catalog-
+// directory) Recipe was authored in, keyed by its identity {target, name,
+// version}, and whether one is recorded. A registry-resolved Recipe living in a
+// content-addressed cache slot returns ("", false), so the resolution-time pin
+// freeze writes only into author-owned files. Triggers the Tier-1 index walk on
+// first call.
+//
+// It hands back the path as the walk recorded it, because its caller writes to
+// it. That is what separates it from LocalEntityPath, which renders the same
+// value against the workspace root for a caller that reports it.
+func (l *LazyLookup) LocalRecipePath(target, name, version string) (string, bool) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.localPathFor("Recipe", target, name, version)
+}
+
+// LocalFeatureRecipePath is the FeatureRecipe analogue of LocalRecipePath.
+func (l *LazyLookup) LocalFeatureRecipePath(target, name, version string) (string, bool) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.localPathFor("FeatureRecipe", target, name, version)
+}
+
+// LocalEntityPath returns the document a resolved entity of kind was authored
+// in, rendered against the workspace root, and whether one is recorded.
+//
+// scope, name and version are the entity's own identity as a by-name resolution
+// reads it off the matched entity — scope being a Recipe's or FeatureRecipe's
+// capability and a Plugin's plugin type, and empty for every kind that carries
+// none. A caller hands back what it already holds, and the per-kind key formula
+// stays here beside the walk that wrote it: spelled at a call site it would be a
+// second statement of that formula, free to disagree the moment one kind's
+// identity shape moves.
+//
+// Only a Tier-1 (catalog-directory) entity has one. An entity resolved from a
+// registry lives in a content-addressed cache slot, which is not a document
+// anybody authored, so it is reported as no path rather than as the slot's
+// location.
+//
+// The Aggregate is deliberately not answered here. Its own accessor already
+// carries the document it was loaded from, and answering it a second way would
+// give one fact two producers, free to disagree. A kind this does not recognise
+// reports no path, which is what an unenumerated kind honestly has.
+//
+// It triggers whichever walk holds the kind on first call. Every accessor that
+// resolves an entity of that kind has already run the same walk, so a caller
+// asking about a match it has just resolved pays nothing for the answer.
+func (l *LazyLookup) LocalEntityPath(kind, scope, name, version string) (string, bool) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	p, ok := l.localPathFor(kind, scope, name, version)
+	if !ok || p == "" {
+		return "", false
+	}
+	return RelativeToWorkspace(l.workspaceRoot, p), true
+}
+
+// localPathFor is the one per-kind lookup both the writable-path accessors and
+// LocalEntityPath read: which index holds the kind, and the key it is held
+// under. It hands back the path as the walk recorded it; rendering it for a
+// reader is the reporting accessor's own step.
+//
+// The caller holds l.mu. Each arm triggers the walk that populates its own index
+// rather than the caller choosing one, so a kind added to an index cannot be
+// looked up before that index exists.
+func (l *LazyLookup) localPathFor(kind, scope, name, version string) (string, bool) {
+	switch kind {
+	case "Component":
+		l.buildComponentIndex()
+		p, ok := l.componentIndex[name]
+		return p, ok
+	case "Feature":
+		l.buildFeatureIndex()
+		p, ok := l.featureIndex[name]
+		return p, ok
+	case "Recipe", "FeatureRecipe":
+		l.buildRecipeIndex()
+		p, ok := l.localEntityPaths[entityBytesKey(kind, recipeIdentityKey(scope, name, version))]
+		return p, ok
+	case "Plugin":
+		l.buildRecipeIndex()
+		p, ok := l.localEntityPaths[entityBytesKey(kind, entityIndexKey(types.PluginCoordinate(scope, name), version))]
+		return p, ok
+	case "MappingLibrary", "WorkloadLibrary", "ArtifactsLibrary":
+		l.buildRecipeIndex()
+		p, ok := l.localEntityPaths[entityBytesKey(kind, name)]
+		return p, ok
+	case "SchemaLibrary":
+		_ = l.buildSchemaLibraries()
+		p, ok := l.localEntityPaths[entityBytesKey(kind, name)]
+		return p, ok
+	}
+	return "", false
+}
+
 // buildRecipeIndex walks the catalog directories once and TOLERANTLY enumerates
-// every recipe-shell kind (Recipe, FeatureRecipe, Aggregate,
-// MappingLibrary, Plugin) into the hot maps, keyed exactly as the eager
-// catalog keys them (recipes/FRs by provider/name:version, Plugins by
-// name:version, aggregates/libraries by metadata.name). A file that
+// every recipe-shell kind — the set foldRecipeShellEntity dispatches on — into
+// the hot maps, keyed exactly as the eager catalog keys them (recipes/FRs by
+// provider/name:version, Plugins by name:version, aggregates/libraries by
+// metadata.name). A file that
 // won't parse — or whose recipe/FR identity
 // collides with one already indexed — is skipped with a one-line stderr warning
 // and a recorded reason; it never aborts the walk. This is the robustness crux:
@@ -1097,30 +1205,6 @@ func (l *LazyLookup) buildSchemaLibraries() error {
 // but keeps a single recipe-resolution path feeding both the point-lookup
 // (RecipeByURI) and the implements search — no second parse that could drift.
 // Idempotent via recipeIndexBuilt; Reset clears it.
-//
-// LocalRecipePath returns the writable filesystem path a Tier-1 (catalog-
-// directory) Recipe was authored in, keyed by its identity {target, name,
-// version}, and whether one is recorded. A registry-resolved Recipe living in a
-// content-addressed cache slot returns ("", false), so the resolution-time pin
-// freeze writes only into author-owned files. Triggers the Tier-1 index walk on
-// first call.
-func (l *LazyLookup) LocalRecipePath(target, name, version string) (string, bool) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	l.buildRecipeIndex()
-	p, ok := l.localEntityPaths[entityBytesKey("Recipe", recipeIdentityKey(target, name, version))]
-	return p, ok
-}
-
-// LocalFeatureRecipePath is the FeatureRecipe analogue of LocalRecipePath.
-func (l *LazyLookup) LocalFeatureRecipePath(target, name, version string) (string, bool) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	l.buildRecipeIndex()
-	p, ok := l.localEntityPaths[entityBytesKey("FeatureRecipe", recipeIdentityKey(target, name, version))]
-	return p, ok
-}
-
 func (l *LazyLookup) buildRecipeIndex() {
 	if l.recipeIndexBuilt {
 		return
@@ -1169,6 +1253,12 @@ func (l *LazyLookup) buildRecipeIndex() {
 // parseData for a Tier-1 catalog file, the whole tar.gz bundle for a Tier-2 recipe
 // cache slot; src labels the source for skip diagnostics. The single fold path
 // feeds both the Tier-1 walk and the pinned Tier-2 pass, so the two cannot drift.
+//
+// local says which of those two the entity arrived through, and it gates the
+// localEntityPaths retention alone: a Tier-1 file's src is a document on this
+// machine, while a pinned slot's src is a label naming the pin rather than a path
+// anybody could open. So the bytes are retained either way — the digest covers
+// both — and the path only where there is one.
 func (l *LazyLookup) foldRecipeShellEntity(kind string, parseData, rawBytes []byte, src string, local bool) {
 	switch kind {
 	case "Recipe":
@@ -1226,7 +1316,12 @@ func (l *LazyLookup) foldRecipeShellEntity(kind string, parseData, rawBytes []by
 			return
 		}
 		foldFirstWin(l.mappingLibraries, e.Metadata.Name, e,
-			func() { l.entityBytes[entityBytesKey("MappingLibrary", e.Metadata.Name)] = rawBytes },
+			func() {
+				l.entityBytes[entityBytesKey("MappingLibrary", e.Metadata.Name)] = rawBytes
+				if local {
+					l.localEntityPaths[entityBytesKey("MappingLibrary", e.Metadata.Name)] = src
+				}
+			},
 			func() {
 				l.recordRecipeSkip(src, fmt.Errorf("duplicate mapping library name %q; this file is shadowed", e.Metadata.Name))
 			})
@@ -1237,7 +1332,12 @@ func (l *LazyLookup) foldRecipeShellEntity(kind string, parseData, rawBytes []by
 			return
 		}
 		foldFirstWin(l.workloadLibraries, e.Metadata.Name, e,
-			func() { l.entityBytes[entityBytesKey("WorkloadLibrary", e.Metadata.Name)] = rawBytes },
+			func() {
+				l.entityBytes[entityBytesKey("WorkloadLibrary", e.Metadata.Name)] = rawBytes
+				if local {
+					l.localEntityPaths[entityBytesKey("WorkloadLibrary", e.Metadata.Name)] = src
+				}
+			},
 			func() {
 				l.recordRecipeSkip(src, fmt.Errorf("duplicate workload library name %q; this file is shadowed", e.Metadata.Name))
 			})
@@ -1248,7 +1348,12 @@ func (l *LazyLookup) foldRecipeShellEntity(kind string, parseData, rawBytes []by
 			return
 		}
 		foldFirstWin(l.artifactsLibraries, e.Metadata.Name, e,
-			func() { l.entityBytes[entityBytesKey("ArtifactsLibrary", e.Metadata.Name)] = rawBytes },
+			func() {
+				l.entityBytes[entityBytesKey("ArtifactsLibrary", e.Metadata.Name)] = rawBytes
+				if local {
+					l.localEntityPaths[entityBytesKey("ArtifactsLibrary", e.Metadata.Name)] = src
+				}
+			},
 			func() {
 				l.recordRecipeSkip(src, fmt.Errorf("duplicate artifacts library name %q; this file is shadowed", e.Metadata.Name))
 			})

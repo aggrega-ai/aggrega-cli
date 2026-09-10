@@ -57,36 +57,46 @@ func resolvedFieldsWorkspace(t *testing.T) (srv *Server, catalogDir string) {
 }
 
 // TestEntityDefinitionCarriesEveryFactTheResolutionDecided pins the description,
-// the publishing scope and the retained authored document onto the answer, with
-// every expectation read off the resolution's own result.
+// the publishing scope, the document the entity was declared in and the retained
+// authored text onto the answer, with every expectation read off the resolution's
+// own result.
 //
 // The rows differ in which facts they carry — one kind carries a description and
-// a scope and no authored document, another carries an authored document and
-// neither of the first two, a third carries none of them — so an answer filling
-// these fields with constants fails on some row whatever constant it chose, and
-// one that carried them for a single kind fails on the others.
+// a scope and no authored text, another carries authored text and neither of the
+// first two, a third carries none of the three — so an answer filling these
+// fields with constants fails on some row whatever constant it chose, and one
+// that carried them for a single kind fails on the others.
+//
+// The document is the one fact every row carries, and it is reported per kind, so
+// what discriminates it is not a population split but the value: each row's path
+// names that row's own file, and a constant fails every row but one.
 func TestEntityDefinitionCarriesEveryFactTheResolutionDecided(t *testing.T) {
 	srv, _ := resolvedFieldsWorkspace(t)
 
 	names := []string{"provider/helm", "db-module", "core/compute/api-server"}
 
-	var described, scoped, sourced, bare int
+	var described, undescribed, scoped, unscoped, texted, untexted int
+	files := map[string]string{}
 	for _, name := range names {
 		view := srv.lazyCatalog.ForRequest(nil)
 		want, ok := compilerops.ResolveEntity(view, name)
 		if !ok {
 			t.Fatalf("the oracle resolved nothing for %q, so nothing can be asserted about it", name)
 		}
-		switch {
-		case want.Description != "":
+		if want.Description != "" {
 			described++
-		case want.Source != "":
-			sourced++
-		default:
-			bare++
+		} else {
+			undescribed++
 		}
 		if want.Scope != "" {
 			scoped++
+		} else {
+			unscoped++
+		}
+		if len(want.Bytes) != 0 {
+			texted++
+		} else {
+			untexted++
 		}
 
 		t.Run(name, func(t *testing.T) {
@@ -100,30 +110,47 @@ func TestEntityDefinitionCarriesEveryFactTheResolutionDecided(t *testing.T) {
 				t.Errorf("the answer scopes %q by %q; the resolution decided %q",
 					name, got.PublishScope, want.Scope)
 			}
-			if got.AuthoredPath != want.Source {
-				t.Errorf("the answer names authored document %q for %q; the resolution retained %q",
-					got.AuthoredPath, name, want.Source)
+			if got.File != want.Source {
+				t.Errorf("the answer declares %q in %q; the resolution resolved it in %q",
+					name, got.File, want.Source)
+			}
+			if got.File == "" {
+				t.Errorf("%q was declared in a document under the workspace root and is reported with "+
+					"no file at all", name)
 			}
 			if got.AuthoredLength != len(want.Bytes) {
-				t.Errorf("the answer reports a %d-byte authored document for %q; the resolution retained %d",
+				t.Errorf("the answer reports %d byte(s) of authored text for %q; the resolution retained %d",
 					got.AuthoredLength, name, len(want.Bytes))
 			}
 			// A path reported to a client is workspace-relative everywhere else in
 			// this daemon's answers, and a host path would disclose where the
 			// workspace sits on the machine.
-			if filepath.IsAbs(got.AuthoredPath) {
-				t.Errorf("the answer discloses a host path for %q: %q", name, got.AuthoredPath)
+			if filepath.IsAbs(got.File) {
+				t.Errorf("the answer discloses a host path for %q: %q", name, got.File)
 			}
+			files[name] = got.File
 		})
 	}
 
-	// Without all four populations the table asserts less than it appears to: a
-	// projection filling every field with a constant passes any table whose rows
-	// agree on that field.
-	if described == 0 || scoped == 0 || sourced == 0 || bare == 0 {
-		t.Fatalf("the table carries %d described, %d scoped, %d sourced and %d bare entity(ies); "+
-			"it needs all four to discriminate a constant-filling projection",
-			described, scoped, sourced, bare)
+	// Both polarities of each optional fact, or the table asserts less than it
+	// appears to: a projection filling one with a constant passes any table whose
+	// rows agree on it.
+	if described == 0 || undescribed == 0 || scoped == 0 || unscoped == 0 || texted == 0 || untexted == 0 {
+		t.Fatalf("the table carries %d described / %d not, %d scoped / %d not, %d with authored text / "+
+			"%d without; it needs both polarities of each to discriminate a constant-filling projection",
+			described, undescribed, scoped, unscoped, texted, untexted)
+	}
+	// The document is reported for every kind, so its discriminator is that the
+	// rows disagree: a projection reporting one entity's file for all of them
+	// would satisfy every per-row comparison above only if they happened to
+	// coincide, and this says they do not.
+	seen := map[string]string{}
+	for name, file := range files {
+		if other, clash := seen[file]; clash {
+			t.Errorf("%q and %q are both reported as declared in %q, so the rows cannot discriminate a "+
+				"projection reporting one file for every entity", name, other, file)
+		}
+		seen[file] = name
 	}
 }
 
@@ -150,8 +177,8 @@ func TestEntityDefinitionCarriesAnAuthoredDocumentByReferenceNotByValue(t *testi
 	}
 
 	got := decodeEntityDefinition(t, callEntityDefinition(t, srv, map[string]any{"name": "db-module"}))
-	if got.AuthoredPath != want.Source {
-		t.Errorf("the answer names authored document %q; the resolution retained %q", got.AuthoredPath, want.Source)
+	if got.File != want.Source {
+		t.Errorf("the answer names document %q; the resolution resolved it in %q", got.File, want.Source)
 	}
 	if got.AuthoredLength != len(want.Bytes) {
 		t.Errorf("the answer reports %d byte(s); the resolution retained %d", got.AuthoredLength, len(want.Bytes))
@@ -218,28 +245,28 @@ spec:
 
 			got := decodeEntityDefinition(t, callEntityDefinition(t, srv, map[string]any{"name": "probe-module"}))
 
-			// Reported either way: it is what tells a client an authored document
-			// exists even where its path cannot be carried.
+			// Reported either way: it is what tells a client an authored text
+			// was retained even where the document's path cannot be carried.
 			if got.AuthoredLength != len(want.Bytes) {
 				t.Errorf("the answer reports %d byte(s); the resolution retained %d",
 					got.AuthoredLength, len(want.Bytes))
 			}
 			switch {
 			case tc.wantPath:
-				if got.AuthoredPath == "" {
+				if got.File == "" {
 					t.Errorf("a document inside the workspace root was reported with no path at all")
 				}
 			default:
-				if got.AuthoredPath != "" {
+				if got.File != "" {
 					t.Errorf("a document outside the workspace root was reported at %q, which this "+
-						"client cannot resolve", got.AuthoredPath)
+						"client cannot resolve", got.File)
 				}
 			}
-			if strings.Contains(got.AuthoredPath, "..") {
-				t.Errorf("the reported path climbs above the workspace root: %q", got.AuthoredPath)
+			if strings.Contains(got.File, "..") {
+				t.Errorf("the reported path climbs above the workspace root: %q", got.File)
 			}
-			if filepath.IsAbs(got.AuthoredPath) {
-				t.Errorf("the reported path discloses a host location: %q", got.AuthoredPath)
+			if filepath.IsAbs(got.File) {
+				t.Errorf("the reported path discloses a host location: %q", got.File)
 			}
 		})
 	}

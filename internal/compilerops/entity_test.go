@@ -28,6 +28,22 @@ type stubEntityView struct {
 	mappingLibrary   string
 	workloadLibrary  string
 	artifactsLibrary string
+
+	// declaredIn answers for one exact identity tuple and nothing else, so a row
+	// proves the resolution asked with the identity it read off the matched entity
+	// rather than with the name the request carried. Keyed by declarationKey.
+	declaredIn map[string]string
+}
+
+// declarationKey joins the identity the resolution asks a document for, in the
+// order the accessor takes it.
+func declarationKey(kind, scope, name, version string) string {
+	return strings.Join([]string{kind, scope, name, version}, "|")
+}
+
+func (v stubEntityView) LocalEntityPath(kind, scope, name, version string) (string, bool) {
+	p, ok := v.declaredIn[declarationKey(kind, scope, name, version)]
+	return p, ok
 }
 
 func (v stubEntityView) Component(uri string) (types.Component, bool) {
@@ -226,8 +242,8 @@ func TestResolveEntityRefusesAnUnmatchedName(t *testing.T) {
 }
 
 // TestResolveEntityAggregateCarriesItsAuthoredFile pins the one kind whose match
-// carries a source path and bytes, because the surface that renders an Aggregate
-// reads the authored file rather than re-encoding the resolved entity.
+// carries authored bytes as well as a document, because the surface that renders
+// an Aggregate reads that text rather than re-encoding the resolved entity.
 func TestResolveEntityAggregateCarriesItsAuthoredFile(t *testing.T) {
 	t.Parallel()
 
@@ -240,6 +256,97 @@ func TestResolveEntityAggregateCarriesItsAuthoredFile(t *testing.T) {
 	}
 	if len(got.Bytes) == 0 {
 		t.Error("the Aggregate match carries no authored bytes")
+	}
+}
+
+// TestResolveEntityReportsTheDocumentEveryKindWasDeclaredIn drives the document
+// report once per kind the resolution reaches, so a kind that stopped reporting
+// one fails here rather than going quiet on whichever surface publishes it.
+//
+// Each row runs twice over the same view content: once with the view declaring no
+// document, which is the control, and once declaring one for the identity the
+// first pass resolved. Without the control a resolution that filled the field
+// from anywhere at all would pass, and the pair is what makes the second pass a
+// statement about the accessor rather than about the field being non-empty.
+//
+// The identity the second pass keys on is the resolved entity's own — the
+// capability that scopes a Recipe among it — so a resolution asking with the name
+// the request carried finds nothing and fails the row. That is the contract: the
+// document is asked for by what the entity turned out to be.
+func TestResolveEntityReportsTheDocumentEveryKindWasDeclaredIn(t *testing.T) {
+	t.Parallel()
+
+	kinds := compilerops.EntityKinds()
+	if len(kinds) == 0 {
+		t.Fatal("the resolution reports no kinds at all; the census is broken, not the code")
+	}
+	views := map[string]stubEntityView{
+		"Component":        {component: "core/compute/api"},
+		"Plugin":           {plugin: "provider/helm"},
+		"Feature":          {feature: "core/metrics"},
+		"Recipe":           {recipe: "helm-api"},
+		"FeatureRecipe":    {featureRecipe: "compose-metrics"},
+		"Aggregate":        {aggregate: "db-module"},
+		"SchemaLibrary":    {schemaLibrary: "Probes"},
+		"MappingLibrary":   {mappingLibrary: "BaseMappings"},
+		"WorkloadLibrary":  {workloadLibrary: "Workloads"},
+		"ArtifactsLibrary": {artifactsLibrary: "Extras"},
+	}
+	if len(views) != len(kinds) {
+		t.Errorf("this test carries %d views for %d kinds; a view names a kind the resolution does not reach",
+			len(views), len(kinds))
+	}
+
+	for _, kind := range kinds {
+		view, ok := views[kind]
+		if !ok {
+			t.Errorf("the resolution reaches %q and this test has no view for it; add one", kind)
+			continue
+		}
+		t.Run(kind, func(t *testing.T) {
+			name := nameFor(view)
+			bare, found := compilerops.ResolveEntity(view, name)
+			if !found {
+				t.Fatalf("%q did not resolve", name)
+			}
+
+			// The Aggregate's own accessor carries its document, so its control
+			// is that the field is filled from there and never asked for twice.
+			if kind == "Aggregate" {
+				elsewhere := view
+				elsewhere.declaredIn = map[string]string{
+					declarationKey(bare.Kind, bare.Scope, bare.Name, bare.Version): "catalog/somewhere-else.yaml",
+				}
+				got, _ := compilerops.ResolveEntity(elsewhere, name)
+				if got.Source != bare.Source {
+					t.Errorf("the Aggregate's document was reported as %q; its own accessor carried %q, "+
+						"so one fact has two producers", got.Source, bare.Source)
+				}
+				return
+			}
+
+			if bare.Source != "" {
+				t.Fatalf("the control resolved with document %q already reported, so declaring one below "+
+					"asserts nothing", bare.Source)
+			}
+			const declared = "catalog/declared/entity.yaml"
+			declaring := view
+			declaring.declaredIn = map[string]string{
+				declarationKey(bare.Kind, bare.Scope, bare.Name, bare.Version): declared,
+			}
+			got, found := compilerops.ResolveEntity(declaring, name)
+			if !found {
+				t.Fatalf("%q stopped resolving once a document was declared for it", name)
+			}
+			if got.Source != declared {
+				t.Errorf("the match reports document %q; the view declared %q for identity %q",
+					got.Source, declared, declarationKey(bare.Kind, bare.Scope, bare.Name, bare.Version))
+			}
+			if len(got.Bytes) != 0 {
+				t.Errorf("%s arrived with %d byte(s) of authored text; only the Aggregate is served text",
+					kind, len(got.Bytes))
+			}
+		})
 	}
 }
 

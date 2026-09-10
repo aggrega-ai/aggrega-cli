@@ -37,32 +37,42 @@ func describeOracle(t *testing.T, s *server, root, catalogDir, name string) comp
 }
 
 // TestDescribeCarriesEveryFactTheResolutionDecided pins the description, the
-// publishing scope and the retained authored document onto the structured
-// payload, with every expectation read off the resolution's own result.
+// publishing scope, the document the entity was declared in and the retained
+// authored text onto the structured payload, with every expectation read off the
+// resolution's own result.
 //
 // The rows differ in which facts they carry — one kind carries a description and
-// a scope and no authored document, another an authored document and neither of
-// the first two, a third none of them — so a payload filling these fields with
+// a scope and no authored text, another authored text and neither of the first
+// two, a third none of the three — so a payload filling these fields with
 // constants fails on some row whatever constant it chose.
+//
+// The document is the one fact every row carries, and it is reported per kind, so
+// what discriminates it is not a population split but the value: each row's path
+// names that row's own file, and a constant fails every row but one.
 func TestDescribeCarriesEveryFactTheResolutionDecided(t *testing.T) {
 	s := newTestServer(t)
 	root, catalogDir, _ := fullstackWorkspace(t)
 
 	names := []string{"provider/helm", "db-module", "core/compute/api-server"}
 
-	var described, scoped, sourced, bare int
+	var described, undescribed, scoped, unscoped, texted, untexted int
+	files := map[string]string{}
 	for _, name := range names {
 		want := describeOracle(t, s, root, catalogDir, name)
-		switch {
-		case want.Description != "":
+		if want.Description != "" {
 			described++
-		case want.Source != "":
-			sourced++
-		default:
-			bare++
+		} else {
+			undescribed++
 		}
 		if want.Scope != "" {
 			scoped++
+		} else {
+			unscoped++
+		}
+		if len(want.Bytes) != 0 {
+			texted++
+		} else {
+			untexted++
 		}
 
 		t.Run(name, func(t *testing.T) {
@@ -85,12 +95,16 @@ func TestDescribeCarriesEveryFactTheResolutionDecided(t *testing.T) {
 				t.Errorf("the payload scopes %q by %q; the resolution decided %q",
 					name, got.PublishScope, want.Scope)
 			}
-			if got.AuthoredPath != want.Source {
-				t.Errorf("the payload names authored document %q for %q; the resolution retained %q",
-					got.AuthoredPath, name, want.Source)
+			if got.File != want.Source {
+				t.Errorf("the payload declares %q in %q; the resolution resolved it in %q",
+					name, got.File, want.Source)
+			}
+			if got.File == "" {
+				t.Errorf("%q was declared in a document under the workspace root and is reported with "+
+					"no file at all", name)
 			}
 			if got.AuthoredLength != len(want.Bytes) {
-				t.Errorf("the payload reports a %d-byte authored document for %q; the resolution retained %d",
+				t.Errorf("the payload reports %d byte(s) of authored text for %q; the resolution retained %d",
 					got.AuthoredLength, name, len(want.Bytes))
 			}
 			// The summary line is written for a reader and states less than the
@@ -99,13 +113,29 @@ func TestDescribeCarriesEveryFactTheResolutionDecided(t *testing.T) {
 				!strings.Contains(res.Content[0].Text, want.Description) {
 				t.Errorf("the summary line drops the description; got: %s", res.Content[0].Text)
 			}
+			files[name] = got.File
 		})
 	}
 
-	if described == 0 || scoped == 0 || sourced == 0 || bare == 0 {
-		t.Fatalf("the table carries %d described, %d scoped, %d sourced and %d bare entity(ies); "+
-			"it needs all four to discriminate a constant-filling payload",
-			described, scoped, sourced, bare)
+	// Both polarities of each optional fact, or the table asserts less than it
+	// appears to: a payload filling one with a constant passes any table whose
+	// rows agree on it.
+	if described == 0 || undescribed == 0 || scoped == 0 || unscoped == 0 || texted == 0 || untexted == 0 {
+		t.Fatalf("the table carries %d described / %d not, %d scoped / %d not, %d with authored text / "+
+			"%d without; it needs both polarities of each to discriminate a constant-filling payload",
+			described, undescribed, scoped, unscoped, texted, untexted)
+	}
+	// The document is reported for every kind, so its discriminator is that the
+	// rows disagree: a payload reporting one entity's file for all of them would
+	// satisfy every per-row comparison above only if they happened to coincide,
+	// and this says they do not.
+	seen := map[string]string{}
+	for name, file := range files {
+		if other, clash := seen[file]; clash {
+			t.Errorf("%q and %q are both reported as declared in %q, so the rows cannot discriminate a "+
+				"payload reporting one file for every entity", name, other, file)
+		}
+		seen[file] = name
 	}
 }
 
@@ -137,14 +167,14 @@ func TestDescribeCarriesAnAuthoredDocumentByReferenceNotByValue(t *testing.T) {
 		t.Fatalf("unmarshal payload: %v", err)
 	}
 
-	if got.AuthoredPath != want.Source {
-		t.Errorf("the payload names authored document %q; the resolution retained %q", got.AuthoredPath, want.Source)
+	if got.File != want.Source {
+		t.Errorf("the payload names document %q; the resolution resolved it in %q", got.File, want.Source)
 	}
 	if got.AuthoredLength != len(want.Bytes) {
 		t.Errorf("the payload reports %d byte(s); the resolution retained %d", got.AuthoredLength, len(want.Bytes))
 	}
-	if !filepath.IsAbs(got.AuthoredPath) && !strings.HasSuffix(got.AuthoredPath, ".yaml") {
-		t.Errorf("the reported authored document %q is not a document path", got.AuthoredPath)
+	if !filepath.IsAbs(got.File) && !strings.HasSuffix(got.File, ".yaml") {
+		t.Errorf("the reported document %q is not a document path", got.File)
 	}
 	if strings.Contains(string(res.StructuredContent), "public_db: main-db") {
 		t.Error("the payload carries the authored document's own text, so it spends the caller's " +

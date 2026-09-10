@@ -47,38 +47,40 @@ type describeArgs struct {
 // meanings across entity-facing surfaces is the confusion a caller cannot resolve
 // from the payload alone, so this one names what it scopes.
 //
-// AuthoredPath and AuthoredLength describe the authored document behind the
-// match, and only a match the resolution retained one for has them. The name
-// avoids `source` for the same reason as above — an author writes `source` on a
-// Recipe, where it names the upstream artifact that Recipe renders, which is a
-// different thing from the file an entity was declared in.
+// File is the document the entity was declared in, named the way the entity
+// listing names one, so a caller reads one field for one question whichever tool
+// it asked. It is reported for every kind, as a path relative to the workspace the
+// call named, which is the coordinate a caller can resolve against the root it
+// supplied.
 //
-// AuthoredPath is reported only where that document lies inside the workspace the
-// call named, and then as a path relative to it, which is the coordinate a caller
-// can resolve against the root it supplied. A document outside that root is
-// reported as no path at all: the only forms it has either climb above the root,
-// which does not resolve from where the caller stands, or name a location on the
-// machine this process runs on, which answers a question the call did not ask.
-// That is the same containment judgement the daemon's answers go through, so one
-// resolution reports one authored document the same way whichever surface is
-// asked.
+// It is empty in two cases, and both are statements about the entity rather than
+// gaps in the answer. An entity resolved from a registry lives in a
+// content-addressed cache slot, which is not a document anybody authored, so there
+// is none to name. And a document outside that root is withheld: the only forms it
+// has either climb above the root, which does not resolve from where the caller
+// stands, or name a location on the machine this process runs on, which answers a
+// question the call did not ask. That is the same containment judgement the
+// daemon's answers go through, so one resolution reports one document the same way
+// whichever surface is asked.
 //
-// AuthoredLength is that document's length in bytes and is reported either way,
-// so a caller is told an authored document was retained even where its path is not
-// one this answer can carry.
+// AuthoredLength is the length in bytes of the authored text the resolution
+// retained, and only the Aggregate is served with one — it is the kind whose text
+// is read back as a document, by the surface that renders one. It is not the length
+// of the file File names, which is why the two are reported independently: a caller
+// is told an authored text was retained where one was, and File answers where the
+// entity was declared either way.
 //
 // The authored bytes themselves are deliberately not carried. Definition already
 // answers what the entity IS, with inheritance applied, and a second copy of the
 // one file that declared it would spend the caller's payload on a document the
-// path lets it read for itself. The path and the length say whether there is one
-// to read and how large it is, which is what a caller can act on.
+// path lets it read for itself.
 type describeEntityPayload struct {
 	Kind           string          `json:"kind"`
 	Name           string          `json:"name"`
 	Version        string          `json:"version"`
 	Description    string          `json:"description,omitempty"`
 	PublishScope   string          `json:"publish_scope,omitempty"`
-	AuthoredPath   string          `json:"authored_path,omitempty"`
+	File           string          `json:"file"`
 	AuthoredLength int             `json:"authored_length"`
 	Definition     json.RawMessage `json:"definition"`
 }
@@ -223,11 +225,11 @@ func (s *server) describeCatalogEntity(a describeArgs, name string) (*callToolRe
 		return nil, &rpcError{Code: codeInternalError,
 			Message: "marshal " + strings.ToLower(match.Kind) + ": " + mErr.Error()}
 	}
-	authored, _ := pathscope.Relative(tw.root, match.Source)
+	file, _ := pathscope.Relative(tw.root, match.Source)
 	payload := describeEntityPayload{
 		Kind: match.Kind, Name: match.Name, Version: match.Version,
 		Description: match.Description, PublishScope: match.Scope,
-		AuthoredPath: authored, AuthoredLength: len(match.Bytes),
+		File: file, AuthoredLength: len(match.Bytes),
 		Definition: def,
 	}
 	return textResult(renderDescribeEntityText(payload), payload)

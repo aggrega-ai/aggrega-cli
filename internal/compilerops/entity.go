@@ -20,6 +20,14 @@ import (
 // different backings could otherwise share the order only by copying it, and a
 // copy of an ordering agrees with its original until one of them learns about a
 // kind the other did not.
+//
+// LocalEntityPath is the one accessor that is not a by-name lookup: it reports
+// the document a matched entity was authored in, asked by the kind and identity
+// the match already carries. It is on this interface rather than at each caller
+// because a backing indexes those documents per kind, under keys only it knows —
+// so a caller reaching past the interface for them would spell that backing's key
+// formula itself. A backing that indexes no document for a kind reports none,
+// which is the honest answer for an entity resolved from a registry.
 type EntityView interface {
 	Component(uri string) (types.Component, bool)
 	PluginByURI(uri string) (types.Plugin, bool)
@@ -31,6 +39,7 @@ type EntityView interface {
 	MappingLibrary(uri string) (types.MappingLibrary, bool)
 	WorkloadLibrary(uri string) (types.WorkloadLibrary, bool)
 	ArtifactsLibrary(uri string) (types.ArtifactsLibrary, bool)
+	LocalEntityPath(kind, scope, name, version string) (string, bool)
 }
 
 // Entity is what a name resolved to: the kind that matched, the identity the
@@ -63,15 +72,30 @@ type Entity struct {
 	// arrive with their inheritance chain already merged.
 	Definition any
 
-	// Source and Bytes carry the authored file behind a match, and only an
-	// Aggregate match has them. Every other kind is served from the backing's own
-	// index, which retains no single authored-file byte source uniformly across
-	// kinds, so a caller wanting an authored document for one of those re-encodes
-	// the resolved entity rather than reading a file.
+	// Source is the document the matched entity was authored in, reported for
+	// every kind the ladder reaches.
+	//
+	// One kind's document has one producer. The branch that matched fills it
+	// where its own accessor already carries the document — the Aggregate's
+	// does — and every other kind is asked of the backing once, after the match,
+	// by the identity that branch read off the entity.
+	//
+	// It is empty where the backing has no authored document to name, which is a
+	// statement about the entity rather than a gap in the answer: an entity
+	// resolved from a registry lives in a content-addressed cache slot, and a
+	// cache slot is not a document anybody wrote.
 	//
 	// Source is recorded as the backing records it. A backing that stores a path
 	// relative to a workspace root hands back the relative form, so a caller that
 	// opens it anchors it against the root the path is relative TO.
+	//
+	// Bytes is the authored text, and it is the Aggregate's alone. It is what the
+	// surface that renders an Aggregate reads instead of re-encoding the resolved
+	// entity, and the Aggregate is the kind a backing retains an authored document
+	// as text for. The bytes kept for the other kinds are kept to compute a
+	// content digest, and for an entity resolved from a registry those are the
+	// whole published bundle rather than the one document a person wrote — so
+	// reporting their length as an authored document's would misstate it.
 	Source string
 	Bytes  []byte
 }
@@ -185,14 +209,27 @@ var entityKinds = []entityKind{
 // for the caller to render, never an empty answer: an empty result reports a
 // mistyped name as an entity with nothing to say about itself, which is the
 // reading every by-name capability here refuses.
+//
+// The authored document is filled here rather than in each rung, and asked of
+// the backing only where the matched rung carried none. One call site is what
+// makes a rung added to the ladder report its document by construction; ten
+// would be ten places to forget, and the forgetting is silent — a kind reports
+// no document and nothing says it stopped.
 func ResolveEntity(view EntityView, name string) (Entity, bool) {
 	if view == nil {
 		return Entity{}, false
 	}
 	for _, k := range entityKinds {
-		if e, ok := k.resolve(view, name); ok {
-			return e, true
+		e, ok := k.resolve(view, name)
+		if !ok {
+			continue
 		}
+		if e.Source == "" {
+			if src, found := view.LocalEntityPath(e.Kind, e.Scope, e.Name, e.Version); found {
+				e.Source = src
+			}
+		}
+		return e, true
 	}
 	return Entity{}, false
 }

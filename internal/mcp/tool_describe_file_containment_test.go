@@ -3,14 +3,14 @@
 
 package mcp
 
-// The containment rule on the authored document's reported path.
+// The containment rule on the reported document.
 //
 // A catalog directory need not sit inside the workspace root, and the catalog
 // records the path in whatever form it holds — which for an outside directory is
 // a climb above the root. Neither form is one a caller can use: the climb does
 // not resolve against the root the call named, and the alternative names a
 // location on the machine this process runs on. So the path is withheld, while
-// the length still reports that an authored document was retained.
+// the length still reports that an authored text was retained.
 //
 // The expectation comes from the shared by-name resolution rather than from the
 // payload, because a payload that stopped reporting the path would otherwise be
@@ -94,7 +94,7 @@ spec:
 				t.Fatal("precondition: the resolution retained no authored document, so nothing here is observable")
 			}
 			if want.Source == "" {
-				t.Fatal("precondition: the resolution recorded no authored path, so withholding one asserts nothing")
+				t.Fatal("precondition: the resolution recorded no document, so withholding one asserts nothing")
 			}
 
 			res := callTool(t, s, "describe", describeArgs{
@@ -108,8 +108,9 @@ spec:
 				t.Fatalf("unmarshal payload: %v", err)
 			}
 
-			// Reported either way: it is what tells a caller an authored document
-			// exists even where its path is not one this answer can carry.
+			// Reported either way: it is what tells a caller an authored text was
+			// retained even where the document's path is not one this answer can
+			// carry.
 			if got.AuthoredLength != len(want.Bytes) {
 				t.Errorf("the payload reports %d byte(s); the resolution retained %d",
 					got.AuthoredLength, len(want.Bytes))
@@ -117,22 +118,22 @@ spec:
 
 			switch {
 			case tc.wantPath:
-				if got.AuthoredPath == "" {
+				if got.File == "" {
 					t.Errorf("a document inside the workspace root was reported with no path at all; "+
 						"the resolution recorded %q", want.Source)
 				}
 			default:
-				if got.AuthoredPath != "" {
+				if got.File != "" {
 					t.Errorf("a document outside the workspace root was reported at %q, which the caller "+
-						"cannot resolve against the root it named", got.AuthoredPath)
+						"cannot resolve against the root it named", got.File)
 				}
 			}
-			if strings.Contains(got.AuthoredPath, "..") {
-				t.Errorf("the reported path climbs above the workspace root: %q", got.AuthoredPath)
+			if strings.Contains(got.File, "..") {
+				t.Errorf("the reported path climbs above the workspace root: %q", got.File)
 			}
-			if filepath.IsAbs(got.AuthoredPath) {
+			if filepath.IsAbs(got.File) {
 				t.Errorf("the reported path names a location on the machine this process runs on: %q",
-					got.AuthoredPath)
+					got.File)
 			}
 		})
 	}
