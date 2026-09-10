@@ -266,6 +266,41 @@ type PushResult struct {
 	DryRun bool
 }
 
+// writePublicationFacts writes the transport facts of a publication — what kind
+// of thing landed, under which media type, and how many bytes — as the indented
+// continuation lines beneath the header line that announced it.
+//
+// It is the single home for those lines, so the account a dry run gives and the
+// account a real publication gives cannot come to describe the same three facts
+// in two shapes. Every one of them is a fact the operation computes and reports
+// in its result, and a publication states them for the same reason a dry run
+// does: a caller that has just landed bytes has no other way to learn what media
+// type they went under or how many of them there were.
+//
+// kind is omitted when empty. A standalone data artifact carries opaque bytes
+// and has no entity kind to name, so a line naming one would be a blank fact.
+//
+// The two byte counts are distinguished as the entity's and the executable's
+// only where there are two to tell apart, which is exactly when the executable
+// travels as its own layer inside one manifest. A lone count is just the size.
+//
+// The lines are indented and follow the header rather than joining it, and that
+// is load-bearing rather than cosmetic: output like this is read back by scripts
+// that match the header anchored at the start of its line and take the reference
+// from a fixed field, so a fact inserted into the header would move what they
+// read while an indented line beneath it is invisible to them.
+func writePublicationFacts(out io.Writer, kind, mediaType string, size, pluginSize int) {
+	if kind != "" {
+		fmt.Fprintf(out, "  kind: %s\n", kind)
+	}
+	if pluginSize > 0 {
+		fmt.Fprintf(out, "  entity mediatype: %s\n  entity size: %d bytes\n  wasm size: %d bytes\n",
+			mediaType, size, pluginSize)
+		return
+	}
+	fmt.Fprintf(out, "  mediatype: %s\n  size: %d bytes\n", mediaType, size)
+}
+
 // Push bundles the entity at cfg.EntityPath and publishes it.
 // Reads workspace config; parses the entity envelope (kind,
 // metadata.name, metadata.version); bundles via pkg/oci.Bundle (which
@@ -418,8 +453,8 @@ func Push(cfg PushConfig) (PushResult, error) {
 	}
 
 	if cfg.DryRun {
-		fmt.Fprintf(out, "aggrega push (dry-run): %s:%s\n  kind: %s\n  mediatype: %s\n  size: %d bytes\n",
-			reference, tag, header.Kind, mediaType, len(bundleBytes))
+		fmt.Fprintf(out, "aggrega push (dry-run): %s:%s\n", reference, tag)
+		writePublicationFacts(out, header.Kind, mediaType, len(bundleBytes), 0)
 		result.DryRun = true
 		// A dry run reports no signature: nothing was signed, because signing
 		// happens against the digest a publication is about to land and this one
@@ -462,6 +497,7 @@ func Push(cfg PushConfig) (PushResult, error) {
 	if exists {
 		if existingDigest == proposedDigest {
 			fmt.Fprintf(out, "Already published: %s:%s (%s)\n", reference, tag, existingDigest)
+			writePublicationFacts(out, header.Kind, mediaType, len(bundleBytes), 0)
 			result.Digest = existingDigest
 			result.AlreadyPublished = true
 			// The bytes were already there, so no signature was produced on this
@@ -498,6 +534,7 @@ func Push(cfg PushConfig) (PushResult, error) {
 		return PushResult{}, fmt.Errorf("push %s:%s: %w", reference, tag, err)
 	}
 	fmt.Fprintf(out, "Push complete: %s:%s (%s)\n", reference, tag, digest)
+	writePublicationFacts(out, header.Kind, mediaType, len(bundleBytes), 0)
 	result.Digest = digest
 
 	if wantSign {

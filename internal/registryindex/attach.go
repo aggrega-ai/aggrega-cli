@@ -40,6 +40,11 @@ import (
 // only that the attachment succeeded cannot name what was attached. The digest is
 // reported for the same reason it is printed — a surface that answers with facts
 // rather than with a line of prose needs the fact itself.
+//
+// The account it writes names every fact of the attachment a caller cannot derive
+// from what it sent: the artifact withdrawn, the severity, the marker's digest and
+// the moment it was stamped. That completeness is what lets a surface reading the
+// prose and a surface reading the facts tell a person the same thing.
 func AttachSignedMarker(ctx context.Context, out io.Writer, target oras.Target, subjectRef, reference string, marker deprecation.Marker, signer signing.Signer) (markerDigest string, err error) {
 	payload, err := deprecation.Marshal(marker)
 	if err != nil {
@@ -72,5 +77,17 @@ func AttachSignedMarker(ctx context.Context, out io.Writer, target oras.Target, 
 	}
 
 	fmt.Fprintf(out, "Deprecation attached: %s (%s, %s)\n", reference, marker.Severity, markerDesc.Digest)
+	// The stamp is written on its own line rather than crowded into the
+	// parenthetical, because it is the one fact of the marker the caller did not
+	// supply and cannot recompute: the attachment reads the clock, and where two
+	// markers sit on one artifact this value is what decides which of them is
+	// authoritative. A caller told only that the attachment succeeded would have to
+	// fetch the marker back to learn which moment it now claims.
+	//
+	// A marker carrying no stamp draws no line. The stamp is optional, so naming
+	// an absent one would state a blank fact rather than report anything.
+	if marker.IssuedOn != "" {
+		fmt.Fprintf(out, "  issued: %s\n", marker.IssuedOn)
+	}
 	return markerDesc.Digest.String(), nil
 }

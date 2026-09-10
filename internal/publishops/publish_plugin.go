@@ -164,6 +164,14 @@ func pushPlugin(out io.Writer, cfg PushConfig, registry string, wantSign bool, n
 	}
 
 	if cfg.DryRun {
+		// This account is spelled here rather than through the shared
+		// continuation-line writer, and the duplication is deliberate: it reports
+		// two more facts than a publication has to report — the layer's own media
+		// type and the executable's content digest — and interleaves them among
+		// the ones a publication shares. Routing it through a writer whose subject
+		// is the result would either move these bytes or carry facts the result
+		// does not hold. What must stay in step is the wording, and the two agree
+		// on every label they share.
 		fmt.Fprintf(out, "aggrega push (dry-run): %s:%s\n  kind: Plugin\n  entity mediatype: %s\n  wasm mediatype: %s\n  wasm content digest: %s\n  entity size: %d bytes\n  wasm size: %d bytes\n",
 			reference, version, oci.MediaTypePlugin, oci.MediaTypeWasm, contentDigest, len(entityYAML), len(wasmBytes))
 		result.DryRun = true
@@ -201,6 +209,7 @@ func pushPlugin(out io.Writer, cfg PushConfig, registry string, wantSign bool, n
 	if exists {
 		if existingDigest == proposedDigest {
 			fmt.Fprintf(out, "Already published: %s:%s (%s)\n", reference, version, existingDigest)
+			writePublicationFacts(out, "Plugin", oci.MediaTypePlugin, len(entityYAML), len(wasmBytes))
 			result.Digest = existingDigest
 			result.AlreadyPublished = true
 			result.Signed = false
@@ -242,6 +251,7 @@ func pushPlugin(out io.Writer, cfg PushConfig, registry string, wantSign bool, n
 		return PushResult{}, fmt.Errorf("push plugin %s:%s: %w", reference, version, err)
 	}
 	fmt.Fprintf(out, "Push complete: %s:%s (%s)\n", reference, version, manifestDigest)
+	writePublicationFacts(out, "Plugin", oci.MediaTypePlugin, len(entityYAML), len(wasmBytes))
 	result.Digest = manifestDigest
 
 	if wantSign {

@@ -154,8 +154,8 @@ func PushArtifact(cfg PushArtifactConfig) (PushArtifactResult, error) {
 	}
 
 	if cfg.DryRun {
-		fmt.Fprintf(out, "aggrega push-artifact (dry-run): %s:%s\n  mediatype: %s\n  size: %d bytes\n",
-			reference, cfg.Tag, mediaType, len(content))
+		fmt.Fprintf(out, "aggrega push-artifact (dry-run): %s:%s\n", reference, cfg.Tag)
+		writePublicationFacts(out, "", mediaType, len(content), 0)
 		result.DryRun = true
 		return result, nil
 	}
@@ -189,6 +189,7 @@ func PushArtifact(cfg PushArtifactConfig) (PushArtifactResult, error) {
 	if exists {
 		if existingDigest == proposedDigest {
 			fmt.Fprintf(out, "Already published: %s:%s (%s)\n", reference, cfg.Tag, existingDigest)
+			writePublicationFacts(out, "", mediaType, len(content), 0)
 			result.Digest = existingDigest
 			result.AlreadyPublished = true
 			return result, nil
@@ -202,6 +203,7 @@ func PushArtifact(cfg PushArtifactConfig) (PushArtifactResult, error) {
 		return PushArtifactResult{}, fmt.Errorf("push %s:%s: %w", reference, cfg.Tag, err)
 	}
 	fmt.Fprintf(out, "Push complete: %s:%s (%s)\n", reference, cfg.Tag, digest)
+	writePublicationFacts(out, "", mediaType, len(content), 0)
 	result.Digest = digest
 	return result, nil
 }

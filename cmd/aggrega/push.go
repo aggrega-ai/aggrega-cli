@@ -147,15 +147,28 @@ func listPublishableKinds(out io.Writer) error {
 // typed one — so the name is added at this boundary, where it is true.
 //
 // The facts the operation reports are discarded here, and that is the command
-// line's own shape rather than an oversight: a terminal has already been written
-// the status lines, and a second rendering of the same outcome would be a
-// duplicate a reader has to reconcile.
+// line's own shape rather than an oversight: the operation writes its own account
+// of the publication to its status output, and that account names every fact the
+// result carries. The reference and tag, the digest, and whether the bytes were
+// already there or nothing was published at all are the identity of the line a
+// person is shown; the kind, the media type and the byte counts follow it as its
+// continuation lines; a signature that was attached says so on its own line. A
+// second rendering here would restate in full an account the terminal has just
+// been given, which is a duplicate a reader has to reconcile rather than a fact
+// they were missing.
+//
+// The two are still not the same thing, and neither substitutes for the other:
+// the prose is written for a person watching, and a surface that answers a caller
+// reads the result, because re-deriving these values by parsing the prose would
+// turn a display format into a contract. What makes the discard honest here is
+// that this surface IS the person watching.
 func pushRun(cfg pushConfig) error {
 	cfg.TokenGetter = tokenGetterOrDefault(cfg.TokenGetter)
 	cfg.IsTTY = ttyOrDefault(cfg.IsTTY)
 	cfg.EnvLookup = envLookupOrGetenv(cfg.EnvLookup)
 	cfg.IdentitySupply = commandLineIdentitySupply
 	cfg.DestinationSupply = commandLineDestinationSupply
+	// projection-omits PushResult: the publication writes an account of itself to this surface's own status output that names every fact the result carries, so projecting it here would restate in full what the terminal has just been shown
 	if _, err := publishops.Push(cfg); err != nil {
 		return fmt.Errorf("aggrega push: %w", err)
 	}

@@ -68,11 +68,21 @@ func newSignCmd() *cobra.Command {
 // signRun is the command line's adapter onto the signing operation. It fills the
 // seams whose production value belongs to a terminal — the interactive identity
 // rung and the terminal check — and names the command in any failure.
+//
+// The facts the operation reports are discarded here because the operation has
+// already written them one at a time: each reference is reported as it is signed,
+// with the digest its signature commits to, and the batch records that same pair
+// for that same reference. There is a line for every reference the batch signed
+// and a reference for every line, so the result holds nothing this surface has
+// not already shown — including on a batch that failed partway, where the
+// successes were reported as they happened and the failures are named in the
+// error rather than in the result.
 func signRun(cfg signConfig) error {
 	cfg.TokenGetter = tokenGetterOrDefault(cfg.TokenGetter)
 	cfg.IsTTY = ttyOrDefault(cfg.IsTTY)
 	cfg.EnvLookup = envLookupOrGetenv(cfg.EnvLookup)
 	cfg.IdentitySupply = commandLineIdentitySupply
+	// projection-omits SignResult: every reference the batch signs is written to this surface's own status output as it is signed, carrying the same digest the result records for it, so the result holds nothing the terminal has not already been shown
 	if _, err := publishops.Sign(cfg); err != nil {
 		return fmt.Errorf("aggrega sign: %w", err)
 	}

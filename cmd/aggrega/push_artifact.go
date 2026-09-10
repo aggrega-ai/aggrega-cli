@@ -70,8 +70,16 @@ func newPushArtifactCmd() *cobra.Command {
 // pushArtifactRun is the command line's adapter onto the data-artifact
 // publication operation: it names the command in any failure, which the
 // operation itself does not, because a caller elsewhere never typed one.
+//
+// The facts the operation reports are discarded here for the reason the entity
+// publication discards its own: the operation writes an account of itself to its
+// status output which names all of them — the reference and tag and the digest on
+// the line itself, the media type and the byte count beneath it — and whether
+// nothing was published or the bytes were already there is which line was
+// written. Restating that here would duplicate it rather than add to it.
 func pushArtifactRun(cfg pushArtifactConfig) error {
 	cfg.DestinationSupply = commandLineDestinationSupply
+	// projection-omits PushArtifactResult: the publication writes an account of itself to this surface's own status output that names every fact the result carries, so projecting it here would restate in full what the terminal has just been shown
 	if _, err := publishops.PushArtifact(cfg); err != nil {
 		return fmt.Errorf("aggrega push-artifact: %w", err)
 	}

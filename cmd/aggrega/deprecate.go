@@ -102,11 +102,18 @@ func newDeprecateCmd() *cobra.Command {
 // operation. It fills the seams whose production value belongs to a terminal —
 // the interactive identity rung, the terminal check that also gates the content
 // prompt — and names the command in any failure.
+//
+// The facts the operation reports are discarded here because each marker is
+// reported as it is attached: the artifact withdrawn, the severity it now
+// carries, the marker's own digest and the moment it was stamped. A batch writes
+// one such account per entry and records one per entry, so the result restates
+// what this surface has already shown rather than adding to it.
 func deprecateRun(cfg deprecateConfig) error {
 	cfg.TokenGetter = tokenGetterOrDefault(cfg.TokenGetter)
 	cfg.IsTTY = ttyOrDefault(cfg.IsTTY)
 	cfg.EnvLookup = envLookupOrGetenv(cfg.EnvLookup)
 	cfg.IdentitySupply = commandLineIdentitySupply
+	// projection-omits DeprecateResult: every marker the operation attaches is written to this surface's own status output as it is attached, naming the same artifact, severity, digest and stamp the result records for it, so the result holds nothing the terminal has not already been shown
 	if _, err := publishops.Deprecate(cfg); err != nil {
 		return fmt.Errorf("aggrega deprecate: %w", err)
 	}
