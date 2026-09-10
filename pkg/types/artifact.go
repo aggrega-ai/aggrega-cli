@@ -17,7 +17,7 @@ import (
 // with extra siblings beyond `$import:`.
 func ErrArtifactEntryShape() error { return errArtifactEntryShape }
 
-var errArtifactEntryShape = cerrors.Register("types/artifact-entry-shape", cerrors.Meta{
+var errArtifactEntryShape = cerrors.Register("artifact-entry-shape", cerrors.Meta{
 	ShortCode: "E0188",
 	Message:   "artifacts entry: shape must be a string scalar or {$import: <local-path>}",
 })

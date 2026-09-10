@@ -143,7 +143,7 @@ func validateIdentities(field string, ids []AdvertisedIdentity) error {
 // than a deliberate "no policy advertised".
 func ErrNoTrustAdvertised() error { return errNoTrustAdvertised }
 
-var errNoTrustAdvertised = cerrors.Register("registrytrust/no-trust-advertised", cerrors.Meta{
+var errNoTrustAdvertised = cerrors.Register("no-trust-advertised", cerrors.Meta{
 	ShortCode: "E0148",
 	Message:   "registrytrust: registry advertises no trust config",
 })
@@ -156,7 +156,7 @@ var errNoTrustAdvertised = cerrors.Register("registrytrust/no-trust-advertised",
 // Decode and Fetch wrap this sentinel on a decode/validation failure.
 func ErrMalformedTrust() error { return errMalformedTrust }
 
-var errMalformedTrust = cerrors.Register("registrytrust/malformed-trust-policy", cerrors.Meta{
+var errMalformedTrust = cerrors.Register("malformed-trust-policy", cerrors.Meta{
 	ShortCode: "E0147",
 	Message:   "registrytrust: advertised trust config is malformed",
 })

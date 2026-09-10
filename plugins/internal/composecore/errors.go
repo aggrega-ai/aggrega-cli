@@ -10,7 +10,7 @@ import cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 // build the curl URL.
 func ErrTranslationProbeNoPort() error { return errTranslationProbeNoPort }
 
-var errTranslationProbeNoPort = cerrors.Register("compiler-renderer-compose/translation-probe-no-port", cerrors.Meta{
+var errTranslationProbeNoPort = cerrors.Register("translation-probe-no-port", cerrors.Meta{
 	ShortCode: "E0236",
 	Message:   "probe http: requires at least one container port; container declares none",
 })
@@ -20,7 +20,7 @@ var errTranslationProbeNoPort = cerrors.Register("compiler-renderer-compose/tran
 // defensive at synthesis time.
 func ErrTranslationProbeShape() error { return errTranslationProbeShape }
 
-var errTranslationProbeShape = cerrors.Register("compiler-renderer-compose/translation-probe-shape", cerrors.Meta{
+var errTranslationProbeShape = cerrors.Register("translation-probe-shape", cerrors.Meta{
 	ShortCode: "E0237",
 	Message:   "probe declares no shape (http/tcp/exec)",
 })
@@ -39,7 +39,7 @@ var errTranslationProbeShape = cerrors.Register("compiler-renderer-compose/trans
 // boundary is the first point where both are present.
 func ErrTranslationConfigMapMissingArtifact() error { return errTranslationConfigMapMissingArtifact }
 
-var errTranslationConfigMapMissingArtifact = cerrors.Register("compiler-renderer-compose/translation-config-map-missing-artifact", cerrors.Meta{
+var errTranslationConfigMapMissingArtifact = cerrors.Register("translation-config-map-missing-artifact", cerrors.Meta{
 	ShortCode: "E0235",
 	Message:   "configmap volume requires a file emitted via the Recipe's artifacts: input; none found",
 })
@@ -52,7 +52,7 @@ var errTranslationConfigMapMissingArtifact = cerrors.Register("compiler-renderer
 // service that misrepresents the intent.
 func ErrUnsupportedComposeForm() error { return errUnsupportedComposeForm }
 
-var errUnsupportedComposeForm = cerrors.Register("compiler-renderer-compose/unsupported-compose-form", cerrors.Meta{
+var errUnsupportedComposeForm = cerrors.Register("unsupported-compose-form", cerrors.Meta{
 	ShortCode: "E0240",
 	Message:   "compose cannot express this workload form",
 })
@@ -63,7 +63,7 @@ var errUnsupportedComposeForm = cerrors.Register("compiler-renderer-compose/unsu
 // lifecycle halts loudly rather than drop the hook.
 func ErrUnsupportedComposeLifecycle() error { return errUnsupportedComposeLifecycle }
 
-var errUnsupportedComposeLifecycle = cerrors.Register("compiler-renderer-compose/unsupported-compose-lifecycle", cerrors.Meta{
+var errUnsupportedComposeLifecycle = cerrors.Register("unsupported-compose-lifecycle", cerrors.Meta{
 	ShortCode: "E0241",
 	Message:   "compose has no lifecycle-hook primitive; container declares lifecycle hooks",
 })
@@ -75,7 +75,7 @@ var errUnsupportedComposeLifecycle = cerrors.Register("compiler-renderer-compose
 // loudly rather than degrade.
 func ErrUnsupportedComposeEnvFrom() error { return errUnsupportedComposeEnvFrom }
 
-var errUnsupportedComposeEnvFrom = cerrors.Register("compiler-renderer-compose/unsupported-compose-env-from", cerrors.Meta{
+var errUnsupportedComposeEnvFrom = cerrors.Register("unsupported-compose-env-from", cerrors.Meta{
 	ShortCode: "E0239",
 	Message:   "compose has no env-from-object primitive; container declares envFrom",
 })
@@ -91,7 +91,7 @@ var errUnsupportedComposeEnvFrom = cerrors.Register("compiler-renderer-compose/u
 // declarable, reintroduced at the point of translation.
 func ErrUnsupportedComposePortProtocol() error { return errUnsupportedComposePortProtocol }
 
-var errUnsupportedComposePortProtocol = cerrors.Register("compiler-renderer-compose/unsupported-compose-port-protocol", cerrors.Meta{
+var errUnsupportedComposePortProtocol = cerrors.Register("unsupported-compose-port-protocol", cerrors.Meta{
 	ShortCode: "E0258",
 	Message:   "compose publishes a port's transport as a tcp or udp suffix; this port declares a transport compose cannot express",
 })
@@ -102,7 +102,7 @@ var errUnsupportedComposePortProtocol = cerrors.Register("compiler-renderer-comp
 // suffix. It halts loudly rather than round or emit a wrong value.
 func ErrUnconvertibleComposeQuantity() error { return errUnconvertibleComposeQuantity }
 
-var errUnconvertibleComposeQuantity = cerrors.Register("compiler-renderer-compose/unconvertible-compose-quantity", cerrors.Meta{
+var errUnconvertibleComposeQuantity = cerrors.Register("unconvertible-compose-quantity", cerrors.Meta{
 	ShortCode: "E0238",
 	Message:   "resources quantity cannot be converted to a compose deploy.resources value",
 })

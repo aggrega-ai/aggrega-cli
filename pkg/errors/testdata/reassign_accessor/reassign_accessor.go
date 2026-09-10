@@ -10,7 +10,7 @@ import cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 // ErrProbe fires when the probe condition is reached.
 func ErrProbe() error { return errProbe }
 
-var errProbe = cerrors.Register("errors-sealing-probe/reassign-accessor", cerrors.Meta{
+var errProbe = cerrors.Register("reassign-accessor", cerrors.Meta{
 	ShortCode: "E0000",
 	Message:   "the probe condition was reached",
 })

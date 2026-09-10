@@ -74,7 +74,7 @@ func explainProbe(t *testing.T) (short, code, message string) {
 // that says the command answers for a condition the host does not declare.
 const (
 	guestProbeShort    = "E0230"
-	guestProbeCode     = "cloudformation-provider-cfncore/duplicate-mapping-key"
+	guestProbeCode     = "duplicate-mapping-key"
 	guestProbeSentence = "cloudformation-provider: one mapping key is written more than once"
 )
 
@@ -341,7 +341,7 @@ func TestExplainRefusesACodeNoConditionCarries(t *testing.T) {
 	if out != "" {
 		t.Errorf("a refused code still wrote an answer:\n%s", out)
 	}
-	for _, want := range []string{"E0164", "resolver/parameter-contract-violation", "sentinels.md"} {
+	for _, want := range []string{"E0164", "parameter-contract-violation", "sentinels.md"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("the refusal omits %q, so a reader cannot correct from it: %s", want, err)
 		}

@@ -17,7 +17,7 @@ import (
 // typed cause so callers can match it with errors.Is.
 func ErrPipelineTargetAbsent() error { return errPipelineTargetAbsent }
 
-var errPipelineTargetAbsent = cerrors.Register("compiler-featurerecipe-pipeline/pipeline-target-absent", cerrors.Meta{
+var errPipelineTargetAbsent = cerrors.Register("pipeline-target-absent", cerrors.Meta{
 	ShortCode: "E0011",
 	Message:   "pipeline patch targets a document not present in the set",
 })
@@ -30,7 +30,7 @@ var errPipelineTargetAbsent = cerrors.Register("compiler-featurerecipe-pipeline/
 // specific engine error (for example jsonpatch.ErrTestFailed) through it.
 func ErrPipelineStepFailed() error { return errPipelineStepFailed }
 
-var errPipelineStepFailed = cerrors.Register("compiler-featurerecipe-pipeline/pipeline-step-failed", cerrors.Meta{
+var errPipelineStepFailed = cerrors.Register("pipeline-step-failed", cerrors.Meta{
 	ShortCode: "E0010",
 	Message:   "pipeline step failed",
 })
@@ -45,7 +45,7 @@ var errPipelineStepFailed = cerrors.Register("compiler-featurerecipe-pipeline/pi
 // keeps this sentinel in the unwrap chain so callers match it with errors.Is.
 func ErrPipelineContractViolation() error { return errPipelineContractViolation }
 
-var errPipelineContractViolation = cerrors.Register("compiler-featurerecipe-pipeline/pipeline-contract-violation", cerrors.Meta{
+var errPipelineContractViolation = cerrors.Register("pipeline-contract-violation", cerrors.Meta{
 	ShortCode: "E0009",
 	Message:   "pipeline step typed-I/O contract violation",
 })
@@ -63,7 +63,7 @@ var errPipelineContractViolation = cerrors.Register("compiler-featurerecipe-pipe
 // the walk reports the typed cause so callers can match it with errors.Is.
 func ErrPipelineTargetOpaque() error { return errPipelineTargetOpaque }
 
-var errPipelineTargetOpaque = cerrors.Register("compiler-featurerecipe-pipeline/pipeline-target-opaque", cerrors.Meta{
+var errPipelineTargetOpaque = cerrors.Register("pipeline-target-opaque", cerrors.Meta{
 	ShortCode: "E0012",
 	Message:   "pipeline patch targets an opaque (non-structured) unit",
 })

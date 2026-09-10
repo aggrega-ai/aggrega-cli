@@ -83,7 +83,7 @@ type verdictPluginResolution struct {
 // which of them stopped a run.
 func ErrVerdictPluginIdentityChanged() error { return errVerdictPluginIdentityChanged }
 
-var errVerdictPluginIdentityChanged = cerrors.Register("pullops/verdict-plugin-identity-changed", cerrors.Meta{
+var errVerdictPluginIdentityChanged = cerrors.Register("verdict-plugin-identity-changed", cerrors.Meta{
 	ShortCode: "E0274",
 	Message:   "the plugin identity recorded as trusted no longer matches what this resolution reports",
 })

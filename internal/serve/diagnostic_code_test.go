@@ -162,12 +162,12 @@ func TestDiagnosticCodeReachesTheWireAsAField(t *testing.T) {
 		{
 			fixture: "parameter-type-mismatch",
 			files:   []string{"release.yaml", "manifest.yaml", "aggregate.yaml"},
-			want:    "resolver/parameter-contract-violation",
+			want:    "parameter-contract-violation",
 		},
 		{
 			fixture: "missing-required-parameter",
 			files:   []string{"release.yaml", "manifest.yaml", "aggregate.yaml"},
-			want:    "resolver/parameter-missing",
+			want:    "parameter-missing",
 		},
 	} {
 		tc := tc
@@ -206,13 +206,13 @@ func TestDiagnosticCodeOnEveryReportingClass(t *testing.T) {
 			name:    "unfilled attachment slot",
 			fixture: "required-attachment-slot",
 			files:   slotFixture,
-			want:    "compiler-analyzer/required-slot-unfilled",
+			want:    "required-slot-unfilled",
 		},
 		{
 			name:    "no recipe resolved",
 			fixture: "required-attachment-slot",
 			files:   slotFixture,
-			want:    "catalog/no-recipe-resolved",
+			want:    "no-recipe-resolved",
 		},
 	} {
 		tc := tc
@@ -286,7 +286,7 @@ func TestDiagnosticCodeIsAnOutputAndLeavesMatchingAlone(t *testing.T) {
 		Err:     resolver.ErrParameterContractViolation(),
 	}
 	diag := resolverFindingToDiagnostic(finding, "error", parseYAML(t, content), lineIndexFor(content))
-	if diag.Code != "resolver/parameter-contract-violation" {
+	if diag.Code != "parameter-contract-violation" {
 		t.Errorf("Code = %q; want the condition's registered code", diag.Code)
 	}
 	if !errors.Is(finding, resolver.ErrParameterContractViolation()) {
@@ -323,7 +323,7 @@ func TestDiagnosticCodeFromRuleSentinel(t *testing.T) {
 	if len(diags) != 1 {
 		t.Fatalf("expected one diagnostic; got %d", len(diags))
 	}
-	if diags[0].Code != "compiler-analyzer/selector-violation" {
+	if diags[0].Code != "selector-violation" {
 		t.Errorf("Code = %q; want the sentinel's registered code", diags[0].Code)
 	}
 }
@@ -356,7 +356,7 @@ spec:
 		t.Fatalf("expected envelope findings; has=%v diags=%d", has, len(diags))
 	}
 	for i, d := range diags {
-		if d.Code != "validator-envelope/entity-envelope-invalid" {
+		if d.Code != "entity-envelope-invalid" {
 			t.Errorf("diagnostic %d Code = %q; want the envelope condition's registered code", i, d.Code)
 		}
 	}
@@ -394,7 +394,7 @@ func TestDiagnosticCodeOnLockfileDrift(t *testing.T) {
 	if diags[0].Severity != "warning" {
 		t.Errorf("Severity = %q; want warning", diags[0].Severity)
 	}
-	if diags[0].Code != "lockfile/lockfile-drift" {
+	if diags[0].Code != "lockfile-drift" {
 		t.Errorf("Code = %q; want the drift condition's registered code", diags[0].Code)
 	}
 }
@@ -435,7 +435,7 @@ func TestDiagnosticCodeOnCascadeFailure(t *testing.T) {
 	if len(diags) != 1 {
 		t.Fatalf("expected one diagnostic on the unloadable Release; got %d", len(diags))
 	}
-	if diags[0].Code != "validator-envelope/entity-envelope-invalid" {
+	if diags[0].Code != "entity-envelope-invalid" {
 		t.Errorf("Code = %q; want the envelope condition's registered code", diags[0].Code)
 	}
 }
@@ -466,12 +466,12 @@ func TestDiagnosticCodeOnClosureLevelFailure(t *testing.T) {
 		{
 			name:  "manifest sibling absent",
 			files: []string{"release.yaml", "aggregate.yaml"},
-			want:  "resolver/document-not-loadable",
+			want:  "document-not-loadable",
 		},
 		{
 			name:  "component type no catalog holds",
 			files: []string{"release.yaml", "manifest.yaml", "aggregate.yaml"},
-			want:  "closure/unresolvable-uri",
+			want:  "unresolvable-uri",
 		},
 	} {
 		tc := tc
@@ -496,7 +496,7 @@ func TestDiagnosticCodeOnClosureExtendsFailure(t *testing.T) {
 		"release.yaml", "manifest.yaml", "aggregate.yaml", ".aggrega-config.yaml",
 		"catalog/components/broken-server.yaml",
 	})
-	findCodeOnWire(t, entries, "validator/extends-merge-failed")
+	findCodeOnWire(t, entries, "extends-merge-failed")
 }
 
 // TestClosureEnvelopeCarriesTheFailureItRendered pins the carrier itself, so a
@@ -518,13 +518,13 @@ func TestClosureEnvelopeCarriesTheFailureItRendered(t *testing.T) {
 	if envelope.cause == nil {
 		t.Fatal("the envelope carries no failure; its rendered text is one-way, so the condition behind it would be unrecoverable")
 	}
-	if code, ok := cerrors.CodeOf(envelope.cause); !ok || code != "closure/unresolvable-uri" {
+	if code, ok := cerrors.CodeOf(envelope.cause); !ok || code != "unresolvable-uri" {
 		t.Errorf("CodeOf(carried failure) = %q, %v; want the unresolvable-reference condition's registered code", code, ok)
 	}
 	if !errors.Is(envelope.cause, closure.ErrUnresolvableURI()) {
 		t.Error("the carried failure no longer matches its condition; carrying it must not touch matching")
 	}
-	if strings.Contains(envelope.Message, "closure/unresolvable-uri") {
+	if strings.Contains(envelope.Message, "unresolvable-uri") {
 		t.Errorf("the rendered text %q carries the code; the key is the only place it travels", envelope.Message)
 	}
 }

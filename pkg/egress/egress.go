@@ -21,7 +21,7 @@ import (
 // offline refusal is, from the user's perspective, an inability to fetch.
 func ErrOfflineEgress() error { return errOfflineEgress }
 
-var errOfflineEgress = cerrors.Register("egress/offline-egress", cerrors.Meta{
+var errOfflineEgress = cerrors.Register("offline-egress", cerrors.Meta{
 	ShortCode: "E0125",
 	Message:   "egress: network access refused because the workspace is offline; remediation: unset workspace.offline (or AGGREGA_OFFLINE) or run `aggrega pull --release <release>` from a connected environment to populate the cache",
 })

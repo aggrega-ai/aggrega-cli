@@ -9,6 +9,6 @@ import cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 
 // Setting the field directly is how an author would claim a code that another
 // package declares.
-var forged = &cerrors.sealed{code: "errors-sealing-probe/legitimate"}
+var forged = &cerrors.sealed{code: "legitimate"}
 
 func Forged() error { return forged }

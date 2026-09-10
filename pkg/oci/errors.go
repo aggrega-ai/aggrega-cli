@@ -15,7 +15,7 @@ import (
 // detect the category via errors.Is.
 func ErrFetchNotFound() error { return errFetchNotFound }
 
-var errFetchNotFound = cerrors.Register("oci/fetch-not-found", cerrors.Meta{
+var errFetchNotFound = cerrors.Register("fetch-not-found", cerrors.Meta{
 	ShortCode: "E0137",
 	Message:   "oci: artifact not found at remote source",
 })
@@ -25,7 +25,7 @@ var errFetchNotFound = cerrors.Register("oci/fetch-not-found", cerrors.Meta{
 // host and a `docker login <registry>` remediation pointer.
 func ErrFetchUnauthorized() error { return errFetchUnauthorized }
 
-var errFetchUnauthorized = cerrors.Register("oci/fetch-unauthorized", cerrors.Meta{
+var errFetchUnauthorized = cerrors.Register("fetch-unauthorized", cerrors.Meta{
 	ShortCode: "E0138",
 	Message:   "oci: authentication required or failed",
 })
@@ -35,7 +35,7 @@ var errFetchUnauthorized = cerrors.Register("oci/fetch-unauthorized", cerrors.Me
 // wrap this sentinel with the URL.
 func ErrFetchNetworkUnreachable() error { return errFetchNetworkUnreachable }
 
-var errFetchNetworkUnreachable = cerrors.Register("oci/fetch-network-unreachable", cerrors.Meta{
+var errFetchNetworkUnreachable = cerrors.Register("fetch-network-unreachable", cerrors.Meta{
 	ShortCode: "E0136",
 	Message:   "oci: network unreachable",
 })
@@ -46,7 +46,7 @@ var errFetchNetworkUnreachable = cerrors.Register("oci/fetch-network-unreachable
 // `aggrega pull --upgrade --release <release>` remediation pointer.
 func ErrFetchIntegrity() error { return errFetchIntegrity }
 
-var errFetchIntegrity = cerrors.Register("oci/fetch-integrity", cerrors.Meta{
+var errFetchIntegrity = cerrors.Register("fetch-integrity", cerrors.Meta{
 	ShortCode: "E0135",
 	Message:   "oci: content digest mismatch",
 })
@@ -60,7 +60,7 @@ var errFetchIntegrity = cerrors.Register("oci/fetch-integrity", cerrors.Meta{
 // the media type that was expected.
 func ErrNoContentLayer() error { return errNoContentLayer }
 
-var errNoContentLayer = cerrors.Register("oci/no-content-layer", cerrors.Meta{
+var errNoContentLayer = cerrors.Register("no-content-layer", cerrors.Meta{
 	ShortCode: "E0140",
 	Message:   "oci: manifest has no layer of the expected content media type",
 })
@@ -72,7 +72,7 @@ var errNoContentLayer = cerrors.Register("oci/no-content-layer", cerrors.Meta{
 // the count.
 func ErrAmbiguousContentLayer() error { return errAmbiguousContentLayer }
 
-var errAmbiguousContentLayer = cerrors.Register("oci/ambiguous-content-layer", cerrors.Meta{
+var errAmbiguousContentLayer = cerrors.Register("ambiguous-content-layer", cerrors.Meta{
 	ShortCode: "E0132",
 	Message:   "oci: manifest has multiple layers of the expected content media type",
 })
@@ -87,7 +87,7 @@ var errAmbiguousContentLayer = cerrors.Register("oci/ambiguous-content-layer", c
 // from authoritative bytes.
 func ErrCachedManifestIntegrity() error { return errCachedManifestIntegrity }
 
-var errCachedManifestIntegrity = cerrors.Register("oci/cached-manifest-integrity", cerrors.Meta{
+var errCachedManifestIntegrity = cerrors.Register("cached-manifest-integrity", cerrors.Meta{
 	ShortCode: "E0133",
 	Message:   "oci: cached manifest digest mismatch",
 })
@@ -103,7 +103,7 @@ var errCachedManifestIntegrity = cerrors.Register("oci/cached-manifest-integrity
 // an idempotent no-op.
 func ErrImmutableTagConflict() error { return errImmutableTagConflict }
 
-var errImmutableTagConflict = cerrors.Register("oci/immutable-tag-conflict", cerrors.Meta{
+var errImmutableTagConflict = cerrors.Register("immutable-tag-conflict", cerrors.Meta{
 	ShortCode: "E0139",
 	Message:   "oci: tag already published with different content",
 })
@@ -113,7 +113,7 @@ var errImmutableTagConflict = cerrors.Register("oci/immutable-tag-conflict", cer
 // at the dispatch boundary, not a user-input error.
 func ErrUnknownEntityKind() error { return errUnknownEntityKind }
 
-var errUnknownEntityKind = cerrors.Register("oci/unknown-entity-kind", cerrors.Meta{
+var errUnknownEntityKind = cerrors.Register("unknown-entity-kind", cerrors.Meta{
 	ShortCode: "E0143",
 	Message:   "oci: unknown entity kind for mediatype dispatch",
 })
@@ -127,7 +127,7 @@ var errUnknownEntityKind = cerrors.Register("oci/unknown-entity-kind", cerrors.M
 // this sentinel with both values for the operator's diagnostic.
 func ErrEntityVersionPathMismatch() error { return errEntityVersionPathMismatch }
 
-var errEntityVersionPathMismatch = cerrors.Register("oci/entity-version-path-mismatch", cerrors.Meta{
+var errEntityVersionPathMismatch = cerrors.Register("entity-version-path-mismatch", cerrors.Meta{
 	ShortCode: "E0134",
 	Message:   "oci: entity per-version subdirectory mismatch",
 })
@@ -143,7 +143,7 @@ var errEntityVersionPathMismatch = cerrors.Register("oci/entity-version-path-mis
 // halts loudly on it rather than let population drop an entity.
 func ErrOCILocationCollision() error { return errOCILocationCollision }
 
-var errOCILocationCollision = cerrors.Register("oci/oci-location-collision", cerrors.Meta{
+var errOCILocationCollision = cerrors.Register("oci-location-collision", cerrors.Meta{
 	ShortCode: "E0141",
 	Message:   "oci: distinct catalog identities map to the same OCI repository location",
 })
@@ -167,7 +167,7 @@ var errOCILocationCollision = cerrors.Register("oci/oci-location-collision", cer
 // this sentinel with the subject reference and the underlying cause.
 func ErrReferrerDiscoveryUnavailable() error { return errReferrerDiscoveryUnavailable }
 
-var errReferrerDiscoveryUnavailable = cerrors.Register("oci/referrer-discovery-unavailable", cerrors.Meta{
+var errReferrerDiscoveryUnavailable = cerrors.Register("referrer-discovery-unavailable", cerrors.Meta{
 	ShortCode: "E0142",
 	Message:   "oci: referrer discovery could not be completed",
 })

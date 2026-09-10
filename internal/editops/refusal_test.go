@@ -156,7 +156,7 @@ func TestTheRefusedConditionCarriesItsIdentifiers(t *testing.T) {
 		t.Fatal("want a refusal")
 	}
 	code, ok := aggerrors.CodeOf(err)
-	if !ok || code != "editops/edit-refused-invalid-result" {
+	if !ok || code != "edit-refused-invalid-result" {
 		t.Errorf("CodeOf = %q, %v; want the editops refusal code", code, ok)
 	}
 	short, ok := aggerrors.ShortCodeOf(err)

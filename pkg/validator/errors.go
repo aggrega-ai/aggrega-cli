@@ -14,14 +14,14 @@ import (
 
 func ErrInheritanceMerge() error { return errInheritanceMerge }
 
-var errInheritanceMerge = cerrors.Register("validator/extends-merge-failed", cerrors.Meta{
+var errInheritanceMerge = cerrors.Register("extends-merge-failed", cerrors.Meta{
 	ShortCode: "E0205",
 	Message:   "inheritance merge failed",
 })
 
 func ErrCyclicExtension() error { return errCyclicExtension }
 
-var errCyclicExtension = cerrors.Register("validator/cyclic-extension", cerrors.Meta{
+var errCyclicExtension = cerrors.Register("cyclic-extension", cerrors.Meta{
 	ShortCode: "E0202",
 	Message:   "cyclic extends chain",
 })
@@ -38,14 +38,14 @@ var errCyclicExtension = cerrors.Register("validator/cyclic-extension", cerrors.
 // either from the name would have no way to tell which walk reported.
 func ErrExtendsChainTooDeep() error { return errExtendsChainTooDeep }
 
-var errExtendsChainTooDeep = cerrors.Register("validator/extends-chain-too-deep", cerrors.Meta{
+var errExtendsChainTooDeep = cerrors.Register("extends-chain-too-deep", cerrors.Meta{
 	ShortCode: "E0220",
 	Message:   "extends chain exceeds maximum depth",
 })
 
 func ErrAssertionNameCollision() error { return errAssertionNameCollision }
 
-var errAssertionNameCollision = cerrors.Register("validator/assertion-name-collision", cerrors.Meta{
+var errAssertionNameCollision = cerrors.Register("assertion-name-collision", cerrors.Meta{
 	ShortCode: "E0201",
 	Message:   "assertion name declared twice across the extends chain",
 })
@@ -70,7 +70,7 @@ var errAssertionNameCollision = cerrors.Register("validator/assertion-name-colli
 // schema block. Match with errors.Is(err, ErrUnknownSchemaPillar()).
 func ErrUnknownSchemaPillar() error { return errUnknownSchemaPillar }
 
-var errUnknownSchemaPillar = cerrors.Register("validator/unknown-schema-pillar", cerrors.Meta{
+var errUnknownSchemaPillar = cerrors.Register("unknown-schema-pillar", cerrors.Meta{
 	ShortCode: "E0267",
 	Message:   "a schema block declares a key that names no data pillar",
 })

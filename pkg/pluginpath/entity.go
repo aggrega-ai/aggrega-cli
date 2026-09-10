@@ -21,7 +21,7 @@ import (
 // reference.
 func ErrPluginEntityNotFound() error { return errPluginEntityNotFound }
 
-var errPluginEntityNotFound = cerrors.Register("pluginpath/plugin-entity-not-found", cerrors.Meta{
+var errPluginEntityNotFound = cerrors.Register("plugin-entity-not-found", cerrors.Meta{
 	ShortCode: "E0145",
 	Message:   "plugin reference is not a Plugin entity",
 })

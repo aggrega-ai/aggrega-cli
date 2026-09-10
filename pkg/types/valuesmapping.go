@@ -16,7 +16,7 @@ import (
 // extra siblings beyond $import.
 func ErrValuesMappingShape() error { return errValuesMappingShape }
 
-var errValuesMappingShape = cerrors.Register("types/values-mapping-shape", cerrors.Meta{
+var errValuesMappingShape = cerrors.Register("values-mapping-shape", cerrors.Meta{
 	ShortCode: "E0197",
 	Message:   "valuesmapping: shape must be a string scalar or {$import: <path-or-library-identity>}",
 })

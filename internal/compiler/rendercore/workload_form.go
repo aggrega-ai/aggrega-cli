@@ -33,7 +33,7 @@ func ErrPersistentTemplateRequiresStatefulForm() error {
 	return errPersistentTemplateRequiresStatefulForm
 }
 
-var errPersistentTemplateRequiresStatefulForm = cerrors.Register("compiler-rendercore/persistent-template-requires-stateful-form", cerrors.Meta{
+var errPersistentTemplateRequiresStatefulForm = cerrors.Register("persistent-template-requires-stateful-form", cerrors.Meta{
 	ShortCode: "E0021",
 	Message:   "persistentTemplate volume requires form: stateful",
 })
@@ -46,7 +46,7 @@ var errPersistentTemplateRequiresStatefulForm = cerrors.Register("compiler-rende
 // so errors.Is matches.
 func ErrScheduledFormRequiresSchedule() error { return errScheduledFormRequiresSchedule }
 
-var errScheduledFormRequiresSchedule = cerrors.Register("compiler-rendercore/scheduled-form-requires-schedule", cerrors.Meta{
+var errScheduledFormRequiresSchedule = cerrors.Register("scheduled-form-requires-schedule", cerrors.Meta{
 	ShortCode: "E0025",
 	Message:   "form: scheduled requires a schedule",
 })
@@ -58,7 +58,7 @@ var errScheduledFormRequiresSchedule = cerrors.Register("compiler-rendercore/sch
 // via cerrors so errors.Is matches.
 func ErrScheduleRequiresScheduledForm() error { return errScheduleRequiresScheduledForm }
 
-var errScheduleRequiresScheduledForm = cerrors.Register("compiler-rendercore/schedule-requires-scheduled-form", cerrors.Meta{
+var errScheduleRequiresScheduledForm = cerrors.Register("schedule-requires-scheduled-form", cerrors.Meta{
 	ShortCode: "E0024",
 	Message:   "schedule requires form: scheduled",
 })
@@ -70,7 +70,7 @@ var errScheduleRequiresScheduledForm = cerrors.Register("compiler-rendercore/sch
 // matches.
 func ErrReferenceFormRequiresEndpoint() error { return errReferenceFormRequiresEndpoint }
 
-var errReferenceFormRequiresEndpoint = cerrors.Register("compiler-rendercore/reference-form-requires-endpoint", cerrors.Meta{
+var errReferenceFormRequiresEndpoint = cerrors.Register("reference-form-requires-endpoint", cerrors.Meta{
 	ShortCode: "E0023",
 	Message:   "form: reference requires an endpoint",
 })
@@ -82,7 +82,7 @@ var errReferenceFormRequiresEndpoint = cerrors.Register("compiler-rendercore/ref
 // errors.Is matches.
 func ErrEndpointRequiresReferenceForm() error { return errEndpointRequiresReferenceForm }
 
-var errEndpointRequiresReferenceForm = cerrors.Register("compiler-rendercore/endpoint-requires-reference-form", cerrors.Meta{
+var errEndpointRequiresReferenceForm = cerrors.Register("endpoint-requires-reference-form", cerrors.Meta{
 	ShortCode: "E0019",
 	Message:   "endpoint requires form: reference",
 })
@@ -94,7 +94,7 @@ var errEndpointRequiresReferenceForm = cerrors.Register("compiler-rendercore/end
 // errors.Is matches.
 func ErrInvalidCronSchedule() error { return errInvalidCronSchedule }
 
-var errInvalidCronSchedule = cerrors.Register("compiler-rendercore/invalid-cron-schedule", cerrors.Meta{
+var errInvalidCronSchedule = cerrors.Register("invalid-cron-schedule", cerrors.Meta{
 	ShortCode: "E0020",
 	Message:   "schedule is not a valid cron expression",
 })

@@ -25,7 +25,7 @@ func TestGuestReportedConditionReachesThePrintedHead(t *testing.T) {
 	t.Parallel()
 
 	const (
-		guestCode  = "compiler-renderer-compose/unsupported-compose-lifecycle"
+		guestCode  = "unsupported-compose-lifecycle"
 		guestShort = "E0241"
 	)
 

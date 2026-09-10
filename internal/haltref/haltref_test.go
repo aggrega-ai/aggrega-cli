@@ -264,7 +264,7 @@ func TestACodeNoConditionCarriesIsRefusedWithBothShapes(t *testing.T) {
 		}
 		// The refusal is only actionable if it says what a code looks like, in
 		// both of the shapes a reader could be holding one in.
-		for _, want := range []string{"E0164", "resolver/parameter-contract-violation", "sentinels.md"} {
+		for _, want := range []string{"E0164", "parameter-contract-violation", "sentinels.md"} {
 			if !strings.Contains(err.Error(), want) {
 				t.Errorf("the refusal for %q omits %q, so a reader cannot correct from it: %s", arg, want, err)
 			}

@@ -37,7 +37,7 @@ import (
 // a real condition's wording is edited. Its code and short code have to be
 // distinct from those of the conditions this test binary links and from nothing
 // else: registration is per-process, so neither value is an allocation.
-var errRegisteredRule = cerrors.Register("example/registered-rule", cerrors.Meta{
+var errRegisteredRule = cerrors.Register("registered-rule", cerrors.Meta{
 	ShortCode: "E9301",
 	Message:   "rule broken",
 })

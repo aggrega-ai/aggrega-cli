@@ -43,7 +43,7 @@ const parseCapabilityPrefix = "parse:"
 // change — so this halt reflects the advertised set, not a fixed enumeration.
 func ErrNoParserForFormat() error { return errNoParserForFormat }
 
-var errNoParserForFormat = cerrors.Register("catalog/no-parser-for-format", cerrors.Meta{
+var errNoParserForFormat = cerrors.Register("no-parser-for-format", cerrors.Meta{
 	ShortCode: "E0098",
 	Message:   "no parser plugin advertises the requested format",
 })
@@ -58,7 +58,7 @@ var errNoParserForFormat = cerrors.Register("catalog/no-parser-for-format", cerr
 // the parser type and phrased for the parser surface.
 func ErrAmbiguousParserPlugin() error { return errAmbiguousParserPlugin }
 
-var errAmbiguousParserPlugin = cerrors.Register("catalog/ambiguous-parser-plugin", cerrors.Meta{
+var errAmbiguousParserPlugin = cerrors.Register("ambiguous-parser-plugin", cerrors.Meta{
 	ShortCode: "E0091",
 	Message:   "format is advertised by more than one parser plugin",
 })

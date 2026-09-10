@@ -26,7 +26,7 @@ import (
 // instanceName, and both conflicting type URIs.
 func ErrFeatureTypeMismatch() error { return errFeatureTypeMismatch }
 
-var errFeatureTypeMismatch = cerrors.Register("compiler-ir/feature-type-mismatch", cerrors.Meta{
+var errFeatureTypeMismatch = cerrors.Register("feature-type-mismatch", cerrors.Meta{
 	ShortCode: "E0013",
 	Message:   "feature type mismatch between Aggregate and Release",
 })

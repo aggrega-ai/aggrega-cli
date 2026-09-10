@@ -59,7 +59,7 @@ func (e *CodedHostError) Unwrap() error { return e.Err }
 // rejection.
 func ErrWasmManifestRejected() error { return errWasmManifestRejected }
 
-var errWasmManifestRejected = cerrors.Register("wasm/wasm-manifest-rejected", cerrors.Meta{
+var errWasmManifestRejected = cerrors.Register("wasm-manifest-rejected", cerrors.Meta{
 	ShortCode: "E0085",
 	Message:   "wasm: plugin rejected by the sandbox",
 })
@@ -78,7 +78,7 @@ var errWasmManifestRejected = cerrors.Register("wasm/wasm-manifest-rejected", ce
 // envelope — the safety net behind the SDK's normal error path.
 func ErrWasmGuestPanic() error { return errWasmGuestPanic }
 
-var errWasmGuestPanic = cerrors.Register("wasm/wasm-guest-panic", cerrors.Meta{
+var errWasmGuestPanic = cerrors.Register("wasm-guest-panic", cerrors.Meta{
 	ShortCode: "E0083",
 	Message:   "wasm: guest plugin panicked during call",
 })
@@ -96,7 +96,7 @@ var errWasmGuestPanic = cerrors.Register("wasm/wasm-guest-panic", cerrors.Meta{
 // proc_exit so callers see the failure code in the message.
 func ErrWasmPluginExited() error { return errWasmPluginExited }
 
-var errWasmPluginExited = cerrors.Register("wasm/wasm-plugin-exited", cerrors.Meta{
+var errWasmPluginExited = cerrors.Register("wasm-plugin-exited", cerrors.Meta{
 	ShortCode: "E0086",
 	Message:   "wasm: plugin invoked proc_exit",
 })
@@ -111,7 +111,7 @@ var errWasmPluginExited = cerrors.Register("wasm/wasm-plugin-exited", cerrors.Me
 // error carries the export name and the guest's message.
 func ErrWasmGuestError() error { return errWasmGuestError }
 
-var errWasmGuestError = cerrors.Register("wasm/wasm-guest-error", cerrors.Meta{
+var errWasmGuestError = cerrors.Register("wasm-guest-error", cerrors.Meta{
 	ShortCode: "E0082",
 	Message:   "wasm: guest plugin reported an error",
 })
@@ -161,7 +161,7 @@ type GuestOutputCBOR interface {
 // called and what came back instead of this socket's shape.
 func ErrWasmOutputShape() error { return errWasmOutputShape }
 
-var errWasmOutputShape = cerrors.Register("wasm/wasm-output-shape", cerrors.Meta{
+var errWasmOutputShape = cerrors.Register("wasm-output-shape", cerrors.Meta{
 	ShortCode: "E0248",
 	Message:   "wasm: guest plugin returned an output that is not the shape the socket reads",
 })
@@ -327,7 +327,7 @@ func (c *reportedCondition) ErrorShortCode() string { return c.shortCode }
 // plugin emitted what and what it should have emitted instead.
 func ErrWasmDiagnosticSeverity() error { return errWasmDiagnosticSeverity }
 
-var errWasmDiagnosticSeverity = cerrors.Register("wasm/wasm-diagnostic-severity-invalid", cerrors.Meta{
+var errWasmDiagnosticSeverity = cerrors.Register("wasm-diagnostic-severity-invalid", cerrors.Meta{
 	ShortCode: "E0081",
 	Message:   "wasm: guest plugin returned a diagnostic whose severity the contract does not declare",
 })
@@ -379,7 +379,7 @@ func GuestDiagnosticSeverities(plugin, export string, diags []abi.Diagnostic) er
 // mismatch surfaces before the entity is published rather than at load.
 func ErrWasmContractMismatch() error { return errWasmContractMismatch }
 
-var errWasmContractMismatch = cerrors.Register("wasm/wasm-contract-mismatch", cerrors.Meta{
+var errWasmContractMismatch = cerrors.Register("wasm-contract-mismatch", cerrors.Meta{
 	ShortCode: "E0080",
 	Message:   "wasm: entity contract claim does not match plugin describe()",
 })
@@ -405,7 +405,7 @@ var errWasmContractMismatch = cerrors.Register("wasm/wasm-contract-mismatch", ce
 // binary's imports.
 func ErrWasmHostFunctionsStampMismatch() error { return errWasmHostFunctionsStampMismatch }
 
-var errWasmHostFunctionsStampMismatch = cerrors.Register("wasm/wasm-host-function-set-mismatch", cerrors.Meta{
+var errWasmHostFunctionsStampMismatch = cerrors.Register("wasm-host-function-set-mismatch", cerrors.Meta{
 	ShortCode: "E0084",
 	Message:   "wasm: stamped host-function record does not match .wasm imports",
 })
@@ -428,7 +428,7 @@ var errWasmHostFunctionsStampMismatch = cerrors.Register("wasm/wasm-host-functio
 // type so the author sees exactly which two kinds diverged.
 func ErrWasmPluginTypeMismatch() error { return errWasmPluginTypeMismatch }
 
-var errWasmPluginTypeMismatch = cerrors.Register("wasm/wasm-plugin-type-mismatch", cerrors.Meta{
+var errWasmPluginTypeMismatch = cerrors.Register("wasm-plugin-type-mismatch", cerrors.Meta{
 	ShortCode: "E0087",
 	Message:   "wasm: declared plugin type does not match plugin describe()",
 })
@@ -456,7 +456,7 @@ var errWasmPluginTypeMismatch = cerrors.Register("wasm/wasm-plugin-type-mismatch
 // against the plugin's describe() self-report.
 func ErrWasmCommandsMirrorMismatch() error { return errWasmCommandsMirrorMismatch }
 
-var errWasmCommandsMirrorMismatch = cerrors.Register("wasm/wasm-command-set-mismatch", cerrors.Meta{
+var errWasmCommandsMirrorMismatch = cerrors.Register("wasm-command-set-mismatch", cerrors.Meta{
 	ShortCode: "E0079",
 	Message:   "wasm: recorded command mirror does not match plugin describe()",
 })
@@ -475,7 +475,7 @@ var errWasmCommandsMirrorMismatch = cerrors.Register("wasm/wasm-command-set-mism
 // a single socket pair.
 func ErrProducerConsumptionReentry() error { return errProducerConsumptionReentry }
 
-var errProducerConsumptionReentry = cerrors.Register("wasm/wasm-nested-producer-consumption-denied", cerrors.Meta{
+var errProducerConsumptionReentry = cerrors.Register("wasm-nested-producer-consumption-denied", cerrors.Meta{
 	ShortCode: "E0078",
 	Message:   "producer-consumption re-entry denied: a producer reached through the host may not issue a further producer-consumption call",
 })
@@ -502,7 +502,7 @@ var errProducerConsumptionReentry = cerrors.Register("wasm/wasm-nested-producer-
 // metadata.version against the plugin's describe() build-provenance version.
 func ErrWasmPluginVersionMismatch() error { return errWasmPluginVersionMismatch }
 
-var errWasmPluginVersionMismatch = cerrors.Register("wasm/wasm-plugin-version-mismatch", cerrors.Meta{
+var errWasmPluginVersionMismatch = cerrors.Register("wasm-plugin-version-mismatch", cerrors.Meta{
 	ShortCode: "E0088",
 	Message:   "wasm: entity metadata.version does not match plugin describe()",
 })

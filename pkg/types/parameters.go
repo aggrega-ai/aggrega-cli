@@ -16,7 +16,7 @@ import (
 // `$import:` value that isn't a string scalar.
 func ErrParametersShape() error { return errParametersShape }
 
-var errParametersShape = cerrors.Register("types/parameters-shape", cerrors.Meta{
+var errParametersShape = cerrors.Register("parameters-shape", cerrors.Meta{
 	ShortCode: "E0193",
 	Message:   "parameters: shape must be an inline object or {$import: <local-path>}",
 })

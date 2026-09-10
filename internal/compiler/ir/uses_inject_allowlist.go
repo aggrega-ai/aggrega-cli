@@ -43,7 +43,7 @@ import (
 // dictation.
 func ErrUsesInjectForbidden() error { return errUsesInjectForbidden }
 
-var errUsesInjectForbidden = cerrors.Register("compiler-ir/uses-inject-forbidden", cerrors.Meta{
+var errUsesInjectForbidden = cerrors.Register("uses-inject-forbidden", cerrors.Meta{
 	ShortCode: "E0015",
 	Message:   "uses-edge inject dictates a delivery mechanism the socket does not permit",
 })

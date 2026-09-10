@@ -125,14 +125,14 @@ const (
 )
 
 var (
-	_ = Register("retirement-probe/below-the-gap", Meta{ShortCode: gapBelow, Message: "the number below the gap"})
-	_ = Register("retirement-probe/above-the-gap", Meta{ShortCode: gapAbove, Message: "the number above the gap"})
+	_ = Register("below-the-gap", Meta{ShortCode: gapBelow, Message: "the number below the gap"})
+	_ = Register("above-the-gap", Meta{ShortCode: gapAbove, Message: "the number above the gap"})
 	// The number in between: below the highest this binary has allocated, and
 	// recorded nowhere as retired. A refusal keyed on "below the highest and not
 	// currently registered" would be a gap check and would panic HERE, taking the
 	// whole test binary down before a single test in the package ran — which is
 	// the loudest failure available and is the point of declaring it here.
-	inTheGapIdentity = Register("retirement-probe/in-the-gap", Meta{ShortCode: gapInside, Message: "the number in the gap"})
+	inTheGapIdentity = Register("in-the-gap", Meta{ShortCode: gapInside, Message: "the number in the gap"})
 )
 
 // TestRegister_AcceptsAGapThatIsNotRetired is the other half of acceptance: the

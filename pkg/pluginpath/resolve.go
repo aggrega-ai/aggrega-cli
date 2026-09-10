@@ -310,7 +310,7 @@ type PluginExportClaim struct {
 // touch — so it holds under the hermetic, air-gapped build.
 func ErrPluginBundleDigestMismatch() error { return errPluginBundleDigestMismatch }
 
-var errPluginBundleDigestMismatch = cerrors.Register("pluginpath/plugin-bundle-digest-mismatch", cerrors.Meta{
+var errPluginBundleDigestMismatch = cerrors.Register("plugin-bundle-digest-mismatch", cerrors.Meta{
 	ShortCode: "E0144",
 	Message:   "cached signature bundle does not match its recorded digest",
 })

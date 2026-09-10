@@ -14,7 +14,7 @@ import (
 // a message and both of the condition's identifiers together, and it is reached
 // through an exported accessor standing beside the registration:
 //
-//	var errBudgetExceeded = Register("example/budget-exceeded", Meta{
+//	var errBudgetExceeded = Register("budget-exceeded", Meta{
 //		ShortCode: "E0000",
 //		Message:   "the declared budget was exceeded",
 //	})
@@ -22,13 +22,13 @@ import (
 //	// ErrBudgetExceeded fires when …
 //	func ErrBudgetExceeded() error { return errBudgetExceeded }
 //
-// The identity above is illustrative and names no package in this module,
-// deliberately. An example naming a real declaration is a second copy of that
-// declaration's value, and the two drift the moment either is edited. E0000 is
-// the illustrative short code for the same reason and can never be a real one:
-// short codes are handed out from E0001 upward, so nothing is ever registered
-// under E0000. Do not "correct" it to a plausible-looking number — a plausible
-// number is exactly what could also be somebody's real assignment.
+// The identity above is illustrative and names no condition this module
+// declares, deliberately. An example naming a real declaration is a second copy
+// of that declaration's value, and the two drift the moment either is edited.
+// E0000 is the illustrative short code for the same reason and can never be a
+// real one: short codes are handed out from E0001 upward, so nothing is ever
+// registered under E0000. Do not "correct" it to a plausible-looking number — a
+// plausible number is exactly what could also be somebody's real assignment.
 //
 // # Why the identity is a value no caller can construct
 //
@@ -67,7 +67,8 @@ type sealed struct {
 func (s *sealed) Error() string { return s.message }
 
 // ErrorCode returns the descriptive code the identity was registered under —
-// the qualified, hyphenated one, such as `resolver/parameter-contract-violation`.
+// the hyphenated one naming the condition in words, such as
+// `parameter-contract-violation`.
 //
 // It is a durable identifier of the condition itself, deliberately separate
 // from the Go accessor that yields the identity, so the two carry their
@@ -81,10 +82,11 @@ func (s *sealed) Error() string { return s.message }
 // rather than recognising a condition by the wording of its message.
 //
 // It is not the code `aggrega` prints on a terminal. A printed diagnostic opens
-// with its category and the condition's SHORT code, because a qualified,
-// hyphenated code is wide enough on the longest conditions to push the message
-// off a narrow terminal. The division holds for both surfaces: this code is the
-// one a machine consumer matches on, the short code is the one a reader quotes.
+// with its category and the condition's SHORT code, because a hyphenated code
+// naming a condition in words is wide enough on the longest conditions to push
+// the message off a narrow terminal. The division holds for both surfaces: this
+// code is the one a machine consumer matches on, the short code is the one a
+// reader quotes.
 func (s *sealed) ErrorCode() string { return s.code }
 
 // ErrorShortCode returns the short code the identity was registered under — the
@@ -311,12 +313,12 @@ type Meta struct {
 	// The descriptive code says what the condition is; this one is short enough
 	// to print. A diagnostic wants its identifier at the head of the line, where
 	// the reader is already looking, and the descriptive code is too wide for
-	// that position: it is package-qualified and kebab-case, so the longest ones
-	// run to many tens of characters — most of a narrow terminal before the
-	// message has begun. The width is described rather than counted on purpose:
-	// a figure here is a second copy of what the declarations below already
-	// determine, and it would go stale the day a longer code is registered.
-	// Four digits fit
+	// that position: it states the condition in words, in kebab-case, so the
+	// longest ones run to many tens of characters — most of a narrow terminal
+	// before the message has begun. The width is described rather than counted
+	// on purpose: a figure here is a second copy of what the declarations below
+	// already determine, and it would go stale the day a longer code is
+	// registered. Four digits fit
 	// anywhere and stay quotable — a user can read one out, type it into a
 	// search, or paste it into a report, which is the whole job.
 	//
@@ -605,7 +607,7 @@ func indexRetirements(record []retirement) map[string]string {
 // meta, and returns its identity. The call stands as a package-level
 // declaration, with the accessor that publishes it directly beside:
 //
-//	var errBudgetExceeded = Register("example/budget-exceeded", Meta{
+//	var errBudgetExceeded = Register("budget-exceeded", Meta{
 //		ShortCode: "E0000",
 //		Message:   "the declared budget was exceeded",
 //	})
@@ -613,13 +615,13 @@ func indexRetirements(record []retirement) map[string]string {
 //	// ErrBudgetExceeded fires when …
 //	func ErrBudgetExceeded() error { return errBudgetExceeded }
 //
-// The identity above is illustrative and names no package in this module,
-// deliberately. An example naming a real declaration is a second copy of that
-// declaration's value, and the two drift the moment either is edited. E0000 is
-// the illustrative short code for the same reason and can never be a real one:
-// short codes are handed out from E0001 upward, so nothing is ever registered
-// under E0000. Do not "correct" it to a plausible-looking number — a plausible
-// number is exactly what could also be somebody's real assignment.
+// The identity above is illustrative and names no condition this module
+// declares, deliberately. An example naming a real declaration is a second copy
+// of that declaration's value, and the two drift the moment either is edited.
+// E0000 is the illustrative short code for the same reason and can never be a
+// real one: short codes are handed out from E0001 upward, so nothing is ever
+// registered under E0000. Do not "correct" it to a plausible-looking number — a
+// plausible number is exactly what could also be somebody's real assignment.
 //
 // The returned type is unexported, and that is the design rather than an
 // oversight. A caller binds the result with type inference and never names it,
@@ -634,11 +636,21 @@ func indexRetirements(record []retirement) map[string]string {
 // sharing either identifier become two identities a consumer outside Go cannot
 // tell apart, and the second registration is refused outright.
 //
-// The first argument is the DESCRIPTIVE code. It is qualified by the declaring
-// package as well as the rule, which keeps two same-named rules in different
-// packages apart, and it is kebab-case in keeping with every other descriptive
-// identifier the platform defines. It is the identifier to match on: it says
-// what the condition is, so a consumer branching on it reads as what it means.
+// The first argument is the DESCRIPTIVE code. It names the condition and
+// nothing else — it carries no namespace, no package and no stage — and it is
+// kebab-case in keeping with every other descriptive identifier the platform
+// defines. It is the identifier to match on: it says what the condition is, so
+// a consumer branching on it reads as what it means.
+//
+// Carrying no namespace is a constraint on the NAME rather than a licence to
+// name loosely. Two conditions may not share a code, and the refusal below is
+// what holds it, so each condition's name has to be distinct across the whole
+// module on its own — a name that would need a qualifier to tell it from
+// another condition's is a name that has not yet said what the condition is.
+// A namespace would also put something in the code that is not a property of
+// the condition: the package a condition is declared in can be renamed or
+// split, and which stage raises it is a property of the occurrence rather than
+// of the identity, as Meta records.
 //
 // Meta.ShortCode is the SHORT code — the letter E and four digits. It names the
 // same condition in a form narrow enough to print at the head of a diagnostic
@@ -791,7 +803,8 @@ func Register(code string, meta Meta) *sealed {
 // values.
 type Condition struct {
 	// Code is the descriptive code the condition is registered under — the
-	// qualified, hyphenated one a consumer outside Go matches on.
+	// hyphenated one naming the condition in words, which a consumer outside Go
+	// matches on.
 	Code string
 
 	// ShortCode is the compact code the condition is registered under — the

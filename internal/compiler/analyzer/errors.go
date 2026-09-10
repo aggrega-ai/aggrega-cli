@@ -24,7 +24,7 @@ import (
 // the violation is what separates the two.
 func ErrSelectorViolation() error { return errSelectorViolation }
 
-var errSelectorViolation = cerrors.Register("compiler-analyzer/selector-violation", cerrors.Meta{
+var errSelectorViolation = cerrors.Register("selector-violation", cerrors.Meta{
 	ShortCode: "E0007",
 	Message:   "selector violation",
 })
@@ -51,7 +51,7 @@ var errSelectorViolation = cerrors.Register("compiler-analyzer/selector-violatio
 // correct the declaration, or give the fill the labels the declaration asks for.
 func ErrSlotSelectorUnsatisfied() error { return errSlotSelectorUnsatisfied }
 
-var errSlotSelectorUnsatisfied = cerrors.Register("compiler-analyzer/slot-selector-unsatisfied", cerrors.Meta{
+var errSlotSelectorUnsatisfied = cerrors.Register("slot-selector-unsatisfied", cerrors.Meta{
 	ShortCode: "E0008",
 	Message:   "attachment slot selector unsatisfied",
 })
@@ -91,7 +91,7 @@ var errSlotSelectorUnsatisfied = cerrors.Register("compiler-analyzer/slot-select
 // fill; this one is whether there is one at all.
 func ErrRequiredSlotUnfilled() error { return errRequiredSlotUnfilled }
 
-var errRequiredSlotUnfilled = cerrors.Register("compiler-analyzer/required-slot-unfilled", cerrors.Meta{
+var errRequiredSlotUnfilled = cerrors.Register("required-slot-unfilled", cerrors.Meta{
 	ShortCode: "E0006",
 	Message:   "required attachment slot unfilled",
 })
@@ -108,7 +108,7 @@ var errRequiredSlotUnfilled = cerrors.Register("compiler-analyzer/required-slot-
 // Guardrail); the message the plugin supplied is surfaced verbatim.
 func ErrPolicyViolation() error { return errPolicyViolation }
 
-var errPolicyViolation = cerrors.Register("compiler-analyzer/policy-violation", cerrors.Meta{
+var errPolicyViolation = cerrors.Register("policy-violation", cerrors.Meta{
 	ShortCode: "E0005",
 	Message:   "policy violation",
 })
@@ -138,7 +138,7 @@ var errPolicyViolation = cerrors.Register("compiler-analyzer/policy-violation", 
 // caller matching on identity matching.
 func ErrMalformedAttachmentRequirement() error { return errMalformedAttachmentRequirement }
 
-var errMalformedAttachmentRequirement = cerrors.Register("compiler-analyzer/malformed-attachment-requirement", cerrors.Meta{
+var errMalformedAttachmentRequirement = cerrors.Register("malformed-attachment-requirement", cerrors.Meta{
 	ShortCode: "E0003",
 	Message:   "malformed attachment requirement",
 })
@@ -156,7 +156,7 @@ var errMalformedAttachmentRequirement = cerrors.Register("compiler-analyzer/malf
 // provenance record is the whole of the evidence.
 func ErrOverriddenAnnotation() error { return errOverriddenAnnotation }
 
-var errOverriddenAnnotation = cerrors.Register("compiler-analyzer/overridden-annotation", cerrors.Meta{
+var errOverriddenAnnotation = cerrors.Register("overridden-annotation", cerrors.Meta{
 	ShortCode: "E0004",
 	Message:   "annotation contribution overridden by an explicit value",
 })
@@ -190,7 +190,7 @@ var errOverriddenAnnotation = cerrors.Register("compiler-analyzer/overridden-ann
 // that is true for every occurrence and states no rule it would be wrong about.
 func ErrUnusableComponentIdentity() error { return errUnusableComponentIdentity }
 
-var errUnusableComponentIdentity = cerrors.Register("compiler-analyzer/unusable-component-identity", cerrors.Meta{
+var errUnusableComponentIdentity = cerrors.Register("unusable-component-identity", cerrors.Meta{
 	ShortCode: "E0262",
 	Message: "component identity cannot be the name its emitted resources are stamped with: " +
 		"rename the component",
@@ -215,7 +215,7 @@ var errUnusableComponentIdentity = cerrors.Register("compiler-analyzer/unusable-
 // the reservation is here, in the paragraph above, where nothing publishes it.
 func ErrCatalogLookup() error { return errCatalogLookup }
 
-var errCatalogLookup = cerrors.Register("compiler-analyzer/catalog-entity-not-found", cerrors.Meta{
+var errCatalogLookup = cerrors.Register("catalog-entity-not-found", cerrors.Meta{
 	ShortCode: "E0002",
 	Message:   "catalog lookup failed",
 	DeclaredAhead: "It will report a catalog lookup that fails during static analysis — a state that " +

@@ -31,7 +31,7 @@ const (
 // resolve cannot locate the placeholder it must replace.
 func ErrLinkConsumerStackMissing() error { return errLinkConsumerStackMissing }
 
-var errLinkConsumerStackMissing = cerrors.Register("cloudformation-provider-cfncore/link-consumer-stack-missing", cerrors.Meta{
+var errLinkConsumerStackMissing = cerrors.Register("link-consumer-stack-missing", cerrors.Meta{
 	ShortCode: "E0231",
 	Message:   "cloudformation-provider: cross-boundary link resolve received no consumer stack template",
 })
@@ -44,7 +44,7 @@ var errLinkConsumerStackMissing = cerrors.Register("cloudformation-provider-cfnc
 // halts rather than emit a reference in the wrong shape.
 func ErrLinkSentinelInterpolated() error { return errLinkSentinelInterpolated }
 
-var errLinkSentinelInterpolated = cerrors.Register("cloudformation-provider-cfncore/link-placeholder-interpolated", cerrors.Meta{
+var errLinkSentinelInterpolated = cerrors.Register("link-placeholder-interpolated", cerrors.Meta{
 	ShortCode: "E0232",
 	Message:   "cloudformation-provider: cross-boundary link value is interpolated into a larger string; only a whole-scalar injection can carry a cross-stack reference",
 })
@@ -68,7 +68,7 @@ var errLinkSentinelInterpolated = cerrors.Register("cloudformation-provider-cfnc
 // cannot be read back out of it ([authoredExport]).
 func ErrLinkExportNameShadowed() error { return errLinkExportNameShadowed }
 
-var errLinkExportNameShadowed = cerrors.Register("cloudformation-provider-cfncore/link-export-name-shadowed", cerrors.Meta{
+var errLinkExportNameShadowed = cerrors.Register("link-export-name-shadowed", cerrors.Meta{
 	ShortCode: "E0249",
 	Message:   "cloudformation-provider: an export name a cross-boundary link derives is already declared by another Outputs entry in the same stack",
 })

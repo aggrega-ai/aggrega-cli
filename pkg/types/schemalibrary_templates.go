@@ -15,7 +15,7 @@ import (
 // that is not declared in the library's `spec.templates` map.
 func ErrTemplateNotFound() error { return errTemplateNotFound }
 
-var errTemplateNotFound = cerrors.Register("types/template-not-found", cerrors.Meta{
+var errTemplateNotFound = cerrors.Register("template-not-found", cerrors.Meta{
 	ShortCode: "E0194",
 	Message:   "schemalibrary: template not found",
 })
@@ -24,7 +24,7 @@ var errTemplateNotFound = cerrors.Register("types/template-not-found", cerrors.M
 // omits a parameter the template declares as required (no default).
 func ErrTemplateParamMissing() error { return errTemplateParamMissing }
 
-var errTemplateParamMissing = cerrors.Register("types/template-param-missing", cerrors.Meta{
+var errTemplateParamMissing = cerrors.Register("template-param-missing", cerrors.Meta{
 	ShortCode: "E0195",
 	Message:   "schemalibrary: template parameter missing",
 })
@@ -33,7 +33,7 @@ var errTemplateParamMissing = cerrors.Register("types/template-param-missing", c
 // supplies a value whose type does not match the parameter's declared type.
 func ErrTemplateParamTypeMismatch() error { return errTemplateParamTypeMismatch }
 
-var errTemplateParamTypeMismatch = cerrors.Register("types/template-param-type-mismatch", cerrors.Meta{
+var errTemplateParamTypeMismatch = cerrors.Register("template-param-type-mismatch", cerrors.Meta{
 	ShortCode: "E0196",
 	Message:   "schemalibrary: template parameter type mismatch",
 })
@@ -43,7 +43,7 @@ var errTemplateParamTypeMismatch = cerrors.Register("types/template-param-type-m
 // $dynamicRef.
 func ErrForbiddenKeyword() error { return errForbiddenKeyword }
 
-var errForbiddenKeyword = cerrors.Register("types/forbidden-keyword", cerrors.Meta{
+var errForbiddenKeyword = cerrors.Register("forbidden-keyword", cerrors.Meta{
 	ShortCode: "E0190",
 	Message:   "schemalibrary: forbidden JSON Schema keyword",
 })

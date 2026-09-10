@@ -27,7 +27,7 @@ import (
 // resolution-completeness pass turns that miss into the loud halt.
 func ErrUnsatisfiableEntityVersion() error { return errUnsatisfiableEntityVersion }
 
-var errUnsatisfiableEntityVersion = cerrors.Register("catalog/unsatisfiable-entity-version", cerrors.Meta{
+var errUnsatisfiableEntityVersion = cerrors.Register("unsatisfiable-entity-version", cerrors.Meta{
 	ShortCode: "E0103",
 	Message:   "no catalog version satisfies the referenced version constraint",
 })

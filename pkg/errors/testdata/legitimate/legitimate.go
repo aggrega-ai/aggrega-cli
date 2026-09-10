@@ -12,7 +12,7 @@ import cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 // ErrProbe fires when the probe condition is reached.
 func ErrProbe() error { return errProbe }
 
-var errProbe = cerrors.Register("errors-sealing-probe/legitimate", cerrors.Meta{
+var errProbe = cerrors.Register("legitimate", cerrors.Meta{
 	// E0000 is the illustrative short code: short codes are handed out from
 	// E0001 upward, so no real condition ever holds it. A fixture is not an
 	// allocation and must not read like one.

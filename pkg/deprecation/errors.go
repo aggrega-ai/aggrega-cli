@@ -17,7 +17,7 @@ import (
 // error.
 func ErrDeprecatedEntity() error { return errDeprecatedEntity }
 
-var errDeprecatedEntity = cerrors.Register("deprecation/deprecated-entity", cerrors.Meta{
+var errDeprecatedEntity = cerrors.Register("deprecated-entity", cerrors.Meta{
 	ShortCode: "E0122",
 	Message:   "deprecation: build consumes a deprecated entity",
 })

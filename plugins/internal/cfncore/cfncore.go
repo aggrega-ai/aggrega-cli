@@ -108,7 +108,7 @@ import (
 // halts instead, and the halt names every entry behind the name.
 func ErrOutputNameCollision() error { return errOutputNameCollision }
 
-var errOutputNameCollision = cerrors.Register("cloudformation-provider-cfncore/output-name-collision", cerrors.Meta{
+var errOutputNameCollision = cerrors.Register("output-name-collision", cerrors.Meta{
 	ShortCode: "E0233",
 	Message:   "cloudformation-provider: two entries an author wrote reach one stack Output name",
 })
@@ -121,7 +121,7 @@ var errOutputNameCollision = cerrors.Register("cloudformation-provider-cfncore/o
 // build halts naming the key and both places it was written.
 func ErrDuplicateMappingKey() error { return errDuplicateMappingKey }
 
-var errDuplicateMappingKey = cerrors.Register("cloudformation-provider-cfncore/duplicate-mapping-key", cerrors.Meta{
+var errDuplicateMappingKey = cerrors.Register("duplicate-mapping-key", cerrors.Meta{
 	ShortCode: "E0230",
 	Message:   "cloudformation-provider: one mapping key is written more than once",
 })

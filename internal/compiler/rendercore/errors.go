@@ -14,7 +14,7 @@ import cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 // is an error only when a step tries to address a document inside it.
 func ErrPipelinePatchTargetNotStructured() error { return errPipelinePatchTargetNotStructured }
 
-var errPipelinePatchTargetNotStructured = cerrors.Register("compiler-rendercore/pipeline-patch-target-not-structured", cerrors.Meta{
+var errPipelinePatchTargetNotStructured = cerrors.Register("pipeline-patch-target-not-structured", cerrors.Meta{
 	ShortCode: "E0022",
 	Message:   "pipeline PATCH target is not parseable structured YAML/JSON",
 })
@@ -40,7 +40,7 @@ var errPipelinePatchTargetNotStructured = cerrors.Register("compiler-rendercore/
 // Category: CATALOG_ERROR.
 func ErrPipelinePatchUnitNotCarved() error { return errPipelinePatchUnitNotCarved }
 
-var errPipelinePatchUnitNotCarved = cerrors.Register("compiler-rendercore/pipeline-patch-unit-not-carved", cerrors.Meta{
+var errPipelinePatchUnitNotCarved = cerrors.Register("pipeline-patch-unit-not-carved", cerrors.Meta{
 	ShortCode: "E0268",
 	Message: "reassemble names a patched unit token the carve did not produce; " +
 		"a conforming codec carves and reassembles a file under the same tokens",

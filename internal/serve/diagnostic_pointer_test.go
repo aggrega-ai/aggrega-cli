@@ -93,7 +93,7 @@ func rawEntry(t *testing.T, d Diagnostic) map[string]json.RawMessage {
 // with the condition instead of failing a file that has nothing to do with it.
 func TestDiagnosticCarriesTheQuotableCodeAndThePointer(t *testing.T) {
 	t.Parallel()
-	const code = "resolver/parameter-contract-violation"
+	const code = "parameter-contract-violation"
 	entries := rawDiagnostics(t, "parameter-type-mismatch",
 		[]string{"release.yaml", "manifest.yaml", "aggregate.yaml"})
 	entry := findCodeOnWire(t, entries, code)

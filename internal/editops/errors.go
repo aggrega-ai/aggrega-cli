@@ -28,7 +28,7 @@ import (
 // surface carrying this capability already has a channel for.
 func ErrEditRefusedInvalidResult() error { return errEditRefusedInvalidResult }
 
-var errEditRefusedInvalidResult = cerrors.Register("editops/edit-refused-invalid-result", cerrors.Meta{
+var errEditRefusedInvalidResult = cerrors.Register("edit-refused-invalid-result", cerrors.Meta{
 	ShortCode: "E0275",
 	Message:   "the edit was refused because the resulting document would not be valid, and nothing was written",
 })

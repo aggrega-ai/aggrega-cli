@@ -41,7 +41,7 @@ const importCapabilityPrefix = "import:"
 // change — so this halt reflects the advertised set, not a fixed enumeration.
 func ErrNoImporterForFormat() error { return errNoImporterForFormat }
 
-var errNoImporterForFormat = cerrors.Register("catalog/no-importer-for-format", cerrors.Meta{
+var errNoImporterForFormat = cerrors.Register("no-importer-for-format", cerrors.Meta{
 	ShortCode: "E0097",
 	Message:   "no importer plugin advertises the requested format",
 })
@@ -56,7 +56,7 @@ var errNoImporterForFormat = cerrors.Register("catalog/no-importer-for-format", 
 // the importer type and phrased for the importer surface.
 func ErrAmbiguousImporterPlugin() error { return errAmbiguousImporterPlugin }
 
-var errAmbiguousImporterPlugin = cerrors.Register("catalog/ambiguous-importer-plugin", cerrors.Meta{
+var errAmbiguousImporterPlugin = cerrors.Register("ambiguous-importer-plugin", cerrors.Meta{
 	ShortCode: "E0090",
 	Message:   "format is advertised by more than one importer plugin",
 })

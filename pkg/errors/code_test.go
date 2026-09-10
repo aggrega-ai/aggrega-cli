@@ -22,15 +22,15 @@ import (
 // Every code value in this file is distinct. The registry is process-wide, so a
 // repeated value would be a duplicate registration and would panic at init.
 const (
-	codeCyclicExtension        = "validator/cyclic-extension-subject"
-	codeSiblingCyclicExtension = "topology/cyclic-extension-subject"
-	codeDuplicate              = "resolver/duplicate-subject"
-	codeEmptyMessage           = "resolver/empty-message-subject"
-	codeEmptyShortCode         = "resolver/empty-short-code-subject"
-	codeMalformedShortCode     = "resolver/malformed-short-code-subject"
-	codeDuplicateShortCode     = "resolver/duplicate-short-code-subject"
-	codeBlankDeclaredAhead     = "resolver/blank-declared-ahead-subject"
-	codeSetDeclaredAhead       = "resolver/set-declared-ahead-subject"
+	codeCyclicExtension        = "cyclic-extension-subject"
+	codeSiblingCyclicExtension = "sibling-cyclic-extension-subject"
+	codeDuplicate              = "duplicate-subject"
+	codeEmptyMessage           = "empty-message-subject"
+	codeEmptyShortCode         = "empty-short-code-subject"
+	codeMalformedShortCode     = "malformed-short-code-subject"
+	codeDuplicateShortCode     = "duplicate-short-code-subject"
+	codeBlankDeclaredAhead     = "blank-declared-ahead-subject"
+	codeSetDeclaredAhead       = "set-declared-ahead-subject"
 )
 
 // The short codes this file registers, distinct for the same reason the codes
@@ -276,12 +276,18 @@ func TestIdentity_MessageIsNeverEmpty(t *testing.T) {
 	}
 }
 
-// TestIdentity_SameRuleNameInTwoPackagesStaysTwoIdentities is the reason a code
-// value names its declaring package as well as its rule. Two rules sharing one
-// exported name in two packages are distinct conditions today; a value derived
-// from the rule name alone would merge them, so errors.Is would begin matching
-// across the pair and only one of the two messages could be registered.
-func TestIdentity_SameRuleNameInTwoPackagesStaysTwoIdentities(t *testing.T) {
+// TestIdentity_SameAccessorNameInTwoPackagesStaysTwoIdentities holds the
+// separation an identity gets from being a distinct registered value rather
+// than from anything about its name. Two conditions reached through accessors
+// sharing one exported name in two packages are distinct conditions, so
+// errors.Is must not match across the pair and each must keep its own sentence.
+//
+// It is also where the naming constraint bites: a code names its condition and
+// carries no qualifier, so two conditions cannot be told apart by where they
+// are declared and each has to be named distinctly on its own. The two codes
+// registered here are distinct for that reason, and registration refuses a
+// duplicate outright.
+func TestIdentity_SameAccessorNameInTwoPackagesStaysTwoIdentities(t *testing.T) {
 	t.Parallel()
 
 	if errCyclicExtension() == errSiblingCyclicExtension() {

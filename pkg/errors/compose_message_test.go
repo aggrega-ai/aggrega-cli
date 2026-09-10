@@ -12,7 +12,7 @@ import (
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
-var errComposeSubject = cerrors.Register("example/compose-subject", cerrors.Meta{
+var errComposeSubject = cerrors.Register("compose-subject", cerrors.Meta{
 	// A test's own short code, in the band this package's tests use. It is not
 	// an allocation: this test binary registers only what its own test files
 	// declare, so the value has to be distinct from its siblings here and from

@@ -28,7 +28,7 @@ import (
 // ErrRecipeValuesMappingRequiresSource: valuesMapping requires source.
 func ErrRecipeValuesMappingRequiresSource() error { return errRecipeValuesMappingRequiresSource }
 
-var errRecipeValuesMappingRequiresSource = cerrors.Register("validator/recipe-values-mapping-requires-source", cerrors.Meta{
+var errRecipeValuesMappingRequiresSource = cerrors.Register("recipe-values-mapping-requires-source", cerrors.Meta{
 	ShortCode: "E0209",
 	Message:   "Recipe: valuesMapping requires source",
 })
@@ -36,7 +36,7 @@ var errRecipeValuesMappingRequiresSource = cerrors.Register("validator/recipe-va
 // ErrRecipeNoInputKind: at least one input kind must be present.
 func ErrRecipeNoInputKind() error { return errRecipeNoInputKind }
 
-var errRecipeNoInputKind = cerrors.Register("validator/recipe-no-input-kind", cerrors.Meta{
+var errRecipeNoInputKind = cerrors.Register("recipe-no-input-kind", cerrors.Meta{
 	ShortCode: "E0210",
 	Message:   "Recipe: at least one input kind required",
 })
@@ -60,7 +60,7 @@ func ErrRecipeFilenameCollisionAcrossInputKinds() error {
 	return errRecipeFilenameCollisionAcrossInputKinds
 }
 
-var errRecipeFilenameCollisionAcrossInputKinds = cerrors.Register("validator/recipe-filename-collision-across-input-kinds", cerrors.Meta{
+var errRecipeFilenameCollisionAcrossInputKinds = cerrors.Register("recipe-filename-collision-across-input-kinds", cerrors.Meta{
 	ShortCode: "E0211",
 	Message:   "filename collision across input kinds: two input-kind blocks produced a file under one output name",
 })
@@ -72,7 +72,7 @@ var errRecipeFilenameCollisionAcrossInputKinds = cerrors.Register("validator/rec
 // declare only `provides:` and have zero input kinds.
 func ErrRecipeEvalProviderConstraint() error { return errRecipeEvalProviderConstraint }
 
-var errRecipeEvalProviderConstraint = cerrors.Register("validator/recipe-eval-provider-constraint", cerrors.Meta{
+var errRecipeEvalProviderConstraint = cerrors.Register("recipe-eval-provider-constraint", cerrors.Meta{
 	ShortCode: "E0206",
 	Message:   "recipe eval-provider constraint: input-kind fields are forbidden when provider is eval",
 })
@@ -85,7 +85,7 @@ var errRecipeEvalProviderConstraint = cerrors.Register("validator/recipe-eval-pr
 // consumes the labels.
 func ErrRecipeOutputLabelReservedNamespace() error { return errRecipeOutputLabelReservedNamespace }
 
-var errRecipeOutputLabelReservedNamespace = cerrors.Register("validator/recipe-output-label-reserved-namespace", cerrors.Meta{
+var errRecipeOutputLabelReservedNamespace = cerrors.Register("recipe-output-label-reserved-namespace", cerrors.Meta{
 	ShortCode: "E0208",
 	Message:   "recipe output-labels constraint: key uses a reserved namespace",
 })
@@ -98,7 +98,7 @@ var errRecipeOutputLabelReservedNamespace = cerrors.Register("validator/recipe-o
 // overlap at load keeps every stamped key traceable to exactly one source.
 func ErrRecipeOutputComponentLabelCollision() error { return errRecipeOutputComponentLabelCollision }
 
-var errRecipeOutputComponentLabelCollision = cerrors.Register("validator/recipe-output-component-label-collision", cerrors.Meta{
+var errRecipeOutputComponentLabelCollision = cerrors.Register("recipe-output-component-label-collision", cerrors.Meta{
 	ShortCode: "E0207",
 	Message:   "recipe output-component-labels constraint: key is also declared in outputLabels",
 })

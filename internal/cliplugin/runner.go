@@ -33,7 +33,7 @@ import (
 // set, so there is no way to turn the plugin URI into bytes.
 func ErrNoResolver() error { return errNoResolver }
 
-var errNoResolver = cerrors.Register("cliplugin/no-plugin-resolution-configured", cerrors.Meta{
+var errNoResolver = cerrors.Register("no-plugin-resolution-configured", cerrors.Meta{
 	ShortCode: "E0001",
 	Message:   "cliplugin: no plugin resolver configured",
 })

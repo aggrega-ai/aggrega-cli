@@ -23,7 +23,7 @@ import (
 // same references against the same declared scope, and the two share one walk.
 func ErrProvidesSelfContainment() error { return errProvidesSelfContainment }
 
-var errProvidesSelfContainment = cerrors.Register("compiler-renderer/provides-self-containment", cerrors.Meta{
+var errProvidesSelfContainment = cerrors.Register("provides-self-containment", cerrors.Meta{
 	ShortCode: "E0057",
 	Message:   "provides block references a root outside the self-contained set",
 })
@@ -38,7 +38,7 @@ var errProvidesSelfContainment = cerrors.Register("compiler-renderer/provides-se
 // default for an absent KEY, never for an absent ROOT.
 func ErrTemplateUnknownRoot() error { return errTemplateUnknownRoot }
 
-var errTemplateUnknownRoot = cerrors.Register("compiler-renderer/template-unknown-root", cerrors.Meta{
+var errTemplateUnknownRoot = cerrors.Register("template-unknown-root", cerrors.Meta{
 	ShortCode: "E0060",
 	Message:   "template references a root the render context does not define",
 })
@@ -59,28 +59,28 @@ func ErrLocalsUnknownReference() error { return gotmpl.ErrLocalsUnknownReference
 
 func ErrProvidesEvaluation() error { return errProvidesEvaluation }
 
-var errProvidesEvaluation = cerrors.Register("compiler-renderer/provides-evaluation-failed", cerrors.Meta{
+var errProvidesEvaluation = cerrors.Register("provides-evaluation-failed", cerrors.Meta{
 	ShortCode: "E0056",
 	Message:   "provides template evaluation failed",
 })
 
 func ErrSelfInjectKeyCollision() error { return errSelfInjectKeyCollision }
 
-var errSelfInjectKeyCollision = cerrors.Register("compiler-renderer/self-inject-key-collision", cerrors.Meta{
+var errSelfInjectKeyCollision = cerrors.Register("self-inject-key-collision", cerrors.Meta{
 	ShortCode: "E0059",
 	Message:   "duplicate delivery key across self-inject and uses-inject",
 })
 
 func ErrAttachmentInjectKeyCollision() error { return errAttachmentInjectKeyCollision }
 
-var errAttachmentInjectKeyCollision = cerrors.Register("compiler-renderer/attachment-inject-key-collision", cerrors.Meta{
+var errAttachmentInjectKeyCollision = cerrors.Register("attachment-inject-key-collision", cerrors.Meta{
 	ShortCode: "E0034",
 	Message:   "duplicate delivery key across attachment-inject and another inject source",
 })
 
 func ErrUnmappedCustomMechanism() error { return errUnmappedCustomMechanism }
 
-var errUnmappedCustomMechanism = cerrors.Register("compiler-renderer/custom-mechanism-has-no-mapping", cerrors.Meta{
+var errUnmappedCustomMechanism = cerrors.Register("custom-mechanism-has-no-mapping", cerrors.Meta{
 	ShortCode: "E0062",
 	Message:   "custom inject mechanism has no matching key in injectMapping output; add the mechanism's key to the Recipe injectMapping",
 })
@@ -110,7 +110,7 @@ var errUnmappedCustomMechanism = cerrors.Register("compiler-renderer/custom-mech
 // sorted order either way, which is what makes both deterministic.
 func ErrProvidesContractUnfulfilled() error { return errProvidesContractUnfulfilled }
 
-var errProvidesContractUnfulfilled = cerrors.Register("compiler-renderer/provides-contract-unfulfilled", cerrors.Meta{
+var errProvidesContractUnfulfilled = cerrors.Register("provides-contract-unfulfilled", cerrors.Meta{
 	ShortCode: "E0055",
 	Message:   "realizer does not publish a provides key its abstract entity's schema.provides contract declares",
 })
@@ -120,7 +120,7 @@ var errProvidesContractUnfulfilled = cerrors.Register("compiler-renderer/provide
 // reference nor a well-formed bare-name `<Library>#/mappings/<entry>` identity.
 func ErrMappingImportShape() error { return errMappingImportShape }
 
-var errMappingImportShape = cerrors.Register("compiler-renderer/mapping-import-shape", cerrors.Meta{
+var errMappingImportShape = cerrors.Register("mapping-import-shape", cerrors.Meta{
 	ShortCode: "E0045",
 	Message:   "valuesMapping $import: is not a bare-name mapping-library reference (<Library>#/mappings/<entry>)",
 })
@@ -130,7 +130,7 @@ var errMappingImportShape = cerrors.Register("compiler-renderer/mapping-import-s
 // any lockfile-pinned libraries bridged in at load).
 func ErrMappingLibraryNotFound() error { return errMappingLibraryNotFound }
 
-var errMappingLibraryNotFound = cerrors.Register("compiler-renderer/mapping-library-not-found", cerrors.Meta{
+var errMappingLibraryNotFound = cerrors.Register("mapping-library-not-found", cerrors.Meta{
 	ShortCode: "E0046",
 	Message:   "mapping-library import references a MappingLibrary not present in the catalog",
 })
@@ -139,7 +139,7 @@ var errMappingLibraryNotFound = cerrors.Register("compiler-renderer/mapping-libr
 // an entry absent from the resolved MappingLibrary's mappings map.
 func ErrMappingEntryNotFound() error { return errMappingEntryNotFound }
 
-var errMappingEntryNotFound = cerrors.Register("compiler-renderer/mapping-entry-not-found", cerrors.Meta{
+var errMappingEntryNotFound = cerrors.Register("mapping-entry-not-found", cerrors.Meta{
 	ShortCode: "E0044",
 	Message:   "mapping-library import references an entry not present in the MappingLibrary",
 })
@@ -149,7 +149,7 @@ var errMappingEntryNotFound = cerrors.Register("compiler-renderer/mapping-entry-
 // reference nor a well-formed bare-name `<Library>#/workloads/<entry>` identity.
 func ErrWorkloadImportShape() error { return errWorkloadImportShape }
 
-var errWorkloadImportShape = cerrors.Register("compiler-renderer/workload-import-shape", cerrors.Meta{
+var errWorkloadImportShape = cerrors.Register("workload-import-shape", cerrors.Meta{
 	ShortCode: "E0064",
 	Message:   "workload $import: is not a bare-name workload-library reference (<Library>#/workloads/<entry>)",
 })
@@ -159,7 +159,7 @@ var errWorkloadImportShape = cerrors.Register("compiler-renderer/workload-import
 // any lockfile-pinned libraries bridged in at load).
 func ErrWorkloadLibraryNotFound() error { return errWorkloadLibraryNotFound }
 
-var errWorkloadLibraryNotFound = cerrors.Register("compiler-renderer/workload-library-not-found", cerrors.Meta{
+var errWorkloadLibraryNotFound = cerrors.Register("workload-library-not-found", cerrors.Meta{
 	ShortCode: "E0065",
 	Message:   "workload-library import references a WorkloadLibrary not present in the catalog",
 })
@@ -168,7 +168,7 @@ var errWorkloadLibraryNotFound = cerrors.Register("compiler-renderer/workload-li
 // an entry absent from the resolved WorkloadLibrary's workloads map.
 func ErrWorkloadEntryNotFound() error { return errWorkloadEntryNotFound }
 
-var errWorkloadEntryNotFound = cerrors.Register("compiler-renderer/workload-entry-not-found", cerrors.Meta{
+var errWorkloadEntryNotFound = cerrors.Register("workload-entry-not-found", cerrors.Meta{
 	ShortCode: "E0063",
 	Message:   "workload-library import references an entry not present in the WorkloadLibrary",
 })
@@ -180,7 +180,7 @@ var errWorkloadEntryNotFound = cerrors.Register("compiler-renderer/workload-entr
 // file cannot expand into another bundle; compose at the consumption site).
 func ErrArtifactImportShape() error { return errArtifactImportShape }
 
-var errArtifactImportShape = cerrors.Register("compiler-renderer/artifact-import-shape", cerrors.Meta{
+var errArtifactImportShape = cerrors.Register("artifact-import-shape", cerrors.Meta{
 	ShortCode: "E0027",
 	Message:   "artifacts $import: is not a bare-name artifacts-library reference (<Library>#/artifacts/<entry>)",
 })
@@ -190,7 +190,7 @@ var errArtifactImportShape = cerrors.Register("compiler-renderer/artifact-import
 // plus any lockfile-pinned libraries bridged in at load).
 func ErrArtifactsLibraryNotFound() error { return errArtifactsLibraryNotFound }
 
-var errArtifactsLibraryNotFound = cerrors.Register("compiler-renderer/artifacts-library-not-found", cerrors.Meta{
+var errArtifactsLibraryNotFound = cerrors.Register("artifacts-library-not-found", cerrors.Meta{
 	ShortCode: "E0031",
 	Message:   "artifacts-library import references an ArtifactsLibrary not present in the catalog",
 })
@@ -199,7 +199,7 @@ var errArtifactsLibraryNotFound = cerrors.Register("compiler-renderer/artifacts-
 // import names a bundle absent from the resolved ArtifactsLibrary's artifacts map.
 func ErrArtifactsLibraryEntryNotFound() error { return errArtifactsLibraryEntryNotFound }
 
-var errArtifactsLibraryEntryNotFound = cerrors.Register("compiler-renderer/artifacts-library-entry-not-found", cerrors.Meta{
+var errArtifactsLibraryEntryNotFound = cerrors.Register("artifacts-library-entry-not-found", cerrors.Meta{
 	ShortCode: "E0030",
 	Message:   "artifacts-library import references a bundle not present in the ArtifactsLibrary",
 })
@@ -226,7 +226,7 @@ var errArtifactsLibraryEntryNotFound = cerrors.Register("compiler-renderer/artif
 // errors.Is(err, ErrArtifactOutputCollision()).
 func ErrArtifactOutputCollision() error { return errArtifactOutputCollision }
 
-var errArtifactOutputCollision = cerrors.Register("compiler-renderer/artifact-output-collision", cerrors.Meta{
+var errArtifactOutputCollision = cerrors.Register("artifact-output-collision", cerrors.Meta{
 	ShortCode: "E0028",
 	Message:   "artifacts output filename collision: two artifact outputs carry the same filename",
 })
@@ -257,7 +257,7 @@ var errArtifactOutputCollision = cerrors.Register("compiler-renderer/artifact-ou
 // errors.Is(err, ErrArtifactPillarNotDeclared()).
 func ErrArtifactPillarNotDeclared() error { return errArtifactPillarNotDeclared }
 
-var errArtifactPillarNotDeclared = cerrors.Register("compiler-renderer/artifact-pillar-not-declared", cerrors.Meta{
+var errArtifactPillarNotDeclared = cerrors.Register("artifact-pillar-not-declared", cerrors.Meta{
 	ShortCode: "E0029",
 	Message:   "artifact template references a pillar the Recipe does not declare",
 })
@@ -281,7 +281,7 @@ var errArtifactPillarNotDeclared = cerrors.Register("compiler-renderer/artifact-
 // component's own render, before any of them reach an assembly.
 func ErrAssembledOutputCollision() error { return errAssembledOutputCollision }
 
-var errAssembledOutputCollision = cerrors.Register("compiler-renderer/assembled-output-collision", cerrors.Meta{
+var errAssembledOutputCollision = cerrors.Register("assembled-output-collision", cerrors.Meta{
 	ShortCode: "E0032",
 	Message:   "assembled output collision: two contributors write the same output path",
 })
@@ -335,7 +335,7 @@ var errAssembledOutputCollision = cerrors.Register("compiler-renderer/assembled-
 // than in the registered wording, which names the collision and not its fix.
 func ErrDerivedKeyCollision() error { return errDerivedKeyCollision }
 
-var errDerivedKeyCollision = cerrors.Register("compiler-renderer/derived-key-collision", cerrors.Meta{
+var errDerivedKeyCollision = cerrors.Register("derived-key-collision", cerrors.Meta{
 	ShortCode: "E0038",
 	Message:   "derived name collision: one name is derived more than once in one key space",
 })
@@ -367,7 +367,7 @@ func ErrCircularImport() error { return refcycle.ErrCycle() }
 // library entry's own body, which the consuming entity did not write.
 func ErrHostInLibraryImport() error { return errHostInLibraryImport }
 
-var errHostInLibraryImport = cerrors.Register("compiler-renderer/host-in-library-import", cerrors.Meta{
+var errHostInLibraryImport = cerrors.Register("host-in-library-import", cerrors.Meta{
 	ShortCode: "E0040",
 	Message:   "library $import: carries a registry host; reference the library by bare-name identity",
 })
@@ -384,7 +384,7 @@ var errHostInLibraryImport = cerrors.Register("compiler-renderer/host-in-library
 // rendered input). Match with errors.Is(err, ErrProviderNodeInputInvalid()).
 func ErrProviderNodeInputInvalid() error { return errProviderNodeInputInvalid }
 
-var errProviderNodeInputInvalid = cerrors.Register("compiler-renderer/provider-node-input-invalid", cerrors.Meta{
+var errProviderNodeInputInvalid = cerrors.Register("provider-node-input-invalid", cerrors.Meta{
 	ShortCode: "E0054",
 	Message:   "provider rejected node input",
 })
@@ -397,7 +397,7 @@ var errProviderNodeInputInvalid = cerrors.Register("compiler-renderer/provider-n
 // triggered the halt.
 func ErrUnknownProvider() error { return errUnknownProvider }
 
-var errUnknownProvider = cerrors.Register("compiler-renderer/unknown-provider", cerrors.Meta{
+var errUnknownProvider = cerrors.Register("unknown-provider", cerrors.Meta{
 	ShortCode: "E0061",
 	Message:   "unknown provider",
 })
@@ -420,7 +420,7 @@ var errUnknownProvider = cerrors.Register("compiler-renderer/unknown-provider", 
 // wording does not yet state.
 func ErrPathCollision() error { return errPathCollision }
 
-var errPathCollision = cerrors.Register("compiler-renderer/path-collision", cerrors.Meta{
+var errPathCollision = cerrors.Register("path-collision", cerrors.Meta{
 	ShortCode: "E0048",
 	Message:   "dispatch path produced multiple provider outputs",
 })
@@ -435,7 +435,7 @@ var errPathCollision = cerrors.Register("compiler-renderer/path-collision", cerr
 // TRANSLATION_ERROR.
 func ErrInstanceIDCollision() error { return errInstanceIDCollision }
 
-var errInstanceIDCollision = cerrors.Register("compiler-renderer/instance-id-collision", cerrors.Meta{
+var errInstanceIDCollision = cerrors.Register("instance-id-collision", cerrors.Meta{
 	ShortCode: "E0041",
 	Message:   "multiple contributors share an instance ID at the same dispatch path",
 })
@@ -452,7 +452,7 @@ var errInstanceIDCollision = cerrors.Register("compiler-renderer/instance-id-col
 // Category: TRANSLATION_ERROR.
 func ErrChartNameMismatch() error { return errChartNameMismatch }
 
-var errChartNameMismatch = cerrors.Register("compiler-renderer/chart-name-mismatch", cerrors.Meta{
+var errChartNameMismatch = cerrors.Register("chart-name-mismatch", cerrors.Meta{
 	ShortCode: "E0036",
 	Message:   "merged-path assembly has conflicting assembly-name annotation values",
 })
@@ -474,7 +474,7 @@ var errChartNameMismatch = cerrors.Register("compiler-renderer/chart-name-mismat
 // (operator-authored path template).
 func ErrPathTemplateInvalidField() error { return errPathTemplateInvalidField }
 
-var errPathTemplateInvalidField = cerrors.Register("compiler-renderer/path-template-invalid-field", cerrors.Meta{
+var errPathTemplateInvalidField = cerrors.Register("path-template-invalid-field", cerrors.Meta{
 	ShortCode: "E0049",
 	Message:   "path template references a field not in the documented allowlist",
 })
@@ -492,7 +492,7 @@ var errPathTemplateInvalidField = cerrors.Register("compiler-renderer/path-templ
 // references invalid context for its scope).
 func ErrFRTemplateInvalidField() error { return errFRTemplateInvalidField }
 
-var errFRTemplateInvalidField = cerrors.Register("compiler-renderer/featurerecipe-template-invalid-field", cerrors.Meta{
+var errFRTemplateInvalidField = cerrors.Register("featurerecipe-template-invalid-field", cerrors.Meta{
 	ShortCode: "E0039",
 	Message:   "FeatureRecipe template references a per-component-only field with executionScope: boundary",
 })
@@ -523,7 +523,7 @@ func ErrBoundaryScopeAttachmentNotDeclaredAtABoundary() error {
 }
 
 var errBoundaryScopeAttachmentNotDeclaredAtABoundary = cerrors.Register(
-	"compiler-renderer/boundary-scope-attachment-not-declared-at-a-boundary", cerrors.Meta{
+	"boundary-scope-attachment-not-declared-at-a-boundary", cerrors.Meta{
 		ShortCode: "E0259",
 		Message: "attachment binds a FeatureRecipe with executionScope: boundary " +
 			"and no boundary holding the component declares it",
@@ -541,7 +541,7 @@ var errBoundaryScopeAttachmentNotDeclaredAtABoundary = cerrors.Register(
 // field also halts here.
 func ErrAssertionFailed() error { return errAssertionFailed }
 
-var errAssertionFailed = cerrors.Register("compiler-renderer/authored-assertion-failed", cerrors.Meta{
+var errAssertionFailed = cerrors.Register("authored-assertion-failed", cerrors.Meta{
 	ShortCode: "E0033",
 	Message:   "assertion failed",
 })
@@ -554,7 +554,7 @@ var errAssertionFailed = cerrors.Register("compiler-renderer/authored-assertion-
 // this sentinel, naming the offending step and the addressed key.
 func ErrPipelineTargetNotEmitted() error { return errPipelineTargetNotEmitted }
 
-var errPipelineTargetNotEmitted = cerrors.Register("compiler-renderer/pipeline-target-not-emitted", cerrors.Meta{
+var errPipelineTargetNotEmitted = cerrors.Register("pipeline-target-not-emitted", cerrors.Meta{
 	ShortCode: "E0052",
 	Message:   "pipeline PATCH targets a document the node did not emit",
 })
@@ -582,7 +582,7 @@ var errPipelineTargetNotEmitted = cerrors.Register("compiler-renderer/pipeline-t
 // the declaration; what only the walk can answer stays with the walk.
 func ErrPipelineHostScopeUnavailable() error { return errPipelineHostScopeUnavailable }
 
-var errPipelineHostScopeUnavailable = cerrors.Register("compiler-renderer/pipeline-host-scope-unavailable", cerrors.Meta{
+var errPipelineHostScopeUnavailable = cerrors.Register("pipeline-host-scope-unavailable", cerrors.Meta{
 	ShortCode: "E0050",
 	Message:   "pipeline /host operation from a step with no host component",
 })
@@ -613,7 +613,7 @@ var errPipelineHostScopeUnavailable = cerrors.Register("compiler-renderer/pipeli
 // output, move the step to /host, or remove it.
 func ErrPipelinePatchPreAssembly() error { return errPipelinePatchPreAssembly }
 
-var errPipelinePatchPreAssembly = cerrors.Register("compiler-renderer/pipeline-patch-targets-unassembled-fragments", cerrors.Meta{
+var errPipelinePatchPreAssembly = cerrors.Register("pipeline-patch-targets-unassembled-fragments", cerrors.Meta{
 	ShortCode: "E0051",
 	Message:   "pipeline PATCH targets an assembler provider's pre-assembly fragments",
 })
@@ -638,7 +638,7 @@ var errPipelinePatchPreAssembly = cerrors.Register("compiler-renderer/pipeline-p
 // Category: CATALOG_ERROR.
 func ErrPluginProviderIncompatible() error { return errPluginProviderIncompatible }
 
-var errPluginProviderIncompatible = cerrors.Register("compiler-renderer/plugin-provider-incompatible", cerrors.Meta{
+var errPluginProviderIncompatible = cerrors.Register("plugin-provider-incompatible", cerrors.Meta{
 	ShortCode: "E0053",
 	Message:   "pipeline plugin is not compatible with the rendering provider",
 })
@@ -663,7 +663,7 @@ var errPluginProviderIncompatible = cerrors.Register("compiler-renderer/plugin-p
 // Category: TRANSLATION_ERROR.
 func ErrBoundaryAssemblerMissing() error { return errBoundaryAssemblerMissing }
 
-var errBoundaryAssemblerMissing = cerrors.Register("compiler-renderer/boundary-assembly-not-provided", cerrors.Meta{
+var errBoundaryAssemblerMissing = cerrors.Register("boundary-assembly-not-provided", cerrors.Meta{
 	ShortCode: "E0035",
 	Message:   "provider expected to assemble its dispatch group provides no boundary assembler",
 })
@@ -681,7 +681,7 @@ var errBoundaryAssemblerMissing = cerrors.Register("compiler-renderer/boundary-a
 // errors.Is(err, ErrArtifactContentMismatch()).
 func ErrArtifactContentMismatch() error { return errArtifactContentMismatch }
 
-var errArtifactContentMismatch = cerrors.Register("compiler-renderer/artifact-content-mismatch", cerrors.Meta{
+var errArtifactContentMismatch = cerrors.Register("artifact-content-mismatch", cerrors.Meta{
 	ShortCode: "E0026",
 	Message:   "imported artifact content does not match the recipe's recorded digest",
 })
@@ -711,7 +711,7 @@ var errArtifactContentMismatch = cerrors.Register("compiler-renderer/artifact-co
 // Match with errors.Is(err, ErrCrossProviderLinkUnsupported()).
 func ErrCrossProviderLinkUnsupported() error { return errCrossProviderLinkUnsupported }
 
-var errCrossProviderLinkUnsupported = cerrors.Register("compiler-renderer/cross-provider-link-unsupported", cerrors.Meta{
+var errCrossProviderLinkUnsupported = cerrors.Register("cross-provider-link-unsupported", cerrors.Meta{
 	ShortCode: "E0037",
 	Message:   "cross-boundary link between endpoints rendered by different providers is not supported",
 })
@@ -730,7 +730,7 @@ var errCrossProviderLinkUnsupported = cerrors.Register("compiler-renderer/cross-
 // errors.Is(err, ErrRenderNondeterministic()).
 func ErrRenderNondeterministic() error { return errRenderNondeterministic }
 
-var errRenderNondeterministic = cerrors.Register("compiler-renderer/render-nondeterministic", cerrors.Meta{
+var errRenderNondeterministic = cerrors.Register("render-nondeterministic", cerrors.Meta{
 	ShortCode: "E0058",
 	Message:   "provider render is not deterministic",
 })
@@ -755,7 +755,7 @@ var errRenderNondeterministic = cerrors.Register("compiler-renderer/render-nonde
 // errors.Is(err, ErrOrphanCrossBoundaryLinkSentinel()).
 func ErrOrphanCrossBoundaryLinkSentinel() error { return errOrphanCrossBoundaryLinkSentinel }
 
-var errOrphanCrossBoundaryLinkSentinel = cerrors.Register("compiler-renderer/orphan-cross-boundary-link-placeholder", cerrors.Meta{
+var errOrphanCrossBoundaryLinkSentinel = cerrors.Register("orphan-cross-boundary-link-placeholder", cerrors.Meta{
 	ShortCode: "E0047",
 	Message:   "assembled output retains an unresolved cross-boundary link placeholder",
 })
@@ -777,7 +777,7 @@ var errOrphanCrossBoundaryLinkSentinel = cerrors.Register("compiler-renderer/orp
 // correct. Match with errors.Is(err, ErrNestSegmentNotOneDirectory()).
 func ErrNestSegmentNotOneDirectory() error { return errNestSegmentNotOneDirectory }
 
-var errNestSegmentNotOneDirectory = cerrors.Register("compiler-renderer/nest-segment-not-one-directory", cerrors.Meta{
+var errNestSegmentNotOneDirectory = cerrors.Register("nest-segment-not-one-directory", cerrors.Meta{
 	ShortCode: "E0250",
 	Message:   "provider named a directory for each contributor's own sub-directory that is not a single directory name",
 })
@@ -807,7 +807,7 @@ var errNestSegmentNotOneDirectory = cerrors.Register("compiler-renderer/nest-seg
 // errors.Is(err, ErrEmptySource()).
 func ErrEmptySource() error { return errEmptySource }
 
-var errEmptySource = cerrors.Register("compiler-renderer/recipe-source-is-empty", cerrors.Meta{
+var errEmptySource = cerrors.Register("recipe-source-is-empty", cerrors.Meta{
 	ShortCode: "E0251",
 	Message:   "recipe source is an empty string, which names neither sourceless mode nor sourced mode",
 })
@@ -848,7 +848,7 @@ var errEmptySource = cerrors.Register("compiler-renderer/recipe-source-is-empty"
 // errors.Is(err, ErrArtifactsLibraryFileEscapesKey()).
 func ErrArtifactsLibraryFileEscapesKey() error { return errArtifactsLibraryFileEscapesKey }
 
-var errArtifactsLibraryFileEscapesKey = cerrors.Register("compiler-renderer/artifacts-library-file-escapes-key", cerrors.Meta{
+var errArtifactsLibraryFileEscapesKey = cerrors.Register("artifacts-library-file-escapes-key", cerrors.Meta{
 	ShortCode: "E0252",
 	Message:   "artifacts-library bundle file name leaves the artifacts key its output is nested under",
 })
@@ -874,7 +874,7 @@ var errArtifactsLibraryFileEscapesKey = cerrors.Register("compiler-renderer/arti
 // document. Match with errors.Is(err, ErrComponentIdentityTargetRefuses()).
 func ErrComponentIdentityTargetRefuses() error { return errComponentIdentityTargetRefuses }
 
-var errComponentIdentityTargetRefuses = cerrors.Register("compiler-renderer/component-identity-target-refuses", cerrors.Meta{
+var errComponentIdentityTargetRefuses = cerrors.Register("component-identity-target-refuses", cerrors.Meta{
 	ShortCode: "E0263",
 	Message:   "the target will not accept a name derived from this component's authored identity: rename the component",
 })
@@ -900,7 +900,7 @@ var errComponentIdentityTargetRefuses = cerrors.Register("compiler-renderer/comp
 // anything an author wrote. Match with errors.Is(err, ErrNameBoundNotConverging()).
 func ErrNameBoundNotConverging() error { return errNameBoundNotConverging }
 
-var errNameBoundNotConverging = cerrors.Register("compiler-renderer/provider-refused-every-component-identity", cerrors.Meta{
+var errNameBoundNotConverging = cerrors.Register("provider-refused-every-component-identity", cerrors.Meta{
 	ShortCode: "E0264",
 	Message:   "provider guest never accepted a component identity the compiler composed for it",
 })
@@ -934,7 +934,7 @@ var errNameBoundNotConverging = cerrors.Register("compiler-renderer/provider-ref
 // errors.Is(err, ErrUnsupportedInputKind()).
 func ErrUnsupportedInputKind() error { return errUnsupportedInputKind }
 
-var errUnsupportedInputKind = cerrors.Register("compiler-renderer/unsupported-input-kind", cerrors.Meta{
+var errUnsupportedInputKind = cerrors.Register("unsupported-input-kind", cerrors.Meta{
 	ShortCode: "E0265",
 	Message:   "provider does not support the node's input kind",
 })
@@ -981,7 +981,7 @@ var errUnsupportedInputKind = cerrors.Register("compiler-renderer/unsupported-in
 // Category: CATALOG_ERROR.
 func ErrProviderRenderDuplicatePath() error { return errProviderRenderDuplicatePath }
 
-var errProviderRenderDuplicatePath = cerrors.Register("compiler-renderer/provider-render-duplicate-path", cerrors.Meta{
+var errProviderRenderDuplicatePath = cerrors.Register("provider-render-duplicate-path", cerrors.Meta{
 	ShortCode: "E0269",
 	Message: "provider guest returned two output files under one path; " +
 		"a conforming guest returns each output path at most once",
@@ -1024,7 +1024,7 @@ func DuplicateRenderPathErr(path, nodeID string) error {
 // Category: TRANSLATION_ERROR.
 func ErrLinkPatchFileNotEmitted() error { return errLinkPatchFileNotEmitted }
 
-var errLinkPatchFileNotEmitted = cerrors.Register("compiler-renderer/link-patch-file-not-emitted", cerrors.Meta{
+var errLinkPatchFileNotEmitted = cerrors.Register("link-patch-file-not-emitted", cerrors.Meta{
 	ShortCode: "E0270",
 	Message: "link patch names an output file the dispatch group did not emit; " +
 		"a conforming link patch names a file the group's own render returned",
@@ -1042,7 +1042,7 @@ var errLinkPatchFileNotEmitted = cerrors.Register("compiler-renderer/link-patch-
 // Category: CATALOG_ERROR.
 func ErrPipelineEmitFileAbsent() error { return errPipelineEmitFileAbsent }
 
-var errPipelineEmitFileAbsent = cerrors.Register("compiler-renderer/pipeline-emit-file-absent", cerrors.Meta{
+var errPipelineEmitFileAbsent = cerrors.Register("pipeline-emit-file-absent", cerrors.Meta{
 	ShortCode: "E0271",
 	Message: "emit_file side effect carries no file; " +
 		"a conforming emit_file side effect carries a file with its path and content",
@@ -1063,7 +1063,7 @@ var errPipelineEmitFileAbsent = cerrors.Register("compiler-renderer/pipeline-emi
 // Category: CATALOG_ERROR.
 func ErrPipelineSideEffectKindUndefined() error { return errPipelineSideEffectKindUndefined }
 
-var errPipelineSideEffectKindUndefined = cerrors.Register("compiler-renderer/pipeline-side-effect-kind-undefined", cerrors.Meta{
+var errPipelineSideEffectKindUndefined = cerrors.Register("pipeline-side-effect-kind-undefined", cerrors.Meta{
 	ShortCode: "E0272",
 	Message: "side effect declares a kind the plugin contract does not define; " +
 		"a conforming side effect declares emit_file or emit_crd",
@@ -1099,7 +1099,7 @@ var errPipelineSideEffectKindUndefined = cerrors.Register("compiler-renderer/pip
 // Category: CATALOG_ERROR.
 func ErrRenderedNameUnavailable() error { return errRenderedNameUnavailable }
 
-var errRenderedNameUnavailable = cerrors.Register("compiler-renderer/rendered-name-unavailable", cerrors.Meta{
+var errRenderedNameUnavailable = cerrors.Register("rendered-name-unavailable", cerrors.Meta{
 	ShortCode: "E0273",
 	Message: "template reads the name the target renders author-supplied source under, and this node's " +
 		"provider reports no such name; a conforming template reads a value the node's own provider supplies",

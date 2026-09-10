@@ -42,11 +42,11 @@ func newExplainCmd() *cobra.Command {
 			"That short code is the one to pass here; it is fixed once a condition is published, so " +
 			"a code quoted out of an old report still names the same condition.\n\n" +
 			"  aggrega explain E0209\n\n" +
-			"The descriptive code is accepted too — the qualified, hyphenated one a structured " +
-			"diagnostic carries as a field of its own. A condition's two codes name the same " +
+			"The descriptive code is accepted too — the hyphenated one naming the condition in " +
+			"words, which a structured diagnostic carries as a field of its own. A condition's two codes name the same " +
 			"condition and reach different readers, so either is a code you may be holding, and the " +
-			"condition above is registered under validator/recipe-values-mapping-requires-source:\n\n" +
-			"  aggrega explain validator/recipe-values-mapping-requires-source\n\n" +
+			"condition above is registered under recipe-values-mapping-requires-source:\n\n" +
+			"  aggrega explain recipe-values-mapping-requires-source\n\n" +
 			"Most conditions are declared inside this binary, and for those the identifiers and the " +
 			"sentence are reported without a network or a cache. The rest — the conditions a provider " +
 			"declares for itself — are resolved against the published reference, as is the " +

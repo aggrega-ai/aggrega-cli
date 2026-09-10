@@ -19,7 +19,7 @@ import (
 // failure without parsing the formatted error text.
 func ErrMappingEntryNotScalar() error { return errMappingEntryNotScalar }
 
-var errMappingEntryNotScalar = cerrors.Register("types/mapping-entry-not-scalar", cerrors.Meta{
+var errMappingEntryNotScalar = cerrors.Register("mapping-entry-not-scalar", cerrors.Meta{
 	ShortCode: "E0191",
 	Message:   "mappinglibrary: entry body must be a string scalar",
 })

@@ -51,7 +51,7 @@ const DigestPrefixLen = 12
 // cache.
 func ErrEmptyWorkspaceRoot() error { return errEmptyWorkspaceRoot }
 
-var errEmptyWorkspaceRoot = cerrors.Register("sourceresolver-cacheslot/empty-workspace-root", cerrors.Meta{
+var errEmptyWorkspaceRoot = cerrors.Register("empty-workspace-root", cerrors.Meta{
 	ShortCode: "E0187",
 	Message:   "cacheslot: empty workspaceRoot",
 })

@@ -33,7 +33,7 @@ func ErrFeatureRecipeValuesMappingRequiresSource() error {
 	return errFeatureRecipeValuesMappingRequiresSource
 }
 
-var errFeatureRecipeValuesMappingRequiresSource = cerrors.Register("validator/feature-recipe-values-mapping-requires-source", cerrors.Meta{
+var errFeatureRecipeValuesMappingRequiresSource = cerrors.Register("feature-recipe-values-mapping-requires-source", cerrors.Meta{
 	ShortCode: "E0204",
 	Message:   "FeatureRecipe: valuesMapping requires source",
 })
@@ -45,7 +45,7 @@ var errFeatureRecipeValuesMappingRequiresSource = cerrors.Register("validator/fe
 // transform, not a rendering surface).
 func ErrFeatureRecipeEvalProviderConstraint() error { return errFeatureRecipeEvalProviderConstraint }
 
-var errFeatureRecipeEvalProviderConstraint = cerrors.Register("validator/feature-recipe-eval-provider-constraint", cerrors.Meta{
+var errFeatureRecipeEvalProviderConstraint = cerrors.Register("feature-recipe-eval-provider-constraint", cerrors.Meta{
 	ShortCode: "E0203",
 	Message:   "featurerecipe eval-provider constraint: render input-kind fields are forbidden when provider is eval",
 })

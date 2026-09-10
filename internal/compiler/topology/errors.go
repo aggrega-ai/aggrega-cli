@@ -14,7 +14,7 @@ import cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 // the author at the specific import that caused the failure.
 func ErrSubAggregateLoad() error { return errSubAggregateLoad }
 
-var errSubAggregateLoad = cerrors.Register("compiler-topology/sub-aggregate-not-loadable", cerrors.Meta{
+var errSubAggregateLoad = cerrors.Register("sub-aggregate-not-loadable", cerrors.Meta{
 	ShortCode: "E0072",
 	Message:   "sub-aggregate load failed",
 })
@@ -27,7 +27,7 @@ var errSubAggregateLoad = cerrors.Register("compiler-topology/sub-aggregate-not-
 // chain.
 func ErrMaxDepth() error { return errMaxDepth }
 
-var errMaxDepth = cerrors.Register("compiler-topology/sub-aggregate-nesting-depth-exceeded", cerrors.Meta{
+var errMaxDepth = cerrors.Register("sub-aggregate-nesting-depth-exceeded", cerrors.Meta{
 	ShortCode: "E0068",
 	Message:   "max sub-aggregate nesting depth exceeded",
 })
@@ -43,7 +43,7 @@ var errMaxDepth = cerrors.Register("compiler-topology/sub-aggregate-nesting-dept
 // declared and the Release-supplied target.
 func ErrReleaseEdgeRetarget() error { return errReleaseEdgeRetarget }
 
-var errReleaseEdgeRetarget = cerrors.Register("compiler-topology/release-edge-retarget", cerrors.Meta{
+var errReleaseEdgeRetarget = cerrors.Register("release-edge-retarget", cerrors.Meta{
 	ShortCode: "E0071",
 	Message:   "release edge retargets a developer-declared edge",
 })
@@ -67,7 +67,7 @@ var errReleaseEdgeRetarget = cerrors.Register("compiler-topology/release-edge-re
 // Aggregate does not declare reaches this same condition.
 func ErrUnboundReleaseEdgeConfig() error { return errUnboundReleaseEdgeConfig }
 
-var errUnboundReleaseEdgeConfig = cerrors.Register("compiler-topology/unbound-release-edge-config", cerrors.Meta{
+var errUnboundReleaseEdgeConfig = cerrors.Register("unbound-release-edge-config", cerrors.Meta{
 	ShortCode: "E0074",
 	Message:   "release per-edge configuration has no edge to apply to",
 })
@@ -84,7 +84,7 @@ var errUnboundReleaseEdgeConfig = cerrors.Register("compiler-topology/unbound-re
 // an edge is type-checked at Step 4).
 func ErrDanglingUsesTarget() error { return errDanglingUsesTarget }
 
-var errDanglingUsesTarget = cerrors.Register("compiler-topology/dangling-uses-target", cerrors.Meta{
+var errDanglingUsesTarget = cerrors.Register("dangling-uses-target", cerrors.Meta{
 	ShortCode: "E0066",
 	Message:   "uses edge target does not exist",
 })
@@ -101,7 +101,7 @@ var errDanglingUsesTarget = cerrors.Register("compiler-topology/dangling-uses-ta
 // precise authoring position.
 func ErrSubAggregateNameCollision() error { return errSubAggregateNameCollision }
 
-var errSubAggregateNameCollision = cerrors.Register("compiler-topology/sub-aggregate-name-collision", cerrors.Meta{
+var errSubAggregateNameCollision = cerrors.Register("sub-aggregate-name-collision", cerrors.Meta{
 	ShortCode: "E0073",
 	Message:   "flattened node ID collision: rename one of the colliding instances so their flattened IDs differ",
 })
@@ -117,7 +117,7 @@ var errSubAggregateNameCollision = cerrors.Register("compiler-topology/sub-aggre
 // silently flattening a half-normalized graph.
 func ErrUnnormalizedAggregate() error { return errUnnormalizedAggregate }
 
-var errUnnormalizedAggregate = cerrors.Register("compiler-topology/aggregate-not-in-canonical-form", cerrors.Meta{
+var errUnnormalizedAggregate = cerrors.Register("aggregate-not-in-canonical-form", cerrors.Meta{
 	ShortCode: "E0075",
 	Message:   "aggregate reached topology un-normalized (non-empty root components alongside a synthesized default subsystem)",
 })
@@ -139,7 +139,7 @@ var errUnnormalizedAggregate = cerrors.Register("compiler-topology/aggregate-not
 // it reads.
 func ErrInvalidActive() error { return errInvalidActive }
 
-var errInvalidActive = cerrors.Register("compiler-topology/active-toggle-not-a-boolean", cerrors.Meta{
+var errInvalidActive = cerrors.Register("active-toggle-not-a-boolean", cerrors.Meta{
 	ShortCode: "E0067",
 	Message:   "active toggle did not resolve to a boolean",
 })
@@ -157,7 +157,7 @@ var errInvalidActive = cerrors.Register("compiler-topology/active-toggle-not-a-b
 // false so the author can either keep the target present or drop the edge.
 func ErrUsesPrunedComponent() error { return errUsesPrunedComponent }
 
-var errUsesPrunedComponent = cerrors.Register("compiler-topology/uses-target-not-active", cerrors.Meta{
+var errUsesPrunedComponent = cerrors.Register("uses-target-not-active", cerrors.Meta{
 	ShortCode: "E0077",
 	Message:   "uses edge target was pruned because its active toggle resolved to false",
 })
@@ -173,7 +173,7 @@ var errUsesPrunedComponent = cerrors.Register("compiler-topology/uses-target-not
 // where the references close the loop.
 func ErrReexportCycle() error { return errReexportCycle }
 
-var errReexportCycle = cerrors.Register("compiler-topology/reexport-cycle", cerrors.Meta{
+var errReexportCycle = cerrors.Register("reexport-cycle", cerrors.Meta{
 	ShortCode: "E0070",
 	Message:   "re-exported component alias forms a cycle",
 })
@@ -190,7 +190,7 @@ var errReexportCycle = cerrors.Register("compiler-topology/reexport-cycle", cerr
 // the offending patch and the specific confinement rule it broke.
 func ErrMutatorPatchRejected() error { return errMutatorPatchRejected }
 
-var errMutatorPatchRejected = cerrors.Register("compiler-topology/mutator-patch-rejected", cerrors.Meta{
+var errMutatorPatchRejected = cerrors.Register("mutator-patch-rejected", cerrors.Meta{
 	ShortCode: "E0069",
 	Message:   "mutator patch rejected",
 })
@@ -215,7 +215,7 @@ var errMutatorPatchRejected = cerrors.Register("compiler-topology/mutator-patch-
 // composed.
 func ErrUnplacedSubModule() error { return errUnplacedSubModule }
 
-var errUnplacedSubModule = cerrors.Register("compiler-topology/unplaced-sub-module", cerrors.Meta{
+var errUnplacedSubModule = cerrors.Register("unplaced-sub-module", cerrors.Meta{
 	ShortCode: "E0076",
 	Message:   "sub-module placed in no boundary: route it into a boundary under `aggregates`, or name its components there under `components`",
 })
@@ -240,7 +240,7 @@ var errUnplacedSubModule = cerrors.Register("compiler-topology/unplaced-sub-modu
 // holding exactly those components, so every component it names is placed.
 func ErrUnplacedComponent() error { return errUnplacedComponent }
 
-var errUnplacedComponent = cerrors.Register("compiler-topology/unplaced-component", cerrors.Meta{
+var errUnplacedComponent = cerrors.Register("unplaced-component", cerrors.Meta{
 	ShortCode: "E0260",
 	Message:   "component placed in no boundary: name it under a boundary's `components`, or place the sub-module that contributes it under `aggregates`",
 })
@@ -279,7 +279,7 @@ var errUnplacedComponent = cerrors.Register("compiler-topology/unplaced-componen
 // configured the component.
 func ErrUnresolvedBoundaryComponent() error { return errUnresolvedBoundaryComponent }
 
-var errUnresolvedBoundaryComponent = cerrors.Register("compiler-topology/unresolved-boundary-component", cerrors.Meta{
+var errUnresolvedBoundaryComponent = cerrors.Register("unresolved-boundary-component", cerrors.Meta{
 	ShortCode: "E0261",
 	Message:   "boundary names a component the composition does not hold: correct the name, or remove the entry",
 })

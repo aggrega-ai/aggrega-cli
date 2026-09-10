@@ -21,7 +21,7 @@ import (
 // validation diagnostic.
 func ErrConfigInvalid() error { return errConfigInvalid }
 
-var errConfigInvalid = cerrors.Register("workspaceconfig/workspace-config-invalid", cerrors.Meta{
+var errConfigInvalid = cerrors.Register("workspace-config-invalid", cerrors.Meta{
 	ShortCode: "E0224",
 	Message:   "file failed schema validation",
 })
@@ -36,7 +36,7 @@ var errConfigInvalid = cerrors.Register("workspaceconfig/workspace-config-invali
 // one win.
 func ErrDuplicateProviderTarget() error { return errDuplicateProviderTarget }
 
-var errDuplicateProviderTarget = cerrors.Register("workspaceconfig/duplicate-provider-target", cerrors.Meta{
+var errDuplicateProviderTarget = cerrors.Register("duplicate-provider-target", cerrors.Meta{
 	ShortCode: "E0225",
 	Message:   "capability is bound to more than one provider plugin",
 })
@@ -51,7 +51,7 @@ var errDuplicateProviderTarget = cerrors.Register("workspaceconfig/duplicate-pro
 // rather than surfacing later as an opaque resolve miss.
 func ErrCapabilityOnCrossCuttingSocket() error { return errCapabilityOnCrossCuttingSocket }
 
-var errCapabilityOnCrossCuttingSocket = cerrors.Register("workspaceconfig/capability-on-cross-cutting-socket", cerrors.Meta{
+var errCapabilityOnCrossCuttingSocket = cerrors.Register("capability-on-cross-cutting-socket", cerrors.Meta{
 	ShortCode: "E0223",
 	Message:   "a cross-cutting socket is bound by capability but attaches by uri",
 })
@@ -68,7 +68,7 @@ var errCapabilityOnCrossCuttingSocket = cerrors.Register("workspaceconfig/capabi
 // inert instead of quietly seeing it ignored.
 func ErrInertFieldOnProviderSocket() error { return errInertFieldOnProviderSocket }
 
-var errInertFieldOnProviderSocket = cerrors.Register("workspaceconfig/inert-field-on-provider-socket", cerrors.Meta{
+var errInertFieldOnProviderSocket = cerrors.Register("inert-field-on-provider-socket", cerrors.Meta{
 	ShortCode: "E0228",
 	Message:   "a provider socket binding sets a field with no referent on that socket",
 })
@@ -85,7 +85,7 @@ var errInertFieldOnProviderSocket = cerrors.Register("workspaceconfig/inert-fiel
 // plugin.
 func ErrGovernanceRoleInvalid() error { return errGovernanceRoleInvalid }
 
-var errGovernanceRoleInvalid = cerrors.Register("workspaceconfig/governance-role-invalid", cerrors.Meta{
+var errGovernanceRoleInvalid = cerrors.Register("governance-role-invalid", cerrors.Meta{
 	ShortCode: "E0227",
 	Message:   "a governance attachment declares no role or an unknown role",
 })
@@ -97,7 +97,7 @@ var errGovernanceRoleInvalid = cerrors.Register("workspaceconfig/governance-role
 // bound to another host halts loudly rather than shadowing the existing binding.
 func ErrDuplicateRegistryAlias() error { return errDuplicateRegistryAlias }
 
-var errDuplicateRegistryAlias = cerrors.Register("workspaceconfig/duplicate-registry-alias", cerrors.Meta{
+var errDuplicateRegistryAlias = cerrors.Register("duplicate-registry-alias", cerrors.Meta{
 	ShortCode: "E0226",
 	Message:   "registry alias is already used by another host",
 })
@@ -110,7 +110,7 @@ var errDuplicateRegistryAlias = cerrors.Register("workspaceconfig/duplicate-regi
 // silently choosing one host over the other.
 func ErrAmbiguousRegistryAlias() error { return errAmbiguousRegistryAlias }
 
-var errAmbiguousRegistryAlias = cerrors.Register("workspaceconfig/ambiguous-registry-alias", cerrors.Meta{
+var errAmbiguousRegistryAlias = cerrors.Register("ambiguous-registry-alias", cerrors.Meta{
 	ShortCode: "E0222",
 	Message:   "registry alias matches more than one host",
 })

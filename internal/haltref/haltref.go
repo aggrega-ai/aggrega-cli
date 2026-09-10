@@ -219,7 +219,7 @@ func (e *UnresolvedCodeError) Error() string {
 func codeShapes() string {
 	return "A code is either the short code a diagnostic prints — the letter E and four digits, as " +
 		"in E0164 — or the descriptive code a structured diagnostic carries, which for that same " +
-		"condition is resolver/parameter-contract-violation."
+		"condition is parameter-contract-violation."
 }
 
 // RetiredCodeError reports a short code that named a condition and no longer

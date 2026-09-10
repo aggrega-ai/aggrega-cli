@@ -18,7 +18,7 @@ import (
 // build halts on it loudly rather than handing the plugin ill-shaped settings.
 func ErrPolicySettingsInvalid() error { return errPolicySettingsInvalid }
 
-var errPolicySettingsInvalid = cerrors.Register("compiler-pipeline/policy-settings-invalid", cerrors.Meta{
+var errPolicySettingsInvalid = cerrors.Register("policy-settings-invalid", cerrors.Meta{
 	ShortCode: "E0018",
 	Message:   "policy attachment settings do not satisfy the plugin's declared settings schema",
 })
@@ -34,7 +34,7 @@ var errPolicySettingsInvalid = cerrors.Register("compiler-pipeline/policy-settin
 // guarantee for the annotation-transform role.
 func ErrAnnotationInjectionRejected() error { return errAnnotationInjectionRejected }
 
-var errAnnotationInjectionRejected = cerrors.Register("compiler-pipeline/annotation-injection-rejected", cerrors.Meta{
+var errAnnotationInjectionRejected = cerrors.Register("annotation-injection-rejected", cerrors.Meta{
 	ShortCode: "E0017",
 	Message:   "annotation-transform plugin output was rejected: an injection targets a component coordinate the host did not supply",
 })

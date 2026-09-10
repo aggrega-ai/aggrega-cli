@@ -85,7 +85,7 @@ spec:
 `)
 	err := validateBindingTargets(manifest, mockCatalogLookup(map[string]types.Feature{}))
 	assertIdentity(t, err, ErrAnnotationBindingTargetUnresolved(),
-		"resolver/annotation-binding-target-unresolved", "E0253")
+		"annotation-binding-target-unresolved", "E0253")
 
 	// The locator names the registry's block rather than the key inside it, and
 	// the key leads the detail instead. That is a property of the coordinate this
@@ -142,7 +142,7 @@ infra:
 	})
 	err := validateBindingTargets(manifest, catalog)
 	assertIdentity(t, err, ErrAnnotationBindingTargetUnresolved(),
-		"resolver/annotation-binding-target-unresolved", "E0253")
+		"annotation-binding-target-unresolved", "E0253")
 
 	const want = `annotation binding does not resolve against its target Feature ` +
 		`(Manifest, at .spec.mappings.features.annotations, ` +
@@ -170,7 +170,7 @@ values:
 
 	undeclared := validateSubkeyValueAgainstFeatureSchema(cache, &feature, "values", "missing", "x")
 	assertIdentity(t, undeclared, ErrAnnotationSubkeyNotConforming(),
-		"resolver/annotation-subkey-not-conforming", "E0254")
+		"annotation-subkey-not-conforming", "E0254")
 	const wantUndeclared = `annotation subkey does not conform to the target Feature's schema at the routed pillar: ` +
 		`annotation subkey "missing" is not declared at Feature "core/monitoring" spec.schema.values.missing`
 	if got := undeclared.Error(); got != wantUndeclared {
@@ -180,7 +180,7 @@ values:
 
 	nonConforming := validateSubkeyValueAgainstFeatureSchema(cache, &feature, "values", "level", "bogus")
 	assertIdentity(t, nonConforming, ErrAnnotationSubkeyNotConforming(),
-		"resolver/annotation-subkey-not-conforming", "E0254")
+		"annotation-subkey-not-conforming", "E0254")
 	if got := nonConforming.Error(); !strings.HasPrefix(got,
 		`annotation subkey does not conform to the target Feature's schema at the routed pillar: `+
 			`annotation subkey "level" value bogus does not conform to Feature "core/monitoring" spec.schema.values.level: `) {
@@ -197,7 +197,7 @@ func TestAnnotationSidePillarMismatch_RendersItsOutput(t *testing.T) {
 	aggregateSide := validateAnnotationSideCompatibility(
 		sideAggregate, "feature.myco/rewrite-host", "upstream", "infra", "aggregate.yaml")
 	assertIdentity(t, aggregateSide, ErrAnnotationSidePillarMismatch(),
-		"resolver/annotation-side-pillar-mismatch", "E0255")
+		"annotation-side-pillar-mismatch", "E0255")
 	const wantAggregate = `annotation routes through a pillar its authoring side may not use: ` +
 		`annotation "feature.myco/rewrite-host" at aggregate.yaml routes through pillar "infra" at path "upstream", ` +
 		`but aggregate-side annotations may only route through pillar "values"`
@@ -209,7 +209,7 @@ func TestAnnotationSidePillarMismatch_RendersItsOutput(t *testing.T) {
 	releaseSide := validateAnnotationSideCompatibility(
 		sideRelease, "feature.myco/db-pool", "pool", "values", "release.yaml")
 	assertIdentity(t, releaseSide, ErrAnnotationSidePillarMismatch(),
-		"resolver/annotation-side-pillar-mismatch", "E0255")
+		"annotation-side-pillar-mismatch", "E0255")
 	const wantRelease = `annotation routes through a pillar its authoring side may not use: ` +
 		`annotation "feature.myco/db-pool" at release.yaml routes through pillar "values" at path "pool", ` +
 		`but release-side annotations may only route through pillar "infra"`
@@ -247,7 +247,7 @@ spec:
 		t.Fatalf("expected exactly 1 finding; got %d: %v", len(findings), findings)
 	}
 	assertIdentity(t, findings[0], ErrAnnotationBindingPillarOverlap(),
-		"resolver/annotation-binding-pillar-overlap", "E0256")
+		"annotation-binding-pillar-overlap", "E0256")
 	if got, want := findings[0].Field, ".spec.mappings.features.annotations.feature.myco/db-pool"; got != want {
 		t.Errorf("locator = %q, want %q", got, want)
 	}

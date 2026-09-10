@@ -19,7 +19,7 @@ import (
 // Workload against the embedded Workload JSON Schema.
 func ErrWorkloadValidation() error { return errWorkloadValidation }
 
-var errWorkloadValidation = cerrors.Register("validator/workload-not-valid", cerrors.Meta{
+var errWorkloadValidation = cerrors.Register("workload-not-valid", cerrors.Meta{
 	ShortCode: "E0214",
 	Message:   "workload validation failed",
 })
@@ -32,7 +32,7 @@ var errWorkloadValidation = cerrors.Register("validator/workload-not-valid", cer
 // reserved for Recipe-internal plumbing).
 func ErrWorkloadFeaturesSchema() error { return errWorkloadFeaturesSchema }
 
-var errWorkloadFeaturesSchema = cerrors.Register("validator/workload-features-schema", cerrors.Meta{
+var errWorkloadFeaturesSchema = cerrors.Register("workload-features-schema", cerrors.Meta{
 	ShortCode: "E0213",
 	Message:   "workload featuresSchema cross-check failed",
 })
@@ -44,7 +44,7 @@ var errWorkloadFeaturesSchema = cerrors.Register("validator/workload-features-sc
 // Structural key-presence only; no value inspection.
 func ErrSlotNotReferenceable() error { return errSlotNotReferenceable }
 
-var errSlotNotReferenceable = cerrors.Register("validator/slot-not-referenceable", cerrors.Meta{
+var errSlotNotReferenceable = cerrors.Register("slot-not-referenceable", cerrors.Meta{
 	ShortCode: "E0212",
 	Message:   "workload attachment slot is not referenceable",
 })

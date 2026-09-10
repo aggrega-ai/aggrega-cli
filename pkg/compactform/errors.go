@@ -18,7 +18,7 @@ import (
 // rejects unknown keywords up front so typos surface immediately.
 func ErrUnknownKeyword() error { return errUnknownKeyword }
 
-var errUnknownKeyword = cerrors.Register("compactform/unknown-keyword", cerrors.Meta{
+var errUnknownKeyword = cerrors.Register("unknown-keyword", cerrors.Meta{
 	ShortCode: "E0120",
 	Message:   "compactform: unknown keyword",
 })
@@ -30,7 +30,7 @@ var errUnknownKeyword = cerrors.Register("compactform/unknown-keyword", cerrors.
 // `type`.
 func ErrAmbiguousDispatch() error { return errAmbiguousDispatch }
 
-var errAmbiguousDispatch = cerrors.Register("compactform/ambiguous-dispatch", cerrors.Meta{
+var errAmbiguousDispatch = cerrors.Register("ambiguous-dispatch", cerrors.Meta{
 	ShortCode: "E0115",
 	Message:   "compactform: ambiguous dispatch — $mode required",
 })
@@ -41,7 +41,7 @@ var errAmbiguousDispatch = cerrors.Register("compactform/ambiguous-dispatch", ce
 // rather than passed downstream to the validator.
 func ErrEscapeContentInvalid() error { return errEscapeContentInvalid }
 
-var errEscapeContentInvalid = cerrors.Register("compactform/escape-content-invalid", cerrors.Meta{
+var errEscapeContentInvalid = cerrors.Register("escape-content-invalid", cerrors.Meta{
 	ShortCode: "E0117",
 	Message:   "compactform: $jsonschema content invalid",
 })
@@ -53,7 +53,7 @@ var errEscapeContentInvalid = cerrors.Register("compactform/escape-content-inval
 // `minimum` / `minLength` / `minItems` depends on the field's type.
 func ErrConstraintTypeMismatch() error { return errConstraintTypeMismatch }
 
-var errConstraintTypeMismatch = cerrors.Register("compactform/constraint-type-mismatch", cerrors.Meta{
+var errConstraintTypeMismatch = cerrors.Register("constraint-type-mismatch", cerrors.Meta{
 	ShortCode: "E0116",
 	Message:   "compactform: constraint not valid for declared type",
 })
@@ -64,7 +64,7 @@ var errConstraintTypeMismatch = cerrors.Register("compactform/constraint-type-mi
 // the URL shape).
 func ErrReferenceUnresolvable() error { return errReferenceUnresolvable }
 
-var errReferenceUnresolvable = cerrors.Register("compactform/reference-unresolvable", cerrors.Meta{
+var errReferenceUnresolvable = cerrors.Register("reference-unresolvable", cerrors.Meta{
 	ShortCode: "E0119",
 	Message:   "compactform: $ref unresolvable",
 })
@@ -78,7 +78,7 @@ var errReferenceUnresolvable = cerrors.Register("compactform/reference-unresolva
 // valid URL whose target does not exist.
 func ErrUnresolvedSchemaLibraryRef() error { return errUnresolvedSchemaLibraryRef }
 
-var errUnresolvedSchemaLibraryRef = cerrors.Register("compactform/unresolved-schema-library-ref", cerrors.Meta{
+var errUnresolvedSchemaLibraryRef = cerrors.Register("unresolved-schema-library-ref", cerrors.Meta{
 	ShortCode: "E0121",
 	Message:   "compactform: cross-document $ref target not found",
 })
@@ -124,7 +124,7 @@ func ErrCircularRef() error { return refcycle.ErrCycle() }
 // error message steers the author to the identity form.
 func ErrHostInLibraryRef() error { return errHostInLibraryRef }
 
-var errHostInLibraryRef = cerrors.Register("compactform/host-in-library-ref", cerrors.Meta{
+var errHostInLibraryRef = cerrors.Register("host-in-library-ref", cerrors.Meta{
 	ShortCode: "E0118",
 	Message:   "compactform: cross-document $ref carries a registry host; reference the library by identity",
 })

@@ -19,7 +19,7 @@ import cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 // with errors.Is(err, ErrCycle()).
 func ErrCycle() error { return errCycle }
 
-var errCycle = cerrors.Register("refcycle/reference-cycle", cerrors.Meta{
+var errCycle = cerrors.Register("reference-cycle", cerrors.Meta{
 	ShortCode: "E0146",
 	Message:   "circular reference expansion",
 })

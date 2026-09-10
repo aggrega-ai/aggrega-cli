@@ -154,7 +154,7 @@ type RecipeLoaderSource interface {
 // over it.
 func ErrNoRecipeLoader() error { return errNoRecipeLoader }
 
-var errNoRecipeLoader = cerrors.Register("closure/catalog-cannot-load-recipe-bodies", cerrors.Meta{
+var errNoRecipeLoader = cerrors.Register("catalog-cannot-load-recipe-bodies", cerrors.Meta{
 	ShortCode: "E0109",
 	Message:   "resolve: catalog lookup cannot load resolved recipe and plugin bodies",
 })
@@ -243,7 +243,7 @@ type ResolvedSource struct {
 // the orchestrator, not this sentinel.
 func ErrSourceTemplateAtLockTime() error { return errSourceTemplateAtLockTime }
 
-var errSourceTemplateAtLockTime = cerrors.Register("closure/source-template-at-lock-time", cerrors.Meta{
+var errSourceTemplateAtLockTime = cerrors.Register("source-template-at-lock-time", cerrors.Meta{
 	ShortCode: "E0110",
 	Message:   "resolve: source-template evaluation failure at lock time",
 })
@@ -254,7 +254,7 @@ var errSourceTemplateAtLockTime = cerrors.Register("closure/source-template-at-l
 // this class also wrap ErrSourceTemplateAtLockTime.
 func ErrSourceTemplateParse() error { return errSourceTemplateParse }
 
-var errSourceTemplateParse = cerrors.Register("closure/source-template-not-parsable", cerrors.Meta{
+var errSourceTemplateParse = cerrors.Register("source-template-not-parsable", cerrors.Meta{
 	ShortCode: "E0111",
 	Message:   "resolve: source-template parse error",
 })
@@ -266,7 +266,7 @@ var errSourceTemplateParse = cerrors.Register("closure/source-template-not-parsa
 // this class also wrap ErrSourceTemplateAtLockTime.
 func ErrSourceTemplateProvidesRef() error { return errSourceTemplateProvidesRef }
 
-var errSourceTemplateProvidesRef = cerrors.Register("closure/source-template-provides-ref", cerrors.Meta{
+var errSourceTemplateProvidesRef = cerrors.Register("source-template-provides-ref", cerrors.Meta{
 	ShortCode: "E0112",
 	Message:   "resolve: source-template references .provides (invalid reverse reference)",
 })
@@ -410,7 +410,7 @@ type LibraryResolution struct {
 // versions, and the consumer chain.
 func ErrMVSConflict() error { return errMVSConflict }
 
-var errMVSConflict = cerrors.Register("closure/version-selection-conflict", cerrors.Meta{
+var errMVSConflict = cerrors.Register("version-selection-conflict", cerrors.Meta{
 	ShortCode: "E0107",
 	Message:   "resolve: minimal version selection conflict — incompatible library version requirements",
 })
@@ -426,7 +426,7 @@ var errMVSConflict = cerrors.Register("closure/version-selection-conflict", cerr
 // an entity the catalog does not hold.
 func ErrUnresolvableURI() error { return errUnresolvableURI }
 
-var errUnresolvableURI = cerrors.Register("closure/unresolvable-uri", cerrors.Meta{
+var errUnresolvableURI = cerrors.Register("unresolvable-uri", cerrors.Meta{
 	ShortCode: "E0114",
 	Message:   "resolve: no entity in the catalog matches this URI",
 })
@@ -481,7 +481,7 @@ func unresolvedEntity(uri, kindHint string, err error) error {
 // offending input string.
 func ErrInvalidLibraryRef() error { return errInvalidLibraryRef }
 
-var errInvalidLibraryRef = cerrors.Register("closure/invalid-library-ref", cerrors.Meta{
+var errInvalidLibraryRef = cerrors.Register("invalid-library-ref", cerrors.Meta{
 	ShortCode: "E0106",
 	Message:   "resolve: invalid library reference URI",
 })

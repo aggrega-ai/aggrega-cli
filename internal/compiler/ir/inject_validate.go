@@ -28,7 +28,7 @@ import (
 // error, never silent mutations.
 func ErrInjectEntryAmbiguous() error { return errInjectEntryAmbiguous }
 
-var errInjectEntryAmbiguous = cerrors.Register("compiler-ir/inject-entry-ambiguous", cerrors.Meta{
+var errInjectEntryAmbiguous = cerrors.Register("inject-entry-ambiguous", cerrors.Meta{
 	ShortCode: "E0014",
 	Message:   "inject entry carries both `value:` and `from:`; schema requires exactly one",
 })

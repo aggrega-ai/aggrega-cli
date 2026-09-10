@@ -12,7 +12,7 @@ import (
 // error names the offending URL and scheme alongside the allowed set.
 func ErrSchemeNotAllowed() error { return errSchemeNotAllowed }
 
-var errSchemeNotAllowed = cerrors.Register("externalinputs/scheme-not-allowed", cerrors.Meta{
+var errSchemeNotAllowed = cerrors.Register("scheme-not-allowed", cerrors.Meta{
 	ShortCode: "E0128",
 	Message:   "externalinputs: URL scheme is not allowed",
 })
@@ -23,7 +23,7 @@ var errSchemeNotAllowed = cerrors.Register("externalinputs/scheme-not-allowed", 
 // every external input a Release's render consumes.
 func ErrAcquisitionDisabled() error { return errAcquisitionDisabled }
 
-var errAcquisitionDisabled = cerrors.Register("externalinputs/acquisition-disabled", cerrors.Meta{
+var errAcquisitionDisabled = cerrors.Register("acquisition-disabled", cerrors.Meta{
 	ShortCode: "E0126",
 	Message:   "externalinputs: acquisition is disabled for unpinned inputs",
 })
@@ -34,7 +34,7 @@ var errAcquisitionDisabled = cerrors.Register("externalinputs/acquisition-disabl
 // the URL, the pinned digest, and the digest the fetched bytes produced.
 func ErrDigestMismatch() error { return errDigestMismatch }
 
-var errDigestMismatch = cerrors.Register("externalinputs/digest-mismatch", cerrors.Meta{
+var errDigestMismatch = cerrors.Register("digest-mismatch", cerrors.Meta{
 	ShortCode: "E0127",
 	Message:   "externalinputs: fetched bytes mismatch the pinned digest",
 })
@@ -44,7 +44,7 @@ var errDigestMismatch = cerrors.Register("externalinputs/digest-mismatch", cerro
 // wrapping error names the URL and both the expected and observed values.
 func ErrStoreCorrupt() error { return errStoreCorrupt }
 
-var errStoreCorrupt = cerrors.Register("externalinputs/store-corrupt", cerrors.Meta{
+var errStoreCorrupt = cerrors.Register("store-corrupt", cerrors.Meta{
 	ShortCode: "E0129",
 	Message:   "externalinputs: store blob mismatches its pinned record",
 })

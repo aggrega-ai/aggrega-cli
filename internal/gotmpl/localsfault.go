@@ -43,7 +43,7 @@ func ErrLocalsForwardReference() error { return errLocalsForwardReference }
 // fixed from the moment it is handed out — the same identity-not-location
 // discipline every other published identifier here follows. Re-spelling it to
 // track a declaration's move would break a code a reader can still quote.
-var errLocalsForwardReference = cerrors.Register("compiler-renderer/locals-forward-reference", cerrors.Meta{
+var errLocalsForwardReference = cerrors.Register("locals-forward-reference", cerrors.Meta{
 	ShortCode: "E0042",
 	Message:   "locals entry references a sibling defined later in the same block",
 })
@@ -66,7 +66,7 @@ var errLocalsForwardReference = cerrors.Register("compiler-renderer/locals-forwa
 func ErrLocalsUnknownReference() error { return errLocalsUnknownReference }
 
 // The code is fixed for the reason stated above the ordering condition.
-var errLocalsUnknownReference = cerrors.Register("compiler-renderer/locals-unknown-reference", cerrors.Meta{
+var errLocalsUnknownReference = cerrors.Register("locals-unknown-reference", cerrors.Meta{
 	ShortCode: "E0043",
 	Message:   "template references a key the locals block does not declare",
 })

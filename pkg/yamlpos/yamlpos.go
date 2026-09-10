@@ -28,7 +28,7 @@ import (
 // is attempted.
 func ErrPositionOutOfRange() error { return errPositionOutOfRange }
 
-var errPositionOutOfRange = cerrors.Register("yamlpos/position-out-of-range", cerrors.Meta{
+var errPositionOutOfRange = cerrors.Register("position-out-of-range", cerrors.Meta{
 	ShortCode: "E0229",
 	Message:   "position out of range",
 })

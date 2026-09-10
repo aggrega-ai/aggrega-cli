@@ -56,7 +56,7 @@ func ErrFetchNotFound() error { return oci.ErrFetchNotFound() }
 // resolve time instead of surfacing as an unreadable bundle later.
 func ErrNotDocsBundle() error { return errNotDocsBundle }
 
-var errNotDocsBundle = cerrors.Register("docscache/not-docs-bundle", cerrors.Meta{
+var errNotDocsBundle = cerrors.Register("not-docs-bundle", cerrors.Meta{
 	ShortCode: "E0123",
 	Message:   "docscache: artifact is not a documentation bundle",
 })
@@ -67,7 +67,7 @@ var errNotDocsBundle = cerrors.Register("docscache/not-docs-bundle", cerrors.Met
 // at the requested path.
 func ErrPageNotFound() error { return errPageNotFound }
 
-var errPageNotFound = cerrors.Register("docscache/page-not-found", cerrors.Meta{
+var errPageNotFound = cerrors.Register("page-not-found", cerrors.Meta{
 	ShortCode: "E0124",
 	Message:   "docscache: page not found in documentation bundle",
 })

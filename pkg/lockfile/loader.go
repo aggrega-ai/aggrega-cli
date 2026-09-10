@@ -19,7 +19,7 @@ import (
 // the offending field path and the validation diagnostic.
 func ErrLockfileInvalid() error { return errLockfileInvalid }
 
-var errLockfileInvalid = cerrors.Register("lockfile/lockfile-invalid", cerrors.Meta{
+var errLockfileInvalid = cerrors.Register("lockfile-invalid", cerrors.Meta{
 	ShortCode: "E0131",
 	Message:   "lockfile: file failed schema validation",
 })

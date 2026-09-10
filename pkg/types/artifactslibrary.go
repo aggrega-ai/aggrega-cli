@@ -20,7 +20,7 @@ import (
 // formatted error text.
 func ErrArtifactsLibraryEntryShape() error { return errArtifactsLibraryEntryShape }
 
-var errArtifactsLibraryEntryShape = cerrors.Register("types/artifacts-library-entry-shape", cerrors.Meta{
+var errArtifactsLibraryEntryShape = cerrors.Register("artifacts-library-entry-shape", cerrors.Meta{
 	ShortCode: "E0189",
 	Message:   "artifactslibrary: entry must be a mapping of filename to a string body",
 })

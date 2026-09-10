@@ -15,7 +15,7 @@ import cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 // are not a collision — one copy is kept.
 func ErrRenderedFileCollision() error { return errRenderedFileCollision }
 
-var errRenderedFileCollision = cerrors.Register("compiler-renderer-helm/rendered-file-collision", cerrors.Meta{
+var errRenderedFileCollision = cerrors.Register("rendered-file-collision", cerrors.Meta{
 	ShortCode: "E0243",
 	Message:   "two rendered resources derive the same output filename with differing content",
 })
@@ -31,7 +31,7 @@ var errRenderedFileCollision = cerrors.Register("compiler-renderer-helm/rendered
 // spec.serviceName).
 func ErrStatefulSetNoHeadlessService() error { return errStatefulSetNoHeadlessService }
 
-var errStatefulSetNoHeadlessService = cerrors.Register("compiler-renderer-helm/stateful-set-no-headless-service", cerrors.Meta{
+var errStatefulSetNoHeadlessService = cerrors.Register("stateful-set-no-headless-service", cerrors.Meta{
 	ShortCode: "E0245",
 	Message:   "synthesized StatefulSet has no headless governing Service",
 })
@@ -41,7 +41,7 @@ var errStatefulSetNoHeadlessService = cerrors.Register("compiler-renderer-helm/s
 // governing Service is ambiguous.
 func ErrStatefulSetAmbiguousHeadlessService() error { return errStatefulSetAmbiguousHeadlessService }
 
-var errStatefulSetAmbiguousHeadlessService = cerrors.Register("compiler-renderer-helm/stateful-set-ambiguous-headless-service", cerrors.Meta{
+var errStatefulSetAmbiguousHeadlessService = cerrors.Register("stateful-set-ambiguous-headless-service", cerrors.Meta{
 	ShortCode: "E0244",
 	Message:   "synthesized StatefulSet has more than one headless Service",
 })

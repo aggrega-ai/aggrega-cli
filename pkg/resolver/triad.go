@@ -20,7 +20,7 @@ import (
 // message names the directory to read distinctly from the catalog-tier duplicate.
 func ErrDuplicateTriadIdentity() error { return errDuplicateTriadIdentity }
 
-var errDuplicateTriadIdentity = cerrors.Register("resolver/duplicate-triad-identity", cerrors.Meta{
+var errDuplicateTriadIdentity = cerrors.Register("duplicate-triad-identity", cerrors.Meta{
 	ShortCode: "E0152",
 	Message:   "duplicate Aggregate/Manifest identity (metadata.name) in the Release directory",
 })
@@ -30,7 +30,7 @@ var errDuplicateTriadIdentity = cerrors.Register("resolver/duplicate-triad-ident
 // registry.
 func ErrTriadRefUnresolvable() error { return errTriadRefUnresolvable }
 
-var errTriadRefUnresolvable = cerrors.Register("resolver/triad-ref-unresolvable", cerrors.Meta{
+var errTriadRefUnresolvable = cerrors.Register("triad-ref-unresolvable", cerrors.Meta{
 	ShortCode: "E0170",
 	Message:   "aggregate/manifest reference unresolvable",
 })

@@ -31,7 +31,7 @@ const maxSubAggregateDepth = 10
 // terminates earlier via the visited set and never reaches this bound.
 func ErrSubAggregateDepth() error { return errSubAggregateDepth }
 
-var errSubAggregateDepth = cerrors.Register("closure/sub-aggregate-depth", cerrors.Meta{
+var errSubAggregateDepth = cerrors.Register("sub-aggregate-depth", cerrors.Meta{
 	ShortCode: "E0113",
 	Message:   "resolve: sub-aggregate inclusion depth exceeded",
 })
@@ -54,7 +54,7 @@ type AggregateLoader interface {
 // sub-aggregate bodies, so the sub-aggregate axis cannot be computed over it.
 func ErrNoAggregateLoader() error { return errNoAggregateLoader }
 
-var errNoAggregateLoader = cerrors.Register("closure/catalog-cannot-load-sub-aggregate-bodies", cerrors.Meta{
+var errNoAggregateLoader = cerrors.Register("catalog-cannot-load-sub-aggregate-bodies", cerrors.Meta{
 	ShortCode: "E0108",
 	Message:   "resolve: catalog lookup cannot load resolved sub-aggregate bodies",
 })

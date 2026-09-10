@@ -12,7 +12,7 @@ import (
 // escape hatch supports, matching cosign's default.
 func ErrUnsupportedKey() error { return errUnsupportedKey }
 
-var errUnsupportedKey = cerrors.Register("signing/unsupported-key", cerrors.Meta{
+var errUnsupportedKey = cerrors.Register("unsupported-key", cerrors.Meta{
 	ShortCode: "E0184",
 	Message:   "signing: unsupported held-key type",
 })
@@ -23,7 +23,7 @@ var errUnsupportedKey = cerrors.Register("signing/unsupported-key", cerrors.Meta
 // wrong key was supplied, or the payload differs from what was signed.
 func ErrSignatureInvalid() error { return errSignatureInvalid }
 
-var errSignatureInvalid = cerrors.Register("signing/signature-invalid", cerrors.Meta{
+var errSignatureInvalid = cerrors.Register("signature-invalid", cerrors.Meta{
 	ShortCode: "E0179",
 	Message:   "signing: signature does not verify",
 })
@@ -36,7 +36,7 @@ var errSignatureInvalid = cerrors.Register("signing/signature-invalid", cerrors.
 // or simulated result.
 func ErrKeylessLive() error { return errKeylessLive }
 
-var errKeylessLive = cerrors.Register("signing/keyless-signing-requires-network", cerrors.Meta{
+var errKeylessLive = cerrors.Register("keyless-signing-requires-network", cerrors.Meta{
 	ShortCode: "E0176",
 	Message:   "signing: keyless signing requires a live identity provider, Fulcio, and Rekor",
 })
@@ -50,7 +50,7 @@ var errKeylessLive = cerrors.Register("signing/keyless-signing-requires-network"
 // valid signature whose signer is not trusted).
 func ErrSignatureVerificationFailed() error { return errSignatureVerificationFailed }
 
-var errSignatureVerificationFailed = cerrors.Register("signing/signature-verification-failed", cerrors.Meta{
+var errSignatureVerificationFailed = cerrors.Register("signature-verification-failed", cerrors.Meta{
 	ShortCode: "E0180",
 	Message:   "signing: signature bundle does not verify",
 })
@@ -63,7 +63,7 @@ var errSignatureVerificationFailed = cerrors.Register("signing/signature-verific
 // trust policy or reject the artifact.
 func ErrUntrustedIdentity() error { return errUntrustedIdentity }
 
-var errUntrustedIdentity = cerrors.Register("signing/untrusted-identity", cerrors.Meta{
+var errUntrustedIdentity = cerrors.Register("untrusted-identity", cerrors.Meta{
 	ShortCode: "E0185",
 	Message:   "signing: signature identity is not trusted for this registry",
 })
@@ -75,7 +75,7 @@ var errUntrustedIdentity = cerrors.Register("signing/untrusted-identity", cerror
 // it or pull from a registry that does not require signatures.
 func ErrNoSignatureFound() error { return errNoSignatureFound }
 
-var errNoSignatureFound = cerrors.Register("signing/no-signature-found", cerrors.Meta{
+var errNoSignatureFound = cerrors.Register("no-signature-found", cerrors.Meta{
 	ShortCode: "E0177",
 	Message:   "signing: no signature found for an artifact that requires one",
 })
@@ -86,7 +86,7 @@ var errNoSignatureFound = cerrors.Register("signing/no-signature-found", cerrors
 // than treated as "trust everyone".
 func ErrNoTrustedIdentities() error { return errNoTrustedIdentities }
 
-var errNoTrustedIdentities = cerrors.Register("signing/no-trusted-identities", cerrors.Meta{
+var errNoTrustedIdentities = cerrors.Register("no-trusted-identities", cerrors.Meta{
 	ShortCode: "E0178",
 	Message:   "signing: keyless verification requires at least one trusted identity",
 })
@@ -98,7 +98,7 @@ var errNoTrustedIdentities = cerrors.Register("signing/no-trusted-identities", c
 // back to a network fetch.
 func ErrTrustRootLoad() error { return errTrustRootLoad }
 
-var errTrustRootLoad = cerrors.Register("signing/trust-root-not-loadable", cerrors.Meta{
+var errTrustRootLoad = cerrors.Register("trust-root-not-loadable", cerrors.Meta{
 	ShortCode: "E0182",
 	Message:   "signing: cannot load pinned trust root",
 })
@@ -111,7 +111,7 @@ var errTrustRootLoad = cerrors.Register("signing/trust-root-not-loadable", cerro
 // push can proceed.
 func ErrUnsignedPushRefused() error { return errUnsignedPushRefused }
 
-var errUnsignedPushRefused = cerrors.Register("signing/unsigned-push-refused", cerrors.Meta{
+var errUnsignedPushRefused = cerrors.Register("unsigned-push-refused", cerrors.Meta{
 	ShortCode: "E0183",
 	Message:   "signing: registry requires signatures; refusing to push unsigned content",
 })
@@ -127,7 +127,7 @@ var errUnsignedPushRefused = cerrors.Register("signing/unsigned-push-refused", c
 // the artifact before the push can proceed.
 func ErrSigningPolicyRequiresSignature() error { return errSigningPolicyRequiresSignature }
 
-var errSigningPolicyRequiresSignature = cerrors.Register("signing/signing-policy-requires-signature", cerrors.Meta{
+var errSigningPolicyRequiresSignature = cerrors.Register("signing-policy-requires-signature", cerrors.Meta{
 	ShortCode: "E0181",
 	Message:   "signing: signing policy requires a signature for this artifact kind; refusing to push unsigned content",
 })

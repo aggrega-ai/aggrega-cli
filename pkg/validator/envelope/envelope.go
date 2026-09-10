@@ -59,7 +59,7 @@ func ErrEntityEnvelope() error { return errEntityEnvelope }
 // the author can correct against a schema. Advice that fits the third is wrong
 // on the other two, where the document may be perfectly well-formed, so it is
 // supplied by the path where it is true rather than carried here.
-var errEntityEnvelope = aggerrors.Register("validator-envelope/entity-envelope-invalid", aggerrors.Meta{
+var errEntityEnvelope = aggerrors.Register("entity-envelope-invalid", aggerrors.Meta{
 	ShortCode: "E0215",
 	Message:   "document envelope validation failed",
 })

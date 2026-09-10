@@ -16,7 +16,7 @@ import (
 // (eager pre-resolution).
 func ErrSchemaResolve() error { return errSchemaResolve }
 
-var errSchemaResolve = cerrors.Register("validator-jsonschema/schema-not-resolvable", cerrors.Meta{
+var errSchemaResolve = cerrors.Register("schema-not-resolvable", cerrors.Meta{
 	ShortCode: "E0218",
 	Message:   "validator/jsonschema: schema resolution failed",
 })
@@ -26,7 +26,7 @@ var errSchemaResolve = cerrors.Register("validator-jsonschema/schema-not-resolva
 // error, evaluation runtime error, or non-boolean result).
 func ErrExtensionEval() error { return errExtensionEval }
 
-var errExtensionEval = cerrors.Register("validator-jsonschema/schema-extension-evaluation-failed", cerrors.Meta{
+var errExtensionEval = cerrors.Register("schema-extension-evaluation-failed", cerrors.Meta{
 	ShortCode: "E0216",
 	Message:   "validator/jsonschema: x-aggrega extension evaluation failed",
 })

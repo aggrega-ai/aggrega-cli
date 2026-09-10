@@ -40,7 +40,7 @@ const (
 // naming the key, the scope and the contract field that disagrees.
 func ErrWellKnownAnnotationScope() error { return errWellKnownAnnotationScope }
 
-var errWellKnownAnnotationScope = cerrors.Register("types/well-known-annotation-scope", cerrors.Meta{
+var errWellKnownAnnotationScope = cerrors.Register("well-known-annotation-scope", cerrors.Meta{
 	ShortCode: "E0198",
 	Message:   "wellKnownAnnotations: a key is declared at a scope the provider's contract does not render",
 })

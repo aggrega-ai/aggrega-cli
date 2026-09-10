@@ -19,7 +19,7 @@ import (
 // failure without parsing the formatted error text.
 func ErrWorkloadEntryNotScalar() error { return errWorkloadEntryNotScalar }
 
-var errWorkloadEntryNotScalar = cerrors.Register("types/workload-entry-not-scalar", cerrors.Meta{
+var errWorkloadEntryNotScalar = cerrors.Register("workload-entry-not-scalar", cerrors.Meta{
 	ShortCode: "E0199",
 	Message:   "workloadlibrary: entry body must be a string scalar",
 })

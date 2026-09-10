@@ -32,7 +32,7 @@ import (
 // edited workspace catalog entity).
 func ErrLockfileDrift() error { return errLockfileDrift }
 
-var errLockfileDrift = cerrors.Register("lockfile/lockfile-drift", cerrors.Meta{
+var errLockfileDrift = cerrors.Register("lockfile-drift", cerrors.Meta{
 	ShortCode: "E0130",
 	Message:   "lockfile: out of date; it no longer matches the current catalog",
 })

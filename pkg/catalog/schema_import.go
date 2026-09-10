@@ -248,7 +248,7 @@ func quoteTarget(target string) string { return "\"" + target + "\"" }
 // errors.Is(err, ErrUnusableSchemaImport()).
 func ErrUnusableSchemaImport() error { return errUnusableSchemaImport }
 
-var errUnusableSchemaImport = cerrors.Register("catalog/unusable-schema-import", cerrors.Meta{
+var errUnusableSchemaImport = cerrors.Register("unusable-schema-import", cerrors.Meta{
 	ShortCode: "E0266",
 	Message:   "a schema `$import:` could not be applied",
 })

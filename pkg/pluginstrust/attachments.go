@@ -56,7 +56,7 @@ import (
 // that happens to be empty.
 func ErrVerdictAttachmentNotConfigured() error { return errVerdictAttachmentNotConfigured }
 
-var errVerdictAttachmentNotConfigured = cerrors.Register("pluginstrust/verdict-attachment-not-configured", cerrors.Meta{
+var errVerdictAttachmentNotConfigured = cerrors.Register("verdict-attachment-not-configured", cerrors.Meta{
 	ShortCode: "E0247",
 	Message:   "a plugin recorded as trusted for an accept-or-reject verdict is no longer attached at any verdict role",
 })
