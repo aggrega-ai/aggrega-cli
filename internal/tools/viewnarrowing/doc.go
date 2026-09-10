@@ -40,15 +40,24 @@
 // itself leaves the authoring documents and the graph unreachable from a check,
 // so a check has nothing raw to re-derive a fact from.
 //
-// No such invocation site exists yet, so that gap is open today and this
-// package does not narrow it. What exists is a push-model entry, which takes
-// a check's predicate function together with a view value the caller
-// constructs, so it bounds nothing about what a check can be handed — and the
-// view type parameter admits any type at all, including one a check declares
-// for itself, which this package reports as a view it cannot place. Stating all
-// of that plainly is the point of this section: an analyzer whose documented
-// reach exceeds its actual reach is how a blind spot comes to be treated as
-// covered.
+// That property has two halves, and exactly one of them holds — so the gap is
+// bounded rather than closed. The framework's invocation sites do accept check
+// values rather than bare predicate functions. The pull sites own the traversal
+// as well: each enumerates a kind's coordinates, assembles every instance's
+// provenance and invokes the check once per instance, so a check names its
+// subject and never constructs one. Real rules run through them from
+// pkg/resolver, internal/compiler/topology, internal/compiler/pipeline and
+// internal/compiler/renderer, and the sites that push one presented document
+// over as it arrives are several rather than one.
+//
+// What stays open is the half the gap actually turns on: every one of those
+// sites takes the view as an argument its caller constructs, and the view
+// contract declares no method, so it admits any type at all — including one a
+// check declares for itself, which this package reports as a view it cannot
+// place. A site supplying the view itself would leave the authoring documents
+// and the graph unreachable from a check, and none does. Stating all of that
+// plainly is the point of this section: an analyzer whose documented reach
+// exceeds its actual reach is how a blind spot comes to be treated as covered.
 //
 // # The one shape that reads no fact and is still placed
 //

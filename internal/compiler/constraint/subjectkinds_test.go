@@ -43,6 +43,15 @@ import (
 // contract and carrying one unexported marker of its own — and, for each kind the
 // framework enumerates, exactly one function taking a check declared over that
 // type.
+//
+// Re-verifying the seal half means perturbing a subject TYPE, never a kind's
+// coordinates, and the reason is that a type's name is DERIVED from those
+// coordinates. Adding a coordinate to needle the seal renames the type; nothing
+// declares the new name; the missing-type branch reports that and moves on to the
+// next kind, so the seal checks below it are not reached at all and the message
+// describes a defect nobody meant to introduce. Perturb the declaration instead —
+// drop an existing subject type's marker method, or give two of them the same
+// marker — and the branch under test is entered directly.
 func TestEveryDerivedSubjectKindHasASealedSubjectTypeAndEveryPullKindATraversal(t *testing.T) {
 	t.Parallel()
 

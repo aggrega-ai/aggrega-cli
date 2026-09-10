@@ -1283,6 +1283,18 @@ type NormalizedView interface {
 	// an entry carrying configuration alone appears there and counts nothing
 	// here.
 	//
+	// Where several scopes of the deployment write against one component, this
+	// answers from exactly one of those entries, and which one is settled
+	// rather than left to a reader: the scopes are walked in the order the
+	// document declares them, each scope's own entries read before the scopes
+	// nested inside it, and every entry read replaces the one before it. So a
+	// nested scope displaces the scope containing it, and a later-declared
+	// scope displaces an earlier one whatever their depths. The rule belongs
+	// in the declaration because the fact is keyed by the component alone and
+	// has to yield one answer: an implementor left to pick would pick the
+	// opposite as readily, and a rule measuring this against what the
+	// application declared would then be comparing the wrong entry.
+	//
 	// Keyed by (node, socket); read from types.BoundaryComponent.Uses.
 	ReleaseAuthoredUsesSocketConnections(node string) types.OrderedMap[int]
 
@@ -1338,6 +1350,18 @@ type NormalizedView interface {
 	// own dependency block is a separate fact with the same shape and the same
 	// authorship rule, because it is separately authored and independently
 	// absent, and neither carries the other.
+	//
+	// Where several scopes of the deployment write against one component, this
+	// answers from exactly one of those entries, and which one is settled
+	// rather than left to a reader: the scopes are walked in the order the
+	// document declares them, each scope's own entries read before the scopes
+	// nested inside it, and every entry read replaces the one before it. So a
+	// nested scope displaces the scope containing it, and a later-declared
+	// scope displaces an earlier one whatever their depths. The rule belongs
+	// in the declaration because the fact is keyed by the component alone and
+	// has to yield one answer: an implementor left to pick would pick the
+	// opposite as readily, and a rule measuring this against what the
+	// application declared would then be comparing the wrong entry.
 	//
 	// Keyed by (node, socket); read from types.BoundaryComponent.Uses.
 	ReleaseAuthoredUsesSocketEntryAliases(node string, socket string) []string
@@ -1415,6 +1439,18 @@ type NormalizedView interface {
 	// an unordered payload would put a byte-identical result at the mercy of
 	// map iteration.
 	//
+	// Where several scopes of the deployment write against one component, this
+	// answers from exactly one of those entries, and which one is settled
+	// rather than left to a reader: the scopes are walked in the order the
+	// document declares them, each scope's own entries read before the scopes
+	// nested inside it, and every entry read replaces the one before it. So a
+	// nested scope displaces the scope containing it, and a later-declared
+	// scope displaces an earlier one whatever their depths. The rule belongs
+	// in the declaration because the fact is keyed by the component alone and
+	// has to yield one answer: an implementor left to pick would pick the
+	// opposite as readily, and a rule measuring this against what the
+	// application declared would then be comparing the wrong entry.
+	//
 	// Keyed by node; read from types.BoundaryComponent.Infra.
 	ReleaseComponentInfra(node string) types.OrderedMap[any]
 
@@ -1470,6 +1506,18 @@ type NormalizedView interface {
 	// are asked a different number of times and a rule over either names a
 	// different authored site.
 	//
+	// Where several scopes of the deployment write against one component, this
+	// answers from exactly one of those entries, and which one is settled
+	// rather than left to a reader: the scopes are walked in the order the
+	// document declares them, each scope's own entries read before the scopes
+	// nested inside it, and every entry read replaces the one before it. So a
+	// nested scope displaces the scope containing it, and a later-declared
+	// scope displaces an earlier one whatever their depths. The rule belongs
+	// in the declaration because the fact is keyed by the component alone and
+	// has to yield one answer: an implementor left to pick would pick the
+	// opposite as readily, and a rule measuring this against what the
+	// application declared would then be comparing the wrong entry.
+	//
 	// Keyed by (node, attachment); read from types.BoundaryFeature.Type.
 	ReleaseAttachmentType(node string, attachment string) (string, bool)
 
@@ -1490,6 +1538,18 @@ type NormalizedView interface {
 	// scope wires, which is keyed by that scope: this one is written against a
 	// named component, so the two are asked a different number of times and a
 	// rule over either names a different authored site.
+	//
+	// Where several scopes of the deployment write against one component, this
+	// answers from exactly one of those entries, and which one is settled
+	// rather than left to a reader: the scopes are walked in the order the
+	// document declares them, each scope's own entries read before the scopes
+	// nested inside it, and every entry read replaces the one before it. So a
+	// nested scope displaces the scope containing it, and a later-declared
+	// scope displaces an earlier one whatever their depths. The rule belongs
+	// in the declaration because the fact is keyed by the component alone and
+	// has to yield one answer: an implementor left to pick would pick the
+	// opposite as readily, and a rule measuring this against what the
+	// application declared would then be comparing the wrong entry.
 	//
 	// Keyed by (node, attachment, socket); read from
 	// types.BoundaryFeature.Uses.
@@ -2149,8 +2209,20 @@ type GraphView interface {
 	// sides, so splitting it into per-coordinate accessors would make the
 	// question un-askable and the accessors individually meaningless.
 	//
+	// Each pillar has its own carrier, and the pillar coordinate is what
+	// selects between them: an attachment's configuration is recorded as one
+	// provenance map per pillar, so asking about a leaf of the developer's
+	// configuration and asking about a leaf of the operator's read different
+	// maps under one fact. Both carriers are named in this declaration for
+	// that reason — a reader reconciling the placement table against the
+	// code would otherwise find one of the two and conclude the other pillar
+	// is unaccounted for. A pillar neither carrier is kept for yields the zero
+	// record, which is the same answer as a leaf the author wrote with no
+	// annotation behind it and deliberately so: every field a rule reads is
+	// absent in both cases.
+	//
 	// Keyed by (node, attachment, pillar, leaf); read from
-	// types.IRFeatureEntry.ValuesProvenance.
+	// types.IRFeatureEntry.ValuesProvenance and .InfraProvenance.
 	PerLeafAttachmentProvenance(node string, attachment string, pillar string, leaf string) LeafProvenance
 
 	// PerLeafAttachmentAuthoredComponent is the component key the entry that
@@ -2362,10 +2434,17 @@ type GraphView interface {
 	CarriedConnectionAuthoredDelivery(node string, carrier string, attachment string, socket string, alias string, target string) []types.OrderedMap[any]
 }
 
-// DescribedView exposes the facts complete at the described stage: every
-// plugin a node's pipeline steps and its rendering provider resolve to,
-// loaded and self-described: the declared capabilities and the scope each
-// dispatched export declares, before any step runs.
+// DescribedView exposes the facts complete at the described stage: a
+// Recipe bound to every node and a FeatureRecipe bound to every
+// attachment, with what each of them declares readable as authored — the
+// source it declares, its provides and locals, and the template text of
+// every field it writes one in — together with the path templates the
+// deployment's own scopes declare, every plugin those bindings resolve to,
+// loaded and self-described: the declared capabilities, the scope each
+// dispatched export declares, what each provider reports about assembling
+// and linking a scope's output, and the name each node's provider gives
+// the output it renders from authored source — all of it before any step
+// runs.
 //
 // It embeds GraphView, so every fact complete earlier is readable here and
 // the containment is a compile-time fact rather than a documented

@@ -126,9 +126,11 @@ import (
 //     nobody working in this module could act on.
 //   - A directory whose name begins with "." or "_", which is what the Go tool
 //     itself skips, so a file there is in no package this module builds.
-//   - A var bound inside a function body. The census reads file-level
+//   - A var or const bound inside a function body. The census reads file-level
 //     declarations only, because the convention a sentinel follows is a
-//     package-level exported name.
+//     package-level exported name. Both binding shapes are named because both
+//     are admitted at file level, so a bullet naming one of them would read as
+//     admitting the other inside a body.
 //   - A method. A name bound to a receiver is reached through a value rather
 //     than through the package, so it is not a name a consumer matches against.
 //
@@ -697,6 +699,15 @@ type emissionSite struct {
 // sites would answer a different question than the one this assertion asks, and
 // would reclassify sentinels on the strength of a declaration that raises
 // nothing.
+//
+// The value walk below admits a var declaration and not a const one, which is
+// where this reading is deliberately NARROWER than [declaredSentinels] beside it,
+// and the difference is a property of the shape being looked for rather than an
+// oversight to reconcile. This walk attributes a package-level check declaration
+// to the framework's dispatch, and a check is a composite literal, which cannot
+// be a Go constant. So a const specification can bind a sentinel — which is why
+// the population walk reads both — and can never hold a check, which is why
+// reading it here would only widen the walk to specifications that cannot match.
 func sentinelCensus(t *testing.T) (declared []string, emitters map[string][]emissionSite, forwards map[string][]string) {
 	t.Helper()
 
@@ -933,6 +944,17 @@ func skipDir(path, root, name string) bool {
 // Where a name is declared more than once the lexicographically first path wins,
 // so a reported path is the same on every run rather than whichever the map
 // handed back first.
+//
+// A const specification is admitted here and is NOT admitted by the emission walk
+// in [sentinelCensus], and the asymmetry is deliberate at both ends rather than
+// one of the two drifting. This reading asks which names exist, and a sentinel is
+// the distinct exported name a consumer matches against however the declaration
+// binds it — so excluding a const would make this a count of one declaration
+// shape rather than of the rules this module raises. That reading asks which
+// declarations construct a check, and a check is a composite literal, which no Go
+// constant can hold. Narrowing this to match it would drop every const-bound
+// sentinel from the population; widening that one to match this would add
+// specifications it can never attribute anything from.
 //
 // A second recogniser of the same declaration shapes lives in the published-pages
 // parity assertion under cmd/aggrega, and the two are deliberately NOT unified.

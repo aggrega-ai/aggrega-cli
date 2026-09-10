@@ -74,12 +74,33 @@ var stages = []stageDecl{
 	{
 		Name:    "described",
 		Extends: "graph",
-		Holds: "every plugin a node's pipeline steps and its rendering provider " +
-			"resolve to, loaded and self-described: the declared capabilities and " +
-			"the scope each dispatched export declares, before any step runs",
-		// Every fact here is a plugin's own self-report, and producing one
+		Holds: "a Recipe bound to every node and a FeatureRecipe bound to every " +
+			"attachment, with what each of them declares readable as authored — " +
+			"the source it declares, its provides and locals, and the template " +
+			"text of every field it writes one in — together with the path " +
+			"templates the deployment's own scopes declare, every plugin those " +
+			"bindings resolve to, loaded and self-described: the declared " +
+			"capabilities, the scope each dispatched export declares, what each " +
+			"provider reports about assembling and linking a scope's output, and " +
+			"the name each node's provider gives the output it renders from " +
+			"authored source — all of it before any step runs",
+		// This is the earliest stage a fact carried by a Recipe or a FeatureRecipe
+		// can occupy, and the floor is the BINDING rather than the node. A node
+		// exists earlier — facts keyed by one are complete as soon as the
+		// authoring documents are normalized — but a Recipe is not an authoring
+		// document: it is selected for a node by the node's resolved component,
+		// and a FeatureRecipe by an attachment's resolved type, both of which the
+		// attachment cascade settles. Until then there is no bound document to
+		// read a field out of, whichever authored fields a node already carries.
+		// So no such fact is declared before this stage, and one that appears to
+		// belong earlier is reading a binding that does not exist yet.
+		//
+		// The powers below are what the plugin self-reports cost: producing one
 		// resolves the reference against the sources the workspace configures,
-		// fetches the guest bytes, and calls describe() across the boundary.
+		// fetches the guest bytes, and calls describe() across the boundary. They
+		// are declared for the stage because the declaration is per stage, not
+		// because every fact here reaches for them — the authored-declaration
+		// facts above are read out of documents the binding already resolved.
 		HostPowers: []hostPower{
 			powerPluginResolution,
 			powerArtifactFetch,
@@ -331,6 +352,34 @@ const declarationCompelsImplementation = "\n\nDeclaring a fact puts its " +
 	"accessor is implemented for that reason rather than because a check " +
 	"reads it, which accounts for its presence without warranting it: a fact " +
 	"no check reads remains a candidate for removal."
+
+// perComponentBoundaryFold is the paragraph a fact carries when it reads the
+// deployment's per-component projection — the one that folds every scope writing
+// against a component into a single entry keyed by that component.
+//
+// It is one shared paragraph rather than a copy inside each Doc, on the same
+// reasoning as the paragraph above: the fold is a property of the projection, so
+// it says the same thing wherever it is read, and copies of it would agree on the
+// day they were written and be free to drift afterwards with nothing comparing
+// them. Which facts carry it is readable from the references to this constant
+// rather than from a list kept beside them.
+//
+// A fact keyed on that projection whose ANSWER does not turn on the fold does not
+// carry it, and that exclusion is a judgement rather than an oversight. Whether
+// the deployment wrote an entry against a component at all is true wherever any
+// scope wrote one, so there is no contest for a fold to settle and stating one
+// would imply a precedence the answer never consults.
+const perComponentBoundaryFold = "\n\nWhere several scopes of the deployment " +
+	"write against one component, this answers from exactly one of those " +
+	"entries, and which one is settled rather than left to a reader: the scopes " +
+	"are walked in the order the document declares them, each scope's own " +
+	"entries read before the scopes nested inside it, and every entry read " +
+	"replaces the one before it. So a nested scope displaces the scope " +
+	"containing it, and a later-declared scope displaces an earlier one whatever " +
+	"their depths. The rule belongs in the declaration because the fact is keyed " +
+	"by the component alone and has to yield one answer: an implementor left to " +
+	"pick would pick the opposite as readily, and a rule measuring this against " +
+	"what the application declared would then be comparing the wrong entry."
 
 // facts declares every fact the framework exposes.
 //
@@ -1426,7 +1475,8 @@ var facts = []factDecl{
 			"the Release wrote an entry under is the separate fact declared " +
 			"beside it, and on this surface the two answer differently for most " +
 			"of what an operator writes: an entry carrying configuration alone " +
-			"appears there and counts nothing here.",
+			"appears there and counts nothing here." +
+			perComponentBoundaryFold,
 	},
 	{
 		Name:        "release-authored-uses-socket-entry-aliases",
@@ -1485,7 +1535,8 @@ var facts = []factDecl{
 			"no other. The component's own dependency block is a separate fact " +
 			"with the same shape and the same authorship rule, because it is " +
 			"separately authored and independently absent, and neither carries " +
-			"the other.",
+			"the other." +
+			perComponentBoundaryFold,
 	},
 	{
 		Name:        "release-component-entry-present",
@@ -1559,7 +1610,8 @@ var facts = []factDecl{
 			"a separate contract for each, and each is independently absent.\n" +
 			"\nAuthor order is carried because these entries reach rendered " +
 			"output, and an unordered payload would put a byte-identical result " +
-			"at the mercy of map iteration.",
+			"at the mercy of map iteration." +
+			perComponentBoundaryFold,
 	},
 	{
 		Name:        "boundary-attachment-declaration",
@@ -1623,7 +1675,8 @@ var facts = []factDecl{
 			"boundary: this one is written against a named component and the " +
 			"other applies to every component in a scope, so they are asked a " +
 			"different number of times and a rule over either names a different " +
-			"authored site.",
+			"authored site." +
+			perComponentBoundaryFold,
 	},
 	{
 		Name:        "release-attachment-authored-uses-socket-names",
@@ -1648,7 +1701,8 @@ var facts = []factDecl{
 			"separate fact from the sockets an attachment written at a scope " +
 			"wires, which is keyed by that scope: this one is written against a " +
 			"named component, so the two are asked a different number of times " +
-			"and a rule over either names a different authored site.",
+			"and a rule over either names a different authored site." +
+			perComponentBoundaryFold,
 	},
 	{
 		Name:        "authored-component-schema-text",
@@ -2265,7 +2319,7 @@ var facts = []factDecl{
 	{
 		Name:        "per-leaf-attachment-provenance",
 		Stage:       "graph",
-		SourceField: "types.IRFeatureEntry.ValuesProvenance",
+		SourceField: "types.IRFeatureEntry.ValuesProvenance and .InfraProvenance",
 		Subject:     []string{"node", "attachment", "pillar", "leaf"},
 		Params: []paramDecl{
 			{Name: "node", Type: "string"},
@@ -2280,7 +2334,18 @@ var facts = []factDecl{
 			"annotation-supplied one is a single question whose answer needs " +
 			"both sides, so splitting it into per-coordinate accessors would " +
 			"make the question un-askable and the accessors individually " +
-			"meaningless.",
+			"meaningless.\n\nEach pillar has its own carrier, and the pillar " +
+			"coordinate is what selects between them: an attachment's " +
+			"configuration is recorded as one provenance map per pillar, so " +
+			"asking about a leaf of the developer's configuration and asking " +
+			"about a leaf of the operator's read different maps under one fact. " +
+			"Both carriers are named in this declaration for that reason — a " +
+			"reader reconciling the placement table against the code would " +
+			"otherwise find one of the two and conclude the other pillar is " +
+			"unaccounted for. A pillar neither carrier is kept for yields the " +
+			"zero record, which is the same answer as a leaf the author wrote " +
+			"with no annotation behind it and deliberately so: every field a rule " +
+			"reads is absent in both cases.",
 	},
 	{
 		Name:        "per-leaf-attachment-authored-component",
