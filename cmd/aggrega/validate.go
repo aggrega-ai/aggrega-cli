@@ -153,7 +153,7 @@ func validatePluginBinary(pluginPath, declaredType, entityPath string, out io.Wr
 func dispatchValidate(rw *workspaceconfig.ResolvedWorkspace, path string, catalogFlagDirs []string, suppressUnsupportedFieldWarnings bool, out io.Writer) error {
 	rw, err := workspaceOrResolve(rw)
 	if err != nil {
-		return fmt.Errorf("workspaceconfig: %w", err)
+		return err
 	}
 	wsCfg := rw.Config()
 	cacheDir := wsCfg.ResolvedArtifactCacheDir()

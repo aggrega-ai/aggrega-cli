@@ -326,7 +326,7 @@ func resolvePublishSigner(req SignerRequest) (signing.Signer, error) {
 	}
 	rw, werr := requireWorkspace(req.Workspace)
 	if werr != nil {
-		return nil, fmt.Errorf("workspaceconfig: %w", werr)
+		return nil, werr
 	}
 	resolved := rw.Config().ResolveSigning(registryhost.Of(req.Registry))
 	keyPath := firstNonEmpty(req.KeyPath, resolved.KeyPath)

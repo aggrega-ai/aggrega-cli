@@ -207,7 +207,7 @@ func resolveImplementsFeature(rw *workspaceconfig.ResolvedWorkspace, catalogDirs
 func loadCatalogLookup(rw *workspaceconfig.ResolvedWorkspace, catalogDirs []string) (resolver.CatalogLookup, error) {
 	rw, err := workspaceOrResolve(rw)
 	if err != nil {
-		return resolver.CatalogLookup{}, fmt.Errorf("workspaceconfig: %w", err)
+		return resolver.CatalogLookup{}, err
 	}
 	wsRoot := rw.Root()
 	wsCfg := rw.Config()

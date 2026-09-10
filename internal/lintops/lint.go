@@ -196,7 +196,7 @@ func RunEntity(cfg Config) error {
 	}
 	rw, err := workspaceOrResolve(cfg.Workspace)
 	if err != nil {
-		return fmt.Errorf("workspaceconfig: %w", err)
+		return err
 	}
 	wsCfg := rw.Config()
 

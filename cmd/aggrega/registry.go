@@ -138,7 +138,7 @@ type registryListConfig struct {
 func registryListRun(cfg registryListConfig) error {
 	rw, err := workspaceOrResolve(cfg.ws)
 	if err != nil {
-		return fmt.Errorf("workspaceconfig: %w", err)
+		return err
 	}
 	wsCfg := rw.Config()
 
@@ -270,7 +270,7 @@ type registryRemoveConfig struct {
 func registryRemoveRun(cfg registryRemoveConfig) error {
 	rw, err := workspaceOrResolve(cfg.ws)
 	if err != nil {
-		return fmt.Errorf("workspaceconfig: %w", err)
+		return err
 	}
 	res, err := registryops.Remove(rw, registryops.RemoveOptions{
 		Token:     cfg.Token,
@@ -431,7 +431,7 @@ type registryAddConfig struct {
 func registryAddRun(cfg registryAddConfig) error {
 	rw, err := workspaceOrResolve(cfg.ws)
 	if err != nil {
-		return fmt.Errorf("workspaceconfig: %w", err)
+		return err
 	}
 	res, addErr := registryops.Add(rw, registryops.AddOptions{
 		Host:              cfg.Host,

@@ -126,7 +126,7 @@ func PushArtifact(cfg PushArtifactConfig) (PushArtifactResult, error) {
 
 	rw, err := requireWorkspace(cfg.Workspace)
 	if err != nil {
-		return PushArtifactResult{}, fmt.Errorf("workspaceconfig: %w", err)
+		return PushArtifactResult{}, err
 	}
 
 	wsCfg := rw.Config()

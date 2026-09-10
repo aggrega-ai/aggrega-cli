@@ -116,7 +116,7 @@ func writePassedOverKinds(out io.Writer, passedOver map[string]int) {
 func RunRelease(rw *workspaceconfig.ResolvedWorkspace, releasePath string, catalogFlagDirs []string, out, diagOut io.Writer, collect *FindingCollector) error {
 	rw, err := workspaceOrResolve(rw)
 	if err != nil {
-		return fmt.Errorf("workspaceconfig: %w", err)
+		return err
 	}
 	wsRoot := rw.Root()
 	wsCfg := rw.Config()

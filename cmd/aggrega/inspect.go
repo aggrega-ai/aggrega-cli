@@ -451,7 +451,7 @@ func inspectCatalogEntity(rw *workspaceconfig.ResolvedWorkspace, identifier stri
 	// inspect is invoked from.
 	rw, err := workspaceOrResolve(rw)
 	if err != nil {
-		return fmt.Errorf("workspaceconfig: %w", err)
+		return err
 	}
 	wsRoot := rw.Root()
 	wsCfg := rw.Config()
@@ -735,7 +735,7 @@ func renderReleaseFile(rw *workspaceconfig.ResolvedWorkspace, releasePath string
 	// not from wsRoot.
 	rw, err := workspaceOrResolve(rw)
 	if err != nil {
-		return fmt.Errorf("workspaceconfig: %w", err)
+		return err
 	}
 	wsRoot := rw.Root()
 	wsCfg := rw.Config()

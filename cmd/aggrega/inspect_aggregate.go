@@ -91,7 +91,7 @@ func renderAggregateFile(rw *workspaceconfig.ResolvedWorkspace, path string, dat
 func aggregateTopologyInputs(rw *workspaceconfig.ResolvedWorkspace, catalogDirs []string) (resolver.CatalogLookup, topology.SubAggregateLoader, string, error) {
 	rw, err := workspaceOrResolve(rw)
 	if err != nil {
-		return resolver.CatalogLookup{}, nil, "", fmt.Errorf("workspaceconfig: %w", err)
+		return resolver.CatalogLookup{}, nil, "", err
 	}
 	wsRoot := rw.Root()
 	wsCfg := rw.Config()

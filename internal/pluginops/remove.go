@@ -61,7 +61,7 @@ func Remove(rw *workspaceconfig.ResolvedWorkspace, opts RemoveOptions) (RemoveRe
 	var res RemoveResult
 	rw, err := workspaceOrRefuse(rw)
 	if err != nil {
-		return res, fmt.Errorf("workspaceconfig: %w", err)
+		return res, err
 	}
 
 	socket := opts.Socket

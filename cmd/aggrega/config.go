@@ -200,7 +200,7 @@ type configShowConfig struct {
 func configShowRun(cfg configShowConfig) error {
 	rw, err := workspaceOrResolve(cfg.ws)
 	if err != nil {
-		return fmt.Errorf("workspaceconfig: %w", err)
+		return err
 	}
 
 	switch {
@@ -410,7 +410,7 @@ type configInitConfig struct {
 func configInitRun(cfg configInitConfig) error {
 	rw, err := workspaceOrResolve(cfg.ws)
 	if err != nil {
-		return fmt.Errorf("workspaceconfig: %w", err)
+		return err
 	}
 
 	delivery := authoredcontent.DeliveryFor(cfg.Report)
@@ -488,7 +488,7 @@ type configCaptureConfig struct {
 func configCaptureRun(cfg configCaptureConfig) error {
 	rw, err := workspaceOrResolve(cfg.ws)
 	if err != nil {
-		return fmt.Errorf("workspaceconfig: %w", err)
+		return err
 	}
 	res, err := configops.Capture(rw, configops.CaptureOptions{AllPlugins: cfg.allPlugins})
 	if err != nil {

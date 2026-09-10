@@ -219,7 +219,7 @@ func (b *batchSigner) prepare() error {
 	if b.cfg.Signer == nil {
 		rw, err := requireWorkspace(b.cfg.Workspace)
 		if err != nil {
-			return fmt.Errorf("workspaceconfig: %w", err)
+			return err
 		}
 		// The key path is registry-independent in the common case (a single
 		// supplied path or global config entry). Resolve it once from the first
@@ -241,7 +241,7 @@ func (b *batchSigner) prepare() error {
 	if b.keyless {
 		rw, werr := requireWorkspace(b.cfg.Workspace)
 		if werr != nil {
-			return fmt.Errorf("workspaceconfig: %w", werr)
+			return werr
 		}
 		idToken, source, err := resolveIdentity(b.cfg.signerRequest(""), rw.Config())
 		if err != nil {
@@ -331,7 +331,7 @@ func (b *batchSigner) buildRefSigner(ref string) (signing.Signer, error) {
 	}
 	rw, err := requireWorkspace(b.cfg.Workspace)
 	if err != nil {
-		return nil, fmt.Errorf("workspaceconfig: %w", err)
+		return nil, err
 	}
 	resolved := rw.Config().ResolveSigning(registryhost.Of(ref))
 	return buildSigner(signerParams{

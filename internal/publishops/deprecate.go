@@ -346,7 +346,7 @@ func deprecateTargetFor(cfg DeprecateConfig, reference string) (oras.Target, str
 	if target == nil {
 		rw, cerr := requireWorkspace(cfg.Workspace)
 		if cerr != nil {
-			return nil, "", fmt.Errorf("workspaceconfig: %w", cerr)
+			return nil, "", cerr
 		}
 		httpClient, cerr := egressClient(rw.Config())
 		if cerr != nil {
@@ -378,7 +378,7 @@ func deprecateSigner(cfg DeprecateConfig) (signing.Signer, error) {
 	}
 	rw, err := requireWorkspace(cfg.Workspace)
 	if err != nil {
-		return nil, fmt.Errorf("workspaceconfig: %w", err)
+		return nil, err
 	}
 	resolved := rw.Config().ResolveSigning(registryhost.Of(cfg.Reference))
 	keyPath := firstNonEmpty(cfg.KeyPath, resolved.KeyPath)

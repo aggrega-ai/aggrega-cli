@@ -354,7 +354,7 @@ func Run(cfg Config) (Result, error) {
 
 	rw, err := requireWorkspace(cfg.Workspace)
 	if err != nil {
-		return Result{}, fmt.Errorf("workspaceconfig: %w", err)
+		return Result{}, err
 	}
 	wsCfg := rw.Config()
 

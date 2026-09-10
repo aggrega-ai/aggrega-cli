@@ -171,7 +171,7 @@ type editDocumentConfig struct {
 func editDocumentRun(cfg editDocumentConfig) error {
 	rw, err := workspaceOrResolve(cfg.ws)
 	if err != nil {
-		return fmt.Errorf("workspaceconfig: %w", err)
+		return err
 	}
 	value, err := editDocumentValue(cfg.Value, cfg.ValueGiven)
 	if err != nil {

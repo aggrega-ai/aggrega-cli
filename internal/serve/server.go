@@ -1547,7 +1547,7 @@ func Run(cfg RunConfig) error {
 	// cascade-merge the config tree.
 	resolved, err := workspaceconfig.Resolve("", cfg.WorkspaceRoot)
 	if err != nil {
-		return fmt.Errorf("workspaceconfig: %w", err)
+		return err
 	}
 
 	stderr := cfg.Stderr

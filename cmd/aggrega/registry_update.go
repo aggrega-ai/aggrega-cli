@@ -129,7 +129,7 @@ type registryUpdateConfig struct {
 func registryUpdateRun(cfg registryUpdateConfig) error {
 	rw, err := workspaceOrResolve(cfg.ws)
 	if err != nil {
-		return fmt.Errorf("workspaceconfig: %w", err)
+		return err
 	}
 	out := cfg.Out
 	if out == nil {

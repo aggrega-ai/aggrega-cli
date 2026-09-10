@@ -340,7 +340,7 @@ func Push(cfg PushConfig) (PushResult, error) {
 
 	rw, err := requireWorkspace(cfg.Workspace)
 	if err != nil {
-		return PushResult{}, fmt.Errorf("workspaceconfig: %w", err)
+		return PushResult{}, err
 	}
 	wsCfg := rw.Config()
 	// Carry the resolved workspace forward so downstream helpers source the

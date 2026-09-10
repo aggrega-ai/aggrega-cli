@@ -50,7 +50,7 @@ const (
 func renderReleaseClosure(rw *workspaceconfig.ResolvedWorkspace, releasePath string, catalogDirs []string, opts inspectOptions) error {
 	rw, err := workspaceOrResolve(rw)
 	if err != nil {
-		return fmt.Errorf("workspaceconfig: %w", err)
+		return err
 	}
 	wsRoot := rw.Root()
 	wsCfg := rw.Config()

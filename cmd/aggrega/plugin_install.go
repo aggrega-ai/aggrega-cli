@@ -74,7 +74,7 @@ var describeInstallable = func(ctx context.Context, src resolvedInstallable) (wa
 func pluginInstallRun(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, ref string, global, workspace, acceptCaps, assumeYes bool, in io.Reader, out io.Writer) error {
 	rw, err := workspaceOrResolve(rw)
 	if err != nil {
-		return fmt.Errorf("workspaceconfig: %w", err)
+		return err
 	}
 	configPath, err := rw.WriteDestination(workspaceconfig.OpCLI, global, workspace)
 	if err != nil {

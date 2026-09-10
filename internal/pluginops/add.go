@@ -138,7 +138,7 @@ func Add(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts AddOpt
 	var res AddResult
 	rw, err := workspaceOrRefuse(rw)
 	if err != nil {
-		return res, fmt.Errorf("workspaceconfig: %w", err)
+		return res, err
 	}
 
 	socket := opts.Socket

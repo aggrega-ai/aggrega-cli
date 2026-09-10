@@ -110,7 +110,7 @@ func validateCatalogWide(wsRoot, cacheDir string, dirs []string, diagOut, out io
 func validateRelease(rw *workspaceconfig.ResolvedWorkspace, releasePath string, catalogFlagDirs []string, verbosity string, irGraph bool, diagOut, out io.Writer) error {
 	rw, err := workspaceOrResolve(rw)
 	if err != nil {
-		return fmt.Errorf("workspaceconfig: %w", err)
+		return err
 	}
 	wsRoot := rw.Root()
 	wsCfg := rw.Config()
