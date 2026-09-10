@@ -138,6 +138,7 @@ func TestCompilerError_CategoryPartitions(t *testing.T) {
 		cerrors.TranslationError,
 		cerrors.FetchError,
 		cerrors.PolicyError,
+		cerrors.TrustError,
 	}
 	seen := map[cerrors.Category]bool{}
 	for _, c := range all {
@@ -162,6 +163,13 @@ func TestPolicyErrorCategoryValue(t *testing.T) {
 	t.Parallel()
 	if string(cerrors.PolicyError) != "POLICY_ERROR" {
 		t.Errorf("PolicyError = %q; want \"POLICY_ERROR\"", string(cerrors.PolicyError))
+	}
+}
+
+func TestTrustErrorCategoryValue(t *testing.T) {
+	t.Parallel()
+	if string(cerrors.TrustError) != "TRUST_ERROR" {
+		t.Errorf("TrustError = %q; want \"TRUST_ERROR\"", string(cerrors.TrustError))
 	}
 }
 

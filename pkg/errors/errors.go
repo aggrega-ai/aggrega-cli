@@ -9,27 +9,35 @@ import (
 	"strings"
 )
 
-// Category names which authoring artifact is at fault for a given
-// CompilerError. The values partition the compiler's error surface
-// by who must act to resolve the failure: developer (Aggregate), operator
-// (Release / Manifest), catalog author (Recipe / Component / Feature /
-// FeatureRecipe / Plugin), provider engine (translation cannot express the requested
-// output), the remote registry / network layer (a fetch of a pinned
-// artifact failed at lock or build time), or an operator-attached
-// policy plugin (a governance verdict rejected the build — the
-// fix is to satisfy the enforced policy or reconsider its attachment,
-// not to edit an authoring file).
+// Category names which concern a given CompilerError belongs to. Most of the
+// values name the authoring artifact at fault, and the set as a whole partitions
+// the compiler's error surface by who must act to resolve the failure: developer
+// (Aggregate), operator (Release / Manifest), catalog author (Recipe / Component
+// / Feature / FeatureRecipe / Plugin), provider engine (translation cannot
+// express the requested output), the remote registry / network layer (a fetch of
+// a pinned artifact failed at lock or build time), an operator-attached policy
+// plugin (a governance verdict rejected the build — the fix is to satisfy the
+// enforced policy or reconsider its attachment, not to edit an authoring file),
+// or the trust and signing layer (a signature, a signing policy, or a recorded
+// trusted identity refused the operation).
 //
 // The values are deliberately not counted here. The block below is the
 // statement of how many there are, and a number written beside it reads as
 // current while lagging the set it counts.
 //
 // The zero value is the absence of a category, and it is a meaningful state
-// rather than an unset field: not every failure the compiler reports is a
-// fault in an authored artifact, and one that is not has no surface to name.
-// A failure whose cause lies in the compiler itself is the case that arises
-// today. The rendered head omits an absent category the same way it omits an
-// absent short code, so nothing stands in for it.
+// rather than an unset field: not every failure the compiler reports has a
+// concern the reader can be routed to. A failure whose cause lies in the
+// compiler itself is the case that arises today. The rendered head omits an
+// absent category the same way it omits an absent short code, so nothing
+// stands in for it.
+//
+// Being no fault of an authored artifact is NOT on its own what leaves the
+// category absent, and reading it that way would be the wrong test. Several of
+// the values above name a concern rather than an authoring surface and are
+// printed for exactly such failures — an acquisition fault, a governance
+// verdict, a trust refusal. What leaves the category absent is having no
+// concern to route the reader to at all.
 type Category string
 
 // The error categories.
@@ -56,6 +64,27 @@ const (
 	// policy or to reconsider the policy attachment, not to correct an
 	// authoring error in the Aggregate.
 	PolicyError Category = "POLICY_ERROR"
+	// TrustError surfaces a failure in the trust and signing layer: a
+	// signature that does not verify, an artifact that carries none where one
+	// is required, a signer whose identity is not among those trusted, a trust
+	// policy or trust root that cannot be read, or a plugin whose recorded
+	// trusted identity no longer matches what resolves.
+	//
+	// It names a CONCERN rather than an authoring surface, which is what lets
+	// one value cover two remediations — "the trust configuration you wrote is
+	// wrong" and "this artifact failed verification". That is deliberate: the
+	// category answers which concern to look at, and the condition's short code
+	// beside it in the head is what distinguishes the specific failure. Two
+	// categories would put the distinction in the token that is a routing hint
+	// and leave the token that is an identity saying it twice.
+	//
+	// Distinct from FetchError, whose own documentation scopes it to fetching,
+	// transport and digest verification: a valid signature from an untrusted
+	// identity is none of those, and its remediation is a trust decision rather
+	// than an operational one. Distinct from PolicyError, which is a governance
+	// attachment's verdict on an assembled build rather than a judgement about
+	// what signed an artifact.
+	TrustError Category = "TRUST_ERROR"
 )
 
 // SourceLocation points at the most specific authoring locator available for

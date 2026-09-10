@@ -25,13 +25,23 @@
 //   - PolicyError: an operator-attached policy plugin rejected the
 //     build; the fix is to satisfy the enforced policy or reconsider its
 //     attachment, not to edit an authoring artifact.
+//   - TrustError: the trust and signing layer refused the operation — a
+//     signature that does not verify, an absent signature where one is
+//     required, an untrusted signer, an unreadable trust policy or trust
+//     root, or a plugin whose recorded trusted identity no longer matches.
+//     It names a concern rather than an authoring surface, so one value
+//     covers both "the trust configuration is wrong" and "this artifact
+//     failed verification"; the condition's short code distinguishes them.
 //
 // A CompilerError may also carry NO category, and that is a state rather than
-// an unset field: a failure whose cause lies in the compiler itself is a fault
-// in no authored artifact, so it has no surface for a category to name. The
-// rendered head omits an absent category rather than standing anything in for
-// it, and the kind-to-Category mapping reports an uncovered reference rather
-// than defaulting one — see ClassifyEntityKind and ClassifyEntityCategory.
+// an unset field: a failure whose cause lies in the compiler itself has no
+// concern to route the reader to, since there is nothing they can go and look
+// at. Being no fault of an authored artifact is not the test — the last three
+// values above name concerns rather than authoring surfaces and are printed
+// for failures that are nobody's authoring mistake. The rendered head omits an
+// absent category rather than standing anything in for it, and the
+// kind-to-Category mapping reports an uncovered reference rather than
+// defaulting one — see ClassifyEntityKind and ClassifyEntityCategory.
 //
 // CompilerError implements the standard error interface plus Unwrap so
 // errors.Is and errors.As work against the carried inner error chain.
@@ -59,19 +69,33 @@
 // that can report against several kinds of entity reads it from the kind the
 // failure carries, through ClassifyEntityKind.
 //
-// # The fetch family is matched, not converted
+// # Two families are matched rather than converted
 //
-// FetchError has no converting type, and the asymmetry is structural rather
-// than an omission. A remote-acquisition failure originates as a shared
-// sentinel wrapped with transport context — a URL, a version, a remediation
-// pointer — rather than as a structured value with fields to read, so there
-// is no domain type on which a conversion method could sit. It reaches its
-// Category by having the chain matched against those sentinels at the
-// diagnostic surface, which then builds the envelope with FetchError. That
-// match is the acquisition-layer counterpart of a ToCompilerError: a sentinel
-// test rather than a type assertion. A refusal to egress at all, raised when
-// the workspace is offline, is matched by the same set, because from the
-// user's position it is likewise an inability to fetch.
+// FetchError and TrustError have no converting type, and the asymmetry is
+// structural rather than an omission. A remote-acquisition failure originates
+// as a shared sentinel wrapped with transport context — a URL, a version, a
+// remediation pointer — rather than as a structured value with fields to read,
+// so there is no domain type on which a conversion method could sit. A trust
+// or signing failure is the same shape for the same reason: it originates as a
+// registered identity wrapped with the key, the reference or the recorded
+// digest that the occurrence concerns. Both reach their Category by having the
+// chain matched against those identities at a diagnostic surface, which then
+// builds the envelope with the fixed Category. That match is the counterpart of
+// a ToCompilerError: an identity test rather than a type assertion. A refusal
+// to egress at all, raised when the workspace is offline, is matched by the
+// fetch set, because from the user's position it is likewise an inability to
+// fetch.
+//
+// The two differ in WHERE the match sits, and the difference follows from where
+// each family's failures converge. Source-resolution fetch faults all cross one
+// boundary inside the renderer, so the match sits there and the envelope
+// reaches every surface, the one-line form included. Trust and signing faults
+// are raised across the publish, pull, resolution and validation paths and
+// converge only at the command line's own diagnostic formatter, so the match
+// sits at that formatter. The consequence is worth stating plainly: a trust
+// failure carries its Category on the printed terminal head and not on the
+// one-line form this package's Error method produces, because the occurrence
+// never crossed an envelope construction before reaching the terminal.
 //
 // # Identities and occurrences
 //

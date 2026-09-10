@@ -29,7 +29,7 @@ import (
 // chain naming no registered condition has no code — and an absent token is
 // omitted rather than stood in for.
 //
-// Dispatch runs four detection branches in a fixed order, and that order is
+// Dispatch runs five detection branches in a fixed order, and that order is
 // part of the contract rather than an implementation detail:
 //
 //  1. Multi-error first. A chain built by errors.Join exposes
@@ -50,12 +50,28 @@ import (
 //  3. The envelope next. An error that is, or wraps, a *cerrors.CompilerError
 //     renders through the chain walk and returns.
 //
-//  4. The structured domain types last. Each is detected with errors.As; the
+//  4. The structured domain types next. Each is detected with errors.As; the
 //     first match is converted through the type's ToCompilerError and
 //     re-entered here. That recursive call lands on the envelope branch and
-//     renders. Falling through every branch returns the error's own Error
-//     output, which is the presentation for errors that have not adopted the
-//     conversion pattern.
+//     renders.
+//
+//  5. The trust and signing family last. It has no domain type to convert
+//     from, so the chain is matched against the conditions themselves and the
+//     envelope is built with the category fixed outright — the same shape the
+//     acquisition family's sentinel match takes. It runs after every branch
+//     above precisely because matching a whole family of conditions is a
+//     broader test than an errors.As on one concrete type: run earlier it
+//     would claim failures a later branch answers better, so run last it can
+//     only fill what would otherwise have fallen through.
+//
+// Falling through every branch returns the error's own Error output. That
+// remains the presentation for a failure that crosses no categorised boundary
+// at all, and it is deliberately still reachable: a command that refuses its
+// arguments, a file it cannot read, a cancellation, a library fault carrying no
+// registered condition of ours. Removing it to force conversion would turn every
+// such failure into a worse diagnostic rather than a better one — an empty head
+// asserts that a category was expected and is missing, which is a different and
+// wrong claim.
 //
 // A new domain type's detection branch goes AFTER the envelope branch, never
 // before, and the reason is recursion termination rather than taste. A
@@ -196,6 +212,18 @@ func formatCompilerErrorAt(err error, pos diagnosticPosition) string {
 	var ae *analyzer.AnalysisError
 	if stderrors.As(err, &ae) && ae != nil {
 		return formatCompilerErrorAt(ae.ToCompilerError(), pos)
+	}
+	// The trust and signing family LAST among the conversions, and the position
+	// is a decision rather than an accident. These failures have no domain type
+	// to convert from, so they are recognised by matching the chain against the
+	// conditions themselves — which is a broader test than an errors.As on one
+	// concrete type, and would therefore claim a failure another branch has a
+	// better answer for. Running it after every branch above means it fires only
+	// on a chain that reached the fallback, so nothing that already prints a head
+	// changes: an envelope keeps the category its own boundary chose, and a domain
+	// type keeps the category its authoring surface derives.
+	if te, ok := trustFailureEnvelope(err); ok {
+		return renderCompilerErrorChain(te, headShortCode(err, pos))
 	}
 	return err.Error()
 }
