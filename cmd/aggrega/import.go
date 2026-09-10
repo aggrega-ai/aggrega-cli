@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -25,7 +24,7 @@ import (
 // values.
 type importFlags struct {
 	format string
-	stdout bool
+	report bool
 }
 
 // newImportCmd turns a foreign source description into draft Aggrega authoring
@@ -54,12 +53,13 @@ named file — no other files, no network.
 Before the drafted output, import names on standard error the format it read
 the source as and the directory the drafted paths are relative to, alongside
 any diagnostics the importer reported. Standard output carries only the result
-— the paths written, or the drafted files themselves under --stdout — so it can
+— the paths written, or the drafted files themselves under --report — so it can
 be piped unchanged.
 
-With --stdout, the drafted files are written to standard output — a header
-line naming each file's path followed by its content — instead of to disk, so
-the result can be reviewed or piped before anything is written.`,
+With --report, the drafted files are reported as content and nothing is
+written: standard output carries one document listing each drafted file's path
+and its content, so the result can be reviewed, parsed or piped before anything
+reaches disk.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			path := args[0]
@@ -86,12 +86,19 @@ the result can be reviewed or piped before anything is written.`,
 				return err
 			}
 
+			// The flag is turned into a delivery once, here, and every branch
+			// below reads that value through its own predicate rather than
+			// re-reading the flag. The flag and the delivery carry the same
+			// answer today, and a second branch on the flag would be a second
+			// spelling of one question — the spelling that stops moving the day a
+			// third delivery is admitted.
+			delivery := authoredcontent.DeliveryFor(opts.report)
 			res, err := importops.Import(cmd.Context(), rw, importops.Options{
 				Source:        content,
 				SourceName:    path,
 				Format:        format,
 				OutputDir:     ".",
-				Delivery:      authoredcontent.DeliveryFor(opts.stdout),
+				Delivery:      delivery,
 				ResolvePlugin: importPluginBytes,
 				Sources:       sources,
 				Settings:      settings,
@@ -102,15 +109,15 @@ the result can be reviewed or piped before anything is written.`,
 
 			// The import's commentary — how the source was read, then what the
 			// importer reported about it — goes to the error stream. Under
-			// --stdout the standard output stream is the drafted files
-			// themselves, so a commentary line there would corrupt what a caller
-			// is piping; putting both on one stream is also what lets a reader
-			// see which importer raised an unmapped-node warning.
+			// --report the standard output stream holds one parseable document
+			// and nothing else, so a commentary line there would corrupt what a
+			// caller is parsing; putting both on one stream is also what lets a
+			// reader see which importer raised an unmapped-node warning.
 			reportImportPreamble(cmd.ErrOrStderr(), res)
 			reportImportDiagnostics(cmd.ErrOrStderr(), res.Diagnostics)
 
-			if opts.stdout {
-				if err := writeImportStdout(cmd.OutOrStdout(), res.Files); err != nil {
+			if delivery.Reports() {
+				if err := reportImportedFiles(cmd.OutOrStdout(), res.Files); err != nil {
 					return err
 				}
 			} else {
@@ -123,7 +130,7 @@ the result can be reviewed or piped before anything is written.`,
 		},
 	}
 	c.Flags().StringVar(&opts.format, "format", "", "Name the source format explicitly, overriding shape detection (for example langflow or flowise)")
-	c.Flags().BoolVar(&opts.stdout, "stdout", false, "Write the drafted files to standard output instead of to disk")
+	c.Flags().BoolVar(&opts.report, "report", false, "Report the drafted files as content, naming the file each is for, and write nothing. Without it the drafts are written to disk.")
 	return c
 }
 
@@ -140,25 +147,32 @@ func importPluginBytes(rw *workspaceconfig.ResolvedWorkspace, uri string) (plugi
 	return resolvePluginURI(uri, workspacePluginResolutionInputs(rw))
 }
 
-// writeImportStdout writes the drafted files to w as a deterministic
-// concatenation: a "# <path>" header line per file, then the file's content,
-// with a trailing newline so consecutive files stay separated. The files are
-// emitted in the order the importer returned them.
-func writeImportStdout(w io.Writer, files []abi.ScaffoldFile) error {
+// reportImportedFiles hands the drafted files back as content instead of
+// writing them, in the reported form every capability that reports authored
+// content answers with.
+//
+// 🔴 The form is the shared one rather than a framing written here, and the
+// difference is not cosmetic. A header-line-per-file concatenation cannot be
+// read back: a drafted file whose own first line begins with the header marker
+// is indistinguishable from the start of the next file, so there is no parse
+// that recovers the set, and a caller piping the stream has to invent an
+// escaping convention the producer never applied. The shared form is one YAML
+// document carrying a documents list, so a caller reads it with the parser it
+// already has and content beginning with a comment or a document marker needs
+// no escaping at all.
+//
+// Each entry carries the path the importer returned, relative to the output
+// root the commentary line names — the same path the writing delivery lands the
+// file at, so what is reported and what would be written address one file.
+//
+// The files are reported in the order the importer returned them, which the
+// shared writer preserves, so the same source reports the same bytes.
+func reportImportedFiles(w io.Writer, files []abi.ScaffoldFile) error {
+	docs := make([]authoredcontent.Document, 0, len(files))
 	for _, f := range files {
-		if _, err := fmt.Fprintf(w, "# %s\n", f.Path); err != nil {
-			return err
-		}
-		if _, err := io.WriteString(w, f.Content); err != nil {
-			return err
-		}
-		if !strings.HasSuffix(f.Content, "\n") {
-			if _, err := io.WriteString(w, "\n"); err != nil {
-				return err
-			}
-		}
+		docs = append(docs, authoredcontent.Document{Path: f.Path, Content: f.Content})
 	}
-	return nil
+	return authoredcontent.Report(w, docs)
 }
 
 // reportImportPreamble writes the one line that says how to read everything the
@@ -176,11 +190,11 @@ func writeImportStdout(w io.Writer, files []abi.ScaffoldFile) error {
 //
 // The output root is named because every drafted path is relative to it and
 // carries no anchor of its own — the wrote lines under a writing delivery and
-// the path headers under --stdout are both root-relative. It is therefore true
-// under both deliveries, which is why the line frames the paths rather than
-// claiming a destination: under --stdout nothing is written anywhere, and a
-// line announcing a directory the run never touched would be worse than no line
-// at all.
+// the reported paths under --report are both root-relative. It is therefore
+// true under both deliveries, which is why the line frames the paths rather
+// than claiming a destination: under --report nothing is written anywhere, and
+// a line announcing a directory the run never touched would be worse than no
+// line at all.
 //
 // Both are read from the result rather than from the values passed to the call,
 // so the line names what the import actually ran with and the two cannot come

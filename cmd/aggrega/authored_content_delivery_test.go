@@ -501,6 +501,7 @@ func TestTheProductClassificationIsCarriedByTheCommandSurface(t *testing.T) {
 	}{
 		{"aggrega config init", "a seeded configuration the operator goes on editing", true},
 		{"aggrega plugin gen-catalog", "catalog entities a catalog author goes on editing", true},
+		{"aggrega import", "draft authoring files the author goes on editing", true},
 		{"aggrega config capture", "a record of what the configuration resolved to", false},
 		{"aggrega plugin sync", "the compiler's own bookkeeping about a plugin module", false},
 	} {

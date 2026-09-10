@@ -11,6 +11,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/authoredcontent"
 	"github.com/aggrega-ai/aggrega-cli/internal/importops"
 )
 
@@ -28,43 +29,85 @@ const demoEchoBody = "kind: Component\nmetadata:\n  name: demo\n"
 // its tests with it, which leaves the CALL SITE uncovered while every moved test
 // passes, so the renderings below exist to cover the half that did not move.
 
-// TestWriteImportStdoutRendersTheDeterministicConcatenation pins the standard-
-// output form: a "# path" header per file followed by its content, in the order
-// the importer returned them, with a supplied newline where the content lacks
-// one so consecutive files stay separated.
+// TestReportedImportedFilesRoundTripThroughTheSharedForm pins the reported form
+// by reading it back: every drafted file's path and content survive the trip,
+// in the importer's own order.
+//
+// 🔴 The assertion is a round trip rather than a pinned byte string, and the
+// reason is the property being claimed. What matters is that a caller can
+// RECOVER the set — which the framing this replaced could not do at all, since a
+// file whose own first line began with the header marker was indistinguishable
+// from the start of the next file. The third row below is exactly that case, and
+// it is the row a header-per-file concatenation cannot get right. A pinned byte
+// string would also make this test a golden over the encoder's choice of block
+// scalar, which library drift moves without moving anything a caller observes.
 //
 // It is a separate path from the write, so a green on the write says nothing
 // about it.
-func TestWriteImportStdoutRendersTheDeterministicConcatenation(t *testing.T) {
+func TestReportedImportedFilesRoundTripThroughTheSharedForm(t *testing.T) {
 	t.Parallel()
 
-	var out bytes.Buffer
-	err := writeImportStdout(&out, []abi.ScaffoldFile{
+	files := []abi.ScaffoldFile{
 		{Path: "demo.yaml", Content: demoEchoBody},
 		{Path: "nested/second.yaml", Content: "kind: Feature\n"},
+		{Path: "leads-with-the-old-header-marker.yaml", Content: "# demo.yaml\nkind: Feature\n"},
 		{Path: "no-trailing-newline.yaml", Content: "bare"},
-	})
-	if err != nil {
-		t.Fatalf("writeImportStdout: %v", err)
 	}
-	want := "# demo.yaml\n" + demoEchoBody +
-		"# nested/second.yaml\nkind: Feature\n" +
-		"# no-trailing-newline.yaml\nbare\n"
-	if out.String() != want {
-		t.Fatalf("writeImportStdout = %q; want %q", out.String(), want)
+
+	var out bytes.Buffer
+	if err := reportImportedFiles(&out, files); err != nil {
+		t.Fatalf("reportImportedFiles: %v", err)
+	}
+
+	docs, err := authoredcontent.Decode(out.Bytes())
+	if err != nil {
+		t.Fatalf("decode the reported answer: %v\n%s", err, out.String())
+	}
+	if len(docs) != len(files) {
+		t.Fatalf("reported %d documents for %d drafted files:\n%s", len(docs), len(files), out.String())
+	}
+	for i, f := range files {
+		if docs[i].Path != f.Path {
+			t.Errorf("document %d names %q; the importer drafted %q, and the order is the importer's",
+				i, docs[i].Path, f.Path)
+		}
+		if docs[i].Content != f.Content {
+			t.Errorf("document %d for %s carries %q; want %q", i, f.Path, docs[i].Content, f.Content)
+		}
+	}
+
+	// The stream is exactly one report and nothing else, asserted by re-encoding
+	// what was decoded and comparing bytes. A decode alone cannot make this claim:
+	// prose beside the documents key still decodes.
+	var reencoded bytes.Buffer
+	if err := authoredcontent.Report(&reencoded, docs); err != nil {
+		t.Fatalf("re-encode the decoded report: %v", err)
+	}
+	if reencoded.String() != out.String() {
+		t.Errorf("the reported stream is not exactly one report:\nstream:\n%s\nthe report alone:\n%s",
+			out.String(), reencoded.String())
 	}
 }
 
-// TestWriteImportStdoutEmitsNothingForAnEmptySet keeps the empty case honest: an
-// import that drafted nothing prints nothing rather than a stray header.
-func TestWriteImportStdoutEmitsNothingForAnEmptySet(t *testing.T) {
+// TestReportedImportedFilesReportTheEmptySetForAnEmptyImport keeps the empty
+// case honest: an import that drafted nothing reports the empty document set
+// rather than an empty stream, so a caller can tell "nothing was drafted" from a
+// truncated answer.
+func TestReportedImportedFilesReportTheEmptySetForAnEmptyImport(t *testing.T) {
 	t.Parallel()
 	var out bytes.Buffer
-	if err := writeImportStdout(&out, nil); err != nil {
-		t.Fatalf("writeImportStdout: %v", err)
+	if err := reportImportedFiles(&out, nil); err != nil {
+		t.Fatalf("reportImportedFiles: %v", err)
 	}
-	if out.Len() != 0 {
-		t.Fatalf("writeImportStdout(nil) wrote %q; want nothing", out.String())
+	docs, err := authoredcontent.Decode(out.Bytes())
+	if err != nil {
+		t.Fatalf("decode the reported answer: %v\n%s", err, out.String())
+	}
+	if len(docs) != 0 {
+		t.Fatalf("reported %d documents for an import that drafted none:\n%s", len(docs), out.String())
+	}
+	if out.Len() == 0 {
+		t.Fatal("reported an empty stream; a caller cannot tell that from a truncated answer")
 	}
 }
 
