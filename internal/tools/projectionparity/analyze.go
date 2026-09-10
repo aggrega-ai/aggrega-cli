@@ -46,6 +46,13 @@ const (
 	// could: the surface never discarded that result, or it does project fields
 	// from it and so does not omit the whole of it.
 	//
+	// Three more concern the name itself rather than the claim: a bare result
+	// name two packages both declare, which does not say which of them is meant;
+	// a package-qualified name whose package declares no shared result of that
+	// name; and a marker whose shape names neither form. Each is reported rather
+	// than passed over, because a marker nothing recognises is a reason an author
+	// believes they gave.
+	//
 	// The declaration is the one way a dropped field is cleared here, so it is
 	// read back against the site rather than taken on trust. A declaration
 	// nothing checks is one a later author applies by habit, and at that point a
@@ -59,19 +66,40 @@ const (
 // Kind is what the finding says, and File and Line are where the surface's
 // projection sits. Surface names the surface, Core the shared computation as
 // package directory and function name, and Result the struct it hands back.
-// Field is the field at issue, empty for a finding about a whole result.
-// Carriers are the surfaces that do carry the field, sorted. Detail carries
-// whatever the kind needs beyond those.
+// ResultPackage is the package directory declaring Result, which is what
+// separates two results of the same name; Result alone is the struct's own name,
+// and more than one package in a module may declare it. Field is the field at
+// issue, empty for a finding about a whole result. Carriers are the surfaces
+// that do carry the field, sorted. Detail carries whatever the kind needs beyond
+// those.
 type Finding struct {
-	Kind     Kind
-	File     string
-	Line     int
-	Surface  string
-	Core     string
-	Result   string
-	Field    string
-	Carriers []string
-	Detail   string
+	Kind          Kind
+	File          string
+	Line          int
+	Surface       string
+	Core          string
+	Result        string
+	ResultPackage string
+	Field         string
+	Carriers      []string
+	Detail        string
+}
+
+// qualifiedResult is the result under the package that declares it, which is
+// the spelling every marker this package prescribes names it by.
+//
+// The prescription is always qualified, and never the shorter bare name even
+// where the bare name happens to be unique today. Whether a bare name is
+// unambiguous is a property of the whole module rather than of the site, so an
+// author cannot see it from where they write the marker, and a bare marker that
+// is accepted today becomes unsupported the day a second package declares a
+// result of that name — with nothing at the site having changed. A prescription
+// that is only conditionally valid is a prescription for a latent failure.
+func (f Finding) qualifiedResult() string {
+	if f.ResultPackage == "" {
+		return f.Result
+	}
+	return f.ResultPackage + "." + f.Result
 }
 
 // String renders a finding as one line, and is what a report prints.
@@ -84,12 +112,12 @@ func (f Finding) String() string {
 			"Carry it, or say where it is dropped why this surface cannot: "+
 			"// projection-omits %s.%s: <reason>",
 			f.Surface, f.Result, f.Field, f.Core, strings.Join(f.Carriers, " and "),
-			f.Result, f.Field)
+			f.qualifiedResult(), f.Field)
 	case ResultDiscarded:
 		fmt.Fprintf(&b, "%s calls %s and discards its %s, so every fact it computed is dropped at once, "+
 			"while %s carries %s. Carry it, or say where it is discarded why this surface cannot: "+
 			"// projection-omits %s: <reason>",
-			f.Surface, f.Core, f.Result, strings.Join(f.Carriers, " and "), f.Detail, f.Result)
+			f.Surface, f.Core, f.Result, strings.Join(f.Carriers, " and "), f.Detail, f.qualifiedResult())
 	case UnreadableSite:
 		fmt.Fprintf(&b, "%s's use of the %s from %s %s, so no parity verdict is drawn for it here",
 			f.Surface, f.Result, f.Core, f.Detail)
@@ -97,7 +125,9 @@ func (f Finding) String() string {
 		fmt.Fprintf(&b, "%s hands back %s and %s, so what its callers are given cannot be compared",
 			f.Core, f.Result, f.Detail)
 	case ExemptionUnsupported:
-		omitted := f.Result
+		// Echoed as the author spelled it, qualifier and all, so a refusal about
+		// a name is readable against the marker it is about.
+		omitted := f.qualifiedResult()
 		if f.Field != "" {
 			omitted += "." + f.Field
 		}
@@ -164,7 +194,29 @@ type Result struct {
 // discarded result — so both need a way to be answered at the site, and the two
 // forms are read back against the site by different checks because they claim
 // different things.
-var exemptionRE = regexp.MustCompile(`projection-omits\s+([A-Za-z_][A-Za-z0-9_]*)(?:\.([A-Za-z_][A-Za-z0-9_]*))?\s*:\s*(.*)$`)
+//
+// The result may be named bare or under the package directory that declares it,
+// and both forms carry the optional field:
+//
+//	projection-omits Answer.Hint: …
+//	projection-omits internal/core.Answer.Hint: …
+//
+// The qualified form exists because a bare name does not always identify one
+// result: a module may declare that name in more than one package, and then the
+// bare marker names all of them and identifies none. The qualified form is what
+// every finding prescribes, and the bare form stays accepted wherever it does
+// identify one result — an author who can see that it does may write it.
+//
+// A qualifier is present exactly when the first token carries a path separator,
+// which is what makes the parse unambiguous with no naming convention behind it:
+// a directory and a result name are both single tokens, so nothing else could
+// tell `Answer.Hint` from `core.Answer`. 🔴 One bound follows and is stated
+// rather than hidden: a shared computation declared in a package directory with
+// no separator in it — which is to say directly at the module root — has no
+// qualified form available, and where such a result's name is also shared, no
+// marker can distinguish it. No core reachable by this read sits there, because
+// a caller bounds the cores to a subtree.
+var exemptionRE = regexp.MustCompile(`projection-omits\s+([A-Za-z_][A-Za-z0-9_/]*)(?:\.([A-Za-z_][A-Za-z0-9_]*))?(?:\.([A-Za-z_][A-Za-z0-9_]*))?\s*:\s*(.*)$`)
 
 // maxFollowDepth bounds how far a value handed on to a same-package helper is
 // followed. Beyond it the site is reported as unreadable rather than followed
@@ -327,9 +379,36 @@ type exemption struct {
 	file    string
 	line    int
 	pos     token.Pos
-	result  string
-	field   string
-	reason  string
+
+	// pkg is the package directory the marker named the result under, empty
+	// where the marker named it bare.
+	pkg    string
+	result string
+	field  string
+	reason string
+
+	// malformed is non-empty where the marker's shape names neither the bare
+	// nor the qualified form. It is carried rather than dropped so the marker is
+	// refused out loud: an author who wrote a reason and had it silently ignored
+	// believes a fact is excused when nothing excuses it.
+	malformed string
+}
+
+// parseExemption reads the result, its package and its field out of a matched
+// marker, or says why the marker's shape names none of them.
+func parseExemption(first, second, third string) (pkg, result, field, malformed string) {
+	if strings.Contains(first, "/") {
+		if second == "" {
+			return "", "", "", fmt.Sprintf("it names the package %s and no result in it — write the result after the package, as in // projection-omits %s.SomeResult: <reason>",
+				first, first)
+		}
+		return first, second, third, ""
+	}
+	if third != "" {
+		return "", "", "", fmt.Sprintf("it names three parts, %s.%s.%s, with no package among them — a result and a field are two, so either drop one or qualify the result with the package directory that declares it",
+			first, second, third)
+	}
+	return "", first, second, ""
 }
 
 func pairKey(surface, resultKey string) string { return surface + "\x00" + resultKey }
@@ -395,7 +474,7 @@ func (a *analysis) readSite(site callSite, p producer) {
 				a.reportedCore[resultKey] = true
 				a.findings = append(a.findings, Finding{
 					Kind: UnreadableCore, File: file, Line: line, Surface: site.surface,
-					Core: core, Result: name, Detail: rt.unreadable,
+					Core: core, Result: name, ResultPackage: p.coreDir, Detail: rt.unreadable,
 				})
 			}
 			continue
@@ -408,7 +487,8 @@ func (a *analysis) readSite(site callSite, p producer) {
 		a.consumes[pair] = true
 		if _, held := a.firstSite[pair]; !held {
 			a.firstSite[pair] = Finding{
-				File: file, Line: line, Surface: site.surface, Core: core, Result: name,
+				File: file, Line: line, Surface: site.surface, Core: core,
+				Result: name, ResultPackage: p.coreDir,
 			}
 		}
 		a.participating[pair] = append(a.participating[pair], funcRange(site.fn))
@@ -418,7 +498,7 @@ func (a *analysis) readSite(site callSite, p producer) {
 			a.pending = append(a.pending, pendingFinding{
 				finding: Finding{
 					Kind: UnreadableSite, File: file, Line: line, Surface: site.surface,
-					Core: core, Result: name, Detail: detail,
+					Core: core, Result: name, ResultPackage: p.coreDir, Detail: detail,
 				},
 				resultKey: resultKey,
 			})
@@ -438,7 +518,7 @@ func (a *analysis) readSite(site callSite, p producer) {
 			if _, held := a.discarded[pair]; !held {
 				a.discarded[pair] = Finding{
 					Kind: ResultDiscarded, File: file, Line: line, Surface: site.surface,
-					Core: core, Result: name,
+					Core: core, Result: name, ResultPackage: p.coreDir,
 				}
 			}
 			continue
@@ -682,9 +762,11 @@ func (a *analysis) collectExemptions() {
 							continue
 						}
 						path, line := a.source.position(c.Pos())
+						pkg, result, field, malformed := parseExemption(match[1], match[2], match[3])
 						a.exemptions = append(a.exemptions, exemption{
 							surface: surface.Name, file: path, line: line, pos: c.Pos(),
-							result: match[1], field: match[2], reason: strings.TrimSpace(match[3]),
+							pkg: pkg, result: result, field: field,
+							reason: strings.TrimSpace(match[4]), malformed: malformed,
 						})
 					}
 				}
@@ -699,6 +781,34 @@ func (a *analysis) collectExemptions() {
 	})
 }
 
+// resultsNamed are the collected result types a marker's stated name reaches,
+// sorted, each as package directory and type name.
+//
+// A qualified name reaches at most one, because that pair is the key this read
+// holds a result type under. A bare name reaches every result of that name, and
+// more than one is what the ambiguity refusal is drawn from — the set is
+// deliberately NOT narrowed to the results this surface calls. Narrowing it
+// would make a marker's validity depend on which computations its own surface
+// happens to reach, so the same words would be accepted on one surface and
+// refused on another, and an author could not tell from the marker which it was.
+func (a *analysis) resultsNamed(pkg, name string) []string {
+	if pkg != "" {
+		key := pkg + "." + name
+		if _, held := a.resultTypes[key]; held {
+			return []string{key}
+		}
+		return nil
+	}
+	var matches []string
+	for key, rt := range a.resultTypes {
+		if rt.name == name {
+			matches = append(matches, key)
+		}
+	}
+	slices.Sort(matches)
+	return matches
+}
+
 // verifyExemptions reads every stated exemption back against what the surface
 // was measured to do, and records the ones the site bears out.
 func (a *analysis) verifyExemptions() {
@@ -709,32 +819,57 @@ func (a *analysis) verifyExemptions() {
 		reject := func(detail string) {
 			a.findings = append(a.findings, Finding{
 				Kind: ExemptionUnsupported, File: e.file, Line: e.line, Surface: e.surface,
-				Result: e.result, Field: e.field, Detail: detail,
+				Result: e.result, ResultPackage: e.pkg, Field: e.field, Detail: detail,
 			})
 		}
 
-		var matches []string
-		for key, rt := range a.resultTypes {
-			if rt.name == e.result {
-				matches = append(matches, key)
-			}
+		if e.malformed != "" {
+			reject(e.malformed)
+			continue
 		}
-		slices.Sort(matches)
+
+		matches := a.resultsNamed(e.pkg, e.result)
 		switch len(matches) {
 		case 0:
+			if e.pkg != "" {
+				if elsewhere := a.resultsNamed("", e.result); len(elsewhere) > 0 {
+					reject(fmt.Sprintf("%s declares no shared result named %s; the shared results of that name are %s",
+						e.pkg, e.result, strings.Join(elsewhere, ", ")))
+					continue
+				}
+			}
 			reject("no shared computation this surface calls hands back a result of that name")
 			continue
 		case 1:
 		default:
-			reject(fmt.Sprintf("two shared results are named that — %s — so the exemption does not say which it means",
-				strings.Join(matches, " and ")))
+			// The list is what says which results are meant, so the count is not
+			// restated beside it: a transcribed count disagreeing with the list
+			// it introduces is the shape this instrument exists to remove.
+			//
+			// The example is built from the first match because the form is what
+			// it demonstrates, and it says "the one it means" so it cannot be read
+			// as the answer — this read has no way to know which of the matches an
+			// author meant, and the list beside it is what makes that choice.
+			suggestion := matches[0]
+			if e.field != "" {
+				suggestion += "." + e.field
+			}
+			reject(fmt.Sprintf("the shared results named %s are %s, so the exemption does not say which of them it means — "+
+				"name the one it means under the package that declares it, in the form // projection-omits %s: <reason>",
+				e.result, strings.Join(matches, ", "), suggestion))
 			continue
 		}
+		// Past this point the result is settled, so every refusal below names it
+		// by the key rather than by whatever the marker spelled. The header
+		// already echoes the author's own spelling, and a detail naming a bare
+		// name beside a qualified header would leave a reader of a module with two
+		// results of that name checking the wrong one — which is the very
+		// confusion the qualified form exists to remove.
 		resultKey := matches[0]
 		rt := a.resultTypes[resultKey]
 
 		if e.field != "" && !slices.Contains(rt.fields, e.field) {
-			reject(fmt.Sprintf("%s carries no field of that name (it carries %s)", e.result, strings.Join(rt.fields, ", ")))
+			reject(fmt.Sprintf("%s carries no field of that name (it carries %s)", resultKey, strings.Join(rt.fields, ", ")))
 			continue
 		}
 		// The subject is what the exemption claims to omit, and restating it is
@@ -750,7 +885,7 @@ func (a *analysis) verifyExemptions() {
 
 		pair := pairKey(e.surface, resultKey)
 		if !a.consumes[pair] {
-			reject(fmt.Sprintf("this surface calls nothing that hands back a %s, so it drops no field of one", e.result))
+			reject(fmt.Sprintf("this surface calls nothing that hands back %s, so it drops no field of one", resultKey))
 			continue
 		}
 		// Each form is held against what it actually claims. A field exemption is
@@ -761,24 +896,24 @@ func (a *analysis) verifyExemptions() {
 		if e.field != "" {
 			if a.reads[pair][e.field] {
 				reject(fmt.Sprintf("this surface does read %s.%s, so the exemption is stale — delete it rather than leaving a reason nothing is dropped for",
-					e.result, e.field))
+					resultKey, e.field))
 				continue
 			}
 		} else {
 			if _, discards := a.discarded[pair]; !discards {
 				reject(fmt.Sprintf("this surface does not discard the %s it is handed, so there is no whole result here for it to excuse — name the field it omits instead",
-					e.result))
+					resultKey))
 				continue
 			}
 			if len(a.reads[pair]) > 0 {
 				reject(fmt.Sprintf("this surface does project %s (it reads %s), so it does not omit the whole of it — name the field it omits instead",
-					e.result, strings.Join(sortedKeys(a.reads[pair]), ", ")))
+					resultKey, strings.Join(sortedKeys(a.reads[pair]), ", ")))
 				continue
 			}
 		}
 		if !withinAny(e.pos, a.participating[pair]) {
 			reject(fmt.Sprintf("it sits away from every projection of %s on this surface, which makes it a list entry rather than a statement at the site",
-				e.result))
+				resultKey))
 			continue
 		}
 		// A whole-result exemption is recorded under the empty field, which is

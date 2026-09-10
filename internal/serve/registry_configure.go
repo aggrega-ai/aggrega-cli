@@ -194,6 +194,13 @@ func (s *Server) dispatchRegistryAdd(ctx context.Context, req *jsonRPCRequest) e
 	if err != nil {
 		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, err.Error())
 	}
+	// projection-omits internal/registryops.AddResult.Content: the registration
+	// fills that document only under a reporting delivery, and this method takes
+	// no delivery — its request declares none and the options built above set
+	// none — so the delivery is always the write and the field is empty on every
+	// answer this method can give. Carrying it would put a key on the wire that
+	// no request can populate, which reads as a capability rather than as the
+	// absence of one.
 	return s.writeResult(ctx, req.ID, registryAddResult{
 		Host:  res.Host,
 		Scope: s.scopeOfWriteTarget(res.Target),

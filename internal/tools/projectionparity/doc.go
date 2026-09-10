@@ -39,14 +39,15 @@
 // # An exemption is stated at the site and read back against it
 //
 // A surface that legitimately cannot carry a fact says so where it drops it, in
-// a comment naming the field and the reason:
+// a comment naming the result under the package that declares it, then the field
+// and the reason:
 //
-//	// projection-omits CatalogResult.Notices: <the reason this surface cannot carry it>
+//	// projection-omits internal/catalogops.CatalogResult.Notices: <the reason this surface cannot carry it>
 //
 // Naming the result alone answers the other finding this read emits, a result a
 // surface discards whole:
 //
-//	// projection-omits CatalogResult: <the reason this surface consumes no part of it>
+//	// projection-omits internal/catalogops.CatalogResult: <the reason this surface consumes no part of it>
 //
 // The two forms claim different things, so each is read back by its own checks.
 // The live case for the broader one is a caller that consumes a result's
@@ -54,14 +55,34 @@
 // where the answer is whether the identifier resolves and there is no reader for
 // the resolved value to be reported to.
 //
+// The result may also be named bare, and the bare form is accepted wherever it
+// identifies one result. It is not what a finding prescribes, and the reason is
+// that whether a bare name identifies one result is a property of the whole
+// module rather than of the site: a module may declare that name in more than one
+// package, in which case the bare marker names all of them and identifies none.
+// So an author cannot see from where they write the marker whether the bare form
+// holds, and a bare marker accepted today stops being accepted the day a second
+// package declares a result of that name — with nothing at the site having
+// changed. Every finding therefore prescribes the qualified form, which is the
+// one spelling that cannot come to mean something else.
+//
 // The declaration is verified rather than believed. One that names a field the
 // site does read is reported, and so is one that names a field no result type at
 // the site carries, and so is one stating no reason. The broader form is reported
 // where the surface never discarded that result, and where it does project fields
-// from it — either would have it clear more than the narrow form could. A
+// from it — either would have it clear more than the narrow form could. A name
+// that reaches no collected result, one that reaches more than one, and a marker
+// whose shape names neither form are all reported too, rather than passed over:
+// a marker nothing recognises is a reason its author believes they gave. A
 // declaration nothing checks is one a later author applies by habit, and at that
 // point a surface that drops a fact for a reason no longer looks different from
 // one that dropped it by accident.
+//
+// 🔴 What the qualified form does NOT do is widen what an exemption can excuse.
+// Every read-back above holds unchanged: it decides which result the marker
+// names and nothing about whether the claim is borne out. A qualified marker on a
+// field the surface reads is still stale, and a qualified whole-result marker on
+// a surface that projects any field of that result is still refused.
 //
 // A central list of exemptions was refused deliberately. It would be a second
 // copy of a fact whose only honest home is the code that drops the field: the

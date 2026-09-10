@@ -4,6 +4,7 @@
 package projectionparity_test
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -778,6 +779,632 @@ func project() {
 			}
 		})
 	}
+}
+
+// twoPackagesOneResultName is the shape a bare result name does not identify:
+// two shared computations in two packages, each handing back a struct of the
+// same name. Both are called from both surfaces, so both are collected and the
+// bare name reaches two results.
+var twoPackagesOneResultName = map[string]string{
+	"internal/alpha/alpha.go": `package alpha
+
+type Answer struct {
+	Verdict bool
+	Hint    string
+}
+
+func Compute() (Answer, error) { return Answer{}, nil }
+`,
+	"internal/beta/beta.go": `package beta
+
+type Answer struct {
+	Verdict bool
+	Hint    string
+}
+
+func Compute() (Answer, error) { return Answer{}, nil }
+`,
+	"internal/one/one.go": `package one
+
+import (
+	"planted/internal/alpha"
+	"planted/internal/beta"
+)
+
+func project() {
+	first, _ := alpha.Compute()
+	_ = first.Verdict
+	_ = first.Hint
+	second, _ := beta.Compute()
+	_ = second.Verdict
+	_ = second.Hint
+}
+`,
+}
+
+// prescribedMarker is the marker text a finding's own message tells an author to
+// write, taken from that message rather than rebuilt from the finding's fields,
+// with a real reason in place of the placeholder.
+//
+// Reading it out of the rendered message is the point: it is the message that an
+// author follows, so a marker rebuilt from the fields would assert agreement
+// between the fields and the grammar while leaving the message — the only part
+// anybody reads — free to prescribe something else.
+func prescribedMarker(t *testing.T, f projectionparity.Finding, reason string) string {
+	t.Helper()
+
+	const opener, placeholder = "// projection-omits ", "<reason>"
+	line := f.String()
+	at := strings.Index(line, opener)
+	if at < 0 {
+		t.Fatalf("the finding prescribes no marker, so an author has nothing to follow:\n%s", line)
+	}
+	marker := line[at:]
+	if !strings.HasSuffix(marker, placeholder) {
+		t.Fatalf("the prescribed marker does not end in the reason placeholder, so this test cannot fill one in:\n%s", marker)
+	}
+	return strings.TrimSuffix(marker, placeholder) + reason
+}
+
+// TestTheMarkerTheReadPrescribesIsAMarkerTheReadAccepts is the round trip, and
+// it is the property the exemption mechanism is worth nothing without.
+//
+// A finding that tells an author to write a marker the same read then refuses is
+// worse than a finding with no remedy at all: the author writes the reason, the
+// refusal names a different defect, and the fact still goes unreported as
+// dropped. That is the state this read shipped in for any result whose bare name
+// two packages declare, so the shared-name rows below are the direct negation of
+// it and the unshared row holds the case that already worked.
+//
+// The marker is taken from the finding's own rendered message and written into
+// the source verbatim. Nothing here constructs a marker of its own — a test that
+// spelled the marker itself would pass while the message prescribed something
+// else, which is exactly the defect.
+func TestTheMarkerTheReadPrescribesIsAMarkerTheReadAccepts(t *testing.T) {
+	t.Parallel()
+
+	for _, row := range []struct {
+		name string
+		// files are the fixture with one %s where the marker is written, in the
+		// doc position of the projecting function.
+		files map[string]string
+		with  string
+		// wantQualified is the package the prescription must name, asserted so a
+		// silent return to the bare form cannot pass this test.
+		wantQualified string
+		wantKind      projectionparity.Kind
+		wantField     string
+		reason        string
+	}{
+		{
+			// The case that was broken: two packages declare Answer, so the bare
+			// name identifies neither and only the qualified form can.
+			name:  "a dropped field of a result whose bare name two packages declare",
+			files: twoPackagesOneResultName,
+			with: `package two
+
+import (
+	"planted/internal/alpha"
+	"planted/internal/beta"
+)
+
+%sfunc project() {
+	first, _ := alpha.Compute()
+	_ = first.Verdict
+	second, _ := beta.Compute()
+	_ = second.Verdict
+	_ = second.Hint
+}
+`,
+			wantQualified: "internal/alpha.Answer",
+			wantKind:      projectionparity.DroppedField,
+			wantField:     "Hint",
+			reason:        "this surface answers a machine that acts on the verdict alone.",
+		},
+		{
+			// The whole-result form of the same trap, which needs its own row:
+			// the two forms are rendered by different branches of the message and
+			// read back by different checks, so one working says nothing about the
+			// other.
+			name:  "a whole result discarded, whose bare name two packages declare",
+			files: twoPackagesOneResultName,
+			with: `package two
+
+import (
+	"planted/internal/alpha"
+	"planted/internal/beta"
+)
+
+%sfunc project() error {
+	_, err := alpha.Compute()
+	second, _ := beta.Compute()
+	_ = second.Verdict
+	_ = second.Hint
+	return err
+}
+`,
+			wantQualified: "internal/alpha.Answer",
+			wantKind:      projectionparity.ResultDiscarded,
+			reason:        "this surface calls it to learn whether the identifier resolves and reports to nobody.",
+		},
+		{
+			// The unshared name, so the row that already worked is held rather
+			// than assumed: the prescription is qualified here too, and it is
+			// still accepted.
+			name: "a dropped field of a result only one package declares",
+			files: map[string]string{
+				"internal/core/core.go": twoFieldCore,
+				"internal/one/one.go": `package one
+
+import "planted/internal/core"
+
+func project() {
+	answer, _ := core.Compute()
+	_ = answer.Verdict
+	_ = answer.Hint
+}
+`,
+			},
+			with: `package two
+
+import "planted/internal/core"
+
+%sfunc project() {
+	answer, _ := core.Compute()
+	_ = answer.Verdict
+}
+`,
+			wantQualified: "internal/core.Answer",
+			wantKind:      projectionparity.DroppedField,
+			wantField:     "Hint",
+			reason:        "this surface answers a machine that acts on the verdict alone.",
+		},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			t.Parallel()
+
+			before := map[string]string{}
+			for path, body := range row.files {
+				before[path] = body
+			}
+			before["internal/two/two.go"] = fmt.Sprintf(row.with, "")
+
+			found := analyze(t, before)
+			if len(found.Findings) != 1 {
+				t.Fatalf("the fixture reports %d finding(s), want exactly 1 so the marker below answers a known one:\n%s",
+					len(found.Findings), projectionparity.Report(found.Findings))
+			}
+			finding := found.Findings[0]
+			if finding.Kind != row.wantKind || finding.Field != row.wantField {
+				t.Fatalf("the fixture reports %q on field %q, want %q on %q",
+					finding.Kind, finding.Field, row.wantKind, row.wantField)
+			}
+
+			marker := prescribedMarker(t, finding, row.reason)
+			if !strings.Contains(marker, row.wantQualified) {
+				t.Fatalf("the prescribed marker does not name the package that declares the result:\n  %s\nwant it to name %s",
+					marker, row.wantQualified)
+			}
+
+			after := map[string]string{}
+			for path, body := range row.files {
+				after[path] = body
+			}
+			after["internal/two/two.go"] = fmt.Sprintf(row.with, marker+"\n")
+
+			cleared := analyze(t, after)
+			if len(cleared.Findings) != 0 {
+				t.Fatalf("the read prescribed a marker it then refuses. Written verbatim from its own message:\n  %s\nand it reports:\n%s",
+					marker, projectionparity.Report(cleared.Findings))
+			}
+		})
+	}
+}
+
+// TestTheBareMarkerStaysAcceptedWhereItIdentifiesOneResult holds the form the
+// tree already uses.
+//
+// Markers written before the qualified form existed name their result bare, and
+// every one of them still has to verify: a grammar extension that quietly
+// invalidated the exemptions already in the tree would turn each of them into a
+// finding, which is a regression wearing the clothes of stricter checking.
+func TestTheBareMarkerStaysAcceptedWhereItIdentifiesOneResult(t *testing.T) {
+	t.Parallel()
+
+	result := analyze(t, map[string]string{
+		"internal/core/core.go": twoFieldCore,
+		"internal/one/one.go": `package one
+
+import "planted/internal/core"
+
+func project() {
+	answer, _ := core.Compute()
+	_ = answer.Verdict
+	_ = answer.Hint
+}
+`,
+		"internal/two/two.go": `package two
+
+import "planted/internal/core"
+
+// projection-omits Answer.Hint: this surface answers a machine, which acts on
+// the verdict and has nothing to do with a phrasing meant for a person.
+func project() {
+	answer, _ := core.Compute()
+	_ = answer.Verdict
+}
+`,
+	})
+	if len(result.Findings) != 0 {
+		t.Fatalf("a bare marker naming the only result of that name was refused:\n%s",
+			projectionparity.Report(result.Findings))
+	}
+}
+
+// TestTheQualifiedMarkerCannotExcuseWhatTheBareOneCouldNot walks every way the
+// qualified form is refused, and asserts WHICH refusal fired for each.
+//
+// The qualified form only decides which result a marker names. It must widen
+// nothing else, because the read-back checks are the whole reason an exemption is
+// a statement rather than a licence — a qualified marker that could excuse a
+// field the surface demonstrably reads would make the marker a way to silence
+// any finding at all.
+//
+// Every row asserts a distinct phrase from its own refusal rather than only the
+// finding's kind, and that is not belt-and-braces: several of these refusals
+// report the same kind, result and surface, so a row checking the kind alone
+// would pass on the wrong refusal firing and the check would silently stop
+// covering its subject.
+func TestTheQualifiedMarkerCannotExcuseWhatTheBareOneCouldNot(t *testing.T) {
+	t.Parallel()
+
+	// threeSurfaces is needed by exactly one row: a result that is collected
+	// (two surfaces call it) while a third surface calls nothing that hands it
+	// back. With two surfaces every collected result is consumed by both, so the
+	// refusal for a marker on a result the surface never receives is unreachable.
+	threeSurfaces := []projectionparity.Surface{
+		{Name: "the first surface", Dirs: []string{"internal/one"}},
+		{Name: "the second surface", Dirs: []string{"internal/two"}},
+		{Name: "the third surface", Dirs: []string{"internal/three"}},
+	}
+
+	for _, row := range []struct {
+		name     string
+		files    map[string]string
+		surfaces []projectionparity.Surface
+		// wantRefusal is the phrase that identifies which refusal fired.
+		wantRefusal string
+		// wantAlso is a finding the refusal must NOT have cleared, empty where
+		// the fixture has none.
+		wantAlso projectionparity.Kind
+	}{
+		{
+			name: "a qualified marker naming a package that declares no such shared result",
+			files: mergeFiles(twoPackagesOneResultName, `package two
+
+import (
+	"planted/internal/alpha"
+	"planted/internal/beta"
+)
+
+// projection-omits internal/elsewhere.Answer.Hint: a package that declares no
+// shared result of that name at all.
+func project() {
+	first, _ := alpha.Compute()
+	_ = first.Verdict
+	second, _ := beta.Compute()
+	_ = second.Verdict
+	_ = second.Hint
+}
+`),
+			wantRefusal: "internal/elsewhere declares no shared result named Answer",
+			wantAlso:    projectionparity.DroppedField,
+		},
+		{
+			name: "a qualified marker on a result this surface calls nothing that hands back",
+			files: map[string]string{
+				"internal/core/core.go": twoFieldCore,
+				"internal/one/one.go": `package one
+
+import "planted/internal/core"
+
+func project() {
+	answer, _ := core.Compute()
+	_ = answer.Verdict
+	_ = answer.Hint
+}
+`,
+				"internal/two/two.go": `package two
+
+// projection-omits internal/core.Answer.Hint: a result this surface never
+// receives, so it drops no field of one.
+func project() {}
+`,
+				"internal/three/three.go": `package three
+
+import "planted/internal/core"
+
+func project() {
+	answer, _ := core.Compute()
+	_ = answer.Verdict
+	_ = answer.Hint
+}
+`,
+			},
+			surfaces:    threeSurfaces,
+			wantRefusal: "calls nothing that hands back internal/core.Answer",
+		},
+		{
+			// The cell that would turn the marker into a licence: a qualified
+			// claim to omit a field the surface plainly reads.
+			name: "a qualified marker on a field the surface does read is stale",
+			files: mergeFiles(twoPackagesOneResultName, `package two
+
+import (
+	"planted/internal/alpha"
+	"planted/internal/beta"
+)
+
+// projection-omits internal/alpha.Answer.Verdict: a claim about a field this
+// body reads on the very next line.
+func project() {
+	first, _ := alpha.Compute()
+	_ = first.Verdict
+	second, _ := beta.Compute()
+	_ = second.Verdict
+	_ = second.Hint
+}
+`),
+			wantRefusal: "does read internal/alpha.Answer.Verdict",
+			wantAlso:    projectionparity.DroppedField,
+		},
+		{
+			// The whole-result form of the same cell, and the one the ruling
+			// authorising this grammar named explicitly: the broad form must not
+			// clear more than the narrow one could.
+			name: "a qualified whole-result marker on a surface that projects a field of it",
+			files: mergeFiles(twoPackagesOneResultName, `package two
+
+import (
+	"planted/internal/alpha"
+	"planted/internal/beta"
+)
+
+// projection-omits internal/alpha.Answer: claimed for the whole result by a
+// body that reads part of it.
+func project() {
+	first, _ := alpha.Compute()
+	_ = first.Verdict
+	second, _ := beta.Compute()
+	_ = second.Verdict
+	_ = second.Hint
+}
+`),
+			wantRefusal: "does not discard the internal/alpha.Answer it is handed",
+			wantAlso:    projectionparity.DroppedField,
+		},
+		{
+			name: "a qualified whole-result marker on a surface that projects the result at another call",
+			files: mergeFiles(twoPackagesOneResultName, `package two
+
+import (
+	"planted/internal/alpha"
+	"planted/internal/beta"
+)
+
+// projection-omits internal/alpha.Answer: claimed for the whole result while a
+// second call in this package reads part of it.
+func project() error {
+	_, err := alpha.Compute()
+	second, _ := beta.Compute()
+	_ = second.Verdict
+	_ = second.Hint
+	return err
+}
+
+func also() {
+	first, _ := alpha.Compute()
+	_ = first.Verdict
+}
+`),
+			wantRefusal: "does project internal/alpha.Answer (it reads Verdict)",
+			wantAlso:    projectionparity.ResultDiscarded,
+		},
+		{
+			name: "a qualified marker away from every projection of the result it names",
+			files: mergeFiles(twoPackagesOneResultName, `package two
+
+import (
+	"planted/internal/alpha"
+	"planted/internal/beta"
+)
+
+func project() {
+	first, _ := alpha.Compute()
+	_ = first.Verdict
+	second, _ := beta.Compute()
+	_ = second.Verdict
+	_ = second.Hint
+}
+`, "internal/two/exemptions.go", `package two
+
+// projection-omits internal/alpha.Answer.Hint: stated nowhere near the
+// projection it excuses.
+func unrelated() {}
+`),
+			wantRefusal: "sits away from every projection",
+			wantAlso:    projectionparity.DroppedField,
+		},
+		{
+			name: "a qualified marker naming a field the result has not got",
+			files: mergeFiles(twoPackagesOneResultName, `package two
+
+import (
+	"planted/internal/alpha"
+	"planted/internal/beta"
+)
+
+// projection-omits internal/alpha.Answer.Reason: a field this result does not
+// carry at all.
+func project() {
+	first, _ := alpha.Compute()
+	_ = first.Verdict
+	second, _ := beta.Compute()
+	_ = second.Verdict
+	_ = second.Hint
+}
+`),
+			wantRefusal: "carries no field of that name",
+			wantAlso:    projectionparity.DroppedField,
+		},
+		{
+			name: "a qualified marker stating no reason",
+			files: mergeFiles(twoPackagesOneResultName, `package two
+
+import (
+	"planted/internal/alpha"
+	"planted/internal/beta"
+)
+
+// projection-omits internal/alpha.Answer.Hint:
+func project() {
+	first, _ := alpha.Compute()
+	_ = first.Verdict
+	second, _ := beta.Compute()
+	_ = second.Verdict
+	_ = second.Hint
+}
+`),
+			wantRefusal: "states no reason",
+			wantAlso:    projectionparity.DroppedField,
+		},
+		{
+			// The refusal that made the qualified form necessary, held so it
+			// cannot quietly stop firing — and its message must name every result
+			// it matched, because the list is what tells an author which packages
+			// to choose between.
+			name: "a bare marker on a name two packages declare still names both and refuses",
+			files: mergeFiles(twoPackagesOneResultName, `package two
+
+import (
+	"planted/internal/alpha"
+	"planted/internal/beta"
+)
+
+// projection-omits Answer.Hint: a bare name that reaches two results.
+func project() {
+	first, _ := alpha.Compute()
+	_ = first.Verdict
+	second, _ := beta.Compute()
+	_ = second.Verdict
+	_ = second.Hint
+}
+`),
+			wantRefusal: "the shared results named Answer are internal/alpha.Answer, internal/beta.Answer",
+			wantAlso:    projectionparity.DroppedField,
+		},
+		{
+			// A shape that named neither form used to match no marker at all, so
+			// the author's reason was ignored in silence. It is refused out loud
+			// now, which is the same defect class as prescribing an unsatisfiable
+			// marker: a reason nobody reads reads as a reason given.
+			name: "a marker naming three parts with no package among them is refused out loud",
+			files: mergeFiles(twoPackagesOneResultName, `package two
+
+import (
+	"planted/internal/alpha"
+	"planted/internal/beta"
+)
+
+// projection-omits alpha.Answer.Hint: a package written without its directory,
+// which names three parts and qualifies nothing.
+func project() {
+	first, _ := alpha.Compute()
+	_ = first.Verdict
+	second, _ := beta.Compute()
+	_ = second.Verdict
+	_ = second.Hint
+}
+`),
+			wantRefusal: "it names three parts, alpha.Answer.Hint, with no package among them",
+			wantAlso:    projectionparity.DroppedField,
+		},
+		{
+			name: "a marker naming a package and no result in it is refused out loud",
+			files: mergeFiles(twoPackagesOneResultName, `package two
+
+import (
+	"planted/internal/alpha"
+	"planted/internal/beta"
+)
+
+// projection-omits internal/alpha: a package with no result named after it.
+func project() {
+	first, _ := alpha.Compute()
+	_ = first.Verdict
+	second, _ := beta.Compute()
+	_ = second.Verdict
+	_ = second.Hint
+}
+`),
+			wantRefusal: "it names the package internal/alpha and no result in it",
+			wantAlso:    projectionparity.DroppedField,
+		},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			t.Parallel()
+
+			corpus := row.surfaces
+			if corpus == nil {
+				corpus = surfaces()
+			}
+			result, err := projectionparity.Analyze(write(t, row.files), "planted", "internal/", corpus)
+			if err != nil {
+				t.Fatalf("run the projection read: %v", err)
+			}
+
+			report := projectionparity.Report(result.Findings)
+			var refusals int
+			for _, f := range result.Findings {
+				if f.Kind == projectionparity.ExemptionUnsupported {
+					refusals++
+				}
+			}
+			if refusals != 1 {
+				t.Fatalf("the read reports %d refusal(s) of the stated exemption, want exactly 1:\n%s", refusals, report)
+			}
+			if !strings.Contains(report, row.wantRefusal) {
+				t.Fatalf("the right refusal shape fired for the wrong reason: no refusal says %q\n%s",
+					row.wantRefusal, report)
+			}
+			if row.wantAlso == "" {
+				return
+			}
+			var kept bool
+			for _, f := range result.Findings {
+				if f.Kind == row.wantAlso {
+					kept = true
+				}
+			}
+			if !kept {
+				t.Fatalf("the refused exemption cleared the %s it was supposed to leave standing, which would make a "+
+					"malformed marker a way to silence a finding:\n%s", row.wantAlso, report)
+			}
+		})
+	}
+}
+
+// mergeFiles is twoPackagesOneResultName plus the second surface's own source,
+// and any further path-and-body pairs a row needs.
+func mergeFiles(base map[string]string, two string, extra ...string) map[string]string {
+	out := map[string]string{"internal/two/two.go": two}
+	for path, body := range base {
+		out[path] = body
+	}
+	for i := 0; i+1 < len(extra); i += 2 {
+		out[extra[i]] = extra[i+1]
+	}
+	return out
 }
 
 // TestTheReadNamesTheResultsNobodyProjectsRatherThanReportingThem pins the one
