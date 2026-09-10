@@ -129,17 +129,33 @@
 //
 // # Validation seeds the per-file state every other file operation reads
 //
-// aggrega/validate is the only method that populates a file's parse and
-// diagnostic cache entries. aggrega/diagnostics, aggrega/hover,
+// aggrega/validate is the only method that populates a file's parse cache entry
+// and its diagnostic layers. aggrega/diagnostics, aggrega/hover,
 // aggrega/completion, aggrega/resolve, aggrega/findReferences and
 // aggrega/findImplementations all read that state and refuse with the
-// file-not-validated application code when it is absent, so a client
-// sends validate for a file before any of them. That state belongs to
-// the workspace the request named — each workspace holds its own parse
-// cache and its own diagnostic layers — and within a workspace the
-// entries are keyed by the document's canonical path alone; see Paths
-// on the wire below for which spelling that is. One daemon serves one
-// client at a time, so the key needs no per-client dimension.
+// file-not-validated application code when it is absent, so a client sends
+// validate for a file before any of them. That state belongs to the workspace
+// the request named — each workspace holds its own parse cache and its own
+// diagnostic layers — and within a workspace the entries are keyed by the
+// document's canonical path alone; see Paths on the wire below for which
+// spelling that is. One daemon serves one client at a time, so the key needs no
+// per-client dimension.
+//
+// The parse cache and the diagnostic layers are TWO stores, seeded at two
+// moments inside one validation, and one reader spans both: aggrega/diagnostics
+// decides out of the parse cache and answers out of the layers. So a reader of a
+// file whose validation is already running WAITS for that validation and is
+// answered with what it found. The five other readers decide and answer out of
+// the parse cache alone — one store, complete when it is written — so they have
+// nothing to wait for and never wait.
+//
+// Waiting is why the file-not-validated code reports one state rather than two.
+// It means nothing has validated this file and nothing is validating it, and a
+// client answers it by sending a validation. A file that IS being validated is
+// reported by the separate validation-in-flight code, and only when the reader's
+// wait ran out of budget; a client answers that one by asking again. See
+// handleDiagnostics for the wait, and validationTracker for why it holds nothing
+// across a validation and cannot deadlock against the worker pool.
 //
 // # The workspace is a parameter, not a property of the process
 //
@@ -792,10 +808,11 @@ type session struct {
 	// It stores the same per-request cancel handle handle already owns
 	// (a second address, not a second cancel authority); track / untrack
 	// run inside handle for every id-bearing request. The per-id cancel
-	// pickup it exposes is built and tested but not yet routed to any
-	// production caller — see cancelRegistry. Constructed lazily in
-	// dispatchLoop alongside serverCtx; the in-memory test harness may
-	// construct it earlier.
+	// pickup it exposes is wired to the $/cancelRequest notification,
+	// which the dispatch loop takes inline at its acceptance boundary
+	// rather than submitting to the pool — see cancelRegistry.
+	// Constructed lazily in dispatchLoop alongside serverCtx; the
+	// in-memory test harness may construct it earlier.
 	cancelTracker *cancelRegistry
 
 	// pushRootValue holds the workspace root the daemon may push diagnostics
@@ -869,6 +886,23 @@ type session struct {
 	// Done() to assert shutdown or per-id cancellation propagates). The
 	// production setup never sets this field. A nil hook is a no-op.
 	testCtxHook func(ctx context.Context, id json.RawMessage)
+
+	// testValidateGateHook, when non-nil, runs inside handleValidate at the
+	// moment the parse cache has been seeded and the diagnostic layers have not
+	// — the window a concurrent reader of the same file used to be answered
+	// from. The production setup never sets this field; it exists so a test can
+	// hold a validation open exactly there and drive readers into that window
+	// deterministically, rather than racing for it and covering the window only
+	// on the runs that happened to land. A nil hook is a no-op.
+	testValidateGateHook func(file string)
+
+	// validationWaitBudget overrides how long a diagnostics request waits for a
+	// validation of its file that is already running. Zero — the production
+	// value, since nothing outside the in-memory test harness sets it — means
+	// the package default, so a real daemon always waits that. Tests pass a
+	// short value so the deadline's own behaviour exercises in subsecond wall
+	// time instead of holding a test open for the real budget.
+	validationWaitBudget time.Duration
 }
 
 // Server is what one request is answered against: the process-level [session],
@@ -901,6 +935,13 @@ type session struct {
 //     workspace's own. Publication copies the file's slice under the lock and
 //     marshals outside it. Two workspaces answered concurrently take two
 //     different locks, so neither waits on the other.
+//
+//   - The in-flight validation tracker is internally synchronized by its own
+//     mutex and holds it for O(1) map work only — never across a validation,
+//     which would serialize the daemon behind one file and undo the pool. It is
+//     what makes the two stores above readable as one answer: a diagnostics
+//     request for a file whose validation is running waits for that validation
+//     rather than reading between its two writes.
 //
 // No field holds a Release. A request that acts on one names it, and the
 // resolution is request-scoped from end to end, so there is no shared Release
@@ -1004,6 +1045,19 @@ type Server struct {
 	// renders — so one overwriting the other would make each request erase the
 	// other's findings. Reads compose every layer; writes only ever touch one.
 	renderDiags map[string][]Diagnostic
+
+	// validations records which of this workspace's files are being validated
+	// right now, so a diagnostics request naming one of them waits for the
+	// validation and is answered with its findings rather than from a store that
+	// validation is halfway through writing. It carries its own mutex and its
+	// zero value is usable, so a workspace nothing has validated needs no
+	// construction step. See validationTracker for why only the diagnostics
+	// reader waits, and for why this cannot deadlock against the worker pool.
+	//
+	// It is per workspace for the same reason the stores above are: two
+	// workspaces can hold a file at one relative path, and a shared tracker
+	// would make a reader in one wait out a validation in the other.
+	validations validationTracker
 
 	// conventionDiags is the third diagnostic layer, guarded by the same diagMu:
 	// the publishing-conventions findings for one authored file, keyed by that

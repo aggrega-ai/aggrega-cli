@@ -26,6 +26,17 @@ const (
 //	       and is draining; new requests are refused while in this
 //	       state. The client should not retry against the same
 //	       subprocess.
+//	1006 — A validation of the file is running right now, and it did
+//	       not finish within the budget the waiting request allowed
+//	       it. The client retries and sends nothing; the state it
+//	       needs is on its way.
+//
+// 1001 and 1006 report opposite states and are kept apart for that reason.
+// Under 1001 nothing has validated the file and nothing is validating it, so a
+// client seeds the state with a validation. Under 1006 a validation is under way,
+// so sending another adds work and answers nothing — the client waits and asks
+// again. One code covering both would leave a client unable to tell which action
+// its situation called for.
 //
 // 1002 is not allocated. It reported that the daemon could not resolve a
 // Release for an operation that needed one, which no request can be in:
@@ -41,4 +52,5 @@ const (
 	errLockfileAbsent      = 1003
 	errEntityNotResolvable = 1004
 	errShuttingDown        = 1005
+	errValidationInFlight  = 1006
 )

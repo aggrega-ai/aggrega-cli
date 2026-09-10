@@ -474,6 +474,13 @@ func (s *Server) dispatchValidate(ctx context.Context, req *jsonRPCRequest) erro
 // one straight-line block), so the wait is seconds. The initial document
 // parse below is a minor fraction of that — the heavy uncancellable cost is
 // the resolve sub-steps, not the parse.
+//
+// While this runs, the file it names is marked as under validation, and an
+// aggrega/diagnostics request for that same file waits for this handler to
+// return rather than reading the two stores it seeds a moment apart. See
+// validationTracker for why that reader alone waits, and handleDiagnostics for
+// what it is answered with. Nothing is held across the work below: the mark is a
+// signal, not a lock.
 func (s *Server) handleValidate(ctx context.Context, params validateParams) (validateResult, *jsonRPCError) {
 	// The Release this request is about, resolved once at the boundary and
 	// threaded through everything below it — the lockfile the pins come from,
@@ -505,6 +512,19 @@ func (s *Server) handleValidate(ctx context.Context, params validateParams) (val
 	// populate a key the next request's spelling cannot read, which reads back as
 	// a file with nothing to report rather than as a request that missed.
 	file := s.canonicalFile(params.File)
+	// A diagnostics request naming this file while this validation runs waits for
+	// it and is then answered with what it found, rather than being answered from
+	// state this handler is halfway through writing. The signal is registered
+	// here, above every write below it, and released when this handler RETURNS —
+	// which is why it is a deferred release rather than a call beside one of the
+	// writes: this handler leaves by several paths, and a release at any one of
+	// them leaks the signal on the rest.
+	//
+	// It sits below the Release resolution above deliberately. A request refused
+	// there returns without writing anything, so there is nothing for a reader to
+	// wait for and nothing is registered.
+	releaseValidation := s.validations.begin(file)
+	defer releaseValidation()
 
 	var doc yaml.Node
 	if err := yaml.Unmarshal([]byte(params.Content), &doc); err != nil {
@@ -521,6 +541,9 @@ func (s *Server) handleValidate(ctx context.Context, params validateParams) (val
 		return validateResult{Diagnostics: diags, Checked: checked}, nil
 	}
 	s.parseCache.Put(file, &doc, []byte(params.Content))
+	if s.testValidateGateHook != nil {
+		s.testValidateGateHook(file)
+	}
 	// Per-file document-envelope validation on the buffer: any classifiable
 	// aggrega document (not just the Release's Aggregate) gets the same
 	// envelope verdict the CLI gives it, on its own file, at the offending
@@ -645,31 +668,90 @@ func (s *Server) dispatchDiagnostics(ctx context.Context, req *jsonRPCRequest) e
 	if err := json.Unmarshal(req.Params, &params); err != nil {
 		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
 	}
-	result, errEnvelope := s.handleDiagnostics(params)
+	result, errEnvelope := s.handleDiagnostics(ctx, params)
+	if ctx.Err() != nil {
+		// The request itself was cancelled — a client's $/cancelRequest, or the
+		// session's shutdown abort — while the handler was waiting for the
+		// validation in flight for this file. Drop the response, as every other
+		// cancelled request's dispatcher does; the sender asked for the answer to
+		// stop coming.
+		return nil
+	}
 	if errEnvelope != nil {
 		return s.writeError(ctx, req.ID, errEnvelope.Code, errEnvelope.Message)
 	}
 	return s.writeResult(ctx, req.ID, result)
 }
 
-// handleDiagnostics returns the cached diagnostics for the file. If
-// the file is not in the parse cache (either never validated, or
-// evicted by mtime check during Get), returns error code 1001
-// file-not-validated.
+// handleDiagnostics answers with the findings held for the file, waiting first
+// for any validation of that same file that is already running.
 //
-// The mtime check fires via parseCache.Get's transparent eviction —
-// when an entry's cachedAt is older than the file's on-disk mtime,
-// Get drops the entry and reports miss, matching the AC 5 contract.
+// # The wait, and why the answer would otherwise be wrong rather than late
 //
-// The requested file is resolved to its canonical spelling before either
-// lookup, so the answer names the document rather than the spelling: a request
-// naming the same file the validation named, in the other spelling, is answered
-// with the same findings rather than with an empty result. The refusal below
-// still names the path the request asked about, not the resolved one, because a
-// sender told about some other spelling of its own value has been handed a
-// puzzle instead of an answer.
-func (s *Server) handleDiagnostics(params diagnosticsParams) (diagnosticsResult, *jsonRPCError) {
+// A validation seeds two stores at two moments inside one handler: the parse
+// cache, which is what decides whether this request can be answered at all, and
+// the diagnostic layers, which are what it is answered from. Between those two
+// moments the decision says yes and the layers are still empty, so a reader
+// landing there is told the file is clean while the validation is about to report
+// errors on it. That is worse than a refusal — a reader acts on "no problems" and
+// does not ask again — so a reader for a file with a validation in flight waits
+// for it and is answered with what it found. Waiting removes the window rather
+// than narrowing it, because what is waited for is the validating handler's
+// return and not a moment inside it.
+//
+// The wait hangs off the request's own context and adds no cancellation of its
+// own: a client's $/cancelRequest ends it because that already cancels this
+// context, and so does the session's shutdown abort. The only thing layered on is
+// a deadline, which is a child of the same context — so a fired deadline leaves
+// the request live and is answered as a refusal, while a cancelled request is
+// answered by its dispatcher dropping the response.
+//
+// # The two refusals, which report different states
+//
+// The file-not-validated code now means exactly one thing: nothing has validated
+// this file and nothing is validating it. A client sends a validation and asks
+// again. It no longer covers "a validation is under way", which is the separate
+// validation-in-flight code, reached only when the wait ran out of budget: there
+// the file is being validated right now and the client retries rather than
+// sending anything. Telling them apart is what lets a client do the right thing
+// in each case.
+//
+// The parse cache's own staleness check can produce the first refusal on a file
+// that WAS validated: it stats its key on every lookup and drops an entry the
+// file on disk has outgrown, so an external edit reads as not-yet-validated,
+// which is the honest answer for a buffer nothing has looked at since.
+//
+// # The spelling
+//
+// The requested file is resolved to its canonical spelling before anything is
+// consulted, so the answer names the document rather than the spelling: a request
+// naming the same file a validation named, in the other spelling, is answered
+// with the same findings rather than with an empty result. Both refusals still
+// name the path the request asked about, not the resolved one, because a sender
+// told about some other spelling of its own value has been handed a puzzle
+// instead of an answer.
+func (s *Server) handleDiagnostics(ctx context.Context, params diagnosticsParams) (diagnosticsResult, *jsonRPCError) {
 	file := s.canonicalFile(params.File)
+	// The deadline is a CHILD of the request's context rather than a replacement
+	// for it, and that is what separates the two ways a wait can end. When the
+	// budget expires the child is done and the request is still live, so there is
+	// a caller to refuse; when the request is cancelled both are done, and the
+	// branch below reads the parent to tell which happened.
+	waitCtx, cancelWait := context.WithTimeout(ctx, s.validationWait())
+	defer cancelWait()
+	if err := s.validations.await(waitCtx, file); err != nil {
+		if ctx.Err() != nil {
+			return diagnosticsResult{}, &jsonRPCError{
+				Code:    errValidationInFlight,
+				Message: fmt.Sprintf("cancelled while waiting for the validation running for %s", params.File),
+			}
+		}
+		return diagnosticsResult{}, &jsonRPCError{
+			Code: errValidationInFlight,
+			Message: fmt.Sprintf("a validation of %s is still running after %s; retry once it finishes",
+				params.File, s.validationWait()),
+		}
+	}
 	if _, ok := s.parseCache.Get(file); !ok {
 		return diagnosticsResult{}, &jsonRPCError{
 			Code:    errFileNotValidated,
