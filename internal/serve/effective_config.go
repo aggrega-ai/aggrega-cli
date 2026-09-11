@@ -72,6 +72,13 @@ type effectiveConfigurationResult struct {
 // composes so that any layer turning it on wins, is attributed to the first
 // layer that turned it on rather than the last that mentioned it.
 func (s *Server) dispatchEffectiveConfiguration(ctx context.Context, req *jsonRPCRequest) error {
+	// A method with no parameters of its own still decodes, so a field a caller
+	// sent is refused rather than dropped. See noParams for why an answer that
+	// ignored an argument is worse than a refusal naming it.
+	if err := decodeParams(req, &noParams{}); err != nil {
+		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
+	}
+
 	if s.resolvedWorkspace == nil {
 		return s.writeError(ctx, req.ID, jsonRPCInternalError,
 			"the daemon holds no resolved workspace to report configuration for")

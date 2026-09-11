@@ -299,7 +299,7 @@ func newConfigInitCmd() *cobra.Command {
 	var force bool
 	var global bool
 	var workspace bool
-	var report bool
+	var dryRun bool
 
 	c := &cobra.Command{
 		Use:   "init",
@@ -322,16 +322,21 @@ instead. If the target config file already exists, init refuses rather than
 overwrite it — pass --force to write anyway (the registry entry is merged into
 the existing file, other settings preserved).
 
-A seeded configuration is a document you own and go on editing, so --report hands
-the content back instead of writing it: nothing is created or modified, and the
-answer names the file the content is for — which matters here, because the target
-is the global config unless --workspace selects this project's own. A caller that
-keeps its own document model puts the content there, where it is visible before
-it is saved and can be amended or undone. --report needs no --force: an existing
-file is never overwritten because nothing is written at all, and the content
-reported is the merge a forced write would produce.
+A seeded configuration is a document you own and go on editing, so --dry-run does
+everything init does except write: it hands the content back, creating and
+modifying nothing. The answer names the file the content is for — which matters
+here, because the target is the global config unless --workspace selects this
+project's own. A caller that keeps its own document model puts the content there,
+where it is visible before it is saved and can be amended or undone. The registry
+is still contacted for its advertised trust policy, because the policy in that
+content is the policy a write would have pinned.
 
-Under --report standard output carries that content and nothing else, so it stays
+Because a dry run does everything else init does, it refuses an existing config
+file exactly as a write refuses it, and for the same reason. So its exit code
+predicts the write's: if the dry run refuses, init would have refused. Pass
+--force alongside it to see the merge an overwriting write would produce.
+
+Under --dry-run standard output carries that content and nothing else, so it stays
 parseable. A registry that advertises no trust policy still produces its notice,
 on standard error: read that stream too, or a configuration seeded with no trust
 policy arrives without the advice to pin identities by hand.`,
@@ -353,7 +358,7 @@ policy arrives without the advice to pin identities by hand.`,
 				Force:     force,
 				Global:    global,
 				Workspace: workspace,
-				Report:    report,
+				DryRun:    dryRun,
 				ws:        rw,
 				Out:       cmd.OutOrStdout(),
 				ErrOut:    cmd.ErrOrStderr(),
@@ -364,7 +369,7 @@ policy arrives without the advice to pin identities by hand.`,
 	c.Flags().BoolVar(&force, "force", false, "Overwrite an existing config file. Without it, init refuses when the target file already exists.")
 	c.Flags().BoolVar(&global, "global", false, "Write the entry to the global config shared across every workspace. This is the default.")
 	c.Flags().BoolVar(&workspace, "workspace", false, "Write the entry to this project's workspace config instead of the global config.")
-	c.Flags().BoolVar(&report, "report", false, "Report the seeded configuration as content, naming the file it is for, and write nothing. Without it the entry is written to the resolved config file.")
+	c.Flags().BoolVar(&dryRun, "dry-run", false, "Do everything except write: hand back the seeded configuration as content, naming the file it is for, and create or modify nothing. Every other behaviour is the write's, so an existing config file is refused exactly as a write refuses it — pass --force alongside it for the merge an overwriting write would produce.")
 	return c
 }
 
@@ -373,8 +378,9 @@ type configInitConfig struct {
 	// Registry is the host to seed with its trust policy. Empty is treated as
 	// the official hub by the underlying add path's host resolution.
 	Registry string
-	// Force permits writing when the target config file already exists. Without
-	// it, init refuses rather than touch an existing file.
+	// Force permits the seeding to proceed when the target config file already
+	// exists. Without it, init refuses rather than touch an existing file, under
+	// every delivery.
 	Force bool
 	// Global and Workspace are the write-target overrides, mirroring
 	// `registry add`. A registry is tool-scoped, so init defaults to the global
@@ -382,15 +388,17 @@ type configInitConfig struct {
 	// usage error.
 	Global    bool
 	Workspace bool
-	// Report asks for the seeded configuration as content rather than as a write.
-	// A seeded configuration is a document its owner goes on editing, so a caller
-	// holding a document model takes the content and decides where it lands.
-	Report bool
+	// DryRun asks the seeding to do everything except write, handing back the
+	// configuration as content. A seeded configuration is a document its owner
+	// goes on editing, so a caller holding a document model takes the content and
+	// decides where it lands. It changes nothing else: the existing-file refusal
+	// and the trust fetch happen exactly as they do under a write.
+	DryRun bool
 
 	ws *workspaceconfig.ResolvedWorkspace
 	// Out carries the answer, and ErrOut an advisory the answer cannot convey.
 	//
-	// The pair exists because under Report the answer on Out is one parseable
+	// The pair exists because under DryRun the answer on Out is one parseable
 	// document and nothing else, so a trust-policy advisory the reported
 	// configuration cannot express — that the registry advertised no policy and
 	// identities must be pinned by hand — would be dropped rather than merely
@@ -413,7 +421,7 @@ func configInitRun(cfg configInitConfig) error {
 		return err
 	}
 
-	delivery := authoredcontent.DeliveryFor(cfg.Report)
+	delivery := authoredcontent.DeliveryFor(cfg.DryRun)
 	res, initErr := configops.Init(rw, configops.InitOptions{
 		Registry:    cfg.Registry,
 		Force:       cfg.Force,

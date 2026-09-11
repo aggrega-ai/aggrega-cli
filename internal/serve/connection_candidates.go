@@ -5,7 +5,6 @@ package serve
 
 import (
 	"context"
-	"encoding/json"
 
 	"go.yaml.in/yaml/v3"
 
@@ -138,7 +137,7 @@ type ConnectionCandidatesResult struct {
 func (s *Server) dispatchConnectionCandidates(ctx context.Context, req *jsonRPCRequest) error {
 	var params connectionCandidatesParams
 	if len(req.Params) > 0 {
-		if err := json.Unmarshal(req.Params, &params); err != nil {
+		if err := decodeParams(req, &params); err != nil {
 			return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
 		}
 	}

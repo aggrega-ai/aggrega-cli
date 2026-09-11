@@ -74,9 +74,12 @@ func newEditDocumentCmd() *cobra.Command {
 			"with.\n\n" +
 			"An entry that is already there, carrying what you asked for, is a no-op. An entry of " +
 			"that name carrying something else is refused rather than replaced.\n\n" +
-			"With --report the edited document is written to standard output as content, naming the " +
-			"file it is for, and nothing is created — for a caller that puts the result in front of " +
-			"someone before it is saved. Without it the document is written.\n\n" +
+			"--dry-run does everything the plain command does except write: the edited document goes " +
+			"to standard output as content, naming the file it is for, and nothing is created — for a " +
+			"caller that puts the result in front of someone before it is saved. Every other " +
+			"behaviour is the write's, the schema gate included, so a request the write would refuse " +
+			"is refused under --dry-run too and its exit code predicts the write's. Without it the " +
+			"document is written.\n\n" +
 			"Whether what you wire is semantically admissible is not decided here. Whether a socket " +
 			"is one the producer declares, or whether a Feature's applicability is satisfied, is " +
 			"what aggrega validate answers.",
@@ -97,7 +100,7 @@ func newEditDocumentCmd() *cobra.Command {
 				// Read from the flag set rather than from the value, so a
 				// deliberate empty value is distinguishable from an absent one.
 				ValueGiven: cmd.Flags().Changed("value"),
-				Report:     opts.report,
+				DryRun:     opts.dryRun,
 
 				ws:  rw,
 				Out: cmd.OutOrStdout(),
@@ -112,8 +115,8 @@ func newEditDocumentCmd() *cobra.Command {
 		"The key the new entry is written under: the component instance name, the attachment's name, the connection's alias, or the value's key")
 	c.Flags().StringVar(&opts.value, "value", "",
 		"What the entry carries, read as a YAML scalar. Its meaning follows from the edit: the entity the entry requests, the node a connection points at, or the scalar a value is set to")
-	c.Flags().BoolVar(&opts.report, "report", false,
-		"Report the edited document as content, naming the file it is for, and write nothing. Without it the document is written")
+	c.Flags().BoolVar(&opts.dryRun, "dry-run", false,
+		"Do everything except write: hand back the edited document as content, naming the file it is for, and create or modify nothing. Every other behaviour is the write's, the schema gate included. Without it the document is written")
 	return c
 }
 
@@ -125,7 +128,7 @@ type editDocumentFlags struct {
 	socket string
 	name   string
 	value  string
-	report bool
+	dryRun bool
 }
 
 // editDocumentConfig is the input contract for `aggrega edit-document`.
@@ -154,8 +157,10 @@ type editDocumentConfig struct {
 	// convey: an omitted value and one set to the empty string are different
 	// requests and only the flag set knows which arrived.
 	ValueGiven bool
-	// Report asks for the edited document as content instead of as a write.
-	Report bool
+	// DryRun asks the edit to do everything except write, handing back the edited
+	// document as content. It changes nothing else: the schema gate the write is
+	// conditioned on runs identically, so a refusal here is a refusal there.
+	DryRun bool
 
 	ws *workspaceconfig.ResolvedWorkspace
 	// Out carries the answer: the reported document, or what reached disk.
@@ -177,7 +182,7 @@ func editDocumentRun(cfg editDocumentConfig) error {
 	if err != nil {
 		return err
 	}
-	delivery := authoredcontent.DeliveryFor(cfg.Report)
+	delivery := authoredcontent.DeliveryFor(cfg.DryRun)
 	res, err := editops.Apply(rw.Root(), editops.Options{
 		File:     cfg.File,
 		Kind:     editops.Kind(cfg.Edit),

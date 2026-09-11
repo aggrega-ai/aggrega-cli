@@ -5,7 +5,6 @@ package serve
 
 import (
 	"context"
-	"encoding/json"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/ir"
@@ -208,7 +207,7 @@ type attachmentContainerParams struct {
 func (s *Server) dispatchAttachmentContainer(ctx context.Context, req *jsonRPCRequest) error {
 	var params attachmentContainerParams
 	if len(req.Params) > 0 {
-		if err := json.Unmarshal(req.Params, &params); err != nil {
+		if err := decodeParams(req, &params); err != nil {
 			return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
 		}
 	}

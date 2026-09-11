@@ -24,7 +24,7 @@ import (
 // values.
 type importFlags struct {
 	format string
-	report bool
+	dryRun bool
 }
 
 // newImportCmd turns a foreign source description into draft Aggrega authoring
@@ -53,13 +53,15 @@ named file — no other files, no network.
 Before the drafted output, import names on standard error the format it read
 the source as and the directory the drafted paths are relative to, alongside
 any diagnostics the importer reported. Standard output carries only the result
-— the paths written, or the drafted files themselves under --report — so it can
+— the paths written, or the drafted files themselves under --dry-run — so it can
 be piped unchanged.
 
-With --report, the drafted files are reported as content and nothing is
-written: standard output carries one document listing each drafted file's path
-and its content, so the result can be reviewed, parsed or piped before anything
-reaches disk.`,
+--dry-run does everything import does except write: standard output carries one
+document listing each drafted file's path and its content, so the result can be
+reviewed, parsed or piped before anything reaches disk. Every other behaviour is
+the write's — the same importer runs over the same source and reports the same
+diagnostics — so what a dry run shows is what a write would put on disk, and a
+source the write would refuse is refused here too.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			path := args[0]
@@ -92,7 +94,7 @@ reaches disk.`,
 			// answer today, and a second branch on the flag would be a second
 			// spelling of one question — the spelling that stops moving the day a
 			// third delivery is admitted.
-			delivery := authoredcontent.DeliveryFor(opts.report)
+			delivery := authoredcontent.DeliveryFor(opts.dryRun)
 			res, err := importops.Import(cmd.Context(), rw, importops.Options{
 				Source:        content,
 				SourceName:    path,
@@ -109,7 +111,7 @@ reaches disk.`,
 
 			// The import's commentary — how the source was read, then what the
 			// importer reported about it — goes to the error stream. Under
-			// --report the standard output stream holds one parseable document
+			// --dry-run the standard output stream holds one parseable document
 			// and nothing else, so a commentary line there would corrupt what a
 			// caller is parsing; putting both on one stream is also what lets a
 			// reader see which importer raised an unmapped-node warning.
@@ -130,7 +132,7 @@ reaches disk.`,
 		},
 	}
 	c.Flags().StringVar(&opts.format, "format", "", "Name the source format explicitly, overriding shape detection (for example langflow or flowise)")
-	c.Flags().BoolVar(&opts.report, "report", false, "Report the drafted files as content, naming the file each is for, and write nothing. Without it the drafts are written to disk.")
+	c.Flags().BoolVar(&opts.dryRun, "dry-run", false, "Do everything except write: hand back the drafted files as content, naming the file each is for, and create or modify nothing. Every other behaviour is the write's, the importer run included. Without it the drafts are written to disk.")
 	return c
 }
 
@@ -190,9 +192,9 @@ func reportImportedFiles(w io.Writer, files []abi.ScaffoldFile) error {
 //
 // The output root is named because every drafted path is relative to it and
 // carries no anchor of its own — the wrote lines under a writing delivery and
-// the reported paths under --report are both root-relative. It is therefore
+// the reported paths under --dry-run are both root-relative. It is therefore
 // true under both deliveries, which is why the line frames the paths rather
-// than claiming a destination: under --report nothing is written anywhere, and
+// than claiming a destination: under --dry-run nothing is written anywhere, and
 // a line announcing a directory the run never touched would be worse than no
 // line at all.
 //

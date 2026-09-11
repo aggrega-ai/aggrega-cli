@@ -5,7 +5,6 @@ package serve
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/authoredcontent"
@@ -29,26 +28,29 @@ import (
 // same request mean different things. The answer names the host it seeded and the
 // file it wrote, so the default is legible in the response rather than assumed.
 //
-// report asks for the seeded configuration as content instead of as a write.
-// Which of the two a caller wants is a property of the caller rather than of this
-// surface — a client that keeps its own document model puts the content where the
-// author can read it before it is saved — so it is a request field. It defaults
-// to writing, because the operation's product is a configuration file and a
-// surface that produces a document owes the document.
+// dryRun does everything the plain request does except write: it answers with the
+// seeded configuration as content instead of putting it on disk. Which of the two
+// a caller wants is a property of the caller rather than of this surface — a
+// client that keeps its own document model puts the content where the author can
+// read it before it is saved — so it is a request field. It defaults to writing,
+// because the operation's product is a configuration file and a surface that
+// produces a document owes the document. It changes nothing else: an existing
+// configuration file is refused exactly as a write refuses it, and force alongside
+// it answers with the merge an overwriting write would produce.
 type configInitParams struct {
 	Registry  string `json:"registry"`
 	Force     bool   `json:"force"`
 	Global    bool   `json:"global"`
 	Workspace bool   `json:"workspace"`
-	Report    bool   `json:"report"`
+	DryRun    bool   `json:"dryRun"`
 }
 
 // configInitResult is the aggrega/configInit response.
 //
 // Written is what a client branches on: under a write it names a file now on disk
-// that the client can open, and under a report it is false and Content carries the
-// document instead. The two are never both meaningful — the file Content is for is
-// Scope.ConfigFile, so nothing here carries a second copy of the path.
+// that the client can open, and under a dry run it is false and Content carries
+// the document instead. The two are never both meaningful — the file Content is
+// for is Scope.ConfigFile, so nothing here carries a second copy of the path.
 //
 // Trust reports what the advertised-trust fetch found, as the three distinguished
 // outcomes rather than as a line of prose. A caller deciding whether the
@@ -87,7 +89,7 @@ type configInitResult struct {
 func (s *Server) dispatchConfigInit(ctx context.Context, req *jsonRPCRequest) error {
 	var params configInitParams
 	if len(req.Params) > 0 {
-		if err := json.Unmarshal(req.Params, &params); err != nil {
+		if err := decodeParams(req, &params); err != nil {
 			return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
 		}
 	}
@@ -113,7 +115,7 @@ func (s *Server) dispatchConfigInit(ctx context.Context, req *jsonRPCRequest) er
 		registry = workspaceconfig.HubBaselineHost
 	}
 
-	delivery := authoredcontent.DeliveryFor(params.Report)
+	delivery := authoredcontent.DeliveryFor(params.DryRun)
 	res, err := configops.Init(s.resolvedWorkspace, configops.InitOptions{
 		Registry:  registry,
 		Force:     params.Force,
@@ -135,7 +137,7 @@ func (s *Server) dispatchConfigInit(ctx context.Context, req *jsonRPCRequest) er
 		if existing := (*configops.ConfigFileExistsError)(nil); errors.As(err, &existing) {
 			return s.writeError(ctx, req.ID, jsonRPCInvalidParams,
 				"config init: "+existing.Path()+" already exists and was left untouched; "+
-					"send force to write it anyway, which merges the registry entry into what is already there")
+					"send force to proceed anyway, which merges the registry entry into what is already there")
 		}
 		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, err.Error())
 	}
@@ -242,7 +244,7 @@ type configCaptureResult struct {
 func (s *Server) dispatchConfigCapture(ctx context.Context, req *jsonRPCRequest) error {
 	var params configCaptureParams
 	if len(req.Params) > 0 {
-		if err := json.Unmarshal(req.Params, &params); err != nil {
+		if err := decodeParams(req, &params); err != nil {
 			return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
 		}
 	}

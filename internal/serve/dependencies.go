@@ -6,7 +6,6 @@ package serve
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"io"
 	"path/filepath"
 	"strings"
@@ -151,7 +150,7 @@ type toolchainCorePluginRow struct {
 // dispatchResolveDependencies unmarshals params and answers the request.
 func (s *Server) dispatchResolveDependencies(ctx context.Context, req *jsonRPCRequest) error {
 	var params resolveDependenciesParams
-	if err := json.Unmarshal(req.Params, &params); err != nil {
+	if err := decodeParams(req, &params); err != nil {
 		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
 	}
 	progress := s.progressFor(ctx)

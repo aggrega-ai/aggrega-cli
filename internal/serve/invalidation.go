@@ -5,7 +5,6 @@ package serve
 
 import (
 	"context"
-	"encoding/json"
 )
 
 // invalidateParams is the request shape for aggrega/invalidate.
@@ -44,7 +43,7 @@ type invalidateResult struct {
 
 func (s *Server) dispatchInvalidate(ctx context.Context, req *jsonRPCRequest) error {
 	var params invalidateParams
-	if err := json.Unmarshal(req.Params, &params); err != nil {
+	if err := decodeParams(req, &params); err != nil {
 		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
 	}
 	result := s.handleInvalidate(params)

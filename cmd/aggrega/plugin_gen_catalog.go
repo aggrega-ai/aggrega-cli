@@ -15,7 +15,7 @@ type genCatalogOptions struct {
 	pluginPath   string
 	outputDir    string
 	overlayPath  string
-	report       bool
+	dryRun       bool
 }
 
 // newPluginGenCatalogCmd builds the `plugin gen-catalog` subcommand. It emits a
@@ -53,13 +53,15 @@ same-named plugins in different sockets apart, since a bare plugin name is uniqu
 only within its own socket. Regenerating over unchanged inputs yields
 byte-identical files.
 
-A generated entity is a catalog document you own and go on editing, so --report
-hands the content back instead of writing it: nothing is created or modified, and
-the answer names the file each document is for. A caller that keeps its own
-document model — an editor, for instance — puts the content there, where it is
-visible before it is saved and can be amended or undone. Without the flag the
-entities are written, because a caller at a terminal has nowhere better to put
-them.`,
+A generated entity is a catalog document you own and go on editing, so --dry-run
+does everything gen-catalog does except write: it hands the content back, creating
+and modifying nothing, and the answer names the file each document is for. A
+caller that keeps its own document model — an editor, for instance — puts the
+content there, where it is visible before it is saved and can be amended or
+undone. Every other behaviour is the write's — the same guests are read and the
+same overlays matched — so a selection gen-catalog would refuse is refused under
+--dry-run too. Without the flag the entities are written, because a caller at a
+terminal has nowhere better to put them.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// The generation copies every byte it emits to the writer handed in
@@ -74,7 +76,7 @@ them.`,
 				PluginPath:   opts.pluginPath,
 				OutputDir:    opts.outputDir,
 				OverlayPath:  opts.overlayPath,
-				Report:       opts.report,
+				DryRun:       opts.dryRun,
 			}, cmd.OutOrStdout())
 			return err
 		},
@@ -83,6 +85,6 @@ them.`,
 	c.Flags().StringVar(&opts.pluginPath, "plugin", "", "generate a single entity for the .wasm guest at this path")
 	c.Flags().StringVar(&opts.outputDir, "output-dir", "", "directory the generated entities are written under (required)")
 	c.Flags().StringVar(&opts.overlayPath, "overlay", "", "authored overlay directory (--from-embedded) or file (--plugin) (required)")
-	c.Flags().BoolVar(&opts.report, "report", false, "Report the generated entities as content, naming the file each is for, and write nothing. Without it the entities are written under --output-dir.")
+	c.Flags().BoolVar(&opts.dryRun, "dry-run", false, "Do everything except write: hand back the generated entities as content, naming the file each is for, and create or modify nothing. Every other behaviour is the write's, so a selection the write would refuse is refused here too. Without it the entities are written under --output-dir.")
 	return c
 }

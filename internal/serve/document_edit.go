@@ -5,7 +5,6 @@ package serve
 
 import (
 	"context"
-	"encoding/json"
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/authoredcontent"
@@ -37,12 +36,14 @@ import (
 // carries. What value means follows from edit: the entity the entry requests,
 // the node a connection points at, or the scalar a value is set to.
 //
-// report asks for the edited document as content instead of as a write. Which of
-// the two a caller wants is a property of the caller rather than of this surface
-// — a client holding its own buffer puts the result in front of the author before
-// anything reaches disk — so it is a request field, and it defaults to writing
-// because the operation's product is an edited document and a surface that
-// produces one owes it.
+// dryRun does everything the plain request does except write: it answers with the
+// edited document as content instead of putting it on disk. Which of the two a
+// caller wants is a property of the caller rather than of this surface — a client
+// holding its own buffer puts the result in front of the author before anything
+// reaches disk — so it is a request field, and it defaults to writing because the
+// operation's product is an edited document and a surface that produces one owes
+// it. It changes nothing else: the schema gate the write is conditioned on runs
+// identically, so an edit the write would refuse is refused here too.
 type documentEditParams struct {
 	File   string   `json:"file"`
 	Edit   string   `json:"edit"`
@@ -50,7 +51,7 @@ type documentEditParams struct {
 	Socket string   `json:"socket"`
 	Name   string   `json:"name"`
 	Value  any      `json:"value"`
-	Report bool     `json:"report"`
+	DryRun bool     `json:"dryRun"`
 }
 
 // documentEditResult is the aggrega/editDocument response.
@@ -124,7 +125,7 @@ type documentEditResult struct {
 func (s *Server) dispatchDocumentEdit(ctx context.Context, req *jsonRPCRequest) error {
 	var params documentEditParams
 	if len(req.Params) > 0 {
-		if err := json.Unmarshal(req.Params, &params); err != nil {
+		if err := decodeParams(req, &params); err != nil {
 			return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
 		}
 	}
@@ -146,7 +147,7 @@ func (s *Server) dispatchDocumentEdit(ctx context.Context, req *jsonRPCRequest) 
 			"the daemon holds no workspace root to resolve the document against")
 	}
 
-	delivery := authoredcontent.DeliveryFor(params.Report)
+	delivery := authoredcontent.DeliveryFor(params.DryRun)
 	res, err := editops.Apply(s.workspaceRoot, editops.Options{
 		File:     params.File,
 		Kind:     editops.Kind(params.Edit),

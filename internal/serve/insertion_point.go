@@ -5,7 +5,6 @@ package serve
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -94,7 +93,7 @@ var (
 func (s *Server) dispatchInsertionPoint(ctx context.Context, req *jsonRPCRequest) error {
 	var params insertionPointParams
 	if len(req.Params) > 0 {
-		if err := json.Unmarshal(req.Params, &params); err != nil {
+		if err := decodeParams(req, &params); err != nil {
 			return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
 		}
 	}

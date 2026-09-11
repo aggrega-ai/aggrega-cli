@@ -5,7 +5,6 @@ package serve
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -156,7 +155,7 @@ type entityDefinitionResult struct {
 func (s *Server) dispatchEntityDefinition(ctx context.Context, req *jsonRPCRequest) error {
 	var params entityDefinitionParams
 	if len(req.Params) > 0 {
-		if err := json.Unmarshal(req.Params, &params); err != nil {
+		if err := decodeParams(req, &params); err != nil {
 			return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
 		}
 	}
@@ -389,7 +388,7 @@ type releaseClosureResult struct {
 // today, which is a different question from what this deployment depends on.
 func (s *Server) dispatchReleaseClosure(ctx context.Context, req *jsonRPCRequest) error {
 	var params releaseClosureParams
-	if err := json.Unmarshal(req.Params, &params); err != nil {
+	if err := decodeParams(req, &params); err != nil {
 		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
 	}
 	result, errEnvelope := s.handleReleaseClosure(ctx, params)

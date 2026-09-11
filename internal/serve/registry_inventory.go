@@ -5,7 +5,6 @@ package serve
 
 import (
 	"context"
-	"encoding/json"
 	"io"
 	"time"
 
@@ -44,6 +43,13 @@ type registryListResult struct {
 // carries credential material, its length, its shape, or any rendering of it, and
 // whether the registry would accept it is not asked.
 func (s *Server) dispatchRegistryList(ctx context.Context, req *jsonRPCRequest) error {
+	// A method with no parameters of its own still decodes, so a field a caller
+	// sent is refused rather than dropped. See noParams for why an answer that
+	// ignored an argument is worse than a refusal naming it.
+	if err := decodeParams(req, &noParams{}); err != nil {
+		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
+	}
+
 	if err := ctx.Err(); err != nil {
 		return s.writeError(ctx, req.ID, jsonRPCInternalError, err.Error())
 	}
@@ -127,7 +133,7 @@ type registrySearchResult struct {
 func (s *Server) dispatchRegistrySearch(ctx context.Context, req *jsonRPCRequest) error {
 	var params registrySearchParams
 	if len(req.Params) > 0 {
-		if err := json.Unmarshal(req.Params, &params); err != nil {
+		if err := decodeParams(req, &params); err != nil {
 			return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
 		}
 	}

@@ -133,10 +133,10 @@ func TestSeedingAConfigurationReportsContentAndWritesNothing(t *testing.T) {
 	}
 	rw := resolveTempWorkspaceAgainst(t, tempWorkspaceOptions{Root: wsRoot}, lookup)
 
-	seed := func(report bool, out *bytes.Buffer) error {
+	seed := func(dryRun bool, out *bytes.Buffer) error {
 		return configInitRun(configInitConfig{
 			Registry:    workspaceconfig.HubBaselineHost,
-			Report:      report,
+			DryRun:      dryRun,
 			ws:          rw,
 			Out:         out,
 			trustClient: offlineTrustClient(),
@@ -350,7 +350,7 @@ func TestMachineStateCapabilitiesWriteDirectly(t *testing.T) {
 // property under test is the split itself: a merged buffer would report the same
 // bytes whichever stream had carried them, which is exactly the distinction these
 // assertions exist to make.
-func trustAdvisoryStreams(t *testing.T, report bool, registry string, client *http.Client) (answer, advisory string) {
+func trustAdvisoryStreams(t *testing.T, dryRun bool, registry string, client *http.Client) (answer, advisory string) {
 	t.Helper()
 	root := t.TempDir()
 	globalPath := filepath.Join(root, "home", "aggrega", "config.yaml")
@@ -364,13 +364,13 @@ func trustAdvisoryStreams(t *testing.T, report bool, registry string, client *ht
 	var out, errOut bytes.Buffer
 	if err := configInitRun(configInitConfig{
 		Registry:    registry,
-		Report:      report,
+		DryRun:      dryRun,
 		ws:          rw,
 		Out:         &out,
 		ErrOut:      &errOut,
 		trustClient: client,
 	}); err != nil {
-		t.Fatalf("seeding %s (report=%v): %v", registry, report, err)
+		t.Fatalf("seeding %s (dryRun=%v): %v", registry, dryRun, err)
 	}
 	return out.String(), errOut.String()
 }
@@ -510,7 +510,12 @@ func TestTheProductClassificationIsCarriedByTheCommandSurface(t *testing.T) {
 	// against all of them: a row checking one spelling passes unchanged for a
 	// command that grew a different one, which is precisely how machine state
 	// would come to carry this delivery without any row noticing.
-	everySpelling := []string{"report", "dry-run"}
+	//
+	// It holds the spellings IN USE and no retired one. A retired spelling here
+	// would read as an assertion and be incapable of failing, since no command
+	// offers it — so it would grow the list without adding cover, and a reader
+	// would take the list for the surface rather than for what it is.
+	everySpelling := []string{"dry-run"}
 
 	for _, row := range []struct {
 		path    string
@@ -519,9 +524,9 @@ func TestTheProductClassificationIsCarriedByTheCommandSurface(t *testing.T) {
 		// row whose product is machine state and must therefore offer none of them.
 		selector string
 	}{
-		{"aggrega config init", "a seeded configuration the operator goes on editing", "report"},
-		{"aggrega plugin gen-catalog", "catalog entities a catalog author goes on editing", "report"},
-		{"aggrega import", "draft authoring files the author goes on editing", "report"},
+		{"aggrega config init", "a seeded configuration the operator goes on editing", "dry-run"},
+		{"aggrega plugin gen-catalog", "catalog entities a catalog author goes on editing", "dry-run"},
+		{"aggrega import", "draft authoring files the author goes on editing", "dry-run"},
 		{"aggrega plugin add", "a plugin attachment the operator goes on editing", "dry-run"},
 		{"aggrega config capture", "a record of what the configuration resolved to", ""},
 		{"aggrega plugin sync", "the compiler's own bookkeeping about a plugin module", ""},

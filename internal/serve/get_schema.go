@@ -151,7 +151,7 @@ func authorableEntityKinds() []entityKindDescriptor {
 func (s *Server) dispatchGetSchema(ctx context.Context, req *jsonRPCRequest) error {
 	var params getSchemaParams
 	if len(req.Params) > 0 {
-		if err := json.Unmarshal(req.Params, &params); err != nil {
+		if err := decodeParams(req, &params); err != nil {
 			return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
 		}
 	}

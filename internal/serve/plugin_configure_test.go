@@ -152,7 +152,7 @@ func TestThePluginMethodsRefuseAMissingRequiredField(t *testing.T) {
 		{"gen-catalog with no overlay", "aggrega/pluginGenCatalog",
 			map[string]any{"fromEmbedded": true, "outputDir": "g"}, "overlay is required"},
 		{"gen-catalog reporting still needs an output directory", "aggrega/pluginGenCatalog",
-			map[string]any{"fromEmbedded": true, "overlay": "o", "report": true}, "outputDir is required"},
+			map[string]any{"fromEmbedded": true, "overlay": "o", "dryRun": true}, "outputDir is required"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			resp := callDaemonMethod(t, srv, tc.method, tc.params)
@@ -388,7 +388,7 @@ default_registry: hub.aggrega.ai
 			if tc.global {
 				target = globalPath
 			}
-			params := map[string]any{"type": "governance", "query": "tag-injector", "role": "label-transform", "dry_run": true}
+			params := map[string]any{"type": "governance", "query": "tag-injector", "role": "label-transform", "dryRun": true}
 			if tc.global {
 				params["global"] = true
 			}
@@ -433,7 +433,7 @@ default_registry: hub.aggrega.ai
 				t.Errorf("the reporting delivery modified the machine-wide configuration:\nbefore:\n%s\nafter:\n%s", globalBefore, got)
 			}
 
-			params["dry_run"] = false
+			params["dryRun"] = false
 			var written pluginAddResult
 			decodeDaemonResult(t, callDaemonMethod(t, srv, "aggrega/pluginAdd", params), &written)
 
@@ -487,7 +487,7 @@ func TestPluginAddOnTheDaemonRefusesAReportOnTheCommandExtensionType(t *testing.
 	}
 
 	resp := callDaemonMethod(t, srv, "aggrega/pluginAdd", map[string]any{
-		"type": "cli", "query": "greet", "acceptCapabilities": true, "dry_run": true,
+		"type": "cli", "query": "greet", "acceptCapabilities": true, "dryRun": true,
 	})
 	if resp.Error == nil {
 		t.Fatal("a report on the command-extension type was accepted; its product is a record the machine maintains")

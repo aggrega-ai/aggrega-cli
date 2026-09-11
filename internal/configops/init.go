@@ -31,7 +31,8 @@ import (
 type ConfigFileExistsError struct{ path string }
 
 func (e *ConfigFileExistsError) Error() string {
-	return fmt.Sprintf("aggrega config init: %s already exists; pass --force to overwrite it", e.path)
+	return fmt.Sprintf("aggrega config init: %s already exists; pass --force to proceed anyway, "+
+		"which merges the registry entry into what is already there", e.path)
 }
 
 // Path is the configuration file that already exists, so a surface re-wording the
@@ -50,12 +51,16 @@ func (e *ConfigFileExistsError) Path() string { return e.path }
 // Workspace forces this project's own file. Setting both is a usage error the
 // write-target policy refuses.
 //
-// Force permits writing where the target file already exists. Without it the
-// seeding refuses rather than touch an existing file.
+// Force permits the seeding to proceed where the target file already exists.
+// Without it the seeding refuses rather than touch an existing file, and it
+// refuses under every delivery — a delivery that writes nothing still rehearses
+// the write it was asked about, refusals included.
 //
-// Delivery selects whether the seeding writes the configuration file or reports
-// the content that write would have produced. The zero value writes, so a caller
-// that says nothing about delivery seeds exactly as before.
+// Delivery selects whether the seeding writes the configuration file or hands
+// back the content that write would have produced. The zero value writes, so a
+// caller that says nothing about delivery seeds exactly as before. Set alongside
+// Force it composes: the content handed back is the merge an overwriting write
+// would produce.
 type InitOptions struct {
 	Registry  string
 	Force     bool
@@ -102,11 +107,15 @@ type InitResult struct {
 // exist yet. So the destination is resolved before anything is written and an
 // existing file refuses unless Force is set.
 //
-// Under a reporting delivery the guard does not run, and that is not a relaxation
-// of it. The guard's whole subject is an existing file being overwritten, and
-// reporting writes nothing, so there is no file for it to protect; the content
-// reported is the merge a forced write would produce. A guard that halted here
-// would refuse to describe a document it was never going to touch.
+// The guard reads Force alone, so it applies under every delivery. A delivery
+// that writes nothing differs from a write in exactly one respect — it does not
+// write — and every other behaviour, refusals included, is identical. That is
+// what lets a caller use a non-writing run as a predicate for the real one: if it
+// refuses, the write would have refused, for the same reason and with the same
+// message. Excusing the guard here would have bought the merge document at the
+// cost of that prediction, and the merge is reachable anyway by asking for it —
+// Force alongside a non-writing delivery reports the document an overwriting
+// write would produce.
 func Init(rw *workspaceconfig.ResolvedWorkspace, opts InitOptions) (InitResult, error) {
 	var res InitResult
 	rw, err := workspaceOrRefuse(rw)
@@ -122,7 +131,7 @@ func Init(rw *workspaceconfig.ResolvedWorkspace, opts InitOptions) (InitResult, 
 	if err != nil {
 		return res, err
 	}
-	if !opts.Force && !opts.Delivery.Reports() {
+	if !opts.Force {
 		switch _, statErr := os.Stat(dest); {
 		case statErr == nil:
 			return res, &ConfigFileExistsError{path: dest}

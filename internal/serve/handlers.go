@@ -139,6 +139,13 @@ type releaseCandidatesResult struct {
 // runs over the root it carries, and two requests naming two workspaces are
 // answered from two trees.
 func (s *Server) dispatchReleaseCandidates(ctx context.Context, req *jsonRPCRequest) error {
+	// A method with no parameters of its own still decodes, so a field a caller
+	// sent is refused rather than dropped. See noParams for why an answer that
+	// ignored an argument is worse than a refusal naming it.
+	if err := decodeParams(req, &noParams{}); err != nil {
+		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
+	}
+
 	releases := walkForReleases(s.workspaceRoot)
 	if releases == nil {
 		releases = []string{}
@@ -207,6 +214,13 @@ type activeReleaseResult struct {
 // broken Release sees the error on the document rather than only inferring it
 // from an empty result.
 func (s *Server) dispatchActiveRelease(ctx context.Context, req *jsonRPCRequest) error {
+	// A method with no parameters of its own still decodes, so a field a caller
+	// sent is refused rather than dropped. See noParams for why an answer that
+	// ignored an argument is worse than a refusal naming it.
+	if err := decodeParams(req, &noParams{}); err != nil {
+		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
+	}
+
 	_, releasePath, attempt := runManifestCascade(s.workspaceRoot, s.wsConfig, s.stderr)
 	s.publishCascadeFailureDiagnostics(ctx, attempt)
 	result := activeReleaseResult{Release: releasePath}
@@ -255,7 +269,7 @@ func (s *Server) dispatchActiveRelease(ctx context.Context, req *jsonRPCRequest)
 // one with no reference to this declaration.
 func (s *Server) dispatchInitialize(ctx context.Context, req *jsonRPCRequest) error {
 	var params initializeParams
-	if err := json.Unmarshal(req.Params, &params); err != nil {
+	if err := decodeParams(req, &params); err != nil {
 		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
 	}
 	selected := selectPositionEncoding(params.Capabilities)
@@ -428,7 +442,7 @@ const checkedDocument = "document"
 // and writes the response envelope.
 func (s *Server) dispatchValidate(ctx context.Context, req *jsonRPCRequest) error {
 	var params validateParams
-	if err := json.Unmarshal(req.Params, &params); err != nil {
+	if err := decodeParams(req, &params); err != nil {
 		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
 	}
 	result, errEnvelope := s.handleValidate(ctx, params)
@@ -665,7 +679,7 @@ type diagnosticsResult struct {
 
 func (s *Server) dispatchDiagnostics(ctx context.Context, req *jsonRPCRequest) error {
 	var params diagnosticsParams
-	if err := json.Unmarshal(req.Params, &params); err != nil {
+	if err := decodeParams(req, &params); err != nil {
 		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
 	}
 	result, errEnvelope := s.handleDiagnostics(ctx, params)
@@ -838,7 +852,7 @@ type irGraphResult struct {
 
 func (s *Server) dispatchIrGraph(ctx context.Context, req *jsonRPCRequest) error {
 	var params irGraphParams
-	if err := json.Unmarshal(req.Params, &params); err != nil {
+	if err := decodeParams(req, &params); err != nil {
 		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
 	}
 	result, errEnvelope := s.handleIrGraph(ctx, params)
@@ -1214,7 +1228,7 @@ type resolveResult struct {
 // nil Location.
 func (s *Server) dispatchResolve(ctx context.Context, req *jsonRPCRequest) error {
 	var params resolveParams
-	if err := json.Unmarshal(req.Params, &params); err != nil {
+	if err := decodeParams(req, &params); err != nil {
 		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
 	}
 	loc, errEnvelope := s.resolveDefinitionSite(ctx, params.URI, params.Position)
@@ -1243,7 +1257,7 @@ type findReferencesResult struct {
 // metadata.name) produces a result envelope.
 func (s *Server) dispatchFindReferences(ctx context.Context, req *jsonRPCRequest) error {
 	var params findReferencesParams
-	if err := json.Unmarshal(req.Params, &params); err != nil {
+	if err := decodeParams(req, &params); err != nil {
 		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
 	}
 	locs, errEnvelope := s.findReferencesAcrossWorkspace(ctx, params.URI, params.Position)
@@ -1273,7 +1287,7 @@ type findImplementationsResult struct {
 // findImplementationsAcrossWorkspace.
 func (s *Server) dispatchFindImplementations(ctx context.Context, req *jsonRPCRequest) error {
 	var params findImplementationsParams
-	if err := json.Unmarshal(req.Params, &params); err != nil {
+	if err := decodeParams(req, &params); err != nil {
 		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
 	}
 	locs, errEnvelope := s.findImplementationsAcrossWorkspace(ctx, params.URI, params.Position)
@@ -1309,7 +1323,7 @@ func (s *Server) dispatchHover(ctx context.Context, req *jsonRPCRequest) error {
 		return nil
 	}
 	var params hoverParams
-	if err := json.Unmarshal(req.Params, &params); err != nil {
+	if err := decodeParams(req, &params); err != nil {
 		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
 	}
 	contents, errEnvelope := s.handleHover(params)
@@ -1352,7 +1366,7 @@ func (s *Server) dispatchCompletion(ctx context.Context, req *jsonRPCRequest) er
 		return nil
 	}
 	var params completionParams
-	if err := json.Unmarshal(req.Params, &params); err != nil {
+	if err := decodeParams(req, &params); err != nil {
 		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
 	}
 	items, errEnvelope := s.handleCompletion(params)

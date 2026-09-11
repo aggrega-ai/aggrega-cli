@@ -5,7 +5,6 @@ package serve
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -95,7 +94,7 @@ type explainErrorResult struct {
 func (s *Server) dispatchExplainError(ctx context.Context, req *jsonRPCRequest) error {
 	var params explainErrorParams
 	if len(req.Params) > 0 {
-		if err := json.Unmarshal(req.Params, &params); err != nil {
+		if err := decodeParams(req, &params); err != nil {
 			return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
 		}
 	}

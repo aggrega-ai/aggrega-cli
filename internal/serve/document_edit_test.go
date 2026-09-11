@@ -322,10 +322,10 @@ func TestEditDocumentUnderReportWritesNothing(t *testing.T) {
 
 	for _, tc := range []struct {
 		name   string
-		report any
+		dryRun any
 		writes bool
 	}{
-		{"reporting writes nothing", true, false},
+		{"a dry run writes nothing", true, false},
 		{"an explicit false writes", false, true},
 		{"an absent delivery writes", nil, true},
 	} {
@@ -335,8 +335,8 @@ func TestEditDocumentUnderReportWritesNothing(t *testing.T) {
 			for k, v := range base {
 				params[k] = v
 			}
-			if tc.report != nil {
-				params["report"] = tc.report
+			if tc.dryRun != nil {
+				params["dryRun"] = tc.dryRun
 			}
 
 			var got documentEditResult

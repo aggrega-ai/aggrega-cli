@@ -5,7 +5,6 @@ package serve
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"strings"
@@ -129,7 +128,7 @@ func (s *Server) selectedPath(what, raw string) (string, error) {
 // consent is refused with what to send named, rather than installing on a consent
 // nobody gave.
 //
-// dry_run does everything the plain request does except write: it answers with
+// dryRun does everything the plain request does except write: it answers with
 // the resulting configuration as content instead of putting it on disk. Which of
 // the two a caller wants is a property of the caller rather than of this
 // surface — a client that keeps its own document model puts the content where the
@@ -146,7 +145,7 @@ type pluginAddParams struct {
 	Global             bool   `json:"global"`
 	Workspace          bool   `json:"workspace"`
 	AcceptCapabilities bool   `json:"acceptCapabilities"`
-	DryRun             bool   `json:"dry_run"`
+	DryRun             bool   `json:"dryRun"`
 }
 
 // pluginAddResult is the aggrega/pluginAdd response.
@@ -159,9 +158,9 @@ type pluginAddParams struct {
 // from the type it sent.
 //
 // Written is what a client branches on: under a write it names a file now on disk
-// that the client can open, and under a report it is false and Content carries the
-// document instead. The two are never both meaningful — the file Content is for is
-// Scope.ConfigFile, so nothing here carries a second copy of the path.
+// that the client can open, and under a dry run it is false and Content carries
+// the document instead. The two are never both meaningful — the file Content is
+// for is Scope.ConfigFile, so nothing here carries a second copy of the path.
 type pluginAddResult struct {
 	Type       string           `json:"type"`
 	Identity   string           `json:"identity,omitempty"`
@@ -195,19 +194,20 @@ type pluginAddResult struct {
 // capabilities — arrives as a request field, so the client asks whoever is driving
 // it and this surface never blocks on a prompt no one can answer.
 //
-// 🔴 It WRITES unless the request asks it to report instead, and the reporting
-// posture is a request field rather than a property of this surface, because a
-// caller at either end may want either. Under a report nothing is created or
-// modified and the answer carries the configuration document the write would have
-// produced, addressed to the file it would have gone to — which for a --global
-// attachment is the machine-wide one, so the scope on the answer is what tells a
-// client how far the content it now holds would reach. It still reaches a
-// registry under a report, because the identity in that document is the identity a
-// write would have pinned.
+// 🔴 It WRITES unless the request asks for a dry run instead, and the delivery is
+// a request field rather than a property of this surface, because a caller at
+// either end may want either. Under a dry run nothing is created or modified and
+// the answer carries the configuration document the write would have produced,
+// addressed to the file it would have gone to — which for a --global attachment is
+// the machine-wide one, so the scope on the answer is what tells a client how far
+// the content it now holds would reach. It still reaches a registry under a dry
+// run, because the identity in that document is the identity a write would have
+// pinned — a dry run differs from the write in exactly one respect, and that is
+// the write itself.
 func (s *Server) dispatchPluginAdd(ctx context.Context, req *jsonRPCRequest) error {
 	var params pluginAddParams
 	if len(req.Params) > 0 {
-		if err := json.Unmarshal(req.Params, &params); err != nil {
+		if err := decodeParams(req, &params); err != nil {
 			return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
 		}
 	}
@@ -319,7 +319,7 @@ type pluginRemoveResult struct {
 func (s *Server) dispatchPluginRemove(ctx context.Context, req *jsonRPCRequest) error {
 	var params pluginRemoveParams
 	if len(req.Params) > 0 {
-		if err := json.Unmarshal(req.Params, &params); err != nil {
+		if err := decodeParams(req, &params); err != nil {
 			return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
 		}
 	}
@@ -398,7 +398,7 @@ type pluginSyncResult struct {
 func (s *Server) dispatchPluginSync(ctx context.Context, req *jsonRPCRequest) error {
 	var params pluginSyncParams
 	if len(req.Params) > 0 {
-		if err := json.Unmarshal(req.Params, &params); err != nil {
+		if err := decodeParams(req, &params); err != nil {
 			return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
 		}
 	}
@@ -441,14 +441,17 @@ func (s *Server) dispatchPluginSync(ctx context.Context, req *jsonRPCRequest) er
 // every guest embedded in this binary, or one guest at a named path. overlay is a
 // directory in the first mode and a single file in the second.
 //
-// report hands the generated content back instead of writing it. It defaults to
-// false, which writes — the same default the command line takes — so a caller
-// that says nothing gets the same behaviour on both surfaces.
+// dryRun does everything the plain request does except write: it hands the
+// generated content back instead of putting it on disk. It defaults to false,
+// which writes — the same default the command line takes — so a caller that says
+// nothing gets the same behaviour on both surfaces. It changes nothing else: the
+// same guests are read and the same overlays matched, so a selection the write
+// would refuse is refused here too.
 //
-// outputDir is required under both deliveries. Under report nothing is written,
-// but each reported document still names the file it is for, and that path is
-// composed from this directory: reporting changes where the content goes, not
-// which file it is content for.
+// outputDir is required under both deliveries. Under a dry run nothing is
+// written, but each returned document still names the file it is for, and that
+// path is composed from this directory: a dry run changes where the content goes,
+// not which file it is content for.
 //
 // 🔴 The three paths are not judged by one rule, and the split is read/write
 // rather than per-field taste. plugin and overlay are READ, and both are files
@@ -462,21 +465,27 @@ type pluginGenCatalogParams struct {
 	Plugin       string `json:"plugin"`
 	OutputDir    string `json:"outputDir"`
 	Overlay      string `json:"overlay"`
-	Report       bool   `json:"report"`
+	DryRun       bool   `json:"dryRun"`
 }
 
 // pluginGenCatalogResult is the aggrega/pluginGenCatalog response.
 //
-// Exactly one half is filled, and which one says which mode ran. Documents
-// carries the generated entities and the file each is for, and appears only in
-// report mode — where nothing was created or modified, so a client puts the
-// content in its own document model, where it is visible before it is saved and
-// can be amended or undone. Notices carries what the generation said about the
-// writes it performed, and appears only when it wrote.
+// Exactly one half is filled, and DryRun says which. Documents carries the
+// generated entities and the file each is for, and appears only under a dry run —
+// where nothing was created or modified, so a client puts the content in its own
+// document model, where it is visible before it is saved and can be amended or
+// undone. Notices carries what the generation said about the writes it performed,
+// and appears only when it wrote.
+//
+// DryRun answers with the same word the request selects the delivery with, so one
+// concept carries one name in both directions and a client reads back what it
+// asked for. It states the delivery outright rather than leaving it to be
+// inferred from which half is filled, so a client branches on what ran instead of
+// on what arrived.
 type pluginGenCatalogResult struct {
 	Documents []pluginGeneratedDocument `json:"documents,omitempty"`
 	Notices   string                    `json:"notices,omitempty"`
-	Reported  bool                      `json:"reported"`
+	DryRun    bool                      `json:"dryRun"`
 }
 
 // pluginGeneratedDocument is one reported entity on the wire: the file it is for,
@@ -538,7 +547,7 @@ func generatedDocuments(docs []authoredcontent.Document) []pluginGeneratedDocume
 func (s *Server) dispatchPluginGenCatalog(ctx context.Context, req *jsonRPCRequest) error {
 	var params pluginGenCatalogParams
 	if len(req.Params) > 0 {
-		if err := json.Unmarshal(req.Params, &params); err != nil {
+		if err := decodeParams(req, &params); err != nil {
 			return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
 		}
 	}
@@ -554,17 +563,17 @@ func (s *Server) dispatchPluginGenCatalog(ctx context.Context, req *jsonRPCReque
 	// outputDir is required under BOTH deliveries, and reporting does not excuse
 	// it. Under the reporting delivery nothing is written, but each reported
 	// document still names the file it is FOR, and that path is composed from this
-	// directory — so a report without it would answer with documents belonging to
+	// directory — so a dry run without it would answer with documents belonging to
 	// nowhere.
 	if params.OutputDir == "" {
 		return s.writeError(ctx, req.ID, jsonRPCInvalidParams,
 			"plugin gen-catalog: outputDir is required (the directory the generated entities are written under, "+
-				"and — under report — the directory each reported document names as its own)")
+				"and — under dryRun — the directory each returned document names as its own)")
 	}
 
 	opts := pluginops.GenCatalogOptions{
 		FromEmbedded: params.FromEmbedded,
-		Report:       params.Report,
+		DryRun:       params.DryRun,
 	}
 	// The three paths are resolved by TWO rules, and which rule a path takes
 	// follows from whether the generation reads it or writes to it. The module and
@@ -609,6 +618,6 @@ func (s *Server) dispatchPluginGenCatalog(ctx context.Context, req *jsonRPCReque
 	return s.writeResult(ctx, req.ID, pluginGenCatalogResult{
 		Documents: generatedDocuments(res.Documents),
 		Notices:   res.Notices,
-		Reported:  params.Report,
+		DryRun:    params.DryRun,
 	})
 }

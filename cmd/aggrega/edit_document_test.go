@@ -233,7 +233,7 @@ func TestEditingADocumentReportsContentAndWritesNothing(t *testing.T) {
 	ws, abs := editDocumentWorkspace(t, "storefront.aggregate.yaml", authoredAggregateForEdit)
 	resolved := resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws.root})
 
-	edit := func(report bool, out *bytes.Buffer) error {
+	edit := func(dryRun bool, out *bytes.Buffer) error {
 		return editDocumentRun(editDocumentConfig{
 			Edit:       "attach-feature",
 			File:       ws.rel,
@@ -241,7 +241,7 @@ func TestEditingADocumentReportsContentAndWritesNothing(t *testing.T) {
 			Name:       "tls",
 			Value:      "core/tls:1.0.0",
 			ValueGiven: true,
-			Report:     report,
+			DryRun:     dryRun,
 			ws:         resolved,
 			Out:        out,
 		})

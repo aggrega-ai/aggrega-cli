@@ -88,7 +88,7 @@ func noImportPluginBytes(*workspaceconfig.ResolvedWorkspace, string) (pluginpath
 // through that writer, fails here.
 //
 // The standard output stream is pinned WHOLE rather than searched, and that is
-// the load-bearing half under --report: there the stream must hold one parseable
+// the load-bearing half under --dry-run: there the stream must hold one parseable
 // document and nothing else, so a commentary line leaking into it would corrupt
 // what a caller parses, and only an exact expectation can see that.
 func TestImportCommandCarriesTheSharedResultOnItsCommentaryStream(t *testing.T) {
@@ -155,7 +155,7 @@ func TestImportCommandCarriesTheSharedResultOnItsCommentaryStream(t *testing.T) 
 		},
 		{
 			name:     "reporting the drafts on standard output",
-			args:     []string{source, "--format", "demo", "--report"},
+			args:     []string{source, "--format", "demo", "--dry-run"},
 			wantOut:  wantReported.String(),
 			writes:   false,
 			wantFile: "demo.yaml",

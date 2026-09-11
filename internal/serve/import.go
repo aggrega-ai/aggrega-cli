@@ -5,7 +5,6 @@ package serve
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"os"
 
@@ -33,9 +32,9 @@ import (
 // than against a directory this process happens to be sitting in, so there is no
 // "here" an absent value could mean.
 //
-// It is required under both deliveries, and reporting does not excuse it. Under
-// report nothing is written, but each drafted file still names the path it is
-// FOR, and that path is relative to this directory — so a report without it
+// It is required under both deliveries, and a dry run does not excuse it. Under
+// a dry run nothing is written, but each drafted file still names the path it is
+// FOR, and that path is relative to this directory — so a dry run without it
 // would answer with drafts belonging to nowhere.
 //
 // format names the source format explicitly. An absent value means the format is
@@ -44,17 +43,20 @@ import (
 // refusal, and a caller converting a source whose shape is not recognised names
 // the format instead.
 //
-// report asks for the drafted files as content instead of as a write. Which of
-// the two a caller wants is a property of the caller rather than of this surface
-// — a client that keeps its own document model puts the drafts where the author
-// can read them before anything reaches disk — so it is a request field. It
-// defaults to writing, because the operation's product is a set of files and a
-// surface that produces files owes them.
+// dryRun does everything the plain request does except write: it answers with the
+// drafted files as content instead of putting them on disk. Which of the two a
+// caller wants is a property of the caller rather than of this surface — a client
+// that keeps its own document model puts the drafts where the author can read them
+// before anything reaches disk — so it is a request field. It defaults to writing,
+// because the operation's product is a set of files and a surface that produces
+// files owes them. It changes nothing else: the same importer runs over the same
+// source and reports the same diagnostics, so a source the write would refuse is
+// refused here too.
 type importParams struct {
 	Source    string `json:"source"`
 	OutputDir string `json:"outputDir"`
 	Format    string `json:"format"`
-	Report    bool   `json:"report"`
+	DryRun    bool   `json:"dryRun"`
 }
 
 // importedFile is one drafted file on the wire: the path it is for, relative to
@@ -146,7 +148,7 @@ type importResult struct {
 func (s *Server) dispatchImport(ctx context.Context, req *jsonRPCRequest) error {
 	var params importParams
 	if len(req.Params) > 0 {
-		if err := json.Unmarshal(req.Params, &params); err != nil {
+		if err := decodeParams(req, &params); err != nil {
 			return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
 		}
 	}
@@ -155,15 +157,15 @@ func (s *Server) dispatchImport(ctx context.Context, req *jsonRPCRequest) error 
 			"import: source is required and must name the file to convert, either as an "+
 				"absolute path or relative to the root of the workspace this session opened")
 	}
-	// outputDir is required under BOTH deliveries, and reporting does not excuse
-	// it. Under the reporting delivery nothing is written, but each drafted file
+	// outputDir is required under BOTH deliveries, and a non-writing one does not
+	// excuse it. Under that delivery nothing is written, but each drafted file
 	// still names the path it is FOR, and that path is relative to this directory
-	// — so a report without it would answer with drafts belonging to nowhere.
+	// — so a dry run without it would answer with drafts belonging to nowhere.
 	if params.OutputDir == "" {
 		return s.writeError(ctx, req.ID, jsonRPCInvalidParams,
 			"import: outputDir is required and must name the directory the drafted files go in, "+
 				"relative to the root of the workspace this session opened — the caller chooses "+
-				"where the drafts land and this surface picks no destination (under report nothing "+
+				"where the drafts land and this surface picks no destination (under dryRun nothing "+
 				"is written, but the drafted paths are still relative to it)")
 	}
 	if s.resolvedWorkspace == nil {
@@ -217,7 +219,7 @@ func (s *Server) dispatchImport(ctx context.Context, req *jsonRPCRequest) error 
 		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "import: "+err.Error())
 	}
 
-	delivery := authoredcontent.DeliveryFor(params.Report)
+	delivery := authoredcontent.DeliveryFor(params.DryRun)
 	res, err := importops.Import(ctx, s.resolvedWorkspace, importops.Options{
 		Source:        content,
 		SourceName:    params.Source,

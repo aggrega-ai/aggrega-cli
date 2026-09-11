@@ -5,7 +5,6 @@ package serve
 
 import (
 	"context"
-	"encoding/json"
 	"io"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/registryops"
@@ -151,7 +150,7 @@ type registryUpdateResult struct {
 func (s *Server) dispatchRegistryAdd(ctx context.Context, req *jsonRPCRequest) error {
 	var params registryAddParams
 	if len(req.Params) > 0 {
-		if err := json.Unmarshal(req.Params, &params); err != nil {
+		if err := decodeParams(req, &params); err != nil {
 			return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
 		}
 	}
@@ -222,7 +221,7 @@ func (s *Server) dispatchRegistryAdd(ctx context.Context, req *jsonRPCRequest) e
 func (s *Server) dispatchRegistryRemove(ctx context.Context, req *jsonRPCRequest) error {
 	var params registryRemoveParams
 	if len(req.Params) > 0 {
-		if err := json.Unmarshal(req.Params, &params); err != nil {
+		if err := decodeParams(req, &params); err != nil {
 			return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
 		}
 	}
@@ -272,7 +271,7 @@ func (s *Server) dispatchRegistryRemove(ctx context.Context, req *jsonRPCRequest
 func (s *Server) dispatchRegistryUpdate(ctx context.Context, req *jsonRPCRequest) error {
 	var params registryUpdateParams
 	if len(req.Params) > 0 {
-		if err := json.Unmarshal(req.Params, &params); err != nil {
+		if err := decodeParams(req, &params); err != nil {
 			return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
 		}
 	}

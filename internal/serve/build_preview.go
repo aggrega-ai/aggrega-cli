@@ -5,7 +5,6 @@ package serve
 
 import (
 	"context"
-	"encoding/json"
 )
 
 // buildPreviewParams is the request shape for `aggrega/buildPreview`. The
@@ -48,7 +47,7 @@ type buildPreviewResult struct {
 // dispatchBuildPreview unmarshals params and answers the request.
 func (s *Server) dispatchBuildPreview(ctx context.Context, req *jsonRPCRequest) error {
 	var params buildPreviewParams
-	if err := json.Unmarshal(req.Params, &params); err != nil {
+	if err := decodeParams(req, &params); err != nil {
 		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
 	}
 	result, errEnvelope := s.handleBuildPreview(ctx, params)

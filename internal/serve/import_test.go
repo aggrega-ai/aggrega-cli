@@ -161,9 +161,9 @@ func TestImportRefusesARequestNamingNoOutputDirectory(t *testing.T) {
 	}{
 		{"no output directory", map[string]any{"source": "flow.json"}, "outputDir is required"},
 		{"reporting still needs an output directory",
-			map[string]any{"source": "flow.json", "report": true}, "outputDir is required"},
+			map[string]any{"source": "flow.json", "dryRun": true}, "outputDir is required"},
 		{"reporting with a format still needs an output directory",
-			map[string]any{"source": "flow.json", "format": "demo", "report": true}, "outputDir is required"},
+			map[string]any{"source": "flow.json", "format": "demo", "dryRun": true}, "outputDir is required"},
 		{"no source", map[string]any{"outputDir": "drafts"}, "source is required"},
 		{"neither", map[string]any{}, "source is required"},
 	} {

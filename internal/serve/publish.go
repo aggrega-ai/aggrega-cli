@@ -5,7 +5,6 @@ package serve
 
 import (
 	"context"
-	"encoding/json"
 	"io"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/cacheops"
@@ -260,7 +259,7 @@ type deprecationMarked struct {
 func (s *Server) dispatchPublishEntity(ctx context.Context, req *jsonRPCRequest) error {
 	var params publishEntityParams
 	if len(req.Params) > 0 {
-		if err := json.Unmarshal(req.Params, &params); err != nil {
+		if err := decodeParams(req, &params); err != nil {
 			return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
 		}
 	}
@@ -387,7 +386,7 @@ func runPublishEntity(cfg publishops.PushConfig) (publishEntityResult, *jsonRPCE
 func (s *Server) dispatchPublishArtifact(ctx context.Context, req *jsonRPCRequest) error {
 	var params publishArtifactParams
 	if len(req.Params) > 0 {
-		if err := json.Unmarshal(req.Params, &params); err != nil {
+		if err := decodeParams(req, &params); err != nil {
 			return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
 		}
 	}
@@ -490,7 +489,7 @@ func runPublishArtifact(cfg publishops.PushArtifactConfig) (publishArtifactResul
 func (s *Server) dispatchSignArtifacts(ctx context.Context, req *jsonRPCRequest) error {
 	var params signArtifactsParams
 	if len(req.Params) > 0 {
-		if err := json.Unmarshal(req.Params, &params); err != nil {
+		if err := decodeParams(req, &params); err != nil {
 			return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
 		}
 	}
@@ -586,7 +585,7 @@ func runSignArtifacts(cfg publishops.SignConfig) (signArtifactsResult, *jsonRPCE
 func (s *Server) dispatchDeprecateArtifact(ctx context.Context, req *jsonRPCRequest) error {
 	var params deprecateArtifactParams
 	if len(req.Params) > 0 {
-		if err := json.Unmarshal(req.Params, &params); err != nil {
+		if err := decodeParams(req, &params); err != nil {
 			return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
 		}
 	}

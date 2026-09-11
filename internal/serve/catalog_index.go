@@ -70,6 +70,13 @@ type catalogIndexResult struct {
 // entity set reaches the other. Read-only — it mutates nothing, resolves
 // nothing, and reaches no registry or network.
 func (s *Server) dispatchCatalogIndex(ctx context.Context, req *jsonRPCRequest) error {
+	// A method with no parameters of its own still decodes, so a field a caller
+	// sent is refused rather than dropped. See noParams for why an answer that
+	// ignored an argument is worse than a refusal naming it.
+	if err := decodeParams(req, &noParams{}); err != nil {
+		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
+	}
+
 	if err := ctx.Err(); err != nil {
 		return s.writeError(ctx, req.ID, jsonRPCInternalError, err.Error())
 	}

@@ -21,24 +21,27 @@ import (
 // guest by identity when there are several and there is nothing to match when
 // there is one.
 //
-// Report hands the generated content back instead of writing it. A generated
-// entity is a catalog document the author owns and goes on editing, so a caller
-// that keeps its own document model puts the content there — where it is visible
-// before it is saved, and can be amended or undone.
+// DryRun asks the generation to do everything except write, handing the content
+// back instead. A generated entity is a catalog document the author owns and goes
+// on editing, so a caller that keeps its own document model puts the content
+// there — where it is visible before it is saved, and can be amended or undone.
+// It changes nothing else: the same guests are read, the same overlays matched,
+// and every refusal a write performs is performed here too.
 type GenCatalogOptions struct {
 	FromEmbedded bool
 	PluginPath   string
 	OutputDir    string
 	OverlayPath  string
-	Report       bool
+	DryRun       bool
 }
 
 // GenCatalogResult is what a catalog generation produced.
 //
 // Exactly one half is filled, and which one says which mode ran. Documents
-// carries the generated entities and the file each is for, and is filled only in
-// report mode — where nothing was created or modified. Notices carries what the
-// generation said about the writes it performed, and is filled only when it wrote.
+// carries the generated entities and the file each is for, and is filled only
+// under a non-writing delivery — where nothing was created or modified. Notices
+// carries what the generation said about the writes it performed, and is filled
+// only when it wrote.
 type GenCatalogResult struct {
 	Documents []authoredcontent.Document `json:"documents,omitempty"`
 	Notices   string                     `json:"notices,omitempty"`
@@ -58,7 +61,8 @@ type GenCatalogResult struct {
 // through a package a caller has to know to find.
 //
 // Whatever the generation emits is copied to out when out is non-nil, so a
-// terminal sees exactly what it saw before. In report mode the emitted form is
+// terminal sees exactly what it saw before. Under a non-writing delivery the
+// emitted form is
 // also decoded into Documents — with that form's own decoder, the matched pair of
 // the encoder that produced it, rather than by re-parsing its text — so a surface
 // answering with values gets values and one answering with text gets text.
@@ -69,7 +73,7 @@ func GenCatalog(ctx context.Context, opts GenCatalogOptions, out io.Writer) (Gen
 		PluginPath:   opts.PluginPath,
 		OutputDir:    opts.OutputDir,
 		OverlayPath:  opts.OverlayPath,
-		Delivery:     authoredcontent.DeliveryFor(opts.Report),
+		Delivery:     authoredcontent.DeliveryFor(opts.DryRun),
 	}, &emitted)
 
 	// The emitted bytes are handed on even when the generation failed part way, so
@@ -84,7 +88,7 @@ func GenCatalog(ctx context.Context, opts GenCatalogOptions, out io.Writer) (Gen
 		return GenCatalogResult{}, err
 	}
 
-	if !opts.Report {
+	if !opts.DryRun {
 		return GenCatalogResult{Notices: emitted.String()}, nil
 	}
 	docs, derr := authoredcontent.Decode(emitted.Bytes())

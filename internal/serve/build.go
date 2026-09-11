@@ -6,7 +6,6 @@ package serve
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"path/filepath"
 
@@ -83,7 +82,7 @@ type buildResult struct {
 // dispatchBuild unmarshals params and answers the request.
 func (s *Server) dispatchBuild(ctx context.Context, req *jsonRPCRequest) error {
 	var params buildParams
-	if err := json.Unmarshal(req.Params, &params); err != nil {
+	if err := decodeParams(req, &params); err != nil {
 		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
 	}
 	result, errEnvelope := s.handleBuild(ctx, params)

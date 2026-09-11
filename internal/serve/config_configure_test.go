@@ -267,27 +267,26 @@ func TestConfigInitOnTheDaemonHonoursTheWorkspaceOverride(t *testing.T) {
 	}
 }
 
-// TestConfigInitOnTheDaemonReportsWithoutWriting drives the reporting delivery to
-// its own effect, and the absent-write assertion is the half that matters: a
-// delivery that reported the content and wrote the file anyway would satisfy every
-// other field.
-func TestConfigInitOnTheDaemonReportsWithoutWriting(t *testing.T) {
+// TestConfigInitOnTheDaemonDryRunsWithoutWriting drives the non-writing delivery
+// to its own effect, and the absent-write assertion is the half that matters: a
+// delivery that answered with the content and wrote the file anyway would satisfy
+// every other field.
+func TestConfigInitOnTheDaemonDryRunsWithoutWriting(t *testing.T) {
 	t.Parallel()
-	srv, globalPath, _ := registryWriteFixture(t, "offline: true\nworkspace: {}\n")
-	before, err := os.ReadFile(globalPath)
-	if err != nil {
-		t.Fatalf("read the global layer: %v", err)
+	srv, globalPath, _ := registryWriteFixture(t, "")
+	if err := os.Remove(globalPath); err != nil && !os.IsNotExist(err) {
+		t.Fatalf("clear the global layer: %v", err)
 	}
 
 	resp := callDaemonMethod(t, srv, "aggrega/configInit", map[string]any{
 		"registry": "reported.example.test",
-		"report":   true,
+		"dryRun":   true,
 	})
 	var res configInitResult
 	decodeDaemonResult(t, resp, &res)
 
 	if res.Written {
-		t.Error("written: got true under a reporting delivery, want false")
+		t.Error("written: got true under a dry run, want false")
 	}
 	if !strings.Contains(res.Content, "reported.example.test") {
 		t.Errorf("content does not carry the seeded registry: %q", res.Content)
@@ -295,14 +294,129 @@ func TestConfigInitOnTheDaemonReportsWithoutWriting(t *testing.T) {
 	if res.Scope.ConfigFile != globalPath {
 		t.Errorf("configFile: got %q, want the file the content is for, %q", res.Scope.ConfigFile, globalPath)
 	}
+	if _, err := os.Stat(globalPath); !os.IsNotExist(err) {
+		t.Errorf("a dry run created the configuration file at %s (stat err = %v)", globalPath, err)
+	}
+}
 
-	after, err := os.ReadFile(globalPath)
-	if err != nil {
-		t.Fatalf("read the global layer after reporting: %v", err)
+// TestADryRunOnTheDaemonRefusesEXACTLYWhereAWriteRefuses is the contract the
+// non-writing delivery exists to be trustworthy about: it differs from the write
+// in one respect only — it does not write — so every refusal the write performs it
+// performs too.
+//
+// That is what lets a caller use it as a PREDICATE. If it refuses, the write would
+// have refused, for the same reason and with the same message, so a client can ask
+// before committing to the change. The two rows are the whole of the contract: the
+// guard fires under a dry run, and force alongside it answers with the merge an
+// overwriting write would produce while still writing nothing.
+//
+// 🔴 The byte-identity assertion in every row is the one that matters. A delivery
+// that composed the merge and also wrote it would satisfy every other field here,
+// and that is precisely the defect an honest name has to exclude.
+//
+// The third row is the predicate property asserted directly, rather than
+// approximated by a substring: the bytes a dry run answers with are compared
+// against the bytes a forced write actually puts on disk, over the same starting
+// document. A "shows the merge" claim checked by looking for one host name would
+// hold just as well for a document that had silently dropped every other setting.
+func TestADryRunOnTheDaemonRefusesEXACTLYWhereAWriteRefuses(t *testing.T) {
+	t.Parallel()
+
+	// The GLOBAL layer is what config init writes; the fixture's own argument is
+	// the workspace layer, which this operation never touches. So the pre-existing
+	// document the merge has to preserve is seeded here rather than through the
+	// fixture, and it carries a setting the registration knows nothing about.
+	const existingGlobal = "offline: true\nregistries:\n    - host: already.example.test\n"
+
+	seed := func(t *testing.T) (*Server, string) {
+		t.Helper()
+		srv, globalPath, _ := registryWriteFixture(t, "workspace: {}\n")
+		if err := os.WriteFile(globalPath, []byte(existingGlobal), 0o644); err != nil {
+			t.Fatalf("seed the global layer: %v", err)
+		}
+		return srv, globalPath
 	}
-	if string(before) != string(after) {
-		t.Errorf("a reporting seeding changed the file:\nbefore:\n%s\nafter:\n%s", before, after)
+
+	for _, tc := range []struct {
+		name    string
+		force   bool
+		refused bool
+	}{
+		{"the guard fires under a dry run, exactly as it fires under a write", false, true},
+		{"force alongside it answers with the merge and still writes nothing", true, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv, globalPath := seed(t)
+
+			params := map[string]any{"registry": "reported.example.test", "dryRun": true}
+			if tc.force {
+				params["force"] = true
+			}
+			resp := callDaemonMethod(t, srv, "aggrega/configInit", params)
+
+			if tc.refused {
+				if resp.Error == nil {
+					t.Fatalf("a dry run over an existing file must be refused; got result %s", resp.Result)
+				}
+				if !strings.Contains(resp.Error.Message, "already exists") {
+					t.Errorf("refusal = %q; want the write's own reason", resp.Error.Message)
+				}
+			} else {
+				var res configInitResult
+				decodeDaemonResult(t, resp, &res)
+				if res.Written {
+					t.Error("written: got true under a dry run, want false")
+				}
+				for _, want := range []string{"reported.example.test", "already.example.test", "offline"} {
+					if !strings.Contains(res.Content, want) {
+						t.Errorf("content is not the MERGE — %q is missing:\n%s", want, res.Content)
+					}
+				}
+			}
+
+			after, err := os.ReadFile(globalPath)
+			if err != nil {
+				t.Fatalf("read the global layer afterwards: %v", err)
+			}
+			if string(after) != existingGlobal {
+				t.Errorf("a dry run changed the file:\nbefore:\n%s\nafter:\n%s", existingGlobal, after)
+			}
+		})
 	}
+
+	t.Run("the bytes a dry run answers with are the bytes a forced write lands", func(t *testing.T) {
+		reportSrv, reportPath := seed(t)
+		var reported configInitResult
+		decodeDaemonResult(t, callDaemonMethod(t, reportSrv, "aggrega/configInit", map[string]any{
+			"registry": "reported.example.test", "force": true, "dryRun": true,
+		}), &reported)
+
+		writeSrv, writePath := seed(t)
+		var written configInitResult
+		decodeDaemonResult(t, callDaemonMethod(t, writeSrv, "aggrega/configInit", map[string]any{
+			"registry": "reported.example.test", "force": true,
+		}), &written)
+
+		onDisk, err := os.ReadFile(writePath)
+		if err != nil {
+			t.Fatalf("read the written global layer: %v", err)
+		}
+		if reported.Content != string(onDisk) {
+			t.Errorf("a dry run does not show what a forced write lands\n--- dry run ---\n%s\n--- on disk ---\n%s",
+				reported.Content, onDisk)
+		}
+		// The control: without it, two identically-empty answers would pass.
+		if !strings.Contains(reported.Content, "reported.example.test") {
+			t.Errorf("the compared content carries nothing: %q", reported.Content)
+		}
+		untouched, err := os.ReadFile(reportPath)
+		if err != nil {
+			t.Fatalf("read the dry-run global layer: %v", err)
+		}
+		if string(untouched) != existingGlobal {
+			t.Errorf("the dry run wrote to its own file:\n%s", untouched)
+		}
+	})
 }
 
 // TestConfigInitOnTheDaemonRefusesAnExistingFile drives the guard, and asserts the

@@ -5,7 +5,6 @@ package serve
 
 import (
 	"context"
-	"encoding/json"
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/cacheops"
@@ -201,6 +200,13 @@ func (s *Server) cacheScopeOf(machineWide []string) cacheScope {
 // deciding whether to reclaim needs to know which of the classes it is reading
 // about are shared with every other project on the machine before it acts.
 func (s *Server) dispatchCacheStatus(ctx context.Context, req *jsonRPCRequest) error {
+	// A method with no parameters of its own still decodes, so a field a caller
+	// sent is refused rather than dropped. See noParams for why an answer that
+	// ignored an argument is worse than a refusal naming it.
+	if err := decodeParams(req, &noParams{}); err != nil {
+		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
+	}
+
 	if err := ctx.Err(); err != nil {
 		return s.writeError(ctx, req.ID, jsonRPCInternalError, err.Error())
 	}
@@ -255,6 +261,13 @@ func (s *Server) dispatchCacheStatus(ctx context.Context, req *jsonRPCRequest) e
 // the removals that did happen, so a caller is never told a partial prune was no
 // prune at all.
 func (s *Server) dispatchCachePrune(ctx context.Context, req *jsonRPCRequest) error {
+	// A method with no parameters of its own still decodes, so a field a caller
+	// sent is refused rather than dropped. See noParams for why an answer that
+	// ignored an argument is worse than a refusal naming it.
+	if err := decodeParams(req, &noParams{}); err != nil {
+		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
+	}
+
 	loc := s.cacheLocations()
 	res, err := cacheops.Prune(loc)
 	if ctx.Err() != nil {
@@ -286,7 +299,7 @@ func (s *Server) dispatchCachePrune(ctx context.Context, req *jsonRPCRequest) er
 func (s *Server) dispatchCacheEvict(ctx context.Context, req *jsonRPCRequest) error {
 	var params cacheEvictParams
 	if len(req.Params) > 0 {
-		if err := json.Unmarshal(req.Params, &params); err != nil {
+		if err := decodeParams(req, &params); err != nil {
 			return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
 		}
 	}
@@ -334,6 +347,13 @@ func (s *Server) dispatchCacheEvict(ctx context.Context, req *jsonRPCRequest) er
 // caller that sent this asked for it, and what the response owes in exchange is
 // an accurate statement of what it reached.
 func (s *Server) dispatchCacheClear(ctx context.Context, req *jsonRPCRequest) error {
+	// A method with no parameters of its own still decodes, so a field a caller
+	// sent is refused rather than dropped. See noParams for why an answer that
+	// ignored an argument is worse than a refusal naming it.
+	if err := decodeParams(req, &noParams{}); err != nil {
+		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
+	}
+
 	res, err := cacheops.Clear(s.cacheLocations())
 	if ctx.Err() != nil {
 		return nil
