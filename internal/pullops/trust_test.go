@@ -443,6 +443,14 @@ func TestVerdictTrustRecordHasOneWriter(t *testing.T) {
 	// build layer's inputs is where that path is handed over, so it is the site
 	// this checks.
 	//
+	// The entry point named here is the RESULT-BEARING one, and naming that one
+	// rather than any pull entry is the discriminating part: it hands the finished
+	// discovery render back, which is what lets a build that filled its own
+	// lockfile present a render it has already performed. The command-line wrapper
+	// that discards the resolution satisfies the same prose and not this check, so
+	// a hand-over that dropped the conserved render reddens here instead of
+	// passing as "still the pull path".
+	//
 	// 🔴 THIS IS THE STRUCTURAL HALF AND IT IS THE WEAKER ONE. The shared layer
 	// invokes what this site hands it through a FUNCTION VALUE, which carries no
 	// call edge any source derivation can follow, so nothing structural can see
@@ -451,9 +459,12 @@ func TestVerdictTrustRecordHasOneWriter(t *testing.T) {
 	// lockfile came back with pins. Neither substitutes for the other — this one
 	// catches a second fill implementation appearing, and that one catches the
 	// hand-off being dropped.
-	if !callers["main.pullRun"]["main.buildDispatchConfig"] {
-		t.Errorf("the build dispatch does not hand the pull path to the build layer; the auto-pull route to the record runs the pull path verbatim (callers seen: %v)",
-			callers["main.pullRun"])
+	if !callers["main.pullRunWithResult"]["main.buildDispatchConfig"] {
+		t.Errorf("the build dispatch does not hand the result-bearing pull path to the build layer; "+
+			"the auto-pull route to the record runs the pull path verbatim and carries its render back "+
+			"(callers seen: %v). An empty set names a moved anchor rather than a dropped hand-over: "+
+			"the census keys on the entry point's name, so confirm that name before reading this as a regression",
+			callers["main.pullRunWithResult"])
 	}
 }
 
