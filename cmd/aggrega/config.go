@@ -144,9 +144,11 @@ preserving its comments and formatting; when that layer's file does not exist it
 says so rather than failing. The two are mutually exclusive.
 
 Pass --origin to annotate each effective setting with the layer it came from —
-a config file, an environment variable, or the built-in defaults. Scalar
-settings are attributed per value; list and map settings are attributed as a
-whole to the layer that last changed them.`,
+a command-line flag, an environment variable, a config file, or the built-in
+defaults, highest precedence first. A flag is named as the reader typed it, so
+a setting a flag decided reports that flag as its source. Scalar settings are
+attributed per value; list and map settings are attributed as a whole to the
+layer that last changed them.`,
 		Example: `  # What applies right now, with the contributing layers listed first
   aggrega config show
 
@@ -173,7 +175,7 @@ whole to the layer that last changed them.`,
 	}
 	c.Flags().BoolVar(&global, "global", false, "Print the global config file's own bytes verbatim, preserving its comments and formatting.")
 	c.Flags().BoolVar(&workspace, "workspace", false, "Print this project's workspace config file's own bytes verbatim, preserving its comments and formatting.")
-	c.Flags().BoolVar(&origin, "origin", false, "Annotate each effective setting with the layer it came from (a config file, an environment variable, or the built-in defaults).")
+	c.Flags().BoolVar(&origin, "origin", false, "Annotate each effective setting with the layer it came from (a command-line flag, an environment variable, a config file, or the built-in defaults).")
 	return c
 }
 
