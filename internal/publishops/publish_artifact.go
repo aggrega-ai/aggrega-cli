@@ -129,6 +129,15 @@ func PushArtifact(cfg PushArtifactConfig) (PushArtifactResult, error) {
 		return PushArtifactResult{}, err
 	}
 
+	// Publishing an artifact is a network round trip, refused before the file is
+	// read. The dry run is excluded by what it does rather than by its name: it
+	// returns below without constructing a target.
+	if !cfg.DryRun {
+		if err := refuseIfOffline(rw, "publishing a data artifact is a network round trip"); err != nil {
+			return PushArtifactResult{}, err
+		}
+	}
+
 	wsCfg := rw.Config()
 	token, err := resolveDestination(cfg.Registry, wsCfg.DefaultRegistry, cfg.DestinationSupply)
 	if err != nil {

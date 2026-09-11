@@ -133,6 +133,19 @@ func egressClient(cfg workspaceconfig.Config) (*http.Client, error) {
 	return egress.HTTPClient(cfg)
 }
 
+// refuseIfOffline is the pre-flight offline refusal for a publication whose own
+// work is a network round trip: it names what was refused and which layer set
+// the posture, before the operation bundles anything.
+//
+// It sits beside egressClient because both are this package's only route to the
+// one gate, so neither the late refusal nor the early one can come to read the
+// offline decision from anywhere else. A publication with an offline-safe form
+// — a dry run, which prints the reference it would publish and constructs no
+// target — does not call it.
+func refuseIfOffline(rw *workspaceconfig.ResolvedWorkspace, act string) error {
+	return egress.RefuseIfOffline(rw, act)
+}
+
 // envLookup returns look when non-nil, else the live process environment. It is a
 // nil-default rather than a resolution rule: the ladder that decides which
 // environment variables carry an identity belongs to the signing package.

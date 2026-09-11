@@ -27,15 +27,24 @@ type lazyWorkspace struct {
 	// global layer and any config-mutating command resolve that path through the
 	// same ladder. Nil selects the production environment inside Resolve.
 	lookup func(string) string
-	once   sync.Once
-	ws     *workspaceconfig.ResolvedWorkspace
-	err    error
+	// flags carries the command-line layer of the precedence ladder — the
+	// settings the reader set on this invocation — composed onto the resolution
+	// below. It is empty on an invocation that set none, which is the ordinary
+	// case, and an empty layer changes nothing.
+	flags workspaceconfig.FlagOverlay
+	once  sync.Once
+	ws    *workspaceconfig.ResolvedWorkspace
+	err   error
 }
 
 func (l *lazyWorkspace) get() (*workspaceconfig.ResolvedWorkspace, error) {
 	l.once.Do(func() {
 		l.ws, l.err = workspaceconfig.Resolve("", l.flagRoot, l.lookup)
 		if l.err == nil {
+			// The flag layer is composed here, on the one resolution every
+			// command reads, which is what makes it the ladder's top layer
+			// rather than a knob each command would have to remember to honour.
+			l.ws = l.ws.WithFlags(l.flags)
 			for _, w := range l.ws.Warnings() {
 				fmt.Fprintf(os.Stderr, "warning: %s\n", w)
 			}
@@ -45,11 +54,23 @@ func (l *lazyWorkspace) get() (*workspaceconfig.ResolvedWorkspace, error) {
 }
 
 // withWorkspaceResolver attaches a lazy workspace resolver carrying the
-// --workspace-root flag value and the flag-aware environment lookup to ctx. The
-// root command's PersistentPreRunE installs it so every command body can obtain
-// the resolved workspace — and the same lookup — through the single chokepoint.
-func withWorkspaceResolver(ctx context.Context, flagRoot string, lookup func(string) string) context.Context {
-	return context.WithValue(ctx, workspaceCtxKey{}, &lazyWorkspace{flagRoot: flagRoot, lookup: lookup})
+// --workspace-root flag value, the flag-aware environment lookup, and
+// optionally the command-line layer of the precedence ladder to ctx. The root
+// command's PersistentPreRunE installs it so every command body can obtain the
+// resolved workspace — and the same lookup — through the single chokepoint.
+//
+// The flag layer is variadic for the same reason Resolve's lookup is: it is an
+// input only one kind of caller has. A command line fills it from what the
+// reader typed; a caller with no command line — the daemon's own resolution, a
+// test driving a command body directly — omits it and resolves exactly the
+// cascade it would have resolved anyway. Omitted and empty mean the same thing,
+// so there is no third state for a caller to get wrong.
+func withWorkspaceResolver(ctx context.Context, flagRoot string, lookup func(string) string, flags ...workspaceconfig.FlagOverlay) context.Context {
+	l := &lazyWorkspace{flagRoot: flagRoot, lookup: lookup}
+	if len(flags) > 0 {
+		l.flags = flags[0]
+	}
+	return context.WithValue(ctx, workspaceCtxKey{}, l)
 }
 
 // configLookupFromContext returns the flag-aware environment lookup carried by

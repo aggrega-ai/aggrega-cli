@@ -518,6 +518,37 @@ func Run(cfg Config) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
+	// A full refresh drops the pins this run holds in order to re-resolve them,
+	// floating each to the highest version a registry currently offers — and
+	// "highest available" is a claim about what a registry serves right now,
+	// which an offline workspace has no way to obtain. Running it from a warm
+	// cache would pin whatever happened to be cached while reporting that it had
+	// floated to the newest, so the posture refuses the refresh rather than
+	// quietly narrowing it into something else. A targeted refresh is the same
+	// act over fewer references and refuses on the same reasoning.
+	//
+	// The ordinary reconcile is deliberately NOT refused. It honours the pins it
+	// already records and resolves only what has none, so a workspace whose
+	// references are all cached or present in a local catalog completes it
+	// without reaching out at all; where it genuinely does reach out, the gate
+	// refuses it there. Refusing it here would break the case an offline
+	// workspace with a local copy of its dependencies exists to serve.
+	//
+	// It is taken HERE rather than at the top of the operation, and the position
+	// is the point: everything above reads local files, and the closure walk
+	// below is the first thing that can reach a registry — so this is the last
+	// moment before the network act, which is what the refusal is keyed on. It
+	// also leaves the caller's own usage errors ahead of it, above all a named
+	// upgrade target the resolution cannot account for. Both diagnostics are
+	// true, and the one about the caller's own input is the more useful of the
+	// two: the posture is a property of the workspace they can read off the
+	// configuration, while a mistyped target is knowable from nowhere else.
+	if cfg.Upgrade {
+		if err := egress.RefuseIfOffline(rw,
+			"re-resolving a dependency to the highest version a registry offers is a network round trip"); err != nil {
+			return Result{}, err
+		}
+	}
 	lookup := cat.ClosureLookupWithReuse(puller, workspaceRoot, cacheDir, externals, registrySeeds, pinReuse.Verification)
 	report.phase(PhaseClosure)
 	// Reference shape is judged before the walk, for the same reason the shared

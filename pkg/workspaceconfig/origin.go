@@ -58,7 +58,14 @@ func (r *ResolvedWorkspace) ContributingLayers() []string {
 	for _, entry := range r.files {
 		out = append(out, originLayerLabel(entry))
 	}
-	return out
+	// The command-line layer sits above every file and every variable, so its
+	// labels come last. They are produced by running the overlay against a
+	// throwaway config rather than by a second enumeration of what the layer
+	// can carry: the labels reported here and the ones a setting is attributed
+	// to have to be one list, and a table walked twice is one list while two
+	// walks written separately are two.
+	var scratch Config
+	return append(out, applyFlagOverlay(&scratch, r.flags)...)
 }
 
 // ValueOrigin pairs one effective configuration setting with the layer that
@@ -75,13 +82,56 @@ type ValueOrigin struct {
 	// from the parsed document rather than by searching its text, in that
 	// document's own coordinates: 1-based line and 1-based UTF-8 byte column.
 	//
-	// It is nil — never a zero span — whenever no document key answers. An
-	// environment override and the built-in defaults have no file at all, and a
-	// file layer may have contributed through a key the setting's own path does
-	// not name. A consumer therefore separates "no position" from "position at
-	// the very start of the file" by the nil check alone: the first key of a
-	// document sits at line 1, column 1, which no absent position resembles.
+	// It is nil — never a zero span — whenever no document key answers. A
+	// command-line flag, an environment override and the built-in defaults have
+	// no file at all, and a file layer may have contributed through a key the
+	// setting's own path does not name. A consumer therefore separates "no
+	// position" from "position at the very start of the file" by the nil check
+	// alone: the first key of a document sits at line 1, column 1, which no
+	// absent position resembles.
 	Position *yamlpos.FieldSpan
+}
+
+// OriginKind classifies the layer a ValueOrigin.Source names.
+//
+// It exists so a consumer that has to say something different per layer — a
+// refusal telling a reader which of the four to change — reads the
+// classification off the one function that produces the labels, rather than
+// re-deriving it from the label's own text. A second reading of those spellings
+// would agree until either moved.
+type OriginKind int
+
+const (
+	// OriginBuiltInDefault reports a setting no layer changed away from the
+	// value Default() seeds. Such a layer has no name.
+	OriginBuiltInDefault OriginKind = iota
+	// OriginConfigFile reports a setting a config file in the cascade
+	// determined. The layer's name is that file's absolute path.
+	OriginConfigFile
+	// OriginEnvironment reports a setting an environment override determined.
+	// The layer's name is the variable, without the "$".
+	OriginEnvironment
+	// OriginCommandLineFlag reports a setting the invocation's own command
+	// line determined. The layer's name is the flag as a reader types it,
+	// leading dashes included, because that is the only spelling of the layer
+	// a reader can act on.
+	OriginCommandLineFlag
+)
+
+// Layer classifies v.Source and returns the name of the layer within that
+// class. It is the inverse of the labelling the report performs, and it lives
+// beside that labelling so the two cannot drift apart.
+func (v ValueOrigin) Layer() (OriginKind, string) {
+	switch {
+	case v.Source == originDefaultsLabel:
+		return OriginBuiltInDefault, ""
+	case strings.HasPrefix(v.Source, originEnvPrefix):
+		return OriginEnvironment, strings.TrimPrefix(v.Source, originEnvPrefix)
+	case strings.HasPrefix(v.Source, flagLayerPrefix):
+		return OriginCommandLineFlag, v.Source
+	default:
+		return OriginConfigFile, v.Source
+	}
 }
 
 // originField is one row of the fixed provenance enumeration: the setting's
@@ -177,6 +227,21 @@ func (r *ResolvedWorkspace) ValueOrigins() ([]ValueOrigin, error) {
 		prev = curr
 	}
 
+	// The command line is the top of the ladder, so it is replayed after every
+	// file and every variable: a flag the reader set on this invocation is what
+	// determined the setting whatever a layer beneath said. Each row is applied
+	// on its own rather than the layer as a whole, so a setting is attributed to
+	// the flag that actually determined it rather than to whichever flag the
+	// table happens to list first.
+	for _, b := range flagBindings {
+		curr := prev
+		if !b.apply(&curr, r.flags) {
+			continue
+		}
+		attributeChanges(fields, source, prev, curr, b.label, false)
+		prev = curr
+	}
+
 	// signing.required composes monotonically rather than whole-replacing per
 	// layer, so its origin is the first layer that turns it on, not the last
 	// layer that wrote it. This override keeps the reported source consistent
@@ -218,17 +283,25 @@ type originLayer struct {
 
 // originPositions resolves, for every setting a config file was attributed to,
 // the position of the key in that file which supplied the value. A setting
-// attributed to an environment override or to the built-in defaults has no
-// document to resolve against and is absent from the result, which is what
-// makes a nil Position unambiguous rather than a coordinate to interpret. Each
-// contributing file is read and parsed at most once however many settings it
-// carries.
+// attributed to a command-line flag, to an environment override or to the
+// built-in defaults has no document to resolve against and is absent from the
+// result, which is what makes a nil Position unambiguous rather than a
+// coordinate to interpret. Each contributing file is read and parsed at most
+// once however many settings it carries.
+//
+// The three document-less layers are skipped by name rather than left to fail
+// the read they would otherwise attempt. A label that is not a path does reach
+// the missing-file branch and does yield nothing, so the result would be the
+// same either way — but only by accident, and an accident that holds is the
+// kind that stops holding when the tolerance it leans on is tightened.
 func originPositions(fields []originField, source map[string]string) (map[string]*yamlpos.FieldSpan, error) {
 	layers := make(map[string]originLayer)
 	out := make(map[string]*yamlpos.FieldSpan, len(fields))
 	for _, f := range fields {
 		path := source[f.name]
-		if path == originDefaultsLabel || strings.HasPrefix(path, originEnvPrefix) {
+		if path == originDefaultsLabel ||
+			strings.HasPrefix(path, originEnvPrefix) ||
+			strings.HasPrefix(path, flagLayerPrefix) {
 			continue
 		}
 		layer, seen := layers[path]
@@ -406,7 +479,7 @@ func originFields() []originField {
 	}
 	return []originField{
 		sc("default_registry", func(c Config) string { return c.DefaultRegistry }),
-		sc("offline", func(c Config) string { return strconv.FormatBool(c.Offline) }),
+		sc(OfflineSettingKey, func(c Config) string { return strconv.FormatBool(c.Offline) }),
 		sc("auto_pull", func(c Config) string { return strconv.FormatBool(c.AutoPull) }),
 		sc("artifact_cache_dir", func(c Config) string { return c.ArtifactCacheDir }),
 		sc("skip_signature_verification", func(c Config) string { return strconv.FormatBool(c.SkipSignatureVerification) }),

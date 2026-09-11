@@ -72,10 +72,14 @@ import (
 //
 // YAML 1.2 boolean parsing note: go.yaml.in/yaml/v3 treats `yes`/`no`/
 // `on`/`off` as STRINGS, not booleans (unlike YAML 1.1). A workspace
-// file with `workspace.offline: yes` fails JSON Schema validation
-// with "expected boolean, got string" rather than silently being
-// parsed as true. Authors must use `true` / `false` for boolean
-// flags.
+// file carrying the top-level `offline: yes` fails JSON Schema
+// validation, reporting that the value has type "string" where a
+// "boolean" was wanted, rather than silently being parsed as true.
+// Authors must use `true` / `false` for boolean flags. The example is
+// a top-level key deliberately: a key the schema does not admit at
+// the position it is written is rejected for being in the wrong
+// place, which would demonstrate a different refusal from the one
+// this note is about.
 type Config struct {
 	// Workspace is the root marker: its presence marks the workspace
 	// root, and it carries only the root-defining catalog directories.
@@ -83,7 +87,12 @@ type Config struct {
 	// DefaultRegistry, Offline, AutoPull, and ArtifactCacheDir are
 	// top-level (not root-defining) settings — global-capable, so they
 	// cascade-merge independently of the root marker.
-	DefaultRegistry  string `yaml:"default_registry"`
+	DefaultRegistry string `yaml:"default_registry"`
+	// Offline is the posture that refuses every network reach. Its
+	// authored key is OfflineSettingKey, and the yaml tag here is that
+	// key's definition — a struct tag cannot be written from a
+	// constant, which is why the constant names itself against this
+	// line rather than the other way round.
 	Offline          bool   `yaml:"offline"`
 	AutoPull         bool   `yaml:"auto_pull"`
 	ArtifactCacheDir string `yaml:"artifact_cache_dir"`

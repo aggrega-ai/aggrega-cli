@@ -59,7 +59,7 @@ var envBindings = []envBinding{
 	},
 	{
 		envVar:     "AGGREGA_OFFLINE",
-		configPath: "offline",
+		configPath: OfflineSettingKey,
 		kind:       envKindBool,
 		apply:      func(cfg *Config, raw string) error { return applyBool(raw, &cfg.Offline) },
 	},

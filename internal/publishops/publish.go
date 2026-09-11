@@ -347,6 +347,18 @@ func Push(cfg PushConfig) (PushResult, error) {
 	// egress client from the same resolution.
 	cfg.Workspace = rw
 
+	// Publishing an entity is a network round trip and has no form that is not,
+	// so an offline workspace refuses it here rather than after the entity has
+	// been read, its signing policy evaluated and its bundle built. A dry run is
+	// the exception and is excluded by what it does rather than by its name: it
+	// returns below without constructing a target, so it reaches no network and
+	// is the offline-safe form of this command.
+	if !cfg.DryRun {
+		if err := refuseIfOffline(rw, "publishing a catalog entity is a network round trip"); err != nil {
+			return PushResult{}, err
+		}
+	}
+
 	token, err := resolveDestination(cfg.Registry, wsCfg.DefaultRegistry, cfg.DestinationSupply)
 	if err != nil {
 		return PushResult{}, err

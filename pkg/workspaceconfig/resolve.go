@@ -21,6 +21,23 @@ import (
 // filename has exactly one definition across the product.
 const ConfigFilename = ".aggrega-config.yaml"
 
+// OfflineSettingKey is the authored key of the offline posture.
+//
+// It is a TOP-LEVEL key. The `workspace:` block is the root marker and admits
+// only the root-defining catalog directories, so a reader told to write this
+// key inside that block is told to write something the schema refuses — and
+// refuses for the wrong reason, which sends them looking for a problem with the
+// value rather than with the position.
+//
+// It is exported because the surfaces that tell a reader what to change have to
+// name the key the loader actually reads: the refusal raised when the posture
+// blocks an operation, and any other prose the product emits. A second spelling
+// of the key inside a message is a spelling that goes on reading as correct
+// after the key moves, which is exactly how the wrong one came to be shipped.
+// The definition itself is the yaml tag on Config.Offline, because a struct tag
+// cannot be written from a constant; a package guard holds the two together.
+const OfflineSettingKey = "offline"
+
 // AppendCIConfigFilename is the basename of the CI-owned additive overlay that
 // sits beside the hand-authored ConfigFilename at any cascade directory. It is
 // a separate file so an automated pipeline owns and may overwrite it wholesale
@@ -108,6 +125,13 @@ type ResolvedWorkspace struct {
 	start    string
 	flagRoot string
 	lookup   func(string) string
+
+	// flags records the command-line layer WithFlags applied on top of the
+	// merge, so the per-value provenance report can attribute a setting the
+	// invocation determined to the flag that determined it. It is empty on a
+	// resolution no surface overlaid, which is every surface that has no
+	// command line.
+	flags FlagOverlay
 }
 
 // Root returns the absolute workspace root directory.

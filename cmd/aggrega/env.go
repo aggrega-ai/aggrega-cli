@@ -25,6 +25,48 @@ func workspaceRootFromFlagOrEnv(cmd *cobra.Command, flagValue string, look func(
 	return envLookupOrGetenv(look)(envWorkspaceRoot)
 }
 
+// helpOffline is the offline flag's help text, held beside the composition that
+// reads the flag so the promise a reader is given and the layer that keeps it
+// sit in one place.
+//
+// It names both directions because the flag is the top of a ladder rather than
+// a switch: the same setting is reachable from the configuration file and from
+// the environment, so turning it OFF for one run is as much the flag's job as
+// turning it on, and a reader meeting a refusal they did not ask for needs the
+// off direction first.
+const helpOffline = "Refuse every network reach for this one run: the offline posture, turned on " +
+	"without editing configuration. Pass --offline=false to turn it off for one run where " +
+	"the configuration file or AGGREGA_OFFLINE already turns it on. What refuses is what cannot " +
+	"be true without a registry: --upgrade, whose whole job is to float each dependency to the " +
+	"highest version a registry currently offers, and the commands whose own work is a network " +
+	"round trip — push, push-artifact, and registry update. What still runs is whatever the " +
+	"machine can already satisfy: a build against a filled lockfile, --auto-pull over references " +
+	"already cached or present in a local catalog, and a dry run, which reports what it would " +
+	"publish and calls nothing"
+
+// flagOverlayFromCobra reads the command-line layer of the precedence ladder off
+// the invocation: the top layer, above the environment overlay and the
+// configuration cascade.
+//
+// The predicate is whether the reader CHANGED the flag rather than what value it
+// holds, and the distinction is the whole reason the layer exists. A boolean's
+// zero value and an unset flag are the same bits, so reading the value alone
+// would make every invocation look as though it had asked for the flag's default
+// — which would silently overwrite a posture the configuration or the
+// environment set, and would leave no way at all to turn one off for a single
+// run.
+//
+// It is the single construction site for that layer. The root command calls it
+// once and stashes the result on the workspace resolver, so every command body
+// reads one composed configuration rather than each re-reading the flag.
+func flagOverlayFromCobra(cmd *cobra.Command, offline bool) workspaceconfig.FlagOverlay {
+	var out workspaceconfig.FlagOverlay
+	if cmd.Flags().Changed(workspaceconfig.OfflineSettingKey) {
+		out.Offline = &offline
+	}
+	return out
+}
+
 // globalConfigLookup builds the environment lookup that resolves the global
 // config path from the --config flag first, then the process environment. When
 // configPath is set it wins: a request for the config-override variable returns

@@ -110,7 +110,7 @@ lint:
 
 func TestLoadOverlaysDefaultsForOmittedFields(t *testing.T) {
 	t.Parallel()
-	// Fixture sets workspace.offline only; every other field omitted.
+	// Fixture sets the top-level offline key only; every other field omitted.
 	// The overlay-on-Default pattern preserves the documented defaults
 	// for absent keys: DefaultRegistry and CacheDir. AutoPull is the Go
 	// zero-value (false), and so is HaltOnDeprecatedSeverity, whose

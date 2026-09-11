@@ -284,6 +284,15 @@ func Update(rw *workspaceconfig.ResolvedWorkspace, opts UpdateOptions, notices i
 	if notices == nil {
 		notices = io.Discard
 	}
+	// Walking the registries is this operation's entire work, so an offline
+	// workspace refuses it here rather than at the first host's transport. There
+	// is no offline-safe form to carve out: the index records what each registry
+	// currently serves, which is a fact about registry state and cannot be
+	// learned without reaching one. Reusing the index already on disk is what a
+	// later search does, and needs no walk at all.
+	if err := egress.RefuseIfOffline(rw, "building the registry index is a network round trip"); err != nil {
+		return res, fmt.Errorf("aggrega registry update: %w", err)
+	}
 	cfg := rw.Config()
 
 	singleExplicit := opts.Registry != ""

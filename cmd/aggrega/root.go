@@ -50,7 +50,7 @@ func init() {
 func newRootCmd() *cobra.Command {
 	var workspaceRootFlag string
 	var configPathFlag string
-	var noColorFlag, plainFlag bool
+	var noColorFlag, plainFlag, offlineFlag bool
 	root := &cobra.Command{
 		Use:           "aggrega",
 		Short:         "Aggrega compiler CLI",
@@ -73,7 +73,9 @@ func newRootCmd() *cobra.Command {
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			globalDisplay = resolveGlobalDisplay(noColorFlag, plainFlag, os.LookupEnv)
 			root := workspaceRootFromFlagOrEnv(cmd, workspaceRootFlag, nil)
-			ctx := withWorkspaceResolver(cmd.Context(), root, globalConfigLookup(configPathFlag, nil))
+			ctx := withWorkspaceResolver(cmd.Context(), root,
+				globalConfigLookup(configPathFlag, nil),
+				flagOverlayFromCobra(cmd, offlineFlag))
 			cmd.SetContext(ctx)
 			armCompiledModuleCacheCap(ctx)
 			return nil
@@ -87,6 +89,7 @@ func newRootCmd() *cobra.Command {
 		"Disable ANSI color in all output. Also honored via the NO_COLOR environment variable")
 	root.PersistentFlags().BoolVar(&plainFlag, "plain", false,
 		"Accessible mode: disable color and draw plain, static progress lines with no spinner animation or cursor repaint, even on a terminal. Intended for screen readers")
+	root.PersistentFlags().BoolVar(&offlineFlag, "offline", false, helpOffline)
 	// Every capability is attached by naming the operation it carries, so the
 	// command line registers nothing the operation table does not account for and
 	// nothing under a path the table does not give. The grouping commands run
