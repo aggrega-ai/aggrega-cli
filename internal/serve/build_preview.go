@@ -84,6 +84,16 @@ func (s *Server) dispatchBuildPreview(ctx context.Context, req *jsonRPCRequest) 
 // boundary: a client that sent the field and was quietly given an unfilled
 // preview could not tell that from a filled one, and the contract would hold
 // only for clients that already knew.
+//
+// A workspace whose auto_pull setting is on does not fill here either, and that
+// is the same behaviour rather than a second rule: the setting asks every build
+// to fill, and this request does not write, so it stands the setting down for
+// the one call instead of refusing to run at all. The command line resolves the
+// identical pairing the identical way — it refuses an explicit flag and
+// suppresses the workspace setting — because a surface that writes nothing
+// would otherwise have no way to report a render in a workspace configured to
+// fill. So this method never consults the composition the writing build reads;
+// there is no outcome it could return.
 func (s *Server) handleBuildPreview(ctx context.Context, params buildPreviewParams) (buildPreviewResult, *jsonRPCError) {
 	if params.AutoPull {
 		return buildPreviewResult{}, &jsonRPCError{

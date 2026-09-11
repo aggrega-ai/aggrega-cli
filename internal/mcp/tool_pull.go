@@ -245,10 +245,33 @@ func pullInvoke(s *server, ctx context.Context, args json.RawMessage) (*callTool
 	}
 	releasePath := tw.absWorkspacePath(release)
 
-	// The payload is assembled around the run rather than after it, so a refusal
-	// past the resolution point carries what the run had computed. The lockfile path
-	// is derived through the same rule the resolution derives it by, so the file this
-	// answer names is the file the run acted on.
+	payload, runErr := runDependencyResolution(ctx, s, tw, releasePath, a, targets)
+	if runErr != nil {
+		return structuredErrorResult(
+			explainToolError(pullFailureSummary(a.Verify, len(targets)), runErr, "release"), payload)
+	}
+	return textResult(renderPullText(payload), payload)
+}
+
+// runDependencyResolution performs one dependency resolution and projects what
+// it did into the shape this surface answers a resolution with.
+//
+// Both halves have one home here because two callers perform the same
+// resolution: the pull tool, which is a resolution and nothing else, and a build
+// asked to fill its lockfile before it renders. A build that ran its own
+// resolution would be free to resolve differently from every other surface, and
+// one that projected its own report would be free to describe the same operation
+// differently from the tool a caller already reads — in both cases the two would
+// agree until they did not, and nothing would say when they stopped.
+//
+// The payload is assembled around the run rather than after it, so a refusal past
+// the resolution point carries what the run had computed. The lockfile path is
+// derived through the same rule the resolution derives it by, so the file this
+// answer names is the file the run acted on. The error is returned unwrapped: the
+// caller-facing sentence for a refusal is chosen by what the CALL asked for, which
+// is the caller's to know and not this function's.
+func runDependencyResolution(ctx context.Context, s *server, tw *toolWorkspace, releasePath string,
+	a pullArgs, targets []string) (pullResultPayload, error) {
 	payload := pullResultPayload{
 		Release:  releasePath,
 		Lockfile: lockfile.PathFor(releasePath),
@@ -273,8 +296,7 @@ func pullInvoke(s *server, ctx context.Context, args json.RawMessage) (*callTool
 	payload.Diagnostics = diagnosticLines(diagnostics.String())
 
 	if runErr != nil {
-		return structuredErrorResult(
-			explainToolError(pullFailureSummary(a.Verify, len(targets)), runErr, "release"), payload)
+		return payload, runErr
 	}
 
 	payload.Verified = res.Verified
@@ -294,7 +316,7 @@ func pullInvoke(s *server, ctx context.Context, args json.RawMessage) (*callTool
 	if res.ExternalInputDiscovery != nil {
 		payload.IncompleteExternalInputs = res.ExternalInputDiscovery.Error()
 	}
-	return textResult(renderPullText(payload), payload)
+	return payload, nil
 }
 
 // pullResolutionConfig assembles the resolution's input contract for one decoded

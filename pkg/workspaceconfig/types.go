@@ -489,6 +489,37 @@ func (c Config) ResolvedArtifactCacheDir() string {
 	return c.ArtifactCacheDir
 }
 
+// FillsLockfile reports whether a build resolves the Release's dependencies
+// into the lockfile before it renders, given whether this one invocation asked
+// for the fill.
+//
+// The two inputs are ADDITIVE and neither outranks the other. AutoPull turns
+// the fill on for every build in the workspace; requested turns it on for a
+// single invocation without editing workspace config. Either is enough, and
+// there is no input that turns it off — a workspace configured to fill is
+// asking every build to fill, so an invocation that did not ask still fills
+// there. That is the whole rule, and it is stated here because this is the only
+// place it is decided.
+//
+// It lives on Config, which owns one of the two inputs, because every surface
+// carrying a build composes this same decision from these same two values: the
+// command line's --auto-pull flag, the daemon's autoPull request field and the
+// tool protocol's auto_pull argument are one knob at three invocation sites. A
+// second copy of the expression would agree with this one until a fourth input
+// appeared or the precedence changed, and the agreement is exactly what would
+// hide the divergence.
+//
+// What it deliberately does NOT decide is whether the calling surface performs
+// writes at all. A surface that promises to write nothing cannot honour a fill
+// whatever these two inputs say, and it refuses or suppresses on its own terms
+// before reaching this — the command line refuses --dry-run paired with
+// --auto-pull, and suppresses the workspace setting for that one run. Folding
+// that in here would make this answer a question about the caller rather than
+// about the configuration.
+func (c Config) FillsLockfile(requested bool) bool {
+	return requested || c.AutoPull
+}
+
 // BuildConfig groups build-time strictness dials and authoring
 // hints. AuthoringRelease names a Release YAML the LSP treats as
 // the "current Release" for inline diagnostics.

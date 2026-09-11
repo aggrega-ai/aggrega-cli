@@ -680,7 +680,11 @@ func ensureLockfile(cfg Config, wsCfg workspaceconfig.Config, run RunOptions, di
 	}
 
 	// build's auto-pull is the opt-in fill: it runs when the caller's AutoPull knob
-	// or workspace.auto_pull is set. By default (upgrade off) it is lockfile-honoring
+	// or workspace.auto_pull is set. That composition is not made here — it is read
+	// from the workspace config, which owns one of the two inputs and is the one
+	// home every build-carrying surface asks, so this build and a build driven
+	// through the daemon or the tool protocol cannot come to rank the two
+	// differently. By default (upgrade off) it is lockfile-honoring
 	// — it honors every existing pin (resolving to the pinned version, verifying the
 	// pinned digest, halting on a drifted pin), resolves + adds un-pinned references,
 	// refills an empty cache by pin, and prunes stale pins; on a complete,
@@ -700,7 +704,7 @@ func ensureLockfile(cfg Config, wsCfg workspaceconfig.Config, run RunOptions, di
 	// preview a render. A missing lockfile then halts with the same pull-first
 	// remediation the read-only default gives, which is the honest outcome: there
 	// is nothing to render against and filling one would be a write.
-	if !run.DryRun && (run.AutoPull || wsCfg.AutoPull) {
+	if !run.DryRun && wsCfg.FillsLockfile(run.AutoPull) {
 		if cfg.Pull == nil {
 			return false, fmt.Errorf("internal: no dependency fill supplied — a build that fills the lockfile needs the caller's pull operation")
 		}

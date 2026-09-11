@@ -22,6 +22,21 @@ type buildArgs struct {
 	WorkspaceRoot  string   `json:"workspace_root"`
 	CatalogDirs    []string `json:"catalog_dirs"`
 	ResponseFormat string   `json:"response_format"`
+
+	// AutoPull resolves the Release's dependencies into the lockfile before the
+	// render, as this build's first step: the same resolution the pull tool
+	// performs, so a workspace filled by a build and one filled by that call are
+	// filled identically. It reaches a registry and writes the lockfile, which
+	// nothing else about this tool does.
+	//
+	// It ranks exactly as the same choice ranks on every other surface carrying a
+	// build, because all of them read one composition: this argument and the
+	// workspace's own auto_pull setting are additive, and either turns the fill on.
+	// So absent — the zero value, which is what an argument nobody sent decodes to —
+	// the render is held to the lockfile as it stands, UNLESS the workspace is
+	// configured to fill, where it fills as it would for any other build there.
+	// What this argument cannot do is turn off a fill the workspace asked for.
+	AutoPull bool `json:"auto_pull"`
 }
 
 // buildFile is one rendered artifact in the build result: its output-relative
@@ -32,8 +47,16 @@ type buildFile struct {
 }
 
 // buildResultPayload is the build tool's structured payload. The render happens
-// entirely in memory: Files are the artifacts the pipeline produced, and
-// nothing is written to disk.
+// entirely in memory: Files are the artifacts the pipeline produced, and no
+// artifact is written to disk.
+//
+// The render is the whole of what writes nothing. A build asked to resolve its
+// dependencies first performs that resolution before rendering, and that step
+// writes the lockfile and fills the content-addressed store — so "in memory"
+// describes where the ARTIFACTS go, which is what a caller reading this shape is
+// choosing between, and never a claim that the call as a whole left the
+// workspace untouched. DependencyResolution below is present exactly when it
+// did.
 //
 // # It is returned on a refusal too
 //
@@ -96,6 +119,20 @@ type buildResultPayload struct {
 	// refusal carries whichever of them the run had raised before it stopped, for
 	// the reason given on this type.
 	Advisories []buildAdvisory `json:"advisories,omitempty"`
+
+	// DependencyResolution is what this build's own fill step resolved, in the
+	// shape the pull tool answers with, and it is absent on a build that did not
+	// fill. A caller that asked for the fill asked for a resolution as part of this
+	// call, so the facts that resolution computed are owed here rather than only on
+	// the call that does nothing else — which the caller would otherwise have to
+	// send a second time to find out what its own build just pinned. Its
+	// diagnostics field carries the resolution's own account of itself line by
+	// line, which is where a caller with no terminal reads what the fill did.
+	//
+	// It is the pull tool's shape rather than one of this tool's own because it
+	// reports the same operation: a caller that has read one resolution here can
+	// read every other, and two shapes would be two spellings of one fact.
+	DependencyResolution *pullResultPayload `json:"dependency_resolution,omitempty"`
 }
 
 // buildAdvisory is one exit-code-neutral finding a build raised.
@@ -141,14 +178,15 @@ func buildAdvisories(advisories []renderer.Diagnostic) []buildAdvisory {
 
 var buildToolSpec = toolSpec{
 	kinds: []string{"release"},
-	description: "Compile a Release into its rendered deployment artifacts entirely in memory and return them — a " +
-		"preview render that writes nothing to disk. Pass the Release path as `release` (absolute, or relative to the " +
+	description: "Compile a Release into its rendered deployment artifacts entirely in memory and return them — the " +
+		"render writes no artifact to disk. Pass the Release path as `release` (absolute, or relative to the " +
 		"workspace). The tool runs the full compiler pipeline through the provider render step and returns the produced " +
 		"files by output-relative path. Use it to see exactly what a Release would emit before committing to a real build, " +
 		"or to inspect one component's rendered output while authoring. In the detailed response format each file's rendered " +
 		"content is included; the concise format returns just the file paths. A render failure comes back as actionable " +
-		"guidance (route it through explain-error if needed) rather than a partial write. Optional `workspace_root` and " +
-		"`catalog_dirs` override workspace and catalog discovery.",
+		"guidance (route it through explain-error if needed) rather than a partial write. `auto_pull` resolves the " +
+		"Release's dependencies into the lockfile first, which reaches a registry and writes. Optional `workspace_root` " +
+		"and `catalog_dirs` override workspace and catalog discovery.",
 	inputSchema: `{
   "type": "object",
   "properties": {
@@ -170,6 +208,10 @@ var buildToolSpec = toolSpec{
       "type": "string",
       "enum": ["detailed", "concise"],
       "description": "detailed returns each rendered file's content; concise returns only the file paths. Defaults to detailed."
+    },
+    "auto_pull": {
+      "type": "boolean",
+      "description": "Resolve the Release's dependencies into the lockfile before rendering. Reaches a registry and writes the lockfile; the render still writes no artifact. Defaults to false. The workspace auto_pull setting turns the same step on for every build, and this adds to it rather than overriding it."
     }
   },
   "required": ["release"]
@@ -193,18 +235,62 @@ func buildInvoke(s *server, ctx context.Context, args json.RawMessage) (*callToo
 		return errorResult(explainToolError("Could not resolve the workspace for the build.", err, "release"))
 	}
 	releasePath := tw.absWorkspacePath(a.Release)
+
+	// The fill, before anything reads the lockfile, because what it writes is what
+	// the render then resolves against. Whether it runs is composed in the workspace
+	// config, which owns one of the two inputs — the argument turns it on for this
+	// call, the workspace's auto_pull setting turns it on for every build there, and
+	// either is enough. Reading the composition from that one home rather than
+	// branching on the argument is what keeps this surface ranking the two exactly as
+	// the command line and the daemon rank them.
+	//
+	// The resolution is the pull tool's own, run with no upgrade targets and no
+	// verify, so it reconciles: recorded pins are honoured and only unpinned
+	// references are resolved fresh. A build that resolved some other way would be
+	// free to fill a workspace differently from the tool a caller uses to fill it.
+	var fillReport *pullResultPayload
+	lockfileFilled := false
+	if tw.cfg.FillsLockfile(a.AutoPull) {
+		report, fillErr := runDependencyResolution(ctx, s, tw, releasePath,
+			pullArgs{Release: a.Release, WorkspaceRoot: a.WorkspaceRoot, CatalogDirs: a.CatalogDirs}, nil)
+		if fillErr != nil {
+			// The fill refused, so nothing was rendered and there is no render to
+			// report on. What the caller is handed is the resolution's own payload,
+			// which carries the diagnostics that say where it stopped — the same
+			// detail the pull tool hands back for the same refusal.
+			return structuredErrorResult(
+				explainToolError("The build refused before rendering: it was asked to resolve this Release's "+
+					"dependencies first, and the resolution did not complete. Nothing was rendered.",
+					fillErr, "release"),
+				buildResultPayload{Release: releasePath, Files: []buildFile{}, DependencyResolution: &report})
+		}
+		fillReport = &report
+		// Recorded as a fact about what just happened rather than read back off the
+		// argument, because what the render needs to know is that a lockfile WAS
+		// written and not that one was asked for. The two part on the refusal above,
+		// and a render told the wrong one would stand down a drift verify that had
+		// something to check.
+		lockfileFilled = true
+	}
+
 	lf := loadReleaseLockfile(releasePath)
 	view := tw.newView(lf)
 
 	// The render-time external-input seam — the same posture and the same builder
 	// the editor's inspection and the command-line build render through. It is the
-	// PINNED posture rather than the acquiring one because this call is an
-	// in-memory render: a seam with acquisition on would let a tool call reach the
-	// network and widen the closure as a side effect of what the caller asked to
-	// be a preview that writes nothing. Repairing a missing store blob by a digest
-	// the lockfile already records is not that widening, and it is what keeps
-	// these bytes the bytes a build emits rather than a decline a build would not
-	// have raised.
+	// PINNED posture rather than the acquiring one because the render emits bytes
+	// rather than acquiring content: a seam with acquisition on would widen the
+	// closure as a side effect of rendering it, so what a caller got back would
+	// depend on what the render happened to reach for. Repairing a missing store
+	// blob by a digest the lockfile already records is not that widening, and it is
+	// what keeps these bytes the bytes a build emits rather than a decline a build
+	// would not have raised.
+	//
+	// A fill above does not loosen this, and the two are not in tension: the
+	// resolution carries forward the external-input pins the lockfile already
+	// records and acquires none, so a reference the lockfile does not pin is
+	// declined after a fill exactly as it is without one. The freeze is a property
+	// of the render rather than of whether anything was resolved first.
 	//
 	// A pinned reference is therefore served from the store, and an unpinned one is
 	// declined and named in the answer rather than quietly rendering a
@@ -217,19 +303,25 @@ func buildInvoke(s *server, ctx context.Context, args json.RawMessage) (*callToo
 	// they were the right bytes to read.
 	fetchSeam := compilerops.PinnedExternalInputs(tw.root, tw.cacheDir, tw.cfg, lf)
 
-	// This tool renders from the pins the workspace already carries: it neither
-	// requires a lockfile nor fills one, unlike the two other artifact-producing
-	// surfaces, which do one or the other before they render. It runs the strict
-	// operation all the same, drift verify included, because what it publishes is
-	// the claim that these are the bytes a build emits — and a build refuses a
-	// lockfile that has drifted, so rendering from one here would publish that
+	// This tool renders from the pins the workspace carries by the time it gets
+	// here — the ones already on disk, or the ones the fill above just wrote. It
+	// runs the strict operation either way, drift verify included, because what it
+	// publishes is the claim that these are the bytes a build emits: a build refuses
+	// a lockfile that has drifted, so rendering from one here would publish that
 	// claim exactly where it does not hold.
 	//
-	// The absent case pays nothing for that, and it needs no condition of its own:
-	// the drift verify reads the lockfile from the inputs and stands down when
-	// there is none, so a Release carrying no lockfile renders as it always did.
-	// What is refused is the single input on which this surface would otherwise
-	// assert something false — a lockfile that exists and no longer matches.
+	// The drift verify stands down on a lockfile this call filled, and that is not a
+	// relaxation. A resolution and the closure it was derived from cannot disagree,
+	// so comparing them would hold a set against itself; the verify is there to
+	// catch a lockfile that went stale between one run and another, which a file
+	// written moments ago by this run cannot have done.
+	//
+	// The absent case pays nothing for that either, and it needs no condition of its
+	// own: the drift verify reads the lockfile from the inputs and stands down when
+	// there is none, so a Release carrying no lockfile and no fill renders as it
+	// always did. What is refused is the single input on which this surface would
+	// otherwise assert something false — a lockfile that exists, was not written by
+	// this call, and no longer matches.
 	preview, err := compilerops.PreviewForArtifact(
 		ctx,
 		compilerops.NewPreviewInputs(
@@ -239,7 +331,7 @@ func buildInvoke(s *server, ctx context.Context, args json.RawMessage) (*callToo
 			tw.root,
 			tw.cfg,
 			s.serverVersion,
-			compilerops.WithLockfile(lf, lf != nil),
+			compilerops.WithLockfile(lf, lf != nil && !lockfileFilled),
 		),
 		pipeline.Options{},
 	)
@@ -260,6 +352,12 @@ func buildInvoke(s *server, ctx context.Context, args json.RawMessage) (*callToo
 	if len(deprecationNotices) > 0 {
 		payload.Deprecations = deprecationNotices
 	}
+	// What the fill resolved travels on every outcome for the same reason the
+	// findings below do: a caller that asked for a fill is owed what the fill did
+	// whether or not the render that followed it survived, and a build that refused
+	// AFTER writing a lockfile is exactly the case where the caller most needs to
+	// know that the write happened.
+	payload.DependencyResolution = fillReport
 	// A declined reference is carried in the answer whether or not the render
 	// survived it. The decline is owed because a reference was declined, not
 	// because the run happened to end badly: a guest that renders around the
@@ -423,7 +521,15 @@ func renderedFiles(result *pipeline.Result, includeContent bool) []buildFile {
 // nothing.
 func renderBuildText(p buildResultPayload) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "Build of %s rendered %d file(s) in memory (nothing written to disk):\n", p.Release, len(p.Files))
+	if p.DependencyResolution != nil {
+		fmt.Fprintf(&b, "Resolved this Release's dependencies into %s first, then rendered.\n",
+			p.DependencyResolution.Lockfile)
+		for _, line := range p.DependencyResolution.Diagnostics {
+			fmt.Fprintf(&b, "  %s\n", line)
+		}
+		b.WriteString("\n")
+	}
+	fmt.Fprintf(&b, "Build of %s rendered %d file(s) in memory (no artifact written to disk):\n", p.Release, len(p.Files))
 	for _, f := range p.Files {
 		fmt.Fprintf(&b, "  %s\n", f.Path)
 	}

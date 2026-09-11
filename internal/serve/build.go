@@ -36,10 +36,15 @@ type buildParams struct {
 	// performs, so a workspace filled by a build and one filled by that request
 	// are filled identically. It reaches a registry and writes the lockfile.
 	//
-	// Absent — the zero value, and the default the command line carries for the
-	// same choice — the build renders against the lockfile as it stands and
-	// refuses a Release that has none. So what the field decides is whether a
-	// Release whose dependencies are not yet resolved is filled or refused.
+	// It ranks exactly as the command line's --auto-pull flag ranks, because the
+	// two are read through one composition: the field and the workspace's own
+	// auto_pull setting are ADDITIVE, and either one turns the fill on. So absent
+	// — the zero value — the build renders against the lockfile as it stands and
+	// refuses a Release that has none, UNLESS the workspace is configured to
+	// fill, in which case it fills as it would for any other build there. What
+	// the field decides is whether this one build fills a Release whose
+	// dependencies are not yet resolved; what it cannot do is turn off a fill the
+	// workspace asked for, which is the same thing the flag cannot do.
 	//
 	// It does not widen what the render itself may reach. The resolution
 	// carries forward the external-input pins the lockfile already records and
@@ -129,7 +134,7 @@ func (s *Server) dispatchBuild(ctx context.Context, req *jsonRPCRequest) error {
 // outside the output root. Both belong to what a build's write is, so both
 // happen here exactly as they happen on the command line.
 //
-// # Whether the lockfile is filled is the request's to say
+// # Whether the lockfile is filled is the request's to say, or the workspace's
 //
 // Asked for, the resolution runs here, before the render — so the gates the
 // render opens with read the lockfile this build just wrote rather than the
@@ -138,6 +143,14 @@ func (s *Server) dispatchBuild(ctx context.Context, req *jsonRPCRequest) error {
 // cannot disagree, and comparing them would hold a set against itself. Left
 // off, the render is held to the lockfile as it stands and a Release without one
 // is refused.
+//
+// Left off is not the request's alone to decide, though, and that is the point
+// of composing the two rather than branching on the field: a workspace whose
+// auto_pull setting is on fills for every build it carries, and a build driven
+// through this request is one of those. The request field adds to that setting
+// and cannot subtract from it, which is exactly how the command line's flag
+// behaves, so the same workspace answers the same way whichever surface a build
+// arrives on.
 //
 // # An unpinned external reference is declined either way
 //
@@ -163,7 +176,22 @@ func (s *Server) handleBuild(ctx context.Context, params buildParams) (buildResu
 	var fillNotices []string
 	var fillReport *dependencyResolutionReport
 	lockfileFilled := false
-	if params.AutoPull {
+	// Whether the fill runs is composed in the workspace config, which owns one of
+	// the two inputs, rather than read off the request field alone. The field turns
+	// the fill on for this one build and the workspace's auto_pull setting turns it
+	// on for every build in the workspace; either is enough. Reading it from the one
+	// home is what makes a build driven here and a build driven at a terminal rank
+	// the two identically, so a workspace configured to fill is not a workspace
+	// where only one of its surfaces does.
+	//
+	// A daemon holding no resolved workspace has no setting to read, so the request
+	// field is the whole of the decision; that case is refused by the fill itself,
+	// which names what is missing.
+	fill := params.AutoPull
+	if s.resolvedWorkspace != nil {
+		fill = s.resolvedWorkspace.Config().FillsLockfile(params.AutoPull)
+	}
+	if fill {
 		notices, report, errEnvelope := s.fillDependencies(ctx, params.Release)
 		if errEnvelope != nil {
 			return buildResult{}, errEnvelope

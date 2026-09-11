@@ -56,10 +56,17 @@ func (s *server) resolveToolWorkspace(rootArg string, catalogDirs []string) (*to
 
 // newView builds the request-scoped catalog lookup for a tool call: a lazy
 // lookup over the workspace's catalog search stack with a nil puller, so the
-// build never networks — a cache miss is a loud halt rather than a registry
+// RENDER never networks — a cache miss is a loud halt rather than a registry
 // fetch. When a lockfile is present its pins are threaded so every resolution
 // is verified-on-read against the pinned digests, matching the non-daemon build
 // front door.
+//
+// The nil puller bounds the render and not the call around it. A build asked to
+// resolve its dependencies first does reach a registry, in a separate step that
+// finishes before this view is built; the view it then renders through is this
+// same non-networking one, held to the pins that step wrote. So the render is
+// hermetic given a filled lockfile however the lockfile came to be filled, which
+// is the same posture the command-line build holds after its own fill.
 func (tw *toolWorkspace) newView(lf *lockfile.Lockfile) *catalog.LazyLookup {
 	v := catalog.NewLazyLookup(tw.root, tw.cacheDir, tw.dirs, nil)
 	if lf != nil {
@@ -88,8 +95,13 @@ func (tw *toolWorkspace) absWorkspacePath(p string) string {
 
 // loadReleaseLockfile loads the per-Release lockfile beside releasePath,
 // best-effort: an absent or unreadable lockfile yields nil, and the caller
-// builds a view with no pins. The MCP tools never auto-pull — a build or
-// validate resolves against whatever pins exist, hermetically.
+// builds a view with no pins.
+//
+// It reports the pins as they stand when it is called, and says nothing about
+// how they got there. A build asked to resolve first — by its own argument or by
+// the workspace's auto_pull setting — performs that resolution BEFORE calling
+// this, so what it loads is the lockfile that fill just wrote. Every other
+// caller here resolves against whatever pins already exist and fills nothing.
 func loadReleaseLockfile(releasePath string) *lockfile.Lockfile {
 	lf, _, err := lockfile.LoadLockfile(lockfile.PathFor(releasePath))
 	if err != nil {

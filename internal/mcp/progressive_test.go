@@ -345,7 +345,29 @@ func TestDefaultDefinitionTokenBudget(t *testing.T) {
 	// long-tail definition creeping in and still discriminates that from ordinary
 	// drift. What the raise admits is one definition's worth of bytes, argued above;
 	// it buys no room for a second.
-	const ceiling = 22522
+	//
+	// It was raised a third time, and this raise differs in kind from the three
+	// above it: it admits no tool at all. The build tool gained an argument that
+	// resolves the Release's dependencies before it renders, so the bytes bought are
+	// one boolean's schema entry and one clause in a description — not a definition.
+	// What the ceiling exists to catch is a long-tail TOOL creeping into the default
+	// list, and an argument on a tool already in that list is categorically not
+	// that; the figure moved because an existing definition says more, which is the
+	// ordinary drift the headroom was sized to tolerate until a capability this
+	// specific came along.
+	//
+	// The clause could have been kept out of the DESCRIPTION and left in the schema
+	// alone, which would have cost a third of these bytes, and that was rejected.
+	// The argument reaches a registry and writes the lockfile, and the description
+	// is what a client reads when it chooses a tool, so a build that can write while
+	// its description says only that it renders in memory would disclose a write in
+	// the one place a caller reads after it has already chosen. The bytes buy the
+	// disclosure, not the capability.
+	//
+	// The bound is held exactly as before rather than rounded up: twelve bytes of
+	// headroom, which is the same figure the two raises above left, so the gate
+	// trips on the next addition as sharply as it tripped on this one.
+	const ceiling = 22983
 	if bytesTotal > ceiling {
 		t.Errorf("default definition budget %d bytes exceeds %d; move long-tail tools to the deferred set", bytesTotal, ceiling)
 	}
