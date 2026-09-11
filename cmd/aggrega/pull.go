@@ -11,6 +11,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
 	"github.com/aggrega-ai/aggrega-cli/internal/pullops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
@@ -175,6 +176,15 @@ type pullConfig struct {
 	// command's RunE populates it from the flags; build's automatic fill leaves it
 	// quiet so only the build's own surface shows during an implicit resolution.
 	diag buildDiagOptions
+
+	// renderOptions is the option set the external-input discovery render runs
+	// under. It is unexported and has no flag behind it because this command has
+	// none to offer: a person running the resolution on its own asks for a
+	// lockfile, not for a rendered tree, so its discovery render carries the zero
+	// value and every knob is off. Build's automatic fill is what fills it — with
+	// the very option set that build would have rendered under, so the discovery
+	// render and the build's render are one render under one set of knobs.
+	renderOptions pipeline.Options
 }
 
 // Pull phase indices into the pull progress spine's labels.
@@ -239,15 +249,35 @@ func pullPhaseStep(p pullops.Phase) int {
 	return pullPhaseLoadCatalog
 }
 
-// pullRun drives the shared dependency resolution from the command line and
-// reports what it did on this surface's own streams.
+// pullRun drives the shared dependency resolution and reports what it did,
+// discarding what the resolution computed. It is the form every caller that
+// wants the resolution performed rather than examined uses.
+//
+// The context is this surface's own, and this surface has none to offer: the
+// command line installs no interrupt handling and carries no render knobs of its
+// own, so the resolution runs under a background context. A caller holding
+// either hands one over through pullRunWithResult instead.
+func pullRun(cfg pullConfig) error {
+	_, err := pullRunWithResult(context.Background(), cfg)
+	return err
+}
+
+// pullRunWithResult drives the shared dependency resolution from the command
+// line, reports what it did on this surface's own streams, and hands back what
+// the resolution computed.
 //
 // What stays here is what belongs to a surface a person drives: the progress
 // spine, the interactive fork the resolution cannot settle from its inputs, the
 // skipped-catalog annotation, this binary's identity, and the report. The
 // resolution itself — the artifact-store client, the egress gate, the trust
 // surface and the lockfile write — is internal/pullops, which every surface runs.
-func pullRun(cfg pullConfig) error {
+//
+// ctx is the caller's. The resolution carries it into every step that leaves the
+// process, and it also carries the render knobs that ride on a context rather
+// than on an option struct — so a caller whose own render knobs must reach the
+// discovery render hands its context in here rather than letting this layer
+// invent one.
+func pullRunWithResult(ctx context.Context, cfg pullConfig) (pullops.Result, error) {
 	diagOut := cfg.DiagOut
 	if diagOut == nil {
 		diagOut = os.Stderr
@@ -279,6 +309,7 @@ func pullRun(cfg pullConfig) error {
 		AnnotateResolutionFailure: withSkipContext,
 		Puller:                    cfg.puller,
 		SourceResolver:            cfg.sourceResolver,
+		RenderOptions:             cfg.renderOptions,
 		Report: pullops.Reporter{
 			Phase: func(p pullops.Phase) { progress.phase(pullPhaseStep(p)) },
 		},
@@ -301,16 +332,16 @@ func pullRun(cfg pullConfig) error {
 	}
 
 	// The resolution takes the caller's context so a caller that withdraws stops
-	// the work rather than only the reply. This surface has no withdrawal to hand
-	// it: the command line installs no interrupt handling, so interrupting an
-	// invocation is the operating system ending the process and there is no
-	// in-process stop for anything to observe. The surfaces that do have one — a
-	// request on the daemon, a tool invocation — drive the same resolution
-	// directly with their own request context, so what is named here is the
-	// absence of a stop on this surface rather than a decision to ignore one.
-	res, err := pullops.Run(context.Background(), opts)
+	// the work rather than only the reply. The command line has no withdrawal to
+	// hand it: it installs no interrupt handling, so interrupting an invocation is
+	// the operating system ending the process and there is no in-process stop for
+	// anything to observe. The surfaces that do have one — a request on the
+	// daemon, a tool invocation — drive the same resolution directly with their
+	// own request context, so what is named here is the absence of a stop on this
+	// surface rather than a decision to ignore one.
+	res, err := pullops.Run(ctx, opts)
 	if err != nil {
-		return err
+		return pullops.Result{}, err
 	}
 
 	if res.Verified {
@@ -322,7 +353,7 @@ func pullRun(cfg pullConfig) error {
 		// compared against this binary: the toolchain is not part of the pinned
 		// closure, and checking it would pin the compiler by proxy.
 		printLockfileToolchain(out, res.Toolchain)
-		return nil
+		return res, nil
 	}
 
 	// Clear the in-place surface before the stdout summary so the progress lines
@@ -339,7 +370,7 @@ func pullRun(cfg pullConfig) error {
 	if res.ExternalInputDiscovery != nil {
 		fmt.Fprintf(out, "External inputs were not fully discovered: dependency pins are complete, external-input pins may not be (see the diagnostics above)\n")
 	}
-	return nil
+	return res, nil
 }
 
 // trustedPluginsSummary renders the trailing field this command's completion

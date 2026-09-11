@@ -5,12 +5,15 @@ package buildops
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
+	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
@@ -69,16 +72,24 @@ func TestEnsureLockfile_LockfilePresent_NoPullNote(t *testing.T) {
 			writeFixture(t, lockfile.PathFor(rel), "{}\n")
 
 			var diag, out bytes.Buffer
-			pre, err := ensureLockfile(
+			pre, filled, err := ensureLockfile(
+				context.Background(),
 				Config{ReleasePath: rel, CatalogDirs: []string{root}},
 				workspaceconfig.Config{},
 				RunOptions{Detail: tc.detail},
+				pipeline.Options{},
 				&diag, &out)
 			if err != nil {
 				t.Fatalf("ensureLockfile: %v", err)
 			}
 			if !pre {
 				t.Fatal("expected lockfilePreexisted=true when the lockfile is present")
+			}
+			// No fill ran, so there is no render to present and the build must render
+			// for itself. A value here would send it to the presentation path with a
+			// render nothing performed.
+			if filled != nil {
+				t.Error("a run that did not fill reported a conserved render")
 			}
 
 			if got := strings.Contains(out.String(), noPullNote); got != tc.wantNote {
@@ -147,13 +158,15 @@ func TestEnsureLockfile_FillRequestedWithALockfileAlreadyPresent(t *testing.T) {
 
 			var called bool
 			var diag, out bytes.Buffer
-			pre, err := ensureLockfile(
-				Config{ReleasePath: rel, Pull: func(_, _ bool, _, _ io.Writer) error {
+			pre, _, err := ensureLockfile(
+				context.Background(),
+				Config{ReleasePath: rel, Pull: func(_ context.Context, _, _ bool, _ pipeline.Options, _, _ io.Writer) (*compilerops.PreviewResult, error) {
 					called = true
-					return nil
+					return nil, nil
 				}},
 				tc.wsCfg,
 				tc.run,
+				pipeline.Options{},
 				&diag, &out)
 			if err != nil {
 				t.Fatalf("ensureLockfile: %v", err)
@@ -187,19 +200,23 @@ func TestEnsureLockfile_FillRequestedWithNoPullSupplied(t *testing.T) {
 	writeFixture(t, rel, "kind: Release\n")
 
 	var diag, out bytes.Buffer
-	_, err := ensureLockfile(
+	_, _, err := ensureLockfile(
+		context.Background(),
 		Config{ReleasePath: rel},
 		workspaceconfig.Config{},
 		RunOptions{AutoPull: false},
+		pipeline.Options{},
 		&diag, &out)
 	if err == nil || !strings.Contains(err.Error(), "run `aggrega pull") {
 		t.Fatalf("no fill requested and no lockfile: want the pull-first remediation, got %v", err)
 	}
 
-	_, err = ensureLockfile(
+	_, _, err = ensureLockfile(
+		context.Background(),
 		Config{ReleasePath: rel},
 		workspaceconfig.Config{},
 		RunOptions{AutoPull: true},
+		pipeline.Options{},
 		&diag, &out)
 	if err == nil || !strings.Contains(err.Error(), "no dependency fill supplied") {
 		t.Fatalf("fill requested with no pull supplied: want the wiring refusal, got %v", err)
@@ -207,23 +224,51 @@ func TestEnsureLockfile_FillRequestedWithNoPullSupplied(t *testing.T) {
 }
 
 // TestEnsureLockfile_FillRunsThroughTheSuppliedPull proves the fill is invoked
-// through the caller's pull rather than reimplemented here, and that the two
-// knobs it forwards reach it verbatim. The call is through a function value, so
-// no structural derivation can see this edge; only an invocation can.
+// through the caller's pull rather than reimplemented here, and that everything
+// the fill's render needs reaches it verbatim: the two resolution knobs, the
+// caller's context, and the render option set. The call is through a function
+// value, so no structural derivation can see this edge; only an invocation can.
+//
+// The option set is asserted by VALUE rather than by field, and that is the
+// point of asserting it at all. What travels is the whole struct the build
+// assembled, so a knob added to the pipeline reaches the fill's render with
+// nothing here to widen — and a comparison against the struct the caller handed
+// in is the only assertion that keeps saying so as the struct grows. A per-field
+// check would go on passing over a field it was never taught about.
+//
+// The context is asserted through a value carried on it, because that is how the
+// two render knobs that do not live on the option struct reach a render: a fill
+// handed a context this layer invented would run with both of them off while
+// every field assertion here still passed.
 func TestEnsureLockfile_FillRunsThroughTheSuppliedPull(t *testing.T) {
 	root := t.TempDir()
 	rel := filepath.Join(root, "release.yaml")
 	writeFixture(t, rel, "kind: Release\n")
 
-	var gotUpgrade, gotDetail, called bool
+	type ctxKey struct{}
+	ctx := context.WithValue(context.Background(), ctxKey{}, "the caller's own")
+
+	// Distinct from the zero value on every axis a caller can set, so a fill
+	// handed a freshly-built option set rather than the caller's fails here.
+	want := pipeline.Options{
+		IncludeTrace:                     true,
+		TraceUnredacted:                  true,
+		SuppressUnsupportedFieldWarnings: true,
+	}
+
+	var gotUpgrade, gotDetail, called, sawCallerCtx bool
+	var gotRender pipeline.Options
 	var diag, out bytes.Buffer
-	pre, err := ensureLockfile(
-		Config{ReleasePath: rel, Pull: func(upgrade, detail bool, _, _ io.Writer) error {
-			called, gotUpgrade, gotDetail = true, upgrade, detail
-			return nil
+	pre, filled, err := ensureLockfile(
+		ctx,
+		Config{ReleasePath: rel, Pull: func(pullCtx context.Context, upgrade, detail bool, render pipeline.Options, _, _ io.Writer) (*compilerops.PreviewResult, error) {
+			called, gotUpgrade, gotDetail, gotRender = true, upgrade, detail, render
+			sawCallerCtx = pullCtx.Value(ctxKey{}) == "the caller's own"
+			return &compilerops.PreviewResult{}, nil
 		}},
 		workspaceconfig.Config{},
 		RunOptions{AutoPull: true, Upgrade: true, Detail: true},
+		want,
 		&diag, &out)
 	if err != nil {
 		t.Fatalf("ensureLockfile with a supplied pull: %v", err)
@@ -234,7 +279,23 @@ func TestEnsureLockfile_FillRunsThroughTheSuppliedPull(t *testing.T) {
 	if !gotUpgrade || !gotDetail {
 		t.Errorf("pull received upgrade=%v detail=%v; want both true", gotUpgrade, gotDetail)
 	}
+	if !sawCallerCtx {
+		t.Error("the fill ran under a context this layer invented, so the render knobs that ride " +
+			"on a context would not have reached the render it performs")
+	}
+	// Comparing the two option sets needs a comparison the language does not give
+	// a struct holding functions, so the fields that are values are compared and
+	// the callbacks are asserted present. A callback left unset is not cosmetic:
+	// an unset compile-begin changes WHEN guests compile.
+	if gotRender.IncludeTrace != want.IncludeTrace ||
+		gotRender.TraceUnredacted != want.TraceUnredacted ||
+		gotRender.SuppressUnsupportedFieldWarnings != want.SuppressUnsupportedFieldWarnings {
+		t.Errorf("the fill's render ran under %+v, want the option set the caller assembled", gotRender)
+	}
 	if pre {
 		t.Error("a filled lockfile is reported as not pre-existing, so drift is not verified against it")
+	}
+	if filled == nil {
+		t.Error("the render the fill handed back was dropped, so the build would render the Release a second time")
 	}
 }

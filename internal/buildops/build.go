@@ -134,15 +134,42 @@ func (o RunOptions) irGraph(graph *types.IRGraph) error {
 // own job, so the surface that owns the pull supplies it, and a build reached
 // from a surface that has no pull to offer refuses the fill rather than
 // performing a partial one of its own.
-type Pull func(upgrade, detail bool, diagOut, out io.Writer) error
+//
+// # Why it takes a render option set, and why the WHOLE set travels
+//
+// Discovering which external inputs a Release consumes is itself a render, so a
+// fill renders the Release the build was going to render anyway. render is the
+// option set that render runs under — the same value the build would have used —
+// handed over whole rather than as a chosen subset, so a knob added to the
+// pipeline reaches the fill's render without a second list here having to be
+// widened to admit it. ctx carries the render knobs that ride on a context
+// rather than on that struct, for the same reason: the fill's render is the
+// build's render, so it runs under the build's own context.
+//
+// # Why it hands a render back
+//
+// A fill that has rendered the Release has computed exactly what the build needs
+// to write. Returning it lets the build present that result instead of computing
+// it a second time, which is what makes one build one render.
+//
+// The contract is the render this fill FINISHED, and nil where it did not finish
+// one — a fill that was not reached, that stood down, or whose render stopped
+// part way. Nil is therefore not an error signal and not a request: it is the
+// absence of a render, and a build that receives it renders for itself. The
+// supplier answers the question from the render's own verdict rather than from a
+// report beside it, so there is no second reading to disagree with the first.
+type Pull func(ctx context.Context, upgrade, detail bool, render pipeline.Options, diagOut, out io.Writer) (*compilerops.PreviewResult, error)
 
 // RunOptions carries the build knobs that are not diagnostics. The zero value is
 // the plain build shape: rendered output to the default output directory.
 //
-// A build's render never acquires an external input, and that is not a knob here
-// or anywhere else. Acquisition happens at the pull step, which pins every
-// external input a Release's render consumes; a build is held to the closure the
-// lockfile records, so an unpinned reference at build time halts naming it.
+// A build never renders in order to acquire, and that is not a knob here or
+// anywhere else. Acquisition happens at the pull step, which pins every external
+// input a Release's render consumes. A build that renders for itself is held to
+// the closure the lockfile records, so an unpinned reference halts naming it;
+// and a build whose pull step ran presents that step's render rather than
+// performing one, so the acquiring render is still the pull's and still the only
+// one there is.
 type RunOptions struct {
 	// DisablePluginCache skips the persistent on-disk plugin compile cache
 	// for this build, compiling guests fresh in an in-memory cache that is
@@ -247,9 +274,9 @@ type Config struct {
 	// value reports nothing.
 	Report Reporter
 
-	// Pull performs the dependency fill the automatic-pull step needs. Nil
-	// refuses a run that would have to fill, rather than performing a partial
-	// fill of its own.
+	// Pull performs the dependency fill the automatic-pull step needs, and hands
+	// back the render that fill performed. Nil refuses a run that would have to
+	// fill, rather than performing a partial fill of its own.
 	Pull Pull
 
 	// AnnotateResolutionFailure, when non-nil, is handed a resolution or
@@ -283,9 +310,19 @@ type Result struct {
 }
 
 // Run composes the filesystem-touching steps (catalog load, lockfile
-// verify-or-fill, external-input gate, artifact write, trace write, external-input
-// merge) around compilerops.Preview, which every rendering surface is a transport
-// over.
+// verify-or-fill, external-input gate, artifact write, trace write) around
+// compilerops.Preview, which every rendering surface is a transport over.
+//
+// # One build, one render
+//
+// The render is performed once per build and no more, and which side performs it
+// follows from what the run did rather than from anything a caller sets. A build
+// whose lockfile step filled the lockfile already has a render of this Release —
+// discovering which external inputs a Release consumes is itself a render — so
+// the steps below present that one. A build that filled nothing renders here.
+// Everything from the completed payload onward is the same either way, which is
+// what makes this operation a presentation layer over a render rather than a
+// second place a Release is rendered.
 //
 // Per-step diagnostics are written to cfg.DiagOut; the run's status output goes
 // to cfg.Out. Neither carries the completion summary: that is returned, so the
@@ -402,11 +439,68 @@ func Run(cfg Config) (Result, error) {
 		report.CatalogShadows(cat)
 	}
 
+	// The render knobs, assembled ONCE and above the lockfile step, because the
+	// step below may render this Release: the fill discovers which external inputs
+	// a Release consumes by rendering it, and that render is this build's render.
+	// Assembling them here is what lets the same option set drive whichever render
+	// happens, so a knob added to the pipeline reaches both without a second
+	// assembly having to be widened to admit it.
+	//
+	// Neither depends on anything the lockfile step produces: every member below
+	// reads the caller's own knobs and this run's report callbacks, and nothing
+	// reads the lockfile, the catalog or the closure.
+	//
+	// The context carries the render knobs that ride on a context rather than on
+	// the option struct; the external-input seam is installed by the shared entry
+	// point, from the service handed to it.
+	buildCtx := wasm.ContextWithDisablePluginCache(context.Background(), run.DisablePluginCache)
+	buildCtx = wasm.ContextWithVerifyDeterminism(buildCtx, run.VerifyDeterminism)
+	renderOptions := pipeline.Options{
+		IncludeTrace:    cfg.TraceEnabled,
+		TraceUnredacted: run.TraceUnredacted,
+		// Per-node render progress. The callback reaches only the caller's
+		// diagnostic surface; the rendered output is byte-deterministic
+		// regardless of whether one is attached. A caller that attached none
+		// discards the calls.
+		NodeProgress: func(done, total int, nodeID string) {
+			if report.RenderNode != nil {
+				report.RenderNode(done, total, nodeID)
+			}
+		},
+		// Eager plugin-compilation phase callbacks. Begin fires once with the
+		// number of provider guests to compile before the render loop; Running
+		// fires when a guest is observed to actually compile; GuestDone fires as
+		// each finishes. All three reach only the caller's diagnostic surface, so
+		// the rendered output stays byte-deterministic. They are set
+		// unconditionally, because a set Begin is what makes the pipeline run the
+		// eager compile pass so a guest compilation is attributed rather than
+		// buried in the first node's render — leaving it unset for a caller with
+		// no progress surface would change when guests compile, not merely what is
+		// displayed.
+		PluginCompileBegin: func(total int) {
+			if report.PluginCompileBegin != nil {
+				report.PluginCompileBegin(total)
+			}
+		},
+		PluginCompileGuestDone: func(done int) {
+			if report.PluginCompileGuestDone != nil {
+				report.PluginCompileGuestDone(done)
+			}
+		},
+		PluginCompileRunning: func() {
+			if report.PluginCompileRunning != nil {
+				report.PluginCompileRunning()
+			}
+		},
+		SuppressUnsupportedFieldWarnings: run.SuppressUnsupportedFieldWarnings,
+	}
+
 	// Ensure the per-Release lockfile exists (filled when the pull step is asked
 	// for, else required), returning whether it pre-existed — drift is verified
-	// only for a pre-existing lockfile; a filled one matches the closure already.
+	// only for a pre-existing lockfile; a filled one matches the closure already —
+	// and the render the fill performed, where it performed one.
 	report.phase(PhaseLockfile)
-	lockfilePreexisted, err := ensureLockfile(cfg, wsCfg, run, diagOut, out)
+	lockfilePreexisted, filled, err := ensureLockfile(buildCtx, cfg, wsCfg, run, renderOptions, diagOut, out)
 	if err != nil {
 		return Result{}, err
 	}
@@ -415,98 +509,76 @@ func Run(cfg Config) (Result, error) {
 		return Result{}, fmt.Errorf("load lockfile: %w", err)
 	}
 
-	// External-input gate for render-time guest fetches, and it is the same seam
-	// every other rendering surface attaches: the pinned posture behind the
-	// decline recorder, taken from the one composition that describes it. A build
-	// renders the closure the lockfile records — a pinned URL is served from the
-	// content-addressed store (refilled by its pinned digest if the blob has gone
-	// missing, which cannot change what the render sees) and an unpinned one is
-	// refused loudly, naming it. Acquisition belongs to the pull step, so there is
-	// nothing for a build to merge back afterwards and no posture for it to choose.
-	fetchSeam := compilerops.PinnedExternalInputs(wsRoot, cacheDir, wsCfg, lf)
-
-	// The build's determinism-wired lazy lookup: EVERY catalog consumer this run
-	// has — guards, triad aggregate resolution, manifest-implements gate,
-	// closure computation + closure-scoped validation + extends, renderer,
-	// topology — resolves the resolved closure through this. No cache→catalog
-	// bridge: the lazy lookup reads registry-pulled entities directly from the
-	// pinned Tier-2 cache. Nil puller: Tier-3 is disabled, so the build never
-	// networks. SetPins threads the lockfile pins so a Tier-2 cache hit is
-	// verified-on-read and a miss is a loud halt rather than a silent skip —
-	// byte-identical from the lockfile.
-	lazyView := catalog.NewLazyLookup(wsRoot, cacheDir, dirs, nil)
-	lazyView.SetPins(catalog.PinsFromLockfile(lf))
-
-	// The preview computation itself — the gate sequence and the render — runs in
-	// the shared entry point every rendering surface is a transport over, so the
-	// command line, the editor's build tool and the daemon cannot come to disagree
-	// about which gates run or in what order. What stays here is what genuinely
-	// belongs to this operation: the knobs, the progress reporting, and the writes.
+	// The render, or the render that already happened.
 	//
-	// The context carries this run's own render knobs; the external-input seam
-	// is installed by the entry point, from the service handed to it below.
-	buildCtx := wasm.ContextWithDisablePluginCache(context.Background(), run.DisablePluginCache)
-	buildCtx = wasm.ContextWithVerifyDeterminism(buildCtx, run.VerifyDeterminism)
+	// A fill renders this Release to find out which external inputs it consumes,
+	// so a build that filled its own lockfile already holds a render of what it
+	// was about to render. It presents that one; it renders only where there was
+	// none to inherit. The presence of the render IS the decision — a fact about
+	// what this run did, which cannot be read two ways and which no dial can
+	// contradict. There is deliberately nothing here asking whether to reuse it:
+	// a switch of that shape would be a second answer to a question the render
+	// itself already answers by existing.
+	//
+	// declined is the references this build's own render was refused, and it is
+	// empty on the presenting path for the same reason it is a fact rather than a
+	// setting: a build that rendered nothing refused nothing. A dry run never
+	// presents — it refuses the flags that fill and stands the workspace setting
+	// down — so the note below is reached from the rendering path alone.
+	preview := filled
+	var declined []string
+	if preview == nil {
+		// External-input gate for render-time guest fetches, and it is the same seam
+		// every other rendering surface attaches: the pinned posture behind the
+		// decline recorder, taken from the one composition that describes it. A build
+		// renders the closure the lockfile records — a pinned URL is served from the
+		// content-addressed store (refilled by its pinned digest if the blob has gone
+		// missing, which cannot change what the render sees) and an unpinned one is
+		// refused loudly, naming it. Acquisition belongs to the pull step, so there is
+		// nothing for a build to merge back afterwards and no posture for it to choose.
+		fetchSeam := compilerops.PinnedExternalInputs(wsRoot, cacheDir, wsCfg, lf)
 
-	// A build emits a deployable artifact, so every gate is on and every
-	// divergence halts. It holds the Release to its lockfile, which the phase
-	// above has already ensured exists.
-	preview, err := compilerops.PreviewForArtifact(
-		buildCtx,
-		compilerops.NewPreviewInputs(
-			fetchSeam,
-			lazyView,
-			releasePath,
-			wsRoot,
-			wsCfg,
-			cfg.CompilerVersion,
-			compilerops.WithLockfile(lf, lockfilePreexisted),
-			// The tolerant Pass-1 load's deprecation notices are this operation's to
-			// produce (no other surface loads a whole catalog) and the entry point's
-			// to emit, so the advisory sequence has one order.
-			compilerops.WithCatalogWarnings(cat.DeprecationWarnings()),
-			compilerops.WithProgress(func(p compilerops.PreviewPhase) { report.phase(previewPhase(p)) }),
-		),
-		pipeline.Options{
-			IncludeTrace:    cfg.TraceEnabled,
-			TraceUnredacted: run.TraceUnredacted,
-			// Per-node render progress. The callback reaches only the caller's
-			// diagnostic surface; the rendered output is byte-deterministic
-			// regardless of whether one is attached. A caller that attached none
-			// discards the calls.
-			NodeProgress: func(done, total int, nodeID string) {
-				if report.RenderNode != nil {
-					report.RenderNode(done, total, nodeID)
-				}
-			},
-			// Eager plugin-compilation phase callbacks. Begin fires once with the
-			// number of provider guests to compile before the render loop; Running
-			// fires when a guest is observed to actually compile; GuestDone fires as
-			// each finishes. All three reach only the caller's diagnostic surface, so
-			// the rendered output stays byte-deterministic. They are set
-			// unconditionally, because a set Begin is what makes the pipeline run the
-			// eager compile pass so a guest compilation is attributed rather than
-			// buried in the first node's render — leaving it unset for a caller with
-			// no progress surface would change when guests compile, not merely what is
-			// displayed.
-			PluginCompileBegin: func(total int) {
-				if report.PluginCompileBegin != nil {
-					report.PluginCompileBegin(total)
-				}
-			},
-			PluginCompileGuestDone: func(done int) {
-				if report.PluginCompileGuestDone != nil {
-					report.PluginCompileGuestDone(done)
-				}
-			},
-			PluginCompileRunning: func() {
-				if report.PluginCompileRunning != nil {
-					report.PluginCompileRunning()
-				}
-			},
-			SuppressUnsupportedFieldWarnings: run.SuppressUnsupportedFieldWarnings,
-		},
-	)
+		// The build's determinism-wired lazy lookup: EVERY catalog consumer this run
+		// has — guards, triad aggregate resolution, manifest-implements gate,
+		// closure computation + closure-scoped validation + extends, renderer,
+		// topology — resolves the resolved closure through this. No cache→catalog
+		// bridge: the lazy lookup reads registry-pulled entities directly from the
+		// pinned Tier-2 cache. Nil puller: Tier-3 is disabled, so the build never
+		// networks. SetPins threads the lockfile pins so a Tier-2 cache hit is
+		// verified-on-read and a miss is a loud halt rather than a silent skip —
+		// byte-identical from the lockfile.
+		lazyView := catalog.NewLazyLookup(wsRoot, cacheDir, dirs, nil)
+		lazyView.SetPins(catalog.PinsFromLockfile(lf))
+
+		// The preview computation itself — the gate sequence and the render — runs in
+		// the shared entry point every rendering surface is a transport over, so the
+		// command line, the editor's build tool and the daemon cannot come to disagree
+		// about which gates run or in what order. What stays here is what genuinely
+		// belongs to this operation: the knobs, the progress reporting, and the writes.
+		//
+		// A build emits a deployable artifact, so every gate is on and every
+		// divergence halts. It holds the Release to its lockfile, which the phase
+		// above has already ensured exists.
+		preview, err = compilerops.PreviewForArtifact(
+			buildCtx,
+			compilerops.NewPreviewInputs(
+				fetchSeam,
+				lazyView,
+				releasePath,
+				wsRoot,
+				wsCfg,
+				cfg.CompilerVersion,
+				compilerops.WithLockfile(lf, lockfilePreexisted),
+				// The tolerant Pass-1 load's deprecation notices are this operation's to
+				// produce (no other surface loads a whole catalog) and the entry point's
+				// to emit, so the advisory sequence has one order.
+				compilerops.WithCatalogWarnings(cat.DeprecationWarnings()),
+				compilerops.WithProgress(func(p compilerops.PreviewPhase) { report.phase(previewPhase(p)) }),
+			),
+			renderOptions,
+		)
+		declined = fetchSeam.Declined()
+	}
 	// The warnings are reported before the failure is returned, because a gate that
 	// halted still found everything ahead of it and a reader who loses those
 	// findings has to re-run to see them.
@@ -517,7 +589,7 @@ func Run(cfg Config) (Result, error) {
 	// failure: a decline halts the render, so it is the failure path in practice,
 	// but the note is owed whenever a reference was declined rather than whenever
 	// the run happened to end badly.
-	if declined := fetchSeam.Declined(); run.DryRun && len(declined) > 0 && report.DryRunDivergence != nil {
+	if run.DryRun && len(declined) > 0 && report.DryRunDivergence != nil {
 		report.DryRunDivergence(declined, releasePath)
 	}
 	if err != nil {
@@ -537,6 +609,16 @@ func Run(cfg Config) (Result, error) {
 	// finished payload. A command-line build writes artifacts and hands back the
 	// graph it rendered from, and a run that stopped has neither.
 	result := preview.PipelineOutcome().Completed()
+	// The presented render is the one case where the verdict comes from outside
+	// this operation: a build that rendered for itself has already returned on the
+	// failure above, while a presented render is only as good as the promise the
+	// surface supplying the fill made about it. A partial render reaching here
+	// would be written out as though it were whole — an artifact set missing the
+	// nodes the render never reached — so it is refused instead, on the same terms
+	// every other wiring error is.
+	if result == nil {
+		return Result{}, fmt.Errorf("internal: the dependency fill handed back a render that did not finish — only a finished render can be presented")
+	}
 
 	// The graph this build resolved, handed back before anything else reaches the
 	// status stream — ahead of the dry run's artifact report and ahead of the
@@ -590,10 +672,13 @@ func Run(cfg Config) (Result, error) {
 		}
 	}
 
-	// Nothing to merge back into the lockfile: a build's render acquires nothing,
-	// so the external-input section is written by the pull step alone. That is
-	// what makes a build a read of the closure rather than an extension of it —
-	// the lockfile a build was held to is the lockfile it leaves behind.
+	// Nothing to merge back into the lockfile, on either path. The external-input
+	// section is written by the pull step alone: a build that rendered for itself
+	// acquired nothing to merge, and a build presenting the fill's render is
+	// holding a render whose acquisitions the fill already wrote before it
+	// returned. That is what makes this operation a read of the closure rather
+	// than an extension of it — whichever lockfile the presented or performed
+	// render was held to is the lockfile this operation leaves behind.
 
 	return Result{Summary: summary}, nil
 }
@@ -631,7 +716,16 @@ func previewPhase(p compilerops.PreviewPhase) Phase {
 }
 
 // ensureLockfile ensures the per-Release lockfile exists before the build wires
-// its lazy lookup + runs closure-scoped Pass-2, returning whether it PRE-EXISTED.
+// its lazy lookup + runs closure-scoped Pass-2, returning whether it PRE-EXISTED
+// and the render the fill performed where one ran.
+//
+// The render comes back because the fill's way of finding out which external
+// inputs a Release consumes is to render it, so a fill leaves a render of this
+// Release behind. Handing it up is what lets the build present it rather than
+// compute the same thing again. It is nil wherever no fill ran, and nil is
+// exactly what it means — there is no render to present — so the caller renders
+// for itself and nothing has to be consulted to find that out.
+//
 // Build is read-only by default: a present lockfile is left as-is — drift
 // against it is verified later against the resolved closure — and a missing one
 // halts with the pull-first remediation, writing no lockfile or source pins.
@@ -657,14 +751,14 @@ func previewPhase(p compilerops.PreviewPhase) Phase {
 // fill's per-entity rows and completion line forwarded through the fill's own
 // status writer. diagOut carries the fill's reuse/verify notices and progress
 // surface.
-func ensureLockfile(cfg Config, wsCfg workspaceconfig.Config, run RunOptions, diagOut, out io.Writer) (bool, error) {
+func ensureLockfile(ctx context.Context, cfg Config, wsCfg workspaceconfig.Config, run RunOptions, render pipeline.Options, diagOut, out io.Writer) (bool, *compilerops.PreviewResult, error) {
 	releasePath := cfg.ReleasePath
 	lockfilePath := lockfile.PathFor(releasePath)
 
 	_, statErr := os.Stat(lockfilePath)
 	preexisted := statErr == nil
 	if statErr != nil && !stderrors.Is(statErr, os.ErrNotExist) {
-		return false, fmt.Errorf("lockfile stat %s: %w", lockfilePath, statErr)
+		return false, nil, fmt.Errorf("lockfile stat %s: %w", lockfilePath, statErr)
 	}
 
 	// Offline: never network. Build is frozen against whatever lockfile exists;
@@ -673,9 +767,9 @@ func ensureLockfile(cfg Config, wsCfg workspaceconfig.Config, run RunOptions, di
 	// directly, so this pre-flight and the actual fill cannot diverge.
 	if _, egErr := egress.RoundTripper(wsCfg); stderrors.Is(egErr, egress.ErrOfflineEgress()) {
 		if preexisted {
-			return true, nil
+			return true, nil, nil
 		}
-		return false, fmt.Errorf("aggrega build: lockfile %s missing and workspace is offline; run `aggrega pull --release %s` from a connected environment first: %w",
+		return false, nil, fmt.Errorf("aggrega build: lockfile %s missing and workspace is offline; run `aggrega pull --release %s` from a connected environment first: %w",
 			lockfilePath, releasePath, oci.ErrFetchNotFound())
 	}
 
@@ -706,12 +800,16 @@ func ensureLockfile(cfg Config, wsCfg workspaceconfig.Config, run RunOptions, di
 	// is nothing to render against and filling one would be a write.
 	if !run.DryRun && wsCfg.FillsLockfile(run.AutoPull) {
 		if cfg.Pull == nil {
-			return false, fmt.Errorf("internal: no dependency fill supplied — a build that fills the lockfile needs the caller's pull operation")
+			return false, nil, fmt.Errorf("internal: no dependency fill supplied — a build that fills the lockfile needs the caller's pull operation")
 		}
-		if err := cfg.Pull(run.Upgrade, run.Detail, diagOut, out); err != nil {
-			return false, fmt.Errorf("auto-pull: %w", err)
+		// The fill runs under this build's own context and option set, so the render
+		// it performs to discover external inputs is the render this build would
+		// have performed — and comes back so the build can present it.
+		filled, err := cfg.Pull(ctx, run.Upgrade, run.Detail, render, diagOut, out)
+		if err != nil {
+			return false, nil, fmt.Errorf("auto-pull: %w", err)
 		}
-		return false, nil
+		return false, filled, nil
 	}
 
 	// Read-only default: the build is frozen against the lockfile as it stands and
@@ -725,8 +823,8 @@ func ensureLockfile(cfg Config, wsCfg workspaceconfig.Config, run RunOptions, di
 			// this note is printed in.
 			fmt.Fprintf(out, "aggrega build --detail: resolution detail is a pull-time surface; no pull step ran this build, so there is nothing to report. Pass --auto-pull (or enable auto_pull) to fill %s during the build and report what the fill did\n", lockfilePath)
 		}
-		return true, nil
+		return true, nil, nil
 	}
-	return false, fmt.Errorf("aggrega build: lockfile %s missing; run `aggrega pull --release %s` first to create it, or pass --auto-pull (or enable auto_pull) to fill it during the build",
+	return false, nil, fmt.Errorf("aggrega build: lockfile %s missing; run `aggrega pull --release %s` first to create it, or pass --auto-pull (or enable auto_pull) to fill it during the build",
 		lockfilePath, releasePath)
 }

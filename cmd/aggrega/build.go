@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/buildops"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 	"github.com/aggrega-ai/aggrega-cli/internal/redact"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
@@ -255,14 +256,34 @@ func buildDispatchConfig(rw *workspaceconfig.ResolvedWorkspace, releasePath stri
 		// pull re-derives the identical stack with the same config.
 		//
 		// The fill discovers and pins the external inputs, because the build's own
-		// render will not: a build renders the closure the lockfile records. So a
-		// build that fills its own lockfile renders the Release twice — once here to
-		// find out which remote references it consumes, and once to build against
-		// what that render pinned. That is the cost of there being one acquisition
-		// moment; running the pull as its own step pays it once instead of on every
-		// build.
-		Pull: func(upgrade, detail bool, pullDiagOut, pullOut io.Writer) error {
-			return pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: catalogFlagDirs, Upgrade: upgrade, Detail: detail, ws: rw, DiagOut: pullDiagOut, Out: pullOut, diag: buildDiagOptions{quiet: true}})
+		// render will not: a build renders the closure the lockfile records. Finding
+		// out which remote references a Release consumes is itself a render, so the
+		// fill renders the Release the build was about to render — under the build's
+		// own context and option set, which arrive here and travel straight through.
+		// That render comes back and the build presents it, so a build that fills its
+		// own lockfile still renders the Release exactly once.
+		Pull: func(ctx context.Context, upgrade, detail bool, render pipeline.Options, pullDiagOut, pullOut io.Writer) (*compilerops.PreviewResult, error) {
+			res, err := pullRunWithResult(ctx, pullConfig{ReleasePath: releasePath, CatalogDirs: catalogFlagDirs, Upgrade: upgrade, Detail: detail, ws: rw, DiagOut: pullDiagOut, Out: pullOut, renderOptions: render, diag: buildDiagOptions{quiet: true}})
+			if err != nil {
+				return nil, err
+			}
+			// Only a render that FINISHED is handed over. A discovery that stopped
+			// part way holds findings worth reporting and no artifacts, and a build
+			// handed one would write out a tree missing whatever the render never
+			// reached. The question is asked of the render's own verdict rather than
+			// of the resolution's separate report of what stopped it, so there is one
+			// answer rather than two that agree today; and the accessor is safe on a
+			// resolution that never reached a discovery at all, which answers the same
+			// way for the same reason — there is no render.
+			//
+			// Handing back nothing leaves the build to render for itself, which is
+			// what it does today on that path and what it must keep doing: the pins
+			// the fill did land are on disk, and a reference the fill never reached is
+			// still unpinned, so the build's own render halts naming it.
+			if res.DiscoveryRender.PipelineOutcome().Completed() == nil {
+				return nil, nil
+			}
+			return res.DiscoveryRender, nil
 		},
 		AnnotateResolutionFailure: withSkipContext,
 		DiagOut:                   diagOut,
