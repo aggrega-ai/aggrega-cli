@@ -788,11 +788,9 @@ func collectConsumerSiblings(node *yaml.Node, path string) (props map[string]*ya
 // composeXRefSchema merges a resolved library schema with consumer-side
 // siblings under the composition semantics:
 //
-//   - Consumer properties overwrite library properties on key collision.
-//     Resulting map ordering follows library-author-order first, then
-//     consumer-added keys in consumer-author-order; library-sourced keys
-//     overwritten by consumer entries lose their x-aggrega-source
-//     annotation (the property is now consumer-authored).
+//   - Consumer properties overwrite library properties on key collision;
+//     library-sourced keys overwritten by consumer entries lose their
+//     x-aggrega-source annotation (the property is now consumer-authored).
 //   - Required arrays union: library entries first (in library author
 //     order), then consumer additions (in consumer author order),
 //     deduplicated.
@@ -811,8 +809,11 @@ func composeXRefSchema(resolved Schema, consumerProps Schema, consumerRequired [
 	}
 
 	mergedProperties := Schema{}
-	// Library-author-order properties (if present on the resolved schema)
-	// land first.
+	// The referenced entry's properties are written first, so a consumer entry
+	// for the same key overwrites one rather than the other way round. The
+	// order they are written in is not an order the result carries: Schema is a
+	// plain map, so the merged value is a set of keys and the ordering of what
+	// is emitted from it is decided by whatever serializes it.
 	if libProps, ok := resolved["properties"].(Schema); ok {
 		for k, v := range libProps {
 			mergedProperties[k] = v

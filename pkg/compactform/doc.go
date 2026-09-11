@@ -46,8 +46,49 @@
 // references a second library, the outer expansion re-annotates everything
 // the inner one contributed, so attribution is exactly one step deep.
 //
-// Compile is a pure function over its input. Same input produces byte-
-// identical output across runs (the deterministic-output invariant
+// Keys authored beside such a $ref: compose into the referenced entry
+// rather than being discarded: properties, required and description are
+// admitted, any other key beside the reference ($mode: aside) is refused
+// naming those three (ErrUnknownKeyword), and a properties: sibling that
+// is not a mapping is refused where it is written
+// (ErrEscapeContentInvalid). Consumer properties overwrite entry
+// properties on key collision, and an overwritten property is
+// consumer-authored rather than library-sourced, so it carries no
+// x-aggrega-source annotation; required unions the two lists, entry
+// first, deduplicated; a consumer description wins where one is present
+// and the entry's survives where none is. The merged shape is closed —
+// additionalProperties: false is injected whatever the entry declared —
+// so an author who needs it to accept arbitrary keys composes the open
+// object through the $jsonschema: escape rather than beside the reference.
+//
+// A library is addressed by identity and never by location: the reference
+// carries the library name, and the version a build resolves to comes
+// from the lockfile. A reference carrying a registry host (the oci://
+// form) is refused at compile so a physical registry location cannot
+// enter authored source, and where that URI parses the diagnostic names
+// the identity-form reference to write instead (ErrHostInLibraryRef). A
+// host-less :version is accepted rather than refused: it is stripped, the
+// bare name resolves, and the asserted version is carried as a
+// minimum-version floor for selection at lock time. The separator is :,
+// matching Manifest mappings and the lockfile pin; an @ separator is
+// refused with a steer to the : spelling rather than failing as an opaque
+// library-not-found (ErrReferenceUnresolvable).
+//
+// Expansion is recursive — a referenced entry may reference another
+// library — and the cycle guard keys on the version-stripped, host-less
+// identity rather than on the reference as written, so one entry reached
+// through two spellings is one key and a cycle cannot evade the guard by
+// spelling its version inconsistently; a cycle halts naming the chain
+// (ErrCircularRef). A syntactically valid reference whose target is
+// absent halts as well: an unknown library name, an entry absent from a
+// named library, and a cross-document reference compiled with no
+// SchemaLibrary catalog in scope all report one unresolved-target
+// condition (ErrUnresolvedSchemaLibraryRef), distinct from the
+// malformed-shape condition a reference not of the form
+// <LibraryName>#/schemas/<EntryName> raises (ErrReferenceUnresolvable).
+//
+// Compile is a pure function over its input. Same input produces
+// byte-identical output across runs (the deterministic-output invariant
 // applies); iteration over map-typed input follows author order via
 // the OrderedMap[V] substrate at pkg/types.
 //
