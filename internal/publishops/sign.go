@@ -130,11 +130,10 @@ type SignedArtifact struct {
 // Signing is continue-and-report: a reference that fails to resolve, sign, or
 // attach is recorded and the batch proceeds to the next reference; after the
 // loop, if any reference failed, a summary naming each failure is returned.
-func Sign(cfg SignConfig) (SignResult, error) {
+func Sign(ctx context.Context, cfg SignConfig) (SignResult, error) {
 	if len(cfg.References) == 0 {
 		return SignResult{}, fmt.Errorf("at least one reference required")
 	}
-	ctx := context.Background()
 	out := cfg.Out
 	if out == nil {
 		out = os.Stdout
@@ -155,6 +154,14 @@ func Sign(cfg SignConfig) (SignResult, error) {
 		signed   []SignedArtifact
 	)
 	for _, ref := range cfg.References {
+		// One interruption point per reference, which is this batch's seam: each
+		// iteration resolves, signs and attaches one artifact at the registry. A
+		// reference not yet reached is one never signed, and the check precedes the
+		// attach rather than following it, because an attached signature is
+		// published and cannot be withdrawn.
+		if serr := stopped(ctx); serr != nil {
+			return SignResult{Signed: signed}, serr
+		}
 		digest, err := b.signRef(ctx, ref)
 		if err != nil {
 			failures = append(failures, refFailure{ref: ref, err: err})

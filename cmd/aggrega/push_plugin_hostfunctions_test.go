@@ -286,7 +286,7 @@ func TestPushPluginHostFunctionsOutOfSyncHalts(t *testing.T) {
 	writeEntityFixture(t, entityPath, pushVerifyEntity+"  runtime:\n    hostFunctions:\n      - aggrega_log\n")
 
 	store := memory.New()
-	err := pushRun(pushConfig{
+	err := pushRun(t.Context(), pushConfig{
 		Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
 		EntityPath: entityPath,
 		PluginPath: pluginPath,
@@ -318,7 +318,7 @@ func TestPushPluginHostFunctionsInSyncProceeds(t *testing.T) {
 	writeEntityFixture(t, entityPath, pushVerifyEntity+"  runtime:\n    hostFunctions: []\n")
 
 	store := memory.New()
-	if err := pushRun(pushConfig{
+	if err := pushRun(t.Context(), pushConfig{
 		Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
 		EntityPath: entityPath,
 		PluginPath: pluginPath,

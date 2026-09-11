@@ -101,7 +101,7 @@ func TestIntegration_TrustPinnedPluginWithdrawalIsRecordedAndReported(t *testing
 
 	withdraw := func(t *testing.T, reference string) {
 		t.Helper()
-		if derr := deprecateRun(deprecateConfig{
+		if derr := deprecateRun(t.Context(), deprecateConfig{
 			Workspace: resolveTempWorkspace(t, tempWorkspaceOptions{}),
 			Reference: reference,
 			Severity:  "retracted",
@@ -209,7 +209,7 @@ func TestIntegration_TrustPinnedWithdrawalHaltsAtTheConfiguredThreshold(t *testi
 	cfg := trustDeprecationConfigBody(host, pubPEM, "retracted", published.URI)
 	wsRoot, _ := writeDeprecationConsumerCatalog(t, host, signer, cfg)
 
-	if derr := deprecateRun(deprecateConfig{
+	if derr := deprecateRun(t.Context(), deprecateConfig{
 		Workspace: resolveTempWorkspace(t, tempWorkspaceOptions{}),
 		Reference: pluginDeprecateRef(host, "linter", "halting-probe", "1.0.0"),
 		Severity:  "retracted",
@@ -290,7 +290,7 @@ func TestIntegration_TrustPinnedWithdrawalFollowsTheTrustFileLifecycle(t *testin
 
 	// The withdrawal happens AFTER the entry was recorded, which is the ordinary case:
 	// a publisher withdraws an artifact a workspace already trusts.
-	if derr := deprecateRun(deprecateConfig{
+	if derr := deprecateRun(t.Context(), deprecateConfig{
 		Workspace: resolveTempWorkspace(t, tempWorkspaceOptions{}),
 		Reference: pluginDeprecateRef(host, "linter", "lifecycle-probe", "1.0.0"),
 		Severity:  "warning",

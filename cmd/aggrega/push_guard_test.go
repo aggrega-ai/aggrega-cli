@@ -37,7 +37,7 @@ func TestPushAbsentTagPublishes(t *testing.T) {
 
 	store := memory.New()
 	var buf bytes.Buffer
-	if err := pushRun(pushConfig{Workspace: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), EntityPath: entityPath, Registry: "example.com", PushTarget: store, Out: &buf}); err != nil {
+	if err := pushRun(t.Context(), pushConfig{Workspace: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), EntityPath: entityPath, Registry: "example.com", PushTarget: store, Out: &buf}); err != nil {
 		t.Fatalf("push to empty registry: %v", err)
 	}
 	if !strings.Contains(buf.String(), "Push complete:") {
@@ -57,12 +57,12 @@ func TestPushSameContentIsIdempotentNoOp(t *testing.T) {
 	writeEntityFixture(t, entityPath, guardComponentBody)
 
 	store := memory.New()
-	if err := pushRun(pushConfig{Workspace: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), EntityPath: entityPath, Registry: "example.com", PushTarget: store}); err != nil {
+	if err := pushRun(t.Context(), pushConfig{Workspace: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), EntityPath: entityPath, Registry: "example.com", PushTarget: store}); err != nil {
 		t.Fatalf("first push: %v", err)
 	}
 
 	var buf bytes.Buffer
-	if err := pushRun(pushConfig{Workspace: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), EntityPath: entityPath, Registry: "example.com", PushTarget: store, Out: &buf}); err != nil {
+	if err := pushRun(t.Context(), pushConfig{Workspace: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), EntityPath: entityPath, Registry: "example.com", PushTarget: store, Out: &buf}); err != nil {
 		t.Fatalf("idempotent re-push should succeed; got %v", err)
 	}
 	if !strings.Contains(buf.String(), "Already published:") {
@@ -81,7 +81,7 @@ func TestPushRefusesOverwriteWithDifferentContent(t *testing.T) {
 	writeEntityFixture(t, entityPath, guardComponentBody)
 
 	store := memory.New()
-	if err := pushRun(pushConfig{Workspace: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), EntityPath: entityPath, Registry: "example.com", PushTarget: store}); err != nil {
+	if err := pushRun(t.Context(), pushConfig{Workspace: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), EntityPath: entityPath, Registry: "example.com", PushTarget: store}); err != nil {
 		t.Fatalf("first push: %v", err)
 	}
 
@@ -92,7 +92,7 @@ func TestPushRefusesOverwriteWithDifferentContent(t *testing.T) {
 	}
 	writeEntityFixture(t, entityPath, changed)
 
-	err := pushRun(pushConfig{Workspace: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), EntityPath: entityPath, Registry: "example.com", PushTarget: store})
+	err := pushRun(t.Context(), pushConfig{Workspace: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), EntityPath: entityPath, Registry: "example.com", PushTarget: store})
 	if err == nil {
 		t.Fatal("expected ErrImmutableTagConflict; got nil")
 	}

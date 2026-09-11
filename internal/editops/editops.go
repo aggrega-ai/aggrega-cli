@@ -60,6 +60,7 @@
 package editops
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -212,7 +213,13 @@ type Result struct {
 // is a no-op: the document is reported unchanged and nothing is written. An
 // entry present carrying something else is refused rather than replaced, because
 // replacing an entry an author wrote is outside this package's bound.
-func Apply(root string, opts Options) (Result, error) {
+//
+// A caller that withdraws before the bytes reach disk leaves the document
+// byte-for-byte as it was, exactly as a refused edit does. The interruption
+// point sits ahead of the write rather than at entry because the write is the
+// only step here a caller cannot take back: everything before it is reading,
+// composing and validating, all of which a withdrawn caller simply discards.
+func Apply(ctx context.Context, root string, opts Options) (Result, error) {
 	if strings.TrimSpace(root) == "" {
 		return Result{}, errNoWorkspace
 	}
@@ -260,11 +267,32 @@ func Apply(root string, opts Options) (Result, error) {
 	if opts.Delivery.Reports() || !changed {
 		return result, nil
 	}
+	// The last point before the edit becomes irreversible. A stop here leaves the
+	// document untouched, which is the same outcome a schema refusal produces, so
+	// a withdrawn edit is indistinguishable from one never attempted.
+	if serr := stopped(ctx); serr != nil {
+		return Result{}, serr
+	}
 	if werr := writeFileAtomic(abs, spliced, 0o644); werr != nil {
 		return Result{}, fmt.Errorf("write %s: %w", rel, werr)
 	}
 	result.Written = []string{rel}
 	return result, nil
+}
+
+// stopped reports that the caller no longer wants the edit, as an error that
+// errors.Is matches against context.Canceled and context.DeadlineExceeded. It
+// returns nil while the caller is still waiting, which is every ordinary edit.
+//
+// It is one function rather than an inline check so the sentence a stop produces
+// is stated once in this package. The cause is wrapped rather than replaced
+// because it is the part a caller acts on: a surface distinguishing "the client
+// withdrew" from "the budget ran out" reads it off the wrapped error.
+func stopped(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("aggrega edit: stopped before the document was written: %w", err)
+	}
+	return nil
 }
 
 // containerFor returns the structural path of the container the entry goes in,

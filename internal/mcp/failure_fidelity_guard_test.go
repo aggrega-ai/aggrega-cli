@@ -86,8 +86,13 @@ var proseOnlyFailureReturns = map[string]int{
 	// unmeasured rather than known.
 	"tool_publish.go": 8,
 	// Inventory. Its search reports which registries could not be consulted, and
-	// the failure return does not.
-	"tool_inventory.go": 3,
+	// the failure return does not. The fourth is the cache inventory's refusal,
+	// and that one loses nothing: the shared enumeration withholds its report
+	// entirely rather than answering with partial totals, because the totals are a
+	// claim about the whole cache and a half-walked inventory understates them
+	// while reading exactly like a small one. So at that failure return there is
+	// no structured answer in hand to carry, by the operation's own design.
+	"tool_inventory.go": 4,
 	// Catalog generation. Its failure return drops the output accumulated before
 	// the failure, which the generated command-tool surface beside it keeps.
 	"tool_gencatalog.go": 5,

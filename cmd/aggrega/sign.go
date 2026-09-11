@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/spf13/cobra"
@@ -46,7 +47,7 @@ func newSignCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return signRun(signConfig{
+			return signRun(cmd.Context(), signConfig{
 				References:   args,
 				KeyPath:      opts.keyPath,
 				FulcioURL:    opts.fulcio,
@@ -77,13 +78,13 @@ func newSignCmd() *cobra.Command {
 // not already shown — including on a batch that failed partway, where the
 // successes were reported as they happened and the failures are named in the
 // error rather than in the result.
-func signRun(cfg signConfig) error {
+func signRun(ctx context.Context, cfg signConfig) error {
 	cfg.TokenGetter = tokenGetterOrDefault(cfg.TokenGetter)
 	cfg.IsTTY = ttyOrDefault(cfg.IsTTY)
 	cfg.EnvLookup = envLookupOrGetenv(cfg.EnvLookup)
 	cfg.IdentitySupply = commandLineIdentitySupply
 	// projection-omits SignResult: every reference the batch signs is written to this surface's own status output as it is signed, carrying the same digest the result records for it, so the result holds nothing the terminal has not already been shown
-	if _, err := publishops.Sign(cfg); err != nil {
+	if _, err := publishops.Sign(ctx, cfg); err != nil {
 		return fmt.Errorf("aggrega sign: %w", err)
 	}
 	return nil

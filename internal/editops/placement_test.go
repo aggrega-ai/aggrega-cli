@@ -51,7 +51,7 @@ func TestTheNestingStepIsReadFromTheDocument(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			root, rel := writeWorkspace(t, tc.doc)
 
-			if _, err := Apply(root, Options{
+			if _, err := Apply(t.Context(), root, Options{
 				File:  rel,
 				Kind:  KindAttachFeature,
 				Node:  []string{"spec", "components", "web"},
@@ -118,7 +118,7 @@ spec:
 		t.Run(tc.name, func(t *testing.T) {
 			root, rel := writeWorkspace(t, twoLevels)
 
-			if _, err := Apply(root, Options{
+			if _, err := Apply(t.Context(), root, Options{
 				File:  rel,
 				Kind:  KindSetValue,
 				Node:  tc.node,
@@ -171,7 +171,7 @@ func TestAValueKeepsTheTypeItWasGiven(t *testing.T) {
 			root, rel := writeWorkspace(t, authoredAggregate)
 			key := strings.TrimSuffix(strings.TrimSpace(strings.Split(tc.want, ":")[0]), ":")
 
-			if _, err := Apply(root, Options{
+			if _, err := Apply(t.Context(), root, Options{
 				File:  rel,
 				Kind:  KindSetValue,
 				Node:  []string{"spec", "components", "web"},
@@ -198,7 +198,7 @@ func TestAValueKeepsTheTypeItWasGiven(t *testing.T) {
 func TestTheEntryLandsAfterEverythingTheAuthorWrote(t *testing.T) {
 	root, rel := writeWorkspace(t, authoredAggregate)
 
-	if _, err := Apply(root, Options{
+	if _, err := Apply(t.Context(), root, Options{
 		File:  rel,
 		Kind:  KindAddComponent,
 		Node:  []string{"spec", "components"},

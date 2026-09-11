@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -81,7 +82,7 @@ with one this run had no basis to judge.`,
 			if err != nil {
 				return err
 			}
-			return registryUpdateRun(registryUpdateConfig{
+			return registryUpdateRun(cmd.Context(), registryUpdateConfig{
 				ws:      rw,
 				Args:    args,
 				Upgrade: upgrade,
@@ -126,7 +127,7 @@ type registryUpdateConfig struct {
 // per-event and says each thing at the moment it happens, which on a walk over
 // several registries leaves the outcome spread across the stream — and leaves
 // parts of it out of the stream altogether.
-func registryUpdateRun(cfg registryUpdateConfig) error {
+func registryUpdateRun(ctx context.Context, cfg registryUpdateConfig) error {
 	rw, err := workspaceOrResolve(cfg.ws)
 	if err != nil {
 		return err
@@ -139,7 +140,7 @@ func registryUpdateRun(cfg registryUpdateConfig) error {
 	if len(cfg.Args) == 1 {
 		token = cfg.Args[0]
 	}
-	res, walkErr := registryops.Update(rw, registryops.UpdateOptions{
+	res, walkErr := registryops.Update(ctx, rw, registryops.UpdateOptions{
 		Registry: token,
 		Upgrade:  cfg.Upgrade,
 		Now:      cfg.now,

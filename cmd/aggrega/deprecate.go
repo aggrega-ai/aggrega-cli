@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/spf13/cobra"
@@ -68,7 +69,7 @@ func newDeprecateCmd() *cobra.Command {
 			if len(args) == 1 {
 				reference = args[0]
 			}
-			return deprecateRun(deprecateConfig{
+			return deprecateRun(cmd.Context(), deprecateConfig{
 				Reference:    reference,
 				Severity:     opts.severity,
 				Reason:       opts.reason,
@@ -108,13 +109,13 @@ func newDeprecateCmd() *cobra.Command {
 // carries, the marker's own digest and the moment it was stamped. A batch writes
 // one such account per entry and records one per entry, so the result restates
 // what this surface has already shown rather than adding to it.
-func deprecateRun(cfg deprecateConfig) error {
+func deprecateRun(ctx context.Context, cfg deprecateConfig) error {
 	cfg.TokenGetter = tokenGetterOrDefault(cfg.TokenGetter)
 	cfg.IsTTY = ttyOrDefault(cfg.IsTTY)
 	cfg.EnvLookup = envLookupOrGetenv(cfg.EnvLookup)
 	cfg.IdentitySupply = commandLineIdentitySupply
 	// projection-omits DeprecateResult: every marker the operation attaches is written to this surface's own status output as it is attached, naming the same artifact, severity, digest and stamp the result records for it, so the result holds nothing the terminal has not already been shown
-	if _, err := publishops.Deprecate(cfg); err != nil {
+	if _, err := publishops.Deprecate(ctx, cfg); err != nil {
 		return fmt.Errorf("aggrega deprecate: %w", err)
 	}
 	return nil

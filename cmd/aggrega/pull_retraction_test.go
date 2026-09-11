@@ -81,7 +81,7 @@ func buildMarkedScreenIndex(t *testing.T, markers map[string]deprecation.Marker,
 
 	rw := resolveWorkspaceWithConfig(t, t.TempDir(), content)
 	var out bytes.Buffer
-	if err := registryUpdateRun(registryUpdateConfig{ws: rw, Out: &out, now: frozenClock()}); err != nil {
+	if err := registryUpdateRun(t.Context(), registryUpdateConfig{ws: rw, Out: &out, now: frozenClock()}); err != nil {
 		t.Fatalf("registryUpdateRun: %v\n%s", err, out.String())
 	}
 	return rw

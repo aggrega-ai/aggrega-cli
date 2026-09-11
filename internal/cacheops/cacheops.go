@@ -27,6 +27,7 @@
 package cacheops
 
 import (
+	"context"
 	"fmt"
 	"io/fs"
 	"net/url"
@@ -187,6 +188,26 @@ func (l Locations) docsBundlesRoot() string {
 // special-cases the class share, so the two never drift.
 const CompiledModuleClassName = "compiled-module cache"
 
+// stopped reports that the caller no longer wants the operation, as an error
+// that errors.Is matches against context.Canceled and context.DeadlineExceeded.
+// It returns nil while the caller is still waiting, which is every ordinary run.
+//
+// It is one function rather than an inline check written at each interruption
+// point so the sentence a stop produces is stated once in this package. Two
+// hand-written phrasings of one condition agree until either is edited, and
+// nothing fails when they stop agreeing.
+//
+// The cause is wrapped rather than replaced because it is the part a caller acts
+// on: a surface distinguishing "the caller withdrew" from "the budget ran out"
+// reads it off the wrapped error, and a surface that does not care prints the
+// sentence.
+func stopped(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("aggrega cache: stopped before the operation finished: %w", err)
+	}
+	return nil
+}
+
 // Collect enumerates every applicable cache class in a fixed order: the four
 // workspace subtrees, present only when a workspace resolved, then the two
 // machine-wide caches.
@@ -195,27 +216,55 @@ const CompiledModuleClassName = "compiled-module cache"
 // deterministic across runs over identical cache state. This is the single
 // assembly of the class set: a report lists every class, a prune filters on the
 // prunable flag, and a clear acts on all of them.
-func Collect(loc Locations) []Class {
+//
+// It takes a context because the enumeration is where a cache operation spends
+// its time: every class walks a subtree and sizes each element it finds, so a
+// caller that has given up is told so here rather than after the last directory
+// has been read. A stop returns the classes gathered so far alongside the error,
+// so a caller can tell how far the enumeration reached instead of being handed
+// an empty set that reads like an empty cache.
+func Collect(ctx context.Context, loc Locations) ([]Class, error) {
 	var classes []Class
 	if loc.WorkspaceRoot != "" {
-		classes = append(classes,
-			Class{Name: "workspace entity cache", Root: loc.entitiesRoot(), Reach: ReachWorkspace, Prunable: true, Elements: enumEntities(loc.entitiesRoot())},
-			Class{Name: "workspace source-artifact cache", Root: loc.sourceArtifactsRoot(), Reach: ReachWorkspace, Prunable: true, Elements: enumSourceArtifacts(loc.sourceArtifactsRoot())},
-			Class{Name: "workspace external-input store", Root: loc.inputsRoot(), Reach: ReachWorkspace, Prunable: true, Elements: enumInputs(loc.inputsRoot())},
-			Class{Name: "workspace docs-bundle cache", Root: loc.docsBundlesRoot(), Reach: ReachWorkspace, Prunable: false, Elements: enumDocsBundles(loc.docsBundlesRoot())},
-		)
+		entities, err := enumEntities(ctx, loc.entitiesRoot())
+		if err != nil {
+			return classes, err
+		}
+		classes = append(classes, Class{Name: "workspace entity cache", Root: loc.entitiesRoot(), Reach: ReachWorkspace, Prunable: true, Elements: entities})
+
+		sourceArtifacts, err := enumSourceArtifacts(ctx, loc.sourceArtifactsRoot())
+		if err != nil {
+			return classes, err
+		}
+		classes = append(classes, Class{Name: "workspace source-artifact cache", Root: loc.sourceArtifactsRoot(), Reach: ReachWorkspace, Prunable: true, Elements: sourceArtifacts})
+
+		inputs, err := enumInputs(ctx, loc.inputsRoot())
+		if err != nil {
+			return classes, err
+		}
+		classes = append(classes, Class{Name: "workspace external-input store", Root: loc.inputsRoot(), Reach: ReachWorkspace, Prunable: true, Elements: inputs})
+
+		docsBundles, err := enumDocsBundles(ctx, loc.docsBundlesRoot())
+		if err != nil {
+			return classes, err
+		}
+		classes = append(classes, Class{Name: "workspace docs-bundle cache", Root: loc.docsBundlesRoot(), Reach: ReachWorkspace, Prunable: false, Elements: docsBundles})
 	}
 	if loc.CompileDir != "" {
-		classes = append(classes,
-			Class{Name: CompiledModuleClassName, Root: loc.CompileDir, Reach: ReachMachine, Prunable: true, Elements: enumCompileModules(loc.CompileDir, loc.AttribIndexPath, loc.ProvIndexPath)},
-		)
+		modules, err := enumCompileModules(ctx, loc.CompileDir, loc.AttribIndexPath, loc.ProvIndexPath)
+		if err != nil {
+			return classes, err
+		}
+		classes = append(classes, Class{Name: CompiledModuleClassName, Root: loc.CompileDir, Reach: ReachMachine, Prunable: true, Elements: modules})
 	}
 	if loc.DescribeDir != "" {
-		classes = append(classes,
-			Class{Name: "plugin-describe cache", Root: loc.DescribeDir, Reach: ReachMachine, Prunable: true, Elements: enumDescribe(loc.DescribeDir)},
-		)
+		describe, err := enumDescribe(ctx, loc.DescribeDir)
+		if err != nil {
+			return classes, err
+		}
+		classes = append(classes, Class{Name: "plugin-describe cache", Root: loc.DescribeDir, Reach: ReachMachine, Prunable: true, Elements: describe})
 	}
-	return classes
+	return classes, nil
 }
 
 // enumEntities enumerates the entity-cache slots. Each slot is an
@@ -224,13 +273,19 @@ func Collect(loc Locations) []Class {
 // records for that entity, schema library, mapping library, or plugin artifact.
 // A slot whose blob cannot be read carries an empty digest and is retained by a
 // prune rather than removed on a guess.
-func enumEntities(root string) []Element {
+func enumEntities(ctx context.Context, root string) ([]Element, error) {
 	var out []Element
 	uriDirs, err := os.ReadDir(root)
 	if err != nil {
-		return out
+		return out, nil
 	}
 	for _, ud := range uriDirs {
+		// One interruption point per URI directory, which is the outer seam of this
+		// enumeration: each iteration reads a directory and sizes every slot beneath
+		// it, so a directory not yet reached is one never read.
+		if serr := stopped(ctx); serr != nil {
+			return out, serr
+		}
 		if !ud.IsDir() {
 			continue
 		}
@@ -260,7 +315,7 @@ func enumEntities(root string) []Element {
 		}
 	}
 	sortElements(out)
-	return out
+	return out, nil
 }
 
 // enumSourceArtifacts enumerates the source-artifact-cache slots. A slot is any
@@ -268,9 +323,16 @@ func enumEntities(root string) []Element {
 // the authoritative content digest a lockfile source-artifact entry pins (the
 // leaf directory name is only a 12-character prefix). A slot whose metadata
 // cannot be read carries an empty digest and is retained by a prune.
-func enumSourceArtifacts(root string) []Element {
+//
+// The stop is returned as the caller's own reason rather than as fs.SkipAll,
+// which would end the walk and hand back a short element list wearing a
+// completed enumeration's shape.
+func enumSourceArtifacts(ctx context.Context, root string) ([]Element, error) {
 	var out []Element
-	_ = filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+	walkErr := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+		if serr := stopped(ctx); serr != nil {
+			return serr
+		}
 		if err != nil || !d.IsDir() {
 			return nil
 		}
@@ -293,16 +355,25 @@ func enumSourceArtifacts(root string) []Element {
 		out = append(out, el)
 		return nil
 	})
+	if walkErr != nil {
+		return out, walkErr
+	}
 	sortElements(out)
-	return out
+	return out, nil
 }
 
 // enumInputs enumerates the external-input store blobs. Each blob file is named
 // by its lowercase-hex content digest, which is exactly the pin a lockfile
 // external-input entry records.
-func enumInputs(root string) []Element {
+//
+// The stop is returned as the caller's own reason rather than as fs.SkipAll, for
+// the reason given on enumSourceArtifacts.
+func enumInputs(ctx context.Context, root string) ([]Element, error) {
 	var out []Element
-	_ = filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+	walkErr := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+		if serr := stopped(ctx); serr != nil {
+			return serr
+		}
 		if err != nil || d.IsDir() {
 			return nil
 		}
@@ -318,8 +389,11 @@ func enumInputs(root string) []Element {
 		})
 		return nil
 	})
+	if walkErr != nil {
+		return out, walkErr
+	}
 	sortElements(out)
-	return out
+	return out, nil
 }
 
 // enumDocsBundles enumerates the documentation-bundle-cache slots. A slot is an
@@ -328,13 +402,18 @@ func enumInputs(root string) []Element {
 // no lockfile references it; the class carries no element digest and is never
 // prune-eligible — only a clear reclaims it. Enumeration reports each slot's
 // decoded reference and version for a stable, deterministic listing.
-func enumDocsBundles(root string) []Element {
+func enumDocsBundles(ctx context.Context, root string) ([]Element, error) {
 	var out []Element
 	refDirs, err := os.ReadDir(root)
 	if err != nil {
-		return out
+		return out, nil
 	}
 	for _, rd := range refDirs {
+		// One interruption point per reference directory: each iteration reads a
+		// directory and sizes every slot beneath it.
+		if serr := stopped(ctx); serr != nil {
+			return out, serr
+		}
 		if !rd.IsDir() {
 			continue
 		}
@@ -360,7 +439,7 @@ func enumDocsBundles(root string) []Element {
 		}
 	}
 	sortElements(out)
-	return out
+	return out, nil
 }
 
 // isCompileLeaf reports whether a non-directory filename beneath the
@@ -410,11 +489,14 @@ func isCompileLeaf(name string) bool {
 // transients — are skipped per isCompileLeaf; they are not cache content. The
 // class remains non-prunable by element digest here: attributing leaves is a
 // reporting concern, not a prune-scope change.
-func enumCompileModules(root, attribIndexPath, provIndexPath string) []Element {
+func enumCompileModules(ctx context.Context, root, attribIndexPath, provIndexPath string) ([]Element, error) {
 	ax, _ := attribindex.Load(attribIndexPath)
 	identities := provenanceIdentities(provIndexPath)
 	var out []Element
-	_ = filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+	walkErr := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+		if serr := stopped(ctx); serr != nil {
+			return serr
+		}
 		if err != nil || d.IsDir() {
 			return nil
 		}
@@ -448,8 +530,11 @@ func enumCompileModules(root, attribIndexPath, provIndexPath string) []Element {
 		out = append(out, el)
 		return nil
 	})
+	if walkErr != nil {
+		return out, walkErr
+	}
 	sortElements(out)
-	return out
+	return out, nil
 }
 
 // provenanceIdentities builds a lookup from a normalized guest content digest to
@@ -483,13 +568,16 @@ func provenanceIdentities(provIndexPath string) map[string]string {
 // reduced to the bare-hex comparison key, which equals the pinned digest a
 // lockfile plugin entry records once both are normalized, so a describe entry
 // maps to a lockfile reference by that key.
-func enumDescribe(root string) []Element {
+func enumDescribe(ctx context.Context, root string) ([]Element, error) {
 	var out []Element
 	entries, err := os.ReadDir(root)
 	if err != nil {
-		return out
+		return out, nil
 	}
 	for _, e := range entries {
+		if serr := stopped(ctx); serr != nil {
+			return out, serr
+		}
 		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
 			continue
 		}
@@ -502,7 +590,7 @@ func enumDescribe(root string) []Element {
 		})
 	}
 	sortElements(out)
-	return out
+	return out, nil
 }
 
 // ProvenanceEntry is one recorded content digest's resolved plugin identities —
@@ -559,10 +647,19 @@ type Report struct {
 	TotalSize  int64             `json:"totalSize"`
 }
 
-// Status enumerates every cache class and totals what it found. It is a pure
-// function of on-disk cache state and removes nothing.
-func Status(loc Locations) Report {
-	classes := Collect(loc)
+// Status enumerates every cache class and totals what it found. It reads
+// on-disk cache state and removes nothing.
+//
+// It returns an error because the enumeration it performs is interruptible: a
+// caller that withdrew gets the stop rather than a report. A stopped run returns
+// no report at all rather than a partially-enumerated one, because the totals
+// are a claim about the whole cache and a half-walked inventory would understate
+// them while reading exactly like a small cache.
+func Status(ctx context.Context, loc Locations) (Report, error) {
+	classes, err := Collect(ctx, loc)
+	if err != nil {
+		return Report{}, err
+	}
 	r := Report{Classes: classes, Provenance: Provenance(loc.ProvIndexPath)}
 	for _, cl := range classes {
 		for _, el := range cl.Elements {
@@ -570,7 +667,7 @@ func Status(loc Locations) Report {
 			r.TotalSize += el.Size
 		}
 	}
-	return r
+	return r, nil
 }
 
 // MachineWideClasses names the classes in the given set whose contents are

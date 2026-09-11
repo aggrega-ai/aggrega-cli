@@ -211,7 +211,13 @@ func (s *Server) dispatchCacheStatus(ctx context.Context, req *jsonRPCRequest) e
 		return s.writeError(ctx, req.ID, jsonRPCInternalError, err.Error())
 	}
 	loc := s.cacheLocations()
-	report := cacheops.Status(loc)
+	report, err := cacheops.Status(ctx, loc)
+	if ctx.Err() != nil {
+		return nil
+	}
+	if err != nil {
+		return s.writeError(ctx, req.ID, jsonRPCInternalError, err.Error())
+	}
 
 	classes := make([]cacheClassResult, 0, len(report.Classes))
 	for _, cl := range report.Classes {
@@ -269,7 +275,7 @@ func (s *Server) dispatchCachePrune(ctx context.Context, req *jsonRPCRequest) er
 	}
 
 	loc := s.cacheLocations()
-	res, err := cacheops.Prune(loc)
+	res, err := cacheops.Prune(ctx, loc)
 	if ctx.Err() != nil {
 		return nil
 	}
@@ -315,7 +321,7 @@ func (s *Server) dispatchCacheEvict(ctx context.Context, req *jsonRPCRequest) er
 		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "cache evict: maxSize must be greater than zero")
 	}
 
-	res, evictErr := cacheops.Evict(s.cacheLocations(), capBytes)
+	res, evictErr := cacheops.Evict(ctx, s.cacheLocations(), capBytes)
 	if ctx.Err() != nil {
 		return nil
 	}
@@ -354,7 +360,7 @@ func (s *Server) dispatchCacheClear(ctx context.Context, req *jsonRPCRequest) er
 		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
 	}
 
-	res, err := cacheops.Clear(s.cacheLocations())
+	res, err := cacheops.Clear(ctx, s.cacheLocations())
 	if ctx.Err() != nil {
 		return nil
 	}

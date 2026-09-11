@@ -28,6 +28,7 @@ package registryops
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"sort"
 	"time"
@@ -231,6 +232,28 @@ func IndexesStale(indexes []registryindex.Loaded, now time.Time) bool {
 	return false
 }
 
+// stopped reports that the caller no longer wants the operation, as an error
+// that errors.Is matches against context.Canceled and context.DeadlineExceeded.
+// It returns nil while the caller is still waiting, which is every ordinary run.
+//
+// It is one function rather than an inline check written at each interruption
+// point so the sentence a stop produces is stated once for the operations that
+// POLL for a withdrawal.
+//
+// 🔴 It is deliberately NOT the same thing as the check in pinAdvertisedTrust,
+// and unifying the two would lose a distinction. This one asks "has the caller
+// withdrawn?" at a seam where no error has occurred. That one asks "was this
+// fetch error CAUSED by a withdrawal?", in order to keep a cancellation from
+// being folded into the tolerated advertises-nothing outcome — a different
+// question, asked only on an error path, and its sentence names the host it was
+// waiting on.
+func stopped(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("aggrega registry: stopped before the operation finished: %w", err)
+	}
+	return nil
+}
+
 // Search reads the local index of the configured registries and returns the
 // records matching the query, together with what the withdrawal screening found.
 //
@@ -249,7 +272,7 @@ func IndexesStale(indexes []registryindex.Loaded, now time.Time) bool {
 // present but not honoured, and the like. It is a writer rather than returned
 // data because the screening constructor owns that wording, and a second copy
 // assembled here would be a second description of the same finding.
-func Search(rw *workspaceconfig.ResolvedWorkspace, q Query, notices io.Writer, now time.Time) (SearchResult, error) {
+func Search(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, q Query, notices io.Writer, now time.Time) (SearchResult, error) {
 	var res SearchResult
 	cfg := rw.Config()
 
@@ -276,6 +299,12 @@ func Search(rw *workspaceconfig.ResolvedWorkspace, q Query, notices io.Writer, n
 
 	var loaded []registryindex.Loaded
 	for _, host := range hosts {
+		// One interruption point per host. Each iteration reads and decodes that
+		// host's whole index from disk, so a host not yet reached is one whose index
+		// was never read.
+		if serr := stopped(ctx); serr != nil {
+			return res, serr
+		}
 		idx, err := registryindex.LoadHost(root, cacheDir, host)
 		if err != nil {
 			if registryindex.IsNotBuilt(err) {

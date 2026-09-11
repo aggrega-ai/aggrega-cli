@@ -57,7 +57,7 @@ import (
 // describe different content — an edit landing on disk after the read cannot
 // reach any of the three. The loader applies the same read-once discipline
 // between import inspection, derivation, and instantiation.
-func pushPlugin(out io.Writer, cfg PushConfig, registry string, wantSign bool, name, version, entityPath string, entityYAML []byte) (PushResult, error) {
+func pushPlugin(ctx context.Context, out io.Writer, cfg PushConfig, registry string, wantSign bool, name, version, entityPath string, entityYAML []byte) (PushResult, error) {
 	if cfg.PluginPath == "" {
 		return PushResult{}, fmt.Errorf("Plugin %s: --plugin <path-to-.wasm> is required to publish a Plugin (publish binds the .wasm into the entity's manifest)", name)
 	}
@@ -78,7 +78,6 @@ func pushPlugin(out io.Writer, cfg PushConfig, registry string, wantSign bool, n
 	// declared memory cap so a large guest whose working set exceeds the platform
 	// default still instantiates, falling back to the describe headroom when the
 	// entity declares none.
-	ctx := context.Background()
 	entityIdentity := name + ":" + version
 	crossCheckMaxPages := wasm.DescribeMaxMemoryPages
 	if entity.Spec.Runtime != nil && entity.Spec.Runtime.MaxMemoryPages != 0 {

@@ -130,7 +130,7 @@ spec:
       type: object
 `)
 	var out bytes.Buffer
-	if err := pushRun(pushConfig{
+	if err := pushRun(t.Context(), pushConfig{
 		EntityPath: entityPath,
 		Registry:   "dev",
 		DryRun:     true,
@@ -152,7 +152,7 @@ func TestPushArtifactResolvesAlias(t *testing.T) {
 	rw := resolveWorkspaceWithAlias(t, "dev.local:5000", "dev")
 	path, _ := makeDocsBundle(t)
 	var out bytes.Buffer
-	if err := pushArtifactRun(pushArtifactConfig{
+	if err := pushArtifactRun(t.Context(), pushArtifactConfig{
 		FilePath:  path,
 		Name:      "aggrega-docs",
 		Tag:       "1.0.0",

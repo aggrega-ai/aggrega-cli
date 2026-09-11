@@ -270,7 +270,7 @@ func (s *Server) dispatchPublishEntity(ctx context.Context, req *jsonRPCRequest)
 		return s.writeErrorEnvelope(ctx, req.ID, paramErr)
 	}
 	progress.begin("Publishing a catalog entity")
-	result, errEnvelope := runPublishEntity(cfg)
+	result, errEnvelope := runPublishEntity(ctx, cfg)
 	if ctx.Err() != nil {
 		return nil
 	}
@@ -342,8 +342,8 @@ func (s *Server) publishEntityConfig(params publishEntityParams, progressOut io.
 // themselves; a caller that wants the prose asks to be reported on and reads it
 // as it is written, on the progress channel, rather than as a field of the
 // answer.
-func runPublishEntity(cfg publishops.PushConfig) (publishEntityResult, *jsonRPCError) {
-	res, err := publishops.Push(cfg)
+func runPublishEntity(ctx context.Context, cfg publishops.PushConfig) (publishEntityResult, *jsonRPCError) {
+	res, err := publishops.Push(ctx, cfg)
 	if err != nil {
 		return publishEntityResult{}, &jsonRPCError{
 			Code:    jsonRPCInternalError,
@@ -397,7 +397,7 @@ func (s *Server) dispatchPublishArtifact(ctx context.Context, req *jsonRPCReques
 		return s.writeErrorEnvelope(ctx, req.ID, paramErr)
 	}
 	progress.begin("Publishing a data artifact")
-	result, errEnvelope := runPublishArtifact(cfg)
+	result, errEnvelope := runPublishArtifact(ctx, cfg)
 	if ctx.Err() != nil {
 		return nil
 	}
@@ -449,8 +449,8 @@ func (s *Server) publishArtifactConfig(params publishArtifactParams, progressOut
 }
 
 // runPublishArtifact runs the data-artifact publication and shapes the answer.
-func runPublishArtifact(cfg publishops.PushArtifactConfig) (publishArtifactResult, *jsonRPCError) {
-	res, err := publishops.PushArtifact(cfg)
+func runPublishArtifact(ctx context.Context, cfg publishops.PushArtifactConfig) (publishArtifactResult, *jsonRPCError) {
+	res, err := publishops.PushArtifact(ctx, cfg)
 	if err != nil {
 		return publishArtifactResult{}, &jsonRPCError{
 			Code:    jsonRPCInternalError,
@@ -500,7 +500,7 @@ func (s *Server) dispatchSignArtifacts(ctx context.Context, req *jsonRPCRequest)
 		return s.writeErrorEnvelope(ctx, req.ID, paramErr)
 	}
 	progress.begin("Signing published artifacts")
-	result, errEnvelope := runSignArtifacts(cfg)
+	result, errEnvelope := runSignArtifacts(ctx, cfg)
 	if ctx.Err() != nil {
 		return nil
 	}
@@ -546,8 +546,8 @@ func (s *Server) signArtifactsConfig(params signArtifactsParams, progressOut io.
 }
 
 // runSignArtifacts runs the signing batch and shapes the answer.
-func runSignArtifacts(cfg publishops.SignConfig) (signArtifactsResult, *jsonRPCError) {
-	res, err := publishops.Sign(cfg)
+func runSignArtifacts(ctx context.Context, cfg publishops.SignConfig) (signArtifactsResult, *jsonRPCError) {
+	res, err := publishops.Sign(ctx, cfg)
 	if err != nil {
 		return signArtifactsResult{}, &jsonRPCError{
 			Code:    jsonRPCInternalError,
@@ -596,7 +596,7 @@ func (s *Server) dispatchDeprecateArtifact(ctx context.Context, req *jsonRPCRequ
 		return s.writeErrorEnvelope(ctx, req.ID, paramErr)
 	}
 	progress.begin("Withdrawing published artifacts")
-	result, errEnvelope := runDeprecateArtifact(cfg)
+	result, errEnvelope := runDeprecateArtifact(ctx, cfg)
 	if ctx.Err() != nil {
 		return nil
 	}
@@ -665,8 +665,8 @@ func (s *Server) deprecateArtifactConfig(params deprecateArtifactParams, progres
 }
 
 // runDeprecateArtifact runs the deprecation and shapes the answer.
-func runDeprecateArtifact(cfg publishops.DeprecateConfig) (deprecateArtifactResult, *jsonRPCError) {
-	res, err := publishops.Deprecate(cfg)
+func runDeprecateArtifact(ctx context.Context, cfg publishops.DeprecateConfig) (deprecateArtifactResult, *jsonRPCError) {
+	res, err := publishops.Deprecate(ctx, cfg)
 	if err != nil {
 		return deprecateArtifactResult{}, &jsonRPCError{
 			Code:    jsonRPCInternalError,

@@ -255,7 +255,7 @@ func TestEachEditKindLandsInTheDocument(t *testing.T) {
 			opts := tc.opts
 			opts.File = rel
 
-			res, err := Apply(root, opts)
+			res, err := Apply(t.Context(), root, opts)
 			if err != nil {
 				t.Fatalf("Apply: %v", err)
 			}
@@ -289,7 +289,7 @@ func TestEachEditKindLandsInTheDocument(t *testing.T) {
 func TestTheEditPreservesEveryByteItDidNotTouch(t *testing.T) {
 	root, rel := writeWorkspace(t, authoredAggregate)
 
-	if _, err := Apply(root, Options{
+	if _, err := Apply(t.Context(), root, Options{
 		File:  rel,
 		Kind:  KindAddComponent,
 		Node:  []string{"spec", "components"},
@@ -351,7 +351,7 @@ func TestIdenticalEditsProduceIdenticalBytes(t *testing.T) {
 		root, rel := writeWorkspace(t, authoredAggregate)
 		o := opts
 		o.File = rel
-		if _, err := Apply(root, o); err != nil {
+		if _, err := Apply(t.Context(), root, o); err != nil {
 			t.Fatalf("Apply on run %d: %v", i, err)
 		}
 		got := readBack(t, root, rel)
@@ -384,12 +384,12 @@ func TestRepeatingAnEditWritesNothing(t *testing.T) {
 		Value: "core/redis:6.2.0",
 	}
 
-	if _, err := Apply(root, opts); err != nil {
+	if _, err := Apply(t.Context(), root, opts); err != nil {
 		t.Fatalf("first Apply: %v", err)
 	}
 	once := readBack(t, root, rel)
 
-	res, err := Apply(root, opts)
+	res, err := Apply(t.Context(), root, opts)
 	if err != nil {
 		t.Fatalf("second Apply: %v", err)
 	}
@@ -410,7 +410,7 @@ func TestAnEntryPresentCarryingSomethingElseIsRefused(t *testing.T) {
 	root, rel := writeWorkspace(t, authoredAggregate)
 	before := readBack(t, root, rel)
 
-	_, err := Apply(root, Options{
+	_, err := Apply(t.Context(), root, Options{
 		File:  rel,
 		Kind:  KindAddComponent,
 		Node:  []string{"spec", "components"},
@@ -433,7 +433,7 @@ func TestAnEntryPresentCarryingSomethingElseIsRefused(t *testing.T) {
 func TestTheReportingDeliveryWritesNothing(t *testing.T) {
 	root, rel := writeWorkspace(t, authoredAggregate)
 
-	res, err := Apply(root, Options{
+	res, err := Apply(t.Context(), root, Options{
 		File:     rel,
 		Kind:     KindAddComponent,
 		Node:     []string{"spec", "components"},
@@ -475,7 +475,7 @@ func TestTheReportedContentEqualsWhatTheWriteProduces(t *testing.T) {
 	rootA, relA := writeWorkspace(t, authoredAggregate)
 	oa := opts
 	oa.File, oa.Delivery = relA, reportDelivery()
-	reported, err := Apply(rootA, oa)
+	reported, err := Apply(t.Context(), rootA, oa)
 	if err != nil {
 		t.Fatalf("reporting Apply: %v", err)
 	}
@@ -483,7 +483,7 @@ func TestTheReportedContentEqualsWhatTheWriteProduces(t *testing.T) {
 	rootB, relB := writeWorkspace(t, authoredAggregate)
 	ob := opts
 	ob.File = relB
-	if _, err := Apply(rootB, ob); err != nil {
+	if _, err := Apply(t.Context(), rootB, ob); err != nil {
 		t.Fatalf("writing Apply: %v", err)
 	}
 

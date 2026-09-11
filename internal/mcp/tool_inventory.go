@@ -141,7 +141,10 @@ func cacheStatusInvoke(s *server, ctx context.Context, args json.RawMessage) (*c
 	// so what this surface takes from it stops being readable at this site — and
 	// a projection nobody can read is indistinguishable from one that drops
 	// everything.
-	report := cacheops.Status(cacheops.ResolveLocations(root, cacheDir))
+	report, err := cacheops.Status(ctx, cacheops.ResolveLocations(root, cacheDir))
+	if err != nil {
+		return errorResult(err.Error())
+	}
 	payload := cacheStatusPayload(root, report)
 	return textResult(renderCacheStatusText(payload), payload)
 }
@@ -468,7 +471,7 @@ func searchInvoke(s *server, ctx context.Context, args json.RawMessage) (*callTo
 		return errorResult(explainToolError("Could not resolve the workspace to search its configured registries.", err, "component"))
 	}
 
-	res, searchErr := registryops.Search(tw.rw, registryops.Query{
+	res, searchErr := registryops.Search(ctx, tw.rw, registryops.Query{
 		Text:             a.Query,
 		Kinds:            a.Kinds,
 		Selector:         a.Selector,

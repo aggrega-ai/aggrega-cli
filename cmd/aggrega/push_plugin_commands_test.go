@@ -185,7 +185,7 @@ spec:
 `)
 
 	store := memory.New()
-	err := pushRun(pushConfig{
+	err := pushRun(t.Context(), pushConfig{
 		Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
 		EntityPath: entityPath,
 		PluginPath: pluginPath,
@@ -236,7 +236,7 @@ spec:
 	}
 
 	var out bytes.Buffer
-	err := pushRun(pushConfig{
+	err := pushRun(t.Context(), pushConfig{
 		Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
 		EntityPath: entityPath,
 		PluginPath: pluginPath,

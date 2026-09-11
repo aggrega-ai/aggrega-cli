@@ -241,7 +241,7 @@ var publishEntityToolSpec = toolSpec{
 	invoke: publishEntityInvoke,
 }
 
-func publishEntityInvoke(s *server, _ context.Context, args json.RawMessage) (*callToolResult, *rpcError) {
+func publishEntityInvoke(s *server, ctx context.Context, args json.RawMessage) (*callToolResult, *rpcError) {
 	var a publishEntityArgs
 	if len(args) > 0 {
 		if err := json.Unmarshal(args, &a); err != nil {
@@ -252,7 +252,7 @@ func publishEntityInvoke(s *server, _ context.Context, args json.RawMessage) (*c
 	if refusal != "" {
 		return errorResult(refusal)
 	}
-	payload, err := runPublishEntity(cfg)
+	payload, err := runPublishEntity(ctx, cfg)
 	if err != nil {
 		return errorResult(explainToolError("The publication did not happen.", err, ""))
 	}
@@ -305,8 +305,8 @@ func (s *server) publishEntityConfig(a publishEntityArgs) (publishops.PushConfig
 // They are prose written for a person watching a terminal, and this surface
 // answers with the facts themselves — which is the whole difference between this
 // tool and the one that runs the command in a separate process.
-func runPublishEntity(cfg publishops.PushConfig) (publishEntityPayload, error) {
-	res, err := publishops.Push(cfg)
+func runPublishEntity(ctx context.Context, cfg publishops.PushConfig) (publishEntityPayload, error) {
+	res, err := publishops.Push(ctx, cfg)
 	if err != nil {
 		return publishEntityPayload{}, err
 	}
@@ -421,7 +421,7 @@ var publishArtifactToolSpec = toolSpec{
 	invoke: publishArtifactInvoke,
 }
 
-func publishArtifactInvoke(s *server, _ context.Context, args json.RawMessage) (*callToolResult, *rpcError) {
+func publishArtifactInvoke(s *server, ctx context.Context, args json.RawMessage) (*callToolResult, *rpcError) {
 	var a publishArtifactArgs
 	if len(args) > 0 {
 		if err := json.Unmarshal(args, &a); err != nil {
@@ -432,7 +432,7 @@ func publishArtifactInvoke(s *server, _ context.Context, args json.RawMessage) (
 	if refusal != "" {
 		return errorResult(refusal)
 	}
-	payload, err := runPublishArtifact(cfg)
+	payload, err := runPublishArtifact(ctx, cfg)
 	if err != nil {
 		return errorResult(explainToolError("The artifact publication did not happen.", err, ""))
 	}
@@ -473,8 +473,8 @@ func (s *server) publishArtifactConfig(a publishArtifactArgs) (publishops.PushAr
 }
 
 // runPublishArtifact runs the data-artifact publication and shapes the answer.
-func runPublishArtifact(cfg publishops.PushArtifactConfig) (publishArtifactPayload, error) {
-	res, err := publishops.PushArtifact(cfg)
+func runPublishArtifact(ctx context.Context, cfg publishops.PushArtifactConfig) (publishArtifactPayload, error) {
+	res, err := publishops.PushArtifact(ctx, cfg)
 	if err != nil {
 		return publishArtifactPayload{}, err
 	}
@@ -594,7 +594,7 @@ var signArtifactsToolSpec = toolSpec{
 	invoke: signArtifactsInvoke,
 }
 
-func signArtifactsInvoke(s *server, _ context.Context, args json.RawMessage) (*callToolResult, *rpcError) {
+func signArtifactsInvoke(s *server, ctx context.Context, args json.RawMessage) (*callToolResult, *rpcError) {
 	var a signArtifactsArgs
 	if len(args) > 0 {
 		if err := json.Unmarshal(args, &a); err != nil {
@@ -605,7 +605,7 @@ func signArtifactsInvoke(s *server, _ context.Context, args json.RawMessage) (*c
 	if refusal != "" {
 		return errorResult(refusal)
 	}
-	payload, err := runSignArtifacts(cfg)
+	payload, err := runSignArtifacts(ctx, cfg)
 	if err != nil {
 		return errorResult(explainToolError("The signing did not happen.", err, ""))
 	}
@@ -644,8 +644,8 @@ func (s *server) signArtifactsConfig(a signArtifactsArgs) (publishops.SignConfig
 }
 
 // runSignArtifacts runs the signing batch and shapes the answer.
-func runSignArtifacts(cfg publishops.SignConfig) (signArtifactsPayload, error) {
-	res, err := publishops.Sign(cfg)
+func runSignArtifacts(ctx context.Context, cfg publishops.SignConfig) (signArtifactsPayload, error) {
+	res, err := publishops.Sign(ctx, cfg)
 	if err != nil {
 		return signArtifactsPayload{}, err
 	}
@@ -800,7 +800,7 @@ var deprecateArtifactToolSpec = toolSpec{
 	invoke: deprecateArtifactInvoke,
 }
 
-func deprecateArtifactInvoke(s *server, _ context.Context, args json.RawMessage) (*callToolResult, *rpcError) {
+func deprecateArtifactInvoke(s *server, ctx context.Context, args json.RawMessage) (*callToolResult, *rpcError) {
 	var a deprecateArtifactArgs
 	if len(args) > 0 {
 		if err := json.Unmarshal(args, &a); err != nil {
@@ -811,7 +811,7 @@ func deprecateArtifactInvoke(s *server, _ context.Context, args json.RawMessage)
 	if refusal != "" {
 		return errorResult(refusal)
 	}
-	payload, err := runDeprecateArtifact(cfg)
+	payload, err := runDeprecateArtifact(ctx, cfg)
 	if err != nil {
 		return errorResult(explainToolError("The deprecation marking did not happen.", err, ""))
 	}
@@ -896,8 +896,8 @@ func (s *server) deprecateArtifactConfig(a deprecateArtifactArgs) (publishops.De
 }
 
 // runDeprecateArtifact runs the deprecation and shapes the answer.
-func runDeprecateArtifact(cfg publishops.DeprecateConfig) (deprecateArtifactPayload, error) {
-	res, err := publishops.Deprecate(cfg)
+func runDeprecateArtifact(ctx context.Context, cfg publishops.DeprecateConfig) (deprecateArtifactPayload, error) {
+	res, err := publishops.Deprecate(ctx, cfg)
 	if err != nil {
 		return deprecateArtifactPayload{}, err
 	}

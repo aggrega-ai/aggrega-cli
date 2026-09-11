@@ -170,7 +170,7 @@ func TestIntegration_ConsumeRetroactiveDeprecation(t *testing.T) {
 		if markerSigner == nil {
 			markerSigner = signer
 		}
-		if derr := deprecateRun(deprecateConfig{
+		if derr := deprecateRun(t.Context(), deprecateConfig{
 			Workspace: resolveTempWorkspace(t, tempWorkspaceOptions{}),
 			Reference: componentDeprecateRef(host),
 			Severity:  severity,

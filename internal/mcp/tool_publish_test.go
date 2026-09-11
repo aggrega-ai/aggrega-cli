@@ -388,7 +388,7 @@ func TestPublicationToolsRefuseLoudlyWithNoCredentialAndDoNotHang(t *testing.T) 
 		}
 		done := make(chan outcome, 1)
 		go func() {
-			payload, err := runPublishEntity(cfg)
+			payload, err := runPublishEntity(t.Context(), cfg)
 			done <- outcome{payload, err}
 		}()
 
@@ -477,7 +477,7 @@ func TestPublishEntityToolRefusesUnsignedWhereASignatureIsRequired(t *testing.T)
 	}
 	store := memory.New()
 	cfg.PushTarget = store
-	if _, err := runPublishEntity(cfg); err == nil {
+	if _, err := runPublishEntity(t.Context(), cfg); err == nil {
 		t.Fatal("the operation answered an unsigned publication that must be refused")
 	} else if !errors.Is(err, signing.ErrUnsignedPushRefused()) {
 		t.Errorf("the refusal must carry the unsigned-publication condition; got %v", err)
@@ -530,7 +530,7 @@ func TestSignatureTheToolProtocolAttachedDoesNotVerifyAgainstAnotherKey(t *testi
 			}
 			store := memory.New()
 			cfg.PushTarget = store
-			got, err := runPublishEntity(cfg)
+			got, err := runPublishEntity(t.Context(), cfg)
 			if err != nil {
 				t.Fatalf("publish: %v", err)
 			}
@@ -607,7 +607,7 @@ func TestPublishArtifactToolLandsBytesAndReportsTheirDigest(t *testing.T) {
 		t.Fatalf("publishArtifactConfig: %s", refusal)
 	}
 	cfg.PushTarget = store
-	got, err := runPublishArtifact(cfg)
+	got, err := runPublishArtifact(t.Context(), cfg)
 	if err != nil {
 		t.Fatalf("publish the artifact: %v", err)
 	}
@@ -649,7 +649,7 @@ func TestSignArtifactsToolSignsWhatIsPublishedAndRefusesWhatIsNot(t *testing.T) 
 		t.Fatalf("publishEntityConfig: %s", refusal)
 	}
 	cfg.PushTarget = store
-	published, err := runPublishEntity(cfg)
+	published, err := runPublishEntity(t.Context(), cfg)
 	if err != nil {
 		t.Fatalf("publish: %v", err)
 	}
@@ -662,7 +662,7 @@ func TestSignArtifactsToolSignsWhatIsPublishedAndRefusesWhatIsNot(t *testing.T) 
 		t.Fatalf("signArtifactsConfig: %s", signRefusal)
 	}
 	signCfg.Target = store
-	signed, err := runSignArtifacts(signCfg)
+	signed, err := runSignArtifacts(t.Context(), signCfg)
 	if err != nil {
 		t.Fatalf("sign: %v", err)
 	}
@@ -685,7 +685,7 @@ func TestSignArtifactsToolSignsWhatIsPublishedAndRefusesWhatIsNot(t *testing.T) 
 		t.Fatalf("signArtifactsConfig: %s", missRefusal)
 	}
 	missCfg.Target = store
-	if _, err := runSignArtifacts(missCfg); err == nil {
+	if _, err := runSignArtifacts(t.Context(), missCfg); err == nil {
 		t.Fatal("signing a reference nothing published must be refused")
 	} else if !strings.Contains(err.Error(), "nothing to sign") {
 		t.Errorf("the refusal must say what was wrong: %q", err.Error())
@@ -717,7 +717,7 @@ func TestDeprecateArtifactToolAttachesAMarkerAndRefusesAnAbsentSubject(t *testin
 		t.Fatalf("deprecateArtifactConfig: %s", refusal)
 	}
 	cfg.Target = store
-	got, err := runDeprecateArtifact(cfg)
+	got, err := runDeprecateArtifact(t.Context(), cfg)
 	if err != nil {
 		t.Fatalf("deprecate: %v", err)
 	}
@@ -740,7 +740,7 @@ func TestDeprecateArtifactToolAttachesAMarkerAndRefusesAnAbsentSubject(t *testin
 		t.Fatalf("deprecateArtifactConfig: %s", missRefusal)
 	}
 	missCfg.Target = store
-	if _, err := runDeprecateArtifact(missCfg); err == nil {
+	if _, err := runDeprecateArtifact(t.Context(), missCfg); err == nil {
 		t.Fatal("a marker against a reference nothing published must be refused")
 	} else if !strings.Contains(err.Error(), "nothing to deprecate") {
 		t.Errorf("the refusal must say what was wrong: %q", err.Error())
@@ -824,7 +824,7 @@ func publishThroughTool(t *testing.T, s *server, root string, store oras.Target)
 		t.Fatalf("publishEntityConfig: %s", refusal)
 	}
 	cfg.PushTarget = store
-	got, err := runPublishEntity(cfg)
+	got, err := runPublishEntity(t.Context(), cfg)
 	if err != nil {
 		t.Fatalf("publish: %v", err)
 	}

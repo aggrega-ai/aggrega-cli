@@ -58,7 +58,7 @@ func buildSearchWorkspace(t *testing.T) *workspaceconfig.ResolvedWorkspace {
 		"registries:\n  - host: hub.aggrega.ai\n    name: hub\n"
 	rw := resolveWorkspaceWithConfig(t, root, content)
 
-	if err := registryUpdateRun(registryUpdateConfig{ws: rw, Out: new(bytes.Buffer), now: searchFrozen}); err != nil {
+	if err := registryUpdateRun(t.Context(), registryUpdateConfig{ws: rw, Out: new(bytes.Buffer), now: searchFrozen}); err != nil {
 		t.Fatalf("seed index via registryUpdateRun: %v", err)
 	}
 	// Pin the staleness clock just after the stamped time so the seeded index reads
@@ -82,7 +82,7 @@ func withSearchClock(t *testing.T, at time.Time) {
 func runSearch(t *testing.T, rw *workspaceconfig.ResolvedWorkspace, opts searchOptions) (string, string, error) {
 	t.Helper()
 	var out, errOut bytes.Buffer
-	err := searchRun(rw, &out, &errOut, opts)
+	err := searchRun(t.Context(), rw, &out, &errOut, opts)
 	return out.String(), errOut.String(), err
 }
 

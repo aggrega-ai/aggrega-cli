@@ -84,7 +84,7 @@ spec:
 			writeEntityFixture(t, entityPath, tc.body)
 
 			store := memory.New()
-			if err := pushRun(pushConfig{
+			if err := pushRun(t.Context(), pushConfig{
 				Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
 				EntityPath: entityPath,
 				Registry:   "example.com",
@@ -129,7 +129,7 @@ spec:
       type: object
 `)
 	store := memory.New()
-	if err := pushRun(pushConfig{
+	if err := pushRun(t.Context(), pushConfig{
 		Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
 		EntityPath: libPath,
 		Registry:   "example.com",
@@ -164,7 +164,7 @@ spec:
     LivenessProbe:
       type: object
 `)
-	err := pushRun(pushConfig{
+	err := pushRun(t.Context(), pushConfig{
 		Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
 		EntityPath: libPath,
 		Registry:   "example.com",
@@ -219,7 +219,7 @@ spec:
 	writeEntityFixture(t, filepath.Join(recipeDir, "partials", "header.yaml"), "# header partial\n")
 
 	store := memory.New()
-	if err := pushRun(pushConfig{
+	if err := pushRun(t.Context(), pushConfig{
 		Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
 		EntityPath: filepath.Join(recipeDir, "server.yaml"),
 		Registry:   "example.com",
@@ -268,7 +268,7 @@ spec:
 	writeEntityFixture(t, filepath.Join(recipeDir, "mariadb.yaml"), recipeBody)
 
 	store := memory.New()
-	if err := pushRun(pushConfig{
+	if err := pushRun(t.Context(), pushConfig{
 		Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
 		EntityPath: filepath.Join(recipeDir, "mariadb.yaml"),
 		Registry:   "example.com",
@@ -310,7 +310,7 @@ metadata:
   name: smoke
   version: 1.0.0
 `)
-	if err := pushRun(pushConfig{
+	if err := pushRun(t.Context(), pushConfig{
 		Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
 		EntityPath: entityPath,
 		Registry:   "example.com",
@@ -352,7 +352,7 @@ metadata:
 			entityPath := filepath.Join(root, "entity.yaml")
 			writeEntityFixture(t, entityPath, tc.body)
 
-			err := pushRun(pushConfig{
+			err := pushRun(t.Context(), pushConfig{
 				Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
 				EntityPath: entityPath,
 				Registry:   "example.com",
@@ -389,7 +389,7 @@ spec:
     values:
       type: object
 `)
-	if err := pushRun(pushConfig{
+	if err := pushRun(t.Context(), pushConfig{
 		Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
 		EntityPath: entityPath,
 		Registry:   "example.com",
@@ -434,7 +434,7 @@ spec:
 
 	// Without --registry, workspace.default_registry wins.
 	var buf bytes.Buffer
-	if err := pushRun(pushConfig{
+	if err := pushRun(t.Context(), pushConfig{
 		Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
 		EntityPath: entityPath,
 		DryRun:     true,
@@ -449,7 +449,7 @@ spec:
 
 	// With --registry, the flag wins over workspace.default_registry.
 	buf.Reset()
-	if err := pushRun(pushConfig{
+	if err := pushRun(t.Context(), pushConfig{
 		Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
 		EntityPath: entityPath,
 		Registry:   "flag.example.io",

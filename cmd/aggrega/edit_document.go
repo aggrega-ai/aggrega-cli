@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"strings"
@@ -89,7 +90,7 @@ func newEditDocumentCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return editDocumentRun(editDocumentConfig{
+			return editDocumentRun(cmd.Context(), editDocumentConfig{
 				Edit: args[0],
 				File: args[1],
 				Node: opts.node,
@@ -173,7 +174,7 @@ type editDocumentConfig struct {
 // The composition, the bound and the re-validation live in that layer, so this
 // surface and a session perform one edit rather than each performing its own.
 // Nothing here decides where an entry goes or whether the result is admissible.
-func editDocumentRun(cfg editDocumentConfig) error {
+func editDocumentRun(ctx context.Context, cfg editDocumentConfig) error {
 	rw, err := workspaceOrResolve(cfg.ws)
 	if err != nil {
 		return err
@@ -183,7 +184,7 @@ func editDocumentRun(cfg editDocumentConfig) error {
 		return err
 	}
 	delivery := authoredcontent.DeliveryFor(cfg.DryRun)
-	res, err := editops.Apply(rw.Root(), editops.Options{
+	res, err := editops.Apply(ctx, rw.Root(), editops.Options{
 		File:     cfg.File,
 		Kind:     editops.Kind(cfg.Edit),
 		Node:     cfg.Node,

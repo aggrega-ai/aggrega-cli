@@ -5,6 +5,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -78,7 +79,7 @@ left out.`,
 			if len(args) == 1 {
 				opts.Query = args[0]
 			}
-			return searchRun(rw, cmd.OutOrStdout(), cmd.ErrOrStderr(), opts)
+			return searchRun(cmd.Context(), rw, cmd.OutOrStdout(), cmd.ErrOrStderr(), opts)
 		},
 	}
 	c.Flags().StringArrayVar(&opts.Kinds, "kind", nil, "Entity kind to match (component|feature|recipe|featurerecipe|workload|plugin). Repeatable; a record matching any one is kept. Case-insensitive.")
@@ -129,12 +130,12 @@ type searchOptions struct {
 // to the next host. If the effective host set is non-empty but not one index
 // loaded, the run fails loudly rather than presenting an empty result as a
 // successful search.
-func searchRun(rw *workspaceconfig.ResolvedWorkspace, out, errOut io.Writer, opts searchOptions) error {
+func searchRun(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, out, errOut io.Writer, opts searchOptions) error {
 	if _, err := parseFormat("search", opts.Output, "table", "json", "names"); err != nil {
 		return err
 	}
 
-	res, err := registryops.Search(rw, registryops.Query{
+	res, err := registryops.Search(ctx, rw, registryops.Query{
 		Text:             opts.Query,
 		Kinds:            opts.Kinds,
 		Selector:         opts.Selector,

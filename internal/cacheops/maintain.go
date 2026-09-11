@@ -4,6 +4,7 @@
 package cacheops
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -70,8 +71,11 @@ type PruneResult struct {
 //
 // A removal failure part-way through returns both the error and the result
 // assembled so far, so a caller renders the removals that did happen instead of
-// reporting a partial prune as though nothing had been removed.
-func Prune(loc Locations) (PruneResult, error) {
+// reporting a partial prune as though nothing had been removed. A stop is
+// reported the same way and for the same reason: the removals already performed
+// cannot be undone, so a withdrawn prune reports what it did rather than
+// claiming it did nothing.
+func Prune(ctx context.Context, loc Locations) (PruneResult, error) {
 	var res PruneResult
 	if loc.WorkspaceRoot == "" {
 		return res, ErrPruneNeedsWorkspace
@@ -92,7 +96,10 @@ func Prune(loc Locations) (PruneResult, error) {
 	// — so it maps to the same reference set. The compiled-module cache is prunable
 	// too, but by attribution rather than by an element digest, so it is handled by
 	// a dedicated arm that consults the attribution index directly.
-	classes := Collect(loc)
+	classes, err := Collect(ctx, loc)
+	if err != nil {
+		return res, err
+	}
 	ax, _ := attribindex.Load(loc.AttribIndexPath)
 	res.MachineWide = MachineWideClasses(classes)
 
@@ -106,6 +113,12 @@ func Prune(loc Locations) (PruneResult, error) {
 		}
 		if cl.Name == CompiledModuleClassName {
 			for _, el := range cl.Elements {
+				// The interruption point sits ahead of the removal, so a stop leaves the
+				// element on disk. A removal cannot be undone, which is why the check is
+				// here rather than after the loop.
+				if serr := stopped(ctx); serr != nil {
+					return res, serr
+				}
 				entry, attributed := ax.Entry(el.Label)
 				if !attributed {
 					// A compiled leaf whose attribution cannot be determined is retained on
@@ -133,6 +146,10 @@ func Prune(loc Locations) (PruneResult, error) {
 			continue
 		}
 		for _, el := range cl.Elements {
+			// As above: ahead of the removal, so a stop leaves the element on disk.
+			if serr := stopped(ctx); serr != nil {
+				return res, serr
+			}
 			if el.DigestHex == "" || refset[el.DigestHex] {
 				res.RetainedCount++
 				continue
@@ -213,13 +230,20 @@ type EvictResult struct {
 //
 // A removal failure returns both the error and the leaves removed before it, so
 // a partial trim is never silent.
-func Evict(loc Locations, capBytes int64) (EvictResult, error) {
+func Evict(ctx context.Context, loc Locations, capBytes int64) (EvictResult, error) {
 	out := EvictResult{
 		CapBytes:    capBytes,
 		MachineWide: []string{CompiledModuleClassName},
 	}
 	if loc.CompileDir == "" {
 		return out, errors.New("cache evict: no compiled-module cache directory could be resolved")
+	}
+	// The reclamation is one call that selects and removes without reporting
+	// progress, so the last point a stop can be observed is before it starts.
+	// Nothing here can interrupt it part-way, and a check afterwards would
+	// withhold the reply while the leaves were already gone.
+	if serr := stopped(ctx); serr != nil {
+		return out, serr
 	}
 	res, err := wasm.ReclaimCompileCache(loc.CompileDir, capBytes)
 	out.TotalBefore = res.Total
@@ -262,10 +286,20 @@ type ClearResult struct {
 // Clear removes every cache subtree. Each subtree is sized before removal so the
 // result states what was reclaimed. Absent subtrees are no-ops.
 //
-// A removal failure returns both the error and the subtrees cleared before it.
-func Clear(loc Locations) (ClearResult, error) {
+// A removal failure returns both the error and the subtrees cleared before it,
+// and a stop is reported the same way: the subtrees already removed cannot be
+// restored, so a withdrawn clear reports what it removed.
+func Clear(ctx context.Context, loc Locations) (ClearResult, error) {
 	var res ClearResult
-	for _, cl := range Collect(loc) {
+	classes, err := Collect(ctx, loc)
+	if err != nil {
+		return res, err
+	}
+	for _, cl := range classes {
+		// Ahead of the removal, so a stop leaves the subtree on disk.
+		if serr := stopped(ctx); serr != nil {
+			return res, serr
+		}
 		if cl.Root == "" {
 			continue
 		}

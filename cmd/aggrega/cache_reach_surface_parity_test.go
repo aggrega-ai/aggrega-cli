@@ -59,7 +59,7 @@ var reachParityCases = []reachParityCase{
 		name: "prune",
 		shared: func(t *testing.T, loc cacheops.Locations) ([]string, []reachedThing) {
 			t.Helper()
-			res, err := cacheops.Prune(loc)
+			res, err := cacheops.Prune(t.Context(), loc)
 			if err != nil {
 				t.Fatalf("the shared prune refused, so it produced no expectation to compare against: %v", err)
 			}
@@ -71,7 +71,7 @@ var reachParityCases = []reachParityCase{
 		},
 		render: func(t *testing.T, w io.Writer, loc cacheops.Locations) {
 			t.Helper()
-			if err := runCachePrune(w, loc); err != nil {
+			if err := runCachePrune(t.Context(), w, loc); err != nil {
 				t.Fatalf("the command refused the prune: %v", err)
 			}
 		},
@@ -80,7 +80,7 @@ var reachParityCases = []reachParityCase{
 		name: "evict",
 		shared: func(t *testing.T, loc cacheops.Locations) ([]string, []reachedThing) {
 			t.Helper()
-			res, err := cacheops.Evict(loc, evictParityCap)
+			res, err := cacheops.Evict(t.Context(), loc, evictParityCap)
 			if err != nil {
 				t.Fatalf("the shared eviction refused, so it produced no expectation to compare against: %v", err)
 			}
@@ -96,7 +96,7 @@ var reachParityCases = []reachParityCase{
 		},
 		render: func(t *testing.T, w io.Writer, loc cacheops.Locations) {
 			t.Helper()
-			if err := runCacheEvict(w, loc, evictParityCap); err != nil {
+			if err := runCacheEvict(t.Context(), w, loc, evictParityCap); err != nil {
 				t.Fatalf("the command refused the eviction: %v", err)
 			}
 		},
@@ -105,7 +105,7 @@ var reachParityCases = []reachParityCase{
 		name: "clear",
 		shared: func(t *testing.T, loc cacheops.Locations) ([]string, []reachedThing) {
 			t.Helper()
-			res, err := cacheops.Clear(loc)
+			res, err := cacheops.Clear(t.Context(), loc)
 			if err != nil {
 				t.Fatalf("the shared wipe refused, so it produced no expectation to compare against: %v", err)
 			}
@@ -117,7 +117,7 @@ var reachParityCases = []reachParityCase{
 		},
 		render: func(t *testing.T, w io.Writer, loc cacheops.Locations) {
 			t.Helper()
-			if err := runCacheClear(w, loc); err != nil {
+			if err := runCacheClear(t.Context(), w, loc); err != nil {
 				t.Fatalf("the command refused the wipe: %v", err)
 			}
 		},

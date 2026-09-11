@@ -110,7 +110,7 @@ func publishSignedPluginToRegistry(t *testing.T, signer signing.Signer) signedPl
 	writeFixture(t, entityPath, pluginEntityYAML(host, name, version))
 
 	wantSign := true
-	if perr := pushRun(pushConfig{
+	if perr := pushRun(t.Context(), pushConfig{
 		Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{Root: entityDir}),
 		EntityPath: entityPath,
 		PluginPath: pluginPath,
@@ -139,7 +139,7 @@ func publishUnsignedPluginToRegistry(t *testing.T) signedPluginPublication {
 	entityPath := filepath.Join(entityDir, "plugin.yaml")
 	writeFixture(t, entityPath, pluginEntityYAML(host, name, version))
 
-	if perr := pushRun(pushConfig{Workspace: resolveTempWorkspace(t, tempWorkspaceOptions{Root: entityDir}), EntityPath: entityPath, PluginPath: pluginPath, Registry: host}); perr != nil {
+	if perr := pushRun(t.Context(), pushConfig{Workspace: resolveTempWorkspace(t, tempWorkspaceOptions{Root: entityDir}), EntityPath: entityPath, PluginPath: pluginPath, Registry: host}); perr != nil {
 		t.Fatalf("publish unsigned plugin: %v", perr)
 	}
 	return fetchPublishedPlugin(t, host, name, version)

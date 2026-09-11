@@ -6,6 +6,7 @@ package publishops
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"strings"
 	"time"
@@ -40,6 +41,25 @@ const fulcioTokenTransientMarker = "There was an error processing the identity t
 type signBundle struct {
 	bytes        []byte
 	artifactType string
+}
+
+// stopped reports that the caller no longer wants the operation, as an error
+// that errors.Is matches against context.Canceled and context.DeadlineExceeded.
+// It returns nil while the caller is still waiting, which is every ordinary run.
+//
+// It is one function rather than an inline check written at each interruption
+// point so the sentence a stop produces is stated once in this package. The
+// cause is wrapped rather than replaced because it is the part a caller acts on.
+//
+// Every interruption point in this package sits AHEAD of the first byte that
+// reaches a registry, which is what the sentence says: publication is not
+// reversible, so a withdrawal observed afterwards would withhold the reply while
+// the bytes were already published.
+func stopped(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("aggrega publish: stopped before anything was published: %w", err)
+	}
+	return nil
 }
 
 // RetryTransient calls fn up to maxPublishAttempts times, returning its first

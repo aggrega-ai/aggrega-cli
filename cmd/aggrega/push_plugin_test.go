@@ -101,7 +101,7 @@ func TestPushPluginSingleManifestPublish(t *testing.T) {
 	}
 	store := memory.New()
 
-	if err := pushRun(pushConfig{
+	if err := pushRun(t.Context(), pushConfig{
 		Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}),
 		EntityPath: entityPath,
 		PluginPath: pluginPath,
@@ -145,7 +145,7 @@ func TestPushPluginPublishedEntityReloadsClean(t *testing.T) {
 	wsRoot, entityPath, pluginPath, _ := writeAgreeingPlugin(t)
 	store := memory.New()
 
-	if err := pushRun(pushConfig{
+	if err := pushRun(t.Context(), pushConfig{
 		Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}),
 		EntityPath: entityPath,
 		PluginPath: pluginPath,
@@ -176,7 +176,7 @@ func TestPushPluginRequiresPluginFlag(t *testing.T) {
 	writeEntityFixture(t, entityPath, agreeingPluginEntity)
 	store := memory.New()
 
-	err := pushRun(pushConfig{
+	err := pushRun(t.Context(), pushConfig{
 		Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
 		EntityPath: entityPath,
 		Registry:   "hub.aggrega.ai",
@@ -216,7 +216,7 @@ spec:
 `)
 
 	store := memory.New()
-	err := pushRun(pushConfig{
+	err := pushRun(t.Context(), pushConfig{
 		Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
 		EntityPath: entityPath,
 		PluginPath: pluginPath,
@@ -246,7 +246,7 @@ func TestPushPluginPartialPushSafety(t *testing.T) {
 	store := memory.New()
 	target := &failVersionTagTarget{Target: store}
 
-	err := pushRun(pushConfig{
+	err := pushRun(t.Context(), pushConfig{
 		Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}),
 		EntityPath: entityPath,
 		PluginPath: pluginPath,
@@ -289,7 +289,7 @@ func TestPushPluginSignedAndVerifiable(t *testing.T) {
 
 	store := memory.New()
 	wantSign := true
-	if err := pushRun(pushConfig{
+	if err := pushRun(t.Context(), pushConfig{
 		Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}),
 		EntityPath: entityPath,
 		PluginPath: pluginPath,
@@ -420,7 +420,7 @@ func TestPushPluginLargeGuestDryRunUnderDeclaredCap(t *testing.T) {
 	wsRoot, entityPath, pluginPath := writeLargeGuestPlugin(t, "  runtime:\n    maxMemoryPages: 4096\n")
 
 	var out bytes.Buffer
-	if err := pushRun(pushConfig{
+	if err := pushRun(t.Context(), pushConfig{
 		Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}),
 		EntityPath: entityPath,
 		PluginPath: pluginPath,
@@ -443,7 +443,7 @@ func TestPushPluginLargeGuestDryRunFallsBackToDescribeFloor(t *testing.T) {
 	wsRoot, entityPath, pluginPath := writeLargeGuestPlugin(t, "")
 
 	var out bytes.Buffer
-	if err := pushRun(pushConfig{
+	if err := pushRun(t.Context(), pushConfig{
 		Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}),
 		EntityPath: entityPath,
 		PluginPath: pluginPath,
@@ -463,7 +463,7 @@ func TestPushPluginLargeGuestDryRunFallsBackToDescribeFloor(t *testing.T) {
 func TestPushPluginLargeGuestDefaultCapInsufficient(t *testing.T) {
 	wsRoot, entityPath, pluginPath := writeLargeGuestPlugin(t, "  runtime:\n    maxMemoryPages: 1024\n")
 
-	err := pushRun(pushConfig{
+	err := pushRun(t.Context(), pushConfig{
 		Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}),
 		EntityPath: entityPath,
 		PluginPath: pluginPath,
@@ -544,7 +544,7 @@ func TestPushPluginProviderReusableInstanceCrossCheck(t *testing.T) {
 `)
 
 	var out bytes.Buffer
-	if err := pushRun(pushConfig{
+	if err := pushRun(t.Context(), pushConfig{
 		Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}),
 		EntityPath: entityPath,
 		PluginPath: pluginPath,
@@ -580,7 +580,7 @@ func TestPushPluginProviderReusableInstanceMismatchHalts(t *testing.T) {
     maxMemoryPages: 4096
 `)
 
-	err := pushRun(pushConfig{
+	err := pushRun(t.Context(), pushConfig{
 		Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}),
 		EntityPath: entityPath,
 		PluginPath: pluginPath,
@@ -609,7 +609,7 @@ func TestPublishPullRoundTripPlugin(t *testing.T) {
 	wsRoot, entityPath, pluginPath, contentDigest := writeAgreeingPlugin(t)
 	store := memory.New()
 
-	if err := pushRun(pushConfig{
+	if err := pushRun(t.Context(), pushConfig{
 		Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}),
 		EntityPath: entityPath,
 		PluginPath: pluginPath,
@@ -697,7 +697,7 @@ func TestVersionTagPushPullParity(t *testing.T) {
 	wsRoot, entityPath, pluginPath, contentDigest := writeAgreeingPlugin(t)
 	store := memory.New()
 
-	if err := pushRun(pushConfig{
+	if err := pushRun(t.Context(), pushConfig{
 		Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}),
 		EntityPath: entityPath,
 		PluginPath: pluginPath,

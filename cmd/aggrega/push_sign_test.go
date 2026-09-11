@@ -63,7 +63,7 @@ func TestPushSignFlagSignsAndAttachesReferrer(t *testing.T) {
 	fake := &signingtest.FakeSigner{}
 
 	sign := true
-	if err := pushRun(pushConfig{
+	if err := pushRun(t.Context(), pushConfig{
 		Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}),
 		EntityPath: entityPath,
 		Registry:   "example.com",
@@ -93,7 +93,7 @@ func TestPushUnsignedToSignatureRequiringRegistryRefused(t *testing.T) {
 	store := memory.New()
 
 	noSign := false
-	err := pushRun(pushConfig{
+	err := pushRun(t.Context(), pushConfig{
 		Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}),
 		EntityPath: entityPath,
 		Registry:   "secure.example.com",
@@ -123,7 +123,7 @@ func TestPushSignsByDefaultToSignatureRequiringRegistry(t *testing.T) {
 	store := memory.New()
 	fake := &signingtest.FakeSigner{}
 
-	if err := pushRun(pushConfig{
+	if err := pushRun(t.Context(), pushConfig{
 		Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}),
 		EntityPath: entityPath,
 		Registry:   "secure.example.com",
@@ -149,7 +149,7 @@ func TestPushSignRequestedWithoutSignerRefused(t *testing.T) {
 	store := memory.New()
 
 	sign := true
-	err := pushRun(pushConfig{
+	err := pushRun(t.Context(), pushConfig{
 		Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}),
 		EntityPath: entityPath,
 		Registry:   "example.com",

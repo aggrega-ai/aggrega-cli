@@ -112,7 +112,7 @@ func TestEditingADocumentFromTheCommandLineLandsTheEntryAndPreservesEveryOtherBy
 	ws, abs := editDocumentWorkspace(t, "storefront.aggregate.yaml", authoredAggregateForEdit)
 
 	var out bytes.Buffer
-	err := editDocumentRun(editDocumentConfig{
+	err := editDocumentRun(t.Context(), editDocumentConfig{
 		Edit:       "add-component",
 		File:       ws.rel,
 		Node:       []string{"spec", "components"},
@@ -169,7 +169,7 @@ func TestAnEditTheSchemaRefusesLeavesTheFileByteIdentical(t *testing.T) {
 	before := readFileForEdit(t, abs)
 
 	var out bytes.Buffer
-	err := editDocumentRun(editDocumentConfig{
+	err := editDocumentRun(t.Context(), editDocumentConfig{
 		Edit:       "set-value",
 		File:       ws.rel,
 		Node:       []string{"spec", "components", "web"},
@@ -203,7 +203,7 @@ func TestTheReleaseFixtureAcceptsALegitimateEditFirst(t *testing.T) {
 	t.Parallel()
 	ws, abs := editDocumentWorkspace(t, "prod.release.yaml", authoredReleaseForEdit)
 
-	err := editDocumentRun(editDocumentConfig{
+	err := editDocumentRun(t.Context(), editDocumentConfig{
 		Edit:       "attach-feature",
 		File:       ws.rel,
 		Node:       []string{"spec", "components", "web"},
@@ -234,7 +234,7 @@ func TestEditingADocumentReportsContentAndWritesNothing(t *testing.T) {
 	resolved := resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws.root})
 
 	edit := func(dryRun bool, out *bytes.Buffer) error {
-		return editDocumentRun(editDocumentConfig{
+		return editDocumentRun(t.Context(), editDocumentConfig{
 			Edit:       "attach-feature",
 			File:       ws.rel,
 			Node:       []string{"spec", "components", "web"},
@@ -302,7 +302,7 @@ func TestTheDefaultDeliveryWrites(t *testing.T) {
 	// delivery stated the document is edited on disk.
 	ws, abs := editDocumentWorkspace(t, "storefront.aggregate.yaml", authoredAggregateForEdit)
 	before := readFileForEdit(t, abs)
-	if err := editDocumentRun(editDocumentConfig{
+	if err := editDocumentRun(t.Context(), editDocumentConfig{
 		Edit:       "set-value",
 		File:       ws.rel,
 		Node:       []string{"spec", "components", "web"},
@@ -363,7 +363,7 @@ func TestAValueThatIsNotAScalarIsRefusedRatherThanFlattened(t *testing.T) {
 	ws, abs := editDocumentWorkspace(t, "storefront.aggregate.yaml", authoredAggregateForEdit)
 	before := readFileForEdit(t, abs)
 
-	err := editDocumentRun(editDocumentConfig{
+	err := editDocumentRun(t.Context(), editDocumentConfig{
 		Edit:       "set-value",
 		File:       ws.rel,
 		Node:       []string{"spec", "components", "web"},
@@ -389,7 +389,7 @@ func TestAnEditNamingNoKnownKindIsRefused(t *testing.T) {
 	ws, abs := editDocumentWorkspace(t, "storefront.aggregate.yaml", authoredAggregateForEdit)
 	before := readFileForEdit(t, abs)
 
-	err := editDocumentRun(editDocumentConfig{
+	err := editDocumentRun(t.Context(), editDocumentConfig{
 		Edit:       "delete-component",
 		File:       ws.rel,
 		Node:       []string{"spec", "components"},

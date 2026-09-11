@@ -72,7 +72,7 @@ func pushEntityFixture(t *testing.T, body string, dryRun bool) (out string, repu
 
 	store := memory.New()
 	var buf bytes.Buffer
-	if err := pushRun(pushConfig{
+	if err := pushRun(t.Context(), pushConfig{
 		Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
 		EntityPath: entityPath,
 		Registry:   "example.com",
@@ -86,7 +86,7 @@ func pushEntityFixture(t *testing.T, body string, dryRun bool) (out string, repu
 		return buf.String(), ""
 	}
 	var again bytes.Buffer
-	if err := pushRun(pushConfig{
+	if err := pushRun(t.Context(), pushConfig{
 		Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
 		EntityPath: entityPath,
 		Registry:   "example.com",
@@ -105,7 +105,7 @@ func pushEntityResult(t *testing.T, body string) publishops.PushResult {
 	root := t.TempDir()
 	entityPath := filepath.Join(root, "1.0.0", "entity.yaml")
 	writeEntityFixture(t, entityPath, body)
-	res, err := publishops.Push(publishops.PushConfig{
+	res, err := publishops.Push(t.Context(), publishops.PushConfig{
 		Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
 		EntityPath: entityPath,
 		Registry:   "example.com",
@@ -214,7 +214,7 @@ func TestPushArtifactReportsTheFactsItsResultCarries(t *testing.T) {
 			}
 
 			// The expectation's own call, against its own store.
-			want, err := publishops.PushArtifact(publishops.PushArtifactConfig{
+			want, err := publishops.PushArtifact(t.Context(), publishops.PushArtifactConfig{
 				Workspace: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
 				FilePath:  bundle, Name: "probe", Tag: "1.0.0",
 				MediaType: row.mediaType, Registry: "example.com",
@@ -227,7 +227,7 @@ func TestPushArtifactReportsTheFactsItsResultCarries(t *testing.T) {
 			store := memory.New()
 			var published, republished bytes.Buffer
 			for _, sink := range []*bytes.Buffer{&published, &republished} {
-				if err := pushArtifactRun(pushArtifactConfig{
+				if err := pushArtifactRun(t.Context(), pushArtifactConfig{
 					Workspace: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
 					FilePath:  bundle, Name: "probe", Tag: "1.0.0",
 					MediaType: row.mediaType, Registry: "example.com",
@@ -269,7 +269,7 @@ func TestPushPluginReportsBothByteCounts(t *testing.T) {
 	wsRoot, entityPath, pluginPath, _ := writeAgreeingPlugin(t)
 
 	// The expectation's own call, against its own store.
-	want, err := publishops.Push(publishops.PushConfig{
+	want, err := publishops.Push(t.Context(), publishops.PushConfig{
 		Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}),
 		EntityPath: entityPath, PluginPath: pluginPath,
 		Registry: "hub.aggrega.ai", PushTarget: memory.New(), Out: &bytes.Buffer{},
@@ -285,7 +285,7 @@ func TestPushPluginReportsBothByteCounts(t *testing.T) {
 	store := memory.New()
 	var published, republished bytes.Buffer
 	for _, sink := range []*bytes.Buffer{&published, &republished} {
-		if err := pushRun(pushConfig{
+		if err := pushRun(t.Context(), pushConfig{
 			Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}),
 			EntityPath: entityPath, PluginPath: pluginPath,
 			Registry: "hub.aggrega.ai", PushTarget: store, Out: sink,
@@ -343,7 +343,7 @@ func TestDeprecateReportsTheStampItAttached(t *testing.T) {
 				if _, err := oci.Push(ctx, store, "1.0.0", oci.MediaTypeComponent, []byte("subject"), nil); err != nil {
 					t.Fatalf("Push subject: %v", err)
 				}
-				res, err := publishops.Deprecate(publishops.DeprecateConfig{
+				res, err := publishops.Deprecate(t.Context(), publishops.DeprecateConfig{
 					Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{}),
 					Reference:  "reg.test/component/core/legacy:1.0.0",
 					Severity:   row.severity,
@@ -372,7 +372,7 @@ func TestDeprecateReportsTheStampItAttached(t *testing.T) {
 
 			// The command's own run, whose output is what is asserted.
 			var got bytes.Buffer
-			if err := deprecateRun(deprecateConfig{
+			if err := deprecateRun(t.Context(), deprecateConfig{
 				Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{}),
 				Reference:  "reg.test/component/core/legacy:1.0.0",
 				Severity:   row.severity,
@@ -452,7 +452,7 @@ func TestSignReportsEveryReferenceItSigned(t *testing.T) {
 
 			// The expectation's own call, against its own store.
 			wantStore, wantRefs, wantSubjects := build()
-			want, err := publishops.Sign(publishops.SignConfig{
+			want, err := publishops.Sign(t.Context(), publishops.SignConfig{
 				Workspace:   resolveTempWorkspace(t, tempWorkspaceOptions{}),
 				References:  wantRefs,
 				SubjectRefs: wantSubjects,
@@ -472,7 +472,7 @@ func TestSignReportsEveryReferenceItSigned(t *testing.T) {
 			// The command's own run, whose output is what is asserted.
 			gotStore, gotRefs, gotSubjects := build()
 			var got bytes.Buffer
-			if err := signRun(signConfig{
+			if err := signRun(t.Context(), signConfig{
 				Workspace:   resolveTempWorkspace(t, tempWorkspaceOptions{}),
 				References:  gotRefs,
 				SubjectRefs: gotSubjects,

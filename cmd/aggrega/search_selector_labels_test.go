@@ -57,7 +57,7 @@ spec:
 `)
 
 	store := &memTagTarget{Store: memory.New()}
-	if err := pushRun(pushConfig{
+	if err := pushRun(t.Context(), pushConfig{
 		EntityPath: entityPath,
 		Registry:   host,
 		PushTarget: store,
@@ -71,7 +71,7 @@ spec:
 		repos:   []string{labelledComponentRepo},
 		targets: map[string]oras.ReadOnlyTarget{labelledComponentRepo: store},
 	})
-	if err := registryUpdateRun(registryUpdateConfig{ws: rw, Out: new(bytes.Buffer), now: searchFrozen}); err != nil {
+	if err := registryUpdateRun(t.Context(), registryUpdateConfig{ws: rw, Out: new(bytes.Buffer), now: searchFrozen}); err != nil {
 		t.Fatalf("registryUpdateRun: %v", err)
 	}
 	withSearchClock(t, searchFrozen().Add(time.Hour))

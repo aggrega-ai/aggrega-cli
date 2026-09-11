@@ -192,7 +192,7 @@ func TestRegistryUpdateSummaryCarriesEveryFactTheWalkComputed(t *testing.T) {
 
 			// One walk, read twice: the shared result is what the facts are
 			// derived from, and the summary is what this surface made of it.
-			shared, _ := registryops.Update(rw, registryops.UpdateOptions{Now: frozen}, io.Discard)
+			shared, _ := registryops.Update(t.Context(), rw, registryops.UpdateOptions{Now: frozen}, io.Discard)
 			var rendered bytes.Buffer
 			reportRegistryUpdate(&rendered, shared)
 			summary := rendered.String()
@@ -242,7 +242,7 @@ func TestRegistryUpdateSummaryCarriesEveryFactTheWalkComputed(t *testing.T) {
 			commandRoot := t.TempDir()
 			commandWorkspace := resolveWorkspaceWithConfig(t, commandRoot, tc.config)
 			var commandOut bytes.Buffer
-			walkErr := registryUpdateRun(registryUpdateConfig{ws: commandWorkspace, Out: &commandOut, now: frozen})
+			walkErr := registryUpdateRun(t.Context(), registryUpdateConfig{ws: commandWorkspace, Out: &commandOut, now: frozen})
 			t.Logf("aggrega registry update — full command output (error: %v):\n%s", walkErr, commandOut.String())
 			for _, want := range []string{"Indexed ", "Index written to "} {
 				if !strings.Contains(commandOut.String(), want) {

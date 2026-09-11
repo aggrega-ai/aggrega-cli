@@ -280,7 +280,7 @@ func (s *Server) dispatchRegistryUpdate(ctx context.Context, req *jsonRPCRequest
 			"the daemon holds no resolved workspace to refresh a registry index for")
 	}
 
-	res, err := registryops.Update(s.resolvedWorkspace, registryops.UpdateOptions{
+	res, err := registryops.Update(ctx, s.resolvedWorkspace, registryops.UpdateOptions{
 		Registry: params.Registry,
 		Upgrade:  params.Upgrade,
 	}, io.Discard)

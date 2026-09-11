@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/spf13/cobra"
@@ -48,7 +49,7 @@ func newPushArtifactCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return pushArtifactRun(pushArtifactConfig{
+			return pushArtifactRun(cmd.Context(), pushArtifactConfig{
 				FilePath:  path,
 				Name:      opts.name,
 				Tag:       opts.tag,
@@ -77,10 +78,10 @@ func newPushArtifactCmd() *cobra.Command {
 // the line itself, the media type and the byte count beneath it — and whether
 // nothing was published or the bytes were already there is which line was
 // written. Restating that here would duplicate it rather than add to it.
-func pushArtifactRun(cfg pushArtifactConfig) error {
+func pushArtifactRun(ctx context.Context, cfg pushArtifactConfig) error {
 	cfg.DestinationSupply = commandLineDestinationSupply
 	// projection-omits PushArtifactResult: the publication writes an account of itself to this surface's own status output that names every fact the result carries, so projecting it here would restate in full what the terminal has just been shown
-	if _, err := publishops.PushArtifact(cfg); err != nil {
+	if _, err := publishops.PushArtifact(ctx, cfg); err != nil {
 		return fmt.Errorf("aggrega push-artifact: %w", err)
 	}
 	return nil

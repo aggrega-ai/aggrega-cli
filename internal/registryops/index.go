@@ -278,8 +278,10 @@ type UpdateOptions struct {
 // that has no reader. A caller with nobody watching discards it.
 //
 // The result is returned alongside any error rather than instead of it, so a
-// partial walk is never reported as no walk at all.
-func Update(rw *workspaceconfig.ResolvedWorkspace, opts UpdateOptions, notices io.Writer) (UpdateResult, error) {
+// partial walk is never reported as no walk at all. A stop is reported the same
+// way and for the same reason: the hosts already indexed have been written, so a
+// withdrawn walk reports what it indexed rather than claiming it indexed nothing.
+func Update(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts UpdateOptions, notices io.Writer) (UpdateResult, error) {
 	var res UpdateResult
 	if notices == nil {
 		notices = io.Discard
@@ -319,11 +321,17 @@ func Update(rw *workspaceconfig.ResolvedWorkspace, opts UpdateOptions, notices i
 		now = time.Now
 	}
 
-	ctx := context.Background()
 	root := rw.Root()
 	cacheDir := cfg.ResolvedArtifactCacheDir()
 	res.IndexRoot = oci.IndexRoot(root, cacheDir)
 	for _, host := range hosts {
+		// One interruption point per host, which is this walk's real seam: each
+		// iteration is a network round trip that enumerates a registry's
+		// repositories and writes an index. A host not yet reached is one never
+		// contacted, and the check precedes the round trip rather than following it.
+		if serr := stopped(ctx); serr != nil {
+			return res, serr
+		}
 		hu, herr := updateHostIndex(ctx, cfg, root, cacheDir, host, now, opts.Upgrade, notices)
 		if herr != nil {
 			hu.Err = herr.Error()

@@ -66,7 +66,7 @@ spec:
     - name: `+export+`
 `)
 	sign := true
-	if perr := pushRun(pushConfig{
+	if perr := pushRun(t.Context(), pushConfig{
 		Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{Root: entityDir}),
 		EntityPath: entityPath,
 		PluginPath: pluginPath,

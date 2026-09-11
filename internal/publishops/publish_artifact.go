@@ -105,7 +105,7 @@ type PushArtifactResult struct {
 // When cfg.DryRun is true, PushArtifact prints the proposed <reference>:<tag>
 // plus media type and byte count and returns without constructing a remote
 // target.
-func PushArtifact(cfg PushArtifactConfig) (PushArtifactResult, error) {
+func PushArtifact(ctx context.Context, cfg PushArtifactConfig) (PushArtifactResult, error) {
 	if cfg.FilePath == "" {
 		return PushArtifactResult{}, fmt.Errorf("artifact file path required (pass as the positional arg)")
 	}
@@ -187,11 +187,19 @@ func PushArtifact(cfg PushArtifactConfig) (PushArtifactResult, error) {
 	// content is refused. The proposed digest is previewed with the SAME
 	// (mediaType, content, nil-annotations) triple oci.Push receives below, so
 	// the preview digest equals the digest the publication would land.
-	existingDigest, exists, err := oci.Resolve(context.Background(), target, cfg.Tag)
+	// The last point before anything reaches the registry. Everything above is
+	// local — reading the file, deriving the reference, building the content — and
+	// a caller that withdrew discards all of it; what follows is published and
+	// cannot be taken back.
+	if serr := stopped(ctx); serr != nil {
+		return PushArtifactResult{}, serr
+	}
+
+	existingDigest, exists, err := oci.Resolve(ctx, target, cfg.Tag)
 	if err != nil {
 		return PushArtifactResult{}, fmt.Errorf("resolve %s:%s: %w", reference, cfg.Tag, err)
 	}
-	proposedDigest, err := oci.ManifestDigest(context.Background(), mediaType, content, nil)
+	proposedDigest, err := oci.ManifestDigest(ctx, mediaType, content, nil)
 	if err != nil {
 		return PushArtifactResult{}, fmt.Errorf("%s:%s: %w", reference, cfg.Tag, err)
 	}
@@ -207,7 +215,7 @@ func PushArtifact(cfg PushArtifactConfig) (PushArtifactResult, error) {
 			reference, cfg.Tag, existingDigest, proposedDigest, oci.ErrImmutableTagConflict())
 	}
 
-	digest, err := oci.Push(context.Background(), target, cfg.Tag, mediaType, content, nil)
+	digest, err := oci.Push(ctx, target, cfg.Tag, mediaType, content, nil)
 	if err != nil {
 		return PushArtifactResult{}, fmt.Errorf("push %s:%s: %w", reference, cfg.Tag, err)
 	}

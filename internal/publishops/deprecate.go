@@ -160,7 +160,7 @@ type DeprecationMarked struct {
 // signature-verify machinery. On the keyless path the identity token is resolved
 // once before the marker is attached, so a signer that cannot be constructed
 // refuses the deprecation before anything is written.
-func Deprecate(cfg DeprecateConfig) (DeprecateResult, error) {
+func Deprecate(ctx context.Context, cfg DeprecateConfig) (DeprecateResult, error) {
 	out := cfg.Out
 	if out == nil {
 		out = os.Stdout
@@ -169,7 +169,13 @@ func Deprecate(cfg DeprecateConfig) (DeprecateResult, error) {
 	if now == nil {
 		now = time.Now
 	}
-	ctx := context.Background()
+
+	// Ahead of either arm, both of which attach a marker at the registry. A marker
+	// is published content, so a withdrawal observed afterwards would withhold the
+	// reply while the deprecation was already visible to every consumer.
+	if serr := stopped(ctx); serr != nil {
+		return DeprecateResult{}, serr
+	}
 
 	if cfg.From != "" {
 		return deprecateBatch(ctx, cfg, out, now)

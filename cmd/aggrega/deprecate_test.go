@@ -74,7 +74,7 @@ func TestDeprecateSingle_FlagsEnrichAndStamp(t *testing.T) {
 	frozen := time.Date(2026, 5, 6, 7, 8, 9, 0, time.UTC)
 
 	var out bytes.Buffer
-	err := deprecateRun(deprecateConfig{
+	err := deprecateRun(t.Context(), deprecateConfig{
 		Workspace:   resolveTempWorkspace(t, tempWorkspaceOptions{}),
 		Reference:   "reg.test/component/core/legacy:1.0.0",
 		Severity:    "warning",
@@ -114,7 +114,7 @@ func TestDeprecateSingle_Interactive(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	err := deprecateRun(deprecateConfig{
+	err := deprecateRun(t.Context(), deprecateConfig{
 		Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{}),
 		Reference:  "reg.test/component/core/legacy:1.0.0",
 		Target:     store,
@@ -145,7 +145,7 @@ func TestDeprecateSingle_Interactive(t *testing.T) {
 // refuses when the required content is absent away from a terminal, rather than
 // blocking on a prompt no one can answer.
 func TestDeprecateSingle_NonInteractiveMissingContentFails(t *testing.T) {
-	err := deprecateRun(deprecateConfig{
+	err := deprecateRun(t.Context(), deprecateConfig{
 		Workspace: resolveTempWorkspace(t, tempWorkspaceOptions{}),
 		Reference: "reg.test/component/core/legacy:1.0.0",
 		Target:    memory.New(),
@@ -188,7 +188,7 @@ func TestDeprecateBatch_AttachesPerEntry(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	err := deprecateRun(deprecateConfig{
+	err := deprecateRun(t.Context(), deprecateConfig{
 		Workspace: resolveTempWorkspace(t, tempWorkspaceOptions{Root: dir}),
 		From:      path,
 		Target:    store,

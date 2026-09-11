@@ -157,7 +157,7 @@ func newRetractionFixtureFor(t *testing.T, subject retractionSubject, markers ma
 	// concern rather than the publisher's.
 	markerWorkspace := resolveTempWorkspace(t, tempWorkspaceOptions{})
 	for version, severity := range markers {
-		if derr := deprecateRun(deprecateConfig{
+		if derr := deprecateRun(t.Context(), deprecateConfig{
 			Workspace: markerWorkspace,
 			Reference: host + "/" + subject.repoPath + ":" + version,
 			Severity:  severity,
@@ -183,7 +183,7 @@ func newRetractionFixtureFor(t *testing.T, subject retractionSubject, markers ma
 	rw := resolveWorkspaceWithConfig(t, t.TempDir(), b.String())
 
 	var updateOut bytes.Buffer
-	if uerr := registryUpdateRun(registryUpdateConfig{ws: rw, Out: &updateOut}); uerr != nil {
+	if uerr := registryUpdateRun(t.Context(), registryUpdateConfig{ws: rw, Out: &updateOut}); uerr != nil {
 		t.Fatalf("registryUpdateRun: %v\n%s", uerr, updateOut.String())
 	}
 

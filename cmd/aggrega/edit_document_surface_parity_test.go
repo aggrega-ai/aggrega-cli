@@ -122,7 +122,7 @@ func (tc editPlacementParityCase) workspace(t *testing.T) *workspaceForEdit {
 	t.Helper()
 	ws, _ := editDocumentWorkspace(t, editPlacementDocument, authoredAggregateForEdit)
 	if tc.repeat {
-		if _, err := editops.Apply(ws.root, tc.options(ws.rel)); err != nil {
+		if _, err := editops.Apply(t.Context(), ws.root, tc.options(ws.rel)); err != nil {
 			t.Fatalf("seeding the entry this row repeats failed, so the row cannot cover its case: %v", err)
 		}
 	}
@@ -134,7 +134,7 @@ func (tc editPlacementParityCase) workspace(t *testing.T) *workspaceForEdit {
 func (tc editPlacementParityCase) shared(t *testing.T) editops.Result {
 	t.Helper()
 	ws := tc.workspace(t)
-	res, err := editops.Apply(ws.root, tc.options(ws.rel))
+	res, err := editops.Apply(t.Context(), ws.root, tc.options(ws.rel))
 	if err != nil {
 		t.Fatalf("the shared edit refused, so it produced no expectation to compare against: %v", err)
 	}
@@ -147,7 +147,7 @@ func (tc editPlacementParityCase) render(t *testing.T) string {
 	t.Helper()
 	ws := tc.workspace(t)
 	var out bytes.Buffer
-	if err := editDocumentRun(editDocumentConfig{
+	if err := editDocumentRun(t.Context(), editDocumentConfig{
 		Edit:       tc.edit,
 		File:       ws.rel,
 		Node:       tc.node,

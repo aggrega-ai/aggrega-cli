@@ -425,7 +425,7 @@ func TestPublicationRefusesLoudlyWithNoCredentialAndDoesNotHang(t *testing.T) {
 		}
 		done := make(chan outcome, 1)
 		go func() {
-			res, err := runPublishEntity(cfg)
+			res, err := runPublishEntity(t.Context(), cfg)
 			done <- outcome{res, err}
 		}()
 
@@ -515,7 +515,7 @@ func TestPublishEntityOnTheDaemonRefusesUnsignedWhereASignatureIsRequired(t *tes
 	}
 	store := memory.New()
 	cfg.PushTarget = store
-	_, runErr := runPublishEntity(cfg)
+	_, runErr := runPublishEntity(t.Context(), cfg)
 	if runErr == nil {
 		t.Fatal("the operation answered an unsigned publication that must be refused")
 	}
@@ -553,7 +553,7 @@ func TestSignatureTheDaemonAttachedDoesNotVerifyAgainstAnotherKey(t *testing.T) 
 	}
 	store := memory.New()
 	cfg.PushTarget = store
-	res, runErr := runPublishEntity(cfg)
+	res, runErr := runPublishEntity(t.Context(), cfg)
 	if runErr != nil {
 		t.Fatalf("publish: %s", runErr.Message)
 	}
@@ -638,7 +638,7 @@ func TestSignArtifactsOnTheDaemonSignsWhatIsPublishedAndRefusesWhatIsNot(t *test
 	// The destination requires signatures, so an explicitly unsigned publication is
 	// refused there — this fixture publishes to a second host that does not.
 	cfg.Registry = "plain.example.test"
-	published, runErr := runPublishEntity(cfg)
+	published, runErr := runPublishEntity(t.Context(), cfg)
 	if runErr != nil {
 		t.Fatalf("publish: %s", runErr.Message)
 	}
@@ -649,7 +649,7 @@ func TestSignArtifactsOnTheDaemonSignsWhatIsPublishedAndRefusesWhatIsNot(t *test
 		t.Fatalf("signArtifactsConfig: %s", signParamErr.Message)
 	}
 	signCfg.Target = store
-	signed, signErr := runSignArtifacts(signCfg)
+	signed, signErr := runSignArtifacts(t.Context(), signCfg)
 	if signErr != nil {
 		t.Fatalf("sign: %s", signErr.Message)
 	}
@@ -670,7 +670,7 @@ func TestSignArtifactsOnTheDaemonSignsWhatIsPublishedAndRefusesWhatIsNot(t *test
 		t.Fatalf("signArtifactsConfig: %s", missParamErr.Message)
 	}
 	missCfg.Target = store
-	if _, err := runSignArtifacts(missCfg); err == nil {
+	if _, err := runSignArtifacts(t.Context(), missCfg); err == nil {
 		t.Fatal("signing a reference nothing published must be refused")
 	} else if !strings.Contains(err.Message, "nothing to sign") {
 		t.Errorf("the refusal must say what was wrong: %q", err.Message)
@@ -702,7 +702,7 @@ func TestDeprecateArtifactOnTheDaemonAttachesAMarkerAndRefusesAnAbsentSubject(t 
 		t.Fatalf("deprecateArtifactConfig: %s", paramErr.Message)
 	}
 	cfg.Target = store
-	res, runErr := runDeprecateArtifact(cfg)
+	res, runErr := runDeprecateArtifact(t.Context(), cfg)
 	if runErr != nil {
 		t.Fatalf("deprecate: %s", runErr.Message)
 	}
@@ -725,7 +725,7 @@ func TestDeprecateArtifactOnTheDaemonAttachesAMarkerAndRefusesAnAbsentSubject(t 
 		t.Fatalf("deprecateArtifactConfig: %s", missParamErr.Message)
 	}
 	missCfg.Target = store
-	if _, err := runDeprecateArtifact(missCfg); err == nil {
+	if _, err := runDeprecateArtifact(t.Context(), missCfg); err == nil {
 		t.Fatal("a marker against a reference nothing published must be refused")
 	} else if !strings.Contains(err.Message, "nothing to deprecate") {
 		t.Errorf("the refusal must say what was wrong: %q", err.Message)
@@ -742,7 +742,7 @@ func publishThroughDaemon(t *testing.T, srv *Server, store oras.Target) publishE
 		t.Fatalf("publishEntityConfig: %s", paramErr.Message)
 	}
 	cfg.PushTarget = store
-	res, runErr := runPublishEntity(cfg)
+	res, runErr := runPublishEntity(t.Context(), cfg)
 	if runErr != nil {
 		t.Fatalf("publish: %s", runErr.Message)
 	}

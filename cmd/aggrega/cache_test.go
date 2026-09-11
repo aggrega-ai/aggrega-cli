@@ -223,10 +223,10 @@ func TestCacheStatusListsDocsBundleClass(t *testing.T) {
 	slot := writeDocsBundleSlot(t, fx.loc.WorkspaceRoot, "reg.example.com/docs/aggrega-docs", "1.0.0")
 
 	var a, b bytes.Buffer
-	if err := runCacheStatus(&a, fx.loc); err != nil {
+	if err := runCacheStatus(t.Context(), &a, fx.loc); err != nil {
 		t.Fatalf("status a: %v", err)
 	}
-	if err := runCacheStatus(&b, fx.loc); err != nil {
+	if err := runCacheStatus(t.Context(), &b, fx.loc); err != nil {
 		t.Fatalf("status b: %v", err)
 	}
 	if a.String() != b.String() {
@@ -257,7 +257,7 @@ func TestCachePruneRetainsDocsBundle(t *testing.T) {
 	slot := writeDocsBundleSlot(t, fx.loc.WorkspaceRoot, "reg.example.com/docs/aggrega-docs", "1.0.0")
 
 	var out bytes.Buffer
-	if err := runCachePrune(&out, fx.loc); err != nil {
+	if err := runCachePrune(t.Context(), &out, fx.loc); err != nil {
 		t.Fatalf("prune: %v", err)
 	}
 	if !exists(slot) {
@@ -266,7 +266,7 @@ func TestCachePruneRetainsDocsBundle(t *testing.T) {
 	if !bytes.Contains(out.Bytes(), []byte("workspace docs-bundle cache element(s) not prune-eligible")) {
 		t.Fatalf("prune did not report the docs-bundle class as out-of-scope:\n%s", out.String())
 	}
-	if err := runCacheClear(&bytes.Buffer{}, fx.loc); err != nil {
+	if err := runCacheClear(t.Context(), &bytes.Buffer{}, fx.loc); err != nil {
 		t.Fatalf("clear: %v", err)
 	}
 	if exists(slot) {
@@ -277,10 +277,10 @@ func TestCachePruneRetainsDocsBundle(t *testing.T) {
 func TestCacheStatusDeterministic(t *testing.T) {
 	fx := newCacheFixture(t)
 	var a, b bytes.Buffer
-	if err := runCacheStatus(&a, fx.loc); err != nil {
+	if err := runCacheStatus(t.Context(), &a, fx.loc); err != nil {
 		t.Fatalf("status a: %v", err)
 	}
-	if err := runCacheStatus(&b, fx.loc); err != nil {
+	if err := runCacheStatus(t.Context(), &b, fx.loc); err != nil {
 		t.Fatalf("status b: %v", err)
 	}
 	if a.String() != b.String() {
@@ -299,7 +299,7 @@ func TestCacheStatusDeterministic(t *testing.T) {
 func TestCachePruneSelective(t *testing.T) {
 	fx := newCacheFixture(t)
 	var out bytes.Buffer
-	if err := runCachePrune(&out, fx.loc); err != nil {
+	if err := runCachePrune(t.Context(), &out, fx.loc); err != nil {
 		t.Fatalf("prune: %v", err)
 	}
 	t.Logf("prune output:\n%s", out.String())
@@ -351,7 +351,7 @@ func TestCachePruneRetainsEmbeddedAndPinnedDescribe(t *testing.T) {
 	unmatchedDescribe := writeDescribe(t, fx.loc.DescribeDir, digest.ContentDigest([]byte("neither-embedded-nor-pinned")))
 
 	var out bytes.Buffer
-	if err := runCachePrune(&out, fx.loc); err != nil {
+	if err := runCachePrune(t.Context(), &out, fx.loc); err != nil {
 		t.Fatalf("prune: %v", err)
 	}
 	t.Logf("prune output:\n%s", out.String())
@@ -376,7 +376,7 @@ func TestCachePruneRetainsEmbeddedAndPinnedDescribe(t *testing.T) {
 func TestCachePruneReportsOutOfScope(t *testing.T) {
 	fx := newCacheFixture(t)
 	var out bytes.Buffer
-	if err := runCachePrune(&out, fx.loc); err != nil {
+	if err := runCachePrune(t.Context(), &out, fx.loc); err != nil {
 		t.Fatalf("prune: %v", err)
 	}
 	s := out.String()
@@ -474,7 +474,7 @@ func TestCachePruneCompiledModulesByReference(t *testing.T) {
 		CompileDir: compileDir, AttribIndexPath: attribPath,
 	}
 	var out bytes.Buffer
-	if err := runCachePrune(&out, loc); err != nil {
+	if err := runCachePrune(t.Context(), &out, loc); err != nil {
 		t.Fatalf("prune: %v", err)
 	}
 	s := out.String()
@@ -560,7 +560,7 @@ func TestCachePruneCompiledKernelReclaimedWhenAllReferrersOrphaned(t *testing.T)
 		CompileDir: compileDir, AttribIndexPath: attribPath,
 	}
 	var out bytes.Buffer
-	if err := runCachePrune(&out, loc); err != nil {
+	if err := runCachePrune(t.Context(), &out, loc); err != nil {
 		t.Fatalf("prune: %v", err)
 	}
 	s := out.String()
@@ -586,7 +586,7 @@ func TestCachePruneCompiledKernelReclaimedWhenAllReferrersOrphaned(t *testing.T)
 
 func TestCachePruneNoWorkspace(t *testing.T) {
 	loc := cacheops.Locations{CompileDir: t.TempDir(), DescribeDir: t.TempDir()}
-	err := runCachePrune(&bytes.Buffer{}, loc)
+	err := runCachePrune(t.Context(), &bytes.Buffer{}, loc)
 	if err == nil {
 		t.Fatalf("expected a loud error with no workspace")
 	}
@@ -594,7 +594,7 @@ func TestCachePruneNoWorkspace(t *testing.T) {
 
 func TestCachePruneNoLockfile(t *testing.T) {
 	loc := cacheops.Locations{WorkspaceRoot: t.TempDir(), CacheDir: cacheTestCacheDir}
-	err := runCachePrune(&bytes.Buffer{}, loc)
+	err := runCachePrune(t.Context(), &bytes.Buffer{}, loc)
 	if err == nil {
 		t.Fatalf("expected a loud error with no lockfile")
 	}
@@ -607,7 +607,11 @@ func TestCacheClearWipesAll(t *testing.T) {
 	// the assertion is over exactly the set clear acts on rather than over a
 	// second list of roots this test would have to keep in step.
 	var roots []string
-	for _, cl := range cacheops.Collect(fx.loc) {
+	classes, err := cacheops.Collect(t.Context(), fx.loc)
+	if err != nil {
+		t.Fatalf("the shared class assembly refused, so this test has no set to assert over: %v", err)
+	}
+	for _, cl := range classes {
 		if cl.Root != "" {
 			roots = append(roots, cl.Root)
 		}
@@ -617,7 +621,7 @@ func TestCacheClearWipesAll(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	if err := runCacheClear(&out, fx.loc); err != nil {
+	if err := runCacheClear(t.Context(), &out, fx.loc); err != nil {
 		t.Fatalf("clear: %v", err)
 	}
 	t.Logf("clear output:\n%s", out.String())
@@ -710,7 +714,7 @@ func TestCacheEvictOverCap(t *testing.T) {
 	loc := cacheops.Locations{CompileDir: compileDir}
 	var out bytes.Buffer
 	// Total is 300 B; cap 150 B forces eviction of the two oldest leaves.
-	if err := runCacheEvict(&out, loc, 150); err != nil {
+	if err := runCacheEvict(t.Context(), &out, loc, 150); err != nil {
 		t.Fatalf("evict: %v", err)
 	}
 	s := out.String()
@@ -737,11 +741,11 @@ func TestCacheEvictIdempotent(t *testing.T) {
 	newest := writeCompileLeaf(t, modDir, "leaf-new", 100, base.Add(time.Hour))
 
 	loc := cacheops.Locations{CompileDir: compileDir}
-	if err := runCacheEvict(&bytes.Buffer{}, loc, 150); err != nil {
+	if err := runCacheEvict(t.Context(), &bytes.Buffer{}, loc, 150); err != nil {
 		t.Fatalf("first evict: %v", err)
 	}
 	var out bytes.Buffer
-	if err := runCacheEvict(&out, loc, 150); err != nil {
+	if err := runCacheEvict(t.Context(), &out, loc, 150); err != nil {
 		t.Fatalf("second evict: %v", err)
 	}
 	s := out.String()
@@ -766,7 +770,7 @@ func TestCacheEvictUnderCap(t *testing.T) {
 	loc := cacheops.Locations{CompileDir: compileDir}
 	var out bytes.Buffer
 	// Total is 200 B; cap 200 B is exactly at the total, so nothing is evicted.
-	if err := runCacheEvict(&out, loc, 200); err != nil {
+	if err := runCacheEvict(t.Context(), &out, loc, 200); err != nil {
 		t.Fatalf("evict: %v", err)
 	}
 	s := out.String()
@@ -794,7 +798,7 @@ func TestCacheEvictTieBreak(t *testing.T) {
 	var out bytes.Buffer
 	// Total is 200 B; cap 100 B forces exactly one eviction. Equal mtimes break
 	// on name ascending, so "leaf-a" is evicted first and "leaf-b" survives.
-	if err := runCacheEvict(&out, loc, 100); err != nil {
+	if err := runCacheEvict(t.Context(), &out, loc, 100); err != nil {
 		t.Fatalf("evict: %v", err)
 	}
 	s := out.String()
@@ -830,7 +834,7 @@ func TestCacheEvictSkipsSidecarsAndTmp(t *testing.T) {
 	loc := cacheops.Locations{CompileDir: compileDir}
 	var out bytes.Buffer
 	// Only the two real leaves (200 B) are counted; cap 150 B evicts one.
-	if err := runCacheEvict(&out, loc, 150); err != nil {
+	if err := runCacheEvict(t.Context(), &out, loc, 150); err != nil {
 		t.Fatalf("evict: %v", err)
 	}
 	s := out.String()
@@ -857,7 +861,7 @@ func TestCacheEvictSkipsSidecarsAndTmp(t *testing.T) {
 // TestCacheEvictNoCompileDir asserts a loud error when no compiled-module cache
 // directory resolves.
 func TestCacheEvictNoCompileDir(t *testing.T) {
-	if err := runCacheEvict(&bytes.Buffer{}, cacheops.Locations{}, 100); err == nil {
+	if err := runCacheEvict(t.Context(), &bytes.Buffer{}, cacheops.Locations{}, 100); err == nil {
 		t.Fatalf("expected a loud error with no compiled-module cache directory")
 	}
 }
@@ -903,10 +907,10 @@ func TestCacheStatusCompileAttribution(t *testing.T) {
 
 	loc := cacheops.Locations{CompileDir: compileDir, AttribIndexPath: attribPath, ProvIndexPath: provPath}
 	var a, b bytes.Buffer
-	if err := runCacheStatus(&a, loc); err != nil {
+	if err := runCacheStatus(t.Context(), &a, loc); err != nil {
 		t.Fatalf("status a: %v", err)
 	}
-	if err := runCacheStatus(&b, loc); err != nil {
+	if err := runCacheStatus(t.Context(), &b, loc); err != nil {
 		t.Fatalf("status b: %v", err)
 	}
 	if a.String() != b.String() {
@@ -948,10 +952,10 @@ func TestCacheStatusProvenanceSharedBy(t *testing.T) {
 
 	loc := cacheops.Locations{ProvIndexPath: idxPath}
 	var a, b bytes.Buffer
-	if err := runCacheStatus(&a, loc); err != nil {
+	if err := runCacheStatus(t.Context(), &a, loc); err != nil {
 		t.Fatalf("status a: %v", err)
 	}
-	if err := runCacheStatus(&b, loc); err != nil {
+	if err := runCacheStatus(t.Context(), &b, loc); err != nil {
 		t.Fatalf("status b: %v", err)
 	}
 	if a.String() != b.String() {

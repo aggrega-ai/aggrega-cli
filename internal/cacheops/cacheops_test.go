@@ -45,7 +45,10 @@ func TestCacheEntitySlotEncoding(t *testing.T) {
 	}
 	loc := Locations{WorkspaceRoot: wsRoot, CacheDir: testCacheDir}
 
-	els := enumEntities(loc.entitiesRoot())
+	els, err := enumEntities(t.Context(), loc.entitiesRoot())
+	if err != nil {
+		t.Fatalf("enumEntities: %v", err)
+	}
 	if len(els) == 0 {
 		t.Fatal("no entity elements enumerated")
 	}
@@ -84,7 +87,10 @@ func TestCacheClassReachIsDeclared(t *testing.T) {
 		"plugin-describe cache":           ReachMachine,
 	}
 
-	classes := Collect(loc)
+	classes, err := Collect(t.Context(), loc)
+	if err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
 	seen := map[string]bool{}
 	for _, cl := range classes {
 		seen[cl.Name] = true
@@ -131,7 +137,10 @@ func TestCompileLeafMembershipUnified(t *testing.T) {
 	lock := writeCompileLeaf(t, compileDir, ".compile-deadbeef.lock", 100, base)
 
 	// Inventory enumeration: only the finished module is a listed element.
-	els := enumCompileModules(compileDir, "", "")
+	els, err := enumCompileModules(t.Context(), compileDir, "", "")
+	if err != nil {
+		t.Fatalf("enumCompileModules: %v", err)
+	}
 	if len(els) != 1 {
 		t.Fatalf("inventory enumeration returned %d element(s), want 1:\n%+v", len(els), els)
 	}
@@ -234,7 +243,7 @@ func TestParseHumanSize(t *testing.T) {
 // the named condition rather than pruning against an empty reference set, which
 // would evict every entry.
 func TestPruneWithoutWorkspaceRefuses(t *testing.T) {
-	_, err := Prune(Locations{CompileDir: t.TempDir(), DescribeDir: t.TempDir()})
+	_, err := Prune(t.Context(), Locations{CompileDir: t.TempDir(), DescribeDir: t.TempDir()})
 	if err == nil {
 		t.Fatal("prune with no workspace returned no error")
 	}
@@ -246,7 +255,7 @@ func TestPruneWithoutWorkspaceRefuses(t *testing.T) {
 // TestEvictWithoutCompileDirRefuses pins the loud refusal when no
 // compiled-module cache directory resolves.
 func TestEvictWithoutCompileDirRefuses(t *testing.T) {
-	res, err := Evict(Locations{}, 100)
+	res, err := Evict(t.Context(), Locations{}, 100)
 	if err == nil {
 		t.Fatal("evict with no compiled-module cache directory returned no error")
 	}
@@ -264,8 +273,14 @@ func TestStatusIsAPureRead(t *testing.T) {
 	leaf := writeCompileLeaf(t, modDir, "abcdef0123", 100, base)
 
 	loc := Locations{CompileDir: compileDir}
-	a := Status(loc)
-	b := Status(loc)
+	a, aErr := Status(t.Context(), loc)
+	if aErr != nil {
+		t.Fatalf("Status: %v", aErr)
+	}
+	b, bErr := Status(t.Context(), loc)
+	if bErr != nil {
+		t.Fatalf("Status: %v", bErr)
+	}
 	if a.TotalCount != b.TotalCount || a.TotalSize != b.TotalSize {
 		t.Errorf("status is not a pure read: %+v then %+v", a, b)
 	}

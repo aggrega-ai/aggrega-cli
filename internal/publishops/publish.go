@@ -329,7 +329,7 @@ func writePublicationFacts(out io.Writer, kind, mediaType string, size, pluginSi
 // without constructing a remote target. Useful for authoring and
 // for verifying the reference-shape construction without binding to
 // a registry.
-func Push(cfg PushConfig) (PushResult, error) {
+func Push(ctx context.Context, cfg PushConfig) (PushResult, error) {
 	if cfg.EntityPath == "" {
 		return PushResult{}, fmt.Errorf("entity path required (pass as positional arg or via --entity)")
 	}
@@ -425,7 +425,7 @@ func Push(cfg PushConfig) (PushResult, error) {
 	// the immutability guard, and the content-digest spelling are reused, not
 	// re-spelled.
 	if header.Kind == "Plugin" {
-		return pushPlugin(out, cfg, registry, wantSign, header.Metadata.Name, header.Metadata.Version, cfg.EntityPath, data)
+		return pushPlugin(ctx, out, cfg, registry, wantSign, header.Metadata.Name, header.Metadata.Version, cfg.EntityPath, data)
 	}
 
 	bundleBytes, mediaType, err := oci.Bundle(header.Kind, cfg.EntityPath)
@@ -488,7 +488,14 @@ func Push(cfg PushConfig) (PushResult, error) {
 		target = repo
 	}
 
-	ctx := context.Background()
+	// The last point before the publication becomes visible to other readers.
+	// Everything above is local — reading the entity, evaluating its signing
+	// policy, building the bundle — and a caller that withdrew discards all of it;
+	// what follows reaches the registry and cannot be taken back, because published
+	// bytes are frozen and the registry offers no overwrite path.
+	if serr := stopped(ctx); serr != nil {
+		return PushResult{}, serr
+	}
 
 	// Immutability guard: published bytes are frozen. HEAD the target tag
 	// before publishing and compare the digest it points at with the digest

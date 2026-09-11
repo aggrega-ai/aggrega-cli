@@ -53,7 +53,7 @@ func writeRelease(t *testing.T) (root, rel string) {
 func TestTheReleaseFixtureIsValidToBeginWith(t *testing.T) {
 	root, rel := writeRelease(t)
 
-	res, err := Apply(root, Options{
+	res, err := Apply(t.Context(), root, Options{
 		File:  rel,
 		Kind:  KindAttachFeature,
 		Node:  []string{"spec", "components", "web"},
@@ -114,7 +114,7 @@ func TestAnEditTheAuthoringSchemaRefusesWritesNothing(t *testing.T) {
 			opts := tc.opts
 			opts.File = rel
 
-			res, err := Apply(root, opts)
+			res, err := Apply(t.Context(), root, opts)
 			if !errors.Is(err, ErrEditRefusedInvalidResult()) {
 				t.Fatalf("want the invalid-result refusal; got %v", err)
 			}
@@ -145,7 +145,7 @@ func TestAnEditTheAuthoringSchemaRefusesWritesNothing(t *testing.T) {
 func TestTheRefusedConditionCarriesItsIdentifiers(t *testing.T) {
 	root, rel := writeRelease(t)
 
-	_, err := Apply(root, Options{
+	_, err := Apply(t.Context(), root, Options{
 		File:  rel,
 		Kind:  KindSetValue,
 		Node:  []string{"spec", "components", "web"},
@@ -184,7 +184,7 @@ func TestAnAlreadyInvalidDocumentIsReportedRatherThanEdited(t *testing.T) {
 		t.Fatalf("write fixture: %v", err)
 	}
 
-	_, err := Apply(root, Options{
+	_, err := Apply(t.Context(), root, Options{
 		File:  rel,
 		Kind:  KindAddComponent,
 		Node:  []string{"spec", "components"},
@@ -304,7 +304,7 @@ func TestARequestThatAddressesNoEditIsRefused(t *testing.T) {
 				before = readBack(t, root, tc.opts.File)
 			}
 
-			_, err := Apply(root, tc.opts)
+			_, err := Apply(t.Context(), root, tc.opts)
 			if !errors.Is(err, tc.want) {
 				t.Fatalf("want %v; got %v", tc.want, err)
 			}
@@ -318,7 +318,7 @@ func TestARequestThatAddressesNoEditIsRefused(t *testing.T) {
 // TestNoWorkspaceIsRefused covers the one refusal that cannot be driven through
 // the fixture, because it is about the root rather than the document.
 func TestNoWorkspaceIsRefused(t *testing.T) {
-	if _, err := Apply("  ", Options{File: "a.yaml", Kind: KindSetValue,
+	if _, err := Apply(t.Context(), "  ", Options{File: "a.yaml", Kind: KindSetValue,
 		Node: []string{"spec"}, Name: "k", Value: "v"}); !errors.Is(err, errNoWorkspace) {
 		t.Fatalf("want the no-workspace refusal; got %v", err)
 	}
@@ -335,7 +335,7 @@ func TestADocumentThatDoesNotParseIsRefused(t *testing.T) {
 		t.Fatalf("write fixture: %v", err)
 	}
 
-	_, err := Apply(root, Options{File: rel, Kind: KindSetValue,
+	_, err := Apply(t.Context(), root, Options{File: rel, Kind: KindSetValue,
 		Node: []string{"spec"}, Name: "k", Value: "v"})
 	if !errors.Is(err, errFileUnparseable) {
 		t.Fatalf("want the unparseable refusal; got %v", err)
@@ -375,7 +375,7 @@ func TestADocumentWithNoUsableKindIsRefused(t *testing.T) {
 			if err := os.WriteFile(filepath.Join(root, rel), []byte(tc.content), 0o644); err != nil {
 				t.Fatalf("write fixture: %v", err)
 			}
-			_, err := Apply(root, Options{File: rel, Kind: KindAddComponent,
+			_, err := Apply(t.Context(), root, Options{File: rel, Kind: KindAddComponent,
 				Node: []string{"spec", "components"}, Name: "x", Value: "a/b:1.0.0"})
 			if !errors.Is(err, tc.want) {
 				t.Fatalf("want %v; got %v", tc.want, err)
@@ -399,7 +399,7 @@ func TestAFlowCollectionIsRefusedRatherThanRewritten(t *testing.T) {
 		"      values: { replicas: 3 }", 1)
 	root, rel := writeWorkspace(t, flow)
 
-	_, err := Apply(root, Options{File: rel, Kind: KindSetValue,
+	_, err := Apply(t.Context(), root, Options{File: rel, Kind: KindSetValue,
 		Node: []string{"spec", "components", "web"}, Name: "timeout", Value: 30})
 	if !errors.Is(err, errContainerFlowStyle) {
 		t.Fatalf("want the flow-collection refusal; got %v", err)
@@ -422,7 +422,7 @@ func TestASocketAuthoredAsAListIsRefusedRatherThanReshaped(t *testing.T) {
 		"      uses:\n        database:\n          - db", 1)
 	root, rel := writeWorkspace(t, listForm)
 
-	_, err := Apply(root, Options{File: rel, Kind: KindWireEdge,
+	_, err := Apply(t.Context(), root, Options{File: rel, Kind: KindWireEdge,
 		Node: []string{"spec", "components", "web"}, Socket: "database", Name: "replica", Value: "db"})
 	if !errors.Is(err, errContainerNotAMapping) {
 		t.Fatalf("want the not-a-mapping refusal; got %v", err)
@@ -445,7 +445,7 @@ func TestASocketAuthoredAsAListIsRefusedRatherThanReshaped(t *testing.T) {
 func TestAnAdHocSocketOnAnAggregateIsAdmitted(t *testing.T) {
 	root, rel := writeWorkspace(t, authoredAggregate)
 
-	res, err := Apply(root, Options{File: rel, Kind: KindWireEdge,
+	res, err := Apply(t.Context(), root, Options{File: rel, Kind: KindWireEdge,
 		Node: []string{"spec", "components", "web"}, Socket: "a-socket-no-catalog-entity-declares",
 		Name: "alias", Value: "db"})
 	if err != nil {

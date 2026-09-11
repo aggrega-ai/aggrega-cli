@@ -315,7 +315,7 @@ func TestRegistryUpdateBuildsSearchableIndex(t *testing.T) {
 	frozen := func() time.Time { return time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC) }
 
 	var out bytes.Buffer
-	if err := registryUpdateRun(registryUpdateConfig{ws: rw, Out: &out, now: frozen}); err != nil {
+	if err := registryUpdateRun(t.Context(), registryUpdateConfig{ws: rw, Out: &out, now: frozen}); err != nil {
 		t.Fatalf("registryUpdateRun (all): %v", err)
 	}
 
@@ -428,7 +428,7 @@ func TestRegistryUpdateBuildsSearchableIndex(t *testing.T) {
 
 	// Byte-identity per file AND identical file set across two runs against the
 	// same registry state.
-	if err := registryUpdateRun(registryUpdateConfig{ws: rw, Out: &out, now: frozen}); err != nil {
+	if err := registryUpdateRun(t.Context(), registryUpdateConfig{ws: rw, Out: &out, now: frozen}); err != nil {
 		t.Fatalf("registryUpdateRun (second): %v", err)
 	}
 	secondBytes, err := os.ReadFile(compPath)
@@ -484,7 +484,7 @@ func TestRegistryUpdateSingleRegistryByAlias(t *testing.T) {
 	rw := resolveWorkspaceWithConfig(t, root, content)
 
 	var out bytes.Buffer
-	if err := registryUpdateRun(registryUpdateConfig{ws: rw, Args: []string{"hub"}, Out: &out}); err != nil {
+	if err := registryUpdateRun(t.Context(), registryUpdateConfig{ws: rw, Args: []string{"hub"}, Out: &out}); err != nil {
 		t.Fatalf("registryUpdateRun (alias): %v", err)
 	}
 
@@ -534,7 +534,7 @@ func TestRegistryUpdateAllRegistriesPartialOnError(t *testing.T) {
 	frozen := func() time.Time { return time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC) }
 
 	var out bytes.Buffer
-	err := registryUpdateRun(registryUpdateConfig{ws: rw, Out: &out, now: frozen})
+	err := registryUpdateRun(t.Context(), registryUpdateConfig{ws: rw, Out: &out, now: frozen})
 	if err == nil {
 		t.Fatalf("registryUpdateRun (all, one host failing): got nil error; want non-nil summary error")
 	}
@@ -578,7 +578,7 @@ func TestRegistryUpdateSingleRegistryFailureIsLoud(t *testing.T) {
 	rw := resolveWorkspaceWithConfig(t, root, content)
 
 	var out bytes.Buffer
-	if err := registryUpdateRun(registryUpdateConfig{ws: rw, Args: []string{"hub"}, Out: &out}); err == nil {
+	if err := registryUpdateRun(t.Context(), registryUpdateConfig{ws: rw, Args: []string{"hub"}, Out: &out}); err == nil {
 		t.Fatalf("registryUpdateRun (single, failing host): got nil error; want non-nil")
 	}
 
@@ -627,7 +627,7 @@ func TestRegistryUpdateRecordsPerVersionDeprecations(t *testing.T) {
 	frozen := func() time.Time { return time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC) }
 
 	var out bytes.Buffer
-	if err := registryUpdateRun(registryUpdateConfig{ws: rw, Out: &out, now: frozen}); err != nil {
+	if err := registryUpdateRun(t.Context(), registryUpdateConfig{ws: rw, Out: &out, now: frozen}); err != nil {
 		t.Fatalf("registryUpdateRun: %v", err)
 	}
 
@@ -671,7 +671,7 @@ func TestRegistryUpdateRecordsPerVersionDeprecations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read record file: %v", err)
 	}
-	if err := registryUpdateRun(registryUpdateConfig{ws: rw, Out: &out, now: frozen}); err != nil {
+	if err := registryUpdateRun(t.Context(), registryUpdateConfig{ws: rw, Out: &out, now: frozen}); err != nil {
 		t.Fatalf("registryUpdateRun (second): %v", err)
 	}
 	second, err := os.ReadFile(recPath)
@@ -703,7 +703,7 @@ func TestRegistryUpdateConditionalReusesUnchangedRepo(t *testing.T) {
 	var out bytes.Buffer
 
 	// First run — full build; the manifest blob is read.
-	if err := registryUpdateRun(registryUpdateConfig{ws: rw, Out: &out, now: frozen}); err != nil {
+	if err := registryUpdateRun(t.Context(), registryUpdateConfig{ws: rw, Out: &out, now: frozen}); err != nil {
 		t.Fatalf("registryUpdateRun (first): %v", err)
 	}
 	if fetches == 0 {
@@ -713,7 +713,7 @@ func TestRegistryUpdateConditionalReusesUnchangedRepo(t *testing.T) {
 	// Second run — unchanged registry state; the conditional refresh must reuse the
 	// prior record and read no content blob.
 	fetches = 0
-	if err := registryUpdateRun(registryUpdateConfig{ws: rw, Out: &out, now: frozen}); err != nil {
+	if err := registryUpdateRun(t.Context(), registryUpdateConfig{ws: rw, Out: &out, now: frozen}); err != nil {
 		t.Fatalf("registryUpdateRun (second): %v", err)
 	}
 	if fetches != 0 {
@@ -746,14 +746,14 @@ func TestRegistryUpdateConditionalFromScratchParityAndFileSet(t *testing.T) {
 	var out bytes.Buffer
 
 	// First (full) build, then a conditional refresh against unchanged state.
-	if err := registryUpdateRun(registryUpdateConfig{ws: rw, Out: &out, now: frozen}); err != nil {
+	if err := registryUpdateRun(t.Context(), registryUpdateConfig{ws: rw, Out: &out, now: frozen}); err != nil {
 		t.Fatalf("registryUpdateRun (build): %v", err)
 	}
 	aBytes, err := os.ReadFile(oci.IndexRepoPath(root, cacheDir, host, repoA))
 	if err != nil {
 		t.Fatalf("read repoA record: %v", err)
 	}
-	if err := registryUpdateRun(registryUpdateConfig{ws: rw, Out: &out, now: frozen}); err != nil {
+	if err := registryUpdateRun(t.Context(), registryUpdateConfig{ws: rw, Out: &out, now: frozen}); err != nil {
 		t.Fatalf("registryUpdateRun (conditional): %v", err)
 	}
 	aBytes2, err := os.ReadFile(oci.IndexRepoPath(root, cacheDir, host, repoA))
@@ -777,7 +777,7 @@ func TestRegistryUpdateConditionalFromScratchParityAndFileSet(t *testing.T) {
 		},
 	}
 	withIndexTarget(t, src2)
-	if err := registryUpdateRun(registryUpdateConfig{ws: rw, Out: &out, now: frozen}); err != nil {
+	if err := registryUpdateRun(t.Context(), registryUpdateConfig{ws: rw, Out: &out, now: frozen}); err != nil {
 		t.Fatalf("registryUpdateRun (drop/add): %v", err)
 	}
 	if _, serr := os.Stat(oci.IndexRepoPath(root, cacheDir, host, repoB)); !os.IsNotExist(serr) {
@@ -809,7 +809,7 @@ func TestRegistryUpdateDeprecationOnExistingTagBound(t *testing.T) {
 	var out bytes.Buffer
 
 	// Initial build: 1.0.0 carries no marker.
-	if err := registryUpdateRun(registryUpdateConfig{ws: rw, Out: &out, now: frozen}); err != nil {
+	if err := registryUpdateRun(t.Context(), registryUpdateConfig{ws: rw, Out: &out, now: frozen}); err != nil {
 		t.Fatalf("registryUpdateRun (build): %v", err)
 	}
 
@@ -819,7 +819,7 @@ func TestRegistryUpdateDeprecationOnExistingTagBound(t *testing.T) {
 	attachSignedMarkerToTag(t, target.Store, "1.0.0", marker, signer)
 
 	// Conditional refresh reuses the prior record — the new marker is NOT seen.
-	if err := registryUpdateRun(registryUpdateConfig{ws: rw, Out: &out, now: frozen}); err != nil {
+	if err := registryUpdateRun(t.Context(), registryUpdateConfig{ws: rw, Out: &out, now: frozen}); err != nil {
 		t.Fatalf("registryUpdateRun (conditional): %v", err)
 	}
 	loaded, err := registryindex.LoadHost(root, cacheDir, host)
@@ -831,7 +831,7 @@ func TestRegistryUpdateDeprecationOnExistingTagBound(t *testing.T) {
 	}
 
 	// A full --upgrade re-read picks it up.
-	if err := registryUpdateRun(registryUpdateConfig{ws: rw, Out: &out, now: frozen, Upgrade: true}); err != nil {
+	if err := registryUpdateRun(t.Context(), registryUpdateConfig{ws: rw, Out: &out, now: frozen, Upgrade: true}); err != nil {
 		t.Fatalf("registryUpdateRun (upgrade): %v", err)
 	}
 	loaded, err = registryindex.LoadHost(root, cacheDir, host)
@@ -865,7 +865,7 @@ func TestRegistryUpdateListingDigestRevalidates(t *testing.T) {
 
 	// First build records the listing validator.
 	withIndexTarget(t, base)
-	if err := registryUpdateRun(registryUpdateConfig{ws: rw, Out: &out, now: frozen}); err != nil {
+	if err := registryUpdateRun(t.Context(), registryUpdateConfig{ws: rw, Out: &out, now: frozen}); err != nil {
 		t.Fatalf("registryUpdateRun (build): %v", err)
 	}
 	loaded, err := registryindex.LoadHost(root, cacheDir, host)
@@ -884,7 +884,7 @@ func TestRegistryUpdateListingDigestRevalidates(t *testing.T) {
 	var seen string
 	spy := listingSpySource{fakeIndexSource: base, lastIfNoneMatch: &seen}
 	withIndexTarget(t, spy)
-	if err := registryUpdateRun(registryUpdateConfig{ws: rw, Out: &out, now: frozen}); err != nil {
+	if err := registryUpdateRun(t.Context(), registryUpdateConfig{ws: rw, Out: &out, now: frozen}); err != nil {
 		t.Fatalf("registryUpdateRun (refresh): %v", err)
 	}
 	if seen != wantETag {

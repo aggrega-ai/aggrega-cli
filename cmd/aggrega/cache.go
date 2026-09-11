@@ -72,7 +72,7 @@ summary line of the form "N elements, <human size>". The listing is
 deterministic: identical cache state produces byte-identical output.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runCacheStatus(cmd.OutOrStdout(), resolveCacheLocations(cmd.Context()))
+			return runCacheStatus(cmd.Context(), cmd.OutOrStdout(), resolveCacheLocations(cmd.Context()))
 		},
 	}
 }
@@ -85,8 +85,11 @@ deterministic: identical cache state produces byte-identical output.`,
 // The reach is on a reading that changes nothing because a reader consults this
 // before deciding whether to reclaim, and that is the moment the reach decides
 // something.
-func runCacheStatus(w io.Writer, loc cacheops.Locations) error {
-	report := cacheops.Status(loc)
+func runCacheStatus(ctx context.Context, w io.Writer, loc cacheops.Locations) error {
+	report, err := cacheops.Status(ctx, loc)
+	if err != nil {
+		return err
+	}
 	for _, cl := range report.Classes {
 		fmt.Fprintf(w, "%s%s:\n", cl.Name, reachMarker(cl.Reach))
 		if len(cl.Elements) == 0 {
@@ -185,7 +188,7 @@ remainder is reclaimed by "aggrega cache evict" or "aggrega cache clear".
 Prune needs a pulled workspace: it fails when no lockfile is present.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runCachePrune(cmd.OutOrStdout(), resolveCacheLocations(cmd.Context()))
+			return runCachePrune(cmd.Context(), cmd.OutOrStdout(), resolveCacheLocations(cmd.Context()))
 		},
 	}
 }
@@ -198,8 +201,8 @@ Prune needs a pulled workspace: it fails when no lockfile is present.`,
 // reason the removals are: a partial prune that reached a machine-wide class
 // reached it, and withholding that alongside the incomplete summary would leave
 // the loudest half of the answer unsaid.
-func runCachePrune(w io.Writer, loc cacheops.Locations) error {
-	res, err := cacheops.Prune(loc)
+func runCachePrune(ctx context.Context, w io.Writer, loc cacheops.Locations) error {
+	res, err := cacheops.Prune(ctx, loc)
 	for _, r := range res.Removed {
 		fmt.Fprintf(w, "removed %s: %s%s\n", r.Class, r.Label, reachMarker(r.Reach))
 	}
@@ -268,7 +271,7 @@ no-op and removes nothing.`,
 			if capBytes <= 0 {
 				return fmt.Errorf("cache evict: --max-size must be greater than zero, got %q", maxSize)
 			}
-			return runCacheEvict(cmd.OutOrStdout(), resolveCacheLocations(cmd.Context()), capBytes)
+			return runCacheEvict(cmd.Context(), cmd.OutOrStdout(), resolveCacheLocations(cmd.Context()), capBytes)
 		},
 	}
 	c.Flags().StringVar(&maxSize, "max-size", "", "size cap for the compiled-module cache (e.g. 5GiB, 512MiB, or a byte count); required")
@@ -285,8 +288,8 @@ no-op and removes nothing.`,
 // function was handed. The two hold the same quantity, and reading the result's
 // is what keeps them unable to disagree: the trim applied the cap the result
 // reports, so that is the cap the answer names.
-func runCacheEvict(w io.Writer, loc cacheops.Locations, capBytes int64) error {
-	res, err := cacheops.Evict(loc, capBytes)
+func runCacheEvict(ctx context.Context, w io.Writer, loc cacheops.Locations, capBytes int64) error {
+	res, err := cacheops.Evict(ctx, loc, capBytes)
 	if res.WithinCapBefore && err == nil {
 		fmt.Fprintf(w, "compiled-module cache is %s, within cap %s; nothing evicted\n",
 			cacheops.HumanSize(res.TotalBefore), cacheops.HumanSize(res.CapBytes))
@@ -360,7 +363,7 @@ can answer.`,
 			if err := confirmCacheClear(cmd.OutOrStdout(), cmd.InOrStdin(), assumeYes); err != nil {
 				return err
 			}
-			return runCacheClear(cmd.OutOrStdout(), resolveCacheLocations(cmd.Context()))
+			return runCacheClear(cmd.Context(), cmd.OutOrStdout(), resolveCacheLocations(cmd.Context()))
 		},
 	}
 	c.Flags().BoolVar(&assumeYes, "yes", false, "skip the confirmation prompt (for non-interactive/CI use)")
@@ -393,8 +396,8 @@ func confirmCacheClear(w io.Writer, r io.Reader, assumeYes bool) error {
 // subtrees cleared before it are still named, and the summary is withheld — but
 // the reach statement is not, for the same reason it is not withheld from a
 // partial prune.
-func runCacheClear(w io.Writer, loc cacheops.Locations) error {
-	res, err := cacheops.Clear(loc)
+func runCacheClear(ctx context.Context, w io.Writer, loc cacheops.Locations) error {
+	res, err := cacheops.Clear(ctx, loc)
 	for _, c := range res.Cleared {
 		fmt.Fprintf(w, "cleared %s (%s)%s\n", c.Class, cacheops.HumanSize(c.Size), reachMarker(c.Reach))
 	}

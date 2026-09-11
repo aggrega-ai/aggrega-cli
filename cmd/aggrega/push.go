@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 
@@ -112,7 +113,7 @@ signing refuses the push rather than leaving unsigned content published.`,
 				v := opts.sign
 				pc.Sign = &v
 			}
-			return pushRun(pc)
+			return pushRun(cmd.Context(), pc)
 		},
 	}
 	c.Flags().StringVar(&opts.entityPath, "entity", "", "Path to the entity YAML to publish (alternatively pass as the positional arg)")
@@ -162,14 +163,14 @@ func listPublishableKinds(out io.Writer) error {
 // reads the result, because re-deriving these values by parsing the prose would
 // turn a display format into a contract. What makes the discard honest here is
 // that this surface IS the person watching.
-func pushRun(cfg pushConfig) error {
+func pushRun(ctx context.Context, cfg pushConfig) error {
 	cfg.TokenGetter = tokenGetterOrDefault(cfg.TokenGetter)
 	cfg.IsTTY = ttyOrDefault(cfg.IsTTY)
 	cfg.EnvLookup = envLookupOrGetenv(cfg.EnvLookup)
 	cfg.IdentitySupply = commandLineIdentitySupply
 	cfg.DestinationSupply = commandLineDestinationSupply
 	// projection-omits PushResult: the publication writes an account of itself to this surface's own status output that names every fact the result carries, so projecting it here would restate in full what the terminal has just been shown
-	if _, err := publishops.Push(cfg); err != nil {
+	if _, err := publishops.Push(ctx, cfg); err != nil {
 		return fmt.Errorf("aggrega push: %w", err)
 	}
 	return nil

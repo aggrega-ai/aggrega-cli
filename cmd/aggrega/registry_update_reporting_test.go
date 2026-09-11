@@ -233,7 +233,7 @@ func TestRegistryUpdateReportsScanOutcome(t *testing.T) {
 			frozen := func() time.Time { return time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC) }
 
 			var out bytes.Buffer
-			if err := registryUpdateRun(registryUpdateConfig{ws: rw, Out: &out, now: frozen}); err != nil {
+			if err := registryUpdateRun(t.Context(), registryUpdateConfig{ws: rw, Out: &out, now: frozen}); err != nil {
 				t.Fatalf("registryUpdateRun: %v", err)
 			}
 			for _, want := range tc.wantLines {

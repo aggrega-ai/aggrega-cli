@@ -82,7 +82,7 @@ func TestIntegration_EntitySignatureVerifiesAgainstManifestDigest(t *testing.T) 
 		t.Fatalf("write component: %v", werr)
 	}
 	wantSign := true
-	if perr := pushRun(pushConfig{
+	if perr := pushRun(t.Context(), pushConfig{
 		Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{Root: entityDir}),
 		EntityPath: entityPath,
 		Registry:   host,

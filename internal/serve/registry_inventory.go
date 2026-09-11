@@ -146,7 +146,7 @@ func (s *Server) dispatchRegistrySearch(ctx context.Context, req *jsonRPCRequest
 	// than folded into the response. It is prose written for a person watching a
 	// terminal, and this surface answers with the verdict itself — the screened
 	// versions travel on each record.
-	res, err := registryops.Search(s.resolvedWorkspace, registryops.Query{
+	res, err := registryops.Search(ctx, s.resolvedWorkspace, registryops.Query{
 		Text:             params.Query,
 		Kinds:            params.Kinds,
 		Selector:         params.Selector,

@@ -43,7 +43,7 @@ func TestPushKeyedEndToEndSignsBeforePush(t *testing.T) {
 	keyPath, pubPEM := writeKeyPEM(t)
 
 	sign := true
-	if err := pushRun(pushConfig{
+	if err := pushRun(t.Context(), pushConfig{
 		Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}),
 		EntityPath: entityPath,
 		Registry:   "secure.example.com",
@@ -88,7 +88,7 @@ func TestPushSignerErrorLeavesZeroBytes(t *testing.T) {
 	store := memory.New()
 
 	sign := true
-	err := pushRun(pushConfig{
+	err := pushRun(t.Context(), pushConfig{
 		Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}),
 		EntityPath: entityPath,
 		Registry:   "secure.example.com",
@@ -113,7 +113,7 @@ func TestPushKeyedMissingKeyLeavesZeroBytes(t *testing.T) {
 	store := memory.New()
 
 	sign := true
-	err := pushRun(pushConfig{
+	err := pushRun(t.Context(), pushConfig{
 		Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}),
 		EntityPath: entityPath,
 		Registry:   "secure.example.com",
@@ -140,7 +140,7 @@ func TestPushKeylessNoTokenNoTTYLeavesZeroBytes(t *testing.T) {
 	store := memory.New()
 
 	sign := true
-	err := pushRun(pushConfig{
+	err := pushRun(t.Context(), pushConfig{
 		Workspace:   resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}),
 		EntityPath:  entityPath,
 		Registry:    "secure.example.com",
@@ -174,7 +174,7 @@ func TestSignAndPushShareOneSigningPath(t *testing.T) {
 	pushEntity, pushWSRoot := writeSigningWorkspace(t, "secure.example.com", true)
 	pushStore := memory.New()
 	sign := true
-	if err := pushRun(pushConfig{
+	if err := pushRun(t.Context(), pushConfig{
 		Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{Root: pushWSRoot}),
 		EntityPath: pushEntity,
 		Registry:   "secure.example.com",
@@ -193,7 +193,7 @@ func TestSignAndPushShareOneSigningPath(t *testing.T) {
 	// through the sign verb's construction path, against the same key.
 	signStore := memory.New()
 	// Re-push the identical bytes into a second store so the digest matches.
-	if err := pushRun(pushConfig{
+	if err := pushRun(t.Context(), pushConfig{
 		Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{Root: pushWSRoot}),
 		EntityPath: pushEntity,
 		Registry:   "example.com",
@@ -208,7 +208,7 @@ func TestSignAndPushShareOneSigningPath(t *testing.T) {
 	if signDigestVal != pushDigest {
 		t.Fatalf("seed digest %q != push digest %q", signDigestVal, pushDigest)
 	}
-	if err := signRun(signConfig{
+	if err := signRun(t.Context(), signConfig{
 		Workspace:   resolveTempWorkspace(t, tempWorkspaceOptions{Root: pushWSRoot}),
 		References:  []string{"secure.example.com/component/core/api-server:1.0.0"},
 		SubjectRefs: map[string]string{"secure.example.com/component/core/api-server:1.0.0": "1.0.0"},

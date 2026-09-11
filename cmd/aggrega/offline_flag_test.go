@@ -488,7 +488,7 @@ func TestRegistryUpdateRefusesUnderTheOfflinePosture(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
-	if _, err := registryops.Update(rw, registryops.UpdateOptions{}, io.Discard); err == nil {
+	if _, err := registryops.Update(t.Context(), rw, registryops.UpdateOptions{}, io.Discard); err == nil {
 		t.Fatal("the registry index build succeeded under the offline posture")
 	} else {
 		assertOfflineRefusal(t, err, workspaceconfig.ConfigFilename)
@@ -498,7 +498,7 @@ func TestRegistryUpdateRefusesUnderTheOfflinePosture(t *testing.T) {
 	// off must get past the refusal, so the red above measures the posture and
 	// not a workspace that could never have been indexed.
 	online := rw.WithFlags(workspaceconfig.FlagOverlay{Offline: new(bool)})
-	if _, err := registryops.Update(online, registryops.UpdateOptions{}, io.Discard); err != nil {
+	if _, err := registryops.Update(t.Context(), online, registryops.UpdateOptions{}, io.Discard); err != nil {
 		if stderrors.Is(err, egress.ErrOfflineEgress()) {
 			t.Error("--offline=false left the offline refusal in place, so the refusal above is not keyed on the posture")
 		}

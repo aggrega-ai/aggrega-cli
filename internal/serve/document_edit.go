@@ -148,7 +148,7 @@ func (s *Server) dispatchDocumentEdit(ctx context.Context, req *jsonRPCRequest) 
 	}
 
 	delivery := authoredcontent.DeliveryFor(params.DryRun)
-	res, err := editops.Apply(s.workspaceRoot, editops.Options{
+	res, err := editops.Apply(ctx, s.workspaceRoot, editops.Options{
 		File:     params.File,
 		Kind:     editops.Kind(params.Edit),
 		Node:     params.Node,
