@@ -119,7 +119,7 @@ func TestDiscoveryRenderIsPinnedToTheLockfileItRecords(t *testing.T) {
 	// not what is under test. What is under test is which pins the view is
 	// carrying by the time the render is reached, and that is settled before the
 	// render begins, so the returned error is deliberately not consulted.
-	_, _ = discoverExternalInputs(
+	_, _, _ = discoverExternalInputs(
 		context.Background(),
 		Config{ReleasePath: "no-such-release.yaml"},
 		workspaceconfig.Config{},

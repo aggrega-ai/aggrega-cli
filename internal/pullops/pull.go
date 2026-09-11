@@ -16,6 +16,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/parse"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
+	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 	"github.com/aggrega-ai/aggrega-cli/internal/pluginfetchverify"
 	"github.com/aggrega-ai/aggrega-cli/internal/registryindex"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
@@ -161,6 +162,26 @@ type Config struct {
 	// identity to report should hand over rather than an invented one.
 	Toolchain *lockfile.ToolchainStamp
 
+	// RenderOptions carries the knobs the external-input discovery render runs
+	// under. The whole option set travels rather than a chosen subset of it, so a
+	// knob added to the pipeline reaches this render without a second list here
+	// having to be widened to admit it — a list that would be widened late or not
+	// at all, and would meanwhile decide by omission which knobs a discovery
+	// render honours.
+	//
+	// The set is behavioural rather than cosmetic, and the member easiest to read
+	// the other way is the clearest case: attaching the plugin-compile callbacks
+	// turns on the eager guest-compilation pass, so leaving them unset changes
+	// WHEN guests compile rather than only what a reader is shown. The zero value
+	// renders with every knob off, which is what a caller holding none of them
+	// hands over.
+	//
+	// Two further render knobs — the plugin-cache switch and the render-twice
+	// determinism check — ride on the context rather than here, so a caller that
+	// wants either wraps the context it hands to Run and owes nothing on this
+	// struct.
+	RenderOptions pipeline.Options
+
 	// DiagOut is the sink for the run's reuse, verification, retraction and
 	// withdrawal notices. Nil defaults to os.Stderr at the top of Run;
 	// callers pass a buffer to capture diagnostics without mutating a process
@@ -229,6 +250,21 @@ type Result struct {
 	// ExternalInputs is how many external inputs the lockfile pins after this run,
 	// across the ones carried forward and the ones this run discovered.
 	ExternalInputs int
+
+	// DiscoveryRender is the result of the render the external-input discovery
+	// performed, carried out whole rather than reduced to the pins it was run to
+	// find. It holds the artifacts, the dependency graph, the trace map and the
+	// advisories of a render of this Release against the closure this run pinned,
+	// so a caller needing any of them holds it already and renders nothing again
+	// to reach it.
+	//
+	// It is filled on a degraded run too, where the discovery render stopped part
+	// way. That is safe because the result carries its own verdict and reports no
+	// completed payload for a run that did not finish, so a caller reaching the
+	// payload through that verdict cannot read a stopped render as a finished
+	// one. Nil where the discovery was not reached at all — a verify-only run, or
+	// a failure above it.
+	DiscoveryRender *compilerops.PreviewResult
 
 	// ExternalInputDiscovery is the failure that stopped the discovery render,
 	// or nil where it completed or was stood down.
@@ -1008,7 +1044,7 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 		return Result{}, err
 	}
 	report.phase(PhaseExternalInputs)
-	pins, discoveryErr := discoverExternalInputs(ctx, cfg, wsCfg, workspaceRoot, cacheDir, lazyView, assembled)
+	pins, discoveryRender, discoveryErr := discoverExternalInputs(ctx, cfg, wsCfg, workspaceRoot, cacheDir, lazyView, assembled)
 	assembled.ExternalInputs = pins
 	// Ahead of BOTH the discovery diagnostic and the write, and the order matters.
 	// A withdrawal reaching the render arrives back here as a render failure, and
@@ -1047,6 +1083,7 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 		Closure:                cl,
 		TrustedPlugins:         trustedCount,
 		ExternalInputs:         len(assembled.ExternalInputs),
+		DiscoveryRender:        discoveryRender,
 		ExternalInputDiscovery: discoveryErr,
 	}, nil
 }

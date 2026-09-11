@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
@@ -51,16 +50,27 @@ import (
 //
 // # What it writes
 //
-// The rendered artifacts are returned in memory and dropped: nothing here writes
-// a file. What it does write is content — each acquired input lands in the
-// content-addressed store under its digest — and the records travel back to the
-// caller, which folds them into the one lockfile write.
+// Nothing here writes a file. What it does write is content — each acquired
+// input lands in the content-addressed store under its digest — and the records
+// travel back to the caller, which folds them into the one lockfile write.
+//
+// The render's own result travels back with them, whole rather than reduced to
+// the records the discovery was after. A caller holding it holds the artifacts,
+// the dependency graph, the trace map and the advisories of a render that has
+// already happened, so a caller needing any of them has it without rendering the
+// same Release a second time. Handing over the whole result rather than a chosen
+// projection of it is what keeps that open: a projection settles here, on behalf
+// of every caller, which parts of a render a caller is permitted to want.
 //
 // The records are returned on the failure path too. A render that stopped
 // part-way has already fetched, verified and stored everything it asked for
 // ahead of the stop, and those pins are correct; discarding them would make the
 // next run refetch content this one has already accepted while telling the
-// reader nothing extra.
+// reader nothing extra. The render's result comes back on that path for a
+// reason of its own: it carries its own verdict, reporting no completed payload
+// for a run that did not finish, so a caller reaching the payload through that
+// verdict cannot read a stopped render as a finished one.
+//
 // ctx is the caller's own, carried into the render rather than replaced by one
 // this layer invented. A render is where the fetching happens, so a withdrawal
 // that could not reach it would leave the one acquiring step in the whole
@@ -73,7 +83,7 @@ func discoverExternalInputs(
 	cacheDir string,
 	view *catalog.LazyLookup,
 	lf *lockfile.Lockfile,
-) ([]lockfile.ExternalInput, error) {
+) ([]lockfile.ExternalInput, *compilerops.PreviewResult, error) {
 	// The pins this render verifies against are derived from the lockfile handed
 	// to this call, in this call, rather than left as whatever the resolution
 	// above last installed on the view.
@@ -103,7 +113,7 @@ func discoverExternalInputs(
 	// cannot be answered differently here than it is at a build.
 	svc := externalinputs.NewAcquiring(workspaceRoot, cacheDir, wsCfg, lf)
 
-	_, err := compilerops.PreviewForArtifact(
+	preview, err := compilerops.PreviewForArtifact(
 		ctx,
 		compilerops.NewPreviewInputs(
 			svc,
@@ -120,9 +130,9 @@ func discoverExternalInputs(
 			// gate.
 			compilerops.WithLockfile(lf, false),
 		),
-		pipeline.Options{},
+		cfg.RenderOptions,
 	)
-	return svc.Records(), err
+	return svc.Records(), preview, err
 }
 
 // reportExternalInputDiscoveryFailure writes the diagnostic a reader needs when
