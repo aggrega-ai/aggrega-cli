@@ -18,7 +18,7 @@ func TestRegistryAddKeyless(t *testing.T) {
 	t.Parallel()
 	rw := resolveTempWorkspace(t, tempWorkspaceOptions{})
 	var out bytes.Buffer
-	err := registryAddRun(registryAddConfig{
+	err := registryAddRun(t.Context(), registryAddConfig{
 		Host: "keyless.example.com",
 		Identities: []string{
 			"dev@example.com=https://accounts.google.com",
@@ -60,7 +60,7 @@ func TestRegistryAddKeyed(t *testing.T) {
 		t.Fatalf("write key: %v", err)
 	}
 	var out bytes.Buffer
-	if err := registryAddRun(registryAddConfig{
+	if err := registryAddRun(t.Context(), registryAddConfig{
 		Host:      "keyed.example.com",
 		KeyPath:   keyPath,
 		Workspace: true,
@@ -85,7 +85,7 @@ func TestRegistryAddHubBaseline(t *testing.T) {
 	t.Parallel()
 	rw := resolveTempWorkspace(t, tempWorkspaceOptions{})
 	var out bytes.Buffer
-	if err := registryAddRun(registryAddConfig{
+	if err := registryAddRun(t.Context(), registryAddConfig{
 		Host:      workspaceconfig.HubBaselineHost,
 		Workspace: true,
 		ws:        rw,
@@ -110,7 +110,7 @@ func TestRegistryAddPreservesExisting(t *testing.T) {
 	rw := resolveTempWorkspace(t, tempWorkspaceOptions{})
 	var out bytes.Buffer
 	add := func(host, identity string) {
-		if err := registryAddRun(registryAddConfig{
+		if err := registryAddRun(t.Context(), registryAddConfig{
 			Host:       host,
 			Identities: []string{identity + "=https://accounts.google.com"},
 			Workspace:  true,
@@ -137,7 +137,7 @@ func TestRegistryAddPreservesExisting(t *testing.T) {
 func TestRegistryAddRejectsMalformedIdentity(t *testing.T) {
 	t.Parallel()
 	rw := resolveTempWorkspace(t, tempWorkspaceOptions{})
-	err := registryAddRun(registryAddConfig{
+	err := registryAddRun(t.Context(), registryAddConfig{
 		Host:       "x.example.com",
 		Identities: []string{"no-issuer-here"},
 		ws:         rw,

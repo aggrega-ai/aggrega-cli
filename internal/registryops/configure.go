@@ -170,7 +170,14 @@ type AddResult struct {
 // trust-policy precedence above is unchanged by the delivery: the fetch is a read
 // and happens either way, so the reported content is the content a write would
 // have produced rather than a different document assembled for reporting.
-func Add(rw *workspaceconfig.ResolvedWorkspace, opts AddOptions) (AddResult, error) {
+// ctx ends the registration where the caller stops wanting it. It reaches the
+// advertised-trust fetch, which is the only step here that leaves the machine
+// and therefore the only one worth abandoning. A stop is a hard error rather
+// than a tolerated not-advertised outcome, for the reason pinAdvertisedTrust
+// states: the two are indistinguishable from the fetch's own error and they must
+// not be treated alike, because one of them would have the registration write a
+// trust policy the registry never declined.
+func Add(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts AddOptions) (AddResult, error) {
 	var res AddResult
 	host := registryhost.Of(opts.Host)
 	if host == "" {
@@ -199,7 +206,7 @@ func Add(rw *workspaceconfig.ResolvedWorkspace, opts AddOptions) (AddResult, err
 
 	switch {
 	case opts.FetchTrust && !manualPolicy:
-		outcome, ferr := pinAdvertisedTrust(&reg, host, opts.TrustClient)
+		outcome, ferr := pinAdvertisedTrust(ctx, &reg, host, opts.TrustClient)
 		if ferr != nil {
 			return res, ferr
 		}
@@ -264,9 +271,22 @@ func Add(rw *workspaceconfig.ResolvedWorkspace, opts AddOptions) (AddResult, err
 // fetched but did not decode, is a hard error: the endpoint answered with
 // content that is not a usable trust policy, which is a real misconfiguration
 // the operator should see rather than a registry that simply advertises none.
-func pinAdvertisedTrust(reg *workspaceconfig.RegistryConfig, host string, client *http.Client) (TrustFetchOutcome, error) {
-	adv, ferr := registrytrust.Fetch(context.Background(), client, host)
+//
+// 🔴 A caller that withdrew is the third outcome, and it is a hard error — it
+// must not be folded into the tolerated one. A cancelled fetch and an
+// unreachable registry are indistinguishable from the transport error alone, and
+// treating a withdrawal as "advertises nothing" would let the registration
+// proceed and write a trust policy the registry never declined: the operator
+// would be left holding a configuration that requires no signatures because a
+// request was interrupted. The context is consulted rather than the error's
+// prose, because a transport error's wording is not a contract.
+func pinAdvertisedTrust(ctx context.Context, reg *workspaceconfig.RegistryConfig, host string, client *http.Client) (TrustFetchOutcome, error) {
+	adv, ferr := registrytrust.Fetch(ctx, client, host)
 	if ferr != nil {
+		if cerr := ctx.Err(); cerr != nil {
+			return TrustFetchOutcome{}, fmt.Errorf(
+				"aggrega registry add: stopped before %s answered whether it advertises a trust policy: %w", host, cerr)
+		}
 		if errors.Is(ferr, registrytrust.ErrMalformedTrust()) {
 			return TrustFetchOutcome{}, fmt.Errorf("aggrega registry add: %w", ferr)
 		}

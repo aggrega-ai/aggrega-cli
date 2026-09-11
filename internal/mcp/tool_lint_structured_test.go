@@ -88,7 +88,7 @@ func lintReportFromCore(t *testing.T, root, entity string) lintops.Report {
 	}
 	collect := &lintops.FindingCollector{}
 	var out, diag bytes.Buffer
-	if rerr := lintops.RunEntity(lintops.Config{
+	if rerr := lintops.RunEntity(t.Context(), lintops.Config{
 		EntityPath:     filepath.Join(root, entity),
 		PolicyResolver: func(_ string, ws bool) bool { return ws },
 		Workspace:      rw,

@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -355,7 +356,7 @@ policy arrives without the advice to pin identities by hand.`,
 			if err != nil {
 				return err
 			}
-			return configInitRun(configInitConfig{
+			return configInitRun(cmd.Context(), configInitConfig{
 				Registry:  registry,
 				Force:     force,
 				Global:    global,
@@ -417,14 +418,14 @@ type configInitConfig struct {
 // write-target resolution, the refuse-if-exists guard, and the registration the
 // trust policy comes from — lives in internal/configops, so this surface and the
 // daemon perform one seeding rather than each performing its own.
-func configInitRun(cfg configInitConfig) error {
+func configInitRun(ctx context.Context, cfg configInitConfig) error {
 	rw, err := workspaceOrResolve(cfg.ws)
 	if err != nil {
 		return err
 	}
 
 	delivery := authoredcontent.DeliveryFor(cfg.DryRun)
-	res, initErr := configops.Init(rw, configops.InitOptions{
+	res, initErr := configops.Init(ctx, rw, configops.InitOptions{
 		Registry:    cfg.Registry,
 		Force:       cfg.Force,
 		Global:      cfg.Global,

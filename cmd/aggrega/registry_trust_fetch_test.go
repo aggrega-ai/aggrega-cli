@@ -49,7 +49,7 @@ func TestRegistryAddFetchesAndPinsTrust(t *testing.T) {
 
 	rw := resolveTempWorkspace(t, tempWorkspaceOptions{})
 	var out bytes.Buffer
-	if err := registryAddRun(registryAddConfig{
+	if err := registryAddRun(t.Context(), registryAddConfig{
 		Host:        host,
 		FetchTrust:  true,
 		Workspace:   true,
@@ -103,7 +103,7 @@ func TestRegistryAddManualIdentityOverridesFetch(t *testing.T) {
 
 	rw := resolveTempWorkspace(t, tempWorkspaceOptions{})
 	var out bytes.Buffer
-	if err := registryAddRun(registryAddConfig{
+	if err := registryAddRun(t.Context(), registryAddConfig{
 		Host:        host,
 		Identities:  []string{"manual@acme.example=https://accounts.google.com"},
 		FetchTrust:  true, // on, but a manual policy must override it
@@ -150,7 +150,7 @@ func TestRegistryAddNoTrustAdvertisedFallsBack(t *testing.T) {
 
 	rw := resolveTempWorkspace(t, tempWorkspaceOptions{})
 	var out bytes.Buffer
-	if err := registryAddRun(registryAddConfig{
+	if err := registryAddRun(t.Context(), registryAddConfig{
 		Host:        host,
 		FetchTrust:  true,
 		Workspace:   true,
@@ -187,7 +187,7 @@ func TestRegistryAddUnreachableEndpointFallsBack(t *testing.T) {
 
 	rw := resolveTempWorkspace(t, tempWorkspaceOptions{})
 	var out bytes.Buffer
-	if err := registryAddRun(registryAddConfig{
+	if err := registryAddRun(t.Context(), registryAddConfig{
 		Host:        host,
 		FetchTrust:  true,
 		Workspace:   true,
@@ -214,7 +214,7 @@ func TestRegistryAddNoFetchTrustSkipsFetch(t *testing.T) {
 	t.Parallel()
 	rw := resolveTempWorkspace(t, tempWorkspaceOptions{})
 	var out bytes.Buffer
-	if err := registryAddRun(registryAddConfig{
+	if err := registryAddRun(t.Context(), registryAddConfig{
 		Host:       "no-fetch.example.com",
 		FetchTrust: false,
 		Workspace:  true,
@@ -246,7 +246,7 @@ func TestRegistryAddMalformedTrustHardFails(t *testing.T) {
 	host, client := advertisedTrustServer(t, `{"trusted_identities": [{"identity": "no-issuer-here"}]}`)
 	rw := resolveTempWorkspace(t, tempWorkspaceOptions{})
 	var out bytes.Buffer
-	err := registryAddRun(registryAddConfig{
+	err := registryAddRun(t.Context(), registryAddConfig{
 		Host:        host,
 		FetchTrust:  true,
 		ws:          rw,

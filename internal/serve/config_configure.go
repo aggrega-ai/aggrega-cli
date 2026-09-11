@@ -116,7 +116,7 @@ func (s *Server) dispatchConfigInit(ctx context.Context, req *jsonRPCRequest) er
 	}
 
 	delivery := authoredcontent.DeliveryFor(params.DryRun)
-	res, err := configops.Init(s.resolvedWorkspace, configops.InitOptions{
+	res, err := configops.Init(ctx, s.resolvedWorkspace, configops.InitOptions{
 		Registry:  registry,
 		Force:     params.Force,
 		Global:    params.Global,

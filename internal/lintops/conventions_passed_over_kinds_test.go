@@ -25,7 +25,7 @@ func catalogWideOutput(t *testing.T, ws string) string {
 		t.Fatalf("resolve the constructed workspace: %v", err)
 	}
 	var out bytes.Buffer
-	if err := RunCatalogWide(rw, []string{ws}, &out, io.Discard, nil); err != nil {
+	if err := RunCatalogWide(t.Context(), rw, []string{ws}, &out, io.Discard, nil); err != nil {
 		t.Fatalf("whole-catalog conventions pass: %v", err)
 	}
 	return out.String()
@@ -127,7 +127,7 @@ spec: {}
 	mustWriteFile(t, filepath.Join(ws, "deployment.yaml"), "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: web\n")
 	mustWriteFile(t, filepath.Join(ws, "values.yaml"), "replicaCount: 2\nimage:\n  tag: latest\n")
 
-	files, passedOver, err := walkCatalogEntityFiles(ws, []string{ws}, "")
+	files, passedOver, err := walkCatalogEntityFiles(t.Context(), ws, []string{ws}, "")
 	if err != nil {
 		t.Fatalf("walkCatalogEntityFiles: %v", err)
 	}

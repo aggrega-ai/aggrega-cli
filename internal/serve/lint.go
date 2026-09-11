@@ -122,7 +122,13 @@ func conventionDiagnosticsFor(findings []lintops.Finding, file string) []Diagnos
 // is unreachable from this path by construction: a check running on every edit is
 // exactly where a registry must not be reached, and a caller wanting that
 // comparison asks for it by name through aggrega/lint.
-func (s *Server) conventionsForBuffer(file string, content []byte, doc *yaml.Node) []Diagnostic {
+//
+// ctx is the validation's own, so a client that withdrew a validation stops the
+// rules this layer runs rather than only discarding what they said. That matters
+// here more than on the explicit request, not less: this layer runs on every
+// edit, so it is the path most likely to be in flight when a keystroke
+// supersedes it.
+func (s *Server) conventionsForBuffer(ctx context.Context, file string, content []byte, doc *yaml.Node) []Diagnostic {
 	if s.resolvedWorkspace == nil {
 		// Nothing to lint against. Production always resolves a workspace at
 		// startup; a Server built as a struct literal is the in-memory harness, and
@@ -138,7 +144,7 @@ func (s *Server) conventionsForBuffer(file string, content []byte, doc *yaml.Nod
 	// The verdict is deliberately dropped. In this mode every finding is advisory,
 	// so a run reports findings rather than refusing, and what a validation owes
 	// its caller is the findings either way.
-	_ = lintops.RunEntity(lintops.Config{
+	_ = lintops.RunEntity(ctx, lintops.Config{
 		EntityPath:    file,
 		ProposedBytes: content,
 		Workspace:     s.resolvedWorkspace,
@@ -160,12 +166,12 @@ func (s *Server) conventionsForBuffer(file string, content []byte, doc *yaml.Nod
 // memory: a session whose dial is turned off reports nothing on its next
 // validation, instead of leaving whatever an earlier on position published
 // standing in the editor with nothing to refresh it.
-func (s *Server) refreshConventionDiagnostics(file string, content []byte, doc *yaml.Node) {
+func (s *Server) refreshConventionDiagnostics(ctx context.Context, file string, content []byte, doc *yaml.Node) {
 	if !s.lintOnValidate {
 		s.setConventionDiagnostics(file, nil)
 		return
 	}
-	s.setConventionDiagnostics(file, s.conventionsForBuffer(file, content, doc))
+	s.setConventionDiagnostics(file, s.conventionsForBuffer(ctx, file, content, doc))
 }
 
 // lintParams is the request shape for `aggrega/lint`.
@@ -310,7 +316,7 @@ func (s *Server) dispatchLint(ctx context.Context, req *jsonRPCRequest) error {
 		if paramErr != nil {
 			return s.writeErrorEnvelope(ctx, req.ID, paramErr)
 		}
-		runErr = lintops.RunEntity(lintops.Config{
+		runErr = lintops.RunEntity(ctx, lintops.Config{
 			EntityPath: abs,
 			PrePublish: params.PrePublish,
 			Workspace:  s.resolvedWorkspace,
@@ -323,13 +329,16 @@ func (s *Server) dispatchLint(ctx context.Context, req *jsonRPCRequest) error {
 		if paramErr != nil {
 			return s.writeErrorEnvelope(ctx, req.ID, paramErr)
 		}
-		runErr = lintops.RunRelease(s.resolvedWorkspace, abs, nil, io.Discard, io.Discard, collect)
+		runErr = lintops.RunRelease(ctx, s.resolvedWorkspace, abs, nil, io.Discard, io.Discard, collect)
 	default:
-		runErr = lintops.RunCatalogWide(s.resolvedWorkspace, nil, io.Discard, io.Discard, collect)
+		runErr = lintops.RunCatalogWide(ctx, s.resolvedWorkspace, nil, io.Discard, io.Discard, collect)
 	}
+	// The request's own context is what the arms above were given, so by the time
+	// this is read the run has already abandoned its remaining work rather than
+	// finished it — which is the difference this check used to hide. It stays
+	// because the response must still be dropped: a caller that withdrew is not
+	// waiting for an answer, and a partial one would misreport its corpus.
 	if ctx.Err() != nil {
-		// Cancelled mid-flight (shutdown). Drop the response; the dispatcher exits
-		// via the drain timer.
 		return nil
 	}
 	if runErr != nil && !collect.Reached() {

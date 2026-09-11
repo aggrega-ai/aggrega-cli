@@ -4,6 +4,7 @@
 package configops
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"os"
@@ -116,7 +117,15 @@ type InitResult struct {
 // cost of that prediction, and the merge is reachable anyway by asking for it —
 // Force alongside a non-writing delivery reports the document an overwriting
 // write would produce.
-func Init(rw *workspaceconfig.ResolvedWorkspace, opts InitOptions) (InitResult, error) {
+//
+// ctx ends the seeding where the caller stops wanting it. Seeding is not a local
+// operation: the registration it delegates to fetches the registry's advertised
+// trust policy over the network, and that fetch is what a caller who has given
+// up is waiting on. Threading the context is what makes a stop reach it — and,
+// at the same time, what keeps a withdrawn seeding from writing a configuration
+// file whose trust policy is empty because the fetch was interrupted rather than
+// because the registry advertises none.
+func Init(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts InitOptions) (InitResult, error) {
 	var res InitResult
 	rw, err := workspaceOrRefuse(rw)
 	if err != nil {
@@ -143,7 +152,7 @@ func Init(rw *workspaceconfig.ResolvedWorkspace, opts InitOptions) (InitResult, 
 	// The registration's result is returned even alongside an error: the
 	// advertised-trust fetch is a read that happened either way, and a caller told
 	// nothing about it cannot tell a skipped fetch from a failed one.
-	registration, addErr := registryops.Add(rw, registryops.AddOptions{
+	registration, addErr := registryops.Add(ctx, rw, registryops.AddOptions{
 		Host:        opts.Registry,
 		FetchTrust:  true,
 		Global:      opts.Global,

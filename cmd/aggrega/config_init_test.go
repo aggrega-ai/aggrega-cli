@@ -40,7 +40,7 @@ func TestConfigInitSeedsGlobalHubBaseline(t *testing.T) {
 	rw := resolveTempWorkspaceAgainst(t, tempWorkspaceOptions{}, lookup)
 
 	var out bytes.Buffer
-	if err := configInitRun(configInitConfig{
+	if err := configInitRun(t.Context(), configInitConfig{
 		Registry:    workspaceconfig.HubBaselineHost,
 		ws:          rw,
 		Out:         &out,
@@ -91,11 +91,11 @@ func TestConfigInitRefusesExistingWithoutForce(t *testing.T) {
 		}
 	}
 
-	if err := configInitRun(base()); err != nil {
+	if err := configInitRun(t.Context(), base()); err != nil {
 		t.Fatalf("first configInitRun: %v", err)
 	}
 
-	err := configInitRun(base())
+	err := configInitRun(t.Context(), base())
 	if err == nil {
 		t.Fatal("second init without --force should refuse an existing file")
 	}
@@ -105,7 +105,7 @@ func TestConfigInitRefusesExistingWithoutForce(t *testing.T) {
 
 	forced := base()
 	forced.Force = true
-	if err := configInitRun(forced); err != nil {
+	if err := configInitRun(t.Context(), forced); err != nil {
 		t.Fatalf("init --force over an existing file should succeed: %v", err)
 	}
 }
@@ -125,7 +125,7 @@ func TestConfigInitConfigPathCreatesTarget(t *testing.T) {
 		t.Fatalf("precondition: target should not exist yet; stat err = %v", err)
 	}
 
-	if err := configInitRun(configInitConfig{
+	if err := configInitRun(t.Context(), configInitConfig{
 		Registry:    workspaceconfig.HubBaselineHost,
 		ws:          rw,
 		Out:         &bytes.Buffer{},
@@ -171,7 +171,7 @@ func TestConfigInitConfigFlagMissingPathCreates(t *testing.T) {
 		t.Fatalf("ResolveWithoutGlobal into a missing --config path: %v", err)
 	}
 
-	if err := configInitRun(configInitConfig{
+	if err := configInitRun(t.Context(), configInitConfig{
 		Registry:    workspaceconfig.HubBaselineHost,
 		ws:          rw,
 		Out:         &bytes.Buffer{},
@@ -208,7 +208,7 @@ func TestConfigInitContextLookupWritesConfigPath(t *testing.T) {
 		t.Fatalf("resolve via the context lookup: %v", err)
 	}
 
-	if err := configInitRun(configInitConfig{
+	if err := configInitRun(t.Context(), configInitConfig{
 		Registry:    workspaceconfig.HubBaselineHost,
 		ws:          rw,
 		Out:         &bytes.Buffer{},

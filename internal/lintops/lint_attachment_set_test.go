@@ -109,7 +109,7 @@ func runWithAttachments(t *testing.T, refs string) []Finding {
 		Out:            io.Discard,
 		Collect:        collect,
 	}
-	if err := RunEntity(cfg); err != nil {
+	if err := RunEntity(t.Context(), cfg); err != nil {
 		t.Fatalf("default-mode lint should not halt; got: %v", err)
 	}
 	if !collect.Reached() {
@@ -175,7 +175,7 @@ func TestLintDispatchesEachAttachmentAtItsOwnExport(t *testing.T) {
 		DiagOut:        io.Discard,
 		Out:            io.Discard,
 	}
-	err := RunEntity(cfg)
+	err := RunEntity(t.Context(), cfg)
 	if err == nil {
 		t.Fatal("a second attachment naming a non-existent export must halt the run; got a clean pass")
 	}

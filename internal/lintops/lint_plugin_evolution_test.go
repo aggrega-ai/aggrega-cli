@@ -97,7 +97,7 @@ func TestLintPrePublishPluginEvolution(t *testing.T) {
 					Workspace:      resolveTempWorkspace(t),
 					DiagOut:        &diag,
 				}
-				err := RunEntity(cfg)
+				err := RunEntity(t.Context(), cfg)
 				if c.wantHalt {
 					if err == nil {
 						t.Fatalf("expected HALT for %s; got PASS (diag: %s)", c.proposedVer, diag.String())
@@ -188,7 +188,7 @@ func TestLintPrePublishPluginCommandEvolution(t *testing.T) {
 					Workspace:      resolveTempWorkspace(t),
 					DiagOut:        &diag,
 				}
-				err := RunEntity(cfg)
+				err := RunEntity(t.Context(), cfg)
 				if c.wantHalt {
 					if err == nil {
 						t.Fatalf("expected HALT for %s; got PASS (diag: %s)", c.proposedVer, diag.String())
@@ -278,7 +278,7 @@ func TestLintPrePublishPluginCapabilityEvolution(t *testing.T) {
 					Workspace:      resolveTempWorkspace(t),
 					DiagOut:        &diag,
 				}
-				err := RunEntity(cfg)
+				err := RunEntity(t.Context(), cfg)
 				if c.wantHalt {
 					if err == nil {
 						t.Fatalf("expected HALT for %s; got PASS (diag: %s)", c.proposedVer, diag.String())
@@ -327,7 +327,7 @@ func TestLintPrePublishPluginCommandFirstPublish(t *testing.T) {
 		Workspace:      resolveTempWorkspace(t),
 		DiagOut:        &diag,
 	}
-	err := RunEntity(cfg)
+	err := RunEntity(t.Context(), cfg)
 	if err != nil {
 		t.Fatalf("first publication of a command-bearing plugin should PASS; got HALT: %v (diag: %s)", err, diag.String())
 	}
@@ -377,7 +377,7 @@ func TestLintPrePublishCoreExempt(t *testing.T) {
 		Workspace:      resolveTempWorkspace(t),
 		DiagOut:        &diag,
 	}
-	err := RunEntity(cfg)
+	err := RunEntity(t.Context(), cfg)
 	if err != nil {
 		t.Fatalf("core plugin should be exempt from the evolution gate; got HALT: %v (diag: %s)", err, diag.String())
 	}

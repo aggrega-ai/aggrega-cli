@@ -117,7 +117,7 @@ func TestLintToolEntityScopeCoreParity(t *testing.T) {
 		t.Fatalf("resolve workspace: %v", err)
 	}
 	var coreOut, coreDiag bytes.Buffer
-	coreErr := lintops.RunEntity(lintops.Config{
+	coreErr := lintops.RunEntity(t.Context(), lintops.Config{
 		EntityPath:     filepath.Join(root, "component.yaml"),
 		PolicyResolver: func(_ string, ws bool) bool { return ws },
 		Workspace:      rw,
@@ -163,7 +163,7 @@ func TestLintToolReleaseScopeCoreParity(t *testing.T) {
 		t.Fatalf("resolve workspace: %v", err)
 	}
 	var coreOut, coreDiag bytes.Buffer
-	coreErr := lintops.RunRelease(rw, filepath.Join(root, "release.yaml"), nil, &coreOut, &coreDiag, nil)
+	coreErr := lintops.RunRelease(t.Context(), rw, filepath.Join(root, "release.yaml"), nil, &coreOut, &coreDiag, nil)
 
 	if (mcpErr == nil) != (coreErr == nil) {
 		t.Fatalf("verdict diverged: mcp=%v core=%v", mcpErr, coreErr)

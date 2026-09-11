@@ -359,7 +359,7 @@ func TestProvidesDeclaredByComponentThroughTheLintCommand(t *testing.T) {
 					DiagOut:        &diag,
 					Out:            &bytes.Buffer{},
 				}
-				if err := RunEntity(cfg); err != nil {
+				if err := RunEntity(t.Context(), cfg); err != nil {
 					t.Fatalf("default-mode lint must not halt on an advisory: %v", err)
 				}
 				reported := reportedProvidesKeys(diag.String())
@@ -426,7 +426,7 @@ func TestProvidesDeclaredByComponentIsSilentWithoutTheComponent(t *testing.T) {
 		DiagOut:        &diag,
 		Out:            &bytes.Buffer{},
 	}
-	if err := RunEntity(cfg); err != nil {
+	if err := RunEntity(t.Context(), cfg); err != nil {
 		t.Fatalf("lint must not halt: %v", err)
 	}
 	if keys := reportedProvidesKeys(diag.String()); len(keys) != 0 {
@@ -468,7 +468,7 @@ func TestProvidesDeclaredByComponentRespectsTheSuppressionFlag(t *testing.T) {
 			DiagOut:   &diag,
 			Out:       &bytes.Buffer{},
 		}
-		if err := RunEntity(cfg); err != nil {
+		if err := RunEntity(t.Context(), cfg); err != nil {
 			t.Fatalf("lint must not halt: %v", err)
 		}
 		return reportedProvidesKeys(diag.String())

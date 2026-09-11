@@ -256,7 +256,7 @@ func TestNamedConfigGovernsConfigInit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolve as the command body does: %v", err)
 	}
-	if err := configInitRun(configInitConfig{
+	if err := configInitRun(t.Context(), configInitConfig{
 		Registry:    workspaceconfig.HubBaselineHost,
 		ws:          rw,
 		Out:         &bytes.Buffer{},

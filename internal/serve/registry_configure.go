@@ -186,7 +186,7 @@ func (s *Server) dispatchRegistryAdd(ctx context.Context, req *jsonRPCRequest) e
 		opts.RequireValue = *params.RequireSignatures
 	}
 
-	res, err := registryops.Add(s.resolvedWorkspace, opts)
+	res, err := registryops.Add(ctx, s.resolvedWorkspace, opts)
 	if ctx.Err() != nil {
 		return nil
 	}

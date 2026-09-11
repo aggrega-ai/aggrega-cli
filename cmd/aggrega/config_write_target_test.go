@@ -31,7 +31,7 @@ func TestRegistryAddDefaultsToGlobal(t *testing.T) {
 	rw := resolveTempWorkspaceAgainst(t, tempWorkspaceOptions{}, lookup)
 
 	var out bytes.Buffer
-	if err := registryAddRun(registryAddConfig{
+	if err := registryAddRun(t.Context(), registryAddConfig{
 		Host: "tool.example.com",
 		ws:   rw,
 		Out:  &out,
@@ -68,7 +68,7 @@ func TestRegistryAddWorkspaceOverride(t *testing.T) {
 	t.Parallel()
 	rw := resolveTempWorkspace(t, tempWorkspaceOptions{})
 	var out bytes.Buffer
-	if err := registryAddRun(registryAddConfig{
+	if err := registryAddRun(t.Context(), registryAddConfig{
 		Host:      "ws.example.com",
 		Workspace: true,
 		ws:        rw,
@@ -91,7 +91,7 @@ func TestRegistryAddWorkspaceOverride(t *testing.T) {
 func TestRegistryAddBothFlagsUsageError(t *testing.T) {
 	t.Parallel()
 	rw := resolveTempWorkspace(t, tempWorkspaceOptions{})
-	err := registryAddRun(registryAddConfig{
+	err := registryAddRun(t.Context(), registryAddConfig{
 		Host:      "x.example.com",
 		Global:    true,
 		Workspace: true,
@@ -112,7 +112,7 @@ func TestRegistryAddGlobalCreatesMissingParentDir(t *testing.T) {
 	global := filepath.Join(t.TempDir(), "cfg", "aggrega", "config.yaml")
 	rw := resolveTempWorkspaceAgainst(t, tempWorkspaceOptions{},
 		frozenEnv(map[string]string{"AGGREGA_CONFIG": global}))
-	if err := registryAddRun(registryAddConfig{
+	if err := registryAddRun(t.Context(), registryAddConfig{
 		Host:   "mkdir.example.com",
 		Global: true,
 		ws:     rw,

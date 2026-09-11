@@ -126,7 +126,7 @@ func TestLintPrePublishMatrixComponent(t *testing.T) {
 				FetchTarget:    target,
 				Workspace:      resolveTempWorkspace(t),
 			}
-			err := RunEntity(cfg)
+			err := RunEntity(t.Context(), cfg)
 			// NO silent-swallow. Matrix
 			// fixtures are clean across all 7 rules; any halt is
 			// the schema-evolution one we care about (or a
@@ -170,7 +170,7 @@ spec:
 		PolicyResolver: func(_ string, ws bool) bool { return ws },
 		Workspace:      resolveTempWorkspace(t),
 	}
-	err := RunEntity(cfg)
+	err := RunEntity(t.Context(), cfg)
 	if err != nil {
 		t.Errorf("default mode should NOT halt (every finding downgraded to warning); got: %v", err)
 	}
@@ -214,7 +214,7 @@ spec:
 		FetchTarget:    target,
 		Workspace:      resolveTempWorkspace(t),
 	}
-	err := RunEntity(cfg)
+	err := RunEntity(t.Context(), cfg)
 	if err != nil {
 		t.Errorf("first publication should PASS; got HALT: %v", err)
 	}
@@ -542,7 +542,7 @@ func TestDefaultRuleIDs(t *testing.T) {
 
 // TestLintMissingEntityPath pins the diagnostic for missing entity path.
 func TestLintMissingEntityPath(t *testing.T) {
-	err := RunEntity(Config{EntityPath: "", Workspace: resolveTempWorkspace(t)})
+	err := RunEntity(t.Context(), Config{EntityPath: "", Workspace: resolveTempWorkspace(t)})
 	if err == nil {
 		t.Fatal("expected error for missing entity path; got nil")
 	}

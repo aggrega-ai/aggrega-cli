@@ -181,7 +181,7 @@ func lintCoreReport(t *testing.T, root, rel string) lintops.Report {
 	collect := &lintops.FindingCollector{}
 	// The verdict is dropped: in this mode every finding is advisory, and what an
 	// oracle for the text owes is the findings.
-	_ = lintops.RunEntity(lintops.Config{
+	_ = lintops.RunEntity(t.Context(), lintops.Config{
 		EntityPath: filepath.Join(root, rel),
 		Workspace:  rw,
 		Out:        io.Discard,

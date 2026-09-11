@@ -77,7 +77,7 @@ func TestLintEntityCoreParity(t *testing.T) {
 
 	// Core oracle.
 	var coreOut, coreDiag bytes.Buffer
-	coreErr := lintops.RunEntity(lintops.Config{
+	coreErr := lintops.RunEntity(t.Context(), lintops.Config{
 		EntityPath:     entityPath,
 		PolicyResolver: func(_ string, ws bool) bool { return ws },
 		Workspace:      rw,
@@ -133,7 +133,7 @@ func TestLintReleaseCoreParity(t *testing.T) {
 
 	// Core oracle.
 	var coreOut, coreDiag bytes.Buffer
-	coreErr := lintops.RunRelease(rw, releasePath, dirs, &coreOut, &coreDiag, nil)
+	coreErr := lintops.RunRelease(t.Context(), rw, releasePath, dirs, &coreOut, &coreDiag, nil)
 
 	// CLI leg.
 	var cliOut bytes.Buffer

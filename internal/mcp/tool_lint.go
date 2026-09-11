@@ -211,13 +211,13 @@ func (s *server) lintInProcess(ctx context.Context, req lintRequest, stdout, std
 		return err
 	}
 	if req.release != "" {
-		return lintops.RunRelease(tw.rw, tw.absWorkspacePath(req.release), nil, stdout, stderr, req.collect)
+		return lintops.RunRelease(ctx, tw.rw, tw.absWorkspacePath(req.release), nil, stdout, stderr, req.collect)
 	}
 	pluginPath := req.plugin
 	if pluginPath != "" {
 		pluginPath = tw.absWorkspacePath(pluginPath)
 	}
-	return lintops.RunEntity(lintops.Config{
+	return lintops.RunEntity(ctx, lintops.Config{
 		EntityPath:     tw.absWorkspacePath(req.entity),
 		PrePublish:     req.prePublish,
 		PluginPath:     pluginPath,

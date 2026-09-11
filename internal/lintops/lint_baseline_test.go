@@ -57,7 +57,7 @@ func seedRemovedExport(t *testing.T, candidateVer string, tags ...string) (*memo
 func TestLintPrePublishBackPatchSelectsHighestBelow(t *testing.T) {
 	target, proposedPath := seedRemovedExport(t, "1.4.2", "1.4.1", "2.0.0")
 	var diag bytes.Buffer
-	err := RunEntity(baselineCfg(t, target, proposedPath, "", &diag))
+	err := RunEntity(t.Context(), baselineCfg(t, target, proposedPath, "", &diag))
 	if err == nil {
 		t.Fatalf("back-patch removing an export should HALT; got PASS (diag: %s)", diag.String())
 	}
@@ -77,7 +77,7 @@ func TestLintPrePublishBackPatchSelectsHighestBelow(t *testing.T) {
 func TestLintPrePublishForwardSelectsBelowLatest(t *testing.T) {
 	target, proposedPath := seedRemovedExport(t, "2.1.0", "1.0.0", "2.0.0")
 	var diag bytes.Buffer
-	err := RunEntity(baselineCfg(t, target, proposedPath, "", &diag))
+	err := RunEntity(t.Context(), baselineCfg(t, target, proposedPath, "", &diag))
 	if err == nil {
 		t.Fatalf("forward release removing an export should HALT; got PASS (diag: %s)", diag.String())
 	}
@@ -99,7 +99,7 @@ func TestLintPrePublishPreReleaseOnlyPreserved(t *testing.T) {
 	proposedPath := writeEntityFile(t, proposedYAML, "1.0.0")
 
 	var diag bytes.Buffer
-	err := RunEntity(baselineCfg(t, target, proposedPath, "", &diag))
+	err := RunEntity(t.Context(), baselineCfg(t, target, proposedPath, "", &diag))
 	if err != nil {
 		t.Fatalf("pre-release-only registry should treat publish as first publication (PASS); got HALT: %v (diag: %s)", err, diag.String())
 	}
@@ -121,7 +121,7 @@ func TestLintPrePublishBaselineOverride(t *testing.T) {
 	t.Run("default halts naming latest-below", func(t *testing.T) {
 		target, proposedPath := seedRemovedExport(t, "2.0.1", "1.4.1", "2.0.0")
 		var diag bytes.Buffer
-		err := RunEntity(baselineCfg(t, target, proposedPath, "", &diag))
+		err := RunEntity(t.Context(), baselineCfg(t, target, proposedPath, "", &diag))
 		if err == nil {
 			t.Fatalf("default predecessor 2.0.0 with a PATCH bump should HALT; got PASS (diag: %s)", diag.String())
 		}
@@ -132,7 +132,7 @@ func TestLintPrePublishBaselineOverride(t *testing.T) {
 	t.Run("baseline forces a different predecessor", func(t *testing.T) {
 		target, proposedPath := seedRemovedExport(t, "2.0.1", "1.4.1", "2.0.0")
 		var diag bytes.Buffer
-		err := RunEntity(baselineCfg(t, target, proposedPath, "1.4.1", &diag))
+		err := RunEntity(t.Context(), baselineCfg(t, target, proposedPath, "1.4.1", &diag))
 		if err != nil {
 			t.Fatalf("--baseline 1.4.1 makes the bump MAJOR (satisfies) and should PASS; got HALT: %v (diag: %s)", err, diag.String())
 		}
@@ -153,7 +153,7 @@ func TestLintPrePublishBaselineInvalid(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			target, proposedPath := seedRemovedExport(t, "1.4.2", "1.4.1", "2.0.0")
 			var diag bytes.Buffer
-			err := RunEntity(baselineCfg(t, target, proposedPath, tc.baseline, &diag))
+			err := RunEntity(t.Context(), baselineCfg(t, target, proposedPath, tc.baseline, &diag))
 			if err == nil {
 				t.Fatalf("invalid --baseline %q should error; got PASS (diag: %s)", tc.baseline, diag.String())
 			}

@@ -37,7 +37,7 @@ func TestRegistryAddPersistsAlias(t *testing.T) {
 	t.Parallel()
 	rw := resolveTempWorkspace(t, tempWorkspaceOptions{})
 	var out bytes.Buffer
-	if err := registryAddRun(registryAddConfig{
+	if err := registryAddRun(t.Context(), registryAddConfig{
 		Host:      "dev.local:5000",
 		Name:      "dev",
 		Workspace: true,
@@ -65,7 +65,7 @@ func TestRegistryAddWithoutNameHostOnly(t *testing.T) {
 	t.Parallel()
 	rw := resolveTempWorkspace(t, tempWorkspaceOptions{})
 	var out bytes.Buffer
-	if err := registryAddRun(registryAddConfig{
+	if err := registryAddRun(t.Context(), registryAddConfig{
 		Host:      "dev.local:5000",
 		Workspace: true,
 		ws:        rw,
@@ -89,7 +89,7 @@ func TestRegistryAddDuplicateAliasDifferentHost(t *testing.T) {
 	t.Parallel()
 	rw := resolveTempWorkspace(t, tempWorkspaceOptions{})
 	var out bytes.Buffer
-	if err := registryAddRun(registryAddConfig{
+	if err := registryAddRun(t.Context(), registryAddConfig{
 		Host:      "a.example.com",
 		Name:      "shared",
 		Workspace: true,
@@ -98,7 +98,7 @@ func TestRegistryAddDuplicateAliasDifferentHost(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("first registryAddRun: %v", err)
 	}
-	err := registryAddRun(registryAddConfig{
+	err := registryAddRun(t.Context(), registryAddConfig{
 		Host:      "b.example.com",
 		Name:      "shared",
 		Workspace: true,

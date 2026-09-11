@@ -73,7 +73,7 @@ func TestReleaseConventionsReportsARetractedPinAheadOfTheClosure(t *testing.T) {
 	rw, releasePath := deprecatedPinWorkspace(t, true)
 
 	var diag bytes.Buffer
-	err := RunRelease(rw, releasePath, nil, io.Discard, &diag, nil)
+	err := RunRelease(t.Context(), rw, releasePath, nil, io.Discard, &diag, nil)
 	if err == nil {
 		t.Fatal("the fixture has no Release, so the pass cannot succeed; the assertion below would be untested")
 	}
@@ -98,7 +98,7 @@ func TestReleaseConventionsWithoutAMarkerReportsNoDeprecation(t *testing.T) {
 	rw, releasePath := deprecatedPinWorkspace(t, false)
 
 	var diag bytes.Buffer
-	err := RunRelease(rw, releasePath, nil, io.Discard, &diag, nil)
+	err := RunRelease(t.Context(), rw, releasePath, nil, io.Discard, &diag, nil)
 	if err == nil {
 		t.Fatal("the fixture has no Release, so the pass cannot succeed; the control would be vacuous")
 	}
@@ -123,7 +123,7 @@ func TestReleaseConventionsToleratesAnAbsentLockfile(t *testing.T) {
 	}
 
 	var diag bytes.Buffer
-	if err := RunRelease(rw, filepath.Join(root, "release.yaml"), nil, io.Discard, &diag, nil); err == nil {
+	if err := RunRelease(t.Context(), rw, filepath.Join(root, "release.yaml"), nil, io.Discard, &diag, nil); err == nil {
 		t.Fatal("the fixture has no Release, so the pass cannot succeed")
 	}
 	if strings.Contains(diag.String(), "deprecation:") {

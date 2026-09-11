@@ -587,7 +587,7 @@ func (s *Server) handleValidate(ctx context.Context, params validateParams) (val
 	// conventions are a question about the document itself. Both answers compose
 	// the layer through the snapshot, so the findings reach the reply whichever of
 	// the two the request asked for.
-	s.refreshConventionDiagnostics(file, []byte(params.Content), &doc)
+	s.refreshConventionDiagnostics(ctx, file, []byte(params.Content), &doc)
 	if releasePath == "" {
 		// The request named no Release, so the half above is the whole answer.
 		// The semantic layer is cleared rather than left standing: this file may

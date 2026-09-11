@@ -128,7 +128,7 @@ func TestSchemaEvolutionMatrixAllKinds(t *testing.T) {
 					FetchTarget:    target,
 					Workspace:      resolveTempWorkspace(t),
 				}
-				err := RunEntity(cfg)
+				err := RunEntity(t.Context(), cfg)
 				if c.wantHalt && err == nil {
 					t.Errorf("expected HALT; got PASS")
 				}
@@ -322,7 +322,7 @@ func TestMultiRuleCrossTalk(t *testing.T) {
 	}
 	// Run lint; in default mode every finding downgrades to
 	// warning and the command exits clean (no error).
-	err := RunEntity(cfg)
+	err := RunEntity(t.Context(), cfg)
 	if err != nil {
 		t.Errorf("default mode should not halt; got: %v", err)
 	}
@@ -476,7 +476,7 @@ spec:
 			PolicyResolver: func(_ string, ws bool) bool { return ws },
 			Workspace:      resolveTempWorkspace(t),
 		}
-		if err := RunEntity(cfg); err != nil {
+		if err := RunEntity(t.Context(), cfg); err != nil {
 			t.Errorf("default mode should not halt on a warning; got: %v", err)
 		}
 	})

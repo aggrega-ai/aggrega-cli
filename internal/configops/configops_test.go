@@ -61,7 +61,7 @@ func workspaceAt(t *testing.T, cfg, globalCfg string) (*workspaceconfig.Resolved
 // the operation quietly repairs by resolving from the current directory, which
 // would make the answer depend on a directory no caller named.
 func TestBothOperationsRefuseAnAbsentWorkspace(t *testing.T) {
-	if _, err := configops.Init(nil, configops.InitOptions{Registry: "example.test"}); err == nil {
+	if _, err := configops.Init(t.Context(), nil, configops.InitOptions{Registry: "example.test"}); err == nil {
 		t.Error("Init with no resolved workspace: got nil error, want a refusal")
 	} else if !strings.Contains(err.Error(), "no resolved workspace supplied") {
 		t.Errorf("Init refusal = %q; want it to name the missing resolution", err)
@@ -296,7 +296,7 @@ func TestInitRefusesAnExistingConfigurationFile(t *testing.T) {
 
 	// The refusal is held in its own variable: an intervening read that reassigned
 	// err would leave the assertions below inspecting that read's nil instead.
-	_, refusal := configops.Init(rw, configops.InitOptions{Registry: "example.test"})
+	_, refusal := configops.Init(t.Context(), rw, configops.InitOptions{Registry: "example.test"})
 	if refusal == nil {
 		t.Fatal("Init over an existing file: got nil error, want a refusal")
 	}
@@ -352,7 +352,7 @@ func TestInitReportsWithoutWriting(t *testing.T) {
 		t.Fatalf("resolve workspace: %v", err)
 	}
 
-	res, err := configops.Init(rw, configops.InitOptions{
+	res, err := configops.Init(t.Context(), rw, configops.InitOptions{
 		Registry: "example.test",
 		Delivery: authoredcontent.DeliveryFor(true),
 	})
@@ -407,7 +407,7 @@ func TestInitWritesAndReportsItsReach(t *testing.T) {
 				t.Fatalf("resolve workspace: %v", err)
 			}
 
-			res, err := configops.Init(rw, configops.InitOptions{
+			res, err := configops.Init(t.Context(), rw, configops.InitOptions{
 				Registry:  "example.test",
 				Workspace: tc.workspaceFlag,
 				// The workspace file exists in both rows, so the local target needs
@@ -445,7 +445,7 @@ func TestInitWritesAndReportsItsReach(t *testing.T) {
 // it fires before anything is written.
 func TestInitRefusesBothWriteTargetOverrides(t *testing.T) {
 	rw, _, _ := workspaceAt(t, "offline: true\nworkspace: {}\n", "offline: true\n")
-	_, err := configops.Init(rw, configops.InitOptions{
+	_, err := configops.Init(t.Context(), rw, configops.InitOptions{
 		Registry:  "example.test",
 		Global:    true,
 		Workspace: true,

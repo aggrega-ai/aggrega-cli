@@ -4,6 +4,7 @@
 package lintops
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"io/fs"
@@ -36,7 +37,14 @@ import (
 //
 // collect optionally gathers the findings as data alongside the human report; nil
 // collects nothing.
-func RunCatalogWide(rw *workspaceconfig.ResolvedWorkspace, catalogFlagDirs []string, out, diagOut io.Writer, collect *FindingCollector) error {
+//
+// ctx ends the pass where the caller stops wanting it. This is the pass whose
+// cost scales with the catalog — one guest dispatch per entity over every entity
+// the configured directories hold — so it is the one where abandoning the work
+// and discarding the answer are materially different outcomes. Both the tree
+// walk and the per-entity loop observe it, so a stop is honoured whichever of
+// the two the pass is in.
+func RunCatalogWide(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, catalogFlagDirs []string, out, diagOut io.Writer, collect *FindingCollector) error {
 	rw, err := workspaceOrResolve(rw)
 	if err != nil {
 		return fmt.Errorf("load workspace config: %w", err)
@@ -46,7 +54,7 @@ func RunCatalogWide(rw *workspaceconfig.ResolvedWorkspace, catalogFlagDirs []str
 		return fmt.Errorf("OPS_ERROR: whole-catalog conventions check needs catalog directories to scan; pass --catalog or set `workspace.catalog_dirs` in .aggrega-config.yaml (or check a specific Release with --release)")
 	}
 	dirs := workspaceconfig.ResolveCatalogDirs(catalogFlagDirs, wsCfg, rw.Root())
-	files, passedOver, err := walkCatalogEntityFiles(rw.Root(), dirs, wsCfg.ResolvedArtifactCacheDir())
+	files, passedOver, err := walkCatalogEntityFiles(ctx, rw.Root(), dirs, wsCfg.ResolvedArtifactCacheDir())
 	if err != nil {
 		return err
 	}
@@ -60,7 +68,7 @@ func RunCatalogWide(rw *workspaceconfig.ResolvedWorkspace, catalogFlagDirs []str
 	// as they did before that record existed. The release-scoped pass below is the
 	// lint path that does hold them to it, and it is the same path that already
 	// reads the lockfile beside the Release, so both files are read from one place.
-	if err := lintConventionsFiles(rw, catalogFlagDirs, paths, pluginpath.PinMaps{}, out, diagOut, collect); err != nil {
+	if err := lintConventionsFiles(ctx, rw, catalogFlagDirs, paths, pluginpath.PinMaps{}, out, diagOut, collect); err != nil {
 		return err
 	}
 	// This is the pass whose summary claims a corpus — "every catalog entity under
@@ -113,7 +121,12 @@ func writePassedOverKinds(out io.Writer, passedOver map[string]int) {
 //
 // collect optionally gathers the findings as data alongside the human report; nil
 // collects nothing.
-func RunRelease(rw *workspaceconfig.ResolvedWorkspace, releasePath string, catalogFlagDirs []string, out, diagOut io.Writer, collect *FindingCollector) error {
+//
+// ctx ends the pass where the caller stops wanting it, at the same two places
+// the whole-catalog pass observes it — the tree walk and the per-entity loop —
+// plus once ahead of the closure resolution, which is the step this pass adds
+// and the one that reads the most before any entity is checked.
+func RunRelease(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, releasePath string, catalogFlagDirs []string, out, diagOut io.Writer, collect *FindingCollector) error {
 	rw, err := workspaceOrResolve(rw)
 	if err != nil {
 		return err
@@ -177,6 +190,13 @@ func RunRelease(rw *workspaceconfig.ResolvedWorkspace, releasePath string, catal
 	if terr != nil {
 		return terr
 	}
+	// Checked ahead of the closure resolution, which is the heaviest read this
+	// pass performs before any entity is checked. The resolver itself accepts no
+	// context, so this is the last point a stop is observable before it runs —
+	// which is worth stating rather than leaving to be rediscovered.
+	if err := stopped(ctx); err != nil {
+		return err
+	}
 	rc, cerr := compilerops.ResolveClosure(compilerops.ClosureInputs{
 		View:            lazyView,
 		ReleasePath:     releasePath,
@@ -193,7 +213,7 @@ func RunRelease(rw *workspaceconfig.ResolvedWorkspace, releasePath string, catal
 	// one Release's dependency closure, and the closure decides which files it
 	// reaches; naming the kinds the walk declined would suggest everything else in
 	// the walked tree was checked, when most of it was simply outside the closure.
-	files, _, err := walkCatalogEntityFiles(wsRoot, dirs, cacheDir)
+	files, _, err := walkCatalogEntityFiles(ctx, wsRoot, dirs, cacheDir)
 	if err != nil {
 		return err
 	}
@@ -202,7 +222,7 @@ func RunRelease(rw *workspaceconfig.ResolvedWorkspace, releasePath string, catal
 		index[f.Kind+"|"+f.Name] = f.Path
 	}
 	paths := closureEntityFiles(lazyView, rc.Closure, index)
-	lintErr := lintConventionsFiles(rw, catalogFlagDirs, paths, trusted, out, diagOut, collect)
+	lintErr := lintConventionsFiles(ctx, rw, catalogFlagDirs, paths, trusted, out, diagOut, collect)
 
 	// A Manifest mapping the catalog contradicts is reported here rather than
 	// halting ahead of the pass, so the conventions report the author came for
@@ -246,7 +266,17 @@ func RunRelease(rw *workspaceconfig.ResolvedWorkspace, releasePath string, catal
 // Release, and the whole-catalog pass names none. Both arms of the linter socket's
 // resolution receive it, so a recorded digest governs the bytes whichever tier
 // serves them. An empty set is the ordinary case and resolves pin-free.
-func lintConventionsFiles(rw *workspaceconfig.ResolvedWorkspace, catalogFlagDirs []string, paths []string, trusted pluginpath.PinMaps, out, diagOut io.Writer, collect *FindingCollector) error {
+//
+// ctx is observed once per entity, at the top of the loop, which is the seam
+// that makes a stop reach the work: this loop is where both passes spend their
+// time, one guest dispatch per entity, and an entity not yet reached is an
+// entity never read, never parsed and never dispatched.
+//
+// A stop returns the caller's own reason and no summary. That is deliberate: the
+// summary line claims a corpus — "conventions checked: N entities" — and
+// printing it after a stop would report a partial walk in the words of a complete
+// one, which is the one thing a reader cannot recover from the output.
+func lintConventionsFiles(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, catalogFlagDirs []string, paths []string, trusted pluginpath.PinMaps, out, diagOut io.Writer, collect *FindingCollector) error {
 	wsCfg := rw.Config()
 	dirs := workspaceconfig.ResolveCatalogDirs(catalogFlagDirs, wsCfg, rw.Root())
 	lazyView := catalog.NewLazyLookup(rw.Root(), wsCfg.ResolvedArtifactCacheDir(), dirs, nil)
@@ -259,6 +289,9 @@ func lintConventionsFiles(rw *workspaceconfig.ResolvedWorkspace, catalogFlagDirs
 
 	findingCount := 0
 	for _, path := range paths {
+		if err := stopped(ctx); err != nil {
+			return err
+		}
 		proposedBytes, err := os.ReadFile(path)
 		if err != nil {
 			return fmt.Errorf("aggrega lint: read %s: %w", path, err)
@@ -356,12 +389,23 @@ func isLintableCatalogKind(kind string) bool {
 // inside the walked tree, but it may equally sit above or beside it, which is
 // why the cache is anchored on wsRoot rather than on each walked directory.
 // Passing "" for cacheDir disables the skip.
-func walkCatalogEntityFiles(wsRoot string, dirs []string, cacheDir string) ([]catalogEntityFile, map[string]int, error) {
+//
+// ctx ends the walk where the caller stops wanting it. The walk reads and parses
+// the YAML header of every file it meets, so over a real catalog it is work in
+// its own right and not merely a directory listing; the stop is returned from
+// the callback, which is how filepath.WalkDir is asked to abandon a traversal,
+// and it is the caller's own reason rather than fs.SkipAll — skipping the rest
+// would return a SHORT file list as though the walk had completed, which is a
+// partial answer wearing a complete one's shape.
+func walkCatalogEntityFiles(ctx context.Context, wsRoot string, dirs []string, cacheDir string) ([]catalogEntityFile, map[string]int, error) {
 	var files []catalogEntityFile
 	passedOver := map[string]int{}
 	seen := map[string]struct{}{}
 	for _, dir := range dirs {
 		err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+			if serr := stopped(ctx); serr != nil {
+				return serr
+			}
 			if err != nil {
 				// A missing catalog directory is reported; a per-file read error is
 				// surfaced when the file is later read for linting.
@@ -412,6 +456,13 @@ func walkCatalogEntityFiles(wsRoot string, dirs []string, cacheDir string) ([]ca
 			return nil
 		})
 		if err != nil {
+			// A stop is returned as the caller's own reason, not as a walk failure:
+			// naming the directory would read as a problem with that directory, when
+			// what happened is that the caller withdrew. Every other error genuinely
+			// is about the directory and keeps the location.
+			if ctx.Err() != nil {
+				return nil, nil, err
+			}
 			return nil, nil, fmt.Errorf("walk catalog directory %s: %w", dir, err)
 		}
 	}

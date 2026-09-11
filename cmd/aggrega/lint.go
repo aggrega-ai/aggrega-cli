@@ -143,18 +143,18 @@ under either format.`,
 				if opts.prePublish {
 					return fmt.Errorf("OPS_ERROR: --pre-publish is mutually exclusive with --release; --pre-publish applies to a single entity, --release checks a Release closure")
 				}
-				return emit(lintops.RunRelease(rw, opts.releasePath, opts.catalogDirs, opOut, os.Stderr, collect))
+				return emit(lintops.RunRelease(cmd.Context(), rw, opts.releasePath, opts.catalogDirs, opOut, os.Stderr, collect))
 			}
 			if path == "" {
 				// No entity argument → whole-catalog conventions.
-				return emit(lintops.RunCatalogWide(rw, opts.catalogDirs, opOut, os.Stderr, collect))
+				return emit(lintops.RunCatalogWide(cmd.Context(), rw, opts.catalogDirs, opOut, os.Stderr, collect))
 			}
 			if opts.baseline != "" && !opts.prePublish {
 				// --baseline only shapes the pre-publish predecessor; forcing a
 				// baseline without the check it feeds is a mistake, so halt loudly.
 				return fmt.Errorf("OPS_ERROR: --baseline requires --pre-publish")
 			}
-			return emit(lintops.RunEntity(lintops.Config{
+			return emit(lintops.RunEntity(cmd.Context(), lintops.Config{
 				EntityPath:     path,
 				PrePublish:     opts.prePublish,
 				Baseline:       opts.baseline,

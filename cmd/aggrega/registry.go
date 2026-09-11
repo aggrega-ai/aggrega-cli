@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -332,7 +333,7 @@ Existing settings in the target config file are preserved.`,
 			if err != nil {
 				return err
 			}
-			return registryAddRun(registryAddConfig{
+			return registryAddRun(cmd.Context(), registryAddConfig{
 				Host:              args[0],
 				Name:              name,
 				Identities:        identities,
@@ -428,12 +429,12 @@ type registryAddConfig struct {
 // performing its own. What is decided here is the prose: the trust fetch's
 // outcome is reported where it happened, before any later refusal, so a person
 // watching sees the same sequence they always did.
-func registryAddRun(cfg registryAddConfig) error {
+func registryAddRun(ctx context.Context, cfg registryAddConfig) error {
 	rw, err := workspaceOrResolve(cfg.ws)
 	if err != nil {
 		return err
 	}
-	res, addErr := registryops.Add(rw, registryops.AddOptions{
+	res, addErr := registryops.Add(ctx, rw, registryops.AddOptions{
 		Host:              cfg.Host,
 		Name:              cfg.Name,
 		Identities:        cfg.Identities,

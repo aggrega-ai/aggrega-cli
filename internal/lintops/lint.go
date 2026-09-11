@@ -95,6 +95,27 @@ func workspaceOrResolve(ws *workspaceconfig.ResolvedWorkspace) (*workspaceconfig
 	return workspaceconfig.Resolve("", "")
 }
 
+// stopped reports that the caller no longer wants the run, as an error that
+// errors.Is matches against context.Canceled and context.DeadlineExceeded. It
+// returns nil while the caller is still waiting, which is every ordinary run.
+//
+// It is one function rather than an inline check written at each interruption
+// point so the sentence a stop produces is stated once. Two hand-written
+// phrasings of one condition agree until either of them is edited, and nothing
+// fails when they stop agreeing — the caller matching the wrapped cause keeps
+// working while the reader is told two different things.
+//
+// The cause is wrapped rather than replaced because it is the part a caller acts
+// on: a surface that distinguishes "the client withdrew the request" from "the
+// budget ran out" reads it off the wrapped error, and a surface that does not
+// care prints the sentence.
+func stopped(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("aggrega lint: stopped before the check finished: %w", err)
+	}
+	return nil
+}
+
 // lintEntityHeader is the minimum YAML envelope lint parses out of the proposed
 // entity file: kind, metadata.name, metadata.version, metadata.labels,
 // spec.capability, and spec.implements. It extends the publishable-entity header
@@ -184,7 +205,14 @@ func pluginIsCore(coordinate string) bool {
 // publication, and treating it as one would wave through a bump the check exists
 // to verify. Where there is genuinely no prior version the bump check is skipped
 // and the run says so, so a silent pass and an unverifiable one never look alike.
-func RunEntity(cfg Config) error {
+//
+// ctx ends the run where the caller stops wanting it. It reaches the two places
+// this operation spends real time — the previous-version fetch, which is the
+// only step that leaves the machine, and the rule dispatch, which runs the
+// linter guests — so a caller that gives up gets the work abandoned rather than
+// only the answer discarded. A caller with nothing to cancel passes a background
+// context and every check below is a no-op.
+func RunEntity(ctx context.Context, cfg Config) error {
 	if cfg.DiagOut == nil {
 		cfg.DiagOut = os.Stderr
 	}
@@ -251,7 +279,7 @@ func RunEntity(cfg Config) error {
 	// (binary ⊇ entity). It never halts and never changes the exit status; when the
 	// .wasm is not resolvable it skips with a one-line note.
 	if header.Kind == "Plugin" {
-		pluginUnderDeclarationAdvisory(proposedBytes, wsCfg, cfg.DiagOut)
+		pluginUnderDeclarationAdvisory(ctx, proposedBytes, wsCfg, cfg.DiagOut)
 	}
 
 	policyResolve := cfg.PolicyResolver
@@ -278,7 +306,7 @@ func RunEntity(cfg Config) error {
 	)
 	if prePublish {
 		previousJSON, previousVersion, err = fetchPreviousRegistryVersion(
-			context.Background(), cfg.FetchTarget, wsCfg, header, cfg.Baseline, cfg.DiagOut,
+			ctx, cfg.FetchTarget, wsCfg, header, cfg.Baseline, cfg.DiagOut,
 		)
 		if err != nil {
 			return fmt.Errorf("aggrega lint: fetch previous: %w", err)
@@ -295,6 +323,13 @@ func RunEntity(cfg Config) error {
 		EntityPath:           cfg.EntityPath,
 		PrePublish:           prePublish,
 	})
+	// Checked immediately before the guests run rather than only on entry,
+	// because everything above it — the workspace resolution, the attachment
+	// resolution, the previous-version fetch — is time in which a caller can give
+	// up, and the dispatch below is the part worth not starting.
+	if err := stopped(ctx); err != nil {
+		return err
+	}
 	rawFindings, err := dispatchLinterAttachments(attachments, inputs)
 	if err != nil {
 		return fmt.Errorf("aggrega lint: dispatch: %w", err)
@@ -645,7 +680,12 @@ func linterCacheResolveOrDefault(wsCfg workspaceconfig.Config, trusted pluginpat
 // a one-line note rather than treated as an error. It never halts and never
 // changes the exit status — under-declaration of a curated surface is legitimate.
 // The derivation is single-sourced with the publish advisory (wasm.UnderDeclaredNotices).
-func pluginUnderDeclarationAdvisory(entityBytes []byte, wsCfg workspaceconfig.Config, diagOut io.Writer) {
+//
+// ctx reaches the describe() call, which instantiates the entity's own guest and
+// is the only step here that runs anything. An advisory the caller has stopped
+// waiting for is still work, so it is abandoned on the same signal the run it
+// belongs to is.
+func pluginUnderDeclarationAdvisory(ctx context.Context, entityBytes []byte, wsCfg workspaceconfig.Config, diagOut io.Writer) {
 	var entity types.Plugin
 	if err := yaml.Unmarshal(entityBytes, &entity); err != nil {
 		fmt.Fprintf(diagOut, "under-declaration advisory: skipped (entity does not parse as a Plugin)\n")
@@ -664,7 +704,7 @@ func pluginUnderDeclarationAdvisory(entityBytes []byte, wsCfg workspaceconfig.Co
 			entity.Metadata.Name, err)
 		return
 	}
-	desc, err := wasm.DescribePluginBytes(context.Background(), entity.Metadata.Name, resolved.Bytes, wasm.DescribeMaxMemoryPages, entity.Metadata.PluginType)
+	desc, err := wasm.DescribePluginBytes(ctx, entity.Metadata.Name, resolved.Bytes, wasm.DescribeMaxMemoryPages, entity.Metadata.PluginType)
 	if err != nil {
 		fmt.Fprintf(diagOut, "under-declaration advisory: skipped for %q (its .wasm did not describe: %v)\n",
 			entity.Metadata.Name, err)

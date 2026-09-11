@@ -134,7 +134,7 @@ func TestSeedingAConfigurationReportsContentAndWritesNothing(t *testing.T) {
 	rw := resolveTempWorkspaceAgainst(t, tempWorkspaceOptions{Root: wsRoot}, lookup)
 
 	seed := func(dryRun bool, out *bytes.Buffer) error {
-		return configInitRun(configInitConfig{
+		return configInitRun(t.Context(), configInitConfig{
 			Registry:    workspaceconfig.HubBaselineHost,
 			DryRun:      dryRun,
 			ws:          rw,
@@ -362,7 +362,7 @@ func trustAdvisoryStreams(t *testing.T, dryRun bool, registry string, client *ht
 	rw := resolveTempWorkspaceAgainst(t, tempWorkspaceOptions{Root: wsRoot}, lookup)
 
 	var out, errOut bytes.Buffer
-	if err := configInitRun(configInitConfig{
+	if err := configInitRun(t.Context(), configInitConfig{
 		Registry:    registry,
 		DryRun:      dryRun,
 		ws:          rw,
