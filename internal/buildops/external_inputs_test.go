@@ -18,13 +18,20 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/externalinputs"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
+	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
-// The seam under test is the one the build attaches — the shared frozen
+// The seam under test is the one the build attaches — the shared pinned
 // composition — called here exactly as the build calls it, so these assertions
 // hold the build's own wiring rather than a service assembled for the test. A
 // build has no acquiring posture to exercise: acquisition is the pull step's,
 // and the acquiring composition is asserted where it is composed.
+//
+// Every fixture hands the seam a CONNECTED workspace, and that is what gives the
+// assertions below their force. The build's seam holds a live transport, so a
+// refusal here is evidence that acquisition is off rather than evidence that
+// there was nothing to fetch with — and those two causes are indistinguishable
+// under a fixture with no transport, while pointing a reader at different things.
 //
 // Each fixture below supplies a workspace root and a RELATIVE cache directory,
 // which is what a build resolves: the configured directory names a location
@@ -37,13 +44,20 @@ import (
 // configure — the same default shape a workspace carries.
 const testCacheDir = ".aggrega/cache"
 
-// TestBuildFetchSeamRefusesUnpinned proves the frozen-closure wiring the build
+// connectedBuildWorkspace is the configuration a build renders under by default:
+// the workspace default, which permits egress. It is named so that every seam
+// construction below reads as "a build that COULD have fetched".
+func connectedBuildWorkspace() workspaceconfig.Config {
+	return workspaceconfig.Default()
+}
+
+// TestBuildFetchSeamRefusesUnpinned proves the pinned-closure wiring the build
 // renders through: an unpinned URL is refused with the acquisition-disabled
 // condition instead of being fetched, and the reference is recorded as declined
 // so the surface can name it.
 func TestBuildFetchSeamRefusesUnpinned(t *testing.T) {
 	t.Parallel()
-	seam := compilerops.FrozenExternalInputs(t.TempDir(), testCacheDir, &lockfile.Lockfile{})
+	seam := compilerops.PinnedExternalInputs(t.TempDir(), testCacheDir, connectedBuildWorkspace(), &lockfile.Lockfile{})
 
 	_, err := seam.Fetch(context.Background(), "https://example.com/never-pinned", "unit-test")
 	if !errors.Is(err, externalinputs.ErrAcquisitionDisabled()) {
@@ -58,6 +72,12 @@ func TestBuildFetchSeamRefusesUnpinned(t *testing.T) {
 // acquisition dial rests on: with a reachable endpoint and no pin, the build's
 // seam still refuses and never touches the network. A fetch count of zero is the
 // observable — an error alone cannot distinguish a refusal from a failed fetch.
+//
+// The workspace is connected and the seam therefore HOLDS a working transport,
+// which is what makes the zero meaningful. The seam can reach that endpoint; it
+// declines to, because acquisition is off. A seam with no transport would score
+// the same zero while proving only that it had no client, and the build's own
+// no-acquisition guarantee would then rest on nothing this test observed.
 func TestBuildFetchSeamNeverAcquires(t *testing.T) {
 	t.Parallel()
 	var calls atomic.Int64
@@ -68,7 +88,7 @@ func TestBuildFetchSeamNeverAcquires(t *testing.T) {
 	defer srv.Close()
 
 	wsRoot := t.TempDir()
-	seam := compilerops.FrozenExternalInputs(wsRoot, testCacheDir, &lockfile.Lockfile{})
+	seam := compilerops.PinnedExternalInputs(wsRoot, testCacheDir, connectedBuildWorkspace(), &lockfile.Lockfile{})
 
 	if _, err := seam.Fetch(context.Background(), srv.URL+"/a", "unit-test"); err == nil {
 		t.Fatal("a build's render must refuse an unpinned reference even when the endpoint is reachable")
@@ -109,8 +129,11 @@ func TestBuildFetchSeamSeedsLockfilePins(t *testing.T) {
 		Size:   int64(len(payload)),
 	}}}
 
-	// A build's seam AND an unresolvable host: only the store can serve this.
-	seam := compilerops.FrozenExternalInputs(wsRoot, testCacheDir, lf)
+	// A build's seam AND an unresolvable host: only the store can serve this. The
+	// workspace is connected, so the seam holds a transport and simply has no need
+	// of it — which is the hermeticity claim stated at its real strength. A pinned
+	// blob already in the store is served without a dial even being attempted.
+	seam := compilerops.PinnedExternalInputs(wsRoot, testCacheDir, connectedBuildWorkspace(), lf)
 	got, err := seam.Fetch(context.Background(), pinnedURL, "unit-test")
 	if err != nil {
 		t.Fatalf("pinned URL must be served from the store without network: %v", err)

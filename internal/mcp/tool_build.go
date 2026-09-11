@@ -196,12 +196,15 @@ func buildInvoke(s *server, ctx context.Context, args json.RawMessage) (*callToo
 	lf := loadReleaseLockfile(releasePath)
 	view := tw.newView(lf)
 
-	// The render-time external-input seam, frozen — the same posture and the same
-	// builder the editor's inspection renders through. It is FROZEN rather than
-	// acquiring because this call is an in-memory render: a seam with acquisition
-	// on would let a tool call reach the network and write into the
-	// content-addressed store as a side effect of what the caller asked to be a
-	// preview that writes nothing.
+	// The render-time external-input seam — the same posture and the same builder
+	// the editor's inspection and the command-line build render through. It is the
+	// PINNED posture rather than the acquiring one because this call is an
+	// in-memory render: a seam with acquisition on would let a tool call reach the
+	// network and widen the closure as a side effect of what the caller asked to
+	// be a preview that writes nothing. Repairing a missing store blob by a digest
+	// the lockfile already records is not that widening, and it is what keeps
+	// these bytes the bytes a build emits rather than a decline a build would not
+	// have raised.
 	//
 	// A pinned reference is therefore served from the store, and an unpinned one is
 	// declined and named in the answer rather than quietly rendering a
@@ -210,9 +213,9 @@ func buildInvoke(s *server, ctx context.Context, args json.RawMessage) (*callToo
 	// Serving a pinned reference from the store is HALF of what makes these bytes
 	// the bytes a build emits. The other half is that the pins served from still
 	// describe the closure the Release resolves to, which the operation below
-	// verifies: reading frozen bytes out of the store says nothing about whether
+	// verifies: reading pinned bytes out of the store says nothing about whether
 	// they were the right bytes to read.
-	fetchSeam := compilerops.FrozenExternalInputs(tw.root, tw.cacheDir, lf)
+	fetchSeam := compilerops.PinnedExternalInputs(tw.root, tw.cacheDir, tw.cfg, lf)
 
 	// This tool renders from the pins the workspace already carries: it neither
 	// requires a lockfile nor fills one, unlike the two other artifact-producing

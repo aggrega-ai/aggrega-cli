@@ -19,15 +19,17 @@ import (
 // inspection supplies — and, as much to the point, what it does NOT supply — is
 // readable from a test.
 //
-// The render-time external-input seam is passed frozen. Without one attached a
-// guest asking for an external input receives a not-available envelope and the
-// render produces different bytes than the same Release renders under a build,
-// with nothing said about it. With this one, a pinned reference is served from
-// the content-addressed store — so the bytes match a build's — and an unpinned
-// one is declined and reported beside the render advisories rather than silently
-// shortening the output. Nothing is written and nothing is fetched: acquisition
-// is off and the transport client is nil, so the inspection cannot reach the
-// network.
+// The render-time external-input seam is the pinned one every rendering surface
+// attaches. Without one attached a guest asking for an external input receives a
+// not-available envelope and the render produces different bytes than the same
+// Release renders under a build, with nothing said about it. With this one, a
+// pinned reference is served from the content-addressed store — so the bytes
+// match a build's — and an unpinned one is declined and reported beside the
+// render advisories rather than silently shortening the output. Acquisition is
+// off, so an inspection cannot widen the closure; what it can do, exactly as a
+// build can, is repair a missing store blob by the digest the lockfile already
+// records, which is what keeps this surface's bytes matching a build's rather
+// than declining where a build would have served.
 //
 // lockfilePreexisted is the caller's own answer to whether the lockfile was on
 // disk before the run rather than derived from it, and it is a parameter because
@@ -55,7 +57,7 @@ func (s *Server) irGraphPreviewInputs(
 }
 
 // irGraphExternalInputs is the seam the graph inspection renders through, built
-// from this daemon's own workspace configuration through the one home the frozen
+// from this daemon's own workspace configuration through the one home the pinned
 // posture has.
 //
 // It exists as a named method rather than inline at the call site so that what
@@ -63,7 +65,7 @@ func (s *Server) irGraphPreviewInputs(
 // cannot be handed no seam at all, but it can be handed the wrong one, and this
 // is what a test compares against.
 func (s *Server) irGraphExternalInputs(lf *lockfile.Lockfile) *externalinputs.DeclineRecorder {
-	return compilerops.FrozenExternalInputs(s.workspaceRoot, s.wsConfig.ResolvedArtifactCacheDir(), lf)
+	return compilerops.PinnedExternalInputs(s.workspaceRoot, s.wsConfig.ResolvedArtifactCacheDir(), s.wsConfig, lf)
 }
 
 // externalInputDivergenceDiagnostics renders the advisory an inspection owes

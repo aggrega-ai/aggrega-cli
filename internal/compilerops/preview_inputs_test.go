@@ -96,7 +96,7 @@ func TestConstructedInputsPassTheZeroValueGuard(t *testing.T) {
 func TestNewPreviewInputsCarriesWhatItWasGiven(t *testing.T) {
 	t.Parallel()
 
-	seam := FrozenExternalInputs(t.TempDir(), ".aggrega/cache", nil)
+	seam := PinnedExternalInputs(t.TempDir(), ".aggrega/cache", workspaceconfig.Default(), nil)
 	lf := &lockfile.Lockfile{Version: 1}
 	var sawPhase bool
 

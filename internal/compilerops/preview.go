@@ -86,8 +86,8 @@ type PreviewInputs struct {
 	// which renders different bytes than the same Release renders with one
 	// attached. A preview that must match a build's bytes supplies a service
 	// with acquisition off: pinned references are served from the content-
-	// addressed store, unpinned ones refuse loudly, and nothing is written.
-	// FrozenExternalInputs builds exactly that service.
+	// addressed store and unpinned ones refuse loudly, so the closure cannot
+	// widen. PinnedExternalInputs builds exactly that service.
 	externalInputs wasm.FetchService
 
 	// lockfile is the Release's loaded lockfile, nil when none is present, which

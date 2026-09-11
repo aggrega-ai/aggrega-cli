@@ -21,7 +21,7 @@ const externalInputPrimitiveCallForm = "externalinputs.NewService("
 // externalInputPrimitiveDecl and externalInputCompositionHome are the census's
 // calibration. The declaration proves the walk reached the declaring file and
 // that the primitive still carries that name; the composition home proves the
-// walk reached the file holding the two composed postures. Without both, a walk
+// walk reached the file holding the composed postures. Without both, a walk
 // that read the wrong tree — a moved module root, a renamed constructor — would
 // report a clean chokepoint over a corpus it never opened.
 // The composition home is required to construct the primitive at least once

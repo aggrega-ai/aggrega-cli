@@ -226,7 +226,7 @@ func (s *server) attachCandidatesForGraphNode(ctx context.Context, tw *toolWorks
 	preview, err := compilerops.PreviewForArtifactFromAvailablePins(
 		ctx,
 		compilerops.NewPreviewInputs(
-			compilerops.FrozenExternalInputs(tw.root, tw.cacheDir, lf),
+			compilerops.PinnedExternalInputs(tw.root, tw.cacheDir, tw.cfg, lf),
 			view,
 			releasePath,
 			tw.root,

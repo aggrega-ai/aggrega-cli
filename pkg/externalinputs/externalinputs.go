@@ -103,11 +103,12 @@ func StoreRoot(workspaceRoot, cacheDir string) string {
 // cases, and a nil client means the same thing in both: pinned inputs are still
 // served from the store, while any fetch — an acquisition or a missing-blob
 // refill — refuses with ErrOfflineEgress. The gate returns none for an offline
-// workspace, which is the case that error names; and the consumption posture
-// passes none at all, by construction, so it cannot reach the network however
-// the workspace is configured. **A caller composing the consumption posture
-// therefore has no missing-blob refill**, and a pinned entry whose store blob
-// has gone missing refuses there rather than being repaired.
+// workspace, which is the case that error names; and the transport-free variant
+// of the consumption posture passes none at all, by construction, so it cannot
+// reach the network however the workspace is configured. A caller composing that
+// variant therefore has no missing-blob refill, and a pinned entry whose store
+// blob has gone missing refuses there rather than being repaired — which is why
+// it is not what a rendering surface composes.
 //
 // pinned is the lockfile's external-inputs view; when it carries duplicate URLs
 // the last record wins.

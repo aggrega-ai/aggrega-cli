@@ -416,14 +416,14 @@ func Run(cfg Config) (Result, error) {
 	}
 
 	// External-input gate for render-time guest fetches, and it is the same seam
-	// every other rendering surface attaches: the frozen posture behind the
+	// every other rendering surface attaches: the pinned posture behind the
 	// decline recorder, taken from the one composition that describes it. A build
 	// renders the closure the lockfile records — a pinned URL is served from the
 	// content-addressed store (refilled by its pinned digest if the blob has gone
 	// missing, which cannot change what the render sees) and an unpinned one is
 	// refused loudly, naming it. Acquisition belongs to the pull step, so there is
 	// nothing for a build to merge back afterwards and no posture for it to choose.
-	fetchSeam := compilerops.FrozenExternalInputs(wsRoot, cacheDir, lf)
+	fetchSeam := compilerops.PinnedExternalInputs(wsRoot, cacheDir, wsCfg, lf)
 
 	// The build's determinism-wired lazy lookup: EVERY catalog consumer this run
 	// has — guards, triad aggregate resolution, manifest-implements gate,

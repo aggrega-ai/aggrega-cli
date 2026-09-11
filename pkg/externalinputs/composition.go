@@ -9,9 +9,41 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
-// NewFrozen constructs the service for the consumption moment: a pinned
-// reference is served from the workspace's content-addressed store, and an
-// unpinned one refuses loudly. Nothing is fetched and nothing is written.
+// NewRefilling constructs the service for the consumption moment: a pinned
+// reference is served from the workspace's content-addressed store, a pinned
+// reference whose store blob has gone missing is refetched by its recorded
+// digest and verified against it, and an unpinned reference refuses loudly.
+//
+// It is the posture every rendering surface attaches. Acquisition is off, and
+// that is passed literally rather than derived from anything, so a render under
+// this service cannot widen the closure however the workspace is configured —
+// which is the guarantee a render actually needs. What it may do is repair the
+// store: a refill is gated by a digest the lockfile already committed to before
+// anything is written or returned, so it cannot introduce bytes the pin did not
+// already name. That makes it a cache repair rather than an acquisition, and it
+// is why it is safe to have on by default.
+//
+// The transport comes from the network-egress gate, which refuses for an offline
+// workspace and leaves the service with no client. So "not refillable" is a
+// consequence of being offline rather than a posture of its own, and there is
+// nothing extra to configure or teach: a pinned reference whose blob is missing
+// is repaired wherever the workspace is allowed to reach the network, and refuses
+// where it is not — at which point the offline refusal names the posture that is
+// genuinely set.
+//
+// The store is located from the workspace root and the workspace's configured
+// artifact cache directory together, which is what makes it the same store for
+// one workspace whatever directory the caller is standing in.
+func NewRefilling(workspaceRoot, cacheDir string, wsCfg workspaceconfig.Config, lf *lockfile.Lockfile) *Service {
+	client, _ := egress.HTTPClient(wsCfg)
+	return NewService(StoreRoot(workspaceRoot, cacheDir), false, client, pinnedFrom(lf))
+}
+
+// NewFrozen constructs the transport-free variant of the consumption posture: a
+// pinned reference is served from the workspace's content-addressed store, and
+// anything that would need a fetch — an unpinned reference, or a pinned one whose
+// store blob has gone missing — refuses. Nothing is fetched and nothing is
+// written.
 //
 // Serving a pinned reference from a local content-addressed store is a read of
 // content already on disk, not a fetch, so producing the same bytes an
@@ -23,6 +55,14 @@ import (
 // transport, so this posture cannot reach the network by construction. A later
 // edit cannot turn fetching on here without first widening the signature, which
 // is a change a reader sees.
+//
+// It is therefore also the only composition here that can refuse a fetch while
+// the workspace is perfectly able to reach the network, and the offline refusal
+// it raises then names a posture that is not set. That is the whole reason a
+// rendering surface composes NewRefilling instead: under it, the refusal arises
+// only when offline genuinely is set, so the message a reader is given is true.
+// What this one remains for is the narrower case of a caller that must be
+// provably unable to reach the network, where the signature is the proof.
 //
 // The store is located from the workspace root and the workspace's configured
 // artifact cache directory together, which is what makes it the same store for
