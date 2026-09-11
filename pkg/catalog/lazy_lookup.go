@@ -605,11 +605,12 @@ type Pin struct {
 
 // PinsFromLockfile builds the version-aware pin set SetPins consumes from a loaded
 // lockfile, across every kind the closure walker resolves through the Tier-2 cache
-// (entities, schema libraries, mapping libraries, workload libraries, wasm
-// plugins) — the same axes Lockfile.PinsByURI covers, over the identical URI set,
-// but retaining ResolvedVersion so a bare-URI pin can
-// address its versioned cache slot. Source artifacts are excluded (they descend on
-// their own read-time digest gate, not the closure walker's Tier-2 reuse).
+// — the same axes Lockfile.PinsByURI covers, over the identical URI set, but
+// retaining ResolvedVersion so a bare-URI pin can address its versioned cache
+// slot. The axes are not enumerated here: the loops below are the statement, and a
+// list beside them is a second copy that goes stale the moment an axis is added.
+// Source artifacts are excluded (they descend on their own read-time digest gate,
+// not the closure walker's Tier-2 reuse).
 func PinsFromLockfile(lf *lockfile.Lockfile) map[string]Pin {
 	if lf == nil {
 		return nil
@@ -637,12 +638,20 @@ func PinsFromLockfile(lf *lockfile.Lockfile) map[string]Pin {
 }
 
 // PinsFromClosure builds the version-aware pin set SetPins consumes from a
-// freshly-computed closure — pull's lock-time source, where no lockfile exists
-// yet. Covers the same axes as PinsFromLockfile (entities, schema + mapping
-// libraries, wasm plugins), each carrying the version the walk resolved so a
-// bare-URI pin addresses its versioned cache slot. Source artifacts are excluded.
+// freshly-computed closure — the lock-time source, used where no lockfile exists
+// yet and again wherever a closure is re-derived and briefly pinned from itself.
+// It projects the same axes as PinsFromLockfile, over the same URI set, each entry
+// carrying the version the walk resolved so a bare-URI pin addresses its versioned
+// cache slot. That agreement is what lets a caller shift a view between the two
+// sources without narrowing what verify-on-read covers, and it is asserted rather
+// than assumed: TestPinBuildersProjectTheSameAxes compares the two key sets.
+// Source artifacts are excluded, exactly as PinsFromLockfile excludes them.
+//
+// The two builders are kept as separate projections rather than routed through one
+// another: they read different source types, so a shared implementation would need
+// a third abstraction over both, and neither caller has a use for one.
 func PinsFromClosure(cl closure.Closure) map[string]Pin {
-	pins := make(map[string]Pin, len(cl.Entities)+len(cl.SchemaLibraries)+len(cl.MappingLibraries)+len(cl.Plugins))
+	pins := make(map[string]Pin, len(cl.Entities)+len(cl.SchemaLibraries)+len(cl.MappingLibraries)+len(cl.WorkloadLibraries)+len(cl.ArtifactsLibraries)+len(cl.Plugins))
 	for _, e := range cl.Entities {
 		pins[e.URI] = Pin{ResolvedVersion: e.ResolvedVersion, Digest: e.Digest, ManifestDigest: e.ManifestDigest}
 	}
@@ -651,6 +660,12 @@ func PinsFromClosure(cl closure.Closure) map[string]Pin {
 	}
 	for _, ml := range cl.MappingLibraries {
 		pins[ml.URI] = Pin{ResolvedVersion: ml.ResolvedVersion, Digest: ml.Digest}
+	}
+	for _, wl := range cl.WorkloadLibraries {
+		pins[wl.URI] = Pin{ResolvedVersion: wl.ResolvedVersion, Digest: wl.Digest}
+	}
+	for _, al := range cl.ArtifactsLibraries {
+		pins[al.URI] = Pin{ResolvedVersion: al.ResolvedVersion, Digest: al.Digest}
 	}
 	for _, wp := range cl.Plugins {
 		pins[wp.URI] = Pin{ResolvedVersion: wp.ResolvedVersion, Digest: wp.Digest, ManifestDigest: wp.ManifestDigest}

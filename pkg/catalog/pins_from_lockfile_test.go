@@ -32,11 +32,14 @@ func TestPinsFromLockfileCoversSameURIsAsPinsByURI(t *testing.T) {
 		WorkloadLibraries: []lockfile.WorkloadLibrary{
 			{URI: "core/BaseWorkloads:1.0.0", ResolvedVersion: "1.0.0", Digest: "sha256:ddd"},
 		},
+		ArtifactsLibraries: []lockfile.ArtifactsLibrary{
+			{URI: "core/BaseArtifacts:1.0.0", ResolvedVersion: "1.0.0", Digest: "sha256:eee"},
+		},
 		Plugins: []lockfile.Plugin{
-			{URI: "core/policy:1.0.0", ResolvedVersion: "1.0.0", Digest: "sha256:eee"},
+			{URI: "core/policy:1.0.0", ResolvedVersion: "1.0.0", Digest: "sha256:fff"},
 		},
 		SourceArtifacts: []lockfile.SourceArtifact{
-			{Kind: "helm-oci-chart", URL: "oci://example/chart", Digest: "sha256:fff"},
+			{Kind: "helm-oci-chart", URL: "oci://example/chart", Digest: "sha256:ggg"},
 		},
 	}
 
@@ -72,9 +75,34 @@ func TestPinsFromLockfileCoversSameURIsAsPinsByURI(t *testing.T) {
 	}
 
 	// Every closure-walked section must be represented; source artifacts excluded.
-	const wantWalkedKinds = 5
-	if len(fromSet) != wantWalkedKinds {
-		t.Errorf("PinsFromLockfile covers %d URIs %v; want %d (one per closure-walked kind, source artifacts excluded)",
-			len(fromSet), keys(fromSet), wantWalkedKinds)
+	// Named rather than counted: a count agrees when both sides are short the same
+	// row, and a bare number goes stale the moment an axis is added while still
+	// reading as deliberate. This list and the fixture above move together.
+	wantURIs := []string{
+		"core/BaseArtifacts:1.0.0",
+		"core/BaseMappings:1.0.0",
+		"core/BaseWorkloads:1.0.0",
+		"core/DbSizing:1.0.0",
+		"core/mariadb:1.0.0",
+		"core/policy:1.0.0",
 	}
+	for _, want := range wantURIs {
+		if _, ok := fromSet[want]; !ok {
+			t.Errorf("PinsFromLockfile does not cover %q — one closure-walked kind is unpinned", want)
+		}
+	}
+	for _, got := range keys(fromSet) {
+		if !containsPinURI(wantURIs, got) {
+			t.Errorf("PinsFromLockfile covers unexpected URI %q; source artifacts are excluded and every other kind is named above", got)
+		}
+	}
+}
+
+func containsPinURI(haystack []string, needle string) bool {
+	for _, s := range haystack {
+		if s == needle {
+			return true
+		}
+	}
+	return false
 }
