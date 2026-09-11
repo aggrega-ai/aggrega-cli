@@ -77,7 +77,12 @@ type CLIInstaller func(ctx context.Context, rw *workspaceconfig.ResolvedWorkspac
 // the command-extension type. Notices is where a version substitution is
 // announced; a nil Notices leaves version selection unscreened rather than
 // skipping a withdrawn version silently, which is the honest posture when there
-// is nowhere to announce the substitution.
+// is nowhere to announce the substitution. A caller that wants the substitution as
+// values rather than as prose supplies a discarding writer and reads the result's
+// Retraction: the screen forms on any non-nil writer, so the version chosen is the
+// same either way and only where the explanation lands differs. A nil writer
+// therefore leaves Retraction empty as well, because there was no screen to reach
+// a conclusion.
 //
 // Delivery selects whether the addition writes the configuration file or reports
 // the content that write would have produced. The zero value writes, so a caller
@@ -124,6 +129,11 @@ type AddOptions struct {
 // wire what was just persisted. The file the document is for is ConfigPath, the
 // one write-target resolution already on this result, so nothing here carries a
 // second copy of the path.
+//
+// Retraction is what the withdrawal screen concluded about the version that was
+// pinned, and is absent whenever it concluded nothing. It is on the result rather
+// than only in the prose on Notices so a surface answering with values reports a
+// substitution a reader would otherwise meet only at a terminal.
 type AddResult struct {
 	Socket string `json:"socket"`
 
@@ -135,6 +145,8 @@ type AddResult struct {
 	ConfigPath          string `json:"configPath"`
 	ConfigIsMachineWide bool   `json:"configIsMachineWide"`
 	Content             []byte `json:"content,omitempty"`
+
+	Retraction *RetractionAdvisory `json:"retraction,omitempty"`
 }
 
 // Add searches the configured registry for a plugin of the named type, resolves
@@ -280,7 +292,8 @@ func Add(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts AddOpt
 	// identity (<pluginType>/<name>) and pin the latest published version so the
 	// attachment is version-pinned.
 	entity := strings.TrimPrefix(repoPath, catalog.KindPathSegment("Plugin")+"/")
-	version, err := ResolveLatestVersion(ctx, rw, host, repoPath, opts.Notices)
+	var recorder retractionRecorder
+	version, err := resolveLatestVersion(ctx, rw, host, repoPath, opts.Notices, &recorder)
 	if err != nil {
 		return res, fmt.Errorf("%s: %w", command, err)
 	}
@@ -293,6 +306,7 @@ func Add(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts AddOpt
 		Identity:            identity,
 		ConfigPath:          configPath,
 		ConfigIsMachineWide: machineWide,
+		Retraction:          recorder.advisoryOrNil(),
 	}
 	if opts.Delivery.Reports() {
 		body, derr := workspaceconfig.PluginSocketRefDocument(configPath, socket, identity, plugintype.Role(opts.Role))
@@ -340,7 +354,8 @@ func addCLI(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts Add
 	if err != nil {
 		return res, err
 	}
-	version, err := ResolveLatestVersion(ctx, rw, host, repoPath, opts.Notices)
+	var recorder retractionRecorder
+	version, err := resolveLatestVersion(ctx, rw, host, repoPath, opts.Notices, &recorder)
 	if err != nil {
 		return res, fmt.Errorf("%s: %w", command, err)
 	}
@@ -365,6 +380,7 @@ func addCLI(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts Add
 		Reference:           ref,
 		ConfigPath:          configPath,
 		ConfigIsMachineWide: machineWide,
+		Retraction:          recorder.advisoryOrNil(),
 	}, nil
 }
 
@@ -504,7 +520,7 @@ var RepoWithdrawalLister = func(ctx context.Context, cfg workspaceconfig.Config,
 // the advisory one, because what it states is what happened to selection — the same
 // event the exclusion notices carry — and the two channels stay distinct precisely so
 // a reader can tell "you are being told something" from "you did not get something".
-func liveRetractionScreen(ctx context.Context, cfg workspaceconfig.Config, host, repoPath, reference string, tags []string, out io.Writer) catalog.RetractionScreen {
+func liveRetractionScreen(ctx context.Context, cfg workspaceconfig.Config, host, repoPath, reference string, tags []string, out io.Writer, rec *retractionRecorder) catalog.RetractionScreen {
 	if out == nil {
 		return nil
 	}
@@ -516,9 +532,14 @@ func liveRetractionScreen(ctx context.Context, cfg workspaceconfig.Config, host,
 	if err != nil {
 		fmt.Fprintf(out, "  retraction: %s: markers could not be read (%v); published versions were not screened for retraction\n",
 			repoPath, err)
+		// The same event the prose states, recorded for a caller answering with
+		// values. It is recorded here rather than through the screen decorator
+		// because there is no screen to decorate: the degradation IS that none was
+		// formed.
+		rec.recordUnscreened(reference, err.Error())
 		return nil
 	}
-	return registryindex.NewLiveScreen(reference, deps, out)
+	return rec.watch(registryindex.NewLiveScreen(reference, deps, out))
 }
 
 // ResolveLatestVersion returns the highest strict-SemVer version published for the
@@ -545,7 +566,19 @@ func liveRetractionScreen(ctx context.Context, cfg workspaceconfig.Config, host,
 // words. A repository whose every selectable version is withdrawn is the different
 // case and does halt: nothing is left to attach, and the withdrawal is the reason.
 func ResolveLatestVersion(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, host, repoPath string, out io.Writer) (string, error) {
-	if version, ok, err := versionFromIndex(rw, host, repoPath, out); err != nil {
+	return resolveLatestVersion(ctx, rw, host, repoPath, out, nil)
+}
+
+// resolveLatestVersion is ResolveLatestVersion with somewhere to record what the
+// withdrawal screen concluded.
+//
+// The recorder is threaded rather than returned alongside the version because the
+// conclusion is reached inside the two screen constructions below, one per
+// discovery path, and a return value would have to be merged at every one of them.
+// A nil recorder records nothing, which is what the exported entry passes: a caller
+// that only wants the prose already has it on out.
+func resolveLatestVersion(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, host, repoPath string, out io.Writer, rec *retractionRecorder) (string, error) {
+	if version, ok, err := versionFromIndex(rw, host, repoPath, out, rec); err != nil {
 		return "", err
 	} else if ok {
 		return version, nil
@@ -561,7 +594,7 @@ func ResolveLatestVersion(ctx context.Context, rw *workspaceconfig.ResolvedWorks
 	// The screen and the selection key off this one reference, and the screen is
 	// populated before selection runs so selection itself still reaches no registry.
 	reference := host + "/" + repoPath
-	screen := liveRetractionScreen(ctx, cfg, host, repoPath, reference, tags, out)
+	screen := liveRetractionScreen(ctx, cfg, host, repoPath, reference, tags, out, rec)
 	version, err := catalog.SelectScreenedVersion(screen, reference, tags)
 	if err != nil {
 		// No conforming tag is the caller's empty-version case, not a failure: it
@@ -596,7 +629,7 @@ func ResolveLatestVersion(ctx context.Context, rw *workspaceconfig.ResolvedWorks
 // select over, so the headline stands. A nil out leaves selection unscreened, which
 // is the honest posture — an exclusion nobody can be told about is the silent
 // substitution this exists to prevent.
-func versionFromIndex(rw *workspaceconfig.ResolvedWorkspace, host, repoPath string, out io.Writer) (string, bool, error) {
+func versionFromIndex(rw *workspaceconfig.ResolvedWorkspace, host, repoPath string, out io.Writer, rec *retractionRecorder) (string, bool, error) {
 	loaded, err := registryindex.LoadHost(rw.Root(), rw.Config().ResolvedArtifactCacheDir(), host)
 	if err != nil {
 		if registryindex.IsNotBuilt(err) {
@@ -608,14 +641,14 @@ func versionFromIndex(rw *workspaceconfig.ResolvedWorkspace, host, repoPath stri
 	// single index-URI mapping, so they cannot disagree about which record they mean.
 	reference := host + "/" + repoPath
 	uri := registryindex.URIForReference(reference)
-	for _, rec := range loaded.Records {
-		if rec.URI != uri {
+	for _, record := range loaded.Records {
+		if record.URI != uri {
 			continue
 		}
-		if len(rec.Versions) == 0 {
-			return rec.Version, true, nil
+		if len(record.Versions) == 0 {
+			return record.Version, true, nil
 		}
-		version, serr := catalog.SelectScreenedVersion(registryindex.NewScreen(rw, host, out), reference, rec.Versions)
+		version, serr := catalog.SelectScreenedVersion(rec.watch(registryindex.NewScreen(rw, host, out)), reference, record.Versions)
 		if serr != nil {
 			return "", true, serr
 		}

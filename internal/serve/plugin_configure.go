@@ -161,15 +161,76 @@ type pluginAddParams struct {
 // that the client can open, and under a dry run it is false and Content carries
 // the document instead. The two are never both meaningful — the file Content is
 // for is Scope.ConfigFile, so nothing here carries a second copy of the path.
+//
+// Retraction is absent on an ordinary attachment and present when the withdrawal
+// screen had something to say about the version that was pinned. A retraction is a
+// withdrawal, frequently for a safety reason, so a caller handed an older version
+// than the newest published one is owed the reason — the command line states it on
+// the terminal, and this is where it travels for a caller that answers with values.
 type pluginAddResult struct {
-	Type       string           `json:"type"`
-	Identity   string           `json:"identity,omitempty"`
-	URI        string           `json:"uri,omitempty"`
-	Capability string           `json:"capability,omitempty"`
-	Reference  string           `json:"reference,omitempty"`
-	Scope      pluginWriteScope `json:"scope"`
-	Written    bool             `json:"written"`
-	Content    string           `json:"content,omitempty"`
+	Type       string            `json:"type"`
+	Identity   string            `json:"identity,omitempty"`
+	URI        string            `json:"uri,omitempty"`
+	Capability string            `json:"capability,omitempty"`
+	Reference  string            `json:"reference,omitempty"`
+	Scope      pluginWriteScope  `json:"scope"`
+	Written    bool              `json:"written"`
+	Content    string            `json:"content,omitempty"`
+	Retraction *pluginRetraction `json:"retraction,omitempty"`
+}
+
+// pluginRetractionExclusion is one published version the withdrawal screen removed
+// from selection, with the reason recorded against it. A record is not required to
+// carry prose, so reason may be absent.
+type pluginRetractionExclusion struct {
+	Version string `json:"version"`
+	Reason  string `json:"reason,omitempty"`
+}
+
+// pluginRetraction is what the withdrawal screen concluded about the version an
+// attachment pinned.
+//
+// It carries the screen's own conclusion rather than the sentence the command line
+// composes from it, on the rule this surface applies to every other answer: a
+// structured fact the shared operation computed travels as values, and how those
+// values are worded is each surface's own. A caller rendering them is free to say
+// it in the words its reader is reading, and cannot fall out of step with a
+// sentence composed somewhere else.
+//
+// Excluded with Selected says the screen ran and withdrew the versions named,
+// pinning Selected in their place. Unscreened says the opposite thing and is the
+// reason the two are separate fields: the withdrawal records could not be read at
+// all, so nothing was screened and no claim is made about whether the pinned
+// version has since been withdrawn. A caller must not read an empty Excluded as
+// "nothing was withdrawn" without looking at Unscreened first.
+type pluginRetraction struct {
+	Reference  string                      `json:"reference"`
+	Selected   string                      `json:"selected,omitempty"`
+	Excluded   []pluginRetractionExclusion `json:"excluded,omitempty"`
+	Unscreened string                      `json:"unscreened,omitempty"`
+}
+
+// pluginRetractionOf projects the operation's advisory onto this surface's wire
+// shape, and returns nil when there was none.
+//
+// It is a projection rather than an emission of the shared type because the shared
+// type carries the command line's own field spellings; emitting it directly would
+// put capitalised keys on a surface whose every other field is lowercase. Nothing
+// is recomputed here — each value is carried across unchanged — so this surface
+// cannot disagree with the screen about what was withdrawn.
+func pluginRetractionOf(advisory *pluginops.RetractionAdvisory) *pluginRetraction {
+	if advisory == nil {
+		return nil
+	}
+	out := &pluginRetraction{
+		Reference:  advisory.Reference,
+		Selected:   advisory.Selected,
+		Unscreened: advisory.Unscreened,
+	}
+	for _, x := range advisory.Excluded {
+		out.Excluded = append(out.Excluded, pluginRetractionExclusion{Version: x.Version, Reason: x.Reason})
+	}
+	return out
 }
 
 // dispatchPluginAdd searches the configured registry for a plugin of the named
@@ -264,10 +325,16 @@ func (s *Server) dispatchPluginAdd(ctx context.Context, req *jsonRPCRequest) err
 		AcceptCapabilities: params.AcceptCapabilities,
 		Delivery:           delivery,
 		InstallCLIPlugin:   s.installCLIPlugin,
-		// The install path reports the commands it registered on this writer, and a
-		// version substitution is announced on it too. Both are prose for a person
-		// watching a terminal; this surface answers with the values instead, which
-		// travel on the result.
+		// The prose written here is for a person watching a terminal, and this surface
+		// has none, so it is discarded and the facts are read off the result instead:
+		// a version substitution travels on Retraction, and the install path's account
+		// of what it registered is the pinned reference the result already names.
+		//
+		// 🔴 It is a discarding writer rather than no writer, and the difference is
+		// load-bearing. Version selection is screened for withdrawals only when there
+		// is a writer at all — the operation leaves it unscreened otherwise, rather
+		// than skipping a withdrawn version with nobody to tell — so passing nothing
+		// here would change which version an attachment pins.
 		Notices: io.Discard,
 		In:      strings.NewReader(""),
 	})
@@ -286,6 +353,7 @@ func (s *Server) dispatchPluginAdd(ctx context.Context, req *jsonRPCRequest) err
 		Scope:      s.pluginScope(res.ConfigPath, res.ConfigIsMachineWide),
 		Written:    !delivery.Reports(),
 		Content:    string(res.Content),
+		Retraction: pluginRetractionOf(res.Retraction),
 	})
 }
 

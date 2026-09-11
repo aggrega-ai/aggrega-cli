@@ -14,6 +14,8 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/authoredcontent"
 	"github.com/aggrega-ai/aggrega-cli/internal/registryindex"
 	"github.com/aggrega-ai/aggrega-cli/internal/registryops"
+	"github.com/aggrega-ai/aggrega-cli/pkg/deprecation"
+	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
@@ -445,6 +447,18 @@ func TestTheReportingDeliveryComposesThroughTheWritePath(t *testing.T) {
 // withdrawal read pointing at a live registry.
 func withFakeRegistry(t *testing.T, repos, tags []string) {
 	t.Helper()
+	withFakeRegistryWithdrawing(t, repos, tags, nil)
+}
+
+// withFakeRegistryWithdrawing is withFakeRegistry with a withdrawal recorded
+// against each named version, mapped to the reason carried on its marker.
+//
+// Each recorded withdrawal carries a verified signer, because only a
+// signature-verified record screens a version at all: an unsigned one is ignored by
+// the same rule production applies, so a fixture that omitted the signer would
+// exercise an unscreened selection while reading as a screened one.
+func withFakeRegistryWithdrawing(t *testing.T, repos, tags []string, withdrawn map[string]string) {
+	t.Helper()
 	prevTarget := RegistryTarget
 	RegistryTarget = func(workspaceconfig.Config) (registryops.RepoLister, string, error) {
 		return fakeLister{repos: repos}, "hub.aggrega.ai", nil
@@ -454,8 +468,20 @@ func withFakeRegistry(t *testing.T, repos, tags []string) {
 		return tags, nil
 	}
 	prevWithdrawals := RepoWithdrawalLister
-	RepoWithdrawalLister = func(_ context.Context, _ workspaceconfig.Config, _, _ string, _ []string, _ io.Writer) ([]registryindex.VersionDeprecation, error) {
-		return nil, nil
+	RepoWithdrawalLister = func(_ context.Context, _ workspaceconfig.Config, _, _ string, versions []string, _ io.Writer) ([]registryindex.VersionDeprecation, error) {
+		var out []registryindex.VersionDeprecation
+		for _, v := range versions {
+			reason, hit := withdrawn[v]
+			if !hit {
+				continue
+			}
+			out = append(out, registryindex.VersionDeprecation{
+				Version: v,
+				Marker:  deprecation.Marker{Severity: deprecation.SeverityRetracted, Reason: reason},
+				Signer:  &lockfile.VerifiedSignature{Identity: "publisher", Mode: "keyed"},
+			})
+		}
+		return out, nil
 	}
 	t.Cleanup(func() {
 		RegistryTarget = prevTarget

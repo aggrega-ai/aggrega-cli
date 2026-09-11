@@ -14,6 +14,8 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/pluginops"
 	"github.com/aggrega-ai/aggrega-cli/internal/registryindex"
 	"github.com/aggrega-ai/aggrega-cli/internal/registryops"
+	"github.com/aggrega-ai/aggrega-cli/pkg/deprecation"
+	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
@@ -326,17 +328,42 @@ func TestTheCommandExtensionTypeRequiresConsentAndAnInstaller(t *testing.T) {
 // one-repository set did.
 func withFakeRegistryForAttach(t *testing.T) {
 	t.Helper()
+	withFakeRegistryForAttachWithdrawing(t, []string{"1.0.0", "1.2.0"}, nil)
+}
+
+// withFakeRegistryForAttachWithdrawing is withFakeRegistryForAttach over a chosen
+// published-version set, with a withdrawal recorded against each version named in
+// withdrawn and mapped to the reason on its marker.
+//
+// Each recorded withdrawal carries a verified signer, because only a
+// signature-verified record screens a version: an unsigned one is ignored by the
+// same rule production applies, so a fixture without one would exercise an
+// unscreened selection while reading as a screened one.
+func withFakeRegistryForAttachWithdrawing(t *testing.T, tags []string, withdrawn map[string]string) {
+	t.Helper()
 	prevTarget := pluginops.RegistryTarget
 	pluginops.RegistryTarget = func(workspaceconfig.Config) (registryops.RepoLister, string, error) {
 		return fixedRepoLister{repos: []string{"plugin/governance/tag-injector", "plugin/cli/greet"}}, "hub.aggrega.ai", nil
 	}
 	prevTags := pluginops.RepoTagLister
 	pluginops.RepoTagLister = func(context.Context, workspaceconfig.Config, string, string) ([]string, error) {
-		return []string{"1.0.0", "1.2.0"}, nil
+		return tags, nil
 	}
 	prevWithdrawals := pluginops.RepoWithdrawalLister
-	pluginops.RepoWithdrawalLister = func(_ context.Context, _ workspaceconfig.Config, _, _ string, _ []string, _ io.Writer) ([]registryindex.VersionDeprecation, error) {
-		return nil, nil
+	pluginops.RepoWithdrawalLister = func(_ context.Context, _ workspaceconfig.Config, _, _ string, versions []string, _ io.Writer) ([]registryindex.VersionDeprecation, error) {
+		var out []registryindex.VersionDeprecation
+		for _, v := range versions {
+			reason, hit := withdrawn[v]
+			if !hit {
+				continue
+			}
+			out = append(out, registryindex.VersionDeprecation{
+				Version: v,
+				Marker:  deprecation.Marker{Severity: deprecation.SeverityRetracted, Reason: reason},
+				Signer:  &lockfile.VerifiedSignature{Identity: "publisher", Mode: "keyed"},
+			})
+		}
+		return out, nil
 	}
 	t.Cleanup(func() {
 		pluginops.RegistryTarget = prevTarget
