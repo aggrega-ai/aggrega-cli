@@ -36,6 +36,16 @@ type buildArgs struct {
 	// the render is held to the lockfile as it stands, UNLESS the workspace is
 	// configured to fill, where it fills as it would for any other build there.
 	// What this argument cannot do is turn off a fill the workspace asked for.
+	//
+	// Resolving is where an external input is acquired. The resolution renders this
+	// Release to discover which remote references its render consumes, fetches
+	// them, and records them in the same lockfile write that carries the dependency
+	// pins — so a reference this Release needs is pinned after a fill and, without
+	// one, is declined by the render and named in the answer.
+	//
+	// A build that fills renders this Release exactly once. That discovery render
+	// is a render of this Release under the posture a build renders in, so the
+	// build is answered from it rather than performing a second one.
 	AutoPull bool `json:"auto_pull"`
 }
 
@@ -249,9 +259,13 @@ func buildInvoke(s *server, ctx context.Context, args json.RawMessage) (*callToo
 	// references are resolved fresh. A build that resolved some other way would be
 	// free to fill a workspace differently from the tool a caller uses to fill it.
 	var fillReport *pullResultPayload
+	// The render the fill conserved, where it conserved one. Nil is not an error
+	// signal and not a request: it is the absence of a render, and the step below
+	// performs one for itself when it arrives that way.
+	var filled *compilerops.PreviewResult
 	lockfileFilled := false
 	if tw.cfg.FillsLockfile(a.AutoPull) {
-		report, fillErr := runDependencyResolution(ctx, s, tw, releasePath,
+		report, render, fillErr := runDependencyResolution(ctx, s, tw, releasePath,
 			pullArgs{Release: a.Release, WorkspaceRoot: a.WorkspaceRoot, CatalogDirs: a.CatalogDirs}, nil)
 		if fillErr != nil {
 			// The fill refused, so nothing was rendered and there is no render to
@@ -265,76 +279,107 @@ func buildInvoke(s *server, ctx context.Context, args json.RawMessage) (*callToo
 				buildResultPayload{Release: releasePath, Files: []buildFile{}, DependencyResolution: &report})
 		}
 		fillReport = &report
+		filled = render
 		// Recorded as a fact about what just happened rather than read back off the
 		// argument, because what the render needs to know is that a lockfile WAS
 		// written and not that one was asked for. The two part on the refusal above,
 		// and a render told the wrong one would stand down a drift verify that had
 		// something to check.
+		//
+		// It is recorded separately from the render above and not derived from it,
+		// because a fill whose discovery render stopped part way wrote its lockfile
+		// and conserved no render: this is true there and the render is nil.
 		lockfileFilled = true
 	}
 
-	lf := loadReleaseLockfile(releasePath)
-	view := tw.newView(lf)
+	// The render, or the render that already happened.
+	//
+	// A fill renders this Release to find out which external inputs it consumes, so
+	// a build whose fill ran already holds a render of what it was about to render —
+	// performed under this same artifact posture, through this same computation,
+	// against the closure that fill pinned. It presents that one, and renders only
+	// where there was none to inherit.
+	//
+	// The PRESENCE of that render is the decision. It is a fact about what this
+	// call did, not a setting: there is deliberately nothing here asking whether to
+	// reuse it, because a switch of that shape would be a second answer to a
+	// question the render itself already answers by existing.
+	//
+	// declined is the references this tool's OWN render was refused, and it stays
+	// empty on the presenting path for the same reason it is a fact rather than a
+	// setting: a call that rendered nothing here refused nothing here, and the fill
+	// that did render acquired rather than declined.
+	// err is the workspace resolution's, already returned on above and therefore
+	// nil here; the render assigns into it rather than shadowing it, so the single
+	// failure branch below reads one variable whichever path produced it.
+	preview := filled
+	var declined []string
+	if preview == nil {
+		lf := loadReleaseLockfile(releasePath)
+		view := tw.newView(lf)
 
-	// The render-time external-input seam — the same posture and the same builder
-	// the editor's inspection and the command-line build render through. It is the
-	// PINNED posture rather than the acquiring one because the render emits bytes
-	// rather than acquiring content: a seam with acquisition on would widen the
-	// closure as a side effect of rendering it, so what a caller got back would
-	// depend on what the render happened to reach for. Repairing a missing store
-	// blob by a digest the lockfile already records is not that widening, and it is
-	// what keeps these bytes the bytes a build emits rather than a decline a build
-	// would not have raised.
-	//
-	// A fill above does not loosen this, and the two are not in tension: the
-	// resolution carries forward the external-input pins the lockfile already
-	// records and acquires none, so a reference the lockfile does not pin is
-	// declined after a fill exactly as it is without one. The freeze is a property
-	// of the render rather than of whether anything was resolved first.
-	//
-	// A pinned reference is therefore served from the store, and an unpinned one is
-	// declined and named in the answer rather than quietly rendering a
-	// not-available envelope the caller cannot tell from real content.
-	//
-	// Serving a pinned reference from the store is HALF of what makes these bytes
-	// the bytes a build emits. The other half is that the pins served from still
-	// describe the closure the Release resolves to, which the operation below
-	// verifies: reading pinned bytes out of the store says nothing about whether
-	// they were the right bytes to read.
-	fetchSeam := compilerops.PinnedExternalInputs(tw.root, tw.cacheDir, tw.cfg, lf)
+		// The render-time external-input seam — the same posture and the same builder
+		// the editor's inspection and the command-line build render through. It is the
+		// PINNED posture rather than the acquiring one because the render emits bytes
+		// rather than acquiring content: a seam with acquisition on would widen the
+		// closure as a side effect of rendering it, so what a caller got back would
+		// depend on what the render happened to reach for. Repairing a missing store
+		// blob by a digest the lockfile already records is not that widening, and it is
+		// what keeps these bytes the bytes a build emits rather than a decline a build
+		// would not have raised.
+		//
+		// Acquisition belongs to the fill, which is why this render owes none of it. A
+		// fill renders with acquisition ON precisely to discover which remote
+		// references this Release consumes, fetches them, and pins them in the lockfile
+		// it writes — so what a fill changes is which references are pinned by the time
+		// a render runs, never what a render may reach. A reference no fill pinned is
+		// declined here exactly as it is on a call that never filled.
+		//
+		// A pinned reference is therefore served from the store, and an unpinned one is
+		// declined and named in the answer rather than quietly rendering a
+		// not-available envelope the caller cannot tell from real content.
+		//
+		// Serving a pinned reference from the store is HALF of what makes these bytes
+		// the bytes a build emits. The other half is that the pins served from still
+		// describe the closure the Release resolves to, which the operation below
+		// verifies: reading pinned bytes out of the store says nothing about whether
+		// they were the right bytes to read.
+		fetchSeam := compilerops.PinnedExternalInputs(tw.root, tw.cacheDir, tw.cfg, lf)
 
-	// This tool renders from the pins the workspace carries by the time it gets
-	// here — the ones already on disk, or the ones the fill above just wrote. It
-	// runs the strict operation either way, drift verify included, because what it
-	// publishes is the claim that these are the bytes a build emits: a build refuses
-	// a lockfile that has drifted, so rendering from one here would publish that
-	// claim exactly where it does not hold.
-	//
-	// The drift verify stands down on a lockfile this call filled, and that is not a
-	// relaxation. A resolution and the closure it was derived from cannot disagree,
-	// so comparing them would hold a set against itself; the verify is there to
-	// catch a lockfile that went stale between one run and another, which a file
-	// written moments ago by this run cannot have done.
-	//
-	// The absent case pays nothing for that either, and it needs no condition of its
-	// own: the drift verify reads the lockfile from the inputs and stands down when
-	// there is none, so a Release carrying no lockfile and no fill renders as it
-	// always did. What is refused is the single input on which this surface would
-	// otherwise assert something false — a lockfile that exists, was not written by
-	// this call, and no longer matches.
-	preview, err := compilerops.PreviewForArtifact(
-		ctx,
-		compilerops.NewPreviewInputs(
-			fetchSeam,
-			view,
-			releasePath,
-			tw.root,
-			tw.cfg,
-			s.serverVersion,
-			compilerops.WithLockfile(lf, lf != nil && !lockfileFilled),
-		),
-		pipeline.Options{},
-	)
+		// This tool renders from the pins the workspace carries by the time it gets
+		// here — the ones already on disk, or the ones a fill above wrote before its
+		// own render stopped. It runs the strict operation either way, drift verify
+		// included, because what it publishes is the claim that these are the bytes a
+		// build emits: a build refuses a lockfile that has drifted, so rendering from
+		// one here would publish that claim exactly where it does not hold.
+		//
+		// The drift verify stands down on a lockfile this call filled, and that is not a
+		// relaxation. A resolution and the closure it was derived from cannot disagree,
+		// so comparing them would hold a set against itself; the verify is there to
+		// catch a lockfile that went stale between one run and another, which a file
+		// written moments ago by this run cannot have done.
+		//
+		// The absent case pays nothing for that either, and it needs no condition of its
+		// own: the drift verify reads the lockfile from the inputs and stands down when
+		// there is none, so a Release carrying no lockfile and no fill renders as it
+		// always did. What is refused is the single input on which this surface would
+		// otherwise assert something false — a lockfile that exists, was not written by
+		// this call, and no longer matches.
+		preview, err = compilerops.PreviewForArtifact(
+			ctx,
+			compilerops.NewPreviewInputs(
+				fetchSeam,
+				view,
+				releasePath,
+				tw.root,
+				tw.cfg,
+				s.serverVersion,
+				compilerops.WithLockfile(lf, lf != nil && !lockfileFilled),
+			),
+			pipeline.Options{},
+		)
+		declined = fetchSeam.Declined()
+	}
 
 	// Every recorded marker is reported whatever the outcome, so choosing a
 	// stricter threshold never costs the caller a finding.
@@ -365,7 +410,7 @@ func buildInvoke(s *server, ctx context.Context, args json.RawMessage) (*callToo
 	// caller cannot tell that from an accurate render unless it is told. A decline
 	// also HALTS the render in the ordinary case, so the refusal is where this field
 	// earns its keep and the success is the incidental path for it.
-	payload.DeclinedExternalInputs = fetchSeam.Declined()
+	payload.DeclinedExternalInputs = declined
 	// The advisories the build raised travel in the answer, so a caller driving the
 	// compiler through this surface receives every finding a command-line build
 	// prints rather than only the ones that stopped it. Read through the accessor
@@ -380,10 +425,26 @@ func buildInvoke(s *server, ctx context.Context, args json.RawMessage) (*callToo
 			payload)
 	}
 
-	// The rendered set comes off the finished payload: the refusal above returned,
-	// so the run whose files this reports is one that ended.
+	// The rendered set comes off the finished payload. A render performed here has
+	// already returned on the refusal above, so a payload missing at this point
+	// means a presented render did not finish — the one case where the verdict
+	// comes from outside this call, and only as good as the promise the fill made
+	// about it. Reporting a partial set would name an artifact list stopping short
+	// of the nodes the render never reached, which reads exactly like a complete
+	// one, so it is refused instead. The fill declines to hand over an unfinished
+	// render, so this is the guard behind that promise rather than the only thing
+	// keeping it.
+	completed := preview.PipelineOutcome().Completed()
+	if completed == nil {
+		return structuredErrorResult(
+			"The build resolved this Release's dependencies first, and the render that resolution "+
+				"performed did not finish — so there is no complete set of files to report and none is "+
+				"reported. Call pull with this same 'release' path to see where the resolution stopped, "+
+				"then build again.",
+			payload)
+	}
 	detail := parseResponseFormat(a.ResponseFormat) == responseFormatDetailed
-	payload.Files = renderedFiles(preview.PipelineOutcome().Completed(), detail)
+	payload.Files = renderedFiles(completed, detail)
 	text := renderBuildText(payload)
 	return textResult(text, payload)
 }

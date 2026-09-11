@@ -66,7 +66,7 @@ func (s *Server) dispatchBuildPreview(ctx context.Context, req *jsonRPCRequest) 
 // writing any of it.
 //
 // The render is the shared artifact-posture one — see
-// [Server.renderUnderArtifactPosture] for the gates it runs, the seam it renders
+// [Server.artifactPostureRender] for the gates it runs, the seam it renders
 // through and where its positioned findings go. What this method adds is the
 // deliberate omission: the artifact set it was handed is reported by name and
 // then dropped. That is the whole difference between this request and the build
@@ -105,8 +105,10 @@ func (s *Server) handleBuildPreview(ctx context.Context, params buildPreviewPara
 	}
 
 	// The fill is refused above, so nothing on this path can have filled a
-	// lockfile: one the render finds was on disk before the request.
-	preview, errEnvelope := s.renderUnderArtifactPosture(ctx, params.Release, false)
+	// lockfile: one the render finds was on disk before the request. For the same
+	// reason there is no conserved render to present — a render is conserved by a
+	// fill, and no fill runs here — so this method always renders.
+	preview, errEnvelope := s.artifactPostureRender(ctx, params.Release, nil, false)
 	if errEnvelope != nil {
 		return buildPreviewResult{}, errEnvelope
 	}

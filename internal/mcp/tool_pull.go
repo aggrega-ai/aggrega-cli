@@ -11,6 +11,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 	"github.com/aggrega-ai/aggrega-cli/internal/pullops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
@@ -245,7 +246,10 @@ func pullInvoke(s *server, ctx context.Context, args json.RawMessage) (*callTool
 	}
 	releasePath := tw.absWorkspacePath(release)
 
-	payload, runErr := runDependencyResolution(ctx, s, tw, releasePath, a, targets)
+	// The render the resolution conserved is dropped here, and the drop is the
+	// answer rather than an omission: this tool reports what was pinned, and a
+	// render is not that. The build tool beside it is the caller that needs one.
+	payload, _, runErr := runDependencyResolution(ctx, s, tw, releasePath, a, targets)
 	if runErr != nil {
 		return structuredErrorResult(
 			explainToolError(pullFailureSummary(a.Verify, len(targets)), runErr, "release"), payload)
@@ -270,8 +274,26 @@ func pullInvoke(s *server, ctx context.Context, args json.RawMessage) (*callTool
 // answer names is the file the run acted on. The error is returned unwrapped: the
 // caller-facing sentence for a refusal is chosen by what the CALL asked for, which
 // is the caller's to know and not this function's.
+//
+// # The render it conserves
+//
+// Discovering which external inputs a Release consumes is itself a render, so a
+// resolution that reached that step holds a render of this Release. It is
+// returned so a build that asked for the fill is answered from it rather than
+// rendering the same Release a second time. The resolution tool ignores it and
+// loses nothing — it reports what was pinned, and a render is not that.
+//
+// Only a render that FINISHED travels. A discovery that stopped part way holds
+// findings and no artifacts, and a caller presenting one would report an artifact
+// set stopping short of the nodes the render never reached, which reads exactly
+// like a complete one. The question is put to the render's own verdict rather
+// than to the resolution's separate report of what stopped it, so there is one
+// answer rather than two that agree today; and the accessor answers the same way
+// for a run that never reached a discovery at all, which needs no clause of its
+// own. Nil is therefore the absence of a render rather than an error signal, and
+// a caller that receives it renders for itself against the pins the run did land.
 func runDependencyResolution(ctx context.Context, s *server, tw *toolWorkspace, releasePath string,
-	a pullArgs, targets []string) (pullResultPayload, error) {
+	a pullArgs, targets []string) (pullResultPayload, *compilerops.PreviewResult, error) {
 	payload := pullResultPayload{
 		Release:  releasePath,
 		Lockfile: lockfile.PathFor(releasePath),
@@ -296,7 +318,7 @@ func runDependencyResolution(ctx context.Context, s *server, tw *toolWorkspace, 
 	payload.Diagnostics = diagnosticLines(diagnostics.String())
 
 	if runErr != nil {
-		return payload, runErr
+		return payload, nil, runErr
 	}
 
 	payload.Verified = res.Verified
@@ -316,7 +338,13 @@ func runDependencyResolution(ctx context.Context, s *server, tw *toolWorkspace, 
 	if res.ExternalInputDiscovery != nil {
 		payload.IncompleteExternalInputs = res.ExternalInputDiscovery.Error()
 	}
-	return payload, nil
+	// The conserved render, asked of its own verdict — see this function's notes
+	// for why only a finished one travels.
+	conserved := res.DiscoveryRender
+	if conserved.PipelineOutcome().Completed() == nil {
+		conserved = nil
+	}
+	return payload, conserved, nil
 }
 
 // pullResolutionConfig assembles the resolution's input contract for one decoded

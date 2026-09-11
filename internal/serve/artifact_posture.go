@@ -50,10 +50,12 @@ const (
 	noticeClassDependencyResolution = "dependency-resolution"
 )
 
-// renderUnderArtifactPosture renders the Release at release through the one
-// preview computation every rendering surface is a transport over, in the
-// posture of a surface that emits an artifact, and publishes the positioned
-// findings it raised.
+// artifactPostureRender is the render a build here is answered from, in the
+// posture of a surface that emits an artifact: the render the dependency fill
+// already performed, or one performed here when the fill performed none. Either
+// way it comes from the one preview computation every rendering surface is a
+// transport over, and the positioned findings it raised are published before it
+// is returned.
 //
 // It is the whole of what the daemon's two build methods share: the Release
 // parameter's contract, the lockfile gates, the frozen external-input seam, the
@@ -62,6 +64,27 @@ const (
 // produced. Keeping the shared half here is what stops the two coming to
 // disagree about which gates run or in what order, which is the disagreement a
 // reader choosing between them would have no way to see.
+//
+// # One build renders the Release once
+//
+// Discovering which external inputs a Release consumes is itself a render, so a
+// build whose fill ran already holds a render of the Release it was about to
+// render — performed under this same posture, through this same computation,
+// against the closure that fill pinned. filled is that render, and this presents
+// it rather than computing a second one.
+//
+// The PRESENCE of that render is the decision. It is a fact about what this run
+// did, not a setting: there is deliberately nothing here asking whether to reuse
+// it, because a switch of that shape would be a second answer to a question the
+// render itself already answers by existing, and two readings of one dial agree
+// until they do not.
+//
+// filled and lockfileFilled are independent facts and neither derives from the
+// other. A fill that ran and whose discovery render stopped part way wrote its
+// lockfile and handed back no render: lockfileFilled is true and filled is nil,
+// and the render performed here is held to what that fill did write. Collapsing
+// the two would stand the drift verify down on a run that never filled, or run
+// it against a lockfile written moments ago by this one.
 //
 // # Why the artifact posture rather than the inspection one
 //
@@ -74,12 +97,12 @@ const (
 //
 // # What it does not do
 //
-// It reaches no network. External references are served from the workspace's
-// content-addressed store where the lockfile pins them and declined where it
-// does not, and each decline is reported rather than silently shortening the
-// output. So the rendered bytes match a build's for a fully-pinned Release, and
-// where they cannot the reader is told which reference is missing and what to
-// run.
+// No render it performs reaches a network. External references are served from
+// the workspace's content-addressed store where the lockfile pins them and
+// declined where it does not, and each decline is reported rather than silently
+// shortening the output. So the rendered bytes match a build's for a
+// fully-pinned Release, and where they cannot the reader is told which reference
+// is missing and what to run.
 //
 // It fills no lockfile either, and lockfileFilled is how it is told that its
 // caller already did. The parameter reports a fact rather than requesting an
@@ -88,6 +111,13 @@ const (
 // verify below is stood down for it. Passing true without having filled would
 // suppress a real drift verdict, which is why the only caller that passes it is
 // the one that performs the fill.
+//
+// A presented render acquired what it needed while the fill was running — the
+// fill is the acquisition, and it is where an external reference this Release
+// consumes is fetched and pinned. So nothing was declined on that path and the
+// divergence advisory has nothing to raise, which is the same reason the
+// declined set is read off the seam this method attaches rather than carried
+// on the render: a render this method did not perform refused nothing here.
 //
 // # Where its findings go
 //
@@ -98,7 +128,7 @@ const (
 // are returned on the result instead. Sending those to the same layer would put a
 // second copy of a withdrawn-pin notice beside the one a validation already
 // publishes on the semantic layer, and two copies of one fact read as two facts.
-func (s *Server) renderUnderArtifactPosture(ctx context.Context, release string, lockfileFilled bool) (*compilerops.PreviewResult, *jsonRPCError) {
+func (s *Server) artifactPostureRender(ctx context.Context, release string, filled *compilerops.PreviewResult, lockfileFilled bool) (*compilerops.PreviewResult, *jsonRPCError) {
 	releasePath, paramErr := resolveReleaseParam(s.workspaceRoot, release)
 	if paramErr != nil {
 		return nil, paramErr
@@ -143,27 +173,44 @@ func (s *Server) renderUnderArtifactPosture(ctx context.Context, release string,
 		}
 	}
 
-	// The request-scoped catalog view, seeded with THIS request's pins before any
-	// cached read fires, so every resolution verifies-on-read against this
-	// Release's lockfile and a concurrent request's pins can never perturb it.
-	var pins map[string]catalog.Pin
-	if lf != nil {
-		pins = catalog.PinsFromLockfile(lf)
+	// The render, or the render that already happened. The presence of a conserved
+	// render is the whole of the decision — see this method's own notes for why
+	// that is a fact rather than a dial.
+	//
+	// declined is the references this method's own render was refused. It stays
+	// empty on the presenting path for the same reason: a render this method did
+	// not perform refused nothing here, and the fill that did perform it acquired
+	// rather than declined. view is likewise only assembled where a render needs
+	// it, and is read afterwards only on the failure path, which the presenting
+	// path cannot reach because no render was performed to fail.
+	preview := filled
+	var view *catalog.LazyLookup
+	var declined []string
+	var err error
+	if preview == nil {
+		// The request-scoped catalog view, seeded with THIS request's pins before any
+		// cached read fires, so every resolution verifies-on-read against this
+		// Release's lockfile and a concurrent request's pins can never perturb it.
+		var pins map[string]catalog.Pin
+		if lf != nil {
+			pins = catalog.PinsFromLockfile(lf)
+		}
+		view = s.lazyCatalog.ForRequest(pins)
+
+		fetchSeam := s.irGraphExternalInputs(lf)
+
+		// A build emits something a person applies, so every gate is on and every
+		// divergence halts. That is the whole of what these methods add over the graph
+		// inspection, which runs the same computation with the refusing gates off. The
+		// gate above has already established that the Release carries a lockfile, so
+		// the drift verify has something to hold it to.
+		preview, err = compilerops.PreviewForArtifact(
+			ctx,
+			s.irGraphPreviewInputs(view, releasePath, lf, fetchSeam, lf != nil && !lockfileFilled),
+			pipeline.Options{},
+		)
+		declined = fetchSeam.Declined()
 	}
-	view := s.lazyCatalog.ForRequest(pins)
-
-	fetchSeam := s.irGraphExternalInputs(lf)
-
-	// A build emits something a person applies, so every gate is on and every
-	// divergence halts. That is the whole of what these methods add over the graph
-	// inspection, which runs the same computation with the refusing gates off. The
-	// gate above has already established that the Release carries a lockfile, so
-	// the drift verify has something to hold it to.
-	preview, err := compilerops.PreviewForArtifact(
-		ctx,
-		s.irGraphPreviewInputs(view, releasePath, lf, fetchSeam, lf != nil && !lockfileFilled),
-		pipeline.Options{},
-	)
 
 	// The positioned advisories are published from whatever the run reached, and
 	// before the failure is returned rather than after. A gate that halted still
@@ -178,7 +225,7 @@ func (s *Server) renderUnderArtifactPosture(ctx context.Context, release string,
 		// and not only of the success one.
 		advisories := preview.PipelineOutcome().Advisories()
 		s.publishRenderDiagnostics(ctx, preview.Resolved.AggregatePath, advisories,
-			externalInputDivergenceDiagnostics(fetchSeam.Declined(), releasePath),
+			externalInputDivergenceDiagnostics(declined, releasePath),
 			preview.Resolved.AggBytes)
 	}
 

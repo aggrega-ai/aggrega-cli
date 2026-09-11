@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/artifactout"
+	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 	"github.com/aggrega-ai/aggrega-cli/internal/pullops"
 )
 
@@ -46,10 +47,18 @@ type buildParams struct {
 	// dependencies are not yet resolved; what it cannot do is turn off a fill the
 	// workspace asked for, which is the same thing the flag cannot do.
 	//
-	// It does not widen what the render itself may reach. The resolution
-	// carries forward the external-input pins the lockfile already records and
-	// adds none, so an external reference the lockfile does not pin is declined
-	// after a fill exactly as it is without one.
+	// Resolving is where an external input is acquired. The resolution renders
+	// this Release to discover which remote references its render consumes,
+	// fetches them, and records them in the same lockfile write that carries the
+	// dependency pins — so a reference this Release needs is pinned after a fill
+	// and, without one, is declined by the render and named in the answer. That is
+	// the whole difference the field makes to what the render may reach: the
+	// build's own render acquires nothing under either setting, and a fill is what
+	// makes what it needs already pinned.
+	//
+	// A build that fills renders this Release exactly once. The fill's discovery
+	// render is a render of this Release under the posture a build renders in, so
+	// the build is answered from it rather than performing a second one.
 	AutoPull bool `json:"autoPull,omitempty"`
 }
 
@@ -105,7 +114,7 @@ func (s *Server) dispatchBuild(ctx context.Context, req *jsonRPCRequest) error {
 // handleBuild builds params.Release and writes the artifacts it rendered.
 //
 // The render is the shared artifact-posture one — see
-// [Server.renderUnderArtifactPosture] for the gates it runs, the seam it renders
+// [Server.artifactPostureRender] for the gates it runs, the seam it renders
 // through and where its positioned findings go. What this method adds is the
 // write.
 //
@@ -152,13 +161,19 @@ func (s *Server) dispatchBuild(ctx context.Context, req *jsonRPCRequest) error {
 // behaves, so the same workspace answers the same way whichever surface a build
 // arrives on.
 //
-// # An unpinned external reference is declined either way
+// # The build's own render acquires nothing; the fill is what acquires
 //
-// The render reaches no network of its own under either setting: a reference the
-// lockfile pins is served from the content-addressed store and one it does not
-// pin is declined. Filling does not change that — the resolution carries forward
-// the external-input pins already recorded and acquires none — so the freeze is
-// a property of the render rather than of the fill.
+// No render a build performs reaches a network: a reference the lockfile pins is
+// served from the content-addressed store and one it does not pin is declined.
+// The fill is the exception and it is the whole of it — the resolution renders
+// this Release with acquisition on precisely to discover which remote references
+// the render consumes, fetches them, and pins them in the lockfile it writes. So
+// a fill changes which references are pinned by the time a build renders, and
+// changes nothing about what a build's own render may reach.
+//
+// Which is why a build asked to fill is answered from the fill's render rather
+// than performing one: that render is a render of this Release, under this same
+// posture, against the closure the fill pinned, so one build renders once.
 //
 // A declined reference is published as a positioned finding naming the reference
 // and what pins it, and that publication happens whatever the render then makes
@@ -175,6 +190,10 @@ func (s *Server) handleBuild(ctx context.Context, params buildParams) (buildResu
 	// nothing here is watching a stream it could have been written to instead.
 	var fillNotices []string
 	var fillReport *dependencyResolutionReport
+	// The render the fill conserved, where it conserved one. Nil is not an error
+	// signal and not a request: it is the absence of a render, and the step below
+	// performs one for itself when it arrives that way.
+	var filled *compilerops.PreviewResult
 	lockfileFilled := false
 	// Whether the fill runs is composed in the workspace config, which owns one of
 	// the two inputs, rather than read off the request field alone. The field turns
@@ -192,41 +211,55 @@ func (s *Server) handleBuild(ctx context.Context, params buildParams) (buildResu
 		fill = s.resolvedWorkspace.Config().FillsLockfile(params.AutoPull)
 	}
 	if fill {
-		notices, report, errEnvelope := s.fillDependencies(ctx, params.Release)
+		notices, report, render, errEnvelope := s.fillDependencies(ctx, params.Release)
 		if errEnvelope != nil {
 			return buildResult{}, errEnvelope
 		}
 		fillNotices = notices
 		fillReport = report
+		filled = render
 		// Recorded as a fact about what just happened rather than read back off
 		// the request, because what the render needs to know is that a lockfile
 		// WAS written and not that one was asked for. The two part on the
 		// refusal above, and a render told the wrong one would stand down a
 		// drift verify that had something to check.
+		//
+		// It is recorded separately from the render above and not derived from it,
+		// because a fill whose discovery render stopped part way wrote its lockfile
+		// and conserved no render: this is true there and the render is nil.
 		lockfileFilled = true
 	}
 
-	preview, errEnvelope := s.renderUnderArtifactPosture(ctx, params.Release, lockfileFilled)
+	preview, errEnvelope := s.artifactPostureRender(ctx, params.Release, filled, lockfileFilled)
 	if errEnvelope != nil {
 		return buildResult{}, errEnvelope
 	}
 	// The envelope above has already answered every refusal, so what is left is a
 	// run that reported no failure. Its finished payload is therefore what a write
 	// draws on, and the guard below is the one case that leaves: no failure and no
-	// render. The accessor is nil-receiver safe, so an absent preview arrives here
-	// as an absent payload and needs no separate clause.
+	// finished render. The accessor is nil-receiver safe, so an absent preview
+	// arrives here as an absent payload and needs no separate clause.
 	completed := preview.PipelineOutcome().Completed()
 	if completed == nil {
-		// A run that reported no failure and produced no render. Nothing here can
+		// A run that reported no failure and finished no render. Nothing here can
 		// be written, and clearing the output directory to write an empty set
 		// would destroy the previous build's output in order to report that this
 		// one emitted nothing. The refusal is loud because the reporting method
 		// beside this one answers with an empty file list in the same situation,
 		// and a build that quietly emptied a directory would be the worse of the
 		// two silences.
+		//
+		// It is also where a presented render is refused, and that half is the one
+		// worth stating: a render performed here has already returned on the
+		// failure above, so a payload missing at this point means the fill handed
+		// back a render that did not finish. Writing that out would emit an
+		// artifact set stopping short of the nodes the render never reached — a
+		// tree indistinguishable from a whole one. The fill declines to hand one
+		// over, so this is the guard behind that promise rather than the only
+		// thing keeping it.
 		return buildResult{}, &jsonRPCError{
 			Code:    errEntityNotResolvable,
-			Message: "the build produced no render, so there was nothing to write",
+			Message: "the build finished no render, so there was nothing to write",
 		}
 	}
 
@@ -275,13 +308,35 @@ func (s *Server) handleBuild(ctx context.Context, params buildParams) (buildResu
 // replaced by one this method invented, so a client that withdraws the build
 // stops the fill instead of only the answer to it. A withdrawn fill writes no
 // lockfile and leaves whatever was already pinned exactly as it was.
-func (s *Server) fillDependencies(ctx context.Context, release string) ([]string, *dependencyResolutionReport, *jsonRPCError) {
+//
+// # The render it conserves, and why only a finished one
+//
+// The resolution renders this Release to discover which external inputs it
+// consumes, so a fill that ran holds a render of exactly what the build was
+// about to render. That render is returned, and the build is answered from it
+// instead of rendering again.
+//
+// Only a render that FINISHED is handed over. A discovery that stopped part way
+// holds findings worth reporting and no artifacts, and a build handed one would
+// write out a tree missing whatever the render never reached — with nothing in
+// the result saying so, because a short artifact set reads exactly like a
+// complete one. The question is put to the render's own verdict rather than to
+// the resolution's separate report of what stopped it, so there is one answer
+// rather than two that agree today; the accessor answers the same way for a
+// resolution that never reached a discovery at all, which needs no clause of its
+// own for the same reason.
+//
+// Handing back nothing leaves the build to render for itself. The pins the fill
+// did land are on disk and a reference it never reached is still unpinned, so
+// that render is held to what the fill actually wrote and halts naming what is
+// missing.
+func (s *Server) fillDependencies(ctx context.Context, release string) ([]string, *dependencyResolutionReport, *compilerops.PreviewResult, *jsonRPCError) {
 	releasePath, paramErr := resolveReleaseParam(s.workspaceRoot, release)
 	if paramErr != nil {
-		return nil, nil, paramErr
+		return nil, nil, nil, paramErr
 	}
 	if s.resolvedWorkspace == nil {
-		return nil, nil, &jsonRPCError{
+		return nil, nil, nil, &jsonRPCError{
 			Code:    jsonRPCInternalError,
 			Message: "the daemon holds no resolved workspace to resolve dependencies against",
 		}
@@ -299,14 +354,20 @@ func (s *Server) fillDependencies(ctx context.Context, release string) ([]string
 		// put to a person halts naming what to supply.
 	})
 	if err != nil {
-		return nil, nil, &jsonRPCError{
+		return nil, nil, nil, &jsonRPCError{
 			Code:    errEntityNotResolvable,
 			Message: err.Error(),
 			cause:   err,
 		}
 	}
 	report := dependencyResolutionReportOf(res, s.workspaceRoot)
-	return noticeLines(notices.String()), &report, nil
+	// The conserved render, asked of its own verdict — see this method's notes for
+	// why only a finished one travels.
+	conserved := res.DiscoveryRender
+	if conserved.PipelineOutcome().Completed() == nil {
+		conserved = nil
+	}
+	return noticeLines(notices.String()), &report, conserved, nil
 }
 
 // dependencyResolutionNotices carries the fill's own lines onto the answer under
