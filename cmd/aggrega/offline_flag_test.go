@@ -304,8 +304,13 @@ func TestUpgradeRefusesUnderEveryOfflineLayer(t *testing.T) {
 			cmd := newRootCmd()
 			cmd.SetOut(io.Discard)
 			cmd.SetErr(io.Discard)
+			// --yes answers the bare refresh's confirmation in advance. That gate
+			// sits ahead of the posture check by design — it guards the operator's
+			// intent, which no resolved state changes — so without it this case
+			// would stop at the confirmation and assert nothing about the posture
+			// it exists to pin.
 			args := append([]string{"pull", "--workspace-root", root, "--release", releasePath,
-				"--catalog", filepath.Join(root, "catalog"), "--upgrade"}, tc.args...)
+				"--catalog", filepath.Join(root, "catalog"), "--upgrade", "--yes"}, tc.args...)
 			cmd.SetArgs(args)
 			err := cmd.Execute()
 			if err == nil {

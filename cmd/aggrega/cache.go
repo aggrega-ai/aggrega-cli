@@ -4,9 +4,7 @@
 package main
 
 import (
-	"bufio"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -370,26 +368,17 @@ can answer.`,
 	return c
 }
 
-// confirmCacheClear gates the total cache wipe behind an interactive
+// confirmCacheClear gates the total cache wipe behind the shared interactive
 // confirmation. With assumeYes it consents immediately. On a non-interactive
 // stdin without assumeYes it refuses — returning an error rather than blocking
 // on a prompt no one can answer. Otherwise it prompts [y/N] on w, reads a line
 // from r, and consents only on an explicit yes.
 func confirmCacheClear(w io.Writer, r io.Reader, assumeYes bool) error {
-	if assumeYes {
-		return nil
-	}
-	if !isTerminal() {
-		return errors.New("cache clear: refusing to wipe every cache on a non-interactive stdin without --yes")
-	}
-	fmt.Fprint(w, "This wipes every cache, including the compiled-module store. Proceed? [y/N] ")
-	line, _ := bufio.NewReader(r).ReadString('\n')
-	switch strings.TrimSpace(line) {
-	case "y", "Y", "yes", "Yes", "YES":
-		return nil
-	default:
-		return errors.New("cache clear: aborted")
-	}
+	return confirmation{
+		question:   "This wipes every cache, including the compiled-module store. Proceed? [y/N] ",
+		noTerminal: "cache clear: refusing to wipe every cache on a non-interactive stdin without --yes",
+		declined:   "cache clear: aborted",
+	}.ask(w, r, assumeYes)
 }
 
 // runCacheClear renders what the shared wipe removed. On a removal failure the

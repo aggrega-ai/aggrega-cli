@@ -4,9 +4,7 @@
 package main
 
 import (
-	"bufio"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -174,20 +172,11 @@ func confirmInstallCapabilities(w io.Writer, r io.Reader, commandLabel string, c
 	} else {
 		fmt.Fprintf(w, "The %q plugin requests no additional capabilities beyond the baseline (arguments in; streamed stdout/stderr; exit code).\n", commandLabel)
 	}
-	if acceptCaps || assumeYes {
-		return nil
-	}
-	if !isTerminal() {
-		return errors.New("aggrega plugin add: refusing to install without capability confirmation on a non-interactive stdin; pass --accept-capabilities or --yes")
-	}
-	fmt.Fprint(w, "Install this plugin? [y/N] ")
-	line, _ := bufio.NewReader(r).ReadString('\n')
-	switch strings.TrimSpace(line) {
-	case "y", "Y", "yes", "Yes", "YES":
-		return nil
-	default:
-		return errors.New("aggrega plugin add: aborted")
-	}
+	return confirmation{
+		question:   "Install this plugin? [y/N] ",
+		noTerminal: "aggrega plugin add: refusing to install without capability confirmation on a non-interactive stdin; pass --accept-capabilities or --yes",
+		declined:   "aggrega plugin add: aborted",
+	}.ask(w, r, acceptCaps || assumeYes)
 }
 
 // builtinCommandNames returns the static built-in command names a newly-built

@@ -30,6 +30,7 @@ type pullFlags struct {
 	detail            bool
 	quiet             bool
 	progress          bool
+	assumeYes         bool
 }
 
 func newPullCmd() *cobra.Command {
@@ -40,15 +41,21 @@ func newPullCmd() *cobra.Command {
 		Long: `Resolve the Release's catalog and source dependencies into the cache and write the per-Release lockfile.
 
 By default, pull reconciles the lockfile against the current dependency resolution while honoring
-the pins it already records. A pinned entity is fetched at its pinned version and
-verified against its pinned digest; if the registry no longer serves the pinned bytes,
-pull halts rather than silently re-pinning. A reference with no pin — newly added, or
-removed from the lockfile by hand — is resolved fresh and added. Entities no longer among
-the resolved dependencies are pruned. Re-running pull on an unchanged dependency set is a no-op.
+the pins it already records. That pin discipline governs what a registry or the content cache
+serves: such an entity is fetched at its pinned version and verified against its pinned digest,
+and if the registry no longer serves the pinned bytes, pull halts rather than silently re-pinning.
+An entity a local catalog directory supplies is resolved from that directory instead, at the
+version its file declares, and its recorded pin is not consulted — so editing a pin by hand does
+not hold a locally-supplied entity at that version, and the reconcile rewrites the entry to match
+the file. A reference with no pin — newly added, or removed from the lockfile by hand — is
+resolved fresh and added. Entities no longer among the resolved dependencies are pruned.
+Re-running pull on an unchanged dependency set is a no-op.
 
 Use --upgrade with no positional arguments to discard the existing lockfile and re-resolve
 every entity from current registry state, floating each dependency to the highest available
-version. Pass one or more entity URIs after --upgrade to upgrade only those: each named pin
+version. That form drops every recorded pin, so it asks for confirmation first; --yes answers in
+advance, and on a non-interactive stdin it refuses rather than waiting for an answer nobody can
+give. Pass one or more entity URIs after --upgrade to upgrade only those: each named pin
 is dropped and re-resolved fresh while every other pin — and the recorded external inputs —
 is held unchanged. A named target may also be a plugin that returns an accept-or-reject verdict;
 such a plugin carries no lockfile pin, and its identity is recorded beside the lockfile instead.
@@ -62,6 +69,15 @@ A URI given without --upgrade is a usage error.`,
 			}
 			if len(args) > 0 && !opts.upgrade {
 				return fmt.Errorf("positional arguments name upgrade targets and require --upgrade")
+			}
+			// Only the bare form is confirmed: naming targets holds every pin not
+			// named, so there is nothing here for a person to lose. The gate sits
+			// ahead of the workspace resolution because what it guards is the
+			// operator's intent, which no resolved state can change.
+			if opts.upgrade && len(args) == 0 {
+				if err := confirmDestructiveRefresh(cmd.OutOrStdout(), cmd.InOrStdin(), "aggrega pull", opts.assumeYes); err != nil {
+					return err
+				}
 			}
 			rw, err := workspaceFromContext(cmd.Context())
 			if err != nil {
@@ -82,12 +98,13 @@ A URI given without --upgrade is a usage error.`,
 	}
 	c.Flags().StringVar(&opts.releasePath, "release", "", "Path to Release YAML file (required)")
 	c.Flags().StringArrayVar(&opts.catalogDirs, "catalog", nil, "Catalog directory; repeatable. Each --catalog is prepended to the workspace catalog_dirs search stack (first match wins). Defaults to the current directory.")
-	c.Flags().BoolVar(&opts.upgrade, "upgrade", false, "Re-resolve dependencies from current registry state, floating each to the highest available version. Bare (no positional URIs) discards the lockfile and re-resolves every entity; with one or more entity URIs, re-resolves only those, holding all other pins and the recorded external inputs unchanged")
+	c.Flags().BoolVar(&opts.upgrade, "upgrade", false, "Re-resolve dependencies from current registry state, floating each to the highest available version. Bare (no positional URIs) discards the lockfile and re-resolves every entity, and asks for confirmation first because it drops every recorded pin; with one or more entity URIs, re-resolves only those, holding all other pins and the recorded external inputs unchanged, and asks nothing")
 	c.Flags().BoolVar(&opts.verify, "verify", false, "Verify the existing lockfile against the current dependency resolution without writing; exits non-zero on drift or missing lockfile. Also reports the compiler and core-plugin versions the lockfile records — reported for audit and never compared against this binary, so a toolchain difference is never drift")
 	c.Flags().BoolVar(&opts.includePrerelease, "include-prerelease", false, "Not yet implemented: accepted and ignored, so a script that passes it keeps working when it starts having an effect")
 	c.Flags().BoolVar(&opts.detail, "detail", false, "Print, per resolved entity, what this pull did — fetched fresh from a registry, reused a cache slot, found in a local catalog, served from inside the compiler binary, or external. Stdout only; not written to the lockfile")
 	c.Flags().BoolVar(&opts.quiet, "quiet", false, "Silence the pull-progress surface on stderr. Does not affect stdout. Takes precedence over --progress")
 	c.Flags().BoolVar(&opts.progress, "progress", false, "Force the pull-progress surface on even when stderr is not a terminal, printing plain static phase lines. The default is auto: the interactive phase checklist is shown only when stderr is a terminal")
+	c.Flags().BoolVar(&opts.assumeYes, "yes", false, "Answer the bare --upgrade confirmation in advance, for non-interactive use. It reaches that one prompt and nothing else: every other form of pull asks nothing, so passing it changes no behaviour there")
 	if err := c.MarkFlagRequired("release"); err != nil {
 		panic(err)
 	}

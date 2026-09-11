@@ -45,6 +45,7 @@ type buildFlags struct {
 	noUnsupportedFieldWarns bool
 	dryRun                  bool
 	irGraph                 bool
+	assumeYes               bool
 }
 
 // Every command that renders offers the unsupported-field warning filter, so the
@@ -110,9 +111,10 @@ the rendered tree reviewable as a diff.`,
 	c.Flags().BoolVar(&opts.disablePluginCache, "disable-plugin-cache", false, "Skip the persistent on-disk plugin compile cache for this build and compile plugin guests fresh in an in-memory cache that is discarded when the build ends. Off by default, which reuses the shared on-disk cache across builds. Does not change rendered output")
 	c.Flags().BoolVar(&opts.verifyDeterminism, "verify-determinism", false, "Render every node twice and compare the emitted bytes, halting the build if any node's two renders differ. Off by default. Use it to confirm a provider renders deterministically — identical input yields byte-identical output — which the GitOps-diff and byte-identical-output guarantees rely on")
 	c.Flags().BoolVar(&opts.autoPull, "auto-pull", false, "Run the pull step before building: resolve the Release's dependencies into the lockfile and cache in-process, then build against them. This is the same in-process fill the workspace auto_pull setting performs, turned on for a single build without editing workspace config. On its own it is an incremental fill — existing pins are honored, and references with no pin are resolved and added")
-	c.Flags().BoolVar(&opts.upgrade, "upgrade", false, "Make the auto-pull step a full refresh: discard the existing lockfile and re-resolve every dependency from current registry state, floating each to the highest available version instead of honoring existing pins. Implies --auto-pull — on its own it runs a full-refresh pull before the build")
+	c.Flags().BoolVar(&opts.upgrade, "upgrade", false, "Make the auto-pull step a full refresh: discard the existing lockfile and re-resolve every dependency from current registry state, floating each to the highest available version instead of honoring existing pins. Implies --auto-pull — on its own it runs a full-refresh pull before the build. It takes no target, so it cannot be narrowed to one dependency: to adopt or drop a single pin, run `aggrega pull --upgrade --release <release> <uri>` instead, which holds every other pin unchanged. Because it drops every recorded pin it asks for confirmation first; --yes answers in advance, and on a non-interactive stdin it refuses rather than waiting for an answer nobody can give")
 	c.Flags().BoolVar(&opts.dryRun, "dry-run", false, "Render the Release and print what it would emit instead of writing it: each artifact's would-be path and its content go to stdout, and the output directory and the lockfile are left untouched. External inputs behave exactly as they do in an ordinary build — pinned inputs are served from the content-addressed store (and refilled by digest when the blob is missing), and a render that requests an unpinned external URL halts naming it — so what a dry run shows is what a build would write. Refuses to combine with --auto-pull, --upgrade or --trace, each of which writes — run the dependency fill, or a traced build, as its own step")
 	c.Flags().BoolVar(&opts.irGraph, flagIRGraph, false, helpIRGraph+". The artifacts are still written and the summary is still printed; the graph is written ahead of both")
+	c.Flags().BoolVar(&opts.assumeYes, "yes", false, "Answer the --upgrade confirmation in advance, for non-interactive use. It reaches that one prompt and nothing else: a build that does not refresh asks nothing, so passing it changes no behaviour there")
 	if err := c.MarkFlagRequired("release"); err != nil {
 		panic(err)
 	}
@@ -124,6 +126,18 @@ the rendered tree reviewable as a diff.`,
 // orchestration in internal/buildops and renders its progress, advisories and
 // completion summary in this command's voice.
 func runBuild(cmd *cobra.Command, args []string, opts *buildFlags) error {
+	// Build's --upgrade takes no target, so every use of it is the destructive
+	// form the confirmation guards — the same act `aggrega pull --upgrade` bare
+	// performs, and gated on the same terms. The dry-run leg is not a second copy
+	// of the flag-conflict rule (which is the shared layer's and stays there): a
+	// dry run performs no refresh, so there is simply nothing here to confirm, and
+	// asking before reporting that the two flags conflict would put the question
+	// ahead of the answer.
+	if opts.upgrade && !opts.dryRun {
+		if err := confirmDestructiveRefresh(cmd.OutOrStdout(), cmd.InOrStdin(), "aggrega build", opts.assumeYes); err != nil {
+			return err
+		}
+	}
 	rw, err := workspaceFromContext(cmd.Context())
 	if err != nil {
 		return err
