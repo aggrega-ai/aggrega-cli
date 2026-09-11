@@ -226,7 +226,11 @@ func assertByteIdenticalTrees(t *testing.T, a, b map[string][]byte) {
 	}
 }
 
-func sortedKeys(m map[string][]byte) []string {
+// sortedKeys returns m's keys in a stable order, so a failure message naming a
+// rendered tree reads the same way on every run. It is generic over the value type
+// because a rendered tree is collected as bytes in some fixtures and as strings in
+// others, and one ordering helper is better than one per collection shape.
+func sortedKeys[V any](m map[string]V) []string {
 	ks := make([]string, 0, len(m))
 	for k := range m {
 		ks = append(ks, k)
