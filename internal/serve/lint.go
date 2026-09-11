@@ -12,8 +12,8 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/lintops"
-	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/entitykind"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
 )
 
 // conventionDiagnostic projects one publishing-conventions finding onto the
@@ -363,14 +363,20 @@ func (s *Server) dispatchLint(ctx context.Context, req *jsonRPCRequest) error {
 }
 
 // lintFindingsByFile groups a run's findings by the document each concerns, in
-// path order, with each file spelled relative to the workspace root.
+// path order, with each file spelled by the one rule every reported path here
+// follows: relative to the workspace root for a document inside it, and the
+// absolute path for one outside.
 //
 // The relative spelling is the one every entity this surface names carries, so a
 // client joins a lint answer against the entity index without converting between
-// two coordinate systems. It is not the spelling the diagnostic stores use, and
-// deliberately: those are keyed absolute because a pushed notification's file
-// identifier is resolved by a client as a filesystem path, whereas this answer
-// names author-owned documents the way the rest of the surface addresses them.
+// two coordinate systems. A catalog directory need not sit inside the root,
+// though, and for a document in one the absolute path is what a reader can open
+// and what the rules' own message text already names — so a climb above the root
+// would spell one path two ways inside a single entry. It is not the spelling the
+// diagnostic stores use for a contained document, and deliberately: those are
+// keyed absolute throughout because a pushed notification's file identifier is
+// resolved by a client as a filesystem path, whereas this answer names
+// author-owned documents the way the rest of the surface addresses them.
 //
 // A finding whose location names no file is grouped under the empty path rather
 // than dropped, so a run that produced one is not answered as a run that produced
@@ -380,7 +386,7 @@ func (s *Server) lintFindingsByFile(findings []lintops.Finding) []lintFileFindin
 	for _, f := range findings {
 		file := ""
 		if f.Location != nil {
-			file = catalog.RelativeToWorkspace(s.workspaceRoot, f.Location.File)
+			file = pathscope.ReportedName(s.workspaceRoot, f.Location.File)
 		}
 		byFile[file] = append(byFile[file], conventionDiagnostic(f))
 	}

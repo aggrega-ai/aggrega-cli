@@ -3,14 +3,15 @@
 
 package mcp
 
-// The containment rule on the reported document.
+// How containment decides the reported document's spelling.
 //
 // A catalog directory need not sit inside the workspace root, and the catalog
 // records the path in whatever form it holds — which for an outside directory is
-// a climb above the root. Neither form is one a caller can use: the climb does
-// not resolve against the root the call named, and the alternative names a
-// location on the machine this process runs on. So the path is withheld, while
-// the length still reports that an authored text was retained.
+// a climb above the root. The climb is the one form a caller cannot use, because
+// it resolves differently depending on where it is read from. Inside the root the
+// answer is the workspace-relative name, which is the coordinate the rest of this
+// surface is in; outside it the answer is the absolute path, which is what a
+// caller can open and what the command line prints for that same file.
 //
 // The expectation comes from the shared by-name resolution rather than from the
 // payload, because a payload that stopped reporting the path would otherwise be
@@ -37,13 +38,13 @@ func writeToolFixture(t *testing.T, path, content string) {
 	}
 }
 
-// TestDescribeReportsNoPathForADocumentOutsideTheWorkspace pins the containment
-// rule on the path this surface reports.
+// TestDescribeSpellsTheReportedPathByContainment pins the rule on the path this
+// surface reports.
 //
 // The row whose catalog sits INSIDE the root is the positive control. Without it,
-// a payload that reported no path at all — for every input, contained or not —
+// a payload that reported the absolute path for every input, contained or not,
 // would satisfy the outside row and this test would assert nothing.
-func TestDescribeReportsNoPathForADocumentOutsideTheWorkspace(t *testing.T) {
+func TestDescribeSpellsTheReportedPathByContainment(t *testing.T) {
 	const aggregate = `apiVersion: aggrega.ai/v1alpha1
 kind: Aggregate
 metadata:
@@ -58,7 +59,7 @@ spec:
 	for _, tc := range []struct {
 		label      string
 		catalogRel string
-		wantPath   bool
+		wantInside bool
 	}{
 		{"inside the workspace root", "catalog", true},
 		{"outside the workspace root", filepath.Join("..", "elsewhere", "catalog"), false},
@@ -108,32 +109,44 @@ spec:
 				t.Fatalf("unmarshal payload: %v", err)
 			}
 
-			// Reported either way: it is what tells a caller an authored text was
-			// retained even where the document's path is not one this answer can
-			// carry.
+			// Reported either way, and it answers a different question from the
+			// path: how much authored text the resolution retained.
 			if got.AuthoredLength != len(want.Bytes) {
 				t.Errorf("the payload reports %d byte(s); the resolution retained %d",
 					got.AuthoredLength, len(want.Bytes))
 			}
 
-			switch {
-			case tc.wantPath:
-				if got.File == "" {
-					t.Errorf("a document inside the workspace root was reported with no path at all; "+
-						"the resolution recorded %q", want.Source)
-				}
-			default:
-				if got.File != "" {
-					t.Errorf("a document outside the workspace root was reported at %q, which the caller "+
-						"cannot resolve against the root it named", got.File)
-				}
+			if got.File == "" {
+				t.Fatalf("the payload reported no path at all; the resolution recorded %q", want.Source)
 			}
 			if strings.Contains(got.File, "..") {
-				t.Errorf("the reported path climbs above the workspace root: %q", got.File)
+				t.Errorf("the reported path climbs above the workspace root: %q. A climb resolves "+
+					"differently depending on where it is read from, which is what the absolute "+
+					"spelling exists to avoid", got.File)
 			}
-			if filepath.IsAbs(got.File) {
-				t.Errorf("the reported path names a location on the machine this process runs on: %q",
-					got.File)
+			// The document this fixture wrote, named independently of the
+			// resolution, so the assertions below are not the answer compared
+			// against itself.
+			document := filepath.Join(catalogDir, "aggregates", "probe-module.yaml")
+			switch {
+			case tc.wantInside:
+				if filepath.IsAbs(got.File) {
+					t.Errorf("a document inside the workspace root was reported at %q; inside the root "+
+						"the answer is in the coordinate the caller supplied", got.File)
+				}
+				if anchored := filepath.Join(ws, got.File); anchored != filepath.Clean(document) {
+					t.Errorf("the reported path %q anchors to %q against the root the call named; the "+
+						"document is at %q", got.File, anchored, document)
+				}
+			default:
+				if !filepath.IsAbs(got.File) {
+					t.Errorf("a document outside the workspace root was reported at %q; outside the root "+
+						"the absolute path is the one spelling the caller can open", got.File)
+				}
+				if got.File != filepath.Clean(document) {
+					t.Errorf("the payload names document %q; the fixture wrote it at %q",
+						got.File, document)
+				}
 			}
 		})
 	}

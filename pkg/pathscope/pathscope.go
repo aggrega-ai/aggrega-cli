@@ -17,7 +17,7 @@
 // dialog. Such a path names wherever they pointed, so it has no root to stay
 // inside, and containment is the wrong question of it rather than a relaxed one.
 //
-// # The four entry points, and why they are four
+// # The five entry points, and why they are five
 //
 // [Resolve] and [IsLocalSlash] answer containment, in the two path algebras the
 // compiler actually uses. Resolve works in operating-system path arithmetic, for
@@ -41,6 +41,16 @@
 // function and a mode argument would put that hazard one wrong argument away, so
 // the two are separate names over one unexported core and there is no mode to
 // pass.
+//
+// [ReportedName] answers containment's third caller: one that is about to put a
+// path in an answer somebody outside this process reads. It decides nothing new —
+// it asks [Relative] and spells the path whichever way that verdict allows, the
+// name relative to the root for a path inside it and the absolute path for one
+// outside. It is a separate entry point rather than a flag on Relative because
+// the two callers want opposite things from a refusal: a caller judging
+// containment wants the false, and a caller reporting a path wants a spelling
+// regardless, since an answer with the path left out is one its reader cannot
+// act on.
 //
 // [ResolveSelected] answers the second question, for an operating-system path a
 // person selected. It is a third name rather than an option on Resolve for the
@@ -177,6 +187,46 @@ func Relative(root, path string) (string, bool) {
 		return "", false
 	}
 	return filepath.ToSlash(rel), true
+}
+
+// ReportedName returns the name to report for path, given the root a reader
+// anchors against.
+//
+// It is the one home for how a path is SPELLED in an answer, as [Relative] is
+// the one home for whether a path is inside a root. A path inside the root is
+// reported as its name relative to that root, which is the coordinate the rest
+// of such an answer is in. A path outside it is reported as the absolute path,
+// which is a location the reader can open, rather than as a climb above the
+// root: a climb spells one path two ways depending on where it is read from,
+// while every other surface naming that same file names it absolutely.
+//
+// It never withholds a path for a non-empty input. Withholding one leaves a
+// reader holding an empty field that reads exactly like a field nobody filled
+// in, so a working system and a broken one look alike from where they sit — and
+// an out-of-root path is not a secret, being what this product's other surfaces
+// print for the same file.
+//
+// root and path are operating-system paths, and path may arrive in either
+// spelling, exactly as [Relative] takes it. The empty path is the one input with
+// no name to report, and it is returned unchanged. Where there is no root to
+// judge against, the path is reported as it arrived: with nothing to anchor it,
+// what the caller was handed is the most that can honestly be said about it.
+//
+// The absolute form is composed by [ResolveSelected] rather than by arithmetic
+// of its own, because the two are asking the same thing — where does this land,
+// with no root it has to stay inside — and a second join here would be a copy
+// that agrees today.
+func ReportedName(root, path string) string {
+	if path == "" {
+		return ""
+	}
+	if rel, ok := Relative(root, path); ok {
+		return rel
+	}
+	if abs, ok := ResolveSelected(root, path); ok {
+		return abs
+	}
+	return path
 }
 
 // ResolveSelected reports where a path somebody selected lands.

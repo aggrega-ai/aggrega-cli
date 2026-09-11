@@ -10,6 +10,7 @@ import (
 	"io"
 	"path/filepath"
 	"slices"
+	"sort"
 	"strings"
 	"testing"
 
@@ -625,6 +626,67 @@ func TestLintRequestOverTheWholeCatalog(t *testing.T) {
 			t.Errorf("findings were attributed to %q; only %q breaks a convention", f.File, rel)
 		}
 	}
+}
+
+// TestLintAnswerSpellsEachFileByContainment pins the rule on the path this
+// answer carries: relative to the workspace root for a document inside it, the
+// absolute path for one outside, and never a climb above the root.
+//
+// A catalog directory need not sit inside the workspace root, and that is the
+// case this exists for. The inside entity is the positive control — without it,
+// an implementation reporting the absolute path for everything would satisfy the
+// outside assertion and this would assert nothing about the rule.
+//
+// The climb is what it asserts against rather than merely emptiness, because the
+// climb is non-empty: it spells one path two ways depending on where it is read
+// from, and every other surface naming that same file names it absolutely — the
+// rules' own message text inside this very answer included.
+func TestLintAnswerSpellsEachFileByContainment(t *testing.T) {
+	t.Parallel()
+	base := t.TempDir()
+	root := filepath.Join(base, "workspace")
+	outsideDir := filepath.Join(base, "shared-catalog")
+
+	writeFixtureFile(t, filepath.Join(root, workspaceconfig.ConfigFilename),
+		"workspace:\n  catalog_dirs:\n    - ../shared-catalog\n    - ./catalog\n")
+	insideRel := filepath.Join("catalog", "components", "svc.yaml")
+	writeFixtureFile(t, filepath.Join(root, insideRel), conventionsBadComponent)
+	outsideAbs := filepath.Join(outsideDir, "components", "svc-elsewhere.yaml")
+	writeFixtureFile(t, outsideAbs, conventionsBadComponent)
+
+	srv := conventionsServer(t, root, false)
+	res := lintOverTheWire(t, srv, lintParams{})
+
+	if res.Checked != 2 {
+		t.Fatalf("Checked = %d; the two configured directories hold one entity each, so a different "+
+			"number means this is not measuring what it claims", res.Checked)
+	}
+	named := map[string]bool{}
+	for _, f := range res.Files {
+		named[f.File] = true
+		if strings.Contains(f.File, "..") {
+			t.Errorf("the answer names %q, which climbs above the workspace root; a climb resolves "+
+				"differently depending on where it is read from", f.File)
+		}
+	}
+	if !named[insideRel] {
+		t.Errorf("no entry names the inside entity at %q; the answer named %v", insideRel, keysOf(named))
+	}
+	if !named[filepath.Clean(outsideAbs)] {
+		t.Errorf("no entry names the outside entity at its absolute path %q; the answer named %v",
+			filepath.Clean(outsideAbs), keysOf(named))
+	}
+}
+
+// keysOf reports a set's members, for a failure message that says what WAS named
+// rather than only what was missing.
+func keysOf(m map[string]bool) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // TestLintRequestRefusesWhatItCannotAnswer drives each refusal, because a

@@ -49,19 +49,17 @@ type describeArgs struct {
 //
 // File is the document the entity was declared in, named the way the entity
 // listing names one, so a caller reads one field for one question whichever tool
-// it asked. It is reported for every kind, as a path relative to the workspace the
-// call named, which is the coordinate a caller can resolve against the root it
-// supplied.
+// it asked. It is reported for every kind, and its spelling follows the one rule
+// every reported path follows: relative to the workspace the call named for a
+// document inside it, and the absolute path for one outside. Both are paths the
+// caller can open, and the second is the same spelling the command line prints for
+// that file. See [pathscope.ReportedName], which is where that rule lives — so one
+// resolution reports one document the same way whichever surface is asked.
 //
-// It is empty in two cases, and both are statements about the entity rather than
-// gaps in the answer. An entity resolved from a registry lives in a
+// It is empty in one case, and that case is a statement about the entity rather
+// than a gap in the answer: an entity resolved from a registry lives in a
 // content-addressed cache slot, which is not a document anybody authored, so there
-// is none to name. And a document outside that root is withheld: the only forms it
-// has either climb above the root, which does not resolve from where the caller
-// stands, or name a location on the machine this process runs on, which answers a
-// question the call did not ask. That is the same containment judgement the
-// daemon's answers go through, so one resolution reports one document the same way
-// whichever surface is asked.
+// is none to name.
 //
 // AuthoredLength is the length in bytes of the authored text the resolution
 // retained, and only the Aggregate is served with one — it is the kind whose text
@@ -225,7 +223,7 @@ func (s *server) describeCatalogEntity(a describeArgs, name string) (*callToolRe
 		return nil, &rpcError{Code: codeInternalError,
 			Message: "marshal " + strings.ToLower(match.Kind) + ": " + mErr.Error()}
 	}
-	file, _ := pathscope.Relative(tw.root, match.Source)
+	file := pathscope.ReportedName(tw.root, match.Source)
 	payload := describeEntityPayload{
 		Kind: match.Kind, Name: match.Name, Version: match.Version,
 		Description: match.Description, PublishScope: match.Scope,

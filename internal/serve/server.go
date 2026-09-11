@@ -205,10 +205,21 @@
 // not guaranteed to be the workspace root; and
 // aggrega/publishDiagnostics carries the key as the identifier a client
 // matches against its own open documents, resolving it as a filesystem
-// path. See canonicalFile, which converts nothing itself — pathscope.Resolve
-// and catalog.RelativeToWorkspace are the single homes for the two
-// directions. A value naming nothing is keyed as it arrived, so such a
-// request still draws file-not-validated naming the path it asked about.
+// path. See canonicalFile, which converts nothing itself. A value naming
+// nothing is keyed as it arrived, so such a request still draws
+// file-not-validated naming the path it asked about.
+//
+// Three questions about a path are asked here and each has one home, so a
+// caller picks by which question it is asking rather than by which helper
+// is nearest. pathscope.Resolve composes a root and a relative name into
+// the path to open, refusing one that would escape the root.
+// catalog.RelativeToWorkspace normalises a path into the IR's
+// workspace-relative coordinate, with no containment check, because that
+// is the byte-identity property the IR wire shape requires — a catalog
+// outside the root legitimately normalises to a climb there.
+// pathscope.ReportedName names a path for a reader outside this process:
+// relative to the root for a document inside it, absolute for one outside,
+// and never empty for a path the daemon holds.
 //
 // A parameter naming a document the daemon must LOCATE inside the
 // workspace is the other rule: aggrega/irGraph's release names a Release

@@ -674,11 +674,11 @@ func workspaceFeatureDeclsIn(ctx context.Context, root string, overlay []workspa
 		if !inside {
 			// The parse cache holds whatever file the editor last sent,
 			// which need not be a workspace file at all. A document outside
-			// the root is not workspace-local, and reporting it under a
-			// workspace-relative path would be a lie about where it came
-			// from. Features that legitimately live outside the root reach
-			// the answer through catalog resolution instead, which addresses
-			// them by name and discloses no host path.
+			// the root is not workspace-local, so it is not a member of the
+			// population this walk reports — a statement about membership
+			// and not about the path. Features that legitimately live
+			// outside the root reach the answer through catalog resolution
+			// instead, which addresses them by name.
 			return true
 		}
 		entity := AttachCandidate{

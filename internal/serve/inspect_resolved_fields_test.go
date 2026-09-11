@@ -189,19 +189,21 @@ func TestEntityDefinitionCarriesAnAuthoredDocumentByReferenceNotByValue(t *testi
 	}
 }
 
-// TestEntityDefinitionReportsNoPathForADocumentOutsideTheWorkspace pins the
-// containment rule on the reported path.
+// TestEntityDefinitionSpellsTheReportedPathByContainment pins the rule on the
+// reported path: relative to the workspace root for a document inside it, the
+// absolute path for one outside, and never withheld.
 //
 // A catalog directory need not sit inside the workspace root, and the catalog
 // records the path in whatever form it holds — which for an outside directory is
-// a climb above the root. A client cannot resolve such a path, and the honest
-// alternative names a location on the machine the daemon runs on. So the path is
-// withheld, while the length still reports that an authored document was
-// retained.
+// a climb above the root. The climb is what this asserts against: it spells one
+// path two ways depending on where it is read from, while the absolute path is
+// what every other surface naming that same file names it.
 //
 // The row where the directory is INSIDE the root is the positive control: without
-// it, a response that reported no path at all would pass this.
-func TestEntityDefinitionReportsNoPathForADocumentOutsideTheWorkspace(t *testing.T) {
+// it, a response that reported the absolute path for everything would pass this.
+// Asserting the absolute spelling rather than merely a non-empty one is the other
+// half — the climb is non-empty too.
+func TestEntityDefinitionSpellsTheReportedPathByContainment(t *testing.T) {
 	const aggregate = `apiVersion: aggrega.ai/v1alpha1
 kind: Aggregate
 metadata:
@@ -216,7 +218,7 @@ spec:
 	for _, tc := range []struct {
 		label      string
 		catalogRel string
-		wantPath   bool
+		wantInside bool
 	}{
 		{"inside the workspace root", filepath.Join("catalog"), true},
 		{"outside the workspace root", filepath.Join("..", "elsewhere", "catalog"), false},
@@ -245,28 +247,44 @@ spec:
 
 			got := decodeEntityDefinition(t, callEntityDefinition(t, srv, map[string]any{"name": "probe-module"}))
 
-			// Reported either way: it is what tells a client an authored text
-			// was retained even where the document's path cannot be carried.
+			// Reported either way, and it answers a different question from the
+			// path: how much authored text the resolution retained.
 			if got.AuthoredLength != len(want.Bytes) {
 				t.Errorf("the answer reports %d byte(s); the resolution retained %d",
 					got.AuthoredLength, len(want.Bytes))
 			}
-			switch {
-			case tc.wantPath:
-				if got.File == "" {
-					t.Errorf("a document inside the workspace root was reported with no path at all")
-				}
-			default:
-				if got.File != "" {
-					t.Errorf("a document outside the workspace root was reported at %q, which this "+
-						"client cannot resolve", got.File)
-				}
+			if got.File == "" {
+				t.Fatalf("the answer reported no path at all; the resolution resolved the document in %q",
+					want.Source)
 			}
 			if strings.Contains(got.File, "..") {
-				t.Errorf("the reported path climbs above the workspace root: %q", got.File)
+				t.Errorf("the reported path climbs above the workspace root: %q. A climb resolves "+
+					"differently depending on where it is read from, which is what the absolute "+
+					"spelling exists to avoid", got.File)
 			}
-			if filepath.IsAbs(got.File) {
-				t.Errorf("the reported path discloses a host location: %q", got.File)
+			// The document this fixture wrote, named independently of the
+			// resolution — so the assertion below is not the answer compared
+			// against itself.
+			document := filepath.Join(catalogDir, "aggregates", "probe-module.yaml")
+			switch {
+			case tc.wantInside:
+				if filepath.IsAbs(got.File) {
+					t.Errorf("a document inside the workspace root was reported at %q; inside the "+
+						"root the answer is in the workspace's own coordinate", got.File)
+				}
+				if anchored := filepath.Join(ws, got.File); anchored != filepath.Clean(document) {
+					t.Errorf("the reported path %q anchors to %q against the workspace root; the "+
+						"document is at %q", got.File, anchored, document)
+				}
+			default:
+				if !filepath.IsAbs(got.File) {
+					t.Errorf("a document outside the workspace root was reported at %q; outside the "+
+						"root the absolute path is the one spelling a client can open", got.File)
+				}
+				if got.File != filepath.Clean(document) {
+					t.Errorf("the answer names document %q; the fixture wrote it at %q",
+						got.File, document)
+				}
 			}
 		})
 	}

@@ -84,19 +84,16 @@ type entityDefinitionParams struct {
 //
 // File is the document the entity was declared in, named the way every other
 // answer on this protocol names one, so a client reads one field for one question
-// wherever it asked. It is reported for every kind, as a path relative to the
-// workspace root — the coordinate every other path in this daemon's answers uses,
-// and one the client can open.
+// wherever it asked. It is reported for every kind, and its spelling follows the
+// one rule every reported path here follows: relative to the workspace root for a
+// document inside it, and the absolute path for one outside. Both are paths the
+// client can open, and the second is the same spelling the command line prints
+// for that file. See [pathscope.ReportedName], which is where that rule lives.
 //
-// It is empty in two cases, and both are statements about the entity rather than
-// gaps in the answer. An entity resolved from a registry lives in a
+// It is empty in one case, and that case is a statement about the entity rather
+// than a gap in the answer: an entity resolved from a registry lives in a
 // content-addressed cache slot, which is not a document anybody authored, so
-// there is none to name. And a document outside the workspace root is withheld,
-// because the only honest forms for it either climb above the root, which the
-// client cannot resolve, or name a location on the machine the daemon runs on,
-// which would disclose that machine's layout for no gain. That is the containment
-// judgement every path this daemon reports goes through, rather than a rule for
-// this response.
+// there is none to name.
 //
 // AuthoredLength is the length in bytes of the authored text the resolution
 // retained, and only the Aggregate is served with one — it is the kind whose text
@@ -199,7 +196,7 @@ func (s *Server) entityDefinition(ctx context.Context, name string) (entityDefin
 			cause:   err,
 		}
 	}
-	file, _ := pathscope.Relative(s.workspaceRoot, match.Source)
+	file := pathscope.ReportedName(s.workspaceRoot, match.Source)
 	return entityDefinitionResult{
 		Kind:           match.Kind,
 		Name:           match.Name,
@@ -254,10 +251,12 @@ func (s *Server) unresolvedEntityEnvelope(ctx context.Context, view *catalog.Laz
 // does.
 //
 // The path is workspace-relative, matching every other path this daemon reports
-// to a client. A document outside the workspace root — the parse cache holds
+// for a document inside the root. A document outside it — the parse cache holds
 // whatever file the editor last sent, which need not be a workspace file — is
-// skipped, because reporting it under a workspace-relative path would misstate
-// where it came from and reporting the host path would disclose one.
+// skipped, because the question this asks is whether the WORKSPACE declares the
+// name, and a buffer the editor happened to send is not the workspace declaring
+// anything. The skip is therefore about membership rather than about the path,
+// and the other refusal is the honest answer for it.
 func (s *Server) workspaceDeclarationOf(ctx context.Context, identity string) (file, kind string, ok bool) {
 	s.rangeWorkspaceDocs(ctx, func(doc workspaceDoc) bool {
 		name, _ := metadataNameOf(doc.node)

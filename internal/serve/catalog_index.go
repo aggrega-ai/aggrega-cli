@@ -181,11 +181,11 @@ func workspaceEntityIndex(ctx context.Context, root string, view *catalog.LazyLo
 		if !inside {
 			// The parse cache holds whatever file the editor last sent,
 			// which need not be a workspace file at all. A document outside
-			// the root is not workspace-local, and reporting it under a
-			// workspace-relative path would misstate where it came from.
-			// Entities that legitimately live outside the root reach the
-			// index through catalog resolution below, addressed by name and
-			// disclosing no host path.
+			// the root is not workspace-local, so it is not a member of the
+			// population this half of the index reports — which is a
+			// statement about membership and not about the path, since
+			// entities that legitimately live outside the root reach the
+			// index through catalog resolution below.
 			return true
 		}
 		if kind == "Feature" {

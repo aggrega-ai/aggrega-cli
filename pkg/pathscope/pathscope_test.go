@@ -166,6 +166,83 @@ func TestRelative(t *testing.T) {
 	}
 }
 
+// TestReportedName pins the spelling a path gets in an answer somebody outside
+// this process reads.
+//
+// The rows the pin exists for are the outside ones. A path inside the root is the
+// control — without it, an implementation that reported the absolute path for
+// everything would satisfy every outside row and this table would assert nothing
+// about the rule. The outside rows assert the absolute form rather than merely a
+// non-empty one, because "not empty" is satisfied by the climb this replaced.
+func TestReportedName(t *testing.T) {
+	const root = "/srv/app"
+	tests := []struct {
+		name string
+		root string
+		path string
+		want string
+	}{
+		// Inside the root: the workspace-relative name, which is the coordinate
+		// the rest of such an answer is in. These are the controls.
+		{"absolute inside", root, "/srv/app/config.yaml", "config.yaml"},
+		{"absolute nested inside", root, "/srv/app/a/b/c.yaml", "a/b/c.yaml"},
+		{"relative inside is taken as it stands", root, "catalog/base/x.yaml", "catalog/base/x.yaml"},
+		{"two dots then a letter is an ordinary name", root, "..config/x.yaml", "..config/x.yaml"},
+
+		// Outside the root: the absolute path, never a climb and never empty. A
+		// climb spells one path two ways depending on where it is read from.
+		{"absolute outside", root, "/srv/shared/catalog/x.yaml", "/srv/shared/catalog/x.yaml"},
+		{"absolute prefix sibling", root, "/srv/app-old/secret.yaml", "/srv/app-old/secret.yaml"},
+		{"a climb is reported at where it lands", root, "../shared/catalog/x.yaml", "/srv/shared/catalog/x.yaml"},
+		{"a climb landing back inside is still where it lands", root, "../app/ok.yaml", "/srv/app/ok.yaml"},
+
+		// The root itself has no name inside itself, so it is reported at the one
+		// spelling that names it.
+		{"the root itself", root, "/srv/app", "/srv/app"},
+
+		// The empty path is the one input with no name to report.
+		{"empty path", root, "", ""},
+		{"empty path and empty root", "", "", ""},
+
+		// With no root to judge against, what the caller was handed is the most
+		// that can honestly be said about the path.
+		{"empty root, absolute path", "", "/srv/app/x.yaml", "/srv/app/x.yaml"},
+		{"empty root, relative path", "", "catalog/x.yaml", "catalog/x.yaml"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := pathscope.ReportedName(tc.root, filepath.FromSlash(tc.path))
+			if got != filepath.FromSlash(tc.want) {
+				t.Fatalf("ReportedName(%q, %q) = %q; want %q", tc.root, tc.path, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestReportedNameNeverWithholdsAPathItWasGiven is the property the surfaces rely
+// on, asserted over every input the containment table feeds Relative — including
+// the ones Relative refuses, which is the whole point.
+//
+// A withheld path leaves a reader holding an empty field that reads exactly like a
+// field nobody filled in, so a working system and a broken one look alike from
+// where they sit. The empty path is the one honest exception and is excluded by
+// name rather than by a condition, so an implementation that started returning
+// empty for anything else is named here rather than passing.
+func TestReportedNameNeverWithholdsAPathItWasGiven(t *testing.T) {
+	const root = "/srv/app"
+	for _, p := range []string{
+		"config.yaml", "a/b/c.yaml", "a/../b", "..config", "..cache/x",
+		"..", "../elsewhere", "a/../../elsewhere", "../app/ok", "../app-old/secret",
+		"/etc/passwd", "/srv/app", ".", "a/..",
+	} {
+		got := pathscope.ReportedName(root, filepath.FromSlash(p))
+		if got == "" {
+			t.Errorf("ReportedName(%q, %q) reported nothing; a non-empty path always has a spelling to report",
+				root, p)
+		}
+	}
+}
+
 // TestRelativeAndResolveAgreeOnContainment is the property that lets one of these
 // answer a caller about to read a file and the other a caller about to report a
 // name: they must not disagree about which paths are inside the root at all.
@@ -393,13 +470,15 @@ func TestIsLocalSlashImpliesContainedJoin(t *testing.T) {
 // entry point answers a question the others do not, and the names say which:
 // Resolve confines a workspace-scoped path in operating-system arithmetic,
 // IsLocalSlash confines a logical name in slash arithmetic, ResolveSelected
-// resolves a path a person chose and confines nothing, and Relative answers with
-// the name a path has relative to a root rather than the location to open it at —
-// the question a caller about to report a path asks, where the other three serve a
-// caller about to use one. A further export is either one of those four wearing a
-// second name or a class nobody named — and if a genuinely new class is being
-// added, this count moves in the same change that names it, which is exactly the
-// deliberation the pin exists to force.
+// resolves a path a person chose and confines nothing, Relative answers with the
+// name a path has relative to a root rather than the location to open it at — the
+// question a caller about to report a path asks, where the first three serve a
+// caller about to use one — and ReportedName answers the question after that one,
+// which spelling to put in an answer, for a caller that owes its reader a path
+// either way. A further export is either one of those five wearing a second name
+// or a class nobody named — and if a genuinely new class is being added, this
+// count moves in the same change that names it, which is exactly the deliberation
+// the pin exists to force.
 func TestNoExportedSymbolTakesAMode(t *testing.T) {
 	fset := token.NewFileSet()
 	pkgs, err := parser.ParseDir(fset, ".", func(fi fs.FileInfo) bool {
@@ -434,8 +513,8 @@ func TestNoExportedSymbolTakesAMode(t *testing.T) {
 			}
 		}
 	}
-	if exported != 4 {
-		t.Errorf("package exports %d functions; the classes are meant to be exactly four entry points (Resolve, IsLocalSlash, ResolveSelected, Relative), so a fifth is either a mode in disguise or a class nobody named", exported)
+	if exported != 5 {
+		t.Errorf("package exports %d functions; the classes are meant to be exactly five entry points (Resolve, IsLocalSlash, ResolveSelected, Relative, ReportedName), so a sixth is either a mode in disguise or a class nobody named", exported)
 	}
 }
 

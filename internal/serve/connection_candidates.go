@@ -264,8 +264,8 @@ func connectionCandidatesIn(ctx context.Context, root string, overlay []workspac
 		if !inside {
 			// The parse cache holds whatever file the editor last sent,
 			// which need not be a workspace file at all. An entity outside
-			// the root is not workspace-local, and reporting it would also
-			// put an absolute host path on the wire.
+			// the root is not workspace-local, so it is not a member of the
+			// population this walk reports.
 			return true
 		}
 		// The bare identity, with no origin beside it: the guard above has
