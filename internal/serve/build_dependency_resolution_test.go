@@ -61,7 +61,7 @@ type resolutionFacts struct {
 // is about.
 func independentResolutionFacts(t *testing.T, srv *Server, ws, releaseRel string) resolutionFacts {
 	t.Helper()
-	res, err := pullops.Run(pullops.Config{
+	res, err := pullops.Run(t.Context(), pullops.Config{
 		Workspace:       srv.resolvedWorkspace,
 		ReleasePath:     filepath.Join(ws, releaseRel),
 		CompilerVersion: srv.compilerVersion,

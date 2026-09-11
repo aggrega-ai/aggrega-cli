@@ -216,7 +216,7 @@ func (s *Server) handleResolveDependencies(ctx context.Context, params resolveDe
 	progress.begin("Resolving dependencies")
 
 	var notices bytes.Buffer
-	res, err := pullops.Run(pullops.Config{
+	res, err := pullops.Run(ctx, pullops.Config{
 		Workspace:       s.resolvedWorkspace,
 		ReleasePath:     releasePath,
 		Upgrade:         params.Upgrade,

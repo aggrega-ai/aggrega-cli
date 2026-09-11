@@ -184,7 +184,7 @@ var pullToolSpec = toolSpec{
 // So what governs is when the operation runs, not which surface runs it — it runs
 // on explicit invocation and never as a side effect of validating or inspecting.
 //
-// # It never prompts, and it cannot be cancelled
+// # It never prompts, and a withdrawal reaches the work
 //
 // Nobody is watching a protocol stream, so the shared resolution is given no way to
 // ask a person anything: a fork that would have been put to a person halts loudly
@@ -194,7 +194,14 @@ var pullToolSpec = toolSpec{
 // to draw one on — and the diagnostics are captured into the answer instead of
 // being written to a process stream, which on this server carries framed protocol
 // messages and nothing else.
-func pullInvoke(s *server, _ context.Context, args json.RawMessage) (*callToolResult, *rpcError) {
+//
+// The invocation's context travels into the resolution, so a caller that withdraws
+// stops the work rather than only the reply: no lockfile is written, and whatever
+// the lockfile already pinned is left exactly as it was. What this transport's tool
+// dispatch supplies is a context nothing cancels, so what is guaranteed here is
+// what the resolution does with a withdrawal it is handed — not that this surface
+// raises one.
+func pullInvoke(s *server, ctx context.Context, args json.RawMessage) (*callToolResult, *rpcError) {
 	var a pullArgs
 	if len(args) > 0 {
 		if err := json.Unmarshal(args, &a); err != nil {
@@ -258,7 +265,7 @@ func pullInvoke(s *server, _ context.Context, args json.RawMessage) (*callToolRe
 	// that reach a return, so reading it here loses nothing and gains every refusal
 	// past that point.
 	var resolved closure.Closure
-	res, runErr := pullops.Run(pullResolutionConfig(s, tw, releasePath, a, targets, &diagnostics,
+	res, runErr := pullops.Run(ctx, pullResolutionConfig(s, tw, releasePath, a, targets, &diagnostics,
 		pullops.Reporter{
 			Resolved: func(cl closure.Closure) { resolved = cl },
 		}))

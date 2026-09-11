@@ -52,7 +52,12 @@ import (
 // ahead of the stop, and those pins are correct; discarding them would make the
 // next run refetch content this one has already accepted while telling the
 // reader nothing extra.
+// ctx is the caller's own, carried into the render rather than replaced by one
+// this layer invented. A render is where the fetching happens, so a withdrawal
+// that could not reach it would leave the one acquiring step in the whole
+// operation unable to be stopped.
 func discoverExternalInputs(
+	ctx context.Context,
 	cfg Config,
 	wsCfg workspaceconfig.Config,
 	workspaceRoot string,
@@ -70,7 +75,7 @@ func discoverExternalInputs(
 	svc := externalinputs.NewAcquiring(workspaceRoot, cacheDir, wsCfg, lf)
 
 	_, err := compilerops.PreviewForArtifact(
-		context.Background(),
+		ctx,
 		compilerops.NewPreviewInputs(
 			svc,
 			view,

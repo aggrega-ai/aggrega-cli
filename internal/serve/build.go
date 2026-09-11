@@ -164,7 +164,7 @@ func (s *Server) handleBuild(ctx context.Context, params buildParams) (buildResu
 	var fillReport *dependencyResolutionReport
 	lockfileFilled := false
 	if params.AutoPull {
-		notices, report, errEnvelope := s.fillDependencies(params.Release)
+		notices, report, errEnvelope := s.fillDependencies(ctx, params.Release)
 		if errEnvelope != nil {
 			return buildResult{}, errEnvelope
 		}
@@ -242,7 +242,12 @@ func (s *Server) handleBuild(ctx context.Context, params buildParams) (buildResu
 // whoever asked for it. The lines and the report are not alternatives — the lines
 // are prose for a person and the report is the facts themselves, and a caller
 // that asked for a fill is owed both.
-func (s *Server) fillDependencies(release string) ([]string, *dependencyResolutionReport, *jsonRPCError) {
+//
+// ctx is the requesting build's own, threaded into the resolution rather than
+// replaced by one this method invented, so a client that withdraws the build
+// stops the fill instead of only the answer to it. A withdrawn fill writes no
+// lockfile and leaves whatever was already pinned exactly as it was.
+func (s *Server) fillDependencies(ctx context.Context, release string) ([]string, *dependencyResolutionReport, *jsonRPCError) {
 	releasePath, paramErr := resolveReleaseParam(s.workspaceRoot, release)
 	if paramErr != nil {
 		return nil, nil, paramErr
@@ -255,7 +260,7 @@ func (s *Server) fillDependencies(release string) ([]string, *dependencyResoluti
 	}
 
 	var notices bytes.Buffer
-	res, err := pullops.Run(pullops.Config{
+	res, err := pullops.Run(ctx, pullops.Config{
 		Workspace:       s.resolvedWorkspace,
 		ReleasePath:     releasePath,
 		CompilerVersion: s.compilerVersion,

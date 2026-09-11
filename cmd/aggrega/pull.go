@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -282,7 +283,15 @@ func pullRun(cfg pullConfig) error {
 		opts.ResolveProviderAmbiguity = runProviderBindingHelper
 	}
 
-	res, err := pullops.Run(opts)
+	// The resolution takes the caller's context so a caller that withdraws stops
+	// the work rather than only the reply. This surface has no withdrawal to hand
+	// it: the command line installs no interrupt handling, so interrupting an
+	// invocation is the operating system ending the process and there is no
+	// in-process stop for anything to observe. The surfaces that do have one — a
+	// request on the daemon, a tool invocation — drive the same resolution
+	// directly with their own request context, so what is named here is the
+	// absence of a stop on this surface rather than a decision to ignore one.
+	res, err := pullops.Run(context.Background(), opts)
 	if err != nil {
 		return err
 	}

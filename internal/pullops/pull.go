@@ -336,6 +336,28 @@ func irEntityInfra(graph *types.IRGraph, manifest *types.Manifest, scopeOf func(
 	return out, nil
 }
 
+// stopped reports that the caller no longer wants the resolution, as an error
+// that errors.Is matches against context.Canceled and context.DeadlineExceeded.
+// It returns nil while the caller is still waiting, which is every ordinary run.
+//
+// It is one function rather than an inline check written at each interruption
+// point so the sentence a stop produces is stated once in this package. Two
+// hand-written phrasings of one condition agree until either is edited, and
+// nothing fails when they stop agreeing.
+//
+// The sentence names the lockfile because the lockfile is what a withdrawn
+// resolution did not write: the pins a reader asked for are not on disk, and the
+// ones that were there are untouched. The cause is wrapped rather than replaced
+// because it is the part a caller acts on — a surface distinguishing "the caller
+// withdrew" from "the budget ran out" reads it off the wrapped error, and a
+// surface that does not care prints the sentence.
+func stopped(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("aggrega pull: stopped before the lockfile was written: %w", err)
+	}
+	return nil
+}
+
 // Run executes the dependency resolution against the supplied configuration.
 // Loads workspace config + Release + Manifest + Aggregate, walks the catalog and
 // source closures, and writes the per-Release lockfile.
@@ -345,7 +367,22 @@ func irEntityInfra(graph *types.IRGraph, manifest *types.Manifest, scopeOf func(
 // (typically a missing catalog entity surfaced by closure.ErrUnresolvableURI),
 // source descent failure (closure.ErrSourceTemplateAtLockTime), and
 // lockfile write failure.
-func Run(cfg Config) (Result, error) {
+//
+// # A caller that gives up stops the work, not only the reply
+//
+// ctx is the caller's own; the resolution carries it into every step that leaves
+// the process and observes it at five points of its own: ahead of the closure
+// walk, which is the first step that can reach a registry; ahead of the source
+// descent; ahead of the freeze, which is the first step that writes; ahead of
+// the acquisition render; and ahead of the lockfile write. A withdrawal at any
+// of them leaves the pins that were already on disk exactly as they were, which
+// is the same outcome a run that failed before the write produces.
+//
+// Past the lockfile write it is deliberately NOT observed again. The trust
+// record written beside the file is part of the same landing, so a stop between
+// the two would leave a lockfile whose companion record does not describe it —
+// a worse state than either finishing or not starting.
+func Run(ctx context.Context, cfg Config) (Result, error) {
 	if cfg.DiagOut == nil {
 		cfg.DiagOut = os.Stderr
 	}
@@ -549,6 +586,14 @@ func Run(cfg Config) (Result, error) {
 			return Result{}, err
 		}
 	}
+	// The last moment before the closure walk, and the position is the point: it
+	// sits beside the offline refusal above for the same reason that refusal does.
+	// Everything higher reads local files, so a caller that gave up during the
+	// load has reached no registry yet and nothing of this run is on disk — which
+	// makes this the first place a withdrawal is worth observing and the cheapest.
+	if err := stopped(ctx); err != nil {
+		return Result{}, err
+	}
 	lookup := cat.ClosureLookupWithReuse(puller, workspaceRoot, cacheDir, externals, registrySeeds, pinReuse.Verification)
 	report.phase(PhaseClosure)
 	// Reference shape is judged before the walk, for the same reason the shared
@@ -676,7 +721,7 @@ func Run(cfg Config) (Result, error) {
 	// Collecting and recording are deliberately separate steps: the caching walk
 	// runs on every invocation, including a verify-only one, and a verify-only run
 	// writes nothing at all.
-	verdictResolutions, err := cacheVerdictSocketPlugins(context.Background(), wsCfg, lookup, lazyView, workspaceRoot, cacheDir, pluginfetchverify.RemoteTargetFor(verdictHTTPClient), cfg.DiagOut)
+	verdictResolutions, err := cacheVerdictSocketPlugins(ctx, wsCfg, lookup, lazyView, workspaceRoot, cacheDir, pluginfetchverify.RemoteTargetFor(verdictHTTPClient), cfg.DiagOut)
 	if err != nil {
 		return Result{}, err
 	}
@@ -694,7 +739,7 @@ func Run(cfg Config) (Result, error) {
 	// flow wrote into the entity. Defense-in-depth over the content-digest pin:
 	// halts on a divergence the digest alone would not surface (a non-aggrega
 	// push, a publish-side stamping bug).
-	if err := verifyPluginHostFunctions(context.Background(), &cl, lazyView.ClosureRecipeLoader(), workspaceRoot, cacheDir, cfg.DiagOut); err != nil {
+	if err := verifyPluginHostFunctions(ctx, &cl, lazyView.ClosureRecipeLoader(), workspaceRoot, cacheDir, cfg.DiagOut); err != nil {
 		return Result{}, fmt.Errorf("verify plugin host functions: %w", err)
 	}
 	// Refresh the pin set so it covers the descended sub-aggregates the source-
@@ -771,7 +816,7 @@ func Run(cfg Config) (Result, error) {
 	// and nothing here can hold them past it. The descent reads BoundaryInfra
 	// and the materialised IR pillars, never the raw parameter map.
 	if err := pipeline.BuildGraph(
-		context.Background(),
+		ctx,
 		pipeline.Inputs{
 			Release:           rel,
 			Manifest:          manifest,
@@ -858,6 +903,13 @@ func Run(cfg Config) (Result, error) {
 			if cfg.SourceResolver != nil {
 				srcResolver = cfg.SourceResolver
 			}
+			// Ahead of the source descent, which fetches and digests every remote
+			// source the closure names. It is the heaviest fetch left in the run and
+			// the descent reports no progress of its own, so this is the last point a
+			// withdrawal is observable before it starts.
+			if err := stopped(ctx); err != nil {
+				return err
+			}
 			sourceArtifacts, err := closure.DescendRecipeSources(
 				perEntityInfra, cl, lazyView.ClosureRecipeLoader(), srcResolver,
 				workspaceRoot, cacheDir,
@@ -870,6 +922,14 @@ func Run(cfg Config) (Result, error) {
 			// Freeze each writable recipe's intrinsic content pins (source +
 			// $import artifact digests) into the recipe file, from the resolved
 			// sources — the resolution-time record the build later verifies.
+			// Ahead of the freeze, because the freeze is the first step in this run
+			// that writes: it appends the resolved content pins into each writable
+			// recipe file, and a recipe file is authored content a caller cannot take
+			// back. Everything above it is fetching and computing, which a withdrawn
+			// caller simply discards.
+			if err := stopped(ctx); err != nil {
+				return err
+			}
 			postFreezeRecipeDigests, err := freezeRecipePins(lazyView, cl.Entities, sourceArtifacts)
 			if err != nil {
 				return fmt.Errorf("freeze recipe pins: %w", err)
@@ -903,7 +963,7 @@ func Run(cfg Config) (Result, error) {
 			// than silently passing as unverified; a closure with nothing registry-
 			// resolved needs no fetch and is unaffected.
 			verifyHTTPClient, _ := egress.HTTPClient(wsCfg)
-			if err := VerifyClosureSignatures(context.Background(), lf, cl, wsCfg, cacheDir, cfg.DiagOut, pluginfetchverify.RemoteTargetFor(verifyHTTPClient)); err != nil {
+			if err := VerifyClosureSignatures(ctx, lf, cl, wsCfg, cacheDir, cfg.DiagOut, pluginfetchverify.RemoteTargetFor(verifyHTTPClient)); err != nil {
 				return fmt.Errorf("verify signatures: %w", err)
 			}
 			assembled = lf
@@ -939,9 +999,26 @@ func Run(cfg Config) (Result, error) {
 	// are written and the failure is reported: a resolution that names what it
 	// could not reach is more use than one that throws away work a reader would
 	// only redo.
+	//
+	// A withdrawal is observed ahead of it for the same reason: the render is the
+	// one moment anything here acquires, reaching the network and writing what it
+	// fetches into the content-addressed store, so a run the caller has given up
+	// on must not begin one.
+	if err := stopped(ctx); err != nil {
+		return Result{}, err
+	}
 	report.phase(PhaseExternalInputs)
-	pins, discoveryErr := discoverExternalInputs(cfg, wsCfg, workspaceRoot, cacheDir, lazyView, assembled)
+	pins, discoveryErr := discoverExternalInputs(ctx, cfg, wsCfg, workspaceRoot, cacheDir, lazyView, assembled)
 	assembled.ExternalInputs = pins
+	// Ahead of BOTH the discovery diagnostic and the write, and the order matters.
+	// A withdrawal reaching the render arrives back here as a render failure, and
+	// reporting it as one would tell a reader that the dependency pins "were
+	// written and are complete" while this run is about to write nothing at all.
+	// The write below is the run's product, so this is the last moment at which a
+	// stop leaves the pins already on disk exactly as they were.
+	if err := stopped(ctx); err != nil {
+		return Result{}, err
+	}
 	if discoveryErr != nil {
 		reportExternalInputDiscoveryFailure(cfg.DiagOut, lockfilePath, len(pins), discoveryErr)
 	}
