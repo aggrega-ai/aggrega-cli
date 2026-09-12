@@ -74,15 +74,14 @@ type CLIInstaller func(ctx context.Context, rw *workspaceconfig.ResolvedWorkspac
 // file. Setting both is a usage error the write-target policy refuses.
 //
 // AcceptCapabilities, AssumeYes, In and InstallCLIPlugin are consulted only for
-// the command-extension type. Notices is where a version substitution is
-// announced; a nil Notices leaves version selection unscreened rather than
-// skipping a withdrawn version silently, which is the honest posture when there
-// is nowhere to announce the substitution. A caller that wants the substitution as
-// values rather than as prose supplies a discarding writer and reads the result's
-// Retraction: the screen forms on any non-nil writer, so the version chosen is the
-// same either way and only where the explanation lands differs. A nil writer
-// therefore leaves Retraction empty as well, because there was no screen to reach
-// a conclusion.
+// the command-extension type. Notices is where the addition's prose goes — the
+// account of each withdrawal marker the registry was asked about, and, unless
+// RetractionNotices redirects it, the substitution a withdrawal caused. With no
+// writer for that substitution — a nil Notices and a nil RetractionNotices —
+// version selection is left unscreened rather than skipping a withdrawn version
+// silently, which is the honest posture when there is nowhere to announce it. That
+// leaves Retraction empty as well, because there was no screen to reach a
+// conclusion.
 //
 // Delivery selects whether the addition writes the configuration file or reports
 // the content that write would have produced. The zero value writes, so a caller
@@ -110,6 +109,54 @@ type AddOptions struct {
 
 	In      io.Reader
 	Notices io.Writer
+
+	// RetractionNotices is where a withdrawal substitution is announced, for a
+	// caller that wants it somewhere other than Notices. A nil RetractionNotices
+	// announces on Notices, which is where the rest of the addition's prose goes,
+	// so a caller with nothing to say about it supplies one writer and gets both.
+	//
+	// It exists for the caller that renders the substitution itself, from the
+	// Retraction on the result, through WriteRetractionNotice. Such a caller sets
+	// this to a discarding writer: the announcement then reaches its reader once,
+	// in its own words and at the moment it chooses, while the marker account still
+	// reaches Notices. Discarding Notices outright would take that account with it,
+	// and it is not about the substitution at all.
+	//
+	// 🔴 A discarding writer, never a nil one. Version selection is screened only
+	// where there is somewhere to announce a substitution, so nil here with a nil
+	// Notices leaves selection unscreened and a withdrawn version would be pinned.
+	// A caller with nowhere to render the advisory leaves this nil and lets the
+	// prose fall to Notices rather than silencing a screen it then cannot replace.
+	RetractionNotices io.Writer
+}
+
+// noticeStreams is where an addition's two kinds of prose go.
+//
+// They are separate because they answer different questions and one caller wants
+// them in different places. The marker account says which of an artifact's
+// published versions the registry was asked about and what was found; the
+// substitution says which version was pinned and why it was not the newest. A
+// surface rendering the substitution itself silences only the second, and a pair
+// is what lets it do that without silencing the first.
+type noticeStreams struct {
+	// notices carries the account of each withdrawal marker the registry was asked
+	// about.
+	notices io.Writer
+	// retractions carries the substitution a withdrawal caused. It is also what
+	// decides whether selection is screened at all: with nowhere to announce a
+	// substitution, selection runs unscreened rather than excluding a version
+	// nobody can be told about.
+	retractions io.Writer
+}
+
+// noticeStreams resolves where this addition's prose goes, defaulting the
+// substitution to the same writer the marker account goes to.
+func (o AddOptions) noticeStreams() noticeStreams {
+	streams := noticeStreams{notices: o.Notices, retractions: o.Notices}
+	if o.RetractionNotices != nil {
+		streams.retractions = o.RetractionNotices
+	}
+	return streams
 }
 
 // AddResult is what an addition did.
@@ -131,9 +178,11 @@ type AddOptions struct {
 // second copy of the path.
 //
 // Retraction is what the withdrawal screen concluded about the version that was
-// pinned, and is absent whenever it concluded nothing. It is on the result rather
-// than only in the prose on Notices so a surface answering with values reports a
-// substitution a reader would otherwise meet only at a terminal.
+// pinned, and is absent whenever it concluded nothing. It is the conclusion as
+// values rather than as the sentence stating it, so every surface is handed the
+// same fact: one answers with the values, and one renders them through
+// WriteRetractionNotice. A reader therefore meets a substitution whichever surface
+// they came through, and neither has to read prose addressed to the other.
 type AddResult struct {
 	Socket string `json:"socket"`
 
@@ -293,7 +342,7 @@ func Add(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts AddOpt
 	// attachment is version-pinned.
 	entity := strings.TrimPrefix(repoPath, catalog.KindPathSegment("Plugin")+"/")
 	var recorder retractionRecorder
-	version, err := resolveLatestVersion(ctx, rw, host, repoPath, opts.Notices, &recorder)
+	version, err := resolveLatestVersion(ctx, rw, host, repoPath, opts.noticeStreams(), &recorder)
 	if err != nil {
 		return res, fmt.Errorf("%s: %w", command, err)
 	}
@@ -355,7 +404,7 @@ func addCLI(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts Add
 		return res, err
 	}
 	var recorder retractionRecorder
-	version, err := resolveLatestVersion(ctx, rw, host, repoPath, opts.Notices, &recorder)
+	version, err := resolveLatestVersion(ctx, rw, host, repoPath, opts.noticeStreams(), &recorder)
 	if err != nil {
 		return res, fmt.Errorf("%s: %w", command, err)
 	}
@@ -503,10 +552,10 @@ var RepoWithdrawalLister = func(ctx context.Context, cfg workspaceconfig.Config,
 // nil — leaving selection unscreened — whenever no screen can be formed, and each
 // of those cases is a deliberate posture rather than a fallthrough:
 //
-// With no writer there is nowhere to announce a substitution, and excluding a
-// version nobody can be told about is the silent substitution this exists to
-// prevent; the marker reads are skipped along with it, so nothing is paid for a
-// screen that would not be used. With no strict-SemVer tag there is no version the
+// With no writer for the substitution there is nowhere to announce it, and
+// excluding a version nobody can be told about is the silent substitution this
+// exists to prevent; the marker reads are skipped along with it, so nothing is paid
+// for a screen that would not be used. With no strict-SemVer tag there is no version the
 // discovery step could select, so there is nothing to screen. And when the marker
 // read itself fails, selection proceeds unscreened rather than halting: the same
 // best-effort posture the index build takes on the same failure, which keeps a
@@ -520,18 +569,20 @@ var RepoWithdrawalLister = func(ctx context.Context, cfg workspaceconfig.Config,
 // the advisory one, because what it states is what happened to selection — the same
 // event the exclusion notices carry — and the two channels stay distinct precisely so
 // a reader can tell "you are being told something" from "you did not get something".
-func liveRetractionScreen(ctx context.Context, cfg workspaceconfig.Config, host, repoPath, reference string, tags []string, out io.Writer, rec *retractionRecorder) catalog.RetractionScreen {
-	if out == nil {
+func liveRetractionScreen(ctx context.Context, cfg workspaceconfig.Config, host, repoPath, reference string, tags []string, streams noticeStreams, rec *retractionRecorder) catalog.RetractionScreen {
+	if streams.retractions == nil {
 		return nil
 	}
 	versions := oci.SortedSemverTags(tags)
 	if len(versions) == 0 {
 		return nil
 	}
-	deps, err := RepoWithdrawalLister(ctx, cfg, host, repoPath, versions, out)
+	// The marker read reports what it found on the writer the account goes to: what
+	// it says is which versions were asked about and what came back, which is not
+	// the substitution and does not travel with it.
+	deps, err := RepoWithdrawalLister(ctx, cfg, host, repoPath, versions, streams.notices)
 	if err != nil {
-		fmt.Fprintf(out, "  retraction: %s: markers could not be read (%v); published versions were not screened for retraction\n",
-			repoPath, err)
+		writeUnscreenedNotice(streams.retractions, reference, err.Error())
 		// The same event the prose states, recorded for a caller answering with
 		// values. It is recorded here rather than through the screen decorator
 		// because there is no screen to decorate: the degradation IS that none was
@@ -539,7 +590,7 @@ func liveRetractionScreen(ctx context.Context, cfg workspaceconfig.Config, host,
 		rec.recordUnscreened(reference, err.Error())
 		return nil
 	}
-	return rec.watch(registryindex.NewLiveScreen(reference, deps, out))
+	return rec.watch(registryindex.NewLiveScreen(reference, deps, streams.retractions))
 }
 
 // ResolveLatestVersion returns the highest strict-SemVer version published for the
@@ -566,19 +617,19 @@ func liveRetractionScreen(ctx context.Context, cfg workspaceconfig.Config, host,
 // words. A repository whose every selectable version is withdrawn is the different
 // case and does halt: nothing is left to attach, and the withdrawal is the reason.
 func ResolveLatestVersion(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, host, repoPath string, out io.Writer) (string, error) {
-	return resolveLatestVersion(ctx, rw, host, repoPath, out, nil)
+	return resolveLatestVersion(ctx, rw, host, repoPath, noticeStreams{notices: out, retractions: out}, nil)
 }
 
-// resolveLatestVersion is ResolveLatestVersion with somewhere to record what the
-// withdrawal screen concluded.
+// resolveLatestVersion is ResolveLatestVersion with the two prose channels kept
+// apart, and somewhere to record what the withdrawal screen concluded.
 //
 // The recorder is threaded rather than returned alongside the version because the
 // conclusion is reached inside the two screen constructions below, one per
 // discovery path, and a return value would have to be merged at every one of them.
 // A nil recorder records nothing, which is what the exported entry passes: a caller
-// that only wants the prose already has it on out.
-func resolveLatestVersion(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, host, repoPath string, out io.Writer, rec *retractionRecorder) (string, error) {
-	if version, ok, err := versionFromIndex(rw, host, repoPath, out, rec); err != nil {
+// that only wants the prose already has it on the one writer it supplied.
+func resolveLatestVersion(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, host, repoPath string, streams noticeStreams, rec *retractionRecorder) (string, error) {
+	if version, ok, err := versionFromIndex(rw, host, repoPath, streams.retractions, rec); err != nil {
 		return "", err
 	} else if ok {
 		return version, nil
@@ -594,7 +645,7 @@ func resolveLatestVersion(ctx context.Context, rw *workspaceconfig.ResolvedWorks
 	// The screen and the selection key off this one reference, and the screen is
 	// populated before selection runs so selection itself still reaches no registry.
 	reference := host + "/" + repoPath
-	screen := liveRetractionScreen(ctx, cfg, host, repoPath, reference, tags, out, rec)
+	screen := liveRetractionScreen(ctx, cfg, host, repoPath, reference, tags, streams, rec)
 	version, err := catalog.SelectScreenedVersion(screen, reference, tags)
 	if err != nil {
 		// No conforming tag is the caller's empty-version case, not a failure: it
@@ -621,15 +672,20 @@ func resolveLatestVersion(ctx context.Context, rw *workspaceconfig.ResolvedWorks
 // the highest published version whether or not that version has since been
 // withdrawn. Running the shared screened selection over the set instead is what
 // makes a withdrawn version skipped here exactly as it is skipped when an entity is
-// pulled, with the substitution announced on out. Absent a withdrawal the two
-// resolve the same version, because the set retains the headline and selection
+// pulled, with the substitution announced on retractions. Absent a withdrawal the
+// two resolve the same version, because the set retains the headline and selection
 // applies the same rule the headline was recorded with.
 //
+// It announces on that one writer and no other. The markers behind this screen
+// were read and accounted for when the index was built, so there is no marker read
+// here to report — which is why this path takes the substitution's writer alone
+// rather than the pair the live path needs.
+//
 // A record carrying no version set holds only its headline: there is nothing to
-// select over, so the headline stands. A nil out leaves selection unscreened, which
-// is the honest posture — an exclusion nobody can be told about is the silent
-// substitution this exists to prevent.
-func versionFromIndex(rw *workspaceconfig.ResolvedWorkspace, host, repoPath string, out io.Writer, rec *retractionRecorder) (string, bool, error) {
+// select over, so the headline stands. A nil retractions leaves selection
+// unscreened, which is the honest posture — an exclusion nobody can be told about
+// is the silent substitution this exists to prevent.
+func versionFromIndex(rw *workspaceconfig.ResolvedWorkspace, host, repoPath string, retractions io.Writer, rec *retractionRecorder) (string, bool, error) {
 	loaded, err := registryindex.LoadHost(rw.Root(), rw.Config().ResolvedArtifactCacheDir(), host)
 	if err != nil {
 		if registryindex.IsNotBuilt(err) {
@@ -648,7 +704,7 @@ func versionFromIndex(rw *workspaceconfig.ResolvedWorkspace, host, repoPath stri
 		if len(record.Versions) == 0 {
 			return record.Version, true, nil
 		}
-		version, serr := catalog.SelectScreenedVersion(rec.watch(registryindex.NewScreen(rw, host, out)), reference, record.Versions)
+		version, serr := catalog.SelectScreenedVersion(rec.watch(registryindex.NewScreen(rw, host, retractions)), reference, record.Versions)
 		if serr != nil {
 			return "", true, serr
 		}

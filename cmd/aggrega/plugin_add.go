@@ -166,6 +166,14 @@ type pluginAddConfig struct {
 // Every sentence carries how far the write reached, because the file a mutation
 // lands in is not something a reader should have to recognise from its path.
 //
+// A version substitution is stated the same way — from the conclusion on the
+// result rather than from prose the operation wrote to a stream handed to it. Both
+// surfaces are handed the same conclusion, so a reader here and a caller answering
+// with values learn the same fact, and the one that renders it does so at the
+// moment it chooses on the writer its own answer occupies. The wording itself is
+// not composed here: it has one home, shared with the screen that reaches the
+// conclusion, so a substitution reads the same however a reader met it.
+//
 // The command-extension sentence is the short one, and deliberately: the installer
 // this command supplies has already named the reference it pinned, the commands it
 // registered and the file it wrote, so restating those would announce one install
@@ -189,6 +197,22 @@ func pluginAddRun(ctx context.Context, cfg pluginAddConfig) error {
 	if delivery.Reports() {
 		notices = cfg.ErrOut
 	}
+	// The substitution is taken as values and stated below, so the operation is
+	// asked to announce it nowhere — which leaves its account of the markers it
+	// read still reaching the writer above, since that account is a different fact
+	// and discarding both would take it too.
+	//
+	// 🔴 The redirect is conditional on there BEING a writer, and that is the
+	// safety property rather than a tidiness one. Selection is screened only where
+	// a substitution can be announced, so handing the operation a discarding writer
+	// with nothing here to render onto would screen the selection and then swallow
+	// the explanation — the silent substitution the screen exists to prevent. With
+	// nowhere to state it, this leaves that writer unset and selection unscreened,
+	// which is the same posture the operation takes on its own.
+	var retractions io.Writer
+	if notices != nil {
+		retractions = io.Discard
+	}
 	res, err := pluginops.Add(ctx, cfg.ws, pluginops.AddOptions{
 		Socket:             cfg.Socket,
 		Query:              cfg.Query,
@@ -202,10 +226,16 @@ func pluginAddRun(ctx context.Context, cfg pluginAddConfig) error {
 		InstallCLIPlugin:   installCLIPlugin,
 		In:                 cfg.In,
 		Notices:            notices,
+		RetractionNotices:  retractions,
 	})
 	if err != nil {
 		return err
 	}
+	// The substitution the addition concluded, stated from the value it concluded
+	// rather than read off a stream: it goes where the rest of this command's
+	// commentary goes, which under a reporting delivery is the writer that leaves
+	// the document's shape alone.
+	pluginops.WriteRetractionNotice(notices, res.Retraction)
 	if delivery.Reports() {
 		if cfg.Out == nil {
 			return nil

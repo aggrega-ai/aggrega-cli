@@ -344,14 +344,36 @@ func (s *screen) ScreenVersions(reference string, tags []string) ([]string, []ca
 // version that was taken, and the evidence for skipping the higher one is not in
 // the author's own files, so it is stated where they will read it.
 func (s *screen) ReportSelection(reference, selected string, excluded []catalog.VersionExclusion) {
+	WriteSelectionNotice(s.out, reference, selected, excluded, s.provenance)
+}
+
+// WriteSelectionNotice states the outcome of a screened selection on out: every
+// published version the screen withdrew with the reason recorded against it, and
+// the version taken in their place, qualified by where the withdrawal facts came
+// from and how current they are.
+//
+// It is the one home of that wording, reached two ways. A screen announces through
+// it while selection runs, which is the path a caller watching a terminal reads. A
+// caller that took the same conclusion as values, and is now rendering it for a
+// reader of its own, announces through it as well rather than composing a second
+// sentence from the same fields — so one substitution reads the same however it
+// reached the reader, and the two cannot drift apart.
+//
+// An empty selection writes nothing. A conclusion that pinned no version states no
+// substitution, which is what a selection that was never screened reached: there is
+// an explanation to give, and it is not this one.
+func WriteSelectionNotice(out io.Writer, reference, selected string, excluded []catalog.VersionExclusion, provenance RetractionProvenance) {
+	if out == nil || selected == "" {
+		return
+	}
 	for _, x := range excluded {
 		if x.Reason == "" {
-			fmt.Fprintf(s.out, "  retraction: %s:%s is %s and was not selected\n", reference, x.Version, deprecation.SeverityRetracted.StatedAs())
+			fmt.Fprintf(out, "  retraction: %s:%s is %s and was not selected\n", reference, x.Version, deprecation.SeverityRetracted.StatedAs())
 			continue
 		}
-		fmt.Fprintf(s.out, "  retraction: %s:%s is %s and was not selected: %s\n", reference, x.Version, deprecation.SeverityRetracted.StatedAs(), x.Reason)
+		fmt.Fprintf(out, "  retraction: %s:%s is %s and was not selected: %s\n", reference, x.Version, deprecation.SeverityRetracted.StatedAs(), x.Reason)
 	}
-	fmt.Fprintf(s.out, "  retraction: %s resolved to %s instead%s\n", reference, selected, s.asOfSuffix())
+	fmt.Fprintf(out, "  retraction: %s resolved to %s instead%s\n", reference, selected, provenance.Clause())
 }
 
 // ReportPinned announces that a reference named an exact version carrying a

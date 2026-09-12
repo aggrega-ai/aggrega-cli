@@ -379,6 +379,11 @@ func TestResolveLatestPluginVersion_OfflineNoIndex(t *testing.T) {
 const (
 	screenedIndexHost = "hub.aggrega.ai"
 	screenedIndexRepo = "plugin/governance/tag-injector"
+	// screenedIndexBuiltAt is when the fixture index below records that it was
+	// built. It is named because a screened selection off that snapshot quotes it
+	// back, so a test asserting the rendered bytes reads the instant from the
+	// fixture that planted it rather than transcribing it a second time.
+	screenedIndexBuiltAt = "2026-08-06T09:00:00Z"
 )
 
 // writeScreenedPluginIndex writes a one-record local index for the plugin
@@ -410,7 +415,7 @@ func writeScreenedPluginIndex(t *testing.T, rw *workspaceconfig.ResolvedWorkspac
 	}
 	writeIndexFixture(t, rw.Root(), rw.Config().ResolvedArtifactCacheDir(), screenedIndexHost,
 		RegistryIndex{Host: screenedIndexHost, Records: []registryindex.Record{rec}},
-		"2026-08-06T09:00:00Z\n")
+		screenedIndexBuiltAt+"\n")
 }
 
 func keysOf(m map[string]string) []string {

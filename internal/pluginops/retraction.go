@@ -4,6 +4,9 @@
 package pluginops
 
 import (
+	"fmt"
+	"io"
+
 	"github.com/aggrega-ai/aggrega-cli/internal/registryindex"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 )
@@ -13,9 +16,10 @@ import (
 //
 // A retraction is a withdrawal, frequently for a safety reason, so a caller given
 // an older version than the newest published one is owed the reason it was given
-// one. The command line states that as prose on the notices writer; a surface that
-// answers with values carries this instead, so the same fact reaches a reader
-// either way and only its presentation differs.
+// one. This is that reason as values, which is what every surface is handed: one
+// answers with the values themselves, and one renders them through
+// WriteRetractionNotice for a reader watching a terminal. So the same fact reaches
+// a reader either way and only its presentation differs.
 //
 // It is absent on an ordinary addition. A screen that withdrew nothing announces
 // nothing, so nothing here is filled and the result carries no advisory at all —
@@ -68,6 +72,50 @@ type RetractionAdvisory struct {
 	// describes. Nothing was consulted, so there is no source to name, and naming one
 	// would claim evidence this selection never had.
 	Provenance registryindex.RetractionProvenance
+}
+
+// WriteRetractionNotice states, on out, what the withdrawal screen concluded about
+// the version an addition pinned, and writes nothing when it concluded nothing.
+//
+// It is how a surface holding the advisory renders it for a reader watching a
+// terminal. The advisory travels as values so each surface may answer in its own
+// terms, and the terminal's terms are these — composed here rather than at the
+// surface, so the sentence a reader meets has one home whichever command put it
+// there.
+//
+// 🔴 It is the second half of a pair, and the other half is
+// AddOptions.RetractionNotices. The operation announces a substitution on the
+// writer that field resolves to as selection runs, so a caller rendering the
+// advisory itself must have set that field to a discarding writer, or the reader
+// is told twice. The reason it is a discarding writer rather than none is stated
+// at the field.
+//
+// The two conditions an advisory carries are rendered apart because they say
+// opposite things. A screened selection states what was withdrawn and what was
+// taken instead; an unscreened one states that nothing was read, so nothing is
+// claimed about the version that was pinned.
+func WriteRetractionNotice(out io.Writer, advisory *RetractionAdvisory) {
+	if out == nil || advisory == nil {
+		return
+	}
+	if advisory.Unscreened != "" {
+		writeUnscreenedNotice(out, advisory.Reference, advisory.Unscreened)
+		return
+	}
+	registryindex.WriteSelectionNotice(out, advisory.Reference, advisory.Selected, advisory.Excluded, advisory.Provenance)
+}
+
+// writeUnscreenedNotice states on out that an artifact's withdrawal records could
+// not be read, so its published versions were not screened. cause is the fault the
+// read failed with, because what a reader can act on is the fault rather than the
+// bare fact that screening was skipped.
+//
+// It is the one home of that wording, reached both as the read fails and again
+// when a surface renders the advisory that failure produced — so a reader meets
+// one sentence whichever of the two put it in front of them.
+func writeUnscreenedNotice(out io.Writer, reference, cause string) {
+	fmt.Fprintf(out, "  retraction: %s: markers could not be read (%s); published versions were not screened for retraction\n",
+		reference, cause)
 }
 
 // retractionRecorder collects what a screened selection concluded, so an addition
