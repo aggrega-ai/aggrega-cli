@@ -67,7 +67,7 @@ func (d *Dispatcher) Register(adapter Adapter) error {
 // adapter's transport reporting one of its own.
 func (d *Dispatcher) Resolve(ctx context.Context, spec SourceSpec) (*ResolvedSource, error) {
 	if err := ctx.Err(); err != nil {
-		return nil, fmt.Errorf("sourceresolver: kind=%s: %w", spec.Kind, err)
+		return nil, fmt.Errorf("kind=%s: %w", spec.Kind, err)
 	}
 	d.mu.RLock()
 	adapter, ok := d.adapters[spec.Kind]

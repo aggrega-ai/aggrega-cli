@@ -81,7 +81,7 @@ var errUnknownKind = cerrors.Register("unknown-source-kind", cerrors.Meta{
 // than flattened into text so a caller can still match it.
 func Wrap(spec SourceSpec, sentinel error, cause error) error {
 	if errors.Is(cause, context.Canceled) || errors.Is(cause, context.DeadlineExceeded) {
-		return fmt.Errorf("sourceresolver: kind=%s url=%s version=%s: %w",
+		return fmt.Errorf("kind=%s url=%s version=%s: %w",
 			spec.Kind, spec.URL, spec.Version, cause)
 	}
 	host := registryhost.Of(spec.URL)
