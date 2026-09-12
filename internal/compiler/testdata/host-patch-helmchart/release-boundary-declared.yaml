@@ -1,0 +1,24 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: host-patch-helmchart-boundary-declared-release
+  environment: testing
+  version: "1.0.0"
+spec:
+  aggregate: ./aggregate-boundary-declared.yaml
+  manifest: ./manifest.yaml
+  boundaries:
+    main:
+      directory: ./dist/main
+      # Written on the boundary, naming no component: it reaches every component
+      # the boundary holds. The FeatureRecipe it binds states no execution scope,
+      # so it generates once for each of them, and each generation stands against
+      # the component it generated for — which is the host its /host pipeline step
+      # addresses.
+      features:
+        guardrail:
+          type: feature.myco/guardrail
+      components:
+        api:
+          infra:
+            replicas: 1

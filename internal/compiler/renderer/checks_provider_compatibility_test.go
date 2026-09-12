@@ -51,6 +51,13 @@ type providerFactStub struct {
 	// answer a FeatureRecipe stating no scope gives.
 	attachExecutionScope map[string]string
 
+	// boundaryAttachExecutionScope is the same fact keyed at the boundary, read
+	// by the rules rooted there. It is a separate map rather than a derivation of
+	// the one above because the two are separate reads of the presentation: a
+	// boundary-rooted rule is handed a boundary and an attachment name and has no
+	// component to key the per-node fact by.
+	boundaryAttachExecutionScope map[string]string
+
 	// The per-step facts, keyed by each site's own coordinates.
 	nodeStepScope     map[string]string
 	nodeStepCaps      map[string][]string
@@ -84,6 +91,10 @@ func (s providerFactStub) StepPluginCompatibleCapabilities(node, step string) []
 
 func (s providerFactStub) AttachmentExecutionScope(node, attachment string) string {
 	return s.attachExecutionScope[factKey(node, attachment)]
+}
+
+func (s providerFactStub) BoundaryAttachmentExecutionScope(boundary, attachment string) string {
+	return s.boundaryAttachExecutionScope[factKey(boundary, attachment)]
 }
 
 func (s providerFactStub) AttachmentStepExportScope(node, attachment, step string) string {
@@ -236,6 +247,13 @@ func newProviderFactStub() providerFactStub {
 		attachExecutionScope: map[string]string{
 			factKey("web", "audit"):   executionScopeBoundary,
 			factKey("cache", "audit"): executionScopeBoundary,
+		},
+		// The same recipe read at the boundary it was declared on. It has to agree
+		// with the per-node answer above: the two keyings name one FeatureRecipe,
+		// and a fixture where they disagreed would exercise a state no build can
+		// reach while reading as though it covered something.
+		boundaryAttachExecutionScope: map[string]string{
+			factKey("prod", "audit"): executionScopeBoundary,
 		},
 
 		attachStepScope: map[string]string{

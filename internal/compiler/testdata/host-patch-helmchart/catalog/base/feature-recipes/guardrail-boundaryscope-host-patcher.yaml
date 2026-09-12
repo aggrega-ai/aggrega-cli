@@ -1,0 +1,26 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: FeatureRecipe
+metadata:
+  name: guardrail-boundaryscope-host-patcher
+  version: "1.0.0"
+spec:
+  capability: helm
+  implements: "feature.myco/guardrail"
+  # The genuinely incompatible shape, kept beside the legal one so a relaxation
+  # that stopped refusing it would fail rather than pass quietly. This recipe
+  # generates ONCE for the boundary however many components that boundary holds,
+  # so it stands against no single component and really does have no host
+  # documents — while the /host step below declares it operates on exactly those.
+  executionScope: boundary
+  artifacts:
+    guardrail-config.yaml: |
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: guardrail-config
+      data:
+        boundary: "{{ .boundary.boundary_name }}"
+  pipeline:
+    - id: inject_into_host
+      plugin: pipeline-step/host-patch:1.0.0
+      function: step

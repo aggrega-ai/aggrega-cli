@@ -3042,6 +3042,17 @@ var AttachmentBoundaryScopeHasADeclaringBoundary = constraint.Check[
 // different reason. Every other step addresses the attachment's own documents,
 // which the provider its FeatureRecipe declares renders.
 //
+// # Why the execution scope is read and not assumed
+//
+// The axis this walks is every attachment a boundary DECLARES, which is a
+// separate question from what scope the FeatureRecipe behind one generates at.
+// An attachment written at a boundary whose FeatureRecipe states no scope
+// generates once per component the boundary holds, and it appears in every one
+// of those components' merged attachment sets — so the node-rooted rule beside
+// this one already asks this same question of that authored step, once for each
+// of them. Reading the scope is what keeps one authored step from being reported
+// once per component AND again here.
+//
 // Its detail names the attachment and the provider, on the same reading the
 // node-carried attachment pipeline follows: the locator names the authored step
 // inside the FeatureRecipe and carries neither.
@@ -3055,6 +3066,11 @@ var BoundaryAttachmentPipelineStepProviderCompatible = constraint.Check[
 		v constraint.DescribedView,
 		s constraint.BoundaryAttachmentPipelineStepSubject,
 	) []constraint.Objection {
+		if v.BoundaryAttachmentExecutionScope(
+			s.BoundaryPath(), s.AttachmentName(),
+		) != executionScopeBoundary {
+			return nil
+		}
 		if v.BoundaryAttachmentStepExportScope(
 			s.BoundaryPath(), s.AttachmentName(), s.StepID(),
 		) == types.ScopeHost {
@@ -3089,8 +3105,22 @@ var BoundaryAttachmentPipelineStepProviderCompatible = constraint.Check[
 // runs on the boundary's own surface, where there is no one component's document
 // set to be the host one — so the host set such a pipeline is handed is empty
 // wherever it is reached, and a step declaring it addresses host documents
-// addresses nothing. That follows from where the attachment was declared, which
-// is settled long before any node is walked.
+// addresses nothing. That follows from the scope the FeatureRecipe declares,
+// which is settled long before any node is walked.
+//
+// # Why the execution scope is read and not assumed
+//
+// The reasoning above holds for a FeatureRecipe that generates once for the
+// boundary, and for no other. Declaring an attachment ON a boundary and
+// declaring a FeatureRecipe that runs ONCE PER boundary are two separate
+// decisions: an attachment written at a boundary whose FeatureRecipe states no
+// scope generates once for each component the boundary holds, and each of those
+// generations stands against that component — which is the host its pipeline
+// addresses. Such an attachment has a host set at every site it runs at, so the
+// condition below does not hold for it and the rule ends before reading
+// anything further. Refusing it would reject the boundary block's own purpose,
+// which is to reach every component nested inside the boundary, on the strength
+// of where the operator happened to write the attachment.
 //
 // # Emptiness
 //
@@ -3112,6 +3142,11 @@ var BoundaryAttachmentPipelineStepScopeHasADocumentSet = constraint.Check[
 		v constraint.DescribedView,
 		s constraint.BoundaryAttachmentPipelineStepSubject,
 	) []constraint.Objection {
+		if v.BoundaryAttachmentExecutionScope(
+			s.BoundaryPath(), s.AttachmentName(),
+		) != executionScopeBoundary {
+			return nil
+		}
 		if v.BoundaryAttachmentStepExportScope(
 			s.BoundaryPath(), s.AttachmentName(), s.StepID(),
 		) != types.ScopeHost {

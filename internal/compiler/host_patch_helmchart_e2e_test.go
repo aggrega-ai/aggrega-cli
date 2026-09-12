@@ -24,15 +24,9 @@ import (
 // staging build skips the calling test.
 func hostPatchHelmchartFixtureInput(t *testing.T) pipelinetest.Input {
 	t.Helper()
-	catalogPaths := stageColocatedCatalog(t, []string{
-		"testdata/host-patch-helmchart/catalog/base",
-		"testdata/host-patch-helmchart/catalog/recipes/helm-chart",
-	}, map[string]string{
-		"pipeline-step/host-patch": "frp-step-host-patch-rust.wasm",
-	})
 	return pipelinetest.Input{
 		ReleasePath:  "testdata/host-patch-helmchart/release.yaml",
-		CatalogPaths: catalogPaths,
+		CatalogPaths: hostPatchHelmchartCatalog(t),
 	}
 }
 

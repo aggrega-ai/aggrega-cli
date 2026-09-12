@@ -159,9 +159,15 @@ func runDescribedStageRules(
 	raised = append(raised, objections...)
 
 	// Each step of the pipeline an attachment declared at a boundary carries.
-	// The boundary set is walked rather than the node set: such an attachment is
-	// declared once and reaches every component the boundary holds, so a
-	// node-rooted walk would ask about one authored pipeline once per component.
+	// The boundary set is walked rather than the node set, because an attachment
+	// whose FeatureRecipe generates once for the boundary is reachable no other
+	// way: it stands against no component, so no node-rooted key names it.
+	//
+	// The axis carries every attachment a boundary declares, whatever scope the
+	// FeatureRecipe behind it generates at, so each rule below reads that scope
+	// and ends on an attachment that generates per component — the node-rooted
+	// rules already ask the same question of those, once for each component the
+	// boundary holds.
 	objections, err = constraint.RunOnBoundaryAttachmentPipelineSteps(
 		ctx.Err, coordinates, coordinates, coordinates, view,
 		BoundaryAttachmentPipelineStepProviderCompatible,

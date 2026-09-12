@@ -1,0 +1,16 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: host-patch-helmchart-boundary-scope-manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      type:
+        core/compute/api-server: helm-api-server-chart-sourced:1.0.0
+    features:
+      # The one binding that differs from the manifest beside this: the
+      # FeatureRecipe generates once for the boundary rather than once per
+      # component, so its /host step addresses a document set that site never has.
+      type:
+        feature.myco/guardrail: guardrail-boundaryscope-host-patcher:1.0.0

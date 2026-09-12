@@ -1,0 +1,14 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: host-patch-helmchart-test
+  version: "1.0.0"
+spec:
+  components:
+    # The same host component the aggregate beside this declares, with no
+    # attachment of its own. The attachment is written on the boundary instead,
+    # which is what the Release beside this exercises: the component must carry
+    # it through the boundary's declaration and through nothing else, or the
+    # fixture would pass while proving the component-declared path again.
+    api:
+      type: core/compute/api-server

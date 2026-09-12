@@ -1,0 +1,23 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: host-patch-helmchart-boundary-scope-release
+  environment: testing
+  version: "1.0.0"
+spec:
+  aggregate: ./aggregate-boundary-declared.yaml
+  manifest: ./manifest-boundary-scope.yaml
+  boundaries:
+    main:
+      directory: ./dist/main
+      # Declared exactly as the release beside this declares it. The two differ
+      # only in the execution scope the bound FeatureRecipe states, which is what
+      # makes this pair able to show that the scope — and not where the operator
+      # wrote the attachment — is what the refusal turns on.
+      features:
+        guardrail:
+          type: feature.myco/guardrail
+      components:
+        api:
+          infra:
+            replicas: 1
