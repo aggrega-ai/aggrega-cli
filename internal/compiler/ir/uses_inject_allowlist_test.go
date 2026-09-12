@@ -193,6 +193,12 @@ func TestBuildIR_UsesInjectAllowlist(t *testing.T) {
 			wantHalt: []string{`mechanism "arg"`, `socket "narrow"`, "core/consumer"},
 		},
 		{
+			// No document can express this edge, so the name is not the authoring
+			// case it reads as. A Release per-edge entry carries no delivery key at
+			// all, the envelope refuses one outright rather than dropping it, and the
+			// pass that stamps an edge Release-originated sets none. The row is
+			// defence in depth: it fixes the verdict for the pair should some later
+			// path produce it, and it is not evidence that the shape occurs.
 			name: "Release-wired edge into a Black-Box socket: halts, and the locator names the Release",
 			edge: topology.NormalizedEdge{Source: "api", Target: "db", Socket: "opaque", Alias: "d14",
 				OriginRelease: true, Inject: envInject()},

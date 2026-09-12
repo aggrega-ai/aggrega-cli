@@ -442,14 +442,15 @@ func TestTheArtifactPillarRuleHaltsTheBuildOnANodesOwnRecipe(t *testing.T) {
 // under the host component's node identity, so the value declared over node-keyed
 // facts contributes no subject for one of them — and must not, because those facts
 // would answer about the host. The value declared over the attachment's own carrier
-// is what reaches them, and this reads the halt an author is handed to say which of
-// the readings over this condition produced it.
+// is what reaches them, and this reads the halt an author is handed to say that the
+// declared rule is what produced it.
 //
 // The wording is the whole discriminator, and there are three of them here: the
 // registered sentence with the offending expression and the artifact, which only a
-// declared value produces; the attachment, which no other reading names; and the
-// absence of the hand-written pre-check's sentence, which is what turns "the build
-// still fails" into "this mechanism refused it".
+// declared value produces; the attachment, which names the carrier the finding is
+// about; and the absence of the sentence a second, hand-written reading of this
+// condition would produce, which is what turns "the build still fails" into "this
+// mechanism refused it".
 //
 // It does not run in parallel: it replaces package-level declarations.
 func TestTheFeatureCarriedArtifactIsRefusedByTheDeclaredRule(t *testing.T) {

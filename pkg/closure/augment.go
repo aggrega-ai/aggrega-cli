@@ -140,8 +140,8 @@ func discoverClosureLibraries(cl *Closure, src LibrarySource, lookup Lookup) err
 	// entity and collect its schema — components first, then features, each sorted
 	// by name. This preserves the deterministic consumer order the eager-map scan
 	// produced, now reading the resolved closure rather than the bridged catalog.
-	// Both build (computeBuildClosure) and pull pass their own lazy lookup, so
-	// there is one producer and no fork.
+	// Build's drift-verify flow and pull's pin flow each pass their own lazy
+	// lookup, so there is one producer and no fork.
 	var compConsumers, featConsumers []SchemaConsumer
 	compSeen, featSeen := map[string]struct{}{}, map[string]struct{}{}
 	for _, e := range cl.Entities {

@@ -738,9 +738,9 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 	// sub-aggregate components — which exist only here, after flattening. Run
 	// the exported resolver validators over the sub-aggregate nodes (and their
 	// edges) so their values and per-edge config are checked like any other.
-	// Predicate-inert: the sub-aggregate's own parameter context is not
-	// resolved, so only context-independent structural constraints are checked
-	// (conditional x-aggrega predicates are validated where the context exists).
+	// Each sub-aggregate node carries the parameter context its own module
+	// resolved, so the conformance run here is parameter-aware rather than
+	// structural-only.
 	//
 	// A rule declared over the composition itself is NOT asked here. Such a rule
 	// is invoked once over every node the composition holds, by the pass that

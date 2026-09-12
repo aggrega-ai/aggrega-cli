@@ -596,9 +596,10 @@ func (v *normalizedView) AuthoredInjectDeliveryKeys(node string, mechanism strin
 // of an instance's injection block reads from, and whether that entry reads a
 // published key at all.
 //
-// It reads the entry through the same decoder the hand-written reading uses, in
-// the mode that treats a bare string value as a literal — which is what such a
-// value is on this surface, where the same shape on a connection is a reference.
+// It reads the entry through the same decoder a connection's delivery payload is
+// read with, in the mode that treats a bare string value as a literal — which is
+// what such a value is on this surface, where the same shape on a connection is a
+// reference.
 func (v *normalizedView) AuthoredInjectProvidesReference(
 	node string, mechanism string, deliveryKey string,
 ) (string, bool) {

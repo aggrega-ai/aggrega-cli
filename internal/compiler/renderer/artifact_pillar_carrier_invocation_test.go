@@ -84,9 +84,9 @@ func carrierOffendingBody(capability string) string {
 }
 
 // carrierTwoOffencesBody names TWO pillars the site does not declare, in one
-// template. It separates the declared rule from the hand-written reading beside it
-// by count rather than by wording: that one returns on the first offending
-// reference, and the rule reports every one of them.
+// template. It is what pins the rule to reporting EVERY offending reference a
+// template makes rather than the first: over a body carrying one offence, a rule
+// that stopped at the first would be indistinguishable from this one.
 func carrierTwoOffencesBody(capability string) string {
 	pair := carrierDelimiters[capability]
 	return "kind: Offender\nchart: " + pair[0] + " .source.chart " + pair[1] +
@@ -368,14 +368,15 @@ func carrierRefusalProof(
 }
 
 // carrierAssertDeclaredRuleRefused reads the halt an author is handed and requires
-// it to be the DECLARED rule's rather than the hand-written reading's.
+// it to be the DECLARED rule's finding.
 //
-// The two refuse the same input and word it differently, which is what makes the
-// message able to say which mechanism ran. Three things are required of it: the
-// registered sentence with the offending expression and the artifact, which is the
-// objection form only a declared value produces; the attachment, which no other
-// reading of this condition names; and the ABSENCE of the hand-written reading's
-// sentence, which is what turns "a halt happened" into "this halt came from here".
+// The wording is what makes the message able to say which mechanism ran, and three
+// things are required of it: the registered sentence with the offending expression
+// and the artifact, which is the objection form only a declared value produces; the
+// attachment, which the locator alone cannot name; and the ABSENCE of the sentence
+// a second, hand-written reading of this condition would produce. That third one
+// keeps a second implementation from appearing beside the rule unnoticed, which is
+// what turns "a halt happened" into "this halt came from here".
 func carrierAssertDeclaredRuleRefused(t *testing.T, err error, attachment string) string {
 	t.Helper()
 	msg := cerrors.CauseChain(err)
@@ -489,11 +490,11 @@ func TestTheDeclaredRuleRefusesAnArtifactABoundaryScopeAttachmentCarries(t *test
 // author is handed when one attachment-carried template names two pillars its
 // FeatureRecipe does not declare.
 //
-// It is the property that separates the declared rule from the hand-written reading
-// beside it by count rather than by wording, and it is the one build where the
-// halt's envelope is read: a single finding is reported as itself, and several
-// findings from one entry are wrapped in a sentence naming the entry and the
-// attachment whose FeatureRecipe carries it.
+// It pins the rule to reporting EVERY offending reference in one template rather
+// than the first, and it is the one build where the halt's envelope is read: a
+// single finding is reported as itself, and several findings from one entry are
+// wrapped in a sentence naming the entry and the attachment whose FeatureRecipe
+// carries it.
 //
 // It does not run in parallel: it replaces package-level declarations.
 func TestTheCarrierRuleReportsEveryOffendingReferenceInOneTemplate(t *testing.T) {
