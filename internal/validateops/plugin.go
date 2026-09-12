@@ -55,13 +55,16 @@ type PluginBinaryResult struct {
 //
 // maxMemoryPages is the memory cap applied when the entity declares none (or in
 // binary-only mode), supplied by the caller.
-func ValidatePluginBinary(pluginPath, declaredType, entityPath string, maxMemoryPages uint32) (PluginBinaryResult, error) {
+//
+// ctx is the caller's own, carried to the guest validation below. A guest call
+// whose context ends unwinds rather than being noticed only once the guest next
+// returns, so ending the caller's run ends the load and the describe it drives.
+func ValidatePluginBinary(ctx context.Context, pluginPath, declaredType, entityPath string, maxMemoryPages uint32) (PluginBinaryResult, error) {
 	var res PluginBinaryResult
 	wasmBytes, err := os.ReadFile(pluginPath)
 	if err != nil {
 		return res, fmt.Errorf("read .wasm %q: %w", pluginPath, err)
 	}
-	ctx := context.Background()
 
 	if entityPath == "" {
 		res.Binary = true

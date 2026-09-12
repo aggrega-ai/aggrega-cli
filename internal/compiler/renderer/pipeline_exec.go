@@ -171,8 +171,8 @@ func runNodePipeline(
 	// every other provider borrows the stock YAML codec. Provider-name → engine
 	// → codec routes through the same engineFactory the orchestrator uses, so
 	// codec selection single-sources the provider→engine mapping.
-	ownCodec := selectCodec(engineFactory, ownProvider, yamlIndent)
-	hostCodec := selectCodec(engineFactory, hostProvider, yamlIndent)
+	ownCodec := selectCodec(ctx, engineFactory, ownProvider, yamlIndent)
+	hostCodec := selectCodec(ctx, engineFactory, hostProvider, yamlIndent)
 
 	// Build the StepInvoker and the per-step descriptor accessor over the shared
 	// resolver + describe() gate, then delegate to the executor body. The public
@@ -189,11 +189,11 @@ func runNodePipeline(
 // scope of a hostless step) or a provider whose engine does not resolve falls
 // back to the stock codec — the borrow default — so the returned codec is never
 // nil.
-func selectCodec(engineFactory EngineFactory, providerName string, yamlIndent int) frp.Codec {
+func selectCodec(ctx context.Context, engineFactory EngineFactory, providerName string, yamlIndent int) frp.Codec {
 	if providerName != "" && engineFactory != nil {
 		if engine, err := engineFactory(providerName); err == nil {
 			if cp, ok := engine.(CodecProvider); ok {
-				if codec, has := cp.PipelineCodec(yamlIndent); has && codec != nil {
+				if codec, has := cp.PipelineCodec(ctx, yamlIndent); has && codec != nil {
 					return codec
 				}
 			}

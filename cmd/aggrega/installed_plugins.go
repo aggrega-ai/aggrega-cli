@@ -120,17 +120,33 @@ type cliCommandReg struct {
 	digest string
 }
 
-// productionCLIPluginRegistrations resolves the workspace and projects its
-// plugins.cli list into the commands to register. A resolution failure is
+// productionCLIPluginRegistrations is the seam-facing form of
+// productionCLIPluginRegistrationsContext, for the command-tree construction
+// that reaches it.
+//
+// The tree is built before any command body runs, so there is no command context
+// to take, and taking one would reshape the root-command constructor that every
+// test in this package builds. The Context form below is where the work lives,
+// so a caller that does hold a context resolves and describes under it.
+func productionCLIPluginRegistrations() []cliCommandReg {
+	return productionCLIPluginRegistrationsContext(context.Background())
+}
+
+// productionCLIPluginRegistrationsContext resolves the workspace and projects
+// its plugins.cli list into the commands to register. A resolution failure is
 // reported as a diagnostic and treated as no configured CLI plugins rather than
 // failing the tree, mirroring how a malformed config surfaces elsewhere.
-func productionCLIPluginRegistrations() []cliCommandReg {
+//
+// ctx reaches the cold-cache describe below, which loads and runs each
+// configured guest; a guest call whose context ends unwinds rather than being
+// noticed only once the guest next returns.
+func productionCLIPluginRegistrationsContext(ctx context.Context) []cliCommandReg {
 	rw, err := workspaceconfig.Resolve("", "")
 	if err != nil {
 		fmt.Fprintf(pluginRegistrationWarnWriter, "warning: ignoring configured CLI plugins: %v\n", err)
 		return nil
 	}
-	return cliRegistrationsFromWorkspace(context.Background(), rw)
+	return cliRegistrationsFromWorkspace(ctx, rw)
 }
 
 // cliRegistrationsFromWorkspace projects a resolved workspace's plugins.cli list

@@ -5,6 +5,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -35,7 +36,7 @@ const (
 // present in this environment, so the render tier runs rather than skipping.
 func TestValidateRecipeRendersInIsolation(t *testing.T) {
 	var buf bytes.Buffer
-	if err := dispatchValidate(resolveTempWorkspace(t, tempWorkspaceOptions{}), validateRecipePath, []string{validateCatalogDir}, false, &buf); err != nil {
+	if err := dispatchValidate(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{}), validateRecipePath, []string{validateCatalogDir}, false, &buf); err != nil {
 		t.Fatalf("dispatchValidate: %v", err)
 	}
 	got := buf.String()
@@ -59,10 +60,10 @@ func TestValidateRecipeRendersInIsolation(t *testing.T) {
 // on, surfaced through validate's own output.
 func TestValidateRecipeDeterministic(t *testing.T) {
 	var a, b bytes.Buffer
-	if err := dispatchValidate(resolveTempWorkspace(t, tempWorkspaceOptions{}), validateRecipePath, []string{validateCatalogDir}, false, &a); err != nil {
+	if err := dispatchValidate(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{}), validateRecipePath, []string{validateCatalogDir}, false, &a); err != nil {
 		t.Fatalf("run 1: %v", err)
 	}
-	if err := dispatchValidate(resolveTempWorkspace(t, tempWorkspaceOptions{}), validateRecipePath, []string{validateCatalogDir}, false, &b); err != nil {
+	if err := dispatchValidate(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{}), validateRecipePath, []string{validateCatalogDir}, false, &b); err != nil {
 		t.Fatalf("run 2: %v", err)
 	}
 	if !bytes.Equal(a.Bytes(), b.Bytes()) {
@@ -74,7 +75,7 @@ func TestValidateRecipeDeterministic(t *testing.T) {
 // (the render tiers do not apply: a Component alone has no workload to render).
 func TestValidateComponentPillars(t *testing.T) {
 	var buf bytes.Buffer
-	if err := dispatchValidate(resolveTempWorkspace(t, tempWorkspaceOptions{}), validateCompPath, []string{validateCatalogDir}, false, &buf); err != nil {
+	if err := dispatchValidate(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{}), validateCompPath, []string{validateCatalogDir}, false, &buf); err != nil {
 		t.Fatalf("dispatchValidate: %v", err)
 	}
 	got := buf.String()
@@ -90,7 +91,7 @@ func TestValidateComponentPillars(t *testing.T) {
 // render tiers are reported as skipped rather than attempted.
 func TestValidateFeatureRecipeShape(t *testing.T) {
 	var buf bytes.Buffer
-	if err := dispatchValidate(resolveTempWorkspace(t, tempWorkspaceOptions{}), validateFRPath, []string{validateCatalogDir}, false, &buf); err != nil {
+	if err := dispatchValidate(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{}), validateFRPath, []string{validateCatalogDir}, false, &buf); err != nil {
 		t.Fatalf("dispatchValidate: %v", err)
 	}
 	got := buf.String()
@@ -109,7 +110,7 @@ func TestValidateFeatureRecipeShape(t *testing.T) {
 // single-entity kind no longer applies to a Plugin.
 func TestValidatePluginSchemaAndShape(t *testing.T) {
 	var buf bytes.Buffer
-	if err := dispatchValidate(resolveTempWorkspace(t, tempWorkspaceOptions{}), validatePluginPath, []string{validateCatalogDir}, false, &buf); err != nil {
+	if err := dispatchValidate(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{}), validatePluginPath, []string{validateCatalogDir}, false, &buf); err != nil {
 		t.Fatalf("dispatchValidate: %v", err)
 	}
 	got := buf.String()
@@ -132,7 +133,7 @@ func TestValidatePluginSchemaAndShape(t *testing.T) {
 // halts at the envelope gate with the recoverable sentinel.
 func TestValidatePluginBadTypeHaltsLoudly(t *testing.T) {
 	var buf bytes.Buffer
-	err := dispatchValidate(resolveTempWorkspace(t, tempWorkspaceOptions{}), validatePluginBadTypePath, []string{validateCatalogDir}, false, &buf)
+	err := dispatchValidate(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{}), validatePluginBadTypePath, []string{validateCatalogDir}, false, &buf)
 	if err == nil {
 		t.Fatalf("expected a schema error, got nil; output:\n%s", buf.String())
 	}
@@ -148,7 +149,7 @@ func TestValidatePluginBadTypeHaltsLoudly(t *testing.T) {
 // required spec field halts at the envelope gate with the recoverable sentinel.
 func TestValidatePluginMissingRequiredHaltsLoudly(t *testing.T) {
 	var buf bytes.Buffer
-	err := dispatchValidate(resolveTempWorkspace(t, tempWorkspaceOptions{}), validatePluginMissingABIPath, []string{validateCatalogDir}, false, &buf)
+	err := dispatchValidate(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{}), validatePluginMissingABIPath, []string{validateCatalogDir}, false, &buf)
 	if err == nil {
 		t.Fatalf("expected a schema error, got nil; output:\n%s", buf.String())
 	}
@@ -164,7 +165,7 @@ func TestValidatePluginMissingRequiredHaltsLoudly(t *testing.T) {
 func TestValidatePluginBinaryOnlyPass(t *testing.T) {
 	pluginPath := wasmtest.EnsureFixtureBuilt(t, "parse-go.wasm")
 	var buf bytes.Buffer
-	if err := validatePluginBinary(pluginPath, "parser", "", &buf); err != nil {
+	if err := validatePluginBinary(context.Background(), pluginPath, "parser", "", &buf); err != nil {
 		t.Fatalf("validatePluginBinary: %v", err)
 	}
 	got := buf.String()
@@ -181,7 +182,7 @@ func TestValidatePluginBinaryOnlyPass(t *testing.T) {
 func TestValidatePluginBinaryOnlyTypeMismatchHaltsLoudly(t *testing.T) {
 	pluginPath := wasmtest.EnsureFixtureBuilt(t, "parse-go.wasm")
 	var buf bytes.Buffer
-	err := validatePluginBinary(pluginPath, "provider", "", &buf)
+	err := validatePluginBinary(context.Background(), pluginPath, "provider", "", &buf)
 	if err == nil {
 		t.Fatalf("expected a type-mismatch error, got nil; output:\n%s", buf.String())
 	}
@@ -195,7 +196,7 @@ func TestValidatePluginBinaryOnlyTypeMismatchHaltsLoudly(t *testing.T) {
 func TestValidatePluginBinaryOnlyRequiresType(t *testing.T) {
 	pluginPath := wasmtest.EnsureFixtureBuilt(t, "parse-go.wasm")
 	var buf bytes.Buffer
-	err := validatePluginBinary(pluginPath, "", "", &buf)
+	err := validatePluginBinary(context.Background(), pluginPath, "", "", &buf)
 	if err == nil {
 		t.Fatalf("expected a missing-type error, got nil; output:\n%s", buf.String())
 	}
@@ -210,7 +211,7 @@ func TestValidatePluginBinaryOnlyRequiresType(t *testing.T) {
 func TestValidatePluginFullModePass(t *testing.T) {
 	_, entityPath, pluginPath, _ := writeAgreeingPlugin(t)
 	var buf bytes.Buffer
-	if err := validatePluginBinary(pluginPath, "", entityPath, &buf); err != nil {
+	if err := validatePluginBinary(context.Background(), pluginPath, "", entityPath, &buf); err != nil {
 		t.Fatalf("validatePluginBinary: %v", err)
 	}
 	got := buf.String()
@@ -227,7 +228,7 @@ func TestValidatePluginFullModePass(t *testing.T) {
 func TestValidatePluginFullModeTypeDisagreementHaltsLoudly(t *testing.T) {
 	_, entityPath, pluginPath, _ := writeAgreeingPlugin(t)
 	var buf bytes.Buffer
-	err := validatePluginBinary(pluginPath, "provider", entityPath, &buf)
+	err := validatePluginBinary(context.Background(), pluginPath, "provider", entityPath, &buf)
 	if err == nil {
 		t.Fatalf("expected a type-disagreement error, got nil; output:\n%s", buf.String())
 	}
@@ -242,7 +243,7 @@ func TestValidatePluginFullModeTypeDisagreementHaltsLoudly(t *testing.T) {
 func TestValidatePluginFullModeNonPluginEntityHaltsLoudly(t *testing.T) {
 	pluginPath := wasmtest.EnsureFixtureBuilt(t, "parse-go.wasm")
 	var buf bytes.Buffer
-	err := validatePluginBinary(pluginPath, "", validateCompPath, &buf)
+	err := validatePluginBinary(context.Background(), pluginPath, "", validateCompPath, &buf)
 	if err == nil {
 		t.Fatalf("expected a non-Plugin-entity error, got nil; output:\n%s", buf.String())
 	}
@@ -290,7 +291,7 @@ func TestValidatePluginReleaseMutuallyExclusiveGuard(t *testing.T) {
 // work.
 func TestValidateBrokenEntityHaltsLoudly(t *testing.T) {
 	var buf bytes.Buffer
-	err := dispatchValidate(resolveTempWorkspace(t, tempWorkspaceOptions{}), validateBrokenPath, []string{validateCatalogDir}, false, &buf)
+	err := dispatchValidate(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{}), validateBrokenPath, []string{validateCatalogDir}, false, &buf)
 	if err == nil {
 		t.Fatalf("expected a schema error, got nil; output:\n%s", buf.String())
 	}
@@ -310,7 +311,7 @@ func TestValidateBrokenEntityHaltsLoudly(t *testing.T) {
 // verdict a catalog walk over the same bytes reaches.
 func TestValidatePluginOverclaimedAnnotationScopeHaltsLoudly(t *testing.T) {
 	var buf bytes.Buffer
-	err := dispatchValidate(resolveTempWorkspace(t, tempWorkspaceOptions{}), validatePluginBadScopePath, []string{validateCatalogDir}, false, &buf)
+	err := dispatchValidate(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{}), validatePluginBadScopePath, []string{validateCatalogDir}, false, &buf)
 	if err == nil {
 		t.Fatal("a scope the provider's contract does not render was accepted")
 	}

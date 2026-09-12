@@ -3,7 +3,10 @@
 
 package mcp
 
-import "encoding/json"
+import (
+	"context"
+	"encoding/json"
+)
 
 // dispatch routes a request to its per-method handler and returns either
 // a result payload or a JSON-RPC error envelope. The routing table is the
@@ -16,10 +19,13 @@ import "encoding/json"
 // the prompt surfaces list and render the authoring personas and the workflow
 // calling sequences. An unrecognized method returns the standard method-not-found
 // envelope.
-func (s *server) dispatch(req *rpcRequest) (any, *rpcError) {
+// ctx is the run's own. It reaches the handshake's bundle acquisition, every
+// tool invocation, and the resource reads that leave the process, so ending the
+// run ends what a call is doing rather than only refusing the next message.
+func (s *server) dispatch(ctx context.Context, req *rpcRequest) (any, *rpcError) {
 	switch req.Method {
 	case "initialize":
-		return s.handleInitialize(req.Params)
+		return s.handleInitialize(ctx, req.Params)
 	case "ping":
 		return struct{}{}, nil
 	case "tools/list":
@@ -33,9 +39,9 @@ func (s *server) dispatch(req *rpcRequest) (any, *rpcError) {
 	case "prompts/get":
 		return handlePromptsGet(req.Params)
 	case "tools/call":
-		return s.handleToolsCall(req.Params)
+		return s.handleToolsCall(ctx, req.Params)
 	case "resources/read":
-		return s.handleResourcesRead(req.Params)
+		return s.handleResourcesRead(ctx, req.Params)
 	default:
 		return nil, &rpcError{Code: codeMethodNotFound, Message: "method not found: " + req.Method}
 	}
@@ -99,7 +105,7 @@ func (s *server) handleNotification(req *rpcRequest) {
 // ahead of any resource read, so that the read path stays offline: see
 // ensureDocsBundle, which reports its own outcome to the log stream and cannot
 // fail the handshake.
-func (s *server) handleInitialize(params json.RawMessage) (any, *rpcError) {
+func (s *server) handleInitialize(ctx context.Context, params json.RawMessage) (any, *rpcError) {
 	var p initializeParams
 	if len(params) > 0 {
 		if err := json.Unmarshal(params, &p); err != nil {
@@ -110,7 +116,7 @@ func (s *server) handleInitialize(params json.RawMessage) (any, *rpcError) {
 		s.logf("mcp: initialize from client %q version %q (protocol %q)",
 			p.ClientInfo.Name, p.ClientInfo.Version, p.ProtocolVersion)
 	}
-	s.ensureDocsBundle()
+	s.ensureDocsBundle(ctx)
 	return initializeResult{
 		ProtocolVersion: negotiateProtocolVersion(p.ProtocolVersion),
 		Capabilities: serverCapabilities{
@@ -141,7 +147,7 @@ func negotiateProtocolVersion(requested string) string {
 // the resolved workspace; cli:// serves a command's help. A missing URI is an
 // invalid-params error; an unrecognised scheme or an absent target is a
 // well-formed resource-not-found error.
-func (s *server) handleResourcesRead(params json.RawMessage) (any, *rpcError) {
+func (s *server) handleResourcesRead(ctx context.Context, params json.RawMessage) (any, *rpcError) {
 	var p readResourceParams
 	if err := json.Unmarshal(params, &p); err != nil {
 		return nil, invalidRequestParams("resources/read", err)
@@ -161,7 +167,7 @@ func (s *server) handleResourcesRead(params json.RawMessage) (any, *rpcError) {
 	case schemeCatalog:
 		return s.readCatalogResource(p.URI)
 	case schemeCli:
-		return s.readCliResource(p.URI)
+		return s.readCliResource(ctx, p.URI)
 	default:
 		return nil, resourceNotFound(p.URI)
 	}

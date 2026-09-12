@@ -5,6 +5,7 @@ package mcp
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -255,7 +256,7 @@ const (
 func TestPromptsListIsByteStableAcrossProcesses(t *testing.T) {
 	if os.Getenv(promptsListProbeEnv) == "1" {
 		var out bytes.Buffer
-		if err := Run(Config{
+		if err := Run(context.Background(), Config{
 			Stdin:         strings.NewReader(promptsListRequest + "\n"),
 			Stdout:        &out,
 			Stderr:        io.Discard,

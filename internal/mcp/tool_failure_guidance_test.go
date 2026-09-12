@@ -134,7 +134,7 @@ type toolFailure struct {
 func callToolRaw(t *testing.T, s *server, name, rawArgs string) toolFailure {
 	t.Helper()
 	params := json.RawMessage(fmt.Sprintf(`{"name":%q,"arguments":%s}`, name, rawArgs))
-	res, rpcErr := s.handleToolsCall(params)
+	res, rpcErr := s.handleToolsCall(context.Background(), params)
 	if rpcErr != nil {
 		t.Errorf("%s: a failure the caller could correct travelled as an error envelope (code %d), which a client need never show the model: %q",
 			name, rpcErr.Code, rpcErr.Message)
@@ -499,7 +499,7 @@ func TestTheProtocolChannelCarriesTheFaultsWithNoToolResult(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			req := &rpcRequest{JSONRPC: "2.0", ID: json.RawMessage(`1`), Method: tc.method, Params: json.RawMessage(tc.params)}
-			res, rpcErr := s.dispatch(req)
+			res, rpcErr := s.dispatch(context.Background(), req)
 			if rpcErr == nil {
 				t.Fatalf("answered with a result (%+v); this fault has no tool result to live in and must travel as an envelope", res)
 			}

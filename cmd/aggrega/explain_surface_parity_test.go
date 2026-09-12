@@ -25,6 +25,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"path/filepath"
@@ -212,7 +213,7 @@ func explainOverTheAssistantWire(t *testing.T, workspaceRoot, diagnostic, kind s
 	var stdout, stderr bytes.Buffer
 	// Stdin is fully written before the session starts and is never appended to, so
 	// the loop reads one message and then reaches EOF, which is the clean exit.
-	if rerr := mcp.Run(mcp.Config{
+	if rerr := mcp.Run(context.Background(), mcp.Config{
 		Stdin:         &stdin,
 		Stdout:        &stdout,
 		Stderr:        &stderr,

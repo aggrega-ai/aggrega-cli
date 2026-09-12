@@ -86,7 +86,11 @@ type docsTargetFor func(tw *toolWorkspace, ref, version string, warn func(string
 // exactly as it was; the reason goes to the log stream and the documentation
 // resources answer resource-not-found, which is a poorer answer than a page and
 // a far better one than a refused session.
-func (s *server) ensureDocsBundle() {
+//
+// ctx is the run's own, carried into the acquisition — a registry round trip —
+// so ending the run ends the fetch instead of leaving the handshake waiting on
+// a registry nobody is still interested in.
+func (s *server) ensureDocsBundle(ctx context.Context) {
 	s.docsBundleOnce.Do(func() {
 		tw, err := s.resolveToolWorkspace("", nil)
 		if err != nil {
@@ -99,7 +103,7 @@ func (s *server) ensureDocsBundle() {
 			targetFor = docsRegistryTarget
 		}
 		warn := func(notice string) { s.logf("mcp: %s", notice) }
-		acquired, err := docsbundle.EnsureCached(context.Background(), tw.cfg, tw.root, tw.cacheDir, ref, version,
+		acquired, err := docsbundle.EnsureCached(ctx, tw.cfg, tw.root, tw.cacheDir, ref, version,
 			func(_ workspaceconfig.Config, ref, version string, warn func(string)) (oras.ReadOnlyTarget, docscache.VerifyAtPull, error) {
 				return targetFor(tw, ref, version, warn)
 			}, warn)

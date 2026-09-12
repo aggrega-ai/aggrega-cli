@@ -5,6 +5,7 @@ package mcp
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -18,7 +19,7 @@ func drive(t *testing.T, requests ...string) (responses []rpcResponse, stdout, s
 	t.Helper()
 	in := strings.NewReader(strings.Join(requests, "\n") + "\n")
 	var out, errBuf bytes.Buffer
-	runErr = Run(Config{Stdin: in, Stdout: &out, Stderr: &errBuf, ServerVersion: "test-version"})
+	runErr = Run(context.Background(), Config{Stdin: in, Stdout: &out, Stderr: &errBuf, ServerVersion: "test-version"})
 	stdout = out.String()
 	stderr = errBuf.String()
 	for _, line := range strings.Split(strings.TrimRight(stdout, "\n"), "\n") {
@@ -258,7 +259,7 @@ func TestNotificationYieldsNoResponse(t *testing.T) {
 func TestCleanExitOnStdinEOF(t *testing.T) {
 	// Empty input: the reader reaches EOF immediately and Run returns nil.
 	var out, errBuf bytes.Buffer
-	if err := Run(Config{Stdin: strings.NewReader(""), Stdout: &out, Stderr: &errBuf}); err != nil {
+	if err := Run(context.Background(), Config{Stdin: strings.NewReader(""), Stdout: &out, Stderr: &errBuf}); err != nil {
 		t.Fatalf("Run on empty stdin returned error: %v", err)
 	}
 	if out.Len() != 0 {
@@ -271,7 +272,7 @@ func TestFinalMessageWithoutTrailingNewline(t *testing.T) {
 	// trailing newline; that message must still be answered.
 	var out, errBuf bytes.Buffer
 	in := strings.NewReader(`{"jsonrpc":"2.0","id":7,"method":"ping"}`)
-	if err := Run(Config{Stdin: in, Stdout: &out, Stderr: &errBuf}); err != nil {
+	if err := Run(context.Background(), Config{Stdin: in, Stdout: &out, Stderr: &errBuf}); err != nil {
 		t.Fatalf("Run returned error: %v", err)
 	}
 	var resp rpcResponse

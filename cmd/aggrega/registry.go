@@ -101,7 +101,7 @@ table uses.`,
 			if err != nil {
 				return err
 			}
-			return registryListRun(registryListConfig{
+			return registryListRun(cmd.Context(), registryListConfig{
 				ws:   rw,
 				Out:  cmd.OutOrStdout(),
 				JSON: format == "json",
@@ -136,7 +136,7 @@ type registryListConfig struct {
 // surface report one resolution rather than each assembling its own. Only the
 // rendering is decided here: the table shows no credential state, so the default
 // invocation passes no resolver and opens no credential store at all.
-func registryListRun(cfg registryListConfig) error {
+func registryListRun(ctx context.Context, cfg registryListConfig) error {
 	rw, err := workspaceOrResolve(cfg.ws)
 	if err != nil {
 		return err
@@ -144,7 +144,7 @@ func registryListRun(cfg registryListConfig) error {
 	wsCfg := rw.Config()
 
 	if cfg.JSON {
-		entries := registryops.List(wsCfg, registryops.AuthResolver(cfg.store))
+		entries := registryops.List(wsCfg, registryops.AuthResolver(ctx, cfg.store))
 		return writeStructured(cfg.Out, "registry list", registryListDoc{Registries: entries})
 	}
 

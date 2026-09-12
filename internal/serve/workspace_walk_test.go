@@ -406,7 +406,7 @@ spec:
 
 	// The lower path wins, on every call.
 	for i := 1; i <= 20; i++ {
-		got := srv.enumerateRecipeImplements("Recipe")
+		got := srv.enumerateRecipeImplements(context.Background(), "Recipe")
 		if got["shared"] != "from-a" {
 			t.Fatalf("call %d: implements = %q, want %q — the traversal delivered the higher path first", i, got["shared"], "from-a")
 		}

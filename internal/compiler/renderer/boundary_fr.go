@@ -719,7 +719,14 @@ func buildBoundaryFRTemplateContext(
 // validation cache, so a boundary-scope FR's provides evaluate identically
 // whether read here or overwritten at dispatch. Walks graph.Spec.BoundaryFeatures
 // (the un-folded projection), so no Release re-walk.
+//
+// ctx is the build's own. The template evaluation below is host-side and observes
+// nothing, but the optional boundary-to-consumer env channel crosses into the
+// provider guest, and a guest call whose context ends unwinds rather than being
+// noticed only once the guest next returns. So ending the build ends that
+// crossing rather than leaving it to finish for a render nobody is waiting for.
 func PrepopulateBoundaryScopeProvides(
+	ctx context.Context,
 	graph *types.IRGraph,
 	release *types.Release,
 	boundaryAnnotations map[string]types.OrderedMap[string],
@@ -760,7 +767,7 @@ func PrepopulateBoundaryScopeProvides(
 					return cerrors.Wrap(engErr, cerrors.TranslationError, cerrors.SourceLocation{File: key.BoundaryPath}, fmt.Sprintf("boundary-scope FR %q: selecting its rendering plugin", instName))
 				}
 				if ov, ok := eng.(BoundaryEnvOverrider); ok {
-					overrides, ovErr := ov.BoundaryEnvOverrides(context.Background(), frCtx.Boundary.InternalUsesEdges, frCtx.Infra)
+					overrides, ovErr := ov.BoundaryEnvOverrides(ctx, frCtx.Boundary.InternalUsesEdges, frCtx.Infra)
 					if ovErr != nil {
 						return cerrors.Wrap(ovErr, cerrors.TranslationError, cerrors.SourceLocation{File: key.BoundaryPath}, fmt.Sprintf("boundary-scope FR %q consumer env overrides", instName))
 					}

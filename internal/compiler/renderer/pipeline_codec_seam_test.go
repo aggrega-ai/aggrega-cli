@@ -45,7 +45,7 @@ func (e codecProviderEngine) Contract() ProviderContract { return ProviderContra
 
 // PipelineCodec satisfies CodecProvider: it reports a marker codec, standing in
 // for any provider whose guest advertises the carve/reassemble exports.
-func (e codecProviderEngine) PipelineCodec(yamlIndent int) (frp.Codec, bool) {
+func (e codecProviderEngine) PipelineCodec(_ context.Context, yamlIndent int) (frp.Codec, bool) {
 	return markerCodec{inner: newStockYAMLCodec(yamlIndent), segments: e.segments}, true
 }
 
@@ -76,24 +76,24 @@ func TestSelectCodec_PicksProviderCodec(t *testing.T) {
 	}
 
 	// A provider whose engine implements CodecProvider → marker codec.
-	mc := selectCodec(factory, "marker", 2)
+	mc := selectCodec(context.Background(), factory, "marker", 2)
 	if _, ok := mc.(markerCodec); !ok {
 		t.Errorf("expected markerCodec for provider %q, got %T", "marker", mc)
 	}
 	// A plain engine → stock codec.
-	if _, ok := selectCodec(factory, "plain", 2).(stockYAMLCodec); !ok {
+	if _, ok := selectCodec(context.Background(), factory, "plain", 2).(stockYAMLCodec); !ok {
 		t.Errorf("expected stockYAMLCodec for a plain engine")
 	}
 	// Empty provider name → stock codec.
-	if _, ok := selectCodec(factory, "", 2).(stockYAMLCodec); !ok {
+	if _, ok := selectCodec(context.Background(), factory, "", 2).(stockYAMLCodec); !ok {
 		t.Errorf("expected stockYAMLCodec for an empty provider name")
 	}
 	// Nil factory → stock codec.
-	if _, ok := selectCodec(nil, "marker", 2).(stockYAMLCodec); !ok {
+	if _, ok := selectCodec(context.Background(), nil, "marker", 2).(stockYAMLCodec); !ok {
 		t.Errorf("expected stockYAMLCodec for a nil factory")
 	}
 	// Unknown provider → stock codec.
-	if _, ok := selectCodec(factory, "nope", 2).(stockYAMLCodec); !ok {
+	if _, ok := selectCodec(context.Background(), factory, "nope", 2).(stockYAMLCodec); !ok {
 		t.Errorf("expected stockYAMLCodec for an unknown provider")
 	}
 }
@@ -119,7 +119,7 @@ func TestRunNodePipeline_RoutesThroughProviderCodec(t *testing.T) {
 		own, nil, false,
 		"marker" /* ownProvider */, "", /* no host */
 		renderctx.RenderContext{}, &types.TemplateContext{},
-		selectCodec(factory, "marker", 2), selectCodec(factory, "", 2),
+		selectCodec(context.Background(), factory, "marker", 2), selectCodec(context.Background(), factory, "", 2),
 		cannedInvoker(t, frp.FRPStepOutput{}), "node")
 	if err != nil {
 		t.Fatalf("runNodePipelineWithInvoker: %v", err)

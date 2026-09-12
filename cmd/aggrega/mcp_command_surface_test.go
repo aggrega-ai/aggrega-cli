@@ -5,6 +5,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"sort"
 	"strconv"
@@ -124,7 +125,7 @@ func TestMCPServerExposesTheRealCommandSurface(t *testing.T) {
 	stdin.WriteString(rpcLine(3, "tools/call", `{"name":"describe-capabilities","arguments":{}}`))
 
 	var stdout, stderr bytes.Buffer
-	if err := mcp.Run(mcp.Config{
+	if err := mcp.Run(context.Background(), mcp.Config{
 		Stdin:         &stdin,
 		Stdout:        &stdout,
 		Stderr:        &stderr,
@@ -279,7 +280,7 @@ func servedToolDescriptions(t *testing.T, surface []mcp.CommandSurface) map[stri
 	stdin.WriteString(rpcLine(3, "tools/call", `{"name":"describe-capabilities","arguments":{}}`))
 
 	var stdout, stderr bytes.Buffer
-	if err := mcp.Run(mcp.Config{
+	if err := mcp.Run(context.Background(), mcp.Config{
 		Stdin:         &stdin,
 		Stdout:        &stdout,
 		Stderr:        &stderr,
@@ -461,7 +462,7 @@ func TestNoToolRunsAGuestFromACallerSuppliedPath(t *testing.T) {
 	stdin.WriteString(rpcLine(2, "tools/call", `{"name":"`+withheld+`","arguments":{}}`))
 
 	var stdout, stderr bytes.Buffer
-	if err := mcp.Run(mcp.Config{
+	if err := mcp.Run(context.Background(), mcp.Config{
 		Stdin:         &stdin,
 		Stdout:        &stdout,
 		Stderr:        &stderr,

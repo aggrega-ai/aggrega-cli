@@ -324,7 +324,10 @@ func (s *server) handleToolsList() (any, *rpcError) {
 // caller can correct it. Once a tool is resolved, its own outcome — success or a
 // guidance-carrying failure — is returned as the result, including a refusal of
 // the arguments it was given.
-func (s *server) handleToolsCall(params json.RawMessage) (any, *rpcError) {
+// ctx is the run's own, handed to the resolved tool. Every tool that publishes,
+// pulls, builds, lints or searches carries it into the work it drives, so ending
+// the run ends that work rather than only its report.
+func (s *server) handleToolsCall(ctx context.Context, params json.RawMessage) (any, *rpcError) {
 	var p callToolParams
 	if err := json.Unmarshal(params, &p); err != nil {
 		return nil, invalidRequestParams("tools/call", err)
@@ -333,7 +336,7 @@ func (s *server) handleToolsCall(params json.RawMessage) (any, *rpcError) {
 		return nil, &rpcError{Code: codeInvalidParams, Message: "tools/call requires a tool name; available tools: " + toolNames()}
 	}
 	if spec, ok := s.lookupTool(p.Name); ok {
-		return spec.invoke(s, context.Background(), p.Arguments)
+		return spec.invoke(s, ctx, p.Arguments)
 	}
 	return nil, &rpcError{Code: codeInvalidParams, Message: "unknown tool: " + p.Name +
 		"; available tools: " + toolNames() +

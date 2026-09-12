@@ -301,7 +301,7 @@ func registryListInvoke(s *server, ctx context.Context, args json.RawMessage) (*
 		return errorResult(explainToolError("Could not resolve the workspace to report its configured registries.", err, "component"))
 	}
 
-	entries := registryops.List(tw.cfg, registryops.AuthResolver(nil))
+	entries := registryops.List(tw.cfg, registryops.AuthResolver(ctx, nil))
 	if entries == nil {
 		entries = []registryops.Registry{}
 	}

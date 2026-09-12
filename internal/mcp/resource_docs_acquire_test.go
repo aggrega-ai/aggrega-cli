@@ -65,7 +65,7 @@ func TestDocsBundleAcquiredAtTheHandshakeAndServedAfterwards(t *testing.T) {
 		t.Fatalf("cold read: got code %d, want resource-not-found %d", rerr.Code, codeResourceNotFound)
 	}
 
-	if _, rerr := s.handleInitialize(nil); rerr != nil {
+	if _, rerr := s.handleInitialize(context.Background(), nil); rerr != nil {
 		t.Fatalf("initialize: %v", rerr)
 	}
 
@@ -118,7 +118,7 @@ func TestDocsBundleAcquisitionRunsOncePerSession(t *testing.T) {
 	}
 
 	for range 3 {
-		if _, rerr := s.handleInitialize(nil); rerr != nil {
+		if _, rerr := s.handleInitialize(context.Background(), nil); rerr != nil {
 			t.Fatalf("initialize: %v", rerr)
 		}
 	}
@@ -142,7 +142,7 @@ func TestDocsBundleAcquisitionFailureNeverFailsTheHandshake(t *testing.T) {
 		return memory.New(), nil, nil
 	}
 
-	res, rerr := s.handleInitialize(nil)
+	res, rerr := s.handleInitialize(context.Background(), nil)
 	if rerr != nil {
 		t.Fatalf("a failed acquisition must not fail the handshake; got %v", rerr)
 	}
@@ -168,7 +168,7 @@ func TestDocsBundleAcquisitionIsSkippedWhenAlreadyCached(t *testing.T) {
 		resolved = true
 		return memory.New(), nil, nil
 	}
-	if _, rerr := s.handleInitialize(nil); rerr != nil {
+	if _, rerr := s.handleInitialize(context.Background(), nil); rerr != nil {
 		t.Fatalf("initialize: %v", rerr)
 	}
 	if resolved {

@@ -68,7 +68,7 @@ func callTool(t *testing.T, s *server, name string, args any) *callToolResult {
 	if err != nil {
 		t.Fatalf("marshal params: %v", err)
 	}
-	res, rpcErr := s.handleToolsCall(params)
+	res, rpcErr := s.handleToolsCall(context.Background(), params)
 	if rpcErr != nil {
 		t.Fatalf("tools/call %s returned protocol error: %+v", name, rpcErr)
 	}
@@ -381,7 +381,7 @@ func TestGenCatalogToolInvokesCore(t *testing.T) {
 func TestUnknownToolReportsCuratedSet(t *testing.T) {
 	s := newTestServer(t)
 	params, _ := json.Marshal(callToolParams{Name: "nope", Arguments: json.RawMessage(`{}`)})
-	_, rpcErr := s.handleToolsCall(params)
+	_, rpcErr := s.handleToolsCall(context.Background(), params)
 	if rpcErr == nil || rpcErr.Code != codeInvalidParams {
 		t.Fatalf("unknown tool error = %+v, want invalid-params", rpcErr)
 	}

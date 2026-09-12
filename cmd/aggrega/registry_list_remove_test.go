@@ -5,6 +5,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -27,7 +28,7 @@ func TestRegistryListDeterministicOutput(t *testing.T) {
 	rw := resolveWorkspaceWithConfig(t, t.TempDir(), content)
 
 	var out bytes.Buffer
-	if err := registryListRun(registryListConfig{ws: rw, Out: &out}); err != nil {
+	if err := registryListRun(context.Background(), registryListConfig{ws: rw, Out: &out}); err != nil {
 		t.Fatalf("registryListRun: %v", err)
 	}
 	got := out.String()
@@ -66,7 +67,7 @@ func TestRegistryListEmpty(t *testing.T) {
 	t.Parallel()
 	rw := resolveTempWorkspace(t, tempWorkspaceOptions{})
 	var out bytes.Buffer
-	if err := registryListRun(registryListConfig{ws: rw, Out: &out}); err != nil {
+	if err := registryListRun(context.Background(), registryListConfig{ws: rw, Out: &out}); err != nil {
 		t.Fatalf("registryListRun: %v", err)
 	}
 	if !strings.Contains(out.String(), "No registries configured") {

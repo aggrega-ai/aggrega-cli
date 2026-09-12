@@ -26,7 +26,7 @@ func TestInspectRawPlugin_DerivesFromBinary(t *testing.T) {
 		t.Fatalf("fixture missing: %v", err)
 	}
 	var buf bytes.Buffer
-	if err := inspectRawPlugin(&buf, pluginPath); err != nil {
+	if err := inspectRawPlugin(context.Background(), &buf, pluginPath); err != nil {
 		t.Fatalf("inspectRawPlugin: %v", err)
 	}
 	out := buf.String()
@@ -51,8 +51,8 @@ func TestInspectRawPlugin_RendersExportContract(t *testing.T) {
 		t.Helper()
 		path := wasmtest.EnsureFixtureBuilt(t, artifact)
 		var buf bytes.Buffer
-		if err := inspectRawPlugin(&buf, path); err != nil {
-			t.Fatalf("inspectRawPlugin(%s): %v", artifact, err)
+		if err := inspectRawPlugin(context.Background(), &buf, path); err != nil {
+			t.Fatalf("inspectRawPlugin(context.Background(), %s): %v", artifact, err)
 		}
 		return buf.String()
 	}
@@ -105,7 +105,7 @@ func TestInspectRawPlugin_DescribeBestEffort(t *testing.T) {
 		t.Parallel()
 		path := wasmtest.EnsureFixtureBuilt(t, "secret-injector-go.wasm")
 		var buf bytes.Buffer
-		if err := inspectRawPlugin(&buf, path); err != nil {
+		if err := inspectRawPlugin(context.Background(), &buf, path); err != nil {
 			t.Fatalf("inspectRawPlugin: %v", err)
 		}
 		out := buf.String()
@@ -125,7 +125,7 @@ func TestInspectRawPlugin_DescribeBestEffort(t *testing.T) {
 		// derived host function.
 		path := wasmtest.EnsureFixtureBuilt(t, "fetch-probe-go.wasm")
 		var buf bytes.Buffer
-		if err := inspectRawPlugin(&buf, path); err != nil {
+		if err := inspectRawPlugin(context.Background(), &buf, path); err != nil {
 			t.Fatalf("a non-describing but readable .wasm must not error; got: %v", err)
 		}
 		out := buf.String()

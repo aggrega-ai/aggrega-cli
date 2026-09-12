@@ -63,7 +63,12 @@ type EntityResult struct {
 //
 // The catalog directories are the already-resolved first-win search stack; the
 // workspace root and cache directory are resolved likewise by the caller.
-func ValidateEntity(wsRoot, cacheDir string, dirs []string, path string, suppressUnsupportedFieldWarnings bool) (EntityResult, error) {
+//
+// ctx is the caller's own. The isolated-render tier drives the real compilation
+// pipeline twice, loading and running provider guests, so ending the caller's
+// run ends that work: a guest call whose context ends unwinds rather than being
+// noticed only once the guest next returns.
+func ValidateEntity(ctx context.Context, wsRoot, cacheDir string, dirs []string, path string, suppressUnsupportedFieldWarnings bool) (EntityResult, error) {
 	var res EntityResult
 	res.Path = path
 
@@ -106,7 +111,7 @@ func ValidateEntity(wsRoot, cacheDir string, dirs []string, path string, suppres
 	case envelope.KindWorkload:
 		return res, validateWorkloadEntity(&res, path, data)
 	case envelope.KindRecipe:
-		return res, validateRecipeEntity(&res, wsRoot, cacheDir, dirs, path, data, suppressUnsupportedFieldWarnings)
+		return res, validateRecipeEntity(ctx, &res, wsRoot, cacheDir, dirs, path, data, suppressUnsupportedFieldWarnings)
 	case envelope.KindFeatureRecipe:
 		return res, validateFeatureRecipeEntity(&res, path, data)
 	case envelope.KindPlugin:
@@ -283,7 +288,7 @@ func validatePluginEntity(res *EntityResult, path string, data []byte) error {
 // documents can change that. The declined sockets are named in Diagnostics, so
 // the report states which surface it did not cover instead of leaving a silent
 // difference between what validate checks and what a build checks.
-func validateRecipeEntity(res *EntityResult, wsRoot, cacheDir string, dirs []string, path string, data []byte, suppressUnsupportedFieldWarnings bool) error {
+func validateRecipeEntity(ctx context.Context, res *EntityResult, wsRoot, cacheDir string, dirs []string, path string, data []byte, suppressUnsupportedFieldWarnings bool) error {
 	var rec types.Recipe
 	if err := yaml.Unmarshal(data, &rec); err != nil {
 		return fmt.Errorf("parse Recipe at %q: %w", path, err)
@@ -345,7 +350,7 @@ func validateRecipeEntity(res *EntityResult, wsRoot, cacheDir string, dirs []str
 		// (possibly not-yet-published or edited-in-place) file drive the render.
 		Recipe: func(string, string) (*types.Recipe, bool) { return &rec, true },
 	}
-	return runRenderTiers(res, harness, tierLookup, recipeLookup, cat.SubAggregateLoader(), suppressUnsupportedFieldWarnings)
+	return runRenderTiers(ctx, res, harness, tierLookup, recipeLookup, cat.SubAggregateLoader(), suppressUnsupportedFieldWarnings)
 }
 
 // declaredRequiredSockets returns the names of every uses socket the Component
@@ -530,7 +535,7 @@ func buildEntityHarness(implements, recipeURI string, comp *types.Component, loo
 // (guard violations, render warnings) surface on the process diagnostic stream
 // through the pipeline itself; the accumulated result carries only this scope's
 // deterministic report.
-func runRenderTiers(res *EntityResult, h entityHarness, lookup resolver.CatalogLookup, recipeLookup renderer.RecipeLookup, subAggregateLoader topology.SubAggregateLoader, suppressUnsupportedFieldWarnings bool) error {
+func runRenderTiers(ctx context.Context, res *EntityResult, h entityHarness, lookup resolver.CatalogLookup, recipeLookup renderer.RecipeLookup, subAggregateLoader topology.SubAggregateLoader, suppressUnsupportedFieldWarnings bool) error {
 	inputs := pipeline.Inputs{
 		Release:           h.release,
 		Manifest:          h.manifest,
@@ -538,7 +543,6 @@ func runRenderTiers(res *EntityResult, h entityHarness, lookup resolver.CatalogL
 		AggregatePath:     h.aggregatePath,
 		WorkspaceConfig:   workspaceconfig.Default(),
 	}
-	ctx := context.Background()
 
 	// Tier 2: resolution, guards, IR construction — no render. A missing
 	// required input, a guard halt, or a resolution error surfaces here.

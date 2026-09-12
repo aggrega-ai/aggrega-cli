@@ -212,12 +212,37 @@ func (e *Engine) NestSegment() string {
 	return desc.Contract.NestSegment
 }
 
-// describe loads the provider guest, reads and validates its describe()
+// describe is the capability-query form of describeContext, for the engine's
+// capability methods, whose contracts carry no context.
+//
+// Those methods are the engine's self-report surface — which input kinds it
+// renders, how it assembles a boundary, what it nests under — and each is
+// declared on a reporter interface the orchestrator, the gate and the pipeline
+// read through. Giving any of them a context would reshape that interface and
+// every implementation of it, including the doubles a test supplies, so the
+// contextless form stays and the caller's context arrives through
+// describeContext wherever a caller has one.
+//
+// The load is memoized, so it happens at most once per Engine: whichever caller
+// reaches it first drives it, and every later query reads the cached descriptor.
+// A render, a validation, a codec crossing and a link crossing all hold the
+// run's context and call the Context form, so on a real build the load runs
+// under the run's own context and a stop reaches it. This form drives the load
+// only when a capability query is the first thing to ask.
+func (e *Engine) describe() (*wasm.PluginDescriptor, error) {
+	return e.describeContext(context.Background())
+}
+
+// describeContext loads the provider guest, reads and validates its describe()
 // self-report, and caches the result (or the failure) on the Engine so the
 // input-kind gate and the render classification read the guest's plugin-level
 // capability claim without reloading. The descriptor is a pure function of the
 // guest bytes, so caching it cannot alter rendered output.
-func (e *Engine) describe() (*wasm.PluginDescriptor, error) {
+//
+// ctx is the caller's own, carried to the load and to the close that follows it.
+// A guest call whose context ends unwinds rather than being noticed only once
+// the guest next returns, so a describe that does not come back is stoppable.
+func (e *Engine) describeContext(ctx context.Context) (*wasm.PluginDescriptor, error) {
 	if e.descriptor != nil || e.descriptorErr != nil {
 		return e.descriptor, e.descriptorErr
 	}
@@ -228,12 +253,12 @@ func (e *Engine) describe() (*wasm.PluginDescriptor, error) {
 	}
 	spec := resolver.PluginSpec(e.pluginURI, resolved)
 	spec.PluginType = wasm.PluginTypeProvider
-	plugin, desc, err := e.loader.LoadAndDescribe(context.Background(), spec)
+	plugin, desc, err := e.loader.LoadAndDescribe(ctx, spec)
 	if err != nil {
 		e.descriptorErr = err
 		return nil, e.descriptorErr
 	}
-	_ = plugin.Close(context.Background())
+	_ = plugin.Close(ctx)
 	e.descriptor = &desc
 	return e.descriptor, nil
 }
@@ -250,7 +275,7 @@ func (e *Engine) describe() (*wasm.PluginDescriptor, error) {
 // invoking, so a reused instance never carries a prior node's source root into
 // the next crossing.
 func (e *Engine) acquireInstance(ctx context.Context) (*wasm.Plugin, func(), error) {
-	desc, err := e.describe()
+	desc, err := e.describeContext(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -518,7 +543,7 @@ func (e *Engine) Warm(ctx context.Context) error {
 // renders of identical input diverge halts the build (ErrRenderNondeterministic),
 // naming the node and provider.
 func (e *Engine) invoke(ctx context.Context, export string, input renderer.RenderNodeInput, sourceRoot string) (renderer.RenderNodeOutput, error) {
-	desc, err := e.describe()
+	desc, err := e.describeContext(ctx)
 	if err != nil {
 		return renderer.RenderNodeOutput{}, err
 	}
@@ -688,7 +713,7 @@ func advertisesExport(desc *wasm.PluginDescriptor, name string) bool {
 // node carries no source at that point, so the validate input carries the node
 // projection and render context alone.
 func (e *Engine) ValidateNodeInput(ctx context.Context, values map[string]any, nodeCtx renderer.NodeRenderContext) ([]renderer.Diagnostic, error) {
-	desc, err := e.describe()
+	desc, err := e.describeContext(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -721,7 +746,7 @@ func (e *Engine) ValidateNodeInput(ctx context.Context, values map[string]any, n
 // Guest-emitted warnings are folded into the returned diagnostics as
 // warn-severity entries.
 func (e *Engine) invokeValidate(ctx context.Context, export string, input renderer.RenderNodeInput, sourceRoot string) ([]renderer.Diagnostic, error) {
-	desc, err := e.describe()
+	desc, err := e.describeContext(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -774,7 +799,7 @@ func (e *Engine) invokeValidate(ctx context.Context, export string, input render
 // and applies the returned overrides. AssemblerEngine embeds *Engine and
 // inherits this method.
 func (e *Engine) BoundaryEnvOverrides(ctx context.Context, internalUsesEdges []types.EnrichedEdge, infra types.OrderedMap[any]) (map[string]map[string]string, error) {
-	desc, err := e.describe()
+	desc, err := e.describeContext(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -823,7 +848,7 @@ func (e *Engine) BoundaryEnvOverrides(ctx context.Context, internalUsesEdges []t
 // carrying provider-specific names, which is the coupling asking the question
 // removes. AssemblerEngine embeds *Engine and inherits this method.
 func (e *Engine) NameBound(ctx context.Context, in renderer.NameBoundInput) (renderer.NameBoundOutput, error) {
-	desc, err := e.describe()
+	desc, err := e.describeContext(ctx)
 	if err != nil {
 		return renderer.NameBoundOutput{}, err
 	}
@@ -877,7 +902,7 @@ func (e *Engine) NameBound(ctx context.Context, in renderer.NameBoundInput) (ren
 // nothing about the target's naming crosses into the core: no alphabet, no
 // grammar, no length. AssemblerEngine embeds *Engine and inherits this method.
 func (e *Engine) RenderedName(ctx context.Context, in renderer.RenderedNameInput) (renderer.RenderedNameOutput, error) {
-	desc, err := e.describe()
+	desc, err := e.describeContext(ctx)
 	if err != nil {
 		return renderer.RenderedNameOutput{}, err
 	}
@@ -937,7 +962,7 @@ func (e *Engine) LinksCrossBoundary() bool {
 // and applies the returned patches. AssemblerEngine embeds *Engine and inherits
 // this method.
 func (e *Engine) LinkPublish(ctx context.Context, in renderer.LinkPublishInput) (renderer.LinkPublishOutput, error) {
-	desc, err := e.describe()
+	desc, err := e.describeContext(ctx)
 	if err != nil {
 		return renderer.LinkPublishOutput{}, err
 	}
@@ -984,7 +1009,7 @@ func (e *Engine) LinkPublish(ctx context.Context, in renderer.LinkPublishInput) 
 // plus the peer's published handle in and applies the returned patches.
 // AssemblerEngine embeds *Engine and inherits this method.
 func (e *Engine) LinkResolve(ctx context.Context, in renderer.LinkResolveInput) (renderer.LinkResolveOutput, error) {
-	desc, err := e.describe()
+	desc, err := e.describeContext(ctx)
 	if err != nil {
 		return renderer.LinkResolveOutput{}, err
 	}

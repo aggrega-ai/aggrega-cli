@@ -4,6 +4,7 @@
 package mcp
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -74,7 +75,7 @@ func TestValidateToolRefusesAnUnusableContract(t *testing.T) {
 	// The core first, so the condition is established before the payload is
 	// compared against it. A payload comparison alone would be satisfied by a
 	// refusal for an unrelated reason.
-	_, coreErr := validateops.ValidateEntity(
+	_, coreErr := validateops.ValidateEntity(context.Background(),
 		tw.root, tw.cacheDir, tw.dirs, tw.absWorkspacePath(entityPath), false)
 	if coreErr == nil {
 		t.Fatalf("the core accepted a contract no validator can be built from.\n" +

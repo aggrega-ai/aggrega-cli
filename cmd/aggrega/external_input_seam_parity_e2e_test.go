@@ -678,7 +678,7 @@ func renderThroughToolProtocol(t *testing.T, root, releasePath, compilerVersion 
 		stdin.WriteByte('\n')
 	}
 
-	if err := mcp.Run(mcp.Config{
+	if err := mcp.Run(context.Background(), mcp.Config{
 		Stdin: &stdin, Stdout: &stdout, Stderr: &stderr, ServerVersion: compilerVersion,
 	}); err != nil {
 		t.Fatalf("the tool protocol's message loop failed: %v\nstderr:\n%s", err, stderr.String())

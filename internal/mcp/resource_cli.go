@@ -62,7 +62,9 @@ func cliRootResource() resource {
 // segment, or any non-command character — is rejected as a resource-not-found
 // so a URI can never inject a flag or escape into an arbitrary argument, and a
 // command whose help the binary cannot produce is likewise a resource-not-found.
-func (s *server) readCliResource(uri string) (any, *rpcError) {
+// ctx is the run's own. The production runner starts a subprocess under it, so
+// ending the run ends the child rather than waiting for it.
+func (s *server) readCliResource(ctx context.Context, uri string) (any, *rpcError) {
 	_, body, ok := splitScheme(uri)
 	if !ok {
 		return nil, resourceNotFound(uri)
@@ -76,7 +78,7 @@ func (s *server) readCliResource(uri string) (any, *rpcError) {
 		run = selfExecCommand
 	}
 	var stdout, stderr bytes.Buffer
-	if err := run(context.Background(), argv, &stdout, &stderr); err != nil {
+	if err := run(ctx, argv, &stdout, &stderr); err != nil {
 		return nil, resourceNotFound(uri)
 	}
 	text := stdout.String()

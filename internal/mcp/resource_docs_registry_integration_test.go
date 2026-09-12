@@ -75,7 +75,7 @@ func TestDocsResourceServedFromARealRegistry(t *testing.T) {
 		t.Fatal("the workspace must start cold")
 	}
 
-	if _, rerr := s.handleInitialize(nil); rerr != nil {
+	if _, rerr := s.handleInitialize(context.Background(), nil); rerr != nil {
 		t.Fatalf("initialize: %v", rerr)
 	}
 	if !strings.Contains(logged.String(), "acquired") {
@@ -115,7 +115,7 @@ func TestDocsAcquisitionRefusedWhenTheWorkspaceIsOffline(t *testing.T) {
 
 	var logged strings.Builder
 	s := &server{out: io.Discard, logw: &logged, serverVersion: "9.9.9-fixture", startDir: ws}
-	if _, rerr := s.handleInitialize(nil); rerr != nil {
+	if _, rerr := s.handleInitialize(context.Background(), nil); rerr != nil {
 		t.Fatalf("initialize must succeed offline; got %v", rerr)
 	}
 	if !strings.Contains(logged.String(), "offline") {

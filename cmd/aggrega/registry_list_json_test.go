@@ -35,7 +35,7 @@ func listRegistriesJSON(t *testing.T, cfgContent string, store credentials.Store
 	t.Helper()
 	rw := resolveWorkspaceWithConfig(t, t.TempDir(), cfgContent)
 	var out bytes.Buffer
-	if err := registryListRun(registryListConfig{ws: rw, Out: &out, JSON: true, store: store}); err != nil {
+	if err := registryListRun(context.Background(), registryListConfig{ws: rw, Out: &out, JSON: true, store: store}); err != nil {
 		t.Fatalf("registryListRun: %v", err)
 	}
 	var doc registryListDoc
@@ -213,7 +213,7 @@ func TestRegistryListTableTouchesNoCredentialStore(t *testing.T) {
 	rw := resolveWorkspaceWithConfig(t, t.TempDir(), registryListJSONConfig)
 	var out bytes.Buffer
 	fatal := &recordingCredentialStore{}
-	if err := registryListRun(registryListConfig{ws: rw, Out: &out, store: fatal}); err != nil {
+	if err := registryListRun(context.Background(), registryListConfig{ws: rw, Out: &out, store: fatal}); err != nil {
 		t.Fatalf("registryListRun: %v", err)
 	}
 	if fatal.gets != 0 {

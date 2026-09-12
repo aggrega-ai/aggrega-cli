@@ -84,7 +84,7 @@ func replayDeferredPatches(
 		return warnings, nil
 	}
 
-	codec := selectCodec(engineFactory, provider, input.YAMLIndent)
+	codec := selectCodec(ctx, engineFactory, provider, input.YAMLIndent)
 	invoke := newStepInvoker(lookup)
 
 	var warnings []Diagnostic

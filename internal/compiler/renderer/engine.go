@@ -66,8 +66,13 @@ type NodeInputValidator interface {
 // the scope it is carving, exactly as it asserts [BoundaryAssembler] and the
 // artifacts-placement capability elsewhere: own-scope units use the own
 // engine's codec, host-scope units use the host engine's codec.
+// The context is the render's own, and it is taken here rather than on the
+// codec's own methods because the carve-and-reassemble contract is the guest
+// export contract unchanged: a guest holds no host context, so that contract
+// cannot take one. An engine that drives its codec across the guest ABI carries
+// the context on the codec it returns.
 type CodecProvider interface {
-	PipelineCodec(yamlIndent int) (frp.Codec, bool)
+	PipelineCodec(ctx context.Context, yamlIndent int) (frp.Codec, bool)
 }
 
 // CrossBoundaryLinker is the optional capability a provider engine implements

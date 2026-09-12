@@ -57,7 +57,7 @@ func (s *Server) dispatchRegistryList(ctx context.Context, req *jsonRPCRequest) 
 		return s.writeError(ctx, req.ID, jsonRPCInternalError,
 			"the daemon holds no resolved workspace to report configured registries for")
 	}
-	entries := registryops.List(s.resolvedWorkspace.Config(), registryops.AuthResolver(nil))
+	entries := registryops.List(s.resolvedWorkspace.Config(), registryops.AuthResolver(ctx, nil))
 	if entries == nil {
 		entries = []registryops.Registry{}
 	}

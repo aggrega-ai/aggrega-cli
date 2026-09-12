@@ -140,12 +140,12 @@ func wireCrossBoundaryLinks(
 				fmt.Sprintf("cross-boundary link resolve for uses edge %q -> %q", edge.Source, edge.Target))
 		}
 
-		tgtWarns, err := applyLinkPatches(tgtGrp, pubOut.Patches, tgtKey.Provider, engineFactory, yamlIndent, edge.Target)
+		tgtWarns, err := applyLinkPatches(ctx, tgtGrp, pubOut.Patches, tgtKey.Provider, engineFactory, yamlIndent, edge.Target)
 		if err != nil {
 			return nil, err
 		}
 		warnings = append(warnings, tgtWarns...)
-		srcWarns, err := applyLinkPatches(srcGrp, resOut.Patches, srcKey.Provider, engineFactory, yamlIndent, edge.Source)
+		srcWarns, err := applyLinkPatches(ctx, srcGrp, resOut.Patches, srcKey.Provider, engineFactory, yamlIndent, edge.Source)
 		if err != nil {
 			return nil, err
 		}
@@ -246,11 +246,11 @@ func buildLinkEdge(edge types.IREdge, srcKey, tgtKey dispatchKey, allProvides No
 // applyLinkPatches applies each returned link patch to the named assembled file
 // in grp, through the endpoint provider's codec. A patch naming a file the
 // dispatch group did not emit halts loudly rather than silently dropping.
-func applyLinkPatches(grp *assembledGroup, patches []LinkPatch, provider string, engineFactory EngineFactory, yamlIndent int, nodeID string) ([]Diagnostic, error) {
+func applyLinkPatches(ctx context.Context, grp *assembledGroup, patches []LinkPatch, provider string, engineFactory EngineFactory, yamlIndent int, nodeID string) ([]Diagnostic, error) {
 	if len(patches) == 0 {
 		return nil, nil
 	}
-	codec := selectCodec(engineFactory, provider, yamlIndent)
+	codec := selectCodec(ctx, engineFactory, provider, yamlIndent)
 	var warnings []Diagnostic
 	for _, patch := range patches {
 		rec, ok := grp.files[patch.File]

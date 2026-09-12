@@ -128,7 +128,7 @@ they are from the readable layouts. Pass --unredacted to print them instead.`,
 				if closureFlag {
 					return refuseClosure("a raw plugin artifact")
 				}
-				return inspectRawPlugin(out, pluginFlag)
+				return inspectRawPlugin(cmd.Context(), out, pluginFlag)
 			}
 			rw, err := workspaceFromContext(cmd.Context())
 			if err != nil {

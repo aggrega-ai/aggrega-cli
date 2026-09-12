@@ -34,27 +34,42 @@ const (
 // output-shape policy stays in the guest. A guest that does not advertise both
 // exports (or cannot be described) reports (nil, false), and the executor
 // borrows the stock YAML codec.
-func (e *Engine) PipelineCodec(yamlIndent int) (frp.Codec, bool) {
-	desc, err := e.describe()
+//
+// ctx is the render's own. It is handed to the returned codec rather than to
+// each crossing because the carve-and-reassemble contract is the guest export
+// contract unchanged, and a guest carries no host context — so that contract
+// cannot take one without asking every implementation, and one implementation
+// compiles into a guest. The codec is built here, used for the one pipeline run
+// that asked for it, and discarded, so the context it carries is that run's by
+// construction.
+func (e *Engine) PipelineCodec(ctx context.Context, yamlIndent int) (frp.Codec, bool) {
+	desc, err := e.describeContext(ctx)
 	if err != nil {
 		return nil, false
 	}
 	if !advertisesExport(desc, CarveExport) || !advertisesExport(desc, ReassembleExport) {
 		return nil, false
 	}
-	return &guestCodec{engine: e, yamlIndent: yamlIndent}, true
+	return &guestCodec{engine: e, yamlIndent: yamlIndent, ctx: ctx}, true
 }
 
 // guestCodec is the host-side frp.Codec that carves and reassembles through a
 // provider guest's carve and reassemble exports. It carries the render-wide
 // indent so the guest's carving and any op-synthesized text match the render's
 // indentation, and it holds the Engine whose loader, lookup, and memoized
-// descriptor drive the crossings. Segment and Reassemble use a background
-// context: the frp.Codec contract carries none, and the crossing is a
-// self-contained guest call with no cancellation surface.
+// descriptor drive the crossings.
 type guestCodec struct {
 	engine     *Engine
 	yamlIndent int
+	// ctx is the render's context, carried on the value because the carve and
+	// reassemble contract takes none and cannot: it is the guest export contract
+	// unchanged, and one implementation of it compiles into a guest, where a host
+	// context does not exist. The value is built inside the pipeline run that
+	// holds the context, used for that run's crossings, and discarded — so its
+	// lifetime is the run's, which is what makes carrying it here the
+	// request-scoped exception rather than a stored context. PipelineCodec above
+	// is the only thing that builds one and always sets this, so it is never nil.
+	ctx context.Context
 }
 
 var _ frp.Codec = (*guestCodec)(nil)
@@ -63,7 +78,7 @@ var _ frp.Codec = (*guestCodec)(nil)
 // guest's carve export.
 func (c *guestCodec) Segment(name string, body []byte) ([]frp.Unit, error) {
 	in := renderer.CarveInput{Name: name, Body: body, YamlIndent: c.yamlIndent}
-	out, err := invokeCarve(context.Background(), c.engine, in)
+	out, err := invokeCarve(c.ctx, c.engine, in)
 	if err != nil {
 		return nil, err
 	}
@@ -77,7 +92,7 @@ func (c *guestCodec) Segment(name string, body []byte) ([]frp.Unit, error) {
 // body and an error, not diagnostics.
 func (c *guestCodec) Reassemble(name string, body []byte, segs []frp.Unit, patched []frp.PatchedUnit) ([]byte, []string, error) {
 	in := renderer.ReassembleInput{Name: name, Body: body, Segs: segs, Patched: patched, YamlIndent: c.yamlIndent}
-	out, err := invokeReassemble(context.Background(), c.engine, in)
+	out, err := invokeReassemble(c.ctx, c.engine, in)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -90,7 +105,7 @@ func (c *guestCodec) Reassemble(name string, body []byte, segs []frp.Unit, patch
 // crossing lifecycle; the codec surface needs no source root (it carves bytes
 // already in the payload). The plugin is closed before invokeCarve returns.
 func invokeCarve(ctx context.Context, e *Engine, input renderer.CarveInput) (renderer.CarveOutput, error) {
-	desc, err := e.describe()
+	desc, err := e.describeContext(ctx)
 	if err != nil {
 		return renderer.CarveOutput{}, err
 	}
@@ -124,7 +139,7 @@ func invokeCarve(ctx context.Context, e *Engine, input renderer.CarveInput) (ren
 // ReassembleOutput. It mirrors invokeCarve's lifecycle. The plugin is closed
 // before invokeReassemble returns.
 func invokeReassemble(ctx context.Context, e *Engine, input renderer.ReassembleInput) (renderer.ReassembleOutput, error) {
-	desc, err := e.describe()
+	desc, err := e.describeContext(ctx)
 	if err != nil {
 		return renderer.ReassembleOutput{}, err
 	}

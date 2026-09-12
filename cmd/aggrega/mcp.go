@@ -43,7 +43,7 @@ the server down.`,
 }
 
 func runMCP(cmd *cobra.Command, args []string) error {
-	return mcp.Run(mcp.Config{
+	return mcp.Run(cmd.Context(), mcp.Config{
 		Stdin:         cmd.InOrStdin(),
 		Stdout:        cmd.OutOrStdout(),
 		Stderr:        cmd.ErrOrStderr(),

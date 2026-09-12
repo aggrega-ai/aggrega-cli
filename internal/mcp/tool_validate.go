@@ -178,7 +178,7 @@ func validateInvoke(s *server, ctx context.Context, args json.RawMessage) (*call
 		if a.Catalog {
 			return errorResult("validate takes exactly one scope: 'plugin' and 'catalog' are mutually exclusive")
 		}
-		return validatePluginScope(s, a, plugin, pluginType, entity)
+		return validatePluginScope(ctx, s, a, plugin, pluginType, entity)
 	}
 
 	// Release scope. Mutually exclusive with a single-entity target and with
@@ -203,7 +203,7 @@ func validateInvoke(s *server, ctx context.Context, args json.RawMessage) (*call
 
 	// Single-entity scope.
 	if entity != "" {
-		return validateEntityScope(s, a, entity)
+		return validateEntityScope(ctx, s, a, entity)
 	}
 
 	return errorResult("validate requires exactly one of 'release', 'entity', 'plugin', or 'catalog'")
@@ -272,14 +272,14 @@ func validateReleaseScope(s *server, ctx context.Context, a validateArgs, releas
 // entity does not validate (the core halts at the first), empty when it does.
 // The render-artifact keys are summarized in the payload; the bytes are not
 // carried here — those belong to the build / describe / inspect tools.
-func validateEntityScope(s *server, a validateArgs, entity string) (*callToolResult, *rpcError) {
+func validateEntityScope(ctx context.Context, s *server, a validateArgs, entity string) (*callToolResult, *rpcError) {
 	tw, err := s.resolveToolWorkspace(a.WorkspaceRoot, a.CatalogDirs)
 	if err != nil {
 		return errorResult(explainToolError("Could not resolve the workspace for validation.", err, "component"))
 	}
 	entityPath := tw.absWorkspacePath(entity)
 
-	res, verr := validateops.ValidateEntity(tw.root, tw.cacheDir, tw.dirs, entityPath, false)
+	res, verr := validateops.ValidateEntity(ctx, tw.root, tw.cacheDir, tw.dirs, entityPath, false)
 
 	var diags []string
 	if verr != nil {
@@ -307,7 +307,7 @@ func validateEntityScope(s *server, a validateArgs, entity string) (*callToolRes
 // that does not know the server's working directory can pass workspace-relative
 // paths as the other scopes do. Diagnostics is problems-only: the single blocking
 // error when the binary does not validate, empty when it does.
-func validatePluginScope(s *server, a validateArgs, plugin, pluginType, entity string) (*callToolResult, *rpcError) {
+func validatePluginScope(ctx context.Context, s *server, a validateArgs, plugin, pluginType, entity string) (*callToolResult, *rpcError) {
 	tw, err := s.resolveToolWorkspace(a.WorkspaceRoot, a.CatalogDirs)
 	if err != nil {
 		return errorResult(explainToolError("Could not resolve the workspace for validation.", err, "plugin"))
@@ -318,7 +318,7 @@ func validatePluginScope(s *server, a validateArgs, plugin, pluginType, entity s
 		entityPath = tw.absWorkspacePath(entity)
 	}
 
-	res, verr := validateops.ValidatePluginBinary(pluginPath, pluginType, entityPath, pluginValidateMaxMemoryPages)
+	res, verr := validateops.ValidatePluginBinary(ctx, pluginPath, pluginType, entityPath, pluginValidateMaxMemoryPages)
 
 	var diags []string
 	if verr != nil {

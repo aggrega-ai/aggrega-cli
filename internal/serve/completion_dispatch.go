@@ -31,7 +31,14 @@ import (
 //     apiVersion:, label-values, target:, schema-keywords).
 //  4. Unrecognized cursor → empty candidate list (LSP convention for
 //     "no completion available here").
-func (s *Server) handleCompletion(params completionParams) ([]CompletionItem, *jsonRPCError) {
+//
+// reqCtx is the request's own context. Several branches below project the
+// workspace document traversal, which reads every YAML file under the root, so
+// ending the request ends that traversal between files rather than leaving it to
+// run on after the answer is no longer wanted. The parameter is named for the
+// request rather than spelled ctx because the cursor classification below binds
+// that name to a yamlpos.Context.
+func (s *Server) handleCompletion(reqCtx context.Context, params completionParams) ([]CompletionItem, *jsonRPCError) {
 	entry, ok := s.parseCache.Get(s.canonicalFile(params.URI))
 	if !ok {
 		return nil, &jsonRPCError{
@@ -62,7 +69,7 @@ func (s *Server) handleCompletion(params completionParams) ([]CompletionItem, *j
 	hostKind := scalarAtPathOnDoc(entry.node, []string{"kind"})
 
 	// Branch 1: navigation-shape cursor (yamlpos recognized it).
-	if items, handled := s.completionForNavigationContext(ctx, hostKind, entry.node, prefix); handled {
+	if items, handled := s.completionForNavigationContext(reqCtx, ctx, hostKind, entry.node, prefix); handled {
 		return adaptItems(items), nil
 	}
 
@@ -78,23 +85,23 @@ func (s *Server) handleCompletion(params completionParams) ([]CompletionItem, *j
 // completion equivalent (MetadataName, SchemaProperty — no candidates
 // at those positions). sourceDoc is the cursor's source file used by
 // the intra-document UsesTarget branch.
-func (s *Server) completionForNavigationContext(ctx yamlpos.Context, hostKind string, sourceDoc *yaml.Node, prefix string) ([]completion.CompletionItem, bool) {
+func (s *Server) completionForNavigationContext(reqCtx context.Context, ctx yamlpos.Context, hostKind string, sourceDoc *yaml.Node, prefix string) ([]completion.CompletionItem, bool) {
 	switch ctx.Kind {
 	case yamlpos.ContextKindExtendsValue:
-		uris := s.enumerateWorkspaceURIs(hostKind)
+		uris := s.enumerateWorkspaceURIs(reqCtx, hostKind)
 		return completion.Extends(uris, prefix), true
 	case yamlpos.ContextKindComponentsType:
-		uris := s.enumerateWorkspaceURIs("Component")
+		uris := s.enumerateWorkspaceURIs(reqCtx, "Component")
 		return completion.ComponentsType(uris, prefix), true
 	case yamlpos.ContextKindFeaturesType:
-		uris := s.enumerateWorkspaceURIs("Feature")
+		uris := s.enumerateWorkspaceURIs(reqCtx, "Feature")
 		return completion.FeaturesType(uris, prefix), true
 	case yamlpos.ContextKindRecipeImplements:
 		targetKind := "Component"
 		if hostKind == "FeatureRecipe" {
 			targetKind = "Feature"
 		}
-		uris := s.enumerateWorkspaceURIs(targetKind)
+		uris := s.enumerateWorkspaceURIs(reqCtx, targetKind)
 		return completion.Implements(uris, prefix), true
 	case yamlpos.ContextKindManifestRecipeReference:
 		// Implements-aware ranking: a Manifest mapping value binds a component
@@ -118,13 +125,13 @@ func (s *Server) completionForNavigationContext(ctx yamlpos.Context, hostKind st
 		if isTypeMapping && len(ctx.Path) > 0 {
 			mappingType = ctx.Path[len(ctx.Path)-1]
 		}
-		uris := s.enumerateWorkspaceURIs(recipeKind)
-		return completion.ManifestRecipeReference(uris, prefix, mappingType, s.enumerateRecipeImplements(recipeKind)), true
+		uris := s.enumerateWorkspaceURIs(reqCtx, recipeKind)
+		return completion.ManifestRecipeReference(uris, prefix, mappingType, s.enumerateRecipeImplements(reqCtx, recipeKind)), true
 	case yamlpos.ContextKindReleaseAggregatePath:
-		paths := s.enumerateWorkspaceRelativePaths("Aggregate")
+		paths := s.enumerateWorkspaceRelativePaths(reqCtx, "Aggregate")
 		return completion.ReleaseAggregatePath(paths, prefix), true
 	case yamlpos.ContextKindReleaseManifestPath:
-		paths := s.enumerateWorkspaceRelativePaths("Manifest")
+		paths := s.enumerateWorkspaceRelativePaths(reqCtx, "Manifest")
 		return completion.ReleaseManifestPath(paths, prefix), true
 	case yamlpos.ContextKindUsesTarget:
 		names := completion.EnumerateLocalComponentKeys(sourceDoc)
@@ -171,12 +178,13 @@ func (s *Server) completionForCompletionContext(kind completion.ContextKind, ctx
 // filter. Returns them deduped and sorted. Empty filter matches every
 // kind (rare).
 //
-// Completion is a fast path; cancellation is honored at the dispatcher
-// entry check rather than mid-traversal, so a background context
-// suffices here.
-func (s *Server) enumerateWorkspaceURIs(kindFilter string) []string {
+// The traversal runs under the request's own context. Its on-disk pass reads
+// every YAML file under the root, so a withdrawal that lands mid-traversal ends
+// it between files; the dispatcher's entry check answers only the request that
+// had already been withdrawn when it arrived.
+func (s *Server) enumerateWorkspaceURIs(reqCtx context.Context, kindFilter string) []string {
 	seen := map[string]bool{}
-	s.rangeWorkspaceDocs(context.Background(), func(doc workspaceDoc) bool {
+	s.rangeWorkspaceDocs(reqCtx, func(doc workspaceDoc) bool {
 		if kindFilter != "" && scalarAtPathOnDoc(doc.node, []string{"kind"}) != kindFilter {
 			return true
 		}
@@ -200,10 +208,11 @@ func (s *Server) enumerateWorkspaceURIs(kindFilter string) []string {
 // completion ranking. Its keys match enumerateWorkspaceURIs's output
 // exactly because both read the same traversal; first document to
 // declare a name wins, which the traversal's per-path ordering makes
-// deterministic.
-func (s *Server) enumerateRecipeImplements(kindFilter string) map[string]string {
+// deterministic. It runs under the request's own context, for the reason stated
+// on the projection above.
+func (s *Server) enumerateRecipeImplements(reqCtx context.Context, kindFilter string) map[string]string {
 	out := map[string]string{}
-	s.rangeWorkspaceDocs(context.Background(), func(doc workspaceDoc) bool {
+	s.rangeWorkspaceDocs(reqCtx, func(doc workspaceDoc) bool {
 		if scalarAtPathOnDoc(doc.node, []string{"kind"}) != kindFilter {
 			return true
 		}
@@ -225,11 +234,11 @@ func (s *Server) enumerateRecipeImplements(kindFilter string) map[string]string 
 // relative paths (extension-stripped — e.g., "app" for app.yaml).
 // Used by Release-path completion handlers (spec.aggregate:,
 // spec.manifest:).
-func (s *Server) enumerateWorkspaceRelativePaths(kindFilter string) []string {
+func (s *Server) enumerateWorkspaceRelativePaths(reqCtx context.Context, kindFilter string) []string {
 	seen := map[string]bool{}
-	// Background context: completion is a fast path; cancellation is
-	// honored at the dispatcher entry check rather than mid-walk.
-	_ = s.walkWorkspaceYAML(context.Background(), func(path string) error {
+	// The walk runs under the request's own context, so a withdrawal that lands
+	// while it is reading the workspace ends it between files.
+	_ = s.walkWorkspaceYAML(reqCtx, func(path string) error {
 		content, err := os.ReadFile(path)
 		if err != nil {
 			return nil

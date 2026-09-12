@@ -27,7 +27,14 @@ import (
 // and manifest-recipe URI references; the two Release path lookups; and
 // uses-target, which renders the referenced sibling Component instance.
 // SchemaProperty and unclassified positions return null Contents.
-func (s *Server) handleHover(params hoverParams) (*MarkupContent, *jsonRPCError) {
+//
+// reqCtx is the request's own context. The reference lookups below may fall
+// through to a workspace walk, which reads every YAML file under the root, so
+// ending the request ends that walk between files rather than leaving it to run
+// on after the answer is no longer wanted. The parameter is named for the
+// request rather than spelled ctx because the cursor classification below binds
+// that name to a yamlpos.Context.
+func (s *Server) handleHover(reqCtx context.Context, params hoverParams) (*MarkupContent, *jsonRPCError) {
 	entry, ok := s.parseCache.Get(s.canonicalFile(params.URI))
 	if !ok {
 		return nil, &jsonRPCError{
@@ -68,7 +75,7 @@ func (s *Server) handleHover(params hoverParams) (*MarkupContent, *jsonRPCError)
 			return nil, nil
 		}
 		name, _, _ := catalog.SplitVersionedURI(ctx.Value)
-		return s.hoverByURI(name), nil
+		return s.hoverByURI(reqCtx, name), nil
 	}
 
 	// All other ContextKinds (SchemaProperty, Unknown, etc.) — null Contents.
@@ -78,8 +85,8 @@ func (s *Server) handleHover(params hoverParams) (*MarkupContent, *jsonRPCError)
 // hoverByURI locates the target entity in parse cache or workspace
 // walk, reads its kind, and dispatches to the corresponding
 // per-kind renderer. Returns nil when no target file matches.
-func (s *Server) hoverByURI(targetURI string) *MarkupContent {
-	doc, content := s.findEntityForHover(targetURI)
+func (s *Server) hoverByURI(reqCtx context.Context, targetURI string) *MarkupContent {
+	doc, content := s.findEntityForHover(reqCtx, targetURI)
 	if doc == nil {
 		return nil
 	}
@@ -89,7 +96,7 @@ func (s *Server) hoverByURI(targetURI string) *MarkupContent {
 // findEntityForHover scans the parse cache + workspace walk for a
 // YAML file whose metadata.name matches targetURI. Returns the
 // parsed root + raw bytes on hit; (nil, nil) on miss.
-func (s *Server) findEntityForHover(targetURI string) (*yaml.Node, []byte) {
+func (s *Server) findEntityForHover(reqCtx context.Context, targetURI string) (*yaml.Node, []byte) {
 	// Parse-cache pass first (cheap, no filesystem).
 	var hitNode *yaml.Node
 	var hitContent []byte
@@ -104,12 +111,14 @@ func (s *Server) findEntityForHover(targetURI string) (*yaml.Node, []byte) {
 	if hitNode != nil {
 		return hitNode, hitContent
 	}
-	// Workspace-walk fallback. Hover is a fast path; cancellation is
-	// honored at the dispatcher entry check rather than mid-walk, so a
-	// background context suffices here.
+	// Workspace-walk fallback, under the request's own context. The walk reads
+	// every YAML file under the root, so it is the part of a hover worth being
+	// able to end: the dispatcher's entry check answers a request that had
+	// already been withdrawn when it arrived, and a withdrawal that lands while
+	// the walk is running reaches it here.
 	var foundDoc *yaml.Node
 	var foundContent []byte
-	_ = s.walkWorkspaceYAML(context.Background(), func(path string) error {
+	_ = s.walkWorkspaceYAML(reqCtx, func(path string) error {
 		if foundDoc != nil {
 			return nil
 		}

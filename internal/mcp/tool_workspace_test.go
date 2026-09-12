@@ -4,6 +4,7 @@
 package mcp
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"os"
@@ -109,7 +110,7 @@ func callDiscoveryTool(t *testing.T, s *server, name string, args map[string]any
 	if err != nil {
 		t.Fatalf("marshal params: %v", err)
 	}
-	res, rpcErr := s.handleToolsCall(params)
+	res, rpcErr := s.handleToolsCall(context.Background(), params)
 	if rpcErr != nil {
 		t.Fatalf("tools/call %s returned a protocol error: %s", name, rpcErr.Message)
 	}

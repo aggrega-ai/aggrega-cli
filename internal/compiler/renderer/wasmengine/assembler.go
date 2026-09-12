@@ -225,7 +225,7 @@ func (e *AssemblerEngine) AssembleBoundary(ctx context.Context, info renderer.Bo
 // no reuse claim the acquired instance is fresh per crossing and the returned
 // release closes it, so dispatch groups stay isolated by construction.
 func (e *AssemblerEngine) invokeAssemble(ctx context.Context, export string, input renderer.AssembleBoundaryInput) (renderer.AssembleBoundaryOutput, error) {
-	desc, err := e.describe()
+	desc, err := e.describeContext(ctx)
 	if err != nil {
 		return renderer.AssembleBoundaryOutput{}, err
 	}

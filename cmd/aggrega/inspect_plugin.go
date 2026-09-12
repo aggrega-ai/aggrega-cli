@@ -44,7 +44,13 @@ import (
 // here is exactly the set publish will require the entity to have recorded. The
 // set is labelled as derived-from-binary and not-yet-recorded to distinguish it
 // from the entity-read view inspect shows for a published Plugin.
-func inspectRawPlugin(out io.Writer, wasmPath string) error {
+//
+// ctx is the caller's own. Nothing here leaves the process — the bytes are
+// already in hand — but the describe below loads and runs a guest, and a guest
+// call whose context ends unwinds rather than being noticed only once the guest
+// next returns. So a describe that does not come back is stoppable, exactly as
+// the same operation is on every other surface that drives it.
+func inspectRawPlugin(ctx context.Context, out io.Writer, wasmPath string) error {
 	wasmBytes, err := os.ReadFile(wasmPath)
 	if err != nil {
 		return fmt.Errorf("read .wasm %q: %w", wasmPath, err)
@@ -66,7 +72,7 @@ func inspectRawPlugin(out io.Writer, wasmPath string) error {
 	// `aggrega validate --plugin`, not inspect. The declared plugin type is left
 	// empty because a bare .wasm carries no entity front and the describe-only load
 	// admits any type, reading the contract from the guest rather than an entity claim.
-	if desc, err := wasm.DescribePluginBytes(context.Background(), identity, wasmBytes, wasm.DescribeMaxMemoryPages, ""); err == nil {
+	if desc, err := wasm.DescribePluginBytes(ctx, identity, wasmBytes, wasm.DescribeMaxMemoryPages, ""); err == nil {
 		renderRawPluginExports(out, desc.Exports)
 	} else {
 		fmt.Fprintln(out, "Exports: (unavailable — this .wasm did not report a describe() contract)")

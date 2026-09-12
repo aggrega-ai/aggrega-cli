@@ -4,6 +4,7 @@
 package wasmengine_test
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -73,7 +74,7 @@ func TestWasmEngineExposesCodecAndArtifactsSeams(t *testing.T) {
 	// The guest cannot be loaded (failingLookup), so the codec seam reports no
 	// codec — the pipeline borrows the stock YAML codec — and the delimiter
 	// accessor takes its default-pair fallback rather than the guest's pair.
-	if codec, ok := w.PipelineCodec(2); ok || codec != nil {
+	if codec, ok := w.PipelineCodec(context.Background(), 2); ok || codec != nil {
 		t.Errorf("unloadable-guest PipelineCodec = (%v, %v); want (nil, false)", codec, ok)
 	}
 	if l, r := w.ArtifactTemplateDelimiters(); l != "{{" || r != "}}" {

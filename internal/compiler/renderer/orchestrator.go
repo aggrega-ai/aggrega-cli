@@ -1088,7 +1088,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 	// Phase B.6 dispatch (which renders the FR's files) re-evaluates the same
 	// provides idempotently. See PrepopulateBoundaryScopeProvides.
 	if input.ResolveResult != nil {
-		if err := PrepopulateBoundaryScopeProvides(graph, input.ResolveResult.Release, input.ResolveResult.BoundaryAnnotations, recipeLookup, allProvides, engineFactory, boundaryFRState); err != nil {
+		if err := PrepopulateBoundaryScopeProvides(ctx, graph, input.ResolveResult.Release, input.ResolveResult.BoundaryAnnotations, recipeLookup, allProvides, engineFactory, boundaryFRState); err != nil {
 			return nil, err
 		}
 	}

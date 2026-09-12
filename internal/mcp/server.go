@@ -6,6 +6,7 @@ package mcp
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -137,7 +138,22 @@ type server struct {
 // it returns a non-nil error only when a stdout write fails or the input
 // stream faults, since a broken transport leaves no channel to report the
 // failure on.
-func Run(cfg Config) error {
+//
+// # The caller's context
+//
+// ctx is the run's own, and it reaches every tool invocation and every resource
+// read: the tools that publish, pull, build, lint and search all carry it into
+// the work they drive, and the CLI-help resource carries it into the subprocess
+// it starts. So ending the run ends whatever a call was doing, rather than only
+// declining to accept the next message.
+//
+// Two bounds are worth stating because they are structural rather than
+// oversights. The read loop blocks in a stdin read, which no context interrupts;
+// the loop therefore ends when the current message has been answered, and a
+// client that closes the connection is what unblocks the read. And a tool whose
+// work ignores the context runs to its own completion — the context reaches it,
+// but what it does with it is that path's own contract.
+func Run(ctx context.Context, cfg Config) error {
 	stdout := cfg.Stdout
 	if stdout == nil {
 		stdout = os.Stdout
@@ -157,7 +173,7 @@ func Run(cfg Config) error {
 		toolchain:     cfg.Toolchain,
 		commandTools:  deriveCommandTools(cfg.Commands),
 	}
-	return s.serve(stdin)
+	return s.serve(ctx, stdin)
 }
 
 // serve runs the message loop: read one newline-delimited message, handle
@@ -165,12 +181,22 @@ func Run(cfg Config) error {
 // message may arrive without a trailing newline (ReadBytes returns the
 // bytes alongside io.EOF); it is handled before the loop returns, so no
 // message is dropped at end-of-stream.
-func (s *server) serve(stdin io.Reader) error {
+//
+// A run whose context has ended stops accepting messages: the check sits at the
+// top of each iteration, so a message already being answered finishes and the
+// next one is never read. It is not a mid-read interruption — the read below
+// blocks in the operating system and no context unblocks it — so the loop
+// observes the withdrawal at its next turn, or when the client closes the
+// connection, whichever comes first.
+func (s *server) serve(ctx context.Context, stdin io.Reader) error {
 	r := bufio.NewReader(stdin)
 	for {
+		if ctx.Err() != nil {
+			return nil
+		}
 		line, err := r.ReadBytes('\n')
 		if trimmed := bytes.TrimSpace(line); len(trimmed) > 0 {
-			if writeErr := s.handleMessage(trimmed); writeErr != nil {
+			if writeErr := s.handleMessage(ctx, trimmed); writeErr != nil {
 				return writeErr
 			}
 		}
@@ -189,7 +215,7 @@ func (s *server) serve(stdin io.Reader) error {
 // response. A request is dispatched and its result or error envelope is
 // framed to stdout. The returned error is non-nil only when writing the
 // response to stdout fails — a fatal transport condition.
-func (s *server) handleMessage(body []byte) error {
+func (s *server) handleMessage(ctx context.Context, body []byte) error {
 	var req rpcRequest
 	if err := json.Unmarshal(body, &req); err != nil {
 		return s.writeError(nil, codeParseError, "parse error: "+err.Error())
@@ -198,7 +224,7 @@ func (s *server) handleMessage(body []byte) error {
 		s.handleNotification(&req)
 		return nil
 	}
-	result, rpcErr := s.dispatch(&req)
+	result, rpcErr := s.dispatch(ctx, &req)
 	if rpcErr != nil {
 		return s.writeErrorEnvelope(req.ID, rpcErr)
 	}

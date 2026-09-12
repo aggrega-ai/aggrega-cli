@@ -16,6 +16,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"strings"
@@ -38,7 +39,7 @@ func serveOneToolProtocolRequest(t *testing.T, method string, params any) json.R
 		t.Fatalf("frame the request: %v", err)
 	}
 	var stdout bytes.Buffer
-	if err := mcp.Run(mcp.Config{
+	if err := mcp.Run(context.Background(), mcp.Config{
 		Stdin:    bytes.NewReader(append(body, '\n')),
 		Stdout:   &stdout,
 		Stderr:   io.Discard,

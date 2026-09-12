@@ -498,7 +498,7 @@ func TestGeneratedCommandToolRefusesAnUnknownProperty(t *testing.T) {
 		Name:      "cli-work",
 		Arguments: mustJSON(t, map[string]any{"output-dir": "/tmp/out"}),
 	})
-	res, rpcErr := s.handleToolsCall(params)
+	res, rpcErr := s.handleToolsCall(context.Background(), params)
 	if rpcErr != nil {
 		t.Fatalf("argument refusal travelled as an error envelope: %+v", rpcErr)
 	}

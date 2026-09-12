@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -88,7 +89,7 @@ func newValidateCmd() *cobra.Command {
 				if releasePath != "" {
 					return fmt.Errorf("OPS_ERROR: --plugin is mutually exclusive with --release; validate a .wasm binary or a Release closure, not both")
 				}
-				return validatePluginBinary(pluginPath, pluginType, path, cmd.OutOrStdout())
+				return validatePluginBinary(cmd.Context(), pluginPath, pluginType, path, cmd.OutOrStdout())
 			}
 			rw, err := workspaceFromContext(cmd.Context())
 			if err != nil {
@@ -106,7 +107,7 @@ func newValidateCmd() *cobra.Command {
 				// No entity argument → whole-catalog correctness.
 				return validateCatalogWideFromWorkspace(rw, catalogDirs)
 			}
-			return dispatchValidate(rw, path, catalogDirs, noUnsupportedFieldWarnings, cmd.OutOrStdout())
+			return dispatchValidate(cmd.Context(), rw, path, catalogDirs, noUnsupportedFieldWarnings, cmd.OutOrStdout())
 		},
 	}
 	c.Flags().StringArrayVar(&catalogDirs, "catalog", nil,
@@ -138,8 +139,8 @@ func newValidateCmd() *cobra.Command {
 // Notices repeats those same lines as bare strings for a caller that summarizes
 // rather than prints, so the content is carried here and reading the repeat
 // would print every notice twice.
-func validatePluginBinary(pluginPath, declaredType, entityPath string, out io.Writer) error {
-	res, err := validateops.ValidatePluginBinary(pluginPath, declaredType, entityPath, wasm.DescribeMaxMemoryPages)
+func validatePluginBinary(ctx context.Context, pluginPath, declaredType, entityPath string, out io.Writer) error {
+	res, err := validateops.ValidatePluginBinary(ctx, pluginPath, declaredType, entityPath, wasm.DescribeMaxMemoryPages)
 	for _, line := range res.Diagnostics {
 		fmt.Fprintln(out, line)
 	}
@@ -150,7 +151,7 @@ func validatePluginBinary(pluginPath, declaredType, entityPath string, out io.Wr
 // single-entity scope core, and renders its structured result: the report lines
 // and rendered artifacts go to out (stdout), advisory notes to stderr. It
 // returns the core's first blocking error so a schema break halts loudly.
-func dispatchValidate(rw *workspaceconfig.ResolvedWorkspace, path string, catalogFlagDirs []string, suppressUnsupportedFieldWarnings bool, out io.Writer) error {
+func dispatchValidate(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, path string, catalogFlagDirs []string, suppressUnsupportedFieldWarnings bool, out io.Writer) error {
 	rw, err := workspaceOrResolve(rw)
 	if err != nil {
 		return err
@@ -159,7 +160,7 @@ func dispatchValidate(rw *workspaceconfig.ResolvedWorkspace, path string, catalo
 	cacheDir := wsCfg.ResolvedArtifactCacheDir()
 	dirs := workspaceconfig.ResolveCatalogDirs(catalogFlagDirs, wsCfg, ".")
 
-	res, verr := validateops.ValidateEntity(rw.Root(), cacheDir, dirs, path, suppressUnsupportedFieldWarnings)
+	res, verr := validateops.ValidateEntity(ctx, rw.Root(), cacheDir, dirs, path, suppressUnsupportedFieldWarnings)
 	for _, line := range res.Diagnostics {
 		fmt.Fprintln(out, line)
 	}

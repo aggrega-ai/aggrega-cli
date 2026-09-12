@@ -47,6 +47,7 @@ package mcp
 // what the result says.
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -114,7 +115,7 @@ func TestValidateToolEntityScopeCoreParity(t *testing.T) {
 		}
 		payload := unmarshalValidatePayload(t, res)
 
-		_, coreErr := validateops.ValidateEntity(tw.root, tw.cacheDir, tw.dirs, tw.absWorkspacePath(entityPath), false)
+		_, coreErr := validateops.ValidateEntity(context.Background(), tw.root, tw.cacheDir, tw.dirs, tw.absWorkspacePath(entityPath), false)
 		if coreErr != nil {
 			t.Fatalf("core rejected the clean fixture: %v", coreErr)
 		}
@@ -133,7 +134,7 @@ func TestValidateToolEntityScopeCoreParity(t *testing.T) {
 		})
 		payload := unmarshalValidatePayload(t, res)
 
-		_, coreErr := validateops.ValidateEntity(tw.root, tw.cacheDir, tw.dirs, tw.absWorkspacePath(entityPath), false)
+		_, coreErr := validateops.ValidateEntity(context.Background(), tw.root, tw.cacheDir, tw.dirs, tw.absWorkspacePath(entityPath), false)
 		if coreErr == nil {
 			t.Fatalf("expected the core to reject a Release as a single-entity target")
 		}
@@ -162,7 +163,7 @@ func TestValidateToolPluginScopeCoreParity(t *testing.T) {
 		}
 		payload := unmarshalValidatePayload(t, res)
 
-		_, coreErr := validateops.ValidatePluginBinary(pluginPath, "parser", "", pluginValidateMaxMemoryPages)
+		_, coreErr := validateops.ValidatePluginBinary(context.Background(), pluginPath, "parser", "", pluginValidateMaxMemoryPages)
 		if coreErr != nil {
 			t.Fatalf("core rejected a matching declared type: %v", coreErr)
 		}
@@ -176,7 +177,7 @@ func TestValidateToolPluginScopeCoreParity(t *testing.T) {
 		})
 		payload := unmarshalValidatePayload(t, res)
 
-		_, coreErr := validateops.ValidatePluginBinary(pluginPath, "provider", "", pluginValidateMaxMemoryPages)
+		_, coreErr := validateops.ValidatePluginBinary(context.Background(), pluginPath, "provider", "", pluginValidateMaxMemoryPages)
 		if coreErr == nil {
 			t.Fatalf("expected the core to reject a type disagreeing with the binary's self-report")
 		}

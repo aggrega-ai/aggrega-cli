@@ -851,7 +851,21 @@ func (l *LazyLookup) feature(uri string) (types.Feature, bool) {
 // next tier, and the lookup ultimately reports miss if no tier
 // produces a Component-kind result. This matches catalog.Load's
 // kind-routing semantic (indexFile dispatches by hdr.Kind).
+// The contextless form is what the plain-function accessor calls, since that
+// accessor's own signature carries none. **A Tier-3 fetch reached that way still
+// runs to completion**: there is no caller context to hand on, and that bound is
+// unchanged. resolveComponentContext below is where the cascade lives, so a
+// caller that does hold a context runs the same walk under it and can end the
+// fetch; the closure walk reaches the same primitive through the resolution
+// surface, which does carry one.
 func (l *LazyLookup) resolveComponent(uri string) (types.Component, bool) {
+	return l.resolveComponentContext(context.Background(), uri)
+}
+
+// resolveComponentContext is resolveComponent's cascade, under a caller's
+// context. Tier 3 is a registry pull, so ending the caller's run ends the fetch
+// rather than leaving it to finish for an answer nobody is waiting for.
+func (l *LazyLookup) resolveComponentContext(ctx context.Context, uri string) (types.Component, bool) {
 	if comp, ok := l.tier1ReadComponent(uri); ok {
 		return comp, true
 	}
@@ -868,11 +882,7 @@ func (l *LazyLookup) resolveComponent(uri string) (types.Component, bool) {
 		// request (an honest degraded preview, not a false-green render).
 		return types.Component{}, false
 	}
-	// The accessor this resolver sits behind is handed to consumers as a plain
-	// function value, so it carries no caller context to hand on and a fetch
-	// reached this way runs to completion. The closure walk reaches the same
-	// primitive through the resolution surface, which does carry one.
-	bytes, _, err := tier3PullCatalogEntity(context.Background(), l.workspaceRoot, l.cacheDir, l.puller, uri, "Component")
+	bytes, _, err := tier3PullCatalogEntity(ctx, l.workspaceRoot, l.cacheDir, l.puller, uri, "Component")
 	if err == nil && bytes != nil {
 		if comp, perr := parseComponentEntity(bytes, uri); perr == nil {
 			l.entityBytes[entityBytesKey("Component", comp.Metadata.Name)] = bytes
@@ -885,7 +895,15 @@ func (l *LazyLookup) resolveComponent(uri string) (types.Component, bool) {
 // resolveFeature mirrors resolveComponent for the Feature surface.
 // The same kind-check guards Tier-2 + Tier-3 unmarshal paths against
 // non-Feature bytes arriving from the cache or registry.
+// It carries the same bound resolveComponent states: a Tier-3 fetch reached
+// through the plain-function accessor runs to completion, because that accessor
+// carries no caller context to hand on.
 func (l *LazyLookup) resolveFeature(uri string) (types.Feature, bool) {
+	return l.resolveFeatureContext(context.Background(), uri)
+}
+
+// resolveFeatureContext mirrors resolveComponentContext for the Feature surface.
+func (l *LazyLookup) resolveFeatureContext(ctx context.Context, uri string) (types.Feature, bool) {
 	if feat, ok := l.tier1ReadFeature(uri); ok {
 		return feat, true
 	}
@@ -899,11 +917,7 @@ func (l *LazyLookup) resolveFeature(uri string) (types.Feature, bool) {
 		// drifted bytes and do not self-heal.
 		return types.Feature{}, false
 	}
-	// The accessor this resolver sits behind is handed to consumers as a plain
-	// function value, so it carries no caller context to hand on and a fetch
-	// reached this way runs to completion. The closure walk reaches the same
-	// primitive through the resolution surface, which does carry one.
-	bytes, _, err := tier3PullCatalogEntity(context.Background(), l.workspaceRoot, l.cacheDir, l.puller, uri, "Feature")
+	bytes, _, err := tier3PullCatalogEntity(ctx, l.workspaceRoot, l.cacheDir, l.puller, uri, "Feature")
 	if err == nil && bytes != nil {
 		if feat, perr := parseFeatureEntity(bytes, uri); perr == nil {
 			l.entityBytes[entityBytesKey("Feature", feat.Metadata.Name)] = bytes

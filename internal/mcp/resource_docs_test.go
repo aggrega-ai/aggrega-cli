@@ -114,7 +114,7 @@ func readResource(t *testing.T, s *server, uri string) (readResourceResult, *rpc
 	if err != nil {
 		t.Fatalf("marshal params: %v", err)
 	}
-	res, rerr := s.handleResourcesRead(params)
+	res, rerr := s.handleResourcesRead(context.Background(), params)
 	if rerr != nil {
 		return readResourceResult{}, rerr
 	}

@@ -105,7 +105,7 @@ func TestRefusedEntityNamedInEntityAndCatalogScopes(t *testing.T) {
 
 	t.Run("entity", func(t *testing.T) {
 		var out bytes.Buffer
-		err := dispatchValidate(rw, compPath, dirs, false, &out)
+		err := dispatchValidate(context.Background(), rw, compPath, dirs, false, &out)
 		if err == nil {
 			t.Fatal("the entity scope must refuse the document")
 		}

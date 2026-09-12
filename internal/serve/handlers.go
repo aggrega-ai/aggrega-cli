@@ -1326,7 +1326,7 @@ func (s *Server) dispatchHover(ctx context.Context, req *jsonRPCRequest) error {
 	if err := decodeParams(req, &params); err != nil {
 		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
 	}
-	contents, errEnvelope := s.handleHover(params)
+	contents, errEnvelope := s.handleHover(ctx, params)
 	if errEnvelope != nil {
 		return s.writeError(ctx, req.ID, errEnvelope.Code, errEnvelope.Message)
 	}
@@ -1369,7 +1369,7 @@ func (s *Server) dispatchCompletion(ctx context.Context, req *jsonRPCRequest) er
 	if err := decodeParams(req, &params); err != nil {
 		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
 	}
-	items, errEnvelope := s.handleCompletion(params)
+	items, errEnvelope := s.handleCompletion(ctx, params)
 	if errEnvelope != nil {
 		return s.writeError(ctx, req.ID, errEnvelope.Code, errEnvelope.Message)
 	}

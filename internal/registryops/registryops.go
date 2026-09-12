@@ -146,7 +146,20 @@ func TrustOf(r workspaceconfig.RegistryConfig) Trust {
 // enumeration, and an unreadable keychain is no reason to withhold the registry
 // set. The returned function reports presence by asking the store for the host's
 // entry; it never inspects, measures, or retains the credential.
-func AuthResolver(store credentials.Store) func(host string) string {
+//
+// ctx is the caller's own, carried on the returned closure rather than added to
+// its signature. The closure is built inside the function that holds the
+// context, handed straight to the listing, invoked once per host during that one
+// call and discarded, so its lifetime is the caller's by construction; the
+// alternative would put a context on a per-host lookup signature every listing
+// surface would then have to route.
+//
+// The reach is bounded and worth stating: the shared credential store honors a
+// context only where it delegates to a credential helper, which is a subprocess
+// exchange. Its plaintext configuration-file path declares the parameter and
+// ignores it, so on a machine with no helper configured the read completes
+// whatever the caller asked for.
+func AuthResolver(ctx context.Context, store credentials.Store) func(host string) string {
 	if store == nil {
 		s, err := credentials.NewStoreFromDocker(credentials.StoreOptions{})
 		if err != nil {
@@ -155,7 +168,10 @@ func AuthResolver(store credentials.Store) func(host string) string {
 		store = s
 	}
 	return func(host string) string {
-		cred, err := store.Get(context.Background(), host)
+		if ctx.Err() != nil {
+			return AuthUnknown
+		}
+		cred, err := store.Get(ctx, host)
 		if err != nil {
 			return AuthUnknown
 		}

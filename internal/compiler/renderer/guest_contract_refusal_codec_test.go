@@ -86,7 +86,7 @@ func (e codecOnlyEngine) Contract() ProviderContract { return ProviderContract{}
 
 // PipelineCodec satisfies CodecProvider, which is the interface the executor
 // checks the engine against.
-func (e codecOnlyEngine) PipelineCodec(int) (frp.Codec, bool) { return e.codec, true }
+func (e codecOnlyEngine) PipelineCodec(context.Context, int) (frp.Codec, bool) { return e.codec, true }
 
 // TestNonconformingCodec_PatchedTokenNotCarved drives a patch from the real guest
 // through a codec whose carve and reassembly disagree about tokens, and asserts
