@@ -103,14 +103,19 @@ func (a *adapter) Kind() string { return Kind }
 // PinnedVersion in the returned ResolvedSource is the resolved
 // commit SHA, not the original ref. The original ref is preserved
 // in OriginalSource for lockfile-side `requested_ref:` recording.
-func (a *adapter) Resolve(spec sourceresolver.SourceSpec) (*sourceresolver.ResolvedSource, error) {
+//
+// ctx reaches the clone itself, which is the long operation here: go-git
+// abandons an in-flight transfer when it ends, so a caller that stops
+// waiting also stops the download. The temp directory is removed on the
+// way out in that case as in every other, so a clone that ends part way
+// leaves nothing behind it.
+func (a *adapter) Resolve(ctx context.Context, spec sourceresolver.SourceSpec) (*sourceresolver.ResolvedSource, error) {
 	cloneDir, err := os.MkdirTemp("", "aggrega-tf-git-*")
 	if err != nil {
 		return nil, fmt.Errorf("terraform-module-git: tempdir: %w", err)
 	}
 	defer os.RemoveAll(cloneDir)
 
-	ctx := context.Background()
 	repo, err := a.clone(ctx, cloneDir, spec.URL, spec.Client)
 	if err != nil {
 		// Preserve the egress refusal as the specific offline sentinel; the

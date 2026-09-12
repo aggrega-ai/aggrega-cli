@@ -4,6 +4,7 @@
 package compose
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -26,7 +27,7 @@ func TestComposeResolveHappyPath(t *testing.T) {
 	root := t.TempDir()
 	a := NewAdapter().(*adapter)
 	a.client = &http.Client{}
-	got, err := a.Resolve(sourceresolver.SourceSpec{
+	got, err := a.Resolve(context.Background(), sourceresolver.SourceSpec{
 		Kind:          Kind,
 		URL:           server.URL + "/compose-fragment.yaml",
 		Version:       "1.0.0",
@@ -71,12 +72,12 @@ func TestComposeResolveDeterministicArchive(t *testing.T) {
 		WorkspaceRoot: t.TempDir(),
 		CacheDir:      ".aggrega/cache",
 	}
-	one, err := a.Resolve(spec)
+	one, err := a.Resolve(context.Background(), spec)
 	if err != nil {
 		t.Fatalf("Resolve 1: %v", err)
 	}
 	spec.WorkspaceRoot = t.TempDir()
-	two, err := a.Resolve(spec)
+	two, err := a.Resolve(context.Background(), spec)
 	if err != nil {
 		t.Fatalf("Resolve 2: %v", err)
 	}
@@ -104,7 +105,7 @@ func TestComposeResolve404WrapsNotFound(t *testing.T) {
 	defer server.Close()
 	a := NewAdapter().(*adapter)
 	a.client = &http.Client{}
-	_, err := a.Resolve(sourceresolver.SourceSpec{
+	_, err := a.Resolve(context.Background(), sourceresolver.SourceSpec{
 		Kind:          Kind,
 		URL:           server.URL + "/missing.yaml",
 		Version:       "1.0.0",
@@ -124,7 +125,7 @@ func TestComposeResolve401WrapsUnauthorized(t *testing.T) {
 	defer server.Close()
 	a := NewAdapter().(*adapter)
 	a.client = &http.Client{}
-	_, err := a.Resolve(sourceresolver.SourceSpec{
+	_, err := a.Resolve(context.Background(), sourceresolver.SourceSpec{
 		Kind:          Kind,
 		URL:           server.URL + "/private.yaml",
 		Version:       "1.0.0",
@@ -140,7 +141,7 @@ func TestComposeResolveConnectionRefusedWrapsNetwork(t *testing.T) {
 	t.Parallel()
 	a := NewAdapter().(*adapter)
 	a.client = &http.Client{}
-	_, err := a.Resolve(sourceresolver.SourceSpec{
+	_, err := a.Resolve(context.Background(), sourceresolver.SourceSpec{
 		Kind:          Kind,
 		URL:           "http://127.0.0.1:1/never-listens.yaml",
 		Version:       "1.0.0",

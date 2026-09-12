@@ -34,7 +34,10 @@
 // stateless string-consumers of the resolved extracted path.
 package sourceresolver
 
-import "net/http"
+import (
+	"context"
+	"net/http"
+)
 
 // SourceSpec is the lock-time input to source resolution: the
 // declared kind, the base URL, the version constraint, plus
@@ -155,6 +158,25 @@ type ResolvedSource struct {
 // context (use the package's Wrap helper for the standard
 // formatting).
 //
+// # Ending a resolution
+//
+// The ctx Resolve receives belongs to the caller, and ending it ends
+// the fetch rather than only the reply: an implementation hands ctx to
+// whatever reaches the network, so a withdrawal aborts the transfer on
+// the wire instead of leaving it running behind a caller that has
+// stopped waiting. An implementation whose transport takes no context
+// of its own is responsible for reaching the stop down to that
+// transport by some other means; returning early while the fetch
+// continues does not satisfy this contract.
+//
+// A resolution that ends part way writes nothing. Every adapter
+// computes the content digest from the complete fetched bytes and only
+// then derives its cache-slot path from that digest, so a fetch that
+// does not finish never reaches the slot computation: no directory is
+// created and no file is written. The cache is left exactly as it was
+// found, and because a slot path encodes the digest of its own
+// contents, no partial artifact can occupy the slot of a complete one.
+//
 // Kind returns the spec.Kind value the adapter handles. Dispatcher
 // reads this when an adapter is registered, populating its routing
 // table. The convention is one adapter per kind across the program's
@@ -166,6 +188,6 @@ type ResolvedSource struct {
 // but offers no synchronisation guarantees around individual
 // Resolve invocations.
 type Adapter interface {
-	Resolve(spec SourceSpec) (*ResolvedSource, error)
+	Resolve(ctx context.Context, spec SourceSpec) (*ResolvedSource, error)
 	Kind() string
 }

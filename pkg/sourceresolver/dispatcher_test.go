@@ -4,6 +4,7 @@
 package sourceresolver_test
 
 import (
+	"context"
 	"errors"
 	"reflect"
 	"testing"
@@ -24,7 +25,7 @@ type fakeAdapter struct {
 
 func (f *fakeAdapter) Kind() string { return f.kind }
 
-func (f *fakeAdapter) Resolve(spec sourceresolver.SourceSpec) (*sourceresolver.ResolvedSource, error) {
+func (f *fakeAdapter) Resolve(_ context.Context, spec sourceresolver.SourceSpec) (*sourceresolver.ResolvedSource, error) {
 	f.calledWith = spec
 	return f.result, f.resultErr
 }
@@ -69,7 +70,7 @@ func TestDispatcherRegisterAndResolve(t *testing.T) {
 		URL:     "oci://example.com/a",
 		Version: "1.0.0",
 	}
-	resA, err := d.Resolve(specA)
+	resA, err := d.Resolve(context.Background(), specA)
 	if err != nil {
 		t.Fatalf("Resolve(specA): %v", err)
 	}
@@ -86,7 +87,7 @@ func TestDispatcherRegisterAndResolve(t *testing.T) {
 
 	// Now route to fakeB; fakeA's prior call doesn't carry over.
 	specB := sourceresolver.SourceSpec{Kind: "test-kind-b", URL: "https://example.com/b.tgz", Version: "2.0.0"}
-	resB, err := d.Resolve(specB)
+	resB, err := d.Resolve(context.Background(), specB)
 	if err != nil {
 		t.Fatalf("Resolve(specB): %v", err)
 	}
@@ -98,7 +99,7 @@ func TestDispatcherRegisterAndResolve(t *testing.T) {
 func TestDispatcherResolveUnknownKindReturnsErrUnknownKind(t *testing.T) {
 	t.Parallel()
 	d := sourceresolver.NewDispatcher()
-	_, err := d.Resolve(sourceresolver.SourceSpec{Kind: "no-such-kind"})
+	_, err := d.Resolve(context.Background(), sourceresolver.SourceSpec{Kind: "no-such-kind"})
 	if err == nil {
 		t.Fatal("expected ErrUnknownKind; got nil")
 	}

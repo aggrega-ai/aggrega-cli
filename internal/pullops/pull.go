@@ -951,14 +951,17 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 					})
 			}
 
-			var srcResolver closure.SourceResolver = sourceResolverShim{wsCfg: wsCfg}
+			var srcResolver closure.SourceResolver = sourceResolverShim{ctx: ctx, wsCfg: wsCfg}
 			if cfg.SourceResolver != nil {
 				srcResolver = cfg.SourceResolver
 			}
 			// Ahead of the source descent, which fetches and digests every remote
-			// source the closure names. It is the heaviest fetch left in the run and
-			// the descent reports no progress of its own, so this is the last point a
-			// withdrawal is observable before it starts.
+			// source the closure names. The descent itself now runs under this
+			// context — the shim carries it into each source's fetch — so a
+			// withdrawal arriving part way through ends the download in flight and
+			// the descent reports it. This check is what answers a caller who had
+			// already withdrawn before the descent began, in one stated reason
+			// rather than as whichever source's transport happened to fail first.
 			if err := stopped(ctx); err != nil {
 				return err
 			}

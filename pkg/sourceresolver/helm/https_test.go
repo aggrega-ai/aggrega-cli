@@ -4,6 +4,7 @@
 package helm
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -37,7 +38,7 @@ func TestHTTPSResolveDirectTGZ(t *testing.T) {
 	}
 
 	root := t.TempDir()
-	got, err := a.Resolve(sourceresolver.SourceSpec{
+	got, err := a.Resolve(context.Background(), sourceresolver.SourceSpec{
 		Kind:          KindHTTPS,
 		URL:           "https://charts.example.com/mariadb-25.0.8.tgz",
 		Version:       "25.0.8",
@@ -87,7 +88,7 @@ func TestHTTPSResolveRepoRootViaIndex(t *testing.T) {
 	}
 
 	root := t.TempDir()
-	got, err := a.Resolve(sourceresolver.SourceSpec{
+	got, err := a.Resolve(context.Background(), sourceresolver.SourceSpec{
 		Kind:          KindHTTPS,
 		URL:           "https://charts.bitnami.com/bitnami",
 		Chart:         "mariadb",
@@ -130,7 +131,7 @@ func TestHTTPSResolveRepoRootMissingChart(t *testing.T) {
 	a := &httpsAdapter{
 		resolveIndex: func(repoURL, chart, version string, _ ...getter.Option) (string, error) { return "", nil },
 	}
-	_, err := a.Resolve(sourceresolver.SourceSpec{
+	_, err := a.Resolve(context.Background(), sourceresolver.SourceSpec{
 		Kind:          KindHTTPS,
 		URL:           "https://charts.example.com/repo",
 		Version:       "1.0.0",
@@ -147,7 +148,7 @@ func TestHTTPSResolveGetterNotFound(t *testing.T) {
 	a := &httpsAdapter{
 		getter: &fakeGetter{err: errors.New(`failed to fetch: 404 Not Found`)},
 	}
-	_, err := a.Resolve(sourceresolver.SourceSpec{
+	_, err := a.Resolve(context.Background(), sourceresolver.SourceSpec{
 		Kind:          KindHTTPS,
 		URL:           "https://charts.example.com/missing.tgz",
 		Version:       "1.0.0",
@@ -164,7 +165,7 @@ func TestHTTPSResolveGetterUnauthorized(t *testing.T) {
 	a := &httpsAdapter{
 		getter: &fakeGetter{err: errors.New(`failed to fetch: 401 Unauthorized`)},
 	}
-	_, err := a.Resolve(sourceresolver.SourceSpec{
+	_, err := a.Resolve(context.Background(), sourceresolver.SourceSpec{
 		Kind:          KindHTTPS,
 		URL:           "https://charts.example.com/private.tgz",
 		Version:       "1.0.0",

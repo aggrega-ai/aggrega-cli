@@ -29,7 +29,7 @@ func TestOCIResolveHappyPath(t *testing.T) {
 	store, archiveBytes, _ := buildChartStore(t, "mariadb", "25.0.8")
 	a := &ociAdapter{newTarget: func(string, *http.Client) (oras.ReadOnlyTarget, error) { return store, nil }}
 
-	got, err := a.Resolve(sourceresolver.SourceSpec{
+	got, err := a.Resolve(context.Background(), sourceresolver.SourceSpec{
 		Kind:          KindOCI,
 		URL:           "oci://hub.aggrega.ai/charts/mariadb",
 		Version:       "25.0.8",
@@ -86,7 +86,7 @@ func TestOCIResolveSetsManifestDigest(t *testing.T) {
 	store, _, manifestDigest := buildChartStore(t, "mariadb", "25.0.8")
 	a := &ociAdapter{newTarget: func(string, *http.Client) (oras.ReadOnlyTarget, error) { return store, nil }}
 
-	got, err := a.Resolve(sourceresolver.SourceSpec{
+	got, err := a.Resolve(context.Background(), sourceresolver.SourceSpec{
 		Kind:          KindOCI,
 		URL:           "oci://hub.aggrega.ai/charts/mariadb",
 		Version:       "25.0.8",
@@ -121,7 +121,7 @@ func TestOCIResolveNotFoundWrapsSentinel(t *testing.T) {
 	store, _, _ := buildChartStore(t, "mariadb", "25.0.8")
 	a := &ociAdapter{newTarget: func(string, *http.Client) (oras.ReadOnlyTarget, error) { return store, nil }}
 
-	_, err := a.Resolve(sourceresolver.SourceSpec{
+	_, err := a.Resolve(context.Background(), sourceresolver.SourceSpec{
 		Kind:          KindOCI,
 		URL:           "oci://hub.aggrega.ai/charts/mariadb",
 		Version:       "9.9.9-missing",
@@ -141,7 +141,7 @@ func TestOCIResolveTargetFactoryFailureWrapsNetwork(t *testing.T) {
 	boom := errors.New("dial tcp: lookup failed")
 	a := &ociAdapter{newTarget: func(string, *http.Client) (oras.ReadOnlyTarget, error) { return nil, boom }}
 
-	_, err := a.Resolve(sourceresolver.SourceSpec{
+	_, err := a.Resolve(context.Background(), sourceresolver.SourceSpec{
 		Kind:          KindOCI,
 		URL:           "oci://hub.aggrega.ai/charts/mariadb",
 		Version:       "25.0.8",
@@ -169,7 +169,7 @@ func TestOCIResolveSignedChartSelectsContentLayer(t *testing.T) {
 	store, content, prov := buildSignedChartStore(t, "25.0.8")
 	a := &ociAdapter{newTarget: func(string, *http.Client) (oras.ReadOnlyTarget, error) { return store, nil }}
 
-	got, err := a.Resolve(sourceresolver.SourceSpec{
+	got, err := a.Resolve(context.Background(), sourceresolver.SourceSpec{
 		Kind:          KindOCI,
 		URL:           "oci://hub.aggrega.ai/charts/mariadb",
 		Version:       "25.0.8",

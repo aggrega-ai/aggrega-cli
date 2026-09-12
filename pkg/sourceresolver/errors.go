@@ -4,6 +4,8 @@
 package sourceresolver
 
 import (
+	"context"
+	"errors"
 	"fmt"
 
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
@@ -67,7 +69,21 @@ var errUnknownKind = cerrors.Register("unknown-source-kind", cerrors.Meta{
 // remediation pointers (e.g., a registry-auth-fail wrapping might
 // include the `docker login <registry>` command). The signature
 // stays stable; the additional context lands inside the function.
+//
+// A resolution the caller stopped is the one case Wrap does not dress
+// as a fetch failure. Every adapter learns about a withdrawal the same
+// way any other transport error arrives — its own error mapping sees a
+// broken fetch and reaches for the nearest fetch sentinel — and the
+// result would tell someone who stopped the run themselves that the
+// network is unreachable and their proxy may need configuring. So a
+// cause carrying the caller's withdrawal is reported as the withdrawal,
+// with no sentinel and no remediation, and it is returned whole rather
+// than flattened into text so a caller can still match it.
 func Wrap(spec SourceSpec, sentinel error, cause error) error {
+	if errors.Is(cause, context.Canceled) || errors.Is(cause, context.DeadlineExceeded) {
+		return fmt.Errorf("sourceresolver: kind=%s url=%s version=%s: %w",
+			spec.Kind, spec.URL, spec.Version, cause)
+	}
 	host := registryhost.Of(spec.URL)
 	remediation := oci.RemediationFor(sentinel, host)
 	if cause == nil {

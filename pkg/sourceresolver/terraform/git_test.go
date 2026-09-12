@@ -28,7 +28,7 @@ func TestTerraformGitResolveHappyPath(t *testing.T) {
 
 	a := &adapter{clone: cloneFromFixture(fixtureDir)}
 	root := t.TempDir()
-	got, err := a.Resolve(sourceresolver.SourceSpec{
+	got, err := a.Resolve(context.Background(), sourceresolver.SourceSpec{
 		Kind:          Kind,
 		URL:           "file://" + fixtureDir,
 		Ref:           "HEAD",
@@ -63,7 +63,7 @@ func TestTerraformGitResolveTagToSHA(t *testing.T) {
 	})
 
 	a := &adapter{clone: cloneFromFixture(fixtureDir)}
-	got, err := a.Resolve(sourceresolver.SourceSpec{
+	got, err := a.Resolve(context.Background(), sourceresolver.SourceSpec{
 		Kind:          Kind,
 		URL:           "file://" + fixtureDir,
 		Ref:           "v1.0.0",
@@ -85,7 +85,7 @@ func TestTerraformGitResolveMissingRefWrapsNotFound(t *testing.T) {
 	})
 
 	a := &adapter{clone: cloneFromFixture(fixtureDir)}
-	_, err := a.Resolve(sourceresolver.SourceSpec{
+	_, err := a.Resolve(context.Background(), sourceresolver.SourceSpec{
 		Kind:          Kind,
 		URL:           "file://" + fixtureDir,
 		Ref:           "nonexistent-branch",
@@ -112,12 +112,12 @@ func TestTerraformGitResolveDeterministicArchive(t *testing.T) {
 		WorkspaceRoot: t.TempDir(),
 		CacheDir:      ".aggrega/cache",
 	}
-	one, err := a.Resolve(spec)
+	one, err := a.Resolve(context.Background(), spec)
 	if err != nil {
 		t.Fatalf("Resolve 1: %v", err)
 	}
 	spec.WorkspaceRoot = t.TempDir()
-	two, err := a.Resolve(spec)
+	two, err := a.Resolve(context.Background(), spec)
 	if err != nil {
 		t.Fatalf("Resolve 2: %v", err)
 	}
@@ -136,7 +136,7 @@ func TestTerraformGitResolveModuleSubdir(t *testing.T) {
 	})
 
 	a := &adapter{clone: cloneFromFixture(fixtureDir)}
-	got, err := a.Resolve(sourceresolver.SourceSpec{
+	got, err := a.Resolve(context.Background(), sourceresolver.SourceSpec{
 		Kind:          Kind,
 		URL:           "file://" + fixtureDir,
 		Ref:           "HEAD",

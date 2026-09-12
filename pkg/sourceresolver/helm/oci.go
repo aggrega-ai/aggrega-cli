@@ -87,14 +87,17 @@ func (a *ociAdapter) Kind() string { return KindOCI }
 //
 // Errors wrap one of the four fetch sentinels with adapter-specific
 // context via sourceresolver.Wrap.
-func (a *ociAdapter) Resolve(spec sourceresolver.SourceSpec) (*sourceresolver.ResolvedSource, error) {
+//
+// ctx reaches the ORAS pull, so ending it abandons the transfer on the
+// wire rather than leaving it running behind a caller that has stopped
+// waiting.
+func (a *ociAdapter) Resolve(ctx context.Context, spec sourceresolver.SourceSpec) (*sourceresolver.ResolvedSource, error) {
 	reference := strings.TrimPrefix(spec.URL, "oci://")
 	target, err := a.newTarget(reference, spec.Client)
 	if err != nil {
 		return nil, sourceresolver.Wrap(spec, sourceresolver.ErrFetchNetworkUnreachable(), err)
 	}
 
-	ctx := context.Background()
 	// Select the chart content layer by media type: a signed chart's manifest
 	// carries a detached provenance layer beside the content, and an index-based
 	// selection could return the provenance blob. Passing the content media type

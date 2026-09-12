@@ -4,6 +4,8 @@
 package pullops
 
 import (
+	"context"
+
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/egress"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver"
@@ -29,7 +31,19 @@ import (
 // a primary fetch verb). Local sources never reach the shim — the descent skips
 // them before resolution — so a local-only closure is unaffected by an offline
 // workspace here.
+//
+// It is also where the run's context crosses into the fetch, which is what makes
+// the source descent interruptible: each source is resolved under that context,
+// so stopping the run stops the download in progress and the descent reports the
+// withdrawal rather than working through the sources that remain.
 type sourceResolverShim struct {
+	// ctx is the run's, and it sits on the shim because the interface the shim
+	// satisfies takes no context: the descent calls Resolve per source with a
+	// spec and nothing else, so this is the only place the run's context can be
+	// carried across to the fetch that needs it. The shim is built inside the
+	// function that owns the context, used for that one descent, and discarded —
+	// it never outlives the run whose context it holds.
+	ctx   context.Context
 	wsCfg workspaceconfig.Config
 }
 
@@ -38,7 +52,7 @@ func (s sourceResolverShim) Resolve(spec closure.SourceSpec) (*closure.ResolvedS
 	if err != nil {
 		return nil, err
 	}
-	rs, err := sourceresolver.Resolve(sourceresolver.SourceSpec{
+	rs, err := sourceresolver.Resolve(s.ctx, sourceresolver.SourceSpec{
 		Kind:           spec.Kind,
 		URL:            spec.URL,
 		Version:        spec.Version,

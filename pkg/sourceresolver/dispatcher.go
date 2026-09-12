@@ -4,6 +4,7 @@
 package sourceresolver
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"sync"
@@ -58,14 +59,23 @@ func (d *Dispatcher) Register(adapter Adapter) error {
 // returns the adapter's ResolvedSource (or its error). Returns a
 // wrapped ErrUnknownKind when no adapter is registered for the
 // requested kind.
-func (d *Dispatcher) Resolve(spec SourceSpec) (*ResolvedSource, error) {
+//
+// ctx belongs to the caller and reaches the adapter's fetch: ending it
+// ends the transfer rather than only the reply. A caller that has
+// already withdrawn is answered here, before any routing, so every
+// kind reports the same reason for the same condition instead of each
+// adapter's transport reporting one of its own.
+func (d *Dispatcher) Resolve(ctx context.Context, spec SourceSpec) (*ResolvedSource, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("sourceresolver: kind=%s: %w", spec.Kind, err)
+	}
 	d.mu.RLock()
 	adapter, ok := d.adapters[spec.Kind]
 	d.mu.RUnlock()
 	if !ok {
 		return nil, fmt.Errorf("sourceresolver: kind=%s: %w", spec.Kind, ErrUnknownKind())
 	}
-	return adapter.Resolve(spec)
+	return adapter.Resolve(ctx, spec)
 }
 
 // Kinds returns the registered kind names in lexicographic order.
@@ -103,9 +113,9 @@ func Register(adapter Adapter) {
 }
 
 // Resolve routes spec through the package-level default
-// dispatcher. See Dispatcher.Resolve for the contract.
-func Resolve(spec SourceSpec) (*ResolvedSource, error) {
-	return defaultDispatcher.Resolve(spec)
+// dispatcher. See Dispatcher.Resolve for the contract, ctx included.
+func Resolve(ctx context.Context, spec SourceSpec) (*ResolvedSource, error) {
+	return defaultDispatcher.Resolve(ctx, spec)
 }
 
 // Kinds returns the kind names registered against the package-level

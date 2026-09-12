@@ -16,6 +16,7 @@ package compose
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -67,8 +68,15 @@ func (a *adapter) Kind() string { return Kind }
 // refused, timeouts) → ErrFetchNetworkUnreachable; non-2xx other →
 // ErrFetchNotFound (treated as a fetch failure absent more
 // information).
-func (a *adapter) Resolve(spec sourceresolver.SourceSpec) (*sourceresolver.ResolvedSource, error) {
-	req, err := http.NewRequest(http.MethodGet, spec.URL, nil)
+//
+// ctx rides on the request, so ending it closes the connection under an
+// in-flight fetch: the download stops on the wire and the body read
+// fails, rather than the caller being released while the transfer runs
+// on. The fragment is digested only once it has arrived in full, and the
+// cache slot is derived from that digest, so an interrupted fetch writes
+// nothing at all.
+func (a *adapter) Resolve(ctx context.Context, spec sourceresolver.SourceSpec) (*sourceresolver.ResolvedSource, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, spec.URL, nil)
 	if err != nil {
 		return nil, sourceresolver.Wrap(spec, sourceresolver.ErrFetchNetworkUnreachable(), err)
 	}

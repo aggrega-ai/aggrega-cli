@@ -4,8 +4,10 @@
 package helm
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -101,7 +103,15 @@ func (a *httpsAdapter) Kind() string { return KindHTTPS }
 // `provenance.yaml` or `<chart>.tgz.prov`. Drift between consecutive
 // pulls of the same version is caught at the next pull via
 // ErrFetchIntegrity.
-func (a *httpsAdapter) Resolve(spec sourceresolver.SourceSpec) (*sourceresolver.ResolvedSource, error) {
+//
+// Both fetches this method can make — the index.yaml lookup and the
+// chart download — run through Helm's getter, which accepts no context
+// of its own. The caller's ctx therefore reaches them underneath, by
+// way of the transport they are given: see transportEndingWith. Ending
+// ctx closes the connection beneath whichever fetch is in flight, so
+// the transfer stops on the wire rather than continuing behind a caller
+// that has stopped waiting.
+func (a *httpsAdapter) Resolve(ctx context.Context, spec sourceresolver.SourceSpec) (*sourceresolver.ResolvedSource, error) {
 	// Production routes every fetch — the chart .tgz and any index.yaml lookup —
 	// through the network-egress gate's transport, so an offline workspace is
 	// refused before any dial and helm never builds its own ungated transport.
@@ -113,7 +123,11 @@ func (a *httpsAdapter) Resolve(spec sourceresolver.SourceSpec) (*sourceresolver.
 		if !ok {
 			return nil, egress.ErrOfflineEgress()
 		}
-		httpOpts = append(httpOpts, getter.WithTransport(transport))
+		// One option carries the stop to both fetches, because this slice is what
+		// the index lookup and the chart download are each handed.
+		stoppable := transportEndingWith(ctx, transport)
+		defer stoppable.CloseIdleConnections()
+		httpOpts = append(httpOpts, getter.WithTransport(stoppable))
 	}
 
 	fetchURL := spec.URL
@@ -178,6 +192,59 @@ func newProvidersNoEnv() getter.Providers {
 		Debug:            false,
 	}
 	return getter.All(s)
+}
+
+// transportEndingWith returns a copy of base whose connections belong to ctx: it
+// dials under ctx, and it closes a connection already established when ctx ends.
+//
+// This is where a stop reaches an HTTPS chart fetch, and it has to be here
+// because Helm's getter takes no context — it builds its own request and hands it
+// to whatever transport it was given, so there is no argument to thread and no
+// call to wrap. Closing the connection underneath is what actually ends the
+// transfer: the read in progress fails and the getter returns because its fetch
+// broke, not because anyone stopped waiting for it. Watching for the stop beside
+// the fetch and returning early would look the same to the caller while leaving
+// the download running, which is the opposite of what this is for.
+//
+// The copy is per-resolution, since it carries that resolution's context, and it
+// keeps a connection pool of its own rather than sharing the gate's — so the
+// caller closes its idle connections once the fetch is done. Copying is also what
+// keeps the gate's own shared transport untouched: it is process-wide, and
+// giving it a context would hand one resolution's lifetime to every other
+// caller of it.
+func transportEndingWith(ctx context.Context, base *http.Transport) *http.Transport {
+	t := base.Clone()
+	dial := t.DialContext
+	if dial == nil {
+		dial = (&net.Dialer{}).DialContext
+	}
+	t.DialContext = func(_ context.Context, network, addr string) (net.Conn, error) {
+		// Dialling under ctx rather than the request's own background context is
+		// what stops a fetch whose caller withdrew before the connection came up.
+		conn, err := dial(ctx, network, addr)
+		if err != nil {
+			return nil, err
+		}
+		return &connEndingWithContext{
+			Conn:    conn,
+			release: context.AfterFunc(ctx, func() { _ = conn.Close() }),
+		}, nil
+	}
+	return t
+}
+
+// connEndingWithContext closes when the context it was dialled under ends, so a
+// transfer already in flight fails instead of running on unobserved. An ordinary
+// close releases the registration too, so a connection on a long-lived context
+// leaves nothing behind it.
+type connEndingWithContext struct {
+	net.Conn
+	release func() bool
+}
+
+func (c *connEndingWithContext) Close() error {
+	c.release()
+	return c.Conn.Close()
 }
 
 // egressTransport extracts the concrete *http.Transport the network-egress gate

@@ -190,20 +190,28 @@ func RequireRecipeLoader(lookup Lookup) (RecipeLoader, error) {
 	return loader, nil
 }
 
-// SourceResolver matches the contract of sourceresolver.Resolve
-// without importing the package. The closure walker stays decoupled
-// from the per-kind adapter pull machinery; tests inject a
-// static-result implementation. Production wiring lives at the
-// orchestrator at build time which composes a SourceResolver from the
-// shipped sourceresolver package via a small type-conversion shim.
+// SourceResolver is the walker's own resolution contract, declared here
+// so the closure walker stays decoupled from the per-kind adapter pull
+// machinery; tests inject a static-result implementation. Production
+// wiring lives at the orchestrator, which composes a SourceResolver
+// from the shipped sourceresolver package via a small type-conversion
+// shim.
+//
+// It takes no context, and the resolver it is wired to does. Ending a
+// run still ends a fetch in progress: the shim holds the run's context
+// and hands it to each resolution, so the descent is interruptible
+// without this contract having to carry a context of its own — which it
+// could not do without every injected implementation accepting one.
 type SourceResolver interface {
 	Resolve(spec SourceSpec) (*ResolvedSource, error)
 }
 
-// SourceSpec mirrors sourceresolver.SourceSpec field-for-field.
-// The two structs are deliberately identical in shape; the
-// orchestrator's wiring shim performs a mechanical field-copy
-// across the package boundary.
+// SourceSpec carries what a resolution needs about one source. It
+// mirrors sourceresolver.SourceSpec apart from that struct's transport
+// client, which the wiring shim supplies from the workspace's egress
+// configuration rather than the walker: the walker names the source,
+// and how it is reached is not its concern. The shim performs a
+// mechanical field-copy across the package boundary.
 type SourceSpec struct {
 	Kind           string
 	URL            string
