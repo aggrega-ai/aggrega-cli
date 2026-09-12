@@ -378,7 +378,7 @@ func screenRecords(indexes []registryindex.Loaded, includeRetracted bool, notice
 	var records []registryindex.Record
 	screening := map[string]Screening{}
 	for _, li := range indexes {
-		screen := registryindex.NewScreenFromRecords(li.Records, registryindex.SnapshotProvenance(li.LastUpdated, li.HasTimestamp), notices)
+		screen := registryindex.NewScreenFromRecords(li.Records, registryindex.IndexProvenance(li.LastUpdated, li.HasTimestamp), notices)
 		for _, rec := range li.Records {
 			if screen != nil {
 				eligible, excluded := screen.ScreenVersions(registryindex.ReferenceForURI(rec.URI), rec.Versions)

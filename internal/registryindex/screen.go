@@ -43,11 +43,10 @@ type screen struct {
 	// withdrawnByURI maps an artifact's index URI to its withdrawn versions and
 	// the reason recorded against each.
 	withdrawnByURI map[string]map[string]string
-	// provenance is the parenthesised clause every notice ends in, naming where
-	// this screen's facts came from and how current they are. It is rendered at
-	// construction rather than derived per notice, so one screen cannot describe
-	// its own source two ways.
-	provenance string
+	// provenance says where this screen's facts came from and how current they
+	// are. It is fixed at construction rather than derived per notice, so one
+	// screen cannot describe its own source two ways.
+	provenance RetractionProvenance
 	out        io.Writer
 }
 
@@ -111,7 +110,7 @@ func NewScreen(rw *workspaceconfig.ResolvedWorkspace, host string, out io.Writer
 	if err != nil {
 		return nil
 	}
-	return NewScreenFromRecords(loaded.Records, SnapshotProvenance(loaded.LastUpdated, loaded.HasTimestamp), out)
+	return NewScreenFromRecords(loaded.Records, IndexProvenance(loaded.LastUpdated, loaded.HasTimestamp), out)
 }
 
 // NewScreenFromRecords builds a withdrawal screen from index records the caller
@@ -124,11 +123,11 @@ func NewScreen(rw *workspaceconfig.ResolvedWorkspace, host string, out io.Writer
 // therefore judge a version withdrawn on exactly the same grounds, because the
 // honored-withdrawal rule is applied here once and nowhere else.
 //
-// provenance is the clause the screen's notices end in, naming where these
-// records came from and how current they are. It is supplied rather than derived
-// because the caller is what knows: the same records mean one thing read from a
-// snapshot and another read from the registry moments ago.
-func NewScreenFromRecords(records []Record, provenance string, out io.Writer) catalog.RetractionScreen {
+// provenance says where these records came from and how current they are. It is
+// supplied rather than derived because the caller is what knows: the same records
+// mean one thing read from a snapshot and another read from the registry moments
+// ago.
+func NewScreenFromRecords(records []Record, provenance RetractionProvenance, out io.Writer) catalog.RetractionScreen {
 	if out == nil {
 		return nil
 	}
@@ -148,18 +147,100 @@ func NewScreenFromRecords(records []Record, provenance string, out io.Writer) ca
 	}
 }
 
-// SnapshotProvenance renders the provenance clause for facts read from the local
-// registry index: when the snapshot was taken, so a reader can tell a fresh
-// record from a stale one, plus the command that refreshes it. It never claims
-// currency — the record says what the registry reported when the index was last
-// built, not what it reports now — and it distinguishes an index carrying no
-// build time from one whose build time happens to be the zero time.
-func SnapshotProvenance(observedAt time.Time, hasObservedAt bool) string {
-	if !hasObservedAt {
-		return " (recorded in the local registry index, which carries no build time; run `aggrega registry update` to refresh it)"
+// ProvenanceSource names where a withdrawal screen's facts came from.
+//
+// The two sources differ only in how current they are, and that difference is
+// what a reader acts on: a reading taken while the command ran speaks to now,
+// while a snapshot can be older than the withdrawal it is being asked about. The
+// values are the spellings a surface answering with values reports, so they name
+// the source in the reader's own terms rather than in this package's.
+type ProvenanceSource string
+
+const (
+	// ProvenanceRegistry is a reading taken from the registry while the command
+	// ran, which has no staleness to warn about.
+	ProvenanceRegistry ProvenanceSource = "registry"
+	// ProvenanceLocalIndex is the local registry index, which is as current as the
+	// last refresh of it and no more.
+	ProvenanceLocalIndex ProvenanceSource = "local-index"
+)
+
+// RetractionProvenance says where a screen's withdrawal facts came from and how
+// current they are.
+//
+// It is the fact rather than the sentence stating it. The clause a reader watching
+// a terminal sees is rendered from this, and a surface answering with values
+// carries these fields — so the fact has one home and its wording another, and
+// neither surface can come to describe one screen's evidence differently from the
+// other.
+//
+// ObservedAt is meaningful only alongside HasObservedAt, which separates an index
+// carrying no build time from one whose build time happens to be the zero time. An
+// empty Source is a screen whose provenance is not known, which is what a selection
+// that was never screened has.
+type RetractionProvenance struct {
+	Source        ProvenanceSource
+	ObservedAt    time.Time
+	HasObservedAt bool
+}
+
+// LiveProvenance is the provenance of withdrawal facts read from the registry
+// while the command ran.
+//
+// It carries no observation time, and that asymmetry is the point: facts read
+// during the command have no staleness to report, so a time on them would invite a
+// reader to weigh a currency question that does not arise.
+func LiveProvenance() RetractionProvenance {
+	return RetractionProvenance{Source: ProvenanceRegistry}
+}
+
+// IndexProvenance is the provenance of withdrawal facts read from the local
+// registry index, carrying when that snapshot was taken so a reader can tell a
+// fresh record from a stale one.
+//
+// It never claims currency: the record says what the registry reported when the
+// index was last built, not what it reports now.
+func IndexProvenance(observedAt time.Time, hasObservedAt bool) RetractionProvenance {
+	return RetractionProvenance{Source: ProvenanceLocalIndex, ObservedAt: observedAt, HasObservedAt: hasObservedAt}
+}
+
+// Clause renders the parenthesised suffix a screen's notices end in, naming where
+// its facts came from and how current they are.
+//
+// It is the one home of that wording, so every notice about one screen's evidence
+// describes it the same way. A provenance with no source renders nothing rather
+// than guessing: a notice that cannot say where its evidence came from is better
+// silent on the question than wrong about it.
+func (p RetractionProvenance) Clause() string {
+	switch p.Source {
+	case ProvenanceRegistry:
+		return " (read from the registry just now)"
+	case ProvenanceLocalIndex:
+		if !p.HasObservedAt {
+			return " (recorded in the local registry index, which carries no build time; run `aggrega registry update` to refresh it)"
+		}
+		return fmt.Sprintf(" (recorded in the local registry index as of %s; run `aggrega registry update` to refresh it)",
+			p.ObservedAt.UTC().Format(time.RFC3339))
+	default:
+		return ""
 	}
-	return fmt.Sprintf(" (recorded in the local registry index as of %s; run `aggrega registry update` to refresh it)",
-		observedAt.UTC().Format(time.RFC3339))
+}
+
+// ProvenanceOf reports the provenance of a screen's withdrawal facts, and reports
+// false for a screen this package did not build.
+//
+// A caller recording what a screen concluded needs the screen's own evidence, and
+// the screen contract is deliberately not widened to carry it: that contract is
+// what a selection primitive calls, and a method there would oblige every
+// implementation — test fakes included — to answer a question only a screen built
+// from index or registry facts can answer. Reporting false instead leaves such a
+// screen with no provenance, which is the truth about it.
+func ProvenanceOf(s catalog.RetractionScreen) (RetractionProvenance, bool) {
+	built, ok := s.(*screen)
+	if !ok {
+		return RetractionProvenance{}, false
+	}
+	return built.provenance, true
 }
 
 // NewLiveScreen builds the discovery-step withdrawal screen for ONE artifact
@@ -187,7 +268,7 @@ func NewLiveScreen(reference string, deps []VersionDeprecation, out io.Writer) c
 	}
 	return &screen{
 		withdrawnByURI: map[string]map[string]string{URIForReference(reference): withdrawn},
-		provenance:     " (read from the registry just now)",
+		provenance:     LiveProvenance(),
 		out:            out,
 	}
 }
@@ -276,7 +357,7 @@ func (s *screen) ReportPinned(reference, version string) {
 // same source, which is what stops one screen describing its own evidence two
 // ways.
 func (s *screen) asOfSuffix() string {
-	return s.provenance
+	return s.provenance.Clause()
 }
 
 // URIForReference maps a bound OCI repository reference (`<host>/<path>`, the
