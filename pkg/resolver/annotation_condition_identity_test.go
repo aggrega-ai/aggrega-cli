@@ -32,7 +32,21 @@ import (
 
 // categoryTokens are the category words a diagnostic head may carry. None of
 // them belongs in the text a raise site supplies.
-var categoryTokens = []string{"DEVELOPER_ERROR", "OPS_ERROR", "CATALOG_ERROR", "TRANSLATION_ERROR", "FETCH_ERROR", "POLICY_ERROR"}
+//
+// Each word is read off the declared value rather than re-spelled, so a value
+// whose spelling changes moves this list with it. The enumeration is still
+// written out because the values are constants and Go offers no walk over them;
+// a value added beside them and omitted here leaves its occurrences uncounted,
+// which reads as a clean result rather than as a gap.
+var categoryTokens = []string{
+	string(cerrors.DeveloperError),
+	string(cerrors.OpsError),
+	string(cerrors.CatalogError),
+	string(cerrors.TranslationError),
+	string(cerrors.FetchError),
+	string(cerrors.PolicyError),
+	string(cerrors.TrustError),
+}
 
 // assertIdentity pins all three identifiers of one condition on one error.
 func assertIdentity(t *testing.T, err error, sentinel error, code, shortCode string) {
