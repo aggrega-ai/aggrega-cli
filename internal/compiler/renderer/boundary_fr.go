@@ -444,6 +444,17 @@ func dispatchBoundaryScopeFR(
 	// passes through and establishes it there, so both attachment scopes name the
 	// producing FeatureRecipe from a single site rather than from two that agree.
 	frNodeCtx := nodeCtx
+	// The copy above carries the sensitivity declarations of whichever component
+	// node's render reached this dispatch, and a boundary-scope feature has no
+	// host component at all — so those declarations govern rendered keys that are
+	// not this feature's, and which node supplied them is an artifact of the walk
+	// order. Carrying them would mark a rendered key from a declaration no author
+	// wrote about it, and a consumer that begins withholding a value has no way
+	// to discover that it should not have. The zero value declares nothing and
+	// therefore marks nothing, which is this axis's safe direction. Cleared
+	// explicitly rather than left inherited because a whole-struct copy names no
+	// field: nothing else on this line says which declarations travelled with it.
+	frNodeCtx.DeclaredSensitivity = DeclaredSensitivity{}
 	frNodeCtx.NodeID = boundaryFRNodeID(key)
 	frNodeCtx.BoundaryPath = key.BoundaryPath
 	// The component identity is COMPOSED from the two things an author wrote —

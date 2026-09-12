@@ -539,6 +539,17 @@ func phaseB6(
 		}
 
 		frNodeCtx := nodeCtx
+		// The copy above carries the HOST Component's sensitivity declarations,
+		// and those govern the host's own rendered keys. They name nothing this
+		// attachment renders, so a key of this render that merely shares a name
+		// with a leaf the host declared would be marked from a declaration no
+		// author wrote about it — and a consumer that begins withholding a value
+		// has no way to discover that it should not have. The zero value declares
+		// nothing and therefore marks nothing, which is this axis's safe
+		// direction. Cleared explicitly rather than left inherited because a
+		// whole-struct copy names no field: nothing else on this line says which
+		// declarations travelled with it.
+		frNodeCtx.DeclaredSensitivity = DeclaredSensitivity{}
 		// This attachment is a contributor of its own, so the names its render
 		// derives are declared under its own label rather than the host node's.
 		// The sink is rewired for the same reason the boundary-scope render
