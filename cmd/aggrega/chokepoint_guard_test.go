@@ -652,3 +652,404 @@ func TestResolveCatalogDirsChokepointGuard(t *testing.T) {
 		}
 	}
 }
+
+// deniedRootContextConstructors are the context-package calls that hand back a
+// context carrying no caller cancellation: the two root constructors, and the
+// one that strips cancellation off a context that had it. WithoutCancel is
+// denied alongside the roots because a guard covering only the roots would leave
+// the identical defect reachable by a second spelling.
+var deniedRootContextConstructors = map[string]bool{
+	"Background":    true,
+	"TODO":          true,
+	"WithoutCancel": true,
+}
+
+// rootContextSite is one denied construction with the verdict the derived
+// predicates reached for it.
+type rootContextSite struct {
+	pos    token.Position
+	call   string
+	exempt bool
+}
+
+// rootContextPackage accumulates one package directory's sites plus the single
+// package-scoped fact the entry-point leniency turns on.
+type rootContextPackage struct {
+	name    string
+	hasRoot bool
+	sites   []rootContextSite
+}
+
+// TestCancellationRootChokepointGuard enforces structurally that a cancellation
+// signal can reach the work. Go offers four ways for a function to hold a
+// context — a parameter, a struct field, a package-level variable, or a call
+// that manufactures one — and only the last discards the caller's cancellation:
+// a function that manufactures a fresh root instead of declaring a parameter is
+// unreachable by the stop its caller is holding. All four are syntactic, which
+// is what makes the class decidable at parse time.
+//
+// The guard is deny-by-default over a whole-module walk: it visits every
+// production Go file, flags every context.Background, context.TODO and
+// context.WithoutCancel call, and exempts only what four DERIVED predicates
+// admit. There is no offender list, so a package that does not exist today is
+// covered the moment it is added, and a function written tomorrow that
+// manufactures a root instead of taking a parameter trips this guard with zero
+// edits here.
+//
+// The four predicates, none of which names a path:
+//
+//   - The sibling forwarder. The enclosing function F passes the manufactured
+//     context to a callee named FContext. That pair is the deliberate
+//     cancellation-free overload of a cancellable sibling: the cancellable path
+//     exists, is named, and a caller that holds a context reaches it. The name
+//     relationship is what makes this a derivation rather than a list — a
+//     function forwarding a fresh root to some OTHER Context-suffixed callee is
+//     not exempt. The names are compared and the receiver is not, so a forward to
+//     a different type's identically-named sibling is admitted as well.
+//
+//   - The cancellable root. The manufactured context is bound alongside a second
+//     value that the same function invokes — ctx, stop := …(context.Background())
+//     followed by defer stop(). The creator holds the cancellation, so nothing is
+//     discarded. 🔴 The far commoner result, err := Work(context.Background())
+//     shape does NOT qualify, and that is the whole tightening: an error is never
+//     invoked, and neither is a blank, which is exactly what separates a cancel
+//     handle from an ordinary second return value.
+//
+//   - The entry-point leniency, and it is the weakest of the four. A main package
+//     that declares no cancellable root of its own is a program with no
+//     cancellation story at all: nothing sits above a process entry point, so a
+//     bare root there discards nothing. The leniency ENDS the moment such a
+//     package declares a cancellable root — from then on a second, bare root in it
+//     routes around the signal the package itself holds, which is the defect. That
+//     is what keeps the command layer held strictly instead of exempted wholesale
+//     for being package main, and the strict-main assertion below fails loudly if
+//     that root ever disappears and the leniency silently widens to cover it.
+//
+//   - The test-support leniency. A package whose name ends in "test" has the
+//     standing every guard in this file already gives a _test.go file: test
+//     support is deliberately independent, and a test that fails to cancel fails
+//     on its own. The naming convention is the whole discriminator, so a package
+//     whose name merely ends in those four letters is exempted too.
+//
+// A context named in a COMMENT needs no predicate — the parse mode drops
+// comments, so the walk structurally cannot see one.
+//
+// 🔴 WHAT THIS GUARD DOES NOT PROVE, AND THE DISTINCTION IS THE WHOLE OF IT. It
+// proves a context ARRIVED. It cannot prove that cancelling it stops the work: a
+// cancellable context wired to nothing — never read, never carried into a
+// blocking call, never selected on — passes this guard, and whether cancelling it
+// ends anything is a runtime property no parse-time walk can reach. That second
+// property has no cheap general proof and is established
+// per operation, by handing the operation an already-cancelled context and
+// asserting it refuses with the cancellation sentinel and no side effect. A green
+// here is never "cancellation works".
+//
+// 🔴 THREE FURTHER BOUNDS, STATED BECAUSE AN UNSTATED BOUND READS AS FULL
+// COVERAGE.
+//
+//  1. The cancellable-root predicate reads syntax, not types. A zero-argument
+//     cleanup handle bound beside a manufactured context is indistinguishable
+//     from a cancel handle without type information, so that shape is exempted
+//     too. Closing it needs a type-checking load, which is a different mechanism
+//     from the parse-only walk every guard in this file shares.
+//  2. The test-file exemption this guard inherits removes the test corpus — by
+//     far the larger population — from scope without a single exemption entry.
+//     That is the same trade the six guards above make, for the same reason.
+//  3. A guard living in a Go test is reached by whatever test selection its caller
+//     makes. A selection narrowed to the packages a change touched runs this guard
+//     only when this package is among them, so a change elsewhere is covered at
+//     the next unnarrowed run rather than at its own. That is a latency, not a
+//     hole, and no package placement removes it: the guard lives in exactly one
+//     package, and any package it lives in is equally absent from a selection that
+//     excludes it.
+//
+// Test files are exempt: a test manufactures a root context deliberately, because
+// it IS the caller, and there is nothing above it to inherit one from.
+func TestCancellationRootChokepointGuard(t *testing.T) {
+	root := filepath.Join("..", "..")
+
+	pkgs := map[string]*rootContextPackage{}
+	// The directory order is kept alongside the map so the reported sites are in
+	// walk order rather than in map-iteration order.
+	order := []string{}
+	visited := 0
+
+	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			base := d.Name()
+			if base == "vendor" || base == "testdata" ||
+				(p != root && strings.HasPrefix(base, ".")) {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(p, ".go") || strings.HasSuffix(p, "_test.go") {
+			return nil
+		}
+		visited++
+		fset := token.NewFileSet()
+		node, perr := parser.ParseFile(fset, p, nil, 0)
+		if perr != nil {
+			t.Fatalf("parse %s: %v", p, perr)
+		}
+		dir := filepath.Dir(p)
+		pkg, seen := pkgs[dir]
+		if !seen {
+			pkg = &rootContextPackage{name: node.Name.Name}
+			pkgs[dir] = pkg
+			order = append(order, dir)
+		}
+		ctxNames := contextPackageNames(t, fset, node)
+		if len(ctxNames) > 0 {
+			collectRootContextSites(fset, node, ctxNames, pkg)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk %s: %v", root, err)
+	}
+
+	strictMains, found := 0, 0
+	for _, dir := range order {
+		pkg := pkgs[dir]
+		found += len(pkg.sites)
+		lenient := false
+		switch {
+		case pkg.name == "main":
+			// The entry-point leniency, which a declared cancellable root ends.
+			lenient = !pkg.hasRoot
+			if pkg.hasRoot {
+				strictMains++
+			}
+		case strings.HasSuffix(pkg.name, "test"):
+			lenient = true
+		}
+		if lenient {
+			continue
+		}
+		for _, s := range pkg.sites {
+			if s.exempt {
+				continue
+			}
+			t.Errorf("%s: %s manufactures a context no caller can cancel — declare a context.Context parameter and pass the caller's, so a stop reaches this work; a fresh root belongs at the process entry point, or beside the cancel handle that ends it, or in the cancellation-free overload of a Context-suffixed sibling", s.pos, s.call)
+		}
+	}
+
+	// The walk's own reach is asserted rather than assumed. A negative-by-default
+	// guard whose walk visited nothing passes exactly as a clean tree does, so a
+	// relocated module root or a mistaken skip would retire this check in silence.
+	if visited == 0 {
+		t.Fatalf("the walk from %s visited no production Go file — the guard is inert, not the tree clean", root)
+	}
+	// The matcher's own reach, for the same reason one step in: a walk that visits
+	// every file and recognises no construction at all also passes silently. A
+	// program that uses contexts builds a root somewhere, so a zero here is the
+	// matcher having stopped matching.
+	if found == 0 {
+		t.Fatalf("the walk from %s recognised no context-root construction anywhere — the matcher is broken, not the tree clean", root)
+	}
+	// The entry-point leniency's own reach. It is package-scoped and self-cancelling
+	// by design, which means losing the command layer's cancellable root would widen
+	// it to cover that whole package — silently, since a widened exemption reports
+	// nothing. This is what makes that widening loud.
+	if strictMains == 0 {
+		t.Fatalf("no main package declares a cancellable root, so the entry-point leniency now covers every main package and this guard no longer reaches the command layer — restore the cancellable root at the process entry point")
+	}
+}
+
+// contextPackageNames returns the local identifiers bound to the context package
+// in node, so the matcher keys on what the file actually calls the package rather
+// than on the literal "context". An aliased import would otherwise evade every
+// selector match in this guard. A dot import is reported rather than tolerated:
+// it would put the constructors in file scope as bare identifiers, which this
+// matcher cannot see, and denying the evasion is the point of a deny-by-default
+// walk.
+func contextPackageNames(t *testing.T, fset *token.FileSet, node *ast.File) map[string]bool {
+	t.Helper()
+	names := map[string]bool{}
+	for _, imp := range node.Imports {
+		if strings.Trim(imp.Path.Value, `"`) != "context" {
+			continue
+		}
+		if imp.Name == nil {
+			names["context"] = true
+			continue
+		}
+		switch imp.Name.Name {
+		case "_":
+			// A blank import binds no name, so nothing here can be called.
+		case ".":
+			t.Errorf("%s: dot import of context — import it under a name, so the root-context constructors stay visible to the cancellation guard", fset.Position(imp.Pos()))
+		default:
+			names[imp.Name.Name] = true
+		}
+	}
+	return names
+}
+
+// collectRootContextSites records every denied construction in node against its
+// package, marking the ones the two function-scoped predicates admit. A
+// construction outside any function body — a package-level variable initialiser —
+// has no enclosing function, so neither predicate can reach it and it is recorded
+// unexempted.
+func collectRootContextSites(fset *token.FileSet, node *ast.File, ctxNames map[string]bool, pkg *rootContextPackage) {
+	record := func(call *ast.CallExpr, name string, exempt bool) {
+		pkg.sites = append(pkg.sites, rootContextSite{
+			pos:    fset.Position(call.Pos()),
+			call:   name,
+			exempt: exempt,
+		})
+	}
+	for _, decl := range node.Decls {
+		fd, isFunc := decl.(*ast.FuncDecl)
+		if !isFunc || fd.Body == nil {
+			ast.Inspect(decl, func(n ast.Node) bool {
+				if call, ok := n.(*ast.CallExpr); ok {
+					if name := deniedRootContextCall(call, ctxNames); name != "" {
+						record(call, name, false)
+					}
+				}
+				return true
+			})
+			continue
+		}
+		forwarded := forwardedRootContexts(fd, ctxNames)
+		rooted := boundCancellableRoots(fd.Body, ctxNames, invokedNames(fd.Body))
+		if len(rooted) > 0 {
+			pkg.hasRoot = true
+		}
+		ast.Inspect(fd.Body, func(n ast.Node) bool {
+			call, ok := n.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			name := deniedRootContextCall(call, ctxNames)
+			if name == "" {
+				return true
+			}
+			record(call, name, forwarded[call.Pos()] || rooted[call.Pos()])
+			return true
+		})
+	}
+}
+
+// deniedRootContextCall returns the call's source spelling when it constructs a
+// context carrying no caller cancellation, and the empty string otherwise.
+func deniedRootContextCall(call *ast.CallExpr, ctxNames map[string]bool) string {
+	sel, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok {
+		return ""
+	}
+	id, ok := sel.X.(*ast.Ident)
+	if !ok || !ctxNames[id.Name] || !deniedRootContextConstructors[sel.Sel.Name] {
+		return ""
+	}
+	return id.Name + "." + sel.Sel.Name + "()"
+}
+
+// forwardedRootContexts returns the positions of the denied constructions fd
+// hands to its own Context-suffixed sibling. The sibling's name is derived from
+// fd's — a function named F may forward to FContext and to nothing else — so the
+// pair is recognised by the relationship rather than by a list of known pairs.
+func forwardedRootContexts(fd *ast.FuncDecl, ctxNames map[string]bool) map[token.Pos]bool {
+	forwarded := map[token.Pos]bool{}
+	sibling := fd.Name.Name + "Context"
+	ast.Inspect(fd.Body, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok || calleeName(call.Fun) != sibling {
+			return true
+		}
+		for _, arg := range call.Args {
+			inner, isCall := arg.(*ast.CallExpr)
+			if !isCall {
+				continue
+			}
+			if deniedRootContextCall(inner, ctxNames) != "" {
+				forwarded[inner.Pos()] = true
+			}
+		}
+		return true
+	})
+	return forwarded
+}
+
+// boundCancellableRoots returns the positions of the denied constructions that
+// are bound as a cancellable root: a two-value assignment whose second value the
+// same function invokes. Requiring the invocation is what separates a cancel
+// handle from an ordinary second return value — an error is never called, and
+// neither is a blank — which a bare two-value bind would have admitted.
+func boundCancellableRoots(body *ast.BlockStmt, ctxNames map[string]bool, invoked map[string]bool) map[token.Pos]bool {
+	rooted := map[token.Pos]bool{}
+	ast.Inspect(body, func(n ast.Node) bool {
+		assign, ok := n.(*ast.AssignStmt)
+		if !ok || len(assign.Lhs) != 2 || len(assign.Rhs) != 1 {
+			return true
+		}
+		handle := exprText(assign.Lhs[1])
+		if handle == "" || !invoked[handle] {
+			return true
+		}
+		ast.Inspect(assign.Rhs[0], func(m ast.Node) bool {
+			inner, isCall := m.(*ast.CallExpr)
+			if isCall && deniedRootContextCall(inner, ctxNames) != "" {
+				rooted[inner.Pos()] = true
+			}
+			return true
+		})
+		return true
+	})
+	return rooted
+}
+
+// invokedNames returns the source spelling of everything body calls, so a bound
+// handle can be tested against it. A cancel handle is, by definition, something
+// the holder calls.
+func invokedNames(body *ast.BlockStmt) map[string]bool {
+	invoked := map[string]bool{}
+	ast.Inspect(body, func(n ast.Node) bool {
+		if call, ok := n.(*ast.CallExpr); ok {
+			if text := exprText(call.Fun); text != "" {
+				invoked[text] = true
+			}
+		}
+		return true
+	})
+	return invoked
+}
+
+// exprText renders an identifier or a dotted selector chain as it is written in
+// the source, so a field-held cancel handle (s.serverCancel) matches its own
+// invocation site as readily as a local one does.
+func exprText(e ast.Expr) string {
+	switch v := e.(type) {
+	case *ast.Ident:
+		return v.Name
+	case *ast.SelectorExpr:
+		x := exprText(v.X)
+		if x == "" {
+			return ""
+		}
+		return x + "." + v.Sel.Name
+	}
+	return ""
+}
+
+// calleeName returns the final name of a call's target — the selector's own name
+// for a method call, the identifier for a plain one, looking through a generic
+// instantiation.
+func calleeName(e ast.Expr) string {
+	switch v := e.(type) {
+	case *ast.Ident:
+		return v.Name
+	case *ast.SelectorExpr:
+		return v.Sel.Name
+	case *ast.IndexExpr:
+		return calleeName(v.X)
+	case *ast.IndexListExpr:
+		return calleeName(v.X)
+	}
+	return ""
+}
