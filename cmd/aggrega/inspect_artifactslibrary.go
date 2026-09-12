@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 
 	"go.yaml.in/yaml/v3"
@@ -22,7 +23,7 @@ import (
 //   - levelList: bundle names only.
 //   - levelDefault: header, description, per-bundle usage line + file list, labels / annotations.
 //   - levelDetail: adds the full Go-template body per file, verbatim.
-func renderArtifactsLibraryFile(_ *workspaceconfig.ResolvedWorkspace, path string, data []byte, _ []string, opts inspectOptions) error {
+func renderArtifactsLibraryFile(_ context.Context, _ *workspaceconfig.ResolvedWorkspace, path string, data []byte, _ []string, opts inspectOptions) error {
 	if opts.output == outputYAML {
 		return emitYAMLRoundTrip(opts, path, data)
 	}

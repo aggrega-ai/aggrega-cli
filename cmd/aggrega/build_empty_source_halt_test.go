@@ -63,7 +63,7 @@ spec:
 // would leave every case below proving only that.
 func primeLockfile(t *testing.T, root, releasePath, catalogRoot string) {
 	t.Helper()
-	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{catalogRoot}}); err != nil {
+	if err := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{catalogRoot}}); err != nil {
 		t.Fatalf("prime lockfile via pull: %v", err)
 	}
 }

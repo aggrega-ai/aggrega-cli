@@ -106,7 +106,7 @@ func TestBuildDefaultReadonlyWithLockfileWritesNoSource(t *testing.T) {
 	writeWorkspaceConfig(t, root, "")
 
 	// Create the lockfile out-of-band via an explicit pull (the sole writer).
-	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{filepath.Join(root, "catalog")}}); err != nil {
+	if err := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{filepath.Join(root, "catalog")}}); err != nil {
 		t.Fatalf("initial pullRun: %v", err)
 	}
 
@@ -175,7 +175,7 @@ func TestBuildVerifiesLockfileAndHaltsOnDrift(t *testing.T) {
 	writeWorkspaceConfig(t, root, "auto_pull: false\n")
 
 	// Prime the cache + lockfile by running an initial explicit pull.
-	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{filepath.Join(root, "catalog")}}); err != nil {
+	if err := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{filepath.Join(root, "catalog")}}); err != nil {
 		t.Fatalf("initial pullRun: %v", err)
 	}
 
@@ -209,7 +209,7 @@ func TestBuildSucceedsWhenLockfileMatchesClosure(t *testing.T) {
 	releasePath := authoringFixture(t, root)
 	writeWorkspaceConfig(t, root, "auto_pull: true\n")
 
-	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{filepath.Join(root, "catalog")}}); err != nil {
+	if err := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{filepath.Join(root, "catalog")}}); err != nil {
 		t.Fatalf("initial pullRun: %v", err)
 	}
 

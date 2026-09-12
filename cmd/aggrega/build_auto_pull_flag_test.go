@@ -165,7 +165,7 @@ func TestBuildAutoPullIncrementalPreservesExternalInputs(t *testing.T) {
 
 	// Establish a lockfile out-of-band (the sole writer), then inject a prior
 	// external-input pin the incremental fill must preserve.
-	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{catalogDir}}); err != nil {
+	if err := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{catalogDir}}); err != nil {
 		t.Fatalf("initial pullRun: %v", err)
 	}
 	url := injectExternalInput(t, lockfilePath)
@@ -193,7 +193,7 @@ func TestBuildAutoPullUpgradeDiscardsExternalInputs(t *testing.T) {
 	catalogDir := filepath.Join(root, "catalog")
 	lockfilePath := filepath.Join(root, "release.lock")
 
-	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{catalogDir}}); err != nil {
+	if err := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{catalogDir}}); err != nil {
 		t.Fatalf("initial pullRun: %v", err)
 	}
 	url := injectExternalInput(t, lockfilePath)

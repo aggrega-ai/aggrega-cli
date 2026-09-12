@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -37,7 +38,7 @@ import (
 //   - default / --resolved: the topology-resolved text layout.
 //   - --flat: the subsystem tree is flattened to one line per node, each
 //     prefixed with its full dotted InstanceID.
-func renderAggregateFile(rw *workspaceconfig.ResolvedWorkspace, path string, data []byte, catalogDirs []string, opts inspectOptions) error {
+func renderAggregateFile(_ context.Context, rw *workspaceconfig.ResolvedWorkspace, path string, data []byte, catalogDirs []string, opts inspectOptions) error {
 	if opts.mode == modeForcedRaw || opts.output == outputYAML {
 		return emitYAMLRoundTrip(opts, path, data)
 	}

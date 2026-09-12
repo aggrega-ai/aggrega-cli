@@ -5,6 +5,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"sort"
@@ -180,7 +181,7 @@ func recordWithdrawals(t *testing.T, rw *workspaceconfig.ResolvedWorkspace, seve
 // the surface printed.
 func inspectWithdrawalOutput(t *testing.T, rw *workspaceconfig.ResolvedWorkspace, arm withdrawalKind, opts inspectOptions) string {
 	t.Helper()
-	if err := inspectCatalogEntity(rw, arm.identifier, nil, opts); err != nil {
+	if err := inspectCatalogEntity(context.Background(), rw, arm.identifier, nil, opts); err != nil {
 		t.Fatalf("inspect %s %q: %v", arm.kind, arm.identifier, err)
 	}
 	return opts.out.(*bytes.Buffer).String()

@@ -5,6 +5,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -60,7 +61,7 @@ func inspectAggregateOutput(t *testing.T, path string) string {
 	t.Helper()
 	var buf bytes.Buffer
 	dir := filepath.Dir(path)
-	if err := dispatchInspect(resolveTempWorkspace(t, tempWorkspaceOptions{}), path, []string{dir}, testInspectOptions(&buf)); err != nil {
+	if err := dispatchInspect(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{}), path, []string{dir}, testInspectOptions(&buf)); err != nil {
 		t.Fatalf("inspecting the Aggregate should succeed; got: %v", err)
 	}
 	return buf.String()

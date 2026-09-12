@@ -219,7 +219,7 @@ func TestBuildResolvesRemotePinnedMappingLibrary(t *testing.T) {
 	catalogDir := filepath.Join(root, "catalog")
 
 	// Initial pull with the library authored locally → a real lockfile pinning it.
-	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{catalogDir}}); err != nil {
+	if err := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{catalogDir}}); err != nil {
 		t.Fatalf("initial pullRun: %v", err)
 	}
 
@@ -282,7 +282,7 @@ func TestPullFetchesRemoteMappingLibraryViaTier3(t *testing.T) {
 	}
 
 	puller := &fakeRemoteMappingLibraryPuller{tags: []string{"1.0.0", "2.0.0"}}
-	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{catalogDir}, puller: puller}); err != nil {
+	if err := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{catalogDir}, puller: puller}); err != nil {
 		t.Fatalf("pullRun (Tier-3 remote mapping fetch): %v", err)
 	}
 	if !puller.listTagsCalled {
@@ -343,7 +343,7 @@ spec:
       image: "recursive-final:{{ .values.tag }}"
 `)
 
-	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{catalogDir}}); err != nil {
+	if err := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{catalogDir}}); err != nil {
 		t.Fatalf("pullRun: %v", err)
 	}
 	if err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false, os.Stderr, os.Stdout); err != nil {
@@ -388,7 +388,7 @@ spec:
       $import: HelmHelpers#/mappings/ServerValues
 `)
 
-	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{catalogDir}}); err != nil {
+	if err := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{catalogDir}}); err != nil {
 		t.Fatalf("pullRun: %v", err)
 	}
 	err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false, os.Stderr, os.Stdout)

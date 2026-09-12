@@ -80,7 +80,7 @@ func TestIntegration_PluginAdd_ConfigSocket_RoundTrip(t *testing.T) {
 
 	// A subsequent pull resolves and pins the just-added config-socket attachment
 	// on both axes — the entity and its .wasm artifact.
-	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), ReleasePath: "release.yaml", CatalogDirs: []string{std}}); err != nil {
+	if err := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), ReleasePath: "release.yaml", CatalogDirs: []string{std}}); err != nil {
 		t.Fatalf("pull after add: %v", err)
 	}
 	lf, _, err := lockfile.LoadLockfile(lockfile.PathFor("release.yaml"))

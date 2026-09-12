@@ -6,6 +6,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"path/filepath"
 	"testing"
@@ -174,7 +175,7 @@ func TestIntegration_PullCommandVerifiesSignedCatalogEntity_Keyed(t *testing.T) 
 		host := startRegistry(t, nil)
 		wsRoot, componentURI := writeCatalogEntityConsumerWorkspace(t, host, pubPEM, signedPush)
 
-		if perr := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}), ReleasePath: "release.yaml"}); perr != nil {
+		if perr := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}), ReleasePath: "release.yaml"}); perr != nil {
 			t.Fatalf("a signed catalog entity under a matching pinned key must PULL and VERIFY; got: %v", perr)
 		}
 
@@ -224,7 +225,7 @@ func TestIntegration_PullCommandVerifiesSignedCatalogEntity_Keyed(t *testing.T) 
 		}
 		wsRoot, _ := writeCatalogEntityConsumerWorkspace(t, host, wrongPubPEM, signedPush)
 
-		perr := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}), ReleasePath: "release.yaml"})
+		perr := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}), ReleasePath: "release.yaml"})
 		if !errors.Is(perr, signing.ErrSignatureVerificationFailed()) {
 			t.Fatalf("a wrong pinned key must HALT the pull with ErrSignatureVerificationFailed; got: %v", perr)
 		}
@@ -237,7 +238,7 @@ func TestIntegration_PullCommandVerifiesSignedCatalogEntity_Keyed(t *testing.T) 
 		// Loud Guardrail.
 		wsRoot, _ := writeCatalogEntityConsumerWorkspace(t, host, pubPEM, unsignedPush)
 
-		perr := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}), ReleasePath: "release.yaml"})
+		perr := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}), ReleasePath: "release.yaml"})
 		if !errors.Is(perr, signing.ErrNoSignatureFound()) {
 			t.Fatalf("an unsigned catalog entity under a require-signatures policy must HALT with ErrNoSignatureFound; got: %v", perr)
 		}

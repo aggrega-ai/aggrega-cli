@@ -328,7 +328,7 @@ spec:
 func seedPinnedExternalInput(t *testing.T, root, releasePath string, workspaceRoot, cacheDir string) {
 	t.Helper()
 
-	if err := pullRun(pullConfig{
+	if err := pullRun(context.Background(), pullConfig{
 		ws:          resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
 		ReleasePath: releasePath,
 	}); err != nil {

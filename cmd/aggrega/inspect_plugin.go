@@ -145,7 +145,7 @@ func compactSchema(raw json.RawMessage) string {
 //   - levelDefault: plugin, plugin type, ABI version, targets,
 //     the exports table, and the runtime block.
 //   - levelDetail: adds the signature pointer and the runtime config keys.
-func renderPluginFile(_ *workspaceconfig.ResolvedWorkspace, path string, data []byte, _ []string, opts inspectOptions) error {
+func renderPluginFile(_ context.Context, _ *workspaceconfig.ResolvedWorkspace, path string, data []byte, _ []string, opts inspectOptions) error {
 	if opts.output == outputYAML {
 		return emitYAMLRoundTrip(opts, path, data)
 	}

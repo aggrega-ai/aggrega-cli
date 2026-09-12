@@ -183,7 +183,7 @@ func TestBuild_BrokenOutOfClosureIsolation(t *testing.T) {
 	// of pins), then both builds below read it. The closure is unchanged by the
 	// broken out-of-closure entities added later, so the pre-existing lockfile
 	// still verifies.
-	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{catalogRoot}}); err != nil {
+	if err := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{catalogRoot}}); err != nil {
 		t.Fatalf("prime lockfile via pull: %v", err)
 	}
 
@@ -304,7 +304,7 @@ func TestPull_BrokenOutOfClosureIsolation(t *testing.T) {
 	t.Chdir(root)
 	releasePath, catalogRoot := writeValidWorkspace(t, root)
 
-	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{catalogRoot}}); err != nil {
+	if err := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{catalogRoot}}); err != nil {
 		t.Fatalf("clean pull should succeed: %v", err)
 	}
 	clean := lockfileEntityURIs(t, releasePath)
@@ -313,7 +313,7 @@ func TestPull_BrokenOutOfClosureIsolation(t *testing.T) {
 	}
 
 	writeBrokenOutOfClosureEntities(t, catalogRoot)
-	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{catalogRoot}, Upgrade: true}); err != nil {
+	if err := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{catalogRoot}, Upgrade: true}); err != nil {
 		t.Fatalf("pull must succeed despite broken out-of-closure entities: %v", err)
 	}
 	dirty := lockfileEntityURIs(t, releasePath)
@@ -343,7 +343,7 @@ metadata:
 spec:
   capability: helm
 `)
-	err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{catalogRoot}})
+	err := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{catalogRoot}})
 	if err == nil {
 		t.Fatal("pull must fail when the in-closure recipe was skipped at load")
 	}

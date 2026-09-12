@@ -169,7 +169,7 @@ they are from the readable layouts. Pass --unredacted to print them instead.`,
 				irGraph:        irGraphFlag,
 				closure:        closureFlag,
 			}
-			return dispatchInspect(rw, args[0], catalogDirs, opts)
+			return dispatchInspect(cmd.Context(), rw, args[0], catalogDirs, opts)
 		},
 	}
 	c.Flags().StringArrayVar(&catalogDirs, "catalog", nil, "Catalog directory; repeatable. Each --catalog is prepended to the workspace catalog_dirs search stack (first match wins). Defaults to the current directory.")
@@ -218,13 +218,17 @@ they are from the readable layouts. Pass --unredacted to print them instead.`,
 // catalogDirs supplies the repeatable --catalog flag directories for both the
 // catalog-name branch and the Release branch's pipeline; each load site resolves
 // them against the workspace catalog_dirs into the first-win search stack.
-func dispatchInspect(rw *workspaceconfig.ResolvedWorkspace, identifier string, catalogDirs []string, opts inspectOptions) error {
+//
+// ctx is the run's own and is carried to every per-kind renderer, because two of
+// them resolve a dependency closure and one builds a graph — work that leaves the
+// process and that a reader must be able to stop.
+func dispatchInspect(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, identifier string, catalogDirs []string, opts inspectOptions) error {
 	if strings.HasPrefix(identifier, "oci://") {
 		return fmt.Errorf("inspect for OCI URIs not yet implemented; resolve to a local path or use a catalog name")
 	}
 
 	if isPathInput(identifier) {
-		return inspectPath(rw, identifier, catalogDirs, opts)
+		return inspectPath(ctx, rw, identifier, catalogDirs, opts)
 	}
 
 	// A bare identifier resolves against the catalog, and no catalog kind is a
@@ -237,7 +241,7 @@ func dispatchInspect(rw *workspaceconfig.ResolvedWorkspace, identifier string, c
 	if opts.closure {
 		return refuseClosure("a catalog entity")
 	}
-	return inspectCatalogEntity(rw, identifier, catalogDirs, opts)
+	return inspectCatalogEntity(ctx, rw, identifier, catalogDirs, opts)
 }
 
 // refuseReleaseOnly reports a request for a document only a Release resolves,
@@ -347,7 +351,13 @@ func resolveSiblingYAML(dir, name string) string {
 // bytes, the catalog search stack, and the resolved inspectOptions (which
 // carry the level, mode, output format, color decision, and the output sink),
 // and writes to opts.out.
-type kindRenderer func(rw *workspaceconfig.ResolvedWorkspace, path string, data []byte, catalogDirs []string, opts inspectOptions) error
+//
+// The first parameter is the run's context. Most kinds render from bytes already
+// in hand and never consult it; the Release kind resolves a dependency closure or
+// builds a graph, which is work that leaves the process. It is on the shared type
+// rather than on those renderers alone so the dispatch has one shape to call, and
+// so a kind that later reaches outside the process has the context already there.
+type kindRenderer func(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, path string, data []byte, catalogDirs []string, opts inspectOptions) error
 
 // kindRenderers maps an entity kind to its file-path inspector. inspectPath
 // dispatches through this table; kinds absent from it fall through to the
@@ -377,7 +387,7 @@ var nonStandalone = map[string]bool{
 // the per-kind renderer registered for that kind. A kind that is structurally
 // embedded-only (Workload) is a hard error naming the entity it embeds under;
 // an unrecognized kind reports the unknown kind.
-func inspectPath(rw *workspaceconfig.ResolvedWorkspace, path string, catalogDirs []string, opts inspectOptions) error {
+func inspectPath(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, path string, catalogDirs []string, opts inspectOptions) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return fmt.Errorf("read %q: %w", path, err)
@@ -401,7 +411,7 @@ func inspectPath(rw *workspaceconfig.ResolvedWorkspace, path string, catalogDirs
 	}
 
 	if render, ok := kindRenderers[preamble.Kind]; ok {
-		return render(rw, path, data, catalogDirs, opts)
+		return render(ctx, rw, path, data, catalogDirs, opts)
 	}
 	if nonStandalone[preamble.Kind] {
 		return fmt.Errorf("kind %s is not a standalone inspectable entity; %s is embedded in Recipes — inspect a Recipe to see its %s", preamble.Kind, preamble.Kind, preamble.Kind)
@@ -442,7 +452,7 @@ func inspectPath(rw *workspaceconfig.ResolvedWorkspace, path string, catalogDirs
 // No match in any kind is a clear not-found naming the identifier and stating it
 // matched no catalog entity of any kind — the bare identifier is not assumed to
 // be a Component.
-func inspectCatalogEntity(rw *workspaceconfig.ResolvedWorkspace, identifier string, catalogDirs []string, opts inspectOptions) error {
+func inspectCatalogEntity(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, identifier string, catalogDirs []string, opts inspectOptions) error {
 	// Catalog entity details print without rendering any per-node IR, so no
 	// workspace-relative path normalization is needed. The resolved workspace root
 	// is still supplied, because it is the anchor the configured cache directory is
@@ -520,13 +530,13 @@ func inspectCatalogEntity(rw *workspaceconfig.ResolvedWorkspace, identifier stri
 		// root the path is relative TO, is what makes a bare Aggregate identifier
 		// resolve from anywhere in the workspace, as every other kind already
 		// does.
-		if err := kindRenderers["Aggregate"](rw, workspaceAnchoredPath(wsRoot, match.Source), match.Bytes, catalogDirs, opts); err != nil {
+		if err := kindRenderers["Aggregate"](ctx, rw, workspaceAnchoredPath(wsRoot, match.Source), match.Bytes, catalogDirs, opts); err != nil {
 			return err
 		}
 		reportEntityWithdrawal(rw, id, opts)
 		return nil
 	default:
-		return renderCatalogMatch(rw, id, resolvedIdentifier, match.Definition, catalogDirs, opts)
+		return renderCatalogMatch(ctx, rw, id, resolvedIdentifier, match.Definition, catalogDirs, opts)
 	}
 }
 
@@ -677,12 +687,12 @@ func reportEntityWithdrawal(rw *workspaceconfig.ResolvedWorkspace, id entityIden
 // The withdrawal report is here rather than at each branch because this is the one
 // funnel every pure-unmarshal kind passes through: a kind reaches the advisory by
 // resolving, not by remembering to ask for it.
-func renderCatalogMatch(rw *workspaceconfig.ResolvedWorkspace, id entityIdentity, identifier string, entity any, catalogDirs []string, opts inspectOptions) error {
+func renderCatalogMatch(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, id entityIdentity, identifier string, entity any, catalogDirs []string, opts inspectOptions) error {
 	data, err := yaml.Marshal(entity)
 	if err != nil {
 		return fmt.Errorf("marshal %s %q: %w", id.kind, identifier, err)
 	}
-	if err := kindRenderers[id.kind](rw, identifier, data, catalogDirs, opts); err != nil {
+	if err := kindRenderers[id.kind](ctx, rw, identifier, data, catalogDirs, opts); err != nil {
 		return err
 	}
 	reportEntityWithdrawal(rw, id, opts)
@@ -727,7 +737,7 @@ func renderCatalogMatch(rw *workspaceconfig.ResolvedWorkspace, id entityIdentity
 // This function threads opts.out as the output sink and reaches the graph
 // through the compiler's one graph-construction entry, so the picture it draws
 // cannot drift from what a build of the same Release would render.
-func renderReleaseFile(rw *workspaceconfig.ResolvedWorkspace, releasePath string, data []byte, catalogDirs []string, opts inspectOptions) error {
+func renderReleaseFile(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, releasePath string, data []byte, catalogDirs []string, opts inspectOptions) error {
 	// The as-authored selection. --raw is the explicit one; --output yaml is the
 	// same document reached through the format flag, which is what that flag
 	// means for every other kind. Only a caller that also asked for the graph
@@ -742,7 +752,7 @@ func renderReleaseFile(rw *workspaceconfig.ResolvedWorkspace, releasePath string
 	// below because that pipeline is the cost of the node view, which a caller
 	// asking for the closure did not ask for.
 	if opts.closure {
-		return renderReleaseClosure(rw, releasePath, catalogDirs, opts)
+		return renderReleaseClosure(ctx, rw, releasePath, catalogDirs, opts)
 	}
 	// wsRoot is the resolved workspace root; the catalog renders its entity
 	// source-file accessors relative to it so catalog-sourced IR records read
@@ -794,7 +804,7 @@ func renderReleaseFile(rw *workspaceconfig.ResolvedWorkspace, releasePath string
 	// graph records — supplied on the inputs like every other build-identity
 	// value, rather than handed to the graph build separately.
 	return pipeline.BuildGraph(
-		context.Background(),
+		ctx,
 		pipeline.Inputs{
 			Release:           rel,
 			Manifest:          manifest,

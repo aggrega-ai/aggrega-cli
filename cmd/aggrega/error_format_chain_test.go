@@ -238,7 +238,7 @@ func TestFormatCompilerError_AssertionFailureReachesTerminal(t *testing.T) {
 	traceEnabled := false
 
 	ws := resolveTempWorkspace(t, tempWorkspaceOptions{})
-	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: catalogDirs, ws: ws}); err != nil {
+	if err := pullRun(context.Background(), pullConfig{ReleasePath: releasePath, CatalogDirs: catalogDirs, ws: ws}); err != nil {
 		t.Fatalf("prime lockfile via pull: %v", err)
 	}
 	err := dispatchBuild(context.Background(), ws, releasePath, catalogDirs, traceEnabled, io.Discard, io.Discard)

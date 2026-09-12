@@ -81,7 +81,11 @@ var pluginRegistrationWarnWriter io.Writer = os.Stderr
 // an installable plugin, so the unknown-command path can suggest installing it.
 // The default is a non-network stub that reports nothing discoverable; the
 // registry-backed lookup is wired separately.
-var pluginDiscoverable = func(name string) bool { return false }
+//
+// It takes the run's context because the registry-backed form reaches a registry
+// over the network: a reader who withdraws while the hint is being looked up ends
+// the lookup instead of waiting on it.
+var pluginDiscoverable = func(_ context.Context, name string) bool { return false }
 
 // reservedCommandNames are command names the CLI reserves for anticipated
 // built-ins, so a configured CLI plugin can never squat a name the CLI intends
@@ -325,9 +329,13 @@ func installSuggestion(name string) string {
 // err is cobra's unknown-command error for a name that is discoverable as an
 // installable plugin. For any other error, or an unknown command that is not
 // discoverable, it returns formatted unchanged so cobra's normal message stands.
-func unknownCommandSuggestion(formatted string, err error) string {
+//
+// ctx is the run's, and it is what bounds the discoverability lookup: the hint is
+// worth a registry round trip only while the reader is still waiting for the
+// diagnostic, so a withdrawn run gets cobra's message without one.
+func unknownCommandSuggestion(ctx context.Context, formatted string, err error) string {
 	name, ok := unknownCommandName(err)
-	if !ok || !pluginDiscoverable(name) {
+	if !ok || !pluginDiscoverable(ctx, name) {
 		return formatted
 	}
 	return formatted + "\n" + installSuggestion(name)

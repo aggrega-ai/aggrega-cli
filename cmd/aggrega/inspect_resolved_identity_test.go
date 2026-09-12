@@ -5,6 +5,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -90,7 +91,7 @@ func TestInspectByNameTitlesOutputWithTheResolvedIdentity(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			var buf bytes.Buffer
 			opts := testInspectOptions(&buf)
-			if err := dispatchInspect(resolveTempWorkspace(t, tempWorkspaceOptions{}), name, []string{catalogDir}, opts); err != nil {
+			if err := dispatchInspect(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{}), name, []string{catalogDir}, opts); err != nil {
 				t.Fatalf("inspect %q: %v", name, err)
 			}
 			out := buf.String()
@@ -148,7 +149,7 @@ func TestInspectByNameRendersAnAggregateFromItsAuthoredDocument(t *testing.T) {
 
 	var buf bytes.Buffer
 	opts := testInspectOptions(&buf)
-	if err := dispatchInspect(resolveTempWorkspace(t, tempWorkspaceOptions{}), "db-module", []string{catalogDir}, opts); err != nil {
+	if err := dispatchInspect(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{}), "db-module", []string{catalogDir}, opts); err != nil {
 		t.Fatalf("inspect db-module: %v", err)
 	}
 	out := buf.String()

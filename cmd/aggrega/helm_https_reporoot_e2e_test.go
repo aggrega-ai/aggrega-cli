@@ -143,7 +143,7 @@ func TestHTTPSRepoRootBuildReproduction(t *testing.T) {
 	releasePath := sourcedRepoRootFixture(t, root, srv.URL, "pinchart")
 	catalogDir := filepath.Join(root, "catalog")
 
-	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{catalogDir}}); err != nil {
+	if err := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{catalogDir}}); err != nil {
 		t.Fatalf("pullRun: %v", err)
 	}
 
@@ -352,7 +352,7 @@ func TestHTTPSRepoRootChartCollision(t *testing.T) {
 	releasePath := collisionRepoRootFixture(t, root, srv.URL, "pinchart", "otherchart")
 	catalogDir := filepath.Join(root, "catalog")
 
-	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{catalogDir}}); err != nil {
+	if err := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{catalogDir}}); err != nil {
 		t.Fatalf("pullRun: %v", err)
 	}
 

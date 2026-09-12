@@ -45,7 +45,7 @@ whose records are out of sync with its binary.`,
 			if pluginPath == "" {
 				return fmt.Errorf("aggrega plugin sync: --plugin <path-to-.wasm> is required (the recorded host functions and commands are derived from the .wasm)")
 			}
-			return stampPluginFile(cmd.OutOrStdout(), args[0], pluginPath)
+			return stampPluginFile(cmd.Context(), cmd.OutOrStdout(), args[0], pluginPath)
 		},
 	}
 	c.Flags().StringVar(&pluginPath, "plugin", "", "Path to the plugin's .wasm artifact whose imports and describe() determine the recorded host functions and commands")
@@ -64,8 +64,11 @@ whose records are out of sync with its binary.`,
 // The command mirror is formatted here rather than carried on the result as text,
 // because the result carries the described commands themselves and each surface
 // renders what it needs from that one value.
-func stampPluginFile(out io.Writer, entityPath, pluginPath string) error {
-	res, err := pluginops.Sync(context.Background(), pluginops.SyncOptions{
+//
+// ctx is the caller's and reaches the guest the alignment describes, so a reader
+// who withdraws the run ends the describe rather than waiting for it.
+func stampPluginFile(ctx context.Context, out io.Writer, entityPath, pluginPath string) error {
+	res, err := pluginops.Sync(ctx, pluginops.SyncOptions{
 		EntityPath: entityPath,
 		PluginPath: pluginPath,
 	})

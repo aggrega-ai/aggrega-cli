@@ -154,7 +154,7 @@ func TestBuild_HelmNamelessDocsRenderThroughGuest(t *testing.T) {
 	catalogDir := filepath.Join(root, "catalog")
 
 	// Build is read-only: prime the lockfile with an explicit pull, then build reads it.
-	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{catalogDir}}); err != nil {
+	if err := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{catalogDir}}); err != nil {
 		t.Fatalf("prime lockfile via pull: %v", err)
 	}
 

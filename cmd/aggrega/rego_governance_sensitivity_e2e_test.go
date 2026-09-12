@@ -493,7 +493,7 @@ func TestRegoCachedGate_TheRecordedDigestGovernsWhichArtifactRuns(t *testing.T) 
 			// entity — so the lockfile is filled with the gate detached. That is the
 			// state a completed pull from a registry leaves behind.
 			pullWorkspace := resolveWorkspaceWithConfig(t, root, "workspace: {}\noffline: true\nplugins: {}\n")
-			if err := pullRun(pullConfig{
+			if err := pullRun(context.Background(), pullConfig{
 				ReleasePath: releasePath, CatalogDirs: []string{catalogDir}, ws: pullWorkspace,
 				DiagOut: os.Stderr, Out: os.Stderr, diag: buildDiagOptions{quiet: true},
 			}); err != nil {

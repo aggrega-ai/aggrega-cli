@@ -5,6 +5,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -122,7 +123,7 @@ func TestPullEndToEndRoundTrip(t *testing.T) {
 	t.Chdir(root)
 	releasePath := authoringFixture(t, root)
 
-	if err := pullRun(pullConfig{
+	if err := pullRun(context.Background(), pullConfig{
 		ws:          resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
 		ReleasePath: releasePath,
 		CatalogDirs: []string{filepath.Join(root, "catalog")},
@@ -149,7 +150,7 @@ func TestPullProducesByteIdenticalLockfileAcrossRuns(t *testing.T) {
 	t.Chdir(root)
 	releasePath := authoringFixture(t, root)
 
-	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{filepath.Join(root, "catalog")}}); err != nil {
+	if err := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{filepath.Join(root, "catalog")}}); err != nil {
 		t.Fatalf("first pull: %v", err)
 	}
 	first, err := os.ReadFile(filepath.Join(root, "release.lock"))
@@ -157,7 +158,7 @@ func TestPullProducesByteIdenticalLockfileAcrossRuns(t *testing.T) {
 		t.Fatalf("read first lockfile: %v", err)
 	}
 
-	if err := pullRun(pullConfig{
+	if err := pullRun(context.Background(), pullConfig{
 		ws:          resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
 		ReleasePath: releasePath,
 		CatalogDirs: []string{filepath.Join(root, "catalog")},
@@ -189,7 +190,7 @@ func TestPullDefaultRerunIsByteIdentical(t *testing.T) {
 	t.Chdir(root)
 	releasePath := authoringFixture(t, root)
 
-	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{filepath.Join(root, "catalog")}}); err != nil {
+	if err := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{filepath.Join(root, "catalog")}}); err != nil {
 		t.Fatalf("first pull: %v", err)
 	}
 	first, err := os.ReadFile(filepath.Join(root, "release.lock"))
@@ -198,7 +199,7 @@ func TestPullDefaultRerunIsByteIdentical(t *testing.T) {
 	}
 
 	// Second pull WITHOUT --upgrade: the honoring reconcile path.
-	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{filepath.Join(root, "catalog")}}); err != nil {
+	if err := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{filepath.Join(root, "catalog")}}); err != nil {
 		t.Fatalf("second pull (honoring rerun): %v", err)
 	}
 	second, err := os.ReadFile(filepath.Join(root, "release.lock"))
@@ -220,7 +221,7 @@ func TestPullByteIdenticalIncludingGeneratedAt(t *testing.T) {
 	t.Chdir(root)
 	releasePath := authoringFixture(t, root)
 
-	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{filepath.Join(root, "catalog")}}); err != nil {
+	if err := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{filepath.Join(root, "catalog")}}); err != nil {
 		t.Fatalf("first pull: %v", err)
 	}
 	first, err := os.ReadFile(filepath.Join(root, "release.lock"))
@@ -228,7 +229,7 @@ func TestPullByteIdenticalIncludingGeneratedAt(t *testing.T) {
 		t.Fatalf("read first lockfile: %v", err)
 	}
 
-	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{filepath.Join(root, "catalog")}}); err != nil {
+	if err := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{filepath.Join(root, "catalog")}}); err != nil {
 		t.Fatalf("second pull: %v", err)
 	}
 	second, err := os.ReadFile(filepath.Join(root, "release.lock"))
@@ -251,7 +252,7 @@ func TestPullUpgradeDiscardsExistingLockfile(t *testing.T) {
 		t.Fatalf("seed stale lockfile: %v", err)
 	}
 
-	if err := pullRun(pullConfig{
+	if err := pullRun(context.Background(), pullConfig{
 		ws:          resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
 		ReleasePath: releasePath,
 		CatalogDirs: []string{filepath.Join(root, "catalog")},
@@ -285,7 +286,7 @@ func TestPullUpgradeFailureLeavesPriorLockfileIntact(t *testing.T) {
 	catalogDir := filepath.Join(root, "catalog")
 	lockfilePath := filepath.Join(root, "release.lock")
 
-	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{catalogDir}}); err != nil {
+	if err := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{catalogDir}}); err != nil {
 		t.Fatalf("seed pull: %v", err)
 	}
 	before, err := os.ReadFile(lockfilePath)
@@ -300,7 +301,7 @@ func TestPullUpgradeFailureLeavesPriorLockfileIntact(t *testing.T) {
 		t.Fatalf("remove recipe to break the closure: %v", err)
 	}
 
-	upgradeErr := pullRun(pullConfig{
+	upgradeErr := pullRun(context.Background(), pullConfig{
 		ws:          resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
 		ReleasePath: releasePath,
 		CatalogDirs: []string{catalogDir},
@@ -362,13 +363,13 @@ func TestPullPreservesExternalInputsWarm(t *testing.T) {
 	releasePath := authoringFixture(t, root)
 	lockfilePath := filepath.Join(root, "release.lock")
 
-	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{filepath.Join(root, "catalog")}}); err != nil {
+	if err := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{filepath.Join(root, "catalog")}}); err != nil {
 		t.Fatalf("seed pull: %v", err)
 	}
 	want := seedExternalInput(t, lockfilePath)
 
 	// Warm re-pull (no --upgrade): the honoring reconcile path.
-	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{filepath.Join(root, "catalog")}}); err != nil {
+	if err := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{filepath.Join(root, "catalog")}}); err != nil {
 		t.Fatalf("warm re-pull: %v", err)
 	}
 
@@ -403,12 +404,12 @@ func TestPullUpgradeDropsAStalePinNoRenderAsksFor(t *testing.T) {
 	releasePath := authoringFixture(t, root)
 	lockfilePath := filepath.Join(root, "release.lock")
 
-	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{filepath.Join(root, "catalog")}}); err != nil {
+	if err := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{filepath.Join(root, "catalog")}}); err != nil {
 		t.Fatalf("seed pull: %v", err)
 	}
 	seedExternalInput(t, lockfilePath)
 
-	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{filepath.Join(root, "catalog")}, Upgrade: true}); err != nil {
+	if err := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{filepath.Join(root, "catalog")}, Upgrade: true}); err != nil {
 		t.Fatalf("upgrade pull: %v", err)
 	}
 
@@ -444,7 +445,7 @@ func TestPullVerifyMatchingLockfileExits0(t *testing.T) {
 	releasePath := authoringFixture(t, root)
 
 	// First populate the lockfile via the default pull.
-	if err := pullRun(pullConfig{
+	if err := pullRun(context.Background(), pullConfig{
 		ws:          resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
 		ReleasePath: releasePath,
 		CatalogDirs: []string{filepath.Join(root, "catalog")},
@@ -454,7 +455,7 @@ func TestPullVerifyMatchingLockfileExits0(t *testing.T) {
 
 	// Now --verify should succeed: lockfile matches the closure
 	// just used to produce it.
-	if err := pullRun(pullConfig{
+	if err := pullRun(context.Background(), pullConfig{
 		ws:          resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
 		ReleasePath: releasePath,
 		CatalogDirs: []string{filepath.Join(root, "catalog")},
@@ -473,7 +474,7 @@ func TestPullVerifyDriftedLockfileReturnsErr(t *testing.T) {
 	releasePath := authoringFixture(t, root)
 
 	// Seed lockfile.
-	if err := pullRun(pullConfig{
+	if err := pullRun(context.Background(), pullConfig{
 		ws:          resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
 		ReleasePath: releasePath,
 		CatalogDirs: []string{filepath.Join(root, "catalog")},
@@ -497,7 +498,7 @@ func TestPullVerifyDriftedLockfileReturnsErr(t *testing.T) {
 		t.Fatalf("write mutated lockfile: %v", err)
 	}
 
-	err = pullRun(pullConfig{
+	err = pullRun(context.Background(), pullConfig{
 		ws:          resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
 		ReleasePath: releasePath,
 		CatalogDirs: []string{filepath.Join(root, "catalog")},
@@ -521,7 +522,7 @@ func TestPullVerifyMissingLockfileReturnsErr(t *testing.T) {
 	releasePath := authoringFixture(t, root)
 	// Deliberately do NOT seed the lockfile.
 
-	err := pullRun(pullConfig{
+	err := pullRun(context.Background(), pullConfig{
 		ws:          resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
 		ReleasePath: releasePath,
 		CatalogDirs: []string{filepath.Join(root, "catalog")},

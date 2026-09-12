@@ -5,6 +5,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"path/filepath"
 	"strings"
@@ -26,7 +27,7 @@ func TestPull_ProgressSurface_ForcedStatic(t *testing.T) {
 	releasePath := authoringFixture(t, root)
 
 	var stdout, stderr bytes.Buffer
-	if err := pullRun(pullConfig{
+	if err := pullRun(context.Background(), pullConfig{
 		ws:          resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
 		ReleasePath: releasePath,
 		CatalogDirs: []string{filepath.Join(root, "catalog")},
@@ -69,7 +70,7 @@ func TestPull_ProgressSurface_AutoNonTTYSilent(t *testing.T) {
 	releasePath := authoringFixture(t, root)
 
 	var stdout, stderr bytes.Buffer
-	if err := pullRun(pullConfig{
+	if err := pullRun(context.Background(), pullConfig{
 		ws:          resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
 		ReleasePath: releasePath,
 		CatalogDirs: []string{filepath.Join(root, "catalog")},

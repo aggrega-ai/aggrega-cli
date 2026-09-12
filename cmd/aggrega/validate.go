@@ -100,7 +100,7 @@ func newValidateCmd() *cobra.Command {
 				if path != "" {
 					return fmt.Errorf("OPS_ERROR: --release is mutually exclusive with an entity argument; pass one or the other")
 				}
-				return validateRelease(rw, releasePath, catalogDirs, compilerops.ParseVerbosity(responseFormat), irGraph, os.Stderr, cmd.OutOrStdout())
+				return validateRelease(cmd.Context(), rw, releasePath, catalogDirs, compilerops.ParseVerbosity(responseFormat), irGraph, os.Stderr, cmd.OutOrStdout())
 			}
 			if path == "" {
 				// No entity argument → whole-catalog correctness.

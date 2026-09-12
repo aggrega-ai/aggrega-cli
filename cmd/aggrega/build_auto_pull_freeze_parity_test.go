@@ -36,7 +36,7 @@ func TestBuildAutoPullFreezeMatchesStandalonePullFreeze(t *testing.T) {
 	if strings.Contains(string(mustReadFile(t, recipeA)), "sourceDigests") {
 		t.Fatalf("workspace A recipe carried sourceDigests before pull")
 	}
-	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: rootA}), ReleasePath: releaseA, CatalogDirs: []string{filepath.Join(rootA, "catalog")}}); err != nil {
+	if err := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: rootA}), ReleasePath: releaseA, CatalogDirs: []string{filepath.Join(rootA, "catalog")}}); err != nil {
 		t.Fatalf("standalone pullRun: %v", err)
 	}
 	recipeAfterPull := mustReadFile(t, recipeA)

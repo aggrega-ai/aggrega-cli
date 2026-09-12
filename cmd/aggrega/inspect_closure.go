@@ -48,7 +48,7 @@ const (
 // seeded with it, so the versions reported are the ones this deployment resolves
 // to rather than whatever the catalog happens to hold today. A workspace with no
 // such record resolves over the catalog as it stands.
-func renderReleaseClosure(rw *workspaceconfig.ResolvedWorkspace, releasePath string, catalogDirs []string, opts inspectOptions) error {
+func renderReleaseClosure(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, releasePath string, catalogDirs []string, opts inspectOptions) error {
 	rw, err := workspaceOrResolve(rw)
 	if err != nil {
 		return err
@@ -66,11 +66,19 @@ func renderReleaseClosure(rw *workspaceconfig.ResolvedWorkspace, releasePath str
 		lf = nil
 	}
 
-	// This renderer starts the resolution below on a plain background context, so
-	// the run's stop does not reach it. It is reached through the per-kind dispatch
-	// table, whose entries share one function type, so a context could not arrive as
-	// an argument without reshaping every sibling renderer.
-	resolved, cerr := compilerops.ResolveClosure(context.Background(), compilerops.ClosureInputs{
+	// The resolution below runs under the caller's context, so a reader who stops
+	// the run stops the entity fetches the walk is making rather than only the
+	// reply. The context arrives as an argument because the per-kind dispatch table
+	// carries one on its shared function type.
+	//
+	// What a stop can reach here is bounded by the view above, and the bound is named
+	// rather than left to be discovered: the view is built with no registry client,
+	// so this listing resolves from the local catalog and the record of pins and
+	// makes no fetch of its own. The context is still the caller's, because the
+	// resolution is the shared one every surface runs and the surfaces that do supply
+	// a client get the stop over the same code; on this one there is nothing outside
+	// the process for it to end.
+	resolved, cerr := compilerops.ResolveClosure(ctx, compilerops.ClosureInputs{
 		View:            view,
 		ReleasePath:     releasePath,
 		WorkspaceRoot:   wsRoot,

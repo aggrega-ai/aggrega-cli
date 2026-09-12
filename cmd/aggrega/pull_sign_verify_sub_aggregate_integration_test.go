@@ -6,6 +6,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"path/filepath"
 	"testing"
@@ -166,7 +167,7 @@ func TestIntegration_PullCommandVerifiesSignedSubAggregate_Keyed(t *testing.T) {
 		host := startRegistry(t, nil)
 		wsRoot, subURI, _ := writeSubAggregateConsumerWorkspace(t, host, pubPEM, signedPush)
 
-		if perr := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}), ReleasePath: "release.yaml"}); perr != nil {
+		if perr := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}), ReleasePath: "release.yaml"}); perr != nil {
 			t.Fatalf("a signed sub-aggregate under a matching pinned key must PULL and VERIFY; got: %v", perr)
 		}
 
@@ -215,7 +216,7 @@ func TestIntegration_PullCommandVerifiesSignedSubAggregate_Keyed(t *testing.T) {
 		}
 		wsRoot, _, _ := writeSubAggregateConsumerWorkspace(t, host, wrongPubPEM, signedPush)
 
-		perr := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}), ReleasePath: "release.yaml"})
+		perr := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}), ReleasePath: "release.yaml"})
 		if !errors.Is(perr, signing.ErrSignatureVerificationFailed()) {
 			t.Fatalf("a wrong pinned key must HALT the pull with ErrSignatureVerificationFailed; got: %v", perr)
 		}

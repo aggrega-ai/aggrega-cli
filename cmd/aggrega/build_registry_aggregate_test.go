@@ -160,7 +160,7 @@ spec:
 		"myapp": {servedTag: "1.0.0", body: registryAggregateBody("myapp", "1.0.0")},
 	}}
 
-	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{catalogDir}, puller: puller}); err != nil {
+	if err := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{catalogDir}, puller: puller}); err != nil {
 		t.Fatalf("pullRun (registry top-level): %v", err)
 	}
 	if len(puller.calls) == 0 {
@@ -235,7 +235,7 @@ spec:
 		"mysub": {servedTag: "1.0.0", body: registryAggregateBody("mysub", "1.0.0")},
 	}}
 
-	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{catalogDir}, puller: puller}); err != nil {
+	if err := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{catalogDir}, puller: puller}); err != nil {
 		t.Fatalf("pullRun (registry sub): %v", err)
 	}
 	lf, _, err := lockfile.LoadLockfile(filepath.Join(root, "release.lock"))
@@ -288,7 +288,7 @@ spec:
 		"myapp": {servedTag: "2.0.0", body: registryAggregateBody("myapp", "1.0.0")},
 	}}
 
-	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{catalogDir}, puller: puller}); err != nil {
+	if err := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{catalogDir}, puller: puller}); err != nil {
 		t.Fatalf("pullRun (drift): %v", err)
 	}
 	lf, _, err := lockfile.LoadLockfile(filepath.Join(root, "release.lock"))

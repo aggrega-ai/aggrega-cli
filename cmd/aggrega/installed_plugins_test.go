@@ -75,7 +75,7 @@ func withRegistrationWarnings(t *testing.T) *bytes.Buffer {
 }
 
 // withDiscoverable swaps the discoverability seam for the test.
-func withDiscoverable(t *testing.T, fn func(string) bool) {
+func withDiscoverable(t *testing.T, fn func(context.Context, string) bool) {
 	t.Helper()
 	prev := pluginDiscoverable
 	pluginDiscoverable = fn
@@ -349,16 +349,16 @@ func TestUnknownCommand_InstallSuggestion(t *testing.T) {
 		if err == nil {
 			t.Fatalf("unknown command returned no error")
 		}
-		return unknownCommandSuggestion(formatCompilerError(err), err)
+		return unknownCommandSuggestion(context.Background(), formatCompilerError(err), err)
 	}
 
-	withDiscoverable(t, func(string) bool { return true })
+	withDiscoverable(t, func(context.Context, string) bool { return true })
 	withHint := run()
 	if !strings.Contains(withHint, "aggrega plugin add cli definitely-not-a-command") {
 		t.Fatalf("discoverable unknown command lacks the install hint:\n%s", withHint)
 	}
 
-	withDiscoverable(t, func(string) bool { return false })
+	withDiscoverable(t, func(context.Context, string) bool { return false })
 	noHint := run()
 	if strings.Contains(noHint, "plugin add cli") {
 		t.Fatalf("non-discoverable unknown command should keep cobra's normal error:\n%s", noHint)

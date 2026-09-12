@@ -119,7 +119,7 @@ func TestIntegration_TrustPinnedPluginWithdrawalIsRecordedAndReported(t *testing
 	withdraw(t, componentDeprecateRef(host))
 	withdraw(t, pluginDeprecateRef(host, "linter", "withdrawn-probe", "1.0.0"))
 
-	if perr := pullRun(pullConfig{
+	if perr := pullRun(context.Background(), pullConfig{
 		ws:          resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}),
 		ReleasePath: "release.yaml",
 		DiagOut:     io.Discard,
@@ -222,7 +222,7 @@ func TestIntegration_TrustPinnedWithdrawalHaltsAtTheConfiguredThreshold(t *testi
 		t.Fatalf("deprecateRun: %v", derr)
 	}
 
-	if perr := pullRun(pullConfig{
+	if perr := pullRun(context.Background(), pullConfig{
 		ws:          resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}),
 		ReleasePath: "release.yaml",
 		DiagOut:     io.Discard,
@@ -268,7 +268,7 @@ func TestIntegration_TrustPinnedWithdrawalFollowsTheTrustFileLifecycle(t *testin
 
 	pull := func(t *testing.T, upgrade bool) {
 		t.Helper()
-		if perr := pullRun(pullConfig{
+		if perr := pullRun(context.Background(), pullConfig{
 			ws:          resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}),
 			ReleasePath: "release.yaml",
 			Upgrade:     upgrade,

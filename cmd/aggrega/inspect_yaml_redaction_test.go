@@ -5,6 +5,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -66,7 +67,7 @@ func inspectGraph(t *testing.T, unredacted bool) string {
 	opts.irGraph = true
 	opts.mode = modeForcedResolved
 	opts.unredacted = unredacted
-	if err := dispatchInspect(resolveTempWorkspace(t, tempWorkspaceOptions{}), yamlRedactionRelease, []string{yamlRedactionCatalog}, opts); err != nil {
+	if err := dispatchInspect(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{}), yamlRedactionRelease, []string{yamlRedactionCatalog}, opts); err != nil {
 		t.Fatalf("dispatchInspect(%q, unredacted=%v): %v", yamlRedactionRelease, unredacted, err)
 	}
 	// The graph leads the stream and the readable view follows it, so what is
@@ -154,7 +155,7 @@ func TestInspectAggregateText_UnredactedEmitsThem(t *testing.T) {
 			opts := testInspectOptions(&buf)
 			opts.mode = modeForcedResolved
 			opts.unredacted = row.unredacted
-			if err := dispatchInspect(resolveTempWorkspace(t, tempWorkspaceOptions{}), yamlRedactionAggregate, []string{yamlRedactionCatalog}, opts); err != nil {
+			if err := dispatchInspect(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{}), yamlRedactionAggregate, []string{yamlRedactionCatalog}, opts); err != nil {
 				t.Fatalf("dispatchInspect(%q): %v", yamlRedactionAggregate, err)
 			}
 			got := buf.String()

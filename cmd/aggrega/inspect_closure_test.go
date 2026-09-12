@@ -5,6 +5,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"strings"
 	"testing"
 )
@@ -22,7 +23,7 @@ func runInspectClosure(t *testing.T, release string, level inspectLevel) (string
 	opts := testInspectOptions(&buf)
 	opts.closure = true
 	opts.level = level
-	err := dispatchInspect(
+	err := dispatchInspect(context.Background(),
 		resolveTempWorkspace(t, tempWorkspaceOptions{}),
 		fullstackFixture+"/"+release,
 		[]string{fullstackFixture + "/catalog"},
@@ -166,7 +167,7 @@ func TestInspectClosure_RefusesASubjectThatResolvesNone(t *testing.T) {
 		var buf bytes.Buffer
 		opts := testInspectOptions(&buf)
 		opts.closure = true
-		err := dispatchInspect(
+		err := dispatchInspect(context.Background(),
 			resolveTempWorkspace(t, tempWorkspaceOptions{}),
 			subject,
 			[]string{fullstackFixture + "/catalog"},

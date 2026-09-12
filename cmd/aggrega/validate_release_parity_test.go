@@ -388,9 +388,9 @@ func TestValidateReleaseCoreParity(t *testing.T) {
 			releasePath := filepath.Join(root, "release.yaml")
 
 			var diagDet, outDet bytes.Buffer
-			errDet := validateRelease(rw, releasePath, dirs, compilerops.VerbosityDetailed, false, &diagDet, &outDet)
+			errDet := validateRelease(context.Background(), rw, releasePath, dirs, compilerops.VerbosityDetailed, false, &diagDet, &outDet)
 			var diagCon, outCon bytes.Buffer
-			errCon := validateRelease(rw, releasePath, dirs, compilerops.VerbosityConcise, false, &diagCon, &outCon)
+			errCon := validateRelease(context.Background(), rw, releasePath, dirs, compilerops.VerbosityConcise, false, &diagCon, &outCon)
 
 			vr := cliOracleValidate(t, rw, releasePath, dirs)
 			underlying := cliCoreUnderlyingDiagTexts(vr)

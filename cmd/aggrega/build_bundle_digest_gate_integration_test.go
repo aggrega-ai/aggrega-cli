@@ -229,7 +229,7 @@ func TestIntegration_BuildBundleDigestGate(t *testing.T) {
 		publishSocketPluginEntitySigned(t, host, mutatorSocket, "1.0.0", mutatorPath, "governance", "mutate", signer)
 		ws := writeVerifyIfPresentConfigSocketWorkspace(t, host, pubPEM, pluginsBlock)
 		t.Chdir(ws)
-		if perr := pullRun(pullConfig{
+		if perr := pullRun(context.Background(), pullConfig{
 			ws:          resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}),
 			ReleasePath: "release.yaml", CatalogDirs: []string{std},
 		}); perr != nil {
@@ -307,7 +307,7 @@ func TestIntegration_BuildBundleDigestGate(t *testing.T) {
 		publishSocketPluginEntity(t, host, mutatorSocket, "1.0.0", mutatorPath, "governance", "mutate")
 		ws := writeVerifyIfPresentConfigSocketWorkspace(t, host, pubPEM, pluginsBlock)
 		t.Chdir(ws)
-		if perr := pullRun(pullConfig{
+		if perr := pullRun(context.Background(), pullConfig{
 			ws:          resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}),
 			ReleasePath: "release.yaml", CatalogDirs: []string{std},
 		}); perr != nil {

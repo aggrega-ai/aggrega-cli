@@ -11,6 +11,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"strings"
 	"testing"
 
@@ -217,7 +218,7 @@ func TestInspectRelease_AttachmentFactsOverRealPipeline(t *testing.T) {
 	)
 	var buf bytes.Buffer
 	opts := testInspectOptions(&buf)
-	if err := dispatchInspect(resolveTempWorkspace(t, tempWorkspaceOptions{}), release, []string{catalog}, opts); err != nil {
+	if err := dispatchInspect(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{}), release, []string{catalog}, opts); err != nil {
 		t.Fatalf("dispatchInspect(%q): %v", release, err)
 	}
 	got := buf.String()

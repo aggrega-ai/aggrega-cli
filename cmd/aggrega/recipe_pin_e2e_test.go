@@ -160,7 +160,7 @@ func TestE1FreezeAtResolution(t *testing.T) {
 		t.Fatalf("recipe carried sourceDigests before pull")
 	}
 
-	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{filepath.Join(root, "catalog")}}); err != nil {
+	if err := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{filepath.Join(root, "catalog")}}); err != nil {
 		t.Fatalf("pullRun: %v", err)
 	}
 
@@ -199,13 +199,13 @@ func TestE1PullIsIdempotentAfterFreeze(t *testing.T) {
 	recipePath := filepath.Join(root, "catalog", "recipes", "server.yaml")
 	catalogDir := filepath.Join(root, "catalog")
 
-	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{catalogDir}}); err != nil {
+	if err := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{catalogDir}}); err != nil {
 		t.Fatalf("first pull: %v", err)
 	}
 	recipe1 := mustReadFile(t, recipePath)
 	lock1 := stripGeneratedAt(mustReadFile(t, filepath.Join(root, "release.lock")))
 
-	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{catalogDir}}); err != nil {
+	if err := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{catalogDir}}); err != nil {
 		t.Fatalf("second pull: %v", err)
 	}
 	recipe2 := mustReadFile(t, recipePath)
@@ -229,7 +229,7 @@ func TestE9DeterministicBuildAfterFreeze(t *testing.T) {
 	releasePath := sourcedPinFixture(t, root, srv.URL+"/pinchart.tgz")
 	catalogDir := filepath.Join(root, "catalog")
 
-	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{catalogDir}}); err != nil {
+	if err := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{catalogDir}}); err != nil {
 		t.Fatalf("pull: %v", err)
 	}
 	if err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false, os.Stderr, os.Stdout); err != nil {
@@ -272,7 +272,7 @@ func TestE2SourceTamperHaltsBuild(t *testing.T) {
 	releasePath := sourcedPinFixture(t, root, srv.URL+"/pinchart.tgz")
 	catalogDir := filepath.Join(root, "catalog")
 
-	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{catalogDir}}); err != nil {
+	if err := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{catalogDir}}); err != nil {
 		t.Fatalf("pull: %v", err)
 	}
 	// Close the source server so the build cannot silently re-fetch and heal the

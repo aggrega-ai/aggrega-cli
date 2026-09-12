@@ -215,7 +215,7 @@ plugins:
     - capability: helm
       uri: provider/helm
 `)
-	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: catDirs, ws: rwHelm, DiagOut: io.Discard, Out: io.Discard, diag: buildDiagOptions{quiet: true}}); err != nil {
+	if err := pullRun(context.Background(), pullConfig{ReleasePath: releasePath, CatalogDirs: catDirs, ws: rwHelm, DiagOut: io.Discard, Out: io.Discard, diag: buildDiagOptions{quiet: true}}); err != nil {
 		t.Fatalf("pull (helm binding): %v", err)
 	}
 
@@ -249,7 +249,7 @@ plugins:
 	}
 
 	// A re-pull adopts the new binding into the lockfile.
-	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: catDirs, ws: rwCompose, DiagOut: io.Discard, Out: io.Discard, diag: buildDiagOptions{quiet: true}}); err != nil {
+	if err := pullRun(context.Background(), pullConfig{ReleasePath: releasePath, CatalogDirs: catDirs, ws: rwCompose, DiagOut: io.Discard, Out: io.Discard, diag: buildDiagOptions{quiet: true}}); err != nil {
 		t.Fatalf("re-pull (compose binding): %v", err)
 	}
 	lf, _, err := lockfile.LoadLockfile(lockfile.PathFor(releasePath))
@@ -277,7 +277,7 @@ func TestProviderBinding_AmbiguousTargetHaltsLoudly(t *testing.T) {
 	releasePath, catalogRoot := providerBindingFixture(t, root, true)
 	rw := resolveWorkspaceWithConfig(t, root, "workspace: {}\noffline: true\n")
 
-	err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: []string{catalogRoot}, ws: rw, DiagOut: io.Discard, Out: io.Discard, diag: buildDiagOptions{quiet: true}})
+	err := pullRun(context.Background(), pullConfig{ReleasePath: releasePath, CatalogDirs: []string{catalogRoot}, ws: rw, DiagOut: io.Discard, Out: io.Discard, diag: buildDiagOptions{quiet: true}})
 	if err == nil {
 		t.Fatal("pull over an ambiguous target with no binding returned nil; expected a loud halt")
 	}
@@ -301,7 +301,7 @@ func TestProviderBinding_UnambiguousTargetNeedsNoBinding(t *testing.T) {
 	catDirs := []string{catalogRoot}
 	rw := resolveWorkspaceWithConfig(t, root, "workspace: {}\noffline: true\n")
 
-	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: catDirs, ws: rw, DiagOut: io.Discard, Out: io.Discard, diag: buildDiagOptions{quiet: true}}); err != nil {
+	if err := pullRun(context.Background(), pullConfig{ReleasePath: releasePath, CatalogDirs: catDirs, ws: rw, DiagOut: io.Discard, Out: io.Discard, diag: buildDiagOptions{quiet: true}}); err != nil {
 		t.Fatalf("pull (unambiguous, no binding): %v", err)
 	}
 	lf, _, err := lockfile.LoadLockfile(lockfile.PathFor(releasePath))

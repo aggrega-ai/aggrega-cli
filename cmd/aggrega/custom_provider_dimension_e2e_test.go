@@ -359,7 +359,7 @@ func TestIntegration_CustomProviderDimension_RoundTrip(t *testing.T) {
 		t.Chdir(ws)
 
 		// Point 2: pull pins BOTH the plugins ARTIFACT and the providers BINDING.
-		if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), ReleasePath: "release.yaml", CatalogDirs: catDirs}); err != nil {
+		if err := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), ReleasePath: "release.yaml", CatalogDirs: catDirs}); err != nil {
 			t.Fatalf("registry pull: %v", err)
 		}
 		lf, _, err := lockfile.LoadLockfile(lockfile.PathFor("release.yaml"))
@@ -385,7 +385,7 @@ func TestIntegration_CustomProviderDimension_RoundTrip(t *testing.T) {
 		// the rendered tree byte-for-byte. This proves the pinned .wasm + binding
 		// deterministically reproduce output across pull/build cycles.
 		_ = os.RemoveAll("dist")
-		if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), ReleasePath: "release.yaml", CatalogDirs: catDirs}); err != nil {
+		if err := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), ReleasePath: "release.yaml", CatalogDirs: catDirs}); err != nil {
 			t.Fatalf("second registry pull: %v", err)
 		}
 		if err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", catDirs, false, os.Stderr, os.Stdout); err != nil {
@@ -415,7 +415,7 @@ func TestIntegration_CustomProviderDimension_RoundTrip(t *testing.T) {
 		pinned := "plugins:\n  providers:\n    - capability: " + capability + "\n      uri: " + pluginURI + "\n"
 		ws := writeCustomProviderWorkspace(t, host, capability, pinned, true)
 		t.Chdir(ws)
-		if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), ReleasePath: "release.yaml", CatalogDirs: catDirs}); err != nil {
+		if err := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), ReleasePath: "release.yaml", CatalogDirs: catDirs}); err != nil {
 			t.Fatalf("registry pull: %v", err)
 		}
 		// A first build (auto_pull on) establishes the rendered baseline.
@@ -490,7 +490,7 @@ spec:
 		t.Chdir(ws)
 		catDirs := []string{std}
 
-		if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), ReleasePath: "release.yaml", CatalogDirs: catDirs}); err != nil {
+		if err := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), ReleasePath: "release.yaml", CatalogDirs: catDirs}); err != nil {
 			t.Fatalf("registry pull (override-core): %v", err)
 		}
 		lf, _, err := lockfile.LoadLockfile(lockfile.PathFor("release.yaml"))
@@ -524,7 +524,7 @@ spec:
 		ws := writeCustomProviderWorkspace(t, host, capability, "", true)
 		t.Chdir(ws)
 
-		if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), ReleasePath: "release.yaml", CatalogDirs: catDirs}); err != nil {
+		if err := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), ReleasePath: "release.yaml", CatalogDirs: catDirs}); err != nil {
 			t.Fatalf("registry pull (unknown target): %v", err)
 		}
 		err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", catDirs, false, os.Stderr, os.Stdout)

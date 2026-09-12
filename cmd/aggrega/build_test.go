@@ -120,7 +120,7 @@ spec:
 	ws := resolveTempWorkspace(t, tempWorkspaceOptions{})
 	// Build is read-only: prime the lockfile with an explicit pull. The assertion
 	// failure surfaces later, at the render step, which the pull does not run.
-	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: catalogDirs, ws: ws}); err != nil {
+	if err := pullRun(context.Background(), pullConfig{ReleasePath: releasePath, CatalogDirs: catalogDirs, ws: ws}); err != nil {
 		t.Fatalf("prime lockfile via pull: %v", err)
 	}
 	err := dispatchBuild(context.Background(), ws, releasePath, catalogDirs, traceEnabled, os.Stderr, os.Stdout)
@@ -231,7 +231,7 @@ spec:
 
 	ws := resolveTempWorkspace(t, tempWorkspaceOptions{})
 	// Build is read-only: prime the lockfile with an explicit pull, then build reads it.
-	if err := pullRun(pullConfig{ReleasePath: filepath.Join(root, "release.yaml"), CatalogDirs: []string{catalogRoot}, ws: ws}); err != nil {
+	if err := pullRun(context.Background(), pullConfig{ReleasePath: filepath.Join(root, "release.yaml"), CatalogDirs: []string{catalogRoot}, ws: ws}); err != nil {
 		t.Fatalf("prime lockfile via pull: %v", err)
 	}
 	err := dispatchBuildWithDiag(context.Background(),
@@ -407,7 +407,7 @@ func TestRunBuild_ProvidesContractUnfulfilledHaltsCLI(t *testing.T) {
 	traceEnabled := false
 
 	ws := resolveTempWorkspace(t, tempWorkspaceOptions{})
-	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: catalogDirs, ws: ws}); err != nil {
+	if err := pullRun(context.Background(), pullConfig{ReleasePath: releasePath, CatalogDirs: catalogDirs, ws: ws}); err != nil {
 		t.Fatalf("prime lockfile via pull: %v", err)
 	}
 	err := dispatchBuild(context.Background(), ws, releasePath, catalogDirs, traceEnabled, os.Stderr, os.Stdout)
@@ -436,7 +436,7 @@ func TestRunBuild_ProvidesContractSupersetBuildsCLI(t *testing.T) {
     extra: "surplus"`)
 
 	ws := resolveTempWorkspace(t, tempWorkspaceOptions{})
-	if err := pullRun(pullConfig{ReleasePath: filepath.Join(root, "release.yaml"), CatalogDirs: []string{filepath.Join(root, "catalog")}, ws: ws}); err != nil {
+	if err := pullRun(context.Background(), pullConfig{ReleasePath: filepath.Join(root, "release.yaml"), CatalogDirs: []string{filepath.Join(root, "catalog")}, ws: ws}); err != nil {
 		t.Fatalf("prime lockfile via pull: %v", err)
 	}
 	err := dispatchBuildWithDiag(context.Background(),
@@ -592,7 +592,7 @@ func TestRunBuild_FeatureProvidesContractUnfulfilledHaltsCLI(t *testing.T) {
 	traceEnabled := false
 
 	ws := resolveTempWorkspace(t, tempWorkspaceOptions{})
-	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: catalogDirs, ws: ws}); err != nil {
+	if err := pullRun(context.Background(), pullConfig{ReleasePath: releasePath, CatalogDirs: catalogDirs, ws: ws}); err != nil {
 		t.Fatalf("prime lockfile via pull: %v", err)
 	}
 	err := dispatchBuild(context.Background(), ws, releasePath, catalogDirs, traceEnabled, os.Stderr, os.Stdout)
@@ -619,7 +619,7 @@ func TestRunBuild_FeatureProvidesContractFulfilledBuildsCLI(t *testing.T) {
     dsn: "metric://{{ .context.instance_id }}"`)
 
 	ws := resolveTempWorkspace(t, tempWorkspaceOptions{})
-	if err := pullRun(pullConfig{ReleasePath: filepath.Join(root, "release.yaml"), CatalogDirs: []string{filepath.Join(root, "catalog")}, ws: ws}); err != nil {
+	if err := pullRun(context.Background(), pullConfig{ReleasePath: filepath.Join(root, "release.yaml"), CatalogDirs: []string{filepath.Join(root, "catalog")}, ws: ws}); err != nil {
 		t.Fatalf("prime lockfile via pull: %v", err)
 	}
 	err := dispatchBuildWithDiag(context.Background(),

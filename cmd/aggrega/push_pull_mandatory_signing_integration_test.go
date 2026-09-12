@@ -6,6 +6,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -282,7 +283,7 @@ func TestIntegration_PullRejectsUnsignedUnderOrgPolicy(t *testing.T) {
 		host := startRegistry(t, nil)
 		ws := writeOrgSigningPullWorkspace(t, host, "signing:\n  required: true\n  kinds: [Component]\n")
 
-		err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), ReleasePath: "release.yaml"})
+		err := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), ReleasePath: "release.yaml"})
 		if !errors.Is(err, signing.ErrNoSignatureFound()) {
 			t.Fatalf("an unsigned in-scope Component under the org policy must be REJECTED at pull with ErrNoSignatureFound, got %v", err)
 		}
@@ -294,7 +295,7 @@ func TestIntegration_PullRejectsUnsignedUnderOrgPolicy(t *testing.T) {
 		host := startRegistry(t, nil)
 		ws := writeOrgSigningPullWorkspace(t, host, "signing:\n  required: true\n  kinds: [Plugin]\n")
 
-		if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), ReleasePath: "release.yaml"}); err != nil {
+		if err := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), ReleasePath: "release.yaml"}); err != nil {
 			t.Fatalf("an out-of-scope kind must pull unsigned without rejection, got %v", err)
 		}
 	})
@@ -305,7 +306,7 @@ func TestIntegration_PullRejectsUnsignedUnderOrgPolicy(t *testing.T) {
 		host := startRegistry(t, nil)
 		ws := writeOrgSigningPullWorkspace(t, host, "")
 
-		if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), ReleasePath: "release.yaml"}); err != nil {
+		if err := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), ReleasePath: "release.yaml"}); err != nil {
 			t.Fatalf("with the org policy off, an unsigned pull must succeed, got %v", err)
 		}
 	})

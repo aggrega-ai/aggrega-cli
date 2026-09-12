@@ -106,7 +106,7 @@ spec:
 	}
 
 	// Build is read-only: prime the lockfile with an explicit pull, then build reads it.
-	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: catalogDirs}); err != nil {
+	if err := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: catalogDirs}); err != nil {
 		t.Fatalf("prime lockfile via pull: %v", err)
 	}
 

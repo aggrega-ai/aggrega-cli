@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 
 	"go.yaml.in/yaml/v3"
@@ -22,7 +23,7 @@ import (
 //   - levelList: schema def names, then template names.
 //   - levelDefault: per-def usage line, per-template $params, labels / annotations.
 //   - levelDetail: adds the full def body and full template bodies.
-func renderSchemaLibraryFile(_ *workspaceconfig.ResolvedWorkspace, path string, data []byte, _ []string, opts inspectOptions) error {
+func renderSchemaLibraryFile(_ context.Context, _ *workspaceconfig.ResolvedWorkspace, path string, data []byte, _ []string, opts inspectOptions) error {
 	if opts.output == outputYAML {
 		return emitYAMLRoundTrip(opts, path, data)
 	}

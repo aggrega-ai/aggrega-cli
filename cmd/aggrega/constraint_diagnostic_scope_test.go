@@ -147,7 +147,7 @@ func TestRefusedEntityNamedInReleaseScopes(t *testing.T) {
 	if _, serr := os.Stat(filepath.Join(root, "release.lock")); serr != nil {
 		t.Fatalf("the clean build must leave a lockfile: %v", serr)
 	}
-	if err := validateRelease(rw, releasePath, cleanDirs, compilerops.VerbosityDetailed, false, &diag, &out); err != nil {
+	if err := validateRelease(context.Background(), rw, releasePath, cleanDirs, compilerops.VerbosityDetailed, false, &diag, &out); err != nil {
 		t.Fatalf("the clean workspace must validate: %v", err)
 	}
 
@@ -166,7 +166,7 @@ func TestRefusedEntityNamedInReleaseScopes(t *testing.T) {
 
 	t.Run("validate --release", func(t *testing.T) {
 		var diag, out bytes.Buffer
-		err := validateRelease(rw, releasePath, dirs, compilerops.VerbosityDetailed, false, &diag, &out)
+		err := validateRelease(context.Background(), rw, releasePath, dirs, compilerops.VerbosityDetailed, false, &diag, &out)
 		if err == nil {
 			t.Fatal("the release scope must halt on a refused in-closure entity")
 		}

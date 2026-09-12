@@ -84,7 +84,7 @@ A URI given without --upgrade is a usage error.`,
 			if err != nil {
 				return err
 			}
-			return pullRun(pullConfig{
+			return pullRun(cmd.Context(), pullConfig{
 				ReleasePath:       opts.releasePath,
 				CatalogDirs:       opts.catalogDirs,
 				Upgrade:           opts.upgrade,
@@ -150,14 +150,14 @@ type pullConfig struct {
 	ws *workspaceconfig.ResolvedWorkspace
 
 	// DiagOut is the sink for the resolution's reuse/verify diagnostic notices.
-	// Nil defaults to os.Stderr at the top of pullRun (production); tests pass a
-	// buffer to capture diagnostics without mutating a process global.
+	// Nil defaults to os.Stderr where the resolution is driven (production); tests
+	// pass a buffer to capture diagnostics without mutating a process global.
 	DiagOut io.Writer
 
 	// Out is the sink for this command's user-facing status output (the --detail
 	// table, the "Verify:" line, and "Pull complete"). Nil defaults to os.Stdout
-	// at the top of pullRun (production); tests pass a buffer to capture the
-	// output without mutating a process global.
+	// where the resolution is driven (production); tests pass a buffer to capture
+	// the output without mutating a process global.
 	Out io.Writer
 
 	// puller overrides the production OCI puller; tests inject an in-memory
@@ -253,12 +253,13 @@ func pullPhaseStep(p pullops.Phase) int {
 // discarding what the resolution computed. It is the form every caller that
 // wants the resolution performed rather than examined uses.
 //
-// The context is this surface's own, and this surface has none to offer: pullRun
-// takes no context parameter and carries no render knobs of its own, so the
-// resolution runs under a background context and observes no withdrawal. A
-// caller holding either hands one over through pullRunWithResult instead.
-func pullRun(cfg pullConfig) error {
-	_, err := pullRunWithResult(context.Background(), cfg)
+// ctx is the caller's and is carried into every step that leaves the process, so
+// a caller that withdraws stops the resolution rather than only the reply. This
+// form differs from pullRunWithResult on one axis only — the result — and
+// carries no render knobs of its own, so a caller whose own render knobs must
+// reach the discovery render hands its context to that form instead.
+func pullRun(ctx context.Context, cfg pullConfig) error {
+	_, err := pullRunWithResult(ctx, cfg)
 	return err
 }
 
@@ -333,11 +334,10 @@ func pullRunWithResult(ctx context.Context, cfg pullConfig) (pullops.Result, err
 
 	// The resolution takes the caller's context so a caller that withdraws stops
 	// the work rather than only the reply. What reaches it depends on the route
-	// in: a build's auto-pull hands over the context its command body inherited,
-	// which ends when the process is asked to stop, and a request on the daemon
-	// or a tool invocation supplies its own request context. The route through
-	// pullRun supplies a background context instead, so a pull driven that way
-	// resolves with no withdrawal for anything below to observe.
+	// in: the pull command hands over the context its command body inherited,
+	// which ends when the process is asked to stop, a build's auto-pull hands over
+	// the same thing from its own command body, and a request on the daemon or a
+	// tool invocation supplies its own request context.
 	res, err := pullops.Run(ctx, opts)
 	if err != nil {
 		return pullops.Result{}, err

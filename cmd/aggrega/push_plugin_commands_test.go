@@ -231,7 +231,7 @@ spec:
 `)
 	// Stamp so the machine-owned records are in sync, leaving only the (legitimate)
 	// under-declaration of the export surface for the advisory to report.
-	if err := stampPluginFile(&bytes.Buffer{}, entityPath, pluginPath); err != nil {
+	if err := stampPluginFile(context.Background(), &bytes.Buffer{}, entityPath, pluginPath); err != nil {
 		t.Fatalf("stamp: %v", err)
 	}
 

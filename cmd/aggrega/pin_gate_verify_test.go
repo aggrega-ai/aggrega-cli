@@ -29,7 +29,7 @@ func TestPinGateSuppressesExternalShadow(t *testing.T) {
 	writeWorkspaceConfig(t, root, "auto_pull: false\n")
 	catalogDir := filepath.Join(root, "catalog")
 
-	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{catalogDir}}); err != nil {
+	if err := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{catalogDir}}); err != nil {
 		t.Fatalf("initial pullRun: %v", err)
 	}
 	lf, _, err := lockfile.LoadLockfile(filepath.Join(root, "release.lock"))

@@ -221,7 +221,7 @@ func TestInspectIRGraph_RefusesAKindThatResolvesToNoGraph(t *testing.T) {
 			var buf bytes.Buffer
 			opts := testInspectOptions(&buf)
 			opts.irGraph = true
-			err := dispatchInspect(resolveTempWorkspace(t, tempWorkspaceOptions{}), tc.identifier, []string{fullstackCatalog}, opts)
+			err := dispatchInspect(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{}), tc.identifier, []string{fullstackCatalog}, opts)
 			switch {
 			case tc.refuses == "" && err != nil:
 				t.Fatalf("a Release was refused: %v", err)
@@ -251,7 +251,7 @@ func TestInspectIRGraph_WithholdsDeclaredValuesAndTheAffordanceRevealsThem(t *te
 		opts := testInspectOptions(&buf)
 		opts.irGraph = true
 		opts.unredacted = unredacted
-		if err := dispatchInspect(resolveTempWorkspace(t, tempWorkspaceOptions{}), yamlRedactionRelease, []string{yamlRedactionCatalog}, opts); err != nil {
+		if err := dispatchInspect(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{}), yamlRedactionRelease, []string{yamlRedactionCatalog}, opts); err != nil {
 			t.Fatalf("dispatchInspect(--ir-graph, unredacted=%v): %v", unredacted, err)
 		}
 		return buf.String()
@@ -296,10 +296,10 @@ func TestValidateIRGraph_IsAdditiveAndLeavesTheVerdictAlone(t *testing.T) {
 	dirs := []string{cliFullstackCatalogDir(t)}
 
 	var diagWithout, outWithout bytes.Buffer
-	errWithout := validateRelease(rw, fullstackRelease, dirs, compilerops.VerbosityDetailed, false, &diagWithout, &outWithout)
+	errWithout := validateRelease(context.Background(), rw, fullstackRelease, dirs, compilerops.VerbosityDetailed, false, &diagWithout, &outWithout)
 
 	var diagWith, outWith bytes.Buffer
-	errWith := validateRelease(rw, fullstackRelease, dirs, compilerops.VerbosityDetailed, true, &diagWith, &outWith)
+	errWith := validateRelease(context.Background(), rw, fullstackRelease, dirs, compilerops.VerbosityDetailed, true, &diagWith, &outWith)
 
 	if (errWithout == nil) != (errWith == nil) {
 		t.Fatalf("the flag moved the verdict: without=%v with=%v", errWithout, errWith)

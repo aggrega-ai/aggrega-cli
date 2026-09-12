@@ -24,7 +24,7 @@ func TestClosureUnificationByteIdentical(t *testing.T) {
 	const cacheDir = ".aggrega/cache"
 	catalogDir := filepath.Join(root, "catalog")
 
-	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{catalogDir}}); err != nil {
+	if err := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{catalogDir}}); err != nil {
 		t.Fatalf("initial pullRun: %v", err)
 	}
 	relocateAggregateToCache(t, root, cacheDir, "mysub")

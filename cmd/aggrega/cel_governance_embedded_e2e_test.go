@@ -331,7 +331,7 @@ func TestCelEmbedded_LabelTransformApplies(t *testing.T) {
                       .filter(n, input.graph.nodes[n].labels["component.aggrega.ai/type"] == "server")
                       .map(n, {"node": n, "key": "compliance.example.com/tier", "value": "gold"})}`)
 	rw := resolveWorkspaceWithConfig(t, root, celAttachment("label-transform", "policy.cel", ""))
-	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: []string{catalogDir, standardCatalogDir(t)}, ws: rw, DiagOut: os.Stderr, Out: os.Stderr, diag: buildDiagOptions{quiet: true}}); err != nil {
+	if err := pullRun(context.Background(), pullConfig{ReleasePath: releasePath, CatalogDirs: []string{catalogDir, standardCatalogDir(t)}, ws: rw, DiagOut: os.Stderr, Out: os.Stderr, diag: buildDiagOptions{quiet: true}}); err != nil {
 		t.Fatalf("pull: %v", err)
 	}
 
@@ -921,7 +921,7 @@ plugins:
           - annotations.cel
 `
 	rw := resolveWorkspaceWithConfig(t, root, config)
-	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: catDirs, ws: rw, DiagOut: os.Stderr, Out: os.Stderr, diag: buildDiagOptions{quiet: true}}); err != nil {
+	if err := pullRun(context.Background(), pullConfig{ReleasePath: releasePath, CatalogDirs: catDirs, ws: rw, DiagOut: os.Stderr, Out: os.Stderr, diag: buildDiagOptions{quiet: true}}); err != nil {
 		t.Fatalf("pull: %v", err)
 	}
 	outA := filepath.Join(root, "outA")

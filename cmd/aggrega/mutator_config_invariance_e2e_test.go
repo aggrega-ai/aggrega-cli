@@ -174,7 +174,7 @@ func TestAnnotationTransformSocket_RolePinnedThroughLockfile(t *testing.T) {
 
 	rwPull := resolveLocalWorkspace(t, root, "plugins:\n  governance:\n    - uri: "+socket+":1.0.0\n      role: annotation-transform\n")
 	releasePath := filepath.Join(root, "release.yaml")
-	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: catDirs, ws: rwPull, DiagOut: os.Stderr, Out: os.Stderr, diag: buildDiagOptions{quiet: true}}); err != nil {
+	if err := pullRun(context.Background(), pullConfig{ReleasePath: releasePath, CatalogDirs: catDirs, ws: rwPull, DiagOut: os.Stderr, Out: os.Stderr, diag: buildDiagOptions{quiet: true}}); err != nil {
 		t.Fatalf("pull (annotation-transform attached): %v", err)
 	}
 
@@ -221,7 +221,7 @@ func TestMutatorSocket_BuildIsInvariantToConfigAfterPull(t *testing.T) {
 	// attachment coordinate + function into the lockfile's mutators section.
 	rwPull := resolveLocalWorkspace(t, root, "plugins:\n  governance:\n    - uri: "+mutatorSocket+":1.0.0\n      role: label-transform\n")
 	releasePath := filepath.Join(root, "release.yaml")
-	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: catDirs, ws: rwPull, DiagOut: os.Stderr, Out: os.Stderr, diag: buildDiagOptions{quiet: true}}); err != nil {
+	if err := pullRun(context.Background(), pullConfig{ReleasePath: releasePath, CatalogDirs: catDirs, ws: rwPull, DiagOut: os.Stderr, Out: os.Stderr, diag: buildDiagOptions{quiet: true}}); err != nil {
 		t.Fatalf("pull (mutator attached): %v", err)
 	}
 

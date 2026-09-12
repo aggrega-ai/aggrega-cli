@@ -5,6 +5,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -33,7 +34,7 @@ func TestVerdictTrustNoVerdictConfigurationWritesNoFile(t *testing.T) {
 	releasePath := authoringFixture(t, root)
 
 	var stdout, stderr bytes.Buffer
-	if err := pullRun(pullConfig{
+	if err := pullRun(context.Background(), pullConfig{
 		ws:          resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
 		ReleasePath: releasePath,
 		CatalogDirs: []string{filepath.Join(root, "catalog")},
@@ -101,7 +102,7 @@ func TestPullRefusesADamagedRecordEvenWithNothingAttached(t *testing.T) {
 
 	pull := func() error {
 		var stdout, stderr bytes.Buffer
-		return pullRun(pullConfig{
+		return pullRun(context.Background(), pullConfig{
 			ws:          resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
 			ReleasePath: releasePath,
 			CatalogDirs: []string{filepath.Join(root, "catalog")},

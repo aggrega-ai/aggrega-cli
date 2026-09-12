@@ -107,7 +107,11 @@ func validateCatalogWide(wsRoot, cacheDir string, dirs []string, diagOut, out io
 // neither the checks, the verdict nor the exit code. A run whose gates refused
 // before the graph was built has none to hand back, and says so on diagOut
 // rather than emitting an empty document.
-func validateRelease(rw *workspaceconfig.ResolvedWorkspace, releasePath string, catalogFlagDirs []string, verbosity string, irGraph bool, diagOut, out io.Writer) error {
+//
+// ctx is the caller's and reaches both halves of the pass — the closure
+// resolution and the validation that dispatches the operator-attached guests —
+// so a reader who stops the run stops the work rather than only the reply.
+func validateRelease(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, releasePath string, catalogFlagDirs []string, verbosity string, irGraph bool, diagOut, out io.Writer) error {
 	rw, err := workspaceOrResolve(rw)
 	if err != nil {
 		return err
@@ -130,11 +134,11 @@ func validateRelease(rw *workspaceconfig.ResolvedWorkspace, releasePath string, 
 	// extends and schema-pillar gates, the Steps 1-4 pipeline, the
 	// resolution-completeness findings, the input-kind capability check, and the
 	// advisory lines.
-	// This scope starts the resolution below on a plain background context, so the
-	// run's stop does not reach it. The resolution accepts one and carries it into
-	// every registry step it takes, so the daemon — which does hold a per-request
-	// context — gets that behaviour over the same code.
-	resolved, cerr := compilerops.ResolveValidationClosure(context.Background(), compilerops.ValidationClosureInputs{
+	// The resolution below runs under the caller's context and carries it into
+	// every registry step it takes, so a reader who stops the run stops the
+	// resolution — and the daemon, which holds a per-request context, gets the
+	// same behaviour over the same code.
+	resolved, cerr := compilerops.ResolveValidationClosure(ctx, compilerops.ValidationClosureInputs{
 		View:            lazyView,
 		ReleasePath:     releasePath,
 		WorkspaceRoot:   wsRoot,
@@ -159,7 +163,7 @@ func validateRelease(rw *workspaceconfig.ResolvedWorkspace, releasePath string, 
 	// for them. Both follow from the same omission, so both are repaired by passing
 	// it. A workspace with no record loads none here and validates as before, with
 	// the resolution saying which plugins it could not check.
-	vr := compilerops.Validate(context.Background(), compilerops.ValidateInputs{
+	vr := compilerops.Validate(ctx, compilerops.ValidateInputs{
 		View:            lazyView,
 		Closure:         resolved.Closure,
 		Release:         resolved.Release,

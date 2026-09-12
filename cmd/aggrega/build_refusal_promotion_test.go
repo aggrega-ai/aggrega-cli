@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -36,7 +37,7 @@ spec:
 // below is about the shape of a failure.
 func renderedPullFailure(t *testing.T, root, releasePath, catalogRoot string) (error, string) {
 	t.Helper()
-	err := pullRun(pullConfig{
+	err := pullRun(context.Background(), pullConfig{
 		ws:          resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
 		ReleasePath: releasePath,
 		CatalogDirs: []string{catalogRoot},

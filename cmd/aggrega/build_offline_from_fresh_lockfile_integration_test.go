@@ -394,7 +394,7 @@ var hermeticCoveredAxes = []string{
 func pullThenCensus(t *testing.T, root, releasePath string) *lockfile.Lockfile {
 	t.Helper()
 	var diag, out bytes.Buffer
-	err := pullRun(pullConfig{
+	err := pullRun(context.Background(), pullConfig{
 		ws:          resolveWorkspaceWithConfig(t, root, hermeticWorkspaceConfig(false)),
 		ReleasePath: releasePath,
 		CatalogDirs: hermeticFixtureCatalogDirs(root),

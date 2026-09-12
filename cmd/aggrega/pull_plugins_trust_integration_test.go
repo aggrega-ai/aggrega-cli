@@ -141,7 +141,7 @@ func pullAt(t *testing.T, root, releasePath string, cfg pullConfig) error {
 	cfg.ReleasePath = releasePath
 	cfg.DiagOut = &stderr
 	cfg.Out = &stdout
-	err := pullRun(cfg)
+	err := pullRun(context.Background(), cfg)
 	if err != nil {
 		return fmt.Errorf("%w (stderr=%q)", err, stderr.String())
 	}
@@ -363,7 +363,7 @@ func TestIntegration_VerdictTrustPullRecordsAnAcquiredPlugin(t *testing.T) {
 	root, releasePath, published := verdictTrustWorkspace(t, host)
 
 	var stdout, stderr bytes.Buffer
-	if err := pullRun(pullConfig{
+	if err := pullRun(context.Background(), pullConfig{
 		ws:          resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
 		ReleasePath: releasePath,
 		DiagOut:     &stderr,
@@ -393,7 +393,7 @@ func TestIntegration_VerdictTrustPullRecordsAnAcquiredPlugin(t *testing.T) {
 	// A second pull over the same workspace holds the record and announces nothing:
 	// the creation notice is for creation.
 	stderr.Reset()
-	if err := pullRun(pullConfig{
+	if err := pullRun(context.Background(), pullConfig{
 		ws:          resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
 		ReleasePath: releasePath,
 		DiagOut:     &stderr,
@@ -422,7 +422,7 @@ func TestIntegration_VerdictTrustVerifyOnlyPullWritesNothing(t *testing.T) {
 	// A verify-only run needs a lockfile to verify against, so seed one with an
 	// ordinary pull and remove the record it wrote.
 	var stdout, stderr bytes.Buffer
-	if err := pullRun(pullConfig{
+	if err := pullRun(context.Background(), pullConfig{
 		ws:          resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
 		ReleasePath: releasePath,
 		DiagOut:     &stderr,
@@ -440,7 +440,7 @@ func TestIntegration_VerdictTrustVerifyOnlyPullWritesNothing(t *testing.T) {
 
 	stdout.Reset()
 	stderr.Reset()
-	if err := pullRun(pullConfig{
+	if err := pullRun(context.Background(), pullConfig{
 		ws:          resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
 		ReleasePath: releasePath,
 		Verify:      true,
@@ -547,7 +547,7 @@ func TestIntegration_VerdictTrustRefusesAChangedRecordedIdentity(t *testing.T) {
 		cfg.ReleasePath = releasePath
 		cfg.DiagOut = &stderr
 		cfg.Out = &stdout
-		return pullRun(cfg)
+		return pullRun(context.Background(), cfg)
 	}
 
 	// The seeding pull records the identity every phase below is measured against.

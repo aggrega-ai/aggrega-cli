@@ -225,7 +225,7 @@ func TestBuildResolvesRemotePinnedArtifactsLibrary(t *testing.T) {
 	distDir := filepath.Join(root, "dist")
 
 	// Initial pull with the library authored locally → a real lockfile pinning it.
-	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{catalogDir}}); err != nil {
+	if err := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{catalogDir}}); err != nil {
 		t.Fatalf("initial pullRun: %v", err)
 	}
 
@@ -292,7 +292,7 @@ func TestBuildResolvesRemotePinnedArtifactsLibrary(t *testing.T) {
 	if err := os.Remove(filepath.Join(root, "release.lock")); err != nil {
 		t.Fatalf("remove lockfile for inline re-pull: %v", err)
 	}
-	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{catalogDir}}); err != nil {
+	if err := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{catalogDir}}); err != nil {
 		t.Fatalf("inline pullRun: %v", err)
 	}
 	clearDist(t, distDir)

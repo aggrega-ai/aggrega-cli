@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -30,7 +31,7 @@ import (
 //   - default / --resolved: the tabular text layout over the resolved Manifest.
 //
 // --flat is a no-op (the layout is already tabular).
-func renderManifestFile(_ *workspaceconfig.ResolvedWorkspace, path string, data []byte, _ []string, opts inspectOptions) error {
+func renderManifestFile(_ context.Context, _ *workspaceconfig.ResolvedWorkspace, path string, data []byte, _ []string, opts inspectOptions) error {
 	// --raw is the as-authored bypass: emit the file verbatim, no extends
 	// resolution, regardless of output format.
 	if opts.mode == modeForcedRaw {

@@ -146,7 +146,7 @@ func TestFreezeFullURIRecipeOnePullFixpoint(t *testing.T) {
 
 	// A single pull: resolves the closure, freezes the recipe's pins into its
 	// file, and writes the lockfile.
-	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{catalogDir}, DiagOut: io.Discard, Out: io.Discard, diag: buildDiagOptions{quiet: true}}); err != nil {
+	if err := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{catalogDir}, DiagOut: io.Discard, Out: io.Discard, diag: buildDiagOptions{quiet: true}}); err != nil {
 		t.Fatalf("pull: %v", err)
 	}
 

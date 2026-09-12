@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 
 	"go.yaml.in/yaml/v3"
@@ -21,7 +22,7 @@ import (
 // A Component file is self-contained, so the --raw / --resolved override has no
 // effect here (opts.mode is read by the resolved instance kinds, not by the
 // as-authored kinds); file-path inspection does not resolve the extends chain.
-func renderComponentFile(_ *workspaceconfig.ResolvedWorkspace, path string, data []byte, _ []string, opts inspectOptions) error {
+func renderComponentFile(_ context.Context, _ *workspaceconfig.ResolvedWorkspace, path string, data []byte, _ []string, opts inspectOptions) error {
 	if opts.output == outputYAML {
 		return emitYAMLRoundTrip(opts, path, data)
 	}

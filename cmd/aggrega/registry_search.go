@@ -55,9 +55,13 @@ func searchRegistry(ctx context.Context, reg registryRepoLister, query string, s
 // keeps the non-network stub. Every step is best-effort — an unresolvable
 // workspace, an offline workspace, an unconfigured registry, or a search failure
 // yields false — so an unknown command never blocks or crashes on a registry
-// probe. The workspace resolves lazily from the working directory since the
-// unknown-command boundary carries no cobra context.
-func productionPluginDiscoverable(name string) bool {
+// probe. The workspace resolves lazily from the working directory, because the
+// unknown-command boundary is reached after dispatch has already failed and
+// carries no resolved workspace of its own.
+//
+// ctx is the run's own, so the enumeration this makes ends when the reader asks
+// the run to stop rather than holding the process open for a hint.
+func productionPluginDiscoverable(ctx context.Context, name string) bool {
 	rw, err := workspaceconfig.Resolve(".", "")
 	if err != nil {
 		return false
@@ -70,7 +74,7 @@ func productionPluginDiscoverable(name string) bool {
 	if err != nil {
 		return false
 	}
-	return discoverableViaSearch(context.Background(), reg, name)
+	return discoverableViaSearch(ctx, reg, name)
 }
 
 // discoverableViaSearch reports whether the registry serves an installable CLI

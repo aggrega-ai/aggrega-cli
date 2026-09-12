@@ -163,7 +163,7 @@ func TestBuildResolvesRemotePinnedAggregate(t *testing.T) {
 
 	// Initial pull with both aggregates authored locally → a real lockfile that
 	// pins them at Tier-1.
-	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{catalogDir}}); err != nil {
+	if err := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{catalogDir}}); err != nil {
 		t.Fatalf("initial pullRun: %v", err)
 	}
 	lf, _, err := lockfile.LoadLockfile(filepath.Join(root, "release.lock"))

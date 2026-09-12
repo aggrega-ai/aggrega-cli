@@ -193,7 +193,7 @@ func TestIntegration_ConsumeRetroactiveDeprecation(t *testing.T) {
 		wsRoot, _ := writeDeprecationConsumerCatalog(t, host, signer, cfg)
 		deprecate(t, host, "warning", "migrate to test/svc2 soon", nil)
 
-		if perr := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}), ReleasePath: "release.yaml"}); perr != nil {
+		if perr := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}), ReleasePath: "release.yaml"}); perr != nil {
 			t.Fatalf("pull with a warning-severity marker must succeed; got: %v", perr)
 		}
 		// The marker was recorded onto the Component's lockfile row.
@@ -220,7 +220,7 @@ func TestIntegration_ConsumeRetroactiveDeprecation(t *testing.T) {
 		wsRoot, _ := writeDeprecationConsumerCatalog(t, host, signer, cfg)
 		deprecate(t, host, "error", "no longer fit for new use", nil)
 
-		if perr := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}), ReleasePath: "release.yaml"}); perr != nil {
+		if perr := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}), ReleasePath: "release.yaml"}); perr != nil {
 			t.Fatalf("pull with an error-severity marker must succeed (halt is at build); got: %v", perr)
 		}
 		berr := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}), "release.yaml", nil, false, io.Discard, io.Discard)
@@ -236,7 +236,7 @@ func TestIntegration_ConsumeRetroactiveDeprecation(t *testing.T) {
 		wsRoot, _ := writeDeprecationConsumerCatalog(t, host, signer, cfg)
 		deprecate(t, host, "retracted", "withdrawn; use test/svc2", nil)
 
-		if perr := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}), ReleasePath: "release.yaml"}); perr != nil {
+		if perr := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}), ReleasePath: "release.yaml"}); perr != nil {
 			t.Fatalf("pull with a retracted marker must succeed; got: %v", perr)
 		}
 		berr := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}), "release.yaml", nil, false, io.Discard, io.Discard)
@@ -268,7 +268,7 @@ func TestIntegration_ConsumeRetroactiveDeprecation(t *testing.T) {
 		}
 		deprecate(t, host, "retracted", "attacker-supplied retraction", otherSigner)
 
-		if perr := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}), ReleasePath: "release.yaml"}); perr != nil {
+		if perr := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}), ReleasePath: "release.yaml"}); perr != nil {
 			t.Fatalf("pull under a verify-if-present policy must succeed even with an untrusted marker; got: %v", perr)
 		}
 		if rec := deprecationRowRecord(t, componentURI); rec != nil {

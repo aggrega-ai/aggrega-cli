@@ -153,7 +153,7 @@ func TestIntegration_LinterCacheMiss_PulledGuestUnreachableAtLint(t *testing.T) 
 
 	// aggrega pull — resolves the release closure and caches every verdict-socket
 	// plugin (the configured linter among them) into the content cache.
-	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), ReleasePath: "release.yaml"}); err != nil {
+	if err := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), ReleasePath: "release.yaml"}); err != nil {
 		t.Fatalf("pull: %v", err)
 	}
 

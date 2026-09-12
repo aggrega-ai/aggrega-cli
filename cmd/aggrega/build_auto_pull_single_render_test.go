@@ -90,7 +90,7 @@ func TestBuildAutoPullEmitsWhatPullThenBuildEmits(t *testing.T) {
 	rootA := t.TempDir()
 	t.Chdir(rootA)
 	releaseA := fullstackTriad(t, fixtureDir, rootA)
-	if err := pullRun(pullConfig{
+	if err := pullRun(context.Background(), pullConfig{
 		ws:          resolveTempWorkspace(t, tempWorkspaceOptions{Root: rootA}),
 		ReleasePath: releaseA,
 		CatalogDirs: catalogDirs,
@@ -212,7 +212,7 @@ func TestBuildAutoPullRendersTheReleaseOnce(t *testing.T) {
 
 	// Leg 1 — calibration. A plain build over a primed lockfile renders once, so
 	// this establishes what one render's worth of warning looks like.
-	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: work}), ReleasePath: releaseFile, CatalogDirs: []string{catalogRoot}}); err != nil {
+	if err := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: work}), ReleasePath: releaseFile, CatalogDirs: []string{catalogRoot}}); err != nil {
 		t.Fatalf("prime lockfile: %v", err)
 	}
 	var plainErr error

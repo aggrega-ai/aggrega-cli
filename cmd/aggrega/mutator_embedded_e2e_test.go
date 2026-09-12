@@ -179,7 +179,7 @@ plugins:
               set:
                 inject.aggrega.ai/mark: hit
 `)
-	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: catDirs, ws: rwSettings, DiagOut: os.Stderr, Out: os.Stderr, diag: buildDiagOptions{quiet: true}}); err != nil {
+	if err := pullRun(context.Background(), pullConfig{ReleasePath: releasePath, CatalogDirs: catDirs, ws: rwSettings, DiagOut: os.Stderr, Out: os.Stderr, diag: buildDiagOptions{quiet: true}}); err != nil {
 		t.Fatalf("pull (settings form): %v", err)
 	}
 	lf, _, err := lockfile.LoadLockfile(lockfile.PathFor(releasePath))
@@ -216,7 +216,7 @@ plugins:
         sources:
           - rules.yaml
 `)
-	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: catDirs, ws: rwSources, DiagOut: os.Stderr, Out: os.Stderr, diag: buildDiagOptions{quiet: true}}); err != nil {
+	if err := pullRun(context.Background(), pullConfig{ReleasePath: releasePath, CatalogDirs: catDirs, ws: rwSources, DiagOut: os.Stderr, Out: os.Stderr, diag: buildDiagOptions{quiet: true}}); err != nil {
 		t.Fatalf("pull (sources form): %v", err)
 	}
 	outSources := filepath.Join(root, "out-sources")
@@ -307,7 +307,7 @@ plugins:
         settings:
           default: untagged
 `)
-	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: catDirs, ws: rw, DiagOut: os.Stderr, Out: os.Stderr, diag: buildDiagOptions{quiet: true}}); err != nil {
+	if err := pullRun(context.Background(), pullConfig{ReleasePath: releasePath, CatalogDirs: catDirs, ws: rw, DiagOut: os.Stderr, Out: os.Stderr, diag: buildDiagOptions{quiet: true}}); err != nil {
 		t.Fatalf("pull: %v", err)
 	}
 	out := filepath.Join(root, "out")
@@ -418,7 +418,7 @@ spec:
 	// unsatisfied (the node lacks role.aggrega.ai/kind=cache) and the build halts
 	// with ErrSelectorViolation.
 	rwNoMutator := resolveWorkspaceWithConfig(t, root, "workspace: {}\noffline: true\n")
-	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: catDirs, ws: rwNoMutator, DiagOut: os.Stderr, Out: os.Stderr, diag: buildDiagOptions{quiet: true}}); err != nil {
+	if err := pullRun(context.Background(), pullConfig{ReleasePath: releasePath, CatalogDirs: catDirs, ws: rwNoMutator, DiagOut: os.Stderr, Out: os.Stderr, diag: buildDiagOptions{quiet: true}}); err != nil {
 		t.Fatalf("pull (no mutator): %v", err)
 	}
 	outNeg := filepath.Join(root, "out-neg")
@@ -449,7 +449,7 @@ plugins:
               set:
                 role.aggrega.ai/kind: cache
 `)
-	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: catDirs, ws: rwMutator, DiagOut: os.Stderr, Out: os.Stderr, diag: buildDiagOptions{quiet: true}}); err != nil {
+	if err := pullRun(context.Background(), pullConfig{ReleasePath: releasePath, CatalogDirs: catDirs, ws: rwMutator, DiagOut: os.Stderr, Out: os.Stderr, diag: buildDiagOptions{quiet: true}}); err != nil {
 		t.Fatalf("pull (mutator attached): %v", err)
 	}
 	outPos := filepath.Join(root, "out-pos")
@@ -486,7 +486,7 @@ plugins:
               set:
                 inject.aggrega.ai/mark: pinned
 `)
-	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: catDirs, ws: rwPull, DiagOut: os.Stderr, Out: os.Stderr, diag: buildDiagOptions{quiet: true}}); err != nil {
+	if err := pullRun(context.Background(), pullConfig{ReleasePath: releasePath, CatalogDirs: catDirs, ws: rwPull, DiagOut: os.Stderr, Out: os.Stderr, diag: buildDiagOptions{quiet: true}}); err != nil {
 		t.Fatalf("pull: %v", err)
 	}
 	out1 := filepath.Join(root, "out1")
@@ -553,7 +553,7 @@ plugins:
         sources:
           - rules.yaml
 `)
-	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: catDirs, ws: rw, DiagOut: os.Stderr, Out: os.Stderr, diag: buildDiagOptions{quiet: true}}); err != nil {
+	if err := pullRun(context.Background(), pullConfig{ReleasePath: releasePath, CatalogDirs: catDirs, ws: rw, DiagOut: os.Stderr, Out: os.Stderr, diag: buildDiagOptions{quiet: true}}); err != nil {
 		t.Fatalf("pull: %v", err)
 	}
 	out1 := filepath.Join(root, "out1")
@@ -606,7 +606,7 @@ plugins:
               set:
                 inject.aggrega.ai/mark: hit
 `)
-	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: catDirs, ws: rw, DiagOut: os.Stderr, Out: os.Stderr, diag: buildDiagOptions{quiet: true}}); err != nil {
+	if err := pullRun(context.Background(), pullConfig{ReleasePath: releasePath, CatalogDirs: catDirs, ws: rw, DiagOut: os.Stderr, Out: os.Stderr, diag: buildDiagOptions{quiet: true}}); err != nil {
 		t.Fatalf("pull: %v", err)
 	}
 	outA := filepath.Join(root, "outA")

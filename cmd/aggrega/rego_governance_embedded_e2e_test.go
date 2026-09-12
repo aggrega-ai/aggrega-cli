@@ -145,7 +145,7 @@ plugins:
 func pullThen(t *testing.T, root, releasePath string, catDirs []string, config, outDir string) error {
 	t.Helper()
 	rw := resolveWorkspaceWithConfig(t, root, config)
-	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: catDirs, ws: rw, DiagOut: os.Stderr, Out: os.Stderr, diag: buildDiagOptions{quiet: true}}); err != nil {
+	if err := pullRun(context.Background(), pullConfig{ReleasePath: releasePath, CatalogDirs: catDirs, ws: rw, DiagOut: os.Stderr, Out: os.Stderr, diag: buildDiagOptions{quiet: true}}); err != nil {
 		t.Fatalf("pull: %v", err)
 	}
 	return dispatchBuildWithDiag(context.Background(), rw, releasePath, catDirs, false, buildDiagOptions{quiet: true}, buildops.RunOptions{OutDir: filepath.Join(root, outDir)}, os.Stderr, os.Stderr)
@@ -441,7 +441,7 @@ labels contains {"node": id, "key": "compliance.example.com/tier", "value": "gol
 }
 `)
 	rw := resolveWorkspaceWithConfig(t, root, regoAttachment("label-transform", "policy.rego", ""))
-	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: []string{catalogDir, standardCatalogDir(t)}, ws: rw, DiagOut: os.Stderr, Out: os.Stderr, diag: buildDiagOptions{quiet: true}}); err != nil {
+	if err := pullRun(context.Background(), pullConfig{ReleasePath: releasePath, CatalogDirs: []string{catalogDir, standardCatalogDir(t)}, ws: rw, DiagOut: os.Stderr, Out: os.Stderr, diag: buildDiagOptions{quiet: true}}); err != nil {
 		t.Fatalf("pull: %v", err)
 	}
 
@@ -1103,7 +1103,7 @@ plugins:
           - annotations.rego
 `
 	rw := resolveWorkspaceWithConfig(t, root, config)
-	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: catDirs, ws: rw, DiagOut: os.Stderr, Out: os.Stderr, diag: buildDiagOptions{quiet: true}}); err != nil {
+	if err := pullRun(context.Background(), pullConfig{ReleasePath: releasePath, CatalogDirs: catDirs, ws: rw, DiagOut: os.Stderr, Out: os.Stderr, diag: buildDiagOptions{quiet: true}}); err != nil {
 		t.Fatalf("pull: %v", err)
 	}
 	outA := filepath.Join(root, "outA")

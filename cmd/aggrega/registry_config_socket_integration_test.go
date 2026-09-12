@@ -337,7 +337,7 @@ func TestIntegration_ConfigSocketPluginPinning_RoundTrip(t *testing.T) {
 	pullAndLoadLock := func(t *testing.T, ws string) *lockfile.Lockfile {
 		t.Helper()
 		t.Chdir(ws)
-		if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), ReleasePath: "release.yaml", CatalogDirs: []string{std}}); err != nil {
+		if err := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), ReleasePath: "release.yaml", CatalogDirs: []string{std}}); err != nil {
 			t.Fatalf("registry pull: %v", err)
 		}
 		lf, _, err := lockfile.LoadLockfile(lockfile.PathFor("release.yaml"))
@@ -426,7 +426,7 @@ func TestIntegration_ConfigSocketPluginPinning_RoundTrip(t *testing.T) {
 		assertPluginAbsentFromLock(t, lf, denyPolicySocket)
 
 		// A baseline verify passes against the lockfile the pull just wrote.
-		if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), ReleasePath: "release.yaml", CatalogDirs: []string{std}, Verify: true}); err != nil {
+		if err := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), ReleasePath: "release.yaml", CatalogDirs: []string{std}, Verify: true}); err != nil {
 			t.Fatalf("baseline verify after pull: %v", err)
 		}
 
@@ -435,7 +435,7 @@ func TestIntegration_ConfigSocketPluginPinning_RoundTrip(t *testing.T) {
 		// at the next build without a re-pull and verify does NOT halt on drift.
 		changed := "plugins:\n  governance:\n    - uri: " + allowPolicySocket + ":1.0.0\n      role: ir-verdict\n"
 		writeWorkspaceConfig(t, ws, "default_registry: \""+host+"\"\nauto_pull: true\noffline: false\n"+changed)
-		if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), ReleasePath: "release.yaml", CatalogDirs: []string{std}, Verify: true}); err != nil {
+		if err := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), ReleasePath: "release.yaml", CatalogDirs: []string{std}, Verify: true}); err != nil {
 			t.Fatalf("verify halted after a policy config change; a verdict socket must not drift-gate: %v", err)
 		}
 	})

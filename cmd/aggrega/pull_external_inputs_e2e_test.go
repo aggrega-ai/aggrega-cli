@@ -117,7 +117,7 @@ func TestPullPinsTheExternalInputsTheRenderRequests(t *testing.T) {
 
 	before := fetches()
 	var diag, out bytes.Buffer
-	if err := pullRun(pullConfig{ws: ws, ReleasePath: releasePath, CatalogDirs: []string{catalogDir}, DiagOut: &diag, Out: &out}); err != nil {
+	if err := pullRun(context.Background(), pullConfig{ws: ws, ReleasePath: releasePath, CatalogDirs: []string{catalogDir}, DiagOut: &diag, Out: &out}); err != nil {
 		t.Fatalf("resolve: %v\ndiagnostics:\n%s", err, diag.String())
 	}
 	if fetches() == before {
@@ -170,7 +170,7 @@ func TestPullThenBuildOfflineSucceeds(t *testing.T) {
 	declareEgress(t, root, catalogDir, false)
 
 	var pullDiag, pullOut bytes.Buffer
-	if err := pullRun(pullConfig{
+	if err := pullRun(context.Background(), pullConfig{
 		ws:          resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
 		ReleasePath: releasePath,
 		CatalogDirs: []string{catalogDir},
@@ -232,7 +232,7 @@ func TestPullOfflineCannotPinAndSaysSo(t *testing.T) {
 	ws := resolveTempWorkspace(t, tempWorkspaceOptions{Root: root})
 
 	var diag, out bytes.Buffer
-	if err := pullRun(pullConfig{ws: ws, ReleasePath: releasePath, CatalogDirs: []string{catalogDir}, DiagOut: &diag, Out: &out}); err != nil {
+	if err := pullRun(context.Background(), pullConfig{ws: ws, ReleasePath: releasePath, CatalogDirs: []string{catalogDir}, DiagOut: &diag, Out: &out}); err != nil {
 		t.Fatalf("an offline resolution must still write its dependency pins: %v\ndiagnostics:\n%s", err, diag.String())
 	}
 	if fetches() != 0 {
@@ -327,7 +327,7 @@ func TestPullUpgradeRediscoversExternalInputs(t *testing.T) {
 	pull := func(upgrade bool) {
 		t.Helper()
 		var diag, out bytes.Buffer
-		if err := pullRun(pullConfig{
+		if err := pullRun(context.Background(), pullConfig{
 			ws:          resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
 			ReleasePath: releasePath,
 			CatalogDirs: []string{catalogDir},
@@ -370,7 +370,7 @@ func TestPullWithNoExternalInputsPinsNothing(t *testing.T) {
 
 	releasePath, catalogDir := dryRunFixture(t, root, "")
 	var diag, out bytes.Buffer
-	if err := pullRun(pullConfig{
+	if err := pullRun(context.Background(), pullConfig{
 		ws:          resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
 		ReleasePath: releasePath,
 		CatalogDirs: []string{catalogDir},

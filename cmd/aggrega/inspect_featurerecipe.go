@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 
 	"go.yaml.in/yaml/v3"
@@ -23,7 +24,7 @@ import (
 //   - levelList: identifier, implements, provider, artifact count.
 //   - levelDefault: implements, provider, artifacts, valuesMapping, injectMapping, executionScope.
 //   - levelDetail: adds artifact bodies, workload body, provides / locals / pipeline / assertions.
-func renderFeatureRecipeFile(rw *workspaceconfig.ResolvedWorkspace, path string, data []byte, catalogDirs []string, opts inspectOptions) error {
+func renderFeatureRecipeFile(_ context.Context, rw *workspaceconfig.ResolvedWorkspace, path string, data []byte, catalogDirs []string, opts inspectOptions) error {
 	if opts.output == outputYAML {
 		return emitYAMLRoundTrip(opts, path, data)
 	}

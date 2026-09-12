@@ -75,7 +75,7 @@ func offlineReferenceCompose(t *testing.T, std, exampleDir string) string {
 	if err := os.Chdir(ws); err != nil {
 		t.Fatalf("chdir reference workspace: %v", err)
 	}
-	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), ReleasePath: "release.yaml", CatalogDirs: []string{std}}); err != nil {
+	if err := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), ReleasePath: "release.yaml", CatalogDirs: []string{std}}); err != nil {
 		t.Fatalf("offline reference pull: %v", err)
 	}
 	if err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", []string{std}, false, os.Stderr, os.Stdout); err != nil {
@@ -338,7 +338,7 @@ func TestIntegration_RegistryRoundTrip_Positive(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(ws, "catalog")); err == nil {
 		t.Fatal("consumer workspace carries a local catalog dir; the no-bridge witness is invalid")
 	}
-	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), ReleasePath: "release.yaml"}); err != nil {
+	if err := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), ReleasePath: "release.yaml"}); err != nil {
 		t.Fatalf("registry pull: %v", err)
 	}
 	if err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", nil, false, os.Stderr, os.Stdout); err != nil {
@@ -384,7 +384,7 @@ func TestIntegration_RegistryBuild_WithheldEntityHaltsAtClosure(t *testing.T) {
 	host := startRegistry(t, nil)
 	pushCatalog(t, host, standardCatalogDir(t))
 	ws := newConsumerWorkspace(t, host)
-	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), ReleasePath: "release.yaml"}); err != nil {
+	if err := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), ReleasePath: "release.yaml"}); err != nil {
 		t.Fatalf("pull: %v", err)
 	}
 
@@ -579,7 +579,7 @@ func TestIntegration_Capstone_LintAndExample(t *testing.T) {
 	// Build is read-only by default: prime the lockfile with an explicit pull (the
 	// sole writer of pins), then build reads it. --catalog supplies every entity
 	// locally, so the pull resolves from the catalog with no network.
-	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), ReleasePath: "release.yaml", CatalogDirs: []string{std}}); err != nil {
+	if err := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), ReleasePath: "release.yaml", CatalogDirs: []string{std}}); err != nil {
 		t.Fatalf("prime lockfile via pull: %v", err)
 	}
 	if err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", []string{std}, false, os.Stderr, os.Stdout); err != nil {
@@ -849,7 +849,7 @@ spec:
 	writeWorkspaceConfig(t, ws, "default_registry: \""+host+"\"\nauto_pull: true\noffline: false")
 	t.Chdir(ws)
 
-	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), ReleasePath: "release.yaml", CatalogDirs: []string{std}}); err != nil {
+	if err := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), ReleasePath: "release.yaml", CatalogDirs: []string{std}}); err != nil {
 		t.Fatalf("registry pull: %v", err)
 	}
 
@@ -939,7 +939,7 @@ spec:
 
 	// A second pull + build reproduces the rendered tree byte-for-byte from the pin.
 	_ = os.RemoveAll("dist")
-	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), ReleasePath: "release.yaml", CatalogDirs: []string{std}}); err != nil {
+	if err := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), ReleasePath: "release.yaml", CatalogDirs: []string{std}}); err != nil {
 		t.Fatalf("second registry pull: %v", err)
 	}
 	if err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", []string{std}, false, os.Stderr, os.Stdout); err != nil {
@@ -1145,7 +1145,7 @@ func TestIntegration_PipelinePlugin_RuntimeTimeoutFlowsToBuild(t *testing.T) {
 		ws := writePipelinePluginFixtureCatalog(t, host, pluginURI)
 		t.Chdir(ws)
 
-		if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), ReleasePath: "release.yaml", CatalogDirs: []string{std}}); err != nil {
+		if err := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), ReleasePath: "release.yaml", CatalogDirs: []string{std}}); err != nil {
 			t.Fatalf("registry pull: %v", err)
 		}
 
@@ -1183,7 +1183,7 @@ func TestIntegration_PipelinePlugin_RuntimeTimeoutFlowsToBuild(t *testing.T) {
 		ws := writePipelinePluginFixtureCatalog(t, host, pluginURI)
 		t.Chdir(ws)
 
-		if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), ReleasePath: "release.yaml", CatalogDirs: []string{std}}); err != nil {
+		if err := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), ReleasePath: "release.yaml", CatalogDirs: []string{std}}); err != nil {
 			t.Fatalf("registry pull: %v", err)
 		}
 		if err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", []string{std}, false, os.Stderr, os.Stdout); err != nil {
@@ -1401,7 +1401,7 @@ func TestIntegration_RegistryAuthRefuse(t *testing.T) {
 	_ = os.Remove(filepath.Join(ws, "release.lock"))
 	_ = os.RemoveAll(filepath.Join(ws, ".aggrega"))
 	t.Chdir(ws)
-	err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), ReleasePath: "release.yaml"})
+	err := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), ReleasePath: "release.yaml"})
 	// The security property: the pull is REFUSED against an auth-demanding
 	// registry — it does not silently succeed. (The exact unauthorized +
 	// `docker login <host>` remediation string is unit-tested in
@@ -1519,7 +1519,7 @@ func TestIntegration_LocalPathPinInvariance(t *testing.T) {
 
 			t.Chdir(ws)
 			_ = os.Remove(lockfile.PathFor(tc.release)) // discard any copied stale lock
-			if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), ReleasePath: tc.release, CatalogDirs: dirs, Upgrade: true}); err != nil {
+			if err := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), ReleasePath: tc.release, CatalogDirs: dirs, Upgrade: true}); err != nil {
 				t.Fatalf("regenerate lock: %v", err)
 			}
 			got := canonicalPins(t, lockfile.PathFor(tc.release))

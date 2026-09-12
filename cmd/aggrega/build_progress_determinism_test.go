@@ -45,7 +45,7 @@ func TestBuild_StdoutAndDistByteIdenticalAcrossProgressModes(t *testing.T) {
 	// Build is read-only: prime the lockfile once so every mode below builds against
 	// the same pre-existing lockfile. Pull output is discarded so it cannot perturb
 	// the per-mode stdout/dist comparison.
-	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releaseYAML, CatalogDirs: []string{catalogRoot}, DiagOut: io.Discard, Out: io.Discard, diag: buildDiagOptions{quiet: true}}); err != nil {
+	if err := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releaseYAML, CatalogDirs: []string{catalogRoot}, DiagOut: io.Discard, Out: io.Discard, diag: buildDiagOptions{quiet: true}}); err != nil {
 		t.Fatalf("prime lockfile via pull: %v", err)
 	}
 

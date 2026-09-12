@@ -279,7 +279,7 @@ func closureListingFor(t *testing.T, root, releasePath string) string {
 	opts := testInspectOptions(&buf)
 	opts.closure = true
 	opts.level = levelDefault
-	err := dispatchInspect(
+	err := dispatchInspect(context.Background(),
 		resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
 		releasePath,
 		nil,

@@ -5,6 +5,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -45,7 +46,7 @@ func TestPullOfflineLockfileMatchesOnlineByteForByte(t *testing.T) {
 		releasePath := authoringFixture(t, root)
 		writeWorkspaceConfig(t, root, configBody)
 
-		if err := pullRun(pullConfig{
+		if err := pullRun(context.Background(), pullConfig{
 			ws:          resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
 			ReleasePath: releasePath,
 			CatalogDirs: []string{filepath.Join(root, "catalog")},

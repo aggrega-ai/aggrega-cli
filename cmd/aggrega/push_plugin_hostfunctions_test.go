@@ -208,7 +208,7 @@ func TestStampPluginFile_WritesHostFunctionsAndCommands(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	if err := stampPluginFile(&out, entityPath, pluginPath); err != nil {
+	if err := stampPluginFile(context.Background(), &out, entityPath, pluginPath); err != nil {
 		t.Fatalf("stampPluginFile: %v", err)
 	}
 	if !strings.Contains(out.String(), "Recorded host functions") || !strings.Contains(out.String(), "greet-a") {
@@ -235,7 +235,7 @@ func TestStampPluginFile_WritesHostFunctionsAndCommands(t *testing.T) {
 
 	// Second run is an idempotent no-op leaving the file byte-identical.
 	var out2 bytes.Buffer
-	if err := stampPluginFile(&out2, entityPath, pluginPath); err != nil {
+	if err := stampPluginFile(context.Background(), &out2, entityPath, pluginPath); err != nil {
 		t.Fatalf("second stampPluginFile: %v", err)
 	}
 	if !strings.Contains(out2.String(), "Already current") {

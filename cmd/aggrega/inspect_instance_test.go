@@ -5,6 +5,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -34,7 +35,7 @@ func inspectInstance(t *testing.T, path string, mutate func(*inspectOptions)) st
 	if mutate != nil {
 		mutate(&opts)
 	}
-	if err := dispatchInspect(resolveTempWorkspace(t, tempWorkspaceOptions{}), path, []string{fullstackCatalog}, opts); err != nil {
+	if err := dispatchInspect(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{}), path, []string{fullstackCatalog}, opts); err != nil {
 		t.Fatalf("dispatchInspect(%q): %v", path, err)
 	}
 	return buf.String()
@@ -233,7 +234,7 @@ spec:
               - host
 `)
 	var buf bytes.Buffer
-	if err := dispatchInspect(resolveTempWorkspace(t, tempWorkspaceOptions{}), child, nil, testInspectOptions(&buf)); err != nil {
+	if err := dispatchInspect(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{}), child, nil, testInspectOptions(&buf)); err != nil {
 		t.Fatalf("inspect child manifest: %v", err)
 	}
 	got := buf.String()
@@ -278,7 +279,7 @@ spec:
           core/compute/api-server: some-api:1.0.0
 `)
 	var buf bytes.Buffer
-	err := dispatchInspect(resolveTempWorkspace(t, tempWorkspaceOptions{}), path, nil, testInspectOptions(&buf))
+	err := dispatchInspect(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{}), path, nil, testInspectOptions(&buf))
 	if err == nil {
 		t.Fatalf("expected inspect to refuse an unknown mappings key; rendered:\n%s", buf.String())
 	}

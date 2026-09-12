@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 
 	"go.yaml.in/yaml/v3"
@@ -23,7 +24,7 @@ import (
 //   - levelList: identifier plus usesSchema socket names.
 //   - levelDefault: schema, uses sockets, secret slots, targeting, labels.
 //   - levelDetail: adds interoperability and assertions.
-func renderFeatureFile(_ *workspaceconfig.ResolvedWorkspace, path string, data []byte, _ []string, opts inspectOptions) error {
+func renderFeatureFile(_ context.Context, _ *workspaceconfig.ResolvedWorkspace, path string, data []byte, _ []string, opts inspectOptions) error {
 	if opts.output == outputYAML {
 		return emitYAMLRoundTrip(opts, path, data)
 	}

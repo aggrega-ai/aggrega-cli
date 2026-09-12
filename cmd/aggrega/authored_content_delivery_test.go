@@ -326,7 +326,7 @@ func TestMachineStateCapabilitiesWriteDirectly(t *testing.T) {
 
 		before := treeFingerprint(t, root)
 		var out bytes.Buffer
-		if err := stampPluginFile(&out, entityPath, pluginPath); err != nil {
+		if err := stampPluginFile(context.Background(), &out, entityPath, pluginPath); err != nil {
 			t.Fatalf("stampPluginFile: %v", err)
 		}
 		diffs := fingerprintDifferences(before, treeFingerprint(t, root))

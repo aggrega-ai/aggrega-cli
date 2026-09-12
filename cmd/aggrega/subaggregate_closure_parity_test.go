@@ -189,7 +189,7 @@ func TestSubAggregateAxisAgreesAcrossLockAndBuild(t *testing.T) {
 
 	// Side A — the lock-time closure, taken from what pull actually writes rather
 	// than from a re-implementation of its orchestration in the test.
-	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{catalogDir}}); err != nil {
+	if err := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{catalogDir}}); err != nil {
 		t.Fatalf("pullRun: %v", err)
 	}
 	lf, _, err := lockfile.LoadLockfile(filepath.Join(root, "release.lock"))

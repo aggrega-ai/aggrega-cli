@@ -140,7 +140,7 @@ func TestBuildResolvesRemoteLibraryTagVersionMismatch(t *testing.T) {
 	}
 
 	puller := &fakeRemoteLibraryPuller{tags: []string{"2.0.0"}, metadataVersion: "1.0.0"}
-	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{catalogDir}, puller: puller}); err != nil {
+	if err := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{catalogDir}, puller: puller}); err != nil {
 		t.Fatalf("pullRun (library tag!=version): %v", err)
 	}
 	lf, _, err := lockfile.LoadLockfile(filepath.Join(root, "release.lock"))
@@ -188,7 +188,7 @@ func TestPullFetchesRemoteLibraryViaTier3(t *testing.T) {
 	}
 
 	puller := &fakeRemoteLibraryPuller{tags: []string{"1.0.0", "2.0.0"}}
-	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{catalogDir}, puller: puller}); err != nil {
+	if err := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{catalogDir}, puller: puller}); err != nil {
 		t.Fatalf("pullRun (Tier-3 remote fetch): %v", err)
 	}
 
@@ -369,7 +369,7 @@ func TestBuildResolvesRemotePinnedSchemaLibrary(t *testing.T) {
 	catalogDir := filepath.Join(root, "catalog")
 
 	// Initial pull with the library authored locally → a real lockfile pinning it.
-	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{catalogDir}}); err != nil {
+	if err := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{catalogDir}}); err != nil {
 		t.Fatalf("initial pullRun: %v", err)
 	}
 
@@ -457,7 +457,7 @@ func TestBuildHaltsOnTamperedBridgedLibrary(t *testing.T) {
 	const cacheDir = ".aggrega/cache"
 	catalogDir := filepath.Join(root, "catalog")
 
-	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{catalogDir}}); err != nil {
+	if err := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{catalogDir}}); err != nil {
 		t.Fatalf("initial pullRun: %v", err)
 	}
 	relocateLibraryToCache(t, root, cacheDir)
@@ -531,7 +531,7 @@ spec:
 
 	puller := &fakeRemoteLibraryPuller{tags: []string{"1.0.0"}}
 	resolver := &recordingSourceResolver{}
-	if err := pullRun(pullConfig{
+	if err := pullRun(context.Background(), pullConfig{
 		ws:             resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
 		ReleasePath:    releasePath,
 		CatalogDirs:    []string{catalogDir},

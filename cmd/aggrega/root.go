@@ -211,7 +211,7 @@ func executeRoot(ctx context.Context, root *cobra.Command) int {
 	if errors.As(err, &ece) {
 		return ece.code
 	}
-	fmt.Fprintln(os.Stderr, unknownCommandSuggestion(formatCompilerError(err), err))
+	fmt.Fprintln(os.Stderr, unknownCommandSuggestion(ctx, formatCompilerError(err), err))
 	return 1
 }
 

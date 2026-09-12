@@ -227,7 +227,7 @@ spec:
 func primeDryRunLockfile(t *testing.T, root, releasePath, catalogDir string) {
 	t.Helper()
 	ws := resolveTempWorkspace(t, tempWorkspaceOptions{Root: root})
-	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: []string{catalogDir}, ws: ws}); err != nil {
+	if err := pullRun(context.Background(), pullConfig{ReleasePath: releasePath, CatalogDirs: []string{catalogDir}, ws: ws}); err != nil {
 		t.Fatalf("prime lockfile via pull: %v", err)
 	}
 }

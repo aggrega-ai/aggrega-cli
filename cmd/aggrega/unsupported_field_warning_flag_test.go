@@ -5,6 +5,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -198,7 +199,7 @@ func TestBuildCmd_UnsupportedFieldWarningFlagReachesTheFilter(t *testing.T) {
 	releaseFile, catalogRoot, _ := composeUnsupportedFieldWorkspace(t, work)
 
 	// Build is read-only about dependency resolution: prime the lockfile first.
-	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: work}), ReleasePath: releaseFile, CatalogDirs: []string{catalogRoot}}); err != nil {
+	if err := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: work}), ReleasePath: releaseFile, CatalogDirs: []string{catalogRoot}}); err != nil {
 		t.Fatalf("prime lockfile via pull: %v", err)
 	}
 

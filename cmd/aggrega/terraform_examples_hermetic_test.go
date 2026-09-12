@@ -46,7 +46,7 @@ func TestTerraformExamplesHermeticOfflineBuild(t *testing.T) {
 			// Resolve + pin from the local catalog with the puller disabled by
 			// offline — a network dial here would be a hard failure, not a
 			// fallback.
-			if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), ReleasePath: "release.yaml", CatalogDirs: []string{catalogRoot}}); err != nil {
+			if err := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), ReleasePath: "release.yaml", CatalogDirs: []string{catalogRoot}}); err != nil {
 				t.Fatalf("offline pull %q (a network dependency would fail here): %v", name, err)
 			}
 

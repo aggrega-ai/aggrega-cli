@@ -139,7 +139,7 @@ func TestPull_InconsistentMappingHalts(t *testing.T) {
 	root, releasePath, catalogDirs := mappingVerdictWorkspace(t, "elsewhere-recipe:1.0.0")
 	t.Chdir(root)
 
-	err := pullRun(pullConfig{
+	err := pullRun(context.Background(), pullConfig{
 		ws:          resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
 		ReleasePath: releasePath,
 		CatalogDirs: catalogDirs,
@@ -168,7 +168,7 @@ func TestBuild_InconsistentMappingHalts(t *testing.T) {
 	root, releasePath, catalogDirs := mappingVerdictWorkspace(t, "server-recipe:1.0.0")
 	t.Chdir(root)
 
-	if err := pullRun(pullConfig{
+	if err := pullRun(context.Background(), pullConfig{
 		ws:          resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
 		ReleasePath: releasePath,
 		CatalogDirs: catalogDirs,
@@ -201,7 +201,7 @@ func TestBuild_ConsistentMappingUnaffected(t *testing.T) {
 	root, releasePath, catalogDirs := mappingVerdictWorkspace(t, "server-recipe:1.0.0")
 	t.Chdir(root)
 
-	if err := pullRun(pullConfig{
+	if err := pullRun(context.Background(), pullConfig{
 		ws:          resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
 		ReleasePath: releasePath,
 		CatalogDirs: catalogDirs,

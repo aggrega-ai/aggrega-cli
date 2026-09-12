@@ -5,6 +5,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -122,7 +123,7 @@ func TestPullWritesToolchainStampAndVerifyReadsItBack(t *testing.T) {
 	releasePath := authoringFixture(t, root)
 	catalogDirs := []string{filepath.Join(root, "catalog")}
 
-	if err := pullRun(pullConfig{
+	if err := pullRun(context.Background(), pullConfig{
 		ws:          resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
 		ReleasePath: releasePath,
 		CatalogDirs: catalogDirs,
@@ -162,7 +163,7 @@ func TestPullWritesToolchainStampAndVerifyReadsItBack(t *testing.T) {
 		t.Fatalf("read lockfile before verify: %v", err)
 	}
 	var out bytes.Buffer
-	if err := pullRun(pullConfig{
+	if err := pullRun(context.Background(), pullConfig{
 		ws:          resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
 		ReleasePath: releasePath,
 		CatalogDirs: catalogDirs,
@@ -202,7 +203,7 @@ func TestPullVerifyTreatsAToolchainDifferenceAsNoDrift(t *testing.T) {
 	releasePath := authoringFixture(t, root)
 	catalogDirs := []string{filepath.Join(root, "catalog")}
 
-	if err := pullRun(pullConfig{
+	if err := pullRun(context.Background(), pullConfig{
 		ws:          resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
 		ReleasePath: releasePath,
 		CatalogDirs: catalogDirs,
@@ -240,7 +241,7 @@ func TestPullVerifyTreatsAToolchainDifferenceAsNoDrift(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	if err := pullRun(pullConfig{
+	if err := pullRun(context.Background(), pullConfig{
 		ws:          resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
 		ReleasePath: releasePath,
 		CatalogDirs: catalogDirs,

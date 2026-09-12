@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 
 	"go.yaml.in/yaml/v3"
@@ -22,7 +23,7 @@ import (
 //   - levelList: mapping entry names only.
 //   - levelDefault: header, description, per-entry usage line, labels / annotations.
 //   - levelDetail: adds the full Go-template body per entry, verbatim.
-func renderMappingLibraryFile(_ *workspaceconfig.ResolvedWorkspace, path string, data []byte, _ []string, opts inspectOptions) error {
+func renderMappingLibraryFile(_ context.Context, _ *workspaceconfig.ResolvedWorkspace, path string, data []byte, _ []string, opts inspectOptions) error {
 	if opts.output == outputYAML {
 		return emitYAMLRoundTrip(opts, path, data)
 	}

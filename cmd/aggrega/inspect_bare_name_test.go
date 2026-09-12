@@ -5,6 +5,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -64,7 +65,7 @@ func TestInspectBareName_Plugin(t *testing.T) {
 	catDir := writeBareNameCatalog(t, map[string]string{"plugin.yaml": pluginFixture})
 
 	var buf bytes.Buffer
-	if err := dispatchInspect(resolveTempWorkspace(t, tempWorkspaceOptions{}), "provider/helm-renderer", []string{catDir}, testInspectOptions(&buf)); err != nil {
+	if err := dispatchInspect(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{}), "provider/helm-renderer", []string{catDir}, testInspectOptions(&buf)); err != nil {
 		t.Fatalf("bare plugin coordinate should inspect cleanly; got: %v", err)
 	}
 	out := buf.String()
@@ -84,7 +85,7 @@ func TestInspectBareName_Component_Preserved(t *testing.T) {
 	catDir := writeBareNameCatalog(t, map[string]string{"component.yaml": bareNameComponentFixture})
 
 	var buf bytes.Buffer
-	if err := dispatchInspect(resolveTempWorkspace(t, tempWorkspaceOptions{}), "core/api-server", []string{catDir}, testInspectOptions(&buf)); err != nil {
+	if err := dispatchInspect(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{}), "core/api-server", []string{catDir}, testInspectOptions(&buf)); err != nil {
 		t.Fatalf("bare Component name should inspect cleanly; got: %v", err)
 	}
 	out := buf.String()
@@ -103,7 +104,7 @@ func TestInspectBareName_Feature(t *testing.T) {
 	catDir := writeBareNameCatalog(t, map[string]string{"feature.yaml": bareNameFeatureFixture})
 
 	var buf bytes.Buffer
-	if err := dispatchInspect(resolveTempWorkspace(t, tempWorkspaceOptions{}), "core/metrics", []string{catDir}, testInspectOptions(&buf)); err != nil {
+	if err := dispatchInspect(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{}), "core/metrics", []string{catDir}, testInspectOptions(&buf)); err != nil {
 		t.Fatalf("bare Feature name should inspect cleanly; got: %v", err)
 	}
 	out := buf.String()
@@ -150,7 +151,7 @@ func TestInspectBareName_Aggregate_ResolvesAwayFromTheWorkspaceRoot(t *testing.T
 	})
 
 	var buf bytes.Buffer
-	if err := dispatchInspect(resolveTempWorkspace(t, tempWorkspaceOptions{}), "storefront", []string{catDir}, testInspectOptions(&buf)); err != nil {
+	if err := dispatchInspect(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{}), "storefront", []string{catDir}, testInspectOptions(&buf)); err != nil {
 		t.Fatalf("a bare Aggregate name should resolve from outside the workspace root; got: %v", err)
 	}
 	out := buf.String()
@@ -170,7 +171,7 @@ func TestInspectBareName_Unresolvable(t *testing.T) {
 	t.Parallel()
 	catDir := writeBareNameCatalog(t, map[string]string{"component.yaml": bareNameComponentFixture})
 
-	err := dispatchInspect(resolveTempWorkspace(t, tempWorkspaceOptions{}), "core/does-not-exist", []string{catDir}, testInspectOptions(&bytes.Buffer{}))
+	err := dispatchInspect(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{}), "core/does-not-exist", []string{catDir}, testInspectOptions(&bytes.Buffer{}))
 	if err == nil {
 		t.Fatal("expected not-found error for an unresolvable bare name; got nil")
 	}
