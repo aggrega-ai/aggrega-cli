@@ -315,6 +315,56 @@ func TestARequestThatAddressesNoEditIsRefused(t *testing.T) {
 	}
 }
 
+// TestAnEditOutsideTheSetIsRefusedWithTheSetNamed pins that refusing an edit
+// this capability does not apply also says which edits it does.
+//
+// The expectation is read from the enumeration rather than written here, so an
+// edit added to the enumeration is required of the refusal too rather than
+// quietly missing from it.
+//
+// Every site that raises the condition is driven, because they raise one
+// condition and a caller reaching any of them is owed one sentence. Two are not
+// reachable through Apply, which refuses an edit outside the set before it
+// composes anything; they are called directly so the set cannot go missing from
+// one of them while the reachable one still names it.
+func TestAnEditOutsideTheSetIsRefusedWithTheSetNamed(t *testing.T) {
+	outside := Options{File: "storefront.aggregate.yaml", Kind: Kind("delete-component"),
+		Node: []string{"spec", "components"}, Name: "web", Value: "a/b:1.0.0"}
+	root, _ := writeWorkspace(t, authoredAggregate)
+
+	_, applyErr := Apply(t.Context(), root, outside)
+	_, containerErr := containerFor(outside)
+	_, entryErr := entryValue(outside)
+
+	for _, tc := range []struct {
+		name string
+		err  error
+	}{
+		{"the request check", applyErr},
+		{"the container derivation", containerErr},
+		{"the entry rendering", entryErr},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if !errors.Is(tc.err, errUnknownKind) {
+				t.Fatalf("want the refusal for an edit outside the set; got %v", tc.err)
+			}
+			got := tc.err.Error()
+			if !strings.Contains(got, `"delete-component"`) {
+				t.Errorf("the refusal does not quote the edit that was named: %s", got)
+			}
+			kinds := Kinds()
+			if len(kinds) == 0 {
+				t.Fatal("the enumeration is empty, so the loop below asserts nothing")
+			}
+			for _, k := range kinds {
+				if !strings.Contains(got, string(k)) {
+					t.Errorf("the refusal does not name the %q edit, which a caller may ask for: %s", k, got)
+				}
+			}
+		})
+	}
+}
+
 // TestNoWorkspaceIsRefused covers the one refusal that cannot be driven through
 // the fixture, because it is about the root rather than the document.
 func TestNoWorkspaceIsRefused(t *testing.T) {

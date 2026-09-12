@@ -5,6 +5,8 @@ package editops
 
 import (
 	"errors"
+	"fmt"
+	"strings"
 
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
@@ -65,6 +67,9 @@ var (
 	errUnknownDocumentKind = errors.New("the document named declares a kind that is not one this product " +
 		"validates, so there is no schema to check the result of an edit against")
 
+	// Raised through unknownKind, which is what names the admissible set
+	// alongside it. Wrapping this value directly would refuse without saying
+	// what may be named instead.
 	errUnknownKind = errors.New("the edit named is not one this capability applies")
 
 	errNoNodePath = errors.New("no node was named: give the path to the node the edit is about, from the " +
@@ -92,3 +97,40 @@ var (
 	errEntryPresentDiffers = errors.New("an entry of that name is already there carrying something else, " +
 		"and replacing what an author wrote is not one of the edits this capability applies")
 )
+
+// unknownKind refuses an edit outside the admissible set and names the set the
+// caller may ask for instead.
+//
+// A caller that names no edit at all is told what it may name. A caller that
+// named one and got it wrong is the caller that most needs the same list, so it
+// is told the same thing rather than only that its request was not admissible.
+//
+// The names are read from the enumeration rather than written here. A list
+// written into a refusal is a second statement of the bound, and the two would
+// agree until an edit was added to one of them.
+//
+// It composes the sentence rather than replacing it, so the condition is still
+// the one value a caller matches on, and still unregistered: it names no rule a
+// reader would look up, and nothing it refuses halts a build.
+func unknownKind(named Kind) error {
+	return fmt.Errorf("%w: %q; name one of %s", errUnknownKind, string(named), admissibleEdits())
+}
+
+// admissibleEdits renders the admissible edits as the fragment a refusal reads
+// out, joining all but the last with commas and the last with "or".
+//
+// A surface composing a refusal of its own renders the same set at its own
+// boundary, and that near-duplicate is deliberate: what may never be restated is
+// the BOUND, which every one of them reads from the enumeration, while the
+// sentence carrying it is each surface's own to write in its own voice.
+func admissibleEdits() string {
+	kinds := Kinds()
+	names := make([]string, 0, len(kinds))
+	for _, k := range kinds {
+		names = append(names, string(k))
+	}
+	if len(names) < 2 {
+		return strings.Join(names, "")
+	}
+	return strings.Join(names[:len(names)-1], ", ") + " or " + names[len(names)-1]
+}

@@ -316,7 +316,7 @@ func containerFor(opts Options) ([]string, error) {
 	case KindSetValue:
 		return append(node, "values"), nil
 	default:
-		return nil, fmt.Errorf("%w: %q", errUnknownKind, string(opts.Kind))
+		return nil, unknownKind(opts.Kind)
 	}
 }
 
@@ -354,7 +354,7 @@ func entryValue(opts Options) (*yaml.Node, error) {
 	case KindSetValue:
 		return scalarNode(opts.Value), nil
 	default:
-		return nil, fmt.Errorf("%w: %q", errUnknownKind, string(opts.Kind))
+		return nil, unknownKind(opts.Kind)
 	}
 }
 
@@ -421,7 +421,7 @@ func checkRequest(opts Options) error {
 	switch opts.Kind {
 	case KindAddComponent, KindAttachFeature, KindWireEdge, KindSetValue:
 	default:
-		return fmt.Errorf("%w: %q", errUnknownKind, string(opts.Kind))
+		return unknownKind(opts.Kind)
 	}
 	if len(opts.Node) == 0 {
 		return errNoNodePath

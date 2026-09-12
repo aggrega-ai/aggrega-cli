@@ -439,30 +439,54 @@ func TestEditDocumentRefusesARequestThatNamesNoEdit(t *testing.T) {
 	}
 }
 
-// TestEditDocumentRefusalNamesEveryAdmissibleEdit pins that the refusal for a
-// missing edit lists the set from the shared layer's own enumeration rather than
-// from a literal here.
+// TestEditDocumentRefusalNamesEveryAdmissibleEdit pins that both refusals about
+// which edit was named list the set from the shared layer's own enumeration
+// rather than from a literal here.
 //
 // Without it a surface could advertise a set the layer does not apply — telling
 // a caller to name something that would then be refused, or omitting something
 // it may name.
+//
+// A caller that named no edit and a caller that named one outside the set are
+// owed the same list, and the second is the one that most needs it: it mistyped,
+// so it is the caller with something to correct. They are refused at different
+// places — the first by this surface, the second by the shared layer — so both
+// are driven rather than one standing in for the other.
 func TestEditDocumentRefusalNamesEveryAdmissibleEdit(t *testing.T) {
 	t.Parallel()
-	srv, _ := documentEditFixture(t, "storefront.aggregate.yaml", editableAggregate)
 
-	resp := callDaemonMethod(t, srv, "aggrega/editDocument",
-		map[string]any{"file": "storefront.aggregate.yaml"})
-	if resp.Error == nil {
-		t.Fatal("a request naming no edit was accepted")
-	}
-	kinds := editops.Kinds()
-	if len(kinds) == 0 {
-		t.Fatal("the shared layer enumerates no edits, so the loop below asserts nothing")
-	}
-	for _, kind := range kinds {
-		if !strings.Contains(resp.Error.Message, string(kind)) {
-			t.Errorf("the refusal does not name the %q edit: %q", kind, resp.Error.Message)
-		}
+	for _, tc := range []struct {
+		name   string
+		params map[string]any
+	}{
+		{"no edit named", map[string]any{"file": "storefront.aggregate.yaml"}},
+		{
+			"an edit outside the set",
+			map[string]any{
+				"file": "storefront.aggregate.yaml",
+				"edit": "delete-component",
+				"node": []string{"spec", "components"},
+				"name": "web",
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv, _ := documentEditFixture(t, "storefront.aggregate.yaml", editableAggregate)
+
+			resp := callDaemonMethod(t, srv, "aggrega/editDocument", tc.params)
+			if resp.Error == nil {
+				t.Fatal("a request that addresses no edit was accepted")
+			}
+			kinds := editops.Kinds()
+			if len(kinds) == 0 {
+				t.Fatal("the shared layer enumerates no edits, so the loop below asserts nothing")
+			}
+			for _, kind := range kinds {
+				if !strings.Contains(resp.Error.Message, string(kind)) {
+					t.Errorf("the refusal does not name the %q edit: %q", kind, resp.Error.Message)
+				}
+			}
+		})
 	}
 }
 
