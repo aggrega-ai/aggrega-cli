@@ -27,6 +27,20 @@ import (
 // adds it has to decide deliberately whether the shape check goes with it. The
 // test is a floor, not a proof — it counts call sites, and cannot tell whether an
 // existing one still performs the check.
+//
+// The census matches the call shape alone — the selector, dot-prefixed, and the
+// parenthesis that opens the argument list — and names no argument. Naming one
+// would tie this scan to an axis it has no stake in, so that reshaping that axis,
+// or merely wrapping a call across lines, would leave the scan matching nothing
+// while the call sites it exists to count are all still there.
+//
+// The dot prefix keeps the declaration in pkg/closure out of the count and means
+// an import alias cannot hide a call, since the selector is what precedes the
+// parenthesis whatever a caller names the package. Dropping the package qualifier
+// is safe because the selector alone is unambiguous: the module declares this name
+// once. That is not a standing assumption — a second, unrelated declaration of the
+// name, called outside the map below, surfaces here as an unlisted site, which is
+// a decision to take deliberately rather than a false positive to suppress.
 func TestClosureComputeCallSiteCensus(t *testing.T) {
 	t.Parallel()
 	root := repoRoot(t)
@@ -56,7 +70,7 @@ func TestClosureComputeCallSiteCensus(t *testing.T) {
 		if rerr != nil {
 			return rerr
 		}
-		if n := strings.Count(string(b), "closure.ComputeClosure(context.Background(), "); n > 0 {
+		if n := strings.Count(string(b), ".ComputeClosure("); n > 0 {
 			rel, _ := filepath.Rel(root, path)
 			found[filepath.ToSlash(rel)] = n
 		}

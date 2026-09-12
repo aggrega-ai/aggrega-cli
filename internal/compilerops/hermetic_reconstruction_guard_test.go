@@ -23,25 +23,54 @@ import (
 // produces a closure that is neither the compute-only one nor the build's, and a
 // drift verify against it reports entries that are not drift.
 //
-// Each form is searched dot-prefixed, so the declarations in pkg/closure are not
-// matches and an import alias cannot hide a call — whatever a caller names the
-// package, the selector is what precedes the parenthesis.
+// Each form is the call shape and nothing else: the selector, dot-prefixed, and
+// the parenthesis that opens the argument list. Both halves earn their place, and
+// so does what the form deliberately leaves out.
+//
+// The dot prefix keeps the declarations in pkg/closure out of the census and means
+// an import alias cannot hide a call — whatever a caller names the package, the
+// selector is what precedes the parenthesis. The trailing parenthesis holds the
+// match to call syntax rather than a bare mention, which is the coverage bound
+// declared on the test below.
+//
+// No argument is named, and that omission is what keeps a form within reach of the
+// thing it guards. The subject here is WHICH FILES reconstruct a closure — a
+// property of the call, not of anything passed to it. A form that also pinned an
+// argument would couple this guard to an axis it has no stake in, such as how a
+// cancellation signal is obtained, and reshaping that axis anywhere in the module
+// would stop the census matching. Two costs follow, and the second is the
+// dangerous one. At a listed home the want-side check below still fails, but it
+// reports that the home moved and so invites an edit to this map — a repair to the
+// wrong thing. At an unlisted home there is nothing to fail: a surface that
+// reconstructs a closure outside the shared computation is simply not seen, which
+// is the one direction a guard must not fail in.
+//
+// Line wrapping is a second, independent way an argument-bearing form loses reach.
+// Pinning an argument means pinning the separator after it, and a call wrapped
+// across lines puts a newline where such a form demands a space — so the same call,
+// reformatted and otherwise untouched, stops matching.
+//
+// Rejected, recorded so it is not re-proposed: censusing on the cancellation
+// argument the sites share. It reads as the more precise pattern and is the same
+// defect one signature change later, because it again names something this guard
+// has no stake in; the next parameter rename or wrapper puts the census out of
+// reach with nothing reporting why.
 //
 // The map is the specification, not a record of what happens to be there. A new
 // entry is a deliberate decision that a further surface may reconstruct a
 // closure, taken by editing this file — which is the point: the edit is what puts
 // the decision in front of a reviewer.
 var hermeticReconstructionHomes = map[string][]string{
-	".ReconstructClosureAxes(context.Background(), ": {
+	".ReconstructClosureAxes(": {
 		"internal/compilerops/preview.go",
 	},
-	".ReconstructWorkspaceSocketEntities(context.Background(), ": {
+	".ReconstructWorkspaceSocketEntities(": {
 		"internal/compilerops/preview.go",
 	},
 	// The fold has two homes and they are different operations rather than a
 	// duplicate: the lock-time descent folds the axes it is about to pin, and the
 	// resolution folds them for a caller that asked for an augmented closure.
-	".AugmentClosure(context.Background(), ": {
+	".AugmentClosure(": {
 		"internal/compilerops/compilerops.go",
 		"internal/pullops/pull.go",
 	},
