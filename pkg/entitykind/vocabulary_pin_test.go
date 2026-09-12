@@ -38,6 +38,7 @@ var nonEntitySchemaTokens = map[string]string{
 	"template-context":          "the shape handed to a template, not a document a user writes",
 	"path-template-context":     "the shape handed to a path template, not a document a user writes",
 	"plugins-trust":             "a generated record of the plugin identity trusted for each verdict-returning attachment, not authored by hand",
+	"serve-wire":                "a wire contract between a client and a background session, not a document a user writes",
 	"wasm-annotation-transform": "a plugin wire contract",
 	"wasm-cli":                  "a plugin wire contract",
 	"wasm-describe":             "a plugin wire contract",
