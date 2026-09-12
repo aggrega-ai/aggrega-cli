@@ -5,9 +5,11 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -397,5 +399,119 @@ func TestTerraformSourcedExampleRenderDeterminism(t *testing.T) {
 	}
 	if !bytes.Contains(prov, []byte("# aggrega.ai/provider: terraform")) {
 		t.Errorf("provenance file missing terraform provider identity; got:\n%s", prov)
+	}
+}
+
+// TestTerraformDeclaredSensitivityExampleRenderDeterminism drives the
+// terraform-declared-sensitivity example through two independent builds and
+// asserts the rendered tree is byte-identical across runs and that a value the
+// Component declares sensitive arrives as Terraform's own sensitivity attribute:
+// an override file lands beside the module's own files and marks exactly the one
+// module input the declaration names.
+//
+// Both directions are asserted, and the second is the one a presence check
+// cannot see. Marking the declared input is what the example demonstrates;
+// leaving the two public coordinates unmarked is what keeps the marking a
+// consequence of the declaration rather than of a variable's name or its value.
+// A build that marked every input satisfies a presence check while hiding values
+// that were never secret, and a consumer that has started reading redacted plan
+// output is expensive to walk back — so the marked set is compared for equality
+// rather than searched for the name that ought to be in it.
+//
+// The expectations here are the ones the example's own page states, written out
+// as literals. They are not recomputed from the Component's declaration or from
+// the module the Recipe vendors, because those are what the build reads: an
+// expectation derived from them would move with a defect planted in them and
+// assert nothing.
+func TestTerraformDeclaredSensitivityExampleRenderDeterminism(t *testing.T) {
+	catalogRoot := siblingCatalogRootForExamples(t)
+	src := workedExampleDir(t, "terraform-declared-sensitivity")
+
+	// One overlay for both runs, so the two builds see byte-identical inputs.
+	stack := exampleCatalogStack(t, catalogRoot, "provider/terraform")
+
+	run1 := buildExampleToDist(t, src, stack)
+	run2 := buildExampleToDist(t, src, stack)
+	assertByteIdenticalTrees(t, run1, run2)
+
+	// All three module inputs are rendered as arguments of the component's module
+	// block. That is what makes the marking below a choice rather than an artifact
+	// of two inputs being absent: every unmarked input is present and could have
+	// been marked.
+	wantBlock := `module "store" {
+  source = "./modules/store"
+
+  access_key_id     = "AKIAEXAMPLE0001"
+  bucket            = "app-artifacts"
+  secret_access_key = "example-placeholder-not-a-real-credential"
+}
+`
+	gotRoot := distFile(t, run1, "aggrega.modules.tf")
+	if !strings.Contains(string(gotRoot), wantBlock) {
+		t.Errorf("root configuration module block mismatch:\n--- got ---\n%s\n--- want ---\n%s", gotRoot, wantBlock)
+	}
+
+	// The vendored module declares none of its own inputs sensitive, so the
+	// attribute asserted below can only have come from the appended override. The
+	// check reads attribute declarations instead of searching for the word: the
+	// module file explains in a comment why it carries no such attribute, and a
+	// substring search matches that sentence and keeps passing on a module that
+	// has since grown one.
+	vars := distFile(t, run1, "/variables.tf")
+	for i, line := range strings.Split(string(vars), "\n") {
+		stmt := strings.TrimSpace(line)
+		if strings.HasPrefix(stmt, "#") {
+			continue
+		}
+		if strings.HasPrefix(stmt, "sensitive") {
+			t.Errorf("the vendored variables.tf declares a sensitivity attribute of its own at line %d (%q), so the rendered marking is no longer distinguishable from the module's own text:\n%s", i+1, stmt, vars)
+		}
+	}
+
+	// Terraform merges an override into the configuration in its own directory and
+	// ignores one placed anywhere else without complaint, so where the file lands
+	// is part of what is asserted. Its absence is a legal build that renders the
+	// credential unmarked, which is the failure this case exists to catch and the
+	// one an exit code cannot see.
+	const overridePath = "infra/terraform/modules/store/aggrega_override.tf.json"
+	override, emitted := run1[overridePath]
+	if !emitted {
+		t.Fatalf("no sensitivity override at %q: the declared value did not reach Terraform's own sensitivity attribute; rendered files: %v", overridePath, sortedKeys(run1))
+	}
+
+	// Decoded rather than searched, so what follows is a statement about the
+	// document's structure. Unknown fields are refused because the override
+	// carries `sensitive` and nothing else: an attribute in this syntax that
+	// Terraform does not evaluate is accepted in silence and reads as correct in
+	// every diff.
+	var doc struct {
+		Variable map[string]struct {
+			Sensitive *bool `json:"sensitive"`
+		} `json:"variable"`
+	}
+	dec := json.NewDecoder(bytes.NewReader(override))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&doc); err != nil {
+		t.Fatalf("decode %s: %v\n%s", overridePath, err, override)
+	}
+
+	// Equality on the whole marked set. A lookup for the declared input passes on
+	// a build that marks every input, which is the over-collecting direction.
+	wantMarked := []string{"secret_access_key"}
+	gotMarked := sortedKeys(doc.Variable)
+	if !slices.Equal(gotMarked, wantMarked) {
+		t.Errorf("the override marks %v; the declaration names %v, and the marking follows the declaration alone:\n%s", gotMarked, wantMarked, override)
+	}
+
+	// Named one by one as well, so a failure says which direction broke. Both
+	// carry public identifiers, neither is declared sensitive, and access_key_id
+	// sits beside the credential with a name that reads like one.
+	for _, public := range []string{"access_key_id", "bucket"} {
+		if _, marked := doc.Variable[public]; marked {
+			t.Errorf("the override marks %q, which no declaration names sensitive; marking a public input withholds a value the reader needs in order to read a plan:\n%s", public, override)
+		}
+	}
+	if marking, marked := doc.Variable["secret_access_key"]; !marked || marking.Sensitive == nil || !*marking.Sensitive {
+		t.Errorf("the declared-sensitive input carries no `sensitive` marking in the override:\n%s", override)
 	}
 }
