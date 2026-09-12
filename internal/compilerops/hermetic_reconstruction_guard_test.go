@@ -95,6 +95,29 @@ var hermeticReconstructionHomes = map[string][]string{
 // because a guard whose corpus silently stopped containing what it guards reports
 // a clean verdict over nothing at all.
 //
+// That second axis is also what calibrates the scan, and it calibrates it only for
+// a form that names at least one home. A form naming none has nothing on the want
+// side to go missing: it reports the same clean verdict whether its pattern still
+// matches the call or has never matched anything in the module, which makes it
+// unfalsifiable — the one property a guard may not have. The two ways a list can be
+// empty are not equally silent, and the difference is what decides where the check
+// goes. Emptying a LISTED form's homes is caught by the comparison below, because
+// the call sites are still there to be reported as unlisted. A form that names no
+// home and matches nothing passes clean. The silent state is therefore exactly the
+// state a no-home form is meant to be in, so the check has to be on the declaration
+// rather than on the result.
+//
+// The loop below refuses such a form instead of censusing it. That arm's job is to
+// hold the precondition under which the want-side comparison means anything, not to
+// add a second calibration beside it: once every form names a home, a scan that
+// stopped reaching the module fails on every form at once.
+//
+// The consequence, recorded so it is not read as an oversight: this map cannot
+// express a prohibition — "no non-test file may perform this call". Such a form has
+// by construction no non-test occurrence to calibrate against, so holding one
+// honestly needs a positive control this map has nowhere to put. Declare a
+// prohibition somewhere that carries one; do not empty a list here to mean it.
+//
 // 🔴 COVERAGE BOUND. This matches CALL SYNTAX — a textual selector in call
 // position. A call reached through a function VALUE (a variable, a struct field, a
 // dispatch-table entry, an argument), through an interface method, or through
@@ -154,6 +177,15 @@ func TestHermeticClosureReconstructionHasOneHome(t *testing.T) {
 	for _, form := range sortedFormKeys(hermeticReconstructionHomes) {
 		want := append([]string(nil), hermeticReconstructionHomes[form]...)
 		sort.Strings(want)
+
+		if len(want) == 0 {
+			t.Errorf(""+
+				"%s is declared in hermeticReconstructionHomes and names no home.\n"+
+				"A form with no home reports the same clean verdict whether its pattern still matches the call or matches nothing at all, so it guards nothing and a typo in it is indistinguishable from a correct one.\n"+
+				"List the files permitted to perform the call, or drop the form.",
+				form)
+			continue
+		}
 
 		got := make([]string, 0, len(found[form]))
 		for file := range found[form] {
