@@ -65,9 +65,7 @@ func keyedVerdictConfig(host string, pubPEM []byte, required bool) workspaceconf
 // cacheVerdictSocketPlugins / verifyCachedVerdictSocketPlugin (NOT placed in the
 // closure) is signature-verified at pull against the resolving registry's trust
 // policy, and a tampered or unsigned gate HALTS the pull with the same Loud
-// Guardrail the pinned plugin path produces. Previously a verdict gate reached
-// build having had only its content digest checked; this proves the full
-// registry-signature verdict now fires on the verdict tier at pull.
+// Guardrail the pinned plugin path produces.
 func TestVerdictGateSignatureHaltsAtPull(t *testing.T) {
 	const uri = "linter/publishing-linter"
 
