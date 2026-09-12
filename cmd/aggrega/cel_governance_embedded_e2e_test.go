@@ -26,6 +26,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -346,7 +347,7 @@ func TestCelEmbedded_LabelTransformApplies(t *testing.T) {
 	}
 
 	out := filepath.Join(root, "out")
-	if err := dispatchBuildWithDiag(rw, releasePath, []string{catalogDir, standardCatalogDir(t)}, false, buildDiagOptions{quiet: true}, buildops.RunOptions{OutDir: out}, os.Stderr, os.Stderr); err != nil {
+	if err := dispatchBuildWithDiag(context.Background(), rw, releasePath, []string{catalogDir, standardCatalogDir(t)}, false, buildDiagOptions{quiet: true}, buildops.RunOptions{OutDir: out}, os.Stderr, os.Stderr); err != nil {
 		t.Fatalf("build: %v", err)
 	}
 	if found, tree := distTreeContains(t, out, "compliance.example.com/tier=gold"); !found {
@@ -924,7 +925,7 @@ plugins:
 		t.Fatalf("pull: %v", err)
 	}
 	outA := filepath.Join(root, "outA")
-	if err := dispatchBuildWithDiag(rw, releasePath, catDirs, false, buildDiagOptions{quiet: true}, buildops.RunOptions{OutDir: outA}, os.Stderr, os.Stderr); err != nil {
+	if err := dispatchBuildWithDiag(context.Background(), rw, releasePath, catDirs, false, buildDiagOptions{quiet: true}, buildops.RunOptions{OutDir: outA}, os.Stderr, os.Stderr); err != nil {
 		t.Fatalf("build A: %v", err)
 	}
 	if found, tree := distTreeContains(t, outA, "a.example.com/first=set"); !found {
@@ -934,7 +935,7 @@ plugins:
 		t.Fatalf("build A attached no feature; the comparison would be vacuous:\n%s", tree)
 	}
 	outB := filepath.Join(root, "outB")
-	if err := dispatchBuildWithDiag(rw, releasePath, catDirs, false, buildDiagOptions{quiet: true}, buildops.RunOptions{OutDir: outB}, os.Stderr, os.Stderr); err != nil {
+	if err := dispatchBuildWithDiag(context.Background(), rw, releasePath, catDirs, false, buildDiagOptions{quiet: true}, buildops.RunOptions{OutDir: outB}, os.Stderr, os.Stderr); err != nil {
 		t.Fatalf("build B: %v", err)
 	}
 	if !snapshotEqual(snapshotDir(t, outA), snapshotDir(t, outB)) {

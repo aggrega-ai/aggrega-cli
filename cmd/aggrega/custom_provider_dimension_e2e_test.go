@@ -27,6 +27,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"os"
 	"os/exec"
@@ -370,7 +371,7 @@ func TestIntegration_CustomProviderDimension_RoundTrip(t *testing.T) {
 		// Point 3: a build loads the PULLED guest and renders THROUGH it. The
 		// provider-distinctive "rendered-node:" content proves the pulled guest
 		// rendered, not an embedded provider.
-		if err := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", catDirs, false, os.Stderr, os.Stdout); err != nil {
+		if err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", catDirs, false, os.Stderr, os.Stdout); err != nil {
 			t.Fatalf("build through the pulled custom provider: %v", err)
 		}
 		found, tree := distTreeContains(t, "dist", renderedNodePrefix)
@@ -387,7 +388,7 @@ func TestIntegration_CustomProviderDimension_RoundTrip(t *testing.T) {
 		if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), ReleasePath: "release.yaml", CatalogDirs: catDirs}); err != nil {
 			t.Fatalf("second registry pull: %v", err)
 		}
-		if err := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", catDirs, false, os.Stderr, os.Stdout); err != nil {
+		if err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", catDirs, false, os.Stderr, os.Stdout); err != nil {
 			t.Fatalf("second build: %v", err)
 		}
 		if second := hashDistTree(t, "dist"); second != firstTree {
@@ -419,7 +420,7 @@ func TestIntegration_CustomProviderDimension_RoundTrip(t *testing.T) {
 		}
 		// A first build (auto_pull on) establishes the rendered baseline.
 		_ = os.RemoveAll("dist")
-		if err := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", catDirs, false, os.Stderr, os.Stdout); err != nil {
+		if err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", catDirs, false, os.Stderr, os.Stdout); err != nil {
 			t.Fatalf("baseline build: %v", err)
 		}
 		baseline := hashDistTree(t, "dist")
@@ -427,7 +428,7 @@ func TestIntegration_CustomProviderDimension_RoundTrip(t *testing.T) {
 		// Freeze the workspace (no auto-pull heal), then rebuild with no network.
 		writeWorkspaceConfig(t, ws, "default_registry: \""+host+"\"\nauto_pull: false\noffline: false\n"+pinned)
 		_ = os.RemoveAll("dist")
-		if err := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", catDirs, false, os.Stderr, os.Stdout); err != nil {
+		if err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", catDirs, false, os.Stderr, os.Stdout); err != nil {
 			t.Fatalf("frozen offline rebuild halted; the workspace provider socket axis must reconstruct from the lockfile: %v", err)
 		}
 		if found, tree := distTreeContains(t, "dist", renderedNodePrefix); !found {
@@ -498,7 +499,7 @@ spec:
 		}
 		assertProviderPinnedInLock(t, lf, capability, pluginCoord, wasmDigest)
 
-		if err := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", catDirs, false, os.Stderr, os.Stdout); err != nil {
+		if err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", catDirs, false, os.Stderr, os.Stdout); err != nil {
 			t.Fatalf("build with a core-target override binding: %v", err)
 		}
 		// The pulled guest rendered the helm node — its provider-distinctive content
@@ -526,7 +527,7 @@ spec:
 		if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), ReleasePath: "release.yaml", CatalogDirs: catDirs}); err != nil {
 			t.Fatalf("registry pull (unknown target): %v", err)
 		}
-		err := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", catDirs, false, os.Stderr, os.Stdout)
+		err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", catDirs, false, os.Stderr, os.Stdout)
 		if err == nil {
 			t.Fatal("build SUCCEEDED for a capability no provider plugin serves and no binding selects; expected a loud halt")
 		}

@@ -23,6 +23,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -193,7 +194,7 @@ func TestPullThenBuildOfflineSucceeds(t *testing.T) {
 	}
 
 	var diag, out bytes.Buffer
-	if err := dispatchBuildWithDiag(offlineWS, releasePath, []string{catalogDir}, false,
+	if err := dispatchBuildWithDiag(context.Background(), offlineWS, releasePath, []string{catalogDir}, false,
 		buildDiagOptions{}, buildops.RunOptions{}, &diag, &out); err != nil {
 		t.Fatalf("an offline build over a fully-pinned Release must render: %v\ndiagnostics:\n%s", err, diag.String())
 	}
@@ -290,7 +291,7 @@ func TestBuildAutoPullFetchesOncePerFill(t *testing.T) {
 	ws := resolveTempWorkspace(t, tempWorkspaceOptions{Root: root})
 
 	var diag, out bytes.Buffer
-	if err := dispatchBuildWithDiag(ws, releasePath, []string{catalogDir}, false,
+	if err := dispatchBuildWithDiag(context.Background(), ws, releasePath, []string{catalogDir}, false,
 		buildDiagOptions{}, buildops.RunOptions{AutoPull: true}, &diag, &out); err != nil {
 		t.Fatalf("build with the automatic fill: %v\ndiagnostics:\n%s", err, diag.String())
 	}

@@ -358,7 +358,7 @@ func assertFrozenBuildGreenAndByteIdentical(t *testing.T, wsRoot, host string, c
 	writeWorkspaceConfig(t, wsRoot, "default_registry: \""+host+"\"\nauto_pull: false\noffline: false\n"+pinnedBlock)
 
 	_ = os.RemoveAll("dist")
-	if err := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}), "release.yaml", catDirs, false, io.Discard, io.Discard); err != nil {
+	if err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}), "release.yaml", catDirs, false, io.Discard, io.Discard); err != nil {
 		t.Fatalf("frozen offline build of a registry socket halted; the socket axis must reconstruct from the lockfile: %v", err)
 	}
 	if found, tree := distTreeContains(t, "dist", witness); !found {
@@ -367,7 +367,7 @@ func assertFrozenBuildGreenAndByteIdentical(t *testing.T, wsRoot, host string, c
 	first := hashDistTree(t, "dist")
 
 	_ = os.RemoveAll("dist")
-	if err := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}), "release.yaml", catDirs, false, io.Discard, io.Discard); err != nil {
+	if err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}), "release.yaml", catDirs, false, io.Discard, io.Discard); err != nil {
 		t.Fatalf("second frozen offline build halted: %v", err)
 	}
 	if second := hashDistTree(t, "dist"); second != first {
@@ -407,7 +407,7 @@ func assertFrozenBuildDriftsOnTamperedSocketPin(t *testing.T, wsRoot, host strin
 	}
 
 	_ = os.RemoveAll("dist")
-	err = dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}), "release.yaml", catDirs, false, io.Discard, io.Discard)
+	err = dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}), "release.yaml", catDirs, false, io.Discard, io.Discard)
 	if err == nil {
 		t.Fatal("frozen build with a tampered socket .wasm pin SUCCEEDED; drift over the reconstructed workspace-socket axis was not detected — the fix blinded the drift check")
 	}

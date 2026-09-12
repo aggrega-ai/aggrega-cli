@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -72,7 +73,7 @@ func TestBuildIsInvocationLocationIndependent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolve workspace from root: %v", err)
 	}
-	if err := dispatchBuild(wsFromRoot, releasePath, nil, false, os.Stderr, os.Stdout); err != nil {
+	if err := dispatchBuild(context.Background(), wsFromRoot, releasePath, nil, false, os.Stderr, os.Stdout); err != nil {
 		t.Fatalf("build from root: %v", err)
 	}
 	fromRoot := distSnapshot(t, filepath.Join(root, "dist"))
@@ -98,7 +99,7 @@ func TestBuildIsInvocationLocationIndependent(t *testing.T) {
 		t.Fatalf("the upward walk found %s from the project root and %s from %s; both working directories sit under one marked workspace, so discovery is not invocation-location-independent",
 			wsFromRoot.Root(), wsFromSub.Root(), sub)
 	}
-	if err := dispatchBuild(wsFromSub, releasePath, nil, false, os.Stderr, os.Stdout); err != nil {
+	if err := dispatchBuild(context.Background(), wsFromSub, releasePath, nil, false, os.Stderr, os.Stdout); err != nil {
 		t.Fatalf("build from subdir: %v", err)
 	}
 	fromSub := distSnapshot(t, filepath.Join(sub, "dist"))

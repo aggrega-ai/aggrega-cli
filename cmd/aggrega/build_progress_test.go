@@ -5,6 +5,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"path/filepath"
 	"strings"
@@ -1163,7 +1164,7 @@ func TestBuild_SingleFinalBlockOnStdout(t *testing.T) {
 	}
 
 	var stdout, stderr bytes.Buffer
-	if err := dispatchBuildWithDiag(resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releaseYAML, []string{catalogRoot}, false, buildDiagOptions{}, buildops.RunOptions{}, &stderr, &stdout); err != nil {
+	if err := dispatchBuildWithDiag(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releaseYAML, []string{catalogRoot}, false, buildDiagOptions{}, buildops.RunOptions{}, &stderr, &stdout); err != nil {
 		t.Fatalf("build failed: %v (stderr=%q)", err, stderr.String())
 	}
 

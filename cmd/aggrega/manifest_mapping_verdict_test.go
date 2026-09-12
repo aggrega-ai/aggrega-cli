@@ -9,6 +9,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -179,7 +180,7 @@ func TestBuild_InconsistentMappingHalts(t *testing.T) {
 	// Now make the mapping inconsistent, leaving everything else in place.
 	writeMappingVerdictManifest(t, root, "elsewhere-recipe:1.0.0")
 
-	err := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
+	err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
 		releasePath, catalogDirs, false, &bytes.Buffer{}, &bytes.Buffer{})
 	if err == nil {
 		t.Fatal("build must halt on a Manifest mapping the catalog contradicts")
@@ -208,7 +209,7 @@ func TestBuild_ConsistentMappingUnaffected(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("pull over a consistent mapping must succeed: %v", err)
 	}
-	err := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
+	err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
 		releasePath, catalogDirs, false, &bytes.Buffer{}, &bytes.Buffer{})
 	if errors.Is(err, catalog.ErrManifestImplementsMismatch()) {
 		t.Fatalf("a consistent mapping must not trip the gate; got %v", err)

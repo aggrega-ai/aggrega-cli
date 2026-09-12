@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -29,7 +30,7 @@ func TestClosureUnificationByteIdentical(t *testing.T) {
 	relocateAggregateToCache(t, root, cacheDir, "mysub")
 
 	build := func() string {
-		if err := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false, os.Stderr, os.Stdout); err != nil {
+		if err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false, os.Stderr, os.Stdout); err != nil {
 			t.Fatalf("dispatchBuild: %v", err)
 		}
 		return readDistTree(t, filepath.Join(root, "dist"))

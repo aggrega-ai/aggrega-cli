@@ -7,6 +7,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"context"
 	"crypto/sha256"
 	"errors"
 	"fmt"
@@ -231,7 +232,7 @@ func TestE9DeterministicBuildAfterFreeze(t *testing.T) {
 	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{catalogDir}}); err != nil {
 		t.Fatalf("pull: %v", err)
 	}
-	if err := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false, os.Stderr, os.Stdout); err != nil {
+	if err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false, os.Stderr, os.Stdout); err != nil {
 		t.Fatalf("first build: %v", err)
 	}
 	first := snapshotDist(t, filepath.Join(root, "dist"))
@@ -241,7 +242,7 @@ func TestE9DeterministicBuildAfterFreeze(t *testing.T) {
 	if err := os.RemoveAll(filepath.Join(root, "dist")); err != nil {
 		t.Fatalf("clean dist: %v", err)
 	}
-	if err := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false, os.Stderr, os.Stdout); err != nil {
+	if err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false, os.Stderr, os.Stdout); err != nil {
 		t.Fatalf("second build: %v", err)
 	}
 	second := snapshotDist(t, filepath.Join(root, "dist"))
@@ -293,7 +294,7 @@ func TestE2SourceTamperHaltsBuild(t *testing.T) {
 		t.Fatalf("no cached blob.tgz found to tamper")
 	}
 
-	err := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false, os.Stderr, os.Stdout)
+	err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false, os.Stderr, os.Stdout)
 	if err == nil {
 		t.Fatalf("build succeeded over a tampered source; expected a loud halt")
 	}

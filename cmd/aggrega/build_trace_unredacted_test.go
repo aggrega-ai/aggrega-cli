@@ -5,6 +5,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"strings"
 	"testing"
 
@@ -22,7 +23,7 @@ import (
 // including a future one that does not read the flags — is bound by.
 func TestBuildRejectsUnredactedTraceWithoutTrace(t *testing.T) {
 	var diag, out bytes.Buffer
-	err := dispatchBuildWithDiag(resolveTempWorkspace(t, tempWorkspaceOptions{}), "release.yaml", nil, false,
+	err := dispatchBuildWithDiag(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{}), "release.yaml", nil, false,
 		buildDiagOptions{quiet: true},
 		buildops.RunOptions{TraceUnredacted: true}, &diag, &out)
 	if err == nil {
@@ -51,7 +52,7 @@ func TestBuildWithTraceDoesNotHitTheFlagPairingHalt(t *testing.T) {
 	t.Chdir(root)
 
 	var diag, out bytes.Buffer
-	err := dispatchBuildWithDiag(resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), "release.yaml", nil, true,
+	err := dispatchBuildWithDiag(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), "release.yaml", nil, true,
 		buildDiagOptions{quiet: true},
 		buildops.RunOptions{TraceUnredacted: true}, &diag, &out)
 	if err == nil {

@@ -5,6 +5,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"os"
@@ -202,7 +203,7 @@ func buildExampleToDist(t *testing.T, src string, catalogStack []string) map[str
 		t.Fatalf("prime lockfile via pull for example %q: %v", src, err)
 	}
 
-	if err := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), releasePath, catalogDirs, traceEnabled, io.Discard, io.Discard); err != nil {
+	if err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), releasePath, catalogDirs, traceEnabled, io.Discard, io.Discard); err != nil {
 		t.Fatalf("build example %q: %v", src, err)
 	}
 	return readExampleDistTree(t, ws)

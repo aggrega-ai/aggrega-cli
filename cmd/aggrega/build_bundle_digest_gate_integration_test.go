@@ -20,6 +20,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"io/fs"
 	"os"
@@ -253,7 +254,7 @@ func TestIntegration_BuildBundleDigestGate(t *testing.T) {
 			t.Fatalf("cached signature bundle absent at %s: %v", bundlePath, serr)
 		}
 
-		if berr := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", []string{std}, false, os.Stderr, os.Stdout); berr != nil {
+		if berr := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", []string{std}, false, os.Stderr, os.Stdout); berr != nil {
 			t.Fatalf("intact signed guest must build cleanly; got: %v", berr)
 		}
 		// The mutator ran: its injected label reached the rendered artifact.
@@ -275,7 +276,7 @@ func TestIntegration_BuildBundleDigestGate(t *testing.T) {
 			t.Fatalf("tamper cached bundle %s: %v", bundlePath, werr)
 		}
 
-		berr := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", []string{std}, false, os.Stderr, os.Stdout)
+		berr := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", []string{std}, false, os.Stderr, os.Stdout)
 		if !errors.Is(berr, pluginpath.ErrPluginBundleDigestMismatch()) {
 			t.Fatalf("a tampered cached bundle must halt with ErrPluginBundleDigestMismatch before instantiation; got: %v", berr)
 		}
@@ -292,7 +293,7 @@ func TestIntegration_BuildBundleDigestGate(t *testing.T) {
 		}
 		overwriteCachedBlobByDigest(t, filepath.Join(cwd, ".aggrega", "cache"), row.Digest, []byte("tampered-wasm-bytes-not-a-module"))
 
-		berr := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", []string{std}, false, os.Stderr, os.Stdout)
+		berr := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", []string{std}, false, os.Stderr, os.Stdout)
 		if !errors.Is(berr, oci.ErrFetchIntegrity()) {
 			t.Fatalf("a tampered .wasm must halt with ErrFetchIntegrity via the content-digest pin; got: %v", berr)
 		}
@@ -321,7 +322,7 @@ func TestIntegration_BuildBundleDigestGate(t *testing.T) {
 			t.Fatalf("unsigned guest recorded a signature fact %+v; verify-when-signed requires none", row.Signature)
 		}
 		// The gate is a no-op with no recorded fact: the build is NOT newly refused.
-		if berr := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", []string{std}, false, os.Stderr, os.Stdout); berr != nil {
+		if berr := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", []string{std}, false, os.Stderr, os.Stdout); berr != nil {
 			t.Fatalf("an unsigned guest must build per existing policy (no new refusal); got: %v", berr)
 		}
 		if found, tree := distTreeContains(t, "dist", proofMutatorLabel); !found {

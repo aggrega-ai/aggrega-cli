@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -87,7 +88,7 @@ spec:
 	releasePath := filepath.Join(root, "release.yaml")
 	catalogDirs := []string{catalogRoot}
 	traceEnabled := false
-	err := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, catalogDirs, traceEnabled, os.Stderr, os.Stdout)
+	err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, catalogDirs, traceEnabled, os.Stderr, os.Stdout)
 	if err == nil {
 		t.Errorf("unknown provider should error at render")
 	}

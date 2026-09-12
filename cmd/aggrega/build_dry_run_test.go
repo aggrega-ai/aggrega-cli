@@ -251,7 +251,7 @@ func TestBuildDryRunWritesNothingThenTheSameBuildWritesTheArtifacts(t *testing.T
 	before := treeSnapshot(t, root)
 
 	var out, diag bytes.Buffer
-	if err := dispatchBuildWithDiag(ws, releasePath, []string{catalogDir}, false,
+	if err := dispatchBuildWithDiag(context.Background(), ws, releasePath, []string{catalogDir}, false,
 		buildDiagOptions{}, buildops.RunOptions{DryRun: true}, &diag, &out); err != nil {
 		t.Fatalf("the dry run must complete the render: %v\ndiagnostics:\n%s", err, diag.String())
 	}
@@ -276,7 +276,7 @@ func TestBuildDryRunWritesNothingThenTheSameBuildWritesTheArtifacts(t *testing.T
 
 	// The same build without the flag: the artifacts appear.
 	var buildOut, buildDiag bytes.Buffer
-	if err := dispatchBuildWithDiag(ws, releasePath, []string{catalogDir}, false,
+	if err := dispatchBuildWithDiag(context.Background(), ws, releasePath, []string{catalogDir}, false,
 		buildDiagOptions{}, buildops.RunOptions{}, &buildDiag, &buildOut); err != nil {
 		t.Fatalf("the same build without --dry-run must write its artifacts: %v\ndiagnostics:\n%s", err, buildDiag.String())
 	}
@@ -344,7 +344,7 @@ func TestBuildDryRunRefusesTheFlagsThatWrite(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			before := treeSnapshot(t, root)
 			var out, diag bytes.Buffer
-			err := dispatchBuildWithDiag(ws, releasePath, []string{catalogDir}, tc.trace,
+			err := dispatchBuildWithDiag(context.Background(), ws, releasePath, []string{catalogDir}, tc.trace,
 				buildDiagOptions{}, tc.run, &diag, &out)
 			if err == nil {
 				t.Fatal("the pairing must halt; the build completed")
@@ -396,7 +396,7 @@ workspace:
 	before := treeSnapshot(t, root)
 
 	var out, diag bytes.Buffer
-	err := dispatchBuildWithDiag(ws, releasePath, []string{catalogDir}, false,
+	err := dispatchBuildWithDiag(context.Background(), ws, releasePath, []string{catalogDir}, false,
 		buildDiagOptions{}, buildops.RunOptions{DryRun: true}, &diag, &out)
 	if err == nil {
 		t.Fatal("a dry run with no lockfile must halt rather than fill one")
@@ -434,7 +434,7 @@ func TestBuildDryRunDeclinesAnUnpinnedExternalReference(t *testing.T) {
 	storeBefore := treeSnapshot(t, storeRoot)
 
 	var out, diag bytes.Buffer
-	err := dispatchBuildWithDiag(ws, releasePath, []string{catalogDir}, false,
+	err := dispatchBuildWithDiag(context.Background(), ws, releasePath, []string{catalogDir}, false,
 		buildDiagOptions{}, buildops.RunOptions{DryRun: true}, &diag, &out)
 	if err == nil {
 		t.Fatal("a dry run meeting an unpinned external reference must halt rather than fetch it")
@@ -509,7 +509,7 @@ func TestBuildDryRunServesAPinnedExternalReferenceFromTheStore(t *testing.T) {
 	// A real build over the resolved Release must render the reference from the
 	// store without going back to the endpoint.
 	var acqOut, acqDiag bytes.Buffer
-	if err := dispatchBuildWithDiag(ws, releasePath, []string{catalogDir}, false,
+	if err := dispatchBuildWithDiag(context.Background(), ws, releasePath, []string{catalogDir}, false,
 		buildDiagOptions{}, buildops.RunOptions{}, &acqDiag, &acqOut); err != nil {
 		srv.Close()
 		t.Fatalf("the build over a resolved Release must render: %v\ndiagnostics:\n%s", err, acqDiag.String())
@@ -548,7 +548,7 @@ func TestBuildDryRunServesAPinnedExternalReferenceFromTheStore(t *testing.T) {
 	lockfileBefore := treeSnapshot(t, filepath.Dir(lockfile.PathFor(releasePath)))
 
 	var out, diag bytes.Buffer
-	if err := dispatchBuildWithDiag(ws, releasePath, []string{catalogDir}, false,
+	if err := dispatchBuildWithDiag(context.Background(), ws, releasePath, []string{catalogDir}, false,
 		buildDiagOptions{}, buildops.RunOptions{DryRun: true}, &diag, &out); err != nil {
 		t.Fatalf("a dry run must render a pinned reference from the store: %v\ndiagnostics:\n%s", err, diag.String())
 	}

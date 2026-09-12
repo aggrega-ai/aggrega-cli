@@ -328,7 +328,30 @@ type Result struct {
 // to cfg.Out. Neither carries the completion summary: that is returned, so the
 // caller places it on whichever stream and in whichever layout its own surface
 // uses.
-func Run(cfg Config) (Result, error) {
+//
+// # The caller's context, and what ending it does
+//
+// ctx is the caller's own, and it reaches every step below that can wait on
+// something outside the process: the dependency fill, the entity fetches the
+// closure walk performs, and the guest calls the render dispatches. Ending it
+// ends those — a fetch in flight is abandoned and the run unwinds — so a caller
+// whose reader asked to stop has a way to make the stop reach the work rather
+// than only the process. A caller with no cancellation of its own passes a
+// background context and the behaviour is what it was.
+//
+// A build writes its artifacts in one step, after the render has finished, so a
+// run that ends part way leaves the output directory exactly as it found it: no
+// half-written artifact set is presented as a finished one.
+func Run(ctx context.Context, cfg Config) (Result, error) {
+	// Already asked to stop: do none of the work. The check is here rather than
+	// only at the steps that wait, because everything below this line reads the
+	// file system, and a run whose reader has already withdrawn it should not
+	// begin one. It halts naming the withdrawal, so the outcome is a stated
+	// reason rather than a build that silently did nothing.
+	if err := ctx.Err(); err != nil {
+		return Result{}, fmt.Errorf("aggrega build: %w", err)
+	}
+
 	diagOut := cfg.DiagOut
 	if diagOut == nil {
 		diagOut = os.Stderr
@@ -453,7 +476,12 @@ func Run(cfg Config) (Result, error) {
 	// The context carries the render knobs that ride on a context rather than on
 	// the option struct; the external-input seam is installed by the shared entry
 	// point, from the service handed to it.
-	buildCtx := wasm.ContextWithDisablePluginCache(context.Background(), run.DisablePluginCache)
+	//
+	// It is derived from the caller's own rather than started fresh, which is what
+	// makes ending that one end the work below: a context minted here would carry
+	// the knobs and nothing else, leaving every waiting step unreachable from
+	// outside.
+	buildCtx := wasm.ContextWithDisablePluginCache(ctx, run.DisablePluginCache)
 	buildCtx = wasm.ContextWithVerifyDeterminism(buildCtx, run.VerifyDeterminism)
 	renderOptions := pipeline.Options{
 		IncludeTrace:    cfg.TraceEnabled,

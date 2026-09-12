@@ -159,7 +159,7 @@ func TestBuildResolvesRemoteLibraryTagVersionMismatch(t *testing.T) {
 
 	// Build re-derives 1.0.0 via the bridge → tier-1; verify must pass (no drift),
 	// and the library-declared default still materializes.
-	if err := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false, os.Stderr, os.Stdout); err != nil {
+	if err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false, os.Stderr, os.Stdout); err != nil {
 		t.Fatalf("dispatchBuild (library tag!=version) must succeed with no drift, got: %v", err)
 	}
 	if got := readDistTree(t, filepath.Join(root, "dist")); !strings.Contains(got, "10Gi") {
@@ -213,7 +213,7 @@ func TestPullFetchesRemoteLibraryViaTier3(t *testing.T) {
 
 	// The remote-fetched, pinned library bridges at build (no network) and its
 	// declared default materializes in the rendered output.
-	if err := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false, os.Stderr, os.Stdout); err != nil {
+	if err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false, os.Stderr, os.Stdout); err != nil {
 		t.Fatalf("dispatchBuild after remote fetch: %v", err)
 	}
 	if got := readDistTree(t, filepath.Join(root, "dist")); !strings.Contains(got, "10Gi") {
@@ -399,7 +399,7 @@ func TestBuildResolvesRemotePinnedSchemaLibrary(t *testing.T) {
 	// build-side bridge can resolve the consumer's $ref.
 	relocateLibraryToCache(t, root, cacheDir)
 
-	if err := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false, os.Stderr, os.Stdout); err != nil {
+	if err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false, os.Stderr, os.Stdout); err != nil {
 		t.Fatalf("dispatchBuild with bridged remote library: %v", err)
 	}
 
@@ -430,7 +430,7 @@ func TestBuildWithoutBridgeFailsUnresolvedRef(t *testing.T) {
 		t.Fatalf("write empty lockfile: %v", err)
 	}
 
-	err := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false, os.Stderr, os.Stdout)
+	err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false, os.Stderr, os.Stdout)
 	if err == nil {
 		t.Fatal("expected build to halt on unresolved cross-document $ref; got nil")
 	}
@@ -480,7 +480,7 @@ func TestBuildHaltsOnTamperedBridgedLibrary(t *testing.T) {
 		t.Fatalf("WriteLockfile: %v", err)
 	}
 
-	err = dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false, os.Stderr, os.Stdout)
+	err = dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false, os.Stderr, os.Stdout)
 	if err == nil {
 		t.Fatal("expected the build to halt on the tampered library pin; got nil")
 	}

@@ -137,7 +137,7 @@ func TestBuild_SourcelessRecipeStillBuilds(t *testing.T) {
 	releasePath, catalogRoot := writeEmptySourceWorkspace(t, root, "")
 	primeLockfile(t, root, releasePath, catalogRoot)
 
-	if err := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogRoot}, false, os.Stderr, os.Stdout); err != nil {
+	if err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogRoot}, false, os.Stderr, os.Stdout); err != nil {
 		t.Fatalf("a Recipe declaring no source must still build: %v", err)
 	}
 	if len(readTree(t, filepath.Join(root, "dist"))) == 0 {
@@ -156,7 +156,7 @@ func TestBuild_RealSourceRecipeStillBuilds(t *testing.T) {
 	releasePath, catalogRoot := writeEmptySourceWorkspace(t, root, "  source: "+chartDir+"\n")
 	primeLockfile(t, root, releasePath, catalogRoot)
 
-	if err := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogRoot}, false, os.Stderr, os.Stdout); err != nil {
+	if err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogRoot}, false, os.Stderr, os.Stdout); err != nil {
 		t.Fatalf("a Recipe naming a real source must still build: %v", err)
 	}
 	if len(readTree(t, filepath.Join(root, "dist"))) == 0 {

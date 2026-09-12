@@ -157,7 +157,7 @@ func runBuild(cmd *cobra.Command, args []string, opts *buildFlags) error {
 			return writeIRGraph(out, "build", graph, false)
 		}
 	}
-	return dispatchBuildWithDiag(rw, opts.releasePath, opts.catalogDirs, opts.traceEnabled,
+	return dispatchBuildWithDiag(cmd.Context(), rw, opts.releasePath, opts.catalogDirs, opts.traceEnabled,
 		buildDiagOptions{quiet: opts.quiet, debug: opts.debug, progress: opts.progress, noColor: globalDisplay.colorOff, plain: globalDisplay.plain},
 		run, os.Stderr, out)
 }
@@ -168,8 +168,8 @@ func runBuild(cmd *cobra.Command, args []string, opts *buildFlags) error {
 // no state it did not supply and stays race-free under t.Parallel; the CLI entry
 // point calls dispatchBuildWithDiag to thread the operator's --quiet / --debug
 // choices. Both share the single implementation below.
-func dispatchBuild(rw *workspaceconfig.ResolvedWorkspace, releasePath string, catalogFlagDirs []string, traceEnabled bool, diagOut, out io.Writer) error {
-	return dispatchBuildWithDiag(rw, releasePath, catalogFlagDirs, traceEnabled, buildDiagOptions{}, buildops.RunOptions{}, diagOut, out)
+func dispatchBuild(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, releasePath string, catalogFlagDirs []string, traceEnabled bool, diagOut, out io.Writer) error {
+	return dispatchBuildWithDiag(ctx, rw, releasePath, catalogFlagDirs, traceEnabled, buildDiagOptions{}, buildops.RunOptions{}, diagOut, out)
 }
 
 // dispatchBuildWithDiag runs the shared build orchestration and renders it as
@@ -193,7 +193,11 @@ func dispatchBuild(rw *workspaceconfig.ResolvedWorkspace, releasePath string, ca
 // switch, the output-directory override, the acquired-pin callback the acquire
 // command reports through, and the graph hand-back a caller that asked for the
 // document supplies. The zero value is the plain build shape.
-func dispatchBuildWithDiag(rw *workspaceconfig.ResolvedWorkspace, releasePath string, catalogFlagDirs []string, traceEnabled bool, diag buildDiagOptions, run buildops.RunOptions, diagOut, out io.Writer) error {
+//
+// ctx is the run's own context, taken from the command rather than started here,
+// so a reader who asks the process to stop ends the build's work and not merely
+// the process. It reaches both the cache probe below and the shared build layer.
+func dispatchBuildWithDiag(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, releasePath string, catalogFlagDirs []string, traceEnabled bool, diag buildDiagOptions, run buildops.RunOptions, diagOut, out io.Writer) error {
 	// Wall-clock start of the whole build run, sourced independently of the
 	// progress reporter (whose clock is unset in silent mode and only spans the
 	// progress phases) so the summary's "Build time" spans the entire dispatch.
@@ -204,11 +208,11 @@ func dispatchBuildWithDiag(rw *workspaceconfig.ResolvedWorkspace, releasePath st
 	// build, so a stale-cache rebuild that recompiles still shows it. This guess
 	// is detected before the build runs so the bar's calibration is fixed for
 	// the whole run. --disable-plugin-cache forces the cold profile.
-	coldCache := wasm.PluginCompileCacheCold(wasm.ContextWithDisablePluginCache(context.Background(), run.DisablePluginCache))
+	coldCache := wasm.PluginCompileCacheCold(wasm.ContextWithDisablePluginCache(ctx, run.DisablePluginCache))
 	progress := newProgressReporter(diagOut, diag, buildProgressSpine(coldCache))
 	defer progress.finish()
 
-	result, err := buildops.Run(buildDispatchConfig(rw, releasePath, catalogFlagDirs, traceEnabled, run, progress, diagOut, out))
+	result, err := buildops.Run(ctx, buildDispatchConfig(rw, releasePath, catalogFlagDirs, traceEnabled, run, progress, diagOut, out))
 	if err != nil {
 		return err
 	}

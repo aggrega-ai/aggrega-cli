@@ -5,6 +5,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -49,7 +50,7 @@ func TestBuildAutoPullFreezeMatchesStandalonePullFreeze(t *testing.T) {
 		t.Fatalf("workspace B recipe carried sourceDigests before build")
 	}
 	var diagBuf, outBuf bytes.Buffer
-	if err := dispatchBuildWithDiag(resolveTempWorkspace(t, tempWorkspaceOptions{Root: rootB}), releaseB, []string{filepath.Join(rootB, "catalog")}, false,
+	if err := dispatchBuildWithDiag(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: rootB}), releaseB, []string{filepath.Join(rootB, "catalog")}, false,
 		buildDiagOptions{}, buildops.RunOptions{AutoPull: true}, &diagBuf, &outBuf); err != nil {
 		t.Fatalf("build --auto-pull: %v", err)
 	}

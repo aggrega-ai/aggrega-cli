@@ -17,6 +17,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"os"
@@ -366,7 +367,7 @@ func TestBuildIRGraph_IsAdditiveAndStillWritesTheArtifacts(t *testing.T) {
 				return writeIRGraph(&out, "build", graph, false)
 			}
 		}
-		if err := dispatchBuildWithDiag(ws, releasePath, []string{catalogDir}, false,
+		if err := dispatchBuildWithDiag(context.Background(), ws, releasePath, []string{catalogDir}, false,
 			buildDiagOptions{}, opts, &diag, &out); err != nil {
 			t.Fatalf("build (withGraph=%v): %v\ndiagnostics:\n%s", withGraph, err, diag.String())
 		}
@@ -433,7 +434,7 @@ func TestBuildIRGraph_CombinesWithADryRun(t *testing.T) {
 	opts.IRGraph = func(graph *types.IRGraph) error {
 		return writeIRGraph(&out, "build", graph, false)
 	}
-	if err := dispatchBuildWithDiag(ws, releasePath, []string{catalogDir}, false,
+	if err := dispatchBuildWithDiag(context.Background(), ws, releasePath, []string{catalogDir}, false,
 		buildDiagOptions{}, opts, &diag, &out); err != nil {
 		t.Fatalf("dry run --ir-graph: %v\ndiagnostics:\n%s", err, diag.String())
 	}
@@ -481,7 +482,7 @@ func TestBuildIRGraph_WithholdsDeclaredValues(t *testing.T) {
 		}
 		return writeIRGraph(&out, "build", graph, false)
 	}
-	if err := dispatchBuildWithDiag(ws, releasePath, []string{catalogDir}, false,
+	if err := dispatchBuildWithDiag(context.Background(), ws, releasePath, []string{catalogDir}, false,
 		buildDiagOptions{}, opts, &diag, &out); err != nil {
 		t.Fatalf("build --ir-graph: %v\ndiagnostics:\n%s", err, diag.String())
 	}

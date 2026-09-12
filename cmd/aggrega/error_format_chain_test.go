@@ -10,6 +10,7 @@
 package main
 
 import (
+	"context"
 	stderrors "errors"
 	"fmt"
 	"io"
@@ -240,7 +241,7 @@ func TestFormatCompilerError_AssertionFailureReachesTerminal(t *testing.T) {
 	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: catalogDirs, ws: ws}); err != nil {
 		t.Fatalf("prime lockfile via pull: %v", err)
 	}
-	err := dispatchBuild(ws, releasePath, catalogDirs, traceEnabled, io.Discard, io.Discard)
+	err := dispatchBuild(context.Background(), ws, releasePath, catalogDirs, traceEnabled, io.Discard, io.Discard)
 	if err == nil {
 		t.Fatal("build returned nil; expected an assertion failure")
 	}

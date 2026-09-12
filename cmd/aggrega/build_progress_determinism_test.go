@@ -5,6 +5,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"io"
@@ -87,7 +88,7 @@ func TestBuild_StdoutAndDistByteIdenticalAcrossProgressModes(t *testing.T) {
 		run.OutDir = outDir
 
 		var stdout, stderr bytes.Buffer
-		if err := dispatchBuildWithDiag(resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releaseYAML, []string{catalogRoot}, false, m.diag, run, &stderr, &stdout); err != nil {
+		if err := dispatchBuildWithDiag(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releaseYAML, []string{catalogRoot}, false, m.diag, run, &stderr, &stdout); err != nil {
 			t.Fatalf("%s: build failed: %v (stderr=%q)", m.name, err, stderr.String())
 		}
 

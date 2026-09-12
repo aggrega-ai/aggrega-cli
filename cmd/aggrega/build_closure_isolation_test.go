@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"sort"
@@ -186,7 +187,7 @@ func TestBuild_BrokenOutOfClosureIsolation(t *testing.T) {
 		t.Fatalf("prime lockfile via pull: %v", err)
 	}
 
-	if err := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogRoot}, false, os.Stderr, os.Stdout); err != nil {
+	if err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogRoot}, false, os.Stderr, os.Stdout); err != nil {
 		t.Fatalf("clean build should succeed: %v", err)
 	}
 	clean := readTree(t, filepath.Join(root, "dist"))
@@ -197,7 +198,7 @@ func TestBuild_BrokenOutOfClosureIsolation(t *testing.T) {
 	// Add broken entities OUTSIDE the closure; the closure (and lockfile) are
 	// unchanged, so the pre-existing lockfile still verifies.
 	writeBrokenOutOfClosureEntities(t, catalogRoot)
-	if err := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogRoot}, false, os.Stderr, os.Stdout); err != nil {
+	if err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogRoot}, false, os.Stderr, os.Stdout); err != nil {
 		t.Fatalf("build must succeed despite broken out-of-closure entities (blast-radius isolation): %v", err)
 	}
 	dirty := readTree(t, filepath.Join(root, "dist"))
@@ -234,7 +235,7 @@ spec:
       storage:
         $ref: "Nonexistent#/schemas/Storage"
 `)
-	if err := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogRoot}, false, os.Stderr, os.Stdout); err == nil {
+	if err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogRoot}, false, os.Stderr, os.Stdout); err == nil {
 		t.Fatal("build must fail when an in-closure component's $ref is unresolvable (closure-scoped Pass-2 must still reject)")
 	}
 }
@@ -262,7 +263,7 @@ metadata:
 spec:
   capability: helm
 `)
-	err := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogRoot}, false, os.Stderr, os.Stdout)
+	err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogRoot}, false, os.Stderr, os.Stdout)
 	if err == nil {
 		t.Fatal("build must fail when the in-closure recipe was skipped at load")
 	}

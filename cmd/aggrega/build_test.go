@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -122,7 +123,7 @@ spec:
 	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: catalogDirs, ws: ws}); err != nil {
 		t.Fatalf("prime lockfile via pull: %v", err)
 	}
-	err := dispatchBuild(ws, releasePath, catalogDirs, traceEnabled, os.Stderr, os.Stdout)
+	err := dispatchBuild(context.Background(), ws, releasePath, catalogDirs, traceEnabled, os.Stderr, os.Stdout)
 	if err == nil {
 		t.Fatal("build returned nil; expected assertion failure")
 	}
@@ -233,7 +234,7 @@ spec:
 	if err := pullRun(pullConfig{ReleasePath: filepath.Join(root, "release.yaml"), CatalogDirs: []string{catalogRoot}, ws: ws}); err != nil {
 		t.Fatalf("prime lockfile via pull: %v", err)
 	}
-	err := dispatchBuildWithDiag(
+	err := dispatchBuildWithDiag(context.Background(),
 		ws,
 		filepath.Join(root, "release.yaml"),
 		[]string{catalogRoot},
@@ -409,7 +410,7 @@ func TestRunBuild_ProvidesContractUnfulfilledHaltsCLI(t *testing.T) {
 	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: catalogDirs, ws: ws}); err != nil {
 		t.Fatalf("prime lockfile via pull: %v", err)
 	}
-	err := dispatchBuild(ws, releasePath, catalogDirs, traceEnabled, os.Stderr, os.Stdout)
+	err := dispatchBuild(context.Background(), ws, releasePath, catalogDirs, traceEnabled, os.Stderr, os.Stdout)
 	if err == nil {
 		t.Fatal("build returned nil; expected a provides-contract shortfall halt")
 	}
@@ -438,7 +439,7 @@ func TestRunBuild_ProvidesContractSupersetBuildsCLI(t *testing.T) {
 	if err := pullRun(pullConfig{ReleasePath: filepath.Join(root, "release.yaml"), CatalogDirs: []string{filepath.Join(root, "catalog")}, ws: ws}); err != nil {
 		t.Fatalf("prime lockfile via pull: %v", err)
 	}
-	err := dispatchBuildWithDiag(
+	err := dispatchBuildWithDiag(context.Background(),
 		ws,
 		filepath.Join(root, "release.yaml"),
 		[]string{filepath.Join(root, "catalog")},
@@ -594,7 +595,7 @@ func TestRunBuild_FeatureProvidesContractUnfulfilledHaltsCLI(t *testing.T) {
 	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: catalogDirs, ws: ws}); err != nil {
 		t.Fatalf("prime lockfile via pull: %v", err)
 	}
-	err := dispatchBuild(ws, releasePath, catalogDirs, traceEnabled, os.Stderr, os.Stdout)
+	err := dispatchBuild(context.Background(), ws, releasePath, catalogDirs, traceEnabled, os.Stderr, os.Stdout)
 	if err == nil {
 		t.Fatal("build returned nil; expected a feature provides-contract shortfall halt")
 	}
@@ -621,7 +622,7 @@ func TestRunBuild_FeatureProvidesContractFulfilledBuildsCLI(t *testing.T) {
 	if err := pullRun(pullConfig{ReleasePath: filepath.Join(root, "release.yaml"), CatalogDirs: []string{filepath.Join(root, "catalog")}, ws: ws}); err != nil {
 		t.Fatalf("prime lockfile via pull: %v", err)
 	}
-	err := dispatchBuildWithDiag(
+	err := dispatchBuildWithDiag(context.Background(),
 		ws,
 		filepath.Join(root, "release.yaml"),
 		[]string{filepath.Join(root, "catalog")},

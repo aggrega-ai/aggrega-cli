@@ -15,6 +15,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"strings"
 	"testing"
 
@@ -44,7 +45,7 @@ func TestBuildHaltsOnAnUnpinnedExternalReference(t *testing.T) {
 	storeBefore := treeSnapshot(t, storeRoot)
 
 	var out, diag bytes.Buffer
-	err := dispatchBuildWithDiag(ws, releasePath, []string{catalogDir}, false,
+	err := dispatchBuildWithDiag(context.Background(), ws, releasePath, []string{catalogDir}, false,
 		buildDiagOptions{}, buildops.RunOptions{}, &diag, &out)
 	if err == nil {
 		t.Fatal("a build meeting an unpinned external reference must halt: there is no acquisition moment inside a build")

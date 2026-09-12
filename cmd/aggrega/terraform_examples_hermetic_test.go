@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"io"
 	"os"
 	"path/filepath"
@@ -55,7 +56,7 @@ func TestTerraformExamplesHermeticOfflineBuild(t *testing.T) {
 
 			// The build refuses to network under offline; success proves the
 			// render path (embedded guest + local/inline source) is hermetic.
-			if err := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), releasePath, catalogDirs, traceEnabled, io.Discard, io.Discard); err != nil {
+			if err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), releasePath, catalogDirs, traceEnabled, io.Discard, io.Discard); err != nil {
 				t.Fatalf("offline build %q (default terraform path must not network): %v", name, err)
 			}
 

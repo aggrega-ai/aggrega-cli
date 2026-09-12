@@ -179,6 +179,39 @@ func runStopProbeChild(role string) {
 		// enough for it to run whether or not the command returned.
 		select {}
 
+	case "build":
+		// Same shape as the frames role, driving a real build instead of a bare
+		// park: the control is started on a context this test never ends, so its
+		// frame must still be on the stack when the dump is taken.
+		controlEntered := make(chan struct{})
+		go func() { _ = parkedControlBuildFill(context.Background(), controlEntered) }()
+		<-controlEntered
+
+		buildEntered := make(chan struct{})
+		go func() {
+			<-buildEntered
+			fmt.Println(readyMarker)
+			os.Stdout.Sync() //nolint:errcheck // best-effort flush of a readiness marker
+		}()
+
+		go func() {
+			<-ctx.Done()
+			time.Sleep(2 * time.Second)
+			fmt.Println(framesMarker)
+			fmt.Println(goroutineFrames())
+			fmt.Println(framesMarker)
+			os.Exit(0)
+		}()
+
+		root := newRootCmd()
+		root.AddCommand(buildProbeCommand(buildEntered))
+		root.SetArgs([]string{"--workspace-root", workspace, "build-probe"})
+		_ = executeRoot(ctx, root)
+
+		// The dumping goroutine owns the exit, so the process stays alive long
+		// enough for it to run whether or not the build returned.
+		select {}
+
 	case "deaf":
 		entered := make(chan struct{})
 		go func() {

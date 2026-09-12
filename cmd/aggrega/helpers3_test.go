@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"io"
 	"os"
 	"path/filepath"
@@ -102,7 +103,7 @@ spec:
 
 	// Either succeeds (no annotations on Aggregate to fire on) or fails;
 	// both paths exercise the validation dispatch.
-	_ = dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, catalogDirs, traceEnabled, os.Stderr, os.Stdout)
+	_ = dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, catalogDirs, traceEnabled, os.Stderr, os.Stdout)
 }
 
 // TestRunBuild_MalformedAggregate pins the resolver-error path: a
@@ -140,7 +141,7 @@ spec:
 	catalogDirs := []string{catalogRoot}
 	traceEnabled := false
 
-	err := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, catalogDirs, traceEnabled, os.Stderr, os.Stdout)
+	err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, catalogDirs, traceEnabled, os.Stderr, os.Stdout)
 	if err == nil {
 		t.Errorf("malformed aggregate should error at resolve")
 	}
@@ -183,7 +184,7 @@ spec:
 	catalogDirs := []string{catalogRoot}
 	traceEnabled := false
 
-	err := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, catalogDirs, traceEnabled, os.Stderr, os.Stdout)
+	err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, catalogDirs, traceEnabled, os.Stderr, os.Stdout)
 	if err == nil {
 		t.Errorf("extends to nonexistent parent should error")
 	}

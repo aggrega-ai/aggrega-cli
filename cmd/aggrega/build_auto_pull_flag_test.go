@@ -5,6 +5,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -48,7 +49,7 @@ func TestBuildAutoPullFlagFillsLockfileWhenConfigOff(t *testing.T) {
 	}
 
 	var diagBuf, outBuf bytes.Buffer
-	if err := dispatchBuildWithDiag(resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false,
+	if err := dispatchBuildWithDiag(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false,
 		buildDiagOptions{}, buildops.RunOptions{AutoPull: true}, &diagBuf, &outBuf); err != nil {
 		t.Fatalf("build --auto-pull (config off, no lockfile): %v", err)
 	}
@@ -70,7 +71,7 @@ func TestBuildAutoPullFlagFillsLockfileWhenConfigOff(t *testing.T) {
 	}
 
 	// Second flagged build honors the now-present pins and preserves them.
-	if err := dispatchBuildWithDiag(resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false,
+	if err := dispatchBuildWithDiag(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false,
 		buildDiagOptions{}, buildops.RunOptions{AutoPull: true}, &diagBuf, &outBuf); err != nil {
 		t.Fatalf("second build --auto-pull: %v", err)
 	}
@@ -99,7 +100,7 @@ func TestBuildUpgradeWithoutActivePullImpliesAutoPull(t *testing.T) {
 	}
 
 	var diagBuf, outBuf bytes.Buffer
-	if err := dispatchBuildWithDiag(resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false,
+	if err := dispatchBuildWithDiag(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false,
 		buildDiagOptions{}, buildops.RunOptions{Upgrade: true}, &diagBuf, &outBuf); err != nil {
 		t.Fatalf("build --upgrade (no --auto-pull) should imply auto-pull, not error: %v", err)
 	}
@@ -170,7 +171,7 @@ func TestBuildAutoPullIncrementalPreservesExternalInputs(t *testing.T) {
 	url := injectExternalInput(t, lockfilePath)
 
 	var diagBuf, outBuf bytes.Buffer
-	if err := dispatchBuildWithDiag(resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false,
+	if err := dispatchBuildWithDiag(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false,
 		buildDiagOptions{}, buildops.RunOptions{AutoPull: true}, &diagBuf, &outBuf); err != nil {
 		t.Fatalf("build --auto-pull (incremental): %v", err)
 	}
@@ -198,7 +199,7 @@ func TestBuildAutoPullUpgradeDiscardsExternalInputs(t *testing.T) {
 	url := injectExternalInput(t, lockfilePath)
 
 	var diagBuf, outBuf bytes.Buffer
-	if err := dispatchBuildWithDiag(resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false,
+	if err := dispatchBuildWithDiag(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false,
 		buildDiagOptions{}, buildops.RunOptions{AutoPull: true, Upgrade: true}, &diagBuf, &outBuf); err != nil {
 		t.Fatalf("build --auto-pull --upgrade: %v", err)
 	}

@@ -78,7 +78,7 @@ func offlineReferenceCompose(t *testing.T, std, exampleDir string) string {
 	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), ReleasePath: "release.yaml", CatalogDirs: []string{std}}); err != nil {
 		t.Fatalf("offline reference pull: %v", err)
 	}
-	if err := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", []string{std}, false, os.Stderr, os.Stdout); err != nil {
+	if err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", []string{std}, false, os.Stderr, os.Stdout); err != nil {
 		t.Fatalf("offline reference build: %v", err)
 	}
 	return sha256HexFile(t, filepath.Join("dist", "compose", "docker-compose.yaml"))
@@ -341,7 +341,7 @@ func TestIntegration_RegistryRoundTrip_Positive(t *testing.T) {
 	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), ReleasePath: "release.yaml"}); err != nil {
 		t.Fatalf("registry pull: %v", err)
 	}
-	if err := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", nil, false, os.Stderr, os.Stdout); err != nil {
+	if err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", nil, false, os.Stderr, os.Stdout); err != nil {
 		t.Fatalf("registry build: %v", err)
 	}
 	got := sha256HexFile(t, filepath.Join("dist", "compose", "docker-compose.yaml"))
@@ -354,7 +354,7 @@ func TestIntegration_RegistryRoundTrip_Positive(t *testing.T) {
 		t.Fatalf("lockfile absent after pull: %v", err)
 	}
 	_ = os.RemoveAll("dist")
-	if err := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", nil, false, os.Stderr, os.Stdout); err != nil {
+	if err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", nil, false, os.Stderr, os.Stdout); err != nil {
 		t.Fatalf("rebuild from lock: %v", err)
 	}
 	if rebuilt := sha256HexFile(t, filepath.Join("dist", "compose", "docker-compose.yaml")); rebuilt != got {
@@ -389,7 +389,7 @@ func TestIntegration_RegistryBuild_WithheldEntityHaltsAtClosure(t *testing.T) {
 	}
 
 	// Pin present: a legitimately-present reference resolves cleanly (no false halt).
-	if err := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", nil, false, os.Stderr, os.Stdout); err != nil {
+	if err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", nil, false, os.Stderr, os.Stdout); err != nil {
 		t.Fatalf("build with all pins present: %v (a present reference must resolve cleanly)", err)
 	}
 
@@ -426,7 +426,7 @@ func TestIntegration_RegistryBuild_WithheldEntityHaltsAtClosure(t *testing.T) {
 	writeWorkspaceConfig(t, ws, "default_registry: \""+host+"\"\nauto_pull: false\noffline: false")
 
 	_ = os.RemoveAll("dist")
-	err = dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", nil, false, os.Stderr, os.Stdout)
+	err = dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", nil, false, os.Stderr, os.Stdout)
 	if err == nil {
 		t.Fatal("build SUCCEEDED with a referenced entity withheld; the unified view silently proceeded on a gap")
 	}
@@ -531,7 +531,7 @@ func TestIntegration_RegistryBuild_GuardNegatives(t *testing.T) {
 			_ = os.RemoveAll(filepath.Join(ws, ".aggrega"))
 			tc.mutate(t, ws)
 			t.Chdir(ws)
-			err := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", nil, false, os.Stderr, os.Stdout)
+			err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", nil, false, os.Stderr, os.Stdout)
 			if err == nil {
 				t.Fatalf("%s: build SUCCEEDED; want failure with %v", tc.name, tc.wantErr)
 			}
@@ -582,7 +582,7 @@ func TestIntegration_Capstone_LintAndExample(t *testing.T) {
 	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), ReleasePath: "release.yaml", CatalogDirs: []string{std}}); err != nil {
 		t.Fatalf("prime lockfile via pull: %v", err)
 	}
-	if err := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", []string{std}, false, os.Stderr, os.Stdout); err != nil {
+	if err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", []string{std}, false, os.Stderr, os.Stdout); err != nil {
 		t.Fatalf("catalog-only build against the shared catalog: %v", err)
 	}
 	if got := sha256HexFile(t, filepath.Join("dist", "compose", "docker-compose.yaml")); got != wantSHA {
@@ -932,7 +932,7 @@ spec:
 	// Build: each bare entity reference resolves through the entity-front (reading
 	// the entity from the cached manifest config blob) and the build reads the
 	// cached inline .wasm. This is the publish → pull → BUILD proof.
-	if err := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", []string{std}, false, os.Stderr, os.Stdout); err != nil {
+	if err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", []string{std}, false, os.Stderr, os.Stdout); err != nil {
 		t.Fatalf("registry build (resolving the bare plugin entity refs from cache): %v", err)
 	}
 	firstTree := hashDistTree(t, "dist")
@@ -942,7 +942,7 @@ spec:
 	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), ReleasePath: "release.yaml", CatalogDirs: []string{std}}); err != nil {
 		t.Fatalf("second registry pull: %v", err)
 	}
-	if err := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", []string{std}, false, os.Stderr, os.Stdout); err != nil {
+	if err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", []string{std}, false, os.Stderr, os.Stdout); err != nil {
 		t.Fatalf("second registry build: %v", err)
 	}
 	if second := hashDistTree(t, "dist"); second != firstTree {
@@ -963,7 +963,7 @@ spec:
 	}
 	writeWorkspaceConfig(t, ws, "default_registry: \""+host+"\"\nauto_pull: false\noffline: false")
 	_ = os.RemoveAll("dist")
-	if err := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", []string{std}, false, os.Stderr, os.Stdout); err == nil {
+	if err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", []string{std}, false, os.Stderr, os.Stdout); err == nil {
 		t.Fatal("frozen build SUCCEEDED against a tampered plugin manifest; the cached-manifest verify did not reject it")
 	}
 }
@@ -1149,7 +1149,7 @@ func TestIntegration_PipelinePlugin_RuntimeTimeoutFlowsToBuild(t *testing.T) {
 			t.Fatalf("registry pull: %v", err)
 		}
 
-		err := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", []string{std}, false, os.Stderr, os.Stdout)
+		err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", []string{std}, false, os.Stderr, os.Stdout)
 		if err == nil {
 			t.Fatal("build SUCCEEDED with an entity-authored timeoutMs: 1; the tiny per-call cap did not reach the loader")
 		}
@@ -1186,7 +1186,7 @@ func TestIntegration_PipelinePlugin_RuntimeTimeoutFlowsToBuild(t *testing.T) {
 		if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), ReleasePath: "release.yaml", CatalogDirs: []string{std}}); err != nil {
 			t.Fatalf("registry pull: %v", err)
 		}
-		if err := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", []string{std}, false, os.Stderr, os.Stdout); err != nil {
+		if err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", []string{std}, false, os.Stderr, os.Stdout); err != nil {
 			t.Fatalf("build FAILED under a generous entity-authored timeout; the same shape that succeeds with timeoutMs: 60000 must build: %v", err)
 		}
 	})
@@ -1346,7 +1346,7 @@ spec:
 	writeWorkspaceConfig(t, ws, "default_registry: \""+host+"\"\nauto_pull: true\noffline: false")
 	t.Chdir(ws)
 
-	err := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", nil, false, os.Stderr, os.Stdout)
+	err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", nil, false, os.Stderr, os.Stdout)
 	if err == nil {
 		t.Fatalf("required-socket: build SUCCEEDED; want failure with ErrMissingRequiredSocket")
 	}

@@ -20,6 +20,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -352,7 +353,7 @@ func TestIntegration_ConfigSocketPluginPinning_RoundTrip(t *testing.T) {
 		lf := pullAndLoadLock(t, ws)
 		assertSocketPinnedInLock(t, lf, host, mutatorSocket, mutatorDigest)
 
-		if err := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", []string{std}, false, os.Stderr, os.Stdout); err != nil {
+		if err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", []string{std}, false, os.Stderr, os.Stdout); err != nil {
 			t.Fatalf("build with a pinned mutator socket: %v (the pulled guest must load from the pin and mutate must run cleanly)", err)
 		}
 		// Observable effect: the injected label reached the rendered artifact, so the
@@ -378,7 +379,7 @@ func TestIntegration_ConfigSocketPluginPinning_RoundTrip(t *testing.T) {
 		// so it carries no drift baseline.
 		assertPluginAbsentFromLock(t, lf, denyPolicySocket)
 
-		err := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", []string{std}, false, os.Stderr, os.Stdout)
+		err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", []string{std}, false, os.Stderr, os.Stdout)
 		if err == nil {
 			t.Fatal("build SUCCEEDED with a halting policy socket; the pulled policy guest did not halt the build")
 		}
@@ -406,7 +407,7 @@ func TestIntegration_ConfigSocketPluginPinning_RoundTrip(t *testing.T) {
 		// during the build.
 		assertSocketPinnedInLock(t, lf, host, mutatorSocket, mutatorDigest)
 
-		if err := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", []string{std}, false, os.Stderr, os.Stdout); err != nil {
+		if err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", []string{std}, false, os.Stderr, os.Stdout); err != nil {
 			t.Fatalf("build with a mutator AND an admitting policy socket: %v (both pulled guests must load from their pins and run)", err)
 		}
 		// The mutator ran (its label reached the artifact) AND the admitting policy

@@ -27,6 +27,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -426,7 +427,7 @@ func buildOffline(t *testing.T, root, releasePath string, diag, out *bytes.Buffe
 	if !ws.Config().Offline {
 		t.Fatal("the workspace did not come back offline, so the denial this case rests on is not in effect")
 	}
-	return dispatchBuildWithDiag(ws, releasePath, hermeticFixtureCatalogDirs(root), false,
+	return dispatchBuildWithDiag(context.Background(), ws, releasePath, hermeticFixtureCatalogDirs(root), false,
 		buildDiagOptions{}, buildops.RunOptions{}, diag, out)
 }
 

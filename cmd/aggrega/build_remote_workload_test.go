@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -206,7 +207,7 @@ func TestBuildResolvesRemotePinnedWorkloadLibrary(t *testing.T) {
 
 	relocateWorkloadLibraryToCache(t, root, cacheDir, "1.0.0")
 
-	if err := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false, os.Stderr, os.Stdout); err != nil {
+	if err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false, os.Stderr, os.Stdout); err != nil {
 		t.Fatalf("dispatchBuild with bridged remote workload library: %v", err)
 	}
 	remote := readDistTree(t, filepath.Join(root, "dist"))
@@ -215,7 +216,7 @@ func TestBuildResolvesRemotePinnedWorkloadLibrary(t *testing.T) {
 	}
 
 	// Deterministic rebuild — byte-identical output.
-	if err := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false, os.Stderr, os.Stdout); err != nil {
+	if err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false, os.Stderr, os.Stdout); err != nil {
 		t.Fatalf("second dispatchBuild: %v", err)
 	}
 	if again := readDistTree(t, filepath.Join(root, "dist")); again != remote {
@@ -233,7 +234,7 @@ func TestBuildResolvesRemotePinnedWorkloadLibrary(t *testing.T) {
 	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{catalogDir}}); err != nil {
 		t.Fatalf("inline pullRun: %v", err)
 	}
-	if err := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false, os.Stderr, os.Stdout); err != nil {
+	if err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false, os.Stderr, os.Stdout); err != nil {
 		t.Fatalf("inline dispatchBuild: %v", err)
 	}
 	if inline := readDistTree(t, filepath.Join(root, "dist")); inline != remote {

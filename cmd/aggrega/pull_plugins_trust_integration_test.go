@@ -129,7 +129,7 @@ func readRecord(t *testing.T, releasePath string) string {
 func buildAt(t *testing.T, root, releasePath string) error {
 	t.Helper()
 	var diagBuf, outBuf bytes.Buffer
-	return dispatchBuildWithDiag(resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, nil, false,
+	return dispatchBuildWithDiag(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, nil, false,
 		buildDiagOptions{}, buildops.RunOptions{OutDir: filepath.Join(root, "dist")}, &diagBuf, &outBuf)
 }
 
@@ -471,7 +471,7 @@ func TestIntegration_VerdictTrustAutoPullBuildWritesTheRecord(t *testing.T) {
 	}
 
 	var diagBuf, outBuf bytes.Buffer
-	if err := dispatchBuildWithDiag(resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, nil, false,
+	if err := dispatchBuildWithDiag(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, nil, false,
 		buildDiagOptions{}, buildops.RunOptions{AutoPull: true, OutDir: filepath.Join(root, "dist")}, &diagBuf, &outBuf); err != nil {
 		t.Fatalf("build --auto-pull: %v (diag=%q)", err, diagBuf.String())
 	}
@@ -486,7 +486,7 @@ func TestIntegration_VerdictTrustAutoPullBuildWritesTheRecord(t *testing.T) {
 	if err := os.Remove(recordPath); err != nil {
 		t.Fatalf("remove the record between builds: %v", err)
 	}
-	if err := dispatchBuildWithDiag(resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, nil, false,
+	if err := dispatchBuildWithDiag(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, nil, false,
 		buildDiagOptions{}, buildops.RunOptions{OutDir: filepath.Join(root, "dist")}, &diagBuf, &outBuf); err != nil {
 		t.Fatalf("build with a present lockfile: %v (diag=%q)", err, diagBuf.String())
 	}

@@ -6,6 +6,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -287,7 +288,7 @@ func TestIntegration_PullCommandVerifiesSignedPlugin_Keyed(t *testing.T) {
 
 		// Build reads the recorded facts and completes: signing changes the
 		// supply-chain trust, not the buildability.
-		if berr := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", []string{std}, false, os.Stderr, os.Stdout); berr != nil {
+		if berr := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", []string{std}, false, os.Stderr, os.Stdout); berr != nil {
 			t.Fatalf("build after verified pull: %v", berr)
 		}
 	})

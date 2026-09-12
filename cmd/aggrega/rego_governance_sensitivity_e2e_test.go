@@ -19,6 +19,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -516,7 +517,7 @@ func TestRegoCachedGate_TheRecordedDigestGovernsWhichArtifactRuns(t *testing.T) 
 
 			buildWorkspace := resolveWorkspaceWithConfig(t, root,
 				governanceAttachment(gate.URI, "ir-verdict", "policy.rego", ""))
-			err := dispatchBuildWithDiag(buildWorkspace, releasePath, []string{catalogDir}, false,
+			err := dispatchBuildWithDiag(context.Background(), buildWorkspace, releasePath, []string{catalogDir}, false,
 				buildDiagOptions{quiet: true}, buildops.RunOptions{OutDir: filepath.Join(root, "dist")},
 				os.Stderr, os.Stderr)
 			if err == nil {

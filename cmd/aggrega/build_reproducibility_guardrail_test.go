@@ -5,6 +5,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -49,7 +50,7 @@ func TestBuildReproducibilityGuardrailWarnsAndSucceeds(t *testing.T) {
 	// closure here); the guardrail warning is emitted before the pipeline, so it
 	// is present regardless of the build's eventual outcome. The guardrail must
 	// not itself be the failure.
-	buildErr := dispatchBuild(rw, releasePath, []string{root}, false, &diag, &out)
+	buildErr := dispatchBuild(context.Background(), rw, releasePath, []string{root}, false, &diag, &out)
 
 	warn := diag.String()
 	if !strings.Contains(warn, "aggrega config capture") {
@@ -71,7 +72,7 @@ func TestBuildReproducibilityGuardrailWarnsAndSucceeds(t *testing.T) {
 		t.Fatalf("Resolve (post-capture): %v", err)
 	}
 	var diag2, out2 bytes.Buffer
-	_ = dispatchBuild(rw2, releasePath, []string{root}, false, &diag2, &out2)
+	_ = dispatchBuild(context.Background(), rw2, releasePath, []string{root}, false, &diag2, &out2)
 	if strings.Contains(diag2.String(), "aggrega config capture") {
 		t.Errorf("guardrail still warned after capture; diag=%q", diag2.String())
 	}
@@ -100,7 +101,7 @@ func TestBuildReproducibilityGuardrailSilentForGateSocket(t *testing.T) {
 	}
 
 	var diag, out bytes.Buffer
-	_ = dispatchBuild(rw, releasePath, []string{root}, false, &diag, &out)
+	_ = dispatchBuild(context.Background(), rw, releasePath, []string{root}, false, &diag, &out)
 	if strings.Contains(diag.String(), "aggrega config capture") {
 		t.Errorf("guardrail warned about a global-only gate socket; diag=%q", diag.String())
 	}

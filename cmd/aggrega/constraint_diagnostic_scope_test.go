@@ -15,6 +15,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -139,7 +140,7 @@ func TestRefusedEntityNamedInReleaseScopes(t *testing.T) {
 	// build gate requires. An author reaches the release scopes with a lockfile
 	// already present; breaking a Component afterwards is the shape under test.
 	var diag, out bytes.Buffer
-	if err := dispatchBuildWithDiag(rw, releasePath, cleanDirs, false,
+	if err := dispatchBuildWithDiag(context.Background(), rw, releasePath, cleanDirs, false,
 		buildDiagOptions{}, buildops.RunOptions{AutoPull: true}, &diag, &out); err != nil {
 		t.Fatalf("the clean workspace must build: %v", err)
 	}
@@ -155,7 +156,7 @@ func TestRefusedEntityNamedInReleaseScopes(t *testing.T) {
 
 	t.Run("build --release", func(t *testing.T) {
 		var diag, out bytes.Buffer
-		err := dispatchBuildWithDiag(rw, releasePath, dirs, false,
+		err := dispatchBuildWithDiag(context.Background(), rw, releasePath, dirs, false,
 			buildDiagOptions{}, buildops.RunOptions{}, &diag, &out)
 		if err == nil {
 			t.Fatal("the build must halt on a refused in-closure entity")

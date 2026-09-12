@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"slices"
@@ -253,7 +254,7 @@ func TestBuildResolvesRemotePinnedArtifactsLibrary(t *testing.T) {
 	// Local-resolution baseline: the library is pinned in the lockfile and still
 	// present in the catalog on disk, so this build reads it from there. Captured
 	// as a (path, content) tree identity for the comparison after the relocation.
-	if err := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false, os.Stderr, os.Stdout); err != nil {
+	if err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false, os.Stderr, os.Stdout); err != nil {
 		t.Fatalf("dispatchBuild with local artifacts library: %v", err)
 	}
 	localTree := hashDistTree(t, distDir)
@@ -262,7 +263,7 @@ func TestBuildResolvesRemotePinnedArtifactsLibrary(t *testing.T) {
 
 	relocateArtifactsLibraryToCache(t, root, cacheDir, "1.0.0")
 
-	if err := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false, os.Stderr, os.Stdout); err != nil {
+	if err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false, os.Stderr, os.Stdout); err != nil {
 		t.Fatalf("dispatchBuild with bridged remote artifacts library: %v", err)
 	}
 	remote := readDistTree(t, distDir)
@@ -277,7 +278,7 @@ func TestBuildResolvesRemotePinnedArtifactsLibrary(t *testing.T) {
 
 	// Deterministic rebuild — byte-identical output, measured without clearing
 	// dist so a stale file from the previous build would surface as a difference.
-	if err := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false, os.Stderr, os.Stdout); err != nil {
+	if err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false, os.Stderr, os.Stdout); err != nil {
 		t.Fatalf("second dispatchBuild: %v", err)
 	}
 	if again := readDistTree(t, distDir); again != remote {
@@ -295,7 +296,7 @@ func TestBuildResolvesRemotePinnedArtifactsLibrary(t *testing.T) {
 		t.Fatalf("inline pullRun: %v", err)
 	}
 	clearDist(t, distDir)
-	if err := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false, os.Stderr, os.Stdout); err != nil {
+	if err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false, os.Stderr, os.Stdout); err != nil {
 		t.Fatalf("inline dispatchBuild: %v", err)
 	}
 	inline := readDistTree(t, distDir)

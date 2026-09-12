@@ -31,6 +31,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -96,7 +97,7 @@ func TestBuildFromANestedSubdirectoryServesTheSameWorkspaceStore(t *testing.T) {
 		t.Logf("building from %s (%s); the store it must read is %s",
 			surface, dir, externalinputs.StoreRoot(root, cacheDir))
 		var diag, out bytes.Buffer
-		err := dispatchBuild(
+		err := dispatchBuild(context.Background(),
 			resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
 			releasePath, nil, false, &diag, &out)
 		if err != nil {

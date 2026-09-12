@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"io"
 	"path/filepath"
@@ -198,7 +199,7 @@ func TestFreezeFullURIRecipeOnePullFixpoint(t *testing.T) {
 
 	// The one-pull fixpoint: a build after a single pull verifies the frozen
 	// lockfile against a freshly-recomputed closure and must NOT report drift.
-	if err := dispatchBuildWithDiag(resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false, buildDiagOptions{quiet: true}, buildops.RunOptions{OutDir: filepath.Join(root, "dist", "main")}, io.Discard, io.Discard); err != nil {
+	if err := dispatchBuildWithDiag(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false, buildDiagOptions{quiet: true}, buildops.RunOptions{OutDir: filepath.Join(root, "dist", "main")}, io.Discard, io.Discard); err != nil {
 		if errors.Is(err, lockfile.ErrLockfileDrift()) {
 			t.Fatalf("build after a single pull reported lockfile drift — the one-pull-lag bug: %v", err)
 		}

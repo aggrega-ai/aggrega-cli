@@ -7,6 +7,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -154,7 +155,7 @@ func TestHTTPSRepoRootBuildReproduction(t *testing.T) {
 	t.Logf("LOCKFILE source_artifacts region:\n%s", lockfileSourceRegion(lf))
 
 	// Build must succeed over the pulled repo-root chart.
-	err := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false, os.Stderr, os.Stdout)
+	err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false, os.Stderr, os.Stdout)
 	if err != nil {
 		t.Logf("FULL ERROR CHAIN: %v", err)
 		t.Logf("errors.Is(err, oci.ErrFetchNotFound)  = %v", errors.Is(err, oci.ErrFetchNotFound()))
@@ -373,7 +374,7 @@ func TestHTTPSRepoRootChartCollision(t *testing.T) {
 	}
 
 	// Both render.
-	if err := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false, os.Stderr, os.Stdout); err != nil {
+	if err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false, os.Stderr, os.Stdout); err != nil {
 		t.Logf("errors.Is(err, oci.ErrFetchNotFound) = %v", errors.Is(err, oci.ErrFetchNotFound()))
 		t.Fatalf("build FAILED for two charts colliding on one repo root: %v", err)
 	}

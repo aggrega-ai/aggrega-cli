@@ -6,6 +6,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"io"
 	"path/filepath"
@@ -208,7 +209,7 @@ func TestIntegration_ConsumeRetroactiveDeprecation(t *testing.T) {
 		}
 
 		// Build succeeds: warning is below the halt threshold, so it advises.
-		if berr := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}), "release.yaml", nil, false, io.Discard, io.Discard); berr != nil {
+		if berr := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}), "release.yaml", nil, false, io.Discard, io.Discard); berr != nil {
 			t.Fatalf("build with a below-threshold marker must succeed; got: %v", berr)
 		}
 	})
@@ -222,7 +223,7 @@ func TestIntegration_ConsumeRetroactiveDeprecation(t *testing.T) {
 		if perr := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}), ReleasePath: "release.yaml"}); perr != nil {
 			t.Fatalf("pull with an error-severity marker must succeed (halt is at build); got: %v", perr)
 		}
-		berr := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}), "release.yaml", nil, false, io.Discard, io.Discard)
+		berr := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}), "release.yaml", nil, false, io.Discard, io.Discard)
 		if !errors.Is(berr, deprecation.ErrDeprecatedEntity()) {
 			t.Fatalf("build must HALT with ErrDeprecatedEntity at severity==threshold; got: %v", berr)
 		}
@@ -238,7 +239,7 @@ func TestIntegration_ConsumeRetroactiveDeprecation(t *testing.T) {
 		if perr := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}), ReleasePath: "release.yaml"}); perr != nil {
 			t.Fatalf("pull with a retracted marker must succeed; got: %v", perr)
 		}
-		berr := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}), "release.yaml", nil, false, io.Discard, io.Discard)
+		berr := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}), "release.yaml", nil, false, io.Discard, io.Discard)
 		if !errors.Is(berr, deprecation.ErrDeprecatedEntity()) {
 			t.Fatalf("build must HALT with ErrDeprecatedEntity for a retracted marker at retracted threshold; got: %v", berr)
 		}
@@ -273,7 +274,7 @@ func TestIntegration_ConsumeRetroactiveDeprecation(t *testing.T) {
 		if rec := deprecationRowRecord(t, componentURI); rec != nil {
 			t.Fatalf("an untrusted marker must NOT be recorded as authoritative; got: %+v", rec)
 		}
-		if berr := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}), "release.yaml", nil, false, io.Discard, io.Discard); berr != nil {
+		if berr := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}), "release.yaml", nil, false, io.Discard, io.Discard); berr != nil {
 			t.Fatalf("an unrecorded (untrusted) marker must not affect the build; got: %v", berr)
 		}
 	})

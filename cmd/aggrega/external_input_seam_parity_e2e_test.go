@@ -567,7 +567,7 @@ func TestThreeSurfacesEmitByteIdenticalArtifactSets(t *testing.T) {
 	tool := surfaceRender{"the tool protocol", renderThroughToolProtocol(t, root, releasePath, compilerVersion)}
 
 	// ---- The command line.
-	if err := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, nil, false, os.Stderr, os.Stdout); err != nil {
+	if err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, nil, false, os.Stderr, os.Stdout); err != nil {
 		t.Fatalf("the command line's build failed: %v", err)
 	}
 	cli := surfaceRender{"the command line", readRenderedTree(t, filepath.Join(root, "dist"))}

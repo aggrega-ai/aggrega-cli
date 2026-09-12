@@ -22,6 +22,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -97,7 +98,7 @@ func TestBuildAutoPullEmitsWhatPullThenBuildEmits(t *testing.T) {
 		t.Fatalf("leg A resolution: %v", err)
 	}
 	var diagA, outA bytes.Buffer
-	if err := dispatchBuildWithDiag(resolveTempWorkspace(t, tempWorkspaceOptions{Root: rootA}), releaseA, catalogDirs, false,
+	if err := dispatchBuildWithDiag(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: rootA}), releaseA, catalogDirs, false,
 		buildDiagOptions{}, buildops.RunOptions{}, &diagA, &outA); err != nil {
 		t.Fatalf("leg A build: %v\ndiagnostics:\n%s", err, diagA.String())
 	}
@@ -108,7 +109,7 @@ func TestBuildAutoPullEmitsWhatPullThenBuildEmits(t *testing.T) {
 	t.Chdir(rootB)
 	releaseB := fullstackTriad(t, fixtureDir, rootB)
 	var diagB, outB bytes.Buffer
-	if err := dispatchBuildWithDiag(resolveTempWorkspace(t, tempWorkspaceOptions{Root: rootB}), releaseB, catalogDirs, false,
+	if err := dispatchBuildWithDiag(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: rootB}), releaseB, catalogDirs, false,
 		buildDiagOptions{}, buildops.RunOptions{AutoPull: true}, &diagB, &outB); err != nil {
 		t.Fatalf("leg B build --auto-pull: %v\ndiagnostics:\n%s", err, diagB.String())
 	}

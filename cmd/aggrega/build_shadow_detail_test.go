@@ -5,6 +5,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -125,7 +126,7 @@ spec:
 	}
 
 	var diag bytes.Buffer
-	if err := dispatchBuildWithDiag(ws, releasePath, catalogDirs, traceEnabled,
+	if err := dispatchBuildWithDiag(context.Background(), ws, releasePath, catalogDirs, traceEnabled,
 		buildDiagOptions{}, buildops.RunOptions{Detail: true}, &diag, os.Stdout); err != nil {
 		t.Fatalf("build failed: %v\n--- diag ---\n%s", err, diag.String())
 	}
