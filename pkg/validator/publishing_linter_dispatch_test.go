@@ -4,6 +4,7 @@
 package validator_test
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"os"
@@ -111,7 +112,7 @@ func TestDispatchClassifiesComponentPatch(t *testing.T) {
 	prev := loadFixture(t, "Component", "patch", "previous.yaml")
 	prop := loadFixture(t, "Component", "patch", "proposed.yaml")
 
-	findings, err := validator.DispatchPublishingLinter(linterSpec(pluginBytes), "", validator.LinterInput{
+	findings, err := validator.DispatchPublishingLinter(context.Background(), linterSpec(pluginBytes), "", validator.LinterInput{
 		RuleID:     "schema-evolution",
 		EntityKind: "Component",
 		Proposed:   prop,
@@ -139,7 +140,7 @@ func TestDispatchClassifiesComponentMinor(t *testing.T) {
 	prev := loadFixture(t, "Component", "minor", "previous.yaml")
 	prop := loadFixture(t, "Component", "minor", "proposed.yaml")
 
-	findings, err := validator.DispatchPublishingLinter(linterSpec(pluginBytes), "", validator.LinterInput{
+	findings, err := validator.DispatchPublishingLinter(context.Background(), linterSpec(pluginBytes), "", validator.LinterInput{
 		RuleID:     "schema-evolution",
 		EntityKind: "Component",
 		Proposed:   prop,
@@ -158,7 +159,7 @@ func TestDispatchClassifiesComponentMajor(t *testing.T) {
 	prev := loadFixture(t, "Component", "major", "previous.yaml")
 	prop := loadFixture(t, "Component", "major", "proposed.yaml")
 
-	findings, err := validator.DispatchPublishingLinter(linterSpec(pluginBytes), "", validator.LinterInput{
+	findings, err := validator.DispatchPublishingLinter(context.Background(), linterSpec(pluginBytes), "", validator.LinterInput{
 		RuleID:     "schema-evolution",
 		EntityKind: "Component",
 		Proposed:   prop,
@@ -174,7 +175,7 @@ func TestDispatchClassifiesComponentMajor(t *testing.T) {
 
 func TestDispatchHandlesUnknownRule(t *testing.T) {
 	pluginBytes := wasmtest.EnsureFixtureBytes(t, "publishing-linter.wasm")
-	findings, err := validator.DispatchPublishingLinter(linterSpec(pluginBytes), "", validator.LinterInput{
+	findings, err := validator.DispatchPublishingLinter(context.Background(), linterSpec(pluginBytes), "", validator.LinterInput{
 		RuleID:     "non-existent-rule",
 		EntityKind: "Component",
 		Proposed:   json.RawMessage(`{"kind": "Component"}`),
@@ -233,7 +234,7 @@ func TestPoliciesRoundTripThroughSchema(t *testing.T) {
 	// input and return an error rather than a finding.
 	prev := loadFixture(t, "Component", "patch", "previous.yaml")
 	prop := loadFixture(t, "Component", "patch", "proposed.yaml")
-	findings, err := validator.DispatchPublishingLinter(linterSpec(pluginBytes), "", validator.LinterInput{
+	findings, err := validator.DispatchPublishingLinter(context.Background(), linterSpec(pluginBytes), "", validator.LinterInput{
 		RuleID:     "schema-evolution",
 		EntityKind: "Component",
 		Proposed:   prop,
@@ -261,7 +262,7 @@ func TestDispatchAnnotationPrefixViolation(t *testing.T) {
 			"annotations": {"aggrega.ai/custom-flag": "x"}
 		}
 	}`)
-	findings, err := validator.DispatchPublishingLinter(linterSpec(pluginBytes), "", validator.LinterInput{
+	findings, err := validator.DispatchPublishingLinter(context.Background(), linterSpec(pluginBytes), "", validator.LinterInput{
 		RuleID:     "annotation-prefix",
 		EntityKind: "Component",
 		Proposed:   proposed,
@@ -293,7 +294,7 @@ func TestDispatchNameShapeViolation(t *testing.T) {
 		"kind": "Component",
 		"metadata": {"name": "BadName"}
 	}`)
-	findings, err := validator.DispatchPublishingLinter(linterSpec(pluginBytes), "", validator.LinterInput{
+	findings, err := validator.DispatchPublishingLinter(context.Background(), linterSpec(pluginBytes), "", validator.LinterInput{
 		RuleID:     "name-shape",
 		EntityKind: "Component",
 		Proposed:   proposed,
@@ -322,7 +323,7 @@ func TestDispatchDynamicRefsViolation(t *testing.T) {
 		"metadata": {"name": "Probes", "version": "1.0.0"},
 		"spec": {"schemas": {"Polymorphic": {"$dynamicAnchor": "node", "type": "object"}}}
 	}`)
-	findings, err := validator.DispatchPublishingLinter(linterSpec(pluginBytes), "", validator.LinterInput{
+	findings, err := validator.DispatchPublishingLinter(context.Background(), linterSpec(pluginBytes), "", validator.LinterInput{
 		RuleID:     "dynamic-refs",
 		EntityKind: "SchemaLibrary",
 		Proposed:   proposed,
@@ -351,7 +352,7 @@ func TestDispatchIdOverridesViolation(t *testing.T) {
 		"metadata": {"name": "Probes", "version": "1.0.0"},
 		"spec": {"schemas": {"Custom": {"$id": "https://example.com/x", "type": "object"}}}
 	}`)
-	findings, err := validator.DispatchPublishingLinter(linterSpec(pluginBytes), "", validator.LinterInput{
+	findings, err := validator.DispatchPublishingLinter(context.Background(), linterSpec(pluginBytes), "", validator.LinterInput{
 		RuleID:     "id-overrides",
 		EntityKind: "SchemaLibrary",
 		Proposed:   proposed,
@@ -380,7 +381,7 @@ func TestDispatchCategoryViolation(t *testing.T) {
 			"labels": {"component.aggrega.ai/category": "compute"}
 		}
 	}`)
-	findings, err := validator.DispatchPublishingLinter(linterSpec(pluginBytes), "", validator.LinterInput{
+	findings, err := validator.DispatchPublishingLinter(context.Background(), linterSpec(pluginBytes), "", validator.LinterInput{
 		RuleID:     "category-matches-directory",
 		EntityKind: "Component",
 		Proposed:   proposed,
@@ -418,7 +419,7 @@ func TestDispatchCategoryViolationSuppressedByPolicy(t *testing.T) {
 		}
 	}`)
 	policies := json.RawMessage(`{"allow_category_mismatches": true}`)
-	findings, err := validator.DispatchPublishingLinter(linterSpec(pluginBytes), "", validator.LinterInput{
+	findings, err := validator.DispatchPublishingLinter(context.Background(), linterSpec(pluginBytes), "", validator.LinterInput{
 		RuleID:     "category-matches-directory",
 		EntityKind: "Component",
 		Proposed:   proposed,
@@ -458,7 +459,7 @@ func TestDispatchPublishingLinterBatch(t *testing.T) {
 			Proposed:   json.RawMessage(`{"kind":"Component","metadata":{"name":"BadName"}}`),
 		},
 	}
-	results, err := validator.DispatchPublishingLinterBatch(linterSpec(pluginBytes), "", inputs)
+	results, err := validator.DispatchPublishingLinterBatch(context.Background(), linterSpec(pluginBytes), "", inputs)
 	if err != nil {
 		t.Fatalf("DispatchPublishingLinterBatch: %v", err)
 	}
@@ -483,7 +484,7 @@ func TestDispatchPublishingLinterBatch(t *testing.T) {
 // toolchain is absent.
 func TestDispatchPublishingLinterRejectsNonLinter(t *testing.T) {
 	nonLinter := wasmtest.EnsureFixtureBytes(t, "frp-step-go.wasm")
-	_, err := validator.DispatchPublishingLinter(linterSpec(nonLinter), "", validator.LinterInput{
+	_, err := validator.DispatchPublishingLinter(context.Background(), linterSpec(nonLinter), "", validator.LinterInput{
 		RuleID:     "name-shape",
 		EntityKind: "Component",
 		Proposed:   json.RawMessage(`{"kind":"Component","metadata":{"name":"core/compute/api-server"}}`),
@@ -511,7 +512,7 @@ func TestDispatchPublishingLinterCrossCheckHalts(t *testing.T) {
 			{Name: "lint_rules", Scope: "own"},
 		}},
 	}
-	_, err := validator.DispatchPublishingLinter(spec, "", validator.LinterInput{
+	_, err := validator.DispatchPublishingLinter(context.Background(), spec, "", validator.LinterInput{
 		RuleID:     "name-shape",
 		EntityKind: "Component",
 		Proposed:   json.RawMessage(`{"kind":"Component","metadata":{"name":"core/compute/api-server"}}`),
@@ -534,7 +535,7 @@ func TestDispatchPublishingLinterCrossCheckHalts(t *testing.T) {
 func TestDispatchPublishingLinterAppliesEntityMemoryCap(t *testing.T) {
 	pluginBytes := wasmtest.EnsureFixtureBytes(t, "publishing-linter.wasm")
 	spec := wasm.PluginSpec{Name: "publishing-linter", Bytes: pluginBytes, MaxMemoryPages: 1}
-	_, err := validator.DispatchPublishingLinter(spec, "", validator.LinterInput{
+	_, err := validator.DispatchPublishingLinter(context.Background(), spec, "", validator.LinterInput{
 		RuleID:     "name-shape",
 		EntityKind: "Component",
 		Proposed:   json.RawMessage(`{"kind":"Component","metadata":{"name":"core/compute/api-server"}}`),
@@ -555,7 +556,7 @@ func TestDispatchPublishingLinterAppliesEntityMemoryCap(t *testing.T) {
 func TestDispatchPublishingLinterHonorsExportOverride(t *testing.T) {
 	pluginBytes := wasmtest.EnsureFixtureBytes(t, "publishing-linter.wasm")
 	const authoredExport = "lint_does_not_exist"
-	_, err := validator.DispatchPublishingLinter(linterSpec(pluginBytes), authoredExport, validator.LinterInput{
+	_, err := validator.DispatchPublishingLinter(context.Background(), linterSpec(pluginBytes), authoredExport, validator.LinterInput{
 		RuleID:     "name-shape",
 		EntityKind: "Component",
 		Proposed:   json.RawMessage(`{"kind":"Component","metadata":{"name":"core/compute/api-server"}}`),
@@ -574,7 +575,7 @@ func TestDispatchPublishingLinterHonorsExportOverride(t *testing.T) {
 // exactly as an attachment that names no per-attachment override would.
 func TestDispatchPublishingLinterDefaultExport(t *testing.T) {
 	pluginBytes := wasmtest.EnsureFixtureBytes(t, "publishing-linter.wasm")
-	findings, err := validator.DispatchPublishingLinter(linterSpec(pluginBytes), "", validator.LinterInput{
+	findings, err := validator.DispatchPublishingLinter(context.Background(), linterSpec(pluginBytes), "", validator.LinterInput{
 		RuleID:     "name-shape",
 		EntityKind: "Component",
 		Proposed:   json.RawMessage(`{"kind":"Component","metadata":{"name":"BadName"}}`),

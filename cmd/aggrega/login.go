@@ -37,7 +37,7 @@ func newLoginCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return loginRun(loginConfig{
+			return loginRun(cmd.Context(), loginConfig{
 				Registry:      args[0],
 				Username:      username,
 				PasswordStdin: passwordStdin,
@@ -88,7 +88,29 @@ type loginConfig struct {
 // credential is written to the standard Docker config file. When a credential
 // helper or OS keychain IS configured, the store delegates to it. For at-rest
 // security, configuring a helper is recommended.
-func loginRun(cfg loginConfig) error {
+//
+// ctx belongs to the caller and governs both steps that leave this process: the
+// verification round trip to the registry, and the write to the credential
+// store. Ending it ends the round trip in flight rather than waiting for it, and
+// stops the write from happening at all.
+//
+// The two steps carry the stop differently, and the difference is worth stating
+// because it decides where the check sits. Verification is an ordinary request
+// and ends with the context. The store honours a context only when it delegates
+// to a credential helper; the plaintext configuration-file path it falls back to
+// accepts a context and ignores it, so the stop is carried to that path by the
+// check this function makes immediately before handing the credential over.
+//
+// Stopping cannot leave a partial credential behind, and the ordering is what
+// guarantees that rather than any cleanup step. Verification happens before
+// anything is written, so a run stopped during it stores nothing at all. The
+// write that follows is a single handoff — to a credential helper as one
+// exchange, or to the configuration file as a write to a temporary file that is
+// then renamed over the old one — so the stored state afterwards is either
+// exactly what was there before or exactly the new credential, never a readable
+// mixture of the two. A run stopped before the write therefore reports that it
+// did not store rather than leaving a credential that looks good and is not.
+func loginRun(ctx context.Context, cfg loginConfig) error {
 	if cfg.Registry == "" {
 		return fmt.Errorf("aggrega login: registry argument required")
 	}
@@ -157,7 +179,7 @@ func loginRun(cfg loginConfig) error {
 		if err != nil {
 			return fmt.Errorf("aggrega login: %s: %w (use --skip-verify to store the credential without contacting the registry)", cfg.Registry, err)
 		}
-		if err := oci.VerifyCredential(context.Background(), cfg.Registry, cred, httpClient); err != nil {
+		if err := oci.VerifyCredential(ctx, cfg.Registry, cred, httpClient); err != nil {
 			return fmt.Errorf("aggrega login: %s: %w", cfg.Registry, err)
 		}
 	}
@@ -170,7 +192,21 @@ func loginRun(cfg loginConfig) error {
 		}
 		store = s
 	}
-	if err := store.Put(context.Background(), cfg.Registry, cred); err != nil {
+	// Checked immediately before the write rather than only on entry, because
+	// everything above it — the prompts, the workspace resolution, the round trip
+	// to the registry — is time in which the operator can give up, and the write
+	// below is the part that outlives the command.
+	//
+	// It is load-bearing rather than an economy. The shared store honours a
+	// context only when it delegates to a credential helper; the plaintext
+	// configuration-file path it falls back to takes a context and ignores it, so
+	// on a machine with no helper configured the write would go ahead after the
+	// operator had already stopped the command. This check is what carries the
+	// stop to that path.
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("aggrega login: %s: %w", cfg.Registry, err)
+	}
+	if err := store.Put(ctx, cfg.Registry, cred); err != nil {
 		return fmt.Errorf("aggrega login: store credential for %s: %w", cfg.Registry, err)
 	}
 

@@ -242,9 +242,9 @@ func dispatchAndCheckRule(t *testing.T, pluginPath string, c participationCase) 
 	if err != nil {
 		t.Fatalf("read plugin %s: %v", pluginPath, err)
 	}
-	findings, err := validator.DispatchPublishingLinter(wasm.PluginSpec{Name: "publishing-linter", Bytes: pluginBytes}, "", input)
+	findings, err := validator.DispatchPublishingLinter(context.Background(), wasm.PluginSpec{Name: "publishing-linter", Bytes: pluginBytes}, "", input)
 	if err != nil {
-		t.Fatalf("DispatchPublishingLinter(%s): %v", c.ruleID, err)
+		t.Fatalf("DispatchPublishingLinter(context.Background(), %s): %v", c.ruleID, err)
 	}
 	for _, f := range findings {
 		if f.RuleID == c.ruleID {
@@ -377,7 +377,7 @@ func dispatchAllAndCollectRuleIDs(t *testing.T, pluginPath string, yamlBytes []b
 		case "provides-declared-by-component":
 			input.ImplementedComponent = implementedComponentFixture(t)
 		}
-		findings, err := validator.DispatchPublishingLinter(wasm.PluginSpec{Name: "publishing-linter", Bytes: pluginBytes}, "", input)
+		findings, err := validator.DispatchPublishingLinter(context.Background(), wasm.PluginSpec{Name: "publishing-linter", Bytes: pluginBytes}, "", input)
 		if err != nil {
 			t.Fatalf("dispatch %s: %v", ruleID, err)
 		}
@@ -415,7 +415,7 @@ func TestPluginDefaultLimits(t *testing.T) {
 			Proposed:   proposedJSON,
 			Policies:   buildParticipationPolicies(),
 		}
-		findings, err := validator.DispatchPublishingLinter(wasm.PluginSpec{Name: "publishing-linter", Bytes: pluginBytes}, "", input)
+		findings, err := validator.DispatchPublishingLinter(context.Background(), wasm.PluginSpec{Name: "publishing-linter", Bytes: pluginBytes}, "", input)
 		if err != nil {
 			t.Fatalf("DispatchPublishingLinter: %v", err)
 		}

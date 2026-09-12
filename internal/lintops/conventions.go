@@ -308,7 +308,7 @@ func lintConventionsFiles(ctx context.Context, rw *workspaceconfig.ResolvedWorks
 			Policies:             policies,
 			EntityPath:           path,
 		})
-		rawFindings, err := dispatchLinterAttachments(attachments, inputs)
+		rawFindings, err := dispatchLinterAttachments(ctx, attachments, inputs)
 		if err != nil {
 			return fmt.Errorf("aggrega lint: dispatch %s: %w", path, err)
 		}

@@ -318,6 +318,17 @@ var errPluginBundleDigestMismatch = cerrors.Register("plugin-bundle-digest-misma
 // Lookup resolves a plugin URI to its resolved bytes. It is the seam each
 // socket binds: the render pipeline binds a build-configured Resolver's Resolve
 // method; the linter binds a no-pins Resolver carrying its --plugin override.
+//
+// The seam carries no cancellation parameter, so a resolution reached through it
+// cannot be ended by the caller that started it. That bound is real but narrow,
+// and the two halves of why are worth stating together. Of the five tiers, four
+// read bytes already on the machine — from the binary, from a catalog directory,
+// from an explicit path, from the content cache — and none of them is an
+// operation there is anything to stop. Only the registry tier performs work worth
+// ending, and it is reached only from a Resolver a caller built with a Puller.
+// So a caller that can end a registry pull calls ResolveContext, which takes the
+// cancellation parameter this type does not; a caller that binds this seam is by
+// construction resolving from the local tiers.
 type Lookup func(uri string) (ResolvedPlugin, error)
 
 // Resolver carries the per-invocation resolution context the cascade consults.
@@ -420,7 +431,35 @@ const unsetMsg = "no plugin path configured. Either:\n" +
 // circuits the cascade. When the URI carries a digest pin, the winning tier's
 // bytes are verified against it; a mismatch halts with a wrapped
 // oci.ErrFetchIntegrity.
+//
+// This form takes no cancellation parameter, so a resolution it starts runs to
+// its own completion. It is the form the Lookup seam binds, and it is exactly
+// right for that seam: a Resolver reached through Lookup carries no Puller, so
+// every tier it can reach reads bytes already on the machine. A caller holding a
+// Resolver that CAN pull calls ResolveContext instead, which carries the
+// caller's cancellation to the pull.
 func (r Resolver) Resolve(uri string) (ResolvedPlugin, error) {
+	return r.ResolveContext(context.Background(), uri)
+}
+
+// ResolveContext runs the tier cascade for uri under the caller's context and
+// returns the resolved bytes. It is the cascade's whole implementation; Resolve
+// is the seam-facing form that delegates here.
+//
+// Precedence, the Override short-circuit and the digest-pin verification are
+// exactly as Resolve describes them — ctx changes which work can be ended, never
+// which bytes win.
+//
+// ctx belongs to the caller and reaches the registry pull, so ending it ends the
+// transfer rather than only the reply. The four tiers above the registry read
+// bytes already on the machine and complete without consulting it. A caller that
+// has already withdrawn is answered here, before any tier is consulted, so a
+// resolution that was never going to be used does not read a file or open a
+// connection first.
+func (r Resolver) ResolveContext(ctx context.Context, uri string) (ResolvedPlugin, error) {
+	if err := ctx.Err(); err != nil {
+		return ResolvedPlugin{}, fmt.Errorf("resolve plugin %q: %w", uri, err)
+	}
 	if r.override != "" {
 		abs := r.override
 		if !filepath.IsAbs(abs) {
@@ -494,7 +533,7 @@ func (r Resolver) Resolve(uri string) (ResolvedPlugin, error) {
 	// 3 registry: an OCI pull. nil puller = hermetic build; a cache miss here
 	// is a loud halt, not a network fetch.
 	if r.puller != nil {
-		b, err := r.puller.PullPlugin(context.Background(), uri)
+		b, err := r.puller.PullPlugin(ctx, uri)
 		if err != nil {
 			return ResolvedPlugin{}, fmt.Errorf("pull plugin %q: %w", uri, err)
 		}

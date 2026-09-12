@@ -52,7 +52,17 @@ const lintExportName = "lint_rules"
 // export is the entry function to dispatch to; an empty export selects the
 // socket's default (lintExportName), mirroring a linter attachment that names
 // no per-attachment override.
-func DispatchPublishingLinter(spec wasm.PluginSpec, export string, input LinterInput) ([]abi.Diagnostic, error) {
+//
+// ctx belongs to the caller and governs the guest itself, not merely the gaps
+// between calls: the host loads every guest with the runtime configured to close
+// a module whose call context is done, so ending ctx unwinds a rule evaluation
+// that is already running rather than waiting for it to come back. A caller that
+// has already withdrawn is answered before the guest is compiled, so a lint
+// nobody is waiting for does not pay for an instantiation.
+func DispatchPublishingLinter(ctx context.Context, spec wasm.PluginSpec, export string, input LinterInput) ([]abi.Diagnostic, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("publishing_linter: %w", err)
+	}
 	if export == "" {
 		export = lintExportName
 	}
@@ -66,7 +76,6 @@ func DispatchPublishingLinter(spec wasm.PluginSpec, export string, input LinterI
 	spec.PluginType = wasm.PluginTypeLinter
 
 	loader := wasm.NewCachingLoader(nil)
-	ctx := context.Background()
 	plugin, desc, err := loader.LoadAndDescribe(ctx, spec)
 	if err != nil {
 		return nil, fmt.Errorf("publishing_linter: load: %w", err)
@@ -113,7 +122,18 @@ func DispatchPublishingLinter(spec wasm.PluginSpec, export string, input LinterI
 // export is the entry function to dispatch to; an empty export selects the
 // socket's default (lintExportName), mirroring a linter attachment that names
 // no per-attachment override.
-func DispatchPublishingLinterBatch(spec wasm.PluginSpec, export string, inputs []LinterInput) ([][]abi.Diagnostic, error) {
+//
+// ctx belongs to the caller and governs every call in the batch, the one already
+// running included: the host loads the guest with the runtime configured to close
+// a module whose call context is done, so ending ctx unwinds the rule evaluation
+// in flight instead of letting it finish and stopping at the next input. That is
+// what makes the batch worth cancelling at all — it is the long-running form, and
+// a stop that only took effect between inputs would still owe the caller the
+// whole of the current one.
+func DispatchPublishingLinterBatch(ctx context.Context, spec wasm.PluginSpec, export string, inputs []LinterInput) ([][]abi.Diagnostic, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("publishing_linter: %w", err)
+	}
 	if export == "" {
 		export = lintExportName
 	}
@@ -122,7 +142,6 @@ func DispatchPublishingLinterBatch(spec wasm.PluginSpec, export string, inputs [
 	spec.PluginType = wasm.PluginTypeLinter
 
 	loader := wasm.NewCachingLoader(nil)
-	ctx := context.Background()
 	plugin, desc, err := loader.LoadAndDescribe(ctx, spec)
 	if err != nil {
 		return nil, fmt.Errorf("publishing_linter: load: %w", err)

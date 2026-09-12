@@ -326,11 +326,13 @@ func RunEntity(ctx context.Context, cfg Config) error {
 	// Checked immediately before the guests run rather than only on entry,
 	// because everything above it — the workspace resolution, the attachment
 	// resolution, the previous-version fetch — is time in which a caller can give
-	// up, and the dispatch below is the part worth not starting.
+	// up, and answering here names the withdrawal plainly instead of surfacing it
+	// as a guest call that was unwound. The dispatch below carries ctx too, so a
+	// caller who withdraws once the guests are running is not waiting on them.
 	if err := stopped(ctx); err != nil {
 		return err
 	}
-	rawFindings, err := dispatchLinterAttachments(attachments, inputs)
+	rawFindings, err := dispatchLinterAttachments(ctx, attachments, inputs)
 	if err != nil {
 		return fmt.Errorf("aggrega lint: dispatch: %w", err)
 	}
@@ -624,11 +626,15 @@ func ResolveLinterPlugins(cliFlag string, wsCfg workspaceconfig.Config, trusted 
 // attachment ran. A dispatch failure at any attachment halts the run rather than
 // dropping that attachment's verdict: a gate the operator configured and the
 // host could not run is a loud failure, never a silent skip.
-func dispatchLinterAttachments(attachments []LinterAttachment, inputs []validator.LinterInput) ([][]abi.Diagnostic, error) {
+//
+// ctx reaches each attachment's guest, so a caller who gives up part way through
+// a multi-attachment run ends the evaluation that is running rather than waiting
+// for the remaining attachments to be asked and answered.
+func dispatchLinterAttachments(ctx context.Context, attachments []LinterAttachment, inputs []validator.LinterInput) ([][]abi.Diagnostic, error) {
 	var raw [][]abi.Diagnostic
 	for _, attachment := range attachments {
 		spec := resolver.PluginSpec("publishing-linter", attachment.Plugin)
-		findings, err := validator.DispatchPublishingLinterBatch(spec, attachment.Export, inputs)
+		findings, err := validator.DispatchPublishingLinterBatch(ctx, spec, attachment.Export, inputs)
 		if err != nil {
 			return nil, err
 		}

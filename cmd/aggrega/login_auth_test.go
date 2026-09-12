@@ -108,7 +108,7 @@ func TestLoginAuthenticatesEndToEnd(t *testing.T) {
 	t.Run("login then authenticated request succeeds", func(t *testing.T) {
 		t.Setenv("DOCKER_CONFIG", t.TempDir())
 		// Verify is ON: this exercises VerifyCredential against the live server.
-		if err := loginRun(loginConfig{
+		if err := loginRun(context.Background(), loginConfig{
 			ws:       resolveTempWorkspace(t, tempWorkspaceOptions{}),
 			Registry: host, Username: "hello", PasswordStdin: true,
 			In: strings.NewReader("world\n"), Out: io.Discard,
@@ -133,7 +133,7 @@ func TestLoginAuthenticatesEndToEnd(t *testing.T) {
 
 	t.Run("wrong password fails verification and stores nothing", func(t *testing.T) {
 		t.Setenv("DOCKER_CONFIG", t.TempDir())
-		err := loginRun(loginConfig{
+		err := loginRun(context.Background(), loginConfig{
 			ws:       resolveTempWorkspace(t, tempWorkspaceOptions{}),
 			Registry: host, Username: "hello", PasswordStdin: true,
 			In: strings.NewReader("not-the-password\n"), Out: io.Discard,

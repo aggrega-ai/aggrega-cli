@@ -26,7 +26,7 @@ func TestLoginPasswordPrecedence(t *testing.T) {
 	const reg = "registry.example.com"
 
 	// stdin wins even when the env var is set.
-	if err := loginRun(loginConfig{
+	if err := loginRun(context.Background(), loginConfig{
 		ws:       resolveTempWorkspace(t, tempWorkspaceOptions{}),
 		Registry: reg, Username: "alice", PasswordStdin: true, SkipVerify: true,
 		In: strings.NewReader("stdin-secret\n"), Out: io.Discard,
@@ -39,7 +39,7 @@ func TestLoginPasswordPrecedence(t *testing.T) {
 	}
 
 	// No stdin: the env var supplies the password.
-	if err := loginRun(loginConfig{
+	if err := loginRun(context.Background(), loginConfig{
 		ws:       resolveTempWorkspace(t, tempWorkspaceOptions{}),
 		Registry: reg, Username: "alice", SkipVerify: true,
 		In: strings.NewReader(""), Out: io.Discard,
