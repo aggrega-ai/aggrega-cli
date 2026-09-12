@@ -253,10 +253,10 @@ func pullPhaseStep(p pullops.Phase) int {
 // discarding what the resolution computed. It is the form every caller that
 // wants the resolution performed rather than examined uses.
 //
-// The context is this surface's own, and this surface has none to offer: the
-// command line installs no interrupt handling and carries no render knobs of its
-// own, so the resolution runs under a background context. A caller holding
-// either hands one over through pullRunWithResult instead.
+// The context is this surface's own, and this surface has none to offer: pullRun
+// takes no context parameter and carries no render knobs of its own, so the
+// resolution runs under a background context and observes no withdrawal. A
+// caller holding either hands one over through pullRunWithResult instead.
 func pullRun(cfg pullConfig) error {
 	_, err := pullRunWithResult(context.Background(), cfg)
 	return err
@@ -332,13 +332,12 @@ func pullRunWithResult(ctx context.Context, cfg pullConfig) (pullops.Result, err
 	}
 
 	// The resolution takes the caller's context so a caller that withdraws stops
-	// the work rather than only the reply. The command line has no withdrawal to
-	// hand it: it installs no interrupt handling, so interrupting an invocation is
-	// the operating system ending the process and there is no in-process stop for
-	// anything to observe. The surfaces that do have one — a request on the
-	// daemon, a tool invocation — drive the same resolution directly with their
-	// own request context, so what is named here is the absence of a stop on this
-	// surface rather than a decision to ignore one.
+	// the work rather than only the reply. What reaches it depends on the route
+	// in: a build's auto-pull hands over the context its command body inherited,
+	// which ends when the process is asked to stop, and a request on the daemon
+	// or a tool invocation supplies its own request context. The route through
+	// pullRun supplies a background context instead, so a pull driven that way
+	// resolves with no withdrawal for anything below to observe.
 	res, err := pullops.Run(ctx, opts)
 	if err != nil {
 		return pullops.Result{}, err

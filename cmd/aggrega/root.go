@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -167,8 +168,15 @@ func silenceUsageOnRun(c *cobra.Command) {
 // work against the file system. A package variable would run that work at
 // process start, before this function is entered, so any program that links this
 // package would pay it whether or not it ever dispatches a command.
+//
+// This is also where the run's context is created, because it is the only place
+// that owns the whole process: a stop request arrives for the process, not for a
+// command, so the context every command inherits has to start here for any of
+// them to be able to observe one.
 func Execute() {
-	if code := executeRoot(newRootCmd()); code != 0 {
+	ctx, stop := withStopSignals(context.Background())
+	defer stop()
+	if code := executeRoot(ctx, newRootCmd()); code != 0 {
 		os.Exit(code)
 	}
 }
@@ -182,12 +190,17 @@ func Execute() {
 // discoverable plugin name, an install hint is appended.
 //
 // A reported success is checked once more before it becomes exit 0, which is why
-// this uses ExecuteC rather than Execute: only ExecuteC hands back the command the
-// arguments actually resolved to, and that command is the only place the leftover
-// positionals can still be read. See strayPositionalOnParentCommand for the case
-// this catches and why the error alone cannot express it.
-func executeRoot(root *cobra.Command) int {
-	cmd, err := root.ExecuteC()
+// this uses ExecuteContextC rather than ExecuteContext: only the C-suffixed form
+// hands back the command the arguments actually resolved to, and that command is
+// the only place the leftover positionals can still be read. See
+// strayPositionalOnParentCommand for the case this catches and why the error
+// alone cannot express it.
+//
+// ctx becomes every command's starting context, which the root's
+// PersistentPreRunE then wraps rather than replaces, so a command body reading
+// cmd.Context() reads a descendant of this one and observes its withdrawal.
+func executeRoot(ctx context.Context, root *cobra.Command) int {
+	cmd, err := root.ExecuteContextC(ctx)
 	if err == nil {
 		if strayPositionalOnParentCommand(cmd) {
 			return 1

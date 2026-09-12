@@ -114,7 +114,7 @@ func TestConfiguredCLIPlugin_ListedAndDispatched(t *testing.T) {
 	root2.SetOut(&bytes.Buffer{})
 	root2.SetErr(&bytes.Buffer{})
 	root2.SetArgs([]string{"moo", "--loud", "twice"})
-	code := executeRoot(root2)
+	code := executeRoot(context.Background(), root2)
 	if code != 0 {
 		t.Fatalf("exit code = %d; want 0", code)
 	}
@@ -221,7 +221,7 @@ func TestConfiguredCLIPlugin_DeclaredFlagsForwardRawArgv(t *testing.T) {
 	root.SetOut(&bytes.Buffer{})
 	root.SetErr(&bytes.Buffer{})
 	root.SetArgs([]string{"moo", "--alien", "extra", "--unknown-to-cobra"})
-	if code := executeRoot(root); code != 0 {
+	if code := executeRoot(context.Background(), root); code != 0 {
 		t.Fatalf("exit code = %d; want 0", code)
 	}
 	if d.calls != 1 {
@@ -324,7 +324,7 @@ func TestConfiguredCLIPlugin_ExitCodePropagation(t *testing.T) {
 			root.SetOut(&bytes.Buffer{})
 			root.SetErr(&bytes.Buffer{})
 			root.SetArgs([]string{"moo"})
-			if got := executeRoot(root); got != tc.code {
+			if got := executeRoot(context.Background(), root); got != tc.code {
 				t.Fatalf("executeRoot exit = %d; want %d", got, tc.code)
 			}
 		})
@@ -420,7 +420,7 @@ func TestConfiguredCLIPlugin_DriftHaltsBeforeRun(t *testing.T) {
 	root2.SetOut(&bytes.Buffer{})
 	root2.SetErr(&bytes.Buffer{})
 	root2.SetArgs([]string{"moo"})
-	if code := executeRoot(root2); code != 0 {
+	if code := executeRoot(context.Background(), root2); code != 0 {
 		t.Fatalf("re-pinned run exit = %d; want 0", code)
 	}
 	if d2.calls != 1 {

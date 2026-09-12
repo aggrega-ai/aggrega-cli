@@ -5,6 +5,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"strings"
 	"testing"
 
@@ -164,7 +165,7 @@ func TestEveryCommandRefusesAStrayPositional(t *testing.T) {
 			root.SetIn(strings.NewReader(""))
 			root.SetArgs(append(append([]string{}, tc.argv...), tc.stray...))
 
-			if code := executeRoot(root); code == 0 {
+			if code := executeRoot(context.Background(), root); code == 0 {
 				t.Errorf("%q accepted %d stray positional argument(s) and reported success; "+
 					"give it an argument validator, or a guard at the top of its run body where its "+
 					"positionals are conditionally meaningful\noutput:\n%s",
@@ -239,7 +240,7 @@ func TestStrayPositionalBesideAnExplicitHelpRequest(t *testing.T) {
 			root.SetIn(strings.NewReader(""))
 			root.SetArgs(tc.argv)
 
-			code := executeRoot(root)
+			code := executeRoot(context.Background(), root)
 			if tc.wantZero && code != 0 {
 				t.Errorf("%v exited %d, want 0 — %s\noutput:\n%s",
 					tc.argv, code, tc.why, buf.String())

@@ -130,10 +130,10 @@ func validateRelease(rw *workspaceconfig.ResolvedWorkspace, releasePath string, 
 	// extends and schema-pillar gates, the Steps 1-4 pipeline, the
 	// resolution-completeness findings, the input-kind capability check, and the
 	// advisory lines.
-	// The command layer starts a run on a plain background context, so there is no
-	// caller's stop to carry into the resolution below. The resolution accepts one and
-	// carries it into every registry step it takes, so the daemon — which does hold a
-	// per-request context — gets that behaviour over the same code.
+	// This scope starts the resolution below on a plain background context, so the
+	// run's stop does not reach it. The resolution accepts one and carries it into
+	// every registry step it takes, so the daemon — which does hold a per-request
+	// context — gets that behaviour over the same code.
 	resolved, cerr := compilerops.ResolveValidationClosure(context.Background(), compilerops.ValidationClosureInputs{
 		View:            lazyView,
 		ReleasePath:     releasePath,
