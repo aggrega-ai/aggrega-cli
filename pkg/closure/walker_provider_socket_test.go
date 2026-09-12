@@ -4,6 +4,7 @@
 package closure_test
 
 import (
+	"context"
 	"errors"
 	"testing"
 
@@ -33,7 +34,7 @@ func TestComputeClosureIsBlindToProviderSocket(t *testing.T) {
 		},
 	}
 
-	c, err := closure.ComputeClosure(&types.Release{}, nil, types.NormalizedAggregate{}, cfg, lookup)
+	c, err := closure.ComputeClosure(context.Background(), &types.Release{}, nil, types.NormalizedAggregate{}, cfg, lookup)
 	if err != nil {
 		t.Fatalf("ComputeClosure: %v", err)
 	}
@@ -63,7 +64,7 @@ func TestResolveProviderSocketEntities_URIBoundPinnedOnEntityAxis(t *testing.T) 
 
 	c := closure.Closure{}
 	refs := []workspaceconfig.PluginRef{{Capability: "helm", URI: providerEntity}}
-	if err := closure.ResolveProviderSocketEntities(&c, refs, lookup); err != nil {
+	if err := closure.ResolveProviderSocketEntities(context.Background(), &c, refs, lookup); err != nil {
 		t.Fatalf("ResolveProviderSocketEntities: %v", err)
 	}
 
@@ -106,7 +107,7 @@ func TestResolveProviderSocketEntities_CapabilityOnlyBindingNotPinned(t *testing
 
 	c := closure.Closure{}
 	refs := []workspaceconfig.PluginRef{{Capability: "helm"}} // capability-only: no URI
-	if err := closure.ResolveProviderSocketEntities(&c, refs, lookup); err != nil {
+	if err := closure.ResolveProviderSocketEntities(context.Background(), &c, refs, lookup); err != nil {
 		t.Fatalf("capability-only binding must not halt; got %v", err)
 	}
 	if len(c.Entities) != 0 {
@@ -131,7 +132,7 @@ func TestResolveProviderSocketEntities_Tier1LocalNotPinned(t *testing.T) {
 
 	c := closure.Closure{}
 	refs := []workspaceconfig.PluginRef{{Capability: "helm", URI: providerEntity}}
-	if err := closure.ResolveProviderSocketEntities(&c, refs, lookup); err != nil {
+	if err := closure.ResolveProviderSocketEntities(context.Background(), &c, refs, lookup); err != nil {
 		t.Fatalf("Tier-1 provider must not halt; got %v", err)
 	}
 	if len(c.Entities) != 0 {
@@ -150,7 +151,7 @@ func TestResolveProviderSocketEntities_UnresolvableHaltsLoudly(t *testing.T) {
 
 	c := closure.Closure{}
 	refs := []workspaceconfig.PluginRef{{Capability: "helm", URI: "provider/helm:1.0.0"}}
-	err := closure.ResolveProviderSocketEntities(&c, refs, lookup)
+	err := closure.ResolveProviderSocketEntities(context.Background(), &c, refs, lookup)
 	if !errors.Is(err, closure.ErrUnresolvableURI()) {
 		t.Fatalf("want ErrUnresolvableURI; got %v", err)
 	}
@@ -186,7 +187,7 @@ func TestResolveProviderSocketEntities_NonRegressionCleanPaths(t *testing.T) {
 				},
 			}
 			c := closure.Closure{}
-			if err := closure.ResolveProviderSocketEntities(&c, tc.providers, lookup); err != nil {
+			if err := closure.ResolveProviderSocketEntities(context.Background(), &c, tc.providers, lookup); err != nil {
 				t.Fatalf("expected clean resolution; got %v", err)
 			}
 			if len(c.Entities) != tc.wantEntities {

@@ -4,6 +4,7 @@
 package catalog_test
 
 import (
+	"context"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
@@ -45,7 +46,7 @@ func TestClosureLookup_TargetedUpgradeFloatsOnlyDropped(t *testing.T) {
 	reuse := &catalog.ReuseVerification{PriorPins: reduced}
 	lookup := cat.ClosureLookupWithReuse(puller, t.TempDir(), cacheDir, nil, nil, reuse)
 
-	resA, err := lookup.ResolveCatalogEntity(uriA, "component")
+	resA, err := lookup.ResolveCatalogEntity(context.Background(), uriA, "component")
 	if err != nil {
 		t.Fatalf("resolve dropped target A: %v", err)
 	}
@@ -53,7 +54,7 @@ func TestClosureLookup_TargetedUpgradeFloatsOnlyDropped(t *testing.T) {
 		t.Errorf("targeted entity A: resolved %q; want 1.1.0 (dropped pin floats to highest)", resA.ResolvedVersion)
 	}
 
-	resB, err := lookup.ResolveCatalogEntity(uriB, "component")
+	resB, err := lookup.ResolveCatalogEntity(context.Background(), uriB, "component")
 	if err != nil {
 		t.Fatalf("resolve held entity B: %v", err)
 	}
@@ -67,7 +68,7 @@ func TestClosureLookup_TargetedUpgradeFloatsOnlyDropped(t *testing.T) {
 	// Exact-form target: a reference carrying an exact version constraint
 	// re-resolves to that literal even with no pin (dropped) — a no-op upgrade
 	// that neither errors nor moves.
-	resExact, err := lookup.ResolveCatalogEntity(uriA+":1.0.0", "component")
+	resExact, err := lookup.ResolveCatalogEntity(context.Background(), uriA+":1.0.0", "component")
 	if err != nil {
 		t.Fatalf("resolve exact-form dropped target: %v", err)
 	}

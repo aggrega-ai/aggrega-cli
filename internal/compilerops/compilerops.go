@@ -17,6 +17,7 @@
 package compilerops
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
 
@@ -171,7 +172,7 @@ func (e *ClosureError) Unwrap() error { return e.err }
 // On failure the returned *ClosureError names the failing stage and carries the
 // rendered detail; the *ResolvedClosure is nil. On success the error is nil and
 // the caller owes a verdict on ManifestConsistencyFindings.
-func ResolveClosure(in ClosureInputs) (*ResolvedClosure, *ClosureError) {
+func ResolveClosure(ctx context.Context, in ClosureInputs) (*ResolvedClosure, *ClosureError) {
 	rel, err := resolver.LoadRelease(in.ReleasePath)
 	if err != nil {
 		return nil, &ClosureError{
@@ -252,7 +253,7 @@ func ResolveClosure(in ClosureInputs) (*ResolvedClosure, *ClosureError) {
 	externals := lockfile.ExternalEntitiesFromBytes(rel, aggExternal, manRes.Bytes)
 	cacheDir := in.WorkspaceConfig.ResolvedArtifactCacheDir()
 	lookup := in.View.ClosureLookup(nil, in.WorkspaceRoot, cacheDir, externals)
-	cl, err := closure.ComputeClosure(rel, manifest, types.Normalize(aggregate), in.WorkspaceConfig, lookup)
+	cl, err := closure.ComputeClosure(ctx, rel, manifest, types.Normalize(aggregate), in.WorkspaceConfig, lookup)
 	if err != nil {
 		return nil, &ClosureError{
 			Stage: ClosureStageComputeClosure,
@@ -265,7 +266,7 @@ func ResolveClosure(in ClosureInputs) (*ResolvedClosure, *ClosureError) {
 	// closure matches the one a build or lint verifies against. Opt-in: a caller
 	// that folds these axes separately leaves it off so the fold does not run twice.
 	if in.Augment {
-		if aerr := closure.AugmentClosure(&cl, in.View, lookup); aerr != nil {
+		if aerr := closure.AugmentClosure(ctx, &cl, in.View, lookup); aerr != nil {
 			return nil, &ClosureError{
 				Stage: ClosureStageComputeClosure,
 				msg:   fmt.Sprintf("closure augment: %v", aerr),

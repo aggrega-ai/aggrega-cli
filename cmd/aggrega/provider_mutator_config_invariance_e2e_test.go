@@ -80,7 +80,7 @@ func serveRenderArtifacts(t *testing.T, ws, releaseRel string, catDirs []string,
 	view := catalog.NewLazyLookup(wsRoot, cacheDir, dirs, nil)
 	view.SetPins(catalog.PinsFromLockfile(lf))
 
-	resolved, cerr := compilerops.ResolveClosure(compilerops.ClosureInputs{
+	resolved, cerr := compilerops.ResolveClosure(context.Background(), compilerops.ClosureInputs{
 		View:            view,
 		ReleasePath:     releasePath,
 		WorkspaceRoot:   wsRoot,

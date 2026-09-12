@@ -4,6 +4,7 @@
 package closure_test
 
 import (
+	"context"
 	"errors"
 	"reflect"
 	"testing"
@@ -148,10 +149,10 @@ func pluginDescentLookup() *fakeLookup {
 // re-fold sits between the phases here — that re-fold is pull.go's job over the
 // lazy index, exercised by the registry round-trip integration test.
 func descendPlugins(c *closure.Closure, loader closure.RecipeLoader, lookup closure.Lookup, provResolver closure.ProviderPluginResolver) error {
-	if err := closure.DescendRecipePluginEntities(c, loader, lookup, provResolver); err != nil {
+	if err := closure.DescendRecipePluginEntities(context.Background(), c, loader, lookup, provResolver); err != nil {
 		return err
 	}
-	return closure.DescendRecipePluginArtifacts(c, loader, lookup)
+	return closure.DescendRecipePluginArtifacts(context.Background(), c, loader, lookup)
 }
 
 // runPluginDescent computes the base closure for the manifest-bearing Release, then
@@ -161,7 +162,7 @@ func runPluginDescent(t *testing.T, lookup *fakeLookup, loader closure.RecipeLoa
 	t.Helper()
 	rel := loadRelease(t, providerDescentRelease)
 	man := loadManifest(t, providerDescentManifest)
-	cl, err := closure.ComputeClosure(rel, man, types.NormalizedAggregate{}, workspaceconfig.Config{}, lookup)
+	cl, err := closure.ComputeClosure(context.Background(), rel, man, types.NormalizedAggregate{}, workspaceconfig.Config{}, lookup)
 	if err != nil {
 		t.Fatalf("ComputeClosure: %v", err)
 	}
@@ -368,7 +369,7 @@ func TestPluginDescent_FeatureRecipePinned(t *testing.T) {
 	rel := loadRelease(t, providerDescentRelease)
 	man := loadManifest(t, featureRecipeDescentManifest)
 	lookup := featureRecipeDescentLookup()
-	cl, err := closure.ComputeClosure(rel, man, types.NormalizedAggregate{}, workspaceconfig.Config{}, lookup)
+	cl, err := closure.ComputeClosure(context.Background(), rel, man, types.NormalizedAggregate{}, workspaceconfig.Config{}, lookup)
 	if err != nil {
 		t.Fatalf("ComputeClosure: %v", err)
 	}
@@ -434,7 +435,7 @@ func TestPluginDescent_FeatureRecipePinnedWithNoRenderInput(t *testing.T) {
 	rel := loadRelease(t, providerDescentRelease)
 	man := loadManifest(t, featureRecipeDescentManifest)
 	lookup := featureRecipeDescentLookup()
-	cl, err := closure.ComputeClosure(rel, man, types.NormalizedAggregate{}, workspaceconfig.Config{}, lookup)
+	cl, err := closure.ComputeClosure(context.Background(), rel, man, types.NormalizedAggregate{}, workspaceconfig.Config{}, lookup)
 	if err != nil {
 		t.Fatalf("ComputeClosure: %v", err)
 	}
@@ -488,7 +489,7 @@ func TestPluginDescent_WorkspaceSocketEntityArtifactPinned(t *testing.T) {
 	man := loadManifest(t, providerDescentManifest)
 	cfg := workspaceconfig.Config{}
 	cfg.Plugins.Governance = []workspaceconfig.PluginRef{{URI: socketEntity, Role: plugintype.RoleLabelTransform}}
-	cl, err := closure.ComputeClosure(rel, man, types.NormalizedAggregate{}, cfg, lookup)
+	cl, err := closure.ComputeClosure(context.Background(), rel, man, types.NormalizedAggregate{}, cfg, lookup)
 	if err != nil {
 		t.Fatalf("ComputeClosure: %v", err)
 	}
@@ -574,7 +575,7 @@ func runProviderDescent(t *testing.T, lookup *fakeLookup, loader closure.RecipeL
 	t.Helper()
 	rel := loadRelease(t, providerDescentRelease)
 	man := loadManifest(t, providerDescentManifest)
-	cl, err := closure.ComputeClosure(rel, man, types.NormalizedAggregate{}, workspaceconfig.Config{}, lookup)
+	cl, err := closure.ComputeClosure(context.Background(), rel, man, types.NormalizedAggregate{}, workspaceconfig.Config{}, lookup)
 	if err != nil {
 		t.Fatalf("ComputeClosure: %v", err)
 	}
@@ -668,7 +669,7 @@ func TestProviderPluginDescent_FeatureRecipe(t *testing.T) {
 	lookup := featureRecipeDescentLookup()
 	lookup.entities[providerPluginEntity] = resolutionOK("1.0.0", "sha256:provider-entity", "tier-3-pull")
 	lookup.plugins[providerPluginArtifact] = resolutionOK("1.0.0", "sha256:provider-artifact", "tier-3-pull")
-	cl, err := closure.ComputeClosure(rel, man, types.NormalizedAggregate{}, workspaceconfig.Config{}, lookup)
+	cl, err := closure.ComputeClosure(context.Background(), rel, man, types.NormalizedAggregate{}, workspaceconfig.Config{}, lookup)
 	if err != nil {
 		t.Fatalf("ComputeClosure: %v", err)
 	}

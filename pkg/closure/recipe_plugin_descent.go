@@ -4,6 +4,7 @@
 package closure
 
 import (
+	"context"
 	"fmt"
 	"sort"
 
@@ -152,7 +153,7 @@ func artifactNeedsNoPin(resolutionPath string, declaredType plugintype.Type) boo
 // Newly-discovered entities are appended to c.Entities (deduped by URI against
 // what is already present, accumulating referenced-from sites). A nil loader is
 // a no-op (the caller wired no recipe-body access).
-func DescendRecipePluginEntities(c *Closure, loader RecipeLoader, lookup Lookup, providerResolver ProviderPluginResolver) error {
+func DescendRecipePluginEntities(ctx context.Context, c *Closure, loader RecipeLoader, lookup Lookup, providerResolver ProviderPluginResolver) error {
 	if c == nil || loader == nil {
 		return nil
 	}
@@ -173,7 +174,7 @@ func DescendRecipePluginEntities(c *Closure, loader RecipeLoader, lookup Lookup,
 		// is pinned here with the referencing recipe URIs; a workspace-socket entity
 		// was already pinned by ComputeClosure and keeps its socket referenced-from.
 		recipeFromSet := recipeRefs[entityURI]
-		entRes, err := lookup.ResolveCatalogEntity(entityURI, pluginKindHint)
+		entRes, err := lookup.ResolveCatalogEntity(ctx, entityURI, pluginKindHint)
 		if err != nil {
 			return fmt.Errorf("resolve: resolve wasm plugin entity %q: %w", entityURI, err)
 		}
@@ -247,7 +248,7 @@ func DescendRecipePluginEntities(c *Closure, loader RecipeLoader, lookup Lookup,
 // is re-canonicalised before return, so the pinned set — and the lockfile written
 // from it — is byte-identical across runs regardless of descent order. A nil loader
 // is a no-op.
-func DescendRecipePluginArtifacts(c *Closure, loader RecipeLoader, lookup Lookup) error {
+func DescendRecipePluginArtifacts(ctx context.Context, c *Closure, loader RecipeLoader, lookup Lookup) error {
 	if c == nil || loader == nil {
 		return nil
 	}
@@ -269,7 +270,7 @@ func DescendRecipePluginArtifacts(c *Closure, loader RecipeLoader, lookup Lookup
 
 	for _, entityURI := range entityURIs {
 		registryOnly := true
-		if err := pinPluginArtifact(c, loader, lookup, entityURI, pluginIndex, registryOnly); err != nil {
+		if err := pinPluginArtifact(ctx, c, loader, lookup, entityURI, pluginIndex, registryOnly); err != nil {
 			return err
 		}
 	}
@@ -294,7 +295,7 @@ func DescendRecipePluginArtifacts(c *Closure, loader RecipeLoader, lookup Lookup
 // locally-resolved once the pinned cache slot is folded into the hermetic view's local
 // enumeration, and dropping it is exactly the reconstruction gap that surfaces as
 // spurious drift.
-func pinPluginArtifact(c *Closure, loader RecipeLoader, lookup Lookup, entityURI string, pluginIndex map[string]int, registryOnly bool) error {
+func pinPluginArtifact(ctx context.Context, c *Closure, loader RecipeLoader, lookup Lookup, entityURI string, pluginIndex map[string]int, registryOnly bool) error {
 	wp, err := loader.LoadPlugin(entityURI)
 	if err != nil {
 		return fmt.Errorf("resolve: load wasm plugin entity %q for artifact descent: %w", entityURI, err)
@@ -306,7 +307,7 @@ func pinPluginArtifact(c *Closure, loader RecipeLoader, lookup Lookup, entityURI
 	// The .wasm rides inline in the entity's single manifest, tagged by the
 	// entity's version; pass that version so a digest-free reference resolves
 	// the layer from the right manifest.
-	artRes, err := lookup.ResolvePlugin(artifactURI, wp.Metadata.Version)
+	artRes, err := lookup.ResolvePlugin(ctx, artifactURI, wp.Metadata.Version)
 	if err != nil {
 		return fmt.Errorf("resolve: resolve pipeline plugin artifact %q: %w", artifactURI, err)
 	}

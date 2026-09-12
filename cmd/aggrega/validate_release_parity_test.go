@@ -332,7 +332,7 @@ func cliOracleValidate(t *testing.T, rw *workspaceconfig.ResolvedWorkspace, rele
 	cacheDir := wsCfg.ResolvedArtifactCacheDir()
 	dirs := workspaceconfig.ResolveCatalogDirs(catalogFlagDirs, wsCfg, wsRoot)
 	lazyView := catalog.NewLazyLookup(wsRoot, cacheDir, dirs, nil)
-	resolved, cerr := compilerops.ResolveClosure(compilerops.ClosureInputs{
+	resolved, cerr := compilerops.ResolveClosure(context.Background(), compilerops.ClosureInputs{
 		View:            lazyView,
 		ReleasePath:     releasePath,
 		WorkspaceRoot:   wsRoot,

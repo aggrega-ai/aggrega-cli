@@ -186,7 +186,7 @@ func TestBuildToBufferRefusesABuildWithNoReleasePath(t *testing.T) {
 	view, releasePath, workspaceRoot, wsCfg := fixtureWorkspace(t)
 	ctx := context.Background()
 
-	resolved, cerr := ResolveClosure(ClosureInputs{
+	resolved, cerr := ResolveClosure(context.Background(), ClosureInputs{
 		View:            view,
 		ReleasePath:     releasePath,
 		WorkspaceRoot:   workspaceRoot,
@@ -218,7 +218,7 @@ func TestValidateRefusesWithNoReleasePath(t *testing.T) {
 	view, releasePath, workspaceRoot, wsCfg := fixtureWorkspace(t)
 	ctx := context.Background()
 
-	resolved, cerr := ResolveClosure(ClosureInputs{
+	resolved, cerr := ResolveClosure(context.Background(), ClosureInputs{
 		View:            view,
 		ReleasePath:     releasePath,
 		WorkspaceRoot:   workspaceRoot,
@@ -259,7 +259,7 @@ func TestValidateWithAnAbsentRecordRunsTheWholePipeline(t *testing.T) {
 		t.Fatalf("the fixture has acquired a record, so the absence case would be vacuous: stat %v", err)
 	}
 
-	resolved, cerr := ResolveClosure(ClosureInputs{
+	resolved, cerr := ResolveClosure(context.Background(), ClosureInputs{
 		View:            view,
 		ReleasePath:     releasePath,
 		WorkspaceRoot:   workspaceRoot,

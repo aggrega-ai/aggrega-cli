@@ -579,7 +579,7 @@ func runPreview(ctx context.Context, in PreviewInputs, pol previewPolicy, opts p
 	// library axes so the closure matches the one drift is verified against; it
 	// is on whenever this layer owns the reconstruction, and a caller that folded
 	// the axes itself no longer exists — the fold has one home now.
-	resolved, cerr := ResolveClosure(ClosureInputs{
+	resolved, cerr := ResolveClosure(ctx, ClosureInputs{
 		View:            in.view,
 		ReleasePath:     in.releasePath,
 		WorkspaceRoot:   in.workspaceRoot,
@@ -617,7 +617,7 @@ func runPreview(ctx context.Context, in PreviewInputs, pol previewPolicy, opts p
 	// Reconstruct the axes ComputeClosure leaves empty, hermetically and from the
 	// lockfile, so the drift comparison below is like-for-like.
 	if pol.reconstructClosureAxes && in.lockfile != nil {
-		if err := reconstructPreviewClosureAxes(in, resolved); err != nil {
+		if err := reconstructPreviewClosureAxes(ctx, in, resolved); err != nil {
 			out.FailedGate = GateAxisReconstruction
 			return out, &resolutionFailure{err: err}
 		}
@@ -756,7 +756,7 @@ func enforceDeprecation(in PreviewInputs, warn func(WarningClass, string)) (halt
 // closure to make the just-pinned plugin entities visible, and the pins are
 // restored to the lockfile view afterward so the render resolves exactly as it
 // would have without the reconstruction.
-func reconstructPreviewClosureAxes(in PreviewInputs, resolved *ResolvedClosure) error {
+func reconstructPreviewClosureAxes(ctx context.Context, in PreviewInputs, resolved *ResolvedClosure) error {
 	view := in.view
 	lookup := resolved.Lookup
 
@@ -776,7 +776,7 @@ func reconstructPreviewClosureAxes(in PreviewInputs, resolved *ResolvedClosure) 
 		view.SetPins(catalog.PinsFromClosure(resolved.Closure))
 		return view.ClosureRecipeLoader(), nil
 	}
-	if err := closure.ReconstructClosureAxes(&resolved.Closure, aggLoader, recipeLoader, lookup, resolvePlugin, refold); err != nil {
+	if err := closure.ReconstructClosureAxes(ctx, &resolved.Closure, aggLoader, recipeLoader, lookup, resolvePlugin, refold); err != nil {
 		view.SetPins(catalog.PinsFromLockfile(in.lockfile))
 		return err
 	}
@@ -797,5 +797,5 @@ func reconstructPreviewClosureAxes(in PreviewInputs, resolved *ResolvedClosure) 
 	if err != nil {
 		return err
 	}
-	return closure.ReconstructWorkspaceSocketEntities(&resolved.Closure, socketEntityURIs, socketRecipeLoader, socketLookup)
+	return closure.ReconstructWorkspaceSocketEntities(ctx, &resolved.Closure, socketEntityURIs, socketRecipeLoader, socketLookup)
 }

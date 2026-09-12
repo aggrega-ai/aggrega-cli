@@ -3,7 +3,11 @@
 
 package closure
 
-import "go.yaml.in/yaml/v3"
+import (
+	"context"
+
+	"go.yaml.in/yaml/v3"
+)
 
 // SchemaConsumer pairs a resolved Component/Feature URI with its schema body
 // (a yaml.Node) so DiscoverSchemaLibraries can scan it for cross-document
@@ -83,6 +87,7 @@ type discoverConsumer[B any] struct {
 // calling it with the same inputs compute the identical closure, so the lockfile
 // one writes and the closure the other checks cannot diverge.
 func discoverLibraries[B any](
+	ctx context.Context,
 	c *Closure,
 	axis LibraryAxis,
 	lookup Lookup,
@@ -101,7 +106,7 @@ func discoverLibraries[B any](
 				return err
 			}
 		}
-		if err := state.resolveLibraries(axis, lookup); err != nil {
+		if err := state.resolveLibraries(ctx, axis, lookup); err != nil {
 			return err
 		}
 		axis.SetLibraries(c, state.materialiseLibs(axis))
@@ -135,12 +140,12 @@ func discoverLibraries[B any](
 //
 // The axis is a parameter rather than baked into the function name, so an axis
 // added to the declared set is discovered here without a new entry point.
-func (c *Closure) DiscoverTemplateLibraries(axis LibraryAxis, lookup Lookup, consumers []TemplateConsumer, body TemplateBodyFunc) error {
+func (c *Closure) DiscoverTemplateLibraries(ctx context.Context, axis LibraryAxis, lookup Lookup, consumers []TemplateConsumer, body TemplateBodyFunc) error {
 	dcs := make([]discoverConsumer[string], 0, len(consumers))
 	for _, tc := range consumers {
 		dcs = append(dcs, discoverConsumer[string]{URI: tc.URI, Body: tc.Template})
 	}
-	return discoverLibraries(c, axis, lookup, dcs,
+	return discoverLibraries(ctx, c, axis, lookup, dcs,
 		func(s *walkState, a LibraryAxis, tmpl, consumerURI string) error {
 			return s.walkImportInto(a, tmpl, consumerURI)
 		}, body)
@@ -148,21 +153,21 @@ func (c *Closure) DiscoverTemplateLibraries(axis LibraryAxis, lookup Lookup, con
 
 // DiscoverMappingLibraries discovers the MappingLibrary closure reachable from a
 // set of Recipe / FeatureRecipe valuesMapping bodies. See DiscoverTemplateLibraries.
-func (c *Closure) DiscoverMappingLibraries(lookup Lookup, consumers []MappingConsumer, body MappingBodyFunc) error {
-	return c.DiscoverTemplateLibraries(LibraryAxisNamed("MappingLibraries"), lookup, consumers, body)
+func (c *Closure) DiscoverMappingLibraries(ctx context.Context, lookup Lookup, consumers []MappingConsumer, body MappingBodyFunc) error {
+	return c.DiscoverTemplateLibraries(ctx, LibraryAxisNamed("MappingLibraries"), lookup, consumers, body)
 }
 
 // DiscoverWorkloadLibraries discovers the WorkloadLibrary closure reachable from a
 // set of Recipe / FeatureRecipe workload bodies. See DiscoverTemplateLibraries.
-func (c *Closure) DiscoverWorkloadLibraries(lookup Lookup, consumers []WorkloadConsumer, body WorkloadBodyFunc) error {
-	return c.DiscoverTemplateLibraries(LibraryAxisNamed("WorkloadLibraries"), lookup, consumers, body)
+func (c *Closure) DiscoverWorkloadLibraries(ctx context.Context, lookup Lookup, consumers []WorkloadConsumer, body WorkloadBodyFunc) error {
+	return c.DiscoverTemplateLibraries(ctx, LibraryAxisNamed("WorkloadLibraries"), lookup, consumers, body)
 }
 
 // DiscoverArtifactsLibraries discovers the ArtifactsLibrary closure reachable from
 // a set of Recipe / FeatureRecipe artifacts-map bodies. An artifacts map may
 // contribute several consumers from one entity. See DiscoverTemplateLibraries.
-func (c *Closure) DiscoverArtifactsLibraries(lookup Lookup, consumers []ArtifactsConsumer, body ArtifactsBodyFunc) error {
-	return c.DiscoverTemplateLibraries(LibraryAxisNamed("ArtifactsLibraries"), lookup, consumers, body)
+func (c *Closure) DiscoverArtifactsLibraries(ctx context.Context, lookup Lookup, consumers []ArtifactsConsumer, body ArtifactsBodyFunc) error {
+	return c.DiscoverTemplateLibraries(ctx, LibraryAxisNamed("ArtifactsLibraries"), lookup, consumers, body)
 }
 
 // DiscoverSchemaLibraries discovers the SchemaLibrary closure reachable from a set
@@ -175,14 +180,14 @@ func (c *Closure) DiscoverArtifactsLibraries(lookup Lookup, consumers []Artifact
 // shared fixpoint rather than a second copy of it.
 //
 // A consumer carrying no schema contributes nothing and is dropped before the walk.
-func (c *Closure) DiscoverSchemaLibraries(lookup Lookup, consumers []SchemaConsumer, body LibraryBodyFunc) error {
+func (c *Closure) DiscoverSchemaLibraries(ctx context.Context, lookup Lookup, consumers []SchemaConsumer, body LibraryBodyFunc) error {
 	dcs := make([]discoverConsumer[*yaml.Node], 0, len(consumers))
 	for _, sc := range consumers {
 		if sc.Schema != nil {
 			dcs = append(dcs, discoverConsumer[*yaml.Node]{URI: sc.URI, Body: sc.Schema})
 		}
 	}
-	return discoverLibraries(c, LibraryAxisNamed("SchemaLibraries"), lookup, dcs,
+	return discoverLibraries(ctx, c, LibraryAxisNamed("SchemaLibraries"), lookup, dcs,
 		func(s *walkState, _ LibraryAxis, node *yaml.Node, consumerURI string) error {
 			return s.walkSchemaRefsInto(node, consumerURI)
 		}, body)

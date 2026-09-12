@@ -633,7 +633,7 @@ func TestPublishPullRoundTripPlugin(t *testing.T) {
 	// Pull: resolve the inline .wasm layer from the version-tagged manifest,
 	// content-verify, cache.
 	lookup := cat.ClosureLookup(&memStorePuller{store: store}, root, ".aggrega/cache")
-	res, err := lookup.ResolvePlugin(uri, version)
+	res, err := lookup.ResolvePlugin(context.Background(), uri, version)
 	if err != nil {
 		t.Fatalf("ResolvePlugin (pull): %v", err)
 	}
@@ -664,7 +664,7 @@ func TestPublishPullRoundTripPlugin(t *testing.T) {
 	}
 	cachedLookup := cat.ClosureLookupWithReuse(nil, root, ".aggrega/cache", nil, nil,
 		&catalog.ReuseVerification{PriorPins: pins})
-	res2, err := cachedLookup.ResolvePlugin(uri, version)
+	res2, err := cachedLookup.ResolvePlugin(context.Background(), uri, version)
 	if err != nil {
 		t.Fatalf("ResolvePlugin (cache): %v", err)
 	}
@@ -678,7 +678,7 @@ func TestPublishPullRoundTripPlugin(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(slot, "blob"), []byte("tampered"), 0o644); err != nil {
 		t.Fatalf("tamper write: %v", err)
 	}
-	if _, err := cachedLookup.ResolvePlugin(uri, version); !errors.Is(err, oci.ErrFetchIntegrity()) {
+	if _, err := cachedLookup.ResolvePlugin(context.Background(), uri, version); !errors.Is(err, oci.ErrFetchIntegrity()) {
 		t.Errorf("tampered cache: err = %v; want ErrFetchIntegrity", err)
 	}
 }
@@ -722,7 +722,7 @@ func TestVersionTagPushPullParity(t *testing.T) {
 		t.Fatalf("LoadAll: %v", err)
 	}
 	lookup := cat.ClosureLookup(&memStorePuller{store: store}, root, ".aggrega/cache")
-	res, err := lookup.ResolvePlugin(uri, version)
+	res, err := lookup.ResolvePlugin(context.Background(), uri, version)
 	if err != nil {
 		t.Fatalf("the .wasm is not resolvable at the published metadata.version %q: %v", version, err)
 	}

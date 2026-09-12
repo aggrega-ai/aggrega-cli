@@ -200,7 +200,7 @@ func TestValidateToolMatchesCompilerops(t *testing.T) {
 	wsCfg := workspaceconfig.Default()
 	lazy := catalog.NewLazyLookup(root, wsCfg.ResolvedArtifactCacheDir(), []string{catalogDir}, nil)
 	view := lazy.ForRequest(nil)
-	resolved, cerr := compilerops.ResolveClosure(compilerops.ClosureInputs{
+	resolved, cerr := compilerops.ResolveClosure(context.Background(), compilerops.ClosureInputs{
 		View: view, ReleasePath: releasePath, WorkspaceRoot: root, WorkspaceConfig: wsCfg,
 	})
 	if cerr != nil {

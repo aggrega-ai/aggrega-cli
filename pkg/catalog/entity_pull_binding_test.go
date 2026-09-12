@@ -71,7 +71,7 @@ func TestTier3PullCatalogEntity_RoutesThroughEntityPuller(t *testing.T) {
 
 	t.Run("bound when kind known", func(t *testing.T) {
 		p := &recordingEntityPuller{}
-		_, _, err := tier3PullCatalogEntity(dir, ".aggrega/cache", p, "compose/dotenv-secret:1.0.0", "FeatureRecipe")
+		_, _, err := tier3PullCatalogEntity(context.Background(), dir, ".aggrega/cache", p, "compose/dotenv-secret:1.0.0", "FeatureRecipe")
 		if err != nil {
 			t.Fatalf("tier3PullCatalogEntity: %v", err)
 		}
@@ -86,7 +86,7 @@ func TestTier3PullCatalogEntity_RoutesThroughEntityPuller(t *testing.T) {
 
 	t.Run("legacy when kind empty", func(t *testing.T) {
 		p := &recordingEntityPuller{}
-		_, _, err := tier3PullCatalogEntity(dir, ".aggrega/cache", p, "hub.aggrega.ai/component/core/x:1.0.0", "")
+		_, _, err := tier3PullCatalogEntity(context.Background(), dir, ".aggrega/cache", p, "hub.aggrega.ai/component/core/x:1.0.0", "")
 		if err != nil {
 			t.Fatalf("tier3PullCatalogEntity: %v", err)
 		}

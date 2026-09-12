@@ -4,6 +4,7 @@
 package closure
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
@@ -39,7 +40,7 @@ import (
 // A capability-only binding (URI == "") names a render-engine target but
 // delegates the choice of serving plugin to capability resolution; it pins no
 // entity here and does not halt the pass.
-func ResolveProviderSocketEntities(cl *Closure, providerRefs []workspaceconfig.PluginRef, lookup Lookup) error {
+func ResolveProviderSocketEntities(ctx context.Context, cl *Closure, providerRefs []workspaceconfig.PluginRef, lookup Lookup) error {
 	if cl == nil {
 		return nil
 	}
@@ -54,7 +55,7 @@ func ResolveProviderSocketEntities(cl *Closure, providerRefs []workspaceconfig.P
 		if ref.URI == "" {
 			continue
 		}
-		res, err := lookup.ResolveCatalogEntity(ref.URI, pluginKindHint)
+		res, err := lookup.ResolveCatalogEntity(ctx, ref.URI, pluginKindHint)
 		if err != nil {
 			return fmt.Errorf("resolve: resolve entity %q: %w", ref.URI, err)
 		}

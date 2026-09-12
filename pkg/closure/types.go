@@ -24,6 +24,8 @@
 package closure
 
 import (
+	"context"
+
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
@@ -345,30 +347,39 @@ type LibraryConsumer struct {
 // at construction. Method-set interface satisfaction gives
 // compile-time guarantees that every implementer provides all
 // four resolution surfaces.
+//
+// Every method takes the caller's context as its first argument, and the reason is
+// that the local tiers are not the whole story: a miss at the in-memory catalog and
+// at the content cache falls through to a registry fetch, which is a step that leaves
+// the process. A caller that gives up part-way through a walk expects those fetches
+// to stop rather than run to completion against a reply nobody will read, and an
+// implementation that accepted no context could not offer that however the caller
+// asked. The context reaches the puller call itself, so a cancellation lands on the
+// transport rather than on the next loop iteration.
 type Lookup interface {
 	// ResolveCatalogEntity resolves a core catalog entity (Component / Feature /
 	// Recipe / FeatureRecipe). kindHint is the KindHint recorded at
 	// the collection site (empty when none was known); a registry-backed Tier-3
 	// pull uses it to bind the bare identity to its OCI location, since a bare
 	// identity carries no kind segment.
-	ResolveCatalogEntity(uri, kindHint string) (Resolution, error)
+	ResolveCatalogEntity(ctx context.Context, uri, kindHint string) (Resolution, error)
 	// ResolveAggregate resolves a sub-aggregate reference (a KindHint=="aggregate"
 	// entity). It is distinct from ResolveCatalogEntity because a bare-name
 	// Aggregate resolves at a dedicated registry tier (the AggregatePuller),
 	// mirroring ResolveSchemaLibrary — the generic catalog-entity tier-3 needs a
 	// tag and cannot fetch a bare name.
-	ResolveAggregate(uri string) (Resolution, error)
+	ResolveAggregate(ctx context.Context, uri string) (Resolution, error)
 	// ResolveLibrary resolves a cross-document library reference on the given axis.
 	// One method covers every library axis rather than one method per axis: the
 	// axis is data, so an implementation dispatches on it and an axis added to the
 	// declared set needs no new method here and no new method on any implementer.
-	ResolveLibrary(axis LibraryAxis, uri string) (LibraryResolution, error)
+	ResolveLibrary(ctx context.Context, axis LibraryAxis, uri string) (LibraryResolution, error)
 	// ResolvePlugin resolves a Plugin entity's .wasm artifact reference — the
 	// entity's bare identity (<socket>/<name>). The .wasm rides inline as a layer
 	// of the single plugin manifest published under the entity's version tag, so
 	// version selects the manifest to read the .wasm from. A core plugin embedded
 	// in the binary resolves offline by its bare identity through the embed tier.
-	ResolvePlugin(uri, version string) (Resolution, error)
+	ResolvePlugin(ctx context.Context, uri, version string) (Resolution, error)
 }
 
 // Resolution is the common output shape for catalog-entity and

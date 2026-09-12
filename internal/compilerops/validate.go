@@ -45,8 +45,8 @@ type ValidationClosureInputs struct {
 // Only the construction is shared. The *ClosureError is handed back exactly as
 // ResolveClosure produced it, stage included, because a front door annotates a
 // resolution failure in its own terms and those surfaces legitimately differ.
-func ResolveValidationClosure(in ValidationClosureInputs) (*ResolvedClosure, *ClosureError) {
-	return ResolveClosure(ClosureInputs{
+func ResolveValidationClosure(ctx context.Context, in ValidationClosureInputs) (*ResolvedClosure, *ClosureError) {
+	return ResolveClosure(ctx, ClosureInputs{
 		View:            in.View,
 		ReleasePath:     in.ReleasePath,
 		WorkspaceRoot:   in.WorkspaceRoot,

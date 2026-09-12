@@ -364,7 +364,7 @@ func TestRunTier4ValidationReleaseCoreParity(t *testing.T) {
 			// Oracle: the same core over the same resolved inputs runTier4Validation
 			// builds internally (request view, resolved closure).
 			view := srv.lazyCatalog.ForRequest(nil)
-			resolved, env := srv.resolveReleaseClosure(view, releasePath)
+			resolved, env := srv.resolveReleaseClosure(context.Background(), view, releasePath)
 			if env != nil {
 				t.Fatalf("oracle resolveReleaseClosure envelope: %+v", env)
 			}

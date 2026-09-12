@@ -4,6 +4,7 @@
 package closure_test
 
 import (
+	"context"
 	"testing"
 
 	"go.yaml.in/yaml/v3"
@@ -42,7 +43,7 @@ func TestDiscoverSchemaLibrariesTransitive(t *testing.T) {
 	}
 
 	var c closure.Closure
-	if err := c.DiscoverSchemaLibraries(lookup,
+	if err := c.DiscoverSchemaLibraries(context.Background(), lookup,
 		[]closure.SchemaConsumer{{URI: "consumer", Schema: consumer}}, body); err != nil {
 		t.Fatalf("DiscoverSchemaLibraries: %v", err)
 	}
@@ -84,7 +85,7 @@ func TestDiscoverSchemaLibrariesCycleTerminates(t *testing.T) {
 	}
 
 	var c closure.Closure
-	if err := c.DiscoverSchemaLibraries(lookup,
+	if err := c.DiscoverSchemaLibraries(context.Background(), lookup,
 		[]closure.SchemaConsumer{{URI: "consumer", Schema: consumer}}, body); err != nil {
 		t.Fatalf("cycle should terminate cleanly at discovery; got %v", err)
 	}

@@ -29,7 +29,7 @@ import (
 func TestTier3EntityRefusal_NamesTheLocalCatalogRemedy(t *testing.T) {
 	p := DefaultOCIPuller{registry: "127.0.0.1:5000"}
 
-	_, _, err := tier3PullCatalogEntity(t.TempDir(), ".aggrega/cache", p, "adminer-recipe", "Recipe")
+	_, _, err := tier3PullCatalogEntity(context.Background(), t.TempDir(), ".aggrega/cache", p, "adminer-recipe", "Recipe")
 	if err == nil {
 		t.Fatal("tier3PullCatalogEntity: want a refusal for an unscoped recipe reference; got nil error")
 	}
@@ -64,7 +64,7 @@ func TestTier3EntityRefusal_NamesThePluginCoordinateRemedy(t *testing.T) {
 	p := DefaultOCIPuller{registry: "127.0.0.1:5000"}
 
 	t.Run("unscoped reference is told to add the pluginType segment", func(t *testing.T) {
-		_, _, err := tier3PullCatalogEntity(t.TempDir(), ".aggrega/cache", p, "patch-credential", "Plugin")
+		_, _, err := tier3PullCatalogEntity(context.Background(), t.TempDir(), ".aggrega/cache", p, "patch-credential", "Plugin")
 		if err == nil {
 			t.Fatal("tier3PullCatalogEntity: want a refusal for an unscoped plugin reference; got nil error")
 		}
@@ -81,7 +81,7 @@ func TestTier3EntityRefusal_NamesThePluginCoordinateRemedy(t *testing.T) {
 	})
 
 	t.Run("qualified reference is told to remove the registry host", func(t *testing.T) {
-		_, _, err := tier3PullCatalogEntity(t.TempDir(), ".aggrega/cache", p, "host.tld/plugin/pipeline/patch-credential", "Plugin")
+		_, _, err := tier3PullCatalogEntity(context.Background(), t.TempDir(), ".aggrega/cache", p, "host.tld/plugin/pipeline/patch-credential", "Plugin")
 		if err == nil {
 			t.Fatal("tier3PullCatalogEntity: want a refusal for a registry-qualified plugin reference; got nil error")
 		}
@@ -199,7 +199,7 @@ func errUnscopedRecipeWrapped() error {
 func TestTier3EntityRefusal_FetchSentinelKeepsItsRemediation(t *testing.T) {
 	p := erroringEntityPuller{err: oci.ErrFetchUnauthorized()}
 
-	_, _, err := tier3PullCatalogEntity(t.TempDir(), ".aggrega/cache", p, "compose/mariadb:1.0.0", "Recipe")
+	_, _, err := tier3PullCatalogEntity(context.Background(), t.TempDir(), ".aggrega/cache", p, "compose/mariadb:1.0.0", "Recipe")
 	if err == nil {
 		t.Fatal("tier3PullCatalogEntity: want the authorization failure; got nil error")
 	}

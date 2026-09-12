@@ -82,7 +82,7 @@ func renderInMemory(t *testing.T, root, releasePath, catalogRoot string) error {
 	t.Helper()
 	rw := resolveTempWorkspace(t, tempWorkspaceOptions{Root: root})
 	view := catalog.NewLazyLookup(root, filepath.Join(root, ".aggrega", "cache"), []string{catalogRoot}, nil)
-	resolved, cerr := compilerops.ResolveClosure(compilerops.ClosureInputs{
+	resolved, cerr := compilerops.ResolveClosure(context.Background(), compilerops.ClosureInputs{
 		View:            view,
 		ReleasePath:     releasePath,
 		WorkspaceRoot:   root,

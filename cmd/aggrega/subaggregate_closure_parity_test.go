@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"path/filepath"
 	"sort"
 	"testing"
@@ -210,7 +211,7 @@ func TestSubAggregateAxisAgreesAcrossLockAndBuild(t *testing.T) {
 
 	view := catalog.NewLazyLookup(root, cacheDir, dirs, nil)
 	view.SetPins(catalog.PinsFromLockfile(lf))
-	resolved, cerr := compilerops.ResolveClosure(compilerops.ClosureInputs{
+	resolved, cerr := compilerops.ResolveClosure(context.Background(), compilerops.ClosureInputs{
 		View:            view,
 		ReleasePath:     releasePath,
 		WorkspaceRoot:   root,
@@ -242,7 +243,7 @@ func TestSubAggregateAxisAgreesAcrossLockAndBuild(t *testing.T) {
 		view.SetPins(catalog.PinsFromClosure(cl))
 		return view.ClosureRecipeLoader(), nil
 	}
-	if rerr := closure.ReconstructClosureAxes(&cl, aggLoader, view.ClosureRecipeLoader(), resolved.Lookup, reconResolver, reconRefold); rerr != nil {
+	if rerr := closure.ReconstructClosureAxes(context.Background(), &cl, aggLoader, view.ClosureRecipeLoader(), resolved.Lookup, reconResolver, reconRefold); rerr != nil {
 		t.Fatalf("ReconstructClosureAxes: %v", rerr)
 	}
 	view.SetPins(catalog.PinsFromLockfile(lf))

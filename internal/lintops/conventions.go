@@ -191,13 +191,14 @@ func RunRelease(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, rele
 		return terr
 	}
 	// Checked ahead of the closure resolution, which is the heaviest read this
-	// pass performs before any entity is checked. The resolver itself accepts no
-	// context, so this is the last point a stop is observable before it runs —
-	// which is worth stating rather than leaving to be rediscovered.
+	// pass performs before any entity is checked. The resolution carries the same
+	// context on into its own registry steps, so this check is the cheap early
+	// exit rather than the only one: a caller that gives up mid-resolution stops
+	// the fetches underneath it too.
 	if err := stopped(ctx); err != nil {
 		return err
 	}
-	rc, cerr := compilerops.ResolveClosure(compilerops.ClosureInputs{
+	rc, cerr := compilerops.ResolveClosure(ctx, compilerops.ClosureInputs{
 		View:            lazyView,
 		ReleasePath:     releasePath,
 		WorkspaceRoot:   wsRoot,

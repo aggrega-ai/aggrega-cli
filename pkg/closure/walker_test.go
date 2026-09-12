@@ -4,6 +4,7 @@
 package closure_test
 
 import (
+	"context"
 	"errors"
 	"reflect"
 	"strings"
@@ -30,22 +31,22 @@ type fakeLookup struct {
 	artifactsLibs map[string]closure.LibraryResolution
 }
 
-func (f *fakeLookup) ResolveCatalogEntity(uri, kindHint string) (closure.Resolution, error) {
+func (f *fakeLookup) ResolveCatalogEntity(ctx context.Context, uri, kindHint string) (closure.Resolution, error) {
 	if res, ok := f.entities[uri]; ok {
 		return res, nil
 	}
 	return closure.Resolution{NotFound: true}, nil
 }
 
-func (f *fakeLookup) ResolveAggregate(uri string) (closure.Resolution, error) {
-	return f.ResolveCatalogEntity(uri, "aggregate")
+func (f *fakeLookup) ResolveAggregate(ctx context.Context, uri string) (closure.Resolution, error) {
+	return f.ResolveCatalogEntity(ctx, uri, "aggregate")
 }
 
 // ResolveLibrary dispatches on the axis rather than exposing one method per axis,
 // mirroring the interface it stands in for. An axis the fixture declares no map
 // for resolves as not-found, which is the honest answer for an axis no test
 // populated.
-func (f *fakeLookup) ResolveLibrary(axis closure.LibraryAxis, uri string) (closure.LibraryResolution, error) {
+func (f *fakeLookup) ResolveLibrary(ctx context.Context, axis closure.LibraryAxis, uri string) (closure.LibraryResolution, error) {
 	byAxis := map[string]map[string]closure.LibraryResolution{
 		"SchemaLibraries":    f.schemaLibs,
 		"MappingLibraries":   f.mappingLibs,
@@ -68,7 +69,7 @@ func fakeBaseName(uri string) string {
 	return uri
 }
 
-func (f *fakeLookup) ResolvePlugin(uri, _ string) (closure.Resolution, error) {
+func (f *fakeLookup) ResolvePlugin(ctx context.Context, uri, _ string) (closure.Resolution, error) {
 	if res, ok := f.plugins[uri]; ok {
 		return res, nil
 	}
@@ -213,7 +214,7 @@ func TestComputeClosureEnumeratesEveryReferenceSite(t *testing.T) {
 		},
 	}
 
-	c, err := closure.ComputeClosure(rel, man, types.Normalize(agg), cfg, lookup)
+	c, err := closure.ComputeClosure(context.Background(), rel, man, types.Normalize(agg), cfg, lookup)
 	if err != nil {
 		t.Fatalf("ComputeClosure: %v", err)
 	}
@@ -412,7 +413,7 @@ func TestEmptyReleaseProducesEmptyClosure(t *testing.T) {
 		plugins:  map[string]closure.Resolution{},
 	}
 
-	c, err := closure.ComputeClosure(rel, nil, types.NormalizedAggregate{}, cfg, lookup)
+	c, err := closure.ComputeClosure(context.Background(), rel, nil, types.NormalizedAggregate{}, cfg, lookup)
 	if err != nil {
 		t.Fatalf("ComputeClosure: %v", err)
 	}
@@ -435,7 +436,7 @@ func TestUnresolvableCatalogEntityHaltsWithWrappedError(t *testing.T) {
 	lookup := newBaseLookup()
 	delete(lookup.entities, "hub.aggrega.ai/component/core/api-server")
 
-	_, err := closure.ComputeClosure(rel, man, types.Normalize(agg), cfg, lookup)
+	_, err := closure.ComputeClosure(context.Background(), rel, man, types.Normalize(agg), cfg, lookup)
 	if err == nil {
 		t.Fatal("expected ErrUnresolvableURI; got nil")
 	}
@@ -455,11 +456,11 @@ func TestDeterministicURIOrdering(t *testing.T) {
 	cfg := workspaceconfig.Default()
 	lookup := newBaseLookup()
 
-	c1, err := closure.ComputeClosure(rel, man, types.Normalize(agg), cfg, lookup)
+	c1, err := closure.ComputeClosure(context.Background(), rel, man, types.Normalize(agg), cfg, lookup)
 	if err != nil {
 		t.Fatalf("walk 1: %v", err)
 	}
-	c2, err := closure.ComputeClosure(rel, man, types.Normalize(agg), cfg, lookup)
+	c2, err := closure.ComputeClosure(context.Background(), rel, man, types.Normalize(agg), cfg, lookup)
 	if err != nil {
 		t.Fatalf("walk 2: %v", err)
 	}

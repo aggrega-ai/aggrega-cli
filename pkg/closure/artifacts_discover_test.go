@@ -4,6 +4,7 @@
 package closure_test
 
 import (
+	"context"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
@@ -34,7 +35,7 @@ func TestDiscoverArtifactsLibrariesTransitive(t *testing.T) {
 	}
 
 	var c closure.Closure
-	if err := c.DiscoverArtifactsLibraries(lookup, consumers, body); err != nil {
+	if err := c.DiscoverArtifactsLibraries(context.Background(), lookup, consumers, body); err != nil {
 		t.Fatalf("DiscoverArtifactsLibraries: %v", err)
 	}
 
@@ -74,7 +75,7 @@ func TestDiscoverArtifactsLibrariesCycleTerminates(t *testing.T) {
 	}
 
 	var c closure.Closure
-	if err := c.DiscoverArtifactsLibraries(lookup, consumers, body); err != nil {
+	if err := c.DiscoverArtifactsLibraries(context.Background(), lookup, consumers, body); err != nil {
 		t.Fatalf("cycle should terminate cleanly at discovery; got %v", err)
 	}
 
@@ -111,7 +112,7 @@ func TestDiscoverArtifactsLibrariesIdentityGate(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			var c closure.Closure
-			if err := c.DiscoverArtifactsLibraries(lookup,
+			if err := c.DiscoverArtifactsLibraries(context.Background(), lookup,
 				[]closure.ArtifactsConsumer{{URI: "consumer", Template: tmpl}}, noBody); err != nil {
 				t.Fatalf("DiscoverArtifactsLibraries: %v", err)
 			}

@@ -4,6 +4,7 @@
 package compilerops
 
 import (
+	"context"
 	"errors"
 	"path/filepath"
 	"testing"
@@ -48,7 +49,7 @@ func extendsMappingWorkspace(t *testing.T, releaseName string) ClosureInputs {
 // green from being vacuous.
 func TestResolveClosure_MappingOntoBaseRecipeProducesNoFinding(t *testing.T) {
 	t.Parallel()
-	resolved, cerr := ResolveClosure(extendsMappingWorkspace(t, "release-base-recipe.yaml"))
+	resolved, cerr := ResolveClosure(context.Background(), extendsMappingWorkspace(t, "release-base-recipe.yaml"))
 	if cerr != nil {
 		t.Fatalf("ResolveClosure must not fail on a consistent mapping: stage=%d %v", cerr.Stage, cerr)
 	}
@@ -69,7 +70,7 @@ func TestResolveClosure_MappingOntoBaseRecipeProducesNoFinding(t *testing.T) {
 // would put them back to silence.
 func TestResolveClosure_InconsistentMappingIsCarriedAsAFinding(t *testing.T) {
 	t.Parallel()
-	resolved, cerr := ResolveClosure(extendsMappingWorkspace(t, "release-unrelated-recipe.yaml"))
+	resolved, cerr := ResolveClosure(context.Background(), extendsMappingWorkspace(t, "release-unrelated-recipe.yaml"))
 	if cerr != nil {
 		t.Fatalf("an inconsistent mapping must be carried as a finding, not a resolution failure; got stage=%d %v",
 			cerr.Stage, cerr)

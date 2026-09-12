@@ -414,6 +414,22 @@ func stopped(ctx context.Context) error {
 // of them leaves the pins that were already on disk exactly as they were, which
 // is the same outcome a run that failed before the write produces.
 //
+// The first half of that is what the five points alone cannot give. A check
+// between steps stops the NEXT step; it does nothing to a fetch already in
+// flight, and a resolution spends most of its wall time inside one. So the
+// context reaches the registry call itself: every fetch made through the
+// closure lookup — the entity walk, library resolution, the sub-aggregate
+// descent, the plugin entity and artifact descents, and the verdict-socket
+// caching — is issued on this context, and a withdrawal lands on the transport
+// rather than waiting for the fetch to finish and be discarded.
+//
+// One read is outside that, and it is named here rather than left to be
+// discovered: library discovery reads each consumer's body through the lazy
+// catalog view, whose Component and Feature accessors are plain function values
+// with no context to carry. Those reads are served from the cache slots the walk
+// above has just written, so the un-cancellable case is a cache miss on an
+// entity the walk did not pin.
+//
 // Past the lockfile write it is deliberately NOT observed again. The trust
 // record written beside the file is part of the same landing, so a stop between
 // the two would leave a lockfile whose companion record does not describe it —
@@ -498,7 +514,7 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	// build passes a nil puller, so Tier-3 never networks and a registry top-level
 	// resolves from the pinned cache through the lazy lookup.
 	registryFetch := func(ref string) (resolver.ResolvedAggregate, bool, error) {
-		data, version, digest, manifestDigest, found, ferr := catalog.PullAndCacheAggregate(workspaceRoot, cacheDir, puller, ref)
+		data, version, digest, manifestDigest, found, ferr := catalog.PullAndCacheAggregate(ctx, workspaceRoot, cacheDir, puller, ref)
 		if ferr != nil || !found {
 			return resolver.ResolvedAggregate{}, found, ferr
 		}
@@ -640,7 +656,7 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	if faults := catalog.ManifestRecipeReferenceFaults(manifest); len(faults) > 0 {
 		return Result{}, cfg.annotate(faults[0], skipped)
 	}
-	cl, err := closure.ComputeClosure(rel, manifest, types.Normalize(aggregate), wsCfg, lookup)
+	cl, err := closure.ComputeClosure(ctx, rel, manifest, types.Normalize(aggregate), wsCfg, lookup)
 	if err != nil {
 		return Result{}, cfg.annotate(fmt.Errorf("resolve: %w", err), skipped)
 	}
@@ -649,7 +665,7 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	// so build / serve reconstruct these entities from the lockfile rather than
 	// from live config — the entity axis stays invariant to a config edit
 	// afterwards.
-	if err := closure.ResolveProviderSocketEntities(&cl, wsCfg.Plugins.Providers, lookup); err != nil {
+	if err := closure.ResolveProviderSocketEntities(ctx, &cl, wsCfg.Plugins.Providers, lookup); err != nil {
 		return Result{}, fmt.Errorf("resolve: %w", err)
 	}
 	// The determinism-wired lazy lookup: the post-fetch consumers — closure-
@@ -668,7 +684,7 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	// operation and a build of the same Release compute the identical library
 	// closure.
 	report.phase(PhaseLibraries)
-	if err := closure.AugmentClosure(&cl, lazyView, lookup); err != nil {
+	if err := closure.AugmentClosure(ctx, &cl, lazyView, lookup); err != nil {
 		return Result{}, fmt.Errorf("resolve: %w", err)
 	}
 	// Transitive sub-aggregate descent: pin the closure of every Aggregate
@@ -680,7 +696,7 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	if aggErr != nil {
 		return Result{}, aggErr
 	}
-	if err := closure.DescendSubAggregates(&cl, aggLoader, lookup); err != nil {
+	if err := closure.DescendSubAggregates(ctx, &cl, aggLoader, lookup); err != nil {
 		return Result{}, fmt.Errorf("resolve: sub-aggregate descent: %w", err)
 	}
 	// Pipeline-plugin descent, two-pass: Phase A reads each in-closure
@@ -719,11 +735,11 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 		}
 		return p, ok, err
 	}
-	if err := closure.DescendRecipePluginEntities(&cl, lazyView.ClosureRecipeLoader(), lookup, providerBindResolver); err != nil {
+	if err := closure.DescendRecipePluginEntities(ctx, &cl, lazyView.ClosureRecipeLoader(), lookup, providerBindResolver); err != nil {
 		return Result{}, fmt.Errorf("resolve: pipeline-plugin entity descent: %w", err)
 	}
 	lazyView.SetPins(catalog.PinsFromClosure(cl))
-	if err := closure.DescendRecipePluginArtifacts(&cl, lazyView.ClosureRecipeLoader(), lookup); err != nil {
+	if err := closure.DescendRecipePluginArtifacts(ctx, &cl, lazyView.ClosureRecipeLoader(), lookup); err != nil {
 		return Result{}, fmt.Errorf("resolve: pipeline-plugin artifact descent: %w", err)
 	}
 	// Resolve the transform-role governance attachments (label-transform /
@@ -1384,7 +1400,7 @@ func cacheVerdictSocketPlugins(ctx context.Context, cfg workspaceconfig.Config, 
 	var resolutions []verdictPluginResolution
 	for _, att := range cfg.VerdictAttachments() {
 		ref := att.Ref
-		entRes, err := lookup.ResolveCatalogEntity(ref.URI, "plugin")
+		entRes, err := lookup.ResolveCatalogEntity(ctx, ref.URI, "plugin")
 		if err != nil {
 			return nil, fmt.Errorf("cache %s socket plugin %q: %w", att.Socket, ref.URI, err)
 		}
@@ -1395,7 +1411,7 @@ func cacheVerdictSocketPlugins(ctx context.Context, cfg workspaceconfig.Config, 
 		if version == "" {
 			version = entRes.ResolvedVersion
 		}
-		artRes, err := lookup.ResolvePlugin(bare, version)
+		artRes, err := lookup.ResolvePlugin(ctx, bare, version)
 		if err != nil {
 			return nil, fmt.Errorf("cache %s socket plugin artifact %q: %w", att.Socket, ref.URI, err)
 		}

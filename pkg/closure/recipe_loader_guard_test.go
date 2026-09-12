@@ -4,6 +4,7 @@
 package closure_test
 
 import (
+	"context"
 	"errors"
 	"testing"
 
@@ -17,19 +18,19 @@ import (
 // would otherwise reach a recipe pass as a nil loader and be skipped in silence.
 type guardBareLookup struct{}
 
-func (guardBareLookup) ResolveCatalogEntity(string, string) (closure.Resolution, error) {
+func (guardBareLookup) ResolveCatalogEntity(context.Context, string, string) (closure.Resolution, error) {
 	return closure.Resolution{}, nil
 }
 
-func (guardBareLookup) ResolveAggregate(string) (closure.Resolution, error) {
+func (guardBareLookup) ResolveAggregate(context.Context, string) (closure.Resolution, error) {
 	return closure.Resolution{}, nil
 }
 
-func (guardBareLookup) ResolveLibrary(closure.LibraryAxis, string) (closure.LibraryResolution, error) {
+func (guardBareLookup) ResolveLibrary(context.Context, closure.LibraryAxis, string) (closure.LibraryResolution, error) {
 	return closure.LibraryResolution{}, nil
 }
 
-func (guardBareLookup) ResolvePlugin(string, string) (closure.Resolution, error) {
+func (guardBareLookup) ResolvePlugin(context.Context, string, string) (closure.Resolution, error) {
 	return closure.Resolution{}, nil
 }
 

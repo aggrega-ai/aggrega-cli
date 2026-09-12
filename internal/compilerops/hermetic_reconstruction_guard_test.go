@@ -32,16 +32,16 @@ import (
 // closure, taken by editing this file — which is the point: the edit is what puts
 // the decision in front of a reviewer.
 var hermeticReconstructionHomes = map[string][]string{
-	".ReconstructClosureAxes(": {
+	".ReconstructClosureAxes(context.Background(), ": {
 		"internal/compilerops/preview.go",
 	},
-	".ReconstructWorkspaceSocketEntities(": {
+	".ReconstructWorkspaceSocketEntities(context.Background(), ": {
 		"internal/compilerops/preview.go",
 	},
 	// The fold has two homes and they are different operations rather than a
 	// duplicate: the lock-time descent folds the axes it is about to pin, and the
 	// resolution folds them for a caller that asked for an augmented closure.
-	".AugmentClosure(": {
+	".AugmentClosure(context.Background(), ": {
 		"internal/compilerops/compilerops.go",
 		"internal/pullops/pull.go",
 	},

@@ -5,6 +5,7 @@ package serve
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -165,7 +166,7 @@ spec:
 func sharedClosureAdvisories(t *testing.T, srv *Server, releasePath string) (lint, narrowing []string) {
 	t.Helper()
 	view := srv.lazyCatalog.ForRequest(nil)
-	resolved, envelope := srv.resolveReleaseClosure(view, releasePath)
+	resolved, envelope := srv.resolveReleaseClosure(context.Background(), view, releasePath)
 	if envelope != nil {
 		t.Fatalf("the closure did not resolve, so the shared core computed no advisories and this test "+
 			"would assert nothing: %s", envelope.Message)

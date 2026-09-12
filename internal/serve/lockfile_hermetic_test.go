@@ -180,7 +180,7 @@ func TestServeReconstructsClosureAxesFromLockfile(t *testing.T) {
 	// Compute-only closure (no reconstruction): the library axis is empty — the
 	// serve drift-false-positive precondition.
 	computeView := srv.lazyCatalog.ForRequest(nil)
-	computed, cerr := compilerops.ResolveClosure(compilerops.ClosureInputs{
+	computed, cerr := compilerops.ResolveClosure(context.Background(), compilerops.ClosureInputs{
 		View:            computeView,
 		ReleasePath:     releasePath,
 		WorkspaceRoot:   srv.workspaceRoot,
@@ -263,7 +263,7 @@ func TestServeByteIdenticalSingleProviderRender(t *testing.T) {
 
 	render := func(withLockfile *lockfile.Lockfile) map[string][]byte {
 		view := srv.lazyCatalog.ForRequest(catalog.PinsFromLockfile(lf))
-		resolved, cerr := compilerops.ResolveClosure(compilerops.ClosureInputs{
+		resolved, cerr := compilerops.ResolveClosure(context.Background(), compilerops.ClosureInputs{
 			View:            view,
 			ReleasePath:     releasePath,
 			WorkspaceRoot:   srv.workspaceRoot,
@@ -332,7 +332,7 @@ func TestServeMutatorConfigInvariance(t *testing.T) {
 
 	build := func(withLockfile *lockfile.Lockfile) error {
 		view := srv.lazyCatalog.ForRequest(catalog.PinsFromLockfile(lf))
-		resolved, cerr := compilerops.ResolveClosure(compilerops.ClosureInputs{
+		resolved, cerr := compilerops.ResolveClosure(context.Background(), compilerops.ClosureInputs{
 			View:            view,
 			ReleasePath:     releasePath,
 			WorkspaceRoot:   srv.workspaceRoot,
@@ -718,7 +718,7 @@ func TestServeReconstructsTransitiveSubAggregateAxis(t *testing.T) {
 
 	// Compute-only closure (no lockfile, so no reconstruction runs).
 	computeView := srv.lazyCatalog.ForRequest(nil)
-	computed, cerr := compilerops.ResolveClosure(compilerops.ClosureInputs{
+	computed, cerr := compilerops.ResolveClosure(context.Background(), compilerops.ClosureInputs{
 		View:            computeView,
 		ReleasePath:     releasePath,
 		WorkspaceRoot:   srv.workspaceRoot,

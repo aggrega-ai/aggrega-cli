@@ -221,7 +221,7 @@ func validateReleaseScope(s *server, ctx context.Context, a validateArgs, releas
 	lf := loadReleaseLockfile(releasePath)
 	view := tw.newView(lf)
 
-	resolved, cerr := compilerops.ResolveValidationClosure(compilerops.ValidationClosureInputs{
+	resolved, cerr := compilerops.ResolveValidationClosure(ctx, compilerops.ValidationClosureInputs{
 		View:            view,
 		ReleasePath:     releasePath,
 		WorkspaceRoot:   tw.root,

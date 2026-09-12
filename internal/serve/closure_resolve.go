@@ -4,6 +4,7 @@
 package serve
 
 import (
+	"context"
 	stderrors "errors"
 	"fmt"
 	"os"
@@ -63,8 +64,8 @@ import (
 // multiple source dirs) and is annotated with skipContext so an in-closure
 // entity skipped at the tolerant lazy enumeration is explained rather than a
 // bare "not found".
-func (s *Server) resolveReleaseClosure(view *catalog.LazyLookup, releasePath string) (*compilerops.ResolvedClosure, *jsonRPCError) {
-	resolved, cerr := compilerops.ResolveValidationClosure(compilerops.ValidationClosureInputs{
+func (s *Server) resolveReleaseClosure(ctx context.Context, view *catalog.LazyLookup, releasePath string) (*compilerops.ResolvedClosure, *jsonRPCError) {
+	resolved, cerr := compilerops.ResolveValidationClosure(ctx, compilerops.ValidationClosureInputs{
 		View:            view,
 		ReleasePath:     releasePath,
 		WorkspaceRoot:   s.workspaceRoot,

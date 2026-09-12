@@ -174,7 +174,7 @@ var describeToolSpec = toolSpec{
 	invoke: describeInvoke,
 }
 
-func describeInvoke(s *server, _ context.Context, args json.RawMessage) (*callToolResult, *rpcError) {
+func describeInvoke(s *server, ctx context.Context, args json.RawMessage) (*callToolResult, *rpcError) {
 	var a describeArgs
 	if len(args) > 0 {
 		if err := json.Unmarshal(args, &a); err != nil {
@@ -191,7 +191,7 @@ func describeInvoke(s *server, _ context.Context, args json.RawMessage) (*callTo
 	case name != "":
 		return s.describeCatalogEntity(a, name)
 	default:
-		return s.describeRelease(a, release)
+		return s.describeRelease(ctx, a, release)
 	}
 }
 
@@ -235,7 +235,7 @@ func (s *server) describeCatalogEntity(a describeArgs, name string) (*callToolRe
 
 // describeRelease resolves a Release's catalog closure and returns a summary of
 // the entities it reaches.
-func (s *server) describeRelease(a describeArgs, release string) (*callToolResult, *rpcError) {
+func (s *server) describeRelease(ctx context.Context, a describeArgs, release string) (*callToolResult, *rpcError) {
 	tw, err := s.resolveToolWorkspace(a.WorkspaceRoot, a.CatalogDirs)
 	if err != nil {
 		return errorResult(explainToolError("Could not resolve the workspace for the Release.", err, "release"))
@@ -244,7 +244,7 @@ func (s *server) describeRelease(a describeArgs, release string) (*callToolResul
 	lf := loadReleaseLockfile(releasePath)
 	view := tw.newView(lf)
 
-	resolved, cerr := compilerops.ResolveClosure(compilerops.ClosureInputs{
+	resolved, cerr := compilerops.ResolveClosure(ctx, compilerops.ClosureInputs{
 		View:            view,
 		ReleasePath:     releasePath,
 		WorkspaceRoot:   tw.root,

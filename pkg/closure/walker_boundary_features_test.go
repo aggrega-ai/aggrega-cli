@@ -4,6 +4,7 @@
 package closure_test
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"testing"
@@ -100,7 +101,7 @@ func TestBoundaryFeatureAttachmentsAreAllPinned(t *testing.T) {
 	}
 
 	rel := loadRelease(t, boundaryAttachmentRelease)
-	c, err := closure.ComputeClosure(rel, nil, types.NormalizedAggregate{}, workspaceconfig.Default(), boundaryAttachmentLookup())
+	c, err := closure.ComputeClosure(context.Background(), rel, nil, types.NormalizedAggregate{}, workspaceconfig.Default(), boundaryAttachmentLookup())
 	if err != nil {
 		t.Fatalf("ComputeClosure: %v", err)
 	}
@@ -126,7 +127,7 @@ func TestBoundaryFeatureReferencePathsRecordTheAttachmentSite(t *testing.T) {
 	t.Parallel()
 
 	rel := loadRelease(t, boundaryAttachmentRelease)
-	c, err := closure.ComputeClosure(rel, nil, types.NormalizedAggregate{}, workspaceconfig.Default(), boundaryAttachmentLookup())
+	c, err := closure.ComputeClosure(context.Background(), rel, nil, types.NormalizedAggregate{}, workspaceconfig.Default(), boundaryAttachmentLookup())
 	if err != nil {
 		t.Fatalf("ComputeClosure: %v", err)
 	}
@@ -165,7 +166,7 @@ func TestNestedBoundaryFeatureKindHintIsRecorded(t *testing.T) {
 	t.Parallel()
 
 	rel := loadRelease(t, boundaryAttachmentRelease)
-	c, err := closure.ComputeClosure(rel, nil, types.NormalizedAggregate{}, workspaceconfig.Default(), boundaryAttachmentLookup())
+	c, err := closure.ComputeClosure(context.Background(), rel, nil, types.NormalizedAggregate{}, workspaceconfig.Default(), boundaryAttachmentLookup())
 	if err != nil {
 		t.Fatalf("ComputeClosure: %v", err)
 	}
@@ -232,7 +233,7 @@ func TestDeeplyNestedBoundaryFeatureIsPinned(t *testing.T) {
 	}
 
 	rel := loadRelease(t, sb.String())
-	c, err := closure.ComputeClosure(rel, nil, types.NormalizedAggregate{}, workspaceconfig.Default(), lookup)
+	c, err := closure.ComputeClosure(context.Background(), rel, nil, types.NormalizedAggregate{}, workspaceconfig.Default(), lookup)
 	if err != nil {
 		t.Fatalf("ComputeClosure: %v", err)
 	}
@@ -310,7 +311,7 @@ func TestRoutedComponentFeatureAttachmentsArePinned(t *testing.T) {
 	t.Parallel()
 
 	rel := loadRelease(t, routedAttachmentRelease)
-	c, err := closure.ComputeClosure(rel, nil, types.NormalizedAggregate{}, workspaceconfig.Default(), routedAttachmentLookup())
+	c, err := closure.ComputeClosure(context.Background(), rel, nil, types.NormalizedAggregate{}, workspaceconfig.Default(), routedAttachmentLookup())
 	if err != nil {
 		t.Fatalf("ComputeClosure: %v", err)
 	}
@@ -343,7 +344,7 @@ func TestRoutedComponentFeatureReferencePathsNameTheRoutingEntry(t *testing.T) {
 	t.Parallel()
 
 	rel := loadRelease(t, routedAttachmentRelease)
-	c, err := closure.ComputeClosure(rel, nil, types.NormalizedAggregate{}, workspaceconfig.Default(), routedAttachmentLookup())
+	c, err := closure.ComputeClosure(context.Background(), rel, nil, types.NormalizedAggregate{}, workspaceconfig.Default(), routedAttachmentLookup())
 	if err != nil {
 		t.Fatalf("ComputeClosure: %v", err)
 	}

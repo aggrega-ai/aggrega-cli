@@ -4,6 +4,7 @@
 package closure
 
 import (
+	"context"
 	"fmt"
 	"sort"
 
@@ -39,9 +40,9 @@ type LibrarySource interface {
 // The axes run in declared order, and each reports failure under its own
 // operator-facing label rather than a hand-written string, so a label cannot
 // disagree with the one the lockfile uses for the same axis.
-func AugmentClosure(cl *Closure, src LibrarySource, lookup Lookup) error {
+func AugmentClosure(ctx context.Context, cl *Closure, src LibrarySource, lookup Lookup) error {
 	for _, d := range libraryDiscoverers() {
-		if err := d.discover(cl, src, lookup); err != nil {
+		if err := d.discover(ctx, cl, src, lookup); err != nil {
 			return fmt.Errorf("%s discovery: %w", d.axis.Label, err)
 		}
 	}
@@ -54,7 +55,7 @@ func AugmentClosure(cl *Closure, src LibrarySource, lookup Lookup) error {
 // information per axis, not a copy of another axis's.
 type libraryDiscoverer struct {
 	axis     LibraryAxis
-	discover func(*Closure, LibrarySource, Lookup) error
+	discover func(context.Context, *Closure, LibrarySource, Lookup) error
 }
 
 // libraryDiscoverers returns the per-axis producers in declared order. It is the
@@ -135,7 +136,7 @@ func importConsumer(uri, importTarget string) []TemplateConsumer {
 // the build/pull. Transitive descent into a discovered library's own $ref:s is
 // unscoped (those libraries are in-closure by construction). Iteration is
 // sorted-name for deterministic output.
-func discoverClosureLibraries(cl *Closure, src LibrarySource, lookup Lookup) error {
+func discoverClosureLibraries(ctx context.Context, cl *Closure, src LibrarySource, lookup Lookup) error {
 	// Closure-scoped consumer scan over the lazy lookup: resolve each closure
 	// entity and collect its schema — components first, then features, each sorted
 	// by name. This preserves the deterministic consumer order the eager-map scan
@@ -186,7 +187,7 @@ func discoverClosureLibraries(cl *Closure, src LibrarySource, lookup Lookup) err
 		return bodies, true, nil
 	}
 
-	return cl.DiscoverSchemaLibraries(lookup, consumers, body)
+	return cl.DiscoverSchemaLibraries(ctx, lookup, consumers, body)
 }
 
 // discoverClosureMappingLibraries is the single producer of the closure's
@@ -197,7 +198,7 @@ func discoverClosureLibraries(cl *Closure, src LibrarySource, lookup Lookup) err
 // A valuesMapping is presented to the walker in its authored `$import: <ref>`
 // directive form; an inline values template and a local-file import carry no
 // library reference and are skipped by the walker's identity gate.
-func discoverClosureMappingLibraries(cl *Closure, src LibrarySource, lookup Lookup) error {
+func discoverClosureMappingLibraries(ctx context.Context, cl *Closure, src LibrarySource, lookup Lookup) error {
 	consumers := collectTemplateConsumers(cl, src,
 		func(uri string, r types.Recipe) []TemplateConsumer {
 			return importConsumer(uri, r.Spec.ValuesMapping.Import)
@@ -219,7 +220,7 @@ func discoverClosureMappingLibraries(cl *Closure, src LibrarySource, lookup Look
 		return bodies, true, nil
 	}
 
-	return cl.DiscoverTemplateLibraries(LibraryAxisNamed("MappingLibraries"), lookup, consumers, body)
+	return cl.DiscoverTemplateLibraries(ctx, LibraryAxisNamed("MappingLibraries"), lookup, consumers, body)
 }
 
 // discoverClosureWorkloadLibraries is the single producer of the closure's
@@ -230,7 +231,7 @@ func discoverClosureMappingLibraries(cl *Closure, src LibrarySource, lookup Look
 // A FeatureRecipe workload library reference is refused at envelope validation, so
 // an attachment consumer contributes no edge here; scanning it is harmless and
 // keeps the producer symmetric with the mapping axis.
-func discoverClosureWorkloadLibraries(cl *Closure, src LibrarySource, lookup Lookup) error {
+func discoverClosureWorkloadLibraries(ctx context.Context, cl *Closure, src LibrarySource, lookup Lookup) error {
 	consumers := collectTemplateConsumers(cl, src,
 		func(uri string, r types.Recipe) []TemplateConsumer {
 			return importConsumer(uri, r.Spec.Workload.Import)
@@ -252,14 +253,14 @@ func discoverClosureWorkloadLibraries(cl *Closure, src LibrarySource, lookup Loo
 		return bodies, true, nil
 	}
 
-	return cl.DiscoverTemplateLibraries(LibraryAxisNamed("WorkloadLibraries"), lookup, consumers, body)
+	return cl.DiscoverTemplateLibraries(ctx, LibraryAxisNamed("WorkloadLibraries"), lookup, consumers, body)
 }
 
 // discoverClosureArtifactsLibraries is the single producer of the closure's
 // ArtifactsLibrary axis. Unlike the workload and mapping axes — where an entity
 // carries a single field — artifacts is a MAP, so one entity may contribute several
 // edges, one per entry that imports a bundle. Entry author order is preserved.
-func discoverClosureArtifactsLibraries(cl *Closure, src LibrarySource, lookup Lookup) error {
+func discoverClosureArtifactsLibraries(ctx context.Context, cl *Closure, src LibrarySource, lookup Lookup) error {
 	consumers := collectTemplateConsumers(cl, src,
 		func(uri string, r types.Recipe) []TemplateConsumer {
 			return artifactsImportConsumers(uri, r.Spec.Artifacts)
@@ -285,7 +286,7 @@ func discoverClosureArtifactsLibraries(cl *Closure, src LibrarySource, lookup Lo
 		return bodies, true, nil
 	}
 
-	return cl.DiscoverTemplateLibraries(LibraryAxisNamed("ArtifactsLibraries"), lookup, consumers, body)
+	return cl.DiscoverTemplateLibraries(ctx, LibraryAxisNamed("ArtifactsLibraries"), lookup, consumers, body)
 }
 
 // artifactsImportConsumers renders every artifacts-map entry that carries an

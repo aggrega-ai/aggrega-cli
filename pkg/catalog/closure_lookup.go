@@ -371,7 +371,7 @@ func versionedSlotURI(uri, version string) string {
 	return uri + ":" + version
 }
 
-func (l *catalogLookup) ResolveCatalogEntity(uri, kindHint string) (closure.Resolution, error) {
+func (l *catalogLookup) ResolveCatalogEntity(ctx context.Context, uri, kindHint string) (closure.Resolution, error) {
 	if res, ok := l.lookupExternal(uri); ok {
 		return res, nil
 	}
@@ -395,7 +395,7 @@ func (l *catalogLookup) ResolveCatalogEntity(uri, kindHint string) (closure.Reso
 	if _, res, ok := l.tier2(fetchURI); ok {
 		return l.honorPinDigest(uri, res)
 	}
-	_, res, err := l.tier3CatalogEntity(fetchURI, ociKindForHint(kindHint))
+	_, res, err := l.tier3CatalogEntity(ctx, fetchURI, ociKindForHint(kindHint))
 	if err != nil {
 		return res, err
 	}
@@ -550,7 +550,7 @@ func (l *catalogLookup) lookupRegistry(uri string) (closure.Resolution, bool) {
 // a registry-published sub-aggregate referenced by bare identity resolves at
 // pull (and the puller is nil on the hermetic build path, so it never fetches at
 // build — the sub resolves there via the build-side cache→catalog bridge).
-func (l *catalogLookup) ResolveAggregate(uri string) (closure.Resolution, error) {
+func (l *catalogLookup) ResolveAggregate(ctx context.Context, uri string) (closure.Resolution, error) {
 	if res, ok := l.lookupExternal(uri); ok {
 		return res, nil
 	}
@@ -561,7 +561,7 @@ func (l *catalogLookup) ResolveAggregate(uri string) (closure.Resolution, error)
 	if _, res, ok := l.tier2(fetchURI); ok {
 		return l.honorPinDigest(uri, res)
 	}
-	res, err := l.tier3Aggregate(fetchURI)
+	res, err := l.tier3Aggregate(ctx, fetchURI)
 	if err != nil {
 		return res, err
 	}
@@ -586,7 +586,7 @@ func (l *catalogLookup) lookupExternal(uri string) (closure.Resolution, bool) {
 // then the registry. The axis selects the local-catalog reader and names the kind
 // the registry tier fetches under; nothing else differs between the axes, so the
 // cascade is written once here rather than copied per axis.
-func (l *catalogLookup) ResolveLibrary(axis closure.LibraryAxis, uri string) (closure.LibraryResolution, error) {
+func (l *catalogLookup) ResolveLibrary(ctx context.Context, axis closure.LibraryAxis, uri string) (closure.LibraryResolution, error) {
 	if res, entries, ok := l.tier1Library(axis, uri); ok {
 		return closure.LibraryResolution{Resolution: res, Entries: entries}, nil
 	}
@@ -595,7 +595,7 @@ func (l *catalogLookup) ResolveLibrary(axis closure.LibraryAxis, uri string) (cl
 		res, err := l.honorPinDigest(uri, res)
 		return closure.LibraryResolution{Resolution: res}, err
 	}
-	res, err := l.tier3Library(fetchURI, axis.Kind)
+	res, err := l.tier3Library(ctx, fetchURI, axis.Kind)
 	if err != nil {
 		return closure.LibraryResolution{Resolution: res}, err
 	}
@@ -603,7 +603,7 @@ func (l *catalogLookup) ResolveLibrary(axis closure.LibraryAxis, uri string) (cl
 	return closure.LibraryResolution{Resolution: res}, err
 }
 
-func (l *catalogLookup) ResolvePlugin(uri, version string) (closure.Resolution, error) {
+func (l *catalogLookup) ResolvePlugin(ctx context.Context, uri, version string) (closure.Resolution, error) {
 	// Embed tier: a core plugin's .wasm embedded in the binary resolves offline by its
 	// bare identity (<socket>/<name>), whatever its socket. Its reference digest is
 	// derived from the embedded bytes on demand — never stored — so the closure walker
@@ -622,7 +622,7 @@ func (l *catalogLookup) ResolvePlugin(uri, version string) (closure.Resolution, 
 	// as a layer, in the single plugin manifest published under the entity's
 	// version tag. Resolve it from that manifest by version rather than falling
 	// through to the entity-resolving catalog tiers.
-	return l.resolveVersionedPluginArtifact(uri, version)
+	return l.resolveVersionedPluginArtifact(ctx, uri, version)
 }
 
 // pluginArtifactReference binds a plugin's bare identity (<socket>/<name>) to the
@@ -662,7 +662,7 @@ func (l *catalogLookup) pluginArtifactReference(identity string) (string, error)
 // ManifestDigest = the manifest digest. A prior pin is HONORED, not laundered: a
 // re-pull whose derived content or served manifest no longer matches the recorded
 // pin halts with oci.ErrFetchIntegrity rather than re-pinning the changed bytes.
-func (l *catalogLookup) resolveVersionedPluginArtifact(uri, version string) (closure.Resolution, error) {
+func (l *catalogLookup) resolveVersionedPluginArtifact(ctx context.Context, uri, version string) (closure.Resolution, error) {
 	// Cache-first: a prior lockfile pin names the content slot to read. Without a
 	// prior pin the slot cannot be addressed (its key is the yet-unknown content
 	// digest), so a fresh resolution must pull to learn the pin.
@@ -680,7 +680,7 @@ func (l *catalogLookup) resolveVersionedPluginArtifact(uri, version string) (clo
 	if err != nil {
 		return closure.Resolution{}, err
 	}
-	result, err := l.ociPuller.Pull(context.Background(), reference, version)
+	result, err := l.ociPuller.Pull(ctx, reference, version)
 	if err != nil {
 		if errors.Is(err, oci.ErrFetchNotFound()) {
 			return closure.Resolution{NotFound: true}, nil
@@ -965,8 +965,8 @@ func (l *catalogLookup) tier2(uri string) ([]byte, closure.Resolution, bool) {
 	return nil, closure.Resolution{}, false
 }
 
-func (l *catalogLookup) tier3CatalogEntity(uri, kind string) ([]byte, closure.Resolution, error) {
-	bytes, res, err := tier3PullCatalogEntity(l.workspaceRoot, l.cacheDir, l.ociPuller, uri, kind)
+func (l *catalogLookup) tier3CatalogEntity(ctx context.Context, uri, kind string) ([]byte, closure.Resolution, error) {
+	bytes, res, err := tier3PullCatalogEntity(ctx, l.workspaceRoot, l.cacheDir, l.ociPuller, uri, kind)
 	if err == nil && !res.NotFound {
 		l.recordRefetchNotice(uri, res.Digest)
 	}
@@ -1118,7 +1118,7 @@ func tier2ReadVerified(workspaceRoot, cacheDir, uri, expectedDigest, expectedMan
 // nil (hermetic-build path) or when the URI cannot be split into a
 // valid OCI reference + tag. Returns a wrapped error on pull or
 // cache-write failure.
-func tier3PullCatalogEntity(workspaceRoot, cacheDir string, puller OCIPuller, uri, kind string) ([]byte, closure.Resolution, error) {
+func tier3PullCatalogEntity(ctx context.Context, workspaceRoot, cacheDir string, puller OCIPuller, uri, kind string) ([]byte, closure.Resolution, error) {
 	if puller == nil {
 		return nil, closure.Resolution{NotFound: true}, nil
 	}
@@ -1131,7 +1131,7 @@ func tier3PullCatalogEntity(workspaceRoot, cacheDir string, puller OCIPuller, ur
 	// tier falls to the legacy already-located, versioned reference path.
 	if ep, ok := puller.(EntityPuller); ok && kind != "" {
 		name, floor, hasFloor := SplitVersionedURI(uri)
-		result, resolvedVersion, err := ep.PullEntity(context.Background(), name, kind, floor)
+		result, resolvedVersion, err := ep.PullEntity(ctx, name, kind, floor)
 		if err != nil {
 			if errors.Is(err, oci.ErrFetchNotFound()) {
 				return nil, closure.Resolution{NotFound: true}, nil
@@ -1178,7 +1178,7 @@ func tier3PullCatalogEntity(workspaceRoot, cacheDir string, puller OCIPuller, ur
 	if !ok {
 		return nil, closure.Resolution{NotFound: true}, nil
 	}
-	result, err := puller.Pull(context.Background(), reference, tag)
+	result, err := puller.Pull(ctx, reference, tag)
 	if err != nil {
 		if errors.Is(err, oci.ErrFetchNotFound()) {
 			return nil, closure.Resolution{NotFound: true}, nil
@@ -1203,7 +1203,7 @@ func tier3PullCatalogEntity(workspaceRoot, cacheDir string, puller OCIPuller, ur
 	}, nil
 }
 
-func (l *catalogLookup) tier3Library(uri, kind string) (closure.Resolution, error) {
+func (l *catalogLookup) tier3Library(ctx context.Context, uri, kind string) (closure.Resolution, error) {
 	if l.ociPuller == nil {
 		return closure.Resolution{NotFound: true}, nil
 	}
@@ -1216,7 +1216,7 @@ func (l *catalogLookup) tier3Library(uri, kind string) (closure.Resolution, erro
 	// verified Tier-2 read addresses.
 	if lp, ok := l.ociPuller.(LibraryPuller); ok {
 		name, floor, hasFloor := SplitVersionedURI(uri)
-		result, resolvedVersion, err := lp.PullLibrary(context.Background(), name, kind, floor)
+		result, resolvedVersion, err := lp.PullLibrary(ctx, name, kind, floor)
 		if err != nil {
 			if errors.Is(err, oci.ErrFetchNotFound()) {
 				return closure.Resolution{NotFound: true}, nil
@@ -1257,7 +1257,7 @@ func (l *catalogLookup) tier3Library(uri, kind string) (closure.Resolution, erro
 	if !ok {
 		return closure.Resolution{NotFound: true}, nil
 	}
-	result, err := l.ociPuller.Pull(context.Background(), reference, tag)
+	result, err := l.ociPuller.Pull(ctx, reference, tag)
 	if err != nil {
 		if errors.Is(err, oci.ErrFetchNotFound()) {
 			return closure.Resolution{NotFound: true}, nil
@@ -1287,8 +1287,8 @@ func (l *catalogLookup) tier3Library(uri, kind string) (closure.Resolution, erro
 // mismatch. A nil puller (the hermetic build path) or a puller without the
 // AggregatePuller capability resolves NotFound, so the registry tier never
 // fetches at build.
-func (l *catalogLookup) tier3Aggregate(uri string) (closure.Resolution, error) {
-	_, version, digest, manifestDigest, found, err := PullAndCacheAggregate(l.workspaceRoot, l.cacheDir, l.ociPuller, uri)
+func (l *catalogLookup) tier3Aggregate(ctx context.Context, uri string) (closure.Resolution, error) {
+	_, version, digest, manifestDigest, found, err := PullAndCacheAggregate(ctx, l.workspaceRoot, l.cacheDir, l.ociPuller, uri)
 	if err != nil {
 		return closure.Resolution{}, err
 	}
@@ -1314,7 +1314,7 @@ func (l *catalogLookup) tier3Aggregate(uri string) (closure.Resolution, error) {
 // single fetch+cache+pin primitive shared by the closure's tier3Aggregate (sub
 // path) and the triad resolver's Tier-3 seam (top-level path): one cache layout,
 // one identity rule, two call sites.
-func PullAndCacheAggregate(workspaceRoot, cacheDir string, puller OCIPuller, ref string) (data []byte, version, digest, manifestDigest string, found bool, err error) {
+func PullAndCacheAggregate(ctx context.Context, workspaceRoot, cacheDir string, puller OCIPuller, ref string) (data []byte, version, digest, manifestDigest string, found bool, err error) {
 	if puller == nil {
 		return nil, "", "", "", false, nil
 	}
@@ -1323,7 +1323,7 @@ func PullAndCacheAggregate(workspaceRoot, cacheDir string, puller OCIPuller, ref
 		return nil, "", "", "", false, nil
 	}
 	name, floor, _ := SplitVersionedURI(ref)
-	result, fetchVersion, perr := ap.PullAggregate(context.Background(), name, floor)
+	result, fetchVersion, perr := ap.PullAggregate(ctx, name, floor)
 	if perr != nil {
 		if errors.Is(perr, oci.ErrFetchNotFound()) {
 			return nil, "", "", "", false, nil

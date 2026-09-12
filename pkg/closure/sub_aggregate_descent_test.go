@@ -4,6 +4,7 @@
 package closure_test
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"reflect"
@@ -93,11 +94,11 @@ func descentLookup() *fakeLookup {
 func runDescent(t *testing.T, top *types.Aggregate, lookup *fakeLookup, loader closure.AggregateLoader) (closure.Closure, error) {
 	t.Helper()
 	rel := loadRelease(t, descentRelease)
-	cl, err := closure.ComputeClosure(rel, nil, types.Normalize(top), workspaceconfig.Config{}, lookup)
+	cl, err := closure.ComputeClosure(context.Background(), rel, nil, types.Normalize(top), workspaceconfig.Config{}, lookup)
 	if err != nil {
 		t.Fatalf("ComputeClosure: %v", err)
 	}
-	derr := closure.DescendSubAggregates(&cl, loader, lookup)
+	derr := closure.DescendSubAggregates(context.Background(), &cl, loader, lookup)
 	return cl, derr
 }
 

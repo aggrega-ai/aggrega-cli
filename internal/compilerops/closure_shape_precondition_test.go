@@ -56,7 +56,7 @@ func TestClosureComputeCallSiteCensus(t *testing.T) {
 		if rerr != nil {
 			return rerr
 		}
-		if n := strings.Count(string(b), "closure.ComputeClosure("); n > 0 {
+		if n := strings.Count(string(b), "closure.ComputeClosure(context.Background(), "); n > 0 {
 			rel, _ := filepath.Rel(root, path)
 			found[filepath.ToSlash(rel)] = n
 		}

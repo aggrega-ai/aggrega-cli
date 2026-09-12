@@ -4,6 +4,7 @@
 package closure_test
 
 import (
+	"context"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
@@ -140,7 +141,7 @@ spec:
 		plugins: map[string]closure.Resolution{},
 	}
 
-	c, err := closure.ComputeClosure(rel, man, types.NormalizedAggregate{}, cfg, lookup)
+	c, err := closure.ComputeClosure(context.Background(), rel, man, types.NormalizedAggregate{}, cfg, lookup)
 	if err != nil {
 		t.Fatalf("ComputeClosure: %v", err)
 	}

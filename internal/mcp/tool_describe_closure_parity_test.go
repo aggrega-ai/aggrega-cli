@@ -27,6 +27,7 @@ package mcp
 //     stopped raising one cannot leave that half iterating over nothing.
 
 import (
+	"context"
 	"encoding/json"
 	"path/filepath"
 	"strings"
@@ -284,7 +285,7 @@ func TestDescribeReleaseCarriesEverythingTheResolutionReachedAndDecided(t *testi
 		t.Fatalf("resolve the oracle workspace: %v", twErr)
 	}
 	lf := loadReleaseLockfile(releasePath)
-	resolved, cerr := compilerops.ResolveClosure(compilerops.ClosureInputs{
+	resolved, cerr := compilerops.ResolveClosure(context.Background(), compilerops.ClosureInputs{
 		View:            tw.newView(lf),
 		ReleasePath:     releasePath,
 		WorkspaceRoot:   tw.root,

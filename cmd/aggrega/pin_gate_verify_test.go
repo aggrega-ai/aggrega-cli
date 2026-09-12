@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"path/filepath"
 	"testing"
 
@@ -62,7 +63,7 @@ func TestPinGateSuppressesExternalShadow(t *testing.T) {
 	resolve := func(withLockfile *lockfile.Lockfile) (compilerops.ResolvedClosure, error) {
 		view := catalog.NewLazyLookup(root, cacheDir, dirs, nil)
 		view.SetPins(catalog.PinsFromLockfile(lf))
-		resolved, cerr := compilerops.ResolveClosure(compilerops.ClosureInputs{
+		resolved, cerr := compilerops.ResolveClosure(context.Background(), compilerops.ClosureInputs{
 			View:            view,
 			ReleasePath:     releasePath,
 			WorkspaceRoot:   root,

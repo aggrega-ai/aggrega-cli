@@ -4,6 +4,7 @@
 package closure_test
 
 import (
+	"context"
 	"reflect"
 	"testing"
 
@@ -114,11 +115,11 @@ func TestPluginDescent_BinaryResolvedOutputShapingPluginStillPinned(t *testing.T
 	cfg.Plugins.Providers = []workspaceconfig.PluginRef{
 		{Capability: "in-binary", URI: binaryPluginEntityURI},
 	}
-	cl, err := closure.ComputeClosure(rel, man, types.NormalizedAggregate{}, cfg, lookup)
+	cl, err := closure.ComputeClosure(context.Background(), rel, man, types.NormalizedAggregate{}, cfg, lookup)
 	if err != nil {
 		t.Fatalf("ComputeClosure: %v", err)
 	}
-	if err := closure.ResolveProviderSocketEntities(&cl, cfg.Plugins.Providers, lookup); err != nil {
+	if err := closure.ResolveProviderSocketEntities(context.Background(), &cl, cfg.Plugins.Providers, lookup); err != nil {
 		t.Fatalf("provider socket pass: %v", err)
 	}
 	if err := descendPlugins(&cl, loader, lookup, nil); err != nil {
@@ -328,7 +329,7 @@ func TestResolveProviderSocketEntities_BinaryResolvedNotPinnedAndDoesNotHalt(t *
 		{Capability: "in-binary", URI: binaryPluginEntityURI},
 		{Capability: "custom", URI: registryOnlyProviderURI},
 	}
-	if err := closure.ResolveProviderSocketEntities(&c, refs, lookup); err != nil {
+	if err := closure.ResolveProviderSocketEntities(context.Background(), &c, refs, lookup); err != nil {
 		t.Fatalf("a provider the binary carries must not halt the socket pass; got %v", err)
 	}
 

@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
@@ -65,7 +66,11 @@ func renderReleaseClosure(rw *workspaceconfig.ResolvedWorkspace, releasePath str
 		lf = nil
 	}
 
-	resolved, cerr := compilerops.ResolveClosure(compilerops.ClosureInputs{
+	// The command layer starts a run on a plain background context, so there is no
+	// caller's stop to carry into the resolution below. This renderer is also reached
+	// through the per-kind dispatch table, whose entries share one function type, so a
+	// context could not arrive as an argument without reshaping every sibling renderer.
+	resolved, cerr := compilerops.ResolveClosure(context.Background(), compilerops.ClosureInputs{
 		View:            view,
 		ReleasePath:     releasePath,
 		WorkspaceRoot:   wsRoot,

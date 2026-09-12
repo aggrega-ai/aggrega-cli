@@ -118,7 +118,7 @@ func TestClosureLookupEmbeddedEntityResolutionIsProviderOnly(t *testing.T) {
 			puller := &countingMissPuller{}
 			lookup := cat.ClosureLookup(puller, dir, ".aggrega/cache")
 
-			res, err := lookup.ResolveCatalogEntity(form.uri, "plugin")
+			res, err := lookup.ResolveCatalogEntity(context.Background(), form.uri, "plugin")
 			if err != nil {
 				t.Fatalf("ResolveCatalogEntity(%q): %v", form.uri, err)
 			}
@@ -158,7 +158,7 @@ func TestClosureLookupResolvesEmbeddedPluginEntityWithoutFetching(t *testing.T) 
 			puller := &countingMissPuller{}
 			lookup := cat.ClosureLookup(puller, dir, ".aggrega/cache")
 
-			res, err := lookup.ResolveCatalogEntity(form.uri, "plugin")
+			res, err := lookup.ResolveCatalogEntity(context.Background(), form.uri, "plugin")
 			if err != nil {
 				t.Fatalf("ResolveCatalogEntity(%q): %v", form.uri, err)
 			}
@@ -228,7 +228,7 @@ func TestClosureLookupEmbeddedResolutionIsExactAndPluginOnly(t *testing.T) {
 			puller := &countingMissPuller{}
 			lookup := cat.ClosureLookup(puller, dir, ".aggrega/cache")
 
-			res, err := lookup.ResolveCatalogEntity(tc.uri, tc.kindHint)
+			res, err := lookup.ResolveCatalogEntity(context.Background(), tc.uri, tc.kindHint)
 			if err != nil {
 				t.Fatalf("ResolveCatalogEntity(%q): %v", tc.uri, err)
 			}
@@ -270,7 +270,7 @@ func TestClosureLookupLocalPluginEntityWinsOverTheBinary(t *testing.T) {
 	puller := &countingMissPuller{}
 	lookup := cat.ClosureLookup(puller, dir, ".aggrega/cache")
 
-	res, err := lookup.ResolveCatalogEntity(identity+":9.9.9", "plugin")
+	res, err := lookup.ResolveCatalogEntity(context.Background(), identity+":9.9.9", "plugin")
 	if err != nil {
 		t.Fatalf("ResolveCatalogEntity: %v", err)
 	}

@@ -4,6 +4,7 @@
 package catalog
 
 import (
+	"context"
 	"slices"
 	"testing"
 
@@ -280,8 +281,8 @@ spec:
 	lazyLk := NewLazyLookup(dir, "", []string{dir}, nil).ClosureLookup(nil, dir, "", nil)
 
 	for _, uri := range []string{"core/server", "server-recipe:1.0.0", "demo/agg"} {
-		er, eerr := eagerLk.ResolveCatalogEntity(uri, "")
-		lr, lerr := lazyLk.ResolveCatalogEntity(uri, "")
+		er, eerr := eagerLk.ResolveCatalogEntity(context.Background(), uri, "")
+		lr, lerr := lazyLk.ResolveCatalogEntity(context.Background(), uri, "")
 		if (eerr == nil) != (lerr == nil) {
 			t.Fatalf("%q: presence differs — eager err=%v lazy err=%v", uri, eerr, lerr)
 		}

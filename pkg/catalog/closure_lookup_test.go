@@ -68,7 +68,7 @@ spec:
 	}
 	lookup := cat.ClosureLookup(nil, dir, ".aggrega/cache")
 
-	res, err := lookup.ResolveCatalogEntity("api-server:1.0.0", "")
+	res, err := lookup.ResolveCatalogEntity(context.Background(), "api-server:1.0.0", "")
 	if err != nil {
 		t.Fatalf("ResolveCatalogEntity: %v", err)
 	}
@@ -133,7 +133,7 @@ spec:
 	lookup := cat.ClosureLookup(nil, dir, ".aggrega/cache")
 
 	// metadata.name form — what Manifest mappings produce. MUST resolve.
-	res, err := lookup.ResolveCatalogEntity("server-recipe:2.5.0", "")
+	res, err := lookup.ResolveCatalogEntity(context.Background(), "server-recipe:2.5.0", "")
 	if err != nil {
 		t.Fatalf("ResolveCatalogEntity(metadata.name URI): %v", err)
 	}
@@ -155,7 +155,7 @@ spec:
 	// against the Recipe; it asks for the Component (which is absent
 	// in this fixture). Returns NotFound so the walker can surface
 	// the missing-Component diagnostic correctly.
-	res, err = lookup.ResolveCatalogEntity("core/server:2.5.0", "")
+	res, err = lookup.ResolveCatalogEntity(context.Background(), "core/server:2.5.0", "")
 	if err != nil {
 		t.Fatalf("ResolveCatalogEntity(spec.implements URI): %v", err)
 	}
@@ -183,7 +183,7 @@ func TestClosureLookupFallsBackToOCIPullerOnCacheMiss(t *testing.T) {
 
 	lookup := cat.ClosureLookup(&orasPullerAdapter{target: store}, dir, ".aggrega/cache")
 
-	res, err := lookup.ResolveCatalogEntity("hub.aggrega.ai/component/core/api-server:2.0.0", "")
+	res, err := lookup.ResolveCatalogEntity(context.Background(), "hub.aggrega.ai/component/core/api-server:2.0.0", "")
 	if err != nil {
 		t.Fatalf("ResolveCatalogEntity: %v", err)
 	}
@@ -216,7 +216,7 @@ func TestClosureLookupNilPullerReturnsNotFound(t *testing.T) {
 	}
 
 	lookup := cat.ClosureLookup(nil, dir, ".aggrega/cache")
-	res, err := lookup.ResolveCatalogEntity("missing/component:9.9.9", "")
+	res, err := lookup.ResolveCatalogEntity(context.Background(), "missing/component:9.9.9", "")
 	if err != nil {
 		t.Fatalf("ResolveCatalogEntity: %v", err)
 	}
@@ -254,7 +254,7 @@ spec:
 	}
 
 	lookup := cat.ClosureLookup(&orasPullerAdapter{target: store}, dir, ".aggrega/cache")
-	res, err := lookup.ResolveLibrary(closure.LibraryAxisNamed("SchemaLibraries"), "hub.aggrega.ai/schemalibrary/core/Probes:1.0.0")
+	res, err := lookup.ResolveLibrary(context.Background(), closure.LibraryAxisNamed("SchemaLibraries"), "hub.aggrega.ai/schemalibrary/core/Probes:1.0.0")
 	if err != nil {
 		t.Fatalf("ResolveSchemaLibrary: %v", err)
 	}
@@ -302,7 +302,7 @@ spec:
 	}
 
 	lookup := cat.ClosureLookup(&orasPullerAdapter{target: store}, dir, ".aggrega/cache")
-	if _, err := lookup.ResolveLibrary(closure.LibraryAxisNamed("MappingLibraries"), "hub.aggrega.ai/mappinglibrary/core/BaseMappings:1.0.0"); err != nil {
+	if _, err := lookup.ResolveLibrary(context.Background(), closure.LibraryAxisNamed("MappingLibraries"), "hub.aggrega.ai/mappinglibrary/core/BaseMappings:1.0.0"); err != nil {
 		t.Fatalf("ResolveMappingLibrary: %v", err)
 	}
 
@@ -350,7 +350,7 @@ func TestResolvePluginVersionTagRoundTrip(t *testing.T) {
 
 	// First resolution: pull the manifest by version, select the .wasm layer,
 	// derive the content pin, cache both blobs.
-	res, err := lookup.ResolvePlugin(artifactURI, version)
+	res, err := lookup.ResolvePlugin(context.Background(), artifactURI, version)
 	if err != nil {
 		t.Fatalf("ResolvePlugin (pull): %v", err)
 	}
@@ -387,7 +387,7 @@ func TestResolvePluginVersionTagRoundTrip(t *testing.T) {
 		artifactURI: {ResolvedVersion: contentDigest, Digest: contentDigest, ManifestDigest: res.ManifestDigest},
 	}}
 	cachedLookup := cat.ClosureLookupWithReuse(nil, dir, ".aggrega/cache", nil, nil, reuse)
-	res2, err := cachedLookup.ResolvePlugin(artifactURI, version)
+	res2, err := cachedLookup.ResolvePlugin(context.Background(), artifactURI, version)
 	if err != nil {
 		t.Fatalf("ResolvePlugin (cache): %v", err)
 	}
@@ -404,7 +404,7 @@ func TestResolvePluginVersionTagRoundTrip(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(slot, "blob"), []byte("tampered"), 0o644); err != nil {
 		t.Fatalf("tamper write: %v", err)
 	}
-	if _, err := cachedLookup.ResolvePlugin(artifactURI, version); !errors.Is(err, oci.ErrFetchIntegrity()) {
+	if _, err := cachedLookup.ResolvePlugin(context.Background(), artifactURI, version); !errors.Is(err, oci.ErrFetchIntegrity()) {
 		t.Errorf("tampered cache: err = %v; want ErrFetchIntegrity", err)
 	}
 }
@@ -440,7 +440,7 @@ func TestResolvePluginManifestSelfVerify(t *testing.T) {
 
 	// Tier-3 pull writes both blobs.
 	lookup := cat.ClosureLookup(&orasPullerAdapter{target: store}, dir, ".aggrega/cache")
-	res, err := lookup.ResolvePlugin(artifactURI, version)
+	res, err := lookup.ResolvePlugin(context.Background(), artifactURI, version)
 	if err != nil {
 		t.Fatalf("ResolvePlugin (pull): %v", err)
 	}
@@ -460,7 +460,7 @@ func TestResolvePluginManifestSelfVerify(t *testing.T) {
 		artifactURI: {ResolvedVersion: contentDigest, Digest: contentDigest, ManifestDigest: res.ManifestDigest},
 	}}
 	offline := cat.ClosureLookupWithReuse(nil, dir, ".aggrega/cache", nil, nil, reuse)
-	res2, err := offline.ResolvePlugin(artifactURI, version)
+	res2, err := offline.ResolvePlugin(context.Background(), artifactURI, version)
 	if err != nil {
 		t.Fatalf("ResolvePlugin (offline, faithful): %v", err)
 	}
@@ -479,7 +479,7 @@ func TestResolvePluginManifestSelfVerify(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(slot, "manifest"), []byte("tampered-manifest"), 0o644); err != nil {
 		t.Fatalf("tamper manifest write: %v", err)
 	}
-	if _, err := offline.ResolvePlugin(artifactURI, version); !errors.Is(err, oci.ErrCachedManifestIntegrity()) {
+	if _, err := offline.ResolvePlugin(context.Background(), artifactURI, version); !errors.Is(err, oci.ErrCachedManifestIntegrity()) {
 		t.Errorf("tampered manifest (reuse pin): err = %v; want ErrCachedManifestIntegrity", err)
 	}
 
@@ -488,7 +488,7 @@ func TestResolvePluginManifestSelfVerify(t *testing.T) {
 	if err := os.Remove(filepath.Join(slot, "manifest")); err != nil {
 		t.Fatalf("remove manifest blob: %v", err)
 	}
-	resMissing, err := offline.ResolvePlugin(artifactURI, version)
+	resMissing, err := offline.ResolvePlugin(context.Background(), artifactURI, version)
 	if err != nil {
 		t.Fatalf("ResolvePlugin (offline, incomplete slot): %v", err)
 	}
@@ -498,7 +498,7 @@ func TestResolvePluginManifestSelfVerify(t *testing.T) {
 
 	// The same incomplete slot re-pulls online and repopulates the manifest blob.
 	online := cat.ClosureLookup(&orasPullerAdapter{target: store}, dir, ".aggrega/cache")
-	if _, err := online.ResolvePlugin(artifactURI, version); err != nil {
+	if _, err := online.ResolvePlugin(context.Background(), artifactURI, version); err != nil {
 		t.Fatalf("ResolvePlugin (online repopulate): %v", err)
 	}
 	if _, err := oci.ReadCachedManifest(dir, ".aggrega/cache", artifactURI, contentDigest); err != nil {
@@ -535,7 +535,7 @@ func TestResolvePluginManifestAuthorityBeatsForgedContentPin(t *testing.T) {
 	}
 	// A faithful pull populates the slot and gives us the authoritative manifest.
 	lookup := cat.ClosureLookup(&orasPullerAdapter{target: store}, dir, ".aggrega/cache")
-	res, err := lookup.ResolvePlugin(artifactURI, version)
+	res, err := lookup.ResolvePlugin(context.Background(), artifactURI, version)
 	if err != nil {
 		t.Fatalf("ResolvePlugin (pull): %v", err)
 	}
@@ -564,7 +564,7 @@ func TestResolvePluginManifestAuthorityBeatsForgedContentPin(t *testing.T) {
 		artifactURI: {ResolvedVersion: forgedDigest, Digest: forgedDigest, ManifestDigest: res.ManifestDigest},
 	}}
 	offline := cat.ClosureLookupWithReuse(nil, dir, ".aggrega/cache", nil, nil, reuse)
-	if _, err := offline.ResolvePlugin(artifactURI, version); !errors.Is(err, oci.ErrFetchIntegrity()) {
+	if _, err := offline.ResolvePlugin(context.Background(), artifactURI, version); !errors.Is(err, oci.ErrFetchIntegrity()) {
 		t.Errorf("forged content + forged content pin: err = %v; want ErrFetchIntegrity from the manifest-authority check", err)
 	}
 }

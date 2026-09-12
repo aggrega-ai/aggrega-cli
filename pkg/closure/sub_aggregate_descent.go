@@ -4,6 +4,7 @@
 package closure
 
 import (
+	"context"
 	"fmt"
 
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
@@ -108,7 +109,7 @@ func RequireAggregateLoader(lookup Lookup) (AggregateLoader, error) {
 // the pinned set — and the lockfile written from it — is byte-identical across
 // runs regardless of descent order. A nil loader is a no-op (the caller wired
 // no registry tier).
-func DescendSubAggregates(c *Closure, loader AggregateLoader, lookup Lookup) error {
+func DescendSubAggregates(ctx context.Context, c *Closure, loader AggregateLoader, lookup Lookup) error {
 	if c == nil || loader == nil {
 		return nil
 	}
@@ -146,7 +147,7 @@ func DescendSubAggregates(c *Closure, loader AggregateLoader, lookup Lookup) err
 		// (every production one loads through the parse core, which does) hands back
 		// the identical value.
 		sub.walkAggregate(types.Normalize(agg), fmt.Sprintf("aggregate(%s)", f.uri))
-		if err := sub.resolveEntities(lookup); err != nil {
+		if err := sub.resolveEntities(ctx, lookup); err != nil {
 			return err
 		}
 

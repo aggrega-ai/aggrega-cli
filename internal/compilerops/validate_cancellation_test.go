@@ -143,7 +143,7 @@ func resolveCancelInputs(t *testing.T) (view *catalog.LazyLookup, resolved *Reso
 	wsCfg = workspaceconfig.Default()
 	view = catalog.NewLazyLookup(root, "", dirs, nil).ForRequest(nil)
 
-	res, cerr := ResolveClosure(ClosureInputs{
+	res, cerr := ResolveClosure(context.Background(), ClosureInputs{
 		View:            view,
 		ReleasePath:     releasePath,
 		WorkspaceRoot:   root,

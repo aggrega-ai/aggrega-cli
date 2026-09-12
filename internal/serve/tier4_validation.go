@@ -121,7 +121,7 @@ func (s *Server) runTier4Validation(ctx context.Context, releasePath, file strin
 	// Quiet load — pins only, no drift verify, and no lockfile reaches the
 	// resolution. Drift is surfaced by the graph request, which reconstructs the
 	// closure axes and verifies against them.
-	resolved, envelope := s.resolveReleaseClosure(view, releasePath)
+	resolved, envelope := s.resolveReleaseClosure(ctx, view, releasePath)
 	if envelope != nil {
 		// Closure-level failure (catalog load, Release/Manifest load,
 		// Aggregate read) — Tier-D fall-back at file:1:1. The code comes off

@@ -44,7 +44,7 @@ func TestSharedOperationsAgainstFixture(t *testing.T) {
 	view, releasePath, workspaceRoot, wsCfg := fixtureWorkspace(t)
 	ctx := context.Background()
 
-	resolved, cerr := ResolveClosure(ClosureInputs{
+	resolved, cerr := ResolveClosure(context.Background(), ClosureInputs{
 		View:            view,
 		ReleasePath:     releasePath,
 		WorkspaceRoot:   workspaceRoot,
@@ -110,7 +110,7 @@ func TestSharedOperationsAgainstFixture(t *testing.T) {
 // Release path.
 func TestResolveClosureReportsLoadStage(t *testing.T) {
 	view, _, workspaceRoot, wsCfg := fixtureWorkspace(t)
-	_, cerr := ResolveClosure(ClosureInputs{
+	_, cerr := ResolveClosure(context.Background(), ClosureInputs{
 		View:            view,
 		ReleasePath:     filepath.Join(workspaceRoot, "does-not-exist.yaml"),
 		WorkspaceRoot:   workspaceRoot,

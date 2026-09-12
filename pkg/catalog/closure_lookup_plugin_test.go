@@ -4,6 +4,7 @@
 package catalog_test
 
 import (
+	"context"
 	"errors"
 	"testing"
 
@@ -39,7 +40,7 @@ func TestClosureLookupResolvesLocalPluginEntityAtTier1(t *testing.T) {
 	const entityURI = "governance/baseline:1.0.0"
 
 	check := func(t *testing.T, lookup closure.Lookup, backing string) {
-		res, err := lookup.ResolveCatalogEntity(entityURI, "plugin")
+		res, err := lookup.ResolveCatalogEntity(context.Background(), entityURI, "plugin")
 		if err != nil {
 			t.Fatalf("[%s] ResolveCatalogEntity: %v", backing, err)
 		}
@@ -66,7 +67,7 @@ func TestClosureLookupResolvesLocalPluginEntityAtTier1(t *testing.T) {
 	var eagerRes closure.Resolution
 	t.Run("eager", func(t *testing.T) {
 		check(t, eager, "eager")
-		eagerRes, _ = eager.ResolveCatalogEntity(entityURI, "plugin")
+		eagerRes, _ = eager.ResolveCatalogEntity(context.Background(), entityURI, "plugin")
 	})
 
 	// Lazy backing — parity (c).
@@ -74,7 +75,7 @@ func TestClosureLookupResolvesLocalPluginEntityAtTier1(t *testing.T) {
 	lazyLookup := lazy.ClosureLookup(nil, "", ".aggrega/cache", nil)
 	t.Run("lazy", func(t *testing.T) {
 		check(t, lazyLookup, "lazy")
-		lazyRes, _ := lazyLookup.ResolveCatalogEntity(entityURI, "plugin")
+		lazyRes, _ := lazyLookup.ResolveCatalogEntity(context.Background(), entityURI, "plugin")
 		if lazyRes != eagerRes {
 			t.Errorf("eager/lazy parity: eager=%+v lazy=%+v", eagerRes, lazyRes)
 		}
@@ -110,7 +111,7 @@ func TestComputeClosureLocalPluginSocketDoesNotHalt(t *testing.T) {
 		{URI: "governance/baseline:1.0.0", Role: plugintype.RoleLabelTransform},
 	}
 
-	cl, err := closure.ComputeClosure(rel, nil, types.NormalizedAggregate{}, cfg, lookup)
+	cl, err := closure.ComputeClosure(context.Background(), rel, nil, types.NormalizedAggregate{}, cfg, lookup)
 	if err != nil {
 		if errors.Is(err, closure.ErrUnresolvableURI()) {
 			t.Fatalf("ComputeClosure halted on a LOCAL Plugin socket (the closed gap): %v", err)

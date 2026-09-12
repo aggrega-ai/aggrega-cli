@@ -79,7 +79,7 @@ func TestClosureLookup_HonorsPinnedVersion(t *testing.T) {
 
 	// 1. HONORED — a pin @1.0.0 resolves 1.0.0 though the registry also has 1.1.0.
 	reuse := &catalog.ReuseVerification{PriorPins: map[string]catalog.Pin{uri: {ResolvedVersion: "1.0.0", Digest: sha256Hex(v100)}}}
-	res, err := cat.ClosureLookupWithReuse(puller, t.TempDir(), cacheDir, nil, nil, reuse).ResolveCatalogEntity(uri, "component")
+	res, err := cat.ClosureLookupWithReuse(puller, t.TempDir(), cacheDir, nil, nil, reuse).ResolveCatalogEntity(context.Background(), uri, "component")
 	if err != nil {
 		t.Fatalf("honored resolve: %v", err)
 	}
@@ -91,7 +91,7 @@ func TestClosureLookup_HonorsPinnedVersion(t *testing.T) {
 	}
 
 	// 2. FLOAT (contrast) — no pin → floats to the highest, 1.1.0.
-	resF, err := cat.ClosureLookupWithReuse(puller, t.TempDir(), cacheDir, nil, nil, nil).ResolveCatalogEntity(uri, "component")
+	resF, err := cat.ClosureLookupWithReuse(puller, t.TempDir(), cacheDir, nil, nil, nil).ResolveCatalogEntity(context.Background(), uri, "component")
 	if err != nil {
 		t.Fatalf("un-pinned resolve: %v", err)
 	}
@@ -102,7 +102,7 @@ func TestClosureLookup_HonorsPinnedVersion(t *testing.T) {
 	// 3. HALT (honor != launder) — a pin whose pinned-version bytes no longer match
 	// the pinned digest halts with ErrFetchIntegrity rather than re-pinning.
 	drift := &catalog.ReuseVerification{PriorPins: map[string]catalog.Pin{uri: {ResolvedVersion: "1.0.0", Digest: sha256Hex([]byte("STALE-PINNED-BYTES"))}}}
-	_, err = cat.ClosureLookupWithReuse(puller, t.TempDir(), cacheDir, nil, nil, drift).ResolveCatalogEntity(uri, "component")
+	_, err = cat.ClosureLookupWithReuse(puller, t.TempDir(), cacheDir, nil, nil, drift).ResolveCatalogEntity(context.Background(), uri, "component")
 	if !errors.Is(err, oci.ErrFetchIntegrity()) {
 		t.Errorf("drifted pin: err %v; want ErrFetchIntegrity (no launder/re-pin)", err)
 	}
@@ -111,7 +111,7 @@ func TestClosureLookup_HonorsPinnedVersion(t *testing.T) {
 	// SchemaLibrary resolves the pin's exact version though a higher one is served.
 	const libURI = "test/two-ver-lib"
 	libReuse := &catalog.ReuseVerification{PriorPins: map[string]catalog.Pin{libURI: {ResolvedVersion: "1.0.0", Digest: sha256Hex(v100)}}}
-	libRes, err := cat.ClosureLookupWithReuse(puller, t.TempDir(), cacheDir, nil, nil, libReuse).ResolveLibrary(closure.LibraryAxisNamed("SchemaLibraries"), libURI)
+	libRes, err := cat.ClosureLookupWithReuse(puller, t.TempDir(), cacheDir, nil, nil, libReuse).ResolveLibrary(context.Background(), closure.LibraryAxisNamed("SchemaLibraries"), libURI)
 	if err != nil {
 		t.Fatalf("honored library resolve: %v", err)
 	}

@@ -29,6 +29,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -310,7 +311,7 @@ func sharedClosureFacts(t *testing.T, root, releasePath string) (libraries, mapp
 	}
 	view.SetPins(catalog.PinsFromLockfile(lf))
 
-	resolved, cerr := compilerops.ResolveClosure(compilerops.ClosureInputs{
+	resolved, cerr := compilerops.ResolveClosure(context.Background(), compilerops.ClosureInputs{
 		View:            view,
 		ReleasePath:     releasePath,
 		WorkspaceRoot:   rw.Root(),

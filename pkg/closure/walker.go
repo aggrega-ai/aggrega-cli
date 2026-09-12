@@ -4,6 +4,7 @@
 package closure
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"strings"
@@ -39,7 +40,12 @@ import (
 // callers: components live under subsystems, the descent is subsystems-only, and
 // no caller can hand this package a shape whose components the walk would miss.
 // The zero value stands for "no aggregate" and is walked as a no-op.
+// ctx is the caller's own. The walk itself touches nothing outside the process, but
+// the resolution pass it ends with does: a reference that misses the local catalog
+// and the content cache is fetched from a registry, so a caller that gives up stops
+// those fetches rather than waiting them out.
 func ComputeClosure(
+	ctx context.Context,
 	release *types.Release,
 	manifest *types.Manifest,
 	aggregate types.NormalizedAggregate,
@@ -58,7 +64,7 @@ func ComputeClosure(
 	if err := state.walk(in); err != nil {
 		return Closure{}, err
 	}
-	if err := state.resolveAll(in.lookup); err != nil {
+	if err := state.resolveAll(ctx, in.lookup); err != nil {
 		return Closure{}, err
 	}
 
@@ -495,19 +501,19 @@ func (s *walkState) walkImportInto(axis LibraryAxis, template, consumerURI strin
 // fatal closure gap and returns ErrUnresolvableURI. Library
 // resolution feeds the minimum version selection pass before invoking
 // the library lookup.
-func (s *walkState) resolveAll(lookup Lookup) error {
-	if err := s.resolveEntities(lookup); err != nil {
+func (s *walkState) resolveAll(ctx context.Context, lookup Lookup) error {
+	if err := s.resolveEntities(ctx, lookup); err != nil {
 		return err
 	}
 	for _, a := range libraryAxes {
-		if err := s.resolveLibraries(a, lookup); err != nil {
+		if err := s.resolveLibraries(ctx, a, lookup); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (s *walkState) resolveEntities(lookup Lookup) error {
+func (s *walkState) resolveEntities(ctx context.Context, lookup Lookup) error {
 	for uri, pending := range s.entities {
 		// A sub-aggregate reference resolves through the dedicated aggregate
 		// registry tier (bare-name capable), not the generic catalog-entity
@@ -517,9 +523,9 @@ func (s *walkState) resolveEntities(lookup Lookup) error {
 		var res Resolution
 		var err error
 		if pending.kindHint == aggregateKindHint {
-			res, err = lookup.ResolveAggregate(uri)
+			res, err = lookup.ResolveAggregate(ctx, uri)
 		} else {
-			res, err = lookup.ResolveCatalogEntity(uri, pending.kindHint)
+			res, err = lookup.ResolveCatalogEntity(ctx, uri, pending.kindHint)
 		}
 		// Both failures carry the reference and its kind hint alongside the
 		// rendered message, so a reporter can say WHICH entity went unresolved
@@ -543,7 +549,7 @@ func (s *walkState) resolveEntities(lookup Lookup) error {
 // Lookup to obtain digest + resolution-path metadata. The axis selects both the
 // accumulator to drain and the kind the resolver dispatches on, so every library
 // axis runs through this one resolution loop rather than a per-axis copy.
-func (s *walkState) resolveLibraries(axis LibraryAxis, lookup Lookup) error {
+func (s *walkState) resolveLibraries(ctx context.Context, axis LibraryAxis, lookup Lookup) error {
 	for uri, lib := range axis.pendingLibs(s) {
 		selected, err := selectMVSVersion(uri, lib.versionByConsumer)
 		if err != nil {
@@ -558,7 +564,7 @@ func (s *walkState) resolveLibraries(axis LibraryAxis, lookup Lookup) error {
 		if selected != "" {
 			resolveURI = uri + ":" + selected
 		}
-		res, err := lookup.ResolveLibrary(axis, resolveURI)
+		res, err := lookup.ResolveLibrary(ctx, axis, resolveURI)
 		if err != nil {
 			return fmt.Errorf("resolve: resolve library %q: %w", uri, err)
 		}

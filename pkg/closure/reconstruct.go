@@ -4,6 +4,7 @@
 package closure
 
 import (
+	"context"
 	"fmt"
 	"sort"
 )
@@ -40,6 +41,7 @@ import (
 // hermetic verifiers only; keep the two in sync deliberately rather than folding
 // the lock-time path into it.
 func ReconstructClosureAxes(
+	ctx context.Context,
 	cl *Closure,
 	aggLoader AggregateLoader,
 	recipeLoader RecipeLoader,
@@ -47,10 +49,10 @@ func ReconstructClosureAxes(
 	providerResolver ProviderPluginResolver,
 	refold func() (RecipeLoader, error),
 ) error {
-	if err := DescendSubAggregates(cl, aggLoader, lookup); err != nil {
+	if err := DescendSubAggregates(ctx, cl, aggLoader, lookup); err != nil {
 		return fmt.Errorf("sub-aggregate descent: %w", err)
 	}
-	if err := DescendRecipePluginEntities(cl, recipeLoader, lookup, providerResolver); err != nil {
+	if err := DescendRecipePluginEntities(ctx, cl, recipeLoader, lookup, providerResolver); err != nil {
 		return fmt.Errorf("pipeline-plugin entity descent: %w", err)
 	}
 	artifactLoader := recipeLoader
@@ -61,7 +63,7 @@ func ReconstructClosureAxes(
 		}
 		artifactLoader = loader2
 	}
-	if err := DescendRecipePluginArtifacts(cl, artifactLoader, lookup); err != nil {
+	if err := DescendRecipePluginArtifacts(ctx, cl, artifactLoader, lookup); err != nil {
 		return fmt.Errorf("pipeline-plugin artifact descent: %w", err)
 	}
 	return nil
@@ -98,7 +100,7 @@ func ReconstructClosureAxes(
 // A NotFound entity or artifact is skipped rather than halting: the honest frozen
 // build resolves both from the cache, and a genuinely-absent one surfaces as drift
 // against the lockfile. A nil loader is a no-op.
-func ReconstructWorkspaceSocketEntities(c *Closure, entityURIs []string, loader RecipeLoader, lookup Lookup) error {
+func ReconstructWorkspaceSocketEntities(ctx context.Context, c *Closure, entityURIs []string, loader RecipeLoader, lookup Lookup) error {
 	if c == nil || loader == nil || len(entityURIs) == 0 {
 		return nil
 	}
@@ -113,7 +115,7 @@ func ReconstructWorkspaceSocketEntities(c *Closure, entityURIs []string, loader 
 
 	const refPath = "release plugin socket"
 	for _, entityURI := range sorted {
-		res, err := lookup.ResolveCatalogEntity(entityURI, pluginKindHint)
+		res, err := lookup.ResolveCatalogEntity(ctx, entityURI, pluginKindHint)
 		if err != nil {
 			return fmt.Errorf("resolve: resolve workspace-socket plugin entity %q: %w", entityURI, err)
 		}
@@ -151,7 +153,7 @@ func ReconstructWorkspaceSocketEntities(c *Closure, entityURIs []string, loader 
 		// A lockfile-pinned socket .wasm can resolve as locally-present when its pinned
 		// cache slot is folded into the hermetic view's local enumeration, so the
 		// registry-only rule is disabled — the artifact is pinned regardless of tier.
-		if err := pinPluginArtifact(c, loader, lookup, entityURI, pluginIndex, false /* registryOnly */); err != nil {
+		if err := pinPluginArtifact(ctx, c, loader, lookup, entityURI, pluginIndex, false /* registryOnly */); err != nil {
 			return err
 		}
 	}
