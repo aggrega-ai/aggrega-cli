@@ -182,6 +182,21 @@ type RendererInput struct {
 	// built elsewhere leaves it unset and nothing is recorded. RenderAll installs
 	// it and publishes it on the result, where it outlives the render's node walk.
 	artifacts *artifactProjections
+
+	// declaredFeatureLeaves answers what one attachment Feature declares sensitive,
+	// memoised for the whole render behind the one home for compiling a Feature's
+	// schema. It travels on the input because the answer is needed at two places a
+	// long way apart — the withholding set assembled beside the node's own
+	// declarations, and each attachment's own render dispatch — and a second reader
+	// at the far site would be a second copy agreeing on the day it was written.
+	//
+	// It is unexported for the same reason the retentions above are: it is the
+	// render's own working state rather than anything a caller supplies. An input
+	// built elsewhere leaves it nil, and a nil reader answers that nothing is
+	// declared — the zero value of a declaration set, which marks nothing. That is
+	// this axis's safe direction, and it is the opposite of the direction that is
+	// safe for withholding, so this reader's answer must never be reused there.
+	declaredFeatureLeaves func(featureType string) resolver.SensitiveLeaves
 }
 
 // NodeProvides holds the resolved provides for all nodes (Pass 1 output).

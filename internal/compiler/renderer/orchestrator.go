@@ -1132,8 +1132,14 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 	// way and for the same reason as the Component reader above. The resolution goes
 	// through the one home for compiling an attachment's schema, so this reader and
 	// the pillar-conformance gate cannot disagree about what a Feature declares.
+	//
+	// Installed on the travelling input rather than kept as a local, because the
+	// same answer is read twice at sites a long way apart: the withholding set
+	// assembled below, and every attachment's own render dispatch, reached from
+	// deep inside the per-node walk. One reader answers both, so the two cannot
+	// come to disagree about what a Feature declares, and one memo serves both.
 	declaredByFeature := map[string]resolver.SensitiveLeaves{}
-	declaredFeatureLeaves := func(featureType string) resolver.SensitiveLeaves {
+	input.declaredFeatureLeaves = func(featureType string) resolver.SensitiveLeaves {
 		if featureType == "" {
 			return resolver.SensitiveLeaves{}
 		}
@@ -1430,7 +1436,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 				if !ok {
 					return resolver.SensitiveLeaves{}
 				}
-				return declaredFeatureLeaves(entry.Type)
+				return input.declaredFeatureLeaves(entry.Type)
 			}))
 		// Boundary->component env channel: apply any per-consumer env overrides
 		// a boundary-scope FR emitted (computed in the pre-loop) over this

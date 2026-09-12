@@ -128,8 +128,8 @@ func TestExecutePhaseBForFeature_NilAndEmpty(t *testing.T) {
 	t.Parallel()
 	tmplCtx := &types.TemplateContext{}
 	got, err := ExecutePhaseBForFeature(tmplCtx, nil, nil)
-	if err != nil || len(got) != 0 {
-		t.Errorf("nil fr: (%v, %v)", got, err)
+	if err != nil || len(got.Resolved) != 0 {
+		t.Errorf("nil fr: (%v, %v)", got.Resolved, err)
 	}
 	// FR with no valuesMapping → returns ctx.Values as-is.
 	fr := &types.FeatureRecipe{}
@@ -138,8 +138,8 @@ func TestExecutePhaseBForFeature_NilAndEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("no vm: %v", err)
 	}
-	if got["k"] != "v" {
-		t.Errorf("ctx.Values pass-through; got %v", got)
+	if got.Resolved["k"] != "v" {
+		t.Errorf("ctx.Values pass-through; got %v", got.Resolved)
 	}
 }
 

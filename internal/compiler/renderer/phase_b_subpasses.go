@@ -544,12 +544,16 @@ func phaseB6(
 		// attachment renders, so a key of this render that merely shares a name
 		// with a leaf the host declared would be marked from a declaration no
 		// author wrote about it — and a consumer that begins withholding a value
-		// has no way to discover that it should not have. The zero value declares
-		// nothing and therefore marks nothing, which is this axis's safe
-		// direction. Cleared explicitly rather than left inherited because a
-		// whole-struct copy names no field: nothing else on this line says which
-		// declarations travelled with it.
-		frNodeCtx.DeclaredSensitivity = DeclaredSensitivity{}
+		// has no way to discover that it should not have. Overwritten rather than
+		// left inherited because a whole-struct copy names no field: nothing else
+		// on this line says which declarations travelled with it.
+		//
+		// What replaces them is what this attachment's OWN Feature declares, so a
+		// leaf its author declared sensitive is marked on its own render. The
+		// assembly is not written out here: it is the same rule the boundary scope
+		// applies, and two statements of it would agree on the day they were
+		// written and be free to diverge afterwards.
+		frNodeCtx.DeclaredSensitivity = featureRecipeDeclaredSensitivity(fr, item.FeatureType, input, frValues.KeysAreDeclaredLeaves)
 		// This attachment is a contributor of its own, so the names its render
 		// derives are declared under its own label rather than the host node's.
 		// The sink is rewired for the same reason the boundary-scope render
@@ -615,7 +619,7 @@ func phaseB6(
 		// nothing makes one's output names distinct from the other's or from the
 		// node's own. It carries this render's presentation too, so the rule declared
 		// over the carrier's facts can be asked inside the walk that records them.
-		frFiles, frComponentID, err := renderFeatureRecipeFiles(ctx, frEngine, fr, &frCtx, frNodeCtx, frValues, resolvedSrc, item.Identity,
+		frFiles, frComponentID, err := renderFeatureRecipeFiles(ctx, frEngine, fr, &frCtx, frNodeCtx, frValues.Resolved, resolvedSrc, item.Identity,
 			carrierProductsOf(state).attachmentOnNode(nodeID, item.Instance),
 			featureAttachmentSlots(fr, input), input.WorkloadLibraries, input.ArtifactsLibraries,
 			nodeAnnotations, input.CatalogLookup.ProviderPlugin)
@@ -771,7 +775,7 @@ func phaseB6(
 				nameBasis: TargetNameBasis(frNodeCtx),
 				fragments: fragments,
 				files:     ownFiles,
-				values:    frValues,
+				values:    frValues.Resolved,
 			})
 		}
 	}
@@ -848,15 +852,24 @@ type attachmentContribution struct {
 //     resources are stamped with and the directory its files are written under
 //     are derived from it, so the two cannot come to name different attachments.
 type attachmentRenderItem struct {
-	Instance  string
-	FR        *types.FeatureRecipe
-	CtxValues types.OrderedMap[any]
-	CtxInfra  types.OrderedMap[any]
-	OwnValues map[string]any
-	OwnInfra  map[string]any
-	Inject    *types.InjectPipe
-	Provides  *types.OrderedMap[string]
-	Identity  attachmentIdentity
+	Instance string
+	// FeatureType is the Feature this attachment NAMES — the entity whose schema
+	// the attachment's authored values were checked against, and therefore the
+	// entity whose declarations govern those values wherever one is read. It is
+	// deliberately not the Feature the bound FeatureRecipe implements: which
+	// FeatureRecipe binds to an attachment is decided by the deployment's own
+	// mapping and nothing holds the two spellings equal, so a reader that took
+	// the FeatureRecipe's word for it could read a different entity's
+	// declarations over this attachment's data.
+	FeatureType string
+	FR          *types.FeatureRecipe
+	CtxValues   types.OrderedMap[any]
+	CtxInfra    types.OrderedMap[any]
+	OwnValues   map[string]any
+	OwnInfra    map[string]any
+	Inject      *types.InjectPipe
+	Provides    *types.OrderedMap[string]
+	Identity    attachmentIdentity
 }
 
 // attachmentRenderSequence assembles the one ordered sequence Phase B.6
@@ -911,8 +924,11 @@ func attachmentRenderSequence(
 			item.OwnValues = attach.Values.TemplateAlphabeticalMapDeep()
 			item.OwnInfra = attach.Infra.TemplateAlphabeticalMapDeep()
 		}
-		if entry, ok := attachments.Get(ref.InstanceName); ok && entry.Inject.Len() > 0 {
-			item.Inject = buildAttachmentInject(entry)
+		if entry, ok := attachments.Get(ref.InstanceName); ok {
+			item.FeatureType = entry.Type
+			if entry.Inject.Len() > 0 {
+				item.Inject = buildAttachmentInject(entry)
+			}
 		}
 		if provides, ok := attachmentProvides[ref.InstanceName]; ok {
 			item.Provides = &provides

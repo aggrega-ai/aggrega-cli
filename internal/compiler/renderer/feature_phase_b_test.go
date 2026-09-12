@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -127,12 +128,92 @@ func TestExecutePhaseBForFeature_RendersValuesMapping(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if values["image"] != "prom/mon:v1" {
-		t.Errorf("image: %v", values["image"])
+	if values.Resolved["image"] != "prom/mon:v1" {
+		t.Errorf("image: %v", values.Resolved["image"])
 	}
-	gotPort, ok := asNumber(values["port"])
+	gotPort, ok := asNumber(values.Resolved["port"])
 	if !ok || gotPort != 9090 {
-		t.Errorf("port: %v (%T)", values["port"], values["port"])
+		t.Errorf("port: %v (%T)", values.Resolved["port"], values.Resolved["port"])
+	}
+	// The mapping invented both keys, so no declaration names either of them.
+	// Reported here because this is the branch that decides it, and a reader
+	// downstream has no way to tell an invented key from an authored one.
+	if values.KeysAreDeclaredLeaves {
+		t.Errorf("a values mapping ran, so its output keys are the template's own invention; reporting them as the Feature's declared leaf paths invites a join no declaration supports")
+	}
+}
+
+// TestFeatureRecipeDeclaredSensitivity_ReadsEachDeclarationFromItsOwnAuthor pins
+// the one thing about this assembly a render-level fixture cannot separate: WHICH
+// entity each half of it reads.
+//
+// The two spellings are equal in an ordinary deployment — the Feature an
+// attachment names, and the Feature the bound FeatureRecipe implements — and
+// nothing holds them equal, so a reader that took either one for both would pass
+// every ordinary render while being wrong about which author's declarations it
+// obeyed. Here they are deliberately different entities declaring different
+// things, which is the only arrangement that can tell the two apart.
+func TestFeatureRecipeDeclaredSensitivity_ReadsEachDeclarationFromItsOwnAuthor(t *testing.T) {
+	t.Parallel()
+
+	const (
+		attachedType   = "example/attached:1.0.0"
+		implementsType = "example/implemented:1.0.0"
+	)
+
+	// The slot declaration lives on the Feature the FeatureRecipe IMPLEMENTS,
+	// because a synthesized workload's attachment entries are authored inside the
+	// FeatureRecipe and checked against that Feature's slots.
+	slots := types.OrderedMap[types.AttachmentSlot]{}
+	slots.Set("credentials", types.AttachmentSlot{Sensitive: true})
+
+	var asked []string
+	input := RendererInput{
+		CatalogLookup: resolver.CatalogLookup{
+			Feature: func(typeURI string) (types.Feature, bool) {
+				if typeURI == implementsType {
+					return types.Feature{Spec: types.FeatureSpec{FeaturesSchema: slots}}, true
+				}
+				return types.Feature{}, false
+			},
+		},
+	}
+	// The leaf declaration lives on the Feature the ATTACHMENT names. The reader
+	// records what it was asked, so the key itself is read rather than inferred
+	// from the answer.
+	input.declaredFeatureLeaves = func(featureType string) resolver.SensitiveLeaves {
+		asked = append(asked, featureType)
+		if featureType == attachedType {
+			return resolver.SensitiveLeaves{Values: map[string]bool{"password": true}}
+		}
+		return resolver.SensitiveLeaves{Values: map[string]bool{"wrong_entity": true}}
+	}
+
+	fr := &types.FeatureRecipe{Spec: types.FeatureRecipeSpec{Implements: implementsType}}
+	got := featureRecipeDeclaredSensitivity(fr, attachedType, input, true)
+
+	if len(asked) != 1 || asked[0] != attachedType {
+		t.Errorf("the leaf reader was asked about %v; want exactly [%q] — the Feature the attachment names, whose schema its authored values were checked against", asked, attachedType)
+	}
+	if !got.ValueLeaves["password"] || got.ValueLeaves["wrong_entity"] {
+		t.Errorf("the leaf set is %v; want the attached Feature's declaration", got.ValueLeaves)
+	}
+	if !got.ValuesAreDeclaredLeaves {
+		t.Errorf("the gate was passed in as true and must be carried through, not re-derived")
+	}
+	if !got.Slots["credentials"] {
+		t.Errorf("the slot set is %v; want the declared sensitive slot of the Feature this FeatureRecipe implements, which is the allowlist its synthesized workload's entries were checked against", got.Slots)
+	}
+}
+
+// TestFeatureRecipeDeclaredSensitivity_NoReaderDeclaresNothing pins the
+// safe-direction default: an input assembled outside the render installs no
+// reader, and a declaration set that declares nothing marks nothing.
+func TestFeatureRecipeDeclaredSensitivity_NoReaderDeclaresNothing(t *testing.T) {
+	t.Parallel()
+	got := featureRecipeDeclaredSensitivity(&types.FeatureRecipe{}, "example/attached:1.0.0", RendererInput{}, true)
+	if len(got.ValueLeaves) != 0 || len(got.Slots) != 0 || got.ValuesAreDeclaredLeaves {
+		t.Errorf("declared %+v with no reader installed; want the zero value, which marks nothing", got)
 	}
 }
 
@@ -142,8 +223,8 @@ func TestExecutePhaseBForFeature_NilFR(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected: %v", err)
 	}
-	if len(got) != 0 {
-		t.Errorf("expected empty, got %v", got)
+	if len(got.Resolved) != 0 {
+		t.Errorf("expected empty, got %v", got.Resolved)
 	}
 }
 
@@ -157,8 +238,14 @@ func TestExecutePhaseBForFeature_EmptyMappingReturnsContextValues(t *testing.T) 
 	if err != nil {
 		t.Fatalf("unexpected: %v", err)
 	}
-	if got["a"] != float64(1) {
-		t.Errorf("expected passthrough .values, got %v", got)
+	if got.Resolved["a"] != float64(1) {
+		t.Errorf("expected passthrough .values, got %v", got.Resolved)
+	}
+	// This is the one branch whose keys ARE what the Feature declared, and the
+	// only branch that can say so: the keys came straight from the authored
+	// values pillar, so a declaration names each of them.
+	if !got.KeysAreDeclaredLeaves {
+		t.Errorf("the values pillar passed through unmapped, so its keys are the Feature's own declared leaf paths; reporting otherwise loses every marking an author declared on them")
 	}
 }
 
@@ -179,8 +266,8 @@ func TestExecutePhaseBForFeature_ResolvesLibraryImport(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if got["image"] != "prom/mon:v2" {
-		t.Errorf("image: %v; want the imported fragment templated against .values", got["image"])
+	if got.Resolved["image"] != "prom/mon:v2" {
+		t.Errorf("image: %v; want the imported fragment templated against .values", got.Resolved["image"])
 	}
 }
 

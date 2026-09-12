@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/ir"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/parse"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -179,20 +180,41 @@ func EvaluateFeatureRecipeLocals(
 	)
 }
 
+// FeatureValues is a FeatureRecipe's evaluated values dictionary together with
+// the one thing about it that only the evaluation can state: whether its keys
+// ARE the leaf paths the Feature declares.
+//
+// The fact travels with the dictionary rather than being answered again later,
+// for the reason the base Recipe's own evaluation states where it records the
+// same fact: reading the values mapping a second time to reach the same
+// conclusion would be two readings of one declaration, free to disagree once
+// either moves.
+type FeatureValues struct {
+	// Resolved is the values dictionary the provider engine consumes.
+	Resolved map[string]any
+
+	// KeysAreDeclaredLeaves reports that Resolved's keys are the Feature's
+	// authored leaf paths. It is false where a values mapping ran, because the
+	// mapping is one whole-document template and its output keys are the
+	// template's own invention: a declaration names none of them.
+	KeysAreDeclaredLeaves bool
+}
+
 // ExecutePhaseBForFeature evaluates a FeatureRecipe's valuesMapping and
-// returns the values dictionary for the provider engine. Mirrors
+// returns the values dictionary for the provider engine, with the one fact
+// about those keys that the evaluation settles. Mirrors
 // ExecutePhaseB for base Recipes but takes a *types.FeatureRecipe. The
 // valuesMapping field carries one of three content-shape-dispatched
 // modes (inline / file $import: / library $import:); this function
 // resolves the mode and returns the templated values output.
-func ExecutePhaseBForFeature(ctx *types.TemplateContext, fr *types.FeatureRecipe, mappingLibs map[string]types.MappingLibrary) (map[string]any, error) {
+func ExecutePhaseBForFeature(ctx *types.TemplateContext, fr *types.FeatureRecipe, mappingLibs map[string]types.MappingLibrary) (FeatureValues, error) {
 	if fr == nil {
-		return map[string]any{}, nil
+		return FeatureValues{Resolved: map[string]any{}}, nil
 	}
 
 	tmplText, err := resolveValuesMappingText(fr.Spec.ValuesMapping, fr.Metadata.Name, "FeatureRecipe", mappingLibs)
 	if err != nil {
-		return nil, err
+		return FeatureValues{}, err
 	}
 
 	if tmplText == "" {
@@ -201,7 +223,11 @@ func ExecutePhaseBForFeature(ctx *types.TemplateContext, fr *types.FeatureRecipe
 		for k, v := range ctx.Values.All() {
 			out[k] = v
 		}
-		return out, nil
+		// This branch is the ONLY one whose resolved keys are the authored leaf
+		// paths, so it is the only one that can record the fact — the same
+		// reading, at the same position, that the base Recipe's own values pass
+		// makes about its own branch.
+		return FeatureValues{Resolved: out, KeysAreDeclaredLeaves: true}, nil
 	}
 
 	output, err := EvalTemplate(
@@ -210,15 +236,62 @@ func ExecutePhaseBForFeature(ctx *types.TemplateContext, fr *types.FeatureRecipe
 		ctx,
 	)
 	if err != nil {
-		return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: fr.Metadata.Name}, fmt.Sprintf("FeatureRecipe %q valuesMapping", fr.Metadata.Name))
+		return FeatureValues{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: fr.Metadata.Name}, fmt.Sprintf("FeatureRecipe %q valuesMapping", fr.Metadata.Name))
 	}
 
 	var values map[string]any
 	if err := parse.TemplateOutput([]byte(output), &values); err != nil {
-		return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: fr.Metadata.Name}, fmt.Sprintf("FeatureRecipe %q valuesMapping output is not valid YAML", fr.Metadata.Name))
+		return FeatureValues{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: fr.Metadata.Name}, fmt.Sprintf("FeatureRecipe %q valuesMapping output is not valid YAML", fr.Metadata.Name))
 	}
 
-	return values, nil
+	return FeatureValues{Resolved: values}, nil
+}
+
+// featureRecipeDeclaredSensitivity assembles the sensitivity declarations one
+// attachment's own render is judged against, from the attachment's own side
+// rather than from the component hosting it.
+//
+// It is the ONE home of that assembly. Both attachment scopes copy the host's
+// render context at their own site, and a context copy names no field — so an
+// assembly written out at each of them would be two statements of one rule,
+// agreeing on the day they were written and free to diverge afterwards.
+//
+// Each of the three declarations is read from whichever entity ALREADY governs
+// the data it is joined against, which is what makes each join declaration to
+// declaration rather than name to name:
+//
+//   - the leaf set, from featureType — the Feature the attachment NAMES, whose
+//     schema the attachment's authored values were checked against — read
+//     through the render's one memoised reader of that declaration, so this
+//     answer and the withholding set's cannot differ for one type;
+//   - the gate over that leaf set, from the values evaluation the caller already
+//     ran, because only that evaluation knows whether a mapping invented the
+//     keys;
+//   - the slot set, from the Feature the FeatureRecipe IMPLEMENTS, because the
+//     entries this join marks are the ones a FeatureRecipe-synthesized workload
+//     authored, and that Feature's slots are the allowlist those entries were
+//     checked against.
+//
+// 🔴 The first and the third deliberately read different entities, and they are
+// equal in most deployments without being held equal by anything: which
+// FeatureRecipe binds to an attachment is decided by the deployment's mapping,
+// not by what the FeatureRecipe implements. Two authoring surfaces are in play —
+// the attachment's values are written where the attachment is attached, and the
+// workload's entries inside the FeatureRecipe — so each is joined against the
+// declarations its own author wrote to.
+//
+// An input that carries no reader — one assembled outside RenderAll — declares
+// nothing here, and a declaration set that declares nothing marks nothing. That
+// is this axis's safe direction, stated on the declaration type itself.
+func featureRecipeDeclaredSensitivity(fr *types.FeatureRecipe, featureType string, input RendererInput, keysAreDeclaredLeaves bool) DeclaredSensitivity {
+	if fr == nil || input.declaredFeatureLeaves == nil {
+		return DeclaredSensitivity{}
+	}
+	return DeclaredSensitivity{
+		ValueLeaves:             input.declaredFeatureLeaves(featureType).Values,
+		ValuesAreDeclaredLeaves: keysAreDeclaredLeaves,
+		Slots:                   ir.SensitiveSlots(featureAttachmentSlots(fr, input)),
+	}
 }
 
 // isResourceGeneratingFR returns true if the FeatureRecipe declares a render

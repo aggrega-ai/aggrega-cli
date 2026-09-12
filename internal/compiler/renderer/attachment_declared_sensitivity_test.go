@@ -18,6 +18,12 @@
 // declares no values mapping, so its rendered keys are its own authored leaves;
 // the boundary-scope one declares a mapping, so its rendered keys are invented
 // inside a template and no declaration names them at all.
+//
+// Each side's declaration is toggled independently of the other, so the file
+// covers a grid rather than two opposed cases: neither side declaring, each side
+// alone, and both at once on one colliding name — which is the only cell where a
+// join reading the wrong entity still marks something, and so the only cell where
+// a wrong answer looks like a right one.
 
 package renderer_test
 
@@ -66,66 +72,118 @@ const (
 	// either side is free to change.
 	declSensOverrideFileName = "aggrega_override.tf.json"
 
-	// A second leaf on each side that no declaration ever names, so every
-	// assertion below has an unmarked sibling travelling the identical route. A
-	// marking that reached everything would pass a collision-only assertion.
+	// A leaf the host alone carries, which no declaration ever names, so every
+	// host-side assertion has an unmarked sibling travelling the identical route.
+	// A marking that reached everything would pass a collision-only assertion.
 	declSensHostPublicLeaf = "bucket"
-	declSensFeatPublicLeaf = "region"
+
+	// The leaf the attachment's Feature alone carries — the only leaf the Feature
+	// ever declares sensitive. It is deliberately a name the host does not use, so
+	// a marking observed on it can have come from nowhere but the Feature's own
+	// declaration. Its unmarked sibling is the colliding leaf above, which the
+	// Feature declares and never declares sensitive.
+	declSensFeatOwnLeaf = "region"
 )
 
-// declSensOverrideDocument is the whole emitted override document for a render
-// that marks the colliding leaf and nothing else — the bytes this target reads,
-// pinned verbatim rather than parsed, because the subject is what lands on disk.
-const declSensOverrideDocument = `{
+// declSensOverrideDocumentFor is the whole emitted override document for a render
+// that marks one named rendered input and nothing else — the bytes this target
+// reads, pinned verbatim rather than parsed, because the subject is what lands on
+// disk. Every expectation below marks at most one key, so no ordering between two
+// marked keys is asserted anywhere.
+func declSensOverrideDocumentFor(name string) string {
+	return `{
   "variable": {
-    "` + declSensCollidingLeaf + `": {
+    "` + name + `": {
       "sensitive": true
     }
   }
 }
 `
+}
 
 // declSensCase is one render: one host component with one attachment, at the
-// scope named, with the host's declaration present or absent.
+// scope named, with each side's declaration present or absent.
+//
+// Three booleans, so eight cases — the whole grid rather than its margins. Each
+// side's declaration is toggled independently because the two are exactly what
+// the join must tell apart, and a case list that moved them together would leave
+// the cell where both are present, which is the collision, unreached.
 type declSensCase struct {
 	name string
 	// boundaryScope selects an attachment declared on the boundary over one
 	// declared on the component. The two copy the host's render context at
 	// different sites, so a proof over one says nothing about the other.
 	boundaryScope bool
-	// hostDeclaresSensitive toggles the ONE declaration in the fixture. With it
-	// off, nothing anywhere declares secret material, so nothing is recoverable
-	// and no override document is emitted at all — which is what keeps the
-	// absence assertions below from passing over a render that produced nothing.
+	// hostDeclaresSensitive toggles the HOST Component's declaration over the
+	// colliding leaf. The attachment's Feature carries a leaf of that same name
+	// and never declares it sensitive, so a marking on the attachment's copy of
+	// that name can only have come from this declaration.
 	hostDeclaresSensitive bool
+	// featureDeclaresSensitive toggles the attachment Feature's OWN declaration,
+	// over the leaf only the Feature carries. The host declares no leaf of that
+	// name at all, so a marking on it can only have come from this declaration.
+	featureDeclaresSensitive bool
 	// attachmentDir is where this scope places the attachment's own files,
 	// relative to the boundary's output directory.
 	attachmentDir string
 }
 
-func declSensCases() []declSensCase {
-	return []declSensCase{
-		{
-			name:                  "a component-scope attachment, host declaration present",
-			hostDeclaresSensitive: true,
-			attachmentDir:         "modules/api--aux",
-		},
-		{
-			name:                  "a boundary-scope attachment, host declaration present",
-			boundaryScope:         true,
-			hostDeclaresSensitive: true,
-			attachmentDir:         "modules/aux",
-		},
-		{
-			name:          "a component-scope attachment, no declaration anywhere",
-			attachmentDir: "modules/api--aux",
-		},
-		{
-			name:          "a boundary-scope attachment, no declaration anywhere",
-			boundaryScope: true,
-			attachmentDir: "modules/aux",
-		},
+// attachmentMarks is the rendered input this case's attachment must carry a
+// marking on, or "" where its output must carry no marking at all.
+//
+// A boundary-scope attachment renders against an empty values pillar, so its
+// rendered inputs come from its own values mapping and their keys are that
+// template's own invention — no declaration names them, on either side. Its
+// answer is therefore "nothing marked" whatever the Feature declares, and that is
+// a live guard on the gate over the leaf join rather than a case the per-Feature
+// join flips.
+func (c declSensCase) attachmentMarks() string {
+	if c.featureDeclaresSensitive && !c.boundaryScope {
+		return declSensFeatOwnLeaf
 	}
+	return ""
+}
+
+// hostMarks is the rendered input this case's HOST must carry a marking on, or ""
+// where the host's output must carry no marking. It follows the host's own
+// declaration and nothing else: the attachment's Feature is a different entity,
+// and what it declares governs no key of the host's render.
+func (c declSensCase) hostMarks() string {
+	if c.hostDeclaresSensitive {
+		return declSensCollidingLeaf
+	}
+	return ""
+}
+
+func declSensCases() []declSensCase {
+	var cases []declSensCase
+	for _, scope := range []struct {
+		boundary bool
+		name     string
+		dir      string
+	}{
+		{name: "a component-scope attachment", dir: "modules/api--aux"},
+		{boundary: true, name: "a boundary-scope attachment", dir: "modules/aux"},
+	} {
+		for _, decl := range []struct {
+			host, feature bool
+			name          string
+		}{
+			{name: "no declaration anywhere"},
+			{host: true, name: "the host's declaration present"},
+			{feature: true, name: "the attachment Feature's own declaration present"},
+			{host: true, feature: true, name: "both declarations present, on one colliding name"},
+		} {
+			cases = append(cases, declSensCase{
+				name:                     scope.name + ", " + decl.name,
+				boundaryScope:            scope.boundary,
+				hostDeclaresSensitive:    decl.host,
+				featureDeclaresSensitive: decl.feature,
+				attachmentDir:            scope.dir,
+			})
+		}
+	}
+	return cases
 }
 
 // declSensModule writes a module directory declaring one input variable per name,
@@ -161,7 +219,7 @@ func renderDeclSensCase(t *testing.T, c declSensCase) map[string]renderer.Assemb
 	t.Helper()
 
 	hostModule := declSensModule(t, declSensHostPublicLeaf, declSensCollidingLeaf)
-	featModule := declSensModule(t, declSensFeatPublicLeaf, declSensCollidingLeaf)
+	featModule := declSensModule(t, declSensFeatOwnLeaf, declSensCollidingLeaf)
 
 	nodes := types.OrderedMap[types.IRNode]{}
 	nodes.Set(declSensNode, types.IRNode{Component: declSensHostType, BoundaryPath: declSensBoundary})
@@ -176,7 +234,7 @@ func renderDeclSensCase(t *testing.T, c declSensCase) map[string]renderer.Assemb
 
 	// The attachment's own authored values, consumed on the component-scope route.
 	attachValues := types.OrderedMap[any]{}
-	attachValues.Set(declSensFeatPublicLeaf, "eu")
+	attachValues.Set(declSensFeatOwnLeaf, "eu")
 	attachValues.Set(declSensCollidingLeaf, "attachment-placeholder")
 	inner := types.OrderedMap[types.IRFeatureEntry]{}
 	inner.Set(declSensInstance, types.IRFeatureEntry{Type: declSensFeatType, Values: attachValues})
@@ -201,19 +259,24 @@ func renderDeclSensCase(t *testing.T, c declSensCase) map[string]renderer.Assemb
 	boundaries := types.OrderedMap[types.Boundary]{}
 	boundaries.Set(declSensBoundary, clusterBoundary)
 
-	// The ONE declaration this fixture moves. The public sibling beside it is
-	// declared either way, so the two cases differ by exactly the sensitivity of
-	// one leaf and by nothing else.
+	// The host's declaration, over the colliding leaf. Its public sibling is
+	// declared either way, so two cases differing on this flag differ by exactly
+	// the sensitivity of one leaf and by nothing else.
 	hostSchema := "values:\n  " + declSensHostPublicLeaf + ": { type: string }\n  " + declSensCollidingLeaf + ": { type: string"
 	if c.hostDeclaresSensitive {
 		hostSchema += ", sensitive: true"
 	}
 	hostSchema += " }\n"
 
-	// The attachment's own Feature declares the same two leaf names and declares
-	// NEITHER sensitive, so nothing on the attachment's side of the fixture can
-	// account for a marking on its output.
-	featSchema := "values:\n  " + declSensFeatPublicLeaf + ": { type: string }\n  " + declSensCollidingLeaf + ": { type: string }\n"
+	// The attachment Feature's own declaration, over the leaf only it carries. It
+	// declares the colliding leaf too and NEVER declares that one sensitive, so the
+	// colliding name is the unmarked sibling on this side: a marking observed on it
+	// was read from the host's declaration over this Feature's render.
+	featSchema := "values:\n  " + declSensFeatOwnLeaf + ": { type: string"
+	if c.featureDeclaresSensitive {
+		featSchema += ", sensitive: true"
+	}
+	featSchema += " }\n  " + declSensCollidingLeaf + ": { type: string }\n"
 
 	input := renderer.RendererInput{
 		Graph: &types.IRGraph{
@@ -280,7 +343,7 @@ func renderDeclSensCase(t *testing.T, c declSensCase) map[string]renderer.Assemb
 		// from a values mapping — and a mapping's output keys are its template's
 		// own invention, which no declaration names.
 		frRecipe.Spec.ValuesMapping = types.ValuesMapping{Inline: `{"` +
-			declSensFeatPublicLeaf + `":"eu","` + declSensCollidingLeaf + `":"attachment-placeholder"}`}
+			declSensFeatOwnLeaf + `":"eu","` + declSensCollidingLeaf + `":"attachment-placeholder"}`}
 	}
 
 	lookup := renderer.RecipeLookup{
@@ -351,7 +414,7 @@ func declSensDirHoldsFiles(files map[string]renderer.AssembledFile, dir string) 
 func TestAttachmentDeclaredSensitivity_HostDeclarationDoesNotReachTheAttachment(t *testing.T) {
 	t.Parallel()
 	for _, c := range declSensCases() {
-		if !c.hostDeclaresSensitive {
+		if !declSensHostOnly(c) {
 			continue
 		}
 		t.Run(c.name, func(t *testing.T) {
@@ -367,8 +430,8 @@ func TestAttachmentDeclaredSensitivity_HostDeclarationDoesNotReachTheAttachment(
 				t.Fatalf("case %q: the host's own rendered input is not marked, so this render proves nothing about whose declaration reaches where; emitted paths: %v",
 					c.name, sortedEmittedPaths(files))
 			}
-			if host != declSensOverrideDocument {
-				t.Errorf("case %q: the host's override document is\n%s\nwant\n%s", c.name, host, declSensOverrideDocument)
+			if want := declSensOverrideDocumentFor(c.hostMarks()); host != want {
+				t.Errorf("case %q: the host's override document is\n%s\nwant\n%s", c.name, host, want)
 			}
 
 			// The subject. The attachment rendered its own inputs, one of which
@@ -386,18 +449,18 @@ func TestAttachmentDeclaredSensitivity_HostDeclarationDoesNotReachTheAttachment(
 	}
 }
 
-// TestAttachmentDeclaredSensitivity_ControlDeclaresNothingAnywhere moves the one
-// declaration and nothing else. With no leaf declared sensitive on either side,
-// nothing is recoverable and no override document is emitted at all — while both
-// renders still emit their module files.
+// TestAttachmentDeclaredSensitivity_ControlDeclaresNothingAnywhere turns both
+// declarations off and changes nothing else. With no leaf declared sensitive on
+// either side, nothing is recoverable and no override document is emitted at all
+// — while both renders still emit their module files.
 //
-// Without it, the absence assertion above would pass over a render that emitted
+// Without it, the absence assertions above would pass over a render that emitted
 // no override anywhere for reasons having nothing to do with whose declaration
 // was read.
 func TestAttachmentDeclaredSensitivity_ControlDeclaresNothingAnywhere(t *testing.T) {
 	t.Parallel()
 	for _, c := range declSensCases() {
-		if c.hostDeclaresSensitive {
+		if !declSensNeither(c) {
 			continue
 		}
 		t.Run(c.name, func(t *testing.T) {
@@ -415,6 +478,131 @@ func TestAttachmentDeclaredSensitivity_ControlDeclaresNothingAnywhere(t *testing
 					c.name, sortedSetKeys(declSensDirSet(overrides)))
 			}
 		})
+	}
+}
+
+// TestAttachmentDeclaredSensitivity_TheAttachmentsOwnFeatureDeclarationReaches is
+// the other direction, and it covers the two cells where the attachment Feature
+// declares a leaf of its own sensitive.
+//
+// With the host's declaration ABSENT, the attachment's own declaration is the only
+// one in the render, so a marking on its output can have come from nowhere else.
+// With the host's declaration PRESENT on a name the Feature also carries, the
+// collision is live: the attachment's output must mark what its own Feature
+// declared and must not mark the colliding name, whose only declaration lives on
+// the host.
+//
+// The failure mode is the everyday one: a value an author declared sensitive is
+// not marked at all, because the declaration sits on the Feature and the join was
+// reading the host.
+func TestAttachmentDeclaredSensitivity_TheAttachmentsOwnFeatureDeclarationReaches(t *testing.T) {
+	t.Parallel()
+	for _, c := range declSensCases() {
+		if !declSensFeatureDeclares(c) {
+			continue
+		}
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			files := renderDeclSensCase(t, c)
+			overrides := declSensOverridesByDir(files)
+
+			// ANTI-VACUITY, first: an absent marking under a directory that holds
+			// no files is an absent render rather than an unmarked one.
+			if !declSensDirHoldsFiles(files, c.attachmentDir) {
+				t.Fatalf("case %q: the attachment emitted nothing under %q, so nothing here reads a marking; emitted paths: %v",
+					c.name, c.attachmentDir, sortedEmittedPaths(files))
+			}
+
+			// The subject: whose declaration the attachment's render was joined
+			// against, read as the whole emitted document rather than as a
+			// substring — so a document naming the colliding leaf as well fails.
+			got, marked := overrides[c.attachmentDir]
+			switch want := c.attachmentMarks(); {
+			case want == "" && marked:
+				t.Errorf("case %q: the attachment's rendered inputs come from its own values mapping, whose keys no declaration names, yet its output is marked:\n%s",
+					c.name, got)
+			case want != "" && !marked:
+				t.Errorf("case %q: the attachment's own Feature declares %q sensitive and its render carries no marking at all, so a value its author declared sensitive reaches the target unmarked; emitted paths: %v",
+					c.name, want, sortedEmittedPaths(files))
+			case want != "" && got != declSensOverrideDocumentFor(want):
+				t.Errorf("case %q: the attachment's override document is\n%s\nwant\n%s\n— it must name the leaf this attachment's OWN Feature declared and no other",
+					c.name, got, declSensOverrideDocumentFor(want))
+			}
+
+			// The host's own render in the same build, which the Feature's
+			// declaration governs no key of. It is the discriminating control for
+			// this direction: a join reading the wrong entity in the other
+			// direction would mark the host from the Feature's declaration.
+			host, hostMarked := overrides["modules/"+declSensNode]
+			switch want := c.hostMarks(); {
+			case want == "" && hostMarked:
+				t.Errorf("case %q: the host Component declares nothing sensitive, yet its own rendered input is marked; the only declaration in this render belongs to the attachment's Feature:\n%s",
+					c.name, host)
+			case want != "" && host != declSensOverrideDocumentFor(want):
+				t.Errorf("case %q: the host's override document is\n%s\nwant\n%s", c.name, host, declSensOverrideDocumentFor(want))
+			}
+		})
+	}
+}
+
+// The three predicates that partition the case grid, named once and read by both
+// the tests above and the coverage guard below. A case matching none of them
+// would be rendered by nothing and asserted by nothing, in silence.
+func declSensNeither(c declSensCase) bool {
+	return !c.hostDeclaresSensitive && !c.featureDeclaresSensitive
+}
+
+func declSensHostOnly(c declSensCase) bool {
+	return c.hostDeclaresSensitive && !c.featureDeclaresSensitive
+}
+
+func declSensFeatureDeclares(c declSensCase) bool { return c.featureDeclaresSensitive }
+
+// TestAttachmentDeclaredSensitivity_EveryCellIsAsserted holds the grid closed.
+//
+// The subject is gated on three independent conditions, so the behaviour is a
+// grid rather than a list, and a defect can sit in a cell no test reaches while
+// every test above passes. Two things are checked, and neither is a count: that
+// the case set IS the full grid, named as a set difference so a missing
+// combination is reported rather than inferred from a total; and that each case
+// is claimed by exactly one of the predicates above, so none is asserted twice
+// and none goes unasserted.
+func TestAttachmentDeclaredSensitivity_EveryCellIsAsserted(t *testing.T) {
+	t.Parallel()
+
+	type cell struct{ boundary, host, feature bool }
+	want := map[cell]struct{}{}
+	for _, boundary := range []bool{false, true} {
+		for _, host := range []bool{false, true} {
+			for _, feature := range []bool{false, true} {
+				want[cell{boundary, host, feature}] = struct{}{}
+			}
+		}
+	}
+
+	got := map[cell]string{}
+	for _, c := range declSensCases() {
+		k := cell{c.boundaryScope, c.hostDeclaresSensitive, c.featureDeclaresSensitive}
+		if prior, seen := got[k]; seen {
+			t.Errorf("two cases occupy one cell %+v: %q and %q", k, prior, c.name)
+		}
+		got[k] = c.name
+
+		claims := 0
+		for _, claimed := range []bool{declSensNeither(c), declSensHostOnly(c), declSensFeatureDeclares(c)} {
+			if claimed {
+				claims++
+			}
+		}
+		if claims != 1 {
+			t.Errorf("case %q is claimed by %d of the three predicates; a case claimed by none is rendered by nothing and asserted by nothing", c.name, claims)
+		}
+	}
+
+	for k := range want {
+		if _, ok := got[k]; !ok {
+			t.Errorf("no case covers the cell %+v, so that combination of declarations is never rendered", k)
+		}
 	}
 }
 

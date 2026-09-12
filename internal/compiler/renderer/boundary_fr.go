@@ -444,17 +444,6 @@ func dispatchBoundaryScopeFR(
 	// passes through and establishes it there, so both attachment scopes name the
 	// producing FeatureRecipe from a single site rather than from two that agree.
 	frNodeCtx := nodeCtx
-	// The copy above carries the sensitivity declarations of whichever component
-	// node's render reached this dispatch, and a boundary-scope feature has no
-	// host component at all — so those declarations govern rendered keys that are
-	// not this feature's, and which node supplied them is an artifact of the walk
-	// order. Carrying them would mark a rendered key from a declaration no author
-	// wrote about it, and a consumer that begins withholding a value has no way
-	// to discover that it should not have. The zero value declares nothing and
-	// therefore marks nothing, which is this axis's safe direction. Cleared
-	// explicitly rather than left inherited because a whole-struct copy names no
-	// field: nothing else on this line says which declarations travelled with it.
-	frNodeCtx.DeclaredSensitivity = DeclaredSensitivity{}
 	frNodeCtx.NodeID = boundaryFRNodeID(key)
 	frNodeCtx.BoundaryPath = key.BoundaryPath
 	// The component identity is COMPOSED from the two things an author wrote —
@@ -563,7 +552,30 @@ func dispatchBoundaryScopeFR(
 	// between the two touches the values, and reading them from the one site that
 	// produced them is what keeps the assembled artifact supplying exactly what
 	// the render was given.
-	boundaryFRState.Values[key] = frValues
+	boundaryFRState.Values[key] = frValues.Resolved
+
+	// The context copied above carries the sensitivity declarations of whichever
+	// component node's render reached this dispatch, and a boundary-scope feature
+	// has no host component at all — so those declarations govern rendered keys
+	// that are not this feature's, and which node supplied them is an artifact of
+	// the walk order. Carrying them would mark a rendered key from a declaration no
+	// author wrote about it, and a consumer that begins withholding a value has no
+	// way to discover that it should not have. Overwritten rather than left
+	// inherited because a whole-struct copy names no field: nothing at the copy
+	// says which declarations travelled with it.
+	//
+	// What replaces them is what the Feature this attachment names declares, through
+	// the same assembly the per-component scope uses. This render's values pillar is
+	// empty by construction, so its rendered inputs can only come from a values
+	// mapping, whose output keys are a template's own invention — and the gate
+	// inside that assembly answers exactly that: none of this render's values keys
+	// is recoverable from a declaration. That is the correct answer here rather
+	// than an omission, and it is what the assembly's own gate states.
+	//
+	// It sits here rather than at the copy because the gate it carries is settled
+	// by the evaluation immediately above, and nothing between the copy and this
+	// line hands this context to a crossing.
+	frNodeCtx.DeclaredSensitivity = featureRecipeDeclaredSensitivity(fr, feat.Type, input, frValues.KeysAreDeclaredLeaves)
 
 	// 5-6. Render via the SAME input-kind machinery the per-component FR sites
 	// use — the central gate, then sourced engine.Render / synthesized workload
@@ -599,7 +611,7 @@ func dispatchBoundaryScopeFR(
 	// reaches it. Read from the ordered per-boundary map for the same reason the
 	// per-component caller reads the ordered IR node — the advisory stream stays
 	// byte-stable across runs of identical input.
-	emitted, _, err := renderFeatureRecipeFiles(ctx, frEngine, fr, frCtx, frNodeCtx, frValues, resolvedSrc, attachmentIdentity{},
+	emitted, _, err := renderFeatureRecipeFiles(ctx, frEngine, fr, frCtx, frNodeCtx, frValues.Resolved, resolvedSrc, attachmentIdentity{},
 		carrierProductsOf(state).attachmentOnBoundary(key.BoundaryPath, frInstance),
 		featureAttachmentSlots(fr, input), input.WorkloadLibraries, input.ArtifactsLibraries,
 		boundaryAnnotations[key.BoundaryPath], input.CatalogLookup.ProviderPlugin)
