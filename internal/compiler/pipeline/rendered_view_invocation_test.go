@@ -185,7 +185,7 @@ func TestRenderedPresentationAnswersFromTheCompiledBuild(t *testing.T) {
 			t.Fatalf("ArtifactProjectionContent(%q, %q) is empty for an artifact the same node projected", node, artifact)
 		}
 		// The bytes are the EVALUATED ones, which is what separates this fact from
-		// the text the stage below carries. The fixture authors its artifact bodies
+		// the text an earlier stage carries. The fixture authors its artifact bodies
 		// as templates, so a presentation handing back the authored form would still
 		// be a plausible document — the assertion is that the template is gone.
 		authored := view.ArtifactTemplateText(node, artifact)
@@ -198,7 +198,7 @@ func TestRenderedPresentationAnswersFromTheCompiledBuild(t *testing.T) {
 
 		// The embedded presentations answer here too, which is what makes this a
 		// stage view rather than a bag of this stage's own facts: the artifact text
-		// belongs to the stage below, the node's labels to the graph's own.
+		// belongs to an earlier stage, the node's labels to the graph's own.
 		if labels := view.NodeLabels(node); labels.Len() == 0 {
 			t.Errorf("NodeLabels(%q) is empty; the graph presentation is not being delegated to", node)
 		}
@@ -323,7 +323,7 @@ func TestRenderedPresentationAnswersFromTheCompiledBuild(t *testing.T) {
 			t.Fatal("the name-set fact enumerated no artifact; a finding from the traversal would certify nothing")
 		}
 
-		// The rule is declared at the stage below this one, so the presentation is
+		// The rule is declared at an earlier stage, so the presentation is
 		// handed over as that stage's view. It is the same value either way — stage
 		// containment is what makes the narrower type satisfiable by the wider
 		// presentation — and naming the narrower one is what lets a rule declared

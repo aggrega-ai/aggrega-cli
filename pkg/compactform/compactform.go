@@ -63,8 +63,16 @@ func WithConsumerFile(path string) CompileOption {
 // does not invoke the validator itself.
 //
 // Compile is a pure function over its input. Same input produces
-// byte-identical output across runs. Map-typed input nodes preserve
-// author order via yaml.Node's natural sequential representation.
+// byte-identical output across runs, and this is the single home of what
+// supplies that.
+//
+// The walk over a map-typed input node follows the order the author wrote,
+// because a parsed node holds its entries as a sequence. The compiled document
+// does not retain that order: Schema is a plain Go map, whose iteration order is
+// neither the author's nor stable. Byte-identity is supplied by whatever
+// serialises the result — both the JSON and the YAML encoder write a Go map's
+// keys in key order — so the order a reader sees is key order and never author
+// order.
 //
 // An input whose anchor is aliased inside its own content is refused,
 // naming that anchor: it describes an infinite tree rather than a schema,

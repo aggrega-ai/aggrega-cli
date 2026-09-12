@@ -1119,10 +1119,11 @@ func featureMappingURI(manifest *types.Manifest, instanceName, featureType strin
 // data by this value join cleanly against the closure's entities (regardless of
 // whether the author wrote the mapping value in short form or full-path form).
 //
-// Returns ("", false) when no Manifest mapping names componentType. Such a
-// component carries no source-descent entity — it would be selected for render
-// by spec.implements, which is a render-selection path, not a
-// source-acquisition path — so it correctly contributes no source artifact.
+// Returns ("", false) when no Manifest mapping names componentType. Resolution
+// is mapping-only, so such a component carries no source-descent entity and
+// correctly contributes no source artifact: an unmapped instance halts loudly in
+// the pre-render resolution-completeness pass rather than resolving by any other
+// route.
 func ComponentRecipeURI(manifest *types.Manifest, instanceName, componentType string) (string, bool, error) {
 	return componentMappingURI(manifest, instanceName, componentType)
 }

@@ -89,8 +89,9 @@
 //
 // Compile is a pure function over its input. Same input produces
 // byte-identical output across runs (the deterministic-output invariant
-// applies); iteration over map-typed input follows author order via
-// the OrderedMap[V] substrate at pkg/types.
+// applies). What supplies that determinism is stated once, on Compile, rather
+// than restated here, so the two surfaces cannot come to name different
+// mechanisms for one property.
 //
 // The runtime evaluation of validate: + when: Go-template predicates is
 // performed by the validator adapter at pkg/validator/jsonschema/; this

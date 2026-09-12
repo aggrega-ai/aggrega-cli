@@ -68,7 +68,7 @@ func TestHaltForRefusesToActOnAMalformedValue(t *testing.T) {
 // as its wrapped errors alone, which would drop the reference, the severity, the
 // message and the observation moment — everything the sentence carries.
 func TestHaltForCarriesTheWholeSentenceAndItsSentinel(t *testing.T) {
-	const notice = "api is deprecated (retracted): withdrawn: bad release (recorded in the lockfile at pull, as of 2026-08-01T09:30:00Z; re-run `aggrega pull` to refresh it)"
+	const notice = "api is retracted: withdrawn: bad release (recorded in the lockfile at pull, as of 2026-08-01T09:30:00Z; re-run `aggrega pull` to refresh it)"
 
 	err := deprecation.HaltFor(notice, deprecation.SeverityRetracted, deprecation.SeverityError)
 	if err == nil {

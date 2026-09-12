@@ -729,7 +729,7 @@ var facts = []factDecl{
 			"One authored shape, two meanings, because the alias is doing a " +
 			"different job on each surface.\n\nIt reads the instance's own " +
 			"dependency block " +
-			"and no other surface. An attachment's block declares sockets on the " +
+			"and no other surface. An attachment's block wires sockets on the " +
 			"Feature it attaches, and a deployment's own edge surface wires sockets " +
 			"from a separate document; each is a separate fact because each is " +
 			"separately authored and independently absent. A rule asking whether a " +

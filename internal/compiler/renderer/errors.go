@@ -653,13 +653,15 @@ var errPluginProviderIncompatible = cerrors.Register("plugin-provider-incompatib
 // than producing an unassembled result the operator only discovers at debug time.
 //
 // It is raised by AssemblyGroupProviderHasItsDeclaredAssembler, once per offending
-// dispatch group, positioned at the deployment document the group's boundaries
-// were declared in. Each objection names the provider and the dispatch path; the
-// remedy — serve the provider through a plugin that advertises both render_node
-// and assemble_boundary — is stated here rather than in the registered wording,
-// which names the condition and not its fix. A group at no dispatch path is
-// passed over, because output written at none is per-node output and no assembly
-// was going to happen there.
+// dispatch group, positioned at the deployment document and carrying no locator
+// within it: an assembly path is evaluated output and a provider is selected, so
+// neither is a key that document holds, and a build given no deployment document
+// leaves the finding unpositioned rather than mispositioned. Each objection names
+// the provider and the dispatch path; the remedy — serve the provider through a
+// plugin that advertises both render_node and assemble_boundary — is stated here
+// rather than in the registered wording, which names the condition and not its
+// fix. A group at no dispatch path is passed over, because output written at none
+// is per-node output and no assembly was going to happen there.
 // Category: TRANSLATION_ERROR.
 func ErrBoundaryAssemblerMissing() error { return errBoundaryAssemblerMissing }
 

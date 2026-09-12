@@ -2823,8 +2823,10 @@ var PipelineStepScopeHasADocumentSet = constraint.Check[
 // declares, while a step addressing the host component's documents is matched
 // against the provider the host node's own Recipe declares — the same value that
 // site's own pipeline is matched against. A host component with no bound Recipe
-// renders no host documents, so a host-addressed step there is left to the rule
-// that owns the missing document set.
+// renders no host documents, so a host-addressed step there is not reported
+// here. No declared rule owns that site's missing document set; the condition
+// stays with the pipeline walk, which halts when a step addresses host documents
+// the site stands against none of.
 //
 // Its detail names the attachment and the provider. The locator names the
 // authored step inside the FeatureRecipe, which is the document to edit, and
