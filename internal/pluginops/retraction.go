@@ -3,7 +3,10 @@
 
 package pluginops
 
-import "github.com/aggrega-ai/aggrega-cli/pkg/catalog"
+import (
+	"github.com/aggrega-ai/aggrega-cli/internal/registryindex"
+	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
+)
 
 // RetractionAdvisory is what the withdrawal screen concluded about the version an
 // addition pinned.
@@ -25,6 +28,11 @@ import "github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 // Selected instead. Unscreened is "you did not get something": the withdrawal
 // records could not be read at all, so selection ran unscreened and no claim is
 // being made about whether the pinned version has since been withdrawn.
+//
+// Provenance qualifies whichever of those two an advisory carries rather than
+// standing as a third alongside them. Where a screen ran it names the evidence that
+// screen rested on; where none did it is empty, because a selection nothing screened
+// rests on no evidence to name.
 type RetractionAdvisory struct {
 	// Reference is the repository reference selection ran over.
 	Reference string
@@ -44,6 +52,22 @@ type RetractionAdvisory struct {
 	// reader can act on is the fault rather than the bare fact that screening was
 	// skipped.
 	Unscreened string
+
+	// Provenance says where the withdrawal facts behind this advisory came from and
+	// how current they are.
+	//
+	// A reader handed an older version than the newest published one needs more than
+	// the reason it was withdrawn: a reading taken from the registry while the
+	// operation ran speaks to now, while a local snapshot can be older than the
+	// withdrawal it is being asked about and a refresh is what settles the
+	// difference. Carrying it as the value the screen itself holds, rather than as a
+	// sentence, is what lets a surface answering with values say that in its own
+	// words without falling out of step with the terminal.
+	//
+	// Its source is empty when no screen was formed, which is the case Unscreened
+	// describes. Nothing was consulted, so there is no source to name, and naming one
+	// would claim evidence this selection never had.
+	Provenance registryindex.RetractionProvenance
 }
 
 // retractionRecorder collects what a screened selection concluded, so an addition
@@ -57,8 +81,13 @@ type retractionRecorder struct {
 	filled   bool
 }
 
-// watch returns a screen that behaves exactly as inner does and records what inner
-// is told.
+// watch returns a screen that behaves exactly as inner does, records what inner is
+// told, and records where inner's own facts came from.
+//
+// The provenance is taken here rather than from anything the screen later
+// announces, because here is where a screen is in hand. The decorator below
+// observes only the conclusions a screen reports, and the evidence those rest on is
+// not among them — a notice states it in prose and the recorder does not read prose.
 //
 // A nil inner is returned unchanged, because nil is how the layers below state
 // that no screen could be formed and selection is to run unscreened — wrapping it
@@ -67,11 +96,20 @@ func (r *retractionRecorder) watch(inner catalog.RetractionScreen) catalog.Retra
 	if r == nil || inner == nil {
 		return inner
 	}
+	// A screen built elsewhere answers no provenance, and the value reported then is
+	// the empty one — which is the truth about such a screen. So the discarded verdict
+	// drops nothing: it says only what the value already says.
+	r.advisory.Provenance, _ = registryindex.ProvenanceOf(inner)
 	return &recordingScreen{inner: inner, rec: r}
 }
 
 // recordUnscreened notes that the withdrawal records could not be read, so
 // selection ran unscreened. cause is the fault the read failed with.
+//
+// It records no provenance, and that absence is the answer rather than an omission.
+// No screen was formed, so there is nothing whose evidence could be named, and the
+// empty source an advisory then carries is exactly what a reader must act on:
+// nothing was screened, so nothing is claimed about the version that was pinned.
 func (r *retractionRecorder) recordUnscreened(reference, cause string) {
 	if r == nil {
 		return

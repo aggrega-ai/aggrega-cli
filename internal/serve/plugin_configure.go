@@ -11,6 +11,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/authoredcontent"
 	"github.com/aggrega-ai/aggrega-cli/internal/pluginops"
+	"github.com/aggrega-ai/aggrega-cli/internal/registryindex"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
 )
@@ -187,6 +188,23 @@ type pluginRetractionExclusion struct {
 	Reason  string `json:"reason,omitempty"`
 }
 
+// pluginRetractionProvenance says where a withdrawal screen's facts came from and
+// how current they are.
+//
+// Source is the screen's own spelling for where it read them, carried across
+// unchanged rather than restated here, so this surface cannot come to name a source
+// the screen would name differently.
+//
+// LastUpdated is when the snapshot behind those facts was taken, and it is absent
+// rather than zero whenever there is no such time to report — a reading taken during
+// the operation has none to report at all, and a snapshot may carry no build time.
+// It is the spelling a searched registry's freshness already travels under on this
+// surface, so one concept keeps one name across the answers that carry it.
+type pluginRetractionProvenance struct {
+	Source      string `json:"source"`
+	LastUpdated string `json:"lastUpdated,omitempty"`
+}
+
 // pluginRetraction is what the withdrawal screen concluded about the version an
 // attachment pinned.
 //
@@ -203,11 +221,19 @@ type pluginRetractionExclusion struct {
 // all, so nothing was screened and no claim is made about whether the pinned
 // version has since been withdrawn. A caller must not read an empty Excluded as
 // "nothing was withdrawn" without looking at Unscreened first.
+//
+// Provenance qualifies whichever of those two arrived, and is absent when selection
+// ran with no screen — where nothing was consulted there is no source to report. A
+// caller that acts on a withdrawal needs it: a reading taken from the registry while
+// the operation ran speaks to now, while a snapshot can be older than the withdrawal
+// it is being asked about, and only the second leaves a caller anything to do about
+// the gap.
 type pluginRetraction struct {
 	Reference  string                      `json:"reference"`
 	Selected   string                      `json:"selected,omitempty"`
 	Excluded   []pluginRetractionExclusion `json:"excluded,omitempty"`
 	Unscreened string                      `json:"unscreened,omitempty"`
+	Provenance *pluginRetractionProvenance `json:"provenance,omitempty"`
 }
 
 // pluginRetractionOf projects the operation's advisory onto this surface's wire
@@ -226,11 +252,33 @@ func pluginRetractionOf(advisory *pluginops.RetractionAdvisory) *pluginRetractio
 		Reference:  advisory.Reference,
 		Selected:   advisory.Selected,
 		Unscreened: advisory.Unscreened,
+		Provenance: pluginRetractionProvenanceOf(advisory.Provenance),
 	}
 	for _, x := range advisory.Excluded {
 		out.Excluded = append(out.Excluded, pluginRetractionExclusion{Version: x.Version, Reason: x.Reason})
 	}
 	return out
+}
+
+// pluginRetractionProvenanceOf projects a screen's provenance onto this surface's
+// wire shape, and returns nil when the advisory rests on no screen.
+//
+// An empty source is how a selection that was never screened states that it has no
+// evidence to name, so it answers with nothing rather than with a shape whose source
+// is the empty string — a caller reading an object with a blank source cannot tell it
+// from a source this surface failed to fill.
+//
+// The observation time is rendered by the provenance itself rather than formatted
+// here, so the instant this answer quotes and the instant a terminal reader is shown
+// are one text produced once.
+func pluginRetractionProvenanceOf(provenance registryindex.RetractionProvenance) *pluginRetractionProvenance {
+	if provenance.Source == "" {
+		return nil
+	}
+	return &pluginRetractionProvenance{
+		Source:      string(provenance.Source),
+		LastUpdated: provenance.ObservedAtStated(),
+	}
 }
 
 // dispatchPluginAdd searches the configured registry for a plugin of the named

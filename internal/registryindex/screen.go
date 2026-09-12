@@ -204,6 +204,27 @@ func IndexProvenance(observedAt time.Time, hasObservedAt bool) RetractionProvena
 	return RetractionProvenance{Source: ProvenanceLocalIndex, ObservedAt: observedAt, HasObservedAt: hasObservedAt}
 }
 
+// ObservedAtStated renders when this provenance's facts were observed, or the
+// empty string when the source records no observation time.
+//
+// It is the one home of that rendering, so the clause a reader watching a terminal
+// sees and the value a surface answering with values carries name the same instant
+// in the same words, and neither can come to state it differently from the other.
+// The instant is stated in UTC, so one screen renders one text whatever zone the
+// process runs in.
+//
+// The empty string is the absent case rather than a zero instant, which is the
+// distinction HasObservedAt exists to draw: a source carrying no observation time
+// and one whose observation time happens to be the zero instant must not read
+// alike. A reader given the empty string learns that the question has no answer
+// here, not that the answer is the epoch.
+func (p RetractionProvenance) ObservedAtStated() string {
+	if !p.HasObservedAt {
+		return ""
+	}
+	return p.ObservedAt.UTC().Format(time.RFC3339)
+}
+
 // Clause renders the parenthesised suffix a screen's notices end in, naming where
 // its facts came from and how current they are.
 //
@@ -211,16 +232,20 @@ func IndexProvenance(observedAt time.Time, hasObservedAt bool) RetractionProvena
 // describes it the same way. A provenance with no source renders nothing rather
 // than guessing: a notice that cannot say where its evidence came from is better
 // silent on the question than wrong about it.
+//
+// The observation time it states is the one ObservedAtStated renders, so the
+// sentence and a surface answering with values quote the same instant rather than
+// each formatting it for itself.
 func (p RetractionProvenance) Clause() string {
 	switch p.Source {
 	case ProvenanceRegistry:
 		return " (read from the registry just now)"
 	case ProvenanceLocalIndex:
-		if !p.HasObservedAt {
+		observed := p.ObservedAtStated()
+		if observed == "" {
 			return " (recorded in the local registry index, which carries no build time; run `aggrega registry update` to refresh it)"
 		}
-		return fmt.Sprintf(" (recorded in the local registry index as of %s; run `aggrega registry update` to refresh it)",
-			p.ObservedAt.UTC().Format(time.RFC3339))
+		return fmt.Sprintf(" (recorded in the local registry index as of %s; run `aggrega registry update` to refresh it)", observed)
 	default:
 		return ""
 	}

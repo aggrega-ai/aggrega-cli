@@ -90,6 +90,22 @@ func TestAnAttachmentAnswersWithTheSubstitutionItMade(t *testing.T) {
 			t.Errorf("advisory reason = %q; want %q — the recorded reason is the compiler's own text and is carried, not reworded",
 				advisory.Excluded[0].Reason, retractedReason)
 		}
+		// The screen's own evidence, captured where the screen is in hand. This fixture
+		// builds no local snapshot, so resolution falls through to a reading taken while
+		// the operation ran — and a recorder that stopped asking the screen would leave
+		// the empty source here, which is the shape a selection nothing screened carries.
+		//
+		// It compares against the named source rather than against its spelling, because
+		// what this layer owes is the capture; the spelling is a wire contract and is
+		// asserted against a literal where that contract lives.
+		if advisory.Provenance.Source != registryindex.ProvenanceRegistry {
+			t.Errorf("advisory provenance source = %q; want %q — these facts were read while the operation ran",
+				advisory.Provenance.Source, registryindex.ProvenanceRegistry)
+		}
+		if advisory.Provenance.HasObservedAt {
+			t.Errorf("advisory provenance reports an observation time (%s) for facts read during the operation; there is no snapshot age to report",
+				advisory.Provenance.ObservedAt)
+		}
 	})
 
 	t.Run("nothing withdrawn leaves the advisory absent", func(t *testing.T) {
@@ -148,6 +164,13 @@ func TestAnUnreadableMarkerIsReportedRatherThanPassingAsCleanScreening(t *testin
 	if len(advisory.Excluded) != 0 {
 		t.Errorf("an unscreened selection reported %d exclusions; nothing was screened, so there is nothing to have withdrawn: %#v",
 			len(advisory.Excluded), advisory.Excluded)
+	}
+	// The control for the assertion in the test above: no screen was formed here, so
+	// there is no evidence to name where it came from. Without this pair, an operation
+	// that reported a source unconditionally would satisfy that one.
+	if advisory.Provenance.Source != "" {
+		t.Errorf("an unscreened selection named %q as its source; nothing was consulted, so there is none to name",
+			advisory.Provenance.Source)
 	}
 }
 
