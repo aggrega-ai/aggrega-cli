@@ -2227,12 +2227,20 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 	//     drives this — the bridge service fragment lands alongside per-
 	//     component compose contributors at the same dispatch path so the
 	//     compose engine's AssembleBoundary merges them.
-	//   - Intermediate=false: write directly under
-	//     <boundary_directory>/<provider>/features/<fr_instance>/<file>.
+	//   - Intermediate=false: the instance name alone is the coordinate, and
+	//     where it sits follows from whether the group's assembler gives each
+	//     contributor a position of its own. Where it does, the attachment
+	//     occupies that position, at
+	//     <boundary_directory>/<provider>/<nest-segment>/<fr_instance>/; where
+	//     it does not, the instance is encoded into a filename prefix and the
+	//     files land directly in the boundary's own directory, at
+	//     <boundary_directory>/<provider>/<fr_instance>--<file>.
 	//
-	// Synthetic node-IDs ("<boundary-fr>:<instance>") distinguish boundary-
-	// scope contributions from per-component contributions in the dispatch
-	// group's per-node maps.
+	// Synthetic node-IDs ("<boundary-fr>:<instance>@<boundary-path>")
+	// distinguish boundary-scope contributions from per-component
+	// contributions in the dispatch group's per-node maps. Both authored
+	// coordinates are carried, because either alone is shared by contributors
+	// an author can tell apart.
 	for key, files := range boundaryFRState.Files {
 		// Look up the FR by walking the release; the FR's provider is
 		// what determines the dispatch path's provider component.
@@ -2467,9 +2475,9 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// the routing performed immediately above rather than from any claim about
 		// it: a boundary-scope feature whose fragments reached the group's
 		// assembler has its names inside the assembled document, and one whose
-		// output was written under its own features/ position does not. A feature
-		// that emitted nothing reached no document either, which is the same answer
-		// and the same reason.
+		// output was placed at its own coordinate does not. A feature that emitted
+		// nothing reached no document either, which is the same answer and the
+		// same reason.
 		frContributor := derivedKeyContributorFor(frProducer, len(intermediates) == 0)
 		dispatch[dKey].derivedKeys.putAll(boundaryFRState.DerivedKeys[key], boundaryFRState.DerivedKeyRepeats[key], frContributor)
 		// Record the boundary as a contributor for the dispatch group's

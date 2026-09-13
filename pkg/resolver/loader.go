@@ -64,6 +64,42 @@ func LoadAggregate(path string) (*types.Aggregate, error) {
 // The tolerant parse is structural. It does not preserve the text of an
 // expression standing in a mapping key position, so a caller needing that text
 // reads it from the raw bytes, which this does not modify.
+//
+// # The catalog's structural read is a DELIBERATE near-duplicate of this one
+//
+// The catalog index reads Aggregate bytes through the same three steps — the
+// envelope gate, the tolerant parse, the typed decode — and folds the result
+// through the same normalization core. They are two functions on purpose, and
+// three things keep them apart rather than one being an unmerged copy.
+//
+// Error classification. A failure met here is charged to the author of the
+// Aggregate and reaches a reader as a developer-domain fault; a failure met on
+// the catalog index is charged to the catalog. One set of malformed bytes
+// therefore reaches a reader as two different authoring faults depending on
+// which read met them, and that is the answer that names the surface whose
+// author can act, not an inconsistency between two copies.
+//
+// The kind check. The envelope gate below asserts the document is an Aggregate,
+// and this read stops there, because its caller already knows what it asked
+// for. The catalog read asserts the decoded kind again, because it is indexing
+// whatever a directory walk handed it and the decode is what tells it which
+// index the entity belongs in.
+//
+// The normalization fold. The fold is the one thing the two must never differ
+// on, and neither carries a copy of it: both call [types.Normalize], so the
+// shape every downstream consumer sees cannot depend on which read produced it.
+// What is duplicated is the wrapper, never the fold — and collapsing the
+// wrapper would force one error classification onto both surfaces.
+//
+// What is NOT one of the three is a difference in error policy. Both refuse
+// every failure and return it; neither skips, degrades, or yields a partial
+// value. The envelope gate below matches on the envelope sentinel rather than
+// on any error, which reads like the narrower of two policies and is not:
+// [envelope.ValidateBytes] states, and implements, that every error it returns
+// carries that sentinel, so the two reads refuse exactly the same documents. A
+// caller that carries on past one of these failures — the same-directory scan
+// recording a skip — is applying its own policy to the error it was handed
+// rather than reading one out of either read.
 func LoadAggregateFromBytes(data []byte, path string) (*types.Aggregate, error) {
 	if _, eerr := envelope.ValidateBytes(envelope.KindAggregate, data, path); errors.Is(eerr, envelope.ErrEntityEnvelope()) {
 		// No Message: the envelope failure is already a composed diagnostic for
@@ -73,10 +109,26 @@ func LoadAggregateFromBytes(data []byte, path string) (*types.Aggregate, error) 
 	}
 	node, perr := envelope.ParseDecodable(data, path)
 	if perr != nil {
-		// The parse failure already names what failed and which file it was
-		// reading, so it is reported as it stands. Restating that here would
-		// tell the reader twice, in two different vocabularies, that one parse
-		// of one file did not succeed.
+		// Structurally unreachable, and kept marked rather than removed. The gate
+		// above refuses every error ValidateBytes returns, and ValidateBytes
+		// reaches a successful return only by obtaining a parse of these same
+		// bytes — its own generic decode, or this very call where that decode
+		// failed. These bytes have therefore parsed once already, and this parse
+		// is a deterministic function of them.
+		//
+		// The identical arm stands at the catalog's structural read, for the
+		// identical reason. Whether the two should stay two gates or collapse into
+		// one is open and is not settled here: ValidateBytes already returns what
+		// it parsed, so handing back a decodable node instead would remove the
+		// second parse at both sites together — a change to its signature and to
+		// every one of its callers, which is why it is named rather than taken.
+		// Both sites carry this note meanwhile, so neither reads as a live failure
+		// path the other lacks.
+		//
+		// What it would report is left exactly as it arrives: the parse failure
+		// already names what failed and which file it was reading, and restating
+		// that here would tell the reader twice, in two different vocabularies,
+		// that one parse of one file did not succeed.
 		return nil, &ResolverError{
 			Entity:  "Aggregate",
 			Field:   path,

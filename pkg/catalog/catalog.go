@@ -1415,12 +1415,43 @@ func parseFeatureRecipeEntity(data []byte, path string) (types.FeatureRecipe, er
 // closure walk follows. The authoritative parse of such an Aggregate happens
 // after its parameters are substituted into the retained raw bytes, so the
 // index never decides a value's type.
+//
+// # It is a DELIBERATE near-duplicate of the resolver's structural read
+//
+// LoadAggregateFromBytes performs the same three steps over the same bytes and
+// folds through the same normalization core. Three things keep the two apart,
+// and they are written out once, on that function; what is worth having here is
+// which side of each this one sits on. A failure met here is charged to the
+// catalog rather than to the Aggregate's author, because the reader who can act
+// is whoever owns the catalog entry. The kind is asserted again after the
+// decode, because this read is indexing whatever a directory walk handed it and
+// the decode is what says which index the entity belongs in. And the fold is
+// not reimplemented: types.Normalize below is the same call, so what is
+// duplicated is the wrapper and never the fold.
+//
+// The two do NOT differ in error policy — see that function for why the
+// sentinel match it performs is not the narrower of two policies.
 func parseAggregateEntity(data []byte, path string) (types.Aggregate, error) {
 	if _, err := envelope.ValidateBytes(envelope.KindAggregate, data, path); err != nil {
 		return types.Aggregate{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, err.Error())
 	}
 	node, perr := envelope.ParseDecodable(data, path)
 	if perr != nil {
+		// Structurally unreachable, and kept marked rather than removed. The gate
+		// above refuses every error ValidateBytes returns, and ValidateBytes
+		// reaches a successful return only by obtaining a parse of these same
+		// bytes — its own generic decode, or this very call where that decode
+		// failed. These bytes have therefore parsed once already, and this parse
+		// is a deterministic function of them.
+		//
+		// The identical arm stands at the resolver's structural read, for the
+		// identical reason. Whether the two should stay two gates or collapse into
+		// one is open and is not settled here: ValidateBytes already returns what
+		// it parsed, so handing back a decodable node instead would remove the
+		// second parse at both sites together — a change to its signature and to
+		// every one of its callers, which is why it is named rather than taken.
+		// Both sites carry this note meanwhile, so neither reads as a live failure
+		// path the other lacks.
 		return types.Aggregate{}, cerrors.Wrap(perr, cerrors.CatalogError, cerrors.SourceLocation{File: path}, perr.Error())
 	}
 	var e types.Aggregate

@@ -15,6 +15,11 @@ import (
 // runtime consumes. The plain `aggrega.ai/sync-wave` provenance entry is
 // retained.
 //
+// That retained entry is provenance and nothing reads it back. Service ordering
+// takes the wave from the typed value the render payload carries, never from
+// this label — see applyWaveOrdering for why decoding it there would order
+// against an empty predecessor set.
+//
 // The set itself is the shared one, because the question "which provenance keys
 // mean nothing off Kubernetes" has one answer for every such target rather than a
 // compose answer and a per-provider answer beside it. The name is kept here

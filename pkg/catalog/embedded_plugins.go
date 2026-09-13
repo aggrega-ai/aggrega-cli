@@ -67,16 +67,23 @@ func embeddedPluginEntities() ([]types.Plugin, map[string]struct{}) {
 //
 // The returned map is keyed exactly like Catalog.Plugins (coordinate:version),
 // so the shared capability-resolution and by-URI matchers run over it unchanged.
-// It is deliberately SEPARATE from Catalog.Plugins and is consulted only at
-// render-time resolution. An embedded core provider is still never pinned as a
-// pulled artifact, but that now follows from the pull-side pin decision rather
-// than from this overlay being unreachable: the closure walk resolves an embedded
-// core-provider entity through its own resolver and declines to record it,
-// because the build selects that provider's rendering engine from the same
-// binary. The overlay applies only to a loaded workspace view
-// (resolveEmbeddedProviders) — a bare Catalog literal resolves from its own
-// Plugins alone. When no entities are embedded (a light binary, or a build
-// before the entities were generated) the loaded set is returned as-is.
+// It is deliberately SEPARATE from Catalog.Plugins, and it applies to ANY view
+// that enables embedded resolution (resolveEmbeddedProviders) rather than to a
+// render-time one alone. The lazy backing that serves the production build and
+// pull paths enables it, so a lock-time provider descent resolving a capability
+// through this overlay can select an embedded core provider. A bare Catalog
+// literal enables nothing and resolves from its own Plugins alone.
+//
+// An embedded core provider is still never pinned as a pulled artifact, and that
+// follows from the pull-side pin decision rather than from this overlay going
+// unread: a resolution served from the binary reports its own resolution path,
+// and the pin predicates leave a core provider carrying that path out of the
+// closure, because the build selects that provider's rendering engine from the
+// same binary. It is that path that answers for an embedded provider — not the
+// local-catalog one sitting beside it in the same predicate. The two legs are
+// disjoint and neither stands in for the other. When no entities are embedded (a
+// light binary, or a build before the entities were generated) the loaded set is
+// returned as-is.
 func (c *Catalog) providerResolutionPlugins() map[string]types.Plugin {
 	if !c.resolveEmbeddedProviders {
 		return c.Plugins

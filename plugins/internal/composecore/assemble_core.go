@@ -320,6 +320,22 @@ func AssembleBoundaryCore(
 //
 // A group whose services all carry one wave records nothing at all, so output for
 // a dispatch group where no boundary declared a wave is unchanged.
+//
+// Where the wave comes from, and what must never become its source. Each
+// service's wave is the typed value its contributing node carried on the render
+// payload, handed in through waveByService. It is deliberately not recovered
+// from the aggrega.ai/sync-wave service label this same assembly stamps, and the
+// reason is sharper than a preference for typed values: that label is elided at
+// wave zero, which is the default every undeclared node carries — so a
+// label-driven read would find nothing for exactly the services later waves have
+// to wait on, and would order each group against an empty set of predecessors.
+// The label is also provenance in a document an author may have written parts
+// of, and a fragment contributed upstream carries whatever its own emitter
+// stamped.
+//
+// Nothing enforces this. Reading the label here would compile, would order
+// correctly on every document that happens to carry one, and would stop ordering
+// silently on the first one that does not.
 func applyWaveOrdering(merged *ComposeFile, waveByService map[string]int) []renderctx.Diagnostic {
 	servicesByWave := map[int][]string{}
 	for svcName := range waveByService {
