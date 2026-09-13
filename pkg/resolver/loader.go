@@ -29,9 +29,12 @@ import (
 // what a build touches: LoadAggregate is reached from the command that
 // reports a single Aggregate as authored, while LoadAggregateFromBytes runs
 // on every build — from the same-directory triad scan, the closure descent,
-// the catalog's sub-aggregate parameter resolution and the pull path. Each of
-// those reads the document as authored, before any parameter reference has
-// been substituted.
+// the catalog's sub-aggregate parameter resolution and the pull path. The
+// triad scan, the closure descent and the pull path read the document as
+// authored, before any parameter reference has been substituted. The
+// sub-aggregate parameter resolution does not: it substitutes the
+// sub-aggregate's parameter references against the resolved parameter map
+// first, so what reaches this core is the interpolated document.
 
 // LoadAggregate reads and unmarshals an Aggregate YAML file.
 func LoadAggregate(path string) (*types.Aggregate, error) {

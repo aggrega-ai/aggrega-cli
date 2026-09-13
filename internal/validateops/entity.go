@@ -123,8 +123,7 @@ func ValidateEntity(ctx context.Context, wsRoot, cacheDir string, dirs []string,
 
 // knownEntityKind maps a peeked kind string to its envelope Kind, reporting
 // whether the kind names a schema-backed entity family. An unrecognized kind
-// (or the embedded-only Workload named where it cannot stand alone) is handled
-// by the caller with a clear diagnostic.
+// is handled by the caller with a clear diagnostic.
 func knownEntityKind(kind string) (envelope.Kind, bool) {
 	switch envelope.Kind(kind) {
 	case envelope.KindComponent, envelope.KindFeature, envelope.KindRecipe,
