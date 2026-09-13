@@ -347,8 +347,8 @@ func TestPolicySocketHaltE2E(t *testing.T) {
 	if !errors.As(err, &ce) {
 		t.Fatalf("policy halt does not surface a *CompilerError: %v", err)
 	}
-	if ce.Category != cerrors.PolicyError {
-		t.Errorf("policy halt category = %q, want %q", ce.Category, cerrors.PolicyError)
+	if ce.Category() != cerrors.PolicyError {
+		t.Errorf("policy halt category = %q, want %q", ce.Category(), cerrors.PolicyError)
 	}
 }
 
