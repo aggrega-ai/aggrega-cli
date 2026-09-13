@@ -128,8 +128,8 @@ type server struct {
 }
 
 // Run reads newline-delimited JSON-RPC 2.0 messages from cfg.Stdin,
-// answers each on cfg.Stdout, and returns when stdin reaches EOF. It is
-// the entry point the `aggrega mcp` command calls.
+// answers each on cfg.Stdout, and returns when stdin reaches EOF or the run's
+// context ends. It is the entry point the `aggrega mcp` command calls.
 //
 // Stream discipline is strict: stdout carries only framed protocol
 // messages — one compact JSON object per line — while every log and
@@ -147,12 +147,12 @@ type server struct {
 // it starts. So ending the run ends whatever a call was doing, rather than only
 // declining to accept the next message.
 //
-// Two bounds are worth stating because they are structural rather than
-// oversights. The read loop blocks in a stdin read, which no context interrupts;
-// the loop therefore ends when the current message has been answered, and a
-// client that closes the connection is what unblocks the read. And a tool whose
-// work ignores the context runs to its own completion — the context reaches it,
-// but what it does with it is that path's own contract.
+// Ending the run ends the message loop too, whether it is answering a message or
+// waiting for one, so a run ends on the first request to end it rather than
+// waiting for the client to close the connection. One bound remains, and it is
+// structural rather than an oversight: a tool whose work ignores the context runs
+// to its own completion — the context reaches it, but what it does with it is that
+// path's own contract.
 func Run(ctx context.Context, cfg Config) error {
 	stdout := cfg.Stdout
 	if stdout == nil {
@@ -176,35 +176,86 @@ func Run(ctx context.Context, cfg Config) error {
 	return s.serve(ctx, stdin)
 }
 
+// readResult is one turn of the reader goroutine: the bytes ReadBytes returned
+// and the error that came with them. The two travel together because a final
+// message can arrive alongside io.EOF in a single call, and that message is still
+// answered before the loop returns.
+type readResult struct {
+	line []byte
+	err  error
+}
+
 // serve runs the message loop: read one newline-delimited message, handle
 // it, repeat until stdin reaches EOF. A blank line is skipped. The final
 // message may arrive without a trailing newline (ReadBytes returns the
 // bytes alongside io.EOF); it is handled before the loop returns, so no
 // message is dropped at end-of-stream.
 //
-// A run whose context has ended stops accepting messages: the check sits at the
-// top of each iteration, so a message already being answered finishes and the
-// next one is never read. It is not a mid-read interruption — the read below
-// blocks in the operating system and no context unblocks it — so the loop
-// observes the withdrawal at its next turn, or when the client closes the
-// connection, whichever comes first.
+// A run whose context has ended stops accepting messages: the loop reads the run
+// at the top of each turn and again on a delivered line, so a message already
+// being answered finishes and none is accepted after that. The withdrawal also
+// ends a turn that is WAITING for a message, which is what lets a stop request
+// reach a server whose client is connected and idle: the read runs on its own
+// goroutine and the loop selects between a delivered line and the run's end. A
+// read blocked in the operating system is unblocked by nothing a context can do,
+// so leaving the read on the loop's own goroutine would make an idle client's
+// silence the thing that decides when a stop takes effect.
+//
+// The reader goroutine outlives the loop when the loop leaves on a withdrawal: it
+// is parked in a read nothing will complete, and it ends when that read returns or
+// when the process does. Joining it would put the blocked read straight back into
+// the exit path the select exists to keep it out of, so it is deliberately left
+// running rather than waited for. Every other exit path releases it, through
+// loopDone below.
 func (s *server) serve(ctx context.Context, stdin io.Reader) error {
-	r := bufio.NewReader(stdin)
+	lines := make(chan readResult)
+	// loopDone releases the reader from a delivery the loop is no longer there to
+	// take. The channel is unbuffered, so a reader holding a line for a loop that
+	// has already returned would otherwise wait for a receive that never comes.
+	loopDone := make(chan struct{})
+	defer close(loopDone)
+	go func() {
+		r := bufio.NewReader(stdin)
+		for {
+			line, err := r.ReadBytes('\n')
+			select {
+			case lines <- readResult{line: line, err: err}:
+			case <-loopDone:
+				return
+			}
+			if err != nil {
+				return
+			}
+		}
+	}()
 	for {
 		if ctx.Err() != nil {
 			return nil
 		}
-		line, err := r.ReadBytes('\n')
-		if trimmed := bytes.TrimSpace(line); len(trimmed) > 0 {
+		var res readResult
+		select {
+		case <-ctx.Done():
+			return nil
+		case res = <-lines:
+			// A delivered line and the run's end can become ready in the same
+			// turn, and a select picks among ready cases at random. Reading the
+			// run again here is what keeps the contract single-valued rather than
+			// decided by that draw: once the run has ended, nothing more is
+			// answered.
+			if ctx.Err() != nil {
+				return nil
+			}
+		}
+		if trimmed := bytes.TrimSpace(res.line); len(trimmed) > 0 {
 			if writeErr := s.handleMessage(ctx, trimmed); writeErr != nil {
 				return writeErr
 			}
 		}
-		if err != nil {
-			if errors.Is(err, io.EOF) {
+		if res.err != nil {
+			if errors.Is(res.err, io.EOF) {
 				return nil
 			}
-			return fmt.Errorf("read message: %w", err)
+			return fmt.Errorf("read message: %w", res.err)
 		}
 	}
 }

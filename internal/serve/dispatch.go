@@ -183,14 +183,10 @@ func (s *session) dispatchLoop(runCtx context.Context, drainTimeout time.Duratio
 	// is the abort that cuts accepted work short. Deriving one from the
 	// other would collapse the two into a single step.
 	//
-	// A nil runCtx means the caller wired no stop request — the in-memory
-	// test harnesses drive the loop that way. A nil context's Done channel
-	// is nil, and a nil channel is never ready in a select, so defaulting
-	// to a background context is what makes "no stop wired" behave as a
-	// stop that never arrives rather than as a panic.
-	if runCtx == nil {
-		runCtx = context.Background()
-	}
+	// It carries no default. A caller that wants a loop no stop reaches
+	// passes a background context and says so at its own call site, which
+	// keeps the choice where the reader can see it: a default here would be
+	// a root manufactured below every caller, reachable by none of them.
 	// serverCtx is the session-level context every per-request context
 	// derives from. It is initialised HERE, before the reader goroutine
 	// below is spawned and before any handle() call — that ordering is

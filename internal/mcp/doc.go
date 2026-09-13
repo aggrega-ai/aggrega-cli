@@ -12,8 +12,8 @@
 // framed protocol messages — one compact JSON object per line — so a
 // connected client can parse the stream without heuristics; every log,
 // diagnostic, and error trace is written to stderr instead. The server
-// reads one message per line until stdin reaches EOF, then returns
-// cleanly.
+// reads one message per line until stdin reaches EOF or the run ends,
+// then returns cleanly.
 //
 // The package's contract is the wire protocol, not the Go API — no public
 // types outside this package consume Run beyond the command layer that

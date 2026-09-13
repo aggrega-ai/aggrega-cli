@@ -36,7 +36,13 @@ JSON object per line, so the client can parse the stream without
 heuristics. Every log, warning, and diagnostic is written to stderr
 instead. The server reads one message per line and exits cleanly when
 stdin reaches end of stream, so a client that closes the connection shuts
-the server down.`,
+the server down.
+
+Asking the process itself to stop — an interrupt from the terminal, or a
+termination request from a supervisor or container runtime — shuts the
+server down on the first request, whether or not a client is sending
+anything: it stops accepting messages, ends the work a call in progress
+is doing, and exits cleanly. A second request ends the process at once.`,
 		Args: cobra.NoArgs,
 		RunE: runMCP,
 	}

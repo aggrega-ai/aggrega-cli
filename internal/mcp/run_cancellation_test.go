@@ -290,6 +290,83 @@ func TestARunWhoseContextHasAlreadyEndedAnswersNothing(t *testing.T) {
 	}
 }
 
+// neverDeliveringReader blocks in Read and delivers nothing at all, which is the
+// state a server sits in while its client is connected and quiet.
+//
+// It is deliberately not blockingReader above: that one hands the loop a message
+// first, so the loop has already completed a turn and its top-of-turn check is
+// what observes a withdrawal. The proof below needs a loop parked inside a read
+// that has never returned, because that is the one state in which no top-of-turn
+// check can run.
+type neverDeliveringReader struct {
+	release chan struct{}
+}
+
+func (r *neverDeliveringReader) Read([]byte) (int, error) {
+	<-r.release
+	return 0, io.EOF
+}
+
+// TestStoppingARunEndsALoopParkedInARead is the load-bearing proof for the
+// message loop itself, as the two above are for the tool and resource surfaces.
+//
+// The loop is driven into a read that never delivers and the run is then
+// withdrawn. That state is the whole point: a proof that withdraws the run and
+// then sends a line proves nothing, because the loop's top-of-turn check already
+// covers a run that ended between messages. What that check cannot cover is a run
+// that ends while the loop is inside a read — the state a server spawned by a
+// connected but idle client is in for its whole life — because a read blocked in
+// the operating system returns for no context.
+//
+// A planted defect makes this fail: take the read back onto the loop's own
+// goroutine and the withdrawal reaches nothing, so serve stays in the read and the
+// liveness ceiling expires.
+//
+// The ceiling separates "returns" from "never returns" and is not a budget:
+// nothing here measures how long a stop takes.
+func TestStoppingARunEndsALoopParkedInARead(t *testing.T) {
+	release := make(chan struct{})
+	defer close(release)
+
+	srv := newCommandToolServer(t, parkedControlCommand)
+
+	stopCtx, stop := context.WithCancel(context.Background())
+	defer stop()
+
+	served := make(chan error, 1)
+	go func() {
+		served <- srv.serve(stopCtx, &neverDeliveringReader{release: release})
+	}()
+
+	// The loop must be genuinely inside the read before the run is withdrawn.
+	// Withdrawing earlier would let a top-of-turn check do the work, and the proof
+	// would pass on a loop that never blocked at all.
+	waitForMCPFrame(t, "neverDeliveringReader")
+
+	// The control, and it is clock-free: the reader is parked in a read nothing
+	// will complete, so a loop that has already returned HERE returned for some
+	// reason other than the stop, and the assertion below would mean nothing.
+	select {
+	case err := <-served:
+		t.Fatalf("the message loop returned before the run was withdrawn (%v), so the "+
+			"assertion below would pass for a reason that has nothing to do with stopping", err)
+	default:
+	}
+
+	stop()
+
+	select {
+	case err := <-served:
+		if err != nil {
+			t.Errorf("the message loop returned %v; withdrawing a run is a clean stop rather "+
+				"than a transport failure", err)
+		}
+	case <-time.After(runReturnCeiling):
+		t.Fatalf("the message loop never returned after the run was withdrawn: it is still " +
+			"parked in a read, so a stop request to the process does not reach it")
+	}
+}
+
 // waitForMCPFrame polls the stack until the named frame appears, so the
 // comparison is taken once both arms are genuinely inside their work.
 func waitForMCPFrame(t *testing.T, frame string) {
