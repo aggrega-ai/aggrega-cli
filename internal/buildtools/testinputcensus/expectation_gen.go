@@ -30,7 +30,7 @@ package main
 // comparison mean, and what every figure here was measured over, is on
 // testInputExpectation.
 var expectation = testInputExpectation{
-	Measured: "2026-09-09",
+	Measured: "2026-09-13",
 	Modules: []expectedModule{
 		{
 			Rel:           "aggrega-abi/go",
@@ -56,6 +56,7 @@ var expectation = testInputExpectation{
 				{ImportPath: "github.com/aggrega-ai/aggrega-cli/internal/pullops", Reach: []string{".gitmodules", "aggrega-abi", "aggrega-pdk"}},
 				{ImportPath: "github.com/aggrega-ai/aggrega-cli/internal/tools/cbororacle", Reach: []string{"aggrega-abi"}},
 				{ImportPath: "github.com/aggrega-ai/aggrega-cli/internal/tools/typegen", Reach: []string{"aggrega-abi"}},
+				{ImportPath: "github.com/aggrega-ai/aggrega-cli/internal/validateops", Reach: []string{".gitmodules", "aggrega-abi", "aggrega-pdk"}},
 				{ImportPath: "github.com/aggrega-ai/aggrega-cli/internal/wasm", Reach: []string{".gitmodules", "aggrega-abi", "aggrega-pdk"}},
 				{ImportPath: "github.com/aggrega-ai/aggrega-cli/pkg/plugintest", Reach: []string{".gitmodules", "aggrega-abi", "aggrega-pdk"}},
 				{ImportPath: "github.com/aggrega-ai/aggrega-cli/pkg/validator", Reach: []string{".gitmodules", "aggrega-abi", "aggrega-pdk"}},
