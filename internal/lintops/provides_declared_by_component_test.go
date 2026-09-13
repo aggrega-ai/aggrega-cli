@@ -13,6 +13,8 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
+	"github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
+
 	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
@@ -375,8 +377,22 @@ func TestProvidesDeclaredByComponentThroughTheLintCommand(t *testing.T) {
 				if !strings.Contains(diag.String(), "core/ai-model/broker") {
 					t.Errorf("the finding names the Component it read:\n%s", diag.String())
 				}
-				if !strings.Contains(diag.String(), "[warn] provides-declared-by-component") {
-					t.Errorf("the finding is advisory and carries its rule id:\n%s", diag.String())
+				// The advisory row opens with its severity and carries the
+				// condition's short code beside the rule identifier. The code is
+				// read off the condition rather than written here, so a
+				// reallocation cannot leave this asserting a number nothing
+				// prints; the severity token is asserted with it, because a row
+				// that lost it would read as a halt.
+				wantRow := abi.SeverityWarn + ": " +
+					errProvidesDeclaredByComponent.ErrorShortCode() + " " +
+					ruleID(errProvidesDeclaredByComponent)
+				if !strings.Contains(diag.String(), wantRow) {
+					t.Errorf("the finding is advisory and carries its rule id and code (%q):\n%s",
+						wantRow, diag.String())
+				}
+				if strings.Contains(diag.String(), "[") {
+					t.Errorf("an advisory row must not wear the bracketed head a halting diagnostic owns:\n%s",
+						diag.String())
 				}
 			})
 		}

@@ -6,10 +6,12 @@ package lintops
 import (
 	"context"
 	"encoding/json"
+	stderrors "errors"
 	"fmt"
 	"io"
 	"os"
 	"slices"
+	"strings"
 
 	"github.com/Masterminds/semver/v3"
 	"go.yaml.in/yaml/v3"
@@ -20,6 +22,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/embedded"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/egress"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
@@ -138,31 +141,22 @@ type lintEntityHeader struct {
 	} `yaml:"spec"`
 }
 
-// defaultRuleIDs returns the rule set to invoke per mode. Default mode runs all
-// structural rules. --pre-publish prepends schema-evolution (which needs
-// previous bytes).
+// defaultRuleIDs returns the rule set to invoke per mode, in dispatch order.
+// Default mode runs the structural rules; --pre-publish additionally runs the
+// rule that needs the previously published bytes to compare against.
 //
-// LOCKSTEP: the slice MUST match the plugin's lib.rs dispatcher arms. Adding a
-// rule requires updating both this slice AND
-// aggrega-cli/plugins/publishing-linter/src/lib.rs. The agreement is guarded by
-// a test that reads the plugin's dispatch table, so a one-sided addition fails
-// rather than producing a rule that silently never runs.
+// The identifiers are read off the declared rule set rather than written out
+// here — see publishingRules, which is that set's single home and carries the
+// lockstep obligation against the guest's dispatch arms.
 func defaultRuleIDs(prePublish bool) []string {
-	rules := []string{
-		"annotation-prefix",
-		"name-shape",
-		"dynamic-refs",
-		"id-overrides",
-		"category-matches-directory",
-		"x-aggrega-discouragement",
-		"plugin-default-limits",
-		"secret-slot-declares-sensitive",
-		"provides-declared-by-component",
+	ids := make([]string, 0, len(publishingRules))
+	for _, r := range publishingRules {
+		if r.prePublish && !prePublish {
+			continue
+		}
+		ids = append(ids, ruleID(r.condition))
 	}
-	if prePublish {
-		return append([]string{"schema-evolution"}, rules...)
-	}
-	return rules
+	return ids
 }
 
 // pluginIsCore reports whether a Plugin's derived identity coordinate
@@ -349,14 +343,14 @@ func RunEntity(ctx context.Context, cfg Config) error {
 		aggregated = downgradeFirstPublicationToWarning(aggregated)
 	}
 
-	// Bump-vs-classification check runs BEFORE printing findings so
+	// Bump-vs-classification check runs BEFORE reporting findings so
 	// the schema-evolution finding can be downgraded to warning when
 	// the bump satisfies the classification. The rule body emits the
 	// classification at Error severity (it's the rule's only output
 	// channel); whether that classification IS a violation depends on
 	// the proposed bump direction — which only the host knows. When
 	// the bump satisfies, the finding is informational; when it
-	// doesn't, the host surfaces its own explicit error.
+	// doesn't, the host surfaces its own explicit refusal.
 	if prePublish && !firstPublication {
 		verdict := classificationFromFindings(aggregated)
 		if verdict != "" {
@@ -364,27 +358,50 @@ func RunEntity(ctx context.Context, cfg Config) error {
 			if !proposedBumpSatisfies(proposedBump, verdict) {
 				cfg.Collect.Add(aggregated, cfg.EntityPath)
 				cfg.Collect.Entities(1)
-				printFindings(aggregated, cfg.DiagOut)
-				return fmt.Errorf(
-					"aggrega lint --pre-publish: schema-evolution requires %s bump; proposed %s -> %s is %s",
-					verdict, previousVersion, header.Metadata.Version, proposedBump,
+				// The findings are reported first and the refusal joined after
+				// them, so the bump refusal reads as the verdict over the
+				// findings rather than as one more of them.
+				return stderrors.Join(
+					reportFindings(aggregated, header.Kind, cfg.EntityPath, cfg.DiagOut),
+					bumpRefusal(header, previousVersion, proposedBump, verdict, cfg.EntityPath),
 				)
 			}
 			// Bump satisfies the classification — downgrade the
-			// schema-evolution finding to warning so it doesn't trip
-			// the generic-error halt below.
-			aggregated = downgradeRuleToWarning(aggregated, "schema-evolution")
+			// schema-evolution finding to warning so it is reported as an
+			// advisory rather than halting the run.
+			aggregated = downgradeRuleToWarning(aggregated, ruleID(errSchemaEvolution))
 		}
 	}
 
 	cfg.Collect.Add(aggregated, cfg.EntityPath)
 	cfg.Collect.Entities(1)
-	halted := printFindings(aggregated, cfg.DiagOut)
-	if halted {
-		return fmt.Errorf("aggrega lint: %d error finding(s)", countErrors(aggregated))
+	if err := reportFindings(aggregated, header.Kind, cfg.EntityPath, cfg.DiagOut); err != nil {
+		return err
 	}
 	fmt.Fprintf(cfg.Out, "lint passed: %s\n", header.Metadata.Name)
 	return nil
+}
+
+// bumpRefusal builds the refusal raised when the version offered for
+// publication is smaller than the evolution classification requires.
+//
+// It is the host's own verdict rather than a rule's finding: the rule reports
+// what changed and how that classifies, and only the host knows which bump was
+// offered — so the two are separate conditions and this one names the bump.
+//
+// The occurrence's values are the three facts a reader needs to choose a
+// different version: the classification the change was given, the predecessor it
+// was compared against, and the bump the offered version actually is.
+func bumpRefusal(header lintEntityHeader, previousVersion, proposedBump, verdict, entityPath string) error {
+	category, _ := cerrors.ClassifyEntityKind(header.Kind)
+	return cerrors.Raise(errPublishBumpBelowClassification, category,
+		cerrors.SourceLocation{File: entityPath},
+		cerrors.ComposeMessage(errPublishBumpBelowClassification, []string{
+			"classified " + verdict,
+			previousVersion + " -> " + header.Metadata.Version,
+			"which is a " + proposedBump + " bump",
+		}, ""),
+		nil)
 }
 
 // downgradeRuleToWarning re-severitizes findings whose RuleID matches the given
@@ -983,9 +1000,10 @@ func downgradeToWarning(findings []abi.Diagnostic) []abi.Diagnostic {
 // classification finding to the advisory severity for the first-publication
 // case. Other rules' findings stay at whatever severity they had.
 func downgradeFirstPublicationToWarning(findings []abi.Diagnostic) []abi.Diagnostic {
+	evolution := ruleID(errSchemaEvolution)
 	out := make([]abi.Diagnostic, len(findings))
 	for i, f := range findings {
-		if f.RuleID == "schema-evolution" && f.Severity == abi.SeverityHalt {
+		if f.RuleID == evolution && f.Severity == abi.SeverityHalt {
 			f.Severity = abi.SeverityWarn
 		}
 		out[i] = f
@@ -993,37 +1011,132 @@ func downgradeFirstPublicationToWarning(findings []abi.Diagnostic) []abi.Diagnos
 	return out
 }
 
-// printFindings writes each finding to diagOut (os.Stderr in production) in a
-// stable format and returns true when at least one finding is severity=halt.
-func printFindings(findings []abi.Diagnostic, diagOut io.Writer) bool {
-	halted := false
-	for _, f := range findings {
-		if f.Severity == abi.SeverityHalt {
-			halted = true
+// reportFindings writes the run's advisory findings to diagOut and returns its
+// halting findings as the run's error, one raised condition per finding, or nil
+// when nothing halted.
+//
+// # The two severities reach a reader by two different routes, deliberately
+//
+// A halting finding is a diagnostic in its own right, so it becomes an
+// occurrence of the condition that names its rule and travels up as the error
+// the run returns. The terminal formatter then composes its head the way it
+// composes every other halting diagnostic's — the concern in brackets beside the
+// condition's short code — so a lint halt and a compiler halt are told apart by
+// what the head SAYS rather than being told apart not at all.
+//
+// An advisory is a row in a report of findings rather than a diagnostic, so it
+// is written here as it is produced, in a shape that opens with its severity and
+// carries no brackets. Borrowing the bracketed head for an advisory is the thing
+// this function exists to stop: the brackets are the framework's, and a row that
+// wears them while meaning something else is indistinguishable from a halt at a
+// glance.
+//
+// entityKind is the linted document's kind, which is what decides the concern a
+// halting finding is filed under. A kind the classifier does not cover is filed
+// under none, and the head then carries the condition alone — the classifier
+// reports rather than guesses, and a concern guessed for a kind nobody mapped
+// would send its reader to a surface nobody chose.
+//
+// entityPath locates every finding from this run, and a finding that located
+// itself more precisely carries its own line, column and authored key on top.
+func reportFindings(findings []abi.Diagnostic, entityKind, entityPath string, diagOut io.Writer) error {
+	var halts []error
+	for _, f := range FindingsFrom(findings, entityPath) {
+		if f.Severity != abi.SeverityHalt {
+			fmt.Fprintln(diagOut, advisoryLine(f))
+			continue
 		}
-		fmt.Fprintf(diagOut, "[%s] %s: %s\n", f.Severity, f.RuleID, f.Message)
+		halts = append(halts, raiseFinding(f, entityKind))
 	}
-	return halted
+	return stderrors.Join(halts...)
 }
 
-func countErrors(findings []abi.Diagnostic) int {
-	n := 0
-	for _, f := range findings {
-		if f.Severity == abi.SeverityHalt {
-			n++
-		}
+// advisoryLine renders one non-halting finding as a report row: the severity it
+// carries, the short code of the condition naming its rule, the rule's own
+// identifier, and the rule's message.
+//
+// It opens with the severity rather than with brackets, and that is the whole
+// point of the shape. The bracketed head belongs to a halting diagnostic and
+// says which concern the reader must act on; an advisory asks the reader to act
+// on nothing, so it must not be able to be mistaken for one.
+//
+// Both identifiers are carried because the row is scanned rather than read: a
+// report lists many findings and a reader picks out the rule, while the code is
+// what they quote and look up. A finding whose rule this build does not know by
+// name carries no code, and a finding carrying no rule identifier at all carries
+// neither — each absent token is omitted rather than stood in for.
+func advisoryLine(f Finding) string {
+	var b strings.Builder
+	b.WriteString(f.Severity)
+	b.WriteString(":")
+	if condition, ok := conditionForRule(f.RuleID); ok {
+		b.WriteString(" ")
+		b.WriteString(condition.ErrorShortCode())
 	}
-	return n
+	if f.RuleID != "" {
+		b.WriteString(" ")
+		b.WriteString(f.RuleID)
+	}
+	b.WriteString(": ")
+	b.WriteString(f.Message)
+	return b.String()
+}
+
+// raiseFinding turns one halting finding into the occurrence of the condition
+// that names its rule.
+//
+// The message is composed rather than assembled here, so the condition's own
+// sentence leads and the rule's text follows it — the composition every other
+// halting diagnostic's message follows. The rule's text is carried through
+// unchanged, so the structured report and the terminal render one finding's
+// words rather than two.
+//
+// A finding whose rule this build does not know by name names no condition, and
+// the occurrence says so rather than borrowing one: the linter socket runs
+// whatever guest the workspace attaches, and a guest of somebody else's reports
+// rules this build has never heard of. Such a finding leads with the rule's own
+// identifier, which is then the only thing identifying it.
+func raiseFinding(f Finding, entityKind string) error {
+	category, _ := cerrors.ClassifyEntityKind(entityKind)
+	source := findingSource(f)
+	condition, ok := conditionForRule(f.RuleID)
+	if !ok {
+		message := f.Message
+		if f.RuleID != "" {
+			message = f.RuleID + ": " + f.Message
+		}
+		return cerrors.Unidentified(category, source, message, nil, nil)
+	}
+	return cerrors.Raise(condition, category, source,
+		cerrors.ComposeMessage(condition, nil, f.Message), nil)
+}
+
+// findingSource projects a finding's location onto the authoring locator a
+// diagnostic points at. The file is always carried; the position and the
+// authored key are carried only where the rule that produced the finding
+// supplied them, so a rule that located nothing is not reported as having
+// located line zero.
+func findingSource(f Finding) cerrors.SourceLocation {
+	if f.Location == nil {
+		return cerrors.SourceLocation{}
+	}
+	return cerrors.SourceLocation{
+		File:    f.Location.File,
+		Locator: f.Location.KeyPath,
+		Line:    f.Location.Line,
+		Column:  f.Location.Column,
+	}
 }
 
 // classificationFromFindings extracts the schema-evolution rule's classification
 // verdict. Returns "" when no schema-evolution finding exists. Multi-finding edge
 // case: HIGHEST classification wins (MAJOR > MINOR > PATCH).
 func classificationFromFindings(findings []abi.Diagnostic) string {
+	evolution := ruleID(errSchemaEvolution)
 	rank := map[string]int{"PATCH": 0, "MINOR": 1, "MAJOR": 2}
 	highest := ""
 	for _, f := range findings {
-		if f.RuleID != "schema-evolution" {
+		if f.RuleID != evolution {
 			continue
 		}
 		if f.Classification == "" {

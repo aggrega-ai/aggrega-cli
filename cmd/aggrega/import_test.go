@@ -5,6 +5,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"strconv"
 	"strings"
 	"testing"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/authoredcontent"
 	"github.com/aggrega-ai/aggrega-cli/internal/importops"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
 // demoEchoBody is the body the demo importer echoes for the "demo" format — one
@@ -159,25 +161,35 @@ func TestReportImportDiagnosticsRendersSeverityAndMessage(t *testing.T) {
 // rule: a halt-severity diagnostic exits non-zero, anything less exits zero, and
 // the sentence points the reader at the messages already on stderr rather than
 // repeating them.
+//
+// The refusal is matched through the condition's accessor rather than against
+// its wording, so re-wording the registered sentence does not silently stop this
+// from covering anything.
 func TestImportDiagnosticsErrorGovernsOnlyTheExitOutcome(t *testing.T) {
 	t.Parallel()
 
 	halted := importops.Result{Diagnostics: []abi.Diagnostic{
 		{Severity: abi.SeverityHalt, Message: "an edge referenced an unknown node"},
 	}}
-	err := importDiagnosticsError(halted)
+	err := halted.Refusal()
 	if err == nil {
 		t.Fatal("a halt-severity diagnostic must make the command exit non-zero")
 	}
-	if !strings.Contains(err.Error(), "see the messages above") {
+	if !errors.Is(err, importops.ErrImportHalted()) {
+		t.Fatalf("the refusal must name the registered condition; got %v", err)
+	}
+	if code, ok := cerrors.ShortCodeOf(err); !ok || code == "" {
+		t.Fatalf("the refusal must carry a short code a reader can quote; got %q, %v", code, ok)
+	}
+	if !strings.Contains(err.Error(), "reported above") {
 		t.Fatalf("the exit sentence must point at the diagnostics already printed; got %q", err.Error())
 	}
 
 	warned := importops.Result{Diagnostics: []abi.Diagnostic{{Severity: "warn", Message: "one node was not mapped"}}}
-	if err := importDiagnosticsError(warned); err != nil {
+	if err := warned.Refusal(); err != nil {
 		t.Fatalf("a warn-only import must exit zero; got %v", err)
 	}
-	if err := importDiagnosticsError(importops.Result{}); err != nil {
+	if err := (importops.Result{}).Refusal(); err != nil {
 		t.Fatalf("a clean import must exit zero; got %v", err)
 	}
 }

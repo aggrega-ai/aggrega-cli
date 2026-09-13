@@ -7,7 +7,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -15,6 +14,7 @@ import (
 	abi "github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/lintops"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
@@ -107,12 +107,49 @@ func TestLintJSONEmitsFindingFields(t *testing.T) {
 	}
 }
 
+// advisoryRow reconstructs the human report's row for one non-halting finding:
+// the severity it carries, the short code of the condition naming its rule, the
+// rule's own identifier, and the rule's message.
+//
+// 🔴 This is a DELIBERATE near-duplicate of the row the operation renders, and
+// unifying the two would destroy the test: an independently written second
+// reading is the whole reason the comparison below is able to fail. The
+// operation's renderer is unexported in another package, so the duplication is
+// also structural — but it is recorded as deliberate here so that a later pass
+// exporting the renderer does not read this as an oversight to tidy away.
+//
+// The short code is the one token the row carries that the structured surface
+// does not. The linter guest assigns no code of its own, so the code on the row
+// is the host's, registered under the rule's own identifier; it is read back
+// through the registry's by-code lookup rather than copied into a table here, so
+// a rule added to the set needs no edit in this file.
+func advisoryRow(f lintops.Finding) string {
+	row := f.Severity + ":"
+	if condition, ok := cerrors.ConditionByCode(f.RuleID); ok {
+		row += " " + condition.ShortCode
+	}
+	if f.RuleID != "" {
+		row += " " + f.RuleID
+	}
+	return row + ": " + f.Message
+}
+
 // TestLintJSONCarriesDiagnosticTextVerbatim is the single-source assertion: the
 // message on the structured surface is the rule's own diagnostic text, not a
-// re-worded or truncated copy of it. It reconstructs the human report's line from
-// the structured fields and requires that exact line to appear in the human
-// output of the same run — so a paraphrase, a trim, or a re-wrap on either side
-// fails here.
+// re-worded or truncated copy of it. It reconstructs the human report's row for
+// each finding and requires that exact row to appear in the human output of the
+// same run — so a paraphrase, a trim, or a re-wrap on either side fails here.
+//
+// The invocation carries no pre-publish flag, and in that mode every rule's
+// output is reported at the advisory severity, so every finding this fixture
+// produces is a row in the human report and the comparison has one arm.
+//
+// A halting finding reaches a reader by an entirely different route: it becomes
+// the run's returned error, whose head the terminal composes, and nothing writes
+// it to the diagnostic stream this run captures. One arriving here is therefore a
+// signal to point a second assertion at that route — never to loosen this one
+// into something both routes satisfy, which would leave neither surface checked
+// against the other. The loop says so at the place it would happen.
 func TestLintJSONCarriesDiagnosticTextVerbatim(t *testing.T) {
 	root := t.TempDir()
 	writeFixture(t, filepath.Join(root, workspaceconfig.ConfigFilename), "workspace: {}\n")
@@ -128,11 +165,17 @@ func TestLintJSONCarriesDiagnosticTextVerbatim(t *testing.T) {
 		t.Fatalf("the run wrote no human findings report; there is nothing to compare against")
 	}
 
-	for _, f := range report.Findings {
-		line := fmt.Sprintf("[%s] %s: %s", f.Severity, f.RuleID, f.Message)
-		if !strings.Contains(humanReport, line) {
-			t.Errorf("structured finding does not reproduce the human line byte for byte.\n"+
-				" reconstructed: %q\n human report:\n%s", line, humanReport)
+	for i, f := range report.Findings {
+		if f.Severity == abi.SeverityHalt {
+			t.Errorf("finding %d halted, so its text reaches a reader as the run's returned error "+
+				"rather than as a row in the report this run captured. Point a second assertion at "+
+				"that error; do not relax the row comparison to span both.\n finding: %+v", i, f)
+			continue
+		}
+		row := advisoryRow(f)
+		if !strings.Contains(humanReport, row) {
+			t.Errorf("structured finding %d does not reproduce the human row byte for byte.\n"+
+				" reconstructed: %q\n human report:\n%s", i, row, humanReport)
 		}
 	}
 }

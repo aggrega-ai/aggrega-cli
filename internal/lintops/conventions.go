@@ -318,7 +318,14 @@ func lintConventionsFiles(ctx context.Context, rw *workspaceconfig.ResolvedWorks
 			continue
 		}
 		fmt.Fprintf(diagOut, "%s:\n", path)
-		printFindings(aggregated, diagOut)
+		// Every finding was re-severitized to the advisory severity above, so
+		// the report raises nothing and the error is nil by construction. It is
+		// named rather than discarded so that a finding reaching here still
+		// halting stops the pass instead of being printed as advice — which is
+		// the one outcome a reader could not tell from a clean run.
+		if err := reportFindings(aggregated, header.Kind, path, diagOut); err != nil {
+			return err
+		}
 		findingCount += len(aggregated)
 	}
 	collect.Entities(len(paths))

@@ -4,7 +4,6 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -128,7 +127,7 @@ source the write would refuse is refused here too.`,
 				}
 			}
 
-			return importDiagnosticsError(res)
+			return res.Refusal()
 		},
 	}
 	c.Flags().StringVar(&opts.format, "format", "", "Name the source format explicitly, overriding shape detection (for example langflow or flowise)")
@@ -213,19 +212,4 @@ func reportImportDiagnostics(w io.Writer, diags []abi.Diagnostic) {
 	for _, d := range diags {
 		fmt.Fprintf(w, "%s: %s\n", d.Severity, d.Message)
 	}
-}
-
-// importDiagnosticsError returns a non-nil error when the import raised a
-// halt-severity diagnostic, so the command exits non-zero on an import the
-// importer could not complete. The diagnostics themselves are already surfaced
-// on stderr by reportImportDiagnostics; this only governs the exit outcome.
-//
-// The condition is read through the result's own predicate rather than by
-// scanning severities here, so the command's exit outcome and a protocol
-// answer's field cannot come to disagree about whether one import completed.
-func importDiagnosticsError(res importops.Result) error {
-	if res.Halted() {
-		return errors.New("import raised one or more halt-severity diagnostics; see the messages above")
-	}
-	return nil
 }
