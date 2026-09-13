@@ -21,10 +21,19 @@ import (
 // import stopped and the diagnostics beside it say why.
 func ErrImportHalted() error { return errImportHalted }
 
+// The evaluated-elsewhere note is written as a string literal rather than
+// through a constant, because the census that reads it reads it off this
+// declaration's own syntax: an identifier naming a constant is a value it
+// cannot resolve, and the declaration would go unread.
 var errImportHalted = cerrors.Register("import-halting-diagnostic", cerrors.Meta{
 	ShortCode: "E0287",
 	Message: "the importer reported a diagnostic that stops the import, so the source was not " +
 		"fully turned into draft authoring files",
+	EvaluatedElsewhere: "The importer guest the catalog advertises for the source format evaluates what " +
+		"it can and cannot translate, and [Result.Refusal] raises this condition when any diagnostic it " +
+		"returned is of halt severity. The rule runs inside that guest, over a foreign source description " +
+		"rather than over a compilation, so the rule dispatch neither invokes it nor holds a view of what " +
+		"it reads.",
 })
 
 // Refusal returns the occurrence of [ErrImportHalted] when the import raised a

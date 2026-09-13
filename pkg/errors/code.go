@@ -386,6 +386,36 @@ func ComposeMessage(condition error, values []string, advice string) string {
 // admits a condition that nothing raises only when this field names the work
 // that will, so the field is read on every generation rather than only
 // displayed.
+//
+// EvaluatedElsewhere is the fourth field and is the same KIND of thing as the
+// third rather than a second note about the same subject. It records another
+// fact about the condition's relationship to the code around it: that the rule
+// this condition names is evaluated somewhere other than the compiler's own
+// rule dispatch — the framework that invokes a declared rule over a view of a
+// compilation and turns its objection into a halt — and could therefore not be
+// written as one of that framework's rules however the tree is rearranged. It
+// is held on the registration for the reason DeclaredAhead is: a list kept
+// somewhere else is a second home for the correspondence, and it goes on
+// describing a condition that has since been renamed, moved or removed, while
+// a note beside the registration is deleted with the condition it describes.
+//
+// It satisfies the admission rule above on both halves, and neither half is
+// satisfied by default. Every identity has a source for it, because the empty
+// value is an assertion rather than a gap: it says this condition's rule COULD
+// be expressed as one of the framework's rules, which is what keeps the
+// condition inside the population the module's emission census holds to a
+// ceiling. And something consumes it: that census — the assertion over where
+// each of this module's conditions is raised — reads this value off the
+// declaration and counts a condition carrying one apart from the conditions it
+// ratchets, so the field moves a number rather than only documenting one.
+//
+// Unlike DeclaredAhead it is NOT published, and that is said here because a
+// field sitting beside a published one otherwise reads as published too. Which
+// side of the boundary between the compiler and a plugin evaluates a rule is a
+// fact about how the product is built; a reader looking a condition up on the
+// reference has nothing to do with it. The reference's generator reads the
+// metadata keys it names and skips every other, so nothing carries this one
+// onto a page.
 type Meta struct {
 	// Message is the text the identity's Error method returns: one sentence
 	// stating the condition, in the words a reader of a diagnostic sees.
@@ -551,6 +581,69 @@ type Meta struct {
 	// Setting the field deliberately, with real text, is therefore the only way
 	// a condition can carry it.
 	DeclaredAhead string
+
+	// EvaluatedElsewhere names what evaluates the rule this condition stands
+	// for, and why that evaluator is not the compiler's own rule dispatch.
+	//
+	// Empty is the ordinary value and is an assertion rather than a gap: it
+	// says this condition's rule could be expressed as one of the dispatch's
+	// own rules, so the condition stays inside the population that is held to a
+	// ceiling. Nearly every condition leaves it empty.
+	//
+	// # What it is for
+	//
+	// A rule the dispatch invokes is a value it holds, over a view of a
+	// compilation and a subject its traversal supplied. A rule evaluated
+	// anywhere else has neither: a rule a plugin evaluates inside its own guest
+	// runs where no view reaches, and a rule evaluated at publication runs over
+	// artifacts rather than over a compilation at all. Both hold their identity
+	// here in the host and raise it on what the evaluator returned.
+	//
+	// The census that counts conditions raised outside the dispatch cannot see
+	// that difference, and no property of the declaring package can: a package
+	// that holds an identity while something else evaluates the rule looks
+	// exactly like a package holding a rule nobody has moved into the dispatch
+	// yet. Without this field the two are one population, and a ratchet over it
+	// refuses every legitimately elsewhere-evaluated rule the product adds. The
+	// fact is therefore declared where it is known, by the author of the
+	// registration, in the same place the condition's other declared facts live.
+	//
+	// # It is prose, and the prose is the cost of setting it
+	//
+	// The value names the evaluator and says why that evaluator is not the
+	// dispatch. Prose rather than a flag, for two reasons that pull the same
+	// way: a flag is satisfiable by saying nothing, and a claim stated in terms
+	// of what evaluates the rule can be held against the code — a value naming
+	// an evaluator that does not evaluate this rule is describing some other
+	// condition.
+	//
+	// # What it does not verify, which is its coverage bound
+	//
+	// Nothing establishes that a rule declaring itself evaluated elsewhere
+	// could not in fact have been written as one of the dispatch's rules. That
+	// is a question about what the rule READS, and the census that consumes
+	// this value resolves no types. So the census can contradict a declaration
+	// the tree already falsifies — a condition carrying this value that the
+	// dispatch is nonetheless seen to raise — and it can refuse one that
+	// describes no condition it can place; it cannot judge a plausible
+	// declaration on a rule nobody has tried to move. The bound is written here
+	// rather than argued away, because an unstated bound reads as full coverage.
+	//
+	// # It is not published
+	//
+	// This text is read by the census and reaches no page. Write it for whoever
+	// maintains the condition, in terms of the evaluator and the input it runs
+	// over — not for a reader of the reference, who is told nothing about it.
+	//
+	// # It cannot be acquired by neglect
+	//
+	// Registration refuses a value that is present but says nothing — one that
+	// is entirely spaces, say. A note naming no evaluator would take the
+	// condition out of the ratcheted population while saying nothing about why
+	// it is out, which is the exemption this field must not become. Setting the
+	// field deliberately, with real text, is therefore the only way a condition
+	// can carry it.
+	EvaluatedElsewhere string
 }
 
 // shortCodeLen and shortCodePrefix are the shape of a short code: the letter E
@@ -832,14 +925,22 @@ func indexRetirements(record []retirement) map[string]string {
 //     put it on the published reference with nothing to tell a reader, which is
 //     the suppression the field exists to prevent. Absent is the ordinary
 //     value and is always accepted; present-and-empty is the shape refused.
+//   - A Meta.EvaluatedElsewhere that is present but says nothing — whitespace
+//     alone. The same reasoning one field along: that value is the prose naming
+//     what evaluates the rule, and a note naming nothing would take the
+//     condition out of the population the emission census ratchets while
+//     telling a reader nothing about why it is out, which is the exemption that
+//     field must not become. Absent is the ordinary value and is always
+//     accepted; present-and-empty is the shape refused.
 //
-// Meta.DeclaredAhead is checked here and deliberately not stored on the
-// identity. Nothing at run time reads it — it is read from the declaration
-// itself, by the generator that composes the published reference — so keeping a
-// copy on the identity would be a second home for a value that already has one.
-// Refusing a malformed declaration and recording a declared value are separate
-// jobs, and this function does the first for a field it does not do the second
-// for.
+// Meta.DeclaredAhead and Meta.EvaluatedElsewhere are BOTH checked here and
+// BOTH deliberately not stored on the identity. Nothing at run time reads
+// either — each is read from the declaration itself, the first by the generator
+// that composes the published reference and the second by the census that
+// reports where this module's conditions are raised — so keeping a copy on the
+// identity would be a second home for a value that already has one. Refusing a
+// malformed declaration and recording a declared value are separate jobs, and
+// this function does the first for two fields it does not do the second for.
 //
 // What Register does NOT check is whether a short code is the NEXT one — the
 // number above the highest already allocated rather than an arbitrary free one.
@@ -877,6 +978,14 @@ func Register(code string, meta Meta) Identity {
 			"a condition nothing raises reaches the published reference only by naming the work that "+
 			"will raise it, so a note carrying no text would publish the condition and tell a reader "+
 			"nothing; write the note, or leave the field unset and let the condition be reported as unraised",
+			code))
+	}
+	if meta.EvaluatedElsewhere != "" && strings.TrimSpace(meta.EvaluatedElsewhere) == "" {
+		panic(fmt.Sprintf("errors: Register called with a blank evaluated-elsewhere note for code %q; "+
+			"a condition whose rule is evaluated outside the compiler's own rule dispatch is counted apart "+
+			"from the conditions whose rules could be expressed there, and a note carrying no text would "+
+			"take this one out of that count and say nothing about why; write the note naming what "+
+			"evaluates the rule and why that evaluator is not the dispatch, or leave the field unset",
 			code))
 	}
 	if prev, dup := shortCodeIndex[meta.ShortCode]; dup {

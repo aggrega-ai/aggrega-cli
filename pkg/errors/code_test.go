@@ -31,6 +31,9 @@ const (
 	codeDuplicateShortCode     = "duplicate-short-code-subject"
 	codeBlankDeclaredAhead     = "blank-declared-ahead-subject"
 	codeSetDeclaredAhead       = "set-declared-ahead-subject"
+
+	codeBlankEvaluatedElsewhere = "blank-evaluated-elsewhere-subject"
+	codeSetEvaluatedElsewhere   = "set-evaluated-elsewhere-subject"
 )
 
 // The short codes this file registers, distinct for the same reason the codes
@@ -51,6 +54,9 @@ const (
 	shortDuplicateSubject       = "E9216"
 	shortBlankDeclaredAhead     = "E9217"
 	shortSetDeclaredAhead       = "E9218"
+
+	shortBlankEvaluatedElsewhere = "E9219"
+	shortSetEvaluatedElsewhere   = "E9220"
 )
 
 // The short code a malformed-value refusal is probed with, and the reason it is
@@ -652,4 +658,70 @@ func TestRegister_AcceptsAnAbsentAndAWrittenDeclaredAheadNote(t *testing.T) {
 	// The absent case is exercised by every other registration in this file and
 	// in the module, so asserting it again here would restate what package
 	// initialisation already proves.
+}
+
+// TestRegister_PanicsOnABlankEvaluatedElsewhereNote pins for the
+// evaluated-elsewhere note the property the declared-ahead refusal above pins
+// for its own: it cannot be acquired by neglect.
+//
+// A condition whose rule is evaluated outside the compiler's own rule dispatch
+// is counted apart from the conditions whose rules could be expressed there. A
+// note carrying no text would take a condition out of the ratcheted count while
+// naming no evaluator, which is the exemption the field must not become — and
+// the exemption is the more tempting failure here, because the ratchet is the
+// thing whose refusal a blank note would silence.
+//
+// The probe uses whitespace rather than the empty string, because the empty
+// string is the ordinary absent value and refusing it would refuse nearly every
+// registration in the module.
+func TestRegister_PanicsOnABlankEvaluatedElsewhereNote(t *testing.T) {
+	t.Parallel()
+
+	v := panicValue(func() {
+		cerrors.Register(codeBlankEvaluatedElsewhere, cerrors.Meta{
+			ShortCode:          shortBlankEvaluatedElsewhere,
+			Message:            "a message whose evaluated-elsewhere note names no evaluator",
+			EvaluatedElsewhere: "   \t  ",
+		})
+	})
+	if v == nil {
+		t.Fatalf("registering a blank evaluated-elsewhere note did not panic")
+	}
+	if msg := fmt.Sprint(v); !strings.Contains(msg, codeBlankEvaluatedElsewhere) {
+		t.Errorf("panic %q does not name the offending code %q", msg, codeBlankEvaluatedElsewhere)
+	}
+
+	// The refused registration must not have landed in either index, for the
+	// reason the two refusals above check the same thing: a half-written entry
+	// would make the repaired declaration fail as a duplicate.
+	if v := panicValue(func() {
+		cerrors.Register(codeBlankEvaluatedElsewhere, cerrors.Meta{
+			ShortCode:          shortBlankEvaluatedElsewhere,
+			Message:            "a message whose evaluated-elsewhere note names no evaluator",
+			EvaluatedElsewhere: "A plugin guest evaluates the rule, so no dispatch invokes it.",
+		})
+	}); v != nil {
+		t.Errorf("a refused registration left one of the two indexes occupied; re-registering panicked with %v", v)
+	}
+}
+
+// TestRegister_AcceptsAnAbsentAndAWrittenEvaluatedElsewhereNote is the
+// calibration for the refusal above, and it is owed for the same reason the
+// declared-ahead calibration is: a refusal that also caught either of these
+// would refuse the whole module at package initialisation.
+func TestRegister_AcceptsAnAbsentAndAWrittenEvaluatedElsewhereNote(t *testing.T) {
+	t.Parallel()
+
+	if v := panicValue(func() {
+		cerrors.Register(codeSetEvaluatedElsewhere, cerrors.Meta{
+			ShortCode:          shortSetEvaluatedElsewhere,
+			Message:            "a message whose evaluated-elsewhere note names its evaluator",
+			EvaluatedElsewhere: "A plugin guest evaluates the rule, so no dispatch invokes it.",
+		})
+	}); v != nil {
+		t.Errorf("a written evaluated-elsewhere note was refused: %v", v)
+	}
+
+	// The absent case is exercised by every other registration in this file and
+	// in the module, exactly as it is for the declared-ahead note.
 }
