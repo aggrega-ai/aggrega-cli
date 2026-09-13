@@ -18,11 +18,11 @@ import (
 // three guest-failure transports converge on one classifiable taxonomy without
 // collapsing into each other.
 func TestGuestReturnedError(t *testing.T) {
-	if err := GuestReturnedError("render_node", GuestFailure{}); err != nil {
+	if err := GuestReturnedError("provider/example-provider", "render_node", GuestFailure{}); err != nil {
 		t.Fatalf("an empty message is the success case and must yield nil, got %v", err)
 	}
 
-	err := GuestReturnedError("render_node", GuestFailure{Message: "template evaluation failed"})
+	err := GuestReturnedError("provider/example-provider", "render_node", GuestFailure{Message: "template evaluation failed"})
 	if err == nil {
 		t.Fatal("a non-empty message must yield an error")
 	}
@@ -52,7 +52,7 @@ func TestGuestReturnedError_ReportedConditionStandsOverTheHostCondition(t *testi
 		guestShort = "E0000"
 	)
 
-	err := GuestReturnedError("render_node", GuestFailure{
+	err := GuestReturnedError("provider/example-provider", "render_node", GuestFailure{
 		Message:   "the occurrence's own clause",
 		Code:      guestCode,
 		ShortCode: guestShort,
@@ -92,13 +92,65 @@ func TestGuestReturnedError_HalfReportNamesNoCondition(t *testing.T) {
 		{"a short code with no descriptive code", GuestFailure{Message: "m", ShortCode: "E0000"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			err := GuestReturnedError("render_node", tc.f)
+			err := GuestReturnedError("provider/example-provider", "render_node", tc.f)
 			code, _ := cerrors.CodeOf(err)
 			short, _ := cerrors.ShortCodeOf(err)
 			if code != hostCode || short != hostShort {
 				t.Errorf("a half report was attached: the error reports %q / %q; the host's own condition "+
 					"(%q / %q) should stand", code, short, hostCode, hostShort)
 			}
+			// The qualifier rides on the condition, so a half report must carry no
+			// plugin either: the condition that stands is the host's own, and
+			// qualifying the compiler's condition by a plugin would say the plugin
+			// allocated a code it did not.
+			if plugin, ok := cerrors.RaisingPluginOf(err); ok {
+				t.Errorf("a half report reports raising plugin %q; the host's own condition stands and carries none", plugin)
+			}
 		})
+	}
+}
+
+// TestGuestReturnedError_TwoPluginsOneCodeStayDistinguishable proves the property
+// the qualifier exists for: two independently authored guests reporting the SAME
+// code are told apart by the plugin the host invoked.
+//
+// It is asserted at this layer as well as at the printing boundary because the two
+// can fail independently — the read can lose the plugin here, and the composition
+// can drop it there — and a reader meeting two identical heads has no way back to
+// which plugin they held.
+func TestGuestReturnedError_TwoPluginsOneCodeStayDistinguishable(t *testing.T) {
+	const (
+		sharedCode  = "example-provider-core/a-condition-the-guest-publishes"
+		sharedShort = "E0000"
+		first       = "provider/example-provider"
+		second      = "provider/another-provider"
+	)
+
+	failure := GuestFailure{Message: "the occurrence's own clause", Code: sharedCode, ShortCode: sharedShort}
+	errFirst := GuestReturnedError(first, "render_node", failure)
+	errSecond := GuestReturnedError(second, "render_node", failure)
+
+	gotFirst, ok := cerrors.RaisingPluginOf(errFirst)
+	if !ok || gotFirst != first {
+		t.Errorf("the first error reports raising plugin %q (found=%t); want %q", gotFirst, ok, first)
+	}
+	gotSecond, ok := cerrors.RaisingPluginOf(errSecond)
+	if !ok || gotSecond != second {
+		t.Errorf("the second error reports raising plugin %q (found=%t); want %q", gotSecond, ok, second)
+	}
+	if gotFirst == gotSecond {
+		t.Fatal("two guests reporting one code are indistinguishable, which is the whole condition the qualifier removes")
+	}
+
+	// The codes themselves stay exactly what each guest published. A machine
+	// consumer matches the allocated code; the qualifier is a third read beside it,
+	// never folded into it.
+	for _, err := range []error{errFirst, errSecond} {
+		if got, ok := cerrors.ShortCodeOf(err); !ok || got != sharedShort {
+			t.Errorf("the short code reports %q (found=%t); want the guest's unqualified %q", got, ok, sharedShort)
+		}
+		if got, ok := cerrors.CodeOf(err); !ok || got != sharedCode {
+			t.Errorf("the descriptive code reports %q (found=%t); want the guest's unqualified %q", got, ok, sharedCode)
+		}
 	}
 }

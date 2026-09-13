@@ -201,7 +201,7 @@ func TestEveryPublishedGuestConditionCrossesWithItsCode(t *testing.T) {
 					"head it prints, so the word would render twice on one line: %s", f.Message)
 			}
 
-			hostErr := wasm.GuestReturnedError(c.export, wasm.GuestFailure{
+			hostErr := wasm.GuestReturnedError("provider/example-provider", c.export, wasm.GuestFailure{
 				Message:   f.Message,
 				Code:      f.Code,
 				ShortCode: f.ShortCode,
@@ -236,7 +236,7 @@ func TestGuestFailureWithoutACondition(t *testing.T) {
 		t.Fatalf("a chain naming no registered condition reported code %q / short code %q", f.Code, f.ShortCode)
 	}
 
-	hostErr := wasm.GuestReturnedError(wasmengine.RenderNodeExport, wasm.GuestFailure{Message: f.Message})
+	hostErr := wasm.GuestReturnedError("provider/example-provider", wasmengine.RenderNodeExport, wasm.GuestFailure{Message: f.Message})
 	short, ok := cerrors.ShortCodeOf(hostErr)
 	// The host's own condition still answers, which is the fallback rather than an
 	// absence: what must NOT happen is the guest's code appearing from nowhere.
@@ -273,7 +273,7 @@ func TestGuestFailureHalfReportNamesNoCondition(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			err := wasm.GuestReturnedError(wasmengine.RenderNodeExport, tc.f)
+			err := wasm.GuestReturnedError("provider/example-provider", wasmengine.RenderNodeExport, tc.f)
 			short, _ := cerrors.ShortCodeOf(err)
 			code, _ := cerrors.CodeOf(err)
 			if short != hostShort || code != hostCode {

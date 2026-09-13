@@ -263,7 +263,7 @@ func runStep(
 		return nil, nil, nil, types.OrderedMap[any]{}, fmt.Errorf("%w: step %q (index %d): %w", ErrPipelineStepFailed(), step.ID, index, err)
 	}
 
-	if gerr := wasm.GuestReturnedError(step.Function, wasm.GuestFailure{Message: out.Error}); gerr != nil {
+	if gerr := wasm.GuestReturnedError(step.Plugin, step.Function, wasm.GuestFailure{Message: out.Error}); gerr != nil {
 		return nil, nil, nil, types.OrderedMap[any]{}, fmt.Errorf("%w: step %q (index %d): %w", ErrPipelineStepFailed(), step.ID, index, gerr)
 	}
 

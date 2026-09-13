@@ -249,7 +249,7 @@ func (e *AssemblerEngine) invokeAssemble(ctx context.Context, export string, inp
 	if err := out.UnmarshalJSON(raw); err != nil {
 		return renderer.AssembleBoundaryOutput{}, fmt.Errorf("wasmengine: decode assemble_boundary output: %w", err)
 	}
-	if err := wasm.GuestReturnedError(export, wasm.GuestFailure{
+	if err := wasm.GuestReturnedError(e.pluginURI, export, wasm.GuestFailure{
 		Message:   out.Error,
 		Code:      out.ConditionCode,
 		ShortCode: out.ConditionShortCode,

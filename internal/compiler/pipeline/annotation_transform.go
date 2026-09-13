@@ -80,7 +80,7 @@ func runAnnotationSocket(ctx context.Context, inputs Inputs, catalogLookup resol
 		if err := wasm.DecodeGuestOutput(export, out, &ao); err != nil {
 			return fmt.Errorf("annotation-transform: plugin %q: %w", ref.URI, err)
 		}
-		if err := wasm.GuestReturnedError(export, wasm.GuestFailure{Message: ao.Error}); err != nil {
+		if err := wasm.GuestReturnedError(ref.URI, export, wasm.GuestFailure{Message: ao.Error}); err != nil {
 			return fmt.Errorf("annotation-transform: plugin %q: %w", ref.URI, err)
 		}
 		if err := applyAnnotationInjections(rr, ao, targetSet, ref.URI); err != nil {

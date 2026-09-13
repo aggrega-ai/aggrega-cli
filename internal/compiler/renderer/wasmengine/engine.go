@@ -579,7 +579,7 @@ func (e *Engine) invoke(ctx context.Context, export string, input renderer.Rende
 	if err := out.UnmarshalJSON(raw); err != nil {
 		return renderer.RenderNodeOutput{}, fmt.Errorf("wasmengine: decode render_node output: %w", err)
 	}
-	if err := wasm.GuestReturnedError(export, wasm.GuestFailure{
+	if err := wasm.GuestReturnedError(e.pluginURI, export, wasm.GuestFailure{
 		Message:   out.Error,
 		Code:      out.ConditionCode,
 		ShortCode: out.ConditionShortCode,
@@ -772,7 +772,7 @@ func (e *Engine) invokeValidate(ctx context.Context, export string, input render
 	if err := out.UnmarshalJSON(raw); err != nil {
 		return nil, fmt.Errorf("wasmengine: decode validate_node_input output: %w", err)
 	}
-	if err := wasm.GuestReturnedError(export, wasm.GuestFailure{
+	if err := wasm.GuestReturnedError(e.pluginURI, export, wasm.GuestFailure{
 		Message:   out.Error,
 		Code:      out.ConditionCode,
 		ShortCode: out.ConditionShortCode,
@@ -875,7 +875,7 @@ func (e *Engine) NameBound(ctx context.Context, in renderer.NameBoundInput) (ren
 	if err := out.UnmarshalJSON(raw); err != nil {
 		return renderer.NameBoundOutput{}, fmt.Errorf("wasmengine: decode name_bound output: %w", err)
 	}
-	if err := wasm.GuestReturnedError(NameBoundExport, wasm.GuestFailure{
+	if err := wasm.GuestReturnedError(e.pluginURI, NameBoundExport, wasm.GuestFailure{
 		Message:   out.Error,
 		Code:      out.ConditionCode,
 		ShortCode: out.ConditionShortCode,
@@ -929,7 +929,7 @@ func (e *Engine) RenderedName(ctx context.Context, in renderer.RenderedNameInput
 	if err := out.UnmarshalJSON(raw); err != nil {
 		return renderer.RenderedNameOutput{}, fmt.Errorf("wasmengine: decode rendered_name output: %w", err)
 	}
-	if err := wasm.GuestReturnedError(RenderedNameExport, wasm.GuestFailure{
+	if err := wasm.GuestReturnedError(e.pluginURI, RenderedNameExport, wasm.GuestFailure{
 		Message:   out.Error,
 		Code:      out.ConditionCode,
 		ShortCode: out.ConditionShortCode,
@@ -989,7 +989,7 @@ func (e *Engine) LinkPublish(ctx context.Context, in renderer.LinkPublishInput) 
 	if err := out.UnmarshalJSON(raw); err != nil {
 		return renderer.LinkPublishOutput{}, fmt.Errorf("wasmengine: decode link_publish output: %w", err)
 	}
-	if err := wasm.GuestReturnedError(wasm.LinkPublishExport, wasm.GuestFailure{
+	if err := wasm.GuestReturnedError(e.pluginURI, wasm.LinkPublishExport, wasm.GuestFailure{
 		Message:   out.Error,
 		Code:      out.ConditionCode,
 		ShortCode: out.ConditionShortCode,
@@ -1036,7 +1036,7 @@ func (e *Engine) LinkResolve(ctx context.Context, in renderer.LinkResolveInput) 
 	if err := out.UnmarshalJSON(raw); err != nil {
 		return renderer.LinkResolveOutput{}, fmt.Errorf("wasmengine: decode link_resolve output: %w", err)
 	}
-	if err := wasm.GuestReturnedError(wasm.LinkResolveExport, wasm.GuestFailure{
+	if err := wasm.GuestReturnedError(e.pluginURI, wasm.LinkResolveExport, wasm.GuestFailure{
 		Message:   out.Error,
 		Code:      out.ConditionCode,
 		ShortCode: out.ConditionShortCode,

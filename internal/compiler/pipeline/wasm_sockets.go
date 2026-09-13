@@ -182,7 +182,7 @@ func runMutatorSocket(ctx context.Context, inputs Inputs, catalogLookup resolver
 		if err := wasm.DecodeGuestOutputCBOR(export, out, &mo); err != nil {
 			return fmt.Errorf("label-transform: plugin %q: %w", ref.URI, err)
 		}
-		if err := wasm.GuestReturnedError(export, wasm.GuestFailure{Message: mo.Error}); err != nil {
+		if err := wasm.GuestReturnedError(ref.URI, export, wasm.GuestFailure{Message: mo.Error}); err != nil {
 			return fmt.Errorf("label-transform: plugin %q: %w", ref.URI, err)
 		}
 		if err := topology.ApplyMutatorPatches(topo, mo); err != nil {
@@ -246,7 +246,7 @@ func runPolicySocket(ctx context.Context, inputs Inputs, catalogLookup resolver.
 		if err := wasm.DecodeGuestOutput(export, out, &po); err != nil {
 			return fmt.Errorf("ir-verdict: plugin %q: %w", ref.URI, err)
 		}
-		if err := wasm.GuestReturnedError(export, wasm.GuestFailure{Message: po.Error}); err != nil {
+		if err := wasm.GuestReturnedError(ref.URI, export, wasm.GuestFailure{Message: po.Error}); err != nil {
 			return fmt.Errorf("ir-verdict: plugin %q: %w", ref.URI, err)
 		}
 		if err := wasm.GuestDiagnosticSeverities(ref.URI, export, po.Results); err != nil {
@@ -335,7 +335,7 @@ func runRenderPolicySocket(ctx context.Context, inputs Inputs, catalogLookup res
 		if err := wasm.DecodeGuestOutput(export, out, &po); err != nil {
 			return fmt.Errorf("render-verdict: plugin %q: %w", ref.URI, err)
 		}
-		if err := wasm.GuestReturnedError(export, wasm.GuestFailure{Message: po.Error}); err != nil {
+		if err := wasm.GuestReturnedError(ref.URI, export, wasm.GuestFailure{Message: po.Error}); err != nil {
 			return fmt.Errorf("render-verdict: plugin %q: %w", ref.URI, err)
 		}
 		if err := wasm.GuestDiagnosticSeverities(ref.URI, export, po.Results); err != nil {

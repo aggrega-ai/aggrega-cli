@@ -254,15 +254,27 @@ type GuestFailure struct {
 // diagnostic a reader meets carries the code the guest published. Classification
 // is unchanged either way: the guest condition wraps ErrWasmGuestError, so a
 // caller matching the host taxonomy with errors.Is still matches.
-func GuestReturnedError(export string, f GuestFailure) error {
+//
+// plugin identifies the guest, and it QUALIFIES the identifiers above rather than
+// decorating the message: a code is unique only within whoever allocated it, and
+// nothing coordinates two plugin authors, so two guests can publish one code for
+// two unrelated conditions. The plugin the host loaded and invoked is what tells
+// them apart, which is why it travels beside the export name as an argument of the
+// host's own rather than as a field of GuestFailure — GuestFailure is what the
+// guest reported in-band, and a guest can neither supply nor forge this. Pass
+// whatever identity the calling socket knows the guest by, which is the same
+// identity that socket's other failures name; GuestDiagnosticSeverities takes it
+// on the same terms.
+func GuestReturnedError(plugin, export string, f GuestFailure) error {
 	if f.Message == "" {
 		return nil
 	}
-	return fmt.Errorf("call %q: %w: %s", export, reportedOver(ErrWasmGuestError(), f), f.Message)
+	return fmt.Errorf("call %q: %w: %s", export, reportedOver(ErrWasmGuestError(), plugin, f), f.Message)
 }
 
 // reportedOver returns the error the wrap above names as the condition: host on
-// its own, or the identifiers the guest reported presented over host.
+// its own, or the identifiers the guest reported presented over host, qualified by
+// the plugin that raised them.
 //
 // It takes the host condition as an argument rather than reaching for it, so the
 // one wrap above stays the one place this package names that condition
@@ -279,22 +291,37 @@ func GuestReturnedError(export string, f GuestFailure) error {
 // everything the reader needs. The guest's own identity is not forged here and
 // could not be: the identifiers travel as data, and there is no path from a code
 // back to the identity that declared it.
-func reportedOver(host error, f GuestFailure) error {
+//
+// The plugin rides on that same decision rather than on a test of its own, and
+// deliberately: the qualifier says whose code this is, so it means nothing where
+// there is no code. A half report and a report with no condition both fall
+// through to the host's own condition, which is the compiler's and needs no
+// qualification.
+func reportedOver(host error, plugin string, f GuestFailure) error {
 	if f.Code == "" || f.ShortCode == "" {
 		return host
 	}
-	return &reportedCondition{host: host, code: f.Code, shortCode: f.ShortCode}
+	return &reportedCondition{host: host, plugin: plugin, code: f.Code, shortCode: f.ShortCode}
 }
 
 // reportedCondition presents the identifiers a guest reported for the condition
-// its failure names, over the host condition it stands on.
+// its failure names, over the host condition it stands on, qualified by the
+// plugin that raised it.
 //
 // Error returns the host condition's own registered sentence and not a second
 // copy of it: the wording has one home, and this type contributes identifiers
 // rather than words. Unwrap returns that condition, so the whole host taxonomy
 // still matches beneath these identifiers.
+//
+// The two code reads report exactly what the guest published and nothing else,
+// unqualified. A machine consumer matching a code is matching the identifier the
+// guest allocated, and folding the plugin into it would hand that consumer a
+// value that is not a code — and, for the short code, one that is not the letter
+// E and four digits either. The plugin is a third read beside them, and the
+// surface that composes a diagnostic for a reader is what joins the two.
 type reportedCondition struct {
 	host      error
+	plugin    string
 	code      string
 	shortCode string
 }
@@ -306,6 +333,8 @@ func (c *reportedCondition) Unwrap() error { return c.host }
 func (c *reportedCondition) ErrorCode() string { return c.code }
 
 func (c *reportedCondition) ErrorShortCode() string { return c.shortCode }
+
+func (c *reportedCondition) ErrorRaisingPlugin() string { return c.plugin }
 
 // ErrWasmDiagnosticSeverity indicates that a guest plugin returned a diagnostic
 // whose severity is not one of the values the shared diagnostic contract

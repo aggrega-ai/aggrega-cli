@@ -180,6 +180,56 @@ type CodedError interface {
 	ErrorShortCode() string
 }
 
+// PluginRaisedError is an error that reports the plugin whose guest raised the
+// condition it names. Only a failure that crossed a plugin socket carries one; a
+// condition the compiler raised itself has no plugin to name and satisfies this
+// interface nowhere.
+//
+// It is a MATCHING interface and is therefore open, for the same reason
+// CodedError is: the error type that reports this sits in the package that owns
+// the socket boundary, not here, and a caller asking "did a plugin raise this"
+// has to be able to match it from anywhere. No construction side exists, because
+// the value is not part of a condition's identity — a plugin cannot be
+// registered, and the identifiers a guest reports travel as data.
+//
+// # What it is for, given the condition already reports two identifiers
+//
+// A condition's identifiers are unique within whoever declared them. The
+// compiler's registry refuses a duplicate, so two conditions the compiler
+// declares can never share a code. Nothing holds across plugin authors: two
+// independently authored guests can publish the same code for two unrelated
+// conditions, and neither author can see the other's allocation. The plugin that
+// raised the condition is what tells those apart, and the host knows it because
+// the host loaded and invoked that plugin — it is not something the guest
+// reports, and so not something a guest can misreport.
+type PluginRaisedError interface {
+	error
+	// ErrorRaisingPlugin returns the identity of the plugin whose guest raised
+	// the condition the error names.
+	ErrorRaisingPlugin() string
+}
+
+// RaisingPluginOf returns the plugin reported by the first error in err's chain
+// that reports one, and whether any error in the chain did.
+//
+// It is CodeOf's companion and walks the same chain for the same reason: the
+// value survives arbitrary wrapping, so a surface composing a diagnostic many
+// frames above the socket the failure crossed still names the plugin that raised
+// it. An error chain that crossed no plugin socket reports none, which is a fact
+// about the chain rather than a failure — and is the ordinary case, since most
+// conditions are the compiler's own.
+//
+// It resolves the FIRST such error in the chain, exactly as CodeOf and
+// ShortCodeOf resolve the first identity, so a caller reading this and then a
+// code is describing one condition and not two.
+func RaisingPluginOf(err error) (string, bool) {
+	var raised PluginRaisedError
+	if stderrors.As(err, &raised) {
+		return raised.ErrorRaisingPlugin(), true
+	}
+	return "", false
+}
+
 // CodeOf returns the code reported by the first error in err's chain that
 // reports one, and whether any error in the chain did.
 //
