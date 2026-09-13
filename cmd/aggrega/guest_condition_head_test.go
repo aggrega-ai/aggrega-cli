@@ -36,7 +36,7 @@ func TestGuestReportedConditionReachesThePrintedHead(t *testing.T) {
 	})
 	// The host frames the guest's failure the way the render path does: its own
 	// categorised envelope, pointing at the node, over the guest's error.
-	framed := cerrors.New(cerrors.TranslationError,
+	framed := cerrors.Unidentified(cerrors.TranslationError,
 		cerrors.SourceLocation{File: "web"}, "rendering node \"web\"", nil, guestErr)
 
 	got := formatCompilerError(framed)
@@ -67,7 +67,7 @@ func TestGuestFailureWithNoConditionPrintsTheHostCode(t *testing.T) {
 	guestErr := wasm.GuestReturnedError("render_node", wasm.GuestFailure{
 		Message: "compose-provider: a failure naming no registered condition",
 	})
-	framed := cerrors.New(cerrors.TranslationError,
+	framed := cerrors.Unidentified(cerrors.TranslationError,
 		cerrors.SourceLocation{File: "web"}, "rendering node \"web\"", nil, guestErr)
 
 	got := formatCompilerError(framed)

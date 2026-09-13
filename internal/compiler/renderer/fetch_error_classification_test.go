@@ -28,8 +28,8 @@ func TestOfflineEgressRoutesToFetchErrorFamily(t *testing.T) {
 	if !ok {
 		t.Fatal("wrapped ErrOfflineEgress did not produce a CompilerError")
 	}
-	if ce.Category != cerrors.FetchError {
-		t.Errorf("Category = %q; want FETCH_ERROR for an offline-egress refusal", ce.Category)
+	if ce.Category() != cerrors.FetchError {
+		t.Errorf("Category = %q; want FETCH_ERROR for an offline-egress refusal", ce.Category())
 	}
 	if !errors.Is(ce, egress.ErrOfflineEgress()) {
 		t.Errorf("classified error no longer detects ErrOfflineEgress in its chain")
@@ -71,8 +71,8 @@ func TestRenderAll_FetchErrorCategoryOnMissingLockfileEntry(t *testing.T) {
 	if !errors.As(err, &compilerErr) {
 		t.Fatalf("error should be a *cerrors.CompilerError; got %T: %v", err, err)
 	}
-	if compilerErr.Category != cerrors.FetchError {
-		t.Errorf("Category = %q; want FETCH_ERROR (got non-fetch routing for a fetch sentinel)", compilerErr.Category)
+	if compilerErr.Category() != cerrors.FetchError {
+		t.Errorf("Category = %q; want FETCH_ERROR (got non-fetch routing for a fetch sentinel)", compilerErr.Category())
 	}
 }
 
@@ -117,8 +117,8 @@ func TestRenderAll_FetchErrorIncludesRemediationOnTamperedArchive(t *testing.T) 
 	if !errors.As(err, &compilerErr) {
 		t.Fatalf("error should be a *cerrors.CompilerError; got %T", err)
 	}
-	if compilerErr.Category != cerrors.FetchError {
-		t.Errorf("Category = %q; want FETCH_ERROR for tampered archive", compilerErr.Category)
+	if compilerErr.Category() != cerrors.FetchError {
+		t.Errorf("Category = %q; want FETCH_ERROR for tampered archive", compilerErr.Category())
 	}
 	if !strings.Contains(compilerErr.Error(), "aggrega pull --upgrade") {
 		t.Errorf("error should include 'aggrega pull --upgrade' remediation; got %q", compilerErr.Error())

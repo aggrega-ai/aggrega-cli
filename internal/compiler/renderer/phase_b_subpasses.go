@@ -297,7 +297,7 @@ func phaseB3(ctx context.Context, tmplCtx *types.TemplateContext, state *PhaseBS
 	}
 	emitter, ok := engine.(ArtifactsEmitter)
 	if !ok {
-		return cerrors.New(cerrors.CatalogError, cerrors.SourceLocation{File: state.RecipePath},
+		return cerrors.Unidentified(cerrors.CatalogError, cerrors.SourceLocation{File: state.RecipePath},
 			fmt.Sprintf("provider %q does not implement artifacts emission; the Recipe declares artifacts: but the bound provider has no artifacts-emission implementation", state.Recipe.Spec.Capability),
 			nil, nil)
 	}

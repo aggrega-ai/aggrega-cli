@@ -169,9 +169,9 @@ func TestTheAssembledCollisionHaltIsACatalogFault(t *testing.T) {
 	if !errors.As(err, &diag) {
 		t.Fatalf("the halt is not a structured diagnostic: %v", err)
 	}
-	if diag.Category != cerrors.CatalogError {
+	if diag.Category() != cerrors.CatalogError {
 		t.Errorf("halt category = %q, want %q — two documents chose names that meet, and the remedy is an edit to one",
-			diag.Category, cerrors.CatalogError)
+			diag.Category(), cerrors.CatalogError)
 	}
 	text := err.Error()
 	for _, want := range []string{
@@ -210,9 +210,9 @@ func TestTheAssembledLinkPlaceholderHaltIsATranslationFault(t *testing.T) {
 	if !errors.As(err, &diag) {
 		t.Fatalf("the halt is not a structured diagnostic: %v", err)
 	}
-	if diag.Category != cerrors.TranslationError {
+	if diag.Category() != cerrors.TranslationError {
 		t.Errorf("halt category = %q, want %q — the fault is on the translation side and no document is at fault",
-			diag.Category, cerrors.TranslationError)
+			diag.Category(), cerrors.TranslationError)
 	}
 }
 

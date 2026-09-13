@@ -53,18 +53,20 @@ func composeQuantities(rl *types.ResourceList, nodeID string) (*ResourceQuantiti
 	if rl.CPU != "" {
 		cpus, err := k8sCPUToComposeCPUs(rl.CPU)
 		if err != nil {
-			return nil, cerrors.New(cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
+			return nil, cerrors.Raise(errUnconvertibleComposeQuantity,
+				cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
 				fmt.Sprintf("compose: cannot convert cpu quantity %q to a deploy.resources cpus value; use a millicpu (e.g. 500m) or a plain core count (e.g. 0.5, 2)", rl.CPU),
-				nil, ErrUnconvertibleComposeQuantity())
+				nil)
 		}
 		out.CPUs = cpus
 	}
 	if rl.Memory != "" {
 		mem, err := k8sMemToComposeBytes(rl.Memory)
 		if err != nil {
-			return nil, cerrors.New(cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
+			return nil, cerrors.Raise(errUnconvertibleComposeQuantity,
+				cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
 				fmt.Sprintf("compose: cannot convert memory quantity %q to a deploy.resources byte count; use an integer quantity with a binary (Ki/Mi/Gi/Ti/Pi) or decimal (k/M/G/T/P) suffix, or a plain byte integer", rl.Memory),
-				nil, ErrUnconvertibleComposeQuantity())
+				nil)
 		}
 		out.Memory = mem
 	}

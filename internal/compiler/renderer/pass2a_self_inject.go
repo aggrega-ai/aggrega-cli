@@ -282,7 +282,7 @@ func resolveSelfInjectEntry(
 	if entry.from != "" {
 		val, ok := ownProvides.Get(entry.from)
 		if !ok {
-			return "", cerrors.New(cerrors.DeveloperError, cerrors.SourceLocation{}, fmt.Sprintf("%s[%q]: from key %q not found in component provides", mechName, key, entry.from), nil, nil)
+			return "", cerrors.Unidentified(cerrors.DeveloperError, cerrors.SourceLocation{}, fmt.Sprintf("%s[%q]: from key %q not found in component provides", mechName, key, entry.from), nil, nil)
 		}
 		return val, nil
 	}

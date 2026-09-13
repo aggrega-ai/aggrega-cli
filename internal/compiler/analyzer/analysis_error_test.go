@@ -63,21 +63,21 @@ func TestAnalysisError_ToCompilerError_LocatedRoutesToDeveloper(t *testing.T) {
 	if ce == nil {
 		t.Fatal("ToCompilerError returned nil")
 	}
-	if ce.Category != cerrors.DeveloperError {
-		t.Errorf("Category = %v, want %v", ce.Category, cerrors.DeveloperError)
+	if ce.Category() != cerrors.DeveloperError {
+		t.Errorf("Category = %v, want %v", ce.Category(), cerrors.DeveloperError)
 	}
-	if ce.Source.File != "workspace/aggregate.yaml" {
-		t.Errorf("Source.File = %q, want the document the finding is about", ce.Source.File)
+	if ce.Source().File != "workspace/aggregate.yaml" {
+		t.Errorf("Source.File = %q, want the document the finding is about", ce.Source().File)
 	}
-	if ce.Source.Locator != locator {
-		t.Errorf("Source.Locator = %q, want the authoring key the rule named %q", ce.Source.Locator, locator)
+	if ce.Source().Locator != locator {
+		t.Errorf("Source.Locator = %q, want the authoring key the rule named %q", ce.Source().Locator, locator)
 	}
 	// The reading a terminal shows names both halves as one position.
-	if got, want := ce.Source.String(), "workspace/aggregate.yaml at "+locator; got != want {
+	if got, want := ce.Source().String(), "workspace/aggregate.yaml at "+locator; got != want {
 		t.Errorf("source pointer reads as %q, want %q", got, want)
 	}
-	if !strings.Contains(ce.Message, "selector violation") {
-		t.Errorf("Message missing original violation text: %q", ce.Message)
+	if !strings.Contains(ce.Message(), "selector violation") {
+		t.Errorf("Message missing original violation text: %q", ce.Message())
 	}
 	// The locator is still on the violation's own field after the conversion.
 	// A consumer walking the parsed document to a range reads it there, and it
@@ -107,17 +107,17 @@ func TestAnalysisError_ToCompilerError_PolicyRoutesToPolicyError(t *testing.T) {
 	if ce == nil {
 		t.Fatal("ToCompilerError returned nil")
 	}
-	if ce.Category != cerrors.PolicyError {
-		t.Errorf("Category = %v, want %v", ce.Category, cerrors.PolicyError)
+	if ce.Category() != cerrors.PolicyError {
+		t.Errorf("Category = %v, want %v", ce.Category(), cerrors.PolicyError)
 	}
-	if ce.Source.File != "" {
-		t.Errorf("Source.File = %q; a verdict names no document", ce.Source.File)
+	if ce.Source().File != "" {
+		t.Errorf("Source.File = %q; a verdict names no document", ce.Source().File)
 	}
-	if ce.Source.Locator != "" {
-		t.Errorf("Source.Locator = %q; a verdict is about the graph, not about one authoring key", ce.Source.Locator)
+	if ce.Source().Locator != "" {
+		t.Errorf("Source.Locator = %q; a verdict is about the graph, not about one authoring key", ce.Source().Locator)
 	}
-	if !strings.Contains(ce.Message, "image must be digest-pinned") {
-		t.Errorf("Message missing plugin-supplied verdict text: %q", ce.Message)
+	if !strings.Contains(ce.Message(), "image must be digest-pinned") {
+		t.Errorf("Message missing plugin-supplied verdict text: %q", ce.Message())
 	}
 	if !stderrors.Is(ce, analyzer.ErrPolicyViolation()) {
 		t.Errorf("errors.Is should traverse to ErrPolicyViolation through the envelope chain")

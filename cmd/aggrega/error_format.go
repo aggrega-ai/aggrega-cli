@@ -298,7 +298,7 @@ func renderCompilerErrorChain(head *cerrors.CompilerError, shortCode string) str
 	b.WriteString(renderCompilerError(head, shortCode))
 	prev := head
 	depth := 0
-	link := head.Wrap
+	link := head.Unwrap()
 	for link != nil {
 		if me, isMulti := link.(interface{ Unwrap() []error }); isMulti {
 			subs := me.Unwrap()
@@ -329,7 +329,7 @@ func renderCompilerErrorChain(head *cerrors.CompilerError, shortCode string) str
 				b.WriteString(indentCausedBy(renderCompilerError(ce, ""), depth))
 			}
 			prev = ce
-			link = ce.Wrap
+			link = ce.Unwrap()
 			continue
 		}
 		next := stderrors.Unwrap(link)
@@ -374,12 +374,12 @@ func hasRenderableFrame(err error) bool {
 // (equality included). Expression or pillar context on the nested frame
 // always counts as new information.
 func frameRedundant(prev, next *cerrors.CompilerError) bool {
-	if next.Expression != "" || len(next.Context) > 0 {
+	if next.Expression() != "" || len(next.Context()) > 0 {
 		return false
 	}
-	return next.Category == prev.Category &&
-		next.Source.String() == prev.Source.String() &&
-		strings.Contains(prev.Message, next.Message)
+	return next.Category() == prev.Category() &&
+		next.Source().String() == prev.Source().String() &&
+		strings.Contains(prev.Message(), next.Message())
 }
 
 // indentBlock indents every line of a rendered block per nesting depth,
@@ -440,8 +440,8 @@ func renderCompilerError(ce *cerrors.CompilerError, shortCode string) string {
 	}
 	var b strings.Builder
 	tokens := make([]string, 0, 2)
-	if ce.Category != "" {
-		tokens = append(tokens, string(ce.Category))
+	if ce.Category() != "" {
+		tokens = append(tokens, string(ce.Category()))
 	}
 	if shortCode != "" {
 		tokens = append(tokens, shortCode)
@@ -449,25 +449,25 @@ func renderCompilerError(ce *cerrors.CompilerError, shortCode string) string {
 	if len(tokens) > 0 {
 		fmt.Fprintf(&b, "[%s]", strings.Join(tokens, " "))
 	}
-	if src := ce.Source.String(); src != "" {
+	if src := ce.Source().String(); src != "" {
 		if b.Len() > 0 {
 			b.WriteString(" ")
 		}
 		b.WriteString(src)
 	}
-	if ce.Message != "" {
+	if ce.Message() != "" {
 		if b.Len() > 0 {
 			b.WriteString("\n  ")
 		}
-		b.WriteString(ce.Message)
+		b.WriteString(ce.Message())
 	}
-	if ce.Expression != "" {
-		fmt.Fprintf(&b, "\n  expression: %s", ce.Expression)
+	if ce.Expression() != "" {
+		fmt.Fprintf(&b, "\n  expression: %s", ce.Expression())
 	}
-	if len(ce.Context) > 0 {
+	if pillars := ce.Context(); len(pillars) > 0 {
 		fmt.Fprintf(&b, "\n  active pillars:")
-		keys := make([]string, 0, len(ce.Context))
-		for k := range ce.Context {
+		keys := make([]string, 0, len(pillars))
+		for k := range pillars {
 			keys = append(keys, k)
 		}
 		sort.Strings(keys)

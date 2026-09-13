@@ -679,7 +679,7 @@ func (i attachmentCarrierInputs) readableFacts(
 		return nil, nil
 	}
 	if i.into == nil {
-		return nil, cerrors.New(cerrors.CatalogError, cerrors.SourceLocation{File: findingFile},
+		return nil, cerrors.Unidentified(cerrors.CatalogError, cerrors.SourceLocation{File: findingFile},
 			fmt.Sprintf("artifact %q could not be checked against the pillars the FeatureRecipe "+
 				"declares — internal error: the check's inputs were incomplete. This is a fault in "+
 				"the compiler rather than in the FeatureRecipe, so there is nothing to correct in "+
@@ -711,14 +711,14 @@ func (i attachmentCarrierInputs) readableEmittedFacts(
 		if !i.callerPresentationSupplied {
 			return nil, nil
 		}
-		return nil, cerrors.New(cerrors.CatalogError, cerrors.SourceLocation{File: findingFile},
+		return nil, cerrors.Unidentified(cerrors.CatalogError, cerrors.SourceLocation{File: findingFile},
 			"the files this FeatureRecipe emitted could not be checked for two of its blocks "+
 				"meeting on one output name — internal error: the render published no presentation "+
 				"over its emission. This is a fault in the compiler rather than in the "+
 				"FeatureRecipe, so there is nothing to correct in the catalog", nil, nil)
 	}
 	if i.emittedInto == nil {
-		return nil, cerrors.New(cerrors.CatalogError, cerrors.SourceLocation{File: findingFile},
+		return nil, cerrors.Unidentified(cerrors.CatalogError, cerrors.SourceLocation{File: findingFile},
 			"the files this FeatureRecipe emitted could not be checked for two of its blocks "+
 				"meeting on one output name — internal error: the check's inputs were incomplete. "+
 				"This is a fault in the compiler rather than in the FeatureRecipe, so there is "+

@@ -154,7 +154,7 @@ func runArtifactPillarRule(
 	}
 	findingFile := artifactFindingFile(state)
 	if state.hydrated == nil {
-		return cerrors.New(cerrors.CatalogError, cerrors.SourceLocation{File: findingFile},
+		return cerrors.Unidentified(cerrors.CatalogError, cerrors.SourceLocation{File: findingFile},
 			fmt.Sprintf("artifact %q could not be checked against the pillars its Recipe declares — "+
 				"internal error: the check's inputs were incomplete. This is a fault in the compiler "+
 				"rather than in the Recipe, so there is nothing to correct in the catalog", outputName), nil, nil)
@@ -381,7 +381,7 @@ func runAttachmentArtifactPillarRule(
 		return attachmentArtifactPillarHalt(raised, key.attachment, outputName)
 	}
 
-	return cerrors.New(cerrors.CatalogError, cerrors.SourceLocation{File: findingFile},
+	return cerrors.Unidentified(cerrors.CatalogError, cerrors.SourceLocation{File: findingFile},
 		fmt.Sprintf("artifact %q could not be checked against the pillars the FeatureRecipe "+
 			"declares — internal error: the render carries no identity to check it under. This is a "+
 			"fault in the compiler rather than in the FeatureRecipe, so there is nothing to correct "+
@@ -438,7 +438,7 @@ func runArtifactContentPinRule(
 	}
 	findingFile := artifactFindingFile(state)
 	if state.hydrated == nil {
-		return cerrors.New(cerrors.CatalogError, cerrors.SourceLocation{File: findingFile},
+		return cerrors.Unidentified(cerrors.CatalogError, cerrors.SourceLocation{File: findingFile},
 			fmt.Sprintf("artifact %q could not be checked against the content digest its Recipe "+
 				"recorded — internal error: the check's inputs were incomplete. This is a fault in "+
 				"the compiler rather than in the Recipe, so there is nothing to correct in the "+
@@ -516,7 +516,7 @@ func runAttachmentArtifactContentPinRule(
 		return attachmentArtifactContentPinHalt(raised, key.attachment, outputName)
 	}
 
-	return cerrors.New(cerrors.CatalogError, cerrors.SourceLocation{File: findingFile},
+	return cerrors.Unidentified(cerrors.CatalogError, cerrors.SourceLocation{File: findingFile},
 		fmt.Sprintf("artifact %q could not be checked against the content digest the FeatureRecipe "+
 			"recorded — internal error: the render carries no identity to check it under. This is a "+
 			"fault in the compiler rather than in the FeatureRecipe, so there is nothing to correct "+
@@ -880,7 +880,7 @@ func runProvidesContractRule(
 		if !callerPresentationSupplied {
 			return nil
 		}
-		return cerrors.New(cerrors.CatalogError, cerrors.SourceLocation{},
+		return cerrors.Unidentified(cerrors.CatalogError, cerrors.SourceLocation{},
 			"the output contract each component type declares could not be checked against what its "+
 				"Recipe publishes — internal error: the check's inputs were incomplete. This is a fault "+
 				"in the compiler rather than in the catalog, so there is nothing to correct in the "+

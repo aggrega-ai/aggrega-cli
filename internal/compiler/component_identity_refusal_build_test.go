@@ -192,8 +192,8 @@ func TestComponentIdentityRefusal_HaltsOnAnIdentityThatCannotBeStamped(t *testin
 				// authored, so the category has to send them there. Reporting it as a
 				// catalog fault would point them at a file holding nothing they can
 				// change.
-				if converted := violation.ToCompilerError(); converted.Category != cerrors.DeveloperError {
-					t.Errorf("violation %d category = %v, want %v", i, converted.Category, cerrors.DeveloperError)
+				if converted := violation.ToCompilerError(); converted.Category() != cerrors.DeveloperError {
+					t.Errorf("violation %d category = %v, want %v", i, converted.Category(), cerrors.DeveloperError)
 				}
 				// The locator positions the finding on the key the author typed,
 				// which is what lets an editor place it.

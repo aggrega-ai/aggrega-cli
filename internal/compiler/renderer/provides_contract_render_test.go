@@ -135,17 +135,17 @@ func TestRenderAll_RecipeShortOfItsComponentsContractHalts(t *testing.T) {
 	if !errors.As(err, &ce) {
 		t.Fatalf("the halt is not a compiler diagnostic: %v", err)
 	}
-	if ce.Source.File != "api-recipe" {
-		t.Errorf("source file = %q, want the Recipe the shortfall is in", ce.Source.File)
+	if ce.Source().File != "api-recipe" {
+		t.Errorf("source file = %q, want the Recipe the shortfall is in", ce.Source().File)
 	}
-	if want := ".spec.provides.service_port"; ce.Source.Locator != want {
-		t.Errorf("locator = %q, want %q", ce.Source.Locator, want)
+	if want := ".spec.provides.service_port"; ce.Source().Locator != want {
+		t.Errorf("locator = %q, want %q", ce.Source().Locator, want)
 	}
-	if !strings.Contains(ce.Message, `"service_port"`) {
-		t.Errorf("the diagnostic must name the missing key; got %q", ce.Message)
+	if !strings.Contains(ce.Message(), `"service_port"`) {
+		t.Errorf("the diagnostic must name the missing key; got %q", ce.Message())
 	}
-	if !strings.Contains(ce.Message, "core/compute/api-server") {
-		t.Errorf("the diagnostic must name the component type whose contract declares it; got %q", ce.Message)
+	if !strings.Contains(ce.Message(), "core/compute/api-server") {
+		t.Errorf("the diagnostic must name the component type whose contract declares it; got %q", ce.Message())
 	}
 }
 

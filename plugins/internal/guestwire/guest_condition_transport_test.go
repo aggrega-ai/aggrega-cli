@@ -174,7 +174,7 @@ func TestEveryPublishedGuestConditionCrossesWithItsCode(t *testing.T) {
 			// A raise as a guest core writes one: the condition beneath, an
 			// occurrence clause above it, and the guest's own categorised frame
 			// around both.
-			raised := cerrors.New(cerrors.TranslationError,
+			raised := cerrors.Unidentified(cerrors.TranslationError,
 				cerrors.SourceLocation{File: "node-a"},
 				"provider: node \"node-a\": the occurrence's own clause",
 				nil, c.condition)

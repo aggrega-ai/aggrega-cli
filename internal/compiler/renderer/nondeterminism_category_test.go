@@ -155,9 +155,9 @@ containers:
 			if !errors.As(err, &ce) {
 				t.Fatalf("expected a categorised error; got %T: %v", err, err)
 			}
-			if ce.Category != cerrors.TranslationError {
+			if ce.Category() != cerrors.TranslationError {
 				t.Errorf("Category = %q; want %q — a provider that renders non-deterministically is a provider-side fault on every crossing",
-					ce.Category, cerrors.TranslationError)
+					ce.Category(), cerrors.TranslationError)
 			}
 		})
 	}
@@ -359,8 +359,8 @@ containers:
 			if !errors.As(err, &ce) {
 				t.Fatalf("an error escaping the feature recipe render carries no category; got %T: %v", err, err)
 			}
-			if ce.Category != tc.want {
-				t.Errorf("Category = %q; want %q", ce.Category, tc.want)
+			if ce.Category() != tc.want {
+				t.Errorf("Category = %q; want %q", ce.Category(), tc.want)
 			}
 		})
 	}

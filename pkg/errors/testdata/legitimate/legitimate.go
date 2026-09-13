@@ -28,3 +28,26 @@ func Match(err error) (string, bool) {
 	}
 	return cerrors.CodeOf(err)
 }
+
+// RaiseProbe is the shape a raise path writes when the failure names a
+// registered condition: the identity the Register call is bound to goes to the
+// constructor that requires one.
+//
+// It is part of the calibration rather than decoration. Every refusal recorded
+// under testdata for the envelope's seal is only meaningful if the legitimate
+// construction path still compiles, and a control that exercises the identity
+// alone would leave the constructors unproven.
+func RaiseProbe(nodeID string) error {
+	return cerrors.Raise(errProbe, cerrors.CatalogError,
+		cerrors.SourceLocation{File: nodeID}, "the probe condition was reached here", nil)
+}
+
+// RaiseUnidentified is the shape a raise path writes when the failure names no
+// registered condition, and it reads the envelope back through the accessors —
+// so the calibration covers the reading side of the seal as well as the writing
+// side.
+func RaiseUnidentified(nodeID string, cause error) (cerrors.Category, string) {
+	ce := cerrors.Unidentified(cerrors.CatalogError,
+		cerrors.SourceLocation{File: nodeID}, "no condition names this failure", nil, cause)
+	return ce.Category(), ce.Message()
+}

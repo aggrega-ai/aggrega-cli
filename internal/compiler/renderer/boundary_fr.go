@@ -684,7 +684,7 @@ func buildBoundaryFRTemplateContext(
 	if !found {
 		// The boundary doesn't carry the attachment directly. Defensive: the
 		// cascade resolution that reaches this FR-instance is upstream.
-		return nil, cerrors.New(cerrors.OpsError, cerrors.SourceLocation{File: key.BoundaryPath},
+		return nil, cerrors.Unidentified(cerrors.OpsError, cerrors.SourceLocation{File: key.BoundaryPath},
 			fmt.Sprintf("boundary-scope FR %q: no BoundaryFeature attachment found at boundary %q", frInstance, key.BoundaryPath),
 			nil, nil)
 	}
@@ -948,11 +948,11 @@ func buildBoundaryContext(
 	boundaryAnnotations map[string]types.OrderedMap[string],
 ) (*types.BoundaryContext, error) {
 	if release == nil {
-		return nil, cerrors.New(cerrors.DeveloperError, cerrors.SourceLocation{}, "internal error while building a boundary render context: no Release was supplied", nil, nil)
+		return nil, cerrors.Unidentified(cerrors.DeveloperError, cerrors.SourceLocation{}, "internal error while building a boundary render context: no Release was supplied", nil, nil)
 	}
 	parts := strings.Split(boundaryPath, "/")
 	if _, ok := findBoundaryAtPath(release.Spec.Boundaries, parts); !ok {
-		return nil, cerrors.New(cerrors.OpsError, cerrors.SourceLocation{File: boundaryPath}, fmt.Sprintf("boundary %q is not declared in the Release", boundaryPath), nil, nil)
+		return nil, cerrors.Unidentified(cerrors.OpsError, cerrors.SourceLocation{File: boundaryPath}, fmt.Sprintf("boundary %q is not declared in the Release", boundaryPath), nil, nil)
 	}
 
 	bc := &types.BoundaryContext{

@@ -754,11 +754,11 @@ func TestExtendsFaultsAreCatalogDomain(t *testing.T) {
 				t.Fatal("expected an extends fault")
 			}
 			ce := errs[0].ToCompilerError()
-			if ce.Category != cerrors.CatalogError {
-				t.Errorf("Category = %v, want %v", ce.Category, cerrors.CatalogError)
+			if ce.Category() != cerrors.CatalogError {
+				t.Errorf("Category = %v, want %v", ce.Category(), cerrors.CatalogError)
 			}
-			if !strings.Contains(ce.Message, tc.wantInMsg) {
-				t.Errorf("Message should name the entity as %q; got %q", tc.wantInMsg, ce.Message)
+			if !strings.Contains(ce.Message(), tc.wantInMsg) {
+				t.Errorf("Message should name the entity as %q; got %q", tc.wantInMsg, ce.Message())
 			}
 		})
 	}

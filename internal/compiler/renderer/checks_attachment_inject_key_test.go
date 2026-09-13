@@ -102,8 +102,8 @@ func injectDeliveryFindings(t *testing.T, halt error) []string {
 			return
 		}
 		var ce *cerrors.CompilerError
-		if stderrors.As(err, &ce) && ce.Message != "" {
-			out = append(out, ce.Message)
+		if stderrors.As(err, &ce) && ce.Message() != "" {
+			out = append(out, ce.Message())
 			if inner := ce.Unwrap(); inner != nil {
 				if _, joinedInner := inner.(interface{ Unwrap() []error }); joinedInner {
 					out = out[:len(out)-1]
@@ -294,13 +294,13 @@ func TestAttachmentInjectKeyRuleIsPositionedAtTheAttachment(t *testing.T) {
 	if !stderrors.As(halt, &ce) {
 		t.Fatalf("halt is not a compiler diagnostic: %v", halt)
 	}
-	if ce.Category != cerrors.DeveloperError {
-		t.Errorf("category = %s, want %s", ce.Category, cerrors.DeveloperError)
+	if ce.Category() != cerrors.DeveloperError {
+		t.Errorf("category = %s, want %s", ce.Category(), cerrors.DeveloperError)
 	}
-	if ce.Source.File != "aggregate.yaml" {
-		t.Errorf("source file = %q, want the document the component was authored in", ce.Source.File)
+	if ce.Source().File != "aggregate.yaml" {
+		t.Errorf("source file = %q, want the document the component was authored in", ce.Source().File)
 	}
-	if want := ".spec.components.api.features.db-creds"; ce.Source.Locator != want {
-		t.Errorf("locator = %q, want %q", ce.Source.Locator, want)
+	if want := ".spec.components.api.features.db-creds"; ce.Source().Locator != want {
+		t.Errorf("locator = %q, want %q", ce.Source().Locator, want)
 	}
 }

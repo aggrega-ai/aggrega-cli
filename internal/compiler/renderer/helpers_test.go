@@ -468,17 +468,17 @@ func TestDispatchWorkloadSynthesis_AllBranches(t *testing.T) {
 	if !errors.As(err, &ce) {
 		t.Fatalf("refusal should carry a *CompilerError so the boundary can route it; got %T", err)
 	}
-	if got, want := ce.Category, cerrors.CatalogError; got != want {
+	if got, want := ce.Category(), cerrors.CatalogError; got != want {
 		t.Errorf("category: got %q, want %q — the Recipe declaring workload: is catalog-authored", got, want)
 	}
-	if n := strings.Count(ce.Message, string(cerrors.CatalogError)); n != 0 {
-		t.Errorf("the message names the category %d times, want 0 — the head carries it\nmessage: %s", n, ce.Message)
+	if n := strings.Count(ce.Message(), string(cerrors.CatalogError)); n != 0 {
+		t.Errorf("the message names the category %d times, want 0 — the head carries it\nmessage: %s", n, ce.Message())
 	}
 	if n := strings.Count(err.Error(), string(cerrors.CatalogError)); n != 1 {
 		t.Errorf("the rendered line says the category %d times, want exactly 1\nfull: %s", n, err.Error())
 	}
-	if !strings.Contains(ce.Message, "p-name") {
-		t.Errorf("the message should name the provider that lacks the capability; got: %s", ce.Message)
+	if !strings.Contains(ce.Message(), "p-name") {
+		t.Errorf("the message should name the provider that lacks the capability; got: %s", ce.Message())
 	}
 }
 

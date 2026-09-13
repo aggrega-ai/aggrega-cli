@@ -32,9 +32,11 @@ import (
 //
 // # Why the identity is a value no caller can construct
 //
-// Both the type and its fields are unexported, so the only way to obtain an
-// identity is to call the accessor of the package that declares it. That is the
-// whole point of the shape: an identity a caller could build for itself would
+// Both the type and its fields are unexported, so nothing outside this package
+// can build one, and the constructors admit nothing else — which leaves calling
+// the accessor of the package that declares the condition as the only way to
+// obtain an identity a diagnostic will accept. That is the whole point of the
+// shape: an identity a caller could build for itself would
 // let any package claim any condition without importing the package that owns
 // it, and the owning package could then never move the condition without
 // silently breaking a matcher it cannot see.
@@ -103,6 +105,66 @@ func (s *sealed) ErrorCode() string { return s.code }
 // It is reached from Go through ShortCodeOf or the CodedError interface, the
 // same way the descriptive code is.
 func (s *sealed) ErrorShortCode() string { return s.shortCode }
+
+// sealedIdentity is the marker that makes [Identity] undeclarable outside this
+// package. It is unexported and has no body because it says nothing about the
+// value; its whole job is to be unnameable from another package. Undeclarable
+// is not the same as unimplementable — an embedded interface promotes it — so
+// the constructors check the concrete type rather than resting on this alone.
+func (s *sealed) sealedIdentity() {}
+
+// Identity is a registered halting condition's identity, in the form a
+// constructor can require.
+//
+// The unexported method is what an importing package cannot DECLARE. An error
+// type that writes out the three exported reads and hands the result to a
+// constructor does not build, which is the shape an author reaches for when
+// they have no identity and want one, and it is why a signature naming this
+// type says something a signature naming error does not.
+//
+// Declaring is not the only way to acquire a method, and the other way is not
+// closed here. A struct that EMBEDS this interface has its whole method set
+// promoted, the undeclarable method included, so such a value satisfies
+// Identity from any package while naming no registered condition. Promotion is
+// how Go composes interfaces; a declaration cannot decline it, and no shape of
+// interface refuses to be embedded.
+//
+// So the guarantee a caller can rely on is the constructor's rather than the
+// interface's alone: [Raise] asserts that the value it was handed is one
+// [Register] produced, and refuses anything else. The interface narrows what
+// can be written; the constructor decides what is accepted.
+//
+// # It is the construction side of a division this package already makes
+//
+// [CodedError] is the MATCHING side, and it is deliberately open: a caller
+// asking "does this chain report a code" has to be able to match anything that
+// does, an error type declared elsewhere included. This is the CONSTRUCTION
+// side, and it is deliberately closed, because a constructor demanding an
+// identity gets nothing from a value that merely claims to have one. The two
+// name overlapping methods and answer opposite questions, so unifying them
+// reopens whichever side loses: widening this one lets any package declare an
+// identity, and narrowing that one stops a foreign coded error from being read
+// at all.
+//
+// # Where a caller gets one
+//
+// Inside the package that declares the condition it is the variable the
+// [Register] call is bound to. From another package it is whatever that
+// package's accessor publishes: an accessor returning error publishes the value
+// for MATCHING, which is what most callers want, and one returning Identity
+// publishes it for construction as well.
+type Identity interface {
+	error
+	// ErrorCode returns the descriptive code of the condition the error names.
+	ErrorCode() string
+	// ErrorShortCode returns the short code of the condition the error names.
+	ErrorShortCode() string
+	// sealedIdentity is unexported: no package outside this one can declare a
+	// method by that name, so no type outside this one can be WRITTEN to
+	// satisfy Identity. A type that embeds Identity has it promoted, which is
+	// the route the constructors close rather than the interface.
+	sealedIdentity()
+}
 
 // CodedError is an error that reports the identifiers of the halting condition
 // it names. Every registered identity satisfies it.
@@ -631,12 +693,19 @@ func indexRetirements(record []retirement) map[string]string {
 // registered under E0000. Do not "correct" it to a plausible-looking number — a
 // plausible number is exactly what could also be somebody's real assignment.
 //
-// The returned type is unexported, and that is the design rather than an
-// oversight. A caller binds the result with type inference and never names it,
-// which is precisely what leaves the identity unconstructible anywhere but
-// here. Publishing it through a function rather than an exported variable is
-// the other half: a variable an importer can see is a variable an importer can
-// reassign, and a reassigned identity silently stops matching everywhere.
+// The returned type is [Identity]: an interface a caller can name and require,
+// implemented by a concrete type that is unexported and carrying one unexported
+// method of its own. Naming the interface is what lets a constructor DEMAND a
+// registered condition; the unexported method is what no importing package can
+// declare, so an error written out by hand does not satisfy it. Embedding the
+// interface promotes that method rather than declaring it, which the interface
+// cannot prevent — see [Identity] — so [Raise] asserts the value came from here
+// instead of resting on the type.
+//
+// Publishing an identity through a function rather than an exported
+// variable is the other half: a variable an importer can see is a variable an
+// importer can reassign, and a reassigned identity silently stops matching
+// everywhere.
 //
 // # A condition carries two identifiers, and they are shaped for two jobs
 //
@@ -732,7 +801,7 @@ func indexRetirements(record []retirement) map[string]string {
 // condition carrying no Meta.DeclaredAhead is in fact raised: that is a
 // property of the whole module rather than of one declaration, so nothing
 // inside a single registration can see it.
-func Register(code string, meta Meta) *sealed {
+func Register(code string, meta Meta) Identity {
 	registryMu.Lock()
 	defer registryMu.Unlock()
 

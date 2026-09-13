@@ -264,7 +264,7 @@ func TestLoadManifest_ReservedPrefixRefusalIsOpsDomain(t *testing.T) {
 	if !errors.As(err, &finding) {
 		t.Fatalf("refusal should carry a *ResolverError so the boundary can route it; got %T", err)
 	}
-	if got, want := finding.ToCompilerError().Category, cerrors.OpsError; got != want {
+	if got, want := finding.ToCompilerError().Category(), cerrors.OpsError; got != want {
 		t.Errorf("category: got %q, want %q — the binding is written in the Manifest, "+
 			"which is the operator's document", got, want)
 	}
@@ -431,7 +431,7 @@ spec:
 	if !errors.As(err, &finding) {
 		t.Fatalf("refusal should carry a *ResolverError so the boundary can route it; got %T", err)
 	}
-	if got, want := finding.ToCompilerError().Category, cerrors.OpsError; got != want {
+	if got, want := finding.ToCompilerError().Category(), cerrors.OpsError; got != want {
 		t.Errorf("category: got %q, want %q — both colliding bindings are written in the "+
 			"Manifest, which is the operator's document", got, want)
 	}

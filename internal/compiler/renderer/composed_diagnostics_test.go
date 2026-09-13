@@ -63,11 +63,11 @@ func TestRenderDiagnosticsLeadWithTheirConditionsSentence(t *testing.T) {
 			if !asCompilerError(tc.err, &compiled) {
 				t.Fatalf("diagnostic is not a CompilerError: %T", tc.err)
 			}
-			if !strings.HasPrefix(compiled.Message, sentence) {
-				t.Errorf("message does not lead with its registered sentence\n  sentence: %q\n  message : %q", sentence, compiled.Message)
+			if !strings.HasPrefix(compiled.Message(), sentence) {
+				t.Errorf("message does not lead with its registered sentence\n  sentence: %q\n  message : %q", sentence, compiled.Message())
 			}
-			if n := strings.Count(compiled.Message, sentence); n != 1 {
-				t.Errorf("message states the registered sentence %d times; want exactly 1\n  message: %q", n, compiled.Message)
+			if n := strings.Count(compiled.Message(), sentence); n != 1 {
+				t.Errorf("message states the registered sentence %d times; want exactly 1\n  message: %q", n, compiled.Message())
 			}
 		})
 	}

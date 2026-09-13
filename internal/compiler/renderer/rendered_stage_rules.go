@@ -117,7 +117,7 @@ func runRenderedStageRules(
 		if !callerPresentationSupplied {
 			return nil
 		}
-		return cerrors.New(cerrors.CatalogError, cerrors.SourceLocation{},
+		return cerrors.Unidentified(cerrors.CatalogError, cerrors.SourceLocation{},
 			"the assembled output could not be checked for two contributors writing one output "+
 				"path — internal error: the check's inputs were incomplete. This is a fault in the "+
 				"compiler rather than in the catalog, so there is nothing to correct in any document",

@@ -121,34 +121,40 @@ func ValidateWorkloadForm(w *types.Workload, nodeID string) error {
 	if form != WorkloadFormStateful {
 		for _, v := range w.Volumes.All() {
 			if v.PersistentTemplate != nil {
-				return cerrors.New(cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
+				return cerrors.Raise(errPersistentTemplateRequiresStatefulForm,
+					cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
 					"workload declares a persistentTemplate volume but is not form: stateful; declare form: stateful",
-					nil, ErrPersistentTemplateRequiresStatefulForm())
+					nil)
 			}
 		}
 	}
 
 	switch {
 	case form == WorkloadFormReference && w.Endpoint == "":
-		return cerrors.New(cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
+		return cerrors.Raise(errReferenceFormRequiresEndpoint,
+			cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
 			"workload is form: reference but declares no endpoint; set endpoint to the external host or URL the reference points at",
-			nil, ErrReferenceFormRequiresEndpoint())
+			nil)
 	case form != WorkloadFormReference && w.Endpoint != "":
-		return cerrors.New(cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
+		return cerrors.Raise(errEndpointRequiresReferenceForm,
+			cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
 			"workload declares an endpoint but is not form: reference; declare form: reference or remove the endpoint",
-			nil, ErrEndpointRequiresReferenceForm())
+			nil)
 	case form == WorkloadFormScheduled && w.Schedule == "":
-		return cerrors.New(cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
+		return cerrors.Raise(errScheduledFormRequiresSchedule,
+			cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
 			"workload is form: scheduled but declares no schedule; set schedule to a 5-field cron expression or an @-macro (e.g. @daily)",
-			nil, ErrScheduledFormRequiresSchedule())
+			nil)
 	case form != WorkloadFormScheduled && w.Schedule != "":
-		return cerrors.New(cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
+		return cerrors.Raise(errScheduleRequiresScheduledForm,
+			cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
 			"workload declares a schedule but is not form: scheduled; declare form: scheduled or remove the schedule",
-			nil, ErrScheduleRequiresScheduledForm())
+			nil)
 	case form == WorkloadFormScheduled && !isValidCronSchedule(w.Schedule):
-		return cerrors.New(cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
+		return cerrors.Raise(errInvalidCronSchedule,
+			cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
 			"workload schedule is not a valid cron expression; use a 5-field crontab expression (e.g. \"0 0 * * *\") or one of @hourly, @daily, @weekly, @monthly, @yearly",
-			nil, ErrInvalidCronSchedule())
+			nil)
 	}
 
 	return nil

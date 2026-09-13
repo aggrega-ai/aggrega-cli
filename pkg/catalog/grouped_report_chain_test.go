@@ -115,8 +115,8 @@ func TestCatalogLoadGroupCarriesItsFindings(t *testing.T) {
 	if !errors.As(err, &ce) {
 		t.Fatalf("the group is not the canonical envelope: %T", err)
 	}
-	if want := "catalog load: 2 schema validation error(s)"; ce.Message != want {
-		t.Errorf("group message\n  got : %q\n  want: %q", ce.Message, want)
+	if want := "catalog load: 2 schema validation error(s)"; ce.Message() != want {
+		t.Errorf("group message\n  got : %q\n  want: %q", ce.Message(), want)
 	}
 }
 
@@ -137,8 +137,8 @@ func TestClosureGroupCarriesItsFindings(t *testing.T) {
 	if !errors.As(err, &ce) {
 		t.Fatalf("the group is not the canonical envelope: %T", err)
 	}
-	if want := "closure validation: 2 schema validation error(s)"; ce.Message != want {
-		t.Errorf("group message\n  got : %q\n  want: %q", ce.Message, want)
+	if want := "closure validation: 2 schema validation error(s)"; ce.Message() != want {
+		t.Errorf("group message\n  got : %q\n  want: %q", ce.Message(), want)
 	}
 }
 
@@ -149,7 +149,7 @@ func TestClosureGroupCarriesItsFindings(t *testing.T) {
 func TestGroupWithNoIdentityUnderneathReportsNoCode(t *testing.T) {
 	t.Parallel()
 	plain := errors.New("a finding that names no registered condition")
-	group := cerrors.New(
+	group := cerrors.Unidentified(
 		cerrors.CatalogError,
 		cerrors.SourceLocation{},
 		"a pass: 1 error(s)",
@@ -182,8 +182,8 @@ func TestClosureGroupRemedyStaysOnTheGroup(t *testing.T) {
 	if !errors.As(err, &ce) {
 		t.Fatalf("the group is not the canonical envelope: %T", err)
 	}
-	if !strings.HasSuffix(ce.Message, "\n  run the fetch step first") {
-		t.Errorf("the group's message does not carry the supplied remedy: %q", ce.Message)
+	if !strings.HasSuffix(ce.Message(), "\n  run the fetch step first") {
+		t.Errorf("the group's message does not carry the supplied remedy: %q", ce.Message())
 	}
 }
 

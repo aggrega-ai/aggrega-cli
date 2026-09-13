@@ -69,9 +69,9 @@ func TestDerivedNames_TwoAttachmentsNamingOneResourceHalt(t *testing.T) {
 	if !errors.As(err, &envelope) {
 		t.Fatalf("the halt is not a categorised diagnostic: %v", err)
 	}
-	joined, isMulti := envelope.Wrap.(interface{ Unwrap() []error })
+	joined, isMulti := envelope.Unwrap().(interface{ Unwrap() []error })
 	if !isMulti {
-		t.Fatalf("the report wraps a single error rather than the set the rule raised: %T", envelope.Wrap)
+		t.Fatalf("the report wraps a single error rather than the set the rule raised: %T", envelope.Unwrap())
 	}
 	findings := joined.Unwrap()
 	if len(findings) != 2 {
@@ -207,9 +207,9 @@ func TestArtifactsNames_OneAttachmentOnTwoHostsNamingOneResourceHalts(t *testing
 	if !errors.As(err, &envelope) {
 		t.Fatalf("the halt is not a categorised diagnostic: %v", err)
 	}
-	joined, isMulti := envelope.Wrap.(interface{ Unwrap() []error })
+	joined, isMulti := envelope.Unwrap().(interface{ Unwrap() []error })
 	if !isMulti {
-		t.Fatalf("the report wraps a single error rather than the set the rule raised: %T", envelope.Wrap)
+		t.Fatalf("the report wraps a single error rather than the set the rule raised: %T", envelope.Unwrap())
 	}
 	findings := joined.Unwrap()
 	if len(findings) != 2 {

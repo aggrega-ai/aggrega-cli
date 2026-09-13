@@ -101,7 +101,7 @@ func MergeProvenanceIntoMappingChild(filename, parentPath string, parent *yaml.N
 	if keyNode != nil && valNode != nil {
 		valNode = UnwrapAlias(valNode)
 		if valNode.Kind != yaml.MappingNode {
-			return cerrors.New(cerrors.CatalogError, cerrors.SourceLocation{File: filename},
+			return cerrors.Unidentified(cerrors.CatalogError, cerrors.SourceLocation{File: filename},
 				fmt.Sprintf("artifact %q %s.%s has unexpected shape (expected mapping, got %s); cannot merge provenance entries",
 					filename, parentPath, key, NodeKindName(valNode.Kind)),
 				nil, nil)

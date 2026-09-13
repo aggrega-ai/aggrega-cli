@@ -425,29 +425,29 @@ func TestTheAttachmentPipelineStepRuleRefusesAHostAddressedStepOnACompiledBuild(
 		// Where an author fixes it: the authored step inside the entity that
 		// declares it, which is neither the document the attachment was written in
 		// nor the one the host component's provider is named in.
-		if finding.Source.File != fr.Metadata.Name {
+		if finding.Source().File != fr.Metadata.Name {
 			t.Errorf("finding positioned in %q; want the entity that declares the step, %q",
-				finding.Source.File, fr.Metadata.Name)
+				finding.Source().File, fr.Metadata.Name)
 		}
-		if want := ".spec.pipeline." + hostScopeStep; finding.Source.Locator != want {
-			t.Errorf("finding positioned at %q; want the authored step %q", finding.Source.Locator, want)
+		if want := ".spec.pipeline." + hostScopeStep; finding.Source().Locator != want {
+			t.Errorf("finding positioned at %q; want the authored step %q", finding.Source().Locator, want)
 		}
 
 		// The attribution. Both providers are ones the step's plugin does not
 		// declare, so both readings refuse — and the finding names the host
 		// component's rather than the attachment's, which is what says which
 		// documents' provider the step was matched against.
-		if !strings.Contains(finding.Message, `"`+hostProvider+`"`) {
-			t.Errorf("finding %q does not name the host component's provider %q", finding.Message, hostProvider)
+		if !strings.Contains(finding.Message(), `"`+hostProvider+`"`) {
+			t.Errorf("finding %q does not name the host component's provider %q", finding.Message(), hostProvider)
 		}
-		if strings.Contains(finding.Message, `"`+ownProvider+`"`) {
+		if strings.Contains(finding.Message(), `"`+ownProvider+`"`) {
 			t.Errorf("finding %q names the attachment's own provider %q; it was matched against the wrong documents' provider",
-				finding.Message, ownProvider)
+				finding.Message(), ownProvider)
 		}
-		if !strings.Contains(finding.Message, `"`+hostScopeAttachment+`"`) {
-			t.Errorf("finding %q does not name the attachment that bound the pipeline", finding.Message)
+		if !strings.Contains(finding.Message(), `"`+hostScopeAttachment+`"`) {
+			t.Errorf("finding %q does not name the attachment that bound the pipeline", finding.Message())
 		}
 
-		t.Logf("the build halted at %q in %q with %q", finding.Source.Locator, finding.Source.File, finding.Message)
+		t.Logf("the build halted at %q in %q with %q", finding.Source().Locator, finding.Source().File, finding.Message())
 	})
 }

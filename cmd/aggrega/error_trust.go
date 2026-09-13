@@ -128,5 +128,5 @@ func trustFailureEnvelope(err error) (*cerrors.CompilerError, bool) {
 	if !matchTrustCondition(err) {
 		return nil, false
 	}
-	return cerrors.New(cerrors.TrustError, cerrors.SourceLocation{}, err.Error(), nil, nil), true
+	return cerrors.Unidentified(cerrors.TrustError, cerrors.SourceLocation{}, err.Error(), nil, nil), true
 }

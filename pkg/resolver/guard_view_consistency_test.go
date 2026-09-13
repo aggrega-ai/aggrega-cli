@@ -216,7 +216,7 @@ func TestNeitherSurfaceSendsAReaderToAnAuthoredCoordinate(t *testing.T) {
 				"CONSEQUENCE: an editor draws the diagnostic on an authoring key the author must not change.",
 				surface, finding.Field)
 		}
-		if got := finding.ToCompilerError().Category; got != "" {
+		if got := finding.ToCompilerError().Category(); got != "" {
 			t.Errorf("%s files the condition under %v; want no category at all.\n"+
 				"INVARIANT: a category answers which authoring surface to fix, so a fault in the "+
 				"compiler carries none — not the developer's, and not a domain of its own either.\n"+

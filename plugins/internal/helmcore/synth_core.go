@@ -379,13 +379,15 @@ func statefulSetGoverningService(services []Service, nodeID string) (string, err
 	case 1:
 		return name, nil
 	case 0:
-		return "", cerrors.New(cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
+		return "", cerrors.Raise(errStatefulSetNoHeadlessService,
+			cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
 			"synthesized StatefulSet requires a headless governing Service (declare a service with type: Headless); none found",
-			nil, ErrStatefulSetNoHeadlessService())
+			nil)
 	default:
-		return "", cerrors.New(cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
+		return "", cerrors.Raise(errStatefulSetAmbiguousHeadlessService,
+			cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
 			"synthesized StatefulSet declares more than one headless Service; the governing Service is ambiguous (declare exactly one type: Headless service)",
-			nil, ErrStatefulSetAmbiguousHeadlessService())
+			nil)
 	}
 }
 
@@ -621,7 +623,7 @@ func translateProbe(p *types.ProbeSpec, containerPorts []ContainerPort) (*Probe,
 	case len(p.Exec) > 0:
 		out.Exec = &ExecAction{Command: p.Exec}
 	default:
-		return nil, cerrors.New(cerrors.TranslationError, cerrors.SourceLocation{}, "probe declares no shape (http/tcp/exec)", nil, nil)
+		return nil, cerrors.Unidentified(cerrors.TranslationError, cerrors.SourceLocation{}, "probe declares no shape (http/tcp/exec)", nil, nil)
 	}
 
 	return out, nil
@@ -632,7 +634,7 @@ func translateProbe(p *types.ProbeSpec, containerPorts []ContainerPort) (*Probe,
 // error if no container ports are declared (TRANSLATION_ERROR).
 func resolveHTTPProbePort(containerPorts []ContainerPort) (string, error) {
 	if len(containerPorts) == 0 {
-		return "", cerrors.New(cerrors.TranslationError, cerrors.SourceLocation{}, "probe http: requires at least one named container port; container declares none", nil, nil)
+		return "", cerrors.Unidentified(cerrors.TranslationError, cerrors.SourceLocation{}, "probe http: requires at least one named container port; container declares none", nil, nil)
 	}
 	names := make([]string, 0, len(containerPorts))
 	for _, p := range containerPorts {
@@ -641,7 +643,7 @@ func resolveHTTPProbePort(containerPorts []ContainerPort) (string, error) {
 		}
 	}
 	if len(names) == 0 {
-		return "", cerrors.New(cerrors.TranslationError, cerrors.SourceLocation{}, "probe http: requires at least one NAMED container port; container ports lack name fields", nil, nil)
+		return "", cerrors.Unidentified(cerrors.TranslationError, cerrors.SourceLocation{}, "probe http: requires at least one NAMED container port; container ports lack name fields", nil, nil)
 	}
 	sort.Strings(names)
 	return names[0], nil
@@ -866,7 +868,7 @@ func translateServices(w *types.Workload, nodeID, namespace string, selectorLabe
 		for portName, portNum := range svcSpec.Ports.All() {
 			targetPort, ok := containerPortMap[portName]
 			if !ok {
-				return nil, cerrors.New(cerrors.TranslationError, cerrors.SourceLocation{}, fmt.Sprintf("service %q port %q has no matching container port name", svcName, portName), nil, nil)
+				return nil, cerrors.Unidentified(cerrors.TranslationError, cerrors.SourceLocation{}, fmt.Sprintf("service %q port %q has no matching container port name", svcName, portName), nil, nil)
 			}
 			_ = targetPort.Port // present for forward compatibility (numeric backref);
 			// today targetPort uses the named-port string, which K8s

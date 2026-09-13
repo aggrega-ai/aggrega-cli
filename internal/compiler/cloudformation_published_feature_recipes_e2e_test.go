@@ -503,7 +503,7 @@ func cfnFeatureRecipeFindings(t *testing.T, err error) []string {
 	if !errors.As(err, &envelope) {
 		t.Fatalf("the halt is not a categorised diagnostic: %v", err)
 	}
-	if joined, isMulti := envelope.Wrap.(interface{ Unwrap() []error }); isMulti {
+	if joined, isMulti := envelope.Unwrap().(interface{ Unwrap() []error }); isMulti {
 		members := joined.Unwrap()
 		texts := make([]string, 0, len(members))
 		for _, m := range members {

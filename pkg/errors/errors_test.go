@@ -5,6 +5,7 @@ package errors_test
 
 import (
 	stderrors "errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -84,7 +85,7 @@ func TestSourceLocation_String_ComposesAPosition(t *testing.T) {
 
 func TestCompilerError_Error_FormatWithSource(t *testing.T) {
 	t.Parallel()
-	e := cerrors.New(
+	e := cerrors.Unidentified(
 		cerrors.CatalogError,
 		cerrors.SourceLocation{File: "recipes/api.yaml", Line: 12, Column: 3},
 		"workload requires workloadSchema",
@@ -101,7 +102,7 @@ func TestCompilerError_Error_FormatWithSource(t *testing.T) {
 
 func TestCompilerError_Error_FormatWithoutSource(t *testing.T) {
 	t.Parallel()
-	e := cerrors.New(cerrors.TranslationError, cerrors.SourceLocation{}, "compose service collision", nil, nil)
+	e := cerrors.Unidentified(cerrors.TranslationError, cerrors.SourceLocation{}, "compose service collision", nil, nil)
 	got := e.Error()
 	if !strings.HasPrefix(got, "[TRANSLATION_ERROR]") {
 		t.Errorf("Error() = %q; expected to start with [TRANSLATION_ERROR]", got)
@@ -228,4 +229,120 @@ func TestCauseChain_NilAndSingleFrame(t *testing.T) {
 	if got := cerrors.CauseChain(lone); got != "only frame" {
 		t.Errorf("CauseChain(single) = %q; want %q", got, "only frame")
 	}
+}
+
+// The identity this file registers, declared the way a consuming package writes
+// one. Its short code sits in the same high band the other test files use and
+// clear of their contiguous runs, so an addition to either does not collide: the
+// registry is process-wide and a repeated identifier panics at initialisation.
+// It is not an allocation and must not be read off the published mapping.
+var identityEmbeddedSubject = cerrors.Register("embedded-identity-subject",
+	cerrors.Meta{ShortCode: "E9221", Message: "the embedded-identity subject was reached"})
+
+// embeddedForgery is the one route the compile gate structurally cannot cover.
+// It embeds the identity interface, which promotes the unexported marker onto
+// it, so it satisfies cerrors.Identity from this package without registering
+// anything — and it COMPILES, which is why the assertion below is a run-time one
+// and why no row for it exists in the compile-gate table.
+//
+// The embedded value is left nil in one case and set to a registered identity in
+// the other. Both matter: the nil one is what an author writes, and the
+// non-nil one is the reason the constructor's check is a concrete-type assertion
+// rather than a test of the value. Nothing readable off the second — not
+// nil-ness, not any of the three exported reads, all of which it answers —
+// separates it from the condition it is impersonating.
+type embeddedForgery struct {
+	cerrors.Identity
+}
+
+func (embeddedForgery) Error() string          { return "the forged condition was reached" }
+func (embeddedForgery) ErrorCode() string      { return "forged-condition" }
+func (embeddedForgery) ErrorShortCode() string { return "E0000" }
+
+// TestRaise_AdmitsOnlyARegisteredIdentity is the run-time half of the seal the
+// compile gate holds the rest of.
+//
+// The property: a diagnostic that renders as though it names a halting condition
+// can be built only from an identity a Register call produced. The harm the
+// property prevents is specific — a forged short code is either a number that
+// resolves to nothing, or worse, a number a real condition holds, which sends a
+// reader quoting it off a terminal to a condition their build never raised.
+//
+// The row that must be ACCEPTED is not decoration. Without it a constructor that
+// refused everything would satisfy every other row, and the table would report a
+// seal while the package had stopped working.
+func TestRaise_AdmitsOnlyARegisteredIdentity(t *testing.T) {
+	t.Parallel()
+
+	for _, c := range []struct {
+		name string
+		// condition is what reaches the constructor.
+		condition cerrors.Identity
+		// wantPanic is the fragment the refusal must carry. Empty means the
+		// call must be admitted. The two refusals assert different fragments
+		// deliberately: a fragment they shared would let either case keep
+		// passing on the other's fault, and they are refused for different
+		// reasons.
+		wantPanic string
+	}{
+		{
+			name:      "the identity a Register call returned is admitted",
+			condition: identityEmbeddedSubject,
+		},
+		{
+			name:      "a struct embedding the identity interface is refused",
+			condition: embeddedForgery{},
+			wantPanic: "no Register call produced",
+		},
+		{
+			name:      "embedding a registered identity and overriding its reads is refused",
+			condition: embeddedForgery{Identity: identityEmbeddedSubject},
+			wantPanic: "no Register call produced",
+		},
+		{
+			name:      "a nil condition is refused, and says so in its own words",
+			condition: nil,
+			wantPanic: "nil condition",
+		},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+
+			recovered, built := raiseRecovering(c.condition)
+
+			if c.wantPanic == "" {
+				if recovered != nil {
+					t.Fatalf("the constructor refused an identity Register produced, so the "+
+						"seal is refusing legitimate callers: %v", recovered)
+				}
+				code, ok := cerrors.CodeOf(built)
+				if !ok || code != "embedded-identity-subject" {
+					t.Errorf("the admitted diagnostic does not carry its condition: "+
+						"CodeOf = %q, %v", code, ok)
+				}
+				return
+			}
+
+			if recovered == nil {
+				t.Fatalf("the constructor admitted a condition no Register call produced, so a " +
+					"diagnostic can name a condition nobody declared — the short code it " +
+					"prints resolves to nothing, or to whichever condition holds that number")
+			}
+			got := fmt.Sprint(recovered)
+			if !strings.Contains(got, c.wantPanic) {
+				t.Errorf("the constructor refused, but not for the reason this case pins — "+
+					"a refusal that fires on the wrong fault stops covering its own.\n"+
+					"want the refusal to contain %q\ngot: %s", c.wantPanic, got)
+			}
+		})
+	}
+}
+
+// raiseRecovering calls the constructor and reports what it panicked with, or
+// nil together with what it built.
+func raiseRecovering(condition cerrors.Identity) (recovered any, built *cerrors.CompilerError) {
+	defer func() { recovered = recover() }()
+	built = cerrors.Raise(condition, cerrors.CatalogError,
+		cerrors.SourceLocation{File: "recipes/api.yaml"}, "the recipe is at fault", nil)
+	return
 }

@@ -233,14 +233,14 @@ func TestInjectMappingMechanismRuleIsPositionedAtTheAttachment(t *testing.T) {
 	if !stderrors.As(halt, &ce) {
 		t.Fatalf("halt is not a compiler diagnostic: %v", halt)
 	}
-	if ce.Category != cerrors.CatalogError {
-		t.Errorf("category = %s, want %s", ce.Category, cerrors.CatalogError)
+	if ce.Category() != cerrors.CatalogError {
+		t.Errorf("category = %s, want %s", ce.Category(), cerrors.CatalogError)
 	}
-	if ce.Source.File != "aggregate.yaml" {
-		t.Errorf("source file = %q, want the document the component was authored in", ce.Source.File)
+	if ce.Source().File != "aggregate.yaml" {
+		t.Errorf("source file = %q, want the document the component was authored in", ce.Source().File)
 	}
-	if want := ".spec.components.api.features.db-creds"; ce.Source.Locator != want {
-		t.Errorf("locator = %q, want %q", ce.Source.Locator, want)
+	if want := ".spec.components.api.features.db-creds"; ce.Source().Locator != want {
+		t.Errorf("locator = %q, want %q", ce.Source().Locator, want)
 	}
 	if !stderrors.Is(halt, ErrUnmappedCustomMechanism()) {
 		t.Errorf("the halt must carry the condition's own identity; got %v", halt)

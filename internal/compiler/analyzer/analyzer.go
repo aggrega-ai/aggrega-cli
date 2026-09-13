@@ -211,7 +211,7 @@ func (e *AnalysisError) ToCompilerError() *cerrors.CompilerError {
 	if e.Kind == AnalysisErrorLocated {
 		pointer = cerrors.SourceLocation{File: e.OriginFile, Locator: e.Field}
 	}
-	return cerrors.New(
+	return cerrors.Unidentified(
 		category,
 		pointer,
 		e.Error(),

@@ -66,7 +66,7 @@ func RenderSourcedCore(baseComposeBytes []byte, sourcePath string, values map[st
 	}
 	var extra any
 	if err := dec.Decode(&extra); !errors.Is(err, io.EOF) {
-		return nil, cerrors.New(cerrors.CatalogError, cerrors.SourceLocation{File: sourcePath},
+		return nil, cerrors.Unidentified(cerrors.CatalogError, cerrors.SourceLocation{File: sourcePath},
 			fmt.Sprintf("compose: node %q: source %q contains multiple YAML documents; a compose file must be a single document", nodeCtx.NodeID, sourcePath),
 			nil, nil)
 	}

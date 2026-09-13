@@ -176,7 +176,7 @@ func runNodeEmissionCollisionRule(
 		if !callerPresentationSupplied {
 			return nil
 		}
-		return cerrors.New(cerrors.CatalogError, cerrors.SourceLocation{File: node.ID},
+		return cerrors.Unidentified(cerrors.CatalogError, cerrors.SourceLocation{File: node.ID},
 			"the files this node's own render emitted could not be checked for two of its blocks "+
 				"meeting on one output name — internal error: the check's inputs were incomplete. "+
 				"This is a fault in the compiler rather than in the catalog, so there is nothing to "+
@@ -349,7 +349,7 @@ func runAttachmentEmissionCollisionRule(
 	}
 	axes := carrier.emittedAxes()
 	if axes == nil {
-		return cerrors.New(cerrors.CatalogError, cerrors.SourceLocation{File: findingFile},
+		return cerrors.Unidentified(cerrors.CatalogError, cerrors.SourceLocation{File: findingFile},
 			"the files this FeatureRecipe emitted could not be checked for two of its blocks "+
 				"meeting on one output name — internal error: the check's subject enumeration was "+
 				"absent. This is a fault in the compiler rather than in the FeatureRecipe, so there "+
@@ -380,7 +380,7 @@ func runAttachmentEmissionCollisionRule(
 		return attachmentEmissionCollisionHalt(raised, key.attachment)
 	}
 
-	return cerrors.New(cerrors.CatalogError, cerrors.SourceLocation{File: findingFile},
+	return cerrors.Unidentified(cerrors.CatalogError, cerrors.SourceLocation{File: findingFile},
 		"the files this FeatureRecipe emitted could not be checked for two of its blocks meeting "+
 			"on one output name — internal error: the render carries no identity to check it under. "+
 			"This is a fault in the compiler rather than in the FeatureRecipe, so there is nothing "+

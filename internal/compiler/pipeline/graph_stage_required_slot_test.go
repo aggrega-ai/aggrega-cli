@@ -339,11 +339,11 @@ func TestTheRequiredSlotRuleHaltsThroughTheViolationChannel(t *testing.T) {
 			t.Fatal("no violation to convert")
 		}
 		converted := out.Analysis.Errors[0].ToCompilerError()
-		if converted.Category != cerrors.DeveloperError {
-			t.Errorf("category = %v, want %v", converted.Category, cerrors.DeveloperError)
+		if converted.Category() != cerrors.DeveloperError {
+			t.Errorf("category = %v, want %v", converted.Category(), cerrors.DeveloperError)
 		}
-		if converted.Source.File != invocationAggregatePath {
-			t.Errorf("source pointer = %q, want the document the finding is about %q", converted.Source.File, invocationAggregatePath)
+		if converted.Source().File != invocationAggregatePath {
+			t.Errorf("source pointer = %q, want the document the finding is about %q", converted.Source().File, invocationAggregatePath)
 		}
 		if !errors.Is(converted, analyzer.ErrRequiredSlotUnfilled()) {
 			t.Error("the converted fault does not carry the rule's identity")

@@ -167,8 +167,8 @@ func TestTheRequirementShapeRuleHaltsThroughTheViolationChannel(t *testing.T) {
 				// The fault is the catalog author's, not the deployment author's,
 				// and the entity is what carries that to the conversion.
 				converted := violation.ToCompilerError()
-				if converted.Category != cerrors.CatalogError {
-					t.Errorf("violation %d category = %v, want %v", i, converted.Category, cerrors.CatalogError)
+				if converted.Category() != cerrors.CatalogError {
+					t.Errorf("violation %d category = %v, want %v", i, converted.Category(), cerrors.CatalogError)
 				}
 			}
 		})

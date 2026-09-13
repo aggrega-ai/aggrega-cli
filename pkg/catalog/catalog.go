@@ -829,7 +829,7 @@ func (c *Catalog) validateSchemaPillarsPass() error {
 	// fixes differ per finding, so no one sentence is true of all of them and
 	// tells the reader what to do. Whatever code the head carries is therefore
 	// the condition the chain actually names, never one minted for the count.
-	return cerrors.New(
+	return cerrors.Unidentified(
 		cerrors.CatalogError,
 		cerrors.SourceLocation{},
 		fmt.Sprintf("catalog load: %d schema validation error(s)", len(validationErrors)),
@@ -928,7 +928,7 @@ func ValidateClosurePillars(
 	// print the same content twice on one diagnostic. This group takes no
 	// identity of its own either — it names a pass and counts what it found,
 	// over findings whose fixes differ per finding.
-	return cerrors.New(
+	return cerrors.Unidentified(
 		cerrors.CatalogError,
 		cerrors.SourceLocation{},
 		message,
@@ -1971,7 +1971,7 @@ func (c *Catalog) SubAggregateLoader() topology.SubAggregateLoader {
 	return func(typeName string, parentParams map[string]any) (*types.Aggregate, string, map[string]any, error) {
 		key, ok, _ := c.resolveAggregateKey(typeName)
 		if !ok {
-			return nil, "", nil, cerrors.New(cerrors.CatalogError, cerrors.SourceLocation{}, fmt.Sprintf("sub-aggregate %q not found in catalog (check the aggregates-block reference names a known Aggregate type, or run `aggrega pull --release <release>` if it must be fetched)", typeName), nil, nil)
+			return nil, "", nil, cerrors.Unidentified(cerrors.CatalogError, cerrors.SourceLocation{}, fmt.Sprintf("sub-aggregate %q not found in catalog (check the aggregates-block reference names a known Aggregate type, or run `aggrega pull --release <release>` if it must be fetched)", typeName), nil, nil)
 		}
 		agg := c.Aggregates[key]
 		// The return path (TopologyNode provenance) always comes from

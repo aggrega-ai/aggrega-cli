@@ -27,11 +27,11 @@ func assertLeadsOnce(t *testing.T, err error, condition error) {
 	if !ok {
 		t.Fatalf("diagnostic is not a CompilerError: %T", err)
 	}
-	if !strings.HasPrefix(ce.Message, sentence) {
-		t.Errorf("message does not lead with its registered sentence\n  sentence: %q\n  message : %q", sentence, ce.Message)
+	if !strings.HasPrefix(ce.Message(), sentence) {
+		t.Errorf("message does not lead with its registered sentence\n  sentence: %q\n  message : %q", sentence, ce.Message())
 	}
-	if n := strings.Count(ce.Message, sentence); n != 1 {
-		t.Errorf("message states the registered sentence %d times; want exactly 1\n  message: %q", n, ce.Message)
+	if n := strings.Count(ce.Message(), sentence); n != 1 {
+		t.Errorf("message states the registered sentence %d times; want exactly 1\n  message: %q", n, ce.Message())
 	}
 }
 

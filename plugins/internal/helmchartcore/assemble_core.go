@@ -87,13 +87,13 @@ func ReadChartMetaBytes(data []byte, label string) (name, version string, err er
 	}
 	var extra any
 	if err := dec.Decode(&extra); !errors.Is(err, io.EOF) {
-		return "", "", cerrors.New(cerrors.CatalogError, cerrors.SourceLocation{File: label}, fmt.Sprintf("helmchart sourced: Chart.yaml in %q contains multiple YAML documents; a chart's Chart.yaml must be a single document", label), nil, nil)
+		return "", "", cerrors.Unidentified(cerrors.CatalogError, cerrors.SourceLocation{File: label}, fmt.Sprintf("helmchart sourced: Chart.yaml in %q contains multiple YAML documents; a chart's Chart.yaml must be a single document", label), nil, nil)
 	}
 	if header.Name == "" {
-		return "", "", cerrors.New(cerrors.CatalogError, cerrors.SourceLocation{File: label}, fmt.Sprintf("helmchart sourced: Chart.yaml in %q has empty name", label), nil, nil)
+		return "", "", cerrors.Unidentified(cerrors.CatalogError, cerrors.SourceLocation{File: label}, fmt.Sprintf("helmchart sourced: Chart.yaml in %q has empty name", label), nil, nil)
 	}
 	if header.Version == "" {
-		return "", "", cerrors.New(cerrors.CatalogError, cerrors.SourceLocation{File: label}, fmt.Sprintf("helmchart sourced: Chart.yaml in %q has empty version", label), nil, nil)
+		return "", "", cerrors.Unidentified(cerrors.CatalogError, cerrors.SourceLocation{File: label}, fmt.Sprintf("helmchart sourced: Chart.yaml in %q has empty version", label), nil, nil)
 	}
 	return header.Name, header.Version, nil
 }
@@ -136,7 +136,7 @@ func ReadChartMetaBytes(data []byte, label string) (name, version string, err er
 // a second derivation that merely agrees with the chart it points at.
 func AssembleUmbrellaCore(boundaryName, aggregateName string, subs []CoreSubChart, chartNameOverride string, indent int) (map[string][]byte, error) {
 	if boundaryName == "" {
-		return nil, cerrors.New(cerrors.OpsError, cerrors.SourceLocation{}, "helmchart umbrella: empty boundary name", nil, nil)
+		return nil, cerrors.Unidentified(cerrors.OpsError, cerrors.SourceLocation{}, "helmchart umbrella: empty boundary name", nil, nil)
 	}
 
 	// Sorted iteration for determinism
@@ -217,7 +217,7 @@ func AssembleUmbrellaCore(boundaryName, aggregateName string, subs []CoreSubChar
 		// alias is accepted by a render and refused by dependency resolution, so
 		// the mistake survives the tools an author reaches for first.
 		if sc.OutputDirectory == "" {
-			return nil, cerrors.New(cerrors.OpsError, cerrors.SourceLocation{File: boundaryName},
+			return nil, cerrors.Unidentified(cerrors.OpsError, cerrors.SourceLocation{File: boundaryName},
 				fmt.Sprintf("helmchart umbrella: sub-chart %q carries no output directory, so the dependency has no directory to point at", sc.InstanceID), nil, nil)
 		}
 		deps = append(deps, umbrellaChartDependency{

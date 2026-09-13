@@ -239,10 +239,10 @@ func stepFindings(err error) []*cerrors.CompilerError {
 		}
 		// An envelope over a joined set carries no position of its own; it is
 		// the members beneath it that are positioned.
-		if finding.Source.Locator != "" || finding.Source.File != "" {
+		if finding.Source().Locator != "" || finding.Source().File != "" {
 			out = append(out, finding)
 		}
-		walk(finding.Wrap)
+		walk(finding.Unwrap())
 	}
 	walk(err)
 	return out
@@ -839,20 +839,20 @@ func TestTheProviderCompatibilityRuleRefusesAnUndeclaredProvider(t *testing.T) {
 		for _, finding := range findings {
 			// Where an author fixes it: the authored step inside the entity that
 			// declares it, which is neither the Aggregate nor the deployment.
-			if finding.Source.File != recipe.Metadata.Name {
+			if finding.Source().File != recipe.Metadata.Name {
 				t.Errorf("finding positioned in %q; want the entity that declares the step, %q",
-					finding.Source.File, recipe.Metadata.Name)
+					finding.Source().File, recipe.Metadata.Name)
 			}
-			positioned[finding.Source.Locator]++
+			positioned[finding.Source().Locator]++
 
 			// The attribution. The step was matched against the component's own
 			// provider, so the finding names that one and not the attachment's.
-			if !strings.Contains(finding.Message, `"`+nodeProvider+`"`) {
-				t.Errorf("finding %q does not name the component's provider %q", finding.Message, nodeProvider)
+			if !strings.Contains(finding.Message(), `"`+nodeProvider+`"`) {
+				t.Errorf("finding %q does not name the component's provider %q", finding.Message(), nodeProvider)
 			}
-			if strings.Contains(finding.Message, `"`+attachmentProvider+`"`) {
+			if strings.Contains(finding.Message(), `"`+attachmentProvider+`"`) {
 				t.Errorf("finding %q names the attachment's provider %q; it was matched against the wrong documents' provider",
-					finding.Message, attachmentProvider)
+					finding.Message(), attachmentProvider)
 			}
 		}
 		for _, step := range authoredOwnSteps(build) {
@@ -1002,19 +1002,19 @@ func TestTheOwnScopeMergedTargetRuleRefusesAStepWithNoTarget(t *testing.T) {
 		// Where an author fixes it: the authored step inside the FeatureRecipe that
 		// declares it — not the document the attachment was written in, and not the
 		// Recipe whose provider merges.
-		if finding.Source.File != fr.Metadata.Name {
+		if finding.Source().File != fr.Metadata.Name {
 			t.Errorf("finding positioned in %q; want the entity that declares the step, %q",
-				finding.Source.File, fr.Metadata.Name)
+				finding.Source().File, fr.Metadata.Name)
 		}
-		if wantLocator := ".spec.pipeline." + stepAttachmentStep; finding.Source.Locator != wantLocator {
-			t.Errorf("finding positioned at %q; want the authored step %q", finding.Source.Locator, wantLocator)
+		if wantLocator := ".spec.pipeline." + stepAttachmentStep; finding.Source().Locator != wantLocator {
+			t.Errorf("finding positioned at %q; want the authored step %q", finding.Source().Locator, wantLocator)
 		}
-		if !strings.Contains(finding.Message, `"`+stepAttachment+`"`) {
-			t.Errorf("finding %q does not name the attachment that bound the pipeline", finding.Message)
+		if !strings.Contains(finding.Message(), `"`+stepAttachment+`"`) {
+			t.Errorf("finding %q does not name the attachment that bound the pipeline", finding.Message())
 		}
 
 		t.Logf("the component renders through %q and its attachment through %q; the build halted at %q in %q with %q",
-			nodeProvider, attachmentProvider, finding.Source.Locator, finding.Source.File, finding.Message)
+			nodeProvider, attachmentProvider, finding.Source().Locator, finding.Source().File, finding.Message())
 	})
 }
 

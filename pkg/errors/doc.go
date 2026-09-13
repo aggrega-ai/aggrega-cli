@@ -105,9 +105,13 @@
 // The identity is a value declared by a Register call and published by an
 // exported accessor standing beside it. It satisfies the error interface, it
 // stays matchable under errors.Is through arbitrary wrapping, and one such
-// value is shared by every occurrence of the condition it names. Neither its
-// type nor its fields are exported, so no package but the one that declares it
-// can produce it.
+// value is shared by every occurrence of the condition it names. Its concrete
+// type and that type's fields are unexported, and the interface it is handed
+// back as — Identity — carries a method no importing package can declare, so an
+// error written out by hand does not satisfy it. Embedding that interface
+// promotes the method rather than declaring it, which no interface can prevent,
+// so the constructors check that the value came from a Register call rather
+// than resting on the type alone.
 //
 // The code the identity carries is a separate thing from the identity itself,
 // and the separation is deliberate. The identity is what Go code matches; the
@@ -122,4 +126,30 @@
 // occurrences of the same condition belongs on the instance, because a single
 // shared value cannot express it; anything true of the condition itself belongs
 // beside the identity, declared once.
+//
+// # Building an occurrence is a decision about identity, and it is forced
+//
+// A CompilerError holds no exported field, so there is no way to bring one into
+// existence but through a constructor, and each constructor states what the
+// occurrence names:
+//
+//   - Raise takes the condition as a typed, required argument and admits only a
+//     value Register returned. An error written out by hand does not satisfy
+//     Identity, so the program handing one over does not compile; one that
+//     embeds Identity does satisfy it, because embedding promotes the method
+//     rather than declaring it, and Raise refuses that value when it runs.
+//   - Unidentified states that the failure names no registered condition. It is
+//     an escape hatch and its name is the point: a diagnostic built there prints
+//     a category with no short code beside it, which reads almost exactly like
+//     one that names a condition, so the gap is made visible at the call site
+//     instead of at the terminal.
+//   - Wrap re-categorises an existing chain and takes whatever identity that
+//     chain carries. Which one it carries is a property of the value rather than
+//     of the call, so it is the one constructor whose identity is not decided
+//     where it is written.
+//
+// The reason the choice is forced rather than encouraged is that a diagnostic
+// naming no condition is indistinguishable, to the person reading it, from one
+// that does — the bracketed category is there either way. A shape that let the
+// identity be omitted would make the commonest failure the silent one.
 package errors

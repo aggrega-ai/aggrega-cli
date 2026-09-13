@@ -259,8 +259,8 @@ func TestBuild_ALongComponentNameIsRefusedWhereTheTargetDeclaresABound(t *testin
 	if !errors.As(err, &compilerErr) {
 		t.Fatalf("the halt must carry a category; got %T", err)
 	}
-	if compilerErr.Category != cerrors.CatalogError {
-		t.Errorf("category = %v, want %v", compilerErr.Category, cerrors.CatalogError)
+	if compilerErr.Category() != cerrors.CatalogError {
+		t.Errorf("category = %v, want %v", compilerErr.Category(), cerrors.CatalogError)
 	}
 
 	for _, want := range []string{

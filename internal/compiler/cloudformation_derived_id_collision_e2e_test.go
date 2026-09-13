@@ -88,9 +88,9 @@ func cfnDerivedIDFindings(t *testing.T, err error) []string {
 	if !errors.As(err, &envelope) {
 		t.Fatalf("the halt is not a categorised diagnostic: %v", err)
 	}
-	joined, isMulti := envelope.Wrap.(interface{ Unwrap() []error })
+	joined, isMulti := envelope.Unwrap().(interface{ Unwrap() []error })
 	if !isMulti {
-		t.Fatalf("the report wraps a single error rather than the set the rule raised: %T", envelope.Wrap)
+		t.Fatalf("the report wraps a single error rather than the set the rule raised: %T", envelope.Unwrap())
 	}
 	members := joined.Unwrap()
 	texts := make([]string, 0, len(members))

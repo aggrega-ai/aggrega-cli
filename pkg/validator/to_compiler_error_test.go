@@ -43,17 +43,17 @@ func TestShapeRuleError_RoutesToCatalog(t *testing.T) {
 			if ce == nil {
 				t.Fatal("ToCompilerError returned nil")
 			}
-			if ce.Category != cerrors.CatalogError {
-				t.Errorf("Category = %v, want %v", ce.Category, cerrors.CatalogError)
+			if ce.Category() != cerrors.CatalogError {
+				t.Errorf("Category = %v, want %v", ce.Category(), cerrors.CatalogError)
 			}
-			if ce.Source.File != "/path/to/recipe.yaml" {
-				t.Errorf("Source.File = %q, want %q", ce.Source.File, "/path/to/recipe.yaml")
+			if ce.Source().File != "/path/to/recipe.yaml" {
+				t.Errorf("Source.File = %q, want %q", ce.Source().File, "/path/to/recipe.yaml")
 			}
 			// The registered sentence is read off the condition rather than
 			// restated here, so this assertion cannot pass against a second copy
 			// of the wording.
-			if sentence := tc.sentinel.Error(); !strings.HasPrefix(ce.Message, sentence+" (") {
-				t.Errorf("Message must open with the registered sentence %q: %q", sentence, ce.Message)
+			if sentence := tc.sentinel.Error(); !strings.HasPrefix(ce.Message(), sentence+" (") {
+				t.Errorf("Message must open with the registered sentence %q: %q", sentence, ce.Message())
 			}
 			for _, want := range []string{
 				tc.wantReference,
@@ -61,8 +61,8 @@ func TestShapeRuleError_RoutesToCatalog(t *testing.T) {
 				"at /path/to/recipe.yaml",
 				"declare a source: pointer alongside valuesMapping",
 			} {
-				if !strings.Contains(ce.Message, want) {
-					t.Errorf("Message missing %q: %q", want, ce.Message)
+				if !strings.Contains(ce.Message(), want) {
+					t.Errorf("Message missing %q: %q", want, ce.Message())
 				}
 			}
 			// Inner chain preserved.
@@ -71,8 +71,8 @@ func TestShapeRuleError_RoutesToCatalog(t *testing.T) {
 			}
 			// The envelope's message and the failure's own text are one string,
 			// which is what keeps a rendered diagnostic from being said twice.
-			if ce.Message != err.Error() {
-				t.Errorf("envelope message %q differs from Error() %q", ce.Message, err.Error())
+			if ce.Message() != err.Error() {
+				t.Errorf("envelope message %q differs from Error() %q", ce.Message(), err.Error())
 			}
 		})
 	}
@@ -111,11 +111,11 @@ func TestWorkloadValidationError_ToCompilerError_RoutesToCatalog(t *testing.T) {
 		Err: validator.ErrWorkloadValidation(),
 	}
 	ce := wve.ToCompilerError()
-	if ce.Category != cerrors.CatalogError {
-		t.Errorf("Category = %v, want %v", ce.Category, cerrors.CatalogError)
+	if ce.Category() != cerrors.CatalogError {
+		t.Errorf("Category = %v, want %v", ce.Category(), cerrors.CatalogError)
 	}
-	if ce.Source.File != "/path/to/recipe.yaml" {
-		t.Errorf("Source.File = %q, want %q", ce.Source.File, "/path/to/recipe.yaml")
+	if ce.Source().File != "/path/to/recipe.yaml" {
+		t.Errorf("Source.File = %q, want %q", ce.Source().File, "/path/to/recipe.yaml")
 	}
 	if !stderrors.Is(ce, validator.ErrWorkloadValidation()) {
 		t.Errorf("errors.Is(ce, ErrWorkloadValidation) = false, want true")
@@ -135,20 +135,20 @@ func TestValidationError_ToCompilerError_ComponentRoutesToCatalog(t *testing.T) 
 		Err:        validator.ErrInheritanceMerge(),
 	})
 	ce := ve.ToCompilerError()
-	if ce.Category != cerrors.CatalogError {
-		t.Errorf("Category = %v, want %v (Component prefix routes to CatalogError)", ce.Category, cerrors.CatalogError)
+	if ce.Category() != cerrors.CatalogError {
+		t.Errorf("Category = %v, want %v (Component prefix routes to CatalogError)", ce.Category(), cerrors.CatalogError)
 	}
-	if ce.Source.File != ".values.port" {
-		t.Errorf("Source.File = %q, want %q", ce.Source.File, ".values.port")
+	if ce.Source().File != ".values.port" {
+		t.Errorf("Source.File = %q, want %q", ce.Source().File, ".values.port")
 	}
-	if !strings.Contains(ce.Message, "must be >= 1024") {
-		t.Errorf("Message missing Constraint: %q", ce.Message)
+	if !strings.Contains(ce.Message(), "must be >= 1024") {
+		t.Errorf("Message missing Constraint: %q", ce.Message())
 	}
-	if !strings.Contains(ce.Message, "got 80") {
-		t.Errorf("Message missing Actual: %q", ce.Message)
+	if !strings.Contains(ce.Message(), "got 80") {
+		t.Errorf("Message missing Actual: %q", ce.Message())
 	}
-	if !strings.Contains(ce.Message, "Use a port number >= 1024") {
-		t.Errorf("Message missing Suggestion: %q", ce.Message)
+	if !strings.Contains(ce.Message(), "Use a port number >= 1024") {
+		t.Errorf("Message missing Suggestion: %q", ce.Message())
 	}
 	if !stderrors.Is(ce, validator.ErrInheritanceMerge()) {
 		t.Errorf("errors.Is(ce, ErrInheritanceMerge) = false, want true")
@@ -164,11 +164,11 @@ func TestValidationError_ToCompilerError_AggregateRoutesToDeveloper(t *testing.T
 		Err:       validator.ErrInheritanceMerge(),
 	})
 	ce := ve.ToCompilerError()
-	if ce.Category != cerrors.DeveloperError {
-		t.Errorf("Category = %v, want %v (an Aggregate failure is developer-domain)", ce.Category, cerrors.DeveloperError)
+	if ce.Category() != cerrors.DeveloperError {
+		t.Errorf("Category = %v, want %v (an Aggregate failure is developer-domain)", ce.Category(), cerrors.DeveloperError)
 	}
-	if !strings.Contains(ce.Message, "Aggregate my-app") {
-		t.Errorf("Message should carry the reference derived from the kind; got %q", ce.Message)
+	if !strings.Contains(ce.Message(), "Aggregate my-app") {
+		t.Errorf("Message should carry the reference derived from the kind; got %q", ce.Message())
 	}
 }
 
@@ -196,7 +196,7 @@ func TestValidationError_ReferenceIsDerivedFromTheKind(t *testing.T) {
 		if !strings.Contains(ve.Error(), "("+tc.wantReference+",") {
 			t.Errorf("kind %q: Error() = %q, want it to name the entity as %q", tc.kind, ve.Error(), tc.wantReference)
 		}
-		if got := ve.ToCompilerError().Category; got != tc.wantCategory {
+		if got := ve.ToCompilerError().Category(); got != tc.wantCategory {
 			t.Errorf("kind %q: Category = %v, want %v", tc.kind, got, tc.wantCategory)
 		}
 	}

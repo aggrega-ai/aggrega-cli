@@ -45,16 +45,16 @@ func headTag(t *testing.T, category cerrors.Category, condition error) string {
 // brackets, source pointer, message, expression, active pillars list.
 func TestFormatCompilerError_RichShape(t *testing.T) {
 	t.Parallel()
-	e := &cerrors.CompilerError{
-		Category:   cerrors.CatalogError,
-		Source:     cerrors.SourceLocation{File: "recipes/api.yaml", Line: 12, Column: 3},
-		Message:    "FeatureRecipe template references per-component-only field",
-		Expression: ".context.instance_id",
-		Context: map[string]any{
+	e := cerrors.Unidentified(
+		cerrors.CatalogError,
+		cerrors.SourceLocation{File: "recipes/api.yaml", Line: 12, Column: 3},
+		"FeatureRecipe template references per-component-only field",
+		map[string]any{
 			".values": "...",
 			".infra":  "...",
 		},
-	}
+		nil,
+	).WithExpression(".context.instance_id")
 	got := formatCompilerError(e)
 	for _, want := range []string{
 		"[CATALOG_ERROR]",
@@ -234,7 +234,7 @@ func TestFormatCompilerError_WorkloadValidation_CategorySaidOnce(t *testing.T) {
 // completes the per-category coverage.
 func TestFormatCompilerError_TranslationCategory_RendersViaCompilerError(t *testing.T) {
 	t.Parallel()
-	ce := cerrors.New(
+	ce := cerrors.Unidentified(
 		cerrors.TranslationError,
 		cerrors.SourceLocation{File: "internal/compiler/renderer/orchestrator.go"},
 		"chart name mismatch across boundaries",
@@ -275,9 +275,9 @@ func TestFormatCompilerError_AnalysisError_RendersAsDeveloper(t *testing.T) {
 // CompilerError via errors.Join" depends on this rendering correctness.
 func TestFormatCompilerError_ErrorsJoin_RendersAll(t *testing.T) {
 	t.Parallel()
-	ce1 := cerrors.New(cerrors.DeveloperError, cerrors.SourceLocation{File: "node-a"}, "violation a", nil, nil)
-	ce2 := cerrors.New(cerrors.DeveloperError, cerrors.SourceLocation{File: "node-b"}, "violation b", nil, nil)
-	ce3 := cerrors.New(cerrors.DeveloperError, cerrors.SourceLocation{File: "node-c"}, "violation c", nil, nil)
+	ce1 := cerrors.Unidentified(cerrors.DeveloperError, cerrors.SourceLocation{File: "node-a"}, "violation a", nil, nil)
+	ce2 := cerrors.Unidentified(cerrors.DeveloperError, cerrors.SourceLocation{File: "node-b"}, "violation b", nil, nil)
+	ce3 := cerrors.Unidentified(cerrors.DeveloperError, cerrors.SourceLocation{File: "node-c"}, "violation c", nil, nil)
 	joined := stderrors.Join(ce1, ce2, ce3)
 
 	got := formatCompilerError(joined)
@@ -363,7 +363,7 @@ func TestFormatCompilerError_LocatedFindings_DistinguishTwoComponentsOfOneType(t
 // its own ToCompilerError path; all three render.
 func TestFormatCompilerError_ErrorsJoin_MixedTypes(t *testing.T) {
 	t.Parallel()
-	ce := cerrors.New(cerrors.TranslationError, cerrors.SourceLocation{}, "translation msg", nil, nil)
+	ce := cerrors.Unidentified(cerrors.TranslationError, cerrors.SourceLocation{}, "translation msg", nil, nil)
 	re := &resolver.ResolverError{Entity: "Aggregate my-app", Field: ".f", Message: "resolver msg", Err: resolver.ErrSchemaConformance()}
 	rve := validator.NewShapeRuleError(validator.ShapeRuleViolation{
 		Kind: envelope.KindRecipe,
@@ -400,9 +400,9 @@ func TestFormatCompilerError_ErrorsJoin_MixedTypes(t *testing.T) {
 // terminal rendering branch.
 func TestFormatCompilerError_ErrorsJoin_RecursionSafe(t *testing.T) {
 	t.Parallel()
-	ce1 := cerrors.New(cerrors.DeveloperError, cerrors.SourceLocation{}, "leaf 1", nil, nil)
-	ce2 := cerrors.New(cerrors.DeveloperError, cerrors.SourceLocation{}, "leaf 2", nil, nil)
-	ce3 := cerrors.New(cerrors.DeveloperError, cerrors.SourceLocation{}, "leaf 3", nil, nil)
+	ce1 := cerrors.Unidentified(cerrors.DeveloperError, cerrors.SourceLocation{}, "leaf 1", nil, nil)
+	ce2 := cerrors.Unidentified(cerrors.DeveloperError, cerrors.SourceLocation{}, "leaf 2", nil, nil)
+	ce3 := cerrors.Unidentified(cerrors.DeveloperError, cerrors.SourceLocation{}, "leaf 3", nil, nil)
 	inner := stderrors.Join(ce1, ce2)
 	outer := stderrors.Join(inner, ce3)
 
@@ -454,7 +454,7 @@ func TestFormatCompilerError_WorkloadValidation_SentenceSaidOnce(t *testing.T) {
 			if !strings.HasPrefix(wve.Error(), sentence) {
 				t.Errorf("the report must open with %q; got %q", sentence, wve.Error())
 			}
-			if msg := wve.ToCompilerError().Message; msg != wve.Error() {
+			if msg := wve.ToCompilerError().Message(); msg != wve.Error() {
 				t.Errorf("the envelope's message must be exactly the report's own text, or the chain walk renders it twice\n envelope %q\n report   %q", msg, wve.Error())
 			}
 			got := formatCompilerError(wve)

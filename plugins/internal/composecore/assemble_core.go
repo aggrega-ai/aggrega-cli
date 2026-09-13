@@ -525,7 +525,7 @@ func reportNameCollisions(class collisionClass, colliding map[string][]sectionCo
 	if class.remedy != "" {
 		message += "; " + class.remedy
 	}
-	return cerrors.New(cerrors.TranslationError, cerrors.SourceLocation{}, message, nil, nil)
+	return cerrors.Unidentified(cerrors.TranslationError, cerrors.SourceLocation{}, message, nil, nil)
 }
 
 // checkServiceCollisions walks contribsByService and returns
@@ -633,9 +633,10 @@ func checkConfigReferences(merged ComposeFile) error {
 	if len(unresolved) == 0 {
 		return nil
 	}
-	return cerrors.New(cerrors.TranslationError, cerrors.SourceLocation{},
+	return cerrors.Raise(errTranslationConfigMapMissingArtifact,
+		cerrors.TranslationError, cerrors.SourceLocation{},
 		fmt.Sprintf("compose AssembleBoundary: %s; declare each one as a top-level configs: entry from the Recipe's artifacts: input", strings.Join(unresolved, "; ")),
-		nil, ErrTranslationConfigMapMissingArtifact())
+		nil)
 }
 
 // applyDependsOn projects IR edges onto contributing services and records an

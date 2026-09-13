@@ -200,9 +200,9 @@ func TestTheDescribedStageHaltCarriesEveryFindingsOwnPosition(t *testing.T) {
 	if !errors.As(err, &envelope) {
 		t.Fatalf("the halt is not a categorised diagnostic: %v", err)
 	}
-	joined, isMulti := envelope.Wrap.(interface{ Unwrap() []error })
+	joined, isMulti := envelope.Unwrap().(interface{ Unwrap() []error })
 	if !isMulti {
-		t.Fatalf("the envelope wraps a single error rather than the set the rules raised: %T", envelope.Wrap)
+		t.Fatalf("the envelope wraps a single error rather than the set the rules raised: %T", envelope.Unwrap())
 	}
 	members := joined.Unwrap()
 	if got, want := len(members), cancelNodeCount*cancelStepsPerNode; got != want {
@@ -215,10 +215,10 @@ func TestTheDescribedStageHaltCarriesEveryFindingsOwnPosition(t *testing.T) {
 		if !errors.As(member, &finding) {
 			t.Fatalf("a finding is not a categorised diagnostic: %v", member)
 		}
-		if finding.Source.File != "recipes/node.yaml" {
-			t.Errorf("finding positioned in %q, want the entity that declares the step", finding.Source.File)
+		if finding.Source().File != "recipes/node.yaml" {
+			t.Errorf("finding positioned in %q, want the entity that declares the step", finding.Source().File)
 		}
-		positions[finding.Source.Locator]++
+		positions[finding.Source().Locator]++
 	}
 	for _, step := range cancelStepIDs() {
 		locator := ".spec.pipeline." + step
@@ -347,12 +347,12 @@ func TestAPluginTheHostCouldNotAskIsNotAPluginThatDeclaredNothing(t *testing.T) 
 		t.Fatalf("the halt is not a categorised diagnostic: %v", refused)
 	}
 	for _, want := range []string{`"patch"`, `"pipeline-step/patch-server:1.0.0"`} {
-		if !strings.Contains(reported.Message, want) {
-			t.Errorf("the halt does not name %s: %q", want, reported.Message)
+		if !strings.Contains(reported.Message(), want) {
+			t.Errorf("the halt does not name %s: %q", want, reported.Message())
 		}
 	}
-	if strings.Contains(reported.Message, "stamper") {
-		t.Errorf("the halt names a later step's plugin as well as the first: %q", reported.Message)
+	if strings.Contains(reported.Message(), "stamper") {
+		t.Errorf("the halt names a later step's plugin as well as the first: %q", reported.Message())
 	}
 	// ANTI-VACUITY. A walk that asked nothing would also raise nothing to
 	// conflate, so the reads are counted rather than assumed.

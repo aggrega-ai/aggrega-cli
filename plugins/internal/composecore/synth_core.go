@@ -90,9 +90,10 @@ func SynthesizeWorkloadCore(
 	case rendercore.WorkloadFormStateless, rendercore.WorkloadFormStateful:
 		// supported
 	default:
-		return nil, nil, cerrors.New(cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID},
+		return nil, nil, cerrors.Raise(errUnsupportedComposeForm,
+			cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID},
 			fmt.Sprintf("compose: workload form %q has no compose mapping; compose supports stateless and stateful only", rendercore.NormalizeWorkloadForm(w.Form)),
-			nil, ErrUnsupportedComposeForm())
+			nil)
 	}
 
 	// Unsupported-field diagnostics accumulate here in a deterministic order: per
@@ -370,7 +371,7 @@ func synthesizeInitServices(
 		serviceName := mainServiceName + "-" + sanitizeServiceName(containerName)
 
 		if _, taken := frag.Services[serviceName]; taken {
-			return nil, cerrors.New(cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID},
+			return nil, cerrors.Unidentified(cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID},
 				fmt.Sprintf("compose: node %q init container %q needs the service name %q, which another container of the same workload already uses; give every entry of containers and initContainers a distinct name",
 					nodeCtx.NodeID, containerName, serviceName),
 				nil, nil)
@@ -441,9 +442,10 @@ func translateContainer(
 	// loudly rather than drop the hook (the loud-halt discipline for a shape
 	// compose cannot express).
 	if c.Lifecycle != nil {
-		return Service{}, nil, cerrors.New(cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID},
+		return Service{}, nil, cerrors.Raise(errUnsupportedComposeLifecycle,
+			cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID},
 			fmt.Sprintf("compose: node %q declares container lifecycle hooks; compose has no lifecycle-hook primitive", nodeCtx.NodeID),
-			nil, ErrUnsupportedComposeLifecycle())
+			nil)
 	}
 
 	// Container resource requests/limits → compose deploy.resources
@@ -463,9 +465,10 @@ func translateContainer(
 	// primitive; a source reference is not a host file, so any env_file
 	// reinterpretation would silently change meaning. Halt loudly.
 	if len(c.EnvFrom) > 0 {
-		return Service{}, nil, cerrors.New(cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID},
+		return Service{}, nil, cerrors.Raise(errUnsupportedComposeEnvFrom,
+			cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID},
 			fmt.Sprintf("compose: node %q declares container envFrom; compose has no env-from-object primitive", nodeCtx.NodeID),
-			nil, ErrUnsupportedComposeEnvFrom())
+			nil)
 	}
 
 	// imagePullPolicy → compose pull_policy (schema-validated enum).
@@ -479,7 +482,7 @@ func translateContainer(
 	case "IfNotPresent":
 		svc.PullPolicy = "if_not_present"
 	default:
-		return Service{}, nil, cerrors.New(cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID},
+		return Service{}, nil, cerrors.Unidentified(cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID},
 			fmt.Sprintf("compose: node %q unknown imagePullPolicy %q", nodeCtx.NodeID, c.ImagePullPolicy),
 			nil, nil)
 	}

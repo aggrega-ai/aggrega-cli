@@ -21,7 +21,7 @@ func chainCategories(err error) []cerrors.Category {
 	var out []cerrors.Category
 	for err != nil {
 		if ce, ok := err.(*cerrors.CompilerError); ok {
-			out = append(out, ce.Category)
+			out = append(out, ce.Category())
 		}
 		err = stderrors.Unwrap(err)
 	}
@@ -161,7 +161,7 @@ func diagnosticChainText(err error) string {
 	var parts []string
 	for err != nil {
 		if ce, ok := err.(*cerrors.CompilerError); ok {
-			parts = append(parts, ce.Message)
+			parts = append(parts, ce.Message())
 		} else {
 			parts = append(parts, err.Error())
 		}

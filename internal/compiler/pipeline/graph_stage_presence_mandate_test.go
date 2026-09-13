@@ -181,11 +181,11 @@ func TestThePresenceMandateRuleHaltsThroughTheViolationChannel(t *testing.T) {
 		// The conversion the command line reads: a developer fault pointing at
 		// the document, not at a node identifier.
 		converted := out.Analysis.Errors[0].ToCompilerError()
-		if converted.Category != cerrors.DeveloperError {
-			t.Errorf("category = %v, want %v", converted.Category, cerrors.DeveloperError)
+		if converted.Category() != cerrors.DeveloperError {
+			t.Errorf("category = %v, want %v", converted.Category(), cerrors.DeveloperError)
 		}
-		if converted.Source.File != invocationAggregatePath {
-			t.Errorf("source pointer = %q, want the document the finding is about", converted.Source.File)
+		if converted.Source().File != invocationAggregatePath {
+			t.Errorf("source pointer = %q, want the document the finding is about", converted.Source().File)
 		}
 	})
 

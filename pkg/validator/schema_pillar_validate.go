@@ -82,7 +82,7 @@ func ValidateSchemaPillars(
 	}
 
 	if node.Kind != yaml.MappingNode {
-		return cerrors.New(
+		return cerrors.Unidentified(
 			cerrors.CatalogError,
 			cerrors.SourceLocation{File: filePath, Line: node.Line},
 			fmt.Sprintf(

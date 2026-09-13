@@ -199,13 +199,13 @@ func frameText(frame error) (text, source string) {
 	if ce == nil {
 		return "", ""
 	}
-	src := ce.Source.String()
+	src := ce.Source().String()
 	switch {
 	case src == "":
-		return ce.Message, ""
-	case ce.Message == "":
+		return ce.Message(), ""
+	case ce.Message() == "":
 		return src, src
 	default:
-		return src + ": " + ce.Message, src
+		return src + ": " + ce.Message(), src
 	}
 }

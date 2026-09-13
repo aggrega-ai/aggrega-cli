@@ -27,11 +27,11 @@ func TestResolverError_ToCompilerError_AggregateRoutesToDeveloper(t *testing.T) 
 	if ce == nil {
 		t.Fatal("ToCompilerError returned nil")
 	}
-	if ce.Category != cerrors.DeveloperError {
-		t.Errorf("Category = %v, want %v", ce.Category, cerrors.DeveloperError)
+	if ce.Category() != cerrors.DeveloperError {
+		t.Errorf("Category = %v, want %v", ce.Category(), cerrors.DeveloperError)
 	}
-	if ce.Source.File != ".spec.components.api.values.replicas" {
-		t.Errorf("Source.File = %q, want %q", ce.Source.File, ".spec.components.api.values.replicas")
+	if ce.Source().File != ".spec.components.api.values.replicas" {
+		t.Errorf("Source.File = %q, want %q", ce.Source().File, ".spec.components.api.values.replicas")
 	}
 	// Inner error chain preserved: errors.Is against the resolver sentinel
 	// matches through the converted CompilerError.
@@ -50,8 +50,8 @@ func TestResolverError_ToCompilerError_ReleaseRoutesToOps(t *testing.T) {
 		Err:     resolver.ErrInvalidParameterRef(),
 	}
 	ce := re.ToCompilerError()
-	if ce.Category != cerrors.OpsError {
-		t.Errorf("Category = %v, want %v", ce.Category, cerrors.OpsError)
+	if ce.Category() != cerrors.OpsError {
+		t.Errorf("Category = %v, want %v", ce.Category(), cerrors.OpsError)
 	}
 }
 
@@ -65,8 +65,8 @@ func TestResolverError_ToCompilerError_RecipeRoutesToCatalog(t *testing.T) {
 		Err:     resolver.ErrYAMLLoad(),
 	}
 	ce := re.ToCompilerError()
-	if ce.Category != cerrors.CatalogError {
-		t.Errorf("Category = %v, want %v", ce.Category, cerrors.CatalogError)
+	if ce.Category() != cerrors.CatalogError {
+		t.Errorf("Category = %v, want %v", ce.Category(), cerrors.CatalogError)
 	}
 }
 
@@ -105,7 +105,7 @@ func TestResolverError_ComposesItsConditionsSentenceOnce(t *testing.T) {
 	}{
 		{"Error", re.Error(), true},
 		{"MessageWithoutSubject", re.MessageWithoutSubject(), false},
-		{"ToCompilerError.Message", re.ToCompilerError().Message, true},
+		{"ToCompilerError.Message", re.ToCompilerError().Message(), true},
 	} {
 		if !strings.HasPrefix(row.rendered, registered) {
 			t.Errorf("%s = %q; want it to open with %q, the condition's registered sentence",

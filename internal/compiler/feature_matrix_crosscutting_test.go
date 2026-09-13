@@ -320,7 +320,7 @@ func collisionEnvelopeOf(err error) (*cerrors.CompilerError, []error) {
 		if !isFrame || frame == nil {
 			continue
 		}
-		if joined, isJoin := frame.Wrap.(interface{ Unwrap() []error }); isJoin {
+		if joined, isJoin := frame.Unwrap().(interface{ Unwrap() []error }); isJoin {
 			return frame, joined.Unwrap()
 		}
 	}
@@ -366,11 +366,11 @@ func testSentinelPathCollision(t *testing.T) {
 		t.Fatalf("expected a report frame wrapping a set of findings; got: %s", joinErrorChain(err))
 	}
 	const wantReport = "assembly paths reached by more than one provider"
-	if report.Message != wantReport {
-		t.Errorf("report message = %q; want %q", report.Message, wantReport)
+	if report.Message() != wantReport {
+		t.Errorf("report message = %q; want %q", report.Message(), wantReport)
 	}
-	if report.Category != cerrors.OpsError {
-		t.Errorf("report category = %q; want %q", report.Category, cerrors.OpsError)
+	if report.Category() != cerrors.OpsError {
+		t.Errorf("report category = %q; want %q", report.Category(), cerrors.OpsError)
 	}
 
 	want := []string{
@@ -387,8 +387,8 @@ func testSentinelPathCollision(t *testing.T) {
 			t.Errorf("finding %d is not a categorised diagnostic: %s", i, joinErrorChain(finding))
 			continue
 		}
-		if frame.Message != want[i] {
-			t.Errorf("finding %d = %q; want %q", i, frame.Message, want[i])
+		if frame.Message() != want[i] {
+			t.Errorf("finding %d = %q; want %q", i, frame.Message(), want[i])
 		}
 	}
 }
@@ -514,7 +514,7 @@ func testCategorizedErrors_TagEmission(t *testing.T) {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			err := cerrors.New(
+			err := cerrors.Unidentified(
 				tc.category,
 				cerrors.SourceLocation{File: "test.yaml"},
 				"sample message",

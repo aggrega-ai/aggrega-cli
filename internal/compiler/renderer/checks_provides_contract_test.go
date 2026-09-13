@@ -132,14 +132,14 @@ func providesContractFindings(t *testing.T, halt error) []string {
 			return
 		}
 		var ce *cerrors.CompilerError
-		if stderrors.As(err, &ce) && ce.Message != "" {
+		if stderrors.As(err, &ce) && ce.Message() != "" {
 			if inner := ce.Unwrap(); inner != nil {
 				if _, joinedInner := inner.(interface{ Unwrap() []error }); joinedInner {
 					walk(inner)
 					return
 				}
 			}
-			out = append(out, ce.Message)
+			out = append(out, ce.Message())
 		}
 	}
 	walk(halt)
@@ -349,14 +349,14 @@ func TestProvidesContractRuleIsPositionedAtTheRecipesProvidesEntry(t *testing.T)
 	if !stderrors.As(halt, &ce) {
 		t.Fatalf("halt is not a compiler diagnostic: %v", halt)
 	}
-	if ce.Category != cerrors.CatalogError {
-		t.Errorf("category = %s, want %s", ce.Category, cerrors.CatalogError)
+	if ce.Category() != cerrors.CatalogError {
+		t.Errorf("category = %s, want %s", ce.Category(), cerrors.CatalogError)
 	}
-	if ce.Source.File != "store-recipe" {
-		t.Errorf("source file = %q, want the Recipe the shortfall is in", ce.Source.File)
+	if ce.Source().File != "store-recipe" {
+		t.Errorf("source file = %q, want the Recipe the shortfall is in", ce.Source().File)
 	}
-	if want := ".spec.provides.dsn"; ce.Source.Locator != want {
-		t.Errorf("locator = %q, want %q", ce.Source.Locator, want)
+	if want := ".spec.provides.dsn"; ce.Source().Locator != want {
+		t.Errorf("locator = %q, want %q", ce.Source().Locator, want)
 	}
 }
 

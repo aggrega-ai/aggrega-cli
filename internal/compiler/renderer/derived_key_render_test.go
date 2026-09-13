@@ -69,7 +69,7 @@ func derivedNameFindings(t *testing.T, err error) []string {
 	if !errors.As(err, &envelope) {
 		t.Fatalf("the halt is not a categorised diagnostic: %v", err)
 	}
-	joined, isMulti := envelope.Wrap.(interface{ Unwrap() []error })
+	joined, isMulti := envelope.Unwrap().(interface{ Unwrap() []error })
 	if !isMulti {
 		// The single-finding branch: the objection's own diagnostic, with no
 		// envelope above it, so the frame itself is the finding.

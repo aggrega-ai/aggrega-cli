@@ -92,11 +92,8 @@ func TestRenderReleaseValidation_AssertionMessageSurvivesFlattening(t *testing.T
 	attributed := fmt.Errorf("Component %q instance %q assertion %q: %w",
 		"core/server", "only", "port_must_be_privileged", failure)
 	vr := &compilerops.ValidateResult{
-		RunErr: &cerrors.CompilerError{
-			Category: cerrors.DeveloperError,
-			Message:  "Component/Feature assertions",
-			Wrap:     attributed,
-		},
+		RunErr: cerrors.Wrap(attributed, cerrors.DeveloperError, cerrors.SourceLocation{},
+			"Component/Feature assertions"),
 	}
 
 	for _, tc := range []struct {
