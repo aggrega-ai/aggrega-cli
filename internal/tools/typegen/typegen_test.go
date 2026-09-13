@@ -598,6 +598,143 @@ func TestTargetSchemaFileAgreesWithItsSchemaBytes(t *testing.T) {
 	}
 }
 
+// TestTypeKeywordDecodesBothSpellingsWithoutFlattening drives the real node
+// decode over both spellings JSON Schema admits for `type`, and asserts the
+// declared set arrives whole.
+//
+// The flattening is the failure this guards, and it is a silent one. A decode
+// that kept only the first member of ["string","number"] would produce a
+// generator that compiles, emits, and byte-matches every committed body —
+// because no schema registered today spells a set — while quietly asserting
+// that an identifier is a string when the wire contract says it is a string or
+// a number. Nothing downstream could tell the difference, so the property has
+// to be pinned here at the decode.
+//
+// The rows are driven through decodeNode rather than through the keyword helper
+// alone, because the keyword is read in the same pass as every other field and
+// it is that pass, not the helper, that a registered target actually runs.
+func TestTypeKeywordDecodesBothSpellingsWithoutFlattening(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		raw  string
+		// wantSet is the declared set, joined with "|" so a failure prints what
+		// arrived rather than a pair of addresses.
+		wantSet  string
+		wantOne  string
+		wantFail bool
+	}{
+		{name: "single name", raw: `{"type":"string"}`, wantSet: "string", wantOne: "string"},
+		{name: "no type keyword", raw: `{"description":"x"}`, wantSet: "", wantOne: ""},
+
+		// The three spellings the daemon's wire contract actually carries. Each
+		// states something true that a narrower reading would discard: a
+		// collection emitted as null when it has nothing to report, and an
+		// identifier the transport defines as either a string or a number.
+		{name: "nullable collection", raw: `{"type":["array","null"]}`, wantSet: "array|null", wantOne: ""},
+		{name: "nullable object", raw: `{"type":["object","null"]}`, wantSet: "object|null", wantOne: ""},
+		{name: "scalar union", raw: `{"type":["string","number"]}`, wantSet: "string|number", wantOne: ""},
+
+		// Declaration order is part of what the set says, so the reverse
+		// spelling must arrive reversed rather than normalised.
+		{name: "declaration order is kept", raw: `{"type":["null","array"]}`, wantSet: "null|array", wantOne: ""},
+
+		// A set of one names one type, so it answers the single-name question
+		// the same way the single-name spelling does.
+		{name: "set of one", raw: `{"type":["string"]}`, wantSet: "string", wantOne: "string"},
+		{name: "empty set", raw: `{"type":[]}`, wantSet: "", wantOne: ""},
+
+		// Neither spelling: the decode refuses rather than reading it as absent,
+		// which would let a malformed schema generate a file whose fields are
+		// all typed `any` and whose emission nothing would question.
+		{name: "neither spelling", raw: `{"type":5}`, wantFail: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := decodeNode(json.RawMessage(tc.raw))
+			if tc.wantFail {
+				if err == nil {
+					t.Fatalf("decodeNode(%s) succeeded; the refusal cannot fire, so it certifies nothing", tc.raw)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("decodeNode(%s): %v", tc.raw, err)
+			}
+			if set := strings.Join(got.Types, "|"); set != tc.wantSet {
+				t.Errorf("decodeNode(%s) declared set = %q, want %q", tc.raw, set, tc.wantSet)
+			}
+			if one := got.declaredType(); one != tc.wantOne {
+				t.Errorf("decodeNode(%s).declaredType() = %q, want %q", tc.raw, one, tc.wantOne)
+			}
+		})
+	}
+}
+
+// TestUnionTypeSurvivesNestingAndNamesNoGoType holds the two consequences of
+// carrying a set rather than a name.
+//
+// Nesting first: the keyword is read by one decode that recurses through
+// `properties` and `items`, so a set declared on a leaf has to arrive at that
+// leaf and not only at a root the test happens to hand it.
+//
+// Then the mapping. A set names no one Go type, so every mechanical mapping
+// must reach its fall-through arm on one — and the fall-through, not a member
+// of the set, is the honest answer. Pinning it here is what would catch a later
+// change that makes the mapping pick a member instead of declining: that change
+// would move no committed byte, because nothing registered today declares a
+// set, so no drift gate would see it.
+func TestUnionTypeSurvivesNestingAndNamesNoGoType(t *testing.T) {
+	const schema = `{
+		"type": "object",
+		"properties": {
+			"ids": {"type": "array", "items": {"type": ["string", "number"]}},
+			"findings": {"type": ["array", "null"], "items": {"type": "string"}}
+		}
+	}`
+	root, err := decodeNode(json.RawMessage(schema))
+	if err != nil {
+		t.Fatalf("decodeNode: %v", err)
+	}
+	byName := map[string]schemaNode{}
+	for _, p := range root.props {
+		byName[p.name] = p.node
+	}
+
+	ids, ok := byName["ids"]
+	if !ok {
+		t.Fatal("the decode dropped the `ids` property")
+	}
+	if ids.Items == nil {
+		t.Fatal("the decode dropped the `ids` items node")
+	}
+	if set := strings.Join(ids.Items.Types, "|"); set != "string|number" {
+		t.Errorf("items node declared set = %q, want %q", set, "string|number")
+	}
+
+	findings, ok := byName["findings"]
+	if !ok {
+		t.Fatal("the decode dropped the `findings` property")
+	}
+	if set := strings.Join(findings.Types, "|"); set != "array|null" {
+		t.Errorf("property node declared set = %q, want %q", set, "array|null")
+	}
+
+	// The mapping declines rather than choosing "array" and emitting a slice the
+	// schema never promised was always present.
+	if got := goType(findings, "Findings", nil); got != "any" {
+		t.Errorf("goType on a declared set = %q, want %q", got, "any")
+	}
+
+	// The structural refusals are written against a declared object, and a set
+	// is not one — so they pass the node through instead of demanding the
+	// annotation an object with no properties would need.
+	if err := checkFieldNode("schema.json", "#/properties/findings", findings); err != nil {
+		t.Errorf("checkFieldNode refused a declared set: %v", err)
+	}
+	if err := checkElementNode("schema.json", "#/properties/ids/items", *ids.Items); err != nil {
+		t.Errorf("checkElementNode refused a declared set: %v", err)
+	}
+}
+
 // TestOrderedMapValueTypeSpellings covers both ordered-map spellings the
 // generator can meet, and asserts them as a pair rather than one at a time
 // because only the emission destination decides which one arrives: a codec

@@ -1352,7 +1352,15 @@ var knownImports = map[string]string{
 // schemaNode is a decoded JSON Schema object node preserving the declared
 // property order.
 type schemaNode struct {
-	Type        string
+	// Types is the `type` keyword as the set of type names it declares. JSON
+	// Schema admits two spellings, a single name and an array of names, and the
+	// array spelling is a statement about the value rather than a shorthand for
+	// one of its members: a field that is an array or null, an identifier that
+	// is a string or a number. Both say something true that a narrower reading
+	// would discard, so the set is kept whole and the single-name spelling is
+	// simply a set of one. Ask declaredType for the one name, where one is what
+	// the caller needs.
+	Types       []string
 	Description string
 	GoType      string // x-aggrega-go-type override (names a hand-written or generic type)
 	Ref         string // $ref target (e.g. #/$defs/Unit); resolves to a Go type name
@@ -1373,11 +1381,48 @@ type namedNode struct {
 	node schemaNode
 }
 
+// declaredType reports the node's type when the schema declares exactly one,
+// and the empty string for a node that declares none and for one that declares
+// a set alike. The mechanical mappings — Go type, structural refusal, nested
+// struct discovery — each turn one declared name into one answer, and a set has
+// no single name to give them, so every one of them must reach its fall-through
+// arm on a set. Routing them all through this accessor is what makes that
+// happen by construction rather than at each call site's discretion, and it is
+// why the field itself is not a string: the set stays on the node for whatever
+// can use it, while the callers that need one name ask for one name.
+func (n schemaNode) declaredType() string {
+	if len(n.Types) == 1 {
+		return n.Types[0]
+	}
+	return ""
+}
+
+// decodeTypeKeyword reads the `type` keyword in either spelling JSON Schema
+// admits — a single name, or an array of names — and returns what was declared,
+// verbatim and in order. A typed string field cannot do this: it fails the
+// whole node decode on the array spelling, and because `type` is decoded in the
+// same pass as every other keyword, a node that fails there is never read at
+// all. So the keyword is taken raw and interpreted here.
+func decodeTypeKeyword(raw json.RawMessage) ([]string, error) {
+	if len(raw) == 0 {
+		return nil, nil
+	}
+	var one string
+	if err := json.Unmarshal(raw, &one); err == nil {
+		return []string{one}, nil
+	}
+	var many []string
+	if err := json.Unmarshal(raw, &many); err != nil {
+		return nil, fmt.Errorf("the type keyword is %s, which is neither a type name nor an array of type names", raw)
+	}
+	return many, nil
+}
+
 func decodeNode(raw json.RawMessage) (schemaNode, error) {
 	var n schemaNode
 	// Decode the flat fields first.
 	var flat struct {
-		Type        string          `json:"type"`
+		Type        json.RawMessage `json:"type"`
 		Description string          `json:"description"`
 		GoType      string          `json:"x-aggrega-go-type"`
 		Ref         string          `json:"$ref"`
@@ -1391,7 +1436,12 @@ func decodeNode(raw json.RawMessage) (schemaNode, error) {
 	if err := json.Unmarshal(raw, &flat); err != nil {
 		return n, err
 	}
-	n.Type, n.Description, n.GoType, n.Ref, n.Required, n.Enum = flat.Type, flat.Description, flat.GoType, flat.Ref, flat.Required, flat.Enum
+	n.Description, n.GoType, n.Ref, n.Required, n.Enum = flat.Description, flat.GoType, flat.Ref, flat.Required, flat.Enum
+	types, err := decodeTypeKeyword(flat.Type)
+	if err != nil {
+		return n, err
+	}
+	n.Types = types
 	// `const` is decoded as raw JSON rather than a string field because the
 	// keyword admits any JSON type and the schema corpus carries a numeric one
 	// (a lockfile version). A typed string field would fail the whole decode on
@@ -1514,7 +1564,7 @@ func goType(n schemaNode, typeName string, vocab map[string]string) string {
 	if n.Ref != "" {
 		return refTypeName(n.Ref)
 	}
-	switch n.Type {
+	switch n.declaredType() {
 	case "string":
 		return "string"
 	case "boolean":
@@ -1596,7 +1646,7 @@ func checkFieldNode(schemaFile, path string, n schemaNode) error {
 	if n.GoType != "" || n.Ref != "" {
 		return nil
 	}
-	switch n.Type {
+	switch n.declaredType() {
 	case "array":
 		if n.Items == nil {
 			return nil
@@ -1623,7 +1673,7 @@ func checkElementNode(schemaFile, path string, n schemaNode) error {
 	if n.GoType != "" || n.Ref != "" {
 		return nil
 	}
-	switch n.Type {
+	switch n.declaredType() {
 	case "array":
 		if n.Items == nil {
 			return nil
@@ -1719,7 +1769,7 @@ func emitStruct(b *strings.Builder, typeName, doc string, n schemaNode, used map
 		nestedName := typeName + field
 		gt := goType(p.node, nestedName, vocab)
 		collectSelectors(gt, used)
-		if p.node.Type == "object" && p.node.GoType == "" && len(p.node.props) > 0 {
+		if p.node.declaredType() == "object" && p.node.GoType == "" && len(p.node.props) > 0 {
 			nested = append(nested, pending{name: nestedName, doc: p.node.Description, node: p.node})
 		}
 		jsonTag, yamlTag := p.name, p.name
@@ -1815,6 +1865,10 @@ type codecField struct {
 	// string. Carrying the declared type lets the omit decision fall back on the
 	// kind when the name is unclassifiable, instead of emitting the field
 	// unconditionally and contradicting its own omitempty tag.
+	//
+	// It is empty wherever the node declares no single type: a node carrying no
+	// `type` keyword, and equally one declaring a set of them, since a set names
+	// no one kind the fallback could decide on.
 	schemaType string
 	// hostOpaqueType is the destination package's own declared Go type for an
 	// opaque field, when that differs from the opaque spelling the annotation
@@ -1846,7 +1900,7 @@ func resolveCodecFields(n schemaNode, vocab map[string]string) []codecField {
 			goType:     goType(p.node, field, vocab),
 			required:   required[p.name],
 			desc:       p.node.Description,
-			schemaType: p.node.Type,
+			schemaType: p.node.declaredType(),
 		})
 	}
 	return fields
