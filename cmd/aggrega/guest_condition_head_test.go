@@ -31,11 +31,21 @@ import (
 func TestGuestReportedConditionReachesThePrintedHead(t *testing.T) {
 	t.Parallel()
 
-	const (
-		guestPlugin = "provider/compose-provider"
-		guestCode   = "unsupported-compose-lifecycle"
-		guestShort  = "E0241"
-	)
+	const guestPlugin = "provider/compose-provider"
+
+	// The identifiers are read off the condition the guest chose rather than
+	// written out, so this test cannot come to assert a spelling the registration
+	// does not carry. The conditions a plugin may choose are the compiler's own,
+	// so there is an accessor to read them from.
+	chosen := wasm.ErrPluginCannotExpressInput()
+	guestCode, ok := cerrors.CodeOf(chosen)
+	if !ok {
+		t.Fatal("the chosen condition reports no descriptive code, so this test asserts nothing")
+	}
+	guestShort, ok := cerrors.ShortCodeOf(chosen)
+	if !ok {
+		t.Fatal("the chosen condition reports no short code, so the head below carries nothing to assert")
+	}
 
 	guestErr := wasm.GuestReturnedError(guestPlugin, "render_node", wasm.GuestFailure{
 		Message:   "compose: node \"web\" declares container lifecycle hooks; compose has no lifecycle-hook primitive",
@@ -65,7 +75,18 @@ func TestGuestReportedConditionReachesThePrintedHead(t *testing.T) {
 		t.Fatal("the host's guest-error condition reports no short code, so the control below asserts nothing")
 	}
 	if strings.Contains(got, hostShort) {
-		t.Errorf("the printed head carries the host's own code %s instead of the guest's %s:\n%s", hostShort, guestShort, got)
+		t.Errorf("the printed head carries the host's own code %s instead of the chosen condition's %s:\n%s", hostShort, guestShort, got)
+	}
+	// A code and a sentence describing two different things on one line is the
+	// failure the closed set exists to remove, so the body is asserted beside the
+	// head: the condition the code resolves to, then the plugin's own sentence.
+	for _, want := range []string{
+		chosen.Error(),
+		"compose: node \"web\" declares container lifecycle hooks; compose has no lifecycle-hook primitive",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the printed diagnostic is missing %q:\n%s", want, got)
+		}
 	}
 }
 
@@ -74,16 +95,34 @@ func TestGuestReportedConditionReachesThePrintedHead(t *testing.T) {
 //
 // A single-plugin assertion cannot show it: a head carrying one plugin's name
 // looks correct whether or not the name came from the plugin, so only two guests
-// publishing the SAME code demonstrate that the head tells them apart.
+// reporting the SAME code demonstrate that the head tells them apart.
+//
+// The shared code is a real member of the set a plugin chooses from, which is
+// what makes this the ORDINARY case rather than a collision: those conditions
+// name a KIND of failure and no place, so every guest that cannot express a
+// construct reports the same code, and the plugin is the only thing in the head
+// that says which of a build's attached guests to open. An invented code would
+// not do — the host refuses one outside the set, so both heads would carry the
+// refusal's own code and the case would be asserting the refusal instead.
 func TestTwoPluginsReportingOneCodePrintDistinguishableHeads(t *testing.T) {
 	t.Parallel()
 
 	const (
-		sharedCode  = "a-condition-two-guests-both-numbered"
-		sharedShort = "E0000"
-		first       = "provider/example-provider"
-		second      = "provider/another-provider"
+		first  = "provider/example-provider"
+		second = "provider/another-provider"
 	)
+
+	// Read off the condition rather than written out, so this cannot come to
+	// assert a spelling the registration does not carry.
+	chosen := wasm.ErrPluginCannotExpressInput()
+	sharedCode, ok := cerrors.CodeOf(chosen)
+	if !ok {
+		t.Fatal("the chosen condition reports no descriptive code, so neither report below names a condition")
+	}
+	sharedShort, ok := cerrors.ShortCodeOf(chosen)
+	if !ok {
+		t.Fatal("the chosen condition reports no short code, so the heads below carry nothing to assert")
+	}
 
 	head := func(plugin string) string {
 		guestErr := wasm.GuestReturnedError(plugin, "render_node", wasm.GuestFailure{
@@ -104,7 +143,21 @@ func TestTwoPluginsReportingOneCodePrintDistinguishableHeads(t *testing.T) {
 		}
 	}
 	if gotFirst == gotSecond {
-		t.Fatalf("two guests publishing %s printed identical diagnostics, so a reader cannot tell which condition they met:\n%s", sharedShort, gotFirst)
+		t.Fatalf("two guests reporting %s printed identical diagnostics, so a reader cannot tell which plugin they came from:\n%s", sharedShort, gotFirst)
+	}
+	// The refusal must not be what printed. Both heads above are qualified
+	// whichever condition stands, so the qualified-form assertion alone would pass
+	// on a pair of refusals — and the case would then be proving the qualifier over
+	// a condition no plugin chose rather than over the shared one it is about.
+	refusalShort, ok := cerrors.ShortCodeOf(wasm.ErrWasmGuestConditionUndeclared())
+	if !ok {
+		t.Fatal("the refusal reports no short code, so the control below asserts nothing")
+	}
+	for plugin, got := range map[string]string{first: gotFirst, second: gotSecond} {
+		if strings.Contains(got, refusalShort) {
+			t.Errorf("the head for %s carries the refusal's code %s, so the shared code under test was "+
+				"rejected rather than reported:\n%s", plugin, refusalShort, got)
+		}
 	}
 }
 

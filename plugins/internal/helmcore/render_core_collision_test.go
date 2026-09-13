@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/helmcore"
 )
 
@@ -48,8 +49,8 @@ func TestHelmEngine_Sourced_NestedSameKindResourcesSurvive(t *testing.T) {
 
 // TestHelmEngine_Sourced_DistinctContentCollisionHalts pins the Loud Guardrail:
 // two templates rendering resources that share one identity (kind, namespace,
-// name) but differ in content halt with ErrRenderedFileCollision rather than
-// silently drop one.
+// name) but differ in content halt on the output-name-collision condition rather
+// than silently drop one.
 func TestHelmEngine_Sourced_DistinctContentCollisionHalts(t *testing.T) {
 	t.Parallel()
 	_, err := helmcore.RenderLoadedChart(context.Background(), loadChart(t, "testdata/collision-chart"),
@@ -57,12 +58,18 @@ func TestHelmEngine_Sourced_DistinctContentCollisionHalts(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected a collision error when two distinct resources derive one output filename")
 	}
-	if !errors.Is(err, helmcore.ErrRenderedFileCollision()) {
-		t.Fatalf("error is not ErrRenderedFileCollision: %v", err)
+	if !errors.Is(err, wasm.ErrPluginOutputNameCollision()) {
+		t.Fatalf("error does not carry the output-name-collision condition: %v", err)
 	}
-	// The halt must name both source templates and the output path.
+	// The halt must name both source templates and the output path — and the
+	// sentence that says a RENDERED FILE is what collided, since the condition
+	// names only the kind and is shared with every other collision this core
+	// reports.
 	msg := err.Error()
-	for _, want := range []string{"service.yaml", "svc-service-shared.yaml"} {
+	for _, want := range []string{
+		"service.yaml", "svc-service-shared.yaml",
+		"two rendered resources derive the same output filename with differing content",
+	} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("collision message missing %q; got: %s", want, msg)
 		}

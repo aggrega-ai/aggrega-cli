@@ -39,6 +39,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
+	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/namesegment"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -90,10 +91,9 @@ func SynthesizeWorkloadCore(
 	case rendercore.WorkloadFormStateless, rendercore.WorkloadFormStateful:
 		// supported
 	default:
-		return nil, nil, cerrors.Raise(errUnsupportedComposeForm,
+		return nil, nil, cerrors.Wrap(wasm.ErrPluginCannotExpressInput(),
 			cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID},
-			fmt.Sprintf("compose: workload form %q has no compose mapping; compose supports stateless and stateful only", rendercore.NormalizeWorkloadForm(w.Form)),
-			nil)
+			fmt.Sprintf("compose: workload form %q has no compose mapping; compose supports stateless and stateful only: compose cannot express this workload form", rendercore.NormalizeWorkloadForm(w.Form)))
 	}
 
 	// Unsupported-field diagnostics accumulate here in a deterministic order: per
@@ -442,10 +442,9 @@ func translateContainer(
 	// loudly rather than drop the hook (the loud-halt discipline for a shape
 	// compose cannot express).
 	if c.Lifecycle != nil {
-		return Service{}, nil, cerrors.Raise(errUnsupportedComposeLifecycle,
+		return Service{}, nil, cerrors.Wrap(wasm.ErrPluginCannotExpressInput(),
 			cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID},
-			fmt.Sprintf("compose: node %q declares container lifecycle hooks; compose has no lifecycle-hook primitive", nodeCtx.NodeID),
-			nil)
+			fmt.Sprintf("compose: node %q declares container lifecycle hooks; compose has no lifecycle-hook primitive: compose has no lifecycle-hook primitive; container declares lifecycle hooks", nodeCtx.NodeID))
 	}
 
 	// Container resource requests/limits → compose deploy.resources
@@ -465,10 +464,9 @@ func translateContainer(
 	// primitive; a source reference is not a host file, so any env_file
 	// reinterpretation would silently change meaning. Halt loudly.
 	if len(c.EnvFrom) > 0 {
-		return Service{}, nil, cerrors.Raise(errUnsupportedComposeEnvFrom,
+		return Service{}, nil, cerrors.Wrap(wasm.ErrPluginCannotExpressInput(),
 			cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID},
-			fmt.Sprintf("compose: node %q declares container envFrom; compose has no env-from-object primitive", nodeCtx.NodeID),
-			nil)
+			fmt.Sprintf("compose: node %q declares container envFrom; compose has no env-from-object primitive: compose has no env-from-object primitive; container declares envFrom", nodeCtx.NodeID))
 	}
 
 	// imagePullPolicy → compose pull_policy (schema-validated enum).
@@ -842,7 +840,9 @@ func probeToHealthcheck(p *types.ProbeSpec, ports types.OrderedMap[types.PortSpe
 	case len(p.Exec) > 0:
 		hc.Test = append([]string{"CMD"}, p.Exec...)
 	default:
-		return nil, ErrTranslationProbeShape()
+		return nil, cerrors.Wrap(wasm.ErrPluginRequiredInputUnresolved(),
+			cerrors.TranslationError, cerrors.SourceLocation{},
+			"probe declares no shape (http/tcp/exec)")
 	}
 
 	if p.PeriodSeconds != nil {
@@ -866,7 +866,9 @@ func probeToHealthcheck(p *types.ProbeSpec, ports types.OrderedMap[types.PortSpe
 // error if no ports are declared.
 func resolveHTTPProbePort(ports types.OrderedMap[types.PortSpec]) (int, error) {
 	if ports.Len() == 0 {
-		return 0, ErrTranslationProbeNoPort()
+		return 0, cerrors.Wrap(wasm.ErrPluginRequiredInputUnresolved(),
+			cerrors.TranslationError, cerrors.SourceLocation{},
+			"probe http: requires at least one container port; container declares none")
 	}
 	names := []string{}
 	for name := range ports.All() {
@@ -1112,7 +1114,9 @@ func composePortProtocolSuffix(protocol string) (string, error) {
 	case "UDP":
 		return "/udp", nil
 	default:
-		return "", ErrUnsupportedComposePortProtocol()
+		return "", cerrors.Wrap(wasm.ErrPluginValueNotRepresentable(),
+			cerrors.TranslationError, cerrors.SourceLocation{},
+			"compose publishes a port's transport as a tcp or udp suffix; this port declares a transport compose cannot express")
 	}
 }
 

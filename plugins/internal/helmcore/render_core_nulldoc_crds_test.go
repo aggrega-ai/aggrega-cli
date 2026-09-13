@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/helmcore"
 )
 
@@ -115,8 +116,8 @@ func TestHelmEngine_Sourced_CrdsEmissionIsDeterministic(t *testing.T) {
 
 // TestHelmEngine_Sourced_CrdTemplateCollisionHalts pins that the Loud Guardrail
 // spans the crds/ and templates/ surfaces: a crds/ CRD and a templates/ CRD that
-// derive one output filename with differing content halt with
-// ErrRenderedFileCollision rather than silently drop one.
+// derive one output filename with differing content halt on the
+// output-name-collision condition rather than silently drop one.
 func TestHelmEngine_Sourced_CrdTemplateCollisionHalts(t *testing.T) {
 	t.Parallel()
 	_, err := helmcore.RenderLoadedChart(context.Background(), loadChart(t, "testdata/crd-collision-chart"),
@@ -124,10 +125,15 @@ func TestHelmEngine_Sourced_CrdTemplateCollisionHalts(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected a collision error when a crds/ and a templates/ resource derive one output filename")
 	}
-	if !errors.Is(err, helmcore.ErrRenderedFileCollision()) {
-		t.Fatalf("error is not ErrRenderedFileCollision: %v", err)
+	if !errors.Is(err, wasm.ErrPluginOutputNameCollision()) {
+		t.Fatalf("error does not carry the output-name-collision condition: %v", err)
 	}
 	if !strings.Contains(err.Error(), "xc-customresourcedefinition-things-example-com.yaml") {
 		t.Errorf("collision message missing the shared output path; got: %s", err.Error())
+	}
+	// The condition names the kind; this sentence is what still says a rendered
+	// file is what collided rather than some other name this core derives.
+	if want := "two rendered resources derive the same output filename with differing content"; !strings.Contains(err.Error(), want) {
+		t.Errorf("collision message missing %q; got: %s", want, err.Error())
 	}
 }

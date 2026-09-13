@@ -56,7 +56,7 @@
 // refusing it is the merge's to do, since there is no second contributor to name.
 //
 // Underneath all of them, converting a parsed fragment to a value tree refuses a
-// mapping key written twice ([ErrDuplicateMappingKey]). No name is built there
+// mapping key written twice ([mappingToValue]). No name is built there
 // and no contributor is compared: it is the case where a fragment already carries
 // two bodies for one key it wrote itself, which every mechanism above would
 // otherwise be handed as a single entry.
@@ -91,40 +91,13 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/alphanumeric"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
+	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/pkg/anchorcycle"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/namesegment"
 	"github.com/awslabs/goformation/v7/intrinsics"
 	"go.yaml.in/yaml/v3"
 )
-
-// ErrOutputNameCollision is the loud failure raised when two different entries
-// an author wrote arrive at one stack Output name. An Output name admits only
-// letters and digits, and it is built by writing what that alphabet refuses as
-// an escape spelled inside it rather than by dropping it, so two entries an
-// author wrote apart stay apart and nothing an author can write reaches this.
-// It is retained because a derivation that stopped telling two entries apart
-// would otherwise emit one Output where two were written, silently; the build
-// halts instead, and the halt names every entry behind the name.
-func ErrOutputNameCollision() error { return errOutputNameCollision }
-
-var errOutputNameCollision = cerrors.Register("output-name-collision", cerrors.Meta{
-	ShortCode: "E0233",
-	Message:   "cloudformation-provider: two entries an author wrote reach one stack Output name",
-})
-
-// ErrDuplicateMappingKey is the loud failure raised when a CloudFormation
-// fragment writes one mapping key twice. A mapping holds one value per key, so
-// converting such a mapping keeps whichever body came last and discards the
-// other — and where the mapping is a Resources or Outputs block, the discarded
-// body is a resource or an output that was written and would not be there. The
-// build halts naming the key and both places it was written.
-func ErrDuplicateMappingKey() error { return errDuplicateMappingKey }
-
-var errDuplicateMappingKey = cerrors.Register("duplicate-mapping-key", cerrors.Meta{
-	ShortCode: "E0230",
-	Message:   "cloudformation-provider: one mapping key is written more than once",
-})
 
 // StackTemplateName is the file name the assembled CloudFormation stack template
 // lands at within a dispatch group's output. A dispatch group folds its per-node
@@ -823,7 +796,7 @@ func nodeToValue(n *yaml.Node) (any, error) {
 // each value. Long-form intrinsic objects (a mapping whose sole key is "Ref" or
 // "Fn::*") are ordinary mappings and pass through unchanged.
 //
-// A key written twice in one mapping is refused ([ErrDuplicateMappingKey]). This
+// A key written twice in one mapping is refused. This
 // is the point at which such a repeat becomes a loss and the only point at which
 // it is still cheap to describe: the parsed node tree carries a mapping's content
 // as a flat run of key/value pairs, so both bodies are present and intact right
@@ -843,7 +816,9 @@ func mappingToValue(n *yaml.Node) (map[string]any, error) {
 		keyNode := n.Content[i]
 		key := keyNode.Value
 		if earlier, taken := firstLine[key]; taken {
-			return nil, fmt.Errorf("%w: the key %q is written at line %d and again at line %d; a mapping holds one value per key, so one of the two bodies would be dropped — remove one, or rename one so each key is written once", ErrDuplicateMappingKey(), key, earlier, keyNode.Line)
+			return nil, cerrors.Wrap(wasm.ErrPluginOutputNameCollision(),
+				cerrors.TranslationError, cerrors.SourceLocation{},
+				fmt.Sprintf("cloudformation-provider: one mapping key is written more than once: the key %q is written at line %d and again at line %d; a mapping holds one value per key, so one of the two bodies would be dropped — remove one, or rename one so each key is written once", key, earlier, keyNode.Line))
 		}
 		firstLine[key] = keyNode.Line
 		v, err := nodeToValue(n.Content[i+1])
@@ -1149,7 +1124,9 @@ func (l *outputNameLedger) err() error {
 		}
 		clauses = append(clauses, fmt.Sprintf("%s reach the Output name %q", joinPhrases(phrases), name))
 	}
-	return fmt.Errorf("%w: %s; an Output name is built by encoding the component and the entry into the letters and digits a logical id admits, rather than by dropping what it does not, so two entries an author wrote apart stay apart — renaming either end clears the build", ErrOutputNameCollision(), strings.Join(clauses, "; "))
+	return cerrors.Wrap(wasm.ErrPluginOutputNameCollision(),
+		cerrors.TranslationError, cerrors.SourceLocation{},
+		fmt.Sprintf("cloudformation-provider: two entries an author wrote reach one stack Output name: %s; an Output name is built by encoding the component and the entry into the letters and digits a logical id admits, rather than by dropping what it does not, so two entries an author wrote apart stay apart — renaming either end clears the build", strings.Join(clauses, "; ")))
 }
 
 // joinPhrases joins already-ordered phrases into one English list.

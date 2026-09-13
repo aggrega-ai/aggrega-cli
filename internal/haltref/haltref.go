@@ -154,9 +154,9 @@ type Entry struct {
 // Its text is a definitive negative, so a caller may surface it only once every
 // place a condition is declared has actually been searched. [Resolve] and
 // [ResolveIn] each return it for their own half of that search, and neither half
-// is the whole one: a condition a provider declares is absent from the registry
-// and present in the published reference. Where a half could not be searched at
-// all, what the caller has measured is an [UnresolvedCodeError] instead.
+// is the whole one: the published region is rendered from the module's own
+// declarations rather than from what this binary links. Where a half could not be
+// searched at all, what the caller has measured is an [UnresolvedCodeError].
 type UnknownCodeError struct {
 	// Code is the argument as it was supplied, so the refusal quotes what the
 	// caller actually typed rather than a normalised form they never wrote.
@@ -179,10 +179,10 @@ func (e *UnknownCodeError) Error() string {
 // It is separate from [UnknownCodeError] because the two are different
 // measurements and a reader acts on them differently. A code absent from a
 // reference that WAS read names nothing, and the repair is the code. A code
-// absent only from this binary's own declarations may still name a condition a
-// provider declares — those are registered inside the guest that raises them,
-// never in the host that loaded it — so with the reference unread there are two
-// repairs open and nothing yet to tell which one applies.
+// absent only from this binary's own declarations is an unfinished lookup — the
+// published reference is rendered from the module's own declarations rather than
+// from what this binary links — so with it unread there are two repairs open and
+// nothing yet to tell which one applies.
 //
 // Nothing in this package constructs it. Neither read here knows whether the
 // other one happened, and that is precisely the fact this reports, so it belongs
@@ -199,7 +199,7 @@ type UnresolvedCodeError struct {
 // needs.
 func (e *UnresolvedCodeError) Error() string {
 	return fmt.Sprintf("%q is not one of the halting conditions this binary declares, and the "+
-		"published reference — which lists the conditions a provider declares for itself as well — "+
+		"published reference — which may have been published for a different version — "+
 		"could not be read, so whether the code names a condition is undetermined. Either repair may "+
 		"be the one you need: correct the code, or get the documentation. %s", e.Code, codeShapes())
 }
@@ -304,18 +304,18 @@ func Resolve(code string) (cerrors.Condition, error) {
 // reference page's generated region rather than out of this binary's registry.
 //
 // It exists because the registry is NOT the whole declared set, and the gap is
-// structural rather than a lapse. Domain-specific work runs inside sandboxed guest
-// modules, and a condition a guest declares is registered when that guest runs —
-// inside the guest, never in the host that loaded it. So the host's registry
-// answers for the conditions the host itself declares and for no others, while a
-// build reports all of them.
+// structural rather than a lapse. The registry answers for the conditions the
+// running binary links, and domain-specific work is compiled into sandboxed guest
+// modules the host loads rather than links — so a condition declared in a package
+// that reaches only a guest is absent from the host's registry however faithfully
+// it was declared.
 //
 // The published region does not have that limit: it is rendered from the
-// declarations across the whole module, guests included, so it resolves every
-// condition. It is therefore the fallback rather than the primary read — the
-// registry answers offline and instantly for most codes, and this covers the rest,
-// which is the ordering that keeps the common case free of the documentation
-// entirely.
+// declarations across the whole module, the guest-only packages included, so it
+// resolves every condition the module declares. It is therefore the fallback
+// rather than the primary read — the registry answers offline and instantly for
+// most codes, and this covers the rest, which is the ordering that keeps the
+// common case free of the documentation entirely.
 //
 // Both codes are accepted, for the reason [Resolve] accepts both: the region
 // carries each condition under its short code and its descriptive code, so

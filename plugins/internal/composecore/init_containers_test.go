@@ -14,6 +14,7 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
+	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -352,13 +353,13 @@ func TestSynthesizeWorkload_InitContainerReachesSharedTranslationHalts(t *testin
 		{
 			name:     "lifecycle",
 			init:     types.ContainerSpec{Name: "prep", Image: "prep:1.0", Lifecycle: &types.LifecycleSpec{}},
-			sentinel: ErrUnsupportedComposeLifecycle(),
+			sentinel: wasm.ErrPluginCannotExpressInput(),
 			want:     "lifecycle-hook primitive",
 		},
 		{
 			name:     "envFrom",
 			init:     types.ContainerSpec{Name: "prep", Image: "prep:1.0", EnvFrom: []types.EnvFromSource{{ConfigMap: "settings"}}},
-			sentinel: ErrUnsupportedComposeEnvFrom(),
+			sentinel: wasm.ErrPluginCannotExpressInput(),
 			want:     "env-from-object primitive",
 		},
 		{

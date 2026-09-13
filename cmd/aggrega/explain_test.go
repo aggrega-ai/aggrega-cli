@@ -63,20 +63,43 @@ func explainProbe(t *testing.T) (short, code, message string) {
 	return short, code, probe.Error()
 }
 
-// guestProbe is a condition declared inside a provider guest: registered when
-// that guest runs, and therefore absent from the host binary's own registry. Its
-// short code, descriptive code and sentence are what the published reference
-// carries for it.
+// referenceOnlyProbe is a condition the published reference carries and this
+// binary does not declare. Its short code, descriptive code and sentence are what
+// the reference publishes for it, and the registry answers for none of them.
 //
 // It is quoted rather than read off an accessor because there is nothing here to
-// read it off — which is the whole property the case exercises. A renumbering
-// would fail this case, which is the failure worth having: it is the one place
-// that says the command answers for a condition the host does not declare.
+// read it off — which is the whole property the case exercises: the command has
+// to answer a code its own declarations cannot resolve, or a reader holding one
+// is told it names nothing.
+//
+// The number is one no condition carries and the retirement record does not hold,
+// and the cases below check both before using it. A retired number resolves — as
+// retired — and would send the command down a different answer entirely, so a row
+// pointed at one would go on running while exercising something else.
 const (
-	guestProbeShort    = "E0230"
-	guestProbeCode     = "duplicate-mapping-key"
-	guestProbeSentence = "cloudformation-provider: one mapping key is written more than once"
+	referenceOnlyProbeShort    = "E9999"
+	referenceOnlyProbeCode     = "example-provider/a-condition-this-binary-does-not-declare"
+	referenceOnlyProbeSentence = "a condition the published reference carries and this binary does not declare"
 )
+
+// requireUnresolvable fatals unless the short code names nothing this binary
+// declares AND is not one the retirement record holds.
+//
+// Both halves matter and only the first is obvious. A registered code would make
+// the fallback unnecessary, and a retired one resolves to the retirement note —
+// so a case pointed at either goes on passing while asserting something other
+// than the route it exists for.
+func requireUnresolvable(t *testing.T, shortCode string) {
+	t.Helper()
+	if _, err := haltref.Resolve(shortCode); err == nil {
+		t.Fatalf("%s resolves from this binary's own registry, so this case no longer exercises the "+
+			"fallback it exists for; point it at a code neither registered nor retired", shortCode)
+	}
+	if note, retired := cerrors.RetiredShortCode(shortCode); retired {
+		t.Fatalf("%s is now retired (%s), so it resolves to the retirement note rather than reaching the "+
+			"published reference; point this case at a code neither registered nor retired", shortCode, note)
+	}
+}
 
 // explainFixturePage renders a halting-conditions page in the shape the generator
 // writes: an entry, and a generated region pairing short codes with the entries
@@ -100,14 +123,14 @@ func explainFixturePage(shortCode, sentence string, documented bool) string {
 
 // explainFixtureReference renders the sentinel reference in the shape the
 // generator writes: every condition under its short code, its descriptive code
-// and the sentence it registers, including one a provider guest declares.
+// and the sentence it registers, including one this binary does not declare.
 func explainFixtureReference(shortCode, code, sentence string) string {
 	return "# Error sentinels\n\n" +
 		"## Every condition, by short code\n\n" +
 		"<!-- BEGIN GENERATED: " + haltref.ReferenceRegionID + " -->\n" +
 		"| Code | Condition | Message |\n| --- | --- | --- |\n" +
 		"| `" + shortCode + "` | `" + code + "` | `" + sentence + "` |\n" +
-		"| `" + guestProbeShort + "` | `" + guestProbeCode + "` | `" + guestProbeSentence + "` |\n" +
+		"| `" + referenceOnlyProbeShort + "` | `" + referenceOnlyProbeCode + "` | `" + referenceOnlyProbeSentence + "` |\n" +
 		"<!-- END GENERATED: " + haltref.ReferenceRegionID + " -->\n"
 }
 
@@ -288,35 +311,37 @@ func TestExplainAcceptsTheDescriptiveCodeToo(t *testing.T) {
 }
 
 // TestExplainAnswersAConditionTheHostDoesNotDeclare is the case the registry
-// alone cannot serve. A provider's conditions are declared inside the guest that
-// raises them, so the host binary registers none of them — yet a build reports
-// them and the published reference carries them, so the command has to answer.
+// alone cannot serve: a code the published reference carries and this binary's
+// own declarations do not resolve, which the command has to answer rather than
+// deny.
+//
+// The two sides can diverge for more than one reason and the command cannot tell
+// them apart, which is why the fallback is keyed on the registry answering
+// nothing rather than on any property of the code: a reader holding a code the
+// reference publishes is owed what it publishes, whatever put it there.
 //
 // The negative control is the same code against the registry directly, which must
-// NOT resolve. Without it this case would pass just as well if the host happened
-// to declare the condition after all, and it would then be proving nothing about
-// the fallback.
+// NOT resolve, and must not be retired either — a retired number resolves to the
+// retirement note and would send the command down a different answer while this
+// case went on passing.
 func TestExplainAnswersAConditionTheHostDoesNotDeclare(t *testing.T) {
 	isolateCLIEnvironment(t)
-	if _, err := haltref.Resolve(guestProbeShort); err == nil {
-		t.Fatalf("%s resolves from this binary's own registry, so this case no longer exercises the "+
-			"fallback it exists for; point it at a condition a guest declares", guestProbeShort)
-	}
+	requireUnresolvable(t, referenceOnlyProbeShort)
 	short, code, message := explainProbe(t)
 	ws := seedExplainWorkspace(t, seededPages(short, code, message, true))
 
-	out, notes, err := runExplainCommand(t, "explain", guestProbeShort, "--workspace-root", ws)
+	out, notes, err := runExplainCommand(t, "explain", referenceOnlyProbeShort, "--workspace-root", ws)
 	if err != nil {
-		t.Fatalf("a condition a guest declares was refused: %v\nnotes: %s", err, notes)
+		t.Fatalf("a condition the published reference carries was refused: %v\nnotes: %s", err, notes)
 	}
-	for _, want := range []string{guestProbeShort, guestProbeCode, guestProbeSentence} {
+	for _, want := range []string{referenceOnlyProbeShort, referenceOnlyProbeCode, referenceOnlyProbeSentence} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the answer omits %q:\n%s", want, out)
 		}
 	}
 	// The fixture page documents no entry for it, so the walk-through is reported
 	// missing rather than silently absent.
-	if !strings.Contains(notes, "no entry for "+guestProbeShort) {
+	if !strings.Contains(notes, "no entry for "+referenceOnlyProbeShort) {
 		t.Errorf("the note does not say which condition the page does not document:\n%s", notes)
 	}
 }
@@ -350,39 +375,40 @@ func TestExplainRefusesACodeNoConditionCarries(t *testing.T) {
 
 // TestExplainSaysWhenItCouldNotConsultTheReference covers the case a single
 // refusal would misreport. A code this binary does not declare may be a typo or
-// may be one a provider declares, and only the published reference tells the two
-// apart — so where the reference cannot be read, the answer says both that the
-// code resolved to nothing here and that the reference was not consulted.
+// may be one the published reference carries, and only that reference tells the
+// two apart — so where it cannot be read, the answer says both that the code
+// resolved to nothing here and that the reference was not consulted.
 //
 // The workspace is pinned offline, so the case reaches no network.
 func TestExplainSaysWhenItCouldNotConsultTheReference(t *testing.T) {
 	isolateCLIEnvironment(t)
+	requireUnresolvable(t, referenceOnlyProbeShort)
 	t.Setenv("AGGREGA_OFFLINE", "1")
 	ws := t.TempDir()
 
-	out, _, err := runExplainCommand(t, "explain", guestProbeShort, "--workspace-root", ws)
+	out, _, err := runExplainCommand(t, "explain", referenceOnlyProbeShort, "--workspace-root", ws)
 	if err == nil {
 		t.Fatal("a code nothing here declares was answered without the reference being read")
 	}
 	if out != "" {
 		t.Errorf("a refused code still wrote an answer:\n%s", out)
 	}
-	for _, want := range []string{guestProbeShort, "sentinels.md", "not cached"} {
+	for _, want := range []string{referenceOnlyProbeShort, "sentinels.md", "not cached"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("the refusal omits %q, so a reader cannot tell a typo from unread documentation: %s", want, err)
 		}
 	}
-	// The condition is real, published and reportable — it is simply declared
-	// somewhere this binary cannot see. Denying it outright would be a false
-	// statement to the one reader most likely to be holding the code.
+	// A code the reference may well carry must not be denied outright while the
+	// reference that would settle it went unread — that is a false statement to the
+	// one reader most likely to be holding it.
 	//
 	// The denial is constructed rather than quoted, so the assertion tracks the
 	// refusal's own text instead of a phrase copied out of it that could go on
 	// passing after the text moved.
-	denial := (&haltref.UnknownCodeError{Code: guestProbeShort}).Error()
+	denial := (&haltref.UnknownCodeError{Code: referenceOnlyProbeShort}).Error()
 	if strings.Contains(err.Error(), denial) {
-		t.Errorf("a condition a provider declares was reported as registered under nothing, while "+
-			"the reference that carries it went unread: %s", err)
+		t.Errorf("a code the published reference may carry was reported as registered under nothing, "+
+			"while the reference that would settle it went unread: %s", err)
 	}
 }
 
@@ -393,9 +419,10 @@ func TestExplainSaysWhenItCouldNotConsultTheReference(t *testing.T) {
 //
 // With the reference read, the refusal is entitled to the definitive negative:
 // every place a condition is declared has been searched. With the reference
-// unreachable it is not — a provider's conditions are declared inside the guest
-// that raises them, so a code missing from the host's own declarations may still
-// name one — and the refusal has to report what it measured instead.
+// unreachable it is not — the published correspondence is rendered from the whole
+// module rather than from what this binary happens to link, so a code missing
+// from the registry alone is an unfinished lookup — and the refusal has to report
+// what it measured instead.
 //
 // Both refusals are constructed from their own types rather than quoted, so the
 // case asserts the claims the product actually makes and cannot drift into

@@ -143,6 +143,19 @@ func LinkResolveFailure(err error) LinkResolveOutput {
 // them says nothing the first statement did not. The containment skip above
 // cannot see it, because the two frames' texts differ in their messages even
 // where their pointers agree.
+//
+// # A chain every frame declines is reported anyway
+//
+// The frame decisions can in principle silence a whole chain: a failure whose
+// only frame is a registered condition contributes nothing, because the condition
+// is reported as an identity rather than as text. The result would be an empty
+// message, and an empty message is the SUCCESS case at the socket — a failing
+// operation would be read as one that completed, and the build would proceed as
+// if the plugin had approved it.
+//
+// So an empty accumulation falls back to the chain's own rendering rather than
+// crossing empty. It is a floor and never the ordinary path: whenever any frame
+// speaks, what crosses is what the frame decisions produced.
 func failureMessage(err error) string {
 	var segments []string
 	statedSource := ""
@@ -168,6 +181,9 @@ func failureMessage(err error) string {
 			segments = append(segments, txt)
 		}
 	}
+	if len(segments) == 0 {
+		return err.Error()
+	}
 	return strings.Join(segments, ": ")
 }
 
@@ -177,21 +193,35 @@ func failureMessage(err error) string {
 // second value, which leaves whatever pointer was last stated standing.
 //
 // For a categorised frame the contribution is its source pointer and message
-// WITHOUT the category; for anything else it is the frame's own text.
+// WITHOUT the category; for a REGISTERED CONDITION it is nothing at all; for
+// anything else it is the frame's own text.
 //
-// Dropping the category and keeping the pointer is not a formatting preference,
-// and the two halves have different reasons. The category is a value the HOST
-// composes into the head of the diagnostic it prints for this failure, so a
-// frame that spells it into the crossing text gives one value two homes and the
-// word arrives twice on one line. The source pointer is occurrence data the host
-// may not hold at all — a document inside the packed source, a key within it —
-// so dropping it would delete the only locator the reader gets.
+// The two silences have one reason and it is the same reason: each of those
+// values is one the HOST composes into the diagnostic it prints for this failure,
+// so a frame that spells it into the crossing text gives one value two homes and
+// the words arrive twice on one line. The category is in the head. The
+// condition's registered sentence is what the host now opens the message with,
+// because the conditions a guest may choose are the host's own and it reports the
+// chosen one by identity — so the sentence crosses as that identity and never as
+// text. What the guest contributes is the occurrence: which construct, which
+// input, which name, which value.
 //
-// The frame is matched by type assertion rather than by errors.As, because the
+// The source pointer is kept for the opposite reason: it is occurrence data the
+// host may not hold at all — a document inside the packed source, a key within it
+// — so dropping it would delete the only locator the reader gets.
+//
+// Each frame is matched by type assertion rather than by errors.As, because the
 // question is what THIS frame says and not what its chain contains: errors.As
 // would answer for a frame further down and every ordinary wrap would then
-// contribute a categorised frame's text.
+// contribute a categorised frame's text — or, for the identity test, fall silent
+// on every frame above a condition.
 func frameText(frame error) (text, source string) {
+	// A registered condition is matched through the construction-side interface,
+	// which no package outside the one that owns the registry can satisfy, so
+	// nothing an author writes by hand can fall silent here by accident.
+	if _, registered := frame.(cerrors.Identity); registered {
+		return "", ""
+	}
 	ce, ok := frame.(*cerrors.CompilerError)
 	if !ok {
 		return frame.Error(), ""

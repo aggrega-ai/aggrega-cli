@@ -79,6 +79,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
+	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/namesegment"
 )
@@ -649,10 +650,9 @@ func checkConfigReferences(merged ComposeFile) error {
 	if len(unresolved) == 0 {
 		return nil
 	}
-	return cerrors.Raise(errTranslationConfigMapMissingArtifact,
+	return cerrors.Wrap(wasm.ErrPluginRequiredInputUnresolved(),
 		cerrors.TranslationError, cerrors.SourceLocation{},
-		fmt.Sprintf("compose AssembleBoundary: %s; declare each one as a top-level configs: entry from the Recipe's artifacts: input", strings.Join(unresolved, "; ")),
-		nil)
+		fmt.Sprintf("compose AssembleBoundary: %s; declare each one as a top-level configs: entry from the Recipe's artifacts: input: configmap volume requires a file emitted via the Recipe's artifacts: input; none found", strings.Join(unresolved, "; ")))
 }
 
 // applyDependsOn projects IR edges onto contributing services and records an

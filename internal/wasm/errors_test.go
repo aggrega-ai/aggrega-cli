@@ -38,38 +38,50 @@ func TestGuestReturnedError(t *testing.T) {
 }
 
 // TestGuestReturnedError_ReportedConditionStandsOverTheHostCondition proves the
-// identifiers a guest reports reach the error the host builds, and that the host
-// taxonomy still classifies underneath them.
+// identifiers of the condition a guest chose reach the error the host builds, and
+// that the host taxonomy still classifies underneath them.
 //
 // Both halves are asserted because either alone would pass on a wrong
 // implementation: reporting the codes by REPLACING the host condition carries them
 // and silently stops matching the taxonomy every caller classifies with, and
 // keeping the host condition without presenting the codes matches and reports the
 // wrong condition.
+//
+// The sentence is asserted in both directions beside them, because an
+// implementation can get the identifiers right and still print the host's
+// wording — leaving a diagnostic whose code resolves to one sentence and whose
+// text says another.
 func TestGuestReturnedError_ReportedConditionStandsOverTheHostCondition(t *testing.T) {
-	const (
-		guestCode  = "example-provider-core/a-condition-the-guest-publishes"
-		guestShort = "E0000"
-	)
+	chosen := conditionReport(t, ErrPluginCannotExpressInput(), "the occurrence's own clause")
 
-	err := GuestReturnedError("provider/example-provider", "render_node", GuestFailure{
-		Message:   "the occurrence's own clause",
-		Code:      guestCode,
-		ShortCode: guestShort,
-	})
-	if got, ok := cerrors.CodeOf(err); !ok || got != guestCode {
-		t.Errorf("the error reports descriptive code %q (found=%t); want the guest's %q", got, ok, guestCode)
+	err := GuestReturnedError("provider/example-provider", "render_node", chosen)
+	if got, ok := cerrors.CodeOf(err); !ok || got != chosen.Code {
+		t.Errorf("the error reports descriptive code %q (found=%t); want the chosen condition's %q", got, ok, chosen.Code)
 	}
-	if got, ok := cerrors.ShortCodeOf(err); !ok || got != guestShort {
-		t.Errorf("the error reports short code %q (found=%t); want the guest's %q", got, ok, guestShort)
+	if got, ok := cerrors.ShortCodeOf(err); !ok || got != chosen.ShortCode {
+		t.Errorf("the error reports short code %q (found=%t); want the chosen condition's %q", got, ok, chosen.ShortCode)
 	}
 	if !errors.Is(err, ErrWasmGuestError()) {
 		t.Error("presenting the guest's identifiers must not displace the host taxonomy")
 	}
-	// The wording of "a guest reported an error" has one home, so this type
-	// contributes identifiers and never a second copy of that sentence.
-	if !strings.Contains(err.Error(), ErrWasmGuestError().Error()) {
-		t.Errorf("the error no longer carries the host condition's registered sentence, got %q", err.Error())
+	// The sentence beside the code is the CHOSEN condition's, because the head a
+	// reader meets carries the chosen condition's code: a line whose code resolves
+	// to one sentence and whose text says another describes two conditions at once,
+	// and the reader looking the code up is told something the line did not say.
+	// It is read off the identity rather than written out here, so the wording
+	// still has exactly one home.
+	if !strings.Contains(err.Error(), ErrPluginCannotExpressInput().Error()) {
+		t.Errorf("the error no longer carries the chosen condition's registered sentence, so the code in "+
+			"the head and the sentence beside it name different conditions, got %q", err.Error())
+	}
+	// And the host's own sentence is NOT what prints, which is the other half of
+	// the same rule. Asserted rather than left implied: an implementation keeping
+	// the host's wording would satisfy every assertion above — the identifiers are
+	// read off the chosen condition and the taxonomy still matches beneath — while
+	// printing the one sentence the head's code does not resolve to.
+	if strings.Contains(err.Error(), ErrWasmGuestError().Error()) {
+		t.Errorf("the error carries the host condition's registered sentence, which the head's short code "+
+			"does not resolve to, got %q", err.Error())
 	}
 }
 
@@ -111,8 +123,14 @@ func TestGuestReturnedError_HalfReportNamesNoCondition(t *testing.T) {
 }
 
 // TestGuestReturnedError_TwoPluginsOneCodeStayDistinguishable proves the property
-// the qualifier exists for: two independently authored guests reporting the SAME
-// code are told apart by the plugin the host invoked.
+// the qualifier exists for: two guests reporting the SAME code are told apart by
+// the plugin the host invoked.
+//
+// Two guests reporting one code is the ordinary case rather than a collision, and
+// that is what makes the qualifier load-bearing. The conditions a plugin chooses
+// from name a KIND of failure and no place, so every guest that cannot express a
+// construct reports the same code; the plugin is the only thing in the diagnostic
+// that says which of a build's attached guests to open.
 //
 // It is asserted at this layer as well as at the printing boundary because the two
 // can fail independently — the read can lose the plugin here, and the composition
@@ -120,13 +138,12 @@ func TestGuestReturnedError_HalfReportNamesNoCondition(t *testing.T) {
 // which plugin they held.
 func TestGuestReturnedError_TwoPluginsOneCodeStayDistinguishable(t *testing.T) {
 	const (
-		sharedCode  = "example-provider-core/a-condition-the-guest-publishes"
-		sharedShort = "E0000"
-		first       = "provider/example-provider"
-		second      = "provider/another-provider"
+		first  = "provider/example-provider"
+		second = "provider/another-provider"
 	)
 
-	failure := GuestFailure{Message: "the occurrence's own clause", Code: sharedCode, ShortCode: sharedShort}
+	failure := conditionReport(t, ErrPluginCannotExpressInput(), "the occurrence's own clause")
+	sharedCode, sharedShort := failure.Code, failure.ShortCode
 	errFirst := GuestReturnedError(first, "render_node", failure)
 	errSecond := GuestReturnedError(second, "render_node", failure)
 
@@ -142,15 +159,15 @@ func TestGuestReturnedError_TwoPluginsOneCodeStayDistinguishable(t *testing.T) {
 		t.Fatal("two guests reporting one code are indistinguishable, which is the whole condition the qualifier removes")
 	}
 
-	// The codes themselves stay exactly what each guest published. A machine
-	// consumer matches the allocated code; the qualifier is a third read beside it,
-	// never folded into it.
+	// The codes themselves stay exactly the chosen condition's. A machine consumer
+	// matches the code the condition is registered under; the qualifier is a third
+	// read beside it, never folded into it.
 	for _, err := range []error{errFirst, errSecond} {
 		if got, ok := cerrors.ShortCodeOf(err); !ok || got != sharedShort {
-			t.Errorf("the short code reports %q (found=%t); want the guest's unqualified %q", got, ok, sharedShort)
+			t.Errorf("the short code reports %q (found=%t); want the unqualified %q", got, ok, sharedShort)
 		}
 		if got, ok := cerrors.CodeOf(err); !ok || got != sharedCode {
-			t.Errorf("the descriptive code reports %q (found=%t); want the guest's unqualified %q", got, ok, sharedCode)
+			t.Errorf("the descriptive code reports %q (found=%t); want the unqualified %q", got, ok, sharedCode)
 		}
 	}
 }

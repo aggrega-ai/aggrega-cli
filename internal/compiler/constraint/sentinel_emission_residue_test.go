@@ -172,8 +172,11 @@ type inlineResidueEntry struct {
 // sequence without a sort: entries sharing a host sit together, which is what a
 // reader needs when judging whether a host's sites can move as a group.
 //
-// A site raising two sentinels is TWO entries. That is deliberate — it makes a
-// partial extraction representable, which a single entry naming both would not.
+// A site raising two checks is TWO entries. That is deliberate — it makes a
+// partial extraction representable, which a single entry covering both would not.
+// Two entries may name one sentinel: a condition a plugin reports names a KIND of
+// failure, so two arms of one test legitimately share one, and the vehicle is then
+// not what tells the entries apart.
 var inlineCheckResidue = []inlineResidueEntry{
 	{
 		vehicle:     "ErrInstanceIDCollision",
@@ -199,7 +202,7 @@ var inlineCheckResidue = []inlineResidueEntry{
 			"artifacts. Leaving is what the declared facts support, not a deferral of convenience.",
 	},
 	{
-		vehicle:     "ErrRenderedFileCollision",
+		vehicle:     "ErrPluginOutputNameCollision",
 		vehicleKind: vehicleSentinel,
 		host:        "RenderLoadedChart",
 		file:        "plugins/internal/helmcore/render_core.go",
@@ -216,7 +219,7 @@ var inlineCheckResidue = []inlineResidueEntry{
 			"ever sees the output, and the rule can only be asked where the bytes still are.",
 	},
 	{
-		vehicle:     "ErrStatefulSetNoHeadlessService",
+		vehicle:     "ErrPluginRequiredInputUnresolved",
 		vehicleKind: vehicleSentinel,
 		host:        "statefulSetGoverningService",
 		file:        "plugins/internal/helmcore/synth_core.go",
@@ -233,7 +236,7 @@ var inlineCheckResidue = []inlineResidueEntry{
 			"only duplicate the counting half and leave the resolution where it already is.",
 	},
 	{
-		vehicle:     "ErrStatefulSetAmbiguousHeadlessService",
+		vehicle:     "ErrPluginRequiredInputUnresolved",
 		vehicleKind: vehicleSentinel,
 		host:        "statefulSetGoverningService",
 		file:        "plugins/internal/helmcore/synth_core.go",
@@ -243,7 +246,9 @@ var inlineCheckResidue = []inlineResidueEntry{
 			"same Kubernetes Service shape and was judged on its own rather than by inheritance, reaching " +
 			"the same placement as the zero arm. The entry stays separate because that is what keeps the " +
 			"agreement a finding: two entries that could have parted and did not say more than one entry " +
-			"covering both, which could not have parted at all.",
+			"covering both, which could not have parted at all. Both arms now name one condition — the " +
+			"conditions a plugin reports name a KIND of failure and several arms legitimately share one — " +
+			"so the vehicle no longer tells the two entries apart and the host-and-arm reading does.",
 	},
 }
 

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -86,8 +87,13 @@ func TestSynthesizeWorkload_UnspellableTransportHalts(t *testing.T) {
 	if err == nil {
 		t.Fatal("a published port declaring a transport compose cannot spell rendered without error")
 	}
-	if !errors.Is(err, ErrUnsupportedComposePortProtocol()) {
-		t.Errorf("halt does not carry the unspellable-transport condition: %v", err)
+	if !errors.Is(err, wasm.ErrPluginValueNotRepresentable()) {
+		t.Errorf("halt does not carry the value-not-representable condition: %v", err)
+	}
+	// The condition is shared with every other unrepresentable value this core
+	// reports, so the sentence is what still says this was the transport.
+	if want := "compose publishes a port's transport as a tcp or udp suffix; this port declares a transport compose cannot express"; !strings.Contains(errorChainText(err), want) {
+		t.Errorf("the halt no longer says the transport is what has no representation.\n  want: %s\n  got:  %v", want, err)
 	}
 }
 

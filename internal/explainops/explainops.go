@@ -25,7 +25,7 @@ import (
 // documentation and take its prose from another.
 type Pages struct {
 	// Reference is the bytes of the page that resolves every condition the
-	// compiler declares, including the ones declared inside a provider guest.
+	// module declares, including any the running binary does not itself link.
 	Reference []byte
 
 	// Halts is the bytes of the page that documents the authoring fix for the
@@ -148,12 +148,11 @@ func Compose(code string, loadPages func() (Pages, error)) (Explanation, error) 
 // paths where the published reference could not be consulted.
 //
 // The narrowing is the whole point. A code missing from this binary's own
-// declarations is not thereby a code that names nothing: a provider's conditions
-// are declared inside the guest that raises them, so the host registers none of
-// them, and only the reference tells a mistyped code from one of those. Carrying
-// the definitive negative into this path would assert something no read
-// established, and it would assert it hardest against a provider author: a
-// provider's conditions are precisely the ones the host cannot see for itself.
+// declarations is not thereby a code that names nothing: the published reference
+// is rendered from the module's own declarations rather than from what this
+// binary links, so only that page tells a mistyped code from one the registry
+// cannot see. Carrying the definitive negative into this path would assert
+// something no read established, against the reader least able to check it.
 //
 // A refusal of any other kind passes through unchanged, because it already
 // reports what it measured.

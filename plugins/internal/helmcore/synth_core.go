@@ -56,6 +56,7 @@ import (
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
+	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
@@ -379,15 +380,13 @@ func statefulSetGoverningService(services []Service, nodeID string) (string, err
 	case 1:
 		return name, nil
 	case 0:
-		return "", cerrors.Raise(errStatefulSetNoHeadlessService,
+		return "", cerrors.Wrap(wasm.ErrPluginRequiredInputUnresolved(),
 			cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
-			"synthesized StatefulSet requires a headless governing Service (declare a service with type: Headless); none found",
-			nil)
+			"synthesized StatefulSet requires a headless governing Service (declare a service with type: Headless); none found: synthesized StatefulSet has no headless governing Service")
 	default:
-		return "", cerrors.Raise(errStatefulSetAmbiguousHeadlessService,
+		return "", cerrors.Wrap(wasm.ErrPluginRequiredInputUnresolved(),
 			cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
-			"synthesized StatefulSet declares more than one headless Service; the governing Service is ambiguous (declare exactly one type: Headless service)",
-			nil)
+			"synthesized StatefulSet declares more than one headless Service; the governing Service is ambiguous (declare exactly one type: Headless service): synthesized StatefulSet has more than one headless Service")
 	}
 }
 

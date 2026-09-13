@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
@@ -53,20 +54,18 @@ func composeQuantities(rl *types.ResourceList, nodeID string) (*ResourceQuantiti
 	if rl.CPU != "" {
 		cpus, err := k8sCPUToComposeCPUs(rl.CPU)
 		if err != nil {
-			return nil, cerrors.Raise(errUnconvertibleComposeQuantity,
+			return nil, cerrors.Wrap(wasm.ErrPluginValueNotRepresentable(),
 				cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
-				fmt.Sprintf("compose: cannot convert cpu quantity %q to a deploy.resources cpus value; use a millicpu (e.g. 500m) or a plain core count (e.g. 0.5, 2)", rl.CPU),
-				nil)
+				fmt.Sprintf("compose: cannot convert cpu quantity %q to a deploy.resources cpus value; use a millicpu (e.g. 500m) or a plain core count (e.g. 0.5, 2): resources quantity cannot be converted to a compose deploy.resources value", rl.CPU))
 		}
 		out.CPUs = cpus
 	}
 	if rl.Memory != "" {
 		mem, err := k8sMemToComposeBytes(rl.Memory)
 		if err != nil {
-			return nil, cerrors.Raise(errUnconvertibleComposeQuantity,
+			return nil, cerrors.Wrap(wasm.ErrPluginValueNotRepresentable(),
 				cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
-				fmt.Sprintf("compose: cannot convert memory quantity %q to a deploy.resources byte count; use an integer quantity with a binary (Ki/Mi/Gi/Ti/Pi) or decimal (k/M/G/T/P) suffix, or a plain byte integer", rl.Memory),
-				nil)
+				fmt.Sprintf("compose: cannot convert memory quantity %q to a deploy.resources byte count; use an integer quantity with a binary (Ki/Mi/Gi/Ti/Pi) or decimal (k/M/G/T/P) suffix, or a plain byte integer: resources quantity cannot be converted to a compose deploy.resources value", rl.Memory))
 		}
 		out.Memory = mem
 	}

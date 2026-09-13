@@ -12,6 +12,7 @@ import (
 
 	frp "github.com/aggrega-ai/aggrega-cli/internal/compiler/featurerecipe_pipeline"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
+	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
@@ -24,54 +25,6 @@ const (
 	handleStackNameKey     = "stackName"
 	handleExportNamePrefix = "exportName."
 )
-
-// ErrLinkConsumerStackMissing is the loud failure a cross-boundary link resolve
-// raises when the consuming endpoint's assembled files carry no CloudFormation
-// stack template to inject the reference into. Without the consumer's stack the
-// resolve cannot locate the placeholder it must replace.
-func ErrLinkConsumerStackMissing() error { return errLinkConsumerStackMissing }
-
-var errLinkConsumerStackMissing = cerrors.Register("link-consumer-stack-missing", cerrors.Meta{
-	ShortCode: "E0231",
-	Message:   "cloudformation-provider: cross-boundary link resolve received no consumer stack template",
-})
-
-// ErrLinkSentinelInterpolated is the loud failure a cross-boundary link resolve
-// raises when the placeholder for an injected value survives only inside a
-// larger string rather than as a whole scalar. A CloudFormation cross-reference
-// is an intrinsic object, which can only replace a whole value; a placeholder
-// spliced into a longer string cannot be swapped for an intrinsic. The build
-// halts rather than emit a reference in the wrong shape.
-func ErrLinkSentinelInterpolated() error { return errLinkSentinelInterpolated }
-
-var errLinkSentinelInterpolated = cerrors.Register("link-placeholder-interpolated", cerrors.Meta{
-	ShortCode: "E0232",
-	Message:   "cloudformation-provider: cross-boundary link value is interpolated into a larger string; only a whole-scalar injection can carry a cross-stack reference",
-})
-
-// ErrLinkExportNameShadowed is the loud failure a cross-boundary link publish
-// raises when an export name it derives for an injected output is already
-// declared by another Outputs entry in the same assembled stack. An Outputs
-// entry's Export name is carried through as authored, so it can spell a name the
-// derivation also produces for this build — leaving the stack declaring one
-// export name twice, from two places, only one of which the author wrote.
-//
-// Only the coincidence halts, never the authoring: declaring an export name on
-// an Outputs entry is supported, and one that no derived name matches publishes
-// unremarked.
-//
-// The diagnostic leans on the export name, because that is the one string both
-// sides spell identically — the author typed it and the derivation reproduced it,
-// which is what makes the collision a collision — so it doubles as the term an
-// author can search their own files for. The stack Output the declaration sits
-// under is named as this core's own, since the authored entry it was built from
-// cannot be read back out of it ([authoredExport]).
-func ErrLinkExportNameShadowed() error { return errLinkExportNameShadowed }
-
-var errLinkExportNameShadowed = cerrors.Register("link-export-name-shadowed", cerrors.Meta{
-	ShortCode: "E0249",
-	Message:   "cloudformation-provider: an export name a cross-boundary link derives is already declared by another Outputs entry in the same stack",
-})
 
 // LinkPublish produces the producer-side wiring for one cross-boundary link on
 // the consumed (target) endpoint's side: for each output key the consuming edge
@@ -93,7 +46,8 @@ var errLinkExportNameShadowed = cerrors.Register("link-export-name-shadowed", ce
 //
 // The consumed endpoint's assembled files are read to check each derived export
 // name against the export names the stack's other Outputs entries already
-// declare, and a match halts ([ErrLinkExportNameShadowed]). The check is scoped
+// declare, and a match halts: one name, two declarations, only one of which
+// appears in any file the author wrote. The check is scoped
 // to this build: what a name meets in an account and region it is deployed into
 // is a property of the deployment, which nothing here can observe. Files
 // carrying no stack template yield no comparison, which is the answer whenever
@@ -138,8 +92,10 @@ func LinkPublish(edge rendercore.LinkEdge, producerFiles []rendercore.RenderedFi
 		})
 	}
 	if len(shadowed) > 0 {
-		return rendercore.LinkPublishOutput{}, fmt.Errorf("%w: %s; each shadowing Outputs entry spells its export name exactly as the halt does, so searching your Recipes for that name reaches the entry — rename the export name the entry declares, or remove that entry's Export block and let the link publish the export",
-			ErrLinkExportNameShadowed(), strings.Join(shadowed, "; "))
+		return rendercore.LinkPublishOutput{}, cerrors.Wrap(wasm.ErrPluginOutputNameCollision(),
+			cerrors.TranslationError, cerrors.SourceLocation{},
+			fmt.Sprintf("cloudformation-provider: an export name a cross-boundary link derives is already declared by another Outputs entry in the same stack: %s; each shadowing Outputs entry spells its export name exactly as the halt does, so searching your Recipes for that name reaches the entry — rename the export name the entry declares, or remove that entry's Export block and let the link publish the export",
+				strings.Join(shadowed, "; ")))
 	}
 	out := rendercore.LinkPublishOutput{Handle: handle}
 	if len(ops) > 0 {
@@ -169,7 +125,9 @@ func LinkPublish(edge rendercore.LinkEdge, producerFiles []rendercore.RenderedFi
 func LinkResolve(edge rendercore.LinkEdge, handle map[string]string, consumerFiles []rendercore.RenderedFile) (rendercore.LinkResolveOutput, error) {
 	stack, ok := findStackFile(consumerFiles)
 	if !ok {
-		return rendercore.LinkResolveOutput{}, ErrLinkConsumerStackMissing()
+		return rendercore.LinkResolveOutput{}, cerrors.Wrap(wasm.ErrPluginRequiredInputUnresolved(),
+			cerrors.TranslationError, cerrors.SourceLocation{},
+			"cloudformation-provider: cross-boundary link resolve received no consumer stack template")
 	}
 	var doc any
 	if err := json.Unmarshal(stack, &doc); err != nil {
@@ -189,7 +147,9 @@ func LinkResolve(edge rendercore.LinkEdge, handle map[string]string, consumerFil
 		path, whole, interpolated := findSentinelPath(doc, sentinel)
 		if !whole {
 			if interpolated {
-				return rendercore.LinkResolveOutput{}, fmt.Errorf("%w: output key %q on socket %q", ErrLinkSentinelInterpolated(), outputKey, edge.Socket)
+				return rendercore.LinkResolveOutput{}, cerrors.Wrap(wasm.ErrPluginValueNotRepresentable(),
+					cerrors.TranslationError, cerrors.SourceLocation{},
+					fmt.Sprintf("cloudformation-provider: cross-boundary link value is interpolated into a larger string; only a whole-scalar injection can carry a cross-stack reference: output key %q on socket %q", outputKey, edge.Socket))
 			}
 			// The consumer did not render this injected value; nothing to wire.
 			continue

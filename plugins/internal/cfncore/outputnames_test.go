@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	abi "github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
+	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 )
 
 // These tests cover what keeps something an author wrote from disappearing from
@@ -231,7 +232,12 @@ func TestOutputNameLedgerAdmitsOneEntryRestated(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			_, err := AssembleStack([]NodeFragment{{NodeID: "orders", Files: tc.files}})
-			if errors.Is(err, ErrOutputNameCollision()) {
+			// The condition alone is shared with every other collision this
+			// core reports, so the Output-name collision is identified by its
+			// own sentence as well — otherwise a merge refusal, which carries
+			// the same condition, would read as this one.
+			if errors.Is(err, wasm.ErrPluginOutputNameCollision()) &&
+				strings.Contains(err.Error(), "two entries an author wrote reach one stack Output name") {
 				t.Fatalf("one entry name restated was read as two entries colliding: %v", err)
 			}
 			switch {
@@ -275,8 +281,11 @@ func TestTheRetainedLedgerReportsEveryCollisionDeterministically(t *testing.T) {
 	if first == nil {
 		t.Fatal("the ledger reported nothing for two names each reached by two entries")
 	}
-	if !errors.Is(first, ErrOutputNameCollision()) {
-		t.Fatalf("report is not the Output-name collision: %v", first)
+	if !errors.Is(first, wasm.ErrPluginOutputNameCollision()) {
+		t.Fatalf("report does not carry the output-name-collision condition: %v", first)
+	}
+	if want := "two entries an author wrote reach one stack Output name"; !strings.Contains(first.Error(), want) {
+		t.Fatalf("report is not the stack-Output collision.\n  want: %s\n  got:  %v", want, first)
 	}
 	t.Logf("halt: %s", first)
 	for i := range 12 {
@@ -387,10 +396,16 @@ func TestDuplicateMappingKeyRefused(t *testing.T) {
 				if err == nil {
 					t.Fatalf("%s accepted a fragment writing %q twice; one of the two bodies is gone", probe.where, tc.wantKey)
 				}
-				if !errors.Is(err, ErrDuplicateMappingKey()) {
-					t.Fatalf("%s halt is not the duplicate-key refusal: %v", probe.where, err)
+				if !errors.Is(err, wasm.ErrPluginOutputNameCollision()) {
+					t.Fatalf("%s halt does not carry the output-name-collision condition: %v", probe.where, err)
 				}
 				msg := err.Error()
+				// The condition names the kind and is shared with the
+				// Output-name collision above, so the duplicate-key refusal is
+				// identified by its own sentence.
+				if want := "one mapping key is written more than once"; !strings.Contains(msg, want) {
+					t.Fatalf("%s halt is not the duplicate-key refusal.\n  want: %s\n  got:  %s", probe.where, want, msg)
+				}
 				if probe.where == "NormalizeFragment" {
 					t.Logf("halt: %s", msg)
 				}
@@ -436,7 +451,7 @@ func TestDuplicateMappingKeyAdmitsOneKeyPerMapping(t *testing.T) {
 // guarantee TestDuplicateMappingKeyRefused pins for a rendered fragment, and it is
 // a separate test because the two input paths reach their refusal from different
 // places. A rendered fragment goes through this package's own conversion, which
-// refuses the repeat itself ([ErrDuplicateMappingKey]). A sourced template never
+// refuses the repeat itself ([mappingToValue]). A sourced template never
 // reaches that conversion: NormalizeSourced, NormalizeSourcedTemplate and
 // ValidateSourced hand the authored bytes to the intrinsics processor, and the
 // processor refuses the document before this package inspects a single key. The

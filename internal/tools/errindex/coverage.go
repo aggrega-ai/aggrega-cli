@@ -288,10 +288,25 @@ func gapsIn(ids []Identity, covered map[string]bool) (gaps []Identity, origins i
 // [resolveCoverage] does refuse, because a declaration naming nothing is
 // something that is actually wrong rather than something merely not yet written.
 //
-// Every declared halting condition earns an entry, so a condition with none is a
-// hole in the published reference rather than a note about it. The figure is
-// therefore the signal that something moved, and it is worth promoting to a
-// refusal once the declared set is stable and the documented set has caught up.
+// WHICH CONDITIONS OWE AN ENTRY, AND WHAT HOLDS THEM TO IT. Every declared
+// halting condition owes an entry, so a condition with none is a hole in the
+// published reference rather than a note about it. 🔴 That is a CONVENTION, and
+// this tier is the whole of its enforcement: the shortfall is reported and never
+// refused, so an author may land a condition ahead of its entry and nothing stops
+// them. Written as a requirement it would be an enforcement claim with no gate
+// behind it.
+//
+// 🔴 It is stated over the DECLARED set because no narrower class is readable
+// here. An [Identity] carries wording and codes and never consequence, so nothing
+// on a registration separates a condition an author can act on from an
+// internal-invariant fault, and a tier cannot measure against a class its input
+// does not express.
+//
+// 🔴 THE REPORTING TIER IS THE SETTLED SHAPE, NOT AN INTERIM ONE. The reason above
+// is structural and does not expire: a shortfall is the ordinary shape of work in
+// progress rather than a backlog that drains, so no later moment makes promoting
+// safe. The figure is the signal that something moved, and that is the whole of
+// its job.
 //
 // The word on a shortfall line is WARN, matching what the line does. A tier that
 // stops the run says so in its own word instead, so a reader meeting a red can

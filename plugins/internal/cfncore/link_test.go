@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
+	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -239,8 +240,13 @@ func TestLinkResolveInterpolatedSentinelHalts(t *testing.T) {
 	files := []rendercore.RenderedFile{{Path: StackTemplateName, Content: consumerStack("jdbc://" + sentinel + ":5432")}}
 
 	_, err := LinkResolve(edge, pub.Handle, files)
-	if !errors.Is(err, ErrLinkSentinelInterpolated()) {
-		t.Fatalf("want ErrLinkSentinelInterpolated, got %v", err)
+	if !errors.Is(err, wasm.ErrPluginValueNotRepresentable()) {
+		t.Fatalf("want the value-not-representable condition, got %v", err)
+	}
+	// The condition names the kind; the sentence is what still says an
+	// interpolated link value is the value with no representation.
+	if want := "cross-boundary link value is interpolated into a larger string"; !strings.Contains(err.Error(), want) {
+		t.Fatalf("the halt no longer says the value was interpolated.\n  want: %s\n  got:  %v", want, err)
 	}
 }
 
@@ -248,8 +254,11 @@ func TestLinkResolveMissingConsumerStackHalts(t *testing.T) {
 	edge := testLinkEdge(nil, nil)
 	pub, _ := LinkPublish(edge, nil)
 	_, err := LinkResolve(edge, pub.Handle, nil)
-	if !errors.Is(err, ErrLinkConsumerStackMissing()) {
-		t.Fatalf("want ErrLinkConsumerStackMissing, got %v", err)
+	if !errors.Is(err, wasm.ErrPluginRequiredInputUnresolved()) {
+		t.Fatalf("want the unresolved-required-input condition, got %v", err)
+	}
+	if want := "cross-boundary link resolve received no consumer stack template"; !strings.Contains(err.Error(), want) {
+		t.Fatalf("the halt no longer says which input went unresolved.\n  want: %s\n  got:  %v", want, err)
 	}
 }
 
@@ -287,8 +296,11 @@ func TestLinkPublishRefusesShadowedExportName(t *testing.T) {
 	if err == nil {
 		t.Fatal("LinkPublish accepted an authored export name that shadows a derived one")
 	}
-	if !errors.Is(err, ErrLinkExportNameShadowed()) {
-		t.Fatalf("want ErrLinkExportNameShadowed, got %v", err)
+	if !errors.Is(err, wasm.ErrPluginOutputNameCollision()) {
+		t.Fatalf("want the output-name-collision condition, got %v", err)
+	}
+	if want := "an export name a cross-boundary link derives is already declared by another Outputs entry in the same stack"; !strings.Contains(err.Error(), want) {
+		t.Fatalf("the halt no longer says an export name is what collided.\n  want: %s\n  got:  %v", want, err)
 	}
 	// The halt presents the derived name by the coordinates it was assembled from,
 	// and every identifier it shows is either a string the author typed or one it

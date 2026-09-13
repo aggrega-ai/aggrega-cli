@@ -16,6 +16,7 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
+	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"helm.sh/helm/v3/pkg/chart"
 	"helm.sh/helm/v3/pkg/chartutil"
@@ -218,7 +219,7 @@ func RenderLoadedChart(
 					// Byte-identical duplicate: keeping one loses nothing.
 					continue
 				}
-				return cerrors.Wrap(ErrRenderedFileCollision(), cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q: rendered resources %q and %q both derive output %q with differing content", nodeCtx.NodeID, keyOrigin[outKey], sourcePath, outKey))
+				return cerrors.Wrap(wasm.ErrPluginOutputNameCollision(), cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q: rendered resources %q and %q both derive output %q with differing content: two rendered resources derive the same output filename with differing content", nodeCtx.NodeID, keyOrigin[outKey], sourcePath, outKey))
 			}
 			out[outKey] = annotated
 			keyOrigin[outKey] = sourcePath

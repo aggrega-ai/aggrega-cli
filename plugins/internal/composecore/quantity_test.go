@@ -5,8 +5,10 @@ package composecore
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -113,9 +115,14 @@ func TestTranslateComposeResources(t *testing.T) {
 		t.Error("empty spec should produce nil deploy")
 	}
 
-	// An unconvertible quantity halts with the sentinel.
+	// An unconvertible quantity halts with the condition, and the sentence beside
+	// it is what still says a resources quantity is the value with no compose
+	// representation — the condition itself names only the kind.
 	_, err = translateComposeResources(&types.ResourceSpec{Limits: &types.ResourceList{Memory: "1.5Gi"}}, "node")
-	if !errors.Is(err, ErrUnconvertibleComposeQuantity()) {
-		t.Errorf("expected ErrUnconvertibleComposeQuantity, got %v", err)
+	if !errors.Is(err, wasm.ErrPluginValueNotRepresentable()) {
+		t.Errorf("expected the value-not-representable condition, got %v", err)
+	}
+	if want := "resources quantity cannot be converted to a compose deploy.resources value"; !strings.Contains(err.Error(), want) {
+		t.Errorf("the halt no longer says which value has no representation.\n  want: %s\n  got:  %v", want, err)
 	}
 }

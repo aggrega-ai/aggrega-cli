@@ -13,6 +13,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/docsplice"
 	"github.com/aggrega-ai/aggrega-cli/internal/haltref"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
 // The published error pages advertise what a build can tell an author. Nothing
@@ -262,6 +263,10 @@ var shortCodeToken = regexp.MustCompile(`\bE[0-9]{4}\b`)
 // agreeing on would have left every lookup answering "no entry documents this",
 // which is a legitimate answer and therefore silent.
 //
+// The reference page's own reader is held the same way, in the second half
+// below: it is a separate correspondence with a separate row shape, and it is
+// what answers a code the binary's declarations do not resolve.
+//
 // This runs against the committed page rather than a fixture, which is the whole
 // point: a fixture is written by whoever writes the test, so it agrees with the
 // reader by construction. The pages sit outside the module, so a change to one
@@ -287,18 +292,16 @@ func TestPublishedErrorPages_TheHaltRegionResolvesThroughTheReader(t *testing.T)
 		t.Fatal("the region names no short code; the extraction is broken, not the page")
 	}
 
-	// The reference page is what resolves a code this binary does not declare —
-	// every condition a provider guest declares is registered inside that guest
-	// and in no host — so both routes are exercised, and both against the
-	// committed pages.
+	// The reference page is the other half of the same correspondence, and it is
+	// what answers a code this binary's own declarations do not resolve. Both
+	// routes are exercised, and both against the committed pages.
 	refName := filepath.Base(haltref.ReferencePagePath)
 	reference, ok := pages[refName]
 	if !ok {
-		t.Fatalf("the published error pages carry no %s, which is what resolves a code no host declares", refName)
+		t.Fatalf("the published error pages carry no %s, which is what resolves a code the registry does not", refName)
 	}
 
 	seen := map[string]bool{}
-	var viaReference int
 	for _, code := range codes {
 		if seen[code] {
 			continue
@@ -317,7 +320,6 @@ func TestPublishedErrorPages_TheHaltRegionResolvesThroughTheReader(t *testing.T)
 					name, code, refName, rerr)
 				continue
 			}
-			viaReference++
 		}
 		if condition.ShortCode != code {
 			t.Errorf("%s resolved to the condition %s, which reports the short code %s",
@@ -343,13 +345,78 @@ func TestPublishedErrorPages_TheHaltRegionResolvesThroughTheReader(t *testing.T)
 		}
 	}
 
-	// The fallback is exercised rather than merely present. Every assertion above
-	// passes with the reference never read, so without this the case would go on
-	// passing if the reference route silently stopped working — and the codes it
-	// covers are exactly the ones the registry cannot answer.
-	if viaReference == 0 {
-		t.Error("no code resolved through the published reference, so the route that answers for a " +
-			"condition declared inside a provider guest was never exercised")
+	// The reference reader is exercised directly, over the committed reference
+	// page, rather than counted by how often the loop above happened to fall
+	// through to it.
+	//
+	// Counting is what this used to do, and it stopped being able to measure
+	// anything: every code the halting-conditions page names resolves from the
+	// binary's own registry, so the fallback is never reached from that page and
+	// the count is structurally zero. A zero there says nothing about whether the
+	// reader still works — which is the property worth holding, because the
+	// generator writes the reference's correspondence and this reader parses it
+	// back, and a row shape either side stopped agreeing on would leave every
+	// fallback lookup answering "nothing is registered under this": a legitimate
+	// answer, and therefore silent.
+	//
+	// Every short code the reference names is in exactly one of two states, and
+	// the pair is asserted as a partition rather than as two separate facts. A
+	// live condition is a row this reader resolves. A retired number is a note
+	// beneath the table and the retirement record holds it. A code in neither
+	// state is a line on the page standing for nothing; a code in both is a
+	// number published as live and recorded as spent at the same time.
+	refRegion, ok := docsplice.Region(reference, haltref.ReferenceRegionID)
+	if !ok {
+		t.Fatalf("%s carries no %q region, so the reader that answers a code the registry does not "+
+			"has nothing to resolve against", refName, haltref.ReferenceRegionID)
+	}
+	refCodes := shortCodeToken.FindAllString(refRegion, -1)
+	if len(refCodes) == 0 {
+		t.Fatal("the reference region names no short code; the extraction is broken, not the page")
+	}
+	var live, spent int
+	seenRef := map[string]bool{}
+	for _, code := range refCodes {
+		if seenRef[code] {
+			continue
+		}
+		seenRef[code] = true
+
+		published, perr := haltref.ResolveIn([]byte(reference), code)
+		_, retired := cerrors.RetiredShortCode(code)
+		switch {
+		case perr != nil && !retired:
+			t.Errorf("%s names %s and neither resolves it as a condition nor records it as retired, so "+
+				"the line stands for nothing a reader can look up: %v", refName, code, perr)
+			continue
+		case perr == nil && retired:
+			t.Errorf("%s publishes %s as a live condition while the retirement record holds it as spent; "+
+				"a reader is told a number both names something and never will again", refName, code)
+			continue
+		case retired:
+			spent++
+			continue
+		}
+		live++
+		if published.ShortCode != code {
+			t.Errorf("%s read out of %s reports the short code %s", code, refName, published.ShortCode)
+		}
+		if published.Code == "" || published.Message == "" {
+			t.Errorf("%s read out of %s carries no descriptive code or no sentence: %+v", code, refName, published)
+		}
+	}
+	// Both arms have to have run. A partition whose every code fell on one side
+	// leaves the other arm asserting nothing, and the page carries both today.
+	if live == 0 || spent == 0 {
+		t.Errorf("the reference resolved %d live condition(s) and %d retired number(s); one arm of the "+
+			"partition was never exercised, so its assertions say nothing", live, spent)
+	}
+	// Calibration for that reader: a code the reference does not name is reported
+	// as naming nothing rather than answered, so the rows above mean what they say
+	// and not that the reader answers for whatever it is handed.
+	var unknown *haltref.UnknownCodeError
+	if _, err := haltref.ResolveIn([]byte(reference), "E0000"); !errors.As(err, &unknown) {
+		t.Errorf("a code %s does not name was not reported as unknown by the reader: %v", refName, err)
 	}
 
 	// Calibration. Every assertion above passes over a page the reader silently

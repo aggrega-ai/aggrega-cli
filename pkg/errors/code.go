@@ -194,13 +194,18 @@ type CodedError interface {
 //
 // # What it is for, given the condition already reports two identifiers
 //
-// A condition's identifiers are unique within whoever declared them. The
-// compiler's registry refuses a duplicate, so two conditions the compiler
-// declares can never share a code. Nothing holds across plugin authors: two
-// independently authored guests can publish the same code for two unrelated
-// conditions, and neither author can see the other's allocation. The plugin that
-// raised the condition is what tells those apart, and the host knows it because
-// the host loaded and invoked that plugin — it is not something the guest
+// A condition's identifiers are the compiler's own, and the registry refuses a
+// duplicate, so two conditions can never share a code. A plugin allocates none:
+// it chooses one of the conditions the compiler declares for a plugin to report,
+// and supplies the specific sentence itself. So two plugins reporting one code
+// are reporting the SAME condition, and the identifiers are not what is at stake.
+//
+// What is at stake is WHERE. A condition a plugin can choose names a KIND of
+// failure and no place — that a construct has no expression, that a value has no
+// representation — so a diagnostic carrying the code alone leaves a reader with a
+// build's several attached guests and no way to tell which of them to open. The
+// plugin that raised the condition is what localises it, and the host knows it
+// because the host loaded and invoked that plugin — it is not something the guest
 // reports, and so not something a guest can misreport.
 type PluginRaisedError interface {
 	error
@@ -754,10 +759,43 @@ var retiredShortCodes = []retirement{
 	{"E0219", "It named a cyclic `extends` chain, reported by a second chain walk the schema-merge " +
 		"library kept beside its combining step; one walk reports every cyclic chain now, and its " +
 		"code is `E0202`."},
+	// The entries below sharing one sentence share one fate: each named something
+	// a single rendering target could not do, and they were withdrawn together
+	// when the conditions a plugin may report became a small set naming KINDS of
+	// failure, chosen by the plugin, with the plugin supplying the specific
+	// sentence itself. No one-to-one successor exists for any of them, so there is
+	// nothing for a redirect to name and a note inventing one would be false.
+	//
+	// Two note styles on the published page is the correct outcome rather than an
+	// inconsistency to tidy. A note that names a successor is useful precisely
+	// because that condition HAS one; flattening those to this sentence would
+	// delete a working redirect, and rewording this sentence to invent one would
+	// publish a claim no condition supports.
+	//
+	// The sentence is written out at every entry rather than bound to a constant,
+	// and that is a requirement rather than a style: the generator that publishes
+	// this record reads it from SOURCE and refuses a note that is not a string
+	// literal, because it resolves no identifiers.
+	{"E0230", "The condition this number named was withdrawn, and no build reports it."},
+	{"E0231", "The condition this number named was withdrawn, and no build reports it."},
+	{"E0232", "The condition this number named was withdrawn, and no build reports it."},
+	{"E0233", "The condition this number named was withdrawn, and no build reports it."},
 	{"E0234", "It named a Recipe source that is an empty string, reported while rendering through the " +
 		"compose provider; one condition covering every provider reports that now, and its code is `E0251`."},
+	{"E0235", "The condition this number named was withdrawn, and no build reports it."},
+	{"E0236", "The condition this number named was withdrawn, and no build reports it."},
+	{"E0237", "The condition this number named was withdrawn, and no build reports it."},
+	{"E0238", "The condition this number named was withdrawn, and no build reports it."},
+	{"E0239", "The condition this number named was withdrawn, and no build reports it."},
+	{"E0240", "The condition this number named was withdrawn, and no build reports it."},
+	{"E0241", "The condition this number named was withdrawn, and no build reports it."},
 	{"E0242", "It named a Recipe source that is an empty string, reported while rendering through the " +
 		"Helm provider; one condition covering every provider reports that now, and its code is `E0251`."},
+	{"E0243", "The condition this number named was withdrawn, and no build reports it."},
+	{"E0244", "The condition this number named was withdrawn, and no build reports it."},
+	{"E0245", "The condition this number named was withdrawn, and no build reports it."},
+	{"E0249", "The condition this number named was withdrawn, and no build reports it."},
+	{"E0258", "The condition this number named was withdrawn, and no build reports it."},
 }
 
 // retiredIndex keys [retiredShortCodes] for the lookup [Register] performs.

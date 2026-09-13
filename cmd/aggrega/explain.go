@@ -47,13 +47,13 @@ func newExplainCmd() *cobra.Command {
 			"condition and reach different readers, so either is a code you may be holding, and the " +
 			"condition above is registered under recipe-values-mapping-requires-source:\n\n" +
 			"  aggrega explain recipe-values-mapping-requires-source\n\n" +
-			"Most conditions are declared inside this binary, and for those the identifiers and the " +
-			"sentence are reported without a network or a cache. The rest — the conditions a provider " +
-			"declares for itself — are resolved against the published reference, as is the " +
-			"walk-through of the authoring fix for every condition. Both are read from the " +
+			"Every condition is declared inside this binary, so the identifiers and the " +
+			"sentence are reported without a network or a cache. The published reference " +
+			"supplies the walk-through of the authoring fix for every condition, and nothing " +
+			"else is resolved against it. It is read from the " +
 			"documentation bundle cached for this workspace, acquired on first use when it is absent. " +
-			"Where it cannot be acquired, a condition this binary declares is still reported and the " +
-			"reason the rest is missing is stated.\n\n" +
+			"Where it cannot be acquired, the condition is still reported and the " +
+			"reason the walk-through is missing is stated.\n\n" +
 			"A number that named a condition and no longer does is reported as retired, with what it " +
 			"named, so a code quoted from an old report is never answered with a different condition.",
 		Args: cobra.ExactArgs(1),

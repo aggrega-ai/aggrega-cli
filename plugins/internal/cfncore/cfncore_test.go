@@ -6,7 +6,6 @@ package cfncore
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"reflect"
 	"sort"
 	"strings"
@@ -543,7 +542,10 @@ func TestAssembleStackRefusesANameAlreadyCarryingDifferentContent(t *testing.T) 
 			if err == nil {
 				t.Fatal("expected a loud halt for a name carrying two different bodies; got nil error — a declared entry would have been displaced silently")
 			}
-			if errors.Is(err, ErrOutputNameCollision()) {
+			// Both refusals now carry one condition, so the check this row does
+			// not exercise is identified by its own sentence rather than by the
+			// condition it shares with the merge's refusal.
+			if strings.Contains(err.Error(), "two entries an author wrote reach one stack Output name") {
 				t.Fatalf("the merge's refusal was preempted by the Output-name collision check, which this row does not exercise: %v", err)
 			}
 			msg := err.Error()

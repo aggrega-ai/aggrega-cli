@@ -161,7 +161,6 @@ var SchemaTypePrimitives = []string{
 // extension keyword requires an entry here before it is offered.
 var AggregaSchemaExtensions = []string{
 	"x-aggrega-anything-at-all",
-	"x-aggrega-discouragement",
 	"x-aggrega-extensions",
 	"x-aggrega-inject",
 	"x-aggrega-narrowed-from",

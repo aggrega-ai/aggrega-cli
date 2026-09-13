@@ -4,9 +4,12 @@
 package wasm
 
 import (
+	"errors"
 	"fmt"
+	"strings"
 
 	abi "github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
+	"github.com/aggrega-ai/aggrega-cli/internal/haltref"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
@@ -115,6 +118,180 @@ var errWasmGuestError = cerrors.Register("wasm-guest-error", cerrors.Meta{
 	ShortCode: "E0082",
 	Message:   "wasm: guest plugin reported an error",
 })
+
+// The generic conditions a plugin reaches for.
+//
+// A plugin that stops a build reports a failure in-band on its socket output: a
+// sentence of its own, and the identity of the condition that sentence names.
+// The identity is not the plugin's to allocate, and the reason is that a plugin
+// author cannot be coordinated with. There is nowhere for a stranger's plugin to
+// publish a number — the published correspondence between codes and conditions
+// is composed from this module's own declarations, and the self-report the host
+// reads at load carries no channel for a condition at all — so a number a plugin
+// minted for itself would be one no reader could look up and no registry could
+// hold distinct from anybody else's.
+//
+// So the identity a plugin reports is one the COMPILER declares, and the host
+// admits any of them. That buys the single property worth having: every code a
+// reader meets resolves, so `aggrega explain` answers for it from the binary's own
+// declarations, with no documentation to fetch and no guest to load.
+//
+// Most plugin failures have no compiler condition that fits, so the compiler
+// declares a small GENERIC set naming the KINDS of failure a plugin reports, and a
+// plugin reaches for one of those. Each names what happened at the socket and
+// nothing about any particular target: that a construct the build declares has no
+// expression, that an input could not be resolved to one value, that two produced
+// things want one name, that a value has no representation. WHICH construct, which
+// input, which name and which value are the plugin's own business, and the plugin
+// says so in its own sentence, which the host carries through and prints after the
+// condition's.
+//
+// That division is what keeps every target-specific fact on the far side of the
+// plugin boundary while the identity a reader quotes stays one the compiler owns.
+//
+// The set gains a member when a genuinely new KIND of failure appears, which is
+// a change to the compiler. It is not widened to accommodate a particular
+// target: a proposed member whose sentence names one is the wrong member rather
+// than a missing one, because such a sentence is domain knowledge that has
+// crossed back over the boundary this set exists to hold. Nor is it widened to
+// cover a failure some compiler condition already names precisely, since a plugin
+// with a precise identity available reports less than it knows by reaching here.
+
+// ErrPluginCannotExpressInput indicates that a plugin has no expression for a
+// construct the build declares. The construct has no counterpart at all in what
+// the plugin emits, so the repair is to stop declaring it against this plugin
+// rather than to change a value it carries.
+//
+// It is one of the conditions a plugin chooses from. Which construct is in the
+// plugin's own sentence; this condition says only that there is no expression
+// for it.
+//
+// A guest core RAISES this condition as well as matching it, and it does so by
+// wrapping the value this accessor returns rather than by handing an identity to
+// the constructor that demands one. The accessor therefore publishes a plain
+// error, which is also what keeps the condition visible to the generator that
+// composes the published error reference: that generator recognises an accessor
+// by its shape, and the shape it recognises returns error.
+func ErrPluginCannotExpressInput() error { return errPluginCannotExpressInput }
+
+var errPluginCannotExpressInput = cerrors.Register("plugin-cannot-express-input", cerrors.Meta{
+	ShortCode: "E0288",
+	Message:   "a plugin has no expression for a construct this build declares",
+	EvaluatedElsewhere: "A guest plugin decides whether it can express a construct, inside its own " +
+		"module and over the input the host handed it, and this package raises the condition on the " +
+		"failure that guest returned. The rule runs where no view of a compilation reaches, so there is " +
+		"no view for the rule dispatch to invoke a rule over.",
+})
+
+// ErrPluginRequiredInputUnresolved indicates that a plugin could not resolve
+// something it requires to exactly one value. Zero and many are one failure at
+// the plugin's input boundary — it cannot pick — so both arrive here, and the
+// plugin's own sentence says which it met.
+//
+// It is one of the conditions a plugin chooses from.
+func ErrPluginRequiredInputUnresolved() error { return errPluginRequiredInputUnresolved }
+
+var errPluginRequiredInputUnresolved = cerrors.Register("plugin-required-input-unresolved", cerrors.Meta{
+	ShortCode: "E0289",
+	Message:   "a plugin could not resolve something it requires to exactly one value",
+	EvaluatedElsewhere: "A guest plugin resolves what it requires, inside its own module and over the " +
+		"input the host handed it, and this package raises the condition on the failure that guest " +
+		"returned. The rule runs where no view of a compilation reaches, so there is no view for the " +
+		"rule dispatch to invoke a rule over.",
+})
+
+// ErrPluginOutputNameCollision indicates that two things a plugin produced
+// occupy one name in its output. It is keyed on the consequence rather than on
+// where either name came from: one slot, two things that must go in it, and
+// emitting would silently drop one. Whether either name was authored or derived
+// is the plugin's own business and is in its sentence.
+//
+// It is one of the conditions a plugin chooses from.
+func ErrPluginOutputNameCollision() error { return errPluginOutputNameCollision }
+
+var errPluginOutputNameCollision = cerrors.Register("plugin-output-name-collision", cerrors.Meta{
+	ShortCode: "E0290",
+	Message:   "two things a plugin produced occupy one name in its output",
+	EvaluatedElsewhere: "A guest plugin names the things it produces, inside its own module, and " +
+		"discovers the collision there; this package raises the condition on the failure that guest " +
+		"returned. The rule runs over the plugin's own output where no view of a compilation reaches, " +
+		"so there is no view for the rule dispatch to invoke a rule over.",
+})
+
+// ErrPluginValueNotRepresentable indicates that a plugin has no representation
+// for a value it was given. It is distinct from having no expression for a
+// construct, and the difference is which repair the author needs: here the
+// counterpart exists in what the plugin emits and this particular value does not
+// fit it, so the value is what changes.
+//
+// It is one of the conditions a plugin chooses from.
+func ErrPluginValueNotRepresentable() error { return errPluginValueNotRepresentable }
+
+var errPluginValueNotRepresentable = cerrors.Register("plugin-value-not-representable", cerrors.Meta{
+	ShortCode: "E0291",
+	Message:   "a plugin has no representation for a value it was given",
+	EvaluatedElsewhere: "A guest plugin decides whether a value it was given can be represented, " +
+		"inside its own module, and this package raises the condition on the failure that guest " +
+		"returned. The rule runs where no view of a compilation reaches, so there is no view for the " +
+		"rule dispatch to invoke a rule over.",
+})
+
+// ErrPluginFailureUnclassified indicates that a plugin reported a failure that
+// none of the declared kinds names. It is the fallback and never a destination:
+// a plugin reaching for it where one of the other conditions fits reports less
+// than it knows.
+//
+// Its wording is deliberately "none of the declared kinds names" rather than "a
+// plugin reported an error", so a reader who quotes it is told plainly that the
+// plugin declined to classify. An over-used fallback is then legible in the wild
+// rather than indistinguishable from a correct report.
+//
+// It is one of the conditions a plugin chooses from, and it is chosen rather
+// than fallen into: a report naming no condition at all is a different state,
+// and the two stay distinguishable because they answer different questions about
+// whether the set is right. A rising count of deliberate fallbacks says the set
+// is missing a kind; a rising count of reports naming nothing says plugins are
+// not reading the contract.
+func ErrPluginFailureUnclassified() error { return errPluginFailureUnclassified }
+
+var errPluginFailureUnclassified = cerrors.Register("plugin-failure-unclassified", cerrors.Meta{
+	ShortCode: "E0292",
+	Message:   "a plugin reported a failure that none of the declared kinds names",
+	EvaluatedElsewhere: "A guest plugin decides that its failure fits none of the declared kinds, " +
+		"inside its own module, and this package raises the condition on the failure that guest " +
+		"returned. The rule runs where no view of a compilation reaches, so there is no view for the " +
+		"rule dispatch to invoke a rule over.",
+})
+
+// guestSelectableConditions is the generic set above as one value, and it is what
+// a refusal names when it tells a plugin's author what to reach for.
+//
+// It is NOT the admissible set. A guest may name any condition the compiler
+// declares, and the reason is that the compiler's own conditions are not all
+// raised in the compiler's own process: shared code the host and the guests both
+// link raises registered conditions INSIDE a guest, which then cross this socket
+// as guest failures. A set that admitted only the generic five would refuse those,
+// and the refusal would accuse a plugin of a protocol violation for a mistake the
+// build's author made in their own file.
+//
+// What the set is for is advice. These five name the KINDS of failure a plugin
+// reports when it has no better identity to offer, so a refusal points at them
+// rather than leaving an author to guess.
+//
+// It is a list of identities rather than a table keyed by code, deliberately.
+// Their codes are read off the identities at the moment they are needed, so no
+// code is written down a second time — a keyed table would be that second copy,
+// and it would agree with the registrations until the day one of them moved.
+//
+// Declaration order is the order a refusal names them in, so one rejected input
+// yields one message.
+var guestSelectableConditions = []error{
+	ErrPluginCannotExpressInput(),
+	ErrPluginRequiredInputUnresolved(),
+	ErrPluginOutputNameCollision(),
+	ErrPluginValueNotRepresentable(),
+	ErrPluginFailureUnclassified(),
+}
 
 // GuestOutput is a socket-output envelope the host decodes strictly from the
 // textual encoding. The single method is the generated codec's strict decode
@@ -235,10 +412,14 @@ type GuestFailure struct {
 	// Message is the failure text the guest reported. Empty is the success case.
 	Message string
 	// Code is the descriptive, machine-matchable identity of the condition the
-	// guest's failure names, or empty where the guest named none.
+	// guest's failure names, or empty where the guest named none. The conditions
+	// a guest may name are the ones the compiler declares, so a value here is
+	// resolved against the registry rather than carried on trust.
 	Code string
 	// ShortCode is the compact identifier of that same condition — the letter E
-	// and four digits — or empty where the guest named none.
+	// and four digits — or empty where the guest named none. It is resolved the
+	// same way, and checked against the descriptive code beside it, so the two
+	// identifiers on one report always name one condition.
 	ShortCode string
 }
 
@@ -251,20 +432,23 @@ type GuestFailure struct {
 //
 // Where the guest also named the condition its failure is about, the returned
 // error reports that condition's identifiers rather than the host's own, so the
-// diagnostic a reader meets carries the code the guest published. Classification
-// is unchanged either way: the guest condition wraps ErrWasmGuestError, so a
-// caller matching the host taxonomy with errors.Is still matches.
+// diagnostic a reader meets carries the code the condition is registered under.
+// The condition has to be one this compiler declares: a guest naming a code that
+// resolves to nothing, or one the numbering has retired, is refused loudly with
+// its message still carried through. Classification is unchanged in every case:
+// the returned error unwraps to ErrWasmGuestError, so a caller matching the host
+// taxonomy with errors.Is still matches.
 //
 // plugin identifies the guest, and it QUALIFIES the identifiers above rather than
-// decorating the message: a code is unique only within whoever allocated it, and
-// nothing coordinates two plugin authors, so two guests can publish one code for
-// two unrelated conditions. The plugin the host loaded and invoked is what tells
-// them apart, which is why it travels beside the export name as an argument of the
-// host's own rather than as a field of GuestFailure — GuestFailure is what the
-// guest reported in-band, and a guest can neither supply nor forge this. Pass
-// whatever identity the calling socket knows the guest by, which is the same
-// identity that socket's other failures name; GuestDiagnosticSeverities takes it
-// on the same terms.
+// decorating the message. A generic condition names a KIND of failure and no
+// place, so two plugins reporting one code are reporting the same condition and a
+// head carrying the code alone cannot tell a reader which of a build's attached
+// guests to look at. The plugin the host loaded and invoked is what localises it,
+// which is why it travels beside the export name as an argument of the host's own
+// rather than as a field of GuestFailure — GuestFailure is what the guest reported
+// in-band, and a guest can neither supply nor forge this. Pass whatever identity
+// the calling socket knows the guest by, which is the same identity that socket's
+// other failures name; GuestDiagnosticSeverities takes it on the same terms.
 func GuestReturnedError(plugin, export string, f GuestFailure) error {
 	if f.Message == "" {
 		return nil
@@ -273,8 +457,9 @@ func GuestReturnedError(plugin, export string, f GuestFailure) error {
 }
 
 // reportedOver returns the error the wrap above names as the condition: host on
-// its own, or the identifiers the guest reported presented over host, qualified by
-// the plugin that raised them.
+// its own, the condition the guest chose presented over host, or the refusal for
+// a guest that chose one this socket does not declare — the last two qualified by
+// the plugin the report came from.
 //
 // It takes the host condition as an argument rather than reaching for it, so the
 // one wrap above stays the one place this package names that condition
@@ -284,55 +469,300 @@ func GuestReturnedError(plugin, export string, f GuestFailure) error {
 // The pairing rule is both-or-neither, and it is a rule rather than a tolerance.
 // A condition has two identifiers naming one condition, so a report carrying one
 // of them describes a condition the host cannot name completely — and attaching
-// it would publish half an identity: one accessor answering for the guest's
-// condition and the other for the host's, on one error, with nothing to say the
-// two are different conditions. A half report therefore names no condition at
-// all, and the host's condition stands, with the guest's message carrying
-// everything the reader needs. The guest's own identity is not forged here and
-// could not be: the identifiers travel as data, and there is no path from a code
-// back to the identity that declared it.
+// it would publish half an identity: one accessor answering for one condition and
+// the other for another, on one error, with nothing to say the two differ. A half
+// report therefore names no condition at all, and the host's condition stands,
+// with the guest's message carrying everything the reader needs.
 //
 // The plugin rides on that same decision rather than on a test of its own, and
-// deliberately: the qualifier says whose code this is, so it means nothing where
-// there is no code. A half report and a report with no condition both fall
-// through to the host's own condition, which is the compiler's and needs no
-// qualification.
+// deliberately: the qualifier says which plugin met this condition, so it means
+// nothing where there is no condition. A half report and a report with no
+// condition both fall through to the host's own condition, which is the
+// compiler's and needs no qualification.
+//
+// A report that names both identifiers is CHECKED rather than attached, and this
+// is the one place that check happens — it is the single site where a guest's
+// identifiers cross into an error the host builds. The refusal is loud and the
+// guest's message survives it: a build that says only "this plugin misbehaved"
+// would hide what actually broke, so the violation is named and the failure is
+// still reported.
 func reportedOver(host error, plugin string, f GuestFailure) error {
 	if f.Code == "" || f.ShortCode == "" {
 		return host
 	}
-	return &reportedCondition{host: host, plugin: plugin, code: f.Code, shortCode: f.ShortCode}
+	named, refused := guestSelected(f)
+	if refused != "" {
+		return &undeclaredGuestCondition{
+			refusal: ErrWasmGuestConditionUndeclared(),
+			host:    host,
+			plugin:  plugin,
+			offered: f.ShortCode,
+			reason:  refused,
+		}
+	}
+	return &reportedCondition{host: host, condition: named, plugin: plugin}
 }
 
-// reportedCondition presents the identifiers a guest reported for the condition
-// its failure names, over the host condition it stands on, qualified by the
-// plugin that raised it.
+// guestSelected returns the condition a guest named, or the zero description and
+// the reason the report names none this compiler declares.
 //
-// Error returns the host condition's own registered sentence and not a second
-// copy of it: the wording has one home, and this type contributes identifiers
-// rather than words. Unwrap returns that condition, so the whole host taxonomy
-// still matches beneath these identifiers.
+// What it admits is every condition the compiler REGISTERS, and that is wider
+// than the generic set a plugin reaches for. The reason is measured rather than
+// permissive: shared compiler code is linked into the guests as well as into the
+// host, so a condition that package registers is raised INSIDE a guest and crosses
+// this socket as a guest failure, having been chosen by nobody. Admitting only the
+// generic set refused those, which halted a build under a protocol violation
+// naming the plugin for a mistake the build's own author had made — and took a
+// resolvable identity away from the reader at the same time. A condition the
+// compiler declares is one `aggrega explain` answers for, which is the whole
+// property the identity exists to carry.
 //
-// The two code reads report exactly what the guest published and nothing else,
-// unqualified. A machine consumer matching a code is matching the identifier the
-// guest allocated, and folding the plugin into it would hand that consumer a
-// value that is not a code — and, for the short code, one that is not the letter
-// E and four digits either. The plugin is a third read beside them, and the
-// surface that composes a diagnostic for a reader is what joins the two.
+// What it still refuses are the two failures that leave a reader holding an
+// identifier that resolves to nothing. A code no condition is registered under is
+// one, and a RETIRED code is the other — the second being the one thing the
+// numbering promises can never reach a terminal, and the one a guest could
+// otherwise break by printing a retired number as a live condition.
+//
+// The residue this deliberately does not police is a plugin naming a real
+// condition its build did not meet. Nothing the host can see distinguishes that
+// from a correct report, it harms only that plugin's users, and it is the plugin
+// author's to get right.
+//
+// The lookup is [haltref.Resolve]'s and is not re-rolled here. That function owns
+// the short-code-then-descriptive-code-then-retired sequence, and it is the only
+// path that tells a retired number from one that names nothing. A second copy of
+// that sequence would agree with it on the day it was written and diverge the
+// first time either was edited.
+//
+// Its refusals are read rather than surfaced, and that is deliberate: their text
+// is written for a reader who typed a code into a terminal, and speaks to
+// repairing a query rather than a plugin's report.
+//
+// The refusals run in the order a reader repairs them, and each says the sharpest
+// true thing available at that point. A code resolving to nothing — or to a
+// retired number — is refused first. A code whose spelling is not the one its
+// condition is registered under is refused next: the host matches the registered
+// bytes rather than normalising what a guest sent, because a host that corrected a
+// guest's identifier would be deciding what the guest meant. A pair whose two
+// identifiers name two different conditions is last, since each alone might be
+// legitimate and it is the pairing that is wrong.
+func guestSelected(f GuestFailure) (cerrors.Condition, string) {
+	named, err := haltref.Resolve(f.ShortCode)
+	if err != nil {
+		var retired *haltref.RetiredCodeError
+		if errors.As(err, &retired) {
+			return cerrors.Condition{}, "that number is retired and names no condition now: " + retired.Note
+		}
+		return cerrors.Condition{}, "no condition is registered under it"
+	}
+	if named.ShortCode != f.ShortCode {
+		return cerrors.Condition{}, fmt.Sprintf("that is not the spelling the condition it resolves to "+
+			"is registered under, which is %s", named.ShortCode)
+	}
+	if named.Code != f.Code {
+		return cerrors.Condition{}, fmt.Sprintf("the descriptive code reported beside it, %q, names a "+
+			"different condition: that short code is registered for %s", f.Code, named.Code)
+	}
+	return named, ""
+}
+
+// selectableConditionList renders the generic conditions a plugin reaches for, in
+// the set's own declaration order, for a refusal to name.
+//
+// A refusal names these rather than the admissible set, and the two are not the
+// same thing. The admissible set is every condition the compiler declares, which
+// is a list no diagnostic could usefully print and which would tell an author
+// nothing about what to write. These five are the answer to that question.
+//
+// It is derived from the set rather than written out, so a member added to the
+// set is named by every refusal without a second edit — and a refusal cannot come
+// to advertise a condition the compiler no longer declares.
+func selectableConditionList() string {
+	named := make([]string, 0, len(guestSelectableConditions))
+	for _, condition := range guestSelectableConditions {
+		code, _ := cerrors.CodeOf(condition)
+		short, _ := cerrors.ShortCodeOf(condition)
+		named = append(named, code+" ("+short+")")
+	}
+	return strings.Join(named, ", ")
+}
+
+// ErrWasmGuestConditionUndeclared indicates that a guest plugin named a condition
+// this compiler does not declare. A report naming a number no condition is
+// registered under, a number the numbering has RETIRED, a spelling the
+// registration does not carry, or a pair of identifiers that name two different
+// conditions is a plugin that has broken the socket's contract.
+//
+// What unites those is the consequence rather than the shape: each leaves a reader
+// holding an identifier that resolves to nothing. A condition the compiler
+// declares is one `aggrega explain` answers for, and that is the whole property an
+// identity crossing this socket exists to carry — so the test is whether the code
+// resolves, not whether a plugin was the party that raised it. Shared compiler
+// code linked into a guest raises the compiler's own conditions from inside it,
+// and those resolve perfectly.
+//
+// It halts rather than being dropped or coerced, and neither alternative is
+// silent in a way this boundary can afford. Dropping the identifiers and letting
+// the generic guest-failure condition stand would publish a build that looks
+// exactly like one from a plugin that named no condition at all, so the author
+// who has to fix it would never learn there was anything to fix. Coercing the
+// value to the nearest declared condition would print a condition the plugin did
+// not name, over a sentence written for a different one.
+//
+// The build still reports what broke it. The wrapping error quotes the offending
+// code, names the generic conditions a plugin reaches for when it has no better
+// identity, and carries the plugin's own message through unchanged — loud about
+// the violation, never silent about the failure, because a user whose build
+// stopped is owed the failure whatever the plugin got wrong about naming it.
+func ErrWasmGuestConditionUndeclared() error { return errWasmGuestConditionUndeclared }
+
+var errWasmGuestConditionUndeclared = cerrors.Register("wasm-guest-condition-undeclared", cerrors.Meta{
+	ShortCode: "E0293",
+	Message:   "wasm: guest plugin named a condition the socket does not declare",
+	EvaluatedElsewhere: "This package evaluates the rule itself, at the plugin socket boundary: it " +
+		"tests the condition a guest named against the set the socket declares, over the output that " +
+		"guest returned. The subject is a returned output rather than a compilation, so there is no " +
+		"view for the rule dispatch to invoke a rule over.",
+})
+
+// undeclaredGuestCondition is the refusal for a report naming a condition this
+// compiler does not declare: the refusal's own identity, the host condition it
+// stands on, the plugin the report came from, the code it offered, and why that
+// code resolves to no condition.
+//
+// It reports the REFUSAL's identifiers and not the offered code. The offered code
+// names no condition the compiler declares, so publishing it would hand a reader
+// an identifier that resolves to nothing — which is the exact failure this
+// condition exists to stop. The offered code is in the sentence instead, quoted,
+// which is where the plugin's author needs it and where nothing will mistake it
+// for a condition.
+//
+// It unwraps to the guest-failure condition as well as to the refusal, so the
+// error still classifies as what it is. A caller matching the host taxonomy goes
+// on matching, and a caller asking specifically whether a plugin broke the
+// socket's contract matches the refusal.
+//
+// The plugin qualifier is carried as a read rather than written into the
+// sentence, exactly as it is for a condition a guest chose correctly, so the
+// surface that composes a diagnostic joins the two in one place. It is set here
+// where it is not set on a half report, and the difference is what the condition
+// is about: a half report falls through to the compiler's own condition, which no
+// plugin raised, while this condition is a statement about one plugin's report
+// and is unreadable without naming it.
+type undeclaredGuestCondition struct {
+	refusal error
+	host    error
+	plugin  string
+	offered string
+	reason  string
+}
+
+// Error opens with the refusal's registered sentence, then quotes the offending
+// code, says why it resolves to no condition, and points at what to write instead.
+// The wording of the refusal itself has one home, so this contributes the
+// occurrence's own values and no second copy of that sentence.
+//
+// The advice names the generic set rather than the admissible one. A plugin may
+// name any condition the compiler declares, and printing that list would be
+// neither short enough to read nor an answer to the author's actual question,
+// which is what to put on this report.
+func (c *undeclaredGuestCondition) Error() string {
+	return fmt.Sprintf("%s: the guest named %q, and %s; a plugin names a condition this compiler "+
+		"declares, and reaches for one of %s when it has none better",
+		c.refusal.Error(), c.offered, c.reason, selectableConditionList())
+}
+
+// Unwrap returns the host condition it stands on and Is answers for the refusal,
+// so errors.Is matches both: the guest-failure taxonomy every socket consumer
+// classifies with, and the specific contract violation. The two are split across
+// an unwrap and a match rather than returned together, because a frame that
+// unwraps to several errors is one the surface that renders a diagnostic walks
+// PAST — it would take the members' bare sentences and drop the text of the frame
+// above them, which here carries the plugin's own message.
+func (c *undeclaredGuestCondition) Unwrap() error { return c.host }
+
+func (c *undeclaredGuestCondition) Is(target error) bool { return target == c.refusal }
+
+// ErrorCode and ErrorShortCode report the refusal's identifiers, read off the
+// refusal itself rather than written out here, so the two spellings of this
+// condition have one home and cannot come to disagree.
+func (c *undeclaredGuestCondition) ErrorCode() string {
+	code, _ := cerrors.CodeOf(c.refusal)
+	return code
+}
+
+func (c *undeclaredGuestCondition) ErrorShortCode() string {
+	short, _ := cerrors.ShortCodeOf(c.refusal)
+	return short
+}
+
+func (c *undeclaredGuestCondition) ErrorRaisingPlugin() string { return c.plugin }
+
+// reportedCondition presents the condition a guest named, over the host condition
+// it stands on, qualified by the plugin that reported it.
+//
+// It holds the registry's DESCRIPTION of that condition rather than its identity,
+// and that is forced rather than chosen. The admissible set is every condition the
+// compiler declares, and the registry deliberately offers no path from a code to
+// an identity: its lookups return a description precisely so a code stays an
+// OUTPUT and never becomes an input to matching. Adding such a path to satisfy
+// this type would break that sealing for every caller in order to serve one.
+//
+// The description is not the strings the guest sent, which is the distinction that
+// matters. Those were the QUERY; this is what the registry answered with, read out
+// of the compiler's own declarations at the boundary. So the wording and the
+// identifiers below are still the registration's and never the guest's, and a
+// guest cannot put a sentence of its own where the condition's belongs.
+//
+// Error returns the NAMED condition's registered sentence, read off the
+// description rather than written out here, so the wording still has exactly one
+// home. It is the named condition's rather than the host's because the head a
+// reader meets carries the named condition's code: a line whose code resolves to
+// one sentence and whose text says another describes two conditions at once. The
+// guest's own specific sentence follows it, appended by the wrap above, so the
+// printed line is the KIND of failure and then what actually happened.
+//
+// That the sentence is said HERE is what obliges the guest not to say it too. A
+// guest raises one of these conditions and the crossing message carries the
+// occurrence's own clause alone — see the failure derivation on the guest side,
+// which drops a registered condition's own frame for exactly this reason, the
+// same way it already drops the authoring category the host composes into the
+// head.
+//
+// Unwrap returns the host condition, so the whole host taxonomy still matches
+// beneath. Is answers for the named condition by comparing the code the target
+// reports against the code the registry answered with. That comparison is exact
+// rather than approximate: the registry refuses a second registration under a code
+// it already holds, so one code names one condition and code equality is identity
+// equality. Neither side is a written-down literal — the target's code is read off
+// the target and this one off the registry — so a condition re-registered under a
+// different code moves both together, which is what separates this from comparing
+// against a code spelled out in source.
+//
+// The two code reads report the named condition's own identifiers, unqualified. A
+// machine consumer matching a code is matching the identifier the condition is
+// registered under, and folding the plugin into it would hand that consumer a
+// value that is not a code — and, for the short code, one that is not the letter E
+// and four digits either. The plugin is a third read beside them, and the surface
+// that composes a diagnostic for a reader is what joins the two.
 type reportedCondition struct {
 	host      error
+	condition cerrors.Condition
 	plugin    string
-	code      string
-	shortCode string
 }
 
-func (c *reportedCondition) Error() string { return c.host.Error() }
+func (c *reportedCondition) Error() string { return c.condition.Message }
 
 func (c *reportedCondition) Unwrap() error { return c.host }
 
-func (c *reportedCondition) ErrorCode() string { return c.code }
+func (c *reportedCondition) Is(target error) bool {
+	code, ok := cerrors.CodeOf(target)
+	return ok && code == c.condition.Code
+}
 
-func (c *reportedCondition) ErrorShortCode() string { return c.shortCode }
+func (c *reportedCondition) ErrorCode() string { return c.condition.Code }
+
+func (c *reportedCondition) ErrorShortCode() string { return c.condition.ShortCode }
 
 func (c *reportedCondition) ErrorRaisingPlugin() string { return c.plugin }
 

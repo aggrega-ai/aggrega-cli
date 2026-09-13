@@ -15,6 +15,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
+	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -272,8 +273,15 @@ func TestSynthesizeWorkload_HTTPProbeNoPort_Errors(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected TRANSLATION_ERROR for http probe with no ports")
 	}
-	if !errors.Is(err, ErrTranslationProbeNoPort()) {
-		t.Errorf("expected ErrTranslationProbeNoPort, got %v", err)
+	// The condition names the KIND of failure, and the sentence names which
+	// input compose could not resolve. Both are asserted: the condition alone is
+	// shared with every other unresolved-input halt this core raises, so a green
+	// on it would no longer tell this failure from those.
+	if !errors.Is(err, wasm.ErrPluginRequiredInputUnresolved()) {
+		t.Errorf("expected the unresolved-required-input condition, got %v", err)
+	}
+	if want := "probe http: requires at least one container port; container declares none"; !strings.Contains(errorChainText(err), want) {
+		t.Errorf("the halt no longer says which input could not be resolved.\n  want: %s\n  got:  %v", want, err)
 	}
 }
 
@@ -432,8 +440,11 @@ func TestSynthesizeWorkload_UnsupportedFormsHalt(t *testing.T) {
 		w.Containers.Set("main", c)
 
 		_, _, err := SynthesizeWorkloadCore(w, nodeCtxFor("x"))
-		if !errors.Is(err, ErrUnsupportedComposeForm()) {
-			t.Errorf("form %q: expected ErrUnsupportedComposeForm; got %v", form, err)
+		if !errors.Is(err, wasm.ErrPluginCannotExpressInput()) {
+			t.Errorf("form %q: expected the cannot-express condition; got %v", form, err)
+		}
+		if want := "compose cannot express this workload form"; !strings.Contains(err.Error(), want) {
+			t.Errorf("form %q: the halt no longer says which construct has no expression.\n  want: %s\n  got:  %v", form, want, err)
 		}
 	}
 }
@@ -492,8 +503,11 @@ func TestSynthesizeWorkload_LifecycleHalts(t *testing.T) {
 	w.Containers.Set("main", c)
 
 	_, _, err := SynthesizeWorkloadCore(w, nodeCtxFor("x"))
-	if !errors.Is(err, ErrUnsupportedComposeLifecycle()) {
-		t.Errorf("expected ErrUnsupportedComposeLifecycle, got %v", err)
+	if !errors.Is(err, wasm.ErrPluginCannotExpressInput()) {
+		t.Errorf("expected the cannot-express condition, got %v", err)
+	}
+	if want := "compose has no lifecycle-hook primitive; container declares lifecycle hooks"; !strings.Contains(errorChainText(err), want) {
+		t.Errorf("the halt no longer says which construct has no expression.\n  want: %s\n  got:  %v", want, err)
 	}
 }
 
@@ -507,8 +521,11 @@ func TestSynthesizeWorkload_UnconvertibleResourceQuantityHalts(t *testing.T) {
 	w.Containers.Set("main", c)
 
 	_, _, err := SynthesizeWorkloadCore(w, nodeCtxFor("x"))
-	if !errors.Is(err, ErrUnconvertibleComposeQuantity()) {
-		t.Errorf("expected ErrUnconvertibleComposeQuantity, got %v", err)
+	if !errors.Is(err, wasm.ErrPluginValueNotRepresentable()) {
+		t.Errorf("expected the value-not-representable condition, got %v", err)
+	}
+	if want := "resources quantity cannot be converted to a compose deploy.resources value"; !strings.Contains(errorChainText(err), want) {
+		t.Errorf("the halt no longer says which value has no representation.\n  want: %s\n  got:  %v", want, err)
 	}
 }
 
@@ -561,8 +578,11 @@ func TestSynthesizeWorkload_EnvFromHalts(t *testing.T) {
 	w.Containers.Set("main", c)
 
 	_, _, err := SynthesizeWorkloadCore(w, nodeCtxFor("x"))
-	if !errors.Is(err, ErrUnsupportedComposeEnvFrom()) {
-		t.Errorf("expected ErrUnsupportedComposeEnvFrom, got %v", err)
+	if !errors.Is(err, wasm.ErrPluginCannotExpressInput()) {
+		t.Errorf("expected the cannot-express condition, got %v", err)
+	}
+	if want := "compose has no env-from-object primitive; container declares envFrom"; !strings.Contains(errorChainText(err), want) {
+		t.Errorf("the halt no longer says which construct has no expression.\n  want: %s\n  got:  %v", want, err)
 	}
 }
 
