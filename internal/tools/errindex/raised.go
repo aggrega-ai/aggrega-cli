@@ -6,19 +6,40 @@ package main
 import (
 	"fmt"
 	"go/ast"
+	"go/token"
 	"io"
 	"sort"
 	"strings"
 )
 
-// collectRaiseSites records, into raised, the handle of every identity this
-// file's production code invokes.
+// collectRaiseSites records what this file's production code reaches: into
+// raised, the handle of every identity it invokes an accessor for; into named,
+// every package-local name it mentions, qualified by the package that mentions
+// it.
 //
-// An identity is reached through the accessor that publishes it, so invoking
-// that accessor is the one thing every raise has in common: the value has to be
-// produced before it can be returned, wrapped, joined, composed into a message,
-// or bound into a table something else returns. That is why this counts
-// INVOCATIONS and asks nothing about where the invocation sits.
+// # A raise has two spellings, and only one of them is the accessor
+//
+// An identity is published by an accessor, and a caller in ANOTHER package can
+// reach it no other way — so from outside, invoking the accessor is what every
+// raise has in common. Inside the declaring package it is the opposite: the
+// constructor a raise goes through takes the registered identity, the accessor
+// yields a plain error, and passing the accessor there does not type-check. What
+// the raise names is the package-local binding the registration produced, and
+// the accessor is not written at the site at all.
+//
+// So a detector reading invocations alone is blind to every condition raised
+// where it is declared, which is most of them. Both spellings are read: the
+// invocation directly, and the mention resolved afterwards by [scan], which
+// joins named against the binding each accessor's own declaration returns. The
+// binding is never guessed from a lowercase-twin spelling — that rule agrees
+// with this tree today, and the day it stops agreeing every raise through the
+// renamed binding would go uncounted while the report still read as clean.
+//
+// The mention side is recorded here and resolved there because a binding is
+// package-scoped while the accessor publishing it may be declared in a different
+// file of that package. Resolving per file would make the answer depend on the
+// order the walk happened to reach the two, which is a result about the
+// filesystem rather than about the tree.
 //
 // 🔴 The syntactic position is deliberately not read, and this is the whole
 // design. A raise detector that recognises shapes — a return statement, a
@@ -26,22 +47,44 @@ import (
 // into a package-level table that a shared dispatcher later returns, and a
 // condition raised that way is as live as any other. Reading the position at
 // all is what creates that blind spot, so nothing here reads it: every
-// invocation counts, wherever the expression stands.
+// occurrence counts, wherever the expression stands.
 //
-// Two occurrences are excluded, and each is excluded because it is a different
-// act rather than because of where it sits:
+// # What is excluded, and why each exclusion is load-bearing
+//
+// Each is excluded because it is a different act rather than because of where it
+// sits, and the first two are what keep this tool able to report anything:
 //
 //   - An accessor's own declaration. `func ErrX() error { return errX }`
-//     publishes the identity and raises nothing; the re-export shape
-//     `func ErrX() error { return other.ErrY() }` is an invocation, and
-//     counting it would make every re-export a raise of its origin, so every
-//     re-exported condition would read as raised whether or not anything ever
-//     reaches it.
-//   - An argument to a matching call — `errors.Is(err, ErrX())` and its As
-//     counterpart. Matching a condition is the opposite of raising one: it asks
-//     whether something else already did. A condition only ever matched is a
-//     check that can never succeed, which is precisely what this tool exists to
-//     surface rather than to hide.
+//     publishes the identity and raises nothing. Under the invocation reading
+//     it is the re-export shape `func ErrX() error { return other.ErrY() }`
+//     that would otherwise make every re-export a raise of its origin; under
+//     the mention reading it is worse, because EVERY accessor names its own
+//     binding, so crediting it would report every accessor-published condition
+//     as raised and the unraised report could never again have a member.
+//   - A value specification's own names. `var errX = Register(…)` binds the very
+//     name the accessor publishes, so reading the name side of a declaration
+//     would credit every registration with raising itself — the same erasure
+//     arriving from the other half of the declaration. Only the values are
+//     read. Every other binding position is excluded with it, for the narrower
+//     reason that a name being declared is not a name being used: a parameter,
+//     a short variable declaration, a type, a label, an import alias.
+//   - A name after a dot. A binding is unexported and package-scoped, so a
+//     selected name is a field or a method and never the binding; reading one
+//     as a binding would credit a rule to a struct field that happens to share
+//     the name.
+//   - An argument to a matching call — `errors.Is(err, ErrX())`, its bare
+//     `errors.Is(err, errX)` counterpart, and their As siblings. Matching a
+//     condition is the opposite of raising one: it asks whether something else
+//     already did. A condition only ever matched is a check that can never
+//     succeed, which is precisely what this tool exists to surface rather than
+//     to hide. Both argument spellings are disqualified, because the mention
+//     reading is what makes the bare one reachable at all.
+//
+// The cost of the mention reading, stated rather than left to be discovered: a
+// local variable shadowing a binding's name, in the binding's own package, would
+// be read as naming it. The binding positions above remove the declarations that
+// introduce such a local, so what is left is a use of the shadow, and the name
+// has to match a registration's local name exactly for the join to reach it.
 //
 // # Guest entry points are read here, and are not read for declarations
 //
@@ -53,11 +96,13 @@ import (
 // raised — so excluding those files here would drop a live condition off the
 // reference for no better reason than where its one raise site happens to sit.
 // The two questions get the two file sets they each need.
-func collectRaiseSites(raised map[string]bool, file *ast.File, pkgDir string, imports map[string]string) {
+func collectRaiseSites(raised, named map[string]bool, file *ast.File, pkgDir string, imports map[string]string) {
 	// Marked on the way down, read on the way back into the subtree: ast.Inspect
-	// visits a call before its arguments, so a matching call can disqualify the
-	// invocations it encloses before they are reached.
+	// visits a node before its children, so a matching call can disqualify the
+	// occurrences it encloses, and a declaration can disqualify the name it
+	// binds, before either is reached.
 	matched := map[ast.Node]bool{}
+	bound := map[*ast.Ident]bool{}
 
 	for _, decl := range file.Decls {
 		if fd, ok := decl.(*ast.FuncDecl); ok {
@@ -66,23 +111,58 @@ func collectRaiseSites(raised map[string]bool, file *ast.File, pkgDir string, im
 			}
 		}
 		ast.Inspect(decl, func(n ast.Node) bool {
-			call, ok := n.(*ast.CallExpr)
-			if !ok {
-				return true
-			}
-			if matchesRatherThanRaises(call) {
-				for _, arg := range call.Args {
-					if inner, isCall := arg.(*ast.CallExpr); isCall {
-						matched[inner] = true
+			switch x := n.(type) {
+			case *ast.CallExpr:
+				if matchesRatherThanRaises(x) {
+					for _, arg := range x.Args {
+						matched[arg] = true
+					}
+					return true
+				}
+				if matched[x] {
+					return true
+				}
+				if h, isAccessorCall := invokedHandle(x, pkgDir, imports); isAccessorCall {
+					raised[h] = true
+				}
+			case *ast.Ident:
+				if matched[x] || bound[x] {
+					return true
+				}
+				named[pkgDir+"."+x.Name] = true
+			case *ast.SelectorExpr:
+				bound[x.Sel] = true
+			case *ast.ValueSpec:
+				for _, name := range x.Names {
+					bound[name] = true
+				}
+			case *ast.Field:
+				for _, name := range x.Names {
+					bound[name] = true
+				}
+			case *ast.AssignStmt:
+				if x.Tok != token.DEFINE {
+					return true
+				}
+				for _, lhs := range x.Lhs {
+					if id, isIdent := lhs.(*ast.Ident); isIdent {
+						bound[id] = true
 					}
 				}
-				return true
-			}
-			if matched[call] {
-				return true
-			}
-			if h, isAccessorCall := invokedHandle(call, pkgDir, imports); isAccessorCall {
-				raised[h] = true
+			case *ast.FuncDecl:
+				bound[x.Name] = true
+			case *ast.TypeSpec:
+				bound[x.Name] = true
+			case *ast.ImportSpec:
+				if x.Name != nil {
+					bound[x.Name] = true
+				}
+			case *ast.LabeledStmt:
+				bound[x.Label] = true
+			case *ast.BranchStmt:
+				if x.Label != nil {
+					bound[x.Label] = true
+				}
 			}
 			return true
 		})
@@ -101,9 +181,13 @@ func collectRaiseSites(raised map[string]bool, file *ast.File, pkgDir string, im
 // anything the day the standard library is imported under a name this tool did
 // not anticipate.
 //
-// Only the DIRECT arguments of such a call are disqualified. A deeper
-// expression is left alone, so an invocation nested inside something that
-// happens to be passed to a matcher still counts as the raise it is.
+// Only the DIRECT arguments of such a call are disqualified, and every spelling
+// of one is: an invocation, and a bare mention of a package-local binding. The
+// bare spelling is the one a caller inside the declaring package writes, so
+// disqualifying only the invocation would let a condition that is exclusively
+// matched there read as raised. A deeper expression is left alone, so an
+// occurrence nested inside something that happens to be passed to a matcher
+// still counts as the raise it is.
 func matchesRatherThanRaises(call *ast.CallExpr) bool {
 	sel, ok := call.Fun.(*ast.SelectorExpr)
 	if !ok {

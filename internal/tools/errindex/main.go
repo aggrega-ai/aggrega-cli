@@ -29,12 +29,22 @@
 // # Which conditions reach the reference
 //
 // A condition earns a place on the sentinel reference by being RAISED —
-// something in the module invokes the accessor that publishes it, so a build can
-// actually report it — or by its registration naming the work that will raise it.
-// A registration that is neither is absent from those pages by construction:
-// nothing hand-writes them, so there is no edit that puts an unraisable condition
-// on a page promising a check that never fires, and a note cannot be acquired by
-// neglect because registration refuses one carrying no text.
+// something in the module reaches its value, so a build can actually report it —
+// or by its registration naming the work that will raise it. A registration that
+// is neither is absent from those pages by construction: nothing hand-writes
+// them, so there is no edit that puts an unraisable condition on a page promising
+// a check that never fires, and a note cannot be acquired by neglect because
+// registration refuses one carrying no text.
+//
+// Reaching the value has two spellings, and reading only one of them makes most
+// of the module's conditions look unraised. From another package the accessor is
+// the only way in. From the declaring package the raise names the package-local
+// binding the registration produced instead, because the constructor takes the
+// registered identity and the accessor yields a plain error — so the accessor is
+// not written at those sites at all. Both are read, the binding taken from the
+// accessor's own declaration rather than from a spelling convention. What is
+// excluded, and why each exclusion is what keeps the report able to have a
+// member, is recorded at [collectRaiseSites].
 //
 // Absence is never silent. Every -out run names every excluded registration, and
 // every condition published as declared-ahead, so a condition cannot become

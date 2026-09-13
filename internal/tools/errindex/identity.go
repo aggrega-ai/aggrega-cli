@@ -43,10 +43,14 @@ type Identity struct {
 	AliasOf    string // "pkg/oci.ErrFetchNotFound" for a re-export, else empty
 	Importable bool   // reachable by `import` from outside this module
 
-	// Raised reports whether production code anywhere in this module invokes
-	// the accessor, which is what makes the condition reachable by a build.
-	// Resolved through a re-export in both directions: a re-export and the
-	// identity it forwards to are one value, so raising either raises both.
+	// Raised reports whether production code anywhere in this module reaches
+	// the condition's value, which is what makes it reachable by a build. Both
+	// spellings count: a caller outside the declaring package invokes the
+	// accessor, and one inside it names the binding the accessor publishes,
+	// because the accessor yields a plain error and the constructor a raise goes
+	// through takes the registered identity. Resolved through a re-export in
+	// both directions: a re-export and the identity it forwards to are one
+	// value, so raising either raises both.
 	Raised bool
 
 	// DeclaredAhead is the note the registration carries naming the work that
@@ -282,15 +286,24 @@ type accessorTarget struct {
 // returns.
 //
 // It reads two further facts about each identity, from the same walk: whether
-// production code anywhere in the module invokes the accessor, which is what
-// makes the condition reachable by a build, and whether a check declares the
-// condition at warning severity, which is what makes it an advisory rather than
-// a halt. One walk answers all three questions because they are asked of the
-// same files and the same parse — a second walk would be a second recogniser of
-// which files count, and two recognisers of one population agree until the day a
-// file takes a shape only one of them reads. What counts as an invocation, and
-// the two occurrences that are excluded, is [collectRaiseSites]; what counts as
-// a severity declaration is [collectAdvisories].
+// production code anywhere in the module reaches the condition's value, which is
+// what makes it reachable by a build, and whether a check declares the condition
+// at warning severity, which is what makes it an advisory rather than a halt.
+// One walk answers all three questions because they are asked of the same files
+// and the same parse — a second walk would be a second recogniser of which files
+// count, and two recognisers of one population agree until the day a file takes
+// a shape only one of them reads. What counts as reaching a condition, and the
+// occurrences that are excluded, is [collectRaiseSites]; what counts as a
+// severity declaration is [collectAdvisories].
+//
+// Reaching a condition has two spellings and only one of them is the accessor.
+// Outside the declaring package the accessor is the only way in; inside it the
+// raise names the binding the registration produced, because the constructor
+// takes the registered identity and the accessor yields a plain error. The
+// mention half is therefore collected during the walk and JOINED below, after
+// the walk has finished, against the binding each accessor's declaration
+// returns — for the same reason the registration join is deferred, that the two
+// halves may be written in either order and in either file.
 //
 // The cost is stated rather than hidden: a handle produced by anything other
 // than an accessor over a registration, or an accessor re-exporting one from
@@ -312,6 +325,7 @@ func scan(root, modulePath string) ([]Identity, error) {
 	accessors := []accessorDecl{}            // in discovery order, sorted later
 	seen := map[string]bool{}                // accessor handles already declared
 	raised := map[string]bool{}              // handles production code invokes
+	named := map[string]bool{}               // pkgDir + "." + every package-local name production code mentions
 	advisory := map[string]bool{}            // handles a check declares at warning severity
 
 	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
@@ -356,7 +370,7 @@ func scan(root, modulePath string) ([]Identity, error) {
 		// reach. The two questions take different file sets deliberately, and
 		// [collectRaiseSites] records why: a condition declared in a shared core
 		// and raised only from the guest beside it is raised.
-		collectRaiseSites(raised, file, pkgDir, imports)
+		collectRaiseSites(raised, named, file, pkgDir, imports)
 
 		// Check declarations are read from the same file set as raise sites, and
 		// for the same reason: a check is production code that runs, and where it
@@ -413,6 +427,27 @@ func scan(root, modulePath string) ([]Identity, error) {
 	})
 	if err != nil {
 		return nil, err
+	}
+
+	// The mention side of the raise question is resolved once the whole tree has
+	// been read, and only here can it be: a package-local binding is
+	// package-scoped, so the accessor that publishes it may be declared in any
+	// file of that package — either side of the raise that names it. Joining per
+	// file would make a condition's raise state depend on the order the walk
+	// reached the two files in, which is an answer about the filesystem rather
+	// than about the tree.
+	//
+	// The binding is taken from the accessor's own declaration, which is what
+	// [accessor] already returns, so the correspondence between a published name
+	// and the value behind it is read rather than inferred from a spelling
+	// convention the compiler does not enforce.
+	for _, acc := range accessors {
+		if acc.target.local == "" {
+			continue
+		}
+		if named[acc.pkg+"."+acc.target.local] {
+			raised[acc.pkg+"."+acc.name] = true
+		}
 	}
 
 	// The declaring accessors are resolved first, because a re-export takes the

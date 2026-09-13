@@ -67,6 +67,75 @@ func TestScan_DoesNotCountAMatchAsARaise(t *testing.T) {
 	}
 }
 
+func TestScan_SeesARaiseThatNamesTheBindingRatherThanTheAccessor(t *testing.T) {
+	t.Parallel()
+	ids := raisedFixture(t)
+
+	// Inside the declaring package a raise names the binding the accessor
+	// publishes: the constructor takes the registered identity and the accessor
+	// yields a plain error, so the accessor does not type-check at the site and
+	// is not written there. A detector reading invocations alone sees a
+	// declaration and no raise for every condition raised where it is declared,
+	// which is most of them.
+	id := mustIdentity(t, ids, "pkg/thing.ErrHandleRaised")
+	if !id.Raised {
+		t.Error("a condition raised only by naming its binding reads as unraised; the detector is " +
+			"reading the accessor spelling alone, which is the one spelling an in-package raise " +
+			"cannot use")
+	}
+	if !id.admitted() {
+		t.Error("pkg/thing.ErrHandleRaised is not admitted, so the reference would not carry a live condition")
+	}
+}
+
+func TestScan_DoesNotCountAMatchOnTheBindingAsARaise(t *testing.T) {
+	t.Parallel()
+	ids := raisedFixture(t)
+
+	// The bare-binding matcher argument is a shape the mention reading makes
+	// reachable for the first time, so the matcher exclusion has to disqualify
+	// it as well as the invocation spelling. Admitting it would publish a
+	// condition that is only ever asked about as one a build can report.
+	id := mustIdentity(t, ids, "pkg/thing.ErrHandleMatchedOnly")
+	if id.Raised {
+		t.Error("a condition whose binding occurs only as an errors.Is argument reads as raised; the " +
+			"matcher exclusion reads the invocation spelling only, so the in-package spelling of a " +
+			"match is counted as a raise")
+	}
+	if id.admitted() {
+		t.Error("pkg/thing.ErrHandleMatchedOnly is admitted, so the reference would promise a check nothing performs")
+	}
+}
+
+func TestScan_DoesNotCountAnAccessorsOwnDeclarationAsARaiseOfItsBinding(t *testing.T) {
+	t.Parallel()
+	ids := raisedFixture(t)
+
+	// EVERY accessor names the binding it publishes, so this exclusion is what
+	// keeps the mention reading from reporting every accessor-published
+	// condition as raised — at which point the unraised report could never again
+	// have a member and would go on passing while saying nothing.
+	//
+	// The same assertion covers the other half of the declaration: the fixture
+	// binds this condition with `var errUntouched = Register(…)`, so a walk
+	// reading a value specification's NAMES rather than only its values would
+	// credit the registration with raising itself and produce the identical
+	// erasure.
+	id := mustIdentity(t, ids, "pkg/thing.ErrUntouched")
+	if id.Raised {
+		t.Fatal("a condition whose binding is named only by its own accessor and its own registration " +
+			"reads as raised; every accessor-published condition now reads as raised by the " +
+			"declaration that publishes it, and the unraised report can no longer have a member")
+	}
+
+	// Calibration, so the assertion above is not passing because the mention
+	// reading is switched off altogether: the fixture does contain a condition
+	// raised through its binding and nothing else.
+	if !mustIdentity(t, ids, "pkg/thing.ErrHandleRaised").Raised {
+		t.Fatal("the mention reading is not firing at all, so the exclusion asserted above certifies nothing")
+	}
+}
+
 func TestScan_ReadsAConditionNamedNowhereAsUnraised(t *testing.T) {
 	t.Parallel()
 	ids := raisedFixture(t)

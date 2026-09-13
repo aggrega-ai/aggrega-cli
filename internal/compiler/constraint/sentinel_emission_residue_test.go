@@ -461,7 +461,10 @@ func funcBodyNames(file *ast.File, host, ident string) bool {
 		if !ok || fd.Body == nil || fd.Name.Name != host {
 			continue
 		}
-		if namesIn(map[string]string{ident: ""}, fd.Body)[ident] {
+		// No package-local bindings are supplied: this asks whether the body
+		// names one literal identifier, and the population it is asked over has
+		// exactly that one member.
+		if namesIn(map[string]string{ident: ""}, nil, fd.Body)[ident] {
 			return true
 		}
 	}

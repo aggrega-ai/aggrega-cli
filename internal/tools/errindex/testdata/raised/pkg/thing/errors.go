@@ -49,6 +49,26 @@ var errFolded = cerrors.Register("thing/folded", cerrors.Meta{
 		"once the fixture raises it.",
 })
 
+// Raised ONLY by naming the package-local binding the accessor publishes, which
+// is the spelling a raise takes inside the declaring package: the constructor
+// takes the registered identity and the accessor yields a plain error, so the
+// accessor cannot be written at the site.
+func ErrHandleRaised() error { return errHandleRaised }
+
+var errHandleRaised = cerrors.Register("thing/handle-raised", cerrors.Meta{
+	ShortCode: "E9110",
+	Message:   "raised by naming the binding rather than the accessor",
+})
+
+// The binding is named, and named only as the argument of a match. A match is
+// the opposite of a raise whichever spelling it is written in.
+func ErrHandleMatchedOnly() error { return errHandleMatchedOnly }
+
+var errHandleMatchedOnly = cerrors.Register("thing/handle-matched-only", cerrors.Meta{
+	ShortCode: "E9111",
+	Message:   "only ever matched, through its binding",
+})
+
 // Declared here and raised nowhere in this package; the only raise is through
 // the re-export in another package.
 func ErrRaisedViaReExport() error { return errRaisedViaReExport }

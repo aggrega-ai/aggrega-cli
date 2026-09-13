@@ -170,6 +170,33 @@ import (
 // elsewhere. Constraining the right-hand side to a registration would read as
 // tightening the criterion and would silently drop every re-export.
 //
+// # The emission side reads two spellings, because a raise has two
+//
+// The declaration side above matches [sentinelName], and the emission side
+// cannot be read the same way. A raise names the identity, and inside the
+// package that declares it the identity is the package-local binding the
+// registration produces — the exported accessor yields a plain error, which the
+// constructor a raise goes through does not accept, so the accessor is not
+// written at a raise site in its own package at all. A census matching only the
+// exported spelling therefore sees a declaration and no raise for every
+// condition raised where it is declared, and reports it as a rule nothing
+// raises.
+//
+// So the emission walk reads the exported name AND the package-local binding
+// each accessor publishes, the binding being READ FROM THE ACCESSOR'S OWN
+// DECLARATION by [accessorHandles] rather than inferred from a lowercase-twin
+// spelling. This is not a widening of what counts as a raise: it is the same
+// question asked of the shape the constructor now produces.
+//
+// Two occurrences of a binding are excluded, and each exclusion is what keeps
+// the instrument able to report anything at all. An accessor's own declaration
+// names the binding it publishes — crediting it empties the no-emission-site
+// bucket permanently while every count still reads as clean. And a value
+// specification's NAMES are never walked, only its values, because a
+// registration binds the very name the accessor publishes and reading the name
+// side would credit every registration with raising itself. Both are recorded at
+// the walk in [sentinelCensus], beside the code that performs them.
+//
 // # Why a forwarding declaration is reported in a bucket of its own
 //
 // That inclusion is right on the declaration side and it leaves a hole on the
@@ -371,8 +398,10 @@ func TestSentinelEmissionSitesAreTheFrameworkDispatch(t *testing.T) {
 			"construction; a plain declared function and any other package-level value are read by their "+
 			"path instead. A function body is read for what it NAMES and a package-level value for what it "+
 			"OBTAINS, so a rule raised from a diagnostic set assembled at package level is counted here "+
-			"rather than reported as raised by nothing. That reads declarations and cannot observe "+
-			"invocation, so a check declared and never invoked is attributed to the dispatch too.\n"+
+			"rather than reported as raised by nothing. Both are read under either spelling a raise takes: "+
+			"the exported name, and the package-local binding the accessor publishes. That reads "+
+			"declarations and cannot observe invocation, so a check declared and never invoked is "+
+			"attributed to the dispatch too.\n"+
 			"CONSEQUENCE while this population reports rather than blocks: an off-framework check gets no "+
 			"computed placement, no caller-coverage guarantee and no framework-supplied provenance, and "+
 			"nothing halts on its absence. The population is not free to grow, though — see the ratchet "+
@@ -476,8 +505,12 @@ func assertUnemittedSentinels(t *testing.T, unemitted []string) {
 			"a name minted for a check that was never written. A consumer can match against it forever "+
 			"and never see it.\n"+
 			"ATTRIBUTION: a raise is read from a declared function body that names the sentinel and from a "+
-			"package-level value that obtains it, so a sentinel reached only as a function VALUE — an entry "+
-			"in a dispatch table something else calls — is not credited and lands here. That is the "+
+			"package-level value that obtains it, under either spelling a raise takes — the exported name, "+
+			"and the package-local binding the accessor publishes, which is the only spelling available "+
+			"inside the declaring package. An accessor's own declaration is excluded, or every "+
+			"accessor-published sentinel would read as raised by the declaration that publishes it and this "+
+			"list could never have a member. A sentinel reached only as a function VALUE — an entry in a "+
+			"dispatch table something else calls — is not credited and lands here. That is the "+
 			"under-attributing direction on purpose: it is a false alarm somebody investigates rather than "+
 			"an unraised condition reported as raised.\n"+
 			"REMEDY: raise it from the check that owns the rule; or, if it is deliberately declared ahead "+
@@ -660,6 +693,21 @@ type emissionSite struct {
 // of error at the value host is toward under-attribution: a value that merely
 // mentions a sentinel is not credited with raising it.
 //
+// Both questions additionally read the package-local binding an accessor
+// publishes, supplied per declaring package by [accessorHandles], because inside
+// that package the binding is the only spelling a raise can take. It is a value
+// rather than an accessor, so the value host obtains it by NAMING it — the same
+// arm a value-bound sentinel takes, for the same reason: there is no call to
+// look for, and requiring one would report every raise of it as no raise at all.
+//
+// The function-body reading of a binding therefore inherits that host's upper
+// bound rather than narrowing it. A body asking `errors.Is(err, errX)` names the
+// binding and is counted, exactly as a body asking `errors.Is(err, ErrX())`
+// names the accessor and is counted today; the two spellings ask one question
+// and it would be incoherent for the census to answer them differently. What
+// this file reports is where a rule is EXPRESSED, and the bound is stated on the
+// off-framework figure itself rather than repaired here.
+//
 // One shape is under-attributed by that choice and is named so it is not
 // mistaken for a defect in the tree. A sentinel reached only as a function VALUE
 // — an accessor bound into a dispatch table something else calls — is obtained
@@ -691,18 +739,35 @@ func sentinelCensus(t *testing.T) (declared []string, emitters map[string][]emis
 	names := declaredSentinels(files)
 	forwards = forwardingDeclarations(files, names)
 	accessorPublished := accessorPublishedSentinels(files, names)
+	handles := accessorHandles(files, names)
 
 	emitters = map[string][]emissionSite{}
 	for path, file := range files {
 		dir := filepath.ToSlash(filepath.Dir(path))
 		inFrameworkPackage := strings.Contains(dir, frameworkPackageSuffix)
+		pkgHandles := handles[dir]
 		for _, decl := range file.Decls {
 			switch d := decl.(type) {
 			case *ast.FuncDecl:
 				if d.Body == nil {
 					continue
 				}
-				recordNamed(emitters, names, emissionSite{
+				// An accessor's own declaration is read WITHOUT the bindings,
+				// and nothing here is more load-bearing than that. Its body
+				// names the binding it publishes, so crediting it would make
+				// every accessor-published sentinel raised by its own
+				// declaration: the no-emission-site bucket would empty
+				// permanently, this assertion would go on passing, and the one
+				// finding it exists to report could never be reported again. The
+				// body is still read for what it NAMES, so a forwarding accessor
+				// still counts as a site for the sentinel it forwards to.
+				bodyHandles := pkgHandles
+				if _, isSentinel := names[d.Name.Name]; isSentinel {
+					if _, isAccessor := accessorHandle(d); isAccessor {
+						bodyHandles = nil
+					}
+				}
+				recordNamed(emitters, names, bodyHandles, emissionSite{
 					name:      dir + "." + d.Name.Name,
 					framework: inFrameworkPackage,
 				}, d.Body)
@@ -715,11 +780,17 @@ func sentinelCensus(t *testing.T) (declared []string, emitters map[string][]emis
 					if !ok {
 						continue
 					}
+					// Only the value expressions are walked, never the names the
+					// specification binds. A registration binds the very name an
+					// accessor publishes, so reading the name side would credit
+					// every registration with raising itself — the same erasure
+					// the accessor exclusion above prevents, arriving from the
+					// other half of the declaration.
 					for i, value := range vs.Values {
 						if i >= len(vs.Names) {
 							continue
 						}
-						recordObtained(emitters, names, accessorPublished, emissionSite{
+						recordObtained(emitters, names, accessorPublished, pkgHandles, emissionSite{
 							name:      dir + "." + vs.Names[i].Name,
 							framework: inFrameworkPackage || isCheckValue(value),
 						}, value)
@@ -768,7 +839,12 @@ func forwardingDeclarations(files map[string]*ast.File, names map[string]string)
 			return
 		}
 		var targets []string
-		for name := range namesIn(names, subtree) {
+		// Read without the package-local bindings, deliberately. A forwarding
+		// relation holds between two PUBLISHED names; an accessor's body naming
+		// the binding it publishes is the publication itself, so reading the
+		// bindings here would move every ordinary accessor into the forwarding
+		// bucket and out of the population its own raises are counted against.
+		for name := range namesIn(names, nil, subtree) {
 			// A declaration naming itself is recursion or a doc reference, not
 			// a forwarding relation, and admitting it would let any sentinel
 			// forward to itself out of the bucket it belongs in.
@@ -989,17 +1065,41 @@ func declaredSentinels(files map[string]*ast.File) map[string]string {
 // a second copy of the scan would be free to drift into recognising a spelling
 // the other does not: a qualified name read by one and not the other would move
 // a sentinel between buckets for no reason a reader could find.
-func namesIn(names map[string]string, subtree ast.Node) map[string]bool {
+//
+// handles maps the package-local bindings an accessor publishes, for the
+// declaring package only, and is nil where the question being asked is about
+// exported names alone — [forwardingDeclarations] passes nil, because a
+// forwarding declaration is a relation between two PUBLISHED names and an
+// accessor's body naming its own binding is the publication rather than a
+// forward. Where it is supplied, naming the binding names the sentinel: inside
+// the declaring package that is the only spelling a raise can take.
+//
+// A name after a dot is never read as a binding. The binding is unexported and
+// package-scoped, so a selected name is a field or a method, and reading one as
+// a binding would credit a rule to a struct field that happens to share the
+// name. The selected identifier is marked on the way down and skipped on the way
+// back into the subtree, which is how the exported reading below already reaches
+// a qualified spelling exactly once.
+func namesIn(names map[string]string, handles map[string]string, subtree ast.Node) map[string]bool {
 	named := map[string]bool{}
+	selected := map[*ast.Ident]bool{}
 	ast.Inspect(subtree, func(node ast.Node) bool {
 		switch x := node.(type) {
-		case *ast.Ident:
-			if _, ok := names[x.Name]; ok {
-				named[x.Name] = true
-			}
 		case *ast.SelectorExpr:
+			selected[x.Sel] = true
 			if _, ok := names[x.Sel.Name]; ok {
 				named[x.Sel.Name] = true
+			}
+		case *ast.Ident:
+			if selected[x] {
+				return true
+			}
+			if _, ok := names[x.Name]; ok {
+				named[x.Name] = true
+				return true
+			}
+			if sentinel, ok := handles[x.Name]; ok {
+				named[sentinel] = true
 			}
 		}
 		return true
@@ -1008,8 +1108,8 @@ func namesIn(names map[string]string, subtree ast.Node) map[string]bool {
 }
 
 // recordNamed attributes site to every declared sentinel the subtree names.
-func recordNamed(emitters map[string][]emissionSite, names map[string]string, site emissionSite, subtree ast.Node) {
-	for name := range namesIn(names, subtree) {
+func recordNamed(emitters map[string][]emissionSite, names map[string]string, handles map[string]string, site emissionSite, subtree ast.Node) {
+	for name := range namesIn(names, handles, subtree) {
 		emitters[name] = append(emitters[name], site)
 	}
 }
@@ -1042,7 +1142,14 @@ func recordNamed(emitters map[string][]emissionSite, names map[string]string, si
 // it would ask a question no count in this file is taken over. That admits a
 // same-named value from outside this module, which is the same admission
 // [namesIn] already makes beside it rather than a new one.
-func obtainedIn(names map[string]string, accessorPublished map[string]bool, subtree ast.Node) map[string]bool {
+//
+// A third shape joins those two and is read like the second. A package-local
+// binding an accessor publishes is a VALUE, so it is obtained by being named and
+// there is no call to look for — the accessor is the thing that cannot be
+// written at the raise, because it yields the wrong type. handles carries those
+// bindings for the declaring package only, and a name after a dot is never read
+// as one, for the reason [namesIn] records beside its own marking.
+func obtainedIn(names map[string]string, accessorPublished map[string]bool, handles map[string]string, subtree ast.Node) map[string]bool {
 	obtained := map[string]bool{}
 	record := func(name string, invoked bool) {
 		if _, ok := names[name]; !ok {
@@ -1057,6 +1164,7 @@ func obtainedIn(names map[string]string, accessorPublished map[string]bool, subt
 			obtained[name] = true
 		}
 	}
+	selected := map[*ast.Ident]bool{}
 	ast.Inspect(subtree, func(node ast.Node) bool {
 		switch x := node.(type) {
 		case *ast.CallExpr:
@@ -1069,10 +1177,20 @@ func obtainedIn(names map[string]string, accessorPublished map[string]bool, subt
 			case *ast.SelectorExpr:
 				record(fun.Sel.Name, true)
 			}
-		case *ast.Ident:
-			record(x.Name, false)
 		case *ast.SelectorExpr:
+			selected[x.Sel] = true
 			record(x.Sel.Name, false)
+		case *ast.Ident:
+			if selected[x] {
+				return true
+			}
+			if _, isSentinel := names[x.Name]; isSentinel {
+				record(x.Name, false)
+				return true
+			}
+			if sentinel, ok := handles[x.Name]; ok {
+				obtained[sentinel] = true
+			}
 		}
 		return true
 	})
@@ -1081,10 +1199,85 @@ func obtainedIn(names map[string]string, accessorPublished map[string]bool, subt
 
 // recordObtained attributes site to every declared sentinel the subtree obtains
 // the value of.
-func recordObtained(emitters map[string][]emissionSite, names map[string]string, accessorPublished map[string]bool, site emissionSite, subtree ast.Node) {
-	for name := range obtainedIn(names, accessorPublished, subtree) {
+func recordObtained(emitters map[string][]emissionSite, names map[string]string, accessorPublished map[string]bool, handles map[string]string, site emissionSite, subtree ast.Node) {
+	for name := range obtainedIn(names, accessorPublished, handles, subtree) {
 		emitters[name] = append(emitters[name], site)
 	}
+}
+
+// accessorHandle returns the package-local name an accessor declaration
+// publishes — the identifier in `func ErrX() error { return errX }`.
+//
+// It is READ FROM THE DECLARATION and never derived from the spelling. A
+// lowercase-twin rule would agree with this tree today and would silently stop
+// agreeing the day an accessor is written over a differently-named binding, at
+// which point every raise through that binding would go uncounted while the
+// census reported a clean population.
+//
+// The shape is the whole test: no receiver, and a body that is one return of a
+// bare identifier. A body returning a call is the forwarding shape, which names
+// another sentinel rather than a package-local binding and is already read as
+// what it is by [forwardingDeclarations].
+func accessorHandle(fd *ast.FuncDecl) (string, bool) {
+	if fd.Recv != nil || fd.Body == nil || len(fd.Body.List) != 1 {
+		return "", false
+	}
+	ret, ok := fd.Body.List[0].(*ast.ReturnStmt)
+	if !ok || len(ret.Results) != 1 {
+		return "", false
+	}
+	id, ok := ret.Results[0].(*ast.Ident)
+	if !ok {
+		return "", false
+	}
+	return id.Name, true
+}
+
+// accessorHandles returns, per package directory, the package-local name each
+// accessor publishes mapped to the sentinel that publishes it.
+//
+// This is what lets the census see a raise at all now that the identity a raise
+// names is the binding rather than the accessor. An identity a caller can only
+// obtain by calling the accessor is reached, inside the declaring package, by
+// naming the binding directly — the accessor is not written there, because it
+// would yield the wrong type — so a census matching [sentinelName] alone sees
+// nothing at the site where the rule is actually raised.
+//
+// It is keyed by directory rather than module-wide, unlike every other map here.
+// A package-local binding is unexported and package-scoped, so two packages may
+// bind the same local name for two different sentinels; a module-wide key would
+// let one package's raise credit the other's sentinel, which is the merge
+// [namesIn]'s bare-name population can afford for exported names and cannot
+// afford for these.
+//
+// Where one directory publishes one binding under two accessor names the
+// lexicographically first wins, so a reported attribution is the same on every
+// run rather than whichever the file map handed back first.
+func accessorHandles(files map[string]*ast.File, names map[string]string) map[string]map[string]string {
+	handles := map[string]map[string]string{}
+	for path, file := range files {
+		dir := filepath.ToSlash(filepath.Dir(path))
+		for _, decl := range file.Decls {
+			fd, ok := decl.(*ast.FuncDecl)
+			if !ok {
+				continue
+			}
+			if _, isSentinel := names[fd.Name.Name]; !isSentinel {
+				continue
+			}
+			local, isAccessor := accessorHandle(fd)
+			if !isAccessor {
+				continue
+			}
+			if handles[dir] == nil {
+				handles[dir] = map[string]string{}
+			}
+			if prior, seen := handles[dir][local]; !seen || fd.Name.Name < prior {
+				handles[dir][local] = fd.Name.Name
+			}
+		}
+	}
+	return handles
 }
 
 // accessorPublishedSentinels reports, for each declared sentinel, whether its
