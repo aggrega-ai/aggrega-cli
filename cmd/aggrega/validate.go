@@ -28,13 +28,14 @@ import (
 //   - --release <path>: release-scoped correctness — the entities a Release's
 //     dependency closure reaches are validated (closure-scoped pillars, extends,
 //     and pre-render authored-value conformance).
-//   - <entity>: single-entity correctness — one catalog entity file is schema-
-//     and shape-checked; a Component or Feature additionally has its pillar
-//     structure checked, and a Recipe is driven through the real compilation
-//     pipeline around a synthesized minimal deployment so an author sees the
-//     isolated rendered output before wiring the entity into any Aggregate. A
-//     Plugin is schema-checked only — it carries no values or pillar surface
-//     and no render tier applies.
+//   - <entity>: single-entity correctness — one catalog entity file is checked
+//     against its kind's schema and then against the checks that kind carries.
+//     A Component or Feature has its pillar structure checked; a Workload,
+//     FeatureRecipe or Plugin has its shape checked; and a Recipe is driven
+//     through the real compilation pipeline around a synthesized minimal
+//     deployment so an author sees the isolated rendered output before wiring
+//     the entity into any Aggregate. Kinds outside that set are refused here
+//     and are reached by the whole-catalog and --release scopes instead.
 //
 // Output is deterministic and the command writes nothing to disk.
 func newValidateCmd() *cobra.Command {
@@ -55,12 +56,16 @@ func newValidateCmd() *cobra.Command {
 			"With --release, validate checks the entities a Release's dependency closure\n" +
 			"reaches: closure-scoped pillars, extends, and pre-render authored-value\n" +
 			"conformance — the same correctness a build applies, scoped to that Release.\n\n" +
-			"With an entity path, validate checks one entity file. All kinds are schema-\n" +
-			"and shape-checked; a Component or Feature has its pillar structure checked;\n" +
-			"a Recipe is additionally compiled end to end against a minimal generated\n" +
-			"deployment, so its resolution, its guards and a render of its output are all\n" +
-			"exercised; a Plugin is schema-checked only, as it has no pillar or render\n" +
-			"surface. The command writes nothing to disk.",
+			"With an entity path, validate checks one entity file. The kinds it accepts\n" +
+			"as a single-entity target are Component, Feature, Recipe, FeatureRecipe,\n" +
+			"Workload and Plugin. Each has its schema checked, then the checks its own\n" +
+			"kind carries: pillar structure for a Component or Feature; shape for a\n" +
+			"Workload, FeatureRecipe or Plugin; and for a Recipe, shape plus an end-to-end\n" +
+			"compile against a minimal generated deployment, so its resolution, its guards\n" +
+			"and a render of its output are all exercised. Any other kind is refused here\n" +
+			"today and is checked in a wider scope instead: a whole-catalog run reaches an\n" +
+			"Aggregate and the library kinds, and --release reaches a Manifest and a\n" +
+			"Release. The command writes nothing to disk.",
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			path := ""
