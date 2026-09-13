@@ -331,6 +331,19 @@ type codecTarget struct {
 	// falling back to a reflective json.Marshal. (Ignored by the Rust/TS backends,
 	// whose runtime resolves the in-package type by name.)
 	externalDefTypes []string
+	// skipCBOR withholds the canonical-CBOR codec from this target, leaving it the
+	// JSON codec alone. It defaults false, so a target that says nothing carries
+	// both.
+	//
+	// The default is what emitsCBOR's criterion asks for: a socket payload is
+	// encoded by one side and decoded by the other, so withholding the codec would
+	// leave one end of such a wire with no way to speak it. Setting this records
+	// that the criterion does not hold for the target — that its wire has no
+	// second side reading CBOR at all — which is a different claim from "nothing
+	// has asked for it yet", and is why the exclusion is stated at the
+	// registration, with its reason, rather than inferred from the schema or the
+	// language.
+	skipCBOR bool
 	// codecOnly emits the canonical-CBOR codec ALONE: no struct declarations, and
 	// no JSON codec either. It is the mode for a destination package that already
 	// declares these types by hand — the compiler's own core types, whose
@@ -495,12 +508,15 @@ func (t codecTarget) emitsDef(name string) bool {
 // emitsCBOR reports whether a codec target carries the canonical-CBOR codec
 // alongside JSON — EncodeCBOR/DecodeCBOR/DecodeCBORStrict plus a
 // `cbor:"<key>[,omitempty]"` struct tag in Go, and the hand-written CBOR
-// encoders in Rust and TS. Every
-// target carries it: a socket payload is encoded by one side and decoded by the
-// other, so a target that lacked the codec would leave one end of that wire with
-// no way to speak it.
+// encoders in Rust and TS.
+//
+// A target carries it unless it says otherwise: a socket payload is encoded by
+// one side and decoded by the other, so a target that lacked the codec would
+// leave one end of that wire with no way to speak it. A target whose wire has no
+// such second side states that in skipCBOR, where the reason sits beside the
+// registration it applies to.
 func (t codecTarget) emitsCBOR() bool {
-	return true
+	return !t.skipCBOR
 }
 
 // frpGuestNeutralVocabulary maps the FRP schema's host type spellings to a
@@ -1307,6 +1323,37 @@ var codecTargets = map[string]codecTarget{
 		lang:             "ts",
 		externalDefTypes: []string{"Diagnostic"},
 	},
+	// The session wire — a TypeScript binding only, into aggrega-abi. This schema
+	// describes the request, response and notification shapes the long-running
+	// session puts on its JSON-RPC wire; the host's own declarations are
+	// hand-written and this target does not touch them, so nothing here emits a
+	// host codec and the schema remains a description of those declarations rather
+	// than their source.
+	//
+	// One language rather than three, and deliberately: the audience is a client
+	// author driving the session over standard input and output, which is the
+	// editor-integration case. A guest plugin never speaks this wire, so the
+	// coverage assertion that obliges a socket payload to carry all three bindings
+	// does not reach it — its criterion is a socket payload or the IR graph, and
+	// this is neither.
+	//
+	// pkg is deliberately absent: it names the destination Go package, only the Go
+	// backend reads it, and there is no Go target here to name one for.
+	//
+	// skipCBOR is set because the criterion for carrying a canonical-CBOR codec is
+	// a payload one side encodes and the other decodes, and that criterion does
+	// not hold here rather than merely going unexercised. This wire is JSON-RPC
+	// text over standard input and output, and this binding is the only generated
+	// side of it: no host codec, no codec in another language, and no guest, since
+	// a guest plugin never speaks this wire. A CBOR codec emitted here would be a
+	// second encoding of every message that nothing at either end reads.
+	"servewire_gen.ts": {
+		schema:     schemas.ServeWireV1alpha1,
+		schemaFile: "serve-wire-v1alpha1.schema.json",
+		lang:       "ts",
+		skipCBOR:   true,
+	},
+
 	// The shared CBOR machinery emitted once per guest crate/package. These
 	// targets are schema-free: they carry the read/write helpers, the runtime key
 	// sort, the float16 conversions, and a dependency-free base64 codec that the
@@ -1381,20 +1428,57 @@ type namedNode struct {
 	node schemaNode
 }
 
-// declaredType reports the node's type when the schema declares exactly one,
-// and the empty string for a node that declares none and for one that declares
-// a set alike. The mechanical mappings — Go type, structural refusal, nested
-// struct discovery — each turn one declared name into one answer, and a set has
-// no single name to give them, so every one of them must reach its fall-through
-// arm on a set. Routing them all through this accessor is what makes that
-// happen by construction rather than at each call site's discretion, and it is
-// why the field itself is not a string: the set stays on the node for whatever
-// can use it, while the callers that need one name ask for one name.
-func (n schemaNode) declaredType() string {
-	if len(n.Types) == 1 {
+// jsonNull is the `type` keyword's name for the absent value. It is a constant
+// because the two accessors below read it for different halves of one fact, and
+// a second spelling of it would let those halves disagree.
+const jsonNull = "null"
+
+// valueType reports the one type name describing the value's SHAPE, and the
+// empty string where the schema names none. The mechanical mappings — Go type,
+// structural refusal, nested struct discovery — each turn one shape into one
+// answer, so routing them all through this accessor makes their behaviour on a
+// set a property of the accessor rather than of each call site's discretion.
+//
+// A set of one names that one. A set of exactly two, one of them `null`, names
+// the other: `null` alongside a single name says the value is sometimes sent as
+// nothing, which is a fact about PRESENCE rather than a second shape, so the
+// shape is the remaining name and every mapping has its answer. Ask nullable
+// for the presence half — the two are read separately because a backend whose
+// language distinguishes an empty value from an absent one needs both, while
+// one whose zero value already carries absence needs only the shape.
+//
+// Any other set names no one shape. A union of genuinely different shapes — an
+// identifier the transport defines as a string or a number — has no single name
+// to give, and choosing a member would publish a contract the schema never
+// stated, so every mapping reaches its fall-through arm on one.
+func (n schemaNode) valueType() string {
+	switch len(n.Types) {
+	case 1:
 		return n.Types[0]
+	case 2:
+		if n.Types[0] == jsonNull {
+			return n.Types[1]
+		}
+		if n.Types[1] == jsonNull {
+			return n.Types[0]
+		}
 	}
 	return ""
+}
+
+// nullable reports whether the type set declares `null` alongside exactly one
+// other name, which is how a schema states that a value is sent as nothing when
+// it has nothing to report. It is the presence half of what valueType reads,
+// and it is kept apart from the shape because the two halves land differently
+// per language: a nil Go slice already marshals to null and back, so the Go
+// mapping needs the shape alone, while a language whose array type admits no
+// null needs the absence stated in the published type or its consumer meets the
+// null at run time with nothing at compile time to have warned them.
+func (n schemaNode) nullable() bool {
+	if len(n.Types) != 2 {
+		return false
+	}
+	return n.Types[0] == jsonNull || n.Types[1] == jsonNull
 }
 
 // decodeTypeKeyword reads the `type` keyword in either spelling JSON Schema
@@ -1557,6 +1641,12 @@ func pascal(s string) string {
 //
 // A nil vocabulary (the single-type entity path) leaves every annotation
 // value untouched.
+//
+// The mapping reads the node's SHAPE, so a value the schema declares as a
+// collection-or-null maps to the collection: a nil Go slice marshals to null
+// and back, which is the same statement the schema makes. The absence half is
+// not lost — it rides on the node for a backend whose language cannot express
+// it in the zero value, and goType is not that backend's only input.
 func goType(n schemaNode, typeName string, vocab map[string]string) string {
 	if n.GoType != "" {
 		return rewriteType(n.GoType, vocab)
@@ -1564,7 +1654,7 @@ func goType(n schemaNode, typeName string, vocab map[string]string) string {
 	if n.Ref != "" {
 		return refTypeName(n.Ref)
 	}
-	switch n.declaredType() {
+	switch n.valueType() {
 	case "string":
 		return "string"
 	case "boolean":
@@ -1607,6 +1697,103 @@ func refTypeName(ref string) string {
 	return ref
 }
 
+// nestedTypeName returns the type name given to an object a property declares
+// inline. Such an object has no name of its own — the schema states its shape in
+// place rather than through a `$defs` entry — so the name is derived from the
+// path that reaches it: the declaring type's name, then the field's.
+//
+// It is one function rather than an expression at each site because the name is
+// asked for from two directions that have to agree: the emission that DECLARES
+// the type, and the field resolution that REFERENCES it. Two derivations of one
+// name disagree in silence — each half stays self-consistent, so the generator
+// emits a file that declares one type and names another, and nothing in it
+// notices.
+func nestedTypeName(declaringType, field string) string {
+	return declaringType + field
+}
+
+// declaresInlineObject reports whether a property node is an object the schema
+// states in place: it carries the properties a declaration is built from, and
+// names no type of its own through a `$ref` or an x-aggrega-go-type annotation.
+//
+// Those two exclusions are what hold it to the field resolution, which reads the
+// annotation first and the `$ref` second and reaches the shape only when neither
+// is there. A node the resolution names through a `$ref` is declared by the def
+// that `$ref` points at, so a second declaration under the derived name would be
+// one nothing references.
+func declaresInlineObject(n schemaNode) bool {
+	return n.GoType == "" && n.Ref == "" && n.valueType() == "object" && len(n.props) > 0
+}
+
+// inlineObjectDefs returns the objects a declared type states inline, each under
+// the name the field resolution gives it, breadth-first in declaration order.
+//
+// A backend owes a declaration for every one of them: a field typed as an inline
+// object names a type, and a file naming a type it does not declare is refused
+// by the destination language at a line in generated code that says nothing
+// about which schema node produced it.
+func inlineObjectDefs(typeName string, n schemaNode) []namedNode {
+	var out []namedNode
+	queue := []namedNode{{name: typeName, node: n}}
+	for len(queue) > 0 {
+		cur := queue[0]
+		queue = queue[1:]
+		for _, p := range cur.node.props {
+			if !declaresInlineObject(p.node) {
+				continue
+			}
+			nested := namedNode{name: nestedTypeName(cur.name, pascal(p.name)), node: p.node}
+			out = append(out, nested)
+			queue = append(queue, nested)
+		}
+	}
+	return out
+}
+
+// expandInlineObjects returns the types a backend declares for a `$defs`-shaped
+// schema: each entry, followed by the objects that entry states inline. A
+// backend iterates this instead of the entries alone, so the set it declares is
+// the set its own fields reference.
+//
+// The Go backend does not read it, and the asymmetry is structural rather than
+// an omission: its declaration emission already queues an inline object as it
+// walks a struct's properties, because that emission is shared with the
+// single-type entity path, where a schema states most of its shape inline.
+// Handing it an expanded list would declare each such type twice.
+func expandInlineObjects(defs []namedNode) []namedNode {
+	out := make([]namedNode, 0, len(defs))
+	for _, d := range defs {
+		out = append(out, d)
+		out = append(out, inlineObjectDefs(d.name, d.node)...)
+	}
+	return out
+}
+
+// checkInlineObjectNames refuses a schema whose declarations would not all carry
+// distinct names. An inline object's name is derived from the path that reaches
+// it, so a `$defs` entry may already carry that name and two paths may derive
+// one name — and either way the emitted file declares one type twice. The
+// destination language refuses that at a line in generated code that does not
+// say which schema nodes collided, so both are named here instead.
+func checkInlineObjectNames(schemaFile string, defs []namedNode) error {
+	declaredBy := map[string]string{}
+	for _, d := range defs {
+		declaredBy[d.name] = "the $defs entry " + d.name
+	}
+	for _, d := range defs {
+		for _, nested := range inlineObjectDefs(d.name, d.node) {
+			where := "the object " + d.name + " declares inline"
+			if prior, ok := declaredBy[nested.name]; ok {
+				return fmt.Errorf("typegen: %s: two declarations would both be named %s — %s, and %s. "+
+					"Rename one of the properties, or give one of them an x-aggrega-go-type annotation "+
+					"naming the type it carries", schemaFile, nested.name, prior, where)
+			}
+			declaredBy[nested.name] = where
+		}
+	}
+	return nil
+}
+
 // checkStructNode refuses, before anything is emitted, the two schema shapes the
 // generator has no Go type name for. An object carrying neither an
 // `x-aggrega-go-type` annotation nor `properties` resolves to a struct name that
@@ -1642,11 +1829,16 @@ func checkStructNode(schemaFile, path string, n schemaNode) error {
 // checkFieldNode takes a node in a property position, where the generator has a
 // name to give a nested struct — so an object here is emittable exactly when it
 // declares the properties that struct is built from.
+//
+// It reads the node's shape, which is what keeps a nullable spelling inside the
+// refusal's reach: an object-or-null with no properties is an object with no
+// properties, and a check that stopped seeing it would be worse than one that
+// fails, because the node would then be typed as opaque with nothing saying so.
 func checkFieldNode(schemaFile, path string, n schemaNode) error {
 	if n.GoType != "" || n.Ref != "" {
 		return nil
 	}
-	switch n.declaredType() {
+	switch n.valueType() {
 	case "array":
 		if n.Items == nil {
 			return nil
@@ -1673,7 +1865,7 @@ func checkElementNode(schemaFile, path string, n schemaNode) error {
 	if n.GoType != "" || n.Ref != "" {
 		return nil
 	}
-	switch n.declaredType() {
+	switch n.valueType() {
 	case "array":
 		if n.Items == nil {
 			return nil
@@ -1766,10 +1958,10 @@ func emitStruct(b *strings.Builder, typeName, doc string, n schemaNode, used map
 	var nested []pending
 	for _, p := range n.props {
 		field := pascal(p.name)
-		nestedName := typeName + field
+		nestedName := nestedTypeName(typeName, field)
 		gt := goType(p.node, nestedName, vocab)
 		collectSelectors(gt, used)
-		if p.node.declaredType() == "object" && p.node.GoType == "" && len(p.node.props) > 0 {
+		if declaresInlineObject(p.node) {
 			nested = append(nested, pending{name: nestedName, doc: p.node.Description, node: p.node})
 		}
 		jsonTag, yamlTag := p.name, p.name
@@ -1866,10 +2058,19 @@ type codecField struct {
 	// kind when the name is unclassifiable, instead of emitting the field
 	// unconditionally and contradicting its own omitempty tag.
 	//
-	// It is empty wherever the node declares no single type: a node carrying no
-	// `type` keyword, and equally one declaring a set of them, since a set names
-	// no one kind the fallback could decide on.
+	// It is empty wherever the node declares no single shape: a node carrying no
+	// `type` keyword, and equally one declaring a union of genuinely different
+	// shapes, since such a union names no one kind the fallback could decide on.
 	schemaType string
+	// nullable says the schema declares this value as sometimes sent as nothing
+	// — the `null` spelled alongside a single type name. It is carried beside
+	// the shape rather than folded into it because the two land differently per
+	// language: Go's zero value already carries absence, so the Go and Rust
+	// emissions read the shape alone, while a language whose array and object
+	// types admit no null must state the absence in the published type. Left
+	// unstated there, a consumer trusting the type meets the null at run time
+	// with nothing at compile time to have warned them.
+	nullable bool
 	// hostOpaqueType is the destination package's own declared Go type for an
 	// opaque field, when that differs from the opaque spelling the annotation
 	// carries. Set only for a codecOnly target, from its opaqueHostTypes table.
@@ -1886,7 +2087,14 @@ type codecField struct {
 // x-aggrega-go-type values and resolving $refs to def type names. It mirrors
 // emitStruct's field-type resolution so the codec types match the emitted
 // struct fields exactly.
-func resolveCodecFields(n schemaNode, vocab map[string]string) []codecField {
+//
+// typeName is the name of the type whose properties these are, and it is a
+// parameter rather than a detail of the walk because an object a property
+// declares inline is named after the type that declares it. Resolving such a
+// field without that name yields a different name from the one the declaration
+// carries, so the emitted file references a type nothing declares — which is why
+// the name comes from nestedTypeName here and at the declaration alike.
+func resolveCodecFields(typeName string, n schemaNode, vocab map[string]string) []codecField {
 	required := map[string]bool{}
 	for _, r := range n.Required {
 		required[r] = true
@@ -1897,10 +2105,11 @@ func resolveCodecFields(n schemaNode, vocab map[string]string) []codecField {
 		fields = append(fields, codecField{
 			field:      field,
 			key:        p.name,
-			goType:     goType(p.node, field, vocab),
+			goType:     goType(p.node, nestedTypeName(typeName, field), vocab),
 			required:   required[p.name],
 			desc:       p.node.Description,
-			schemaType: p.node.declaredType(),
+			schemaType: p.node.valueType(),
+			nullable:   p.node.nullable(),
 		})
 	}
 	return fields
@@ -1920,7 +2129,7 @@ func resolveCodecFields(n schemaNode, vocab map[string]string) []codecField {
 // nested generated type (direct UnmarshalJSON call) from a scalar or an
 // opaque passthrough.
 func emitCodec(b *strings.Builder, typeName string, n schemaNode, vocab map[string]string, defTypes map[string]bool) {
-	fields := resolveCodecFields(n, vocab)
+	fields := resolveCodecFields(typeName, n, vocab)
 	emitMarshal(b, typeName, fields, defTypes)
 	emitUnmarshal(b, typeName, fields, defTypes)
 	emitUnmarshalStrict(b, typeName, fields)
@@ -2746,6 +2955,13 @@ func generateDefs(t codecTarget) ([]byte, error) {
 				return nil, err
 			}
 		}
+		// A name a backend would declare twice is refused here for the same
+		// reason and in the same place: every backend derives the name the same
+		// way, so a collision is a property of the schema rather than of one
+		// emission.
+		if err := checkInlineObjectNames(t.schemaFile, root.defs); err != nil {
+			return nil, err
+		}
 	}
 	switch t.lang {
 	case "", "go":
@@ -2783,7 +2999,7 @@ func checkOpaqueHostTypes(t codecTarget, root schemaNode) error {
 			continue
 		}
 		for _, p := range d.node.props {
-			if goType(p.node, pascal(p.name), t.vocabulary) != "json.RawMessage" {
+			if goType(p.node, nestedTypeName(d.name, pascal(p.name)), t.vocabulary) != "json.RawMessage" {
 				continue
 			}
 			if _, ok := t.opaqueHostTypes[d.name+"."+p.name]; !ok {
@@ -2825,7 +3041,7 @@ func checkSkippedDefsUnreferenced(t codecTarget, root schemaNode) error {
 			continue
 		}
 		for _, p := range d.node.props {
-			resolved := goType(p.node, pascal(p.name), t.vocabulary)
+			resolved := goType(p.node, nestedTypeName(d.name, pascal(p.name)), t.vocabulary)
 			for _, tok := range typeTokens(resolved) {
 				if skipped[tok] {
 					return fmt.Errorf(

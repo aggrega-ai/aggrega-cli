@@ -40,7 +40,7 @@ import (
 // def struct type. Encode emits fields in canonical key order fixed here; decode
 // switches on the wire key and is order-independent.
 func emitRustCBOR(b *strings.Builder, typeName string, n schemaNode, vocab map[string]string, defTypes map[string]bool) {
-	fields := resolveCodecFields(n, vocab)
+	fields := resolveCodecFields(typeName, n, vocab)
 	sorted := append([]codecField(nil), fields...)
 	sort.SliceStable(sorted, func(i, j int) bool { return cborKeyLess(sorted[i].key, sorted[j].key) })
 

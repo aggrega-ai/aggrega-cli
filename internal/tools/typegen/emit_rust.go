@@ -35,8 +35,14 @@ func generateDefsRust(t codecTarget) ([]byte, error) {
 		return nil, fmt.Errorf("schema %s has no $defs to emit", t.schemaFile)
 	}
 
+	// The module declares each `$defs` entry AND each object those entries state
+	// inline. An inline object is named after the type declaring it and a field
+	// typed as one carries that name, so a module emitting only the entries
+	// publishes a struct field naming a type the module never declares.
+	defs := expandInlineObjects(root.defs)
+
 	defTypes := map[string]bool{}
-	for _, d := range root.defs {
+	for _, d := range defs {
 		defTypes[d.name] = true
 	}
 	// externalDefTypes are emitted by a sibling codec target into the same crate;
@@ -55,15 +61,15 @@ func generateDefsRust(t codecTarget) ([]byte, error) {
 	// non-required nested-struct field may carry #[serde(default)] (which requires
 	// the referenced type to implement Default).
 	defaultableTypes := map[string]bool{}
-	for _, d := range root.defs {
-		defaultableTypes[d.name] = rustDefDefaultable(d.node, t.vocabulary, defTypes)
+	for _, d := range defs {
+		defaultableTypes[d.name] = rustDefDefaultable(d.name, d.node, t.vocabulary, defTypes)
 	}
 
 	// Emit the structs into a temporary buffer first so the import block can
 	// declare only the items the generated code actually references (an unused
 	// `use` is a Rust warning).
 	var structs strings.Builder
-	for _, d := range root.defs {
+	for _, d := range defs {
 		emitRustStruct(&structs, d.name, d.node, t.vocabulary, defTypes, defaultableTypes)
 	}
 	// The canonical-CBOR codec impls, parallel to the serde structs, for a guest
@@ -72,7 +78,7 @@ func generateDefsRust(t codecTarget) ([]byte, error) {
 	// map-bearing struct already declares).
 	if t.emitsCBOR() {
 		structs.WriteString("\n")
-		for _, d := range root.defs {
+		for _, d := range defs {
 			emitRustCBOR(&structs, d.name, d.node, t.vocabulary, defTypes)
 		}
 	}
@@ -135,8 +141,8 @@ where
 // per-field decision to emit #[serde(default)] on a non-required nested-struct
 // field that references the type; keeping it in one function prevents the two
 // from diverging.
-func rustDefDefaultable(n schemaNode, vocab map[string]string, defTypes map[string]bool) bool {
-	for _, f := range resolveCodecFields(n, vocab) {
+func rustDefDefaultable(typeName string, n schemaNode, vocab map[string]string, defTypes map[string]bool) bool {
+	for _, f := range resolveCodecFields(typeName, n, vocab) {
 		if rustFieldType(f, defTypes) == "Box<RawValue>" {
 			return false
 		}
@@ -149,7 +155,7 @@ func rustDefDefaultable(n schemaNode, vocab map[string]string, defTypes map[stri
 // computed in a pre-pass so a field's serde attributes can consult the
 // defaultability of a type emitted later in the same module.
 func emitRustStruct(b *strings.Builder, typeName string, n schemaNode, vocab map[string]string, defTypes map[string]bool, defaultableTypes map[string]bool) {
-	fields := resolveCodecFields(n, vocab)
+	fields := resolveCodecFields(typeName, n, vocab)
 	if n.Description != "" {
 		writeRustDoc(b, "", oneLine(n.Description))
 	}

@@ -50,7 +50,7 @@ import (
 // generation time; the decode side switches on the wire key, so it is
 // order-independent.
 func emitCBORCodec(b *strings.Builder, typeName string, n schemaNode, vocab map[string]string, defTypes map[string]bool, opaqueHostTypes map[string]string) {
-	fields := applyOpaqueHostTypes(resolveCodecFields(n, vocab), typeName, opaqueHostTypes)
+	fields := applyOpaqueHostTypes(resolveCodecFields(typeName, n, vocab), typeName, opaqueHostTypes)
 	sorted := append([]codecField(nil), fields...)
 	sort.SliceStable(sorted, func(i, j int) bool { return cborKeyLess(sorted[i].key, sorted[j].key) })
 	emitCBOREncode(b, typeName, sorted, defTypes)

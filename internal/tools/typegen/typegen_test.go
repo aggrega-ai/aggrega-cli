@@ -138,6 +138,7 @@ var codecTargetPaths = map[string][]string{
 	"import_gen.go":              {"..", "..", "..", "..", "aggrega-abi", "go", "pkg", "abi"},
 	"import_gen.rs":              {"..", "..", "..", "..", "aggrega-abi", "rust", "src"},
 	"import_gen.ts":              {"..", "..", "..", "..", "aggrega-abi", "typescript", "src"},
+	"servewire_gen.ts":           {"..", "..", "..", "..", "aggrega-abi", "typescript", "src"},
 	"cbor_gen.rs":                {"..", "..", "..", "..", "aggrega-abi", "rust", "src"},
 	"cbor_gen.ts":                {"..", "..", "..", "..", "aggrega-abi", "typescript", "src"},
 	// The host describe codec is committed inside aggrega-cli's wasm package.
@@ -619,29 +620,45 @@ func TestTypeKeywordDecodesBothSpellingsWithoutFlattening(t *testing.T) {
 		raw  string
 		// wantSet is the declared set, joined with "|" so a failure prints what
 		// arrived rather than a pair of addresses.
-		wantSet  string
-		wantOne  string
-		wantFail bool
+		wantSet string
+		// wantShape and wantNullable are the two halves the accessors read out
+		// of that set, asserted together because the whole point of keeping them
+		// apart is that a set can state one without the other.
+		wantShape    string
+		wantNullable bool
+		wantFail     bool
 	}{
-		{name: "single name", raw: `{"type":"string"}`, wantSet: "string", wantOne: "string"},
-		{name: "no type keyword", raw: `{"description":"x"}`, wantSet: "", wantOne: ""},
+		{name: "single name", raw: `{"type":"string"}`, wantSet: "string", wantShape: "string"},
+		{name: "no type keyword", raw: `{"description":"x"}`, wantSet: "", wantShape: ""},
 
 		// The three spellings the daemon's wire contract actually carries. Each
 		// states something true that a narrower reading would discard: a
 		// collection emitted as null when it has nothing to report, and an
 		// identifier the transport defines as either a string or a number.
-		{name: "nullable collection", raw: `{"type":["array","null"]}`, wantSet: "array|null", wantOne: ""},
-		{name: "nullable object", raw: `{"type":["object","null"]}`, wantSet: "object|null", wantOne: ""},
-		{name: "scalar union", raw: `{"type":["string","number"]}`, wantSet: "string|number", wantOne: ""},
+		//
+		// The first two name one shape and an absence; the third names two
+		// shapes and no absence, which is why it reads back with no shape at
+		// all rather than with its first member.
+		{name: "nullable collection", raw: `{"type":["array","null"]}`, wantSet: "array|null", wantShape: "array", wantNullable: true},
+		{name: "nullable object", raw: `{"type":["object","null"]}`, wantSet: "object|null", wantShape: "object", wantNullable: true},
+		{name: "scalar union", raw: `{"type":["string","number"]}`, wantSet: "string|number", wantShape: ""},
 
 		// Declaration order is part of what the set says, so the reverse
-		// spelling must arrive reversed rather than normalised.
-		{name: "declaration order is kept", raw: `{"type":["null","array"]}`, wantSet: "null|array", wantOne: ""},
+		// spelling must arrive reversed rather than normalised — and the shape
+		// it names is the same either way, since which side the null sits on is
+		// not a fact about the value.
+		{name: "declaration order is kept", raw: `{"type":["null","array"]}`, wantSet: "null|array", wantShape: "array", wantNullable: true},
 
-		// A set of one names one type, so it answers the single-name question
-		// the same way the single-name spelling does.
-		{name: "set of one", raw: `{"type":["string"]}`, wantSet: "string", wantOne: "string"},
-		{name: "empty set", raw: `{"type":[]}`, wantSet: "", wantOne: ""},
+		// A set of one names one shape and no absence, so it answers both
+		// questions the way the single-name spelling does.
+		{name: "set of one", raw: `{"type":["string"]}`, wantSet: "string", wantShape: "string"},
+		{name: "empty set", raw: `{"type":[]}`, wantSet: "", wantShape: ""},
+
+		// Three names, one of them null, is not the nullable spelling: the
+		// remaining two still name no one shape, so the absence cannot be read
+		// off on its own. Pinned because it is the spelling the entity schemas
+		// carry, and reading it as nullable would change what they generate.
+		{name: "null inside a wider union", raw: `{"type":["string","object","null"]}`, wantSet: "string|object|null", wantShape: ""},
 
 		// Neither spelling: the decode refuses rather than reading it as absent,
 		// which would let a malformed schema generate a file whose fields are
@@ -662,32 +679,43 @@ func TestTypeKeywordDecodesBothSpellingsWithoutFlattening(t *testing.T) {
 			if set := strings.Join(got.Types, "|"); set != tc.wantSet {
 				t.Errorf("decodeNode(%s) declared set = %q, want %q", tc.raw, set, tc.wantSet)
 			}
-			if one := got.declaredType(); one != tc.wantOne {
-				t.Errorf("decodeNode(%s).declaredType() = %q, want %q", tc.raw, one, tc.wantOne)
+			if shape := got.valueType(); shape != tc.wantShape {
+				t.Errorf("decodeNode(%s).valueType() = %q, want %q", tc.raw, shape, tc.wantShape)
+			}
+			if nullable := got.nullable(); nullable != tc.wantNullable {
+				t.Errorf("decodeNode(%s).nullable() = %v, want %v", tc.raw, nullable, tc.wantNullable)
 			}
 		})
 	}
 }
 
-// TestUnionTypeSurvivesNestingAndNamesNoGoType holds the two consequences of
-// carrying a set rather than a name.
+// TestUnionTypeSurvivesNestingAndSeparatesShapeFromAbsence holds the three
+// consequences of carrying a set rather than a name.
 //
 // Nesting first: the keyword is read by one decode that recurses through
 // `properties` and `items`, so a set declared on a leaf has to arrive at that
 // leaf and not only at a root the test happens to hand it.
 //
-// Then the mapping. A set names no one Go type, so every mechanical mapping
-// must reach its fall-through arm on one — and the fall-through, not a member
-// of the set, is the honest answer. Pinning it here is what would catch a later
-// change that makes the mapping pick a member instead of declining: that change
-// would move no committed byte, because nothing registered today declares a
-// set, so no drift gate would see it.
-func TestUnionTypeSurvivesNestingAndNamesNoGoType(t *testing.T) {
+// Then the two readings, which are the reason the set is kept whole. A set
+// naming one shape and `null` states a shape AND an absence, so the mapping
+// resolves the shape — a nil Go slice already marshals to null, which is the
+// same statement — while the absence stays readable beside it for a backend
+// whose language cannot put it in the zero value. A set naming two shapes
+// states neither, so the mapping declines: choosing a member would publish a
+// contract the schema never made.
+//
+// Third, and this is the assertion worth the most: the structural refusals must
+// SEE a nullable object. They switch on the shape, and a reading that returned
+// nothing for a set would carry the node past them — which is not a refusal
+// that fails but a refusal that stops firing, so the node would be typed as
+// opaque with no diagnostic anywhere saying the check had been skipped.
+func TestUnionTypeSurvivesNestingAndSeparatesShapeFromAbsence(t *testing.T) {
 	const schema = `{
 		"type": "object",
 		"properties": {
 			"ids": {"type": "array", "items": {"type": ["string", "number"]}},
-			"findings": {"type": ["array", "null"], "items": {"type": "string"}}
+			"findings": {"type": ["array", "null"], "items": {"type": "string"}},
+			"labels": {"type": ["object", "null"]}
 		}
 	}`
 	root, err := decodeNode(json.RawMessage(schema))
@@ -718,20 +746,146 @@ func TestUnionTypeSurvivesNestingAndNamesNoGoType(t *testing.T) {
 		t.Errorf("property node declared set = %q, want %q", set, "array|null")
 	}
 
-	// The mapping declines rather than choosing "array" and emitting a slice the
-	// schema never promised was always present.
-	if got := goType(findings, "Findings", nil); got != "any" {
-		t.Errorf("goType on a declared set = %q, want %q", got, "any")
+	// A union of two shapes still declines: `any` is the honest answer where the
+	// schema names no one shape.
+	if got := goType(*ids.Items, "", nil); got != "any" {
+		t.Errorf("goType on a union of two shapes = %q, want %q", got, "any")
+	}
+	// A shape plus an absence resolves to the shape, and the absence is readable
+	// beside it rather than folded into it.
+	if got := goType(findings, "Findings", nil); got != "[]string" {
+		t.Errorf("goType on a nullable collection = %q, want %q", got, "[]string")
+	}
+	if !findings.nullable() {
+		t.Error("a nullable collection reports nullable() = false, so the absence is lost")
 	}
 
-	// The structural refusals are written against a declared object, and a set
-	// is not one — so they pass the node through instead of demanding the
-	// annotation an object with no properties would need.
-	if err := checkFieldNode("schema.json", "#/properties/findings", findings); err != nil {
-		t.Errorf("checkFieldNode refused a declared set: %v", err)
-	}
+	// The element refusal still passes a union of shapes through: it is written
+	// against a declared object, and a union is not one.
 	if err := checkElementNode("schema.json", "#/properties/ids/items", *ids.Items); err != nil {
-		t.Errorf("checkElementNode refused a declared set: %v", err)
+		t.Errorf("checkElementNode refused a union of two shapes: %v", err)
+	}
+	// The field refusal reaches a nullable object with no properties. A check
+	// that stopped firing here would be worse than one that fails.
+	labels, ok := byName["labels"]
+	if !ok {
+		t.Fatal("the decode dropped the `labels` property")
+	}
+	if err := checkFieldNode("schema.json", "#/properties/labels", labels); err == nil {
+		t.Error("checkFieldNode passed a nullable object with no properties; the refusal cannot fire, so it certifies nothing")
+	}
+	// And it still passes one that carries the annotation, so the refusal is
+	// discriminating rather than rejecting every nullable object it meets.
+	annotated := labels
+	annotated.GoType = "map[string]string"
+	if err := checkFieldNode("schema.json", "#/properties/labels", annotated); err != nil {
+		t.Errorf("checkFieldNode refused an annotated nullable object: %v", err)
+	}
+}
+
+// TestDefDeclaringAValuePublishesAsThatValue drives the real TypeScript
+// emission over a schema whose `$defs` declare values rather than objects, and
+// pins what each publishes.
+//
+// The emission builds one interface per def out of that def's `properties`, so
+// a def declaring none has no members to build an interface from. Publishing an
+// empty interface for such a def is not an imprecision but a falsehood that
+// reaches the wire: the encoder built from an empty field list encodes every
+// value as an empty object, so an envelope whose version, identifier and method
+// name are each such a def puts none of the three on it. So every row below
+// asserts the DECLARATION and the ENCODER together; the declaration alone would
+// pass while the encoder still emitted nothing.
+//
+// The rows are driven through generateDefsTS rather than through the
+// classifier, because the classifier is not what a registered target runs.
+func TestDefDeclaringAValuePublishesAsThatValue(t *testing.T) {
+	const schema = `{
+		"$defs": {
+			"ProtocolVersion": {"type": "string", "const": "2.0"},
+			"Method": {"type": "string", "enum": ["a/one", "a/two"]},
+			"Identifier": {"type": ["string", "number"]},
+			"Code": {"type": "integer"},
+			"Subject": {"type": "string"},
+			"Empty": {"type": "object", "properties": {}},
+			"Envelope": {
+				"type": "object",
+				"required": ["jsonrpc", "id", "method", "findings"],
+				"properties": {
+					"jsonrpc": {"$ref": "#/$defs/ProtocolVersion"},
+					"id": {"$ref": "#/$defs/Identifier"},
+					"method": {"$ref": "#/$defs/Method"},
+					"findings": {"type": ["array", "null"], "items": {"type": "string"}},
+					"extras": {"type": ["array", "null"], "items": {"type": "string"}}
+				}
+			}
+		}
+	}`
+	got, err := generateDefsTS(codecTarget{schema: schema, schemaFile: "probe.schema.json", lang: "ts"})
+	if err != nil {
+		t.Fatalf("generateDefsTS: %v", err)
+	}
+	src := string(got)
+
+	for _, tc := range []struct {
+		name string
+		want string
+	}{
+		// A fixed value becomes the literal it fixes, and the encoder puts that
+		// literal on the wire rather than an empty object.
+		{"a fixed value declares its literal", `export type ProtocolVersion = "2.0";`},
+		{"a fixed value encodes as a string", "export function encodeProtocolVersion(v: ProtocolVersion): string {\n  return jstr(v);\n}"},
+
+		// A closed vocabulary becomes the union of its members, in declared
+		// order — order is part of what the schema said.
+		{"a closed vocabulary declares its members", `export type Method = "a/one" | "a/two";`},
+		{"a closed vocabulary encodes as a string", "export function encodeMethod(v: Method): string {\n  return jstr(v);\n}"},
+
+		// A value the transport admits in more than one shape declares both, and
+		// encodes through the arm that carries either.
+		{"a union of shapes declares both", `export type Identifier = string | number;`},
+		{"a union of shapes encodes opaquely", "export function encodeIdentifier(v: Identifier): string {\n  return encodeOpaque(v);\n}"},
+
+		// A bare scalar becomes that scalar.
+		{"an integer declares a number", `export type Code = number;`},
+		{"a string declares a string", `export type Subject = string;`},
+
+		// An object with no properties really is an empty object, so it keeps
+		// the interface. The alias path must not swallow it.
+		{"an empty object stays an interface", "export interface Empty {\n}"},
+
+		// A collection the wire sends as null says so, and the required one puts
+		// the null on the wire rather than reaching into it.
+		{"a nullable collection declares the null", "  findings: string[] | null;"},
+		{"a required nullable encodes the null", `v.findings === null ? "null" :`},
+		{"a non-required nullable guards the null", "v.extras !== undefined && v.extras !== null && v.extras.length > 0"},
+
+		// The envelope is the whole point: each of its three identifying fields
+		// now routes to an encoder that emits a value.
+		{"the envelope carries its version", "parts.push(`${jstr(\"jsonrpc\")}:${encodeProtocolVersion(v.jsonrpc)}`);"},
+		{"the envelope carries its identifier", "parts.push(`${jstr(\"id\")}:${encodeIdentifier(v.id)}`);"},
+		{"the envelope carries its method", "parts.push(`${jstr(\"method\")}:${encodeMethod(v.method)}`);"},
+
+		// The CBOR fork in the same module emits the same shape. A module whose
+		// two codecs disagreed about a def would declare one thing and encode
+		// another, and only one of the two would be read in any given test.
+		{"the CBOR fork writes the scalar", "export function appendCBORProtocolVersion(out: number[], v: ProtocolVersion): void {\n  writeText(out, v);\n}"},
+		{"the CBOR fork reads the scalar", "export function decodeCBORCodeFrom(dec: CborDec): Code {\n  return dec.readInt() as Code;\n}"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if !strings.Contains(src, tc.want) {
+				t.Errorf("the emitted module does not contain:\n%s", tc.want)
+			}
+		})
+	}
+
+	// The negative control: no def may publish an interface with no members
+	// except the one that genuinely declares an empty object. Asserted as an
+	// absence because the defect this test exists for is exactly a declaration
+	// that is present and empty.
+	for _, name := range []string{"ProtocolVersion", "Method", "Identifier", "Code", "Subject"} {
+		if strings.Contains(src, "export interface "+name+" {\n}") {
+			t.Errorf("%s still publishes an interface with no members, so its encoder emits an empty object", name)
+		}
 	}
 }
 
@@ -1061,7 +1215,7 @@ func TestSkipDefsRefusalCanFail(t *testing.T) {
 					continue
 				}
 				for _, p := range d.node.props {
-					for _, tok := range typeTokens(goType(p.node, pascal(p.name), tgt.vocabulary)) {
+					for _, tok := range typeTokens(goType(p.node, nestedTypeName(d.name, pascal(p.name)), tgt.vocabulary)) {
 						if tok != d.name && tgt.emitsDef(tok) {
 							for _, other := range root.defs {
 								if other.name == tok {
@@ -1293,6 +1447,176 @@ func quotedLiterals(s string) []string {
 		}
 		out = append(out, s[:j])
 		s = s[j+1:]
+	}
+}
+
+// TestInlineObjectIsDeclaredByEveryBackendThatNamesIt pins the whole of what an
+// object a property declares inline is worth: a name derived identically at the
+// declaration and at the field, and a declaration emitted by every backend whose
+// fields carry that name.
+//
+// It asserts the declaration and the REFERENCE together, per language, because
+// either half alone passes while the emitted file is broken. A backend that
+// names the type without declaring it emits a module the destination language
+// refuses; a backend that declares it under a second name emits a module that
+// declares one type and names another. Neither shows up in the generator's own
+// sources, and neither is visible to a gate that byte-compares generated files,
+// because such a file is stably wrong.
+//
+// The nested encoder is asserted too, and it is the load-bearing row: a field
+// falling through to the opaque arm still type-checks once the declaration
+// exists, and it then serialises the value by the key order it was parsed in
+// rather than by the order the schema declares — which puts different bytes on
+// the wire from the counterpart emission, with nothing failing on either side.
+func TestInlineObjectIsDeclaredByEveryBackendThatNamesIt(t *testing.T) {
+	const schema = `{
+		"$defs": {
+			"Capabilities": {
+				"type": "object",
+				"description": "What the client can handle.",
+				"properties": {
+					"window": {
+						"type": "object",
+						"description": "What the client can show.",
+						"properties": {
+							"progress": {"type": "boolean"},
+							"inner": {
+								"type": "object",
+								"properties": {"depth": {"type": "string"}}
+							}
+						}
+					},
+					"named": {"$ref": "#/$defs/Named"},
+					"annotated": {
+						"type": "object",
+						"x-aggrega-go-type": "map[string]string",
+						"properties": {"ignored": {"type": "string"}}
+					}
+				}
+			},
+			"Named": {"type": "object", "properties": {"value": {"type": "string"}}}
+		}
+	}`
+	target := codecTarget{schema: schema, schemaFile: "probe.schema.json", pkg: "probe", helpers: true}
+
+	tsTarget := target
+	tsTarget.lang = "ts"
+	tsSrc, err := generateDefs(tsTarget)
+	if err != nil {
+		t.Fatalf("generateDefs ts: %v", err)
+	}
+	rustTarget := target
+	rustTarget.lang = "rust"
+	rustSrc, err := generateDefs(rustTarget)
+	if err != nil {
+		t.Fatalf("generateDefs rust: %v", err)
+	}
+	goSrc, err := generateDefs(target)
+	if err != nil {
+		t.Fatalf("generateDefs go: %v", err)
+	}
+
+	for _, tc := range []struct {
+		name string
+		src  string
+		want string
+	}{
+		// TypeScript: the field names the type, the type is declared, and the
+		// encoder dispatches to it rather than carrying it opaquely.
+		{"ts field names the derived type", string(tsSrc), "  window?: CapabilitiesWindow;"},
+		{"ts declares the derived type", string(tsSrc), "export interface CapabilitiesWindow {"},
+		{"ts encodes it structurally", string(tsSrc), "encodeCapabilitiesWindow(v.window)"},
+		{"ts emits its encoder", string(tsSrc), "export function encodeCapabilitiesWindow(v: CapabilitiesWindow): string {"},
+		{"ts reaches the second level", string(tsSrc), "export interface CapabilitiesWindowInner {"},
+		{"ts names the second level", string(tsSrc), "  inner?: CapabilitiesWindowInner;"},
+		{"ts carries the CBOR fork too", string(tsSrc), "export function appendCBORCapabilitiesWindow(out: number[], v: CapabilitiesWindow): void {"},
+
+		// Rust: the same pair.
+		{"rust field names the derived type", string(rustSrc), "pub window: CapabilitiesWindow,"},
+		{"rust declares the derived type", string(rustSrc), "pub struct CapabilitiesWindow {"},
+		{"rust reaches the second level", string(rustSrc), "pub struct CapabilitiesWindowInner {"},
+
+		// Go declares it from the struct walk, and the field resolution has to
+		// agree with that walk about the name.
+		// The type and its tag, rather than the field name beside the type: the
+		// formatter pads the column, so a single space between them is a fact
+		// about the other fields in the struct rather than about this one.
+		{"go field names the derived type", string(goSrc), "CapabilitiesWindow `json:\"window,omitempty\""},
+		{"go declares the derived type", string(goSrc), "type CapabilitiesWindow struct {"},
+		{"go reaches the second level", string(goSrc), "type CapabilitiesWindowInner struct {"},
+
+		// A node naming its type through a $ref keeps that name, and a node
+		// carrying an annotation keeps the annotated one. Neither earns a
+		// derived declaration, so both are the boundary of the capability.
+		{"a ref keeps the def name", string(tsSrc), "  named?: Named;"},
+		{"an annotation keeps its own type", string(tsSrc), "  annotated?: Record<string, string>;"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if !strings.Contains(tc.src, tc.want) {
+				t.Errorf("the emitted module does not contain:\n%s", tc.want)
+			}
+		})
+	}
+
+	// The negative controls. A derived declaration under the bare property name
+	// is the exact shape the two halves disagreeing produces, and a declaration
+	// for a $ref'd or annotated node is a type nothing references.
+	for _, absent := range []struct {
+		name string
+		src  string
+		bad  string
+	}{
+		{"ts must not name the bare property", string(tsSrc), "export interface Window {"},
+		{"rust must not name the bare property", string(rustSrc), "pub struct Window {"},
+		{"go must not name the bare property", string(goSrc), "type Window struct {"},
+		{"ts must not declare a type for a $ref node", string(tsSrc), "export interface CapabilitiesNamed {"},
+		{"ts must not declare a type for an annotated node", string(tsSrc), "export interface CapabilitiesAnnotated {"},
+	} {
+		t.Run(absent.name, func(t *testing.T) {
+			if strings.Contains(absent.src, absent.bad) {
+				t.Errorf("the emitted module contains a declaration it should not:\n%s", absent.bad)
+			}
+		})
+	}
+}
+
+// TestInlineObjectNameCollisionRefusalCanFail drives the refusal in both
+// directions. A refusal nobody has seen fire is decoration, and this one guards
+// a name the schema never spells out — so the schema an author reads gives no
+// hint that two declarations would collide.
+func TestInlineObjectNameCollisionRefusalCanFail(t *testing.T) {
+	const collides = `{
+		"$defs": {
+			"Parent": {
+				"type": "object",
+				"properties": {"nested": {"type": "object", "properties": {"leaf": {"type": "string"}}}}
+			},
+			"ParentNested": {"type": "object", "properties": {"other": {"type": "string"}}}
+		}
+	}`
+	const clean = `{
+		"$defs": {
+			"Parent": {
+				"type": "object",
+				"properties": {"nested": {"type": "object", "properties": {"leaf": {"type": "string"}}}}
+			},
+			"ParentOther": {"type": "object", "properties": {"other": {"type": "string"}}}
+		}
+	}`
+
+	// The positive control runs first: without it, a refusal that fired for some
+	// unrelated reason would read as this refusal working.
+	if _, err := generateDefs(codecTarget{schema: clean, schemaFile: "probe.schema.json", pkg: "probe", lang: "ts"}); err != nil {
+		t.Fatalf("the control schema was refused, so the refusal below proves nothing: %v", err)
+	}
+
+	_, err := generateDefs(codecTarget{schema: collides, schemaFile: "probe.schema.json", pkg: "probe", lang: "ts"})
+	if err == nil {
+		t.Fatal("generation succeeded with two declarations named ParentNested; the refusal cannot fail, " +
+			"so it certifies nothing")
+	}
+	if !strings.Contains(err.Error(), "ParentNested") {
+		t.Errorf("the refusal fired but does not name the colliding type: %v", err)
 	}
 }
 

@@ -17,11 +17,52 @@ import (
 // machinery lives in the generated cbor_gen.ts module (tsCBORHelpersSrc), and the
 // canonical rules match the Go and Rust forks byte-for-byte.
 
+// tsCBORFieldType returns the Go-vocabulary spelling the CBOR fork encodes a
+// field through.
+//
+// A value the schema also declares as null takes the opaque arm. The structural
+// arms have no null to write, and the reader has no way to tell a null from the
+// item it was expecting — this fork's reader exposes no way to look at the next
+// item's major type before consuming it — so a structural pair could encode a
+// null it could never read back. The opaque arm carries either form and reads
+// back exactly what it wrote, which is the same answer the fork already gives
+// any value it has no single CBOR shape for.
+func tsCBORFieldType(f codecField) string {
+	if f.nullable {
+		return "any"
+	}
+	return f.goType
+}
+
+// emitTSCBORValue writes the CBOR encode/decode pair for a def that declares a
+// value rather than an object, through the same value arms a field of that
+// shape takes.
+func emitTSCBORValue(b *strings.Builder, typeName string, v tsDefValue, defTypes map[string]bool) {
+	fmt.Fprintf(b, "export function encodeCBOR%s(v: %s): Uint8Array {\n", typeName, typeName)
+	b.WriteString("  const out: number[] = [];\n")
+	fmt.Fprintf(b, "  appendCBOR%s(out, v);\n", typeName)
+	b.WriteString("  return new Uint8Array(out);\n")
+	b.WriteString("}\n\n")
+
+	fmt.Fprintf(b, "export function appendCBOR%s(out: number[], v: %s): void {\n", typeName, typeName)
+	emitTSCBOREncodeValue(b, "v", v.goShape, "  ", defTypes, 0)
+	b.WriteString("}\n\n")
+
+	fmt.Fprintf(b, "export function decodeCBOR%s(data: Uint8Array): %s {\n", typeName, typeName)
+	b.WriteString("  const dec = new CborDec(data);\n")
+	fmt.Fprintf(b, "  return decodeCBOR%sFrom(dec);\n", typeName)
+	b.WriteString("}\n\n")
+
+	fmt.Fprintf(b, "export function decodeCBOR%sFrom(dec: CborDec): %s {\n", typeName, typeName)
+	fmt.Fprintf(b, "  return %s as %s;\n", tsDecodeExpr(v.goShape, defTypes), typeName)
+	b.WriteString("}\n\n")
+}
+
 // emitTSCBOR writes the CBOR encode/decode functions for one def interface.
 // Encode emits fields in canonical key order fixed here; decode switches on the
 // wire key and is order-independent.
 func emitTSCBOR(b *strings.Builder, typeName string, n schemaNode, vocab map[string]string, defTypes map[string]bool) {
-	fields := resolveCodecFields(n, vocab)
+	fields := resolveCodecFields(typeName, n, vocab)
 	sorted := append([]codecField(nil), fields...)
 	sort.SliceStable(sorted, func(i, j int) bool { return cborKeyLess(sorted[i].key, sorted[j].key) })
 
@@ -35,7 +76,7 @@ func emitTSCBOR(b *strings.Builder, typeName string, n schemaNode, vocab map[str
 	fmt.Fprintf(b, "export function appendCBOR%s(out: number[], v: %s): void {\n", typeName, typeName)
 	nRequired := 0
 	for _, f := range sorted {
-		if f.required || tsOmitGuard("v."+tsFieldAccess(f.key), f.goType) == "" {
+		if f.required || tsOmitGuard("v."+tsFieldAccess(f.key), tsCBORFieldType(f), f.nullable) == "" {
 			nRequired++
 		}
 	}
@@ -44,7 +85,7 @@ func emitTSCBOR(b *strings.Builder, typeName string, n schemaNode, vocab map[str
 		if f.required {
 			continue
 		}
-		guard := tsOmitGuard("v."+tsFieldAccess(f.key), f.goType)
+		guard := tsOmitGuard("v."+tsFieldAccess(f.key), tsCBORFieldType(f), f.nullable)
 		if guard != "" {
 			fmt.Fprintf(b, "  if (%s) n++;\n", guard)
 		}
@@ -68,7 +109,7 @@ func emitTSCBOR(b *strings.Builder, typeName string, n schemaNode, vocab map[str
 	b.WriteString("    const k = dec.readText();\n")
 	b.WriteString("    switch (k) {\n")
 	for _, f := range fields {
-		fmt.Fprintf(b, "      case %q: o[%q] = %s; break;\n", f.key, f.key, tsDecodeExpr(f.goType, defTypes))
+		fmt.Fprintf(b, "      case %q: o[%q] = %s; break;\n", f.key, f.key, tsDecodeExpr(tsCBORFieldType(f), defTypes))
 	}
 	b.WriteString("      default: dec.skip();\n")
 	b.WriteString("    }\n")
@@ -83,13 +124,13 @@ func emitTSCBOREncodeField(b *strings.Builder, f codecField, defTypes map[string
 	acc := "v." + tsFieldAccess(f.key)
 	emit := func(indent string) {
 		fmt.Fprintf(b, "%swriteText(out, %q);\n", indent, f.key)
-		emitTSCBOREncodeValue(b, acc, f.goType, indent, defTypes, 0)
+		emitTSCBOREncodeValue(b, acc, tsCBORFieldType(f), indent, defTypes, 0)
 	}
 	if f.required {
 		emit("  ")
 		return
 	}
-	guard := tsOmitGuard(acc, f.goType)
+	guard := tsOmitGuard(acc, tsCBORFieldType(f), f.nullable)
 	if guard == "" {
 		emit("  ")
 		return
