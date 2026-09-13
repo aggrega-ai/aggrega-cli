@@ -925,11 +925,11 @@ func buildRuleInputs(src ruleInputSources) []validator.LinterInput {
 			Policies:   src.Policies,
 		}
 		switch r {
-		case "schema-evolution":
+		case ruleID(errSchemaEvolution):
 			input.Previous = src.Previous
-		case "category-matches-directory":
+		case ruleID(errCategoryMatchesDirectory):
 			input.SourcePath = src.EntityPath
-		case "provides-declared-by-component":
+		case ruleID(errProvidesDeclaredByComponent):
 			input.ImplementedComponent = src.ImplementedComponent
 		}
 		inputs = append(inputs, input)

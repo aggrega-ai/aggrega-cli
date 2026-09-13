@@ -45,9 +45,14 @@ func TestLintPrePublishPluginEvolution(t *testing.T) {
 		wantHalt    bool
 	}
 	cases := []struct {
-		changeDir   string
-		cells       []cell
-		wantSurface string // substring the diagnostic must name on a halt
+		changeDir string
+		cells     []cell
+		// wantSurface is the substring naming the changed surface. On a halt it
+		// is read off the run's error: a halting finding becomes an occurrence
+		// of the condition that names its rule and travels up as that error,
+		// carrying the rule's own text, while the diagnostic stream carries the
+		// advisories.
+		wantSurface string
 		wantVerdict string // required-bump substring the halt error must carry
 	}{
 		{
@@ -105,8 +110,9 @@ func TestLintPrePublishPluginEvolution(t *testing.T) {
 					if tc.wantVerdict != "" && !strings.Contains(err.Error(), tc.wantVerdict) {
 						t.Errorf("halt error should demand a %s bump; got: %v", tc.wantVerdict, err)
 					}
-					if tc.wantSurface != "" && !strings.Contains(diag.String(), tc.wantSurface) {
-						t.Errorf("diagnostic should name the changed surface %q; got: %s", tc.wantSurface, diag.String())
+					if tc.wantSurface != "" && !strings.Contains(err.Error(), tc.wantSurface) {
+						t.Errorf("halt error should name the changed surface %q; got: %v (diag: %s)",
+							tc.wantSurface, err, diag.String())
 					}
 				} else if err != nil {
 					t.Fatalf("expected PASS for %s; got HALT: %v (diag: %s)", c.proposedVer, err, diag.String())
@@ -133,9 +139,12 @@ func TestLintPrePublishPluginCommandEvolution(t *testing.T) {
 		wantHalt    bool
 	}
 	cases := []struct {
-		changeDir   string
-		cells       []cell
-		wantSurface string // substring the diagnostic must name on a halt
+		changeDir string
+		cells     []cell
+		// wantSurface is the substring naming the changed surface. On a halt it
+		// is read off the run's error, for the reason recorded on the export
+		// matrix's own table.
+		wantSurface string
 		wantVerdict string // required-bump substring the halt error must carry
 	}{
 		{
@@ -196,8 +205,9 @@ func TestLintPrePublishPluginCommandEvolution(t *testing.T) {
 					if tc.wantVerdict != "" && !strings.Contains(err.Error(), tc.wantVerdict) {
 						t.Errorf("halt error should demand a %s bump; got: %v", tc.wantVerdict, err)
 					}
-					if tc.wantSurface != "" && !strings.Contains(diag.String(), tc.wantSurface) {
-						t.Errorf("diagnostic should name the changed surface %q; got: %s", tc.wantSurface, diag.String())
+					if tc.wantSurface != "" && !strings.Contains(err.Error(), tc.wantSurface) {
+						t.Errorf("halt error should name the changed surface %q; got: %v (diag: %s)",
+							tc.wantSurface, err, diag.String())
 					}
 				} else if err != nil {
 					t.Fatalf("expected PASS for %s; got HALT: %v (diag: %s)", c.proposedVer, err, diag.String())
@@ -231,9 +241,14 @@ func TestLintPrePublishPluginCapabilityEvolution(t *testing.T) {
 		wantHalt    bool
 	}
 	cases := []struct {
-		changeDir   string
-		cells       []cell
-		wantSurface string // substring the diagnostic must name on EVERY cell, halt or pass
+		changeDir string
+		cells     []cell
+		// wantSurface is the substring naming the changed surface, required on
+		// EVERY cell. Which element carries it follows the consequence, not the
+		// cell: a halting finding becomes the run's error, and a finding the
+		// satisfied bump re-severitized to an advisory is written to the
+		// diagnostic stream.
+		wantSurface string
 		wantVerdict string // required-bump substring the halt error must carry
 	}{
 		{
@@ -289,13 +304,19 @@ func TestLintPrePublishPluginCapabilityEvolution(t *testing.T) {
 				} else if err != nil {
 					t.Fatalf("expected PASS for %s; got HALT: %v (diag: %s)", c.proposedVer, err, diag.String())
 				}
-				// The diagnostic must name the block whose list changed on
-				// every cell, halt or pass. A verdict alone cannot tell an
-				// author which of a plugin's capability senses moved, and
-				// naming a key the entity does not carry sends them looking
-				// in the wrong place.
-				if !strings.Contains(diag.String(), tc.wantSurface) {
-					t.Errorf("diagnostic should name the changed surface %q; got: %s", tc.wantSurface, diag.String())
+				// The block whose list changed must be named on every cell,
+				// halt or pass. A verdict alone cannot tell an author which of
+				// a plugin's capability senses moved, and naming a key the
+				// entity does not carry sends them looking in the wrong place.
+				// The element read follows the consequence: a halting finding
+				// travels up as the run's error, an advisory to the diagnostic
+				// stream.
+				carrier, where := diag.String(), "diagnostic"
+				if c.wantHalt {
+					carrier, where = err.Error(), "halt error"
+				}
+				if !strings.Contains(carrier, tc.wantSurface) {
+					t.Errorf("%s should name the changed surface %q; got: %s", where, tc.wantSurface, carrier)
 				}
 			})
 		}
