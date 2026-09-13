@@ -163,7 +163,7 @@ func TestDispatchIDCorrelatedResponsesThroughSerializer(t *testing.T) {
 
 	var stdout bytes.Buffer
 	srv := newPoolTestServerAt(t, root, &stdin, &stdout, 1, nil)
-	if err := srv.dispatchLoop(500 * time.Millisecond); err != nil {
+	if err := srv.dispatchLoop(context.Background(), 500*time.Millisecond); err != nil {
 		t.Fatalf("dispatchLoop: %v", err)
 	}
 
@@ -313,7 +313,7 @@ func TestDispatchIDCorrelatedUnderOutOfOrderCompletion(t *testing.T) {
 
 			loopDone := make(chan error, 1)
 			go func() {
-				err := srv.dispatchLoop(500 * time.Millisecond)
+				err := srv.dispatchLoop(context.Background(), 500*time.Millisecond)
 				stdoutW.Close()
 				loopDone <- err
 			}()
@@ -417,7 +417,7 @@ func TestBoundedQueueBackpressureBlocks(t *testing.T) {
 	srv := newPoolTestServer(t, stdinR, &stdout, 1, hook)
 
 	loopDone := make(chan error, 1)
-	go func() { loopDone <- srv.dispatchLoop(500 * time.Millisecond) }()
+	go func() { loopDone <- srv.dispatchLoop(context.Background(), 500*time.Millisecond) }()
 
 	// Feed the saturating requests, then wait for the first worker to be
 	// held, then confirm one more submission is in flight but blocked.
@@ -506,7 +506,7 @@ func TestByteIdenticalToSequentialAtConcurrencyOne(t *testing.T) {
 	}
 	stdin.Write(framedNotification("aggrega/shutdown", nil))
 	srv := newPoolTestServer(t, &stdin, &stdout, 1, nil)
-	if err := srv.dispatchLoop(500 * time.Millisecond); err != nil {
+	if err := srv.dispatchLoop(context.Background(), 500*time.Millisecond); err != nil {
 		t.Fatalf("dispatchLoop: %v", err)
 	}
 

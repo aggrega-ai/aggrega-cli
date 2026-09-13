@@ -6,6 +6,7 @@ package serve
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -99,7 +100,7 @@ func driveSession(t *testing.T, srv *Server, requests ...sessionRequest) []wireF
 	srv.out = outW
 
 	loopDone := make(chan error, 1)
-	go func() { loopDone <- srv.dispatchLoop(500 * time.Millisecond) }()
+	go func() { loopDone <- srv.dispatchLoop(context.Background(), 500*time.Millisecond) }()
 
 	framesCh := make(chan wireFrame, 256)
 	readerDone := make(chan struct{})

@@ -116,7 +116,7 @@ func TestConfigInitOverTheWireWritesNothingWhenTheClientCancels(t *testing.T) {
 	entered := parkUntilCancelled(t, srv, targetID)
 
 	loopDone := make(chan error, 1)
-	go func() { loopDone <- srv.dispatchLoop(500 * time.Millisecond) }()
+	go func() { loopDone <- srv.dispatchLoop(context.Background(), 500*time.Millisecond) }()
 
 	if _, err := stdinW.Write(framedRequestIn(t, srv, targetID, "aggrega/configInit", map[string]any{
 		"registry":  host,

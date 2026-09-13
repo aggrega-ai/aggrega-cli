@@ -86,7 +86,7 @@ func explainOverTheDaemonWire(t *testing.T, workspaceRoot, code string) explainE
 	var stdout, stderr bytes.Buffer
 	// Stdin is fully written before the daemon starts and is never appended to, so
 	// the loop reads one request and then reaches EOF, which is the clean exit.
-	if rerr := serve.Run(serve.RunConfig{
+	if rerr := serve.Run(context.Background(), serve.RunConfig{
 		Stdin:           &stdin,
 		Stdout:          &stdout,
 		Stderr:          &stderr,
@@ -717,7 +717,7 @@ func explainRefusalOverTheDaemonWire(t *testing.T, workspaceRoot, code string) s
 	stdin.Write(body)
 
 	var stdout, stderr bytes.Buffer
-	if rerr := serve.Run(serve.RunConfig{
+	if rerr := serve.Run(context.Background(), serve.RunConfig{
 		Stdin:           &stdin,
 		Stdout:          &stdout,
 		Stderr:          &stderr,

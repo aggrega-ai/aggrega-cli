@@ -197,7 +197,7 @@ func TestShutdownCancelsConcurrentInFlightHandlers(t *testing.T) {
 			}
 
 			loopDone := make(chan error, 1)
-			go func() { loopDone <- srv.dispatchLoop(200 * time.Millisecond) }()
+			go func() { loopDone <- srv.dispatchLoop(context.Background(), 200*time.Millisecond) }()
 
 			for i := 0; i < inFlight; i++ {
 				if _, err := stdinW.Write(framedRequestIn(t, srv, i+1, "aggrega/releaseCandidates", map[string]any{})); err != nil {
@@ -270,7 +270,7 @@ func TestPerRequestCancelFiresOnCompletion(t *testing.T) {
 		mu.Unlock()
 	}
 
-	if err := srv.dispatchLoop(500 * time.Millisecond); err != nil {
+	if err := srv.dispatchLoop(context.Background(), 500*time.Millisecond); err != nil {
 		t.Fatalf("dispatchLoop: %v", err)
 	}
 
@@ -305,7 +305,7 @@ func TestCancelTrackerEmptyAfterBurst(t *testing.T) {
 	stdin.Write(framedNotification("aggrega/shutdown", nil))
 
 	srv := newPoolTestServerAt(t, root, &stdin, &stdout, 16, nil)
-	if err := srv.dispatchLoop(500 * time.Millisecond); err != nil {
+	if err := srv.dispatchLoop(context.Background(), 500*time.Millisecond); err != nil {
 		t.Fatalf("dispatchLoop: %v", err)
 	}
 
@@ -345,7 +345,7 @@ func TestCancelRequestByIdInterruptsHandler(t *testing.T) {
 	}
 
 	loopDone := make(chan error, 1)
-	go func() { loopDone <- srv.dispatchLoop(500 * time.Millisecond) }()
+	go func() { loopDone <- srv.dispatchLoop(context.Background(), 500*time.Millisecond) }()
 
 	if _, err := stdinW.Write(framedRequestIn(t, srv, targetID, "aggrega/releaseCandidates", map[string]any{})); err != nil {
 		t.Fatalf("write request: %v", err)
@@ -416,7 +416,7 @@ func TestCancelRequestNotificationInterruptsHandler(t *testing.T) {
 			}
 
 			loopDone := make(chan error, 1)
-			go func() { loopDone <- srv.dispatchLoop(500 * time.Millisecond) }()
+			go func() { loopDone <- srv.dispatchLoop(context.Background(), 500*time.Millisecond) }()
 
 			if _, err := stdinW.Write(framedRequestIn(t, srv, targetID, "aggrega/releaseCandidates", map[string]any{})); err != nil {
 				t.Fatalf("write request: %v", err)
@@ -473,7 +473,7 @@ func TestCancelRequestUnknownIdIsNoOp(t *testing.T) {
 	stdin.Write(framedNotification("aggrega/shutdown", nil))
 
 	srv := newPoolTestServerAt(t, root, &stdin, &stdout, 4, nil)
-	if err := srv.dispatchLoop(500 * time.Millisecond); err != nil {
+	if err := srv.dispatchLoop(context.Background(), 500*time.Millisecond); err != nil {
 		t.Fatalf("dispatchLoop: %v", err)
 	}
 
@@ -525,7 +525,7 @@ func TestCancelRequestNormalizesIdWhitespace(t *testing.T) {
 	}
 
 	loopDone := make(chan error, 1)
-	go func() { loopDone <- srv.dispatchLoop(500 * time.Millisecond) }()
+	go func() { loopDone <- srv.dispatchLoop(context.Background(), 500*time.Millisecond) }()
 
 	if _, err := stdinW.Write(framedRequestIn(t, srv, targetID, "aggrega/releaseCandidates", map[string]any{})); err != nil {
 		t.Fatalf("write request: %v", err)

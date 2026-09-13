@@ -5,6 +5,7 @@ package serve
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -158,7 +159,7 @@ func newDiagWire(t *testing.T, poolSize int, waitBudget time.Duration) *diagWire
 		nextID:   1,
 		pending:  map[int]jsonRPCResponse{},
 	}
-	go func() { w.loopDone <- srv.dispatchLoop(500 * time.Millisecond) }()
+	go func() { w.loopDone <- srv.dispatchLoop(context.Background(), 500*time.Millisecond) }()
 	return w
 }
 

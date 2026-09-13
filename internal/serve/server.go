@@ -1510,6 +1510,13 @@ func (s *Server) diagnosticsFiles() []string {
 // aggrega/shutdown drains accepted in-flight work; a second aborts it), or an
 // unrecoverable I/O error occurs.
 //
+// ctx is the context the process was launched with, which ends when the process
+// is first asked to stop. Its withdrawal reaches the dispatch loop as the first
+// shutdown signal: the daemon stops accepting work, lets accepted work finish,
+// and returns. It is passed to the loop rather than made the parent of the
+// session context, because the session context's cancellation is the abort that
+// cuts accepted work short and the two steps must stay distinct.
+//
 // # The launch resolution is not the workspace requests act on
 //
 // A request that acts on a workspace names one, and the state held for it is
@@ -1542,7 +1549,7 @@ func (s *Server) diagnosticsFiles() []string {
 // before entering the dispatch loop. The cobra entry point surfaces that error
 // to the process exit code; the IDE client interprets non-zero exit as a
 // "language server failed to start" condition.
-func Run(cfg RunConfig) error {
+func Run(ctx context.Context, cfg RunConfig) error {
 	if cfg.WorkspaceRoot != "" {
 		st, statErr := os.Stat(cfg.WorkspaceRoot)
 		if statErr != nil {
@@ -1607,5 +1614,5 @@ func Run(cfg RunConfig) error {
 	if drainTimeout == 0 {
 		drainTimeout = defaultDrainTimeout
 	}
-	return sess.dispatchLoop(drainTimeout)
+	return sess.dispatchLoop(ctx, drainTimeout)
 }

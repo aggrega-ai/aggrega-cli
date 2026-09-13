@@ -44,7 +44,7 @@ func startServerWithPipes(t *testing.T) (stdinW io.WriteCloser, stdoutR io.Reade
 	srv := newTestServer(t, t.TempDir(), stdinR, stdoutBuf)
 	ch := make(chan error, 1)
 	go func() {
-		ch <- srv.dispatchLoop(shortDrain)
+		ch <- srv.dispatchLoop(context.Background(), shortDrain)
 	}()
 	return stdinWriter, stdoutBuf, ch
 }
@@ -105,7 +105,7 @@ func TestShutdownFirstSignalDrainsInFlight(t *testing.T) {
 	}
 
 	done := make(chan error, 1)
-	go func() { done <- srv.dispatchLoop(shortDrain) }()
+	go func() { done <- srv.dispatchLoop(context.Background(), shortDrain) }()
 
 	if _, err := stdinW.Write(framedRequestIn(t, srv, 1, "aggrega/releaseCandidates", map[string]any{})); err != nil {
 		t.Fatalf("write request: %v", err)
@@ -167,7 +167,7 @@ func TestShutdownSecondNotificationAborts(t *testing.T) {
 	}
 
 	done := make(chan error, 1)
-	go func() { done <- srv.dispatchLoop(shortDrain) }()
+	go func() { done <- srv.dispatchLoop(context.Background(), shortDrain) }()
 
 	if _, err := stdinW.Write(framedRequestIn(t, srv, 1, "aggrega/releaseCandidates", map[string]any{})); err != nil {
 		t.Fatalf("write request: %v", err)
@@ -268,7 +268,7 @@ func TestShutdownAbortIsPromptOnSecondSignal(t *testing.T) {
 	}
 
 	done := make(chan error, 1)
-	go func() { done <- srv.dispatchLoop(shortDrain) }()
+	go func() { done <- srv.dispatchLoop(context.Background(), shortDrain) }()
 
 	if _, err := stdinW.Write(framedRequestIn(t, srv, 1, "aggrega/releaseCandidates", map[string]any{})); err != nil {
 		t.Fatalf("write request: %v", err)
@@ -328,7 +328,7 @@ func TestShutdownRejectsSubsequentRequests(t *testing.T) {
 	}
 
 	done := make(chan error, 1)
-	go func() { done <- srv.dispatchLoop(500 * time.Millisecond) }()
+	go func() { done <- srv.dispatchLoop(context.Background(), 500*time.Millisecond) }()
 
 	// Hold request 1 in-flight.
 	if _, err := stdinW.Write(framedRequestIn(t, srv, 1, "aggrega/releaseCandidates", map[string]any{})); err != nil {
@@ -418,7 +418,7 @@ func TestShutdownDropsSubsequentNotifications(t *testing.T) {
 	srv := newPoolTestServer(t, stdinR, stdoutBuf, 4, nil)
 	done := make(chan error, 1)
 	go func() {
-		done <- srv.dispatchLoop(500 * time.Millisecond)
+		done <- srv.dispatchLoop(context.Background(), 500*time.Millisecond)
 	}()
 
 	if _, err := stdinW.Write(payload); err != nil {
@@ -433,5 +433,98 @@ func TestShutdownDropsSubsequentNotifications(t *testing.T) {
 	if stdoutBuf.Len() != 0 {
 		t.Errorf("expected empty stdout (no responses for shutdown+notification), got: %s",
 			stdoutBuf.String())
+	}
+}
+
+// TestAStopRequestToTheProcessDrainsTheDispatchLoop is the proof that asking
+// the PROCESS to stop reaches the daemon's work, rather than merely reaching a
+// signature that holds a context.
+//
+// The run context the process was launched with is withdrawn while a handler is
+// in flight. The loop must treat that exactly as it treats the FIRST
+// aggrega/shutdown: enter draining, let the accepted handler run to completion
+// uncancelled, and exit cleanly. Three observations separate that design from
+// every neighbouring one, and none of them is a duration:
+//
+//   - The loop exits at all. Stdin is an open pipe that never reaches EOF and
+//     no shutdown notification is ever written, so the withdrawal is the only
+//     thing that can end the loop. A loop that does not observe it hangs, which
+//     the liveness ceiling below reports as a hang rather than as a slow
+//     machine.
+//   - The in-flight handler is released by its own completion and not by its
+//     per-request context, which is what distinguishes a drain from an abort. A
+//     withdrawal wired as an abort would cancel it.
+//   - The draining state was entered. An exit reached any other way — EOF, a
+//     write failure — leaves the flag unset, so reading it after the loop has
+//     returned attributes the exit.
+func TestAStopRequestToTheProcessDrainsTheDispatchLoop(t *testing.T) {
+	t.Parallel()
+	const handlerRun = 150 * time.Millisecond
+
+	var completed, cancelled int32
+	entered := make(chan struct{})
+
+	stdinR, stdinW := io.Pipe()
+	stdout := &syncBuffer{}
+	srv := newPoolTestServer(t, stdinR, stdout, 1, nil)
+	srv.testCtxHook = func(ctx context.Context, id json.RawMessage) {
+		if len(id) == 0 {
+			return // a notification carries no id
+		}
+		close(entered)
+		select {
+		case <-ctx.Done():
+			// A stop request drains, so it must NOT reach here.
+			atomic.AddInt32(&cancelled, 1)
+		case <-time.After(handlerRun):
+			atomic.AddInt32(&completed, 1)
+		}
+	}
+
+	runCtx, stop := context.WithCancel(context.Background())
+	defer stop()
+
+	done := make(chan error, 1)
+	go func() { done <- srv.dispatchLoop(runCtx, shortDrain) }()
+
+	if _, err := stdinW.Write(framedRequestIn(t, srv, 1, "aggrega/releaseCandidates", map[string]any{})); err != nil {
+		t.Fatalf("write request: %v", err)
+	}
+	select {
+	case <-entered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("handler never entered in-flight")
+	}
+
+	// Nothing has asked the loop to stop yet, so an exit here would mean the
+	// exit had a cause this test is not measuring. The window cannot flake the
+	// other way: a loaded machine makes the loop slower to exit, never quicker
+	// to exit when nothing asked it to.
+	select {
+	case err := <-done:
+		t.Fatalf("the dispatch loop exited before any stop request arrived (err=%v)", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	stop()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Errorf("dispatchLoop exited with an error: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("the dispatch loop did not exit after the run context was withdrawn; " +
+			"a stop request to the process must reach the loop")
+	}
+
+	if got := atomic.LoadInt32(&cancelled); got != 0 {
+		t.Errorf("the in-flight handler was cancelled by the stop request (%d); the first request drains, it does not abort", got)
+	}
+	if got := atomic.LoadInt32(&completed); got != 1 {
+		t.Errorf("the in-flight handler did not run to completion under drain; completed=%d", got)
+	}
+	if !srv.shuttingDown.Load() {
+		t.Error("the loop exited without entering the draining state; a stop request must be accepted the way a shutdown notification is")
 	}
 }

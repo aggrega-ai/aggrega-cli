@@ -39,7 +39,12 @@ built-in defaults apply.
 The daemon honors the aggrega/shutdown JSON-RPC notification for a
 cooperative cross-platform exit: the daemon completes the in-flight
 handler if any, refuses new requests with code 1005, and exits
-cleanly within a 2-second drain budget.`,
+cleanly within a 2-second drain budget.
+
+Asking the process itself to stop — an interrupt from the terminal, or
+a termination request from a supervisor or container runtime — takes
+the same path on the same terms: the first request drains the daemon
+and it exits cleanly, and a second ends the process at once.`,
 		Args: cobra.NoArgs,
 		RunE: runServe,
 	}
@@ -66,7 +71,11 @@ func runServe(cmd *cobra.Command, args []string) error {
 		v, _ := cmd.Flags().GetBool("build-on-inspect")
 		buildOnInspect = &v
 	}
-	return serve.Run(serve.RunConfig{
+	// cmd.Context() is the run's context, which ends when the process is first
+	// asked to stop. The daemon reads it as the first shutdown signal, so a
+	// termination request from a supervisor drains it and ends it on the same
+	// terms the cooperative notification does.
+	return serve.Run(cmd.Context(), serve.RunConfig{
 		Stdin:           cmd.InOrStdin(),
 		Stdout:          cmd.OutOrStdout(),
 		Stderr:          cmd.ErrOrStderr(),

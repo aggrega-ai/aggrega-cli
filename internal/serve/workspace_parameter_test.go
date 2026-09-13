@@ -6,6 +6,7 @@ package serve
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -115,7 +116,7 @@ func scriptedSession(t *testing.T, launchRoot string, script [][]byte) []wireFra
 	stdin.Write(framedNotification("aggrega/shutdown", nil))
 
 	srv := newPoolTestServerAt(t, launchRoot, &stdin, &stdout, 1, nil)
-	if err := srv.dispatchLoop(5 * time.Second); err != nil {
+	if err := srv.dispatchLoop(context.Background(), 5*time.Second); err != nil {
 		t.Fatalf("dispatchLoop: %v", err)
 	}
 

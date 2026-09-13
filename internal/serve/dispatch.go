@@ -135,14 +135,15 @@ type incomingMessage struct {
 //
 // Shutdown is a two-step, drain-then-abort sequence:
 //
-//   - The FIRST aggrega/shutdown (or stdin EOF) enters DRAINING. The
-//     main loop stops accepting new work — subsequent requests are
-//     rejected and subsequent notifications dropped at the acceptance
-//     boundary — and begins draining the worker pool in the background,
-//     letting in-flight work (an in-flight validation) run to
-//     completion. serverCtx is NOT cancelled, so accepted work is never
-//     cut short. When the background drain completes, the loop exits
-//     cleanly.
+//   - The FIRST aggrega/shutdown (or stdin EOF, or withdrawal of runCtx —
+//     the context the process was launched with, which ends when the
+//     process is first asked to stop) enters DRAINING. The main loop
+//     stops accepting new work — subsequent requests are rejected and
+//     subsequent notifications dropped at the acceptance boundary — and
+//     begins draining the worker pool in the background, letting
+//     in-flight work (an in-flight validation) run to completion.
+//     serverCtx is NOT cancelled, so accepted work is never cut short.
+//     When the background drain completes, the loop exits cleanly.
 //   - The SECOND aggrega/shutdown ABORTS. The reader cancels serverCtx
 //     at the instant it parses the message, so in-flight handlers return
 //     at their next phase boundary, and it arms a tight drain-budget
@@ -151,7 +152,10 @@ type incomingMessage struct {
 //     precedes serializer teardown, so a handler that does not observe
 //     cancellation promptly is bounded only by its own completion; the
 //     spawning client's force escalation is the ultimate stop for such
-//     work.
+//     work. A second stop request to the process is the same escalation
+//     arriving by the other route: it ends the process outright where the
+//     signal is wired, above this loop, so the drain-then-abort shape is
+//     the same whichever way the two requests arrive.
 //
 // Each message off the single stdin stream gets a dense, gap-free
 // arrival sequence. The id-order stdout serializer emits responses in
@@ -172,7 +176,21 @@ type incomingMessage struct {
 //     loop continues.
 //   - Handler internal error: returns the -32603 internal-error
 //     envelope or an application-code envelope; loop continues.
-func (s *session) dispatchLoop(drainTimeout time.Duration) error {
+func (s *session) dispatchLoop(runCtx context.Context, drainTimeout time.Duration) error {
+	// runCtx is the context the process was launched with. It is NOT the
+	// parent of serverCtx and must not become one: its withdrawal is the
+	// first shutdown signal, which drains, while serverCtx's cancellation
+	// is the abort that cuts accepted work short. Deriving one from the
+	// other would collapse the two into a single step.
+	//
+	// A nil runCtx means the caller wired no stop request — the in-memory
+	// test harnesses drive the loop that way. A nil context's Done channel
+	// is nil, and a nil channel is never ready in a select, so defaulting
+	// to a background context is what makes "no stop wired" behave as a
+	// stop that never arrives rather than as a panic.
+	if runCtx == nil {
+		runCtx = context.Background()
+	}
 	// serverCtx is the session-level context every per-request context
 	// derives from. It is initialised HERE, before the reader goroutine
 	// below is spawned and before any handle() call — that ordering is
@@ -302,8 +320,25 @@ func (s *session) dispatchLoop(drainTimeout time.Duration) error {
 	// here for a message that never reaches a worker (a parse failure).
 	var seq int64
 	var drainCh <-chan time.Time
+	// stopCh carries the process's own stop request. It is read into a
+	// local because the case below disarms itself by dropping it: a
+	// withdrawn context's Done channel stays ready for good, so a case
+	// left armed would spin the loop from the moment it first fires.
+	stopCh := runCtx.Done()
 	for {
 		select {
+		case <-stopCh:
+			// The process was asked to stop. This is the first shutdown
+			// signal arriving by a second route, so it does exactly what
+			// acceptance of the first aggrega/shutdown does and nothing
+			// more: enter draining and begin the background pool drain, so
+			// accepted in-flight work finishes and the loop leaves through
+			// the same clean-exit path. serverCtx is deliberately NOT
+			// cancelled here — cutting accepted work short is the abort,
+			// which is the second request's job.
+			stopCh = nil
+			s.shuttingDown.Store(true)
+			startDrain()
 		case d := <-drainTimerInstall:
 			drainCh = d
 		case werr := <-ser.errCh:

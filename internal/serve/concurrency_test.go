@@ -5,6 +5,7 @@ package serve
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -148,7 +149,7 @@ func TestConcurrentSharedFileDispatchRaceClean(t *testing.T) {
 			srv, compPath, brokenPath := newConcurrencyServer(t, stdinR, stdoutW, pool)
 
 			loopDone := make(chan error, 1)
-			go func() { loopDone <- srv.dispatchLoop(500 * time.Millisecond) }()
+			go func() { loopDone <- srv.dispatchLoop(context.Background(), 500*time.Millisecond) }()
 
 			// Read responses concurrently so a saturated bounded queue
 			// back-pressures the writer rather than deadlocking the test.
@@ -300,7 +301,7 @@ func TestConcurrentValidateAndReadHandlersRaceClean(t *testing.T) {
 	srv, compPath, _ := newConcurrencyServer(t, stdinR, stdoutW, 16)
 
 	loopDone := make(chan error, 1)
-	go func() { loopDone <- srv.dispatchLoop(500 * time.Millisecond) }()
+	go func() { loopDone <- srv.dispatchLoop(context.Background(), 500*time.Millisecond) }()
 	type drained struct {
 		byID  map[int]jsonRPCResponse
 		total int
@@ -394,7 +395,7 @@ func TestConcurrentIrGraphValidateInvalidateRaceClean(t *testing.T) {
 			srv := newPinIsolationServer(t, ws, stdinR, stdoutW, pool)
 
 			loopDone := make(chan error, 1)
-			go func() { loopDone <- srv.dispatchLoop(500 * time.Millisecond) }()
+			go func() { loopDone <- srv.dispatchLoop(context.Background(), 500*time.Millisecond) }()
 			type drained struct {
 				byID  map[int]jsonRPCResponse
 				total int

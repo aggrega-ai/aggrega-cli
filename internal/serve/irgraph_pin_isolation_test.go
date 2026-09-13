@@ -270,7 +270,7 @@ func TestServeIrGraphPinIsolationUnderConcurrency(t *testing.T) {
 			srv := newPinIsolationServer(t, ws, stdinR, stdout, pool)
 
 			loopDone := make(chan error, 1)
-			go func() { loopDone <- srv.dispatchLoop(500 * time.Millisecond) }()
+			go func() { loopDone <- srv.dispatchLoop(context.Background(), 500*time.Millisecond) }()
 
 			const rounds = 80
 			// Even ids -> Release A, odd ids -> Release B.
