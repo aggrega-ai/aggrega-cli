@@ -1784,7 +1784,7 @@ func checkInlineObjectNames(schemaFile string, defs []namedNode) error {
 		for _, nested := range inlineObjectDefs(d.name, d.node) {
 			where := "the object " + d.name + " declares inline"
 			if prior, ok := declaredBy[nested.name]; ok {
-				return fmt.Errorf("typegen: %s: two declarations would both be named %s — %s, and %s. "+
+				return fmt.Errorf("%s: two declarations would both be named %s — %s, and %s. "+
 					"Rename one of the properties, or give one of them an x-aggrega-go-type annotation "+
 					"naming the type it carries", schemaFile, nested.name, prior, where)
 			}
