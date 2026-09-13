@@ -48,16 +48,20 @@ func decodedResult(t *testing.T, v any) (map[string]any, []byte) {
 // it states the delivery outright instead of leaving a client to infer it from
 // which half is filled.
 //
-// The helper it calls is named for the neighbouring test's subject and is
-// reused deliberately: the key-set comparison is one mechanic, and a second
-// copy of it here would agree today and drift later.
+// The expected set comes from the shipped schema rather than from a list here,
+// so what these rows state is which of the shape's two OPTIONAL halves each
+// delivery fills. The delivery key itself is named by no row: the schema
+// requires it, so demanding it in all three shapes is the schema's doing and
+// stays true without an edit here on the day a fourth shape is added.
 func TestPluginGenCatalogResultWireShape(t *testing.T) {
 	t.Parallel()
 
+	const resultDef = "#/$defs/PluginGenCatalogResult"
+
 	for _, tc := range []struct {
-		name   string
-		result pluginGenCatalogResult
-		want   []string
+		name    string
+		result  pluginGenCatalogResult
+		carries []string
 	}{
 		{
 			// The dry-run delivery: the generated entities came back and
@@ -67,7 +71,7 @@ func TestPluginGenCatalogResultWireShape(t *testing.T) {
 				Documents: []pluginGeneratedDocument{{Path: "generated/greet.yaml", Content: "metadata: {}\n"}},
 				DryRun:    true,
 			},
-			want: []string{"documents", "dryRun"},
+			carries: []string{"documents"},
 		},
 		{
 			// The writing delivery: the files reached disk and the generation's
@@ -76,23 +80,24 @@ func TestPluginGenCatalogResultWireShape(t *testing.T) {
 			result: pluginGenCatalogResult{
 				Notices: "wrote generated/greet.yaml\n",
 			},
-			want: []string{"dryRun", "notices"},
+			carries: []string{"notices"},
 		},
 		{
 			// 🔴 The shape that pins the delivery key hardest: a write with
-			// nothing to say. Both optional halves are omitted, so if the
-			// delivery key were ever made omittable it would vanish here while
-			// the two rows above still passed — and a client branching on it
-			// would read a write as indistinguishable from a field it never got.
-			name:   "a write with neither half filled still states the delivery",
-			result: pluginGenCatalogResult{},
-			want:   []string{"dryRun"},
+			// nothing to say. Both optional halves are omitted, so the only key
+			// left is the one the schema requires — and if the delivery key were
+			// ever made omittable it would vanish here while the two rows above
+			// still passed, leaving a client branching on it unable to tell a
+			// write from a field it never got.
+			name:    "a write with neither half filled still states the delivery",
+			result:  pluginGenCatalogResult{},
+			carries: nil,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			obj, body := decodedResult(t, tc.result)
-			assertEntityRefKeys(t, "the gen-catalog result's", obj, tc.want, body)
+			assertWireKeys(t, "the gen-catalog result's", resultDef, obj, tc.carries, body)
 			if obj["dryRun"] != tc.result.DryRun {
 				t.Errorf("dryRun = %v, want %v: %s", obj["dryRun"], tc.result.DryRun, body)
 			}
@@ -107,7 +112,9 @@ func TestPluginGenCatalogResultWireShape(t *testing.T) {
 // spelling and nothing else: the shared document type it projects from carries
 // no tags for this protocol, so emitting that type directly would serialize its
 // Go field names capitalised, against every other shape on this surface. A
-// projection whose reason is the spelling needs the spelling asserted.
+// projection whose reason is the spelling needs the spelling asserted, and it is
+// asserted against the position the shipped schema declares for it — the same
+// spelling a client reads the contract from, rather than a copy of it here.
 func TestPluginGenCatalogDocumentWireShape(t *testing.T) {
 	t.Parallel()
 
@@ -115,5 +122,5 @@ func TestPluginGenCatalogDocumentWireShape(t *testing.T) {
 		Path:    "generated/greet.yaml",
 		Content: "metadata: {}\n",
 	})
-	assertEntityRefKeys(t, "a reported document's", obj, []string{"content", "path"}, body)
+	assertWireKeys(t, "a reported document's", "#/$defs/PluginGeneratedDocument", obj, nil, body)
 }

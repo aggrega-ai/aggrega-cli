@@ -117,7 +117,7 @@ default_registry: hub.aggrega.ai
 				if err := json.Unmarshal(resp.Result, &raw); err != nil {
 					t.Fatalf("unmarshal the payload: %v", err)
 				}
-				if _, present := raw["retraction"]; present {
+				if _, present := raw[wireOptionalProperty(t, "#/$defs/PluginAddResult", "retraction")]; present {
 					t.Errorf("the payload carries a retraction key on an attachment that withdrew nothing: %s", resp.Result)
 				}
 				return
@@ -157,9 +157,14 @@ default_registry: hub.aggrega.ai
 			if !present {
 				t.Fatalf("the payload carries no provenance key: %s", resp.Result)
 			}
-			if _, carried := provenance["lastUpdated"]; carried {
-				t.Errorf("the payload carries a lastUpdated key on a reading taken during the request: %s", resp.Result)
-			}
+			// The whole key set against the schema, rather than a probe for the age
+			// alone: facts read during the request have no staleness to report, so
+			// the object must be exactly what the position requires and nothing
+			// more — and asserting the set is also what catches the source key
+			// arriving under a spelling the contract does not declare, which a
+			// decode into the struct cannot see.
+			assertWireKeys(t, "the advisory's provenance", "#/$defs/PluginRetractionProvenance",
+				provenance, nil, resp.Result)
 			// A count and equalities rather than a containment check over the payload
 			// text: "the answer mentions 2.0.0" is satisfied by the version appearing
 			// anywhere, the pinned identity included, so it would pass on a surface
@@ -185,14 +190,20 @@ default_registry: hub.aggrega.ai
 // value are indistinguishable once decoded, and which of the two a client receives is
 // the contract: an age that is simply not reported must be a missing key, since a
 // client handed a blank one cannot tell it from a field this surface failed to fill.
-func wireRetractionProvenanceKeys(t *testing.T, payload json.RawMessage) (map[string]json.RawMessage, bool) {
+//
+// The two keys it descends through are named against the shipped schema rather than
+// written out, so a respelling on either position fails this read instead of leaving
+// it hunting a key the published contract no longer has — and the same resolution
+// asserts each is OPTIONAL, which is what makes reporting its absence meaningful
+// rather than a claim that the wire broke its own contract.
+func wireRetractionProvenanceKeys(t *testing.T, payload json.RawMessage) (map[string]any, bool) {
 	t.Helper()
 
 	var answer map[string]json.RawMessage
 	if err := json.Unmarshal(payload, &answer); err != nil {
 		t.Fatalf("unmarshal the payload: %v", err)
 	}
-	rawRetraction, present := answer["retraction"]
+	rawRetraction, present := answer[wireOptionalProperty(t, "#/$defs/PluginAddResult", "retraction")]
 	if !present {
 		t.Fatalf("the payload carries no retraction at all, so there is no provenance to read: %s", payload)
 	}
@@ -200,11 +211,11 @@ func wireRetractionProvenanceKeys(t *testing.T, payload json.RawMessage) (map[st
 	if err := json.Unmarshal(rawRetraction, &retraction); err != nil {
 		t.Fatalf("unmarshal the retraction: %v", err)
 	}
-	rawProvenance, present := retraction["provenance"]
+	rawProvenance, present := retraction[wireOptionalProperty(t, "#/$defs/PluginRetraction", "provenance")]
 	if !present {
 		return nil, false
 	}
-	var provenance map[string]json.RawMessage
+	var provenance map[string]any
 	if err := json.Unmarshal(rawProvenance, &provenance); err != nil {
 		t.Fatalf("unmarshal the retraction provenance: %v", err)
 	}
@@ -342,11 +353,17 @@ default_registry: hub.aggrega.ai
 			if !present {
 				t.Fatalf("the payload carries no provenance key: %s", resp.Result)
 			}
-			_, carried := provenance["lastUpdated"]
-			if carried != (tc.wantLastUpdate != "") {
-				t.Errorf("the payload %s a lastUpdated key and the snapshot's build time is %q: %s",
-					map[bool]string{true: "carries", false: "omits"}[carried], tc.wantLastUpdate, resp.Result)
+			// The age is the one optional property this position declares, so
+			// which arm the snapshot is decides whether the key is there at all,
+			// and the rest of the set comes from the schema. Asserting the whole
+			// set rather than probing the age alone is what additionally holds the
+			// source key to the spelling the contract declares.
+			var carries []string
+			if tc.wantLastUpdate != "" {
+				carries = []string{"lastUpdated"}
 			}
+			assertWireKeys(t, "the advisory's provenance", "#/$defs/PluginRetractionProvenance",
+				provenance, carries, resp.Result)
 		})
 	}
 }

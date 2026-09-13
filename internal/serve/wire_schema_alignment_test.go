@@ -582,15 +582,29 @@ func taggedStructFields(t *testing.T, dir string) map[string]map[string]bool {
 	return out
 }
 
-// compileWireSchema returns the shipped schema as a decoded document and a
-// compiler holding it, so a subject can address any position inside it.
-func compileWireSchema(t *testing.T) (map[string]any, *jsonschema.Compiler) {
+// wireSchemaDocument returns the shipped schema as a decoded document.
+//
+// It is the one decode every assertion in this package shares. The wire-shape
+// assertions address a position out of the same document the alignment
+// directions walk, so a second decode beside it would be a second in-memory
+// copy of the contract — one that agrees today and stops agreeing the moment
+// somebody points one of them at a different embedded variable.
+func wireSchemaDocument(t *testing.T) map[string]any {
 	t.Helper()
 
 	var doc map[string]any
 	if err := json.Unmarshal([]byte(schemas.ServeWireV1alpha1), &doc); err != nil {
 		t.Fatalf("the shipped serve-wire schema does not decode as JSON: %v", err)
 	}
+	return doc
+}
+
+// compileWireSchema returns the shipped schema as a decoded document and a
+// compiler holding it, so a subject can address any position inside it.
+func compileWireSchema(t *testing.T) (map[string]any, *jsonschema.Compiler) {
+	t.Helper()
+
+	doc := wireSchemaDocument(t)
 
 	resource, err := jsonschema.UnmarshalJSON(bytes.NewReader([]byte(schemas.ServeWireV1alpha1)))
 	if err != nil {

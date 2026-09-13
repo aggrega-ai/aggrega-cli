@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-// entityRefKeys reads the key set of one reported entity identity off the
+// decodedObjectKeys reads the key set of one reported object off the
 // generically-decoded response, sorted so the comparison is
 // order-independent.
 //
@@ -20,7 +20,7 @@ import (
 // tell "carries no origin" from `origin: ""` — which is exactly the
 // distinction these tests exist to make. The object's own key set is the
 // only thing that can.
-func entityRefKeys(obj map[string]any) []string {
+func decodedObjectKeys(obj map[string]any) []string {
 	keys := make([]string, 0, len(obj))
 	for k := range obj {
 		keys = append(keys, k)
@@ -29,21 +29,142 @@ func entityRefKeys(obj map[string]any) []string {
 	return keys
 }
 
-// assertEntityRefKeys fails unless the reported identity carries exactly the
-// expected keys. The whole set is asserted rather than the presence or
-// absence of one name, so a fourth key arriving under any spelling fails
-// here too.
-func assertEntityRefKeys(t *testing.T, what string, obj map[string]any, want []string, body []byte) {
+// wireSchemaPosition returns the property names one position in the shipped
+// schema declares, and which of them it requires.
+//
+// It is what makes the expectations below external. A key set written out in Go
+// is a second copy of the contract that agrees on the day it is typed and is
+// checked against nothing afterwards; the shipped schema is the copy clients
+// read, so it is the one an assertion about the wire has to be made against.
+//
+// A pointer that does not resolve is fatal rather than an empty result. An empty
+// property set would make every comparison below vacuous — the expected set
+// would be read from nothing and a decoded object would have nothing to
+// disagree with — and a vacuous key-set assertion reads exactly like a passing
+// one.
+func wireSchemaPosition(t *testing.T, def string) (declared, required map[string]bool) {
 	t.Helper()
-	got := entityRefKeys(obj)
-	if len(got) != len(want) {
-		t.Fatalf("%s keys = %v, want exactly %v: %s", what, got, want, body)
+
+	position, err := resolveSchemaPointer(wireSchemaDocument(t), def)
+	if err != nil {
+		t.Fatalf("%v — the assertion names a position the shipped schema does not declare, so the "+
+			"expected key set would be read from nothing and any object at all would satisfy it", err)
 	}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Fatalf("%s keys = %v, want exactly %v: %s", what, got, want, body)
+	properties, ok := position["properties"].(map[string]any)
+	if !ok || len(properties) == 0 {
+		t.Fatalf("%s declares no properties, so the expected key set would be empty and any object "+
+			"at all would satisfy it", def)
+	}
+
+	declared = map[string]bool{}
+	for name := range properties {
+		declared[name] = true
+	}
+	required = map[string]bool{}
+	entries, _ := position["required"].([]any)
+	for _, entry := range entries {
+		name, ok := entry.(string)
+		if !ok {
+			t.Fatalf("%s: a required entry is %#v rather than a property name", def, entry)
+		}
+		if !declared[name] {
+			t.Fatalf("%s requires %q and declares no property of that name, so the floor below would "+
+				"demand a key the ceiling forbids", def, name)
+		}
+		required[name] = true
+	}
+	return declared, required
+}
+
+// assertWireKeys fails unless the decoded object carries exactly the keys the
+// shipped schema declares for the named position, given which of that position's
+// optional properties this value fills.
+//
+// The expected set is COMPUTED from the schema rather than written out, and the
+// two edges catch different drift. The position's required properties are the
+// FLOOR: a key an omitempty tag dropped is missing from a set the schema says
+// must be there. The comparison is an equality rather than a containment, so
+// the computed set is also the CEILING: a field whose tag was renamed arrives
+// under a spelling nothing put in the expected set, and fails twice over, since
+// the name it used to carry is now absent too.
+//
+// The exactness is this comparison's, not a property of the schema. Most
+// positions on this wire do close their property set, but not all of them do,
+// and a ceiling resting on that would be a ceiling with holes in it wherever
+// one does not.
+//
+// carries names only the optional properties this value fills, which is the one
+// thing the schema cannot know — an optional property is present or absent
+// according to what the value holds, and that is the arm's own statement. It is
+// still held against the schema in both directions: a name the position does not
+// declare fails, and so does a name the position REQUIRES, because naming a
+// required property adds nothing and would go on passing on the day it stops
+// being required.
+//
+// The observed side is the generically-decoded object, for the reason
+// decodedResult states: a decode back into the struct reports an absent key and
+// a key carrying a zero value identically, and cannot see a tag at all.
+func assertWireKeys(t *testing.T, what, def string, obj map[string]any, carries []string, body []byte) {
+	t.Helper()
+
+	declared, required := wireSchemaPosition(t, def)
+
+	want := map[string]bool{}
+	for name := range required {
+		want[name] = true
+	}
+	for _, name := range carries {
+		if !declared[name] {
+			t.Fatalf("%s: this arm says it carries %q and %s declares no property of that name, so "+
+				"the expectation names a key the published contract does not have", what, name, def)
+		}
+		if required[name] {
+			t.Fatalf("%s: this arm names %q among the optional properties it fills and %s requires "+
+				"it; the floor already demands it, and naming it here would go on passing on the day "+
+				"it stops being required", what, name, def)
+		}
+		want[name] = true
+	}
+
+	got := decodedObjectKeys(obj)
+	expected := sortedKeys(want)
+	if len(got) != len(expected) {
+		t.Fatalf("%s keys = %v, want exactly %v — %s requires %v and this arm fills %v: %s",
+			what, got, expected, def, sortedKeys(required), carries, body)
+	}
+	for i := range expected {
+		if got[i] != expected[i] {
+			t.Fatalf("%s keys = %v, want exactly %v — %s requires %v and this arm fills %v: %s",
+				what, got, expected, def, sortedKeys(required), carries, body)
 		}
 	}
+}
+
+// wireOptionalProperty returns a property name after confirming the shipped
+// schema declares it at the named position and does not require it.
+//
+// A probe that reads one key off the payload BYTES is the only thing that can
+// tell "not reported" from "reported empty", so those probes stay — but the key
+// they look for is a string that would otherwise be checked against nothing.
+// Resolving it here is what makes a respelling in the schema fail the probe
+// rather than leave it hunting a key the contract no longer has.
+//
+// The optionality half matters as much: a probe asserting a key is ABSENT is
+// only meaningful where the schema permits it to be, and one written against a
+// required property is asserting the wire breaks its own contract.
+func wireOptionalProperty(t *testing.T, def, name string) string {
+	t.Helper()
+
+	declared, required := wireSchemaPosition(t, def)
+	if !declared[name] {
+		t.Fatalf("%s declares no %q property, so a probe for that key is looking for something the "+
+			"published contract does not have", def, name)
+	}
+	if required[name] {
+		t.Fatalf("%s requires %q, so it is never legitimately absent and a probe for its presence "+
+			"asserts nothing", def, name)
+	}
+	return name
 }
 
 // socketTargets reads one reported socket's target list as decoded objects.
@@ -84,6 +205,13 @@ func socketTargets(t *testing.T, socket map[string]any, body []byte) []map[strin
 // discriminating. A build that put origin on every reported identity would
 // pass the attach half; one that put it on none would pass the connection
 // half; only the contrast rejects both.
+//
+// The two halves name two different schema positions and take their expected
+// key sets from them, so the contrast is the published contract's rather than
+// this file's: one position declares no origin property at all and the other
+// requires one. A build that put origin on both would be emitting a key the
+// first position does not declare, and one that put it on neither would be
+// dropping a key the second position requires.
 func TestEntityIdentityCarriesOriginOnlyWhereItDistinguishesSomething(t *testing.T) {
 	root := writeConnectionFixture(t)
 	srv := newTestServer(t, root, &bytes.Buffer{}, &bytes.Buffer{})
@@ -96,8 +224,8 @@ func TestEntityIdentityCarriesOriginOnlyWhereItDistinguishesSomething(t *testing
 	for _, socket := range sockets {
 		for _, target := range socketTargets(t, socket, connBody) {
 			targetsSeen++
-			assertEntityRefKeys(t, "a connection target's", target,
-				[]string{"file", "kind", "name"}, connBody)
+			assertWireKeys(t, "a connection target's", "#/$defs/WorkspaceEntityRef",
+				target, nil, connBody)
 		}
 	}
 	// A fixture reporting no target at all would make the loop above
@@ -124,8 +252,8 @@ func TestEntityIdentityCarriesOriginOnlyWhereItDistinguishesSomething(t *testing
 		t.Fatalf("no candidate was reported, so the assertions below check nothing: %s", attachBody)
 	}
 	for _, candidate := range candidates {
-		assertEntityRefKeys(t, "an attach candidate's", candidate,
-			[]string{"file", "kind", "name", "origin"}, attachBody)
+		assertWireKeys(t, "an attach candidate's", "#/$defs/SourcedEntityRef",
+			candidate, nil, attachBody)
 		if candidate["origin"] != EntityOriginWorkspace {
 			t.Errorf("candidate %v origin = %v, want %q: %s",
 				candidate["name"], candidate["origin"], EntityOriginWorkspace, attachBody)
