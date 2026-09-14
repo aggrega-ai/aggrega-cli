@@ -220,16 +220,38 @@ func TestLoadParametersImport_SingleFile(t *testing.T) {
 	}
 }
 
-// TestLoadParametersImport_FileNotFound verifies the error path: a
-// non-existent path produces ErrParametersImportLoad. Multi-source
-// layering is exercised by the Release extends: chain tests.
-func TestLoadParametersImport_FileNotFound(t *testing.T) {
-	_, err := LoadParametersImport("/nonexistent/params.yaml")
-	if err == nil {
-		t.Fatal("expected error for missing file")
+// TestLoadParametersImport_UnloadableFile pins both ways the import can fail to
+// produce a document — the file is not there, and the file is there and its
+// bytes do not parse — onto the one condition every unloadable file reports
+// under. Multi-source layering is exercised by the Release extends: chain tests.
+//
+// Both arms match through the accessor rather than against the registered code,
+// because a string comparison would keep compiling, keep reading like a match,
+// and silently stop matching the day the condition is registered under a
+// different code.
+func TestLoadParametersImport_UnloadableFile(t *testing.T) {
+	dir := t.TempDir()
+	malformed := filepath.Join(dir, "malformed.yaml")
+	if err := os.WriteFile(malformed, []byte("db_size: \"10Gi\n  bad: [unclosed\n"), 0o644); err != nil {
+		t.Fatalf("write fixture: %v", err)
 	}
-	if !errors.Is(err, ErrParametersImportLoad()) {
-		t.Errorf("expected ErrParametersImportLoad, got %v", err)
+
+	for _, tc := range []struct {
+		name string
+		path string
+	}{
+		{name: "path names no file", path: filepath.Join(dir, "absent.yaml")},
+		{name: "file holds bytes that do not parse", path: malformed},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := LoadParametersImport(tc.path)
+			if err == nil {
+				t.Fatal("expected a load failure, got nil")
+			}
+			if !errors.Is(err, ErrYAMLLoad()) {
+				t.Errorf("expected the document-load condition, got %v", err)
+			}
+		})
 	}
 }
 

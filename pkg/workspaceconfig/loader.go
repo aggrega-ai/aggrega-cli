@@ -19,6 +19,13 @@ import (
 // by Load. Errors satisfying errors.Is(err, ErrConfigInvalid()) carry
 // a wrapped message naming the offending field path and the
 // validation diagnostic.
+//
+// A lockfile's load registers a near-identical sentence under a separate
+// condition, and that split is deliberate and is not to be unified. A workspace
+// configuration is written by an author, so a file that fails validation is
+// something its author can correct, which is why this condition declares a rule
+// over authored input; the lockfile's covers a file the machine writes, where
+// there is no authored rule to have broken, and declares no rule at all.
 func ErrConfigInvalid() error { return errConfigInvalid }
 
 var errConfigInvalid = cerrors.Register("workspace-config-invalid", cerrors.Meta{

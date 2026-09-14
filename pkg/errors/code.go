@@ -864,6 +864,9 @@ var retiredShortCodes = []retirement{
 		"and column; that condition's code is `E0215`."},
 	{"E0159", "It named a target reference whose dot-separated segments did not all match the " +
 		"instance-name pattern, and no build reported it before the condition was withdrawn."},
+	{"E0166", "It named the file a Release's `parameters: { $import: … }` points at when that file " +
+		"could not be read or its bytes did not parse; a file that yields no document is one " +
+		"condition wherever the path was written, and its code is `E0175`."},
 	{"E0217", "It named a schema-validation failure that could not be reported against a particular " +
 		"field, and no build reported it before the condition was withdrawn."},
 	{"E0219", "It named a cyclic `extends` chain, reported by a second chain walk the schema-merge " +

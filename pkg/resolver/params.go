@@ -103,8 +103,11 @@ func copyParameterTree(m map[string]any) map[string]any {
 // is the province of Release extends: chains where the parent Release
 // carries base parameters and the child extends + overrides.
 //
-// Read or unmarshal errors are wrapped as ResolverError with
-// ErrParametersImportLoad and the offending path attached.
+// Read or unmarshal errors are wrapped as ResolverError with ErrYAMLLoad and
+// the offending path attached. That condition is the one every file a build
+// could not turn into a document reports under, and the finding's own locator is
+// what says this one was named by a Release's parameters import — see
+// ErrYAMLLoad for why the naming key does not earn an identity of its own.
 func LoadParametersImport(path string) (map[string]any, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -112,7 +115,7 @@ func LoadParametersImport(path string) (map[string]any, error) {
 			Entity:  "Release",
 			Field:   fmt.Sprintf(".spec.parameters.$import: %s", path),
 			Message: fmt.Sprintf("failed to read file: %v", err),
-			Err:     ErrParametersImportLoad(),
+			Err:     ErrYAMLLoad(),
 		}
 	}
 	var params map[string]any
@@ -121,7 +124,7 @@ func LoadParametersImport(path string) (map[string]any, error) {
 			Entity:  "Release",
 			Field:   fmt.Sprintf(".spec.parameters.$import: %s", path),
 			Message: fmt.Sprintf("failed to unmarshal YAML: %v", err),
-			Err:     ErrParametersImportLoad(),
+			Err:     ErrYAMLLoad(),
 		}
 	}
 	return params, nil

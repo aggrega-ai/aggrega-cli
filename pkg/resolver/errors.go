@@ -23,20 +23,28 @@ var errInvalidParameterRef = cerrors.Register("invalid-parameter-ref", cerrors.M
 	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
-// ErrParametersImportLoad wraps a read or unmarshal failure for the
-// single path supplied at Release.spec.parameters.$import:.
-func ErrParametersImportLoad() error { return errParametersImportLoad }
-
-var errParametersImportLoad = cerrors.Register("parameters-import-not-loadable", cerrors.Meta{
-	ShortCode: "E0166",
-	Message:   "parameters $import: load failed",
-	RulePlace: cerrors.NotARule("A read or unmarshal of the single path a Release's parameters import names did not produce " +
-		"content. The file is opened when the import is applied, so what it reports is a load that " +
-		"failed rather than a rule refusing anything written in it."),
-})
-
-// ErrYAMLLoad wraps a file-read or YAML-unmarshal failure for any of the
-// three source documents (Aggregate, Release, Manifest).
+// ErrYAMLLoad wraps a failure to turn a file into a document: the read did not
+// produce bytes, or the bytes did not unmarshal.
+//
+// Its subject is any file a build has to read, and not only the three documents
+// a build starts from. Beside the Aggregate, the Release and the Manifest it
+// covers the parameter contract read out of an Aggregate, the file a Release's
+// parameters import names, and the file a schema import names — each of them a
+// path an author wrote, and a file that yielded no document to judge.
+//
+// One identity covers them all, and the reason is that neither the failure nor
+// the remedy varies with which key named the path: the file is absent,
+// unreadable or malformed, and what the author does is correct the path or
+// correct the file. Which surface named it is what the OCCURRENCE carries — the
+// entity reference and the locator travel on the finding and into the source
+// pointer — so a second identity per naming key would hand a reader another code
+// to look up for one failure while telling them nothing the diagnostic does not
+// already say.
+//
+// It is not a fault in what a file holds once it has parsed. Content that parsed
+// and is the wrong shape for the surface that asked for it is a rule over what
+// the author wrote, and the surface that read it names its own condition for
+// that; this one reports only that there was nothing to read.
 func ErrYAMLLoad() error { return errYAMLLoad }
 
 var errYAMLLoad = cerrors.Register("document-not-loadable", cerrors.Meta{

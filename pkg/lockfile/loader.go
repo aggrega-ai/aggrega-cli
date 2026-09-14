@@ -17,6 +17,10 @@ import (
 // raised by LoadLockfile. Errors satisfying
 // errors.Is(err, ErrLockfileInvalid()) carry a wrapped message naming
 // the offending field path and the validation diagnostic.
+//
+// A workspace configuration's own load registers a near-identical sentence under
+// a separate condition. That split is deliberate and is not to be unified: what
+// separates the two is the reason this registration already declares.
 func ErrLockfileInvalid() error { return errLockfileInvalid }
 
 var errLockfileInvalid = cerrors.Register("lockfile-invalid", cerrors.Meta{
