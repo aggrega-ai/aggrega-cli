@@ -579,11 +579,17 @@ func synthesizeAggregateFeatureFromAnnotation(
 // No finding raised inside the expansion carries the category word. Every such
 // finding is collected into the per-component error slice and reaches the reader
 // through one of the two scope-path wraps — wrapAnnotationOpsError on the Release
-// side, wrapAggregateAnnotationOpsError on the Aggregate side — and that wrap is
+// side, wrapAggregateAnnotationError on the Aggregate side — and that wrap is
 // the single place the category is supplied, so it is named once per diagnostic
 // line however many findings the line joins. An inner site that names it too says
 // it twice at the rendered boundary, which is why the category belongs to the
 // wrap alone.
+//
+// Each wrap supplies the domain of the document its annotation value was
+// authored in, so a finding raised from both sides is filed under the developer's
+// surface when it came from an Aggregate and the operator's when it came from a
+// Release. A finding that wrote a category into its own text would assert one of
+// those two at a site that cannot tell which side reached it.
 //
 // The composed shapes are, inner:
 //
@@ -747,6 +753,27 @@ func releaseCategory() cerrors.Category {
 	return category
 }
 
+// aggregateCategory is the authoring domain a fault on the Aggregate is
+// reported under, resolved the same way releaseCategory resolves the Release's
+// and for the same reason: the correspondence between an entity kind and the
+// domain its faults are filed under has one home, and a category named at a
+// raise site is a second copy of it.
+//
+// It panics on an unmapped kind, as the other resolutions of this question do:
+// the kind is a constant chosen in the compiler rather than read from an
+// authored document, so an unmappable one means the correspondence stopped
+// covering a kind that raises categorised faults. That is a mistake in the
+// compiler, not in anything a user wrote, and it would otherwise surface as a
+// fault quietly attributed to the wrong authoring domain.
+func aggregateCategory() cerrors.Category {
+	category, ok := cerrors.ClassifyEntityKind(string(entitykind.Aggregate))
+	if !ok {
+		panic("resolver: the Aggregate kind belongs to no authoring domain, so an annotation-expansion " +
+			"fault on an Aggregate cannot be attributed; extend the entity-kind category mapping to cover it")
+	}
+	return category
+}
+
 // wrapAnnotationOpsError files an annotation-expansion failure under the
 // Release's authoring domain and names the scope the inner findings cannot know.
 // The bad annotation value lives in the Release, so the domain is the one the
@@ -762,12 +789,18 @@ func wrapAnnotationOpsError(boundaryPath, componentName, key, stage string, inne
 		fmt.Sprintf("annotation %s failed at boundary %q component %q key %q", stage, boundaryPath, componentName, key))
 }
 
-// wrapAggregateAnnotationOpsError is the same wrap on the Aggregate side. The
-// bad annotation value lives in the Aggregate (Developer-authored), so the
-// failure is Aggregate-scoped rather than Release-scoped; the concern stays the
-// operator's, for uniform diagnostic ergonomics with the Release-side wrapper.
-func wrapAggregateAnnotationOpsError(componentPath, key, stage string, inner error) error {
-	return cerrors.Wrap(inner, cerrors.OpsError, cerrors.SourceLocation{},
+// wrapAggregateAnnotationError is the same wrap on the Aggregate side. The bad
+// annotation value lives in the Aggregate, so the domain is the one the
+// kind-to-domain correspondence gives the Aggregate, asked for rather than
+// restated — see aggregateCategory.
+//
+// Each wrapper therefore takes the classification of the document its annotation
+// value was authored in, and the two differ because their entities do: the same
+// condition reported against an Aggregate names the developer's surface and
+// against a Release names the operator's. That is what a reader has to act on —
+// which file to open — so it follows the document rather than the wrap.
+func wrapAggregateAnnotationError(componentPath, key, stage string, inner error) error {
+	return cerrors.Wrap(inner, aggregateCategory(), cerrors.SourceLocation{},
 		fmt.Sprintf("annotation %s failed at aggregate component %q key %q", stage, componentPath, key))
 }
 
@@ -882,7 +915,7 @@ func expandAggregateSubsystems(
 					}
 					feature, errs := synthesizeAggregateFeatureFromAnnotation(key, *value, binding, lookupFeature(catalogLookup, binding.Feature), cache, effective.sources[key])
 					if len(errs) > 0 {
-						return wrapAggregateAnnotationOpsError(componentPath, key, "expansion", errors.Join(errs...))
+						return wrapAggregateAnnotationError(componentPath, key, "expansion", errors.Join(errs...))
 					}
 					comp.Features.Set(key, feature)
 					recordAnnotationProvenance(rr, AnnotationProvenanceKey(componentPath, "", key), key, effective.sources[key])

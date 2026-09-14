@@ -280,6 +280,12 @@ spec:
 // composition through the expansion wrapper, which is the surface an author
 // actually meets: the wrapper supplies the scope the inner condition does not
 // know, and the category word appears once rather than at both levels.
+//
+// The annotation value is authored in the Aggregate, so the category named is
+// the developer's — the wrapper takes the domain registered for the document the
+// value lives in. The operator's domain is asserted absent for the same reason
+// the developer's is counted rather than merely found: the value is named once,
+// by the surface it was written on, and never alongside a second one.
 func TestExpandAnnotations_SidePillarMismatch_SaysTheCategoryOnce(t *testing.T) {
 	t.Parallel()
 	aggSrc := `
@@ -312,8 +318,11 @@ spec:
 		t.Errorf("ShortCodeOf through the wrapper = %q (found=%v), want %q", got, ok, "E0255")
 	}
 	msg := err.Error()
-	if n := strings.Count(msg, "OPS_ERROR"); n != 1 {
+	if n := strings.Count(msg, string(cerrors.DeveloperError)); n != 1 {
 		t.Errorf("the category is said %d times, want exactly 1\nfull: %s", n, msg)
+	}
+	if strings.Contains(msg, string(cerrors.OpsError)) {
+		t.Errorf("an Aggregate-authored annotation names the operator's domain\nfull: %s", msg)
 	}
 	// The wrapper's own contribution is the scope the inner condition cannot
 	// know, so it has to survive the raise rather than be replaced by it.

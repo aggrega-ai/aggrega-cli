@@ -271,10 +271,15 @@ func hasEscapeHatch(node map[string]any) bool {
 // binding-path pair rather than risk a false halt. Once the terminal sub-schema
 // is located it is validated in full — no type-only relaxation, no soft-skip of
 // a terminal composed shape. A terminal segment absent from an explicit
-// properties map returns an OPS_ERROR naming the undeclared subkey (this case
+// properties map returns a finding naming the undeclared subkey (this case
 // typically pre-empts via [ValidateAnnotationBindingTargets] at catalog load).
-// A value conflicting with the located sub-schema returns an OPS_ERROR naming
-// the subkey, the value, and the failing constraint.
+// A value conflicting with the located sub-schema returns a finding naming the
+// subkey, the value, and the failing constraint.
+//
+// Neither finding carries an authoring domain of its own. Both authoring sides
+// reach this check, and the domain a diagnostic prints is the one belonging to
+// the document the annotation value was authored in, supplied by the scope-path
+// wrap the finding is collected through.
 func validateSubkeyValueAgainstFeatureSchema(cache *featureSchemaCache, feature *types.Feature, pillar, subkey string, value any) error {
 	if feature == nil {
 		return nil

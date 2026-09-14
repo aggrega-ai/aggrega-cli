@@ -968,6 +968,10 @@ func TestExpand_AggregateSide_BindingMapsToInfra_ErrorsLoud(t *testing.T) {
 	t.Parallel()
 	// Aggregate-side annotation paired with a binding that declares
 	// only infra paths: the side-vs-pillar mismatch halts the build.
+	// The annotation value is authored in the Aggregate, so the halt
+	// names the developer's domain; the symmetric Release-side test
+	// below names the operator's, and the pair is what shows the two
+	// wraps follow their own documents.
 	aggSrc := `
 apiVersion: aggrega.ai/v1alpha1
 kind: Aggregate
@@ -995,7 +999,7 @@ spec:
 	}
 	msg := cerrors.CauseChain(err)
 	for _, want := range []string{
-		"OPS_ERROR",
+		string(cerrors.DeveloperError),
 		"feature.myco/rewrite-host",
 		"upstream",
 		"infra",
@@ -1005,6 +1009,9 @@ spec:
 		if !strings.Contains(msg, want) {
 			t.Errorf("error message missing %q\nfull message: %s", want, msg)
 		}
+	}
+	if strings.Contains(msg, string(cerrors.OpsError)) {
+		t.Errorf("an Aggregate-authored annotation names the operator's domain\nfull message: %s", msg)
 	}
 }
 
@@ -1683,8 +1690,16 @@ spec:
 	// so a joined diagnostic says it once however many inner findings it carries.
 	// An inner raise site that names it too renders the word twice on one line, and
 	// the count is what catches that — a Contains check passes on both shapes.
-	if n := strings.Count(msg, string(cerrors.OpsError)); n != 1 {
+	//
+	// The wrap names the domain of the document the annotation value was authored
+	// in, and this value is authored in the Aggregate, so the word counted is the
+	// developer's. The Release-side sibling below counts the operator's over the
+	// same condition, which is what shows the domain follows the document.
+	if n := strings.Count(msg, string(cerrors.DeveloperError)); n != 1 {
 		t.Errorf("the category is said %d times, want exactly 1\nfull: %s", n, msg)
+	}
+	if strings.Contains(msg, string(cerrors.OpsError)) {
+		t.Errorf("an Aggregate-authored annotation names the operator's domain\nfull: %s", msg)
 	}
 }
 
