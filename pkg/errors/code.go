@@ -406,20 +406,21 @@ func ComposeMessage(condition error, values []string, advice string) string {
 // RulePlace is the fourth field and is a different kind of thing again. The
 // one above records a fact about one condition's relationship to the code
 // around it and is set on a small minority. This one is asked of every
-// condition: it says which of three places the rule a condition names belongs
-// to — a rule over authored input, a rule another evaluator owns, or not a rule
-// at all — and it carries the reason where the place needs one. It is held on
-// the registration for the reason DeclaredAhead is, and for one more: which
-// place a rule belongs to cannot be derived from any property of the declaring
-// package, because a package holding an identity while something else evaluates
-// the rule, and a package holding a condition that is no rule at all, look
-// exactly like a package holding a rule nobody has moved into the dispatch yet.
+// condition: it says which of four places the rule a condition names belongs
+// to — a rule over authored input, a rule another evaluator owns, a rule no
+// stage reaches, or not a rule at all — and it carries the reason where the
+// place needs one. It is held on the registration for the reason DeclaredAhead
+// is, and for one more: which place a rule belongs to cannot be derived from
+// any property of the declaring package, because a package holding an identity
+// while something else evaluates the rule, and a package holding a condition
+// that is no rule at all, look exactly like a package holding a rule nobody has
+// moved into the dispatch yet.
 // The author of the registration is the only one who knows, so that is where it
 // is written.
 //
 // It satisfies the admission rule above differently from the one before it, and
 // more plainly. Every identity has a source for it because every condition is in
-// exactly one of the three places by construction — so this is not a field
+// exactly one of the four places by construction — so this is not a field
 // populated for a minority but one asked of the whole set, whose unset value is
 // an undeclared question rather than an assertion. And something consumes it:
 // the census that reports where this module's conditions are raised reads the
@@ -429,7 +430,7 @@ func ComposeMessage(condition error, values []string, advice string) string {
 //
 // Unlike DeclaredAhead it is NOT published, and that is said here because a
 // field sitting beside a published one otherwise reads as published too. Which
-// of the three places a rule belongs to is a fact about how the product is
+// of the four places a rule belongs to is a fact about how the product is
 // built; a reader looking a condition up on the reference has nothing to do
 // with it. The reference is composed from the values that scan carries onto an
 // identity, and this is not one of them, so no page can carry it.
@@ -599,10 +600,10 @@ type Meta struct {
 	// a condition can carry it.
 	DeclaredAhead string
 
-	// RulePlace declares which of three places the rule this condition names
+	// RulePlace declares which of four places the rule this condition names
 	// belongs to, and carries the reason where the place needs one.
 	//
-	// The three places, what separates them and the constructors that declare
+	// The four places, what separates them and the constructors that declare
 	// them are documented on RulePlace itself. What belongs here is what this
 	// field's own states mean.
 	//
@@ -615,14 +616,14 @@ type Meta struct {
 	// holding.
 	//
 	// That is why the constructors carry the whole value. A condition's place is
-	// one of three things and never a spectrum, so a shape that could be half
+	// one of four things and never a spectrum, so a shape that could be half
 	// set — a flag beside a note beside another note — would make "declared" a
 	// property to be worked out from three fields rather than read off one, and
 	// would admit a registration declaring two places at once.
 	//
 	// # It cannot be acquired by neglect
 	//
-	// The two places that are a departure from the ordinary one take their
+	// The three places that are a departure from the ordinary one take their
 	// reason as a constructor argument, so a declaration that omits it does not
 	// compile, and registration refuses one whose reason is present and says
 	// nothing. A place declared with no reason behind it would be the exemption
@@ -643,7 +644,7 @@ type Meta struct {
 // the condition at its registration and carrying the reason where the place
 // needs one.
 //
-// # The three places
+// # The four places
 //
 // Every condition is in exactly one of them, and the separation is what keeps a
 // count of the rules not yet expressed as the compiler's own from also counting
@@ -658,13 +659,18 @@ type Meta struct {
 //     rule is evaluated where no view of a compilation reaches — inside a plugin
 //     guest, or over artifacts at publication — so the condition is held here in
 //     the host and raised on what that evaluator returned.
+//   - A rule no stage reaches, declared with RuleNoStageReaches. The rule is
+//     over authored input and is evaluated here rather than by another
+//     evaluator, but the moment it runs at is not a stage of a compilation — a
+//     catalog directory load, a pull, a push, a closure walk, a configuration
+//     write — so no declared stage holds the facts it reads.
 //   - Not a rule at all, declared with NotARule. A registry refusing a request, a
 //     signature that does not verify, a file that will not parse, a guest that
 //     trapped, an invariant of this program's own construction. Nothing anybody
 //     authored decides it, and no evaluator evaluates it against anything: there
 //     is no rule here for any evaluator to own.
 //
-// # The reason is prose, and the prose is the cost of the two places that carry one
+// # The reason is prose, and the prose is the cost of the three places that carry one
 //
 // A claim that a rule could not have been expressed as one of the dispatch's own
 // settles a question for every later reader, and a claim nobody can hold against
@@ -697,7 +703,7 @@ type Meta struct {
 // in terms of what the condition reports and what decides it — not for a reader
 // of the reference, who is told nothing about them.
 type RulePlace struct {
-	// class is which of the three places, and reason is the prose the two
+	// class is which of the four places, and reason is the prose the three
 	// places that take one carry. Both are unexported so that the only values
 	// of this type a registration can name are the ones the constructors below
 	// build: a caller outside this package cannot assemble a place carrying a
@@ -706,11 +712,11 @@ type RulePlace struct {
 	reason string
 }
 
-// rulePlaceClass is which of the three places a RulePlace names. Its zero value
+// rulePlaceClass is which of the four places a RulePlace names. Its zero value
 // is the undeclared one, which is what makes an unset Meta.RulePlace a question
-// rather than a fourth answer.
+// rather than a fifth answer.
 //
-// The values below are handed out by the three constructors beside them and by
+// The values below are handed out by the four constructors beside them and by
 // nothing else. A class added here is added to [RulePlace.carriesNoReason] in the
 // same edit, which is where each one's reason requirement is stated.
 type rulePlaceClass uint8
@@ -719,6 +725,7 @@ const (
 	rulePlaceUndeclared rulePlaceClass = iota
 	rulePlaceOverAuthoredInput
 	rulePlaceEvaluatedElsewhere
+	rulePlaceNoStageReaches
 	rulePlaceNotARule
 )
 
@@ -727,9 +734,10 @@ const (
 // the compiler's own rule dispatch could evaluate whether or not it evaluates it
 // today.
 //
-// It takes no reason. The other two constructors take one because each is a
-// claim that a rule is somewhere other than where rules go, and this is where
-// rules go.
+// It takes no reason. The other three constructors take one because each is a
+// departure from where rules go — the rule is another evaluator's, or no stage
+// reaches it, or there is no rule at all — and this is where rules go, about
+// which there is nothing to say.
 func RuleOverAuthoredInput() RulePlace {
 	return RulePlace{class: rulePlaceOverAuthoredInput}
 }
@@ -743,6 +751,32 @@ func RuleOverAuthoredInput() RulePlace {
 // held here in the host and raised on what that evaluator returned.
 func RuleEvaluatedElsewhere(evaluator string) RulePlace {
 	return RulePlace{class: rulePlaceEvaluatedElsewhere, reason: evaluator}
+}
+
+// RuleNoStageReaches declares that this condition names a rule over authored
+// input that no declared stage of a compilation reaches, and names the moment
+// the rule is evaluated at instead.
+//
+// It is the ordinary place in every respect but one. An author can be wrong
+// about the document, and the rule is evaluated here rather than by another
+// evaluator — but no declared stage of a compilation holds the facts the rule
+// reads at the moment it runs. A catalog directory load, a pull, a push, a
+// closure walk, a configuration write: none of them is a compilation, so there
+// is no stage for the dispatch to evaluate the rule at.
+//
+// The name is about the MOMENT and not about the document, and carrying that
+// distinction is why it says what it says. Most of these documents are compiled
+// later in some build — a recipe read while a catalog directory is indexed is
+// compiled in some build afterwards — so a name asserting the document sits
+// outside a compilation would be false of most of the set. A claim that no stage
+// reaches the rule is true of every member, stays true, and reclassifies cleanly
+// the day a stage is declared for one of these moments.
+//
+// The reason names the condition's own moment rather than the category. The
+// category is the constructor's name already, so a reason restating it tells a
+// later reader nothing the call does not say.
+func RuleNoStageReaches(why string) RulePlace {
+	return RulePlace{class: rulePlaceNoStageReaches, reason: why}
 }
 
 // NotARule declares that this condition names no rule at all — a registry
@@ -760,15 +794,17 @@ func NotARule(why string) RulePlace {
 // about this value the unset case answers.
 func (p RulePlace) declared() bool { return p.class != rulePlaceUndeclared }
 
-// carriesNoReason reports whether this value is one of the two places that take a
-// reason and was given one that says nothing — whitespace alone.
+// carriesNoReason reports whether this value is one of the three places that take
+// a reason and was given one that says nothing — whitespace alone.
 //
 // It states which places require a reason positively, in one expression, so that
 // a class added above is added here rather than falling through a default arm
 // into silent acceptance. A place that takes no reason is not asked about,
 // because a constructor that accepts none cannot be given one.
 func (p RulePlace) carriesNoReason() bool {
-	takesAReason := p.class == rulePlaceEvaluatedElsewhere || p.class == rulePlaceNotARule
+	takesAReason := p.class == rulePlaceEvaluatedElsewhere ||
+		p.class == rulePlaceNoStageReaches ||
+		p.class == rulePlaceNotARule
 	return takesAReason && strings.TrimSpace(p.reason) == ""
 }
 
@@ -1088,7 +1124,7 @@ func indexRetirements(record []retirement) map[string]string {
 //     the suppression the field exists to prevent. Absent is the ordinary
 //     value and is always accepted; present-and-empty is the shape refused.
 //   - A Meta.RulePlace whose reason is present and says nothing — whitespace
-//     alone — for the two places that take one. The constructors already make a
+//     alone — for the three places that take one. The constructors already make a
 //     missing reason a compile error, so what is left to refuse here is a reason
 //     written and empty, which would be the same exemption one field along: a
 //     place declared with nothing behind it.

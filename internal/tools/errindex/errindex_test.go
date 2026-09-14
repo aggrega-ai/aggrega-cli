@@ -254,7 +254,7 @@ func moduleDeclaringPlace(t *testing.T, place string) string {
 
 	root := t.TempDir()
 	// The stand-in for the package that declares the identity carries the
-	// rule-place field and the three constructors, so a fixture below is a
+	// rule-place field and the four constructors, so a fixture below is a
 	// registration that declares the key rather than one that could not express
 	// it — the distinction every fixture in this tree is written to make.
 	errorsBody := `package errors
@@ -269,7 +269,8 @@ type RulePlace struct{ class int }
 
 func RuleOverAuthoredInput() RulePlace              { return RulePlace{class: 1} }
 func RuleEvaluatedElsewhere(string) RulePlace       { return RulePlace{class: 2} }
-func NotARule(string) RulePlace                     { return RulePlace{class: 3} }
+func RuleNoStageReaches(string) RulePlace           { return RulePlace{class: 3} }
+func NotARule(string) RulePlace                     { return RulePlace{class: 4} }
 
 type sealed struct{ code, shortCode, message string }
 
@@ -321,7 +322,7 @@ var errPlaced = cerrors.Register("thing/placed", cerrors.Meta{
 // registration that carries the new key is what catches it; asserting only that
 // the scan succeeded would not.
 //
-// All three places are exercised, and the absent case with them. They differ in
+// All four places are exercised, and the absent case with them. They differ in
 // whether the value carries a literal at all, and a reader that had come to fold
 // one of them into the message would pass an assertion taken over the others.
 func TestScan_ReadsARulePlaceAndLeavesTheMessageIntact(t *testing.T) {
@@ -334,6 +335,7 @@ func TestScan_ReadsARulePlaceAndLeavesTheMessageIntact(t *testing.T) {
 		{"no place declared", ""},
 		{"a rule over authored input", "cerrors.RuleOverAuthoredInput()"},
 		{"a rule another evaluator owns", `cerrors.RuleEvaluatedElsewhere("A plugin guest evaluates it.")`},
+		{"a rule no stage reaches", `cerrors.RuleNoStageReaches("A catalog directory load reads it.")`},
 		{"no rule at all", `cerrors.NotARule("A registry answered the request.")`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -383,11 +385,12 @@ func TestScan_RefusesARulePlaceItCannotRead(t *testing.T) {
 		names string
 	}{
 		{"a value that is not a call", `"a rule over authored input"`, "not a call"},
-		{"a constructor this scan does not know", "cerrors.SomewhereElse()", "not one of the three"},
+		{"a constructor this scan does not know", "cerrors.SomewhereElse()", "not one of the four"},
 		{"the place that takes no reason, given one", `cerrors.RuleOverAuthoredInput("why")`, "takes no reason"},
 		{"a place that takes a reason, given none", "cerrors.NotARule()", "takes one reason"},
 		{"a reason that is not a literal", "cerrors.NotARule(whyThisIsNotARule)", "not a string literal"},
 		{"a reason that says nothing", `cerrors.NotARule("   ")`, "says nothing"},
+		{"the newest place, given a reason that says nothing", `cerrors.RuleNoStageReaches(" \t ")`, "says nothing"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()

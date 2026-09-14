@@ -243,7 +243,7 @@ import (
 // moved into the dispatch yet, and a discriminator over package structure sorts
 // the two together whichever structure it reads. The fact is therefore declared
 // where it is known: on the registration, as the errors package's RulePlace
-// metadata, which names which of three places the rule belongs to and carries
+// metadata, which names which of four places the rule belongs to and carries
 // the reason where the place needs one. This census reads it off the
 // declaration's own syntax.
 //
@@ -412,8 +412,8 @@ const unemittedSentinelsBlock = true
 // The separating fact cannot be derived — a package holding a condition that is
 // no rule at all looks exactly like a package holding a rule nobody has moved
 // yet — so it is declared at the registration, in the errors package's rule
-// place, which says which of three places the rule belongs to and carries prose
-// for the two that are a departure from the ordinary one.
+// place, which says which of four places the rule belongs to and carries prose
+// for the three that are a departure from the ordinary one.
 //
 // # What makes blocking possible without reddening the shipped tree
 //
@@ -467,7 +467,7 @@ const unemittedSentinelsBlock = true
 // the reasoning sits beside the code performing it.
 //
 // So the remedy a failure names is always to declare the place, never to record
-// the name. Every condition IS in one of the three places; what a condition can
+// the name. Every condition IS in one of the four places; what a condition can
 // lack is a registration to say so on, which is a different finding with a
 // different remedy and is reported as one.
 const undeclaredRulePlaceBlocks = true
@@ -526,7 +526,7 @@ const checkTypeName = "Check"
 // on no other metadata key — an unrecognised key is skipped, so a field added
 // beside these disturbs this walk not at all.
 //
-// The three constructor names are the errors package's three places, and they
+// The four constructor names are the errors package's four places, and they
 // are read by NAME rather than resolved: the value a rule-place key is given is
 // a call, and this census resolves no types, so what it reads is which function
 // the call names and what literal it was handed.
@@ -537,6 +537,7 @@ const (
 
 	placeOverAuthoredInputFunc  = "RuleOverAuthoredInput"
 	placeEvaluatedElsewhereFunc = "RuleEvaluatedElsewhere"
+	placeNoStageReachesFunc     = "RuleNoStageReaches"
 	placeNotARuleFunc           = "NotARule"
 )
 
@@ -807,7 +808,7 @@ func assertUnemittedSentinels(t *testing.T, unemitted []string) {
 //
 // # What a declaration is, here
 //
-// A rule place naming one of the three constructors, read off the registration
+// A rule place naming one of the four constructors, read off the registration
 // by [readPlacementDeclarations].
 func assertEveryConditionDeclaresItsPlace(t *testing.T, declared, forwarding []string, declaredAt map[string]string, declarations placementDeclarations) {
 	t.Helper()
@@ -842,15 +843,16 @@ func assertEveryConditionDeclaresItsPlace(t *testing.T, declared, forwarding []s
 
 	if len(undeclared) > 0 {
 		report("%d condition(s) declare no place for the rule they name.\n"+
-			"INVARIANT: every condition's rule is in exactly one of three places — a rule over authored "+
-			"input, a rule another evaluator owns, or no rule at all — and which one is declared at the "+
-			"registration, because no property of the declaring package can tell them apart.\n"+
+			"INVARIANT: every condition's rule is in exactly one of four places — a rule over authored "+
+			"input, a rule another evaluator owns, a rule no stage reaches, or no rule at all — and "+
+			"which one is declared at the registration, because no property of the declaring package "+
+			"can tell them apart.\n"+
 			"CONSEQUENCE: a condition declaring none is counted with the rules not yet expressed as %s "+
 			"values whether or not it could ever be one. The count that measures how much of that "+
 			"migration remains then cannot reach zero, and every later reading re-opens the same question "+
 			"about the same conditions — which is the cost this declaration exists to end, not a tidiness "+
 			"concern.\n"+
-			"REMEDY: declare the place on the registration. The two places that are a departure from a "+
+			"REMEDY: declare the place on the registration. The three places that are a departure from a "+
 			"rule over authored input carry prose saying why, and that prose is what makes a condition "+
 			"settled: a later reader meets the reason instead of the question. Recording the name in a "+
 			"list here is not a remedy, and no such list exists.\n"+
@@ -880,14 +882,16 @@ func assertEveryConditionDeclaresItsPlace(t *testing.T, declared, forwarding []s
 		tier = "blocks"
 	}
 	t.Logf("declared-place population: %d condition(s) declare no place, against %d that do — %d a rule "+
-		"over authored input, %d a rule another evaluator owns, %d no rule at all. The population is "+
-		"every declared condition CARRYING A REGISTRATION: %d forwarding declaration(s) and %d "+
-		"condition(s) no registration binds are outside it, because neither carries a metadata literal "+
-		"to declare a place on. This assertion %s on any member.",
+		"over authored input, %d a rule another evaluator owns, %d a rule no stage reaches, %d no rule "+
+		"at all. The population is every declared condition CARRYING A REGISTRATION: %d forwarding "+
+		"declaration(s) and %d condition(s) no registration binds are outside it, because neither "+
+		"carries a metadata literal to declare a place on. This assertion %s on any member.",
 		len(undeclared),
-		byPlace[placeOverAuthoredInputFunc]+byPlace[placeEvaluatedElsewhereFunc]+byPlace[placeNotARuleFunc],
+		byPlace[placeOverAuthoredInputFunc]+byPlace[placeEvaluatedElsewhereFunc]+
+			byPlace[placeNoStageReachesFunc]+byPlace[placeNotARuleFunc],
 		byPlace[placeOverAuthoredInputFunc],
 		byPlace[placeEvaluatedElsewhereFunc],
+		byPlace[placeNoStageReachesFunc],
 		byPlace[placeNotARuleFunc],
 		len(forwarding),
 		len(unregistered),
@@ -1192,7 +1196,7 @@ func sentinelCensus(t *testing.T) (declared []string, declaredAt map[string]stri
 // # Two spellings, one fact
 //
 // A registration declares its place as a rule-place value, which says which of
-// three places the rule belongs to and carries prose for the two that take one.
+// four places the rule belongs to and carries prose for the three that take one.
 //
 // The prose is kept rather than discarded once the place is established, because
 // the guard that fails on a declaration the tree contradicts has to show a reader
@@ -1212,17 +1216,21 @@ type placementDeclaration struct {
 }
 
 // claimsOutsideTheDispatch reports whether this declaration says the rule could
-// not be one of the framework's own — either because another evaluator owns it,
-// or because the condition names no rule at all.
+// not be one of the framework's own — because another evaluator owns it, because
+// no stage of a compilation reaches the moment it runs at, or because the
+// condition names no rule at all.
 //
-// Those two are read together everywhere in this file, and deliberately: a
-// condition in either place was never inside the dispatch, so neither is the
-// backwards movement the ratchet refuses. What separates them is the question
-// the migration asks — one is a rule somewhere else, the other is no rule at all
-// — and that separation is what a later reader meets instead of the question.
-// The ratchet does not need it, so it is reported rather than partitioned on.
+// Those three are read together everywhere in this file, and deliberately: a
+// condition in any of them was never inside the dispatch, so none of them is the
+// backwards movement the ratchet refuses. What separates them is the question the
+// migration asks — one is a rule somewhere else, one is a rule at a moment no
+// stage holds the facts for, the last is no rule at all — and that separation is
+// what a later reader meets instead of the question. The ratchet does not need
+// it, so it is reported rather than partitioned on.
 func (d placementDeclaration) claimsOutsideTheDispatch() bool {
-	return d.placeFunc == placeEvaluatedElsewhereFunc || d.placeFunc == placeNotARuleFunc
+	return d.placeFunc == placeEvaluatedElsewhereFunc ||
+		d.placeFunc == placeNoStageReachesFunc ||
+		d.placeFunc == placeNotARuleFunc
 }
 
 // claim is the prose the declaration carries, for a guard that has to show a
@@ -1387,7 +1395,7 @@ func readPlacementDeclarations(t *testing.T, files map[string]*ast.File, handles
 	return out
 }
 
-// declaredRulePlace reads a rule-place value: which of the errors package's three
+// declaredRulePlace reads a rule-place value: which of the errors package's four
 // constructors the declaration names, and the literal it was handed.
 //
 // It is deliberately strict about the shape, and every arm that returns
@@ -1397,7 +1405,7 @@ func readPlacementDeclarations(t *testing.T, files map[string]*ast.File, handles
 // would leave the condition in the ratcheted population and the ceiling would
 // fail naming a regression that did not happen.
 //
-// The reason is required for the two places that carry one, and refused as blank
+// The reason is required for the three places that carry one, and refused as blank
 // for the same reason registration refuses it: a place declared with nothing
 // behind it moves a condition out of the ratcheted count while saying nothing
 // about why it is out. The place that carries no reason is read as unreadable if
@@ -1422,7 +1430,7 @@ func declaredRulePlace(expr ast.Expr) (fn, reason string, ok bool) {
 			return "", "", false
 		}
 		return fn, "", true
-	case placeEvaluatedElsewhereFunc, placeNotARuleFunc:
+	case placeEvaluatedElsewhereFunc, placeNoStageReachesFunc, placeNotARuleFunc:
 		if len(call.Args) != 1 {
 			return "", "", false
 		}

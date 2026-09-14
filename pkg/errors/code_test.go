@@ -36,6 +36,7 @@ const (
 	codePlaceOverAuthoredInput  = "place-over-authored-input-subject"
 	codePlaceEvaluatedElsewhere = "place-evaluated-elsewhere-subject"
 	codePlaceNotARule           = "place-not-a-rule-subject"
+	codePlaceNoStageReaches     = "place-no-stage-reaches-subject"
 )
 
 // The short codes this file registers, distinct for the same reason the codes
@@ -61,6 +62,7 @@ const (
 	shortPlaceOverAuthoredInput  = "E9224"
 	shortPlaceEvaluatedElsewhere = "E9225"
 	shortPlaceNotARule           = "E9226"
+	shortPlaceNoStageReaches     = "E9227"
 )
 
 // The short code a malformed-value refusal is probed with, and the reason it is
@@ -676,9 +678,9 @@ func TestRegister_AcceptsAnAbsentAndAWrittenDeclaredAheadNote(t *testing.T) {
 // expressed as the dispatch's own while naming no reason for the move. That is
 // the exemption the field must not become, so it is refused.
 //
-// Both of the two places that take a reason are probed. They are separate arms
-// of one predicate, and an assertion over one of them would pass over a
-// predicate that had stopped reading the other.
+// All three of the places that take a reason are probed. They are separate arms
+// of one predicate, and an assertion over any subset of them would pass over a
+// predicate that had stopped reading the rest.
 func TestRegister_PanicsOnARulePlaceWhoseReasonSaysNothing(t *testing.T) {
 	t.Parallel()
 
@@ -688,6 +690,7 @@ func TestRegister_PanicsOnARulePlaceWhoseReasonSaysNothing(t *testing.T) {
 	}{
 		{"not a rule at all", cerrors.NotARule("   \t  ")},
 		{"a rule another evaluator owns", cerrors.RuleEvaluatedElsewhere("  ")},
+		{"a rule no stage reaches", cerrors.RuleNoStageReaches(" \t ")},
 	} {
 		v := panicValue(func() {
 			cerrors.Register(codeBlankRulePlaceReason, cerrors.Meta{
@@ -718,19 +721,19 @@ func TestRegister_PanicsOnARulePlaceWhoseReasonSaysNothing(t *testing.T) {
 	}
 }
 
-// TestRegister_AcceptsEachOfTheThreePlaces is the calibration for the refusal
+// TestRegister_AcceptsEachOfTheFourPlaces is the calibration for the refusal
 // above, and it is owed for the reason the other calibrations here are:
 // a refusal that also caught a well-formed declaration would refuse the module
 // at package initialisation the moment the declared set is written.
 //
-// All three places are exercised rather than one. They differ in whether a
+// All four places are exercised rather than one. They differ in whether a
 // reason is carried at all, so a predicate that had come to refuse the ordinary
-// place — the one carrying none — would pass an assertion taken over either of
-// the other two.
+// place — the one carrying none — would pass an assertion taken over any of the
+// other three.
 //
 // The absent case is not asserted here: every other registration in this file
 // and in the module carries no place, so package initialisation proves it.
-func TestRegister_AcceptsEachOfTheThreePlaces(t *testing.T) {
+func TestRegister_AcceptsEachOfTheFourPlaces(t *testing.T) {
 	t.Parallel()
 
 	for _, tc := range []struct {
@@ -750,6 +753,12 @@ func TestRegister_AcceptsEachOfTheThreePlaces(t *testing.T) {
 			code:      codePlaceEvaluatedElsewhere,
 			shortCode: shortPlaceEvaluatedElsewhere,
 			place:     cerrors.RuleEvaluatedElsewhere("A plugin guest evaluates the rule, so no dispatch invokes it."),
+		},
+		{
+			name:      "a rule no stage reaches",
+			code:      codePlaceNoStageReaches,
+			shortCode: shortPlaceNoStageReaches,
+			place:     cerrors.RuleNoStageReaches("A catalog directory load reads it, and no stage holds those facts."),
 		},
 		{
 			name:      "not a rule at all",

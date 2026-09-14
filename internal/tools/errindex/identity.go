@@ -264,7 +264,7 @@ type registered struct {
 }
 
 // declaredPlace is what a registration's rule-place key declares: which of the
-// errors package's three place constructors it names, the reason the two that
+// errors package's four place constructors it names, the reason the three that
 // take one were handed, and — where the value could not be read at all — why.
 //
 // # Why this scan reads a key it carries nowhere
@@ -450,7 +450,7 @@ func scan(root, modulePath string) ([]Identity, error) {
 						// registrations reports on, and the two readings then
 						// describe different declarations with nothing failing.
 						return fmt.Errorf("%s: %s declares where its rule belongs in a form this scan cannot "+
-							"read: %s; the value is a call to one of the three place constructors, and the two "+
+							"read: %s; the value is a call to one of the four place constructors, and the three "+
 							"that take a reason take it as a string literal written at the declaration — a "+
 							"constant or a call moves the text out of the declaration, where neither this scan "+
 							"nor a reader of the source can see it",
@@ -919,7 +919,7 @@ func yieldsErrorAlone(ft *ast.FuncType) bool {
 // condition reach the published reference at all — see [admitted].
 //
 // The rule place is read from the same literal and is the one key here that is
-// not prose: its value is a call naming one of three constructors. Why this scan
+// not prose: its value is a call naming one of four constructors. Why this scan
 // reads a key it carries onto no page, and what it does with an unreadable one,
 // is recorded on [declaredPlace].
 //
@@ -992,7 +992,7 @@ func registration(vs *ast.ValueSpec, errPkg string, isErrorsPkg bool) (string, r
 	return vs.Names[0].Name, out, true
 }
 
-// The three place constructors, named here because this scan reads them by name
+// The four place constructors, named here because this scan reads them by name
 // and resolves nothing: the value a rule-place key is given is a call, and what
 // this reads is which function the call names and what literal it was handed. A
 // same-named constructor from outside the errors package would be read as this
@@ -1001,6 +1001,7 @@ func registration(vs *ast.ValueSpec, errPkg string, isErrorsPkg bool) (string, r
 const (
 	placeOverAuthoredInput  = "RuleOverAuthoredInput"
 	placeEvaluatedElsewhere = "RuleEvaluatedElsewhere"
+	placeNoStageReaches     = "RuleNoStageReaches"
 	placeNotARule           = "NotARule"
 )
 
@@ -1014,7 +1015,7 @@ const (
 func rulePlace(expr ast.Expr) declaredPlace {
 	call, ok := expr.(*ast.CallExpr)
 	if !ok {
-		return declaredPlace{unreadable: "the value is not a call to one of the three place constructors"}
+		return declaredPlace{unreadable: "the value is not a call to one of the four place constructors"}
 	}
 	var name string
 	switch fun := call.Fun.(type) {
@@ -1031,7 +1032,7 @@ func rulePlace(expr ast.Expr) declaredPlace {
 			return declaredPlace{unreadable: name + " takes no reason and was given one"}
 		}
 		return declaredPlace{constructor: name}
-	case placeEvaluatedElsewhere, placeNotARule:
+	case placeEvaluatedElsewhere, placeNoStageReaches, placeNotARule:
 		if len(call.Args) != 1 {
 			return declaredPlace{unreadable: name + " takes one reason and was given a different number"}
 		}
@@ -1045,7 +1046,7 @@ func rulePlace(expr ast.Expr) declaredPlace {
 		}
 		return declaredPlace{constructor: name, reason: reason}
 	}
-	return declaredPlace{unreadable: "the value calls " + name + ", which is not one of the three place constructors"}
+	return declaredPlace{unreadable: "the value calls " + name + ", which is not one of the four place constructors"}
 }
 
 // stringLiteral returns the text of a string-valued expression a registration
