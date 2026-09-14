@@ -81,8 +81,20 @@ func findingMessage(err error, instance any, definition string) string {
 }
 
 // nameViolatedDefinition prefixes a message with the reusable definition
-// whose constraint the value failed, and leaves the message alone when
-// there is no definition to name.
+// whose constraint the value failed, introduced by the word that says what
+// the definition is to the value, and leaves the message alone when there is
+// no definition to name.
+//
+// The introducing word is what keeps the two coordinates apart. A surface
+// rendering a finding puts the key path the author wrote in front of this
+// message and separates the two with a colon, so a definition pointer
+// written bare would arrive as a third colon-separated run and read as one
+// more segment of that path — a segment the reader then cannot find in their
+// own file. The word says the pointer is a different kind of thing: not
+// where the value sits, but the contract it was measured against. That
+// holds whichever schema the definition came from, which is what the word
+// has to do, because the definition is the author's own wherever the schema
+// being checked is one they wrote.
 //
 // Every diagnostic the walk emits at a position inside a named definition
 // goes through here, rather than only the ones a schema library produced.
@@ -95,7 +107,7 @@ func nameViolatedDefinition(message, definition string) string {
 	if definition == "" {
 		return message
 	}
-	return localDefsPointer + definition + ": " + message
+	return "against " + localDefsPointer + definition + ": " + message
 }
 
 // stripLocationChain removes the leading run of `validating <location>: `

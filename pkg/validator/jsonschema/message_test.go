@@ -274,6 +274,13 @@ func TestTheSchemaLocationChainLeavesTheMessage(t *testing.T) {
 // definition became the root of the call and the library called it "root",
 // so the name has to be put back or the reader is never told which declared
 // shape their value failed.
+//
+// The expectation is written out in full, as the reader sees it, rather than
+// assembled from the constants the composer uses. The word introducing the
+// pointer is what keeps it from reading as one more segment of the author's
+// own key path, so it is a decision about the line a reader gets — and an
+// expectation built from the composer's own parts would move with any of them
+// and pin none of it.
 func TestASubstitutedDefinitionIsNamedInPlaceOfTheChain(t *testing.T) {
 	err := &stubErr{msg: libraryRootLabel + `type: 1 has type "integer", want "string"`}
 
@@ -281,7 +288,7 @@ func TestASubstitutedDefinitionIsNamedInPlaceOfTheChain(t *testing.T) {
 		t.Errorf("with no definition substituted there is nothing to name; got %q, want %q", got, want)
 	}
 
-	want := localDefsPointer + `delivery: type: 1 has type "integer", want "string"`
+	want := `against /$defs/delivery: type: 1 has type "integer", want "string"`
 	if got := findingMessage(err, 1, "delivery"); got != want {
 		t.Errorf("findingMessage = %q, want %q", got, want)
 	}
