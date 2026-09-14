@@ -202,7 +202,7 @@ func TestArtifactPinsForRecipeHashesImportsSkipsInline(t *testing.T) {
 	arts.Set("inline.yaml", types.ArtifactEntry{Inline: "a: b"})
 	arts.Set("extra.yaml", types.ArtifactEntry{Import: imp})
 
-	pins, err := recipepin.ArtifactPinsForRecipe(arts)
+	pins, err := recipepin.ArtifactPinsForRecipe(arts, "Recipe", "pinned-recipe")
 	if err != nil {
 		t.Fatalf("ArtifactPinsForRecipe: %v", err)
 	}

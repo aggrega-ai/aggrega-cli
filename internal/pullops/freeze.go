@@ -65,7 +65,7 @@ func freezeRecipePins(lazyView *catalog.LazyLookup, entities []closure.ResolvedR
 			if !ok {
 				continue
 			}
-			artPins, aerr := recipepin.ArtifactPinsForRecipe(r.Spec.Artifacts)
+			artPins, aerr := recipepin.ArtifactPinsForRecipe(r.Spec.Artifacts, "Recipe", r.Metadata.Name)
 			if aerr != nil {
 				return nil, aerr
 			}
@@ -86,7 +86,7 @@ func freezeRecipePins(lazyView *catalog.LazyLookup, entities []closure.ResolvedR
 			if !ok {
 				continue
 			}
-			artPins, aerr := recipepin.ArtifactPinsForRecipe(fr.Spec.Artifacts)
+			artPins, aerr := recipepin.ArtifactPinsForRecipe(fr.Spec.Artifacts, "FeatureRecipe", fr.Metadata.Name)
 			if aerr != nil {
 				return nil, aerr
 			}

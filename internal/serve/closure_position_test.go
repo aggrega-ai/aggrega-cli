@@ -96,8 +96,8 @@ spec:
 				"release.lock":   "",
 			},
 			release:     "release.yaml",
-			wantPrefix:  `load manifest "./absent-manifest.yaml": YAML load failed:`,
-			wantMessage: "check the file exists, is readable, and contains well-formed YAML",
+			wantPrefix:  `load manifest "./absent-manifest.yaml": file load failed:`,
+			wantMessage: "the file could not be read, or its bytes did not parse",
 			// `  manifest: …` sits on line 9 at column 3; the key token is
 			// 8 runes, so the end column is 11.
 			wantLine: 9, wantColumn: 3, wantEndLine: 9, wantEndColumn: 11,
@@ -121,8 +121,8 @@ spec:
 				"release.lock":  "",
 			},
 			release:     "release.yaml",
-			wantPrefix:  `load aggregate "./absent-aggregate.yaml": YAML load failed:`,
-			wantMessage: "check the file exists, is readable, and contains well-formed YAML",
+			wantPrefix:  `load aggregate "./absent-aggregate.yaml": file load failed:`,
+			wantMessage: "the file could not be read, or its bytes did not parse",
 			// `  aggregate: …` sits on line 9 at column 3; the key token is
 			// 9 runes, so the end column is 12.
 			wantLine: 9, wantColumn: 3, wantEndLine: 9, wantEndColumn: 12,

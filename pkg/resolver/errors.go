@@ -23,14 +23,15 @@ var errInvalidParameterRef = cerrors.Register("invalid-parameter-ref", cerrors.M
 	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
-// ErrYAMLLoad wraps a failure to turn a file into a document: the read did not
-// produce bytes, or the bytes did not unmarshal.
+// ErrYAMLLoad wraps a failure to turn a file into the content a surface asked
+// for: the read did not produce bytes, or the bytes did not parse.
 //
 // Its subject is any file a build has to read, and not only the three documents
 // a build starts from. Beside the Aggregate, the Release and the Manifest it
 // covers the parameter contract read out of an Aggregate, the file a Release's
-// parameters import names, and the file a schema import names — each of them a
-// path an author wrote, and a file that yielded no document to judge.
+// parameters import names, the file a schema import names, and the file a
+// Recipe's or FeatureRecipe's valuesMapping, workload or artifacts entry imports
+// — each of them a path an author wrote, and a file that yielded nothing to use.
 //
 // One identity covers them all, and the reason is that neither the failure nor
 // the remedy varies with which key named the path: the file is absent,
@@ -41,6 +42,14 @@ var errInvalidParameterRef = cerrors.Register("invalid-parameter-ref", cerrors.M
 // to look up for one failure while telling them nothing the diagnostic does not
 // already say.
 //
+// The registered sentence names no format, and that is a requirement rather than
+// a simplification. Some of the files it covers are parsed as YAML and some are
+// read as Go template source and never parsed at all, so a sentence promising
+// YAML would lead a diagnostic about a template file with a claim about that
+// file's format, and would offer advice its reader cannot act on. What each
+// occurrence supplies is the clause saying which surface named the path and the
+// reason the read or the parse gave.
+//
 // It is not a fault in what a file holds once it has parsed. Content that parsed
 // and is the wrong shape for the surface that asked for it is a rule over what
 // the author wrote, and the surface that read it names its own condition for
@@ -49,10 +58,10 @@ func ErrYAMLLoad() error { return errYAMLLoad }
 
 var errYAMLLoad = cerrors.Register("document-not-loadable", cerrors.Meta{
 	ShortCode: "E0175",
-	Message:   "YAML load failed: check the file exists, is readable, and contains well-formed YAML",
-	RulePlace: cerrors.NotARule("A source document could not be read, or its bytes could not be unmarshalled, so there is no " +
-		"document to judge. The file is opened when the load runs, and what it reports is a load that " +
-		"did not yield one."),
+	Message:   "file load failed: the file could not be read, or its bytes did not parse",
+	RulePlace: cerrors.NotARule("A file a build had to read could not be read, or its bytes could not be parsed, so the " +
+		"surface that named it was left with nothing to use. The file is opened when the load runs, " +
+		"and what it reports is a load that did not yield content."),
 })
 
 // ErrManifestReservedPrefix wraps a Manifest features.annotations

@@ -30,6 +30,8 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/yamlsplice"
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
+	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -223,7 +225,15 @@ func currentPinRegion(lines []string, spec *yaml.Node, childIndent int) (int, in
 // consumption site; both are skipped here. Each remaining entry's Import is the
 // resolved absolute $import path (the catalog rewrites relative $import paths to
 // absolute at load). The result is sorted by name.
-func ArtifactPinsForRecipe(artifacts types.OrderedMap[types.ArtifactEntry]) ([]types.ArtifactDigest, error) {
+//
+// entityKind is "Recipe" or "FeatureRecipe" and entityName is the entity's
+// metadata.name. They name the document the artifacts map was read from, and they
+// are parameters because this computation is shared by both kinds and the map
+// alone says which entity declared it. A failure to read one of the imported
+// files reports the entity, the artifacts key and the path together, which is
+// what a reader at the pin freeze has to have in order to know which of a
+// closure's recipes to open.
+func ArtifactPinsForRecipe(artifacts types.OrderedMap[types.ArtifactEntry], entityKind, entityName string) ([]types.ArtifactDigest, error) {
 	var pins []types.ArtifactDigest
 	for _, name := range artifacts.Keys() {
 		entry, _ := artifacts.Get(name)
@@ -232,12 +242,44 @@ func ArtifactPinsForRecipe(artifacts types.OrderedMap[types.ArtifactEntry]) ([]t
 		}
 		body, err := entry.Text()
 		if err != nil {
-			return nil, fmt.Errorf("recipepin: read artifact %q import %s: %w", name, entry.Import, err)
+			return nil, artifactImportLoadError(entry.Import, err, entityKind, entityName, name)
 		}
 		pins = append(pins, types.ArtifactDigest{Name: name, Digest: digest.ContentDigest([]byte(body))})
 	}
 	sortArtifactPins(pins)
 	return pins, nil
+}
+
+// artifactImportLoadError reports an artifacts entry whose $import: names a file
+// the pin freeze could not acquire, as the load failure it is.
+//
+// It names a condition this package does not declare, because the failure is not
+// specific to the pin freeze: the same file is read again when the entry is
+// rendered, and the same authoring mistake on a valuesMapping or a workload
+// import is the same failure with the same remedy. One identity covers them, and
+// each raise path supplies the clause saying where it happened.
+//
+// The diagnostic it builds is the canonical envelope rather than a wrapped
+// string, and that is what lets the failure reach the reader with a head at all:
+// the boundary that renders a halt prints a bracketed head for an error that is
+// or wraps the envelope and falls through to plain single-line text for one that
+// is not. Composing through the condition's registered sentence keeps that
+// boundary from printing the sentence a second time beneath the diagnostic.
+//
+// Its clause names what the author wrote — the entity, the artifacts key, the
+// imported path — and nothing about the packages that read them, so a reader is
+// shown the vocabulary of the file they would open to fix it.
+func artifactImportLoadError(path string, cause error, entityKind, entityName, artifactName string) error {
+	condition := resolver.ErrYAMLLoad()
+	return cerrors.Wrap(
+		condition,
+		cerrors.CatalogError,
+		cerrors.SourceLocation{File: path},
+		cerrors.ComposeMessage(condition, []string{
+			fmt.Sprintf("%s %q artifact %q file import", entityKind, entityName, artifactName),
+			cause.Error(),
+		}, ""),
+	)
 }
 
 // MatchSourcePin returns the recipe-carried source pin for the identity

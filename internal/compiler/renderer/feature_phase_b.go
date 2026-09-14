@@ -10,8 +10,41 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/ir"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/parse"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
+	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
+
+// importLoadError reports a `$import:` whose file the build could not acquire,
+// as the load failure it is rather than as an untyped read error.
+//
+// It names a condition this package does not declare, and that is the point: the
+// failure is not specific to which key named the path — valuesMapping, workload
+// and an artifacts entry each leave the same surface unusable and give the author
+// the same thing to do — so each raise path supplies the clause saying where it
+// happened and leaves the identity to the package that already holds it. A
+// second identity per naming key would hand a reader another code to look up for
+// one failure.
+//
+// It composes through the condition's registered sentence rather than emitting
+// surface alone, so the diagnostic opens with that sentence and carries the raise
+// path's own clause after it. The boundary that renders a halt prints the
+// outermost frame whose text the output does not already carry, so a message
+// that did not lead with the sentence would print it a second time as a
+// redundant continuation line.
+//
+// The cause's text travels as one of the occurrence's values rather than as a
+// wrapped frame, so the operating system's own reason — which is what tells a
+// missing file from an unreadable one — reaches the reader on the same line as
+// the surface that named it.
+func importLoadError(path string, cause error, surface string) error {
+	condition := resolver.ErrYAMLLoad()
+	return cerrors.Wrap(
+		condition,
+		cerrors.CatalogError,
+		cerrors.SourceLocation{File: path},
+		cerrors.ComposeMessage(condition, []string{surface, cause.Error()}, ""),
+	)
+}
 
 // resolveValuesMappingText resolves a ValuesMapping struct to a Go template
 // source string. Mode 1 (inline) returns the authored content directly;
@@ -53,7 +86,7 @@ func resolveValuesMappingText(vm types.ValuesMapping, entityName, entityKind str
 	}
 	data, err := os.ReadFile(vm.Import)
 	if err != nil {
-		return "", cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: vm.Import}, fmt.Sprintf("%s %q valuesMapping file import", entityKind, entityName))
+		return "", importLoadError(vm.Import, err, fmt.Sprintf("%s %q valuesMapping file import", entityKind, entityName))
 	}
 	return string(data), nil
 }
@@ -93,7 +126,7 @@ func resolveWorkloadText(w types.WorkloadTemplate, entityName string, workloadLi
 	}
 	data, err := os.ReadFile(w.Import)
 	if err != nil {
-		return "", cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: w.Import}, fmt.Sprintf("Recipe %q workload file import", entityName))
+		return "", importLoadError(w.Import, err, fmt.Sprintf("Recipe %q workload file import", entityName))
 	}
 	return string(data), nil
 }
@@ -107,7 +140,7 @@ func resolveWorkloadText(w types.WorkloadTemplate, entityName string, workloadLi
 func resolveArtifactEntryText(a types.ArtifactEntry, entityName, artifactName string) (string, error) {
 	text, err := a.Text()
 	if err != nil {
-		return "", cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: a.Import}, fmt.Sprintf("Recipe %q artifact %q file import", entityName, artifactName))
+		return "", importLoadError(a.Import, err, fmt.Sprintf("Recipe %q artifact %q file import", entityName, artifactName))
 	}
 	return text, nil
 }
