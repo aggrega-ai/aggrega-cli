@@ -447,39 +447,59 @@ type NormalizedView interface {
 	// the difference reads the declared socket set first, which is the fact
 	// that answers which sockets exist to be asked about.
 	//
-	// Declaring a fact puts its accessor on its stage's view interface, and
-	// every later stage carries that interface by embedding — so a view
-	// presenting any of those stages answers the accessor whether or not a
-	// check asks it. The declaration compels the implementation; nothing
-	// compels the declaration. This accessor is implemented for that reason
-	// rather than because a check reads it, which accounts for its presence
-	// without warranting it: a fact no check reads remains a candidate for
-	// removal.
-	//
-	// The rule this fact exists to serve is enforced, and not as a declared
-	// check. A connection dictating a delivery its socket does not permit
-	// halts the build while the graph is built, in the same resolution that
-	// settles whether that connection's socket was declared at all. What keeps
-	// the rule out of a check is the socket side rather than the connection
-	// side: this fact is keyed by a component type and a socket, and that is
-	// the whole of its key, while the socket a connection an attachment drew
-	// is wired into is declared on the attached Feature's own dependency
-	// sockets and never on the consuming component's. So this fact cannot
-	// answer for such a connection at all, and a check reading it alone would
-	// approve every attachment-drawn dictation — silently, for exactly the
-	// connections it could not see.
-	//
-	// What is missing is one companion fact rather than a stage or a subject
-	// kind. The connection side is declared already — the delivery a
-	// connection dictates as authored, keyed by the carrier that drew it, over
-	// every connection the composition drew — so a Feature-side counterpart
-	// to this fact, over the socket declarations a Feature makes, is the whole
-	// of what a faithful check still wants. Until that exists this fact has a
-	// reader it lacks rather than a reader it is not owed, which is why it is
-	// not the removal candidate a fact nothing reads would otherwise be.
+	// It answers for a connection the consuming component's own dependency
+	// block drew, and for one the deployment's edge surface wired, and for no
+	// other. Its key is a component type and a socket, and that is the whole
+	// of it, while the socket a connection an attachment drew is wired into is
+	// declared on the attached Feature's own dependency sockets and never on
+	// the consuming component's. A rule reading this fact alone would approve
+	// every attachment-drawn dictation — silently, for exactly the
+	// connections it could not see — so the rule over what a connection may
+	// dictate reads the Feature-side counterpart beside it and picks between
+	// the two by the surface that drew the connection.
 	//
 	// Keyed by (node, socket); read from types.UsesSchemaEntry.Inject.
 	SocketInjectMechanismNames(componentType string, socket string) []string
+
+	// AttachmentSocketInjectMechanismNames are the delivery mechanisms a
+	// dependency socket of the Feature an attachment resolves to allows a
+	// connection wired into it to dictate, in author order.
+	//
+	// It is the Feature-side counterpart of the allowlist a component type's
+	// own dependency socket declares, and the two are separate facts because
+	// they read separate declaration surfaces: a connection an attachment's
+	// own dependency block drew is wired into a socket the attached Feature
+	// declares, never into one the consuming component declares. One fact
+	// spanning both would have to pick a surface, and would answer for the
+	// wrong one wherever the other applied.
+	//
+	// The names are an allowlist and nothing more: they constrain which
+	// mechanisms a consumer may dictate delivery through, never what any of
+	// them carries. The shape of one delivery entry is the entity contract's
+	// to state, and restating it here would give one rule two homes.
+	//
+	// Empty is a declaration rather than an absence, and a rule reading this
+	// fact must not take it for "unconstrained" — it is the most constrained
+	// answer a socket can give. A socket naming no mechanism permits no
+	// dictation at all, so a connection dictating any delivery for it is
+	// refused. An omitted allowlist and an explicitly empty one are
+	// deliberately the same answer, because reading them apart would give an
+	// empty list a meaning no authoring surface documents.
+	//
+	// Whether the socket carries a declaration at all is a different question,
+	// and this fact does not answer it: a socket the Feature declares no entry
+	// for reads the same as one declaring no mechanism. A rule that turns on
+	// the difference reads the Feature's declared socket set first.
+	//
+	// It is keyed per attachment as well as per node although the answer
+	// follows from the Feature type alone, for the reason the Feature's
+	// declared socket set gives: a rule refusing a dictation has to name the
+	// attachment that wrote it, which is what an author can act on, where the
+	// type alone would leave them looking for which attachment meant it.
+	//
+	// Keyed by (node, attachment, socket); read from
+	// types.UsesSchemaEntry.Inject.
+	AttachmentSocketInjectMechanismNames(featureType string, socket string) []string
 
 	// PerEdgeTarget is the target one connection names, as authored — empty
 	// when the author named none.

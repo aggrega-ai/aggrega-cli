@@ -4,12 +4,11 @@
 package ir
 
 import (
-	"fmt"
+	"slices"
 	"strings"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
-	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
-	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // ErrUsesInjectForbidden reports an `inject:` block on a `uses:` edge that the
@@ -25,10 +24,10 @@ import (
 //     is opaque declares its socket without `inject:` and the consumer takes
 //     whatever the producer's Recipe emits — the Black-Box pattern.
 //
-// The two carry different message text, which is what tells an author whether to
-// widen an allowlist or to stop dictating; the condition they report is the same
-// one, so splitting the sentinel would ask a programmatic consumer to match two
-// values for one question.
+// The two carry different advice, which is what tells an author whether to widen
+// an allowlist or to stop dictating; the condition they report is the same one,
+// so splitting the sentinel would ask a programmatic consumer to match two values
+// for one question.
 //
 // A socket the declaring entity never declared is OUT of scope and reaches no
 // refusal here. An ad-hoc socket has no `usesSchema` entry, so it carries no
@@ -49,87 +48,138 @@ var errUsesInjectForbidden = cerrors.Register("uses-inject-forbidden", cerrors.M
 	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
-// usesInjectLocator names the surface an edge's inject block was authored on, in
-// the author's own terms: the component instance that consumes the edge, the
-// attachment instance when the edge came from one, and the deploying document when
-// the edge was wired there rather than in the Aggregate. It exists so a refusal
-// points at the block to edit instead of at the internal identity of the edge.
-func usesInjectLocator(nodeID, originFeatureInstance string, originRelease bool) string {
-	switch {
-	case originRelease:
-		return fmt.Sprintf("Release component %q", nodeID)
-	case originFeatureInstance != "":
-		return fmt.Sprintf("component %q attachment %q", nodeID, originFeatureInstance)
-	default:
-		return fmt.Sprintf("component %q", nodeID)
-	}
-}
+// The surfaces a dependency socket can be declared on, named as the author reads
+// them. They travel into a diagnostic's caption, so an author is told which
+// entity's declaration was quoted rather than being left to work it out from the
+// identity alone.
+const (
+	surfaceComponentType = "declared on the component type"
+	surfaceFeatureType   = "declared on the feature type"
+)
 
-// usesInjectViolations checks one edge's dictated delivery mechanisms against the
-// allowlist declared on the socket it is wired into, and returns one diagnostic
-// per violation. An empty result is the permitted case.
+// CarriedConnectionDeliveryIsSocketPermitted reports each delivery mechanism a
+// connection dictates that the socket it is wired into does not permit, wherever
+// that connection was written.
 //
-// The two facts it reads are the edge's dictated mechanism names, taken from the
-// authored inject block via [resolver.InjectMechanismNames], and the socket's
-// declaration, taken from [socketEntry] so the declaring entity is resolved once
-// for the whole build path.
+// It is invoked once per connection together with the surface that drew it,
+// because the delivery it reads is what an AUTHOR wrote on one connection: a
+// node, a socket and an alias name up to three separately authored blocks at
+// once, and a rule invoked once for the three would read one of them and report
+// the other two as approved. The delivery is read as authored rather than as the
+// graph stores it, because the conversion into the graph drops a payload it
+// cannot express as one string per delivery key — so a rule reading the converted
+// form would see a connection as dictating nothing when its payload was dropped.
 //
-// Both inputs are needed at once, which is what fixes where this runs: the
-// authored block belongs to the edge and the allowlist belongs to whichever
-// catalog entity owns the socket. Diagnostics come back in the mechanism order the
-// author wrote, with custom mechanisms following the core three, so a joined halt
-// is byte-identical across runs of the same input.
-func usesInjectViolations(
-	lookup resolver.CatalogLookup,
-	componentType, originFeature, socket, alias, pathPrefix string,
-	inject *types.InjectBlock,
-) []string {
-	mechanisms := resolver.InjectMechanismNames(inject)
-	if len(mechanisms) == 0 {
-		return nil
-	}
-
-	entry, owner, declared := socketEntry(lookup, componentType, originFeature, socket)
-	if !declared {
-		return nil
-	}
-
-	surface := "component type"
-	if originFeature != "" {
-		surface = "feature type"
-	}
-	edgePath := fmt.Sprintf("%s.uses[%q][%q].inject", pathPrefix, socket, alias)
-
-	// An absent allowlist and an explicitly empty one are the same declaration:
-	// the socket permits no dictation. Reading them apart would make `inject: []`
-	// mean something no surface documents.
-	if len(entry.Inject) == 0 {
-		return []string{fmt.Sprintf(
-			"%s: socket %q on %s %q declares no inject allowlist (Black-Box pattern) — delivery dictation is not allowed",
-			edgePath, socket, surface, owner)}
-	}
-
-	allowed := make(map[string]bool, len(entry.Inject))
-	for _, mech := range entry.Inject {
-		allowed[mech] = true
-	}
-
-	var out []string
-	for _, mech := range mechanisms {
-		if allowed[mech] {
-			continue
+// # Which entity's declaration is quoted
+//
+// The socket is read on whichever entity declared it, and the surface that drew
+// the connection is what picks between them: a connection an attachment's own
+// dependency block drew participates in the attached Feature's socket
+// declarations, and every other connection in the consuming component type's.
+// Consulting the component alone would permit every attachment-drawn dictation
+// without reading the declaration that governs it.
+//
+// The Feature type is the one the attachment RESOLVED to rather than the one
+// stamped on the connection when it was drawn. The resolved type is the
+// composition's single answer to what an attachment is, which every rule over a
+// Feature's declarations at this stage reads, and a second reading taken from
+// the connection would be free to disagree with it.
+//
+// A socket the declaring entity never declared is out of scope and reaches no
+// refusal: an ad-hoc socket carries no allowlist to be outside of and makes no
+// Black-Box promise to keep. What such a socket gives up is the declaration's
+// guarantees, not the author's ability to route what they invented.
+//
+// # What each occurrence says
+//
+// The two refusals carry the same condition and different advice, because the
+// remedy differs between them and no single registered sentence could be true of
+// both: a socket declaring no allowlist permits no dictation at all, while one
+// declaring an allowlist permits what it lists. The detail names the mechanism
+// the sentence refers to, then the socket, then — where there is one — what that
+// socket does permit, then the entity whose declaration was quoted.
+//
+// Findings come back in the order the composition drew the connections and then
+// in the order the author wrote the mechanisms, so identical input yields an
+// identical sequence.
+var CarriedConnectionDeliveryIsSocketPermitted = constraint.Check[
+	constraint.GraphView,
+	constraint.CarriedConnectionSubject,
+]{
+	Sentinel: ErrUsesInjectForbidden(),
+	Severity: constraint.SeverityFatal,
+	Run: func(
+		v constraint.GraphView,
+		s constraint.CarriedConnectionSubject,
+	) []constraint.Objection {
+		dictated := v.CarriedConnectionAuthoredDelivery(
+			s.NodeID(), s.CarrierKind(), s.CarrierAttachment(),
+			s.SocketName(), s.AliasName(), s.TargetNodeID())
+		if len(dictated) == 0 {
+			return nil
 		}
-		out = append(out, fmt.Sprintf(
-			"%s.%s: mechanism %q not in socket %q inject allowlist %v on %s %q",
-			edgePath, mech, mech, socket, entry.Inject, surface, owner))
-	}
-	return out
-}
 
-// joinUsesInjectViolations renders every uses-inject refusal collected over the
-// edge set as one halt, so an author sees every offending edge in a single build
-// rather than fixing them one build at a time. Ordering follows the edge set's
-// authoring order, which the topology layer preserves.
-func joinUsesInjectViolations(violations []string) error {
-	return fmt.Errorf("%w: %s", ErrUsesInjectForbidden(), strings.Join(violations, "; "))
+		// The declaring entity is resolved here rather than in a helper: the
+		// facts a check reads are derived from its own body, so a helper handed
+		// the view would take this rule's reads out of reach of the reading that
+		// holds it to the narrowest view its predicate allows.
+		var surface, owner string
+		var allowed []string
+		if s.CarrierKind() == constraint.CarrierAttachment {
+			owner = v.AttachmentResolvedType(s.NodeID(), s.CarrierAttachment())
+			if !slices.Contains(v.AttachmentDeclaredSocketNames(owner), s.SocketName()) {
+				return nil
+			}
+			surface = surfaceFeatureType
+			allowed = v.AttachmentSocketInjectMechanismNames(owner, s.SocketName())
+		} else {
+			componentType, present := v.FlattenedNodeComponentType(s.NodeID())
+			if !present || !slices.Contains(v.DeclaredSocketNames(componentType), s.SocketName()) {
+				return nil
+			}
+			surface, owner = surfaceComponentType, componentType
+			allowed = v.SocketInjectMechanismNames(componentType, s.SocketName())
+		}
+
+		var out []constraint.Objection
+		for _, payloads := range dictated {
+			mechanisms := payloads.Keys()
+			if len(mechanisms) == 0 {
+				continue
+			}
+			// An absent allowlist and an explicitly empty one are the same
+			// declaration: the socket permits no dictation. Reading them apart
+			// would make an empty list mean something no authoring surface
+			// documents.
+			if len(allowed) == 0 {
+				out = append(out, s.RaiseWithAdvice(
+					ErrUsesInjectForbidden(),
+					"The socket declares no delivery allowlist, so it permits no dictation at all — "+
+						"the entity that declared it delivers the dependency's values itself. Remove the "+
+						"inject block from this connection and read the values from the connection's "+
+						"provides in the consuming Recipe, or declare the mechanisms the socket permits "+
+						"in its usesSchema entry.",
+					constraint.Uncaptioned(strings.Join(mechanisms, ", ")),
+					constraint.Captioned("on socket", s.SocketName()),
+					constraint.Captioned(surface, owner),
+				))
+				continue
+			}
+			for _, mechanism := range mechanisms {
+				if slices.Contains(allowed, mechanism) {
+					continue
+				}
+				out = append(out, s.RaiseWithAdvice(
+					ErrUsesInjectForbidden(),
+					"Dictate one of the mechanisms the socket permits, or widen that socket's inject "+
+						"allowlist in the declaring entity's usesSchema entry.",
+					constraint.Uncaptioned(mechanism),
+					constraint.Captioned("on socket", s.SocketName()),
+					constraint.Captioned("which permits", strings.Join(allowed, ", ")),
+					constraint.Captioned(surface, owner),
+				))
+			}
+		}
+		return out
+	},
 }

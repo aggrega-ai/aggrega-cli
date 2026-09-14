@@ -58,14 +58,14 @@ const (
 	// SubjectNodeSocket is the subject kind (node, socket), keyed by 13 declared facts.
 	SubjectNodeSocket SubjectKind = "(node, socket)"
 
+	// SubjectNodeAttachmentSocket is the subject kind (node, attachment, socket), keyed by 4 declared facts.
+	SubjectNodeAttachmentSocket SubjectKind = "(node, attachment, socket)"
+
 	// SubjectEdge is the subject kind edge, keyed by 8 declared facts.
 	SubjectEdge SubjectKind = "edge"
 
 	// SubjectNodeAttachment is the subject kind (node, attachment), keyed by 19 declared facts.
 	SubjectNodeAttachment SubjectKind = "(node, attachment)"
-
-	// SubjectNodeAttachmentSocket is the subject kind (node, attachment, socket), keyed by 3 declared facts.
-	SubjectNodeAttachmentSocket SubjectKind = "(node, attachment, socket)"
 
 	// SubjectSubsystemAttachment is the subject kind (subsystem, attachment), keyed by 1 declared fact.
 	SubjectSubsystemAttachment SubjectKind = "(subsystem, attachment)"
@@ -166,9 +166,9 @@ var SubjectKinds = []SubjectKindInfo{
 	{Kind: SubjectDocumentAnnotationBinding, Coordinates: []string{"document", "annotation-binding"}, Traversal: TraversalPush},
 	{Kind: SubjectNode, Coordinates: []string{"node"}, Traversal: TraversalPull},
 	{Kind: SubjectNodeSocket, Coordinates: []string{"node", "socket"}, Traversal: TraversalPull},
+	{Kind: SubjectNodeAttachmentSocket, Coordinates: []string{"node", "attachment", "socket"}, Traversal: TraversalPull},
 	{Kind: SubjectEdge, Coordinates: []string{"edge"}, Traversal: TraversalPull},
 	{Kind: SubjectNodeAttachment, Coordinates: []string{"node", "attachment"}, Traversal: TraversalPull},
-	{Kind: SubjectNodeAttachmentSocket, Coordinates: []string{"node", "attachment", "socket"}, Traversal: TraversalPull},
 	{Kind: SubjectSubsystemAttachment, Coordinates: []string{"subsystem", "attachment"}, Traversal: TraversalPull},
 	{Kind: SubjectNodeSlot, Coordinates: []string{"node", "slot"}, Traversal: TraversalPull},
 	{Kind: SubjectNodeMechanism, Coordinates: []string{"node", "mechanism"}, Traversal: TraversalPull},

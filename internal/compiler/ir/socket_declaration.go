@@ -39,16 +39,16 @@ func socketDeclaration(lookup resolver.CatalogLookup, componentType, originFeatu
 
 // socketEntry resolves the usesSchema entry a socket was declared under, on the
 // entity that OWNS the socket, and reports whether such an entry exists. It also
-// returns the owning entity's type URI, so a diagnostic can name the entity whose
+// returns the owning entity's type URI, so a caller can name the entity whose
 // declaration it is quoting rather than the entity the edge happens to hang off.
 //
-// It is the one resolution of "which entity declares this socket, and what does
-// that declaration say", and [socketDeclaration] plus the socket's delivery
-// allowlist check both read it. Keeping them on one lookup is what makes the
-// declaration marker and the allowlist verdict incapable of disagreeing about
-// which entity they consulted — a second lookup would agree on the ordinary case
-// and diverge exactly on the Feature-authored edge, which is the case the marker
-// exists to get right.
+// It is this construction path's one resolution of "which entity declares this
+// socket, and what does that declaration say", and [socketDeclaration] reads it.
+// A rule asking the same question of a finalised graph reads it as declared facts
+// instead, through the accessors that project the same catalog entries — which is
+// what a check is handed in place of a lookup, and why the two are one question
+// read through two projections of one catalog rather than two lookups free to
+// consult different entities.
 //
 // The declaring surfaces are not interchangeable: a Feature-authored edge's socket
 // is declared on the originating Feature's usesSchema, never on the consuming

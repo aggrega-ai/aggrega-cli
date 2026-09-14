@@ -1032,6 +1032,26 @@ func (v *normalizedView) AttachmentSocketSelector(featureType string, socket str
 	return entry.Selector
 }
 
+// AttachmentSocketInjectMechanismNames returns the delivery mechanisms a Feature
+// type's dependency socket permits a connection wired into it to dictate, in
+// author order.
+//
+// A socket the Feature declares no entry for reads the same as one declaring no
+// mechanism, which is the reading the fact's own declaration states: both leave
+// nothing permitted, and which of the two a socket is belongs to the fact that
+// answers which sockets the Feature declares.
+func (v *normalizedView) AttachmentSocketInjectMechanismNames(
+	featureType string,
+	socket string,
+) []string {
+	feat := lookupFeature(v.catalog, featureType)
+	if feat == nil {
+		return nil
+	}
+	entry, _ := feat.Spec.UsesSchema.Get(socket)
+	return entry.Inject
+}
+
 // AttachmentFeatureLabels returns the labels a Feature type declares, in author
 // order.
 func (v *normalizedView) AttachmentFeatureLabels(featureType string) types.OrderedMap[string] {

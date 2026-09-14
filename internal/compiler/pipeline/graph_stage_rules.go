@@ -9,6 +9,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/analyzer"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/ir"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 )
@@ -239,6 +240,29 @@ func runGraphStageRules(
 		coordinates,
 		out.GraphView,
 		resolver.CarriedConnectionInjectReferenceIsPublished,
+	)
+	if err != nil {
+		return err
+	}
+	out.Analysis.Errors = append(out.Analysis.Errors, analyzer.ErrorsFromObjections(violations)...)
+
+	// No connection dictates a delivery mechanism the socket it is wired into
+	// does not permit, evaluated once per connection the composition drew
+	// together with the surface that drew it. The socket is read on whichever
+	// entity declared it, and which entity that is follows from the surface: a
+	// connection an attachment drew is wired into a socket the attached Feature
+	// declares, which no reading keyed by the consuming component could answer
+	// for — so a rule asked once per node, socket and alias would approve every
+	// attachment-drawn dictation without reading the declaration that governs
+	// it. The delivery it reads is the one the author wrote rather than the one
+	// the graph stores, because the conversion into the graph drops a payload it
+	// cannot express as one string per delivery key. The signal is read once per
+	// connection, which is the granularity the traversal promises.
+	violations, err = constraint.RunOnCarriedConnections(
+		ctx.Err,
+		coordinates,
+		out.GraphView,
+		ir.CarriedConnectionDeliveryIsSocketPermitted,
 	)
 	if err != nil {
 		return err
