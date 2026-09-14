@@ -1625,6 +1625,23 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			node.ReleaseAnnotations, input.CatalogLookup.ProviderPlugin,
 			nodeCtx.UnsupportedFieldSink)
 
+		// The same point holds every fact the sensitivity advisory needs, which is
+		// why it is raised beside the one above rather than at the dispatch: the
+		// node's declarations were assembled onto the context above, the declared
+		// input kinds are settled here, and the resolved provider is in hand. It
+		// reports a `values` leaf whose declared sensitivity this node's render
+		// cannot carry to its target while the author still holds a lever over it
+		// — a security-relevant declaration spent on nothing, which without a word
+		// is indistinguishable from one that worked. A degradation, never a
+		// refusal: no rendered byte moves and the declaration passes through
+		// untouched.
+		//
+		// It is handed the node context's own declaration set rather than a second
+		// reading, so the advisory and the marking on the wire cannot describe
+		// different declarations.
+		warnSensitivityNotConveyed(nodeID, providerName, nodeCtx.RecipeName,
+			nodeCtx.DeclaredSensitivity, hasSource, nodeCtx.UnsupportedFieldSink)
+
 		// Advertised-only refusal of an authored identity the node's target will
 		// not accept. This node's identity is the one its author wrote, so it is
 		// refused rather than shortened: it is the deployed name of the workload,

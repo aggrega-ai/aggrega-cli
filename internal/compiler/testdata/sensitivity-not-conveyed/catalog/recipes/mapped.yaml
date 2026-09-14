@@ -1,0 +1,20 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata: { name: sens-mapped, version: "1.0.0" }
+spec:
+  capability: helm
+  implements: sens/mapped
+  source: ./charts/app
+  provides:
+    host: "{{ .context.instance_id }}"
+  # The mapping deliberately emits keys spelled exactly like the declared leaf
+  # paths, so this node and the direct one render the same two values under the
+  # same two names. The marking is still absent, because the gate is on the
+  # resolved keys BEING the declared leaf paths rather than on their resembling
+  # them: a mapping's output keys are the template's own invention and a match
+  # would be a name collision rather than a recovery.
+  valuesMapping: |
+    {
+      "appName": "{{ .values.appName }}",
+      "dbPassword": "{{ .values.dbPassword }}"
+    }

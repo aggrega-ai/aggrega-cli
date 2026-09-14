@@ -1,0 +1,27 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: sensitivity-not-conveyed-app
+  version: "1.0.0"
+spec:
+  components:
+    # Three nodes authoring the same two values against the same two
+    # declarations, differing only in what their Recipe declares. Asserting all
+    # three from one build is what makes each verdict evidence: a silence
+    # measured beside a firing sibling on the same channel proves the advisory
+    # is deciding rather than merely quiet.
+    mapped:
+      type: sens/mapped
+      values:
+        appName: demo
+        dbPassword: hunter2-plaintext
+    direct:
+      type: sens/direct
+      values:
+        appName: demo
+        dbPassword: hunter2-plaintext
+    placed:
+      type: sens/placed
+      values:
+        appName: demo
+        dbPassword: hunter2-plaintext

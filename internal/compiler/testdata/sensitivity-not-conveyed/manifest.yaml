@@ -1,0 +1,12 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: sensitivity-not-conveyed-manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      type:
+        sens/mapped: sens-mapped:1.0.0
+        sens/direct: sens-direct:1.0.0
+        sens/placed: sens-placed:1.0.0

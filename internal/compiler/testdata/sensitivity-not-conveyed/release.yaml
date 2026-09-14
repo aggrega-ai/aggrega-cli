@@ -1,0 +1,16 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: sensitivity-not-conveyed-release
+  environment: local
+  version: "1.0.0"
+spec:
+  aggregate: ./aggregate.yaml
+  manifest: ./manifest.yaml
+  boundaries:
+    cluster:
+      directory: ./dist/cluster
+      components:
+        mapped: {}
+        direct: {}
+        placed: {}

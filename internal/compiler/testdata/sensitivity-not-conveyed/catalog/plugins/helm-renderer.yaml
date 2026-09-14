@@ -1,0 +1,31 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Plugin
+metadata:
+  name: helm
+  version: 1.0.0
+  pluginType: provider
+  description: Provider-rendering plugin for the helm provider.
+spec:
+  abiVersion: v1alpha1
+  provider:
+    capabilities:
+      - helm
+    # All three input kinds, because this corpus's whole point is that one
+    # target renders the same declarations through three shapes and conveys
+    # them on one. A contract narrower than this would refuse a node before
+    # the advisory could be asked about it.
+    contract:
+      inputKinds:
+        sourced: true
+        synthesized: true
+        artifactsStandalone: true
+      boundaryAssembly: none
+      reusableInstance: true
+  exports:
+    - name: render_node
+  runtime:
+    maxMemoryPages: 4096
+    # Generous per-call cap so guest runtime initialization completes even where
+    # the host runs the Wasm engine without native code generation (a sandboxed
+    # environment that denies executable memory falls back to slow interpretation).
+    timeoutMs: 300000

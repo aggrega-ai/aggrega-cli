@@ -1,0 +1,19 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata: { name: sens-placed, version: "1.0.0" }
+spec:
+  capability: helm
+  implements: sens/placed
+  provides:
+    host: "{{ .context.instance_id }}"
+  # Artifacts and nothing else, so this node's whole output is imported artifact
+  # documents and its dispatch carries neither a values map nor a workload.
+  artifacts:
+    app-config.yaml: |
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: {{ .context.instance_id }}-config
+      data:
+        APP_NAME: "{{ .values.appName }}"
+        DB_PASSWORD: "{{ .values.dbPassword }}"

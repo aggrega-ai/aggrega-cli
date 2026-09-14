@@ -1,0 +1,18 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: sens/placed
+  version: "1.0.0"
+  labels:
+    component.aggrega.ai/type: "server"
+spec:
+  schema:
+    values:
+      appName: { type: string }
+      # Declared identically again, on a node whose Recipe declares artifacts
+      # and nothing else. That dispatch carries no values map at all, so the
+      # declaration is unconveyable here permanently and there is no lever an
+      # author could pull — which is why this node must stay silent.
+      dbPassword: { type: string, sensitive: true }
+    provides:
+      host: { type: string, required: true }

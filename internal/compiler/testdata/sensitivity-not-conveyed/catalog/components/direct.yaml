@@ -1,0 +1,18 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: sens/direct
+  version: "1.0.0"
+  labels:
+    component.aggrega.ai/type: "server"
+spec:
+  schema:
+    values:
+      appName: { type: string }
+      # Declared identically to the mapped component's leaf, and this node's
+      # Recipe declares no valuesMapping — so the resolved keys ARE the declared
+      # leaf paths, the join is exact, and the declaration is conveyed. Nothing
+      # here is unconveyable, so nothing here may be advised.
+      dbPassword: { type: string, sensitive: true }
+    provides:
+      host: { type: string, required: true }

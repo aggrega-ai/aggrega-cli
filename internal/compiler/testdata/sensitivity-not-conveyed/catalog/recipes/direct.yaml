@@ -1,0 +1,12 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata: { name: sens-direct, version: "1.0.0" }
+spec:
+  capability: helm
+  implements: sens/direct
+  source: ./charts/app
+  provides:
+    host: "{{ .context.instance_id }}"
+  # No valuesMapping. The values pillar is flattened as the engine input, so the
+  # resolved keys are the authored leaf paths and the declaration joins to the
+  # rendered identity exactly.

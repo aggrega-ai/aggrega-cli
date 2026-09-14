@@ -35,6 +35,21 @@ const SensitiveByValueCode = rendercore.SensitiveByValueCode
 // from the single definition in rendercore.
 var SensitiveByValueDiagnostic = rendercore.SensitiveByValueDiagnostic
 
+// SensitivityNotConveyedCode re-exports the stable code carried by every
+// sensitivity-not-conveyed advisory, so the render orchestration package and its
+// display consumers match the class by the single definition in rendercore.
+const SensitivityNotConveyedCode = rendercore.SensitivityNotConveyedCode
+
+// SensitivityNotConveyedDiagnostic re-exports the constructor for the
+// sensitivity-not-conveyed advisory so the render orchestration package builds
+// it from the single definition in rendercore.
+var SensitivityNotConveyedDiagnostic = rendercore.SensitivityNotConveyedDiagnostic
+
+// UnconveyedValueLeafDeclarations re-exports the one reading of which authored
+// sensitivity declarations a node's render cannot convey, so the advisory and
+// the marking it is the complement of are decided from one definition.
+var UnconveyedValueLeafDeclarations = rendercore.UnconveyedValueLeafDeclarations
+
 // RenderDiagnosticText re-exports the one formatter for a structured render
 // diagnostic's user-facing line, so every display surface renders the class
 // identically.
