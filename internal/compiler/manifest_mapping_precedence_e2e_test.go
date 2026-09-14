@@ -64,8 +64,13 @@ func loadMappingPrecedenceInputs(t *testing.T, manifestFile string) (*catalog.Ca
 // The catalog here really does hold a Recipe whose spec.implements matches the
 // type, which is what makes the miss meaningful: resolution is mapping-only.
 //
-// A miss here is not a silent loss — the pre-render resolution-completeness
-// pass turns it into the loud fault the sibling test below quotes.
+// A miss here is not a silent loss. The tests in this file load the catalog
+// eagerly and run no dependency-closure walk, so the pre-render
+// resolution-completeness pass is what turns the miss into the loud fault the
+// sibling test below quotes. A surface that resolves the Release's dependency
+// closure first stops earlier, in that resolution, on the URI no catalog entity
+// matches — so the fault a surface reports for this fixture is the one its own
+// entry point reaches first.
 func TestMapping_DanglingComponentValueIsAMissOnBothJoins(t *testing.T) {
 	t.Parallel()
 

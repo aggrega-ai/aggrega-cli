@@ -23,8 +23,11 @@ import (
 // Every kind reaches it through the same selection, so an unsatisfiable version
 // pin behaves alike wherever it is written: a version typo on a Manifest recipe
 // mapping halts exactly as the same typo on a component type does. The accessors
-// whose shape carries no error channel report it as a miss, and the build's
-// resolution-completeness pass turns that miss into the loud halt.
+// whose shape carries no error channel report it as a miss, and which stage turns
+// that miss into the loud halt depends on the surface: the resolution-completeness
+// pass where the catalog was loaded eagerly, and the Release's dependency-closure
+// resolution — naming the URI no catalog entity matches — on a surface that
+// resolves that closure first, which stops before the pass runs.
 func ErrUnsatisfiableEntityVersion() error { return errUnsatisfiableEntityVersion }
 
 var errUnsatisfiableEntityVersion = cerrors.Register("unsatisfiable-entity-version", cerrors.Meta{

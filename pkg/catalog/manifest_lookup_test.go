@@ -204,8 +204,10 @@ func TestRecipeLookupWithManifest_MappingResolves(t *testing.T) {
 // though the catalog does hold a recipe whose spec.implements matches the type.
 //
 // The fault itself is reported by the pre-render resolution-completeness pass,
-// which reads the same mapping value; this test pins only that the render
-// lookup refuses to answer.
+// which reads the same mapping value, on a surface that loads the catalog
+// eagerly as this test does; a surface that resolves the Release's dependency
+// closure first stops in that resolution before the pass runs. This test pins
+// only that the render lookup refuses to answer.
 func TestRecipeLookupWithManifest_UnresolvableMappingIsAMiss(t *testing.T) {
 	t.Parallel()
 	c := fakeCatalog(

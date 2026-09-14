@@ -322,9 +322,12 @@ func (c *Catalog) componentTypeToRecipeWithManifest(manifest *types.Manifest) fu
 		//
 		// A mapping entry is answered whether or not its URI resolves — the
 		// precedence rule is stated once, on RecipeLookupWithManifest. The
-		// unresolvable case is a miss here and surfaces as a CATALOG_ERROR at
-		// the resolution-completeness pass, which names the mapping value the
-		// author wrote.
+		// unresolvable case is a miss here, and which stage reports it depends
+		// on the caller: one that loaded the catalog eagerly surfaces it as a
+		// CATALOG_ERROR at the resolution-completeness pass, which names the
+		// mapping value the author wrote; one that resolved the Release's
+		// dependency closure first never reaches that pass, because that
+		// resolution already stopped on the URI no catalog entity matches.
 		if uri, ok, err := componentMappingURI(manifest, instanceName, componentType); err == nil && ok {
 			r, found := c.RecipeByURI(uri)
 			if !found {
@@ -408,9 +411,12 @@ func recipeReferenceSegments(uri string) (int, bool) {
 // applies: an exact pin resolves that version, a caret pin the highest in range,
 // an unversioned reference the highest available. A pin the catalog cannot satisfy
 // is a miss here — it is never quietly widened to a version the author did not
-// ask for — and the build's resolution-completeness pass turns that miss into a
-// loud halt naming the mapping value, exactly as it does for a component type
-// pinned at an absent version.
+// ask for. Which stage turns that miss into the loud halt depends on the caller:
+// one that loaded the catalog eagerly reports it at the resolution-completeness
+// pass, naming the mapping value, exactly as it does for a component type pinned
+// at an absent version; one that resolved the Release's dependency closure first
+// stopped in that resolution before the pass ran, naming the URI no catalog
+// entity matches and the mapping entry that referenced it.
 //
 // Ambiguity across CAPABILITIES is a miss, never a silent pick: a bare reference
 // two capabilities can both answer carries nothing that selects either, so it
@@ -422,7 +428,10 @@ func (c *Catalog) RecipeByURI(uri string) (types.Recipe, bool) {
 	// The unsatisfiable-version sentinel is dropped rather than surfaced: this
 	// accessor's (entity, found) shape is the one every consumer of the recipe
 	// lookup shares, and an unsatisfied pin is a miss to all of them. The loud
-	// halt is the resolution-completeness pass's, which names the mapping value.
+	// halt belongs to whichever stage the caller reaches first — the
+	// resolution-completeness pass, naming the mapping value, where the catalog
+	// was loaded eagerly; the Release's dependency-closure resolution, naming
+	// the unmatched URI, where the caller resolved that closure first.
 	key, ok, _ := selectCapabilityScopedVersion(c.Recipes, uri, func(r types.Recipe) (string, string, string) {
 		return r.Spec.Capability, r.Metadata.Name, r.Metadata.Version
 	})

@@ -6,10 +6,18 @@ metadata:
 spec:
   # core/compute/api-server maps to a Recipe that is NOT in this catalog. A
   # mapping entry is the author's answer for that type, so an unresolvable
-  # value is a fault to report rather than a reason to resolve some other way:
-  # the render lookup answers a miss and the pre-render
-  # resolution-completeness pass turns that miss into a loud halt naming this
-  # value.
+  # value is a fault to report rather than a reason to resolve some other way.
+  #
+  # WHICH fault is raised depends on the surface, so a test built on this
+  # fixture asserts against the one its own entry point produces. A surface
+  # that loads the catalog eagerly, as the build-faithful pipeline harness
+  # does, runs no dependency-closure walk: the render lookup answers a miss and
+  # the pre-render resolution-completeness pass turns that miss into a loud
+  # halt naming this value. A surface that resolves the Release's dependency
+  # closure first stops in that resolution instead, naming the URI no catalog
+  # entity matches and the mapping entry it was referenced from, before the
+  # resolution-completeness pass has run at all — so a build payload from such
+  # a run carries no advisory entries.
   mappings:
     components:
       type:
