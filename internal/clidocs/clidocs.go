@@ -6,10 +6,19 @@
 // between HTML-comment markers.
 //
 // The package owns one concern: rendering — turning a command descriptor into a
-// stable markdown fragment (synopsis, flags table, subcommand list, and a flags
-// table for each subcommand that declares flags). Placing that fragment into a
-// page belongs to docsplice, which owns the generated-region convention for
-// every generator that writes one, so the marker format is not restated here.
+// stable markdown fragment (synopsis, long-form description, flags table,
+// subcommand list, and a description and flags table for each subcommand that
+// declares them). Placing that fragment into a page belongs to docsplice, which
+// owns the generated-region convention for every generator that writes one, so
+// the marker format is not restated here.
+//
+// A command's long-form description is emitted verbatim inside a fenced block,
+// byte-for-byte as the terminal receives it. It is hard-wrapped text carrying
+// indented examples and blank-line paragraph breaks, so reflowing it into
+// markdown prose would let the renderer reinterpret punctuation the author
+// chose for a terminal. Verbatim also makes the published page and the
+// command's own help the same bytes, which is what lets a regenerate-and-diff
+// check report the page falling behind the help.
 //
 // It does not read the command tree itself. Every command fact it renders comes
 // from the catalog clisurface.Catalog projects, which is the single place the
@@ -153,21 +162,27 @@ func visibleCommands(cat []clisurface.Descriptor, parentPath string) []clisurfac
 }
 
 // renderCommand produces the mechanical reference fragment for one command:
-// its synopsis, its own flags, its subcommands, and one flags table per
-// subcommand that declares flags. Descriptive prose is left to the curated
-// portion of the page. The flags rendered are the command's local ones — the
-// flags it inherits are documented once on the global-flags page instead of
-// repeated under every command.
+// its synopsis, its long-form description, its own flags, its subcommands, and
+// a description and flags table for each subcommand that declares them. Prose
+// the command does not carry itself is left to the curated portion of the page.
+// The flags rendered are the command's local ones — the flags it inherits are
+// documented once on the global-flags page instead of repeated under every
+// command.
 //
 // A command and its subcommands share one page, so a reader looking up a
-// subcommand's flags finds them beside the parent's rather than on a page of
-// their own.
+// subcommand's description or flags finds them beside the parent's rather than
+// on a page of their own.
 func renderCommand(cmd clisurface.Descriptor, cat []clisurface.Descriptor) string {
 	var b strings.Builder
 	b.WriteString("**Synopsis**\n\n")
 	b.WriteString("```\n")
 	b.WriteString(cmd.Synopsis)
 	b.WriteString("\n```")
+
+	if desc := renderDescription(cmd.Long); desc != "" {
+		b.WriteString("\n\n**Description**\n\n")
+		b.WriteString(desc)
+	}
 
 	if flags := renderFlagSet(cmd.LocalFlags); flags != "" {
 		b.WriteString("\n\n**Flags**\n\n")
@@ -179,12 +194,26 @@ func renderCommand(cmd clisurface.Descriptor, cat []clisurface.Descriptor) strin
 		b.WriteString(subs)
 	}
 
-	if subFlags := renderSubcommandFlags(cmd, cat); subFlags != "" {
+	if detail := renderSubcommandDetail(cmd, cat); detail != "" {
 		b.WriteString("\n\n")
-		b.WriteString(subFlags)
+		b.WriteString(detail)
 	}
 
 	return b.String()
+}
+
+// renderDescription renders a command's long-form description as a fenced
+// block holding the text verbatim, so the published page carries the same bytes
+// the command prints. Only trailing whitespace is removed, which is what lets
+// the fence close on its own line; nothing is rewrapped, re-indented or
+// escaped. It returns the empty string when the command declares no long-form
+// description, so callers can suppress the whole section.
+func renderDescription(long string) string {
+	body := strings.TrimRight(long, " \t\n")
+	if strings.TrimSpace(body) == "" {
+		return ""
+	}
+	return "```\n" + body + "\n```"
 }
 
 // renderFlagSet renders flags as a markdown table sorted by flag name. Hidden
@@ -239,13 +268,19 @@ func renderSubcommands(cmd clisurface.Descriptor, cat []clisurface.Descriptor) s
 	return strings.TrimRight(b.String(), "\n")
 }
 
-// renderSubcommandFlags renders one flags table per subcommand of cmd, each
-// under a label naming the subcommand's full invocation path. Subcommands are
-// visited in the order renderSubcommands lists them, and one declaring no flags
-// of its own contributes nothing, so the reference carries no empty table and a
-// wholly flagless family renders exactly as it did before — the same
-// empty-string contract renderFlagSet has. It returns the empty string when no
-// subcommand declares a flag, so callers can suppress the whole section.
+// renderSubcommandDetail renders, for each subcommand of cmd, its long-form
+// description followed by its flags table, each under a label naming the
+// subcommand's full invocation path. Subcommands are visited in the order
+// renderSubcommands lists them, and a subcommand contributes only the blocks it
+// has material for: one declaring no flags of its own carries no flags table,
+// one declaring no long-form description carries no description, and one with
+// neither contributes nothing at all — the same empty-string contract
+// renderFlagSet has. It returns the empty string when no subcommand declares
+// either, so callers can suppress the whole section.
+//
+// A subcommand's description sits immediately above its own flags table rather
+// than in a section of its own, so everything a reader needs about one
+// subcommand stays together on the page the family shares.
 //
 // The label is bold rather than a markdown heading. Every part of the generated
 // region is deliberately heading-free, so regenerating a page can neither add
@@ -253,16 +288,17 @@ func renderSubcommands(cmd clisurface.Descriptor, cat []clisurface.Descriptor) s
 // curated headings alone.
 //
 // The subcommands covered are cmd's own, matching the depth of the subcommand
-// table above them: a reader sees a flags table for each command that table
+// table above them: a reader sees these blocks for each command that table
 // lists, and for no command it does not.
-func renderSubcommandFlags(cmd clisurface.Descriptor, cat []clisurface.Descriptor) string {
+func renderSubcommandDetail(cmd clisurface.Descriptor, cat []clisurface.Descriptor) string {
 	var blocks []string
 	for _, sub := range visibleCommands(cat, cmd.Path) {
-		flags := renderFlagSet(sub.LocalFlags)
-		if flags == "" {
-			continue
+		if desc := renderDescription(sub.Long); desc != "" {
+			blocks = append(blocks, "**`"+sub.Path+"` description**\n\n"+desc)
 		}
-		blocks = append(blocks, "**`"+sub.Path+"` flags**\n\n"+flags)
+		if flags := renderFlagSet(sub.LocalFlags); flags != "" {
+			blocks = append(blocks, "**`"+sub.Path+"` flags**\n\n"+flags)
+		}
 	}
 	return strings.Join(blocks, "\n\n")
 }
