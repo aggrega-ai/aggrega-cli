@@ -87,7 +87,7 @@ var (
 //
 // # Where an unsaved buffer is read from
 //
-// The session's parse cache first, so a position is reported against what the
+// The daemon's parse cache first, so a position is reported against what the
 // editor is holding rather than against what was last written to disk, and the
 // file itself when the cache carries nothing for it.
 func (s *Server) dispatchInsertionPoint(ctx context.Context, req *jsonRPCRequest) error {

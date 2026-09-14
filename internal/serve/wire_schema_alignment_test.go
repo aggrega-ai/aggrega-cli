@@ -221,7 +221,7 @@ func wireSubjects() []wireSubject {
 		{name: "jsonRPCError", typ: reflect.TypeOf(jsonRPCError{}), def: "#/$defs/ErrorObject"},
 		{
 			name: "jsonRPCNotification", typ: reflect.TypeOf(jsonRPCNotification{}),
-			def: "#/$defs/SessionNotification",
+			def: "#/$defs/DaemonNotification",
 			values: map[string]any{
 				"Method": "aggrega/publishDiagnostics",
 				"Params": map[string]any{"file": "/w/a.yaml", "diagnostics": []any{}},
