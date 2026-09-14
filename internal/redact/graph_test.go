@@ -93,7 +93,7 @@ func markedGraph(t *testing.T) *types.IRGraph {
 	nodes := types.OrderedMap[types.IRNode]{}
 	nodes.Set("app", types.IRNode{
 		Component: "mark/app",
-		SensitiveAuthoredLeaves: []string{
+		SensitivePayloadLeaves: []string{
 			"values.dbPassword",
 			"values.credentials.username",
 			"values.credentials.password",
@@ -191,7 +191,7 @@ func TestGraph_AttachmentAndBoundaryPillarsWithhold(t *testing.T) {
 		Type:                    "feature.mark/db-credential",
 		Values:                  om("secretName", "db-creds", "vault", om("token", "t-secret", "path", "p-secret")),
 		Infra:                   om("region", "eu-west-1", "key", "k-secret"),
-		SensitiveAuthoredLeaves: []string{"values.vault.token", "values.vault.path", "infra.key"},
+		SensitivePayloadLeaves: []string{"values.vault.token", "values.vault.path", "infra.key"},
 	}
 	attachments := types.OrderedMap[types.IRFeatureEntry]{}
 	attachments.Set("credentials", entry)
@@ -201,7 +201,7 @@ func TestGraph_AttachmentAndBoundaryPillarsWithhold(t *testing.T) {
 	boundaryAttachment := types.IRBoundaryFeature{
 		Type:                    "feature.mark/boundary-guard",
 		Infra:                   om("note", "boundary-wide", "apiKey", "a-secret"),
-		SensitiveAuthoredLeaves: []string{"infra.apiKey"},
+		SensitivePayloadLeaves: []string{"infra.apiKey"},
 	}
 	boundaryAttachments := types.OrderedMap[types.IRBoundaryFeature]{}
 	boundaryAttachments.Set("guard", boundaryAttachment)
@@ -301,7 +301,7 @@ func TestGraph_UnreadableInputWithholdsWholly(t *testing.T) {
 			name: "a payload that does not decode",
 			nodes: func() types.OrderedMap[types.IRNode] {
 				n := types.OrderedMap[types.IRNode]{}
-				n.Set("app", types.IRNode{SensitiveAuthoredLeaves: []string{"values.dbPassword"}})
+				n.Set("app", types.IRNode{SensitivePayloadLeaves: []string{"values.dbPassword"}})
 				return n
 			},
 			payload: `{"dbPassword": NOT-JSON`,

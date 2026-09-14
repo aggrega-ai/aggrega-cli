@@ -12,7 +12,7 @@
 // a broken deployment rather than a protected one.
 //
 // Nothing here decides WHAT is sensitive. The facts it consumes are read from
-// their own single homes upstream — the authored leaf declarations on an
+// their own single homes upstream — the sensitive-leaf declarations on an
 // entity's schema, the per-delivery-key marking the graph carries on an
 // attachment, and the reading of which template outputs were computed from a
 // declared leaf — and arrive as a Keys set. No value is inspected and no

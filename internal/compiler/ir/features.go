@@ -1147,11 +1147,11 @@ func deriveTopLevelOrigin(values, infra types.OrderedMap[types.FieldProvenance])
 //     attachment slot of the same name sensitive.
 //   - SensitiveInject — the merged inject delivery keys whose referenced
 //     provides key the Feature declares sensitive.
-//   - SensitiveAuthoredLeaves — the merged values and infra leaves the
-//     attachment authored a value at whose path the Feature declares sensitive.
+//   - SensitivePayloadLeaves — the merged values and infra leaves the
+//     attachment's payload carries whose path the Feature declares sensitive.
 //
 // The three sensitivity facts sit at three units — one whole attachment, one
-// inject delivery key, one authored leaf — and each is computed from its own
+// inject delivery key, one payload leaf — and each is computed from its own
 // inputs. None is derived from another, and in particular the per-attachment
 // answer is never spread down to the narrower units: it is true whenever the
 // Feature declares sensitivity anywhere, which says nothing about a specific
@@ -1165,20 +1165,20 @@ func deriveTopLevelOrigin(values, infra types.OrderedMap[types.FieldProvenance])
 // contributed the attachment.
 //
 // The leaf half of Sensitive reads what the Feature's schema DECLARES, not the
-// subset of sensitive leaves this attachment happened to author a value for.
-// Sensitivity is a property of the catalog entity plus the slot it fills, so a
-// linter, a guest or a policy can reason about the entity in isolation;
+// subset of sensitive leaves this attachment's payload happens to carry a value
+// for. Sensitivity is a property of the catalog entity plus the slot it fills,
+// so a linter, a guest or a policy can reason about the entity in isolation;
 // intersecting with the carried values would make the same field sensitive in
 // one deployment and not another.
 //
-// SensitiveAuthoredLeaves does intersect, and the two are not in tension because
+// SensitivePayloadLeaves does intersect, and the two are not in tension because
 // they are answers to different questions. Sensitive answers what the entity is,
-// which must not vary by deployment. SensitiveAuthoredLeaves answers where this
+// which must not vary by deployment. SensitivePayloadLeaves answers where this
 // deployment put data, which varies by deployment necessarily — a leaf is named
-// there only because this attachment authored a value at it. Neither rule
-// belongs on the other field: intersecting inside Sensitive would make one
+// there only because this attachment's payload carries a value at it. Neither
+// rule belongs on the other field: intersecting inside Sensitive would make one
 // entity sensitive in one deployment and not another, and declining to intersect
-// in SensitiveAuthoredLeaves would name leaves that carry nothing.
+// in SensitivePayloadLeaves would name leaves that carry nothing.
 //
 // Every input is a declaration or a mapping the compiler itself built. No value
 // is inspected, and no meaning is read out of a name: the attachment's name is
@@ -1233,7 +1233,7 @@ func finalizeAttachmentFacts(
 
 		sensitive := declared.Any() || sensitiveSlots[name]
 		marked := deriveInjectSensitivity(entry.Inject, declared.Provides)
-		markedLeaves := deriveAuthoredSensitiveLeaves(entry.Values, entry.Infra, declared)
+		markedLeaves := derivePayloadSensitiveLeaves(entry.Values, entry.Infra, declared)
 		if sensitive || marked.Len() > 0 || len(markedLeaves) > 0 {
 			// A marked delivery key implies a sensitive provides declaration,
 			// and a marked leaf implies a sensitive values or infra
@@ -1242,7 +1242,7 @@ func finalizeAttachmentFacts(
 			// produce rather than live ones.
 			entry.Sensitive = sensitive
 			entry.SensitiveInject = marked
-			entry.SensitiveAuthoredLeaves = markedLeaves
+			entry.SensitivePayloadLeaves = markedLeaves
 		}
 		result.Features.Set(name, entry)
 	}
@@ -1318,26 +1318,30 @@ func deriveInjectSensitivity(inject types.OrderedMap[types.OrderedMap[string]], 
 	return out
 }
 
-// deriveAuthoredSensitiveLeaves selects the leaves one authored values/infra
-// pair holds whose path an entity's schema declares sensitive, returning each as
-// its pillar-prefixed coordinate.
+// derivePayloadSensitiveLeaves selects the leaves one values/infra payload pair
+// holds whose path an entity's schema declares sensitive, returning each as its
+// pillar-prefixed coordinate.
 //
-// It is the ONE home for the per-authored-leaf marking, and its three subjects
-// are the three places the graph carries authored pillar data: a merged
-// attachment's own values and infra, a node's values and infra against its
-// Component's declarations, and a boundary attachment's infra against its
-// Feature's. Each caller supplies the payloads and the declarations; the rule
-// joining them lives only here, so a surface added later cannot come to mark on
-// a different reading from the surfaces already marked.
+// Each caller passes the payload the graph goes on to carry rather than the
+// block it was built from, so a leaf standing at a schema-declared default is
+// named alongside one a deployment wrote.
+//
+// It is the ONE home for the per-leaf marking, and its three subjects are the
+// three places the graph carries pillar data: a merged attachment's own values
+// and infra, a node's values and infra against its Component's declarations,
+// and a boundary attachment's infra against its Feature's. Each caller supplies
+// the payloads and the declarations; the rule joining them lives only here, so
+// a surface added later cannot come to mark on a different reading from the
+// surfaces already marked.
 //
 // The join asks [resolver.SensitiveLeaves.Covers], which is the one home for
-// "does this entity's declarations reach this authored datum" and is the same
-// question every withholding surface asks of the same declarations. A
-// declaration COVERS a leaf when it names that leaf or names an object
-// containing it, so a leaf beneath an object an author declared sensitive is
-// named by that declaration and marking it claims nothing the author did not
-// write. Matching is segment-wise, so a declaration at "db" reaches "db.password"
-// and not a sibling "dbPassword".
+// "does this entity's declarations reach this datum" and is the same question
+// every withholding surface asks of the same declarations. A declaration COVERS
+// a leaf when it names that leaf or names an object containing it, so a leaf
+// beneath an object an author declared sensitive is named by that declaration
+// and marking it claims nothing the author did not write. Matching is
+// segment-wise, so a declaration at "db" reaches "db.password" and not a
+// sibling "dbPassword".
 //
 // The direction the covering rule is NOT allowed to slip into is worth naming
 // where the join is made. Marking may not claim more than an author declared,
@@ -1356,17 +1360,17 @@ func deriveInjectSensitivity(inject types.OrderedMap[types.OrderedMap[string]], 
 // silence is the wrong direction to fail in for this axis.
 //
 // The two pillars are collected in declaration order, values before infra, and
-// each pillar's leaves arrive in the order the payload holds them. That is
-// author order throughout — the payloads are order-preserving containers, so no
-// sort is needed and none is applied. Sorting would replace an author order a
-// consumer can act on with one it cannot.
+// each pillar's leaves arrive in the order the payload holds them. That is the
+// payload's own order throughout — the payloads are order-preserving
+// containers, so no sort is needed and none is applied. Sorting would replace
+// an order a consumer can act on with one it cannot.
 //
 // Returns nil when the entity declares no sensitive leaf in either pillar, when
-// it resolves to no schema at all, or when nothing is authored at the leaves it
-// does declare. That is the honest answer rather than an empty list: there is no
-// marked leaf to name. A caller with only one pillar to offer passes the zero
-// value for the other, which names nothing.
-func deriveAuthoredSensitiveLeaves(values, infra types.OrderedMap[any], declared resolver.SensitiveLeaves) []string {
+// it resolves to no schema at all, or when the payload carries nothing at the
+// leaves it does declare. That is the honest answer rather than an empty list:
+// there is no marked leaf to name. A caller with only one pillar to offer
+// passes the zero value for the other, which names nothing.
+func derivePayloadSensitiveLeaves(values, infra types.OrderedMap[any], declared resolver.SensitiveLeaves) []string {
 	var out []string
 	collect := func(pillar types.OrderedMap[any], root string) {
 		if pillar.Len() == 0 {
@@ -1574,7 +1578,7 @@ func collectCompFeaturesRecursive(
 // Tier-4 fold into FeatureValuesMapping (collectBoundaryWideFeatures) is unchanged;
 // this projection is additive, for boundary-scope FR source identity + bf.Infra.
 //
-// It also derives each attachment's per-authored-leaf sensitivity marking, from
+// It also derives each attachment's per-leaf sensitivity marking, from
 // the attached Feature's own declarations, through the one derivation every
 // marked surface shares. The catalog is taken as a parameter rather than reached
 // for inside, because that is what makes the marking a property of the
@@ -1674,7 +1678,7 @@ func buildBoundaryFeaturesProjection(
 						// default the schema materialised at a declared-sensitive
 						// leaf is a datum the projection carries, so a marking read
 						// off the authored block alone would leave it unnamed.
-						SensitiveAuthoredLeaves: deriveAuthoredSensitiveLeaves(
+						SensitivePayloadLeaves: derivePayloadSensitiveLeaves(
 							types.OrderedMap[any]{}, infra, declaredFor(bf.Type),
 						),
 					})

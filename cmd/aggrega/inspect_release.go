@@ -28,7 +28,7 @@ import (
 // is the resolved graph — computed from the authored entities rather than
 // reproduced from them — so it is a view this command produced for someone to
 // read, and the sensitivity declarations that govern it are read off the graph's
-// own per-authored-leaf markings rather than derived a second way.
+// own per-leaf markings rather than derived a second way.
 func renderReleaseResolved(opts inspectOptions, rel *types.Release, releasePath string, graph *types.IRGraph, rr *resolver.ResolveResult, lookup resolver.CatalogLookup) error {
 	identifier := identifierVersion(rel.Metadata.Name, rel.Metadata.Version)
 	renderHeader(opts, "Release", identifier)

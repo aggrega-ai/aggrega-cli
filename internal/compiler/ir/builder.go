@@ -337,7 +337,7 @@ func BuildIRContext(ctx context.Context, cfg BuildIRConfig) (*types.IRGraph, Fea
 			}
 		}
 
-		// The node's own per-authored-leaf sensitivity marking, over the SAME two
+		// The node's own per-leaf sensitivity marking, over the SAME two
 		// payloads the two mappings above carry rather than over the authored
 		// blocks they were built from. A default the schema materialised at a
 		// declared-sensitive leaf is a datum the graph carries, so a marking read
@@ -345,7 +345,7 @@ func BuildIRContext(ctx context.Context, cfg BuildIRConfig) (*types.IRGraph, Fea
 		// from the node's Component through the same compile-and-read pair every
 		// other consumer of a Component's declarations uses, so no surface can
 		// come to a different answer about what this Component declared.
-		irNode.SensitiveAuthoredLeaves = deriveAuthoredSensitiveLeaves(
+		irNode.SensitivePayloadLeaves = derivePayloadSensitiveLeaves(
 			filledValues, filledInfra, declaredComponentLeaves(topoNode.ComponentType),
 		)
 

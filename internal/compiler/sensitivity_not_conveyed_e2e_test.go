@@ -178,7 +178,7 @@ func TestSensitivityNotConveyed_TheAdvisedNodeStillCarriesNoMarking(t *testing.T
 			t.Fatalf("graph carries no node %q", node)
 		}
 		var found bool
-		for _, c := range n.SensitiveAuthoredLeaves {
+		for _, c := range n.SensitivePayloadLeaves {
 			if c == "values.dbPassword" {
 				found = true
 			}
@@ -189,7 +189,7 @@ func TestSensitivityNotConveyed_TheAdvisedNodeStillCarriesNoMarking(t *testing.T
 		if !found {
 			t.Errorf("node %q does not mark values.dbPassword; the fixture no longer declares "+
 				"what the advisory is about, so every assertion in this file measures nothing: %v",
-				node, n.SensitiveAuthoredLeaves)
+				node, n.SensitivePayloadLeaves)
 		}
 	}
 }

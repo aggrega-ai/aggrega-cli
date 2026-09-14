@@ -10,17 +10,17 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// The pillar prefixes a per-authored-leaf coordinate carries. A coordinate is
-// the pillar name, a dot, and the flat-dotted path of the authored datum within
-// that pillar, which is what makes one list able to name leaves in two pillars
-// without a reader having to know which list it came from.
+// The pillar prefixes a per-leaf coordinate carries. A coordinate is the pillar
+// name, a dot, and the flat-dotted path of the datum within that pillar, which
+// is what makes one list able to name leaves in two pillars without a reader
+// having to know which list it came from.
 const (
 	valuesPillar = "values"
 	infraPillar  = "infra"
 )
 
 // Graph returns a copy of an IR graph with every leaf the graph's OWN
-// per-authored-leaf markings name replaced by the withheld marker.
+// per-leaf markings name replaced by the withheld marker.
 //
 // It consults nothing outside the graph, and that is the property worth
 // stating: the markings were computed at IR-build time from the declarations —
@@ -106,7 +106,7 @@ func rawPillars(in types.OrderedMap[json.RawMessage], nodes types.OrderedMap[typ
 			out.Set(nodeID, rawMarker())
 			continue
 		}
-		out.Set(nodeID, rawPillar(payload, pillarPaths(node.SensitiveAuthoredLeaves, pillar)))
+		out.Set(nodeID, rawPillar(payload, pillarPaths(node.SensitivePayloadLeaves, pillar)))
 	}
 	return out
 }
@@ -162,8 +162,8 @@ func attachmentPillars(in types.OrderedMap[types.OrderedMap[types.IRFeatureEntry
 	for nodeID, attachments := range in.All() {
 		replaced := types.OrderedMap[types.IRFeatureEntry]{}
 		for instance, entry := range attachments.All() {
-			entry.Values = PillarStructured(entry.Values, pillarPaths(entry.SensitiveAuthoredLeaves, valuesPillar), WithheldDeclared)
-			entry.Infra = PillarStructured(entry.Infra, pillarPaths(entry.SensitiveAuthoredLeaves, infraPillar), WithheldDeclared)
+			entry.Values = PillarStructured(entry.Values, pillarPaths(entry.SensitivePayloadLeaves, valuesPillar), WithheldDeclared)
+			entry.Infra = PillarStructured(entry.Infra, pillarPaths(entry.SensitivePayloadLeaves, infraPillar), WithheldDeclared)
 			replaced.Set(instance, entry)
 		}
 		out.Set(nodeID, replaced)
@@ -186,7 +186,7 @@ func boundaryPillars(in types.OrderedMap[types.OrderedMap[types.IRBoundaryFeatur
 	for boundaryPath, attachments := range in.All() {
 		replaced := types.OrderedMap[types.IRBoundaryFeature]{}
 		for instance, attachment := range attachments.All() {
-			attachment.Infra = PillarStructured(attachment.Infra, pillarPaths(attachment.SensitiveAuthoredLeaves, infraPillar), WithheldDeclared)
+			attachment.Infra = PillarStructured(attachment.Infra, pillarPaths(attachment.SensitivePayloadLeaves, infraPillar), WithheldDeclared)
 			replaced.Set(instance, attachment)
 		}
 		out.Set(boundaryPath, replaced)

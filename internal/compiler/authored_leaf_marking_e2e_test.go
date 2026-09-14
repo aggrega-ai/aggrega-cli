@@ -84,7 +84,7 @@ func TestAuthoredLeafMarking_NodeOwnPillars(t *testing.T) {
 		t.Fatalf("graph carries no node %q", markingNode)
 	}
 
-	assertMarkedExactly(t, "node "+markingNode, node.SensitiveAuthoredLeaves, []string{
+	assertMarkedExactly(t, "node "+markingNode, node.SensitivePayloadLeaves, []string{
 		// Declared at the leaf.
 		"values.dbPassword",
 		// Declared on the containing object; both children are named by that
@@ -112,7 +112,7 @@ func TestAuthoredLeafMarking_NodeNegativeDirection(t *testing.T) {
 
 	node, _ := result.IRGraph.Spec.Nodes.Get(markingNode)
 	marked := map[string]bool{}
-	for _, c := range node.SensitiveAuthoredLeaves {
+	for _, c := range node.SensitivePayloadLeaves {
 		marked[c] = true
 	}
 
@@ -131,7 +131,7 @@ func TestAuthoredLeafMarking_NodeNegativeDirection(t *testing.T) {
 	} {
 		if marked[row.coordinate] {
 			t.Errorf("node %s: %q is marked and must not be — %s; the whole marking is %v",
-				markingNode, row.coordinate, row.why, node.SensitiveAuthoredLeaves)
+				markingNode, row.coordinate, row.why, node.SensitivePayloadLeaves)
 		}
 	}
 }
@@ -155,7 +155,7 @@ func TestAuthoredLeafMarking_AttachmentCoversBeneathADeclaredObject(t *testing.T
 		t.Fatalf("node %q carries no attachment %q (keys: %v)", markingNode, markingAttachment, attachments.Keys())
 	}
 
-	assertMarkedExactly(t, "attachment "+markingAttachment, entry.SensitiveAuthoredLeaves, []string{
+	assertMarkedExactly(t, "attachment "+markingAttachment, entry.SensitivePayloadLeaves, []string{
 		"values.vault.token",
 		"values.vault.path",
 	})
@@ -164,7 +164,7 @@ func TestAuthoredLeafMarking_AttachmentCoversBeneathADeclaredObject(t *testing.T
 	// Feature deliberately leaves undeclared. It is what separates "the
 	// marking covers a declared subtree" from "the marking names whatever the
 	// attachment authored".
-	for _, c := range entry.SensitiveAuthoredLeaves {
+	for _, c := range entry.SensitivePayloadLeaves {
 		if c == "values.secretName" {
 			t.Errorf("attachment %s: values.secretName is marked; its Feature declares it public, and "+
 				"marking a locator states something false about it", markingAttachment)
@@ -189,12 +189,12 @@ func TestAuthoredLeafMarking_BoundaryAttachmentInfra(t *testing.T) {
 		t.Fatalf("boundary %q carries no attachment %q (keys: %v)", markingBoundary, markingBoundaryFR, perBoundary.Keys())
 	}
 
-	assertMarkedExactly(t, "boundary attachment "+markingBoundaryFR, bf.SensitiveAuthoredLeaves, []string{
+	assertMarkedExactly(t, "boundary attachment "+markingBoundaryFR, bf.SensitivePayloadLeaves, []string{
 		"infra.apiKey",
 		"infra.store.token",
 	})
 
-	for _, c := range bf.SensitiveAuthoredLeaves {
+	for _, c := range bf.SensitivePayloadLeaves {
 		if strings.HasPrefix(c, "values.") {
 			t.Errorf("boundary attachment %s: %q is a values coordinate, and a boundary attachment authors "+
 				"no values pillar at all", markingBoundaryFR, c)
@@ -223,13 +223,13 @@ func TestAuthoredLeafMarking_OrderIsAuthorOrderValuesBeforeInfra(t *testing.T) {
 		"values.outer.inner.secret",
 		"infra.backup.passphrase",
 	}
-	if len(node.SensitiveAuthoredLeaves) != len(want) {
-		t.Fatalf("node %s marking: got %v, want the sequence %v", markingNode, node.SensitiveAuthoredLeaves, want)
+	if len(node.SensitivePayloadLeaves) != len(want) {
+		t.Fatalf("node %s marking: got %v, want the sequence %v", markingNode, node.SensitivePayloadLeaves, want)
 	}
 	for i := range want {
-		if node.SensitiveAuthoredLeaves[i] != want[i] {
+		if node.SensitivePayloadLeaves[i] != want[i] {
 			t.Fatalf("node %s marking order: got %v, want %v — author order, values pillar first, no sort",
-				markingNode, node.SensitiveAuthoredLeaves, want)
+				markingNode, node.SensitivePayloadLeaves, want)
 		}
 	}
 }

@@ -281,7 +281,7 @@ func (t IRFeatureEntry) appendCBOR(dst []byte) ([]byte, error) {
 	if !t.CatalogAnnotations.IsZero() {
 		n++
 	}
-	if len(t.SensitiveAuthoredLeaves) != 0 {
+	if len(t.SensitivePayloadLeaves) != 0 {
 		n++
 	}
 	dst = appendCBORHead(dst, 5, uint64(n))
@@ -398,11 +398,11 @@ func (t IRFeatureEntry) appendCBOR(dst []byte) ([]byte, error) {
 			}
 		}
 	}
-	if len(t.SensitiveAuthoredLeaves) != 0 {
-		dst = appendCBORTextString(dst, "sensitive_authored_leaves")
-		dst = appendCBORHead(dst, 4, uint64(len(t.SensitiveAuthoredLeaves)))
-		for i := range t.SensitiveAuthoredLeaves {
-			ev := t.SensitiveAuthoredLeaves[i]
+	if len(t.SensitivePayloadLeaves) != 0 {
+		dst = appendCBORTextString(dst, "sensitive_payload_leaves")
+		dst = appendCBORHead(dst, 4, uint64(len(t.SensitivePayloadLeaves)))
+		for i := range t.SensitivePayloadLeaves {
+			ev := t.SensitivePayloadLeaves[i]
 			dst = appendCBORTextString(dst, ev)
 		}
 	}
@@ -597,7 +597,7 @@ func (t *IRFeatureEntry) decodeCBOR(dec *cborDec) error {
 					return err
 				}
 			}
-		case "sensitive_authored_leaves":
+		case "sensitive_payload_leaves":
 			{
 				sn, err := dec.readArrayHeader()
 				if err != nil {
@@ -613,7 +613,7 @@ func (t *IRFeatureEntry) decodeCBOR(dec *cborDec) error {
 					}
 					s = append(s, ev)
 				}
-				t.SensitiveAuthoredLeaves = s
+				t.SensitivePayloadLeaves = s
 			}
 		default:
 			if err := dec.skip(); err != nil {
@@ -631,7 +631,7 @@ func (t *IRFeatureEntry) decodeCBOR(dec *cborDec) error {
 // key would yield an empty value indistinguishable from a real one. The
 // check reads the map's own keys and does not descend.
 func (t *IRFeatureEntry) DecodeCBORStrict(data []byte) error {
-	if err := refuseUndeclaredCBORKeys(data, "type", "resolved_version", "labels", "catalog_annotations", "binding", "values", "infra", "inject", "origin", "annotation_key", "annotation_source", "values_provenance", "infra_provenance", "sensitive", "sensitive_inject", "sensitive_authored_leaves"); err != nil {
+	if err := refuseUndeclaredCBORKeys(data, "type", "resolved_version", "labels", "catalog_annotations", "binding", "values", "infra", "inject", "origin", "annotation_key", "annotation_source", "values_provenance", "infra_provenance", "sensitive", "sensitive_inject", "sensitive_payload_leaves"); err != nil {
 		return err
 	}
 	return t.DecodeCBOR(data)
@@ -651,7 +651,7 @@ func (t IRBoundaryFeature) appendCBOR(dst []byte) ([]byte, error) {
 	if !t.Infra.IsZero() {
 		n++
 	}
-	if len(t.SensitiveAuthoredLeaves) != 0 {
+	if len(t.SensitivePayloadLeaves) != 0 {
 		n++
 	}
 	dst = appendCBORHead(dst, 5, uint64(n))
@@ -665,11 +665,11 @@ func (t IRBoundaryFeature) appendCBOR(dst []byte) ([]byte, error) {
 			dst = appendCBORByteString(dst, raw)
 		}
 	}
-	if len(t.SensitiveAuthoredLeaves) != 0 {
-		dst = appendCBORTextString(dst, "sensitive_authored_leaves")
-		dst = appendCBORHead(dst, 4, uint64(len(t.SensitiveAuthoredLeaves)))
-		for i := range t.SensitiveAuthoredLeaves {
-			ev := t.SensitiveAuthoredLeaves[i]
+	if len(t.SensitivePayloadLeaves) != 0 {
+		dst = appendCBORTextString(dst, "sensitive_payload_leaves")
+		dst = appendCBORHead(dst, 4, uint64(len(t.SensitivePayloadLeaves)))
+		for i := range t.SensitivePayloadLeaves {
+			ev := t.SensitivePayloadLeaves[i]
 			dst = appendCBORTextString(dst, ev)
 		}
 	}
@@ -710,7 +710,7 @@ func (t *IRBoundaryFeature) decodeCBOR(dec *cborDec) error {
 					return err
 				}
 			}
-		case "sensitive_authored_leaves":
+		case "sensitive_payload_leaves":
 			{
 				sn, err := dec.readArrayHeader()
 				if err != nil {
@@ -726,7 +726,7 @@ func (t *IRBoundaryFeature) decodeCBOR(dec *cborDec) error {
 					}
 					s = append(s, ev)
 				}
-				t.SensitiveAuthoredLeaves = s
+				t.SensitivePayloadLeaves = s
 			}
 		default:
 			if err := dec.skip(); err != nil {
@@ -744,7 +744,7 @@ func (t *IRBoundaryFeature) decodeCBOR(dec *cborDec) error {
 // key would yield an empty value indistinguishable from a real one. The
 // check reads the map's own keys and does not descend.
 func (t *IRBoundaryFeature) DecodeCBORStrict(data []byte) error {
-	if err := refuseUndeclaredCBORKeys(data, "type", "infra", "sensitive_authored_leaves"); err != nil {
+	if err := refuseUndeclaredCBORKeys(data, "type", "infra", "sensitive_payload_leaves"); err != nil {
 		return err
 	}
 	return t.DecodeCBOR(data)
@@ -953,7 +953,7 @@ func (t IRNode) appendCBOR(dst []byte) ([]byte, error) {
 	if t.SynthesizedSubsystem != false {
 		n++
 	}
-	if len(t.SensitiveAuthoredLeaves) != 0 {
+	if len(t.SensitivePayloadLeaves) != 0 {
 		n++
 	}
 	dst = appendCBORHead(dst, 5, uint64(n))
@@ -1064,11 +1064,11 @@ func (t IRNode) appendCBOR(dst []byte) ([]byte, error) {
 		dst = appendCBORTextString(dst, "synthesized_subsystem")
 		dst = appendCBORBool(dst, t.SynthesizedSubsystem)
 	}
-	if len(t.SensitiveAuthoredLeaves) != 0 {
-		dst = appendCBORTextString(dst, "sensitive_authored_leaves")
-		dst = appendCBORHead(dst, 4, uint64(len(t.SensitiveAuthoredLeaves)))
-		for i := range t.SensitiveAuthoredLeaves {
-			ev := t.SensitiveAuthoredLeaves[i]
+	if len(t.SensitivePayloadLeaves) != 0 {
+		dst = appendCBORTextString(dst, "sensitive_payload_leaves")
+		dst = appendCBORHead(dst, 4, uint64(len(t.SensitivePayloadLeaves)))
+		for i := range t.SensitivePayloadLeaves {
+			ev := t.SensitivePayloadLeaves[i]
 			dst = appendCBORTextString(dst, ev)
 		}
 	}
@@ -1263,7 +1263,7 @@ func (t *IRNode) decodeCBOR(dec *cborDec) error {
 					return err
 				}
 			}
-		case "sensitive_authored_leaves":
+		case "sensitive_payload_leaves":
 			{
 				sn, err := dec.readArrayHeader()
 				if err != nil {
@@ -1279,7 +1279,7 @@ func (t *IRNode) decodeCBOR(dec *cborDec) error {
 					}
 					s = append(s, ev)
 				}
-				t.SensitiveAuthoredLeaves = s
+				t.SensitivePayloadLeaves = s
 			}
 		default:
 			if err := dec.skip(); err != nil {
@@ -1297,7 +1297,7 @@ func (t *IRNode) decodeCBOR(dec *cborDec) error {
 // key would yield an empty value indistinguishable from a real one. The
 // check reads the map's own keys and does not descend.
 func (t *IRNode) DecodeCBORStrict(data []byte) error {
-	if err := refuseUndeclaredCBORKeys(data, "description", "labels", "component", "resolved_version", "sync_wave", "boundary_path", "subsystem_path", "synthesized_subsystem", "synthesized_boundary", "catalog_metadata", "catalog_annotations", "release_annotations", "aggregate_annotations", "self_inject", "source_file", "uses", "sensitive_authored_leaves"); err != nil {
+	if err := refuseUndeclaredCBORKeys(data, "description", "labels", "component", "resolved_version", "sync_wave", "boundary_path", "subsystem_path", "synthesized_subsystem", "synthesized_boundary", "catalog_metadata", "catalog_annotations", "release_annotations", "aggregate_annotations", "self_inject", "source_file", "uses", "sensitive_payload_leaves"); err != nil {
 		return err
 	}
 	return t.DecodeCBOR(data)

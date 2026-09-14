@@ -72,7 +72,7 @@ func irFixture(t *testing.T) types.IRGraph {
 		ValuesProvenance:        om[types.FieldProvenance](t, "zulu", types.FieldProvenance{Origin: types.OriginExplicit}, "b", types.FieldProvenance{Origin: types.OriginExplicit}),
 		InfraProvenance:         om[types.FieldProvenance](t, "size", types.FieldProvenance{Origin: types.OriginAnnotation, Side: "release", AnnotationKey: "aggrega.ai/size"}),
 		Sensitive:               true,
-		SensitiveAuthoredLeaves: []string{"values.zulu", "infra.size"},
+		SensitivePayloadLeaves: []string{"values.zulu", "infra.size"},
 	}
 
 	node := types.IRNode{

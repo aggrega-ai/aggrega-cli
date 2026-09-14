@@ -63,10 +63,10 @@ func TestNodeMarking_AbsentWhenTheComponentResolvesToNoEntity(t *testing.T) {
 	}
 	graph := markingNodeGraph(t, "core/unknown", markingNodeValues(), lookup)
 	node, _ := graph.Spec.Nodes.Get("api")
-	if node.SensitiveAuthoredLeaves != nil {
+	if node.SensitivePayloadLeaves != nil {
 		t.Errorf("node marking = %#v, want nil: an unresolvable Component declares nothing, and an "+
 			"allocated empty slice would put an empty array on the wire where the field should be absent",
-			node.SensitiveAuthoredLeaves)
+			node.SensitivePayloadLeaves)
 	}
 }
 
@@ -78,8 +78,8 @@ func TestNodeMarking_AbsentWithNoCatalogAtAll(t *testing.T) {
 	t.Parallel()
 	graph := markingNodeGraph(t, "core/whatever", markingNodeValues(), resolver.CatalogLookup{})
 	node, _ := graph.Spec.Nodes.Get("api")
-	if node.SensitiveAuthoredLeaves != nil {
-		t.Errorf("node marking = %#v, want nil with no catalog wired", node.SensitiveAuthoredLeaves)
+	if node.SensitivePayloadLeaves != nil {
+		t.Errorf("node marking = %#v, want nil with no catalog wired", node.SensitivePayloadLeaves)
 	}
 }
 
@@ -115,9 +115,9 @@ func TestBoundaryMarking_AbsentWhenTheFeatureResolvesToNoEntity(t *testing.T) {
 	if bf.Infra.Len() != 1 {
 		t.Errorf("attachment infra = %v, want the authored infra carried unchanged", bf.Infra.Keys())
 	}
-	if bf.SensitiveAuthoredLeaves != nil {
+	if bf.SensitivePayloadLeaves != nil {
 		t.Errorf("boundary marking = %#v, want nil: an unresolvable Feature declares nothing",
-			bf.SensitiveAuthoredLeaves)
+			bf.SensitivePayloadLeaves)
 	}
 }
 
@@ -139,8 +139,8 @@ func TestBoundaryMarking_ZeroCatalogDoesNotPanic(t *testing.T) {
 	if !ok {
 		t.Fatalf("boundary carries no attachment %q; have %v", "guard", inner.Keys())
 	}
-	if bf.SensitiveAuthoredLeaves != nil {
-		t.Errorf("boundary marking = %#v, want nil with no catalog wired", bf.SensitiveAuthoredLeaves)
+	if bf.SensitivePayloadLeaves != nil {
+		t.Errorf("boundary marking = %#v, want nil with no catalog wired", bf.SensitivePayloadLeaves)
 	}
 }
 
@@ -154,19 +154,19 @@ func TestDeriveAuthoredSensitiveLeaves_NilNotEmpty(t *testing.T) {
 	authored := types.OrderedMap[any]{}
 	authored.Set("public", "readable")
 
-	if got := deriveAuthoredSensitiveLeaves(authored, types.OrderedMap[any]{}, resolver.SensitiveLeaves{}); got != nil {
+	if got := derivePayloadSensitiveLeaves(authored, types.OrderedMap[any]{}, resolver.SensitiveLeaves{}); got != nil {
 		t.Errorf("with no declarations: got %#v, want nil", got)
 	}
 
 	declared := resolver.SensitiveLeaves{Values: map[string]bool{"secret": true}}
-	if got := deriveAuthoredSensitiveLeaves(authored, types.OrderedMap[any]{}, declared); got != nil {
+	if got := derivePayloadSensitiveLeaves(authored, types.OrderedMap[any]{}, declared); got != nil {
 		t.Errorf("with a declaration nothing was authored at: got %#v, want nil", got)
 	}
 
 	// The positive control, so the two nils above are the rule answering rather
 	// than the helper being inert on this input shape.
 	authored.Set("secret", "material")
-	got := deriveAuthoredSensitiveLeaves(authored, types.OrderedMap[any]{}, declared)
+	got := derivePayloadSensitiveLeaves(authored, types.OrderedMap[any]{}, declared)
 	if len(got) != 1 || got[0] != "values.secret" {
 		t.Errorf("with the declared leaf authored: got %#v, want [values.secret]", got)
 	}

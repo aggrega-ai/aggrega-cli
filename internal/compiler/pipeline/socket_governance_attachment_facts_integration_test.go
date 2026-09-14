@@ -244,7 +244,7 @@ func TestGovernanceSensitiveByValueAuthoredLeafDenyE2E(t *testing.T) {
 	}
 	msg := err.Error()
 	t.Logf("authored-leaf verdict halt:\n%s", msg)
-	for _, want := range []string{`attachment "credentials"`, `authored leaf "` + governanceFactsDeclaredLeaf + `"`} {
+	for _, want := range []string{`attachment "credentials"`, `payload leaf "` + governanceFactsDeclaredLeaf + `"`} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("authored-leaf halt does not report %q, so the per-leaf marking did not reach the guest:\n%v", want, msg)
 		}
@@ -434,7 +434,7 @@ func TestGovernanceAttachmentFactsObservedAtTheGuest(t *testing.T) {
 		// pillars could both claim.
 		`"sensitive":true`,
 		`"sensitive_inject":{"env":{"DATABASE_PASSWORD":"password"}}`,
-		`"sensitive_authored_leaves":["values.literalPassword"]`,
+		`"sensitive_payload_leaves":["values.literalPassword"]`,
 	} {
 		if !strings.Contains(stderr, want) {
 			t.Errorf("the guest did not observe %s in its payload:\n%s", want, stderr)

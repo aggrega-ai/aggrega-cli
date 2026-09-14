@@ -150,8 +150,8 @@ func TestGovernanceWire_SensitivityAccompaniesTheFacts(t *testing.T) {
 	// literalPassword, which its Feature declares sensitive, and authors one at
 	// secretName, which it does not. Both are asserted, because a derivation
 	// that marked every authored leaf would satisfy the first assertion alone.
-	if got := credentials.SensitiveAuthoredLeaves; len(got) != 1 || got[0] != "values.literalPassword" {
-		t.Errorf("%s: sensitive_authored_leaves = %v, want exactly [values.literalPassword]", governanceSlotAttachment, got)
+	if got := credentials.SensitivePayloadLeaves; len(got) != 1 || got[0] != "values.literalPassword" {
+		t.Errorf("%s: sensitive_payload_leaves = %v, want exactly [values.literalPassword]", governanceSlotAttachment, got)
 	}
 
 	// The paired sibling: the free attachment's Feature declares nothing
@@ -163,9 +163,9 @@ func TestGovernanceWire_SensitivityAccompaniesTheFacts(t *testing.T) {
 	if metrics.SensitiveInject.Len() != 0 {
 		t.Errorf("%s: sensitive_inject = %v, want empty", governanceFreeAttachment, metrics.SensitiveInject.Keys())
 	}
-	if len(metrics.SensitiveAuthoredLeaves) != 0 {
-		t.Errorf("%s: sensitive_authored_leaves = %v, want empty (its Feature declares no sensitive leaf)",
-			governanceFreeAttachment, metrics.SensitiveAuthoredLeaves)
+	if len(metrics.SensitivePayloadLeaves) != 0 {
+		t.Errorf("%s: sensitive_payload_leaves = %v, want empty (its Feature declares no sensitive leaf)",
+			governanceFreeAttachment, metrics.SensitivePayloadLeaves)
 	}
 }
 
@@ -183,7 +183,7 @@ func TestGovernanceWire_SensitivityAccompaniesTheFacts(t *testing.T) {
 // cannot pass by the key being unreachable in both directions.
 func TestGovernanceWire_AuthoredLeafMarkingIsOmittedWhenNothingIsMarked(t *testing.T) {
 	t.Parallel()
-	const wireKey = `"sensitive_authored_leaves"`
+	const wireKey = `"sensitive_payload_leaves"`
 
 	marked := governanceAttachment(t, governanceWireBuild(t, "both"), governanceSlotAttachment)
 	markedBytes, err := json.Marshal(marked)
@@ -247,7 +247,7 @@ func TestGovernanceWire_ControlVariantsMoveOneVariableEach(t *testing.T) {
 	if got := noMarkedDeliveryCredentials.SensitiveInject.Len(); got != 0 {
 		t.Errorf("no-marked-delivery variant still marks %d delivery mechanism(s); it must mark none", got)
 	}
-	if got := noMarkedDeliveryCredentials.SensitiveAuthoredLeaves; len(got) != 1 || got[0] != "values.literalPassword" {
+	if got := noMarkedDeliveryCredentials.SensitivePayloadLeaves; len(got) != 1 || got[0] != "values.literalPassword" {
 		t.Errorf("no-marked-delivery variant's authored-leaf marking = %v, want exactly [values.literalPassword]; "+
 			"it must move only the delivery variable, and the authored leaf is what makes the two routes separable", got)
 	}
@@ -271,7 +271,7 @@ func TestGovernanceWire_ControlVariantsMoveOneVariableEach(t *testing.T) {
 	if got := noSensitiveDatumCredentials.SensitiveInject.Len(); got != 0 {
 		t.Errorf("no-sensitive-datum control marks %d delivery mechanism(s); it must mark none", got)
 	}
-	if got := noSensitiveDatumCredentials.SensitiveAuthoredLeaves; len(got) != 0 {
+	if got := noSensitiveDatumCredentials.SensitivePayloadLeaves; len(got) != 0 {
 		t.Errorf("no-sensitive-datum control still marks authored leaves %v; it must mark none", got)
 	}
 	if !noSensitiveDatumCredentials.Sensitive {

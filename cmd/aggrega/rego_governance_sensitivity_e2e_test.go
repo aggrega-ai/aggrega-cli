@@ -49,10 +49,10 @@ const (
 	sensitivityUnmarkedLeaf = "values.secretName"
 )
 
-// sensitivityPolicy refuses a build that writes a datum the catalog declares
-// sensitive into a Feature attachment's own authored payload.
+// sensitivityPolicy refuses a build that carries a datum the catalog declares
+// sensitive in a Feature attachment's own payload.
 //
-// It reads the per-authored-leaf marking and nothing coarser. The
+// It reads the per-leaf marking and nothing coarser. The
 // whole-attachment answer is deliberately not consulted: that answer is true
 // whenever the attached Feature declares sensitivity anywhere, so a rule keyed on
 // it would also refuse the permitted arm below — which is exactly what that arm
@@ -64,8 +64,8 @@ import rego.v1
 deny contains msg if {
 	some node_id, attachments in input.graph.spec.feature_values_mapping
 	some attachment_name, attachment in attachments
-	some leaf in attachment.sensitive_authored_leaves
-	msg := sprintf("node %v attachment %v writes declared-sensitive material by value at authored leaf %v", [node_id, attachment_name, leaf])
+	some leaf in attachment.sensitive_payload_leaves
+	msg := sprintf("node %v attachment %v writes declared-sensitive material by value at payload leaf %v", [node_id, attachment_name, leaf])
 }
 `
 
@@ -353,7 +353,7 @@ func TestRegoEmbedded_AuthoredLeafSensitivityRefusesAndPermits(t *testing.T) {
 			t.Fatalf("want ErrPolicyViolation, got: %v", err)
 		}
 		msg := err.Error()
-		if !strings.Contains(msg, `authored leaf `+sensitivityDeclaredLeaf) {
+		if !strings.Contains(msg, `payload leaf `+sensitivityDeclaredLeaf) {
 			t.Errorf("the refusal must name the declared-sensitive leaf %q, which is the only way it could have read the per-leaf marking; got: %v",
 				sensitivityDeclaredLeaf, msg)
 		}
@@ -547,7 +547,7 @@ func TestRegoCachedGate_TheRecordedDigestGovernsWhichArtifactRuns(t *testing.T) 
 			// The guest's own sentence, which only the seeded artifact could have
 			// produced. Matching the condition alone would be satisfied by any
 			// verdict from any plugin, so it would not show that THIS artifact ran.
-			if !strings.Contains(err.Error(), "authored leaf "+sensitivityDeclaredLeaf) {
+			if !strings.Contains(err.Error(), "payload leaf "+sensitivityDeclaredLeaf) {
 				t.Errorf("the halt must carry the seeded guest's own verdict sentence, which is what shows the cached artifact "+
 					"resolved and ran; got: %v", err)
 			}
