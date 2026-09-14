@@ -313,6 +313,9 @@ func ErrPluginBundleDigestMismatch() error { return errPluginBundleDigestMismatc
 var errPluginBundleDigestMismatch = cerrors.Register("plugin-bundle-digest-mismatch", cerrors.Meta{
 	ShortCode: "E0144",
 	Message:   "cached signature bundle does not match its recorded digest",
+	RulePlace: cerrors.NotARule("A signed guest's cached signature bundle is missing, unreadable, or hashes to something " +
+		"other than the digest the lockfile recorded. The blob is read and re-hashed when the " +
+		"comparison runs, so what it reports is an integrity comparison that did not hold."),
 })
 
 // Lookup resolves a plugin URI to its resolved bytes. It is the seam each

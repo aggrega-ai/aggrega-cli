@@ -24,6 +24,7 @@ func ErrConfigInvalid() error { return errConfigInvalid }
 var errConfigInvalid = cerrors.Register("workspace-config-invalid", cerrors.Meta{
 	ShortCode: "E0224",
 	Message:   "file failed schema validation",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrDuplicateProviderTarget reports that the composed provider list binds
@@ -39,6 +40,7 @@ func ErrDuplicateProviderTarget() error { return errDuplicateProviderTarget }
 var errDuplicateProviderTarget = cerrors.Register("duplicate-provider-target", cerrors.Meta{
 	ShortCode: "E0225",
 	Message:   "capability is bound to more than one provider plugin",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrCapabilityOnCrossCuttingSocket reports that a cross-cutting socket
@@ -54,6 +56,7 @@ func ErrCapabilityOnCrossCuttingSocket() error { return errCapabilityOnCrossCutt
 var errCapabilityOnCrossCuttingSocket = cerrors.Register("capability-on-cross-cutting-socket", cerrors.Meta{
 	ShortCode: "E0223",
 	Message:   "a cross-cutting socket is bound by capability but attaches by uri",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrInertFieldOnProviderSocket reports that a provider-socket binding sets a
@@ -71,6 +74,7 @@ func ErrInertFieldOnProviderSocket() error { return errInertFieldOnProviderSocke
 var errInertFieldOnProviderSocket = cerrors.Register("inert-field-on-provider-socket", cerrors.Meta{
 	ShortCode: "E0228",
 	Message:   "a provider socket binding sets a field with no referent on that socket",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrGovernanceRoleInvalid reports that a governance attachment declares no
@@ -88,6 +92,7 @@ func ErrGovernanceRoleInvalid() error { return errGovernanceRoleInvalid }
 var errGovernanceRoleInvalid = cerrors.Register("governance-role-invalid", cerrors.Meta{
 	ShortCode: "E0227",
 	Message:   "a governance attachment declares no role or an unknown role",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrDuplicateRegistryAlias reports that a registry alias is already used by a
@@ -100,6 +105,7 @@ func ErrDuplicateRegistryAlias() error { return errDuplicateRegistryAlias }
 var errDuplicateRegistryAlias = cerrors.Register("duplicate-registry-alias", cerrors.Meta{
 	ShortCode: "E0226",
 	Message:   "registry alias is already used by another host",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrAmbiguousRegistryAlias reports that a registry token matched the alias of
@@ -113,6 +119,7 @@ func ErrAmbiguousRegistryAlias() error { return errAmbiguousRegistryAlias }
 var errAmbiguousRegistryAlias = cerrors.Register("ambiguous-registry-alias", cerrors.Meta{
 	ShortCode: "E0222",
 	Message:   "registry alias matches more than one host",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // Load reads the workspace's .aggrega-config.yaml file at path,

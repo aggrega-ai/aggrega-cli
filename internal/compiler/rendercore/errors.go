@@ -17,6 +17,9 @@ func ErrPipelinePatchTargetNotStructured() error { return errPipelinePatchTarget
 var errPipelinePatchTargetNotStructured = cerrors.Register("pipeline-patch-target-not-structured", cerrors.Meta{
 	ShortCode: "E0022",
 	Message:   "pipeline PATCH target is not parseable structured YAML/JSON",
+	RulePlace: cerrors.NotARule("A file the render emitted could not be segmented into an addressable document tree when a " +
+		"patch step addressed it. The parse is attempted because the step addressed the file, so what " +
+		"it reports is a segmentation that did not yield a tree rather than a rule refusing content."),
 })
 
 // ErrPipelinePatchUnitNotCarved fires when reassembly is handed a patched unit
@@ -44,4 +47,7 @@ var errPipelinePatchUnitNotCarved = cerrors.Register("pipeline-patch-unit-not-ca
 	ShortCode: "E0268",
 	Message: "reassemble names a patched unit token the carve did not produce; " +
 		"a conforming codec carves and reassembles a file under the same tokens",
+	RulePlace: cerrors.NotARule("A codec's reassembly was handed a unit token its own carve of the same file never produced. " +
+		"No authored document can reach it: the carve and the reassembly of one file are two halves " +
+		"of one codec's contract, so it reports a codec whose output does not conform to it."),
 })

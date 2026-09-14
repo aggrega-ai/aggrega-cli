@@ -35,6 +35,7 @@ func ErrLockfileDrift() error { return errLockfileDrift }
 var errLockfileDrift = cerrors.Register("lockfile-drift", cerrors.Meta{
 	ShortCode: "E0130",
 	Message:   "lockfile: out of date; it no longer matches the current catalog",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // Verify checks every URI in the freshly-computed closure against

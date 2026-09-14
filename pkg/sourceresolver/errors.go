@@ -47,6 +47,9 @@ func ErrUnknownKind() error { return errUnknownKind }
 var errUnknownKind = cerrors.Register("unknown-source-kind", cerrors.Meta{
 	ShortCode: "E0186",
 	Message:   "sourceresolver: no adapter registered for source kind",
+	RulePlace: cerrors.NotARule("No adapter is registered for the source kind a resolution dispatched on. It reports a " +
+		"dispatch that found no handler — how this program is assembled — rather than a rule over " +
+		"anything an author wrote."),
 })
 
 // Wrap returns an error that satisfies errors.Is(returned, sentinel)

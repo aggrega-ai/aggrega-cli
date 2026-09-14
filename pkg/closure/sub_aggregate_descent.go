@@ -35,6 +35,7 @@ func ErrSubAggregateDepth() error { return errSubAggregateDepth }
 var errSubAggregateDepth = cerrors.Register("sub-aggregate-depth", cerrors.Meta{
 	ShortCode: "E0113",
 	Message:   "resolve: sub-aggregate inclusion depth exceeded",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // AggregateLoader loads the parsed body of a resolved (pinned) sub-aggregate so
@@ -58,6 +59,9 @@ func ErrNoAggregateLoader() error { return errNoAggregateLoader }
 var errNoAggregateLoader = cerrors.Register("catalog-cannot-load-sub-aggregate-bodies", cerrors.Meta{
 	ShortCode: "E0108",
 	Message:   "resolve: catalog lookup cannot load resolved sub-aggregate bodies",
+	RulePlace: cerrors.NotARule("A caller supplied a catalog lookup that cannot load resolved sub-aggregate bodies, so the " +
+		"sub-aggregate axis cannot be computed over it at all. It reports how this program was wired " +
+		"rather than a rule over anything an author wrote."),
 })
 
 // RequireAggregateLoader adapts a Lookup to the AggregateLoader the

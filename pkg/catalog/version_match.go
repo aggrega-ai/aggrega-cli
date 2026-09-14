@@ -30,6 +30,7 @@ func ErrUnsatisfiableEntityVersion() error { return errUnsatisfiableEntityVersio
 var errUnsatisfiableEntityVersion = cerrors.Register("unsatisfiable-entity-version", cerrors.Meta{
 	ShortCode: "E0103",
 	Message:   "no catalog version satisfies the referenced version constraint",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // SplitVersionedURI splits a URI like "core/api-server:1.0.0" into its base

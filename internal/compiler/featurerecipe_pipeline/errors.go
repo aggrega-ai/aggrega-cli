@@ -20,6 +20,7 @@ func ErrPipelineTargetAbsent() error { return errPipelineTargetAbsent }
 var errPipelineTargetAbsent = cerrors.Register("pipeline-target-absent", cerrors.Meta{
 	ShortCode: "E0011",
 	Message:   "pipeline patch targets a document not present in the set",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrPipelineStepFailed is the walk's umbrella sentinel for a step that
@@ -33,6 +34,10 @@ func ErrPipelineStepFailed() error { return errPipelineStepFailed }
 var errPipelineStepFailed = cerrors.Register("pipeline-step-failed", cerrors.Meta{
 	ShortCode: "E0010",
 	Message:   "pipeline step failed",
+	RulePlace: cerrors.NotARule("A pipeline step did not run to completion — a guest trap, a malformed step output, a " +
+		"halt-severity diagnostic the step returned, or a patch the apply engine rejected. It names " +
+		"an operation that failed and carries the cause it wraps; no predicate over authored content " +
+		"decides it."),
 })
 
 // ErrPipelineContractViolation fires when a step's typed input or output does
@@ -48,6 +53,7 @@ func ErrPipelineContractViolation() error { return errPipelineContractViolation 
 var errPipelineContractViolation = cerrors.Register("pipeline-contract-violation", cerrors.Meta{
 	ShortCode: "E0009",
 	Message:   "pipeline step typed-I/O contract violation",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrPipelineTargetOpaque fires when a patch addresses a unit the codec
@@ -66,4 +72,5 @@ func ErrPipelineTargetOpaque() error { return errPipelineTargetOpaque }
 var errPipelineTargetOpaque = cerrors.Register("pipeline-target-opaque", cerrors.Meta{
 	ShortCode: "E0012",
 	Message:   "pipeline patch targets an opaque (non-structured) unit",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })

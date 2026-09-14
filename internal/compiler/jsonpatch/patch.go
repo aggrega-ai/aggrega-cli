@@ -20,6 +20,9 @@ func ErrTestFailed() error { return errTestFailed }
 var errTestFailed = cerrors.Register("patch-test-operation-failed", cerrors.Meta{
 	ShortCode: "E0016",
 	Message:   "jsonpatch: test operation failed",
+	RulePlace: cerrors.NotARule("An RFC 6902 test operation did not match the document at its path. The predicate is the " +
+		"patch's own test operation rather than a rule this compiler declares, so what it reports is " +
+		"the outcome of applying that patch."),
 })
 
 // Op is one RFC 6902 operation the engine applies. It is deliberately a

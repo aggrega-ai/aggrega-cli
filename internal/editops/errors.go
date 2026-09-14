@@ -33,6 +33,7 @@ func ErrEditRefusedInvalidResult() error { return errEditRefusedInvalidResult }
 var errEditRefusedInvalidResult = cerrors.Register("edit-refused-invalid-result", cerrors.Meta{
 	ShortCode: "E0275",
 	Message:   "the edit was refused because the resulting document would not be valid, and nothing was written",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // The conditions on which no edit is applied.

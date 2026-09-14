@@ -19,6 +19,7 @@ func ErrWorkloadTemplateShape() error { return errWorkloadTemplateShape }
 var errWorkloadTemplateShape = cerrors.Register("workload-template-shape", cerrors.Meta{
 	ShortCode: "E0200",
 	Message:   "workload: shape must be a string scalar or {$import: <path-or-library-identity>}",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // WorkloadTemplate carries the Recipe's authored workload-YAML producer

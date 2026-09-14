@@ -62,6 +62,7 @@ func ErrEntityEnvelope() error { return errEntityEnvelope }
 var errEntityEnvelope = aggerrors.Register("entity-envelope-invalid", aggerrors.Meta{
 	ShortCode: "E0215",
 	Message:   "document envelope validation failed",
+	RulePlace: aggerrors.RuleOverAuthoredInput(),
 })
 
 // adviceCorrectDocument is the advice for the schema-violation path, the one

@@ -26,6 +26,7 @@ func ErrProvidesSelfContainment() error { return errProvidesSelfContainment }
 var errProvidesSelfContainment = cerrors.Register("provides-self-containment", cerrors.Meta{
 	ShortCode: "E0057",
 	Message:   "provides block references a root outside the self-contained set",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrTemplateUnknownRoot is the halt raised when a template references a
@@ -41,6 +42,7 @@ func ErrTemplateUnknownRoot() error { return errTemplateUnknownRoot }
 var errTemplateUnknownRoot = cerrors.Register("template-unknown-root", cerrors.Meta{
 	ShortCode: "E0060",
 	Message:   "template references a root the render context does not define",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrLocalsForwardReference is the ordering fault a locals reference carries when
@@ -62,6 +64,9 @@ func ErrProvidesEvaluation() error { return errProvidesEvaluation }
 var errProvidesEvaluation = cerrors.Register("provides-evaluation-failed", cerrors.Meta{
 	ShortCode: "E0056",
 	Message:   "provides template evaluation failed",
+	RulePlace: cerrors.NotARule("A provides template could not be evaluated, so the entry produced no value. It reports that " +
+		"answering the question became impossible rather than a rule that refused content, and what " +
+		"failed is in the cause it wraps."),
 })
 
 func ErrSelfInjectKeyCollision() error { return errSelfInjectKeyCollision }
@@ -69,6 +74,7 @@ func ErrSelfInjectKeyCollision() error { return errSelfInjectKeyCollision }
 var errSelfInjectKeyCollision = cerrors.Register("self-inject-key-collision", cerrors.Meta{
 	ShortCode: "E0059",
 	Message:   "duplicate delivery key across self-inject and uses-inject",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 func ErrAttachmentInjectKeyCollision() error { return errAttachmentInjectKeyCollision }
@@ -76,6 +82,7 @@ func ErrAttachmentInjectKeyCollision() error { return errAttachmentInjectKeyColl
 var errAttachmentInjectKeyCollision = cerrors.Register("attachment-inject-key-collision", cerrors.Meta{
 	ShortCode: "E0034",
 	Message:   "duplicate delivery key across attachment-inject and another inject source",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 func ErrUnmappedCustomMechanism() error { return errUnmappedCustomMechanism }
@@ -83,6 +90,7 @@ func ErrUnmappedCustomMechanism() error { return errUnmappedCustomMechanism }
 var errUnmappedCustomMechanism = cerrors.Register("custom-mechanism-has-no-mapping", cerrors.Meta{
 	ShortCode: "E0062",
 	Message:   "custom inject mechanism has no matching key in injectMapping output; add the mechanism's key to the Recipe injectMapping",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrProvidesContractUnfulfilled is the Loud Guardrail halt raised at render
@@ -113,6 +121,7 @@ func ErrProvidesContractUnfulfilled() error { return errProvidesContractUnfulfil
 var errProvidesContractUnfulfilled = cerrors.Register("provides-contract-unfulfilled", cerrors.Meta{
 	ShortCode: "E0055",
 	Message:   "realizer does not publish a provides key its abstract entity's schema.provides contract declares",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrMappingImportShape fires when a valuesMapping $import: (or a recursive
@@ -123,6 +132,7 @@ func ErrMappingImportShape() error { return errMappingImportShape }
 var errMappingImportShape = cerrors.Register("mapping-import-shape", cerrors.Meta{
 	ShortCode: "E0045",
 	Message:   "valuesMapping $import: is not a bare-name mapping-library reference (<Library>#/mappings/<entry>)",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrMappingLibraryNotFound fires when a bare-name mapping-library import
@@ -133,6 +143,7 @@ func ErrMappingLibraryNotFound() error { return errMappingLibraryNotFound }
 var errMappingLibraryNotFound = cerrors.Register("mapping-library-not-found", cerrors.Meta{
 	ShortCode: "E0046",
 	Message:   "mapping-library import references a MappingLibrary not present in the catalog",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrMappingEntryNotFound fires when a bare-name mapping-library import names
@@ -142,6 +153,7 @@ func ErrMappingEntryNotFound() error { return errMappingEntryNotFound }
 var errMappingEntryNotFound = cerrors.Register("mapping-entry-not-found", cerrors.Meta{
 	ShortCode: "E0044",
 	Message:   "mapping-library import references an entry not present in the MappingLibrary",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrWorkloadImportShape fires when a workload $import: (or a recursive
@@ -152,6 +164,7 @@ func ErrWorkloadImportShape() error { return errWorkloadImportShape }
 var errWorkloadImportShape = cerrors.Register("workload-import-shape", cerrors.Meta{
 	ShortCode: "E0064",
 	Message:   "workload $import: is not a bare-name workload-library reference (<Library>#/workloads/<entry>)",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrWorkloadLibraryNotFound fires when a bare-name workload-library import
@@ -162,6 +175,7 @@ func ErrWorkloadLibraryNotFound() error { return errWorkloadLibraryNotFound }
 var errWorkloadLibraryNotFound = cerrors.Register("workload-library-not-found", cerrors.Meta{
 	ShortCode: "E0065",
 	Message:   "workload-library import references a WorkloadLibrary not present in the catalog",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrWorkloadEntryNotFound fires when a bare-name workload-library import names
@@ -171,6 +185,7 @@ func ErrWorkloadEntryNotFound() error { return errWorkloadEntryNotFound }
 var errWorkloadEntryNotFound = cerrors.Register("workload-entry-not-found", cerrors.Meta{
 	ShortCode: "E0063",
 	Message:   "workload-library import references an entry not present in the WorkloadLibrary",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrArtifactImportShape fires when an artifacts entry `$import:` value is
@@ -183,6 +198,7 @@ func ErrArtifactImportShape() error { return errArtifactImportShape }
 var errArtifactImportShape = cerrors.Register("artifact-import-shape", cerrors.Meta{
 	ShortCode: "E0027",
 	Message:   "artifacts $import: is not a bare-name artifacts-library reference (<Library>#/artifacts/<entry>)",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrArtifactsLibraryNotFound fires when a bare-name artifacts-library import
@@ -193,6 +209,7 @@ func ErrArtifactsLibraryNotFound() error { return errArtifactsLibraryNotFound }
 var errArtifactsLibraryNotFound = cerrors.Register("artifacts-library-not-found", cerrors.Meta{
 	ShortCode: "E0031",
 	Message:   "artifacts-library import references an ArtifactsLibrary not present in the catalog",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrArtifactsLibraryEntryNotFound fires when a bare-name artifacts-library
@@ -202,6 +219,7 @@ func ErrArtifactsLibraryEntryNotFound() error { return errArtifactsLibraryEntryN
 var errArtifactsLibraryEntryNotFound = cerrors.Register("artifacts-library-entry-not-found", cerrors.Meta{
 	ShortCode: "E0030",
 	Message:   "artifacts-library import references a bundle not present in the ArtifactsLibrary",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrArtifactOutputCollision fires when one Recipe's artifacts map emits two
@@ -229,6 +247,7 @@ func ErrArtifactOutputCollision() error { return errArtifactOutputCollision }
 var errArtifactOutputCollision = cerrors.Register("artifact-output-collision", cerrors.Meta{
 	ShortCode: "E0028",
 	Message:   "artifacts output filename collision: two artifact outputs carry the same filename",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrArtifactPillarNotDeclared fires when an artifacts entry's template reads a
@@ -260,6 +279,7 @@ func ErrArtifactPillarNotDeclared() error { return errArtifactPillarNotDeclared 
 var errArtifactPillarNotDeclared = cerrors.Register("artifact-pillar-not-declared", cerrors.Meta{
 	ShortCode: "E0029",
 	Message:   "artifact template references a pillar the Recipe does not declare",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrAssembledOutputCollision fires when two contributors to one assembly
@@ -284,6 +304,7 @@ func ErrAssembledOutputCollision() error { return errAssembledOutputCollision }
 var errAssembledOutputCollision = cerrors.Register("assembled-output-collision", cerrors.Meta{
 	ShortCode: "E0032",
 	Message:   "assembled output collision: two contributors write the same output path",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrDerivedKeyCollision fires when one derived name is declared more than once
@@ -338,6 +359,7 @@ func ErrDerivedKeyCollision() error { return errDerivedKeyCollision }
 var errDerivedKeyCollision = cerrors.Register("derived-key-collision", cerrors.Meta{
 	ShortCode: "E0038",
 	Message:   "derived name collision: one name is derived more than once in one key space",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrCircularImport is the $import-surface name for a mapping-library import
@@ -370,6 +392,7 @@ func ErrHostInLibraryImport() error { return errHostInLibraryImport }
 var errHostInLibraryImport = cerrors.Register("host-in-library-import", cerrors.Meta{
 	ShortCode: "E0040",
 	Message:   "library $import: carries a registry host; reference the library by bare-name identity",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrProviderNodeInputInvalid is the Loud Guardrail halt a provider
@@ -387,6 +410,10 @@ func ErrProviderNodeInputInvalid() error { return errProviderNodeInputInvalid }
 var errProviderNodeInputInvalid = cerrors.Register("provider-node-input-invalid", cerrors.Meta{
 	ShortCode: "E0054",
 	Message:   "provider rejected node input",
+	RulePlace: cerrors.RuleEvaluatedElsewhere("The provider guest's input-validation export evaluates the rule over the node's resolved " +
+		"input, inside its own module, and returns its diagnostics; this package raises the condition " +
+		"on a halt-severity one. The rule runs where no view of a compilation reaches, so there is no " +
+		"view for the rule dispatch to invoke a rule over."),
 })
 
 // ErrUnknownProvider is the compiler-level fatal halt produced by the
@@ -400,6 +427,9 @@ func ErrUnknownProvider() error { return errUnknownProvider }
 var errUnknownProvider = cerrors.Register("unknown-provider", cerrors.Meta{
 	ShortCode: "E0061",
 	Message:   "unknown provider",
+	RulePlace: cerrors.NotARule("A Recipe named a provider that resolution did not register. The predicate is the resolution " +
+		"itself, so there is no resolved subject for a rule to be declared over: what it reports is " +
+		"that none resolved."),
 })
 
 // ErrPathCollision fires when two boundaries with the same evaluated
@@ -423,6 +453,7 @@ func ErrPathCollision() error { return errPathCollision }
 var errPathCollision = cerrors.Register("path-collision", cerrors.Meta{
 	ShortCode: "E0048",
 	Message:   "dispatch path produced multiple provider outputs",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrInstanceIDCollision fires when two contributors from different
@@ -438,6 +469,7 @@ func ErrInstanceIDCollision() error { return errInstanceIDCollision }
 var errInstanceIDCollision = cerrors.Register("instance-id-collision", cerrors.Meta{
 	ShortCode: "E0041",
 	Message:   "multiple contributors share an instance ID at the same dispatch path",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrChartNameMismatch fires when two or more boundaries' contributing
@@ -455,6 +487,7 @@ func ErrChartNameMismatch() error { return errChartNameMismatch }
 var errChartNameMismatch = cerrors.Register("chart-name-mismatch", cerrors.Meta{
 	ShortCode: "E0036",
 	Message:   "merged-path assembly has conflicting assembly-name annotation values",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrPathTemplateInvalidField fires before a path template
@@ -477,6 +510,7 @@ func ErrPathTemplateInvalidField() error { return errPathTemplateInvalidField }
 var errPathTemplateInvalidField = cerrors.Register("path-template-invalid-field", cerrors.Meta{
 	ShortCode: "E0049",
 	Message:   "path template references a field not in the documented allowlist",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrFRTemplateInvalidField fires when the boundary-scope FeatureRecipe
@@ -495,6 +529,7 @@ func ErrFRTemplateInvalidField() error { return errFRTemplateInvalidField }
 var errFRTemplateInvalidField = cerrors.Register("featurerecipe-template-invalid-field", cerrors.Meta{
 	ShortCode: "E0039",
 	Message:   "FeatureRecipe template references a per-component-only field with executionScope: boundary",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrBoundaryScopeAttachmentNotDeclaredAtABoundary fires when an attachment
@@ -527,6 +562,7 @@ var errBoundaryScopeAttachmentNotDeclaredAtABoundary = cerrors.Register(
 		ShortCode: "E0259",
 		Message: "attachment binds a FeatureRecipe with executionScope: boundary " +
 			"and no boundary holding the component declares it",
+		RulePlace: cerrors.RuleOverAuthoredInput(),
 	})
 
 // ErrAssertionFailed wraps a build halt triggered by {{ fail "..." }}
@@ -544,6 +580,9 @@ func ErrAssertionFailed() error { return errAssertionFailed }
 var errAssertionFailed = cerrors.Register("authored-assertion-failed", cerrors.Meta{
 	ShortCode: "E0033",
 	Message:   "assertion failed",
+	RulePlace: cerrors.NotARule("An assertion an author wrote in their own template evaluated to a failure. The predicate is " +
+		"that template text rather than a rule this compiler declares, so there is no Go predicate " +
+		"here for the rule dispatch to hold."),
 })
 
 // ErrPipelineTargetNotEmitted fires when a pipeline PATCH step addresses a
@@ -557,6 +596,7 @@ func ErrPipelineTargetNotEmitted() error { return errPipelineTargetNotEmitted }
 var errPipelineTargetNotEmitted = cerrors.Register("pipeline-target-not-emitted", cerrors.Meta{
 	ShortCode: "E0052",
 	Message:   "pipeline PATCH targets a document the node did not emit",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrPipelineHostScopeUnavailable fires when a pipeline step performs a
@@ -585,6 +625,7 @@ func ErrPipelineHostScopeUnavailable() error { return errPipelineHostScopeUnavai
 var errPipelineHostScopeUnavailable = cerrors.Register("pipeline-host-scope-unavailable", cerrors.Meta{
 	ShortCode: "E0050",
 	Message:   "pipeline /host operation from a step with no host component",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrPipelinePatchPreAssembly fires when a pipeline PATCH addresses a
@@ -616,6 +657,7 @@ func ErrPipelinePatchPreAssembly() error { return errPipelinePatchPreAssembly }
 var errPipelinePatchPreAssembly = cerrors.Register("pipeline-patch-targets-unassembled-fragments", cerrors.Meta{
 	ShortCode: "E0051",
 	Message:   "pipeline PATCH targets an assembler provider's pre-assembly fragments",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrPluginProviderIncompatible fires when a pipeline step's plugin declares
@@ -641,6 +683,7 @@ func ErrPluginProviderIncompatible() error { return errPluginProviderIncompatibl
 var errPluginProviderIncompatible = cerrors.Register("plugin-provider-incompatible", cerrors.Meta{
 	ShortCode: "E0053",
 	Message:   "pipeline plugin is not compatible with the rendering provider",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrBoundaryAssemblerMissing fires when a provider that self-reports assembling
@@ -668,6 +711,7 @@ func ErrBoundaryAssemblerMissing() error { return errBoundaryAssemblerMissing }
 var errBoundaryAssemblerMissing = cerrors.Register("boundary-assembly-not-provided", cerrors.Meta{
 	ShortCode: "E0035",
 	Message:   "provider expected to assemble its dispatch group provides no boundary assembler",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrArtifactContentMismatch is the Loud Guardrail halt raised at build when
@@ -686,6 +730,7 @@ func ErrArtifactContentMismatch() error { return errArtifactContentMismatch }
 var errArtifactContentMismatch = cerrors.Register("artifact-content-mismatch", cerrors.Meta{
 	ShortCode: "E0026",
 	Message:   "imported artifact content does not match the recipe's recorded digest",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrCrossProviderLinkUnsupported marks a cross-boundary uses edge whose two
@@ -716,6 +761,7 @@ func ErrCrossProviderLinkUnsupported() error { return errCrossProviderLinkUnsupp
 var errCrossProviderLinkUnsupported = cerrors.Register("cross-provider-link-unsupported", cerrors.Meta{
 	ShortCode: "E0037",
 	Message:   "cross-boundary link between endpoints rendered by different providers is not supported",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrRenderNondeterministic is the Loud Guardrail halt the verify-determinism
@@ -735,6 +781,10 @@ func ErrRenderNondeterministic() error { return errRenderNondeterministic }
 var errRenderNondeterministic = cerrors.Register("render-nondeterministic", cerrors.Meta{
 	ShortCode: "E0058",
 	Message:   "provider render is not deterministic",
+	RulePlace: cerrors.NotARule("A provider guest rendered one node twice from identical input and returned different bytes. " +
+		"The comparison drives that guest twice and so produces its own comparand, and what it " +
+		"reports is a guest that is not deterministic rather than a predicate over a fact anything " +
+		"held."),
 })
 
 // ErrOrphanCrossBoundaryLinkSentinel is the Loud Guardrail halt raised when
@@ -760,6 +810,7 @@ func ErrOrphanCrossBoundaryLinkSentinel() error { return errOrphanCrossBoundaryL
 var errOrphanCrossBoundaryLinkSentinel = cerrors.Register("orphan-cross-boundary-link-placeholder", cerrors.Meta{
 	ShortCode: "E0047",
 	Message:   "assembled output retains an unresolved cross-boundary link placeholder",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrNestSegmentNotOneDirectory is the Loud Guardrail halt raised when a
@@ -782,6 +833,7 @@ func ErrNestSegmentNotOneDirectory() error { return errNestSegmentNotOneDirector
 var errNestSegmentNotOneDirectory = cerrors.Register("nest-segment-not-one-directory", cerrors.Meta{
 	ShortCode: "E0250",
 	Message:   "provider named a directory for each contributor's own sub-directory that is not a single directory name",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrEmptySource is the Loud Guardrail halt raised when a Recipe declares
@@ -812,6 +864,7 @@ func ErrEmptySource() error { return errEmptySource }
 var errEmptySource = cerrors.Register("recipe-source-is-empty", cerrors.Meta{
 	ShortCode: "E0251",
 	Message:   "recipe source is an empty string, which names neither sourceless mode nor sourced mode",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrArtifactsLibraryFileEscapesKey is the Loud Guardrail halt raised when a
@@ -853,6 +906,7 @@ func ErrArtifactsLibraryFileEscapesKey() error { return errArtifactsLibraryFileE
 var errArtifactsLibraryFileEscapesKey = cerrors.Register("artifacts-library-file-escapes-key", cerrors.Meta{
 	ShortCode: "E0252",
 	Message:   "artifacts-library bundle file name leaves the artifacts key its output is nested under",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrComponentIdentityTargetRefuses is the Loud Guardrail halt raised when a
@@ -879,6 +933,10 @@ func ErrComponentIdentityTargetRefuses() error { return errComponentIdentityTarg
 var errComponentIdentityTargetRefuses = cerrors.Register("component-identity-target-refuses", cerrors.Meta{
 	ShortCode: "E0263",
 	Message:   "the target will not accept a name derived from this component's authored identity: rename the component",
+	RulePlace: cerrors.RuleEvaluatedElsewhere("The provider guest that renders for the target decides whether a name derived from the " +
+		"component's authored identity is one the target accepts, and returns its own reason and the " +
+		"kind of name it covers verbatim. The grammar belongs to the target and is the guest's to " +
+		"know, so no view of a compilation carries the fact this turns on."),
 })
 
 // ErrNameBoundNotConverging is the Loud Guardrail halt raised when a provider
@@ -905,6 +963,9 @@ func ErrNameBoundNotConverging() error { return errNameBoundNotConverging }
 var errNameBoundNotConverging = cerrors.Register("provider-refused-every-component-identity", cerrors.Meta{
 	ShortCode: "E0264",
 	Message:   "provider guest never accepted a component identity the compiler composed for it",
+	RulePlace: cerrors.NotARule("A provider guest refused every name the host composed for it and never accepted one — " +
+		"returning a bound it then refuses, or walking a bound down by nothing. It reports a guest " +
+		"that does not honour the convergence contract rather than anything an author wrote."),
 })
 
 // ErrUnsupportedInputKind is the Loud Guardrail halt raised when the input kind
@@ -939,6 +1000,7 @@ func ErrUnsupportedInputKind() error { return errUnsupportedInputKind }
 var errUnsupportedInputKind = cerrors.Register("unsupported-input-kind", cerrors.Meta{
 	ShortCode: "E0265",
 	Message:   "provider does not support the node's input kind",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // The four conditions below share an audience and a reason for carrying an
@@ -987,6 +1049,10 @@ var errProviderRenderDuplicatePath = cerrors.Register("provider-render-duplicate
 	ShortCode: "E0269",
 	Message: "provider guest returned two output files under one path; " +
 		"a conforming guest returns each output path at most once",
+	RulePlace: cerrors.NotARule("A provider guest returned two output files under one path, so one would overwrite the other. " +
+		"Which of the two the guest meant is a question only that guest can answer, so it reports a " +
+		"guest whose returned output does not conform to the contract rather than anything an author " +
+		"wrote."),
 })
 
 // DuplicateRenderPathErr raises [ErrProviderRenderDuplicatePath] for the given
@@ -1030,6 +1096,10 @@ var errLinkPatchFileNotEmitted = cerrors.Register("link-patch-file-not-emitted",
 	ShortCode: "E0270",
 	Message: "link patch names an output file the dispatch group did not emit; " +
 		"a conforming link patch names a file the group's own render returned",
+	RulePlace: cerrors.NotARule("A provider guest returned link wiring naming an output file the dispatch group never " +
+		"emitted. The wiring is that guest's own return value and the file set is that group's own " +
+		"render, so it reports a guest whose output does not conform to the contract it renders " +
+		"under."),
 })
 
 // ErrPipelineEmitFileAbsent fires when a pipeline step's guest returns a side
@@ -1048,6 +1118,9 @@ var errPipelineEmitFileAbsent = cerrors.Register("pipeline-emit-file-absent", ce
 	ShortCode: "E0271",
 	Message: "emit_file side effect carries no file; " +
 		"a conforming emit_file side effect carries a file with its path and content",
+	RulePlace: cerrors.NotARule("A pipeline step's guest returned a side effect declaring the emit_file kind while carrying " +
+		"no file to write. It reports a guest whose returned payload does not carry the member the " +
+		"kind it declared requires."),
 })
 
 // ErrPipelineSideEffectKindUndefined fires when a pipeline step's guest returns
@@ -1069,6 +1142,9 @@ var errPipelineSideEffectKindUndefined = cerrors.Register("pipeline-side-effect-
 	ShortCode: "E0272",
 	Message: "side effect declares a kind the plugin contract does not define; " +
 		"a conforming side effect declares emit_file or emit_crd",
+	RulePlace: cerrors.NotARule("A pipeline step's guest returned a side effect whose kind the plugin contract does not " +
+		"define, so the host has no arm that knows what bytes it contributes. It reports a guest " +
+		"whose returned output names something outside the contract."),
 })
 
 // ErrRenderedNameUnavailable fires when a Recipe writes a template reading the
@@ -1105,4 +1181,5 @@ var errRenderedNameUnavailable = cerrors.Register("rendered-name-unavailable", c
 	ShortCode: "E0273",
 	Message: "template reads the name the target renders author-supplied source under, and this node's " +
 		"provider reports no such name; a conforming template reads a value the node's own provider supplies",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })

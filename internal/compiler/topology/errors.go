@@ -17,6 +17,7 @@ func ErrSubAggregateLoad() error { return errSubAggregateLoad }
 var errSubAggregateLoad = cerrors.Register("sub-aggregate-not-loadable", cerrors.Meta{
 	ShortCode: "E0072",
 	Message:   "sub-aggregate load failed",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrMaxDepth fires from flattenAggregate when sub-aggregate inclusion
@@ -30,6 +31,7 @@ func ErrMaxDepth() error { return errMaxDepth }
 var errMaxDepth = cerrors.Register("sub-aggregate-nesting-depth-exceeded", cerrors.Meta{
 	ShortCode: "E0068",
 	Message:   "max sub-aggregate nesting depth exceeded",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrReleaseEdgeRetarget fires from the Release edge pass when a Release
@@ -46,6 +48,7 @@ func ErrReleaseEdgeRetarget() error { return errReleaseEdgeRetarget }
 var errReleaseEdgeRetarget = cerrors.Register("release-edge-retarget", cerrors.Meta{
 	ShortCode: "E0071",
 	Message:   "release edge retargets a developer-declared edge",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrUnboundReleaseEdgeConfig fires when a Release per-edge `uses` entry
@@ -70,6 +73,7 @@ func ErrUnboundReleaseEdgeConfig() error { return errUnboundReleaseEdgeConfig }
 var errUnboundReleaseEdgeConfig = cerrors.Register("unbound-release-edge-config", cerrors.Meta{
 	ShortCode: "E0074",
 	Message:   "release per-edge configuration has no edge to apply to",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrDanglingUsesTarget fires when a `uses` edge names a target component
@@ -87,6 +91,7 @@ func ErrDanglingUsesTarget() error { return errDanglingUsesTarget }
 var errDanglingUsesTarget = cerrors.Register("dangling-uses-target", cerrors.Meta{
 	ShortCode: "E0066",
 	Message:   "uses edge target does not exist",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrSubAggregateNameCollision fires from flattenAggregate when a Set
@@ -104,6 +109,7 @@ func ErrSubAggregateNameCollision() error { return errSubAggregateNameCollision 
 var errSubAggregateNameCollision = cerrors.Register("sub-aggregate-name-collision", cerrors.Meta{
 	ShortCode: "E0073",
 	Message:   "flattened node ID collision: rename one of the colliding instances so their flattened IDs differ",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrUnnormalizedAggregate fires at the topology entry when an Aggregate
@@ -120,6 +126,10 @@ func ErrUnnormalizedAggregate() error { return errUnnormalizedAggregate }
 var errUnnormalizedAggregate = cerrors.Register("aggregate-not-in-canonical-form", cerrors.Meta{
 	ShortCode: "E0075",
 	Message:   "aggregate reached topology un-normalized (non-empty root components alongside a synthesized default subsystem)",
+	RulePlace: cerrors.NotARule("An Aggregate reached the topology walk in a state the normalization core cannot produce, so " +
+		"a caller built one by hand or took a load path that skipped that core. It reports an " +
+		"invariant of this program's own construction; the authored shape it would correspond to is " +
+		"refused before it gets here."),
 })
 
 // ErrInvalidActive fires from flattenAggregate when a component's or a
@@ -142,6 +152,7 @@ func ErrInvalidActive() error { return errInvalidActive }
 var errInvalidActive = cerrors.Register("active-toggle-not-a-boolean", cerrors.Meta{
 	ShortCode: "E0067",
 	Message:   "active toggle did not resolve to a boolean",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrUsesPrunedComponent fires from the origin-agnostic dangling-target
@@ -160,6 +171,7 @@ func ErrUsesPrunedComponent() error { return errUsesPrunedComponent }
 var errUsesPrunedComponent = cerrors.Register("uses-target-not-active", cerrors.Meta{
 	ShortCode: "E0077",
 	Message:   "uses edge target was pruned because its active toggle resolved to false",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrReexportCycle fires from flattenAggregate when resolving a re-exported
@@ -176,6 +188,7 @@ func ErrReexportCycle() error { return errReexportCycle }
 var errReexportCycle = cerrors.Register("reexport-cycle", cerrors.Meta{
 	ShortCode: "E0070",
 	Message:   "re-exported component alias forms a cycle",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrMutatorPatchRejected fires when a mutator plugin returns a JSON Patch
@@ -193,6 +206,10 @@ func ErrMutatorPatchRejected() error { return errMutatorPatchRejected }
 var errMutatorPatchRejected = cerrors.Register("mutator-patch-rejected", cerrors.Meta{
 	ShortCode: "E0069",
 	Message:   "mutator patch rejected",
+	RulePlace: cerrors.NotARule("A mutator plugin returned a patch the host refused to apply to the labels-only graph " +
+		"projection — one that does not decode, does not apply cleanly, or reaches outside the " +
+		"node-label surface. It reports a guest whose returned output does not conform to the surface " +
+		"its role admits."),
 })
 
 // ErrUnplacedSubModule fires when a Release places none of a sub-module's
@@ -218,6 +235,7 @@ func ErrUnplacedSubModule() error { return errUnplacedSubModule }
 var errUnplacedSubModule = cerrors.Register("unplaced-sub-module", cerrors.Meta{
 	ShortCode: "E0076",
 	Message:   "sub-module placed in no boundary: route it into a boundary under `aggregates`, or name its components there under `components`",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrUnplacedComponent fires when a component the composition holds is placed in
@@ -243,6 +261,7 @@ func ErrUnplacedComponent() error { return errUnplacedComponent }
 var errUnplacedComponent = cerrors.Register("unplaced-component", cerrors.Meta{
 	ShortCode: "E0260",
 	Message:   "component placed in no boundary: name it under a boundary's `components`, or place the sub-module that contributes it under `aggregates`",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrUnresolvedBoundaryComponent fires when a boundary names a component the
@@ -282,4 +301,5 @@ func ErrUnresolvedBoundaryComponent() error { return errUnresolvedBoundaryCompon
 var errUnresolvedBoundaryComponent = cerrors.Register("unresolved-boundary-component", cerrors.Meta{
 	ShortCode: "E0261",
 	Message:   "boundary names a component the composition does not hold: correct the name, or remove the entry",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })

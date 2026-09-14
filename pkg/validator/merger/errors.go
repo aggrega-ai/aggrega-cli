@@ -19,6 +19,9 @@ func ErrMergeInvalid() error { return errMergeInvalid }
 var errMergeInvalid = cerrors.Register("schema-merge-input-invalid", cerrors.Meta{
 	ShortCode: "E0221",
 	Message:   "merger: invalid merge input",
+	RulePlace: cerrors.NotARule("A structural merge failure the per-keyword rules cannot resolve — an empty input chain, or " +
+		"a chain element carrying no schema. It reports a merge that could not be performed over the " +
+		"inputs it was handed rather than a rule refusing anything an author wrote."),
 })
 
 // MergeError wraps a sentinel with merge-time context. Path names the

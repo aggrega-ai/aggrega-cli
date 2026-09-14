@@ -20,6 +20,7 @@ func ErrDeprecatedEntity() error { return errDeprecatedEntity }
 var errDeprecatedEntity = cerrors.Register("deprecated-entity", cerrors.Meta{
 	ShortCode: "E0122",
 	Message:   "deprecation: build consumes a deprecated entity",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // HaltFor returns the halt a configured threshold produces for one recorded

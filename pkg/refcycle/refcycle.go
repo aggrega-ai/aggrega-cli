@@ -22,6 +22,7 @@ func ErrCycle() error { return errCycle }
 var errCycle = cerrors.Register("reference-cycle", cerrors.Meta{
 	ShortCode: "E0146",
 	Message:   "circular reference expansion",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // Check reports whether key is already in flight within stack. When it is,

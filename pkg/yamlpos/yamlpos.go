@@ -31,6 +31,10 @@ func ErrPositionOutOfRange() error { return errPositionOutOfRange }
 var errPositionOutOfRange = cerrors.Register("position-out-of-range", cerrors.Meta{
 	ShortCode: "E0229",
 	Message:   "position out of range",
+	RulePlace: cerrors.NotARule("A position addresses a line outside the document, or a conversion was attempted against an " +
+		"empty line index. It reports a coordinate this program computed that the document cannot " +
+		"hold — an invariant of its own construction rather than a rule over anything an author " +
+		"wrote."),
 })
 
 // Position matches the LSP shape: 0-based line + 0-based character

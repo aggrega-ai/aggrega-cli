@@ -25,6 +25,9 @@ func ErrOrderedMapDecodeDepthExceeded() error { return errOrderedMapDecodeDepthE
 var errOrderedMapDecodeDepthExceeded = cerrors.Register("document-nesting-depth-exceeded", cerrors.Meta{
 	ShortCode: "E0192",
 	Message:   "OrderedMap: decode depth exceeded",
+	RulePlace: cerrors.NotARule("A document's nested-object recursion exceeded the bound the decoder applies to keep " +
+		"pathological input off the call stack. The bound belongs to the decoder and is applied while " +
+		"the document is being read, so what it reports is a decode that was stopped."),
 })
 
 // orderedMapDecodeMaxDepth bounds nested-OrderedMap recursion in unmarshal

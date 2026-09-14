@@ -18,6 +18,8 @@ func ErrFetchNotFound() error { return errFetchNotFound }
 var errFetchNotFound = cerrors.Register("fetch-not-found", cerrors.Meta{
 	ShortCode: "E0137",
 	Message:   "oci: artifact not found at remote source",
+	RulePlace: cerrors.NotARule("A remote fetch found no artifact at the requested reference and version. It reports an " +
+		"operation that found nothing."),
 })
 
 // ErrFetchUnauthorized is returned when registry authentication is
@@ -28,6 +30,8 @@ func ErrFetchUnauthorized() error { return errFetchUnauthorized }
 var errFetchUnauthorized = cerrors.Register("fetch-unauthorized", cerrors.Meta{
 	ShortCode: "E0138",
 	Message:   "oci: authentication required or failed",
+	RulePlace: cerrors.NotARule("A registry required authentication that was absent or did not succeed. It reports an " +
+		"operation the registry refused."),
 })
 
 // ErrFetchNetworkUnreachable is returned when the transport layer
@@ -38,6 +42,8 @@ func ErrFetchNetworkUnreachable() error { return errFetchNetworkUnreachable }
 var errFetchNetworkUnreachable = cerrors.Register("fetch-network-unreachable", cerrors.Meta{
 	ShortCode: "E0136",
 	Message:   "oci: network unreachable",
+	RulePlace: cerrors.NotARule("The transport could not be established — name resolution, connection, or handshake. It " +
+		"reports an operation that failed."),
 })
 
 // ErrFetchIntegrity is returned when pulled bytes don't match the
@@ -49,6 +55,8 @@ func ErrFetchIntegrity() error { return errFetchIntegrity }
 var errFetchIntegrity = cerrors.Register("fetch-integrity", cerrors.Meta{
 	ShortCode: "E0135",
 	Message:   "oci: content digest mismatch",
+	RulePlace: cerrors.NotARule("Pulled bytes do not match the digest the manifest claims for them. It reports an integrity " +
+		"comparison over fetched bytes that did not hold."),
 })
 
 // ErrNoContentLayer is returned when an OCI manifest carries no layer of
@@ -63,6 +71,9 @@ func ErrNoContentLayer() error { return errNoContentLayer }
 var errNoContentLayer = cerrors.Register("no-content-layer", cerrors.Meta{
 	ShortCode: "E0140",
 	Message:   "oci: manifest has no layer of the expected content media type",
+	RulePlace: cerrors.NotARule("A fetched manifest carries no layer of the content media type the caller expected. The " +
+		"manifest is fetched in order to be read, and what it reports is a selection over fetched " +
+		"content that found nothing to take."),
 })
 
 // ErrAmbiguousContentLayer is returned when an OCI manifest carries more
@@ -75,6 +86,9 @@ func ErrAmbiguousContentLayer() error { return errAmbiguousContentLayer }
 var errAmbiguousContentLayer = cerrors.Register("ambiguous-content-layer", cerrors.Meta{
 	ShortCode: "E0132",
 	Message:   "oci: manifest has multiple layers of the expected content media type",
+	RulePlace: cerrors.NotARule("A fetched manifest carries more than one layer of the expected content media type, so no " +
+		"layer can be selected. The manifest is fetched in order to be read, and what it reports is a " +
+		"selection over fetched content that could not be made."),
 })
 
 // ErrCachedManifestIntegrity is returned when a cached OCI manifest blob no
@@ -90,6 +104,8 @@ func ErrCachedManifestIntegrity() error { return errCachedManifestIntegrity }
 var errCachedManifestIntegrity = cerrors.Register("cached-manifest-integrity", cerrors.Meta{
 	ShortCode: "E0133",
 	Message:   "oci: cached manifest digest mismatch",
+	RulePlace: cerrors.NotARule("A cached manifest blob no longer hashes to the digest the artifact commits to. It reports an " +
+		"integrity comparison over cached bytes that did not hold."),
 })
 
 // ErrImmutableTagConflict is returned by the publish path when the
@@ -106,6 +122,9 @@ func ErrImmutableTagConflict() error { return errImmutableTagConflict }
 var errImmutableTagConflict = cerrors.Register("immutable-tag-conflict", cerrors.Meta{
 	ShortCode: "E0139",
 	Message:   "oci: tag already published with different content",
+	RulePlace: cerrors.NotARule("The tag being published already exists in the registry pointing at different content. The " +
+		"existing tag is looked up in the registry when the push runs, so what it reports is a " +
+		"registry refusing to have published bytes replaced."),
 })
 
 // ErrUnknownEntityKind is returned by MediaTypeForKind for kind
@@ -116,6 +135,9 @@ func ErrUnknownEntityKind() error { return errUnknownEntityKind }
 var errUnknownEntityKind = cerrors.Register("unknown-entity-kind", cerrors.Meta{
 	ShortCode: "E0143",
 	Message:   "oci: unknown entity kind for mediatype dispatch",
+	RulePlace: cerrors.NotARule("A kind string outside the canonical entity-kind set reached the media-type dispatch. It " +
+		"reports an invariant of this program's own construction at a dispatch boundary, never " +
+		"anything a user supplied."),
 })
 
 // ErrEntityVersionPathMismatch is returned by the publish-time
@@ -130,6 +152,7 @@ func ErrEntityVersionPathMismatch() error { return errEntityVersionPathMismatch 
 var errEntityVersionPathMismatch = cerrors.Register("entity-version-path-mismatch", cerrors.Meta{
 	ShortCode: "E0134",
 	Message:   "oci: entity per-version subdirectory mismatch",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrOCILocationCollision fires when two DISTINCT catalog identities map to the
@@ -146,6 +169,7 @@ func ErrOCILocationCollision() error { return errOCILocationCollision }
 var errOCILocationCollision = cerrors.Register("oci-location-collision", cerrors.Meta{
 	ShortCode: "E0141",
 	Message:   "oci: distinct catalog identities map to the same OCI repository location",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrReferrerDiscoveryUnavailable is returned when an artifact's referrers
@@ -170,6 +194,9 @@ func ErrReferrerDiscoveryUnavailable() error { return errReferrerDiscoveryUnavai
 var errReferrerDiscoveryUnavailable = cerrors.Register("referrer-discovery-unavailable", cerrors.Meta{
 	ShortCode: "E0142",
 	Message:   "oci: referrer discovery could not be completed",
+	RulePlace: cerrors.NotARule("An artifact's referrers could not be looked up at all — the target cannot serve discovery, " +
+		"the subject could not be located, or the request itself failed. It reports a question that " +
+		"went unanswered rather than an answer."),
 })
 
 // RemediationFor returns the operator-actionable remediation hint

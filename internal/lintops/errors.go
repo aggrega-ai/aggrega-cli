@@ -34,10 +34,10 @@ import (
 //
 // # Each registration declares its own evaluator, as a literal
 //
-// Every registration below carries an evaluated-elsewhere note, because a
+// Every registration below declares its rule evaluated elsewhere, because a
 // publishing-discipline rule is evaluated by the publishing-linter guest, or by
 // this package's own publish-time verdict, and never by the compiler's rule
-// dispatch. The notes read alike wherever the fact is alike, and that
+// dispatch. The reasons read alike wherever the fact is alike, and that
 // repetition is deliberate rather than a shared constant waiting to be
 // extracted.
 //
@@ -53,111 +53,111 @@ var (
 		ShortCode: "E0276",
 		Message: "the version being published changes the published predecessor in a way the " +
 			"documented evolution rubric objects to",
-		EvaluatedElsewhere: "The publishing-linter guest evaluates the difference between the version " +
-			"being published and its published predecessor, and this package raises the condition on the " +
-			"finding it returns. The rule runs inside the guest over content presented at publication, " +
-			"which the rule dispatch neither invokes nor holds a view of.",
+		RulePlace: cerrors.RuleEvaluatedElsewhere("The publishing-linter guest evaluates the difference between the version being published and " +
+			"its published predecessor, and this package raises the condition on the finding it returns. " +
+			"The rule runs inside the guest over content presented at publication, which the rule " +
+			"dispatch neither invokes nor holds a view of."),
 	})
 
 	errAnnotationPrefix = cerrors.Register("annotation-prefix", cerrors.Meta{
 		ShortCode: "E0277",
 		Message:   "an annotation key on the entity uses a prefix the platform reserves",
-		EvaluatedElsewhere: "The publishing-linter guest evaluates the entity's annotation keys against " +
-			"the prefixes the platform reserves, and this package raises the condition on the finding it " +
-			"returns. The rule runs inside the guest over content presented at publication, which the rule " +
-			"dispatch neither invokes nor holds a view of.",
+		RulePlace: cerrors.RuleEvaluatedElsewhere("The publishing-linter guest evaluates the entity's annotation keys against the prefixes the " +
+			"platform reserves, and this package raises the condition on the finding it returns. The rule " +
+			"runs inside the guest over content presented at publication, which the rule dispatch neither " +
+			"invokes nor holds a view of."),
 	})
 
 	errNameShape = cerrors.Register("name-shape", cerrors.Meta{
 		ShortCode: "E0278",
 		Message:   "the entity's name does not follow the documented name shape for its kind",
-		EvaluatedElsewhere: "The publishing-linter guest evaluates the entity's name against the " +
-			"documented name shape for its kind, and this package raises the condition on the finding it " +
-			"returns. The rule runs inside the guest over content presented at publication, which the rule " +
-			"dispatch neither invokes nor holds a view of.",
+		RulePlace: cerrors.RuleEvaluatedElsewhere("The publishing-linter guest evaluates the entity's name against the documented name shape " +
+			"for its kind, and this package raises the condition on the finding it returns. The rule runs " +
+			"inside the guest over content presented at publication, which the rule dispatch neither " +
+			"invokes nor holds a view of."),
 	})
 
 	errDynamicRefs = cerrors.Register("dynamic-refs", cerrors.Meta{
 		ShortCode: "E0279",
 		Message: "a schema in the entity uses a dynamic reference construct that cross-document " +
 			"reference resolution cannot follow",
-		EvaluatedElsewhere: "The publishing-linter guest evaluates the schemas the entity carries for " +
-			"dynamic reference constructs, and this package raises the condition on the finding it " +
-			"returns. The rule runs inside the guest over content presented at publication, which the rule " +
-			"dispatch neither invokes nor holds a view of.",
+		RulePlace: cerrors.RuleEvaluatedElsewhere("The publishing-linter guest evaluates the schemas the entity carries for dynamic reference " +
+			"constructs, and this package raises the condition on the finding it returns. The rule runs " +
+			"inside the guest over content presented at publication, which the rule dispatch neither " +
+			"invokes nor holds a view of."),
 	})
 
 	errIDOverrides = cerrors.Register("id-overrides", cerrors.Meta{
 		ShortCode: "E0280",
 		Message: "a schema in the entity declares an identifier of its own, where the platform " +
 			"owns that schema's identity",
-		EvaluatedElsewhere: "The publishing-linter guest evaluates the schemas the entity carries for an " +
-			"identifier declared where the platform owns the schema's identity, and this package raises " +
-			"the condition on the finding it returns. The rule runs inside the guest over content " +
-			"presented at publication, which the rule dispatch neither invokes nor holds a view of.",
+		RulePlace: cerrors.RuleEvaluatedElsewhere("The publishing-linter guest evaluates the schemas the entity carries for an identifier " +
+			"declared where the platform owns the schema's identity, and this package raises the " +
+			"condition on the finding it returns. The rule runs inside the guest over content presented " +
+			"at publication, which the rule dispatch neither invokes nor holds a view of."),
 	})
 
 	errCategoryMatchesDirectory = cerrors.Register("category-matches-directory", cerrors.Meta{
 		ShortCode: "E0281",
 		Message: "the entity's category label does not match the category directory the entity " +
 			"is filed under",
-		EvaluatedElsewhere: "The publishing-linter guest evaluates the entity's category label against " +
-			"the category directory it is filed under, and this package raises the condition on the " +
-			"finding it returns. The rule runs inside the guest over content presented at publication, " +
-			"which the rule dispatch neither invokes nor holds a view of.",
+		RulePlace: cerrors.RuleEvaluatedElsewhere("The publishing-linter guest evaluates the entity's category label against the category " +
+			"directory it is filed under, and this package raises the condition on the finding it " +
+			"returns. The rule runs inside the guest over content presented at publication, which the " +
+			"rule dispatch neither invokes nor holds a view of."),
 	})
 
 	errXAggregaDiscouragement = cerrors.Register("x-aggrega-discouragement", cerrors.Meta{
 		ShortCode: "E0282",
 		Message: "the entity writes an Aggrega schema extension directly into schema content " +
 			"instead of declaring it under usesSchema or featuresSchema",
-		EvaluatedElsewhere: "The publishing-linter guest evaluates the schema content the entity carries " +
-			"for an Aggrega schema extension written there rather than under the entity's own socket or " +
-			"attachment table, and this package raises the condition on the finding it returns. The rule " +
-			"runs inside the guest over content presented at publication, which the rule dispatch neither " +
-			"invokes nor holds a view of.",
+		RulePlace: cerrors.RuleEvaluatedElsewhere("The publishing-linter guest evaluates the schema content the entity carries for an Aggrega " +
+			"schema extension written there rather than under the entity's own socket or attachment " +
+			"table, and this package raises the condition on the finding it returns. The rule runs inside " +
+			"the guest over content presented at publication, which the rule dispatch neither invokes nor " +
+			"holds a view of."),
 	})
 
 	errPluginDefaultLimits = cerrors.Register("plugin-default-limits", cerrors.Meta{
 		ShortCode: "E0283",
 		Message: "the Plugin entity declares no runtime resource cap of its own, so the platform " +
 			"defaults apply",
-		EvaluatedElsewhere: "The publishing-linter guest evaluates the runtime resource caps a Plugin " +
-			"entity declares, and this package raises the condition on the finding it returns. The rule " +
-			"runs inside the guest over content presented at publication, which the rule dispatch neither " +
-			"invokes nor holds a view of.",
+		RulePlace: cerrors.RuleEvaluatedElsewhere("The publishing-linter guest evaluates the runtime resource caps a Plugin entity declares, " +
+			"and this package raises the condition on the finding it returns. The rule runs inside the " +
+			"guest over content presented at publication, which the rule dispatch neither invokes nor " +
+			"holds a view of."),
 	})
 
 	errSecretSlotDeclaresSensitive = cerrors.Register("secret-slot-declares-sensitive", cerrors.Meta{
 		ShortCode: "E0284",
 		Message: "an attachment slot admits only secret material and does not declare that it " +
 			"handles it",
-		EvaluatedElsewhere: "The publishing-linter guest evaluates an attachment slot's selector against " +
-			"what the slot declares about handling secret material, and this package raises the condition " +
-			"on the finding it returns. The rule runs inside the guest over content presented at " +
-			"publication, which the rule dispatch neither invokes nor holds a view of.",
+		RulePlace: cerrors.RuleEvaluatedElsewhere("The publishing-linter guest evaluates an attachment slot's selector against what the slot " +
+			"declares about handling secret material, and this package raises the condition on the " +
+			"finding it returns. The rule runs inside the guest over content presented at publication, " +
+			"which the rule dispatch neither invokes nor holds a view of."),
 	})
 
 	errProvidesDeclaredByComponent = cerrors.Register("provides-declared-by-component", cerrors.Meta{
 		ShortCode: "E0285",
 		Message: "the Recipe publishes a provides key the Component it implements does not " +
 			"declare, so a consumer wiring that key is refused",
-		EvaluatedElsewhere: "The publishing-linter guest evaluates the provides keys a Recipe publishes " +
-			"against the Component it implements, and this package raises the condition on the finding it " +
-			"returns. The rule runs inside the guest over content presented at publication, which the rule " +
-			"dispatch neither invokes nor holds a view of.",
+		RulePlace: cerrors.RuleEvaluatedElsewhere("The publishing-linter guest evaluates the provides keys a Recipe publishes against the " +
+			"Component it implements, and this package raises the condition on the finding it returns. " +
+			"The rule runs inside the guest over content presented at publication, which the rule " +
+			"dispatch neither invokes nor holds a view of."),
 	})
 
 	errPublishBumpBelowClassification = cerrors.Register("publish-bump-below-classification", cerrors.Meta{
 		ShortCode: "E0286",
 		Message: "the version bump being published is smaller than the evolution check's " +
 			"classification of the change requires",
-		EvaluatedElsewhere: "This package evaluates the rule itself, at publication: it reads the " +
-			"classification the evolution rule produced and compares it with the bump between the " +
-			"published predecessor's version and the one offered — see [bumpRefusal], which is the host's " +
-			"own verdict rather than a finding the guest returned. Which bump was offered is known only " +
-			"here, and publication runs no compilation, so there is no view for the rule dispatch to " +
-			"invoke a rule over.",
+		RulePlace: cerrors.RuleEvaluatedElsewhere("This package evaluates the rule itself, at publication: it reads the classification the " +
+			"evolution rule produced and compares it with the bump between the published predecessor's " +
+			"version and the one offered — see [bumpRefusal], which is the host's own verdict rather " +
+			"than a finding the guest returned. Which bump was offered is known only here, and " +
+			"publication runs no compilation, so there is no view for the rule dispatch to invoke a rule " +
+			"over."),
 	})
 )
 

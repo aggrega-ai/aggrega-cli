@@ -65,6 +65,9 @@ func ErrWasmManifestRejected() error { return errWasmManifestRejected }
 var errWasmManifestRejected = cerrors.Register("wasm-manifest-rejected", cerrors.Meta{
 	ShortCode: "E0085",
 	Message:   "wasm: plugin rejected by the sandbox",
+	RulePlace: cerrors.NotARule("The sandbox refused a plugin because its descriptor declares or requires something the " +
+		"sandbox does not grant or accept. It reports the sandbox's own admission bound on a guest's " +
+		"self-report rather than a rule over anything an author wrote."),
 })
 
 // ErrWasmGuestPanic indicates that guest plugin code panicked during a
@@ -84,6 +87,8 @@ func ErrWasmGuestPanic() error { return errWasmGuestPanic }
 var errWasmGuestPanic = cerrors.Register("wasm-guest-panic", cerrors.Meta{
 	ShortCode: "E0083",
 	Message:   "wasm: guest plugin panicked during call",
+	RulePlace: cerrors.NotARule("Guest plugin code panicked during a call and the panic escaped the runtime's own error " +
+		"envelope. It reports a guest that trapped."),
 })
 
 // ErrWasmPluginExited indicates that a guest plugin invoked WASI
@@ -102,6 +107,9 @@ func ErrWasmPluginExited() error { return errWasmPluginExited }
 var errWasmPluginExited = cerrors.Register("wasm-plugin-exited", cerrors.Meta{
 	ShortCode: "E0086",
 	Message:   "wasm: plugin invoked proc_exit",
+	RulePlace: cerrors.NotARule("A guest plugin invoked the WASI process-exit call with a non-zero code during a call. " +
+		"Plugins return their output through the call-and-return path, so it reports a guest that " +
+		"stopped itself rather than a rule refusing anything."),
 })
 
 // ErrWasmGuestError indicates that a guest plugin ran to completion but
@@ -117,6 +125,9 @@ func ErrWasmGuestError() error { return errWasmGuestError }
 var errWasmGuestError = cerrors.Register("wasm-guest-error", cerrors.Meta{
 	ShortCode: "E0082",
 	Message:   "wasm: guest plugin reported an error",
+	RulePlace: cerrors.NotARule("A guest plugin ran to completion and reported, on its own output envelope, that it could not " +
+		"complete the operation. It carries that guest's message and reports a failure the guest " +
+		"declared rather than a rule refusing anything."),
 })
 
 // The generic conditions a plugin reaches for.
@@ -177,10 +188,10 @@ func ErrPluginCannotExpressInput() error { return errPluginCannotExpressInput }
 var errPluginCannotExpressInput = cerrors.Register("plugin-cannot-express-input", cerrors.Meta{
 	ShortCode: "E0288",
 	Message:   "a plugin has no expression for a construct this build declares",
-	EvaluatedElsewhere: "A guest plugin decides whether it can express a construct, inside its own " +
-		"module and over the input the host handed it, and this package raises the condition on the " +
-		"failure that guest returned. The rule runs where no view of a compilation reaches, so there is " +
-		"no view for the rule dispatch to invoke a rule over.",
+	RulePlace: cerrors.RuleEvaluatedElsewhere("A guest plugin decides whether it can express a construct, inside its own module and over " +
+		"the input the host handed it, and this package raises the condition on the failure that " +
+		"guest returned. The rule runs where no view of a compilation reaches, so there is no view " +
+		"for the rule dispatch to invoke a rule over."),
 })
 
 // ErrPluginRequiredInputUnresolved indicates that a plugin could not resolve
@@ -194,10 +205,10 @@ func ErrPluginRequiredInputUnresolved() error { return errPluginRequiredInputUnr
 var errPluginRequiredInputUnresolved = cerrors.Register("plugin-required-input-unresolved", cerrors.Meta{
 	ShortCode: "E0289",
 	Message:   "a plugin could not resolve something it requires to exactly one value",
-	EvaluatedElsewhere: "A guest plugin resolves what it requires, inside its own module and over the " +
-		"input the host handed it, and this package raises the condition on the failure that guest " +
-		"returned. The rule runs where no view of a compilation reaches, so there is no view for the " +
-		"rule dispatch to invoke a rule over.",
+	RulePlace: cerrors.RuleEvaluatedElsewhere("A guest plugin resolves what it requires, inside its own module and over the input the host " +
+		"handed it, and this package raises the condition on the failure that guest returned. The " +
+		"rule runs where no view of a compilation reaches, so there is no view for the rule dispatch " +
+		"to invoke a rule over."),
 })
 
 // ErrPluginOutputNameCollision indicates that two things a plugin produced
@@ -212,10 +223,10 @@ func ErrPluginOutputNameCollision() error { return errPluginOutputNameCollision 
 var errPluginOutputNameCollision = cerrors.Register("plugin-output-name-collision", cerrors.Meta{
 	ShortCode: "E0290",
 	Message:   "two things a plugin produced occupy one name in its output",
-	EvaluatedElsewhere: "A guest plugin names the things it produces, inside its own module, and " +
-		"discovers the collision there; this package raises the condition on the failure that guest " +
-		"returned. The rule runs over the plugin's own output where no view of a compilation reaches, " +
-		"so there is no view for the rule dispatch to invoke a rule over.",
+	RulePlace: cerrors.RuleEvaluatedElsewhere("A guest plugin names the things it produces, inside its own module, and discovers the " +
+		"collision there; this package raises the condition on the failure that guest returned. The " +
+		"rule runs over the plugin's own output where no view of a compilation reaches, so there is " +
+		"no view for the rule dispatch to invoke a rule over."),
 })
 
 // ErrPluginValueNotRepresentable indicates that a plugin has no representation
@@ -230,10 +241,10 @@ func ErrPluginValueNotRepresentable() error { return errPluginValueNotRepresenta
 var errPluginValueNotRepresentable = cerrors.Register("plugin-value-not-representable", cerrors.Meta{
 	ShortCode: "E0291",
 	Message:   "a plugin has no representation for a value it was given",
-	EvaluatedElsewhere: "A guest plugin decides whether a value it was given can be represented, " +
-		"inside its own module, and this package raises the condition on the failure that guest " +
-		"returned. The rule runs where no view of a compilation reaches, so there is no view for the " +
-		"rule dispatch to invoke a rule over.",
+	RulePlace: cerrors.RuleEvaluatedElsewhere("A guest plugin decides whether a value it was given can be represented, inside its own " +
+		"module, and this package raises the condition on the failure that guest returned. The rule " +
+		"runs where no view of a compilation reaches, so there is no view for the rule dispatch to " +
+		"invoke a rule over."),
 })
 
 // ErrPluginFailureUnclassified indicates that a plugin reported a failure that
@@ -257,10 +268,10 @@ func ErrPluginFailureUnclassified() error { return errPluginFailureUnclassified 
 var errPluginFailureUnclassified = cerrors.Register("plugin-failure-unclassified", cerrors.Meta{
 	ShortCode: "E0292",
 	Message:   "a plugin reported a failure that none of the declared kinds names",
-	EvaluatedElsewhere: "A guest plugin decides that its failure fits none of the declared kinds, " +
-		"inside its own module, and this package raises the condition on the failure that guest " +
-		"returned. The rule runs where no view of a compilation reaches, so there is no view for the " +
-		"rule dispatch to invoke a rule over.",
+	RulePlace: cerrors.RuleEvaluatedElsewhere("A guest plugin decides that its failure fits none of the declared kinds, inside its own " +
+		"module, and this package raises the condition on the failure that guest returned. The rule " +
+		"runs where no view of a compilation reaches, so there is no view for the rule dispatch to " +
+		"invoke a rule over."),
 })
 
 // guestSelectableConditions is the generic set above as one value, and it is what
@@ -341,6 +352,10 @@ func ErrWasmOutputShape() error { return errWasmOutputShape }
 var errWasmOutputShape = cerrors.Register("wasm-output-shape", cerrors.Meta{
 	ShortCode: "E0248",
 	Message:   "wasm: guest plugin returned an output that is not the shape the socket reads",
+	RulePlace: cerrors.NotARule("A guest plugin returned an output that is not the shape the socket it was called at reads " +
+		"— an undeclared top-level field, a field of the wrong type, or bytes that are not a " +
+		"well-formed object at all. It reports a guest whose returned output does not conform to that " +
+		"socket's shape."),
 })
 
 // DecodeGuestOutput decodes a guest's socket output into dst and returns an
@@ -619,10 +634,10 @@ func ErrWasmGuestConditionUndeclared() error { return errWasmGuestConditionUndec
 var errWasmGuestConditionUndeclared = cerrors.Register("wasm-guest-condition-undeclared", cerrors.Meta{
 	ShortCode: "E0293",
 	Message:   "wasm: guest plugin named a condition the socket does not declare",
-	EvaluatedElsewhere: "This package evaluates the rule itself, at the plugin socket boundary: it " +
-		"tests the condition a guest named against the set the socket declares, over the output that " +
-		"guest returned. The subject is a returned output rather than a compilation, so there is no " +
-		"view for the rule dispatch to invoke a rule over.",
+	RulePlace: cerrors.RuleEvaluatedElsewhere("This package evaluates the rule itself, at the plugin socket boundary: it tests the " +
+		"condition a guest named against the set the socket declares, over the output that guest " +
+		"returned. The subject is a returned output rather than a compilation, so there is no view " +
+		"for the rule dispatch to invoke a rule over."),
 })
 
 // undeclaredGuestCondition is the refusal for a report naming a condition this
@@ -789,6 +804,9 @@ func ErrWasmDiagnosticSeverity() error { return errWasmDiagnosticSeverity }
 var errWasmDiagnosticSeverity = cerrors.Register("wasm-diagnostic-severity-invalid", cerrors.Meta{
 	ShortCode: "E0081",
 	Message:   "wasm: guest plugin returned a diagnostic whose severity the contract does not declare",
+	RulePlace: cerrors.NotARule("A guest plugin returned a diagnostic whose severity the shared contract does not declare, so " +
+		"the host has no route for it. It reports a guest whose returned output falls outside the " +
+		"closed set that contract fixes."),
 })
 
 // GuestDiagnosticSeverities checks every diagnostic a guest returned against the
@@ -841,6 +859,7 @@ func ErrWasmContractMismatch() error { return errWasmContractMismatch }
 var errWasmContractMismatch = cerrors.Register("wasm-contract-mismatch", cerrors.Meta{
 	ShortCode: "E0080",
 	Message:   "wasm: entity contract claim does not match plugin describe()",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrWasmHostFunctionsStampMismatch indicates that a Plugin entity's stamped
@@ -867,6 +886,7 @@ func ErrWasmHostFunctionsStampMismatch() error { return errWasmHostFunctionsStam
 var errWasmHostFunctionsStampMismatch = cerrors.Register("wasm-host-function-set-mismatch", cerrors.Meta{
 	ShortCode: "E0084",
 	Message:   "wasm: stamped host-function record does not match .wasm imports",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrWasmPluginTypeMismatch indicates that the plugin type expected at a load
@@ -890,6 +910,7 @@ func ErrWasmPluginTypeMismatch() error { return errWasmPluginTypeMismatch }
 var errWasmPluginTypeMismatch = cerrors.Register("wasm-plugin-type-mismatch", cerrors.Meta{
 	ShortCode: "E0087",
 	Message:   "wasm: declared plugin type does not match plugin describe()",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrWasmCommandsMirrorMismatch indicates that a Plugin entity's recorded
@@ -918,6 +939,7 @@ func ErrWasmCommandsMirrorMismatch() error { return errWasmCommandsMirrorMismatc
 var errWasmCommandsMirrorMismatch = cerrors.Register("wasm-command-set-mismatch", cerrors.Meta{
 	ShortCode: "E0079",
 	Message:   "wasm: recorded command mirror does not match plugin describe()",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrProducerConsumptionReentry indicates that a producer reached through the
@@ -937,6 +959,10 @@ func ErrProducerConsumptionReentry() error { return errProducerConsumptionReentr
 var errProducerConsumptionReentry = cerrors.Register("wasm-nested-producer-consumption-denied", cerrors.Meta{
 	ShortCode: "E0078",
 	Message:   "producer-consumption re-entry denied: a producer reached through the host may not issue a further producer-consumption call",
+	RulePlace: cerrors.NotARule("A producer reached through the host-mediated producer-consumption seam issued a further " +
+		"producer-consumption call of its own. The seam bounds itself to one producer level, so it " +
+		"reports a re-entrant call this host refuses by construction rather than a rule over anything " +
+		"an author wrote."),
 })
 
 // ErrWasmPluginVersionMismatch indicates that a Plugin entity's recorded
@@ -964,4 +990,5 @@ func ErrWasmPluginVersionMismatch() error { return errWasmPluginVersionMismatch 
 var errWasmPluginVersionMismatch = cerrors.Register("wasm-plugin-version-mismatch", cerrors.Meta{
 	ShortCode: "E0088",
 	Message:   "wasm: entity metadata.version does not match plugin describe()",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })

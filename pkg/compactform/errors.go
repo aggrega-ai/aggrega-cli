@@ -21,6 +21,7 @@ func ErrUnknownKeyword() error { return errUnknownKeyword }
 var errUnknownKeyword = cerrors.Register("unknown-keyword", cerrors.Meta{
 	ShortCode: "E0120",
 	Message:   "compactform: unknown keyword",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrAmbiguousDispatch indicates a node's content shape could be
@@ -33,6 +34,7 @@ func ErrAmbiguousDispatch() error { return errAmbiguousDispatch }
 var errAmbiguousDispatch = cerrors.Register("ambiguous-dispatch", cerrors.Meta{
 	ShortCode: "E0115",
 	Message:   "compactform: ambiguous dispatch — $mode required",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrEscapeContentInvalid indicates a `$jsonschema:` block carried
@@ -44,6 +46,7 @@ func ErrEscapeContentInvalid() error { return errEscapeContentInvalid }
 var errEscapeContentInvalid = cerrors.Register("escape-content-invalid", cerrors.Meta{
 	ShortCode: "E0117",
 	Message:   "compactform: $jsonschema content invalid",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrConstraintTypeMismatch indicates a constraint keyword was applied
@@ -56,6 +59,7 @@ func ErrConstraintTypeMismatch() error { return errConstraintTypeMismatch }
 var errConstraintTypeMismatch = cerrors.Register("constraint-type-mismatch", cerrors.Meta{
 	ShortCode: "E0116",
 	Message:   "compactform: constraint not valid for declared type",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrReferenceUnresolvable indicates a `$ref:` URL is syntactically
@@ -67,6 +71,7 @@ func ErrReferenceUnresolvable() error { return errReferenceUnresolvable }
 var errReferenceUnresolvable = cerrors.Register("reference-unresolvable", cerrors.Meta{
 	ShortCode: "E0119",
 	Message:   "compactform: $ref unresolvable",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrUnresolvedSchemaLibraryRef indicates a cross-document `$ref:`
@@ -81,6 +86,7 @@ func ErrUnresolvedSchemaLibraryRef() error { return errUnresolvedSchemaLibraryRe
 var errUnresolvedSchemaLibraryRef = cerrors.Register("unresolved-schema-library-ref", cerrors.Meta{
 	ShortCode: "E0121",
 	Message:   "compactform: cross-document $ref target not found",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrCircularRef indicates a schema that cannot be expanded, because
@@ -127,6 +133,7 @@ func ErrHostInLibraryRef() error { return errHostInLibraryRef }
 var errHostInLibraryRef = cerrors.Register("host-in-library-ref", cerrors.Meta{
 	ShortCode: "E0118",
 	Message:   "compactform: cross-document $ref carries a registry host; reference the library by identity",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // CompileError is a structured compile failure carrying source-position

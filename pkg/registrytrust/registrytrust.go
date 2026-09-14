@@ -146,6 +146,9 @@ func ErrNoTrustAdvertised() error { return errNoTrustAdvertised }
 var errNoTrustAdvertised = cerrors.Register("no-trust-advertised", cerrors.Meta{
 	ShortCode: "E0148",
 	Message:   "registrytrust: registry advertises no trust config",
+	RulePlace: cerrors.NotARule("A registry answered the well-known trust request with a not-found, so it publishes no trust " +
+		"document. It reports the outcome of asking a registry a question rather than a rule refusing " +
+		"anything."),
 })
 
 // ErrMalformedTrust reports that a registry served a trust document that
@@ -159,6 +162,9 @@ func ErrMalformedTrust() error { return errMalformedTrust }
 var errMalformedTrust = cerrors.Register("malformed-trust-policy", cerrors.Meta{
 	ShortCode: "E0147",
 	Message:   "registrytrust: advertised trust config is malformed",
+	RulePlace: cerrors.NotARule("A registry served a trust document that fetched successfully and then failed to decode or " +
+		"validate. The document is fetched in order to be decoded, and what it reports is a decode " +
+		"over fetched content that did not yield a usable policy."),
 })
 
 // fetchTimeout bounds the one-time well-known GET so a hung endpoint cannot

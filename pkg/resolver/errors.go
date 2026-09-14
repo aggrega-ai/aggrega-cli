@@ -20,6 +20,7 @@ func ErrInvalidParameterRef() error { return errInvalidParameterRef }
 var errInvalidParameterRef = cerrors.Register("invalid-parameter-ref", cerrors.Meta{
 	ShortCode: "E0158",
 	Message:   "invalid parameter reference: check the {{ .parameters.* }} expression names a declared parameter and parses as a Go template",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrParametersImportLoad wraps a read or unmarshal failure for the
@@ -29,6 +30,9 @@ func ErrParametersImportLoad() error { return errParametersImportLoad }
 var errParametersImportLoad = cerrors.Register("parameters-import-not-loadable", cerrors.Meta{
 	ShortCode: "E0166",
 	Message:   "parameters $import: load failed",
+	RulePlace: cerrors.NotARule("A read or unmarshal of the single path a Release's parameters import names did not produce " +
+		"content. The file is opened when the import is applied, so what it reports is a load that " +
+		"failed rather than a rule refusing anything written in it."),
 })
 
 // ErrYAMLLoad wraps a file-read or YAML-unmarshal failure for any of the
@@ -38,6 +42,9 @@ func ErrYAMLLoad() error { return errYAMLLoad }
 var errYAMLLoad = cerrors.Register("document-not-loadable", cerrors.Meta{
 	ShortCode: "E0175",
 	Message:   "YAML load failed: check the file exists, is readable, and contains well-formed YAML",
+	RulePlace: cerrors.NotARule("A source document could not be read, or its bytes could not be unmarshalled, so there is no " +
+		"document to judge. The file is opened when the load runs, and what it reports is a load that " +
+		"did not yield one."),
 })
 
 // ErrManifestReservedPrefix wraps a Manifest features.annotations
@@ -54,6 +61,7 @@ func ErrManifestReservedPrefix() error { return errManifestReservedPrefix }
 var errManifestReservedPrefix = cerrors.Register("manifest-reserved-prefix", cerrors.Meta{
 	ShortCode: "E0161",
 	Message:   "manifest annotation binding uses reserved prefix",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrManifestCrossBindingPillarCollision wraps two Manifest
@@ -67,6 +75,7 @@ func ErrManifestCrossBindingPillarCollision() error { return errManifestCrossBin
 var errManifestCrossBindingPillarCollision = cerrors.Register("manifest-cross-binding-pillar-collision", cerrors.Meta{
 	ShortCode: "E0160",
 	Message:   "manifest annotation bindings collide on same Feature path+pillar",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrAnnotationBindingTargetUnresolved wraps a Manifest annotation binding
@@ -91,6 +100,7 @@ func ErrAnnotationBindingTargetUnresolved() error { return errAnnotationBindingT
 var errAnnotationBindingTargetUnresolved = cerrors.Register("annotation-binding-target-unresolved", cerrors.Meta{
 	ShortCode: "E0253",
 	Message:   "annotation binding does not resolve against its target Feature",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrAnnotationSubkeyNotConforming wraps an authored annotation subkey whose
@@ -112,6 +122,7 @@ func ErrAnnotationSubkeyNotConforming() error { return errAnnotationSubkeyNotCon
 var errAnnotationSubkeyNotConforming = cerrors.Register("annotation-subkey-not-conforming", cerrors.Meta{
 	ShortCode: "E0254",
 	Message:   "annotation subkey does not conform to the target Feature's schema at the routed pillar",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrAnnotationSidePillarMismatch wraps an annotation whose binding routes it
@@ -129,6 +140,7 @@ func ErrAnnotationSidePillarMismatch() error { return errAnnotationSidePillarMis
 var errAnnotationSidePillarMismatch = cerrors.Register("annotation-side-pillar-mismatch", cerrors.Meta{
 	ShortCode: "E0255",
 	Message:   "annotation routes through a pillar its authoring side may not use",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrAnnotationBindingPillarOverlap marks an ADVISORY finding, not a halt: a
@@ -148,6 +160,7 @@ func ErrAnnotationBindingPillarOverlap() error { return errAnnotationBindingPill
 var errAnnotationBindingPillarOverlap = cerrors.Register("annotation-binding-pillar-overlap", cerrors.Meta{
 	ShortCode: "E0256",
 	Message:   "annotation binding declares one path in both pillar lists",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrInvalidInjectKey wraps an inject delivery key that does not match
@@ -157,6 +170,7 @@ func ErrInvalidInjectKey() error { return errInvalidInjectKey }
 var errInvalidInjectKey = cerrors.Register("invalid-inject-key", cerrors.Meta{
 	ShortCode: "E0156",
 	Message:   "invalid inject key: the from-key must name a declared provides key of the target component type",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrSchemaConformance wraps a developer-authored component-instance
@@ -171,6 +185,7 @@ func ErrSchemaConformance() error { return errSchemaConformance }
 var errSchemaConformance = cerrors.Register("schema-conformance", cerrors.Meta{
 	ShortCode: "E0168",
 	Message:   "authored pillar does not conform to its declared schema",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrSchemaContractCompileFailure wraps a schema contract that was declared and
@@ -207,6 +222,7 @@ var errSchemaContractCompileFailure = cerrors.Register(
 		Message: "declared schema contract could not be compiled into a usable schema, so nothing " +
 			"was validated against it: correct the contract where it is declared, or remove it " +
 			"if the configuration it covers needs no validation",
+		RulePlace: cerrors.RuleOverAuthoredInput(),
 	})
 
 // ErrAttachmentSlotShape wraps an attachment that binds a declared slot
@@ -239,6 +255,7 @@ func ErrAttachmentSlotShape() error { return errAttachmentSlotShape }
 var errAttachmentSlotShape = cerrors.Register("attachment-slot-shape", cerrors.Meta{
 	ShortCode: "E0150",
 	Message:   "attachment does not conform to its declared slot shape",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrAttachmentSlotNearMiss marks an ADVISORY finding, not a halt: an
@@ -253,6 +270,7 @@ func ErrAttachmentSlotNearMiss() error { return errAttachmentSlotNearMiss }
 var errAttachmentSlotNearMiss = cerrors.Register("attachment-slot-near-miss", cerrors.Meta{
 	ShortCode: "E0149",
 	Message:   "attachment name is a near miss for a declared slot",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrUsesSocketNearMiss marks an ADVISORY finding, not a halt: a socket
@@ -268,6 +286,7 @@ func ErrUsesSocketNearMiss() error { return errUsesSocketNearMiss }
 var errUsesSocketNearMiss = cerrors.Register("uses-socket-near-miss", cerrors.Meta{
 	ShortCode: "E0174",
 	Message:   "uses socket name is a near miss for a declared socket",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrProvidesKeyNotDeclared marks an ADVISORY finding, not a halt: a bound
@@ -283,6 +302,7 @@ func ErrProvidesKeyNotDeclared() error { return errProvidesKeyNotDeclared }
 var errProvidesKeyNotDeclared = cerrors.Register("provides-key-not-declared", cerrors.Meta{
 	ShortCode: "E0167",
 	Message:   "Recipe publishes a provides key its Component does not declare",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrUnreadParameter marks an ADVISORY finding, not a halt: a parameter the
@@ -296,6 +316,7 @@ func ErrUnreadParameter() error { return errUnreadParameter }
 var errUnreadParameter = cerrors.Register("unread-parameter", cerrors.Meta{
 	ShortCode: "E0173",
 	Message:   "declared parameter is read by no reference in the Aggregate",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrGuardEntityViewInconsistency wraps an internal-consistency failure: a
@@ -311,6 +332,7 @@ func ErrGuardEntityViewInconsistency() error { return errGuardEntityViewInconsis
 var errGuardEntityViewInconsistency = cerrors.Register("internal-catalog-view-disagreement", cerrors.Meta{
 	ShortCode: "E0154",
 	Message:   "the compiler's own views of the catalog disagree",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrMissingRequiredFeature wraps a component whose declared catalog type
@@ -329,6 +351,7 @@ func ErrMissingRequiredFeature() error { return errMissingRequiredFeature }
 var errMissingRequiredFeature = cerrors.Register("missing-required-feature", cerrors.Meta{
 	ShortCode: "E0162",
 	Message:   "missing required feature: attach a Feature of the required type to the component",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrFeatureMergeConflict wraps a conflict during Release-side Feature
@@ -338,6 +361,7 @@ func ErrFeatureMergeConflict() error { return errFeatureMergeConflict }
 var errFeatureMergeConflict = cerrors.Register("feature-merge-conflict", cerrors.Meta{
 	ShortCode: "E0153",
 	Message:   "feature merge conflict: reconcile the Aggregate and Release declarations for the feature",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrUnknownUsesSocket wraps a socket name that the entity owning the surface
@@ -352,6 +376,7 @@ func ErrUnknownUsesSocket() error { return errUnknownUsesSocket }
 var errUnknownUsesSocket = cerrors.Register("unknown-uses-socket", cerrors.Meta{
 	ShortCode: "E0171",
 	Message:   "unknown uses socket: name a socket the entity declares in its usesSchema — only a component's own uses block may name one the catalog did not declare",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrSelfInjectForbidden wraps a self-inject declaration on a component
@@ -361,6 +386,7 @@ func ErrSelfInjectForbidden() error { return errSelfInjectForbidden }
 var errSelfInjectForbidden = cerrors.Register("self-inject-forbidden", cerrors.Meta{
 	ShortCode: "E0169",
 	Message:   "self-inject on component without spec.inject allowlist",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrInjectKeyCollision wraps a delivery key declared on more than one
@@ -370,6 +396,7 @@ func ErrInjectKeyCollision() error { return errInjectKeyCollision }
 var errInjectKeyCollision = cerrors.Register("inject-key-collision", cerrors.Meta{
 	ShortCode: "E0155",
 	Message:   "duplicate delivery key across inject sources",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrMissingRequiredSocket wraps a uses-socket marked required in the
@@ -379,6 +406,7 @@ func ErrMissingRequiredSocket() error { return errMissingRequiredSocket }
 var errMissingRequiredSocket = cerrors.Register("missing-required-socket", cerrors.Meta{
 	ShortCode: "E0163",
 	Message:   "required uses socket not populated",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrParameterMissing wraps a parameter declared required: true in the
@@ -392,6 +420,7 @@ func ErrParameterMissing() error { return errParameterMissing }
 var errParameterMissing = cerrors.Register("parameter-missing", cerrors.Meta{
 	ShortCode: "E0165",
 	Message:   "required parameter not supplied",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrParameterContractViolation wraps a parameter value that fails the
@@ -405,6 +434,7 @@ func ErrParameterContractViolation() error { return errParameterContractViolatio
 var errParameterContractViolation = cerrors.Register("parameter-contract-violation", cerrors.Meta{
 	ShortCode: "E0164",
 	Message:   "parameter contract violated",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrDuplicateBoundaryComponent wraps a Release that places one component in
@@ -430,6 +460,7 @@ func ErrDuplicateBoundaryComponent() error { return errDuplicateBoundaryComponen
 var errDuplicateBoundaryComponent = cerrors.Register("duplicate-boundary-component", cerrors.Meta{
 	ShortCode: "E0151",
 	Message:   "component declared in more than one boundary: declare each component in exactly one boundary",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrUnnormalizedRelease fires at the resolve entry when a Release arrives
@@ -448,6 +479,10 @@ func ErrUnnormalizedRelease() error { return errUnnormalizedRelease }
 var errUnnormalizedRelease = cerrors.Register("release-not-in-canonical-form", cerrors.Meta{
 	ShortCode: "E0172",
 	Message:   "release reached resolve un-normalized (non-empty root components alongside a synthesized default boundary)",
+	RulePlace: cerrors.NotARule("A Release reached resolution in a state the normalization core cannot produce, so a caller " +
+		"built one by hand or took a load path that skipped that core. It reports an invariant of " +
+		"this program's own construction; the authored shape it would correspond to is refused by the " +
+		"envelope."),
 })
 
 // ErrVerdictPluginTrustMismatch reports that the digest recorded as trusted for a
@@ -480,6 +515,10 @@ func ErrVerdictPluginTrustMismatch() error { return errVerdictPluginTrustMismatc
 var errVerdictPluginTrustMismatch = cerrors.Register("verdict-plugin-trust-mismatch", cerrors.Meta{
 	ShortCode: "E0246",
 	Message:   "the digest recorded as trusted for this plugin does not match the digest its cached manifest reports",
+	RulePlace: cerrors.NotARule("The digest recorded as trusted for a verdict plugin disagrees with the digest that plugin's " +
+		"manifest reports. The manifest is read from the content cache as the resolution runs, so the " +
+		"comparand is obtained when the comparison happens and what it reports is a trust " +
+		"verification that did not hold."),
 })
 
 // ResolverError carries entity and field context alongside a sentinel error.

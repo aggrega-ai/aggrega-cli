@@ -59,6 +59,9 @@ func ErrNotDocsBundle() error { return errNotDocsBundle }
 var errNotDocsBundle = cerrors.Register("not-docs-bundle", cerrors.Meta{
 	ShortCode: "E0123",
 	Message:   "docscache: artifact is not a documentation bundle",
+	RulePlace: cerrors.NotARule("A reference resolved to an artifact that does not carry the documentation-bundle media type. " +
+		"The artifact is fetched in order to be inspected, so the fact the comparison turns on is " +
+		"obtained when it runs; what it reports is a resolution that yielded the wrong kind of thing."),
 })
 
 // ErrPageNotFound reports that the requested page is absent from an otherwise
@@ -70,6 +73,8 @@ func ErrPageNotFound() error { return errPageNotFound }
 var errPageNotFound = cerrors.Register("page-not-found", cerrors.Meta{
 	ShortCode: "E0124",
 	Message:   "docscache: page not found in documentation bundle",
+	RulePlace: cerrors.NotARule("A requested page is absent from a bundle that is present and integrity-verified. It reports " +
+		"a lookup in fetched content that found nothing rather than a rule refusing content."),
 })
 
 // VerifyAtPull verifies a resolved documentation bundle's signature at pull

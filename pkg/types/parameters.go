@@ -19,6 +19,7 @@ func ErrParametersShape() error { return errParametersShape }
 var errParametersShape = cerrors.Register("parameters-shape", cerrors.Meta{
 	ShortCode: "E0193",
 	Message:   "parameters: shape must be an inline object or {$import: <local-path>}",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ParametersBlock carries the Release's environment-specific parameter

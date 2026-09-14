@@ -54,6 +54,9 @@ func ErrEmptyWorkspaceRoot() error { return errEmptyWorkspaceRoot }
 var errEmptyWorkspaceRoot = cerrors.Register("empty-workspace-root", cerrors.Meta{
 	ShortCode: "E0187",
 	Message:   "cacheslot: empty workspaceRoot",
+	RulePlace: cerrors.NotARule("A cache slot was requested with an empty workspace root, which would resolve against the " +
+		"process working directory at write time. It reports how this program called itself rather " +
+		"than a rule over anything an author wrote."),
 })
 
 // Slot computes the absolute cache-slot directory path for a

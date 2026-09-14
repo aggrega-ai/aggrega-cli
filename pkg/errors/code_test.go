@@ -32,11 +32,7 @@ const (
 	codeBlankDeclaredAhead     = "blank-declared-ahead-subject"
 	codeSetDeclaredAhead       = "set-declared-ahead-subject"
 
-	codeBlankEvaluatedElsewhere = "blank-evaluated-elsewhere-subject"
-	codeSetEvaluatedElsewhere   = "set-evaluated-elsewhere-subject"
-
 	codeBlankRulePlaceReason    = "blank-rule-place-reason-subject"
-	codeTwoPlaceSpellings       = "two-place-spellings-subject"
 	codePlaceOverAuthoredInput  = "place-over-authored-input-subject"
 	codePlaceEvaluatedElsewhere = "place-evaluated-elsewhere-subject"
 	codePlaceNotARule           = "place-not-a-rule-subject"
@@ -61,11 +57,7 @@ const (
 	shortBlankDeclaredAhead     = "E9217"
 	shortSetDeclaredAhead       = "E9218"
 
-	shortBlankEvaluatedElsewhere = "E9219"
-	shortSetEvaluatedElsewhere   = "E9220"
-
 	shortBlankRulePlaceReason    = "E9222"
-	shortTwoPlaceSpellings       = "E9223"
 	shortPlaceOverAuthoredInput  = "E9224"
 	shortPlaceEvaluatedElsewhere = "E9225"
 	shortPlaceNotARule           = "E9226"
@@ -672,72 +664,6 @@ func TestRegister_AcceptsAnAbsentAndAWrittenDeclaredAheadNote(t *testing.T) {
 	// initialisation already proves.
 }
 
-// TestRegister_PanicsOnABlankEvaluatedElsewhereNote pins for the
-// evaluated-elsewhere note the property the declared-ahead refusal above pins
-// for its own: it cannot be acquired by neglect.
-//
-// A condition whose rule is evaluated outside the compiler's own rule dispatch
-// is counted apart from the conditions whose rules could be expressed there. A
-// note carrying no text would take a condition out of the ratcheted count while
-// naming no evaluator, which is the exemption the field must not become — and
-// the exemption is the more tempting failure here, because the ratchet is the
-// thing whose refusal a blank note would silence.
-//
-// The probe uses whitespace rather than the empty string, because the empty
-// string is the ordinary absent value and refusing it would refuse nearly every
-// registration in the module.
-func TestRegister_PanicsOnABlankEvaluatedElsewhereNote(t *testing.T) {
-	t.Parallel()
-
-	v := panicValue(func() {
-		cerrors.Register(codeBlankEvaluatedElsewhere, cerrors.Meta{
-			ShortCode:          shortBlankEvaluatedElsewhere,
-			Message:            "a message whose evaluated-elsewhere note names no evaluator",
-			EvaluatedElsewhere: "   \t  ",
-		})
-	})
-	if v == nil {
-		t.Fatalf("registering a blank evaluated-elsewhere note did not panic")
-	}
-	if msg := fmt.Sprint(v); !strings.Contains(msg, codeBlankEvaluatedElsewhere) {
-		t.Errorf("panic %q does not name the offending code %q", msg, codeBlankEvaluatedElsewhere)
-	}
-
-	// The refused registration must not have landed in either index, for the
-	// reason the two refusals above check the same thing: a half-written entry
-	// would make the repaired declaration fail as a duplicate.
-	if v := panicValue(func() {
-		cerrors.Register(codeBlankEvaluatedElsewhere, cerrors.Meta{
-			ShortCode:          shortBlankEvaluatedElsewhere,
-			Message:            "a message whose evaluated-elsewhere note names no evaluator",
-			EvaluatedElsewhere: "A plugin guest evaluates the rule, so no dispatch invokes it.",
-		})
-	}); v != nil {
-		t.Errorf("a refused registration left one of the two indexes occupied; re-registering panicked with %v", v)
-	}
-}
-
-// TestRegister_AcceptsAnAbsentAndAWrittenEvaluatedElsewhereNote is the
-// calibration for the refusal above, and it is owed for the same reason the
-// declared-ahead calibration is: a refusal that also caught either of these
-// would refuse the whole module at package initialisation.
-func TestRegister_AcceptsAnAbsentAndAWrittenEvaluatedElsewhereNote(t *testing.T) {
-	t.Parallel()
-
-	if v := panicValue(func() {
-		cerrors.Register(codeSetEvaluatedElsewhere, cerrors.Meta{
-			ShortCode:          shortSetEvaluatedElsewhere,
-			Message:            "a message whose evaluated-elsewhere note names its evaluator",
-			EvaluatedElsewhere: "A plugin guest evaluates the rule, so no dispatch invokes it.",
-		})
-	}); v != nil {
-		t.Errorf("a written evaluated-elsewhere note was refused: %v", v)
-	}
-
-	// The absent case is exercised by every other registration in this file and
-	// in the module, exactly as it is for the declared-ahead note.
-}
-
 // TestRegister_PanicsOnARulePlaceWhoseReasonSaysNothing pins the half of the
 // place declaration the constructors cannot pin.
 //
@@ -792,52 +718,8 @@ func TestRegister_PanicsOnARulePlaceWhoseReasonSaysNothing(t *testing.T) {
 	}
 }
 
-// TestRegister_PanicsOnBothARulePlaceAndAnEvaluatedElsewhereNote pins the rule
-// that keeps one condition from holding two spellings of one fact.
-//
-// The note and the place are the same declaration written two ways. A condition
-// carrying both has two homes for where its rule belongs, and the day they
-// disagree nothing downstream can say which was meant — the census reading the
-// source would have to choose, and whichever it chose would be a guess. The
-// refusal is what makes the older spelling safe to keep beside the newer one
-// rather than a state the two can drift apart in.
-//
-// The place used here is the one that means the SAME thing as the note, because
-// that is the pairing a reader is most likely to write believing it is
-// belt-and-braces. A place contradicting the note is refused by the same
-// predicate and needs no separate probe: the predicate reads whether both are
-// present and never what either says.
-func TestRegister_PanicsOnBothARulePlaceAndAnEvaluatedElsewhereNote(t *testing.T) {
-	t.Parallel()
-
-	v := panicValue(func() {
-		cerrors.Register(codeTwoPlaceSpellings, cerrors.Meta{
-			ShortCode:          shortTwoPlaceSpellings,
-			Message:            "a message declaring its place twice",
-			EvaluatedElsewhere: "A plugin guest evaluates the rule, so no dispatch invokes it.",
-			RulePlace:          cerrors.RuleEvaluatedElsewhere("A plugin guest evaluates the rule, so no dispatch invokes it."),
-		})
-	})
-	if v == nil {
-		t.Fatalf("registering both a rule place and an evaluated-elsewhere note did not panic")
-	}
-	if msg := fmt.Sprint(v); !strings.Contains(msg, codeTwoPlaceSpellings) {
-		t.Errorf("panic %q does not name the offending code %q", msg, codeTwoPlaceSpellings)
-	}
-
-	if v := panicValue(func() {
-		cerrors.Register(codeTwoPlaceSpellings, cerrors.Meta{
-			ShortCode: shortTwoPlaceSpellings,
-			Message:   "a message declaring its place twice",
-			RulePlace: cerrors.RuleEvaluatedElsewhere("A plugin guest evaluates the rule, so no dispatch invokes it."),
-		})
-	}); v != nil {
-		t.Errorf("a refused registration left one of the two indexes occupied; re-registering panicked with %v", v)
-	}
-}
-
-// TestRegister_AcceptsEachOfTheThreePlaces is the calibration for the two
-// refusals above, and it is owed for the reason the other calibrations here are:
+// TestRegister_AcceptsEachOfTheThreePlaces is the calibration for the refusal
+// above, and it is owed for the reason the other calibrations here are:
 // a refusal that also caught a well-formed declaration would refuse the module
 // at package initialisation the moment the declared set is written.
 //

@@ -251,6 +251,7 @@ func ErrUnusableSchemaImport() error { return errUnusableSchemaImport }
 var errUnusableSchemaImport = cerrors.Register("unusable-schema-import", cerrors.Meta{
 	ShortCode: "E0266",
 	Message:   "a schema `$import:` could not be applied",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // schemaImportError shapes one import failure as the catalog-load diagnostic the

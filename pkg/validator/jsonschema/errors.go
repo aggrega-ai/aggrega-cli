@@ -19,6 +19,9 @@ func ErrSchemaResolve() error { return errSchemaResolve }
 var errSchemaResolve = cerrors.Register("schema-not-resolvable", cerrors.Meta{
 	ShortCode: "E0218",
 	Message:   "validator/jsonschema: schema resolution failed",
+	RulePlace: cerrors.NotARule("A schema could not be resolved when the validating adapter was constructed, so nothing was " +
+		"built to validate against. It reports a resolution that did not yield a schema rather than a " +
+		"rule refusing content."),
 })
 
 // ErrExtensionEval indicates an x-aggrega-when: or x-aggrega-
@@ -29,6 +32,9 @@ func ErrExtensionEval() error { return errExtensionEval }
 var errExtensionEval = cerrors.Register("schema-extension-evaluation-failed", cerrors.Meta{
 	ShortCode: "E0216",
 	Message:   "validator/jsonschema: x-aggrega extension evaluation failed",
+	RulePlace: cerrors.NotARule("An extension template predicate could not be evaluated to a boolean — a parse error, a " +
+		"runtime error, or a result that is not boolean. It reports that answering the question " +
+		"became impossible rather than a rule that refused content."),
 })
 
 // AdapterError wraps the underlying library or template evaluation

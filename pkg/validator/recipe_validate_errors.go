@@ -31,6 +31,7 @@ func ErrRecipeValuesMappingRequiresSource() error { return errRecipeValuesMappin
 var errRecipeValuesMappingRequiresSource = cerrors.Register("recipe-values-mapping-requires-source", cerrors.Meta{
 	ShortCode: "E0209",
 	Message:   "Recipe: valuesMapping requires source",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrRecipeNoInputKind: at least one input kind must be present.
@@ -39,6 +40,7 @@ func ErrRecipeNoInputKind() error { return errRecipeNoInputKind }
 var errRecipeNoInputKind = cerrors.Register("recipe-no-input-kind", cerrors.Meta{
 	ShortCode: "E0210",
 	Message:   "Recipe: at least one input kind required",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrRecipeFilenameCollisionAcrossInputKinds: two input-kind blocks of one
@@ -63,6 +65,7 @@ func ErrRecipeFilenameCollisionAcrossInputKinds() error {
 var errRecipeFilenameCollisionAcrossInputKinds = cerrors.Register("recipe-filename-collision-across-input-kinds", cerrors.Meta{
 	ShortCode: "E0211",
 	Message:   "filename collision across input kinds: two input-kind blocks produced a file under one output name",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrRecipeEvalProviderConstraint: the eval provider executes formatting
@@ -75,6 +78,7 @@ func ErrRecipeEvalProviderConstraint() error { return errRecipeEvalProviderConst
 var errRecipeEvalProviderConstraint = cerrors.Register("recipe-eval-provider-constraint", cerrors.Meta{
 	ShortCode: "E0206",
 	Message:   "recipe eval-provider constraint: input-kind fields are forbidden when provider is eval",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrRecipeOutputLabelReservedNamespace: an outputLabels key uses a
@@ -88,6 +92,7 @@ func ErrRecipeOutputLabelReservedNamespace() error { return errRecipeOutputLabel
 var errRecipeOutputLabelReservedNamespace = cerrors.Register("recipe-output-label-reserved-namespace", cerrors.Meta{
 	ShortCode: "E0208",
 	Message:   "recipe output-labels constraint: key uses a reserved namespace",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrRecipeOutputComponentLabelCollision: a key promoted through
@@ -101,4 +106,5 @@ func ErrRecipeOutputComponentLabelCollision() error { return errRecipeOutputComp
 var errRecipeOutputComponentLabelCollision = cerrors.Register("recipe-output-component-label-collision", cerrors.Meta{
 	ShortCode: "E0207",
 	Message:   "recipe output-component-labels constraint: key is also declared in outputLabels",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })

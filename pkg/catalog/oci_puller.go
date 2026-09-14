@@ -28,6 +28,7 @@ func ErrQualifiedPluginReference() error { return errQualifiedPluginReference }
 var errQualifiedPluginReference = cerrors.Register("plugin-reference-must-not-be-registry-qualified", cerrors.Meta{
 	ShortCode: "E0102",
 	Message:   "wasm plugin reference must be the plugin coordinate identity (<pluginType>/<name>:<version>), not a registry-qualified or artifact path",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrUnscopedPluginReference is returned when a Plugin reference carries no
@@ -42,6 +43,7 @@ func ErrUnscopedPluginReference() error { return errUnscopedPluginReference }
 var errUnscopedPluginReference = cerrors.Register("plugin-reference-must-be-scoped", cerrors.Meta{
 	ShortCode: "E0104",
 	Message:   "wasm plugin reference must carry a pluginType scope (<pluginType>/<name>); an empty scope cannot bind to an OCI location",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrUnscopedRecipeReference is returned when a Recipe / FeatureRecipe reference
@@ -56,6 +58,7 @@ func ErrUnscopedRecipeReference() error { return errUnscopedRecipeReference }
 var errUnscopedRecipeReference = cerrors.Register("recipe-reference-must-be-scoped", cerrors.Meta{
 	ShortCode: "E0105",
 	Message:   "recipe reference must be provider-scoped (<provider>/<name>); an empty provider cannot bind to an OCI location",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrAllVersionsRetracted is returned when every published version of an entity
@@ -72,6 +75,7 @@ func ErrAllVersionsRetracted() error { return errAllVersionsRetracted }
 var errAllVersionsRetracted = cerrors.Register("all-versions-retracted", cerrors.Meta{
 	ShortCode: "E0089",
 	Message:   "every published version this reference could select has been withdrawn",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // VersionExclusion is one published version a RetractionScreen removed from

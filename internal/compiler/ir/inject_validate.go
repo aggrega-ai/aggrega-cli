@@ -31,6 +31,7 @@ func ErrInjectEntryAmbiguous() error { return errInjectEntryAmbiguous }
 var errInjectEntryAmbiguous = cerrors.Register("inject-entry-ambiguous", cerrors.Meta{
 	ShortCode: "E0014",
 	Message:   "inject entry carries both `value:` and `from:`; schema requires exactly one",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ValidateInjectBlock walks a single InjectBlock's mechanisms (env, file,

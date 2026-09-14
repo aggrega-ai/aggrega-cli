@@ -59,6 +59,7 @@ func ErrVerdictAttachmentNotConfigured() error { return errVerdictAttachmentNotC
 var errVerdictAttachmentNotConfigured = cerrors.Register("verdict-attachment-not-configured", cerrors.Meta{
 	ShortCode: "E0247",
 	Message:   "a plugin recorded as trusted for an accept-or-reject verdict is no longer attached at any verdict role",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // LoadOrStart reads the record at path, or starts an empty one when the file is

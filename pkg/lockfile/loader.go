@@ -22,6 +22,9 @@ func ErrLockfileInvalid() error { return errLockfileInvalid }
 var errLockfileInvalid = cerrors.Register("lockfile-invalid", cerrors.Meta{
 	ShortCode: "E0131",
 	Message:   "lockfile: file failed schema validation",
+	RulePlace: cerrors.NotARule("A lockfile failed structural validation as it was loaded. The file is opened and validated " +
+		"as one operation, and the machine writes it rather than an author, so what it reports is a " +
+		"load that could not produce a lockfile."),
 })
 
 // DiagnosticSeverity classifies a non-fatal observation surfaced by

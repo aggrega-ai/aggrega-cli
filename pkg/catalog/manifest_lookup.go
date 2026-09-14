@@ -54,6 +54,7 @@ func ErrManifestImplementsMismatch() error { return errManifestImplementsMismatc
 var errManifestImplementsMismatch = cerrors.Register("manifest-implements-mismatch", cerrors.Meta{
 	ShortCode: "E0096",
 	Message:   "manifest mapping entry's recipe spec.implements does not match the mapped component-type / feature-type key",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrAmbiguousTypeMapping fires when a component/feature type resolves to more
@@ -65,6 +66,7 @@ func ErrAmbiguousTypeMapping() error { return errAmbiguousTypeMapping }
 var errAmbiguousTypeMapping = cerrors.Register("ambiguous-type-mapping", cerrors.Meta{
 	ShortCode: "E0093",
 	Message:   "manifest maps multiple version-distinct keys to the same base type; the type-to-recipe lookup is ambiguous",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrDuplicateEntityIdentity fires when two catalog entities of one kind share
@@ -79,6 +81,7 @@ func ErrDuplicateEntityIdentity() error { return errDuplicateEntityIdentity }
 var errDuplicateEntityIdentity = cerrors.Register("duplicate-entity-identity", cerrors.Meta{
 	ShortCode: "E0094",
 	Message:   "duplicate entity identity within a single catalog directory",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrDuplicateRecipeIdentity is the recipe-specific facet of
@@ -106,6 +109,7 @@ func ErrProviderVersionUnsatisfiable() error { return errProviderVersionUnsatisf
 var errProviderVersionUnsatisfiable = cerrors.Register("provider-version-unsatisfiable", cerrors.Meta{
 	ShortCode: "E0101",
 	Message:   "no provider-rendering plugin version satisfies the recipe's provider version pin",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrAmbiguousProviderPlugin fires at resolution when a capability is served
@@ -123,6 +127,7 @@ func ErrAmbiguousProviderPlugin() error { return errAmbiguousProviderPlugin }
 var errAmbiguousProviderPlugin = cerrors.Register("ambiguous-provider-plugin", cerrors.Meta{
 	ShortCode: "E0092",
 	Message:   "capability is served by more than one provider plugin; add a plugins.providers entry to select one",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrProviderBindingUnsatisfied fires at resolution when a plugins.providers
@@ -136,6 +141,7 @@ func ErrProviderBindingUnsatisfied() error { return errProviderBindingUnsatisfie
 var errProviderBindingUnsatisfied = cerrors.Register("provider-binding-unsatisfied", cerrors.Meta{
 	ShortCode: "E0100",
 	Message:   "plugins.providers entry names a plugin no provider-rendering plugin serving the capability matches",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrNoRecipeResolved fires when a component/feature instance has no explicit
@@ -156,6 +162,7 @@ func ErrNoRecipeResolved() error { return errNoRecipeResolved }
 var errNoRecipeResolved = cerrors.Register("no-recipe-resolved", cerrors.Meta{
 	ShortCode: "E0099",
 	Message:   "no recipe resolved for component/feature instance: add an explicit Manifest mapping for its type",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrMalformedRecipeReference fires when a Manifest mapping value carries more
@@ -173,6 +180,7 @@ func ErrMalformedRecipeReference() error { return errMalformedRecipeReference }
 var errMalformedRecipeReference = cerrors.Register("malformed-recipe-reference", cerrors.Meta{
 	ShortCode: "E0095",
 	Message:   "malformed recipe reference in a Manifest mapping value",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // RecipeMappingURI composes the bare "name:version" URI form that Manifest

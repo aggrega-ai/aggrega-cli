@@ -27,6 +27,7 @@ func ErrSelectorViolation() error { return errSelectorViolation }
 var errSelectorViolation = cerrors.Register("selector-violation", cerrors.Meta{
 	ShortCode: "E0007",
 	Message:   "selector violation",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrSlotSelectorUnsatisfied is the ABI-stable sentinel for an attachment
@@ -54,6 +55,7 @@ func ErrSlotSelectorUnsatisfied() error { return errSlotSelectorUnsatisfied }
 var errSlotSelectorUnsatisfied = cerrors.Register("slot-selector-unsatisfied", cerrors.Meta{
 	ShortCode: "E0008",
 	Message:   "attachment slot selector unsatisfied",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrRequiredSlotUnfilled is the ABI-stable sentinel for an attachment
@@ -94,6 +96,7 @@ func ErrRequiredSlotUnfilled() error { return errRequiredSlotUnfilled }
 var errRequiredSlotUnfilled = cerrors.Register("required-slot-unfilled", cerrors.Meta{
 	ShortCode: "E0006",
 	Message:   "required attachment slot unfilled",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrPolicyViolation is the ABI-stable sentinel for a Step-4
@@ -111,6 +114,7 @@ func ErrPolicyViolation() error { return errPolicyViolation }
 var errPolicyViolation = cerrors.Register("policy-violation", cerrors.Meta{
 	ShortCode: "E0005",
 	Message:   "policy violation",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrMalformedAttachmentRequirement is the ABI-stable sentinel for a
@@ -141,6 +145,7 @@ func ErrMalformedAttachmentRequirement() error { return errMalformedAttachmentRe
 var errMalformedAttachmentRequirement = cerrors.Register("malformed-attachment-requirement", cerrors.Meta{
 	ShortCode: "E0003",
 	Message:   "malformed attachment requirement",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrOverriddenAnnotation is the ABI-stable sentinel for a leaf of an
@@ -159,6 +164,7 @@ func ErrOverriddenAnnotation() error { return errOverriddenAnnotation }
 var errOverriddenAnnotation = cerrors.Register("overridden-annotation", cerrors.Meta{
 	ShortCode: "E0004",
 	Message:   "annotation contribution overridden by an explicit value",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrUnusableComponentIdentity is the ABI-stable sentinel for a component whose
@@ -194,4 +200,5 @@ var errUnusableComponentIdentity = cerrors.Register("unusable-component-identity
 	ShortCode: "E0262",
 	Message: "component identity cannot be the name its emitted resources are stamped with: " +
 		"rename the component",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })

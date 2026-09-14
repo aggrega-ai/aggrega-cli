@@ -86,6 +86,10 @@ func ErrVerdictPluginIdentityChanged() error { return errVerdictPluginIdentityCh
 var errVerdictPluginIdentityChanged = cerrors.Register("verdict-plugin-identity-changed", cerrors.Meta{
 	ShortCode: "E0274",
 	Message:   "the plugin identity recorded as trusted no longer matches what this resolution reports",
+	RulePlace: cerrors.NotARule("A pull resolved a verdict attachment to a plugin identity the record beside the lockfile " +
+		"does not hold for it. The identity is produced by the resolution the comparison is part of, " +
+		"so it reports a recorded trust fact that no longer verifies rather than a rule refusing " +
+		"authored content."),
 })
 
 // splitAttachmentRef splits an attachment's authored reference into its bare

@@ -36,6 +36,7 @@ func ErrPersistentTemplateRequiresStatefulForm() error {
 var errPersistentTemplateRequiresStatefulForm = cerrors.Register("persistent-template-requires-stateful-form", cerrors.Meta{
 	ShortCode: "E0021",
 	Message:   "persistentTemplate volume requires form: stateful",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrScheduledFormRequiresSchedule is the companion constraint that a
@@ -49,6 +50,7 @@ func ErrScheduledFormRequiresSchedule() error { return errScheduledFormRequiresS
 var errScheduledFormRequiresSchedule = cerrors.Register("scheduled-form-requires-schedule", cerrors.Meta{
 	ShortCode: "E0025",
 	Message:   "form: scheduled requires a schedule",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrScheduleRequiresScheduledForm is the reverse companion constraint: a
@@ -61,6 +63,7 @@ func ErrScheduleRequiresScheduledForm() error { return errScheduleRequiresSchedu
 var errScheduleRequiresScheduledForm = cerrors.Register("schedule-requires-scheduled-form", cerrors.Meta{
 	ShortCode: "E0024",
 	Message:   "schedule requires form: scheduled",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrReferenceFormRequiresEndpoint is the companion constraint that a
@@ -73,6 +76,7 @@ func ErrReferenceFormRequiresEndpoint() error { return errReferenceFormRequiresE
 var errReferenceFormRequiresEndpoint = cerrors.Register("reference-form-requires-endpoint", cerrors.Meta{
 	ShortCode: "E0023",
 	Message:   "form: reference requires an endpoint",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrEndpointRequiresReferenceForm is the reverse companion constraint: an
@@ -85,6 +89,7 @@ func ErrEndpointRequiresReferenceForm() error { return errEndpointRequiresRefere
 var errEndpointRequiresReferenceForm = cerrors.Register("endpoint-requires-reference-form", cerrors.Meta{
 	ShortCode: "E0019",
 	Message:   "endpoint requires form: reference",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrInvalidCronSchedule is emitted when a schedule fails the structural cron
@@ -97,6 +102,7 @@ func ErrInvalidCronSchedule() error { return errInvalidCronSchedule }
 var errInvalidCronSchedule = cerrors.Register("invalid-cron-schedule", cerrors.Meta{
 	ShortCode: "E0020",
 	Message:   "schedule is not a valid cron expression",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // NormalizeWorkloadForm maps an empty form to the stateless default and

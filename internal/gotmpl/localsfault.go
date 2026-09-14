@@ -46,6 +46,7 @@ func ErrLocalsForwardReference() error { return errLocalsForwardReference }
 var errLocalsForwardReference = cerrors.Register("locals-forward-reference", cerrors.Meta{
 	ShortCode: "E0042",
 	Message:   "locals entry references a sibling defined later in the same block",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // ErrLocalsUnknownReference is the Loud Guardrail halt raised when a template
@@ -69,6 +70,7 @@ func ErrLocalsUnknownReference() error { return errLocalsUnknownReference }
 var errLocalsUnknownReference = cerrors.Register("locals-unknown-reference", cerrors.Meta{
 	ShortCode: "E0043",
 	Message:   "template references a key the locals block does not declare",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
 // LocalsForwardRemedy is the ONE home of what an ordering fault tells the author

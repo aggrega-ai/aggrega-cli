@@ -43,6 +43,9 @@ var errOfflineEgress = cerrors.Register("offline-egress", cerrors.Meta{
 		"the configuration file (or AGGREGA_OFFLINE) to allow it from now on; where the work is a build " +
 		"that needs content the machine does not have, run `aggrega pull --release <release>` from a " +
 		"connected environment first to populate the cache",
+	RulePlace: cerrors.NotARule("Network access was refused because the resolved workspace is offline, at the point an egress " +
+		"is constructed and before any dial. It reports an operation this workspace declines to " +
+		"perform rather than a rule refusing anything an author wrote."),
 })
 
 // RefuseIfOffline returns the offline refusal for an operation whose own work is

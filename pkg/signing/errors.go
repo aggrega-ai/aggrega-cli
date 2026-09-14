@@ -15,6 +15,9 @@ func ErrUnsupportedKey() error { return errUnsupportedKey }
 var errUnsupportedKey = cerrors.Register("unsupported-key", cerrors.Meta{
 	ShortCode: "E0184",
 	Message:   "signing: unsupported held-key type",
+	RulePlace: cerrors.NotARule("A held key supplied to the keyed signer is not of the one key profile that signer supports. " +
+		"It reports an input the signing operation cannot use rather than a rule over anything " +
+		"authored in a document."),
 })
 
 // ErrSignatureInvalid is returned when a signature does not verify
@@ -26,6 +29,8 @@ func ErrSignatureInvalid() error { return errSignatureInvalid }
 var errSignatureInvalid = cerrors.Register("signature-invalid", cerrors.Meta{
 	ShortCode: "E0179",
 	Message:   "signing: signature does not verify",
+	RulePlace: cerrors.NotARule("A signature does not verify against the supplied public key and payload. It reports a " +
+		"cryptographic verification that did not hold."),
 })
 
 // ErrKeylessLive is returned by the keyless signer when invoked without
@@ -39,6 +44,9 @@ func ErrKeylessLive() error { return errKeylessLive }
 var errKeylessLive = cerrors.Register("keyless-signing-requires-network", cerrors.Meta{
 	ShortCode: "E0176",
 	Message:   "signing: keyless signing requires a live identity provider, Fulcio, and Rekor",
+	RulePlace: cerrors.NotARule("Keyless signing was invoked with no reachable identity provider, certificate authority or " +
+		"transparency log. The path is live-only, so it reports an operation that cannot be performed " +
+		"here rather than a rule refusing content."),
 })
 
 // ErrSignatureVerificationFailed is returned when a signature bundle does
@@ -53,6 +61,8 @@ func ErrSignatureVerificationFailed() error { return errSignatureVerificationFai
 var errSignatureVerificationFailed = cerrors.Register("signature-verification-failed", cerrors.Meta{
 	ShortCode: "E0180",
 	Message:   "signing: signature bundle does not verify",
+	RulePlace: cerrors.NotARule("A signature bundle does not verify against the trust anchor and policy at pull time. It " +
+		"reports a cryptographic verification that did not hold."),
 })
 
 // ErrUntrustedIdentity is returned when a signature bundle verifies
@@ -66,6 +76,9 @@ func ErrUntrustedIdentity() error { return errUntrustedIdentity }
 var errUntrustedIdentity = cerrors.Register("untrusted-identity", cerrors.Meta{
 	ShortCode: "E0185",
 	Message:   "signing: signature identity is not trusted for this registry",
+	RulePlace: cerrors.NotARule("A signature bundle verifies structurally while its certificate identity matches none the " +
+		"registry trusts. It reports a trust decision over an already-verified signature rather than " +
+		"a rule refusing content."),
 })
 
 // ErrNoSignatureFound is returned when a registry requires signatures (or
@@ -78,6 +91,8 @@ func ErrNoSignatureFound() error { return errNoSignatureFound }
 var errNoSignatureFound = cerrors.Register("no-signature-found", cerrors.Meta{
 	ShortCode: "E0177",
 	Message:   "signing: no signature found for an artifact that requires one",
+	RulePlace: cerrors.NotARule("An artifact that must carry a signature carries no signature referrer to verify. It reports " +
+		"a verification that had nothing to verify rather than a rule refusing content."),
 })
 
 // ErrNoTrustedIdentities is returned when a keyless verification is
@@ -89,6 +104,9 @@ func ErrNoTrustedIdentities() error { return errNoTrustedIdentities }
 var errNoTrustedIdentities = cerrors.Register("no-trusted-identities", cerrors.Meta{
 	ShortCode: "E0178",
 	Message:   "signing: keyless verification requires at least one trusted identity",
+	RulePlace: cerrors.NotARule("A keyless verification was requested with an empty trusted-identity set, which would admit " +
+		"any signer. It reports a verification that cannot be performed as asked rather than a rule " +
+		"refusing content."),
 })
 
 // ErrTrustRootLoad is returned when a pinned trust-root bundle cannot be
@@ -101,6 +119,9 @@ func ErrTrustRootLoad() error { return errTrustRootLoad }
 var errTrustRootLoad = cerrors.Register("trust-root-not-loadable", cerrors.Meta{
 	ShortCode: "E0182",
 	Message:   "signing: cannot load pinned trust root",
+	RulePlace: cerrors.NotARule("A pinned trust-root bundle could not be loaded from the configured path — absent, " +
+		"malformed, or rejected by the parser. The file is opened when the load runs, and what it " +
+		"reports is a load that did not yield a trust root."),
 })
 
 // ErrUnsignedPushRefused is returned when an unsigned push targets a
@@ -114,6 +135,8 @@ func ErrUnsignedPushRefused() error { return errUnsignedPushRefused }
 var errUnsignedPushRefused = cerrors.Register("unsigned-push-refused", cerrors.Meta{
 	ShortCode: "E0183",
 	Message:   "signing: registry requires signatures; refusing to push unsigned content",
+	RulePlace: cerrors.NotARule("An unsigned push targets a registry that requires signatures. It reports an operation the " +
+		"destination refuses rather than a rule refusing content."),
 })
 
 // ErrSigningPolicyRequiresSignature is returned when the workspace signing
@@ -130,4 +153,7 @@ func ErrSigningPolicyRequiresSignature() error { return errSigningPolicyRequires
 var errSigningPolicyRequiresSignature = cerrors.Register("signing-policy-requires-signature", cerrors.Meta{
 	ShortCode: "E0181",
 	Message:   "signing: signing policy requires a signature for this artifact kind; refusing to push unsigned content",
+	RulePlace: cerrors.NotARule("The workspace signing policy requires a signature for the artifact kind being published and " +
+		"the push carries none. It reports an operation the policy refuses to perform rather than a " +
+		"rule refusing content."),
 })

@@ -36,6 +36,9 @@ func ErrNoResolver() error { return errNoResolver }
 var errNoResolver = cerrors.Register("no-plugin-resolution-configured", cerrors.Meta{
 	ShortCode: "E0001",
 	Message:   "cliplugin: no plugin resolver configured",
+	RulePlace: cerrors.NotARule("A runner was constructed with no resolution seam, so nothing can turn a plugin reference " +
+		"into bytes. No predicate over authored content decides it: it reports that this program was " +
+		"wired without the part that performs the operation."),
 })
 
 // Runner dispatches an installed CLI plugin. It composes plugin-URI resolution
