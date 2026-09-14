@@ -78,29 +78,23 @@ func EntityYAMLFromBundle(blob []byte) ([]byte, error) {
 //     carry zeroed timestamps so two independent Bundle invocations
 //     against the same input produce byte-identical archives.
 //
-// For every publishable kind that sits in a per-version subdirectory,
-// Bundle first invokes validateEntityVersionPathSubdir on the
-// entityPath; a mismatch between the path's version segment (the entity
-// file's parent directory) and the entity's metadata.version returns
-// ErrEntityVersionPathMismatch wrapped with both values. Plugin is
-// the exception: it has no per-version subdirectory — its version comes
-// from metadata.version and its repository location is the socket-path
-// (plugin/<socket>/<name>) — so the per-version guard does not apply to it.
+// For every publishable kind, Bundle first invokes
+// validateEntityVersionPathSubdir on the entityPath; a mismatch between
+// the path's version segment (the entity file's parent directory) and
+// the entity's metadata.version returns ErrEntityVersionPathMismatch
+// wrapped with both values.
 func Bundle(kind, entityPath string) ([]byte, string, error) {
 	mediaType, err := MediaTypeForKind(kind)
 	if err != nil {
 		return nil, "", err
 	}
 
-	// Every publishable kind except Plugin sits in a per-version
-	// subdirectory whose name equals the entity's metadata.version. The
-	// entity file (component.yaml, recipe.yaml, library.yaml, …) is the
-	// parent-dir anchor for those kinds. Plugin authoring carries no
-	// version subdir, so it is excluded from the guard.
-	if kind != "Plugin" {
-		if err := validateEntityVersionPathSubdir(entityPath); err != nil {
-			return nil, "", err
-		}
+	// Every publishable kind sits in a per-version subdirectory whose name
+	// equals the entity's metadata.version. The entity file
+	// (component.yaml, plugin.yaml, recipe.yaml, library.yaml, …) is the
+	// parent-dir anchor.
+	if err := validateEntityVersionPathSubdir(entityPath); err != nil {
+		return nil, "", err
 	}
 
 	switch kind {

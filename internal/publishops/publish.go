@@ -303,9 +303,9 @@ func writePublicationFacts(out io.Writer, kind, mediaType string, size, pluginSi
 
 // Push bundles the entity at cfg.EntityPath and publishes it.
 // Reads workspace config; parses the entity envelope (kind,
-// metadata.name, metadata.version); bundles via pkg/oci.Bundle (which
-// handles per-kind dispatch including per-version subdir enforcement for
-// every publishable kind and Recipe / FeatureRecipe tar.gz directory
+// metadata.name, metadata.version); routes a Plugin to the one-manifest
+// packer and every other kind through pkg/oci.Bundle (per-kind dispatch,
+// the per-version subdir guard, Recipe / FeatureRecipe tar.gz directory
 // walking); constructs the OCI repository reference; publishes via pkg/oci.Push.
 //
 // Signing is sign-before-publish: when signing is requested, Push computes

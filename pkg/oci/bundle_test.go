@@ -175,27 +175,29 @@ func TestBundleBareKindsPerVersionSubdir(t *testing.T) {
 	}
 }
 
-// TestBundlePluginNoVersionSubdir proves the Plugin arm: it bundles to
-// bare YAML under the Plugin entity mediatype, and the per-version
-// subdirectory guard does NOT apply — a Plugin entity authored OUTSIDE a
-// version-named directory bundles cleanly, where every version-subdir kind
-// would halt with ErrEntityVersionPathMismatch. The version comes from
-// metadata.version; the repository location is the socket-path.
-func TestBundlePluginNoVersionSubdir(t *testing.T) {
+// TestBundlePluginPerVersionSubdirEnforced proves the Plugin arm on both
+// sides of the per-version guard, which covers Plugin exactly as it covers
+// every other publishable kind. In-layout — the entity file's parent
+// directory equals its metadata.version — a Plugin bundles to the verbatim
+// entity YAML under the Plugin entity mediatype. Off-layout it halts with
+// ErrEntityVersionPathMismatch, and the Component at the same off-layout
+// path is the control proving the halt is the guard rather than the fixture.
+func TestBundlePluginPerVersionSubdirEnforced(t *testing.T) {
 	t.Parallel()
 	body := []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Plugin\nmetadata:\n  name: frp/patch\n  version: 1.0.0\nspec:\n  plugin: \"oci://hub.aggrega.ai/plugin/frp/patch:1.0.0\"\n")
-	// Authored at a path whose parent dir is NOT the version (here the kind name)
-	// — a Component here would fail the version-subdir guard.
-	dir := filepath.Join(t.TempDir(), "wasm-plugins")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+
+	// In-layout: the parent dir equals metadata.version, so the guard passes
+	// and the bare-YAML arm returns the entity file unchanged.
+	inLayout := filepath.Join(t.TempDir(), "1.0.0")
+	if err := os.MkdirAll(inLayout, 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	path := filepath.Join(dir, "frp-step-patch.yaml")
-	mustWrite(t, path, body)
+	inPath := filepath.Join(inLayout, "plugin.yaml")
+	mustWrite(t, inPath, body)
 
-	data, mt, err := oci.Bundle("Plugin", path)
+	data, mt, err := oci.Bundle("Plugin", inPath)
 	if err != nil {
-		t.Fatalf("Plugin should bundle without a version subdir; got %v", err)
+		t.Fatalf("in-layout Plugin should bundle; got %v", err)
 	}
 	if mt != oci.MediaTypePlugin {
 		t.Errorf("Plugin mediatype = %q; want %q", mt, oci.MediaTypePlugin)
@@ -204,7 +206,20 @@ func TestBundlePluginNoVersionSubdir(t *testing.T) {
 		t.Errorf("Plugin bundle should be the verbatim entity YAML")
 	}
 
-	// Confirm the contrast: a Component at the same off-layout path DOES halt.
+	// Off-layout: the parent dir is not the version, so the guard halts.
+	dir := filepath.Join(t.TempDir(), "wasm-plugins")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	offPath := filepath.Join(dir, "plugin.yaml")
+	mustWrite(t, offPath, body)
+	if _, _, err := oci.Bundle("Plugin", offPath); !errors.Is(err, oci.ErrEntityVersionPathMismatch()) {
+		t.Errorf("off-layout Plugin should wrap ErrEntityVersionPathMismatch; got %v", err)
+	}
+
+	// The contrast that keeps the assertion honest: a Component at the same
+	// off-layout path halts identically, so the Plugin halt above is the
+	// shared guard and not something Plugin-specific.
 	compBody := []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: demo/x\n  version: 1.0.0\n")
 	compPath := filepath.Join(dir, "component.yaml")
 	mustWrite(t, compPath, compBody)
@@ -242,8 +257,8 @@ func TestBundleCoversEveryMediaTypeKind(t *testing.T) {
 		t.Run(kind, func(t *testing.T) {
 			t.Parallel()
 			// In-layout for every kind: the entity file's parent dir equals its
-			// metadata.version, which satisfies the per-version guard. Plugin is
-			// exempt from that guard and unaffected by satisfying it anyway.
+			// metadata.version, which satisfies the per-version guard every
+			// publishable kind passes through.
 			ver := filepath.Join(t.TempDir(), "1.0.0")
 			if err := os.MkdirAll(ver, 0o755); err != nil {
 				t.Fatalf("mkdir: %v", err)
