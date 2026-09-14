@@ -304,44 +304,67 @@ const offFrameworkEmissionBlocks = false
 // that job here, because a passing Go package prints nothing: a rise that is
 // reported and not failed is a rise nobody learns about.
 //
-// Criterion, so that a later reading measures the same thing: the number of
-// distinct sentinel names, matching [sentinelName] and bound by a package-level
-// declaration in a non-test .go file under [scannedRoots], for which the census
-// attributes at least one emission site outside the framework's dispatch —
-// attribution exactly as [checkTypeName] and [frameworkPackageSuffix] decide it,
-// over the host shapes and the inner criterion [sentinelCensus] records.
-// Measured 2026-09-10, at aggrega-cli 9ee1c176 with the value-host walk this
-// file now performs: 241, of 279 declared.
+// Criterion, so that a later reading measures the same thing: the RATCHETED half
+// of the off-framework population. That is the number of distinct sentinel names,
+// matching [sentinelName] and bound by a package-level declaration in a non-test
+// .go file under [scannedRoots], for which the census attributes at least one
+// emission site outside the framework's dispatch — attribution exactly as
+// [checkTypeName] and [frameworkPackageSuffix] decide it, over the host shapes
+// and the inner criterion [sentinelCensus] records — LESS the ones whose
+// registration declares that another evaluator owns the rule, or that the
+// condition names no rule at all. [partitionOffFrameworkByDeclaredPlace] performs
+// that subtraction and guards those declarations in both directions.
 //
-// # This figure is not comparable with the recording above it
+// Measured 2026-09-14, at aggrega-cli 335cbaf7: 154, of 281 declared.
 //
-// It is three higher, and none of the three is the tree getting worse: the
-// change that recorded it edited no production file. The walk that produces it
-// enters every package-level var declaration rather than only a check
-// declaration, so three rules already raised from a package-level diagnostic
-// set are now counted as the off-framework emission paths they always were. The
-// meter did not move; it stopped understating itself by three. Two recordings
-// taken over different host sets measure different things, so the pair must not
-// be read as a trend. The denominator moved for an unrelated reason: a declared
-// condition was retired.
+// Its composition at that revision, which a bare number cannot carry and which
+// decides how the figure is read: 149 conditions declaring a rule over authored
+// input — the candidates, each of which could be expressed as a check — and 5
+// carrying no registration to declare a place on, which
+// [assertEveryConditionDeclaresItsPlace] names on every run. The second term is
+// counted here rather than subtracted, because a condition with no declaration
+// has an UNKNOWN place rather than a place outside the dispatch, and the safe
+// direction for an unknown is to count it. Subtracting it would let a new
+// unregistered condition raised outside the dispatch escape this bound entirely,
+// which is the one movement the bound exists to refuse.
 //
-// The bound this leaves, recorded so the ceiling is never read as the
-// population: a FALL is deliberately not failed, so once the count drops this
-// constant carries slack the ratchet does not reclaim, and a regression inside
-// that slack is invisible. Reclaiming it is a one-line edit here, belonging to
-// whatever change lowers the count rather than to a later tidy-up.
+// # This figure is NOT comparable with the recording it replaces
 //
-// # What is read against this number is the RATCHETED half
+// The previous recording was 241, and the drop to 154 is not 87 rules moving into
+// the dispatch. No rule moved: the change that lowered it migrated nothing and
+// altered no raise path. What changed is the population the number is taken over.
+// The old one was MIXED — every condition raised outside the dispatch, counted
+// together whether its rule could be expressed as a check or could never be one —
+// and the new one is the conditions whose rules could be, plus the few that have
+// not said. Two recordings taken over different populations measure different
+// things, so the pair must not be read as a trend.
 //
-// The criterion recorded above is the whole off-framework population, and that
-// population is now partitioned: only the conditions whose rules COULD be
-// expressed as checks are read against this number, while the ones declaring
-// their rule is evaluated elsewhere are counted apart. The partition's own
-// criterion sits beside [offFrameworkEmissionBlocks] with the reasoning. The
-// number is unchanged and this is not an edit to the bound — what moved is
-// which population it bounds, so the two readings must not be compared as a
-// trend, for the same reason the two recordings above must not be.
-const offFrameworkEmissionCeiling = 241
+// The slack the old recording carried is reclaimed by this one rather than left
+// standing, so the ratchet is exact again at the moment it is recorded. The bound
+// that leaves, recorded so the ceiling is never read as the population: a FALL is
+// deliberately not failed, so once the count drops this constant carries slack the
+// ratchet does not reclaim, and a regression inside that slack is invisible.
+// Reclaiming it is a one-line edit here, belonging to whatever change lowers the
+// count rather than to a later tidy-up.
+//
+// # The denominator can now reach zero, which is the point of the re-scoping
+//
+// A meter is honest only if the thing it measures can reach zero, and the old
+// population could not. A large part of it was conditions no work moves inside the
+// dispatch, because there is no rule there for the dispatch to evaluate — a
+// registry refusing a request, a signature that does not verify, a file that will
+// not parse, a guest that trapped. The meter's own reversing condition was
+// unreachable, and every later reading re-opened the same question about the same
+// conditions.
+//
+// Those are now declared and counted apart, so nothing in this population is here
+// by construction. The 149 reach zero by being expressed as checks. The 5 reach
+// zero by acquiring a registration that declares where their rule belongs, or by
+// being deleted — a finite named set with a remedy per member, which is a
+// different thing from a structural remainder. So zero is a state this number can
+// arrive at, and [offFrameworkEmissionBlocks] flips in the edit that takes it
+// there.
+const offFrameworkEmissionCeiling = 154
 
 // unemittedSentinelsBlock decides whether a sentinel with no emission site at
 // all fails this test or is only reported. It is true.
@@ -372,7 +395,7 @@ const offFrameworkEmissionCeiling = 241
 const unemittedSentinelsBlock = true
 
 // undeclaredRulePlaceBlocks decides whether a condition that declares no place
-// for its rule fails this test or is only reported. It is false.
+// for its rule fails this test or is only reported. It is true.
 //
 // # What the declaration is for, and why the count above needs it
 //
@@ -392,30 +415,62 @@ const unemittedSentinelsBlock = true
 // place, which says which of three places the rule belongs to and carries prose
 // for the two that are a departure from the ordinary one.
 //
-// # Why it does not block yet, and what flipping it needs
+// # What makes blocking possible without reddening the shipped tree
 //
-// The declared set is not yet written, so blocking now would fail on the shipped
-// tree on every run for nearly every condition, and an assertion in that state is
-// switched off rather than fixed — the reasoning recorded at
-// [offFrameworkEmissionBlocks], arriving at the same answer for the same reason.
-// What flips it is the change that finishes declaring the set: at that point the
-// population this names is empty, so the assertion fails on any member at all,
-// exactly as [unemittedSentinelsBlock] does over its own empty population.
+// The declared set is written: every condition carrying a registration declares
+// a place, so the population this names is empty. That is what lets this fail on
+// any member at all, with no recorded exception to narrow the corpus and nothing
+// standing between a new condition declaring no place and a red build — the
+// standing [unemittedSentinelsBlock] has over its own empty population, for the
+// same reason.
 //
-// The body it gates is written and runs today. Only the channel is switched, so
-// the flip is a one-line edit activating an assertion whose failure has already
-// been demonstrated, rather than an assertion authored at the moment it is first
-// needed.
+// It is deliberately NOT the standing [offFrameworkEmissionBlocks] has. That
+// population is a backlog the tree is working through, so a blocking form would
+// fail on the shipped tree every run and be switched off rather than fixed. This
+// one is not a backlog: a condition arriving without a place is wrong when it
+// lands rather than scheduled to be fixed, because the answer is known to
+// whoever registers it and to nobody else afterwards.
 //
-// # No exception list, then or now
+// # Why the gate rather than the compiler, which would be stronger
 //
-// When it blocks there is nothing to record a permitted name in, and none should
-// be added. A recorded exception outlives its subject silently: once the
-// condition it names acquires a declaration the entry reads as a known hole
-// where there is none. A condition that genuinely has no place to declare does
-// not exist — every condition is in one of the three — so the remedy a failure
-// names is always to declare the place, never to record the name.
-const undeclaredRulePlaceBlocks = false
+// The strongest available shape is a required positional argument on the errors
+// package's Register — a condition omitting its place would then not compile and
+// no assertion would be needed. That shape stays reachable and was not taken
+// here, for a reason about sequencing rather than preference: it moves every
+// registration call site in the module in one act, plus the fixture modules under
+// testdata that compile on their own, and it would put that churn behind the same
+// review as the classification of the conditions themselves. A disagreement about
+// one would then block the other.
+//
+// What reaches it later is a mechanical edit with nothing left to decide, once
+// every registration already carries a place — which is the state this gate now
+// holds the tree in. The place moves from the metadata literal to an argument,
+// the field goes away, and this assertion goes with it, because a population the
+// compiler cannot express is a population nothing has to count. The two are not
+// both needed: an argument that cannot be omitted makes this census's question
+// unaskable rather than merely answered.
+//
+// # No exception list, and the one exclusion is DERIVED rather than recorded
+//
+// There is nothing here to record a permitted name in, and none should be added.
+// A recorded exception outlives its subject silently: once the condition it names
+// acquires a declaration the entry reads as a known hole where there is none.
+//
+// The population is narrower than every declared condition, and the narrowing is
+// not such a list. A condition no registration binds carries no metadata literal
+// to declare a place on, so there is nothing on it this gate could ask for — and
+// that is read from the tree on every run by [readPlacementDeclarations] rather
+// than written down anywhere. The difference is what makes it safe: the exclusion
+// cannot come to describe nothing, because a condition acquiring a registration
+// joins this population immediately and fails until it declares a place. Its
+// members are named on every run by [assertEveryConditionDeclaresItsPlace], where
+// the reasoning sits beside the code performing it.
+//
+// So the remedy a failure names is always to declare the place, never to record
+// the name. Every condition IS in one of the three places; what a condition can
+// lack is a registration to say so on, which is a different finding with a
+// different remedy and is reported as one.
+const undeclaredRulePlaceBlocks = true
 
 // sentinelName matches the declaration convention for a sentinel: an exported
 // package-level error variable named for the rule it stands for.
@@ -488,7 +543,7 @@ const (
 func TestSentinelEmissionSitesAreTheFrameworkDispatch(t *testing.T) {
 	t.Parallel()
 
-	declared, emitters, forwards, placements := sentinelCensus(t)
+	declared, declaredAt, emitters, forwards, placements := sentinelCensus(t)
 	if len(declared) == 0 {
 		t.Fatalf("no sentinel declaration was found under %s, so a clean result certifies nothing",
 			strings.Join(scannedRoots, ", "))
@@ -599,7 +654,7 @@ func TestSentinelEmissionSitesAreTheFrameworkDispatch(t *testing.T) {
 			len(forwarding), strings.Join(namedList(namedWithForwards(forwarding, forwards), 12), "; "))
 	}
 	assertUnemittedSentinels(t, unemitted)
-	assertEveryConditionDeclaresItsPlace(t, declared, forwarding, placements)
+	assertEveryConditionDeclaresItsPlace(t, declared, forwarding, declaredAt, placements)
 
 	if !offFrameworkEmissionBlocks {
 		t.Logf("the off-framework population reports and does not block on its size. It becomes blocking "+
@@ -718,18 +773,43 @@ func assertUnemittedSentinels(t *testing.T, unemitted []string) {
 //
 // # The population, stated so a later reading measures the same thing
 //
-// Every declared sentinel EXCEPT a forwarding one. A forwarding declaration is a
-// second exported name for a rule declared elsewhere — it carries no
-// registration of its own, so there is nothing on it to declare a place on, and
-// the place of the rule it names is declared at the registration it forwards to.
-// Counting them would put a permanent floor under a population that is asserted
-// to reach zero, which is the reading a meter must never produce.
+// Every declared sentinel THAT CARRIES A REGISTRATION. Two kinds of declaration
+// are outside it, and both are outside for one reason: there is no registration
+// on them to declare a place on.
+//
+//   - A forwarding declaration. It is a second exported name for a rule declared
+//     elsewhere, and the place of the rule it names is declared at the
+//     registration it forwards to.
+//   - A declaration no registration binds at all — a sentinel built by another
+//     package's constructor, or bound straight to a plain Go error value. There
+//     is no metadata literal in it to carry a place.
+//
+// Counting either would put a permanent floor under a population that is
+// asserted to reach zero, which is the reading a meter must never produce.
+//
+// # The second exclusion is DERIVED, which is what keeps it from being a list
+//
+// The population this file refuses to hold anywhere is a recorded set of
+// permitted names, for the reason [unemittedSentinelsBlock] records: such a set
+// outlives its subject silently. This exclusion is not one. It is read from the
+// tree on every run by [readPlacementDeclarations], from the absence of a
+// registration, so it is guarded in both directions without anything guarding
+// it. A condition that acquires a registration joins the population on the next
+// run and fails until it declares a place; a condition that is deleted leaves
+// the population and the report together. Neither movement needs anybody to
+// remember this report exists.
+//
+// What it costs is a coverage bound, and the bound is stated rather than
+// implied: the members are NAMED on every run, beside the file declaring each,
+// so a reader can open the declaration and confirm that no registration is there
+// to carry a place. A population whose excluded half is invisible has narrowed
+// the corpus while reading as full coverage.
 //
 // # What a declaration is, here
 //
 // A rule place naming one of the three constructors, read off the registration
 // by [readPlacementDeclarations].
-func assertEveryConditionDeclaresItsPlace(t *testing.T, declared, forwarding []string, declarations placementDeclarations) {
+func assertEveryConditionDeclaresItsPlace(t *testing.T, declared, forwarding []string, declaredAt map[string]string, declarations placementDeclarations) {
 	t.Helper()
 
 	isForwarding := map[string]bool{}
@@ -737,10 +817,14 @@ func assertEveryConditionDeclaresItsPlace(t *testing.T, declared, forwarding []s
 		isForwarding[name] = true
 	}
 
-	var undeclared []string
+	var undeclared, unregistered []string
 	byPlace := map[string]int{}
 	for _, name := range declared {
 		if isForwarding[name] {
+			continue
+		}
+		if !declarations.registered[name] {
+			unregistered = append(unregistered, name+" declared in "+filepath.ToSlash(declaredAt[name]))
 			continue
 		}
 		decl, found := declarations.bySentinel[name]
@@ -774,19 +858,39 @@ func assertEveryConditionDeclaresItsPlace(t *testing.T, declared, forwarding []s
 			strings.Join(namedList(undeclared, 12), ", "))
 	}
 
+	if len(unregistered) > 0 {
+		t.Logf("%d condition(s) sit outside this population because no registration in this module binds "+
+			"the value their declaration publishes, each named beside the file declaring it so the "+
+			"exclusion can be checked rather than taken: %s.\n"+
+			"There is no metadata literal on such a declaration to carry a place — the same reason a "+
+			"forwarding declaration is outside this population. The exclusion is DERIVED from the absence "+
+			"of a registration on every run rather than recorded as a permitted name, so it cannot "+
+			"outlive its subject: a condition acquiring a registration joins the population on the next "+
+			"run and fails until it declares a place, and one that is deleted leaves the population and "+
+			"this report together.\n"+
+			"They are named on every run rather than counted, because a population whose excluded half is "+
+			"invisible has narrowed the corpus while reading as full coverage. Each is also counted "+
+			"against the off-framework ceiling wherever the census places it outside the dispatch, so "+
+			"none of them is exempt from the meter as well as from this gate.",
+			len(unregistered), strings.Join(namedList(unregistered, 12), "; "))
+	}
+
 	tier := "reports and does not block"
 	if undeclaredRulePlaceBlocks {
 		tier = "blocks"
 	}
 	t.Logf("declared-place population: %d condition(s) declare no place, against %d that do — %d a rule "+
-		"over authored input, %d a rule another evaluator owns, %d no rule at all. Forwarding "+
-		"declarations are outside this population, because a second name for a rule carries no "+
-		"registration to declare a place on. This assertion %s on any member.",
+		"over authored input, %d a rule another evaluator owns, %d no rule at all. The population is "+
+		"every declared condition CARRYING A REGISTRATION: %d forwarding declaration(s) and %d "+
+		"condition(s) no registration binds are outside it, because neither carries a metadata literal "+
+		"to declare a place on. This assertion %s on any member.",
 		len(undeclared),
 		byPlace[placeOverAuthoredInputFunc]+byPlace[placeEvaluatedElsewhereFunc]+byPlace[placeNotARuleFunc],
 		byPlace[placeOverAuthoredInputFunc],
 		byPlace[placeEvaluatedElsewhereFunc],
 		byPlace[placeNotARuleFunc],
+		len(forwarding),
+		len(unregistered),
 		tier)
 }
 
@@ -894,11 +998,17 @@ type emissionSite struct {
 	framework bool
 }
 
-// sentinelCensus returns the declared sentinel names, sorted, the sites naming
-// each one, and, for each sentinel whose own declaration names another sentinel,
-// the sentinels that declaration names.
+// sentinelCensus returns the declared sentinel names, sorted, one declaring path
+// per name, the sites naming each one, and, for each sentinel whose own
+// declaration names another sentinel, the sentinels that declaration names.
 //
-// The third result answers a different question from the second and is kept
+// The paths are returned because a report that excludes a condition from a
+// population has to say where that condition is declared, so a reader can open
+// the declaration and check the exclusion rather than take it — the same reason
+// every other bucket in this file is named beside the declaration it was
+// attributed from.
+//
+// The fourth result answers a different question from the third and is kept
 // apart from it deliberately. The sites say where a rule is raised; the
 // forwarding relation says what a declaration IS. Folding a forwarding
 // declaration into the site map would make a name that raises nothing count as
@@ -993,7 +1103,7 @@ type emissionSite struct {
 // sentinel's value. A const can still BIND a sentinel, which is why the
 // population walk reads both, and reading it here would only widen the walk to
 // specifications that cannot match.
-func sentinelCensus(t *testing.T) (declared []string, emitters map[string][]emissionSite, forwards map[string][]string, placements placementDeclarations) {
+func sentinelCensus(t *testing.T) (declared []string, declaredAt map[string]string, emitters map[string][]emissionSite, forwards map[string][]string, placements placementDeclarations) {
 	t.Helper()
 
 	files, _ := collectGoFiles(t, scannedRoots, excludeTestFiles)
@@ -1071,7 +1181,7 @@ func sentinelCensus(t *testing.T) (declared []string, emitters map[string][]emis
 		sites := emitters[name]
 		sort.Slice(sites, func(a, b int) bool { return sites[a].name < sites[b].name })
 	}
-	return declared, emitters, forwards, placements
+	return declared, names, emitters, forwards, placements
 }
 
 // placementDeclaration is what one registration says about where the rule its
@@ -1120,20 +1230,43 @@ func (d placementDeclaration) claimsOutsideTheDispatch() bool {
 func (d placementDeclaration) claim() string { return d.placeReason }
 
 // placementDeclarations is what [readPlacementDeclarations] reads out of the
-// tree: the declarations it could attribute to a sentinel, and the ones it could
-// not.
+// tree: the declarations it could attribute to a sentinel, the ones it could
+// not, and the sentinels a registration was found for at all.
 //
-// The two are separate because only the first can be partitioned. An orphan is
-// not dropped, though — it is a declaration that describes no condition this
-// census counts, which is exactly what the describes-nothing guard exists to
-// fail on, so it is carried here rather than discarded at the walk.
+// The first two are separate because only the first can be partitioned. An
+// orphan is not dropped, though — it is a declaration that describes no
+// condition this census counts, which is exactly what the describes-nothing
+// guard exists to fail on, so it is carried here rather than discarded at the
+// walk.
 type placementDeclarations struct {
 	bySentinel map[string]placementDeclaration
 	orphans    []string
+
+	// registered is every sentinel this walk found a registration for, WHETHER
+	// OR NOT that registration declares a place. It is read from the same walk
+	// and the same population as bySentinel, so the two cannot drift into two
+	// criteria that agree today.
+	//
+	// It answers a question bySentinel cannot: a sentinel absent from both has
+	// no registration to declare a place on, while one present here and absent
+	// there has a registration that declares none. Those are a coverage bound
+	// and a defect respectively, and the gate over undeclared places has to tell
+	// them apart — a walk recording only the declarations it found reads them
+	// identically and would fail on the first.
+	registered map[string]bool
 }
 
 // readPlacementDeclarations reads, for each declared sentinel, what its
-// registration says about where the rule it names belongs.
+// registration says about where the rule it names belongs — and, separately,
+// WHETHER a registration binds it at all.
+//
+// The second fact is read here rather than by a walk of its own because it is
+// the same walk: a registration is recognised before its metadata is examined,
+// so asking whether one exists costs nothing and asking it anywhere else would
+// be a second recogniser of the same shape, free to drift from this one. What
+// consumes it is the gate over undeclared places, which has to separate a
+// condition whose registration declares no place — a defect — from one with no
+// registration to declare on, which is a bound on what this census can ask.
 //
 // The shape it looks for is the one a registration is written in: a package-
 // level `var <binding> = <pkg>.Register(<code>, <pkg>.Meta{ … })`. The binding
@@ -1182,7 +1315,10 @@ type placementDeclarations struct {
 func readPlacementDeclarations(t *testing.T, files map[string]*ast.File, handles map[string]map[string]string) placementDeclarations {
 	t.Helper()
 
-	out := placementDeclarations{bySentinel: map[string]placementDeclaration{}}
+	out := placementDeclarations{
+		bySentinel: map[string]placementDeclaration{},
+		registered: map[string]bool{},
+	}
 	for path, file := range files {
 		dir := filepath.ToSlash(filepath.Dir(path))
 		for _, decl := range file.Decls {
@@ -1199,11 +1335,21 @@ func readPlacementDeclarations(t *testing.T, files map[string]*ast.File, handles
 				if !ok {
 					continue
 				}
+				site := dir + "." + vs.Names[0].Name
+				// The sentinel is resolved BEFORE the place is read, and the
+				// order is the whole of what makes the coverage bound derivable.
+				// A registration is recorded here whether or not it declares a
+				// place, so a condition absent from this set is one no
+				// registration in this module binds at all — a fact about the
+				// tree, read on every run, rather than a name somebody recorded.
+				sentinel, published := handles[dir][vs.Names[0].Name]
+				if published {
+					out.registered[sentinel] = true
+				}
 				placeValue, aheadValue := declaredMetaValues(meta)
 				if placeValue == nil {
 					continue
 				}
-				site := dir + "." + vs.Names[0].Name
 				declaration := placementDeclaration{site: site}
 				fn, reason, readable := declaredRulePlace(placeValue)
 				if !readable {
@@ -1219,7 +1365,6 @@ func readPlacementDeclarations(t *testing.T, files map[string]*ast.File, handles
 					}
 					declaration.declaredAhead = strings.TrimSpace(aheadNote) != ""
 				}
-				sentinel, published := handles[dir][vs.Names[0].Name]
 				if !published {
 					out.orphans = append(out.orphans,
 						site+" (no accessor in that package publishes this binding, so the census counts "+
