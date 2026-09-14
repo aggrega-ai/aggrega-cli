@@ -19,7 +19,11 @@ import (
 // that neither scope-flag on its own trips that guard (the three symmetric lint
 // scopes stay intact).
 func TestLintReleasePrePublishMutuallyExclusive(t *testing.T) {
-	const guardMsg = "OPS_ERROR: --pre-publish is mutually exclusive with --release"
+	// The sentence alone, without the head. The category is composed by the
+	// formatter from the value the refusal passes to its constructor, so an
+	// assertion that also pinned the head would be pinning the renderer rather
+	// than this guard.
+	const guardMsg = "--pre-publish is mutually exclusive with --release"
 
 	runLint := func(t *testing.T, args ...string) error {
 		t.Helper()

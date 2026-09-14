@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/compactform"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -587,9 +588,10 @@ func synthesizeAggregateFeatureFromAnnotation(
 //
 //	annotation <stage> failed at key "<key>": <reason>
 //
-// and outer:
+// and outer, with the bracketed head composed by the formatter from the category
+// the wrap supplies and the condition the wrapped chain names:
 //
-//	OPS_ERROR: annotation <stage> failed at boundary "<path>" component "<name>" key "<key>": <joined inner>
+//	annotation <stage> failed at boundary "<path>" component "<name>" key "<key>"
 func wrapAnnotationOpsErrorStage(key, stage string, inner error) error {
 	return fmt.Errorf("annotation %s failed at key %q: %w", stage, key, inner)
 }
@@ -723,20 +725,27 @@ func splitBoundaryPath(path string) []string {
 	return out
 }
 
-// wrapAnnotationOpsError formats an annotation-expansion failure with
-// the OPS_ERROR prefix. The bad annotation value lives in the Release,
-// so the error is Release-scoped (OPS_ERROR) rather than Catalog-scoped.
+// wrapAnnotationOpsError re-categorises an annotation-expansion failure as the
+// operator's concern and names the scope the inner findings cannot know. The bad
+// annotation value lives in the Release, so the concern is Release-scoped rather
+// than Catalog-scoped.
+//
+// The category is passed to the constructor rather than written into the
+// sentence, which is what lets the formatter compose the head once — and lets it
+// carry the short code of whichever registered condition the wrapped chain
+// names, which a hand-written prefix cannot supply.
 func wrapAnnotationOpsError(boundaryPath, componentName, key, stage string, inner error) error {
-	return fmt.Errorf("OPS_ERROR: annotation %s failed at boundary %q component %q key %q: %w", stage, boundaryPath, componentName, key, inner)
+	return cerrors.Wrap(inner, cerrors.OpsError, cerrors.SourceLocation{},
+		fmt.Sprintf("annotation %s failed at boundary %q component %q key %q", stage, boundaryPath, componentName, key))
 }
 
-// wrapAggregateAnnotationOpsError formats an annotation-expansion
-// failure on the Aggregate side. The bad annotation value lives in the
-// Aggregate (Developer-authored), so the error is Aggregate-scoped
-// rather than Release-scoped; the OPS_ERROR prefix is preserved for
-// uniform diagnostic ergonomics with the Release-side wrapper.
+// wrapAggregateAnnotationOpsError is the same wrap on the Aggregate side. The
+// bad annotation value lives in the Aggregate (Developer-authored), so the
+// failure is Aggregate-scoped rather than Release-scoped; the concern stays the
+// operator's, for uniform diagnostic ergonomics with the Release-side wrapper.
 func wrapAggregateAnnotationOpsError(componentPath, key, stage string, inner error) error {
-	return fmt.Errorf("OPS_ERROR: annotation %s failed at aggregate component %q key %q: %w", stage, componentPath, key, inner)
+	return cerrors.Wrap(inner, cerrors.OpsError, cerrors.SourceLocation{},
+		fmt.Sprintf("annotation %s failed at aggregate component %q key %q", stage, componentPath, key))
 }
 
 // validateAnnotationSideCompatibility enforces the

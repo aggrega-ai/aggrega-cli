@@ -12,6 +12,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 	"github.com/aggrega-ai/aggrega-cli/internal/validateops"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 
 	"github.com/spf13/cobra"
@@ -78,13 +79,16 @@ func newValidateCmd() *cobra.Command {
 			// inspects one artifact. Refusing here keeps the flag from rendering a
 			// verdict and silently dropping the document that was asked for.
 			if irGraph && releasePath == "" {
-				return fmt.Errorf("OPS_ERROR: --%s applies to the --release scope, the one scope that resolves a Release to a graph; pass --release <path-to-release.yaml>", flagIRGraph)
+				return cerrors.Unidentified(cerrors.OpsError, cerrors.SourceLocation{},
+					fmt.Sprintf("--%s applies to the --release scope, the one scope that resolves a Release to a graph; pass --release <path-to-release.yaml>", flagIRGraph),
+					nil, nil)
 			}
 			// --type declares the plugin type for a binary-only .wasm check and is
 			// meaningful only alongside --plugin; reject it on its own so it never
 			// silently no-ops on a catalog-, release-, or entity-scoped run.
 			if pluginType != "" && pluginPath == "" {
-				return fmt.Errorf("OPS_ERROR: --type applies only with --plugin; pass --plugin <path-to-.wasm> to validate a binary")
+				return cerrors.Unidentified(cerrors.OpsError, cerrors.SourceLocation{},
+					"--type applies only with --plugin; pass --plugin <path-to-.wasm> to validate a binary", nil, nil)
 			}
 			if pluginPath != "" {
 				// Binary/entity plugin validation is a distinct scope: it checks a
@@ -92,7 +96,8 @@ func newValidateCmd() *cobra.Command {
 				// entity argument, against the entity's declared surface). It selects
 				// neither the whole-catalog nor the release closure.
 				if releasePath != "" {
-					return fmt.Errorf("OPS_ERROR: --plugin is mutually exclusive with --release; validate a .wasm binary or a Release closure, not both")
+					return cerrors.Unidentified(cerrors.OpsError, cerrors.SourceLocation{},
+						"--plugin is mutually exclusive with --release; validate a .wasm binary or a Release closure, not both", nil, nil)
 				}
 				return validatePluginBinary(cmd.Context(), pluginPath, pluginType, path, cmd.OutOrStdout())
 			}
@@ -104,7 +109,8 @@ func newValidateCmd() *cobra.Command {
 				// Release-closure mode is mutually exclusive with a positional
 				// entity target — they select different closures.
 				if path != "" {
-					return fmt.Errorf("OPS_ERROR: --release is mutually exclusive with an entity argument; pass one or the other")
+					return cerrors.Unidentified(cerrors.OpsError, cerrors.SourceLocation{},
+						"--release is mutually exclusive with an entity argument; pass one or the other", nil, nil)
 				}
 				return validateRelease(cmd.Context(), rw, releasePath, catalogDirs, compilerops.ParseVerbosity(responseFormat), irGraph, os.Stderr, cmd.OutOrStdout())
 			}

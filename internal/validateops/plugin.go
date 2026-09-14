@@ -9,6 +9,7 @@ import (
 	"os"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
@@ -69,7 +70,9 @@ func ValidatePluginBinary(ctx context.Context, pluginPath, declaredType, entityP
 	if entityPath == "" {
 		res.Binary = true
 		if declaredType == "" {
-			return res, fmt.Errorf("OPS_ERROR: binary-only plugin validation needs a declared type; pass --type <plugin-type>, or add a Plugin entity argument to take the type from the entity")
+			return res, cerrors.Unidentified(cerrors.OpsError, cerrors.SourceLocation{},
+				"binary-only plugin validation needs a declared type; pass --type <plugin-type>, or add a Plugin entity argument to take the type from the entity",
+				nil, nil)
 		}
 		res.PluginPath = pluginPath
 		res.DeclaredType = declaredType
@@ -118,7 +121,10 @@ func ValidatePluginBinary(ctx context.Context, pluginPath, declaredType, entityP
 	// declaredType that disagrees is an authoring contradiction, not a second
 	// source.
 	if declaredType != "" && declaredType != entity.Metadata.PluginType {
-		return res, fmt.Errorf("OPS_ERROR: --type %q disagrees with the entity's metadata.pluginType %q; a Plugin has one declared type — drop --type or fix the entity", declaredType, entity.Metadata.PluginType)
+		return res, cerrors.Unidentified(cerrors.OpsError, cerrors.SourceLocation{},
+			fmt.Sprintf("--type %q disagrees with the entity's metadata.pluginType %q; a Plugin has one declared type — drop --type or fix the entity",
+				declaredType, entity.Metadata.PluginType),
+			nil, nil)
 	}
 
 	// The same entity → EntityInputs mapping the publish path builds, so validate

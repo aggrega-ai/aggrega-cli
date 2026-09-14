@@ -19,6 +19,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/entitykind"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginstrust"
@@ -51,7 +52,9 @@ func RunCatalogWide(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, 
 	}
 	wsCfg := rw.Config()
 	if len(catalogFlagDirs) == 0 && len(wsCfg.Workspace.CatalogDirs) == 0 {
-		return fmt.Errorf("OPS_ERROR: whole-catalog conventions check needs catalog directories to scan; pass --catalog or set `workspace.catalog_dirs` in .aggrega-config.yaml (or check a specific Release with --release)")
+		return cerrors.Unidentified(cerrors.OpsError, cerrors.SourceLocation{},
+			"whole-catalog conventions check needs catalog directories to scan; pass --catalog or set `workspace.catalog_dirs` in .aggrega-config.yaml (or check a specific Release with --release)",
+			nil, nil)
 	}
 	dirs := workspaceconfig.ResolveCatalogDirs(catalogFlagDirs, wsCfg, rw.Root())
 	files, passedOver, err := walkCatalogEntityFiles(ctx, rw.Root(), dirs, wsCfg.ResolvedArtifactCacheDir())

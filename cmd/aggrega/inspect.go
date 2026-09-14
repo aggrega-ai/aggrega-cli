@@ -21,6 +21,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 	"github.com/aggrega-ai/aggrega-cli/internal/redact"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
@@ -253,8 +254,10 @@ func dispatchInspect(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace,
 // the document the caller asked for, which reads to that caller exactly like a
 // Release whose document is empty.
 func refuseReleaseOnly(flag, subject, document string) error {
-	return fmt.Errorf("OPS_ERROR: --%s applies to a Release, and %s resolves to no %s; point inspect at a Release file to read one",
-		flag, subject, document)
+	return cerrors.Unidentified(cerrors.OpsError, cerrors.SourceLocation{},
+		fmt.Sprintf("--%s applies to a Release, and %s resolves to no %s; point inspect at a Release file to read one",
+			flag, subject, document),
+		nil, nil)
 }
 
 // refuseIRGraph reports a request for the IR graph made of a subject that

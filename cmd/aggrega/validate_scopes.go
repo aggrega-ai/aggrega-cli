@@ -37,7 +37,9 @@ func validateCatalogWideFromWorkspace(rw *workspaceconfig.ResolvedWorkspace, cat
 	wsCfg := rw.Config()
 	cacheDir := wsCfg.ResolvedArtifactCacheDir()
 	if len(catalogFlagDirs) == 0 && len(wsCfg.Workspace.CatalogDirs) == 0 {
-		return fmt.Errorf("OPS_ERROR: whole-catalog validation needs catalog directories to scan; pass --catalog or set `workspace.catalog_dirs` in .aggrega-config.yaml (or validate a specific Release with --release)")
+		return cerrors.Unidentified(cerrors.OpsError, cerrors.SourceLocation{},
+			"whole-catalog validation needs catalog directories to scan; pass --catalog or set `workspace.catalog_dirs` in .aggrega-config.yaml (or validate a specific Release with --release)",
+			nil, nil)
 	}
 	dirs := workspaceconfig.ResolveCatalogDirs(catalogFlagDirs, wsCfg, wsRoot)
 	return validateCatalogWide(wsRoot, cacheDir, dirs, os.Stderr, os.Stdout)

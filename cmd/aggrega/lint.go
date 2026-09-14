@@ -4,13 +4,13 @@
 package main
 
 import (
-	"fmt"
 	"io"
 	"os"
 
 	"github.com/spf13/cobra"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/lintops"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
 // lintFlags carries the `lint` command's flag state. It is constructed per
@@ -135,13 +135,15 @@ under either format.`,
 				// Release-closure mode is mutually exclusive with a positional /
 				// --entity target — they select different closures.
 				if path != "" {
-					return fmt.Errorf("OPS_ERROR: --release is mutually exclusive with an entity argument; pass one or the other")
+					return cerrors.Unidentified(cerrors.OpsError, cerrors.SourceLocation{},
+						"--release is mutually exclusive with an entity argument; pass one or the other", nil, nil)
 				}
 				// --pre-publish drives the single-entity registry-bump check; the
 				// release-closure pass never consults it. Halt loudly rather than
 				// silently ignore the flag.
 				if opts.prePublish {
-					return fmt.Errorf("OPS_ERROR: --pre-publish is mutually exclusive with --release; --pre-publish applies to a single entity, --release checks a Release closure")
+					return cerrors.Unidentified(cerrors.OpsError, cerrors.SourceLocation{},
+						"--pre-publish is mutually exclusive with --release; --pre-publish applies to a single entity, --release checks a Release closure", nil, nil)
 				}
 				return emit(lintops.RunRelease(cmd.Context(), rw, opts.releasePath, opts.catalogDirs, opOut, os.Stderr, collect))
 			}
@@ -152,7 +154,8 @@ under either format.`,
 			if opts.baseline != "" && !opts.prePublish {
 				// --baseline only shapes the pre-publish predecessor; forcing a
 				// baseline without the check it feeds is a mistake, so halt loudly.
-				return fmt.Errorf("OPS_ERROR: --baseline requires --pre-publish")
+				return cerrors.Unidentified(cerrors.OpsError, cerrors.SourceLocation{},
+					"--baseline requires --pre-publish", nil, nil)
 			}
 			return emit(lintops.RunEntity(cmd.Context(), lintops.Config{
 				EntityPath:     path,

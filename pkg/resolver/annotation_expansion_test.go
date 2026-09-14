@@ -363,11 +363,17 @@ spec:
 	if err == nil {
 		t.Fatalf("expected OPS_ERROR on ambiguous routing; got nil")
 	}
-	if !strings.Contains(err.Error(), "OPS_ERROR") {
-		t.Errorf("error missing OPS_ERROR prefix: %v", err)
+	// The whole chain on one line, not the outermost frame alone. The scope wrap
+	// is a categorised envelope, whose Error renders a single frame deliberately
+	// so the rich multi-line shape stays with the formatter — so a caller reading
+	// Error alone gets the scope and drops the finding beneath it. CauseChain is
+	// the flattened form for exactly this kind of single-line read.
+	chain := cerrors.CauseChain(err)
+	if !strings.Contains(chain, "OPS_ERROR") {
+		t.Errorf("error missing the OPS_ERROR category: %v", chain)
 	}
-	if !strings.Contains(err.Error(), "multiple subkey paths") {
-		t.Errorf("error missing 'multiple subkey paths' diagnostic: %v", err)
+	if !strings.Contains(chain, "multiple subkey paths") {
+		t.Errorf("error missing 'multiple subkey paths' diagnostic: %v", chain)
 	}
 }
 
@@ -987,7 +993,7 @@ spec:
 	if err == nil {
 		t.Fatal("expected side-vs-pillar mismatch error; got nil")
 	}
-	msg := err.Error()
+	msg := cerrors.CauseChain(err)
 	for _, want := range []string{
 		"OPS_ERROR",
 		"feature.myco/rewrite-host",
@@ -1034,7 +1040,7 @@ spec:
 	if err == nil {
 		t.Fatal("expected side-vs-pillar mismatch error; got nil")
 	}
-	msg := err.Error()
+	msg := cerrors.CauseChain(err)
 	for _, want := range []string{
 		"OPS_ERROR",
 		"feature.myco/db-pool",
@@ -1629,7 +1635,7 @@ spec:
 	if err == nil {
 		t.Fatal("expected side-vs-pillar mismatch error for the infra-pillar subkey on the Aggregate side; got nil")
 	}
-	msg := err.Error()
+	msg := cerrors.CauseChain(err)
 	if !strings.Contains(msg, "pool_size") {
 		t.Errorf("error should name the offending subkey (pool_size); got: %s", msg)
 	}
@@ -1666,7 +1672,7 @@ spec:
 	if err == nil {
 		t.Fatal("expected error for subkey not declared in binding map; got nil")
 	}
-	msg := err.Error()
+	msg := cerrors.CauseChain(err)
 	if !strings.Contains(msg, "unknown_subkey") {
 		t.Errorf("error should name the unknown subkey; got: %s", msg)
 	}
@@ -1721,7 +1727,7 @@ spec:
 	if err == nil {
 		t.Fatal("expected error for subkey not declared in binding map; got nil")
 	}
-	msg := err.Error()
+	msg := cerrors.CauseChain(err)
 	if !strings.Contains(msg, "unknown_subkey") {
 		t.Errorf("error should name the unknown subkey; got: %s", msg)
 	}
@@ -1772,7 +1778,7 @@ spec:
 	if err == nil {
 		t.Fatal("expected type-mismatch errors; got nil")
 	}
-	msg := err.Error()
+	msg := cerrors.CauseChain(err)
 	if !strings.Contains(msg, "db_name") {
 		t.Errorf("error should name db_name (declared type string, got integer); got: %s", msg)
 	}
@@ -1816,7 +1822,7 @@ spec:
 	if err == nil {
 		t.Fatal("expected three collected errors; got nil")
 	}
-	msg := err.Error()
+	msg := cerrors.CauseChain(err)
 	for _, want := range []string{"unknown", "pool_size", "db_name"} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("collect-and-emit-all dropped %q; got: %s", want, msg)
@@ -1939,7 +1945,7 @@ spec:
 
 	// Surface check (regression backstop): both subkeys should
 	// appear in the rendered error text.
-	msg := err.Error()
+	msg := cerrors.CauseChain(err)
 	if !strings.Contains(msg, "unknown_a") || !strings.Contains(msg, "unknown_b") {
 		t.Errorf("composed error should carry both subkeys in rendered text; got: %s", msg)
 	}
