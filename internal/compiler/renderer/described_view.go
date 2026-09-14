@@ -338,9 +338,9 @@ func (v *describedView) AttachmentStepExportScope(
 	return v.scopeOf(v.attachmentPipeline(node, attachment), step)
 }
 
-// BoundaryAttachmentRenderingProvider returns the provider that renders one
-// boundary-scope attachment's documents, as the engine kind its bound
-// FeatureRecipe's declared capability projects to.
+// BoundaryAttachmentRenderingProvider returns the provider that renders the
+// documents of one attachment declared on a boundary, as the engine kind its
+// bound FeatureRecipe's declared capability projects to.
 func (v *describedView) BoundaryAttachmentRenderingProvider(
 	boundary string, attachment string,
 ) string {
@@ -352,8 +352,9 @@ func (v *describedView) BoundaryAttachmentRenderingProvider(
 }
 
 // BoundaryAttachmentStepPluginCompatibleCapabilities returns the provider
-// capabilities the plugin behind one step of a boundary-scope attachment's
-// pipeline declares its step is compatible with, in declared order.
+// capabilities the plugin behind one step of the pipeline of an attachment
+// declared on a boundary declares its step is compatible with, in declared
+// order.
 func (v *describedView) BoundaryAttachmentStepPluginCompatibleCapabilities(
 	boundary string, attachment string, step string,
 ) []string {
@@ -365,8 +366,8 @@ func (v *describedView) BoundaryAttachmentStepPluginCompatibleCapabilities(
 }
 
 // BoundaryAttachmentStepExportScope returns the document root the export one
-// step of a boundary-scope attachment's pipeline dispatches to declares it
-// operates on, empty when the export declares none.
+// step of the pipeline of an attachment declared on a boundary dispatches to
+// declares it operates on, empty when the export declares none.
 func (v *describedView) BoundaryAttachmentStepExportScope(
 	boundary string, attachment string, step string,
 ) string {

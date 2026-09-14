@@ -327,9 +327,11 @@ func (c *describedStageCoordinates) BoundaryAttachments(boundary string) []strin
 	return out
 }
 
-// BoundaryAttachmentPipelineSteps returns the steps of the pipeline one
-// boundary-scope attachment's FeatureRecipe carries, in the order that
-// FeatureRecipe declares them.
+// BoundaryAttachmentPipelineSteps returns the steps of the pipeline the
+// FeatureRecipe of one attachment declared on a boundary carries, in the order
+// that FeatureRecipe declares them. The execution scope that FeatureRecipe
+// declares is a separate fact, read through BoundaryAttachmentExecutionScope;
+// this answers for every attachment the boundary declares, whatever it is.
 func (c *describedStageCoordinates) BoundaryAttachmentPipelineSteps(
 	boundary string, attachment string,
 ) []constraint.AuthoredCoordinate {
