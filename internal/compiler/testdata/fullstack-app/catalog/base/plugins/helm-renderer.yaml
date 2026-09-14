@@ -4,7 +4,13 @@ metadata:
   name: helm
   version: 1.0.0
   pluginType: provider
-  description: Wasm rendering engine for the helm provider.
+  # Deliberately described where the sibling plugins in this catalog are not: a
+  # by-name resolution test reads this catalog for entities that differ in which
+  # optional facts they carry, and uses this entry as the one carrying a
+  # description. With every entity here undescribed, a projection that filled the
+  # field with a constant would satisfy the comparison on every row and the test
+  # would stop discriminating. Keep it, and keep it non-empty.
+  description: Renders IR nodes into helm-native artifacts.
 spec:
   abiVersion: v1alpha1
   provider:

@@ -4,7 +4,6 @@ metadata:
   name: helm-chart
   version: 1.0.0
   pluginType: provider
-  description: Wasm rendering engine for the helm-chart provider.
 spec:
   abiVersion: v1alpha1
   provider:

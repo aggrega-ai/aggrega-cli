@@ -7,10 +7,9 @@ metadata:
   name: cloudformation
   version: 0.0.0-test
   pluginType: provider
-  description: Wasm rendering engine for the cloudformation provider — normalizes CloudFormation fragments to pure-JSON long-form intrinsics and merges a dispatch group's fragments into a single CloudFormation stack template.
 spec:
   abiVersion: v1alpha1
-  # The engine renders standalone artifact fragments and normalizes sourced
+  # The plugin renders standalone artifact fragments and normalizes sourced
   # templates to pure-JSON long-form intrinsics, structurally validating a sourced
   # template ahead of render; it merges a dispatch group's per-node fragments into
   # one stack template, and it wires cross-boundary uses edges through the
@@ -32,8 +31,8 @@ spec:
   provider:
     capabilities:
       - cloudformation
-    # provider carries the provider-socket metadata for this rendering engine.
-    # The cloudformation engine synthesizes no Workload, so it declares no
+    # provider carries the provider-socket metadata for this provider plugin.
+    # The cloudformation plugin synthesizes no Workload, so it declares no
     # workloadSchema; it reads the cloud-target boundary annotations below to
     # shape a cross-stack reference between boundaries (a boundary is one
     # stack). This is descriptive contract metadata for catalog readers and the
@@ -49,9 +48,9 @@ spec:
       - key: aggrega.ai/aws-assume-role-arn
         purpose: The IAM role ARN a cross-account stack read assumes to reach a peer stack's exported values.
         defaultBehavior: No role is supplied, and a cross-account reference carries no assume-role.
-    # contract is this engine's render-behavior self-report, matched against the
+    # contract is this plugin's render-behavior self-report, matched against the
     # plugin's own describe() output at publish and at load. The cloudformation
-    # engine renders sourced templates and standalone artifact fragments; it does
+    # plugin renders sourced templates and standalone artifact fragments; it does
     # not synthesize workloads, and it merges a dispatch group's per-node fragments
     # into a single stack template (boundary-merge assembly).
     contract:
@@ -60,13 +59,13 @@ spec:
         synthesized: false
         artifactsStandalone: true
       boundaryAssembly: merge
-      # reusableInstance declares that one loaded instance of this engine serves
+      # reusableInstance declares that one loaded instance of this plugin serves
       # every render, assemble, and validate crossing of a build rather than a
-      # fresh instance per crossing. The engine holds no state across crossings —
+      # fresh instance per crossing. The plugin holds no state across crossings —
       # its output is a pure function of each crossing's input — so a reused
       # instance produces byte-identical artifacts.
       reusableInstance: true
-      # crossBoundaryLinking declares that this engine wires a cross-boundary uses
+      # crossBoundaryLinking declares that this plugin wires a cross-boundary uses
       # edge — a uses edge whose ends assemble into different stacks (dispatch
       # groups) — by emitting a cross-stack reference through its paired
       # link_publish and link_resolve exports, both declared above.

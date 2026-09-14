@@ -4,7 +4,6 @@ metadata:
   name: compose
   version: 1.0.0
   pluginType: provider
-  description: Wasm rendering engine for the compose provider.
 spec:
   abiVersion: v1alpha1
   provider:

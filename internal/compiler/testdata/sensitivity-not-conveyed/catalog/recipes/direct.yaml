@@ -7,6 +7,6 @@ spec:
   source: ./charts/app
   provides:
     host: "{{ .context.instance_id }}"
-  # No valuesMapping. The values pillar is flattened as the engine input, so the
+  # No valuesMapping. The values pillar is flattened as the render input, so the
   # resolved keys are the authored leaf paths and the declaration joins to the
   # rendered identity exactly.
