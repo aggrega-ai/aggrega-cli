@@ -260,6 +260,33 @@ type registered struct {
 	shortCode     string
 	message       string
 	declaredAhead string
+	place         declaredPlace
+}
+
+// declaredPlace is what a registration's rule-place key declares: which of the
+// errors package's three place constructors it names, the reason the two that
+// take one were handed, and — where the value could not be read at all — why.
+//
+// # Why this scan reads a key it carries nowhere
+//
+// The place a condition's rule belongs to reaches no page: it is a fact about how
+// the product is built, and the reference is composed from the values carried onto
+// an [Identity], which this is not. What this scan does with it is refuse a
+// declaration nothing can read, and that is worth doing here for the reason the
+// missing-short-code refusal is worth doing here. A registration whose place
+// cannot be read cannot run either — the registration itself refuses the shapes
+// it can see — so the tree is already wrong, and this is the earlier and cheaper
+// place to say so, over source rather than over a program that has to start.
+//
+// It matters more for this key than for the prose beside it, because a second
+// reader of the same registrations reads this one and acts on it. A value only
+// one of the two can read is a value they disagree about silently: this scan
+// would pass over it as absent while the other reports on a declaration that is
+// there. Refusing is what keeps the two readings the same reading.
+type declaredPlace struct {
+	constructor string
+	reason      string
+	unreadable  string
 }
 
 // accessorTarget is what an accessor's body yields. Exactly one field is set:
@@ -416,6 +443,19 @@ func scan(root, modulePath string) ([]Identity, error) {
 						continue
 					}
 					key := pkgDir + "." + name
+					if why := reg.place.unreadable; why != "" {
+						// Refused rather than passed over, for the reason
+						// recorded on declaredPlace: a value this scan skips as
+						// absent is a value the other reader of these same
+						// registrations reports on, and the two readings then
+						// describe different declarations with nothing failing.
+						return fmt.Errorf("%s: %s declares where its rule belongs in a form this scan cannot "+
+							"read: %s; the value is a call to one of the three place constructors, and the two "+
+							"that take a reason take it as a string literal written at the declaration — a "+
+							"constant or a call moves the text out of the declaration, where neither this scan "+
+							"nor a reader of the source can see it",
+							path, key, why)
+					}
 					if prev, dup := registrations[key]; dup && prev != reg {
 						return fmt.Errorf("%s: %s is registered twice, with different metadata", path, key)
 					}
@@ -878,14 +918,28 @@ func yieldsErrorAlone(ft *ast.FuncType) bool {
 // anything raises it, and it names the work that will. It is what lets such a
 // condition reach the published reference at all — see [admitted].
 //
+// The rule place is read from the same literal and is the one key here that is
+// not prose: its value is a call naming one of three constructors. Why this scan
+// reads a key it carries onto no page, and what it does with an unreadable one,
+// is recorded on [declaredPlace].
+//
 // A registered message is what makes this a registration at all — a Meta literal
 // declaring no string message is a call this scan does not recognise. The short
 // code is extracted but NOT part of that test, deliberately: treating a missing
 // short code as "not a registration" would drop the whole identity out of the
 // index silently, which is the one outcome worse than reporting it. [scan]
 // refuses it by name instead, where the handle is known. The declared-ahead note
-// is outside the test for the opposite reason: its ordinary value is absent, so
-// requiring it would recognise almost nothing.
+// and the rule place are outside the test for the opposite reason: their ordinary
+// value is absent, so requiring either would recognise almost nothing.
+//
+// # Each key is read by its own arm, and none by a catch-all
+//
+// The arms below name every key this scan reads and skip every other, and there
+// is no default arm assigning whatever is left to the message. A catch-all is the
+// shape that turns a widened filter into a corrupted message: the next key added
+// to the recognised set, if its arm were forgotten, would be written into the
+// condition's own sentence and reported as the message with nothing failing. The
+// arms cost one line each and remove that failure mode outright.
 func registration(vs *ast.ValueSpec, errPkg string, isErrorsPkg bool) (string, registered, bool) {
 	none := registered{}
 	if len(vs.Names) != 1 || len(vs.Values) != 1 {
@@ -914,27 +968,84 @@ func registration(vs *ast.ValueSpec, errPkg string, isErrorsPkg bool) (string, r
 		if !ok {
 			continue
 		}
-		if key.Name != "Message" && key.Name != "ShortCode" && key.Name != "DeclaredAhead" {
-			continue
-		}
-		value, ok := stringLiteral(kv.Value)
-		if !ok {
-			continue
-		}
 		switch key.Name {
+		case "Message":
+			if value, ok := stringLiteral(kv.Value); ok {
+				out.message = value
+				found = true
+			}
 		case "ShortCode":
-			out.shortCode = value
+			if value, ok := stringLiteral(kv.Value); ok {
+				out.shortCode = value
+			}
 		case "DeclaredAhead":
-			out.declaredAhead = value
-		default:
-			out.message = value
-			found = true
+			if value, ok := stringLiteral(kv.Value); ok {
+				out.declaredAhead = value
+			}
+		case "RulePlace":
+			out.place = rulePlace(kv.Value)
 		}
 	}
 	if !found {
 		return "", none, false
 	}
 	return vs.Names[0].Name, out, true
+}
+
+// The three place constructors, named here because this scan reads them by name
+// and resolves nothing: the value a rule-place key is given is a call, and what
+// this reads is which function the call names and what literal it was handed. A
+// same-named constructor from outside the errors package would be read as this
+// one, which is the admission [namesErrorsSymbol] already makes for the
+// registration call itself.
+const (
+	placeOverAuthoredInput  = "RuleOverAuthoredInput"
+	placeEvaluatedElsewhere = "RuleEvaluatedElsewhere"
+	placeNotARule           = "NotARule"
+)
+
+// rulePlace reads a rule-place value, and says why it could not be read rather
+// than returning a zero value that is indistinguishable from an absent key.
+//
+// Every unreadable arm names what is wrong in terms a reader can act on at the
+// declaration, because the refusal that carries this text is the only thing
+// standing between a declaration nothing can read and a tree where one reader
+// sees a place and the other sees none.
+func rulePlace(expr ast.Expr) declaredPlace {
+	call, ok := expr.(*ast.CallExpr)
+	if !ok {
+		return declaredPlace{unreadable: "the value is not a call to one of the three place constructors"}
+	}
+	var name string
+	switch fun := call.Fun.(type) {
+	case *ast.Ident:
+		name = fun.Name
+	case *ast.SelectorExpr:
+		name = fun.Sel.Name
+	default:
+		return declaredPlace{unreadable: "the value calls something this scan cannot name"}
+	}
+	switch name {
+	case placeOverAuthoredInput:
+		if len(call.Args) != 0 {
+			return declaredPlace{unreadable: name + " takes no reason and was given one"}
+		}
+		return declaredPlace{constructor: name}
+	case placeEvaluatedElsewhere, placeNotARule:
+		if len(call.Args) != 1 {
+			return declaredPlace{unreadable: name + " takes one reason and was given a different number"}
+		}
+		reason, readable := stringLiteral(call.Args[0])
+		if !readable {
+			return declaredPlace{unreadable: "the reason given to " + name +
+				" is not a string literal at the declaration"}
+		}
+		if strings.TrimSpace(reason) == "" {
+			return declaredPlace{unreadable: "the reason given to " + name + " says nothing"}
+		}
+		return declaredPlace{constructor: name, reason: reason}
+	}
+	return declaredPlace{unreadable: "the value calls " + name + ", which is not one of the three place constructors"}
 }
 
 // stringLiteral returns the text of a string-valued expression a registration

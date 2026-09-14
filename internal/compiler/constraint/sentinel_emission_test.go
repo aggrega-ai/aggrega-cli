@@ -250,15 +250,17 @@ import (
 // Criterion, so that a later reading measures the same thing: a declared
 // sentinel is UNRATCHETED when the census places it in the off-framework
 // population AND the registration binding the value its accessor publishes
-// carries a non-empty EvaluatedElsewhere string literal — read by
-// [evaluatedElsewhereDeclarations], over the same file set and the same
-// population every other count in this file is taken over. The ratcheted count
-// is the off-framework population minus those. No other figure this file
-// reports is changed by the partition.
+// declares that the rule belongs somewhere other than this dispatch. That
+// declaration has two spellings and both count: a non-empty
+// EvaluatedElsewhere string literal, and a RulePlace naming either another
+// evaluator or no rule at all. Both are read by [readPlacementDeclarations],
+// over the same file set and the same population every other count in this
+// file is taken over. The ratcheted count is the off-framework population
+// minus those. No other figure this file reports is changed by the partition.
 //
 // # The declaration is guarded in both directions, and what no guard can see
 //
-// [partitionOffFrameworkByEvaluator] fails on a declaration the tree
+// [partitionOffFrameworkByDeclaredPlace] fails on a declaration the tree
 // CONTRADICTS — a condition carrying one that the census nonetheless attributes
 // to the framework's dispatch — and on one that DESCRIBES NOTHING: a
 // declaration the census cannot place in the off-framework population at all.
@@ -371,6 +373,52 @@ const offFrameworkEmissionCeiling = 241
 // the correspondence travels with the identity.
 const unemittedSentinelsBlock = true
 
+// undeclaredRulePlaceBlocks decides whether a condition that declares no place
+// for its rule fails this test or is only reported. It is false.
+//
+// # What the declaration is for, and why the count above needs it
+//
+// The off-framework population is called a migration meter, and a meter is only
+// honest if the thing it measures can reach zero. Part of that population never
+// can: a registry refusing a request, a signature that does not verify, a file
+// that will not parse, a guest that trapped, an invariant of this program's own
+// construction. No work anyone does moves those inside the dispatch, because
+// there is no rule there for the dispatch to evaluate. Counted together with the
+// rules that are merely not expressed as checks yet, they make the meter's own
+// reversing condition unreachable, and every later reading of it re-opens the
+// same question about the same conditions.
+//
+// The separating fact cannot be derived — a package holding a condition that is
+// no rule at all looks exactly like a package holding a rule nobody has moved
+// yet — so it is declared at the registration, in the errors package's rule
+// place, which says which of three places the rule belongs to and carries prose
+// for the two that are a departure from the ordinary one.
+//
+// # Why it does not block yet, and what flipping it needs
+//
+// The declared set is not yet written, so blocking now would fail on the shipped
+// tree on every run for nearly every condition, and an assertion in that state is
+// switched off rather than fixed — the reasoning recorded at
+// [offFrameworkEmissionBlocks], arriving at the same answer for the same reason.
+// What flips it is the change that finishes declaring the set: at that point the
+// population this names is empty, so the assertion fails on any member at all,
+// exactly as [unemittedSentinelsBlock] does over its own empty population.
+//
+// The body it gates is written and runs today. Only the channel is switched, so
+// the flip is a one-line edit activating an assertion whose failure has already
+// been demonstrated, rather than an assertion authored at the moment it is first
+// needed.
+//
+// # No exception list, then or now
+//
+// When it blocks there is nothing to record a permitted name in, and none should
+// be added. A recorded exception outlives its subject silently: once the
+// condition it names acquires a declaration the entry reads as a known hole
+// where there is none. A condition that genuinely has no place to declare does
+// not exist — every condition is in one of the three — so the remedy a failure
+// names is always to declare the place, never to record the name.
+const undeclaredRulePlaceBlocks = false
+
 // sentinelName matches the declaration convention for a sentinel: an exported
 // package-level error variable named for the rule it stands for.
 var sentinelName = regexp.MustCompile(`^Err[A-Z][A-Za-z0-9]*$`)
@@ -415,25 +463,35 @@ const frameworkPackageSuffix = "internal/compiler/constraint"
 const checkTypeName = "Check"
 
 // registrationFuncName is the function a condition's identity is declared by,
-// and the two metadata keys below are the ones this census reads off that
-// declaration.
+// and the metadata keys and constructor names below are the ones this census
+// reads off that declaration.
 //
-// They are spelled here rather than at the walk so the three strings tying this
-// file to the errors package's declaration shape sit together: a rename there
-// is carried here in one place, and a reader can see at a glance how much of
-// that shape this census depends on. It depends on no other part of it, and in
-// particular on no other metadata key — an unrecognised key is skipped, so a
-// field added beside these disturbs this walk not at all.
+// They are spelled here rather than at the walk so every string tying this file
+// to the errors package's declaration shape sits in one place: a rename there is
+// carried here once, and a reader can see at a glance how much of that shape
+// this census depends on. It depends on no other part of it, and in particular
+// on no other metadata key — an unrecognised key is skipped, so a field added
+// beside these disturbs this walk not at all.
+//
+// The three constructor names are the errors package's three places, and they
+// are read by NAME rather than resolved: the value a rule-place key is given is
+// a call, and this census resolves no types, so what it reads is which function
+// the call names and what literal it was handed.
 const (
 	registrationFuncName = "Register"
 	elsewhereMetaKey     = "EvaluatedElsewhere"
 	declaredAheadMetaKey = "DeclaredAhead"
+	rulePlaceMetaKey     = "RulePlace"
+
+	placeOverAuthoredInputFunc  = "RuleOverAuthoredInput"
+	placeEvaluatedElsewhereFunc = "RuleEvaluatedElsewhere"
+	placeNotARuleFunc           = "NotARule"
 )
 
 func TestSentinelEmissionSitesAreTheFrameworkDispatch(t *testing.T) {
 	t.Parallel()
 
-	declared, emitters, forwards, elsewhere := sentinelCensus(t)
+	declared, emitters, forwards, placements := sentinelCensus(t)
 	if len(declared) == 0 {
 		t.Fatalf("no sentinel declaration was found under %s, so a clean result certifies nothing",
 			strings.Join(scannedRoots, ", "))
@@ -508,19 +566,20 @@ func TestSentinelEmissionSitesAreTheFrameworkDispatch(t *testing.T) {
 			strings.Join(namedList(offFramework, 12), ", "))
 	}
 
-	ratcheted, unratcheted := partitionOffFrameworkByEvaluator(t, offFramework, emitters, elsewhere)
+	ratcheted, unratcheted := partitionOffFrameworkByDeclaredPlace(t, offFramework, emitters, placements)
 	t.Logf("off-framework partition: %d of the %d sentinels emitted outside the dispatch declare that "+
-		"their rule is evaluated elsewhere and are NOT ratcheted, leaving %d ratcheted. The ceiling "+
+		"their rule could not be one of the framework's own — another evaluator owns it, or the "+
+		"condition names no rule at all — and are NOT ratcheted, leaving %d ratcheted. The ceiling "+
 		"below is read against the ratcheted count alone, so the off-framework total must never be "+
 		"compared with it.", len(unratcheted), len(offFramework), len(ratcheted))
 	if len(unratcheted) > 0 {
 		t.Logf("not ratcheted, each named beside the declaration it was attributed from, so the "+
 			"attribution can be checked rather than taken: %s.\n"+
-			"Each of these carries prose on its own registration naming what evaluates its rule and why "+
-			"that evaluator is not this dispatch. They are named on every run rather than counted, because "+
+			"Each of these carries prose on its own registration naming where its rule belongs and why "+
+			"that place is not this dispatch. They are named on every run rather than counted, because "+
 			"a partition whose unratcheted half is invisible has retired the guard while reading as a "+
 			"repair.",
-			strings.Join(namedList(namedWithElsewhere(unratcheted, elsewhere), 12), "; "))
+			strings.Join(namedList(namedWithPlacement(unratcheted, placements), 12), "; "))
 	}
 
 	assertOffFrameworkCeiling(t, len(ratcheted), len(declared))
@@ -543,6 +602,7 @@ func TestSentinelEmissionSitesAreTheFrameworkDispatch(t *testing.T) {
 			len(forwarding), strings.Join(namedList(namedWithForwards(forwarding, forwards), 12), "; "))
 	}
 	assertUnemittedSentinels(t, unemitted)
+	assertEveryConditionDeclaresItsPlace(t, declared, forwarding, placements)
 
 	if !offFrameworkEmissionBlocks {
 		t.Logf("the off-framework population reports and does not block on its size. It becomes blocking "+
@@ -570,8 +630,8 @@ func TestSentinelEmissionSitesAreTheFrameworkDispatch(t *testing.T) {
 // What it is given is the RATCHETED half of the off-framework population, not
 // the whole of it: a condition declaring that its rule is evaluated outside the
 // dispatch by construction was never inside it, so its arrival is not the
-// backwards movement this refuses. [partitionOffFrameworkByEvaluator] performs
-// that split and guards the declaration in both directions.
+// backwards movement this refuses. [partitionOffFrameworkByDeclaredPlace]
+// performs that split and guards the declaration in both directions.
 func assertOffFrameworkCeiling(t *testing.T, ratcheted, declared int) {
 	t.Helper()
 
@@ -651,6 +711,92 @@ func assertUnemittedSentinels(t *testing.T, unemitted []string) {
 	t.Logf("no-emission-site population: %d sentinel(s) carry no emission site, against a population "+
 		"asserted to be empty with no recorded exception. This assertion %s on any member.",
 		len(unemitted), tier)
+}
+
+// assertEveryConditionDeclaresItsPlace reports, and eventually fails on, a
+// condition whose registration does not say where the rule it names belongs.
+//
+// The reasoning for the tier, for the flip, and for why no exception list exists
+// is at [undeclaredRulePlaceBlocks].
+//
+// # The population, stated so a later reading measures the same thing
+//
+// Every declared sentinel EXCEPT a forwarding one. A forwarding declaration is a
+// second exported name for a rule declared elsewhere — it carries no
+// registration of its own, so there is nothing on it to declare a place on, and
+// the place of the rule it names is declared at the registration it forwards to.
+// Counting them would put a permanent floor under a population that is asserted
+// to reach zero, which is the reading a meter must never produce.
+//
+// # What a declaration is, here
+//
+// Either spelling: an evaluated-elsewhere note, or a rule place naming one of the
+// three constructors. Both say where the rule belongs, and a registration
+// carrying both is refused at registration, so reading either as a declaration
+// double-counts nothing.
+func assertEveryConditionDeclaresItsPlace(t *testing.T, declared, forwarding []string, declarations placementDeclarations) {
+	t.Helper()
+
+	isForwarding := map[string]bool{}
+	for _, name := range forwarding {
+		isForwarding[name] = true
+	}
+
+	var undeclared []string
+	byPlace := map[string]int{}
+	for _, name := range declared {
+		if isForwarding[name] {
+			continue
+		}
+		decl, found := declarations.bySentinel[name]
+		switch {
+		case !found:
+			undeclared = append(undeclared, name)
+		case decl.note != "":
+			byPlace[elsewhereMetaKey]++
+		default:
+			byPlace[decl.placeFunc]++
+		}
+	}
+
+	report := t.Logf
+	if undeclaredRulePlaceBlocks {
+		report = t.Errorf
+	}
+
+	if len(undeclared) > 0 {
+		report("%d condition(s) declare no place for the rule they name.\n"+
+			"INVARIANT: every condition's rule is in exactly one of three places — a rule over authored "+
+			"input, a rule another evaluator owns, or no rule at all — and which one is declared at the "+
+			"registration, because no property of the declaring package can tell them apart.\n"+
+			"CONSEQUENCE: a condition declaring none is counted with the rules not yet expressed as %s "+
+			"values whether or not it could ever be one. The count that measures how much of that "+
+			"migration remains then cannot reach zero, and every later reading re-opens the same question "+
+			"about the same conditions — which is the cost this declaration exists to end, not a tidiness "+
+			"concern.\n"+
+			"REMEDY: declare the place on the registration. The two places that are a departure from a "+
+			"rule over authored input carry prose saying why, and that prose is what makes a condition "+
+			"settled: a later reader meets the reason instead of the question. Recording the name in a "+
+			"list here is not a remedy, and no such list exists.\n"+
+			"Alphabetically: %s", len(undeclared), checkTypeName,
+			strings.Join(namedList(undeclared, 12), ", "))
+	}
+
+	tier := "reports and does not block"
+	if undeclaredRulePlaceBlocks {
+		tier = "blocks"
+	}
+	t.Logf("declared-place population: %d condition(s) declare no place, against %d that do — %d a rule "+
+		"over authored input, %d a rule another evaluator owns (%d of them in the older note spelling), "+
+		"%d no rule at all. Forwarding declarations are outside this population, because a second name "+
+		"for a rule carries no registration to declare a place on. This assertion %s on any member.",
+		len(undeclared),
+		byPlace[placeOverAuthoredInputFunc]+byPlace[placeEvaluatedElsewhereFunc]+byPlace[placeNotARuleFunc]+byPlace[elsewhereMetaKey],
+		byPlace[placeOverAuthoredInputFunc],
+		byPlace[placeEvaluatedElsewhereFunc]+byPlace[elsewhereMetaKey],
+		byPlace[elsewhereMetaKey],
+		byPlace[placeNotARuleFunc],
+		tier)
 }
 
 // TestAssertedSentinelPopulationCoversTheModule asserts that [scannedRoots]
@@ -856,7 +1002,7 @@ type emissionSite struct {
 // sentinel's value. A const can still BIND a sentinel, which is why the
 // population walk reads both, and reading it here would only widen the walk to
 // specifications that cannot match.
-func sentinelCensus(t *testing.T) (declared []string, emitters map[string][]emissionSite, forwards map[string][]string, elsewhere elsewhereDeclarations) {
+func sentinelCensus(t *testing.T) (declared []string, emitters map[string][]emissionSite, forwards map[string][]string, placements placementDeclarations) {
 	t.Helper()
 
 	files, _ := collectGoFiles(t, scannedRoots, excludeTestFiles)
@@ -864,7 +1010,7 @@ func sentinelCensus(t *testing.T) (declared []string, emitters map[string][]emis
 	forwards = forwardingDeclarations(files, names)
 	accessorPublished := accessorPublishedSentinels(files, names)
 	handles := accessorHandles(files, names)
-	elsewhere = evaluatedElsewhereDeclarations(t, files, handles)
+	placements = readPlacementDeclarations(t, files, handles)
 
 	emitters = map[string][]emissionSite{}
 	for path, file := range files {
@@ -934,40 +1080,85 @@ func sentinelCensus(t *testing.T) (declared []string, emitters map[string][]emis
 		sites := emitters[name]
 		sort.Slice(sites, func(a, b int) bool { return sites[a].name < sites[b].name })
 	}
-	return declared, emitters, forwards, elsewhere
+	return declared, emitters, forwards, placements
 }
 
-// elsewhereDeclaration is one registration's statement that the rule its
-// condition names is evaluated outside the framework's dispatch: where the
-// statement was read from, what it says, and whether the same registration also
-// carries a declared-ahead note.
+// placementDeclaration is what one registration says about where the rule its
+// condition names belongs: where the statement was read from, which of the two
+// spellings it is written in, what it says, and whether the same registration
+// also carries a declared-ahead note.
 //
-// The note's text is kept rather than discarded once its presence is
-// established, because the guard that fails on a declaration the tree
-// contradicts has to show a reader the claim being contradicted. Nothing else
-// reads it: the criterion is presence, and the prose is for whoever opens the
-// declaration.
-type elsewhereDeclaration struct {
-	site          string
-	note          string
+// # Two spellings, one fact
+//
+// A registration declares its place either as an evaluated-elsewhere note —
+// prose naming what evaluates the rule — or as a rule-place value, which says
+// which of three places the rule belongs to and carries prose for the two that
+// take one. Carrying both is refused at registration AND refused at the walk
+// that builds these, so at most one of [note] and [placeFunc] is set on any
+// declaration reaching this type. The second refusal is not redundant with the
+// first for the reason the blank-value refusal is not: this census reads source
+// rather than running it, so it meets a tree the registration would have refused
+// to start.
+//
+// The prose is kept rather than discarded once its presence is established,
+// because the guard that fails on a declaration the tree contradicts has to show
+// a reader the claim being contradicted. Nothing else reads it: the criterion is
+// which place is declared, and the prose is for whoever opens the declaration.
+type placementDeclaration struct {
+	site string
+
+	// note is the evaluated-elsewhere prose, empty when that key is absent.
+	note string
+
+	// placeFunc is the name of the constructor a rule-place key was given, and
+	// placeReason the literal that constructor was handed. Both are empty when
+	// that key is absent, and placeReason is empty for the place that takes no
+	// reason.
+	placeFunc   string
+	placeReason string
+
 	declaredAhead bool
 }
 
-// elsewhereDeclarations is what [evaluatedElsewhereDeclarations] reads out of
-// the tree: the declarations it could attribute to a sentinel, and the ones it
-// could not.
+// claimsOutsideTheDispatch reports whether this declaration says the rule could
+// not be one of the framework's own — either because another evaluator owns it,
+// or because the condition names no rule at all.
+//
+// Those two are read together everywhere in this file, and deliberately: a
+// condition in either place was never inside the dispatch, so neither is the
+// backwards movement the ratchet refuses. What separates them is the question
+// the migration asks — one is a rule somewhere else, the other is no rule at all
+// — and that separation is what a later reader meets instead of the question.
+// The ratchet does not need it, so it is reported rather than partitioned on.
+func (d placementDeclaration) claimsOutsideTheDispatch() bool {
+	return d.note != "" || d.placeFunc == placeEvaluatedElsewhereFunc || d.placeFunc == placeNotARuleFunc
+}
+
+// claim is the prose the declaration carries, for a guard that has to show a
+// reader what is being contradicted.
+func (d placementDeclaration) claim() string {
+	if d.note != "" {
+		return d.note
+	}
+	return d.placeReason
+}
+
+// placementDeclarations is what [readPlacementDeclarations] reads out of the
+// tree: the declarations it could attribute to a sentinel, and the ones it could
+// not.
 //
 // The two are separate because only the first can be partitioned. An orphan is
 // not dropped, though — it is a declaration that describes no condition this
 // census counts, which is exactly what the describes-nothing guard exists to
 // fail on, so it is carried here rather than discarded at the walk.
-type elsewhereDeclarations struct {
-	bySentinel map[string]elsewhereDeclaration
+type placementDeclarations struct {
+	bySentinel map[string]placementDeclaration
 	orphans    []string
 }
 
-// evaluatedElsewhereDeclarations reads, for each declared sentinel, the
-// non-empty evaluated-elsewhere note its registration carries.
+// readPlacementDeclarations reads, for each declared sentinel, what its
+// registration says about where the rule it names belongs — in either of the two
+// spellings that declaration takes.
 //
 // The shape it looks for is the one a registration is written in: a package-
 // level `var <binding> = <pkg>.Register(<code>, <pkg>.Meta{ … })`. The binding
@@ -1004,10 +1195,19 @@ type elsewhereDeclarations struct {
 // in for. A present-but-blank value is refused for the same reason and is
 // additionally refused at registration, which this cannot rely on because it
 // reads source rather than running it.
-func evaluatedElsewhereDeclarations(t *testing.T, files map[string]*ast.File, handles map[string]map[string]string) elsewhereDeclarations {
+//
+// # A rule-place value is read by the constructor it names
+//
+// The newer spelling is a call rather than a string, so it is read by which
+// function the call names and what literal that function was handed — see
+// [declaredRulePlace]. That is the same no-types criterion the rest of this file
+// is taken over: nothing here resolves the call to a function, and a
+// same-named constructor from outside this module would be read as this one,
+// which is the admission [namesRegistration] already makes one line along.
+func readPlacementDeclarations(t *testing.T, files map[string]*ast.File, handles map[string]map[string]string) placementDeclarations {
 	t.Helper()
 
-	out := elsewhereDeclarations{bySentinel: map[string]elsewhereDeclaration{}}
+	out := placementDeclarations{bySentinel: map[string]placementDeclaration{}}
 	for path, file := range files {
 		dir := filepath.ToSlash(filepath.Dir(path))
 		for _, decl := range file.Decls {
@@ -1024,24 +1224,39 @@ func evaluatedElsewhereDeclarations(t *testing.T, files map[string]*ast.File, ha
 				if !ok {
 					continue
 				}
-				elsewhereValue, aheadValue := declaredMetaValues(meta)
-				if elsewhereValue == nil {
+				elsewhereValue, placeValue, aheadValue := declaredMetaValues(meta)
+				if elsewhereValue == nil && placeValue == nil {
 					continue
 				}
 				site := dir + "." + vs.Names[0].Name
-				note, readable := declaredString(elsewhereValue)
-				if !readable || strings.TrimSpace(note) == "" {
-					reportUnreadableDeclaration(t, site, elsewhereMetaKey)
+				if elsewhereValue != nil && placeValue != nil {
+					reportTwoPlaceSpellings(t, site)
 					continue
 				}
-				ahead := false
+				declaration := placementDeclaration{site: site}
+				if elsewhereValue != nil {
+					note, readable := declaredString(elsewhereValue)
+					if !readable || strings.TrimSpace(note) == "" {
+						reportUnreadableDeclaration(t, site, elsewhereMetaKey)
+						continue
+					}
+					declaration.note = note
+				}
+				if placeValue != nil {
+					fn, reason, readable := declaredRulePlace(placeValue)
+					if !readable {
+						reportUnreadableDeclaration(t, site, rulePlaceMetaKey)
+						continue
+					}
+					declaration.placeFunc, declaration.placeReason = fn, reason
+				}
 				if aheadValue != nil {
 					aheadNote, aheadReadable := declaredString(aheadValue)
 					if !aheadReadable {
 						reportUnreadableDeclaration(t, site, declaredAheadMetaKey)
 						continue
 					}
-					ahead = strings.TrimSpace(aheadNote) != ""
+					declaration.declaredAhead = strings.TrimSpace(aheadNote) != ""
 				}
 				sentinel, published := handles[dir][vs.Names[0].Name]
 				if !published {
@@ -1058,12 +1273,84 @@ func evaluatedElsewhereDeclarations(t *testing.T, files map[string]*ast.File, ha
 				if prior, seen := out.bySentinel[sentinel]; seen && prior.site <= site {
 					continue
 				}
-				out.bySentinel[sentinel] = elsewhereDeclaration{site: site, note: note, declaredAhead: ahead}
+				out.bySentinel[sentinel] = declaration
 			}
 		}
 	}
 	sort.Strings(out.orphans)
 	return out
+}
+
+// declaredRulePlace reads a rule-place value: which of the errors package's three
+// constructors the declaration names, and the literal it was handed.
+//
+// It is deliberately strict about the shape, and every arm that returns
+// unreadable is a value the guard above then FAILS on rather than skips. The
+// reason is the one recorded at [reportUnreadableDeclaration]: a value this
+// census cannot read is indistinguishable here from an absent one, so a skip
+// would leave the condition in the ratcheted population and the ceiling would
+// fail naming a regression that did not happen.
+//
+// The reason is required for the two places that carry one, and refused as blank
+// for the same reason registration refuses it: a place declared with nothing
+// behind it moves a condition out of the ratcheted count while saying nothing
+// about why it is out. The place that carries no reason is read as unreadable if
+// handed one, because a declaration that does not compile is not a declaration
+// this census should report as well-formed.
+func declaredRulePlace(expr ast.Expr) (fn, reason string, ok bool) {
+	call, isCall := expr.(*ast.CallExpr)
+	if !isCall {
+		return "", "", false
+	}
+	switch f := call.Fun.(type) {
+	case *ast.Ident:
+		fn = f.Name
+	case *ast.SelectorExpr:
+		fn = f.Sel.Name
+	default:
+		return "", "", false
+	}
+	switch fn {
+	case placeOverAuthoredInputFunc:
+		if len(call.Args) != 0 {
+			return "", "", false
+		}
+		return fn, "", true
+	case placeEvaluatedElsewhereFunc, placeNotARuleFunc:
+		if len(call.Args) != 1 {
+			return "", "", false
+		}
+		text, readable := declaredString(call.Args[0])
+		if !readable || strings.TrimSpace(text) == "" {
+			return "", "", false
+		}
+		return fn, text, true
+	}
+	return "", "", false
+}
+
+// reportTwoPlaceSpellings fails on a registration declaring where its rule
+// belongs twice, once in each spelling.
+//
+// It mirrors the refusal the registration itself performs, and it is owed here
+// for the reason the blank-value refusal is owed here: this census reads source
+// rather than running it, so it meets a tree the registration would have refused
+// to start. Without it such a declaration would be read as one place — whichever
+// arm below happened to come first — and a reader of the census would be told a
+// single fact about a condition whose own declaration states two.
+func reportTwoPlaceSpellings(t *testing.T, site string) {
+	t.Helper()
+
+	t.Errorf("the registration at %s declares where its rule belongs twice: as a note under %s, and "+
+		"as a value under %s.\n"+
+		"INVARIANT: a registration declares its place once. The two are the same declaration in two "+
+		"spellings, and registration refuses a condition carrying both.\n"+
+		"CONSEQUENCE: read as one declaration it would report whichever spelling this walk reached "+
+		"first, so a reader would be told a single fact about a condition whose own declaration states "+
+		"two — and the day the two disagree, nothing would say which was meant.\n"+
+		"REMEDY: keep the %s value, which says which of the three places the rule belongs to, and drop "+
+		"the note.",
+		site, elsewhereMetaKey, rulePlaceMetaKey, rulePlaceMetaKey)
 }
 
 // reportUnreadableDeclaration fails on a metadata value this census must read
@@ -1119,10 +1406,14 @@ func namesRegistration(fun ast.Expr) bool {
 }
 
 // declaredMetaValues returns the expressions a registration's metadata literal
-// binds to the two keys this census reads, and nil for a key it does not
+// binds to the three keys this census reads, and nil for a key it does not
 // declare. Every other key is skipped, so a metadata field this walk knows
 // nothing about disturbs it not at all.
-func declaredMetaValues(meta *ast.CompositeLit) (elsewhere, ahead ast.Expr) {
+//
+// Each key is returned as its own value rather than folded into one, because
+// the three are different questions with different readers: two are prose read
+// by [declaredString], and the third is a call read by [declaredRulePlace].
+func declaredMetaValues(meta *ast.CompositeLit) (elsewhere, place, ahead ast.Expr) {
 	for _, el := range meta.Elts {
 		kv, ok := el.(*ast.KeyValueExpr)
 		if !ok {
@@ -1135,11 +1426,13 @@ func declaredMetaValues(meta *ast.CompositeLit) (elsewhere, ahead ast.Expr) {
 		switch key.Name {
 		case elsewhereMetaKey:
 			elsewhere = kv.Value
+		case rulePlaceMetaKey:
+			place = kv.Value
 		case declaredAheadMetaKey:
 			ahead = kv.Value
 		}
 	}
-	return elsewhere, ahead
+	return elsewhere, place, ahead
 }
 
 // declaredString returns the text of a string-valued expression a registration
@@ -1181,13 +1474,26 @@ func declaredString(expr ast.Expr) (string, bool) {
 	return "", false
 }
 
-// partitionOffFrameworkByEvaluator splits the off-framework population between
-// the conditions this ratchet counts and the ones it does not, and fails on a
-// declaration the tree contradicts or one that describes nothing.
+// partitionOffFrameworkByDeclaredPlace splits the off-framework population
+// between the conditions this ratchet counts and the ones it does not, and fails
+// on a declaration the tree contradicts or one that describes nothing.
 //
-// The arms are exhaustive over the declarations and each is taken at most once
-// per condition, which is what keeps the two counts a partition rather than two
-// overlapping views. In order: a condition the census attributes to the
+// # Which declarations it partitions on, and which it passes over
+//
+// A declaration is read here only when it claims the rule could not be one of
+// the framework's own — another evaluator owns it, or the condition names no
+// rule at all. A condition declaring a rule OVER AUTHORED INPUT makes no such
+// claim: it says the rule belongs where the dispatch can evaluate it, which is
+// true whether the census places the condition inside the dispatch or outside
+// it, so there is nothing here for the tree to contradict and nothing to move
+// out of the ratcheted count. Such a declaration is passed over by this
+// partition and read by the gate over undeclared places instead.
+//
+// # The arms
+//
+// They are exhaustive over the claiming declarations and each is taken at most
+// once per condition, which is what keeps the two counts a partition rather than
+// two overlapping views. In order: a condition the census attributes to the
 // framework's dispatch fails, because the tree shows the rule IS a check; one
 // the census places off-framework moves out of the ratcheted count; one
 // carrying a declared-ahead note is admitted and reported, because nothing
@@ -1196,7 +1502,7 @@ func declaredString(expr ast.Expr) (string, bool) {
 //
 // The reasoning for each failure, and for what neither of them can see, is
 // recorded beside [offFrameworkEmissionBlocks] rather than restated here.
-func partitionOffFrameworkByEvaluator(t *testing.T, offFramework []string, emitters map[string][]emissionSite, declarations elsewhereDeclarations) (ratcheted, unratcheted []string) {
+func partitionOffFrameworkByDeclaredPlace(t *testing.T, offFramework []string, emitters map[string][]emissionSite, declarations placementDeclarations) (ratcheted, unratcheted []string) {
 	t.Helper()
 
 	inOffFramework := map[string]bool{}
@@ -1214,10 +1520,13 @@ func partitionOffFrameworkByEvaluator(t *testing.T, offFramework []string, emitt
 	var contradicted, describesNothing, notYetRaised []string
 	for _, name := range declared {
 		decl := declarations.bySentinel[name]
+		if !decl.claimsOutsideTheDispatch() {
+			continue
+		}
 		switch {
 		case attributedToDispatch(emitters[name]):
 			contradicted = append(contradicted,
-				name+" at "+decl.site+", declaring: "+decl.note)
+				name+" at "+decl.site+", declaring: "+decl.claim())
 		case inOffFramework[name]:
 			moved[name] = true
 			unratcheted = append(unratcheted, name)
@@ -1236,24 +1545,25 @@ func partitionOffFrameworkByEvaluator(t *testing.T, offFramework []string, emitt
 	}
 
 	if len(contradicted) > 0 {
-		t.Errorf("%d condition(s) declare that their rule is evaluated outside the framework's dispatch "+
-			"while the census attributes a dispatch emission site to them.\n"+
-			"INVARIANT: a condition carrying an evaluated-elsewhere declaration names a rule that cannot "+
+		t.Errorf("%d condition(s) declare that their rule could not be one of the framework's own — "+
+			"another evaluator owns it, or the condition names no rule at all — while the census "+
+			"attributes a dispatch emission site to them.\n"+
+			"INVARIANT: a condition carrying either of those declarations names a rule that cannot "+
 			"be expressed as a %s value, so no emission site of it is the framework's dispatch.\n"+
 			"CONSEQUENCE: the declaration is contradicted by the tree it describes. Left standing it "+
 			"holds the condition outside the ratcheted population on a fact the tree already falsifies, "+
 			"so every later reading of the ceiling is taken over a population one member too small and "+
 			"the ratchet quietly carries one more unit of slack.\n"+
-			"REMEDY: drop the declaration from the registration. The tree shows the rule IS expressed as "+
-			"a %s, which is what the declaration says it could never be, so the declaration is the wrong "+
-			"half rather than the check.\n"+
+			"REMEDY: declare the place the condition is actually in. The tree shows the rule IS expressed "+
+			"as a %s, which is what the declaration says it could never be, so the declaration is the "+
+			"wrong half rather than the check.\n"+
 			"Alphabetically: %s", len(contradicted), checkTypeName, checkTypeName,
 			strings.Join(namedList(contradicted, 12), "; "))
 	}
 
 	if len(describesNothing) > 0 {
-		t.Errorf("%d evaluated-elsewhere declaration(s) describe no condition this census can place in "+
-			"the off-framework population.\n"+
+		t.Errorf("%d declaration(s) placing a rule outside the framework's dispatch describe no condition "+
+			"this census can place in the off-framework population.\n"+
 			"INVARIANT: such a declaration says why a condition is counted apart from the rules that "+
 			"could be expressed as %s values, so it describes a condition the census places among "+
 			"them.\n"+
@@ -1270,13 +1580,13 @@ func partitionOffFrameworkByEvaluator(t *testing.T, offFramework []string, emitt
 	}
 
 	if len(notYetRaised) > 0 {
-		t.Logf("%d condition(s) declare their rule is evaluated elsewhere AND carry a declared-ahead "+
-			"note, and have no emission site yet: %s.\n"+
+		t.Logf("%d condition(s) place their rule outside the framework's dispatch AND carry a "+
+			"declared-ahead note, and have no emission site yet: %s.\n"+
 			"Such a condition is admitted rather than failed: the declared-ahead note is the "+
 			"registration's own statement that nothing raises it, so there is no emission bucket to move "+
-			"it out of. It is reported on every run rather than passing quietly, because the "+
-			"evaluated-elsewhere half stays undischarged until the work the note names lands and the "+
-			"condition arrives in the off-framework population.",
+			"it out of. It is reported on every run rather than passing quietly, because the placement "+
+			"stays undischarged until the work the note names lands and the condition arrives in the "+
+			"off-framework population.",
 			len(notYetRaised), strings.Join(namedList(notYetRaised, 12), "; "))
 	}
 
@@ -1299,11 +1609,11 @@ func attributedToDispatch(sites []emissionSite) bool {
 	return false
 }
 
-// namedWithElsewhere renders each unratcheted sentinel beside the registration
+// namedWithPlacement renders each unratcheted sentinel beside the registration
 // its declaration was read from, so a reader can open that declaration and check
 // the attribution rather than take it. It is the unratcheted bucket's
 // counterpart to [namedWithSites] and [namedWithForwards].
-func namedWithElsewhere(sentinels []string, declarations elsewhereDeclarations) []string {
+func namedWithPlacement(sentinels []string, declarations placementDeclarations) []string {
 	out := make([]string, 0, len(sentinels))
 	for _, sentinel := range sentinels {
 		out = append(out, sentinel+" declared at "+declarations.bySentinel[sentinel].site)

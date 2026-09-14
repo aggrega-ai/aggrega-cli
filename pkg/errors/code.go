@@ -421,6 +421,36 @@ func ComposeMessage(condition error, values []string, advice string) string {
 // reference has nothing to do with it. The reference's generator reads the
 // metadata keys it names and skips every other, so nothing carries this one
 // onto a page.
+//
+// RulePlace is the fifth field and is a different kind of thing again. The two
+// above each record a fact about one condition's relationship to the code
+// around it, and each is set on a small minority. This one is asked of every
+// condition: it says which of three places the rule a condition names belongs
+// to — a rule over authored input, a rule another evaluator owns, or not a rule
+// at all — and it carries the reason where the place needs one. It is held on
+// the registration for the reason the two above are, and for one more: which
+// place a rule belongs to cannot be derived from any property of the declaring
+// package, because a package holding an identity while something else evaluates
+// the rule, and a package holding a condition that is no rule at all, look
+// exactly like a package holding a rule nobody has moved into the dispatch yet.
+// The author of the registration is the only one who knows, so that is where it
+// is written.
+//
+// It satisfies the admission rule above differently from the two before it, and
+// more plainly. Every identity has a source for it because every condition is in
+// exactly one of the three places by construction — so this is not a field
+// populated for a minority but one asked of the whole set, whose unset value is
+// an undeclared question rather than an assertion. And something consumes it:
+// the census that reports where this module's conditions are raised reads the
+// place off the declaration and counts a condition that is no rule at all apart
+// from the rules that could be expressed as the dispatch's own, and the scan
+// that composes the published reference refuses a declaration it cannot read.
+//
+// Like EvaluatedElsewhere and unlike DeclaredAhead it is NOT published. Which
+// of the three places a rule belongs to is a fact about how the product is
+// built; a reader looking a condition up on the reference has nothing to do
+// with it. The reference is composed from the values that scan carries onto an
+// identity, and this is not one of them, so no page can carry it.
 type Meta struct {
 	// Message is the text the identity's Error method returns: one sentence
 	// stating the condition, in the words a reader of a diagnostic sees.
@@ -649,6 +679,180 @@ type Meta struct {
 	// field deliberately, with real text, is therefore the only way a condition
 	// can carry it.
 	EvaluatedElsewhere string
+
+	// RulePlace declares which of three places the rule this condition names
+	// belongs to, and carries the reason where the place needs one.
+	//
+	// The three places, what separates them and the constructors that declare
+	// them are documented on RulePlace itself. What belongs here is what this
+	// field's own states mean.
+	//
+	// # The unset value is a question, not an answer
+	//
+	// It is the one value on Meta whose absence asserts nothing. An unset
+	// DeclaredAhead says the condition needs no such note, and an unset
+	// EvaluatedElsewhere says the rule could be expressed as one of the
+	// dispatch's own; both are claims, and both are the ordinary case. An unset
+	// RulePlace says only that nobody has said where the rule belongs, which is
+	// a question a reader of the registration is left holding.
+	//
+	// That is why the constructors carry the whole value. A condition's place is
+	// one of three things and never a spectrum, so a shape that could be half
+	// set — a flag beside a note beside another note — would make "declared" a
+	// property to be worked out from three fields rather than read off one, and
+	// would admit a registration declaring two places at once.
+	//
+	// # It cannot be acquired by neglect
+	//
+	// The two places that are a departure from the ordinary one take their
+	// reason as a constructor argument, so a declaration that omits it does not
+	// compile, and registration refuses one whose reason is present and says
+	// nothing. A place declared with no reason behind it would be the exemption
+	// this field must not become: it would move a condition out of the count
+	// that measures how many rules are not yet expressed as the dispatch's own
+	// while saying nothing about why it is out.
+	//
+	// # What requires it, and what only validates it
+	//
+	// Registration validates a declaration it is given and does not require one:
+	// a registration carrying no place is accepted. What names the conditions
+	// carrying none is the census over this module's conditions, which reads
+	// these declarations off the source.
+	RulePlace RulePlace
+}
+
+// RulePlace is where the rule a halting condition names belongs, declared beside
+// the condition at its registration and carrying the reason where the place
+// needs one.
+//
+// # The three places
+//
+// Every condition is in exactly one of them, and the separation is what keeps a
+// count of the rules not yet expressed as the compiler's own from also counting
+// the ones that could never be:
+//
+//   - A rule over authored input, declared with RuleOverAuthoredInput. The
+//     condition names something an author can be wrong about in a document they
+//     wrote, so the compiler's own rule dispatch could evaluate it — whether or
+//     not it evaluates it today. This is the ordinary place and it takes no
+//     reason, because there is nothing to say about a rule being where rules go.
+//   - A rule another evaluator owns, declared with RuleEvaluatedElsewhere. The
+//     rule is evaluated where no view of a compilation reaches — inside a plugin
+//     guest, or over artifacts at publication — so the condition is held here in
+//     the host and raised on what that evaluator returned.
+//   - Not a rule at all, declared with NotARule. A registry refusing a request, a
+//     signature that does not verify, a file that will not parse, a guest that
+//     trapped, an invariant of this program's own construction. Nothing anybody
+//     authored decides it, and no evaluator evaluates it against anything: there
+//     is no rule here for any evaluator to own.
+//
+// # The reason is prose, and the prose is the cost of the two places that carry one
+//
+// A claim that a rule could not have been expressed as one of the dispatch's own
+// settles a question for every later reader, and a claim nobody can hold against
+// the code settles nothing. So the reason is prose rather than a flag, for two
+// reasons that pull the same way: a flag is satisfiable by saying nothing, and a
+// reason stated in terms of what the condition actually reports can be held
+// against the code — a NotARule reason describing a rule over authored input is
+// describing some other condition.
+//
+// # What a declaration does not verify, which is its coverage bound
+//
+// Nothing establishes that a condition declaring itself no rule at all could not
+// in fact have been written as a rule over authored input. That is a question
+// about what the condition's raise path READS, and the census that consumes these
+// declarations resolves no types. So the census can contradict a declaration the
+// tree already falsifies — a condition declaring it is no rule that the dispatch
+// is nonetheless seen to raise — and it can refuse one that describes no
+// condition it can place; it cannot judge a plausible declaration on a condition
+// nobody has tried to move. The bound is written here rather than argued away,
+// because an unstated bound reads as full coverage.
+//
+// # It is not published
+//
+// Two readers read these values off the declaration, and neither puts one on a
+// page. The census counts a condition that is no rule at all apart from the
+// rules that could be expressed as the dispatch's own; the scan that composes
+// the published reference reads the declaration only far enough to refuse one it
+// cannot read, and carries the value onto no identity, which is what the
+// reference is composed from. So write them for whoever maintains the condition,
+// in terms of what the condition reports and what decides it — not for a reader
+// of the reference, who is told nothing about them.
+type RulePlace struct {
+	// class is which of the three places, and reason is the prose the two
+	// places that take one carry. Both are unexported so that the only values
+	// of this type a registration can name are the ones the constructors below
+	// build: a caller outside this package cannot assemble a place carrying a
+	// reason it should not have, or a class no constructor hands out.
+	class  rulePlaceClass
+	reason string
+}
+
+// rulePlaceClass is which of the three places a RulePlace names. Its zero value
+// is the undeclared one, which is what makes an unset Meta.RulePlace a question
+// rather than a fourth answer.
+//
+// The values below are handed out by the three constructors beside them and by
+// nothing else. A class added here is added to [RulePlace.carriesNoReason] in the
+// same edit, which is where each one's reason requirement is stated.
+type rulePlaceClass uint8
+
+const (
+	rulePlaceUndeclared rulePlaceClass = iota
+	rulePlaceOverAuthoredInput
+	rulePlaceEvaluatedElsewhere
+	rulePlaceNotARule
+)
+
+// RuleOverAuthoredInput declares that this condition names a rule over authored
+// input: something an author can be wrong about in a document they wrote, which
+// the compiler's own rule dispatch could evaluate whether or not it evaluates it
+// today.
+//
+// It takes no reason. The other two constructors take one because each is a
+// claim that a rule is somewhere other than where rules go, and this is where
+// rules go.
+func RuleOverAuthoredInput() RulePlace {
+	return RulePlace{class: rulePlaceOverAuthoredInput}
+}
+
+// RuleEvaluatedElsewhere declares that this condition's rule is evaluated
+// somewhere other than the compiler's own rule dispatch, and names that
+// evaluator and why it is not the dispatch.
+//
+// It is the same declaration Meta.EvaluatedElsewhere carries, in the form that
+// says which of the three places it is. A registration declares its place once:
+// carrying both is refused at registration, so one condition never holds two
+// spellings of one fact.
+func RuleEvaluatedElsewhere(evaluator string) RulePlace {
+	return RulePlace{class: rulePlaceEvaluatedElsewhere, reason: evaluator}
+}
+
+// NotARule declares that this condition names no rule at all — a registry
+// refusing a request, a signature that does not verify, a file that will not
+// parse, a guest that trapped, an invariant of this program's own construction —
+// and says why.
+//
+// The reason is what makes such a condition settled rather than repeatedly
+// re-examined: a later reader meets the reason instead of the question.
+func NotARule(why string) RulePlace {
+	return RulePlace{class: rulePlaceNotARule, reason: why}
+}
+
+// declared reports whether a place was declared at all, which is the one thing
+// about this value the unset case answers.
+func (p RulePlace) declared() bool { return p.class != rulePlaceUndeclared }
+
+// carriesNoReason reports whether this value is one of the two places that take a
+// reason and was given one that says nothing — whitespace alone.
+//
+// It states which places require a reason positively, in one expression, so that
+// a class added above is added here rather than falling through a default arm
+// into silent acceptance. A place that takes no reason is not asked about,
+// because a constructor that accepts none cannot be given one.
+func (p RulePlace) carriesNoReason() bool {
+	takesAReason := p.class == rulePlaceEvaluatedElsewhere || p.class == rulePlaceNotARule
+	return takesAReason && strings.TrimSpace(p.reason) == ""
 }
 
 // shortCodeLen and shortCodePrefix are the shape of a short code: the letter E
@@ -970,15 +1174,32 @@ func indexRetirements(record []retirement) map[string]string {
 //     telling a reader nothing about why it is out, which is the exemption that
 //     field must not become. Absent is the ordinary value and is always
 //     accepted; present-and-empty is the shape refused.
+//   - A Meta.RulePlace whose reason is present and says nothing — whitespace
+//     alone — for the two places that take one. The constructors already make a
+//     missing reason a compile error, so what is left to refuse here is a reason
+//     written and empty, which would be the same exemption one field along: a
+//     place declared with nothing behind it.
+//   - A Meta.RulePlace declared beside a non-empty Meta.EvaluatedElsewhere. The
+//     two are the same declaration in two spellings, so carrying both would give
+//     one condition two homes for one fact — and where the two disagree, nothing
+//     downstream could say which was meant. A registration declares its place
+//     once. This refusal is what makes the older spelling safe to keep while the
+//     declared set is written in the newer one, rather than a state the two can
+//     drift apart in.
 //
-// Meta.DeclaredAhead and Meta.EvaluatedElsewhere are BOTH checked here and
-// BOTH deliberately not stored on the identity. Nothing at run time reads
-// either — each is read from the declaration itself, the first by the generator
-// that composes the published reference and the second by the census that
+// What is NOT refused is a registration that declares no place at all. A place
+// is asked of every condition, and asking is not this function's to enforce: a
+// condition carrying none is named by the census that reads these declarations
+// across the module, which is the only reader that can see the whole set.
+//
+// Meta.DeclaredAhead, Meta.EvaluatedElsewhere and Meta.RulePlace are ALL checked
+// here and NONE of them stored on the identity. Nothing at run time reads any of
+// them — each is read from the declaration itself, the first by the generator
+// that composes the published reference and the other two by the census that
 // reports where this module's conditions are raised — so keeping a copy on the
 // identity would be a second home for a value that already has one. Refusing a
 // malformed declaration and recording a declared value are separate jobs, and
-// this function does the first for two fields it does not do the second for.
+// this function does the first for three fields it does not do the second for.
 //
 // What Register does NOT check is whether a short code is the NEXT one — the
 // number above the highest already allocated rather than an arbitrary free one.
@@ -1024,6 +1245,22 @@ func Register(code string, meta Meta) Identity {
 			"from the conditions whose rules could be expressed there, and a note carrying no text would "+
 			"take this one out of that count and say nothing about why; write the note naming what "+
 			"evaluates the rule and why that evaluator is not the dispatch, or leave the field unset",
+			code))
+	}
+	if meta.RulePlace.carriesNoReason() {
+		panic(fmt.Sprintf("errors: Register called with a rule place whose reason says nothing for code %q; "+
+			"a place that is a departure from a rule over authored input is a claim about this condition, "+
+			"and a claim with no reason behind it moves the condition out of the count of rules not yet "+
+			"expressed as the dispatch's own while saying nothing about why; write the reason, or declare "+
+			"the place the condition is actually in",
+			code))
+	}
+	if meta.RulePlace.declared() && meta.EvaluatedElsewhere != "" {
+		panic(fmt.Sprintf("errors: Register called with both a rule place and an evaluated-elsewhere note "+
+			"for code %q; the two are the same declaration in two spellings, so a condition carrying both "+
+			"has two homes for one fact and nothing downstream can say which was meant when they disagree; "+
+			"keep the rule place and drop the note, which is the spelling that says which of the three "+
+			"places the rule belongs to",
 			code))
 	}
 	if prev, dup := shortCodeIndex[meta.ShortCode]; dup {

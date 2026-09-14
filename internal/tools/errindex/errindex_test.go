@@ -232,6 +232,182 @@ func TestScan_RefusesARegistrationWithNoShortCode(t *testing.T) {
 	}
 }
 
+// The one registration the rule-place fixtures below declare, and the two values
+// every assertion over them is taken against. They are constants so that a test
+// asserts the message the fixture declared rather than a second copy of it — the
+// corruption these tests exist to catch is one that replaces the message with
+// something else, and an assertion written against a literal repeated at the
+// assertion could be written against the wrong one.
+const (
+	placeFixtureModule    = "example.test/place"
+	placeFixtureHandle    = "pkg/thing.ErrPlaced"
+	placeFixtureShortCode = "E0001"
+	placeFixtureMessage   = "the sentence this condition registers"
+)
+
+// moduleDeclaringPlace writes a module whose single registration carries the
+// given rule-place value, and returns its root. An empty value writes no
+// rule-place key at all, which is the ordinary shape of every registration that
+// has not declared its place.
+func moduleDeclaringPlace(t *testing.T, place string) string {
+	t.Helper()
+
+	root := t.TempDir()
+	// The stand-in for the package that declares the identity carries the
+	// rule-place field and the three constructors, so a fixture below is a
+	// registration that declares the key rather than one that could not express
+	// it — the distinction every fixture in this tree is written to make.
+	errorsBody := `package errors
+
+type Meta struct {
+	ShortCode string
+	Message   string
+	RulePlace RulePlace
+}
+
+type RulePlace struct{ class int }
+
+func RuleOverAuthoredInput() RulePlace              { return RulePlace{class: 1} }
+func RuleEvaluatedElsewhere(string) RulePlace       { return RulePlace{class: 2} }
+func NotARule(string) RulePlace                     { return RulePlace{class: 3} }
+
+type sealed struct{ code, shortCode, message string }
+
+func (s *sealed) Error() string { return s.message }
+
+func Register(code string, meta Meta) *sealed {
+	return &sealed{code: code, shortCode: meta.ShortCode, message: meta.Message}
+}
+`
+	declaration := ""
+	if place != "" {
+		declaration = "\n\tRulePlace: " + place + ","
+	}
+	thingBody := `package thing
+
+import cerrors "` + placeFixtureModule + `/pkg/errors"
+
+func ErrPlaced() error { return errPlaced }
+
+var errPlaced = cerrors.Register("thing/placed", cerrors.Meta{
+	ShortCode: "` + placeFixtureShortCode + `",
+	Message:   "` + placeFixtureMessage + `",` + declaration + `
+})
+`
+	for path, body := range map[string]string{
+		filepath.Join("pkg", "errors", "code.go"):  errorsBody,
+		filepath.Join("pkg", "thing", "errors.go"): thingBody,
+	} {
+		full := filepath.Join(root, path)
+		if err := os.MkdirAll(filepath.Dir(full), 0o750); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		if err := os.WriteFile(full, []byte(body), 0o600); err != nil {
+			t.Fatalf("write %s: %v", path, err)
+		}
+	}
+	return root
+}
+
+// TestScan_ReadsARulePlaceAndLeavesTheMessageIntact is the positive half, and
+// the message assertion is the load-bearing one rather than a formality.
+//
+// The scan recognises a fixed set of metadata keys and skips every other. The
+// shape that fails here is a key admitted to that set without an arm of its own,
+// which falls through to whatever handles the remainder — and where the
+// remainder is the message, the condition's own sentence is replaced by the
+// value of the newly admitted key, reported as the message, with nothing
+// failing and no column blank. Asserting the message BYTE FOR BYTE on a
+// registration that carries the new key is what catches it; asserting only that
+// the scan succeeded would not.
+//
+// All three places are exercised, and the absent case with them. They differ in
+// whether the value carries a literal at all, and a reader that had come to fold
+// one of them into the message would pass an assertion taken over the others.
+func TestScan_ReadsARulePlaceAndLeavesTheMessageIntact(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name  string
+		place string
+	}{
+		{"no place declared", ""},
+		{"a rule over authored input", "cerrors.RuleOverAuthoredInput()"},
+		{"a rule another evaluator owns", `cerrors.RuleEvaluatedElsewhere("A plugin guest evaluates it.")`},
+		{"no rule at all", `cerrors.NotARule("A registry answered the request.")`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			ids, err := scan(moduleDeclaringPlace(t, tc.place), placeFixtureModule)
+			if err != nil {
+				t.Fatalf("scan refused a well-formed declaration of %s: %v", tc.name, err)
+			}
+			var found bool
+			for _, id := range ids {
+				if id.Handle() != placeFixtureHandle {
+					continue
+				}
+				found = true
+				if id.Message != placeFixtureMessage {
+					t.Errorf("the message read for %s is %q, want %q; a metadata key admitted without an "+
+						"arm of its own is written into the condition's own sentence",
+						tc.name, id.Message, placeFixtureMessage)
+				}
+				if id.ShortCode != placeFixtureShortCode {
+					t.Errorf("the short code read for %s is %q, want %q", tc.name, id.ShortCode, placeFixtureShortCode)
+				}
+			}
+			if !found {
+				t.Fatalf("the scan returned no identity for %s, so nothing above was asserted", placeFixtureHandle)
+			}
+		})
+	}
+}
+
+// TestScan_RefusesARulePlaceItCannotRead is the negative half. The reasoning for
+// refusing rather than skipping is on declaredPlace: a value this scan passes
+// over as absent is a value the other reader of these same registrations reports
+// on, and the two readings then describe different declarations with nothing
+// failing.
+//
+// Each row names one malformed shape and the text the refusal must carry, so a
+// refusal that had collapsed into one message for every shape fails here rather
+// than passing as "it refused something".
+func TestScan_RefusesARulePlaceItCannotRead(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name  string
+		place string
+		names string
+	}{
+		{"a value that is not a call", `"a rule over authored input"`, "not a call"},
+		{"a constructor this scan does not know", "cerrors.SomewhereElse()", "not one of the three"},
+		{"the place that takes no reason, given one", `cerrors.RuleOverAuthoredInput("why")`, "takes no reason"},
+		{"a place that takes a reason, given none", "cerrors.NotARule()", "takes one reason"},
+		{"a reason that is not a literal", "cerrors.NotARule(whyThisIsNotARule)", "not a string literal"},
+		{"a reason that says nothing", `cerrors.NotARule("   ")`, "says nothing"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			ids, err := scan(moduleDeclaringPlace(t, tc.place), placeFixtureModule)
+			if err == nil {
+				t.Fatalf("the scan accepted %s and read %d identity(ies)", tc.name, len(ids))
+			}
+			if !strings.Contains(err.Error(), tc.names) {
+				t.Errorf("the refusal does not say %q, so a reader cannot tell what is wrong with the "+
+					"declaration: %v", tc.names, err)
+			}
+			if !strings.Contains(err.Error(), "errPlaced") {
+				t.Errorf("the refusal does not name the offending registration, so a reader cannot find "+
+					"it: %v", err)
+			}
+		})
+	}
+}
+
 // TestRenderIndex_CarriesBothIdentifiersOnEveryRecord pins the machine-readable
 // record shape, which is a published contract: two consumers decode it by
 // position and each pins the field count deliberately, so a silent change to the

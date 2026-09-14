@@ -34,6 +34,12 @@ const (
 
 	codeBlankEvaluatedElsewhere = "blank-evaluated-elsewhere-subject"
 	codeSetEvaluatedElsewhere   = "set-evaluated-elsewhere-subject"
+
+	codeBlankRulePlaceReason    = "blank-rule-place-reason-subject"
+	codeTwoPlaceSpellings       = "two-place-spellings-subject"
+	codePlaceOverAuthoredInput  = "place-over-authored-input-subject"
+	codePlaceEvaluatedElsewhere = "place-evaluated-elsewhere-subject"
+	codePlaceNotARule           = "place-not-a-rule-subject"
 )
 
 // The short codes this file registers, distinct for the same reason the codes
@@ -57,6 +63,12 @@ const (
 
 	shortBlankEvaluatedElsewhere = "E9219"
 	shortSetEvaluatedElsewhere   = "E9220"
+
+	shortBlankRulePlaceReason    = "E9222"
+	shortTwoPlaceSpellings       = "E9223"
+	shortPlaceOverAuthoredInput  = "E9224"
+	shortPlaceEvaluatedElsewhere = "E9225"
+	shortPlaceNotARule           = "E9226"
 )
 
 // The short code a malformed-value refusal is probed with, and the reason it is
@@ -724,4 +736,154 @@ func TestRegister_AcceptsAnAbsentAndAWrittenEvaluatedElsewhereNote(t *testing.T)
 
 	// The absent case is exercised by every other registration in this file and
 	// in the module, exactly as it is for the declared-ahead note.
+}
+
+// TestRegister_PanicsOnARulePlaceWhoseReasonSaysNothing pins the half of the
+// place declaration the constructors cannot pin.
+//
+// A place that is a departure from a rule over authored input takes its reason
+// as a constructor argument, so a declaration that omits it does not compile at
+// all — the refusal below is unreachable through the missing-argument route and
+// nothing here probes it, because a compile error is not a runtime value to
+// assert against. What is left is the argument that is present and says nothing,
+// which compiles and would move a condition out of the count of rules not yet
+// expressed as the dispatch's own while naming no reason for the move. That is
+// the exemption the field must not become, so it is refused.
+//
+// Both of the two places that take a reason are probed. They are separate arms
+// of one predicate, and an assertion over one of them would pass over a
+// predicate that had stopped reading the other.
+func TestRegister_PanicsOnARulePlaceWhoseReasonSaysNothing(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name  string
+		place cerrors.RulePlace
+	}{
+		{"not a rule at all", cerrors.NotARule("   \t  ")},
+		{"a rule another evaluator owns", cerrors.RuleEvaluatedElsewhere("  ")},
+	} {
+		v := panicValue(func() {
+			cerrors.Register(codeBlankRulePlaceReason, cerrors.Meta{
+				ShortCode: shortBlankRulePlaceReason,
+				Message:   "a message whose rule place carries no reason",
+				RulePlace: tc.place,
+			})
+		})
+		if v == nil {
+			t.Fatalf("registering %s with a blank reason did not panic", tc.name)
+		}
+		if msg := fmt.Sprint(v); !strings.Contains(msg, codeBlankRulePlaceReason) {
+			t.Errorf("panic %q for %s does not name the offending code %q", msg, tc.name, codeBlankRulePlaceReason)
+		}
+	}
+
+	// The refused registrations must not have landed in either index, for the
+	// reason every refusal above checks the same thing: a half-written entry
+	// would make the repaired declaration fail as a duplicate.
+	if v := panicValue(func() {
+		cerrors.Register(codeBlankRulePlaceReason, cerrors.Meta{
+			ShortCode: shortBlankRulePlaceReason,
+			Message:   "a message whose rule place carries no reason",
+			RulePlace: cerrors.NotARule("A registry answered the request; nothing anybody authored decides it."),
+		})
+	}); v != nil {
+		t.Errorf("a refused registration left one of the two indexes occupied; re-registering panicked with %v", v)
+	}
+}
+
+// TestRegister_PanicsOnBothARulePlaceAndAnEvaluatedElsewhereNote pins the rule
+// that keeps one condition from holding two spellings of one fact.
+//
+// The note and the place are the same declaration written two ways. A condition
+// carrying both has two homes for where its rule belongs, and the day they
+// disagree nothing downstream can say which was meant — the census reading the
+// source would have to choose, and whichever it chose would be a guess. The
+// refusal is what makes the older spelling safe to keep beside the newer one
+// rather than a state the two can drift apart in.
+//
+// The place used here is the one that means the SAME thing as the note, because
+// that is the pairing a reader is most likely to write believing it is
+// belt-and-braces. A place contradicting the note is refused by the same
+// predicate and needs no separate probe: the predicate reads whether both are
+// present and never what either says.
+func TestRegister_PanicsOnBothARulePlaceAndAnEvaluatedElsewhereNote(t *testing.T) {
+	t.Parallel()
+
+	v := panicValue(func() {
+		cerrors.Register(codeTwoPlaceSpellings, cerrors.Meta{
+			ShortCode:          shortTwoPlaceSpellings,
+			Message:            "a message declaring its place twice",
+			EvaluatedElsewhere: "A plugin guest evaluates the rule, so no dispatch invokes it.",
+			RulePlace:          cerrors.RuleEvaluatedElsewhere("A plugin guest evaluates the rule, so no dispatch invokes it."),
+		})
+	})
+	if v == nil {
+		t.Fatalf("registering both a rule place and an evaluated-elsewhere note did not panic")
+	}
+	if msg := fmt.Sprint(v); !strings.Contains(msg, codeTwoPlaceSpellings) {
+		t.Errorf("panic %q does not name the offending code %q", msg, codeTwoPlaceSpellings)
+	}
+
+	if v := panicValue(func() {
+		cerrors.Register(codeTwoPlaceSpellings, cerrors.Meta{
+			ShortCode: shortTwoPlaceSpellings,
+			Message:   "a message declaring its place twice",
+			RulePlace: cerrors.RuleEvaluatedElsewhere("A plugin guest evaluates the rule, so no dispatch invokes it."),
+		})
+	}); v != nil {
+		t.Errorf("a refused registration left one of the two indexes occupied; re-registering panicked with %v", v)
+	}
+}
+
+// TestRegister_AcceptsEachOfTheThreePlaces is the calibration for the two
+// refusals above, and it is owed for the reason the other calibrations here are:
+// a refusal that also caught a well-formed declaration would refuse the module
+// at package initialisation the moment the declared set is written.
+//
+// All three places are exercised rather than one. They differ in whether a
+// reason is carried at all, so a predicate that had come to refuse the ordinary
+// place — the one carrying none — would pass an assertion taken over either of
+// the other two.
+//
+// The absent case is not asserted here: every other registration in this file
+// and in the module carries no place, so package initialisation proves it.
+func TestRegister_AcceptsEachOfTheThreePlaces(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name      string
+		code      string
+		shortCode string
+		place     cerrors.RulePlace
+	}{
+		{
+			name:      "a rule over authored input",
+			code:      codePlaceOverAuthoredInput,
+			shortCode: shortPlaceOverAuthoredInput,
+			place:     cerrors.RuleOverAuthoredInput(),
+		},
+		{
+			name:      "a rule another evaluator owns",
+			code:      codePlaceEvaluatedElsewhere,
+			shortCode: shortPlaceEvaluatedElsewhere,
+			place:     cerrors.RuleEvaluatedElsewhere("A plugin guest evaluates the rule, so no dispatch invokes it."),
+		},
+		{
+			name:      "not a rule at all",
+			code:      codePlaceNotARule,
+			shortCode: shortPlaceNotARule,
+			place:     cerrors.NotARule("A registry answered the request; nothing anybody authored decides it."),
+		},
+	} {
+		if v := panicValue(func() {
+			cerrors.Register(tc.code, cerrors.Meta{
+				ShortCode: tc.shortCode,
+				Message:   "a message declaring " + tc.name,
+				RulePlace: tc.place,
+			})
+		}); v != nil {
+			t.Errorf("a well-formed declaration of %s was refused: %v", tc.name, v)
+		}
+	}
 }
