@@ -317,11 +317,13 @@ func (e *ValidationError) Unwrap() error {
 // ToCompilerError converts the structured ValidationError into a
 // *cerrors.CompilerError.
 //
-// The Category is the authoring domain the failure's entity kind belongs to:
-// a Component, Recipe, Feature, FeatureRecipe or Manifest is catalog content,
-// an Aggregate is the developer's surface, a Release is the operator's. It is
-// read from the kind the failure carries, with no default to fall through to
-// — a kind belonging to no domain is refused rather than substituted for.
+// The Category is the authoring domain the failure's entity kind belongs to,
+// read from the kind the failure carries through the single home of that
+// correspondence — see [cerrors.ClassifyEntityKind], which states which kind
+// belongs to which domain. It is not restated here: a second copy of the
+// correspondence agrees on the day it is written and is free to disagree the
+// day either side moves. There is no default to fall through to — a kind
+// belonging to no domain is refused rather than substituted for.
 //
 // The Source location maps the JSON-path FieldPath into the CompilerError's
 // SourceLocation.File. FieldPath is a JSON-path-style locator (e.g.,

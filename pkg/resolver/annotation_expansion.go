@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/compactform"
+	"github.com/aggrega-ai/aggrega-cli/pkg/entitykind"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
@@ -725,17 +726,39 @@ func splitBoundaryPath(path string) []string {
 	return out
 }
 
-// wrapAnnotationOpsError re-categorises an annotation-expansion failure as the
-// operator's concern and names the scope the inner findings cannot know. The bad
-// annotation value lives in the Release, so the concern is Release-scoped rather
-// than Catalog-scoped.
+// releaseCategory is the authoring domain a fault on the Release is reported
+// under. It is read from the one home of the kind-to-domain correspondence
+// rather than written out here: a category named at a raise site is a second
+// copy of that correspondence, and a copy agrees on the day it is written and is
+// free to disagree the day either side moves.
+//
+// It panics on an unmapped kind, for the reason the other resolutions of this
+// question panic: the kind is a constant chosen in the compiler rather than read
+// from an authored document, so an unmappable one means the correspondence
+// stopped covering a kind that raises categorised faults. That is a mistake in
+// the compiler, not in anything a user wrote, and it would otherwise surface as
+// a fault quietly attributed to the wrong authoring domain.
+func releaseCategory() cerrors.Category {
+	category, ok := cerrors.ClassifyEntityKind(string(entitykind.Release))
+	if !ok {
+		panic("resolver: the Release kind belongs to no authoring domain, so an annotation-expansion " +
+			"fault on a Release cannot be attributed; extend the entity-kind category mapping to cover it")
+	}
+	return category
+}
+
+// wrapAnnotationOpsError files an annotation-expansion failure under the
+// Release's authoring domain and names the scope the inner findings cannot know.
+// The bad annotation value lives in the Release, so the domain is the one the
+// kind-to-domain correspondence gives the Release, asked for rather than
+// restated — see releaseCategory.
 //
 // The category is passed to the constructor rather than written into the
 // sentence, which is what lets the formatter compose the head once — and lets it
 // carry the short code of whichever registered condition the wrapped chain
 // names, which a hand-written prefix cannot supply.
 func wrapAnnotationOpsError(boundaryPath, componentName, key, stage string, inner error) error {
-	return cerrors.Wrap(inner, cerrors.OpsError, cerrors.SourceLocation{},
+	return cerrors.Wrap(inner, releaseCategory(), cerrors.SourceLocation{},
 		fmt.Sprintf("annotation %s failed at boundary %q component %q key %q", stage, boundaryPath, componentName, key))
 }
 
