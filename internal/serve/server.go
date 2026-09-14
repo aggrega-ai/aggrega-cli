@@ -377,10 +377,10 @@ type RunConfig struct {
 	// config-file key for this daemon invocation: the command layer sets it
 	// from the --build-on-inspect flag only when the operator passed the
 	// flag, so an unset flag (nil) leaves the config-file value in force. It
-	// controls whether the IR-graph inspection request runs the build's
-	// analysis — true publishes the build's findings as an additional
-	// diagnostic layer; false (the default) returns the graph without running
-	// that stage. Nothing is written to disk under either value.
+	// controls whether the IR-graph inspection request runs the
+	// artifact-rendering stage — true publishes the advisories that stage
+	// raises as an additional diagnostic layer; false (the default) returns
+	// the graph without running it. Nothing is written to disk either way.
 	BuildOnInspect *bool
 }
 

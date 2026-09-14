@@ -774,15 +774,14 @@ type ServeConfig struct {
 	// It selects a stage, never a posture, and the distinction is the one a
 	// reader most often gets wrong: the inspection stands down the same
 	// refusing checks under either value, so this key adds none of the checks a
-	// build halts on and the editor still draws a graph where a build would
-	// refuse. What it adds is the advisories the rendering stage itself
+	// build halts on. What it adds is the advisories the rendering stage itself
 	// produces.
 	//
 	// Nothing is written to disk under either value — no rendered artifacts, no
-	// output directory, no lockfile — and the returned graph is identical
-	// whether the stage runs or not; only the additional advisories differ. A
-	// serve --build-on-inspect flag overrides this key for one daemon
-	// invocation.
+	// output directory, no lockfile — and the rendering stage never mutates the
+	// graph, so where the inspection answers with one it is the same graph
+	// either way. A serve --build-on-inspect flag overrides this key for one
+	// daemon invocation.
 	BuildOnInspect bool `yaml:"build_on_inspect"`
 
 	// LintOnValidate selects whether a validation request also runs the
