@@ -115,9 +115,9 @@ func (a *googleAdapter) buildPositionKeywords(s *jsonschema.Schema, ambientDefs 
 		contains:      a.buildBranchIndex(s.Contains, ambientDefs, enclosing),
 	}
 
-	// 🔴 The element keywords are modelled together or not at all, and the
-	// reason is that a branch can fail to build — a reference that does not
-	// resolve on its own leaves one nil.
+	// The element keywords are modelled together or not at all, and the reason
+	// is a correctness one rather than a tidiness one: a branch can fail to
+	// build — a reference that does not resolve on its own leaves one nil.
 	//
 	// Two ways a partial model goes wrong, both silent. A positional list
 	// assembled by skipping the entries that failed would slide the surviving

@@ -445,7 +445,8 @@ func LoadManifestFromBytes(data []byte, path string) (*types.Manifest, error) {
 // of the facts the presentation states, so reading them anywhere else would be
 // answering from a second source that happens to agree.
 //
-// 🔴 It reports EVERY offending binding rather than the first. The rule is
+// It reports EVERY offending binding rather than the first — a contract of this
+// rule rather than a property of how it happens to be written. The rule is
 // invoked once per declared binding and the framework accumulates what each
 // invocation raised, so an author fixing a Manifest with several offending keys
 // sees all of them in one build instead of one per build.
@@ -485,7 +486,8 @@ func rejectReservedAnnotationBindings(man *types.Manifest, path string) error {
 // facts it reads, and the provenance its findings carry is supplied by the
 // framework rather than assembled here.
 //
-// 🔴 It reports EVERY binding that collides rather than the first. The rule is
+// It reports EVERY binding that collides rather than the first — a contract of
+// this rule rather than a property of how it happens to be written. The rule is
 // invoked once per declared binding and the framework accumulates what each
 // invocation raised, so an author fixing a Manifest whose third and fourth
 // bindings both collide with its first sees both in one build instead of one per

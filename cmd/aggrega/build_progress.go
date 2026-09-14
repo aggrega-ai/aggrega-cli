@@ -420,7 +420,7 @@ var spinnerTickInterval = 100 * time.Millisecond
 
 // markDone, markActive, and markPending are the checklist row prefixes.
 const (
-	markDone    = "[✓] " // [✓]
+	markDone    = "[✓] " // the check mark is U+2713
 	markPending = "[ ] "
 )
 

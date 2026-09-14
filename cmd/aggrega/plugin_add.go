@@ -202,8 +202,10 @@ func pluginAddRun(ctx context.Context, cfg pluginAddConfig) error {
 	// read still reaching the writer above, since that account is a different fact
 	// and discarding both would take it too.
 	//
-	// 🔴 The redirect is conditional on there BEING a writer, and that is the
-	// safety property rather than a tidiness one. Selection is screened only where
+	// The redirect is conditional on there BEING a writer. That condition is the
+	// safety property rather than a tidiness one, and removing it reintroduces
+	// exactly the failure the screen exists to prevent.
+	// Selection is screened only where
 	// a substitution can be announced, so handing the operation a discarding writer
 	// with nothing here to render onto would screen the selection and then swallow
 	// the explanation — the silent substitution the screen exists to prevent. With

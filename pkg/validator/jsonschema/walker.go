@@ -388,9 +388,10 @@ func (a *googleAdapter) indexSubSchemas(s *jsonschema.Schema, path string, ambie
 
 	// The name a diagnostic at this position cites.
 	//
-	// 🔴 The instance root is the exception, and it is not an oversight. A
-	// reference at the root and the same constraints written out at the root
-	// are two authorings of one document, so they must fail identically; and
+	// The instance root is the exception, and it is deliberate rather than an
+	// oversight. A reference at the root and the same constraints written out
+	// at the root are two authorings of one document, so they must fail
+	// identically; and
 	// there the definition IS the document's root, so the library's own label
 	// is already accurate. Citing the name would make one set of constraints
 	// report differently according to how the author chose to factor it.

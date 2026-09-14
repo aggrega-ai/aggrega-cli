@@ -36,8 +36,9 @@ import (
 // is wrong. Both send a reader to the wrong document. Asking the rule first is
 // what keeps the diagnostic on the binding.
 //
-// 🔴 It reports EVERY offending binding, and every offending route within one,
-// rather than the first. The rule is invoked once per declared binding and the
+// It reports EVERY offending binding, and every offending route within one,
+// rather than the first — a contract of this rule rather than a property of how
+// it happens to be written. The rule is invoked once per declared binding and the
 // framework accumulates what each invocation raised, so an author fixing a
 // Manifest whose bindings offend several times sees them all in one build instead
 // of one per build.

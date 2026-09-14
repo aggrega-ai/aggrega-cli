@@ -52,8 +52,9 @@ type evaluatedByWalk struct {
 // between, and the walk that owns this copy reaches each child on its
 // own, in sorted key order, so no constraint goes unchecked.
 //
-// 🔴 **What is removed is exactly what the walk evaluates itself, and
-// nothing more.** Removing a constraint the walk does not evaluate drops
+// What is removed is exactly what the walk evaluates itself, and nothing
+// more — a boundary that is wrong in both directions if it moves, and
+// silently so in both. Removing a constraint the walk does not evaluate drops
 // it silently; keeping one the walk does evaluate reports the same failure
 // twice, once from each. So the caller states which families it evaluates
 // at this position (see evaluatedByWalk) and the transform removes those,

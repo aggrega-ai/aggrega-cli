@@ -152,10 +152,11 @@ func importPluginBytes(rw *workspaceconfig.ResolvedWorkspace, uri string) (plugi
 // writing them, in the reported form every capability that reports authored
 // content answers with.
 //
-// 🔴 The form is the shared one rather than a framing written here, and the
-// difference is not cosmetic. A header-line-per-file concatenation cannot be
-// read back: a drafted file whose own first line begins with the header marker
-// is indistinguishable from the start of the next file, so there is no parse
+// The form is the shared one rather than a framing written here, and the
+// difference is what makes the output parseable rather than a matter of taste.
+// A header-line-per-file concatenation cannot be read back: a drafted file
+// whose own first line begins with the header marker is indistinguishable from
+// the start of the next file, so there is no parse
 // that recovers the set, and a caller piping the stream has to invent an
 // escaping convention the producer never applied. The shared form is one YAML
 // document carrying a documents list, so a caller reads it with the parser it

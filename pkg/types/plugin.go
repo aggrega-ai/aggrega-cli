@@ -399,9 +399,9 @@ func (c ProviderContract) IsZero() bool {
 //
 // To add an input kind: add the property to the entity schema's inputKinds node
 // and regenerate, add it to the describe-socket schema so both generated codecs
-// carry it, and extend the mappers that cross into the generated shapes. 🔴 Do
-// NOT declare a fourth struct with the same booleans. Nothing makes that fail to
-// compile — not unexported fields, not aliases, not generation — so the
+// carry it, and extend the mappers that cross into the generated shapes. Do
+// NOT declare a fourth struct with the same booleans, because nothing makes
+// that fail to compile — not unexported fields, not aliases, not generation — so the
 // field-set guard in internal/wasm is a floor that reports a new shape after the
 // fact, never a bar that prevents one.
 type PluginInputKinds = PluginSpecProviderContractInputKinds

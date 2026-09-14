@@ -21,7 +21,7 @@ package mcp
 // this fixture. Without it, a count of one on the filling leg could as easily
 // mean the fixture stopped warning at all.
 //
-// ⚠️ This surface writes no artifact, so it has no output tree to check the
+// 🔴 This surface writes no artifact, so it has no output tree to check the
 // render against. What stands in for that is the returned file set, which is
 // populated only from a finished render.
 

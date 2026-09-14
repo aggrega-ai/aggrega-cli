@@ -270,8 +270,9 @@ var (
 // It is one number per identity rather than an expression evaluated per part,
 // which is the whole point of reserving a fixed run for the last part.
 //
-// 🔴 The join term is computed from the regions actually being joined, and that
-// is a correctness property rather than a tidiness one. A fixed multiple is
+// The join term is computed from the regions actually being joined, and that
+// is a correctness property rather than a tidiness one: getting it wrong emits
+// a name the target refuses. A fixed multiple is
 // correct only for the arity its author had in hand: one more region needs one
 // more join, and a budget that did not account for it would hand the earlier
 // parts characters the limit does not have — so the composition would emit a

@@ -112,8 +112,9 @@ func ValidateWellKnownAnnotationScopes(p Plugin) error {
 // A provider that declares a support claim which names no entry for the key is
 // not covered: it has said which keys it reads, and this is not one of them.
 //
-// 🔴 An ABSENT claim is a different thing from a claim that omits the key, and
-// reports covered. A provider that declares no support claim at all has said
+// An ABSENT claim is a different thing from a claim that omits the key, and it
+// reports covered. Collapsing the two is the mistake this distinction exists to
+// prevent. A provider that declares no support claim at all has said
 // nothing, and inferring "this key is not read" from silence would put a negative
 // claim in the provider author's mouth and report it to a deployment author as
 // the provider's own word. The residue is real and is not papered over: a

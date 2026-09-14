@@ -138,8 +138,9 @@ func renderNode() int32 {
 // they were written, and a path whose copy was forgotten would emit a name nothing
 // compares — invisible from every green build.
 //
-// 🔴 An ARTIFACTS placement declares alongside every other path, and the reason is
-// that what has to be compared is the name an emitted document CARRIES rather than
+// An ARTIFACTS placement declares alongside every other path, and excluding it
+// would leave a real cluster overwrite unreported. What has to be compared is
+// the name an emitted document CARRIES rather than
 // where that name came from. An artifact's body is emitted as authored, with only
 // build provenance spliced into its metadata, so the names in it are the ones its
 // author wrote rather than anything this guest derived — but two resources reaching

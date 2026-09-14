@@ -100,8 +100,9 @@ func RunAdvisories(
 // caller's binding resolves — names that document per finding instead, because its
 // locator is a path inside it.
 //
-// 🔴 Each traversal call NAMES its rule as a literal argument, and that is a
-// constraint of the framework rather than a style. Which rules a caller invokes
+// Each traversal call NAMES its rule as a literal argument, and that is a
+// constraint of the framework rather than a style: a call written any other way
+// makes the rule it invokes underivable. Which rules a caller invokes
 // is derived by reading this module's source for a traversal entry called with a
 // declared rule named at the call site; a helper taking a rule and calling the
 // traversal itself would name a parameter there instead, and the derivation would

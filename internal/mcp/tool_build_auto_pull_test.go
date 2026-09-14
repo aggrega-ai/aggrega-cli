@@ -288,7 +288,7 @@ func TestBuildFillArgumentDefaultsOff(t *testing.T) {
 // including the lockfile path, which two separate temporary workspaces would
 // necessarily disagree about for reasons having nothing to do with the subject.
 //
-// ⚠️ The Diagnostics leg is a NON-REGRESSION here and not a positive
+// 🔴 The Diagnostics leg is a NON-REGRESSION here and not a positive
 // demonstration, which is recorded so nobody reads more into a green than it
 // carries. This fixture is offline and resolves entirely from its copied catalog,
 // so the resolution fetches nothing, verifies no signature and skips no withdrawn

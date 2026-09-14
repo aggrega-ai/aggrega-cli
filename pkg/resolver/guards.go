@@ -282,8 +282,9 @@ func releaseDocumentName(release *types.Release) string {
 // findings carry no document and no locator, because the only thing a subject
 // could do there is send a reader to a key that is not at fault.
 //
-// 🔴 Each traversal call NAMES its rule as a literal argument, and that is a
-// constraint of the framework rather than a style. Which rules a caller invokes
+// Each traversal call NAMES its rule as a literal argument, and that is a
+// constraint of the framework rather than a style: a call written any other way
+// makes the rule it invokes underivable. Which rules a caller invokes
 // is derived by reading this module's source for a traversal entry called with a
 // declared rule named at the call site; a helper taking a rule and calling the
 // traversal itself would name a parameter there instead, and the derivation would

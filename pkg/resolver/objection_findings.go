@@ -24,8 +24,9 @@ import (
 // the field the finding positions at, which is what lets a front end place it on
 // the offending authoring key rather than at the head of the file.
 //
-// 🔴 The message is built from the rule's detail VALUES and never from
-// [constraint.ObjectionMessage]. The finding renders through the one composition
+// The message is built from the rule's detail VALUES and never from
+// [constraint.ObjectionMessage], and taking the other path states the rule's
+// sentence twice in one line. The finding renders through the one composition
 // every diagnostic naming a condition follows, which reads the rule's registered
 // wording off the sentinel itself; [constraint.ObjectionMessage] already opens
 // with that same wording, so handing its result over as a value would state the
