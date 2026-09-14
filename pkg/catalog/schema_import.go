@@ -9,6 +9,7 @@ import (
 
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/refcycle"
+	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"go.yaml.in/yaml/v3"
 )
@@ -134,7 +135,7 @@ func substituteSchemaImport(entityPath string, node *yaml.Node, where string, st
 
 	resolved, err := resolveAgainstEntityDir(entityPath, target)
 	if err != nil {
-		return schemaImportError(entityPath, node,
+		return schemaImportLoadError(entityPath, node,
 			where+": resolve imported schema path "+quoteTarget(target)+": "+err.Error())
 	}
 	if chain, cyclic := refcycle.Check(stack, resolved); cyclic {
@@ -148,12 +149,12 @@ func substituteSchemaImport(entityPath string, node *yaml.Node, where string, st
 
 	data, err := os.ReadFile(resolved)
 	if err != nil {
-		return schemaImportError(entityPath, node,
+		return schemaImportLoadError(entityPath, node,
 			where+": read imported schema "+quoteTarget(target)+": "+err.Error())
 	}
 	var doc yaml.Node
 	if err := yaml.Unmarshal(data, &doc); err != nil {
-		return schemaImportError(entityPath, node,
+		return schemaImportLoadError(entityPath, node,
 			where+": parse imported schema "+quoteTarget(target)+": "+err.Error())
 	}
 	content := &doc
@@ -232,16 +233,23 @@ func quoteTarget(target string) string { return "\"" + target + "\"" }
 // cannot be applied, so the surface would be left holding an unread pointer
 // instead of the contract the author meant to import.
 //
-// It covers every way the directive fails to yield content, because each of them
-// leaves the same surface unusable and gives the author the same thing to do —
-// correct the directive or the file it names. The condition's sentence therefore
-// states only that the import could not be applied, and each raise path supplies
-// its own clause saying which way: a directive sharing its mapping with another
-// key, a value that is not a file path, a value that addresses a registry or a
-// library entry rather than a file, a path that does not resolve, a file that
-// cannot be read or parsed, and content that is not a map of schema content.
-// Registering one sentence per way would put advice that is true at one raise
-// path into a sentence that leads at all seven.
+// It covers the faults in what the author wrote: the directive itself, and the
+// shape of the content the file it names turned out to hold. Each raise path
+// supplies its own clause saying which — a directive sharing its mapping with
+// another key, a value that is not a file path, a value that addresses a
+// registry or a library entry rather than a file, and content that parsed and is
+// not a map of schema content. They are one condition because each leaves the
+// same surface unusable and gives the author the same thing to do: correct the
+// directive, or the file it names. The condition's sentence therefore states only
+// that the import could not be applied, since registering one sentence per way
+// would put advice that is true at one raise path into a sentence that leads at
+// all of them.
+//
+// Failing to ACQUIRE the file a well-formed directive names is not this
+// condition. A path that does not resolve, a file that cannot be read, and bytes
+// that do not parse are not faults in a document at all — there is no imported
+// document to judge — so they report under [resolver.ErrYAMLLoad], whose
+// registered sentence is true of each of them.
 //
 // Category: CATALOG_ERROR — the fault is in an authored catalog document's
 // schema surface, or in the file beside it that the surface names. Match with
@@ -254,8 +262,28 @@ var errUnusableSchemaImport = cerrors.Register("unusable-schema-import", cerrors
 	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
-// schemaImportError shapes one import failure as the catalog-load diagnostic the
-// rest of this package produces, located at the authored node.
+// schemaImportError reports a fault in the authored directive, or in the shape of
+// what it yielded, under the condition that names those faults.
+func schemaImportError(entityPath string, node *yaml.Node, message string) error {
+	return schemaImportDiagnostic(ErrUnusableSchemaImport(), entityPath, node, message)
+}
+
+// schemaImportLoadError reports a failure to acquire the file a well-formed
+// directive names, under the condition that names a document which could not be
+// loaded.
+//
+// It names a condition this package does not own, for the same reason the cycle
+// check in the import walk does: what fails is not specific to a schema import,
+// so the surface supplies the clause saying where it happened and leaves the
+// identity to the package that already holds it. A second identity for a file
+// that is not there would give a reader two codes to look up for one failure.
+func schemaImportLoadError(entityPath string, node *yaml.Node, message string) error {
+	return schemaImportDiagnostic(resolver.ErrYAMLLoad(), entityPath, node, message)
+}
+
+// schemaImportDiagnostic shapes one import failure as the catalog-load diagnostic
+// the rest of this package produces, located at the authored node and naming the
+// condition its caller chose.
 //
 // It composes through the condition's registered sentence rather than emitting
 // message alone, so the diagnostic opens with the sentence and carries the raise
@@ -263,12 +291,16 @@ var errUnusableSchemaImport = cerrors.Register("unusable-schema-import", cerrors
 // stylistic: the chain walk that renders a halt prints the outermost frame whose
 // text the output does not already carry, so a message that did not lead with it
 // would print the sentence a second time as a redundant continuation line.
-func schemaImportError(entityPath string, node *yaml.Node, message string) error {
+//
+// The two conditions routed through it compose identically, through this one
+// implementation, so which condition a raise path names is the only thing that
+// differs between them and the composition cannot drift between the two.
+func schemaImportDiagnostic(condition error, entityPath string, node *yaml.Node, message string) error {
 	return cerrors.Wrap(
-		ErrUnusableSchemaImport(),
+		condition,
 		cerrors.CatalogError,
 		cerrors.SourceLocation{File: entityPath, Line: nodeLineOf(node)},
-		cerrors.ComposeMessage(ErrUnusableSchemaImport(), nil, message),
+		cerrors.ComposeMessage(condition, nil, message),
 	)
 }
 

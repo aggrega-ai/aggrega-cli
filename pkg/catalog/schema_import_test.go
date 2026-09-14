@@ -27,6 +27,7 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/refcycle"
+	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -329,6 +330,80 @@ func TestSchemaImport_Refusals(t *testing.T) {
 			}
 			if !strings.Contains(err.Error(), tc.wantMsg) {
 				t.Errorf("refusal did not name this fault\n got: %v\nwant substring: %q", err, tc.wantMsg)
+			}
+		})
+	}
+}
+
+// TestSchemaImport_RefusalsNameTheirCondition pins which condition each fault
+// reports under, because the two are not one condition: a fault in the authored
+// directive, or in the shape of what it yielded, is something the author got
+// wrong in a document they wrote, while a file that is absent, unreadable or
+// unparsable is a document that could not be loaded at all.
+//
+// Each row matches through the exported accessor rather than against the code the
+// condition is registered under: a code is a published string that a comparison
+// would keep compiling against after the condition moved behind it, and would
+// then stop matching with nothing failing.
+//
+// Every row also asserts the condition it must NOT report. Without that half a
+// row passes on a chain carrying both identities, which is exactly the state a
+// split done wrongly produces.
+func TestSchemaImport_RefusalsNameTheirCondition(t *testing.T) {
+	cases := []struct {
+		name    string
+		spec    string
+		files   map[string]string
+		want    error
+		notWant error
+	}{
+		{
+			name:    "acquisition: the file the directive names is not there",
+			spec:    "  schema:\n    values:\n      $import: ./missing.yaml\n",
+			want:    resolver.ErrYAMLLoad(),
+			notWant: ErrUnusableSchemaImport(),
+		},
+		{
+			name:    "acquisition: the file was read and its text is not well-formed YAML",
+			spec:    "  schema:\n    values:\n      $import: ./malformed.yaml\n",
+			files:   map[string]string{"malformed.yaml": "greeting:\n\ttype: string\n"},
+			want:    resolver.ErrYAMLLoad(),
+			notWant: ErrUnusableSchemaImport(),
+		},
+		{
+			name:    "shape: the directive shares its mapping with authored content",
+			spec:    "  schema:\n    values:\n      $import: ./c.yaml\n      greeting: { type: string }\n",
+			files:   map[string]string{"c.yaml": "greeting: { type: string }\n"},
+			want:    ErrUnusableSchemaImport(),
+			notWant: resolver.ErrYAMLLoad(),
+		},
+		{
+			name:    "shape: the directive's value is not a path",
+			spec:    "  schema:\n    values:\n      $import: {}\n",
+			want:    ErrUnusableSchemaImport(),
+			notWant: resolver.ErrYAMLLoad(),
+		},
+		{
+			name:    "shape: what parsed is not a map of schema content",
+			spec:    "  schema:\n    values:\n      $import: ./prose.yaml\n",
+			files:   map[string]string{"prose.yaml": "this is prose, not a schema\n"},
+			want:    ErrUnusableSchemaImport(),
+			notWant: resolver.ErrYAMLLoad(),
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			path := schemaImportFixture(t, tc.spec, tc.files)
+			_, err := parseComponentEntity(mustRead(t, path), path)
+			if err == nil {
+				t.Fatal("expected a refusal; the entity parsed")
+			}
+			if !errors.Is(err, tc.want) {
+				t.Errorf("refusal does not report the condition this fault belongs to: %v", err)
+			}
+			if errors.Is(err, tc.notWant) {
+				t.Errorf("refusal also reports the condition this fault does not belong to: %v", err)
 			}
 		})
 	}
