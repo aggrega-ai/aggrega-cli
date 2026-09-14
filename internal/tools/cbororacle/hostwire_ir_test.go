@@ -67,11 +67,11 @@ func irFixture(t *testing.T) types.IRGraph {
 			"ZED", om[string](t, "TOKEN", "api_token"),
 		),
 		// Structurally encoded: the canonical encoding sorts these.
-		Labels:                  om[string](t, "zeta", "z", "b", "1"),
-		CatalogAnnotations:      om[string](t, "zzz", "3", "a", "1"),
-		ValuesProvenance:        om[types.FieldProvenance](t, "zulu", types.FieldProvenance{Origin: types.OriginExplicit}, "b", types.FieldProvenance{Origin: types.OriginExplicit}),
-		InfraProvenance:         om[types.FieldProvenance](t, "size", types.FieldProvenance{Origin: types.OriginAnnotation, Side: "release", AnnotationKey: "aggrega.ai/size"}),
-		Sensitive:               true,
+		Labels:                 om[string](t, "zeta", "z", "b", "1"),
+		CatalogAnnotations:     om[string](t, "zzz", "3", "a", "1"),
+		ValuesProvenance:       om[types.FieldProvenance](t, "zulu", types.FieldProvenance{Origin: types.OriginExplicit}, "b", types.FieldProvenance{Origin: types.OriginExplicit}),
+		InfraProvenance:        om[types.FieldProvenance](t, "size", types.FieldProvenance{Origin: types.OriginAnnotation, Side: "release", AnnotationKey: "aggrega.ai/size"}),
+		Sensitive:              true,
 		SensitivePayloadLeaves: []string{"values.zulu", "infra.size"},
 	}
 

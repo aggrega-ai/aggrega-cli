@@ -188,9 +188,9 @@ func TestGraph_AttachmentAndBoundaryPillarsWithhold(t *testing.T) {
 	t.Parallel()
 
 	entry := types.IRFeatureEntry{
-		Type:                    "feature.mark/db-credential",
-		Values:                  om("secretName", "db-creds", "vault", om("token", "t-secret", "path", "p-secret")),
-		Infra:                   om("region", "eu-west-1", "key", "k-secret"),
+		Type:                   "feature.mark/db-credential",
+		Values:                 om("secretName", "db-creds", "vault", om("token", "t-secret", "path", "p-secret")),
+		Infra:                  om("region", "eu-west-1", "key", "k-secret"),
 		SensitivePayloadLeaves: []string{"values.vault.token", "values.vault.path", "infra.key"},
 	}
 	attachments := types.OrderedMap[types.IRFeatureEntry]{}
@@ -199,8 +199,8 @@ func TestGraph_AttachmentAndBoundaryPillarsWithhold(t *testing.T) {
 	byNode.Set("app", attachments)
 
 	boundaryAttachment := types.IRBoundaryFeature{
-		Type:                    "feature.mark/boundary-guard",
-		Infra:                   om("note", "boundary-wide", "apiKey", "a-secret"),
+		Type:                   "feature.mark/boundary-guard",
+		Infra:                  om("note", "boundary-wide", "apiKey", "a-secret"),
 		SensitivePayloadLeaves: []string{"infra.apiKey"},
 	}
 	boundaryAttachments := types.OrderedMap[types.IRBoundaryFeature]{}
