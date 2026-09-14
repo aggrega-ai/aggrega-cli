@@ -23,7 +23,7 @@ type ComponentMetadata struct {
 	Name string `json:"name" yaml:"name"`
 	// Version Strict Semantic Versioning of the interface (e.g., 1.0.0).
 	Version string `json:"version" yaml:"version"`
-	// Description A concise, one-sentence summary of what the entity does.
+	// Description What this entity is and what it is for, written for someone deciding whether to use it. Open with a sentence naming the thing, then add what a reader needs in order to choose it and use it correctly — what it expects from a deployment, and anything surprising about how it behaves. A short paragraph is the usual length.
 	Description string `json:"description,omitempty" yaml:"description,omitempty"`
 	// Maintainers List of maintainers who own this entity.
 	Maintainers []Maintainer `json:"maintainers,omitempty" yaml:"maintainers,omitempty"`
