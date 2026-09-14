@@ -98,6 +98,14 @@ func TestWithSkipContext_NoteReachesTheTerminalWhateverTheChainShape(t *testing.
 // unit boundary: what the reader sees for the refused file names the condition by
 // its registered short code, in the bracketed head beside the category — the one
 // position the error reference teaches a code appears in.
+//
+// It also pins which chain the diagnostic's OWN head is composed from, because
+// the two are easy to confuse once both carry a code. The head follows the lead:
+// the decoration decides which of the two failures the reader meets first, and
+// the head names that one's condition. No refusal is singled out here — the
+// failure carries no unresolved-reference frame to match one against — so the
+// decorated failure leads and its own code heads the diagnostic, while the
+// refused file's code stays where the refused file is reported.
 func TestWithSkipContext_RefusedFileCarriesItsShortCode(t *testing.T) {
 	failure := fmt.Errorf("resolve: resolve entity %q: %w", "server-recipe:1.0.0", catalog.ErrUnscopedRecipeReference())
 	rendered := formatCompilerError(withSkipContext(failure, []catalog.SkippedEntity{refusedRecipeSkip()}))
@@ -110,12 +118,21 @@ func TestWithSkipContext_RefusedFileCarriesItsShortCode(t *testing.T) {
 	if !strings.Contains(rendered, wantHead) {
 		t.Errorf("the refused file's line must carry %s; rendered:\n%s", wantHead, rendered)
 	}
-	// The consequence's code must NOT be promoted to the head: a code is a
-	// promise that it names the thing that went wrong, and the registry's
-	// provider-scoping condition is not what the author wrote wrong.
-	consequence, _ := cerrors.ShortCodeOf(catalog.ErrUnscopedRecipeReference())
-	if first := strings.SplitN(rendered, "\n", 2)[0]; strings.Contains(first, consequence) {
-		t.Errorf("the head must not carry the consequence's short code %s; head was:\n%s", consequence, first)
+	// The refused file's code must NOT head the diagnostic. Heading with it
+	// would claim a cause the record could not establish — no refusal was
+	// singled out — and a reader acts on the code at the top of the line.
+	first := strings.SplitN(rendered, "\n", 2)[0]
+	if strings.Contains(first, wantCode) {
+		t.Errorf("no refusal was singled out, so the refused file's code %s must not head the diagnostic; head was:\n%s", wantCode, first)
+	}
+	// And the head carries the leading failure's own code, which is what makes
+	// the line quotable and lookupable at all.
+	leadCode, ok := cerrors.ShortCodeOf(catalog.ErrUnscopedRecipeReference())
+	if !ok {
+		t.Fatal("the resolution condition must be registered with a short code")
+	}
+	if !strings.Contains(first, leadCode) {
+		t.Errorf("the head must carry the leading failure's own short code %s; head was:\n%s", leadCode, first)
 	}
 }
 

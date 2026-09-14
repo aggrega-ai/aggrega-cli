@@ -66,6 +66,14 @@ type sealed struct {
 // every enclosing frame. It can never be empty: an empty message renders as a
 // dangling separator inside an enclosing wrap, which reads as a truncated
 // diagnostic rather than as the defect it is, and registration refuses one.
+//
+// It returns the message alone, and the identifiers stay off it deliberately.
+// This string is embedded in every frame that wraps it, so a short code emitted
+// here would reappear in nested positions — the same repetition that keeps the
+// short code off CompilerError.Error. The head a reader sees is composed where
+// the diagnostic is printed, from the code read off the whole chain, by the one
+// surface that knows it is writing to a terminal and knows where in the output
+// the result will sit.
 func (s *sealed) Error() string { return s.message }
 
 // ErrorCode returns the descriptive code the identity was registered under —
@@ -84,11 +92,14 @@ func (s *sealed) Error() string { return s.message }
 // rather than recognising a condition by the wording of its message.
 //
 // It is not the code `aggrega` prints on a terminal. A printed diagnostic opens
-// with its category and the condition's SHORT code, because a hyphenated code
-// naming a condition in words is wide enough on the longest conditions to push
-// the message off a narrow terminal. The division holds for both surfaces: this
-// code is the one a machine consumer matches on, the short code is the one a
-// reader quotes.
+// with a bracketed head carrying the condition's SHORT code, because a
+// hyphenated code naming a condition in words is wide enough on the longest
+// conditions to push the message off a narrow terminal. The head carries the
+// occurrence's category beside the short code where the occurrence has one, and
+// the short code alone where it has none, so the code is in the head wherever
+// the reader meets the failure. The division holds for both surfaces: this code
+// is the one a machine consumer matches on, the short code is the one a reader
+// quotes.
 func (s *sealed) ErrorCode() string { return s.code }
 
 // ErrorShortCode returns the short code the identity was registered under — the

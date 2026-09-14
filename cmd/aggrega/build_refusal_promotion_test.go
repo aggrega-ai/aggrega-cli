@@ -161,13 +161,31 @@ func TestPull_RefusalPromotionIsExactOrAbsent(t *testing.T) {
 
 			_, rendered := renderedPullFailure(t, root, releasePath, catalogRoot)
 
-			head := strings.SplitN(rendered, "\n", 2)[0]
-			if !strings.Contains(head, "resolve entity \""+reference+"\"") {
-				t.Errorf("the headline must be left as it is when no single refusal explains the failure; the head was:\n%s\n\nwhole diagnostic:\n%s",
+			// No refusal leads, so none of them heads the diagnostic. The head
+			// is asserted against the refusal's condition rather than against
+			// the whole line, because the line also carries the leading
+			// failure's own code — every diagnostic is headed, and heading is
+			// not what promotion decides. What promotion decides is WHICH
+			// failure the head belongs to.
+			refusalCode, ok := cerrors.ShortCodeOf(envelope.ErrEntityEnvelope())
+			if !ok {
+				t.Fatal("the envelope-validation condition must be registered with a short code")
+			}
+			if head := strings.SplitN(rendered, "\n", 2)[0]; strings.Contains(head, refusalCode) {
+				t.Errorf("no single refusal explains the failure, so no refusal may head the diagnostic; the head was:\n%s\n\nwhole diagnostic:\n%s",
 					head, rendered)
 			}
-			if !strings.Contains(rendered, "catalog files skipped at load") {
+			// And the failure itself leads the report, with the refusals listed
+			// beneath it — the order is the claim, so it is asserted as order.
+			idxFailure := strings.Index(rendered, "resolve entity \""+reference+"\"")
+			if idxFailure < 0 {
+				t.Fatalf("the failure must still name the reference it could not resolve; rendered:\n%s", rendered)
+			}
+			switch idxRefusals := strings.Index(rendered, "catalog files skipped at load"); {
+			case idxRefusals < 0:
 				t.Errorf("every refusal must still be listed for the reader to weigh; rendered:\n%s", rendered)
+			case idxRefusals < idxFailure:
+				t.Errorf("the refusals are listed above the failure they could not explain; rendered:\n%s", rendered)
 			}
 			if !strings.Contains(rendered, "explained only by a refusal naming something this Release reaches") {
 				t.Errorf("the note must still state the distinction the reader has to apply themselves; rendered:\n%s", rendered)

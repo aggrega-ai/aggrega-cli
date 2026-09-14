@@ -17,19 +17,29 @@ import (
 
 // formatCompilerError renders a CompilerError in the documented multi-line
 // shape (the bracketed head, source pointer, message, optional expression,
-// optional pillar snapshot). When err is not (or does not wrap) a
-// *CompilerError, falls back to err.Error() so non-CLI callers and
-// non-categorised errors retain their existing presentation.
+// optional pillar snapshot). When err neither is nor wraps a *CompilerError but
+// still names a registered condition, it renders the same head with the short
+// code alone above the error's own text; when it names neither, it falls back
+// to err.Error() so non-CLI callers and unidentified errors retain their
+// existing presentation.
 //
 // The bracketed head carries the category the failure was filed under and,
 // when the chain names a registered condition, that condition's short code
 // beside it. Which frames carry the short code is decided by
-// diagnosticPosition below, not here. Either token may be absent — a failure
-// that is not a fault in an authored artifact has no surface to name, and a
-// chain naming no registered condition has no code — and an absent token is
-// omitted rather than stood in for.
+// diagnosticPosition below, not here. Either token may be absent — a chain
+// naming no registered condition has no code, and a failure with no concern to
+// route the reader to has no category — and an absent token is omitted rather
+// than stood in for.
 //
-// Dispatch runs five detection branches in a fixed order, and that order is
+// So one head shape serves every diagnostic, and which of its tokens are
+// present is a fact about the failure rather than about how it was built. A
+// chain that crossed a categorising boundary and names a condition carries
+// both; one that crossed such a boundary and names no condition carries the
+// category alone; one that names a condition and crossed no such boundary
+// carries the short code alone; one with neither carries no brackets at all
+// and is its own message.
+//
+// Dispatch runs six detection branches in a fixed order, and that order is
 // part of the contract rather than an implementation detail:
 //
 //  1. Multi-error first. A chain built by errors.Join exposes
@@ -55,18 +65,28 @@ import (
 //     re-entered here. That recursive call lands on the envelope branch and
 //     renders.
 //
-//  5. The trust and signing family last. It has no domain type to convert
+//  5. The trust and signing family next. It has no domain type to convert
 //     from, so the chain is matched against the conditions themselves and the
 //     envelope is built with the category fixed outright — the same shape the
 //     acquisition family's sentinel match takes. It runs after every branch
 //     above precisely because matching a whole family of conditions is a
 //     broader test than an errors.As on one concrete type: run earlier it
-//     would claim failures a later branch answers better, so run last it can
-//     only fill what would otherwise have fallen through.
+//     would claim failures a later branch answers better, so run last among the
+//     categorising branches it can only fill what would otherwise have fallen
+//     through.
+//
+//  6. A chain that names a registered condition and crossed no categorising
+//     boundary at all, last. It has no category and never will — nothing on
+//     that path derived one from an entity kind and no boundary fixed one — but
+//     it does name a condition, so the head carries the short code alone. This
+//     runs after every branch above for the same reason the one above it does,
+//     and it is the widest test of all: it asks only whether the chain names
+//     any registered condition, so anywhere earlier it would claim failures
+//     every other branch answers with a category as well.
 //
 // Falling through every branch returns the error's own Error output. That
-// remains the presentation for a failure that crosses no categorised boundary
-// at all, and it is deliberately still reachable: a command that refuses its
+// remains the presentation for a failure that names no registered condition
+// either, and it is deliberately still reachable: a command that refuses its
 // arguments, a file it cannot read, a cancellation, a library fault carrying no
 // registered condition of ours. Removing it to force conversion would turn every
 // such failure into a worse diagnostic rather than a better one — an empty head
@@ -225,7 +245,55 @@ func formatCompilerErrorAt(err error, pos diagnosticPosition) string {
 	if te, ok := trustFailureEnvelope(err); ok {
 		return renderCompilerErrorChain(te, headShortCode(err, pos))
 	}
+	// A chain that names a registered condition and reached here LAST, and it is
+	// the widest test in the dispatch: every branch above asks what a failure IS
+	// — a join, a decoration, an envelope, a domain type, a member of one family
+	// — while this asks only whether the chain names any condition at all. So it
+	// can sit nowhere else: anywhere earlier it would claim failures those
+	// branches answer with a category as well as a code.
+	//
+	// What reaches it is a failure that crossed no categorising boundary. That is
+	// not a gap to be filled with a plausible category, and the head is composed
+	// so that it does not have to be: an absent token is omitted rather than
+	// stood in for, so what the reader meets is the short code alone. Guessing
+	// the category instead would put a wrong answer in the token that says which
+	// surface to go and fix, which is the part of a diagnostic a reader acts on
+	// first.
+	//
+	// The guard is the code rather than a type test, and it is what keeps this
+	// branch off everything else: a chain naming no condition has nothing for a
+	// head to carry, so it falls to the line below and renders exactly as it
+	// always did. A continuation is covered by the same guard, since the position
+	// is what decides whether a short code is read at all.
+	if code := headShortCode(err, pos); code != "" {
+		return renderCompilerError(conditionOnlyEnvelope(err), code)
+	}
 	return err.Error()
+}
+
+// conditionOnlyEnvelope builds the rendering-only envelope a failure that names
+// a registered condition and carries no category is rendered from.
+//
+// It is the trust family's envelope one step further out, and it is built the
+// same way for the same reasons. The message is err.Error(), which for a wrapped
+// chain is already the whole flattened text — exactly the string the
+// uncategorised fallback prints — so the envelope changes what the reader sees
+// in one respect only: a bracketed head appears above text that is otherwise
+// unchanged. It carries no wrap chain because it has nothing left to say; its
+// message already holds every frame's contribution, and the short code is read
+// off the ORIGINAL error rather than off this envelope, so dropping the chain
+// costs the head nothing.
+//
+// The category is left absent deliberately, and it is the absent value rather
+// than an unfilled one. A failure reaching this point crossed no boundary that
+// derives a category from an entity kind and none that fixes one outright, so
+// there is no concern to route the reader to; the empty Category is exactly how
+// that is said. See the Category type, which documents the absence as a state.
+//
+// It exists for the duration of one render and is never returned to a caller, so
+// errors.Is, errors.As and the chain any command returns are untouched.
+func conditionOnlyEnvelope(err error) *cerrors.CompilerError {
+	return cerrors.Unidentified("", cerrors.SourceLocation{}, err.Error(), nil, nil)
 }
 
 // headShortCode returns the short code the head of a diagnostic rendered at
@@ -466,8 +534,10 @@ func indentCausedBy(block string, depth int) string {
 //
 // Either token can be absent, and an absent one is omitted rather than stood
 // in for. A short code is absent when the chain names no registered condition;
-// a category is absent when the failure is not a fault in an authored artifact
-// and so has no surface to name. With both absent the brackets are omitted
+// a category is absent when there is no concern to route the reader to — which
+// is not the same as the failure being no fault of an authored artifact, since
+// several categories name a concern rather than an authoring surface and are
+// printed for exactly such failures. With both absent the brackets are omitted
 // too, because empty brackets assert that a head was expected and is missing,
 // which is a different thing from a head with nothing to say.
 //
