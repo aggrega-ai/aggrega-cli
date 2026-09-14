@@ -4,89 +4,58 @@
 package resolver
 
 import (
-	"fmt"
-	"sort"
-
-	"github.com/aggrega-ai/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 )
 
-// LintAnnotationBindingMaps walks every annotation binding on a
-// Manifest and reports one advisory per dotted-path subkey that
-// the binding declares in BOTH Maps.Infra and Maps.Values lists.
+// LintAnnotationBindingMaps asks the one-pillar-per-path rule of every
+// annotation binding the resolved Manifest declares, and returns one advisory
+// per path a binding declares under both of its pillar lists.
 //
-// The overlap pattern is an authoring smell rather than a structural
-// error: declaring "this subkey routes through both pillars" is
-// incoherent because annotation subkeys fire exactly one pillar's
-// contribution per authoring side (per the Aggregate-as-Authoring-
-// Surface invariant's pillar partition). The runtime path
-// [types.AnnotationBindingMaps.Lookup] tie-breaks deterministically
-// to "infra", which makes the overlapped subkey Aggregate-inaccessible
-// — the Aggregate side then halts via side-vs-pillar enforcement at
-// expansion time, despite the subkey appearing in Maps.Values.
+// It presents the document and names the rule rather than walking the registry
+// itself, for the reason the Manifest's other binding readings state: the rule
+// is declared in this package as a constraint, so where it runs follows from the
+// facts it reads, and the provenance its findings carry — the locator above all
+// — is supplied by the framework rather than assembled here.
 //
-// Surfacing the smell at the manifest layer (right after Resolve,
-// before expansion) gives operators a clear preview of which subkeys
-// the deterministic tie-break will silently route to infra.
-//
-// Each finding carries [ErrAnnotationBindingPillarOverlap] and its own
-// locator, and is returned rather than printed, so it joins the one advisory
+// The findings are returned rather than printed, so they join the one advisory
 // collection every other advisory flows through: the build renders that
 // collection to a terminal and the compiler-as-service daemon maps the same
-// findings to editor warnings positioned on the offending binding key. A
-// finding written straight to a stream reaches only the first of those two,
-// and reaches it under a shape no consumer can match.
+// findings to editor warnings positioned on the offending binding key. A finding
+// written straight to a stream reaches only the first of those two, and reaches
+// it under a shape no consumer can match.
 //
-// The lint never halts. Authors who deliberately accept the overlap
-// (or who run with the warning ignored) still get the deterministic
-// tie-break behavior; the runtime side-vs-pillar halt remains the
-// load-bearing safety net.
+// It reports EVERY offending path on every offending binding rather than the
+// first — a contract of the rule rather than a property of how it happens to be
+// written. The rule is invoked once per declared binding and the framework
+// accumulates what each invocation raised, so an author fixing a Manifest with
+// several overlaps sees all of them in one build instead of one per build.
 //
-// Walk order. Annotation keys are walked in OrderedMap author order. Within
-// a binding, overlapping paths are emitted in [sort.Strings] order so
-// multiple overlaps on one binding produce a stable, deterministic
-// finding sequence across runs of identical input.
+// Walk order. Bindings are visited in the order the registry declares them,
+// which is author order; within one binding the rule raises in the order the
+// values pillar declares its paths. Both orders are fixed by what the framework
+// and the presentation already guarantee, so repeated runs over identical input
+// report an identical sequence.
 //
-// Returns nil when the manifest is nil or carries no overlapping
-// paths.
-func LintAnnotationBindingMaps(manifest *types.Manifest) []*ResolverError {
-	if manifest == nil {
+// Nothing here halts. An author who accepts the overlap keeps the deterministic
+// routing the tie-break performs; the halt that catches an application-side
+// annotation reaching the dropped pillar remains the load-bearing safety net.
+//
+// Returns nil when no Manifest was resolved or when no binding declares an
+// overlapping path.
+func LintAnnotationBindingMaps(result *ResolveResult) []*ResolverError {
+	if result == nil || result.Manifest == nil {
 		return nil
 	}
-	var findings []*ResolverError
-
-	check := func(annotations *types.OrderedMap[types.AnnotationBinding]) {
-		if annotations == nil {
-			return
-		}
-		for _, key := range annotations.Keys() {
-			binding, _ := annotations.Get(key)
-			infraSet := make(map[string]struct{}, len(binding.Maps.Infra))
-			for _, p := range binding.Maps.Infra {
-				infraSet[p] = struct{}{}
-			}
-			var overlapping []string
-			for _, p := range binding.Maps.Values {
-				if _, has := infraSet[p]; has {
-					overlapping = append(overlapping, p)
-				}
-			}
-			sort.Strings(overlapping)
-			for _, p := range overlapping {
-				findings = append(findings, &ResolverError{
-					Entity: "Manifest",
-					Field:  annotationBindingField(key),
-					Message: fmt.Sprintf(
-						"annotation binding %q on Feature %q declares path %q in both maps.infra and maps.values; the routing tie-break sends this subkey through the infra pillar, which makes it unreachable from the Aggregate side — declare two bindings under two annotation keys if both pillars are meant to route it",
-						key, binding.Feature, p,
-					),
-					Err: ErrAnnotationBindingPillarOverlap(),
-				})
-			}
-		}
-	}
-
-	if manifest.Spec.Mappings.Features != nil {
-		check(manifest.Spec.Mappings.Features.Annotations)
-	}
-	return findings
+	document := manifestDocumentOf(result)
+	var presented constraint.DocumentView = newManifestDocumentView(document, result.Manifest)
+	return findingsAtTheirOwnDocument(
+		constraint.RunOnDocumentAnnotationBindings(
+			document,
+			presented.ManifestAnnotationBindingKeys(document),
+			presented,
+			annotationBindingPathRoutesThroughOnePillar,
+		),
+		"Manifest",
+		"Manifest",
+	)
 }

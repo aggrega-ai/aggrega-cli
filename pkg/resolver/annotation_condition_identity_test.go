@@ -256,21 +256,20 @@ spec:
             values:
               - shared_subkey
 `)
-	findings := LintAnnotationBindingMaps(manifest)
+	findings := lintBindingMaps(manifest)
 	if len(findings) != 1 {
 		t.Fatalf("expected exactly 1 finding; got %d: %v", len(findings), findings)
 	}
 	assertIdentity(t, findings[0], ErrAnnotationBindingPillarOverlap(),
 		"annotation-binding-pillar-overlap", "E0256")
-	if got, want := findings[0].Field, ".spec.mappings.features.annotations.feature.myco/db-pool"; got != want {
+	if got, want := findings[0].Field, ".spec.mappings.features.annotations"; got != want {
 		t.Errorf("locator = %q, want %q", got, want)
 	}
 	const want = `annotation binding declares one path in both pillar lists ` +
-		`(Manifest, at .spec.mappings.features.annotations.feature.myco/db-pool, ` +
-		`annotation binding "feature.myco/db-pool" on Feature "core/db-pool:1.0.0" declares path "shared_subkey" ` +
-		`in both maps.infra and maps.values; the routing tie-break sends this subkey through the infra pillar, ` +
-		`which makes it unreachable from the Aggregate side — declare two bindings under two annotation keys ` +
-		`if both pillars are meant to route it)`
+		`(Manifest, at .spec.mappings.features.annotations, ` +
+		`"feature.myco/db-pool", on Feature "core/db-pool:1.0.0", at path "shared_subkey", ` +
+		`which the routing tie-break sends through the pillar "infra", ` +
+		`declare a second binding under another annotation key to route it through "values")`
 	if got := findings[0].Error(); got != want {
 		t.Errorf("rendered output\n got: %s\nwant: %s", got, want)
 	}

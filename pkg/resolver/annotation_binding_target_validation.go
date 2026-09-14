@@ -389,17 +389,3 @@ func subkeyConformanceFailure(compiled compactform.Schema, subSchema map[string]
 	}
 	return f.Message, true
 }
-
-// annotationBindingField locates a finding on the annotation binding that
-// carried it: the field path of that binding's key within the Manifest.
-//
-// It is one function rather than a format string at each raise site because the
-// path is the coordinate an editor resolves a diagnostic against, and two
-// spellings of it would place the same finding on two different keys. A binding
-// key containing a period — which the reserved annotation-key shape permits —
-// does not resolve to the key node itself; the walk's documented fallback lands
-// on the enclosing annotations block, which is the nearest coordinate that is
-// certainly correct.
-func annotationBindingField(annotationKey string) string {
-	return ".spec.mappings.features.annotations." + annotationKey
-}

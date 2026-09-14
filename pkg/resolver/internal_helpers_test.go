@@ -262,19 +262,19 @@ func TestSortResolverErrors_StableOrderByEntityThenField(t *testing.T) {
 }
 
 // TestLintAnnotationBindingMaps_NilAnnotationsTierSkipped pins the
-// nil-annotations branch of the lint walker. A Features tier that
-// declares no `annotations` map (nil pointer) is skipped without
-// adding warnings — the walker's per-tier check returns early.
+// nil-annotations branch of the reading's presentation. A Features tier that
+// declares no `annotations` map (nil pointer) presents no binding key, so the
+// rule is asked about nothing and no warning is added.
 func TestLintAnnotationBindingMaps_NilAnnotationsTierSkipped(t *testing.T) {
 	t.Parallel()
 	m := &types.Manifest{}
 	m.Spec.Mappings.Features = &types.MappingTier{} // Annotations nil
-	if warnings := LintAnnotationBindingMaps(m); warnings != nil {
+	if warnings := lintBindingMaps(m); warnings != nil {
 		t.Errorf("nil annotations tier: expected no warnings; got %v", warnings)
 	}
 	// A nil Features tier is skipped on the same terms.
 	m.Spec.Mappings.Features = nil
-	if warnings := LintAnnotationBindingMaps(m); warnings != nil {
+	if warnings := lintBindingMaps(m); warnings != nil {
 		t.Errorf("nil features tier: expected no warnings; got %v", warnings)
 	}
 }

@@ -25,6 +25,12 @@ func manifestFromYAML(t *testing.T, src string) *types.Manifest {
 	return &m
 }
 
+// lintBindingMaps asks the reading of a Manifest on its own, which is the shape
+// the resolve presents it in.
+func lintBindingMaps(manifest *types.Manifest) []*ResolverError {
+	return LintAnnotationBindingMaps(&ResolveResult{Manifest: manifest})
+}
+
 func TestLintAnnotationBindingMaps_NoOverlap_NoWarning(t *testing.T) {
 	t.Parallel()
 	manifest := manifestFromYAML(t, `
@@ -45,7 +51,7 @@ spec:
             values:
               - db_name
 `)
-	findings := LintAnnotationBindingMaps(manifest)
+	findings := lintBindingMaps(manifest)
 	if len(findings) != 0 {
 		t.Errorf("expected no findings; got %d: %v", len(findings), findings)
 	}
@@ -73,16 +79,20 @@ spec:
               - db_name
               - shared_subkey
 `)
-	findings := LintAnnotationBindingMaps(manifest)
+	findings := lintBindingMaps(manifest)
 	if len(findings) != 1 {
 		t.Fatalf("expected exactly 1 finding; got %d: %v", len(findings), findings)
 	}
 	if !stderrors.Is(findings[0], ErrAnnotationBindingPillarOverlap()) {
 		t.Errorf("finding should carry the pillar-overlap advisory identity; got %v", findings[0])
 	}
-	// The locator is the coordinate an editor resolves the diagnostic against,
-	// so it is pinned rather than left to the message text.
-	if got, want := findings[0].Field, ".spec.mappings.features.annotations.feature.myco/db-pool"; got != want {
+	// The locator is the coordinate an editor resolves the diagnostic against, so
+	// it is pinned rather than left to the message text. It names the registry
+	// block and stops there: this binding's key carries a period, and a locator
+	// segment carrying the dialect's own separator is unaddressable, so descending
+	// into it would spell a path the document does not contain. The key itself
+	// reaches the reader as the finding's leading value instead.
+	if got, want := findings[0].Field, ".spec.mappings.features.annotations"; got != want {
 		t.Errorf("locator = %q, want %q", got, want)
 	}
 	rendered := findings[0].Error()
@@ -90,8 +100,8 @@ spec:
 		"feature.myco/db-pool",
 		"core/db-pool:1.0.0",
 		"shared_subkey",
-		"maps.infra",
-		"maps.values",
+		`which the routing tie-break sends through the pillar "infra"`,
+		`route it through "values"`,
 	} {
 		if !strings.Contains(rendered, want) {
 			t.Errorf("finding missing %q: %s", want, rendered)
@@ -99,10 +109,47 @@ spec:
 	}
 }
 
+// TestLintAnnotationBindingMaps_UndottedKey_LocatorNamesTheKey is the other half
+// of the locator contract. The truncation the dotted-key case pins is a property
+// of the key rather than of this reading, so a key the dialect can address is
+// addressed — without this the two cases are indistinguishable from a locator
+// that always stops at the block.
+func TestLintAnnotationBindingMaps_UndottedKey_LocatorNamesTheKey(t *testing.T) {
+	t.Parallel()
+	manifest := manifestFromYAML(t, `
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: test
+  version: "1.0.0"
+spec:
+  mappings:
+    features:
+      annotations:
+        db-pool:
+          feature: core/db-pool:1.0.0
+          maps:
+            infra:
+              - shared_subkey
+            values:
+              - shared_subkey
+`)
+	findings := lintBindingMaps(manifest)
+	if len(findings) != 1 {
+		t.Fatalf("expected exactly 1 finding; got %d: %v", len(findings), findings)
+	}
+	if got, want := findings[0].Field, ".spec.mappings.features.annotations.db-pool"; got != want {
+		t.Errorf("locator = %q, want %q", got, want)
+	}
+}
+
 func TestLintAnnotationBindingMaps_MultiplePathOverlap_StableOrder(t *testing.T) {
 	t.Parallel()
-	// Three duplicates declared in author-arbitrary order; warnings
-	// should emit in sort.Strings order: "alpha", "beta", "gamma".
+	// Three duplicates, with the values pillar declaring them in an order that is
+	// neither lexical nor the infra pillar's. The reading raises in the order the
+	// values pillar declares them — that pillar's claim is the one the tie-break
+	// drops — so the fixture is authored to fail against any implementation that
+	// sorts or that walks the infra side.
 	manifest := manifestFromYAML(t, `
 apiVersion: aggrega.ai/v1alpha1
 kind: Manifest
@@ -117,19 +164,19 @@ spec:
           feature: core/db-pool:1.0.0
           maps:
             infra:
-              - gamma
               - alpha
               - beta
+              - gamma
             values:
+              - gamma
               - alpha
               - beta
-              - gamma
 `)
-	findings := LintAnnotationBindingMaps(manifest)
+	findings := lintBindingMaps(manifest)
 	if len(findings) != 3 {
 		t.Fatalf("expected 3 findings; got %d: %v", len(findings), findings)
 	}
-	wantOrder := []string{"alpha", "beta", "gamma"}
+	wantOrder := []string{"gamma", "alpha", "beta"}
 	for i, p := range wantOrder {
 		if !strings.Contains(findings[i].Error(), "\""+p+"\"") {
 			t.Errorf("finding %d should mention path %q; got: %s", i, p, findings[i])
@@ -167,7 +214,7 @@ spec:
             values:
               - shared
 `)
-	findings := LintAnnotationBindingMaps(manifest)
+	findings := lintBindingMaps(manifest)
 	if len(findings) != 2 {
 		t.Fatalf("expected 2 findings; got %d: %v", len(findings), findings)
 	}
@@ -179,10 +226,12 @@ spec:
 	}
 }
 
-func TestLintAnnotationBindingMaps_NilManifest_NoPanic(t *testing.T) {
+func TestLintAnnotationBindingMaps_NothingResolved_NoPanic(t *testing.T) {
 	t.Parallel()
-	findings := LintAnnotationBindingMaps(nil)
-	if findings != nil {
-		t.Errorf("nil manifest: expected nil findings; got %v", findings)
+	if findings := LintAnnotationBindingMaps(nil); findings != nil {
+		t.Errorf("nil resolve: expected nil findings; got %v", findings)
+	}
+	if findings := LintAnnotationBindingMaps(&ResolveResult{}); findings != nil {
+		t.Errorf("resolve carrying no Manifest: expected nil findings; got %v", findings)
 	}
 }

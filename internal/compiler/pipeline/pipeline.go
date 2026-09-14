@@ -754,7 +754,7 @@ func ResolveAndValidate(
 		// APPEND for the reason stated at the drain — the resolve already carries
 		// the advisories from the checks that needed only the Aggregate.
 		resolveResult.LintAdvisories = append(resolveResult.LintAdvisories,
-			resolver.LintAnnotationBindingMaps(resolveResult.Manifest)...)
+			resolver.LintAnnotationBindingMaps(resolveResult)...)
 		if err := resolver.ExpandAnnotations(resolveResult, catalogLookup); err != nil {
 			return fmt.Errorf("annotation expansion: %w", err)
 		}
