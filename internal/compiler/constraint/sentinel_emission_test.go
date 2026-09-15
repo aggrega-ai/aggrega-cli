@@ -250,7 +250,8 @@ import (
 // Criterion, so that a later reading measures the same thing: a declared
 // sentinel is UNRATCHETED when the census places it in the off-framework
 // population AND the registration binding the value its accessor publishes
-// declares a RulePlace naming either another evaluator or no rule at all. That
+// declares a RulePlace naming another evaluator, a moment no declared stage
+// reaches, or no rule at all. That
 // declaration is read by [readPlacementDeclarations], over the same file set
 // and the same population every other count in this file is taken over. The
 // ratcheted count is the off-framework population minus those. No other figure
@@ -311,8 +312,9 @@ const offFrameworkEmissionBlocks = false
 // emission site outside the framework's dispatch — attribution exactly as
 // [checkTypeName] and [frameworkPackageSuffix] decide it, over the host shapes
 // and the inner criterion [sentinelCensus] records — LESS the ones whose
-// registration declares that another evaluator owns the rule, or that the
-// condition names no rule at all. [partitionOffFrameworkByDeclaredPlace] performs
+// registration declares that another evaluator owns the rule, that no declared
+// stage of a compilation reaches it, or that the condition names no rule at
+// all. [partitionOffFrameworkByDeclaredPlace] performs
 // that subtraction and guards those declarations in both directions.
 //
 // Measured 2026-09-15, at aggrega-cli c3828f72: 120, of 280 declared.
@@ -626,8 +628,9 @@ func TestSentinelEmissionSitesAreTheFrameworkDispatch(t *testing.T) {
 
 	ratcheted, unratcheted := partitionOffFrameworkByDeclaredPlace(t, offFramework, emitters, placements)
 	t.Logf("off-framework partition: %d of the %d sentinels emitted outside the dispatch declare that "+
-		"their rule could not be one of the framework's own — another evaluator owns it, or the "+
-		"condition names no rule at all — and are NOT ratcheted, leaving %d ratcheted. The ceiling "+
+		"their rule is not one of the framework's own — another evaluator owns it, no declared "+
+		"stage reaches it, or the condition names no rule at all — and are NOT ratcheted, "+
+		"leaving %d ratcheted. The ceiling "+
 		"below is read against the ratcheted count alone, so the off-framework total must never be "+
 		"compared with it.", len(unratcheted), len(offFramework), len(ratcheted))
 	if len(unratcheted) > 0 {
@@ -1573,9 +1576,10 @@ func declaredString(expr ast.Expr) (string, bool) {
 //
 // # Which declarations it partitions on, and which it passes over
 //
-// A declaration is read here only when it claims the rule could not be one of
-// the framework's own — another evaluator owns it, or the condition names no
-// rule at all. A condition declaring a rule OVER AUTHORED INPUT makes no such
+// A declaration is read here only when it claims the rule is not one of the
+// framework's own — another evaluator owns it, no declared stage of a
+// compilation reaches it, or the condition names no rule at all. A condition
+// declaring a rule OVER AUTHORED INPUT makes no such
 // claim: it says the rule belongs where the dispatch can evaluate it, which is
 // true whether the census places the condition inside the dispatch or outside
 // it, so there is nothing here for the tree to contradict and nothing to move
@@ -1638,17 +1642,17 @@ func partitionOffFrameworkByDeclaredPlace(t *testing.T, offFramework []string, e
 	}
 
 	if len(contradicted) > 0 {
-		t.Errorf("%d condition(s) declare that their rule could not be one of the framework's own — "+
-			"another evaluator owns it, or the condition names no rule at all — while the census "+
-			"attributes a dispatch emission site to them.\n"+
-			"INVARIANT: a condition carrying either of those declarations names a rule that cannot "+
-			"be expressed as a %s value, so no emission site of it is the framework's dispatch.\n"+
+		t.Errorf("%d condition(s) declare that their rule is not one of the framework's own — "+
+			"another evaluator owns it, no declared stage reaches it, or the condition names no "+
+			"rule at all — while the census attributes a dispatch emission site to them.\n"+
+			"INVARIANT: a condition carrying any of those declarations names a rule that is not "+
+			"expressed as a %s value, so no emission site of it is the framework's dispatch.\n"+
 			"CONSEQUENCE: the declaration is contradicted by the tree it describes. Left standing it "+
 			"holds the condition outside the ratcheted population on a fact the tree already falsifies, "+
 			"so every later reading of the ceiling is taken over a population one member too small and "+
 			"the ratchet quietly carries one more unit of slack.\n"+
 			"REMEDY: declare the place the condition is actually in. The tree shows the rule IS expressed "+
-			"as a %s, which is what the declaration says it could never be, so the declaration is the "+
+			"as a %s, which is what the declaration says it is not, so the declaration is the "+
 			"wrong half rather than the check.\n"+
 			"Alphabetically: %s", len(contradicted), checkTypeName, checkTypeName,
 			strings.Join(namedList(contradicted, 12), "; "))
