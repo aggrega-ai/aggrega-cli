@@ -87,9 +87,19 @@ validation that can accept one, so a listener answers 401 to every caller
 whatever it sends, and serves nothing until token validation is in place.
 
 The workspace this process serves is fixed when it starts, on either
-transport: --workspace-root names it, AGGREGA_WORKSPACE_ROOT supplies it
-when the flag is absent, and with neither it is resolved from the working
-directory.
+transport: --workspace-root names it, and AGGREGA_WORKSPACE_ROOT supplies
+it when the flag is absent. With neither, a server on standard input and
+output resolves the workspace from the directory it was started in, while
+a listener is refused before it binds unless a workspace resolves there:
+one reached over HTTP serves a workspace an operator chose rather than
+whichever directory it happened to be started in.
+
+For the same reason a call arriving over HTTP cannot name a workspace of
+its own. Sending workspace_root or catalog_dirs is refused, naming the
+argument, and the directories searched for catalog entities beside the
+served workspace are its own workspace.catalog_dirs setting. Over
+standard input and output both arguments are honoured: the client that
+launched the server is running on this machine.
 
 Asking the process itself to stop — an interrupt from the terminal, or a
 termination request from a supervisor or container runtime — shuts the

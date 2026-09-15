@@ -189,8 +189,16 @@ func NewHTTPHandler(ctx context.Context, cfg Config, transport HTTPConfig) (http
 }
 
 // newHTTPHandler wires a handler onto an already-built server. It is the single
-// construction point, so the caps are checked once and the refusing
-// authenticator is installed once however the handler was reached.
+// construction point, so the caps are checked once, the refusing authenticator
+// is installed once, and the session is marked as one reached over HTTP once,
+// however the handler was reached.
+//
+// The mark is set here rather than beside the server the exported constructor
+// builds because this is the point no HTTP path bypasses: a caller that builds a
+// server itself and mounts a handler on it is serving that server over HTTP just
+// as much as one that went through the constructor, and a session that answered
+// requests while still claiming to speak the process's own streams would grant
+// those callers what only a caller at this machine's keyboard may have.
 func newHTTPHandler(runCtx context.Context, s *server, transport HTTPConfig) (*httpHandler, error) {
 	if transport.MaxBodyBytes <= 0 {
 		return nil, fmt.Errorf("mcp.limits.max_body_bytes must be positive, got %d", transport.MaxBodyBytes)
@@ -206,6 +214,7 @@ func newHTTPHandler(runCtx context.Context, s *server, transport HTTPConfig) (*h
 	if s.cancels == nil {
 		s.cancels = requestcancel.New()
 	}
+	s.transport = transportHTTP
 	return &httpHandler{
 		srv:            s,
 		runCtx:         runCtx,

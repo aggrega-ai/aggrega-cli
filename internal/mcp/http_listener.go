@@ -15,6 +15,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
 // unixAddressPrefix introduces the second of the two listen-address forms: this
@@ -78,16 +80,20 @@ type ListenConfig struct {
 // reachable from, whether the connection carrying a request is encrypted, and
 // the end of the listener's life.
 //
-// The order of the three steps below is the contract rather than an arrangement.
-// Every refusal this transport can make about its own configuration is made
-// first, with nothing yet built and nothing yet bound, so a misconfigured
-// deployment fails at startup rather than after an address is already accepting.
-// The handler is built second, because acquiring the documentation bundle is the
+// The order of the steps below is the contract rather than an arrangement.
+// Every refusal a deployment can meet at startup is made first, with nothing yet
+// built and nothing yet bound, so a misconfigured deployment fails at startup
+// rather than after an address is already accepting: what the listener itself is
+// asked to do, and then whether there is a workspace for it to serve. The
+// handler is built second, because acquiring the documentation bundle is the
 // expensive step and there is no reason to pay it for a deployment that is about
 // to be refused. Only then is anything bound.
 func ListenAndServe(ctx context.Context, cfg Config, transport HTTPConfig, listen ListenConfig) error {
 	target, cert, err := resolveListenTarget(listen)
 	if err != nil {
+		return err
+	}
+	if err := requireServableWorkspace(cfg.WorkspaceRoot); err != nil {
 		return err
 	}
 	handler, err := NewHTTPHandler(ctx, cfg, transport)
@@ -99,6 +105,38 @@ func ListenAndServe(ctx context.Context, cfg Config, transport HTTPConfig, liste
 		return err
 	}
 	return l.serve(ctx)
+}
+
+// requireServableWorkspace refuses a listener that has no workspace to serve.
+//
+// A process reached over its own streams was launched by the client using it,
+// from wherever that client happened to be, and answering from the directory it
+// was started in is the useful thing to do. A listener is the opposite: it is
+// started once by an operator and answers callers who cannot see the machine, so
+// the directory it happens to have been launched from is not a workspace anyone
+// chose. Serving one anyway would publish whatever that directory contains to
+// every caller that reaches the address.
+//
+// A root supplied at launch settles it outright: the operator named the
+// workspace, and whether that directory is furnished yet is a question for the
+// calls answered in it rather than for whether the address may open. With no
+// root supplied, discovery must find something to anchor on — falling back to
+// the working directory is exactly the case this refuses.
+func requireServableWorkspace(root string) error {
+	if root != "" {
+		return nil
+	}
+	rw, err := workspaceconfig.Resolve("", "")
+	if err != nil {
+		return fmt.Errorf("resolve the workspace this server would serve: %w", err)
+	}
+	if rw.Marker() != workspaceconfig.MarkerCWD {
+		return nil
+	}
+	return fmt.Errorf("this server was started in a directory no workspace resolves from, and a server "+
+		"reached over HTTP serves one workspace rather than whichever directory it was launched in: name "+
+		"the workspace with --workspace-root, or set AGGREGA_WORKSPACE_ROOT, or start the server inside "+
+		"the workspace it is to serve (it was started in %s)", rw.Root())
 }
 
 // listenTarget is a parsed listen address: what to bind, where, and whether a

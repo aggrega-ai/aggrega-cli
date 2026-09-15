@@ -82,6 +82,24 @@ type Config struct {
 	WorkspaceRoot string
 }
 
+// transportMode is the transport a session speaks.
+//
+// It is read wherever what a call may name depends on who is calling. A client
+// that launched this process reaches it over the process's own streams and is
+// at the machine's keyboard, so it names the workspace it means on each call. A
+// caller reaching a listener is somewhere else entirely, and is served the one
+// workspace the process was started over.
+type transportMode int
+
+const (
+	// transportStdio frames newline-delimited messages on the process's own
+	// standard input and output. It is the zero value, so a server built without
+	// a transport behaves as a client-launched one does.
+	transportStdio transportMode = iota
+	// transportHTTP answers one message per request on a listener.
+	transportHTTP
+)
+
 // server holds the per-session transport state: the sole stdout writer
 // every response is framed through, the stderr sink every log line goes
 // to, and the reported build identity. It is constructed once in Run and
@@ -106,6 +124,12 @@ type server struct {
 	// supplies no explicit workspace_root. Empty resolves from the process
 	// working directory. A test points it at a fixture workspace.
 	startDir string
+
+	// transport is which transport composed this session, and it decides what a
+	// call may name rather than how a message is framed. Framing is settled by
+	// the frontend that reads the message; this is read where the answer depends
+	// on whether the caller is at this machine's keyboard.
+	transport transportMode
 
 	// docsBundleRef and docsBundleVersion pin the documentation bundle the
 	// resource surface reads pages from. Empty values derive the reference from
@@ -247,6 +271,7 @@ func Run(ctx context.Context, cfg Config) error {
 		commandTools:  deriveCommandTools(cfg.Commands),
 		renderHelp:    cfg.RenderHelp,
 		startDir:      cfg.WorkspaceRoot,
+		transport:     transportStdio,
 	}
 	return s.run(ctx, stdin)
 }

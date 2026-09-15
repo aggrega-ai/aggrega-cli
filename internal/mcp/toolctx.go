@@ -4,13 +4,83 @@
 package mcp
 
 import (
+	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
+
+// The two arguments a call uses to say which workspace it means: the root
+// itself, and the catalog directories read beside it. They are spelled here as
+// the caller spells them, and this is the one place they are, so the refusal
+// below names what was sent rather than a second spelling of it.
+const (
+	argumentWorkspaceRoot = "workspace_root"
+	argumentCatalogDirs   = "catalog_dirs"
+)
+
+// workspaceSelection is the slice of a tool's arguments that names a workspace,
+// read before the tool reads its own arguments.
+//
+// It is deliberately not a second declaration of any tool's argument shape: it
+// carries these two fields and no others, so a tool may add, rename or drop
+// anything else without this reading changing, and a tool that takes neither
+// argument simply decodes to the zero value.
+type workspaceSelection struct {
+	WorkspaceRoot string   `json:"workspace_root"`
+	CatalogDirs   []string `json:"catalog_dirs"`
+}
+
+// workspaceSelectionRefusal reports the corrective text for a call that names a
+// workspace this session does not let it name, or the empty string when the
+// call names none and the tool may run.
+//
+// A caller reaching this server over its own streams launched it and is at this
+// machine's keyboard, so it names the workspace it means and every one of these
+// arguments is honoured. A caller reaching a listener is not, and the process
+// serves the one workspace it was started over; naming another would let a
+// caller read a directory the operator never offered.
+//
+// The refusal is loud rather than silent because an argument that is quietly
+// dropped reads to its sender exactly like one that was honoured — the answer
+// comes back computed somewhere else, with nothing in it saying so.
+func (s *server) workspaceSelectionRefusal(args json.RawMessage) string {
+	if s.transport != transportHTTP || len(args) == 0 {
+		return ""
+	}
+	var sent workspaceSelection
+	if err := json.Unmarshal(args, &sent); err != nil {
+		// The tool refuses a payload it cannot read, naming the field and the type
+		// it wanted. That is the correction the caller needs, and a refusal composed
+		// here would reach them first and say less.
+		return ""
+	}
+
+	named := make([]string, 0, 2)
+	if sent.WorkspaceRoot != "" {
+		named = append(named, argumentWorkspaceRoot)
+	}
+	if len(sent.CatalogDirs) > 0 {
+		named = append(named, argumentCatalogDirs)
+	}
+	if len(named) == 0 {
+		return ""
+	}
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "This server serves one workspace, fixed when it was started, so a call cannot name "+
+		"another: remove %s from the arguments and call again. The answer is computed in the workspace "+
+		"the server was started over.", strings.Join(named, " and "))
+	if len(sent.CatalogDirs) > 0 {
+		b.WriteString(" Catalog directories to search beside that workspace are its own configuration, " +
+			"under workspace.catalog_dirs.")
+	}
+	return b.String()
+}
 
 // toolWorkspace is the per-call resolved workspace context the closure-driven
 // tools build their compiler-operations inputs from. Every field is derived

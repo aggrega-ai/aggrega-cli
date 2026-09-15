@@ -329,6 +329,14 @@ func (s *server) handleToolsList() (any, *rpcError) {
 // caller can correct it. Once a tool is resolved, its own outcome — success or a
 // guidance-carrying failure — is returned as the result, including a refusal of
 // the arguments it was given.
+//
+// One refusal is composed here rather than by the tool, and it is composed after
+// the tool is resolved so that it travels as that tool's own failing result: a
+// call that names a workspace this session does not let it name. Every tool
+// crosses this line, so the rule holds for the ones that resolve a workspace,
+// the ones that answer without resolving one, and the generated command tools
+// alike, and its wording has one home rather than one per tool.
+//
 // ctx is the run's own, handed to the resolved tool. Every tool that publishes,
 // pulls, builds, lints or searches carries it into the work it drives, so ending
 // the run ends that work rather than only its report.
@@ -341,6 +349,15 @@ func (s *server) handleToolsCall(ctx context.Context, params json.RawMessage) (a
 		return nil, &rpcError{Code: codeInvalidParams, Message: "tools/call requires a tool name; available tools: " + toolNames()}
 	}
 	if spec, ok := s.lookupTool(p.Name); ok {
+		// Read before the tool reads its own arguments, and here rather than where
+		// a workspace is resolved, because not every tool resolves one: the
+		// generated command tools carry the same argument and run a command with
+		// it, and one curated tool answers from the machine-wide caches when no
+		// workspace resolves, so a refusal placed at resolution would be dropped
+		// there without a word.
+		if refusal := s.workspaceSelectionRefusal(p.Arguments); refusal != "" {
+			return errorResult(refusal)
+		}
 		return spec.invoke(s, ctx, p.Arguments)
 	}
 	return nil, &rpcError{Code: codeInvalidParams, Message: "unknown tool: " + p.Name +

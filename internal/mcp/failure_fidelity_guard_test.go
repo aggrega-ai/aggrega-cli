@@ -98,10 +98,15 @@ var proseOnlyFailureReturns = map[string]int{
 	"tool_gencatalog.go": 5,
 	// Position lookup, workspace description, the progressive surface, and the
 	// shared argument-decode helper: argument and context refusals.
+	//
+	// The second entry against the dispatch surface is the refusal of a call that
+	// names a workspace the session does not let it name. It is decided from the
+	// arguments alone, before the named tool is entered, so no operation has run
+	// and there are no findings to carry.
 	"tool_insertion_point.go": 6,
 	"tool_workspace.go":       2,
 	"progressive.go":          1,
-	"tools.go":                1,
+	"tools.go":                2,
 }
 
 // TestFailureReturnsWithoutStructuredContentMatchTheLedger is the guard.
