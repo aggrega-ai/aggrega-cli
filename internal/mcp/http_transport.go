@@ -180,6 +180,7 @@ func NewHTTPHandler(ctx context.Context, cfg Config, transport HTTPConfig) (http
 		serverVersion: cfg.ServerVersion,
 		toolchain:     cfg.Toolchain,
 		commandTools:  deriveCommandTools(cfg.Commands),
+		renderHelp:    cfg.RenderHelp,
 	}
 	s.ensureDocsBundle(ctx)
 	return newHTTPHandler(ctx, s, transport)

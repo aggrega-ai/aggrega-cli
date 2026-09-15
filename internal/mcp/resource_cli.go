@@ -4,7 +4,6 @@
 package mcp
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -23,13 +22,24 @@ const (
 )
 
 // commandRunner runs an aggrega command by argument vector, writing its output
-// to stdout and stderr. It is the seam both command-driven surfaces share: the
-// cli:// resource, which asks for a command's help, and the generated command
-// tools, which ask the command to do its work. The production value re-invokes
-// the running binary, so a command's behavior and its help text both keep their
-// single home in the command layer, and a test injects a fake that records the
-// arguments.
+// to stdout and stderr. It is the seam the generated command tools reach when
+// they ask a command to do its work: the production value re-invokes the
+// running binary, so a command's behavior keeps its single home in the command
+// layer, and a test injects a fake that records the arguments.
 type commandRunner func(ctx context.Context, args []string, stdout, stderr io.Writer) error
+
+// HelpRenderer renders one command's help text from the live command tree.
+//
+// The path names a command by its own name segments, with no binary name and no
+// flags; cli://plugin/gen-catalog is the path {"plugin", "gen-catalog"}, and an
+// empty path names the top-level command. It reports ok=false for a path naming
+// no command, which a cli:// read answers as a resource that is not there.
+//
+// The command layer supplies it for the same reason it supplies the command
+// surface: that layer is the only one that can see both the command tree and
+// this server. A session handed none serves no cli:// resource at all, rather
+// than reaching for some other way to produce the text.
+type HelpRenderer func(path []string) (text string, ok bool)
 
 // cliResourceTemplate returns the CLI-help URI-template family. The template is
 // parameterised by a command path; a cli:// read resolves it to that command's
@@ -38,7 +48,7 @@ func cliResourceTemplate() resourceTemplate {
 	return resourceTemplate{
 		URITemplate: "cli://{command}",
 		Name:        "cli-help",
-		Description: "The command-line help for an aggrega command, served from the running binary. The path names a command or subcommand path (for example cli://validate or cli://plugin/gen-catalog); an empty path (cli://) serves the top-level help.",
+		Description: "The command-line help for an aggrega command, answered from the commands this server itself carries rather than by running anything. The path names a command or subcommand path (for example cli://validate or cli://plugin/gen-catalog); an empty path (cli://) serves the top-level help.",
 		MimeType:    cliMimeType,
 	}
 }
@@ -55,50 +65,50 @@ func cliRootResource() resource {
 	}
 }
 
-// readCliResource serves cli://{command} as the command's help output, produced
-// by the running binary so the help has a single home in the command layer
-// rather than being restated here. An empty path serves the top-level help. A
-// path with a segment that is not a plain command token — a leading dash, a dot
-// segment, or any non-command character — is rejected as a resource-not-found
-// so a URI can never inject a flag or escape into an arbitrary argument, and a
-// command whose help the binary cannot produce is likewise a resource-not-found.
-// ctx is the run's own. The production runner starts a subprocess under it, so
-// ending the run ends the child rather than waiting for it.
-func (s *server) readCliResource(ctx context.Context, uri string) (readResourceResult, *rpcError) {
+// readCliResource serves cli://{command} as that command's help text, rendered
+// from the command tree this process already holds, so the help keeps its single
+// home in the command layer rather than being restated here. An empty path
+// serves the top-level help.
+//
+// Three cases are one answer, a resource that is not there. A path with a
+// segment that is not a plain command token — a leading dash, a dot segment, or
+// any non-command character — is refused before any renderer is consulted, so a
+// URI can never turn into a flag or climb out into something else. A path the
+// renderer resolves to no command is refused because there is no such command to
+// serve help for. And a session that was handed no renderer refuses
+// every path in the family: there is no second way to produce the text, so the
+// honest answer is that the resource is not there.
+func (s *server) readCliResource(uri string) (readResourceResult, *rpcError) {
 	_, body, ok := splitScheme(uri)
 	if !ok {
 		return readResourceResult{}, resourceNotFound(uri)
 	}
-	argv, ok := cliHelpArgs(body)
+	path, ok := cliCommandPath(body)
 	if !ok {
 		return readResourceResult{}, resourceNotFound(uri)
 	}
-	run := s.runCommand
-	if run == nil {
-		run = selfExecCommand
-	}
-	var stdout, stderr bytes.Buffer
-	if err := run(ctx, argv, &stdout, &stderr); err != nil {
+	if s.renderHelp == nil {
 		return readResourceResult{}, resourceNotFound(uri)
 	}
-	text := stdout.String()
-	if strings.TrimSpace(text) == "" {
-		text = stderr.String()
+	text, ok := s.renderHelp(path)
+	if !ok {
+		return readResourceResult{}, resourceNotFound(uri)
 	}
 	return readResourceResult{
 		Contents: []resourceContents{{URI: uri, MimeType: cliMimeType, Text: text}},
 	}, nil
 }
 
-// cliHelpArgs turns a cli:// URI body into the argument vector that requests the
-// command's help. An empty body requests the top-level help. Each path segment
-// must be a plain command token — lowercase letters, digits, and internal
-// dashes — so a URI cannot inject a flag (a leading dash) or a traversal (a dot
-// segment). It reports ok=false for any segment that is not a command token.
-func cliHelpArgs(body string) ([]string, bool) {
+// cliCommandPath turns a cli:// URI body into the command path that names the
+// command whose help is wanted. An empty body names the top-level command and
+// yields an empty path. Each path segment must be a plain command token —
+// lowercase letters, digits, and internal dashes — so a URI cannot turn into a
+// flag (a leading dash) or a traversal (a dot segment). It reports ok=false for
+// any segment that is not a command token.
+func cliCommandPath(body string) ([]string, bool) {
 	body = strings.Trim(body, "/")
 	if body == "" {
-		return []string{"--help"}, true
+		return nil, true
 	}
 	segs := strings.Split(body, "/")
 	for _, seg := range segs {
@@ -106,13 +116,13 @@ func cliHelpArgs(body string) ([]string, bool) {
 			return nil, false
 		}
 	}
-	return append(segs, "--help"), true
+	return segs, true
 }
 
 // isCommandToken reports whether s is a plain command token: a lowercase letter
 // first, then lowercase letters, digits, or internal dashes. It excludes a
 // leading dash (which would read as a flag), an empty segment, and any other
-// character, so only genuine command names reach the argument vector.
+// character, so only genuine command names reach the command path.
 func isCommandToken(s string) bool {
 	if s == "" {
 		return false

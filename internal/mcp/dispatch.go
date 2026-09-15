@@ -230,7 +230,12 @@ func negotiateProtocolVersion(requested string) string {
 // and the catalog family serves the caller's own workspace. So the freshness
 // hint is chosen here, beside the branch that resolves the family, rather than
 // by the method.
-func (s *server) handleResourcesRead(ctx context.Context, era protocolEra, params json.RawMessage) (any, *rpcError) {
+//
+// It takes the run's context so every routed method carries the same shape, and
+// consults it nowhere: no family's read reaches work that a context could end.
+// Each of them answers from bytes this process already holds — a cached page, a
+// compiled-in schema, a file in the resolved workspace, or the command tree.
+func (s *server) handleResourcesRead(_ context.Context, era protocolEra, params json.RawMessage) (any, *rpcError) {
 	var p readResourceParams
 	if err := json.Unmarshal(params, &p); err != nil {
 		return nil, invalidRequestParams("resources/read", err)
@@ -263,9 +268,9 @@ func (s *server) handleResourcesRead(ctx context.Context, era protocolEra, param
 		res, rerr = s.readCatalogResource(p.URI)
 		hint = workspaceCacheHint()
 	case schemeCli:
-		// Produced by running the binary's own help, which is the command tree
-		// compiled into it.
-		res, rerr = s.readCliResource(ctx, p.URI)
+		// Rendered from the command tree this process holds, which is the tree
+		// compiled into the binary.
+		res, rerr = s.readCliResource(p.URI)
 		hint = compiledInCacheHint()
 	default:
 		return nil, refusalInEra(era, resourceNotFound(p.URI))

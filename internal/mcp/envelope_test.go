@@ -4,10 +4,8 @@
 package mcp
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -192,8 +190,8 @@ func TestEveryPerRequestResultCarriesTheEnvelope(t *testing.T) {
 }
 
 // readFixtureServer builds a server whose workspace holds one catalog entity and
-// whose documentation bundle and command seams are both substituted, so a run
-// over it can read all four resource families without reaching a network or a
+// whose documentation-bundle and help-rendering seams are both substituted, so a
+// run over it can read all four resource families without reaching a network or a
 // real catalog.
 func readFixtureServer(t *testing.T) *server {
 	t.Helper()
@@ -215,9 +213,8 @@ func readFixtureServer(t *testing.T) *server {
 	if err := os.WriteFile(filepath.Join(ws, "component.yaml"), []byte(body), 0o644); err != nil {
 		t.Fatalf("write component: %v", err)
 	}
-	s.runCommand = func(_ context.Context, args []string, stdout, _ io.Writer) error {
-		_, _ = io.WriteString(stdout, "USAGE: aggrega "+strings.Join(args, " "))
-		return nil
+	s.renderHelp = func(path []string) (string, bool) {
+		return "USAGE: aggrega " + strings.Join(path, " "), true
 	}
 	return s
 }

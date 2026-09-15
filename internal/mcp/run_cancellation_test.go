@@ -18,9 +18,12 @@ import (
 // publishes, pulls, builds, lints or searches declares one and threads it into
 // the work it drives, and the per-invocation dispatch handed each of them a fresh
 // background context — so the whole surface's cancellation plumbing terminated
-// one line above the tools that needed it. The resource reads were the same: the
-// CLI-help read starts a subprocess and the start-of-run acquisition pulls the
-// documentation bundle from a registry, both on a context nobody could end.
+// one line above the tools that needed it. The start-of-run acquisition was the
+// same: it pulls the documentation bundle from a registry on a context nobody
+// could end. A resource read is in neither class, because every family answers
+// from bytes this process already holds — a cached page, a compiled-in schema, a
+// file in the resolved workspace, or the command tree — so there is no read-side
+// proof here to sit beside the tool-side one.
 //
 // These proofs ask whether ending the run ends what a call is doing. The
 // discriminator is the FRAME of the goroutine inside the tool, compared against a
@@ -100,9 +103,6 @@ func (r *blockingReader) Read(p []byte) (int, error) {
 // moves this fixture with it instead of leaving a request no tool answers.
 var callFixtureCommand = `{"jsonrpc":"2.0","id":1,"method":"tools/call",` +
 	`"params":{"name":"` + commandToolName("aggrega work") + `","arguments":{}}}` + "\n"
-
-const readCliHelp = `{"jsonrpc":"2.0","id":1,"method":"resources/read",` +
-	`"params":{"uri":"cli://validate"}}` + "\n"
 
 // driveWithContext runs the real entry point under a caller's context and
 // collects whatever it answered. It is the harness the package already uses,
@@ -200,66 +200,9 @@ func TestStoppingARunEndsTheToolsWork(t *testing.T) {
 	}
 }
 
-// TestStoppingARunEndsTheCliResourceRead is the same proof for the resource-read
-// surface, which reaches the runner through a different route: resources/read on
-// a cli:// URI rather than tools/call.
-//
-// It matters separately because that route is what starts a SUBPROCESS in
-// production: the runner injected here parks instead, and the production runner
-// builds its child with the context this proof shows arriving, so an ended run
-// ends the child. That last hop is the operating system's, not this test's, and
-// is stated rather than claimed.
-//
-// The planted defect is the same shape: hand the runner a background context.
-func TestStoppingARunEndsTheCliResourceRead(t *testing.T) {
-	controlHold := make(chan struct{})
-	stoppedHold := make(chan struct{})
-	defer close(controlHold)
-	defer close(stoppedHold)
-
-	controlSrv := newCommandToolServer(t, parkedControlCommand)
-	stoppedSrv := newCommandToolServer(t, parkedStoppedCommand)
-
-	controlDone := make(chan error, 1)
-	go func() {
-		controlDone <- controlSrv.serve(context.Background(),
-			&blockingReader{remaining: readCliHelp, hold: controlHold})
-	}()
-
-	stopCtx, stop := context.WithCancel(context.Background())
-	stoppedDone := make(chan error, 1)
-	go func() {
-		stoppedDone <- stoppedSrv.serve(stopCtx,
-			&blockingReader{remaining: readCliHelp, hold: stoppedHold})
-	}()
-
-	waitForMCPFrame(t, "parkedControlCommand")
-	waitForMCPFrame(t, "parkedStoppedCommand")
-
-	stop()
-
-	waitForMCPFrameToClear(t, "parkedStoppedCommand")
-
-	frames := mcpGoroutineFrames()
-	if !strings.Contains(frames, "parkedControlCommand") {
-		t.Fatalf("the control's runner frame is ABSENT from the dump, so the comparison below " +
-			"would pass for the wrong reason; the control's read must still be running")
-	}
-	if strings.Contains(frames, "parkedStoppedCommand") {
-		t.Errorf("the stopped run's runner frame is STILL on the stack while the control's is " +
-			"there too: the run was withdrawn but the command it started was never ended")
-	}
-
-	select {
-	case <-stoppedDone:
-	case <-time.After(runReturnCeiling):
-		t.Errorf("the stopped run's message loop never returned within the liveness ceiling")
-	}
-}
-
-// TestARunWhoseContextHasAlreadyEndedAnswersNothing pins the hand-off the two
-// proofs above cannot see: that the entry point's own parameter is the context
-// the loop reads, rather than one it mints.
+// TestARunWhoseContextHasAlreadyEndedAnswersNothing pins the hand-off the proof
+// above cannot see: that the entry point's own parameter is the context the loop
+// reads, rather than one it mints.
 //
 // The control is what discriminates. A live run answers the ping; a withdrawn one
 // must answer nothing at all. A run where both answered, or neither, would prove

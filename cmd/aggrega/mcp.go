@@ -4,6 +4,9 @@
 package main
 
 import (
+	"bytes"
+	"sync"
+
 	"github.com/aggrega-ai/aggrega-cli/internal/clisurface"
 	"github.com/aggrega-ai/aggrega-cli/internal/mcp"
 
@@ -73,6 +76,9 @@ func runMCP(cmd *cobra.Command, args []string) error {
 		// plugin versions a lockfile written at a terminal records for this binary.
 		Toolchain: toolchainStamp(),
 		Commands:  commandSurface(cmd.Root()),
+		// Supplied from here for the same reason, and over the same tree: the
+		// help a cli:// read serves is the help this tree prints.
+		RenderHelp: commandHelp(cmd.Root()),
 	})
 }
 
@@ -106,4 +112,64 @@ func commandSurface(root *cobra.Command) []mcp.CommandSurface {
 		out = append(out, mcp.CommandSurface{Descriptor: d, Runnable: runnable[d.Path]})
 	}
 	return out
+}
+
+// helpRenderMu serialises help rendering over one command tree.
+//
+// None of the steps below is a read, which is the whole reason it is here.
+// Resolving a path writes the name each command was reached by onto that
+// command; installing the help and version flags merges a command's inherited
+// flags into its own set; the writer is installed on the command being rendered;
+// and the render itself swaps that writer again while it composes the usage
+// block. Requests reach the server on their own goroutines, so two reads
+// arriving together would meet every one of those, and the one whose writer was
+// swapped out collects only the bytes the other had not already taken.
+var helpRenderMu sync.Mutex
+
+// commandHelp renders one command's help from the live tree, for the server's
+// cli:// resource family.
+//
+// It is supplied from here for the same reason the command surface is: this is
+// the only package that can see both the command tree and the server. The text
+// is the tree's own help rendering, so a command reaches the resource family by
+// existing in the tree and its help has one home rather than a restatement here.
+//
+// The path is the command's own name segments. It resolves against the tree the
+// same way an invocation does, and a path that does not resolve to a command all
+// the way down is reported as no command rather than as the nearest ancestor:
+// resolution leaves whatever it could not match, so anything left over means the
+// path named something the tree does not have.
+//
+// Two calls are what make the rendered text the text the command prints. Running
+// a command installs its help and version flags on it immediately before the
+// run, so the flag list a reader sees includes them; rendering without those
+// calls produces a help block missing the help flag itself.
+func commandHelp(root *cobra.Command) mcp.HelpRenderer {
+	if root == nil {
+		return nil
+	}
+	return func(path []string) (string, bool) {
+		helpRenderMu.Lock()
+		defer helpRenderMu.Unlock()
+
+		target, leftover, _ := root.Find(path)
+		if target == nil || len(leftover) > 0 {
+			return "", false
+		}
+		target.InitDefaultHelpFlag()
+		target.InitDefaultVersionFlag()
+
+		// The writer goes on the command being rendered because the lookup walks
+		// up the tree from there, and it is put back before the next reader sees
+		// the tree.
+		previous := target.OutOrStdout()
+		defer target.SetOut(previous)
+
+		var rendered bytes.Buffer
+		target.SetOut(&rendered)
+		if err := target.Help(); err != nil {
+			return "", false
+		}
+		return rendered.String(), true
+	}
 }

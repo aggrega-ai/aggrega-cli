@@ -58,6 +58,17 @@ type Config struct {
 	// An empty value yields no command tools, which is the shape every test
 	// that is not about them runs in.
 	Commands []CommandSurface
+
+	// RenderHelp renders a command's help text for the cli:// resource family,
+	// from the command tree this process already holds. The command layer
+	// supplies it for the same reason it supplies the command surface above:
+	// that layer is the only one that can see both the command tree and this
+	// server, so the help keeps its single home there.
+	//
+	// A nil renderer serves no cli:// resource: every read in the family is
+	// answered as a resource that is not there, on every transport. That is the
+	// shape every test that is not about the family runs in.
+	RenderHelp HelpRenderer
 }
 
 // server holds the per-session transport state: the sole stdout writer
@@ -115,12 +126,17 @@ type server struct {
 	// injects a fake that records the request and returns canned output.
 	runLint lintRunner
 
-	// runCommand runs an aggrega command by argument vector, for the cli://
-	// resource and for the generated command tools. Nil self-execs the running
-	// binary, so a command's behavior and its help text have a single home in
-	// the command layer. A test injects a fake that records the arguments and
-	// returns canned output.
+	// runCommand runs an aggrega command by argument vector, for the generated
+	// command tools. Nil self-execs the running binary, so a command's behavior
+	// has a single home in the command layer. A test injects a fake that records
+	// the arguments and returns canned output.
 	runCommand commandRunner
+
+	// renderHelp renders a command's help text for the cli:// resource family,
+	// read from the command tree the command layer handed this server. Nil
+	// answers every read in that family as a resource that is not there: there is
+	// no fallback, because nothing else here can see a command tree.
+	renderHelp HelpRenderer
 
 	// commandTools is the long-tail tool set derived from the command surface
 	// the caller supplied, built once per session in Run and never mutated, so
@@ -175,11 +191,10 @@ var errCancelledByClient = errors.New("request cancelled by the client")
 // # The caller's context
 //
 // ctx is the run's own, and it reaches the start-of-run documentation
-// acquisition, every tool invocation and every resource read: the tools that
-// publish, pull, build, lint and search all carry it into the work they drive,
-// and the CLI-help resource carries it into the subprocess it starts. So ending
-// the run ends whatever a call was doing, rather than only declining to accept
-// the next message.
+// acquisition and every tool invocation: the tools that publish, pull, build,
+// lint and search all carry it into the work they drive. So ending the run ends
+// whatever a call was doing, rather than only declining to accept the next
+// message.
 //
 // Ending the run ends the message loop too, whether it is answering a message or
 // waiting for one, so a run ends on the first request to end it rather than
@@ -219,6 +234,7 @@ func Run(ctx context.Context, cfg Config) error {
 		serverVersion: cfg.ServerVersion,
 		toolchain:     cfg.Toolchain,
 		commandTools:  deriveCommandTools(cfg.Commands),
+		renderHelp:    cfg.RenderHelp,
 	}
 	return s.run(ctx, stdin)
 }

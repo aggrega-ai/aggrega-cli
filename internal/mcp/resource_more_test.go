@@ -4,7 +4,6 @@
 package mcp
 
 import (
-	"context"
 	"encoding/json"
 	"io"
 	"os"
@@ -90,20 +89,25 @@ func TestServeCatalogEntity(t *testing.T) {
 	}
 }
 
-// TestServeCliHelp proves cli:// resolves a command path to the running binary's
-// help through the injected seam, that the empty path serves the top-level help,
-// and that a flag-shaped or traversal segment is rejected without ever running
-// the binary.
+// TestServeCliHelp proves cli:// resolves a command path to that command's help
+// through the renderer seam, that the empty path serves the top-level help, and
+// that a flag-shaped or traversal segment is rejected without the renderer ever
+// being reached.
+//
+// The call count is what separates "asked for the top-level command" from "not
+// asked at all": both carry an empty path, so reading the path alone could not
+// tell the root read from a URI the validation was supposed to stop.
 func TestServeCliHelp(t *testing.T) {
 	t.Parallel()
-	var gotArgs []string
+	var gotPath []string
+	var calls int
 	s := &server{
 		out:  io.Discard,
 		logw: io.Discard,
-		runCommand: func(_ context.Context, args []string, stdout, _ io.Writer) error {
-			gotArgs = args
-			_, _ = io.WriteString(stdout, "USAGE: aggrega "+strings.Join(args, " "))
-			return nil
+		renderHelp: func(path []string) (string, bool) {
+			calls++
+			gotPath = path
+			return "USAGE: aggrega " + strings.Join(path, " "), true
 		},
 	}
 
@@ -111,8 +115,8 @@ func TestServeCliHelp(t *testing.T) {
 	if rerr != nil {
 		t.Fatalf("resources/read cli://plugin/gen-catalog: %+v", rerr)
 	}
-	if want := []string{"plugin", "gen-catalog", "--help"}; !equalStrings(gotArgs, want) {
-		t.Errorf("cli argv = %v, want %v", gotArgs, want)
+	if want := []string{"plugin", "gen-catalog"}; !equalStrings(gotPath, want) {
+		t.Errorf("cli command path = %v, want %v", gotPath, want)
 	}
 	if rr.Contents[0].MimeType != cliMimeType {
 		t.Errorf("mimeType = %q, want %q", rr.Contents[0].MimeType, cliMimeType)
@@ -121,23 +125,33 @@ func TestServeCliHelp(t *testing.T) {
 		t.Errorf("cli help text not served: %q", rr.Contents[0].Text)
 	}
 
-	gotArgs = nil
+	calls, gotPath = 0, []string{"unset"}
 	if _, rerr := readResource(t, s, "cli://"); rerr != nil {
 		t.Fatalf("resources/read cli:// (root): %+v", rerr)
 	}
-	if want := []string{"--help"}; !equalStrings(gotArgs, want) {
-		t.Errorf("root cli argv = %v, want %v", gotArgs, want)
+	if calls != 1 {
+		t.Errorf("the root read reached the renderer %d time(s), want 1", calls)
+	}
+	if len(gotPath) != 0 {
+		t.Errorf("root cli command path = %v, want the empty path", gotPath)
 	}
 
 	// A flag-shaped or traversal segment must never reach the seam.
 	for _, uri := range []string{"cli://-rf", "cli://../etc", "cli://plugin/--output"} {
-		gotArgs = nil
+		calls = 0
 		if _, rerr := readResource(t, s, uri); rerr == nil || rerr.Code != codeResourceNotFound {
 			t.Errorf("resources/read %s error = %+v, want code %d", uri, rerr, codeResourceNotFound)
 		}
-		if gotArgs != nil {
-			t.Errorf("resources/read %s ran the seam with %v; must reject before running", uri, gotArgs)
+		if calls != 0 {
+			t.Errorf("resources/read %s reached the renderer; it must be rejected before that", uri)
 		}
+	}
+
+	// A path the renderer does not resolve is the same answer an unrunnable
+	// command was: the resource is not there.
+	s.renderHelp = func([]string) (string, bool) { return "", false }
+	if _, rerr := readResource(t, s, "cli://not-a-command"); rerr == nil || rerr.Code != codeResourceNotFound {
+		t.Errorf("resources/read cli://not-a-command error = %+v, want code %d", rerr, codeResourceNotFound)
 	}
 }
 
