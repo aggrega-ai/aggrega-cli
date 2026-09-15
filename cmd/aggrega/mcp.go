@@ -30,7 +30,7 @@ const helpListen = "Serve the protocol over HTTP on this address instead of stan
 
 func newMCPCmd() *cobra.Command {
 	c := &cobra.Command{
-		Use:   "mcp",
+		Use: "mcp",
 		Short: "Run a Model Context Protocol server over standard input and output, or over HTTP, " +
 			"for AI-assistant integration",
 		Long: `Run Aggrega as a Model Context Protocol (MCP) server, so an AI
