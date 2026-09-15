@@ -5,12 +5,16 @@
 // `aggrega mcp`, and answers the list and dispatch methods an AI assistant
 // uses to discover and invoke the server's surface.
 //
-// Two transports reach the same server. The stdio transport frames
-// newline-delimited JSON-RPC 2.0 over stdin/stdout and is what the command
-// speaks. The HTTP transport answers one message per request against a
-// handler a caller constructs and mounts; it shares the routing and the
-// per-request revision with stdio, and differs in how a message is framed on
-// the way in and out and in what ends a call already running. Over HTTP the
+// Two transports reach the same server, and which one a run speaks is the
+// command layer's choice. The stdio transport frames newline-delimited
+// JSON-RPC 2.0 over stdin/stdout. The HTTP transport answers one message per
+// request against a handler NewHTTPHandler builds, reached either on a
+// listener ListenAndServe binds and owns — the address it parses, the TLS it
+// terminates, the plaintext confinement it refuses on, and the drain it
+// performs when the run ends — or on a handler a caller mounts itself. It
+// shares the routing and the per-request revision with stdio, and differs in
+// how a message is framed on the way in and out and in what ends a call
+// already running. Over HTTP the
 // connection closing is the cancellation signal the protocol defines there, so
 // no request is recorded by id; stdio, which has no per-request stream to
 // close, cancels by id through the registry instead.
@@ -36,8 +40,8 @@
 // may cancel one by id, leaving every other one running.
 //
 // The package's contract is the wire protocol, not the Go API — no public
-// types outside this package consume Run beyond the command layer that
-// spawns the server as a subprocess. The tool, resource, and prompt
+// types outside this package consume Run or ListenAndServe beyond the
+// command layer that starts the server. The tool, resource, and prompt
 // bodies are answered by the shared compiler operations, so no operation
 // is reimplemented here.
 //

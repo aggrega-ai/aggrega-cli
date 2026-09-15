@@ -31,22 +31,27 @@ const helpListen = "Serve the protocol over HTTP on this address instead of stan
 func newMCPCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "mcp",
-		Short: "Run a Model Context Protocol server over stdio for AI-assistant integration",
-		Long: `Run Aggrega as a Model Context Protocol (MCP) server over stdio, so an
-AI assistant can discover and drive Aggrega operations through a
-structured protocol instead of scraping command output.
+		Short: "Run a Model Context Protocol server over standard input and output, or over HTTP, " +
+			"for AI-assistant integration",
+		Long: `Run Aggrega as a Model Context Protocol (MCP) server, so an AI
+assistant can discover and drive Aggrega operations through a structured
+protocol instead of scraping command output.
 
-The server speaks newline-delimited JSON-RPC 2.0 on stdin/stdout. It is
-normally spawned as a subprocess by an MCP-capable client, not run by
-hand.
+Two transports reach the same server, and the invocation chooses between
+them. With no listen address the server speaks newline-delimited JSON-RPC
+2.0 over the process's standard input and output, which is how an
+MCP-capable client runs it: spawned as a subprocess, not typed by hand.
+Given --listen, or mcp.listen in the workspace configuration, it serves
+the protocol over HTTP instead — one long-running process on a host,
+reached by callers who are not at its keyboard.
 
-It speaks two MCP protocol revisions, 2026-07-28 and 2025-06-18, so a
-client of either connects. In 2026-07-28 nothing is settled for the
-connection as a whole: every request states the protocol version it
-speaks and the capabilities its sender offers, and the server reads both
-from the request it is answering rather than holding anything between
-messages. In 2025-06-18 a client settles those same facts once, by
-opening the connection with an initialize handshake.
+It speaks two MCP protocol revisions on both transports, 2026-07-28 and
+2025-06-18, so a client of either connects. In 2026-07-28 nothing is
+settled for the connection as a whole: every request states the protocol
+version it speaks and the capabilities its sender offers, and the server
+reads both from the request it is answering rather than holding anything
+between messages. In 2025-06-18 a client settles those same facts once,
+by opening the connection with an initialize handshake.
 
 Both revisions reach the same server, and a client learns the same
 things about it either way. A client on 2026-07-28 calls server/discover
@@ -61,18 +66,38 @@ it through tools/call and resources/read. The server exposes Aggrega
 operations — compiling and inspecting a Release, reading catalog
 entities — as tools and resources an assistant can call directly.
 
-Stream discipline is strict: stdout carries only protocol messages, one
-JSON object per line, so the client can parse the stream without
-heuristics. Every log, warning, and diagnostic is written to stderr
-instead. The server reads one message per line and exits cleanly when
-stdin reaches end of stream, so a client that closes the connection shuts
-the server down.
+On standard input and output, stream discipline is strict: stdout carries
+only protocol messages, one JSON object per line, so the client can parse
+the stream without heuristics. Every log, warning, and diagnostic is
+written to stderr instead. The server reads one message per line and
+exits cleanly when stdin reaches end of stream, so a client that closes
+the connection shuts the server down. A client ends one call by naming
+its id, and every other call carries on.
+
+Over HTTP there is one endpoint, /mcp, accepting POST. Every message is
+its own request and no session of any kind is kept, so nothing a client
+sends first decides how a later request is answered. Closing the
+connection ends the call it carried. A request carrying an Origin header
+is checked against mcp.allowed_origins, and mcp.limits bounds how large
+one request body may be and how many requests are answered at once.
+
+Every HTTP request is answered with a bearer-token challenge and nothing
+is served. The server requires a token on every request and carries no
+validation that can accept one, so a listener answers 401 to every caller
+whatever it sends, and serves nothing until token validation is in place.
+
+The workspace this process serves is fixed when it starts, on either
+transport: --workspace-root names it, AGGREGA_WORKSPACE_ROOT supplies it
+when the flag is absent, and with neither it is resolved from the working
+directory.
 
 Asking the process itself to stop — an interrupt from the terminal, or a
 termination request from a supervisor or container runtime — shuts the
 server down on the first request, whether or not a client is sending
 anything: it stops accepting messages, ends the work a call in progress
-is doing, and exits cleanly. A second request ends the process at once.`,
+is doing, and exits cleanly. A listener stops accepting and lets a call
+already being answered finish, within a bounded budget, before the
+process exits. A second request ends the process at once.`,
 		Args: cobra.NoArgs,
 		RunE: runMCP,
 	}
