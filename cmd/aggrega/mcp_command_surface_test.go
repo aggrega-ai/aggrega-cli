@@ -98,6 +98,68 @@ func rpcLine(id int, method, params string) string {
 	return `{"jsonrpc":"2.0","id":` + strconv.Itoa(id) + `,"method":"` + method + `","params":` + params + "}\n"
 }
 
+// rpcFrame is one response line the server wrote: the request id it answers, and
+// the two mutually exclusive halves of a JSON-RPC answer left raw, so a caller
+// unmarshals whatever shape its own call returns.
+type rpcFrame struct {
+	ID     int             `json:"id"`
+	Result json.RawMessage `json:"result"`
+	Error  *struct {
+		Code    int    `json:"code"`
+		Message string `json:"message"`
+	} `json:"error"`
+}
+
+// answersByID reads a server session's whole output stream and returns the
+// answer to each of wantIDs, keyed by that id.
+//
+// Requests are answered on their own goroutines, so the order answers reach the
+// stream is the order their handlers finished in, never the order the requests
+// were sent. Picking an answer by its position in the stream would be reading
+// whichever call happened to land in that slot, so correlation here is by id —
+// which is what a connected client does, and the only thing the protocol
+// promises.
+//
+// It is the completeness guard as much as the reader, and every caller leans on
+// that half: an assertion over a stream nobody answered, or over one truncated
+// part way, passes while measuring nothing. A line that is not a protocol frame,
+// an id answered twice, an answer to an id nothing asked for, and a missing
+// answer all fail here — so a caller reading a frame reads one from a stream
+// already shown to carry exactly the expected answers, exactly once each.
+func answersByID(t *testing.T, stdout string, wantIDs ...int) map[int]rpcFrame {
+	t.Helper()
+
+	want := make(map[int]bool, len(wantIDs))
+	for _, id := range wantIDs {
+		want[id] = true
+	}
+
+	frames := make(map[int]rpcFrame, len(wantIDs))
+	for _, line := range strings.Split(strings.TrimSpace(stdout), "\n") {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		var frame rpcFrame
+		if err := json.Unmarshal([]byte(line), &frame); err != nil {
+			t.Fatalf("the server wrote a line that is not a protocol frame: %q: %v", line, err)
+		}
+		if !want[frame.ID] {
+			t.Fatalf("the server answered id %d, which nothing asked for: %q", frame.ID, line)
+		}
+		if _, seen := frames[frame.ID]; seen {
+			t.Fatalf("the server answered id %d twice; the second line is %q", frame.ID, line)
+		}
+		frames[frame.ID] = frame
+	}
+	for _, id := range wantIDs {
+		if _, answered := frames[id]; !answered {
+			t.Fatalf("nothing in the stream carries id %d; %d of %d requests were answered:\n%s",
+				id, len(frames), len(wantIDs), stdout)
+		}
+	}
+	return frames
+}
+
 // mcpCommandToolName renders a command path as the tool name the server
 // advertises for it. It mirrors the server's own derivation because the naming
 // rule is not exported; the guard against the two drifting is that this test
@@ -135,43 +197,36 @@ func TestMCPServerExposesTheRealCommandSurface(t *testing.T) {
 		t.Fatalf("mcp.Run: %v (stderr: %s)", err, stderr.String())
 	}
 
-	lines := strings.Split(strings.TrimSpace(stdout.String()), "\n")
-	if len(lines) != 3 {
-		t.Fatalf("got %d response lines, want 3:\n%s", len(lines), stdout.String())
-	}
+	answers := answersByID(t, stdout.String(), 1, 2, 3)
 
 	// The default tool list must not carry the long tail.
-	var listResp struct {
-		Result struct {
-			Tools []struct{ Name string } `json:"tools"`
-		} `json:"result"`
+	var listResult struct {
+		Tools []struct{ Name string } `json:"tools"`
 	}
-	if err := json.Unmarshal([]byte(lines[1]), &listResp); err != nil {
+	if err := json.Unmarshal(answers[2].Result, &listResult); err != nil {
 		t.Fatalf("unmarshal tools/list: %v", err)
 	}
-	for _, tl := range listResp.Result.Tools {
+	for _, tl := range listResult.Tools {
 		if strings.HasPrefix(tl.Name, "cli-") {
 			t.Errorf("the default tool list carries a generated command tool %q", tl.Name)
 		}
 	}
 
 	// The capability listing carries one tool per non-exempt runnable command.
-	var callResp struct {
-		Result struct {
-			StructuredContent struct {
-				Capabilities []struct {
-					Name        string `json:"name"`
-					Description string `json:"description"`
-					Deferred    bool   `json:"deferred"`
-				} `json:"capabilities"`
-			} `json:"structuredContent"`
-		} `json:"result"`
+	var callResult struct {
+		StructuredContent struct {
+			Capabilities []struct {
+				Name        string `json:"name"`
+				Description string `json:"description"`
+				Deferred    bool   `json:"deferred"`
+			} `json:"capabilities"`
+		} `json:"structuredContent"`
 	}
-	if err := json.Unmarshal([]byte(lines[2]), &callResp); err != nil {
+	if err := json.Unmarshal(answers[3].Result, &callResult); err != nil {
 		t.Fatalf("unmarshal describe-capabilities: %v", err)
 	}
 	surfaced := map[string]bool{}
-	for _, c := range callResp.Result.StructuredContent.Capabilities {
+	for _, c := range callResult.StructuredContent.Capabilities {
 		surfaced[c.Name] = true
 	}
 
@@ -290,42 +345,35 @@ func servedToolDescriptions(t *testing.T, surface []mcp.CommandSurface) map[stri
 		t.Fatalf("mcp.Run: %v (stderr: %s)", err, stderr.String())
 	}
 
-	lines := strings.Split(strings.TrimSpace(stdout.String()), "\n")
-	if len(lines) != 3 {
-		t.Fatalf("got %d response lines, want 3:\n%s", len(lines), stdout.String())
-	}
+	answers := answersByID(t, stdout.String(), 1, 2, 3)
 
 	out := map[string]string{}
 
-	var listResp struct {
-		Result struct {
-			Tools []struct {
-				Name        string `json:"name"`
-				Description string `json:"description"`
-			} `json:"tools"`
-		} `json:"result"`
+	var listResult struct {
+		Tools []struct {
+			Name        string `json:"name"`
+			Description string `json:"description"`
+		} `json:"tools"`
 	}
-	if err := json.Unmarshal([]byte(lines[1]), &listResp); err != nil {
+	if err := json.Unmarshal(answers[2].Result, &listResult); err != nil {
 		t.Fatalf("unmarshal tools/list: %v", err)
 	}
-	for _, tl := range listResp.Result.Tools {
+	for _, tl := range listResult.Tools {
 		out[tl.Name] = tl.Description
 	}
 
-	var callResp struct {
-		Result struct {
-			StructuredContent struct {
-				Capabilities []struct {
-					Name        string `json:"name"`
-					Description string `json:"description"`
-				} `json:"capabilities"`
-			} `json:"structuredContent"`
-		} `json:"result"`
+	var callResult struct {
+		StructuredContent struct {
+			Capabilities []struct {
+				Name        string `json:"name"`
+				Description string `json:"description"`
+			} `json:"capabilities"`
+		} `json:"structuredContent"`
 	}
-	if err := json.Unmarshal([]byte(lines[2]), &callResp); err != nil {
+	if err := json.Unmarshal(answers[3].Result, &callResult); err != nil {
 		t.Fatalf("unmarshal describe-capabilities: %v", err)
 	}
-	for _, c := range callResp.Result.StructuredContent.Capabilities {
+	for _, c := range callResult.StructuredContent.Capabilities {
 		out[c.Name] = c.Description
 	}
 	return out
@@ -471,31 +519,19 @@ func TestNoToolRunsAGuestFromACallerSuppliedPath(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("mcp.Run: %v (stderr: %s)", err, stderr.String())
 	}
-	lines := strings.Split(strings.TrimSpace(stdout.String()), "\n")
-	if len(lines) != 2 {
-		t.Fatalf("got %d response lines, want 2:\n%s", len(lines), stdout.String())
-	}
+	answers := answersByID(t, stdout.String(), 1, 2)
 
-	var callResp struct {
-		Result json.RawMessage `json:"result"`
-		Error  *struct {
-			Code    int    `json:"code"`
-			Message string `json:"message"`
-		} `json:"error"`
+	call := answers[2]
+	if call.Error == nil {
+		t.Fatalf("calling %q was answered rather than refused: %s", withheld, string(call.Result))
 	}
-	if err := json.Unmarshal([]byte(lines[1]), &callResp); err != nil {
-		t.Fatalf("unmarshal tools/call %s: %v", withheld, err)
-	}
-	if callResp.Error == nil {
-		t.Fatalf("calling %q was answered rather than refused: %s", withheld, string(callResp.Result))
-	}
-	if !strings.Contains(callResp.Error.Message, withheld) {
-		t.Errorf("the refusal does not name what was refused: %q", callResp.Error.Message)
+	if !strings.Contains(call.Error.Message, withheld) {
+		t.Errorf("the refusal does not name what was refused: %q", call.Error.Message)
 	}
 	for _, pointer := range []string{"available tools", "describe-capabilities"} {
-		if !strings.Contains(callResp.Error.Message, pointer) {
+		if !strings.Contains(call.Error.Message, pointer) {
 			t.Errorf("the refusal does not point the caller at %s, so an assistant meeting it learns only "+
-				"that something failed: %q", pointer, callResp.Error.Message)
+				"that something failed: %q", pointer, call.Error.Message)
 		}
 	}
 }
