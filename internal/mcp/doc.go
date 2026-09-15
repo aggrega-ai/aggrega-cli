@@ -3,10 +3,16 @@
 
 // Package mcp implements the stdio Model Context Protocol server invoked
 // by `aggrega mcp`. The server speaks newline-delimited JSON-RPC 2.0 over
-// stdin/stdout, targeting protocol revision 2025-06-18: it completes the
-// initialize handshake, advertises tool, resource, and prompt
-// capabilities, and answers the list and dispatch methods an AI assistant
+// stdin/stdout, and answers the list and dispatch methods an AI assistant
 // uses to discover and invoke the server's surface.
+//
+// It speaks two protocol revisions, so a client of either connects. In
+// 2026-07-28 a request states the revision it speaks and the capabilities
+// its sender offers, and server/discover advertises the revisions, the
+// tool, resource and prompt capabilities, and the connect-time guidance. In
+// 2025-06-18 the initialize handshake advertises the same, and a client
+// selects that revision by opening with it. Which revision a request speaks
+// is read off that request; nothing is remembered between them.
 //
 // The transport is strict about stream ownership. stdout carries only
 // framed protocol messages — one compact JSON object per line — so a

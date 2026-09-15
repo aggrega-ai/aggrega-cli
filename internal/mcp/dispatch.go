@@ -19,13 +19,31 @@ import (
 // the prompt surfaces list and render the authoring personas and the workflow
 // calling sequences. An unrecognized method returns the standard method-not-found
 // envelope.
+//
+// The revision a request speaks is read off the request before anything is
+// routed, and a request that claims the per-request revision without
+// conforming to it is refused here rather than reaching a handler. Two methods
+// belong to one revision only: initialize is the handshake revision's own, and
+// server/discover carries the same facts in the per-request revision, so a
+// request reaching for either from the wrong revision is told the server does
+// not serve that method.
+//
 // ctx is the run's own. It reaches every tool invocation and the resource reads
 // that leave the process, so ending the run ends what a call is doing rather
 // than only refusing the next message.
 func (s *server) dispatch(ctx context.Context, req *rpcRequest) (any, *rpcError) {
+	era, protocolErr := readRequestProtocol(req.Params)
+	if protocolErr != nil {
+		return nil, protocolErr
+	}
 	switch req.Method {
 	case "initialize":
 		return s.handleInitialize(req.Params)
+	case "server/discover":
+		if era != eraPerRequest {
+			return nil, methodNotFound(req.Method)
+		}
+		return s.handleDiscover()
 	case "ping":
 		return struct{}{}, nil
 	case "tools/list":
@@ -43,8 +61,16 @@ func (s *server) dispatch(ctx context.Context, req *rpcRequest) (any, *rpcError)
 	case "resources/read":
 		return s.handleResourcesRead(ctx, req.Params)
 	default:
-		return nil, &rpcError{Code: codeMethodNotFound, Message: "method not found: " + req.Method}
+		return nil, methodNotFound(req.Method)
 	}
+}
+
+// methodNotFound builds the standard envelope for a method this server does
+// not serve. It is the one home for that answer, so a method the server serves
+// in one revision and not the other is indistinguishable from a method it has
+// never heard of — which is what a client in the wrong revision should see.
+func methodNotFound(method string) *rpcError {
+	return &rpcError{Code: codeMethodNotFound, Message: "method not found: " + method}
 }
 
 // allResourceTemplates advertises every URI-template family the read surface
@@ -117,25 +143,23 @@ func (s *server) handleInitialize(params json.RawMessage) (any, *rpcError) {
 	}
 	return initializeResult{
 		ProtocolVersion: negotiateProtocolVersion(p.ProtocolVersion),
-		Capabilities: serverCapabilities{
-			Tools:     &toolsCapability{ListChanged: false},
-			Resources: &resourcesCapability{Subscribe: false, ListChanged: false},
-			Prompts:   &promptsCapability{ListChanged: false},
-		},
-		ServerInfo:   implementation{Name: serverName, Version: s.serverVersion},
-		Instructions: serverInstructions,
+		Capabilities:    serverCapabilitySet(),
+		ServerInfo:      s.identity(),
+		Instructions:    serverInstructions,
 	}, nil
 }
 
 // negotiateProtocolVersion returns the revision the handshake settles on:
 // the client's requested revision when the server supports it, otherwise
-// the server's own revision, which signals the client to adopt it or
-// disconnect.
+// the revision the handshake is defined in, which signals the client to
+// adopt it or disconnect. A client reaching this exchange at all has chosen
+// the handshake, so the other revision this server speaks is not on offer
+// here — a client that wants it states it on each request instead.
 func negotiateProtocolVersion(requested string) string {
-	if requested == protocolVersion {
+	if requested == handshakeRevision {
 		return requested
 	}
-	return protocolVersion
+	return handshakeRevision
 }
 
 // handleResourcesRead dispatches a resources/read request. It validates the

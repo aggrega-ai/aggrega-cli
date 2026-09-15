@@ -5,11 +5,23 @@ package mcp
 
 import "encoding/json"
 
-// protocolVersion is the Model Context Protocol revision this server
-// implements. The initialize handshake echoes it when the client
-// requests a supported revision, and otherwise reports it as the
-// revision the client should adopt.
-const protocolVersion = "2025-06-18"
+// The two Model Context Protocol revisions this server speaks, each named
+// for the shape of the exchange it defines rather than for its place in a
+// sequence.
+//
+// perRequestRevision carries no connection-level negotiation at all: every
+// request states the revision it speaks and the capabilities its sender
+// offers, every result carries its type and the server's identity, and
+// server/discover advertises what the server supports.
+//
+// handshakeRevision settles those same facts once, in an initialize
+// exchange, and a client selects it by opening with that handshake. It is
+// spoken for the deprecation window the protocol's own lifecycle policy
+// grants, so a client that has not moved still connects.
+const (
+	perRequestRevision = "2026-07-28"
+	handshakeRevision  = "2025-06-18"
+)
 
 // serverName is the implementation identity reported to the client in the
 // initialize handshake's serverInfo block.
@@ -18,13 +30,22 @@ const serverName = "aggrega"
 // JSON-RPC 2.0 and Model Context Protocol error codes. The first block is
 // the standard JSON-RPC range; resourceNotFound is the protocol-specific
 // code the read surface returns for an unknown resource URI.
+//
+// unsupportedProtocolVersion is allocated by the 2026-07-28 revision, which
+// also fixes the payload it carries: the revisions the server does speak and
+// the one the request asked for. The other two codes that revision allocates
+// are not declared here, because this server never emits them: one reports a
+// mismatch between a request's transport headers and its body, and the other
+// reports a client capability the server needed and the request did not
+// declare, which nothing here requires.
 const (
-	codeParseError       = -32700
-	codeInvalidRequest   = -32600
-	codeMethodNotFound   = -32601
-	codeInvalidParams    = -32602
-	codeInternalError    = -32603
-	codeResourceNotFound = -32002
+	codeParseError                 = -32700
+	codeInvalidRequest             = -32600
+	codeMethodNotFound             = -32601
+	codeInvalidParams              = -32602
+	codeInternalError              = -32603
+	codeResourceNotFound           = -32002
+	codeUnsupportedProtocolVersion = -32022
 )
 
 // rpcRequest is the wire shape for an incoming JSON-RPC 2.0 message. An
@@ -87,6 +108,14 @@ type implementation struct {
 	Version string `json:"version,omitempty"`
 }
 
+// identity is this server's own implementation identity. Both revisions
+// report it — the handshake in its serverInfo block, the per-request
+// revision under the reserved metadata key on every result — so the two
+// read it from here rather than each composing one.
+func (s *server) identity() implementation {
+	return implementation{Name: serverName, Version: s.serverVersion}
+}
+
 // serverCapabilities advertises the feature groups the server supports.
 // Each group is present when the server serves it; the list and dispatch
 // surfaces for tools, resources, and prompts are all present even while
@@ -95,6 +124,17 @@ type serverCapabilities struct {
 	Tools     *toolsCapability     `json:"tools,omitempty"`
 	Resources *resourcesCapability `json:"resources,omitempty"`
 	Prompts   *promptsCapability   `json:"prompts,omitempty"`
+}
+
+// serverCapabilitySet is the one statement of what this server advertises.
+// The initialize handshake and server/discover both answer from here, so the
+// two revisions cannot come to advertise different surfaces.
+func serverCapabilitySet() serverCapabilities {
+	return serverCapabilities{
+		Tools:     &toolsCapability{ListChanged: false},
+		Resources: &resourcesCapability{Subscribe: false, ListChanged: false},
+		Prompts:   &promptsCapability{ListChanged: false},
+	}
 }
 
 // toolsCapability advertises the tools surface. ListChanged reports

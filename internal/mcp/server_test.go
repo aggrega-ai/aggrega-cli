@@ -52,8 +52,8 @@ func TestInitializeHandshakeAdvertisesCapabilities(t *testing.T) {
 	if err := json.Unmarshal(resps[0].Result, &res); err != nil {
 		t.Fatalf("unmarshal initialize result: %v", err)
 	}
-	if res.ProtocolVersion != protocolVersion {
-		t.Errorf("protocolVersion = %q, want %q", res.ProtocolVersion, protocolVersion)
+	if res.ProtocolVersion != handshakeRevision {
+		t.Errorf("protocolVersion = %q, want %q", res.ProtocolVersion, handshakeRevision)
 	}
 	if res.ServerInfo.Name != serverName {
 		t.Errorf("serverInfo.name = %q, want %q", res.ServerInfo.Name, serverName)
@@ -83,8 +83,8 @@ func TestUnsupportedProtocolVersionReportsServerRevision(t *testing.T) {
 	if err := json.Unmarshal(resps[0].Result, &res); err != nil {
 		t.Fatalf("unmarshal initialize result: %v", err)
 	}
-	if res.ProtocolVersion != protocolVersion {
-		t.Errorf("protocolVersion = %q, want server revision %q", res.ProtocolVersion, protocolVersion)
+	if res.ProtocolVersion != handshakeRevision {
+		t.Errorf("protocolVersion = %q, want server revision %q", res.ProtocolVersion, handshakeRevision)
 	}
 }
 
