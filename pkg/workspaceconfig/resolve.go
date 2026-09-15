@@ -569,11 +569,15 @@ func LooksLikeOCIURI(uri string) bool {
 	return false
 }
 
-// resolveConfigPaths resolves a layer's relative BASE path fields — workspace
-// catalog_dirs and the four plugin-socket URIs — against dir, the directory of
-// the config file that declared them. Absolute values carried from a
-// farther-out layer pass through, so calling this after each layer's overlay is
-// idempotent: only the relative fields this layer wrote are anchored.
+// resolveConfigPaths resolves a layer's relative BASE path fields against dir,
+// the directory of the config file that declared them. Which fields those are is
+// stated by the body below and is deliberately not repeated here: a list beside
+// the calls it describes goes stale at the next field that joins them, and
+// nothing compares the two.
+//
+// Absolute values carried from a farther-out layer pass through, so calling this
+// after each layer's overlay is idempotent: only the relative fields this layer
+// wrote are anchored.
 func resolveConfigPaths(cfg *Config, dir string) {
 	for i, d := range cfg.Workspace.CatalogDirs {
 		cfg.Workspace.CatalogDirs[i] = resolveFilesystemPath(dir, d)
@@ -581,6 +585,13 @@ func resolveConfigPaths(cfg *Config, dir string) {
 	resolvePluginURIs(cfg.Plugins.Governance, dir)
 	resolvePluginURIs(cfg.Plugins.Linter, dir)
 	resolvePluginURIs(cfg.Plugins.Importer, dir)
+	// The listener's certificate and key are declaring-file-relative on the same
+	// terms as every path above: the reader who wrote them named a file beside
+	// the configuration that names it, and resolving them anywhere else would
+	// make where the process looks depend on the directory it happened to be
+	// launched from.
+	cfg.MCP.TLS.CertFile = resolveFilesystemPath(dir, cfg.MCP.TLS.CertFile)
+	cfg.MCP.TLS.KeyFile = resolveFilesystemPath(dir, cfg.MCP.TLS.KeyFile)
 }
 
 // resolveAppendPaths resolves a captured layer's relative `_append` path fields

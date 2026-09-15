@@ -182,6 +182,7 @@ func NewHTTPHandler(ctx context.Context, cfg Config, transport HTTPConfig) (http
 		toolchain:     cfg.Toolchain,
 		commandTools:  deriveCommandTools(cfg.Commands),
 		renderHelp:    cfg.RenderHelp,
+		startDir:      cfg.WorkspaceRoot,
 	}
 	s.ensureDocsBundle(ctx)
 	return newHTTPHandler(ctx, s, transport)

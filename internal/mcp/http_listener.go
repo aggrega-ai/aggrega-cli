@@ -1,0 +1,314 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Cognitio S.r.l.
+
+package mcp
+
+import (
+	"context"
+	"crypto/tls"
+	"errors"
+	"fmt"
+	"io"
+	"log"
+	"net"
+	"net/http"
+	"os"
+	"strings"
+	"time"
+)
+
+// unixAddressPrefix introduces the second of the two listen-address forms: this
+// prefix followed by a filesystem path, which is bound as a Unix domain socket.
+// Anything not carrying it is read as the first form, a host and a port.
+const unixAddressPrefix = "unix:"
+
+// loopbackHostname is the one name a listen address may use in place of a
+// loopback literal. It is checked by resolving it and requiring every address it
+// resolves to be a loopback address, because the name is what an operator types
+// while the addresses behind it are what the listener will actually accept on.
+//
+// No other name is treated this way: a name that happens to resolve to a
+// loopback address is a network address here, because reading it otherwise would
+// make where a listener may bind depend on a resolution that can change under it.
+const loopbackHostname = "localhost"
+
+// listenerDrainBudget bounds how long a listener whose run has ended keeps
+// answering before it is closed outright.
+//
+// It is the budget the editor backend already holds for the same moment, and one
+// number rather than two because both answer the same question: how long a
+// request already accepted may go on being answered after the process has been
+// asked to stop. A request still in flight finishes and its answer reaches the
+// caller; one that has not finished by then loses its connection, which is what a
+// caller of a stopping process should expect.
+const listenerDrainBudget = 2 * time.Second
+
+// ListenConfig carries what selects and shapes the listener itself, as distinct
+// from HTTPConfig, which carries what the handler applies to traffic already
+// accepted.
+//
+// An empty Address is not a value this type describes: the command layer starts
+// no listener at all in that case and speaks the protocol over standard input
+// and output instead.
+type ListenConfig struct {
+	// Address is where the listener binds, in one of two forms: "host:port", or
+	// "unix:" followed by a filesystem path.
+	//
+	// With neither TLS file below set, the listener serves plaintext, and a
+	// plaintext listener is permitted only on loopback or on a Unix socket — the
+	// shape a deployment behind a terminating proxy takes. Any other address is
+	// refused before anything binds.
+	Address string
+
+	// CertFile is the path to the PEM certificate chain the listener presents,
+	// and KeyFile the path to that certificate's PEM private key. They are set
+	// together: with both set the process terminates TLS itself and may serve on
+	// any address, with neither set it serves plaintext under the confinement
+	// above, and one without the other is refused.
+	CertFile string
+	KeyFile  string
+}
+
+// ListenAndServe answers the protocol over HTTP until ctx ends.
+//
+// It is the entry point the `aggrega mcp` command calls when a listen address is
+// configured, and the counterpart of Run, which speaks the same protocol over
+// standard input and output. Everything a request can influence is settled by
+// the handler NewHTTPHandler builds; what this adds is where that handler is
+// reachable from, whether the connection carrying a request is encrypted, and
+// the end of the listener's life.
+//
+// The order of the three steps below is the contract rather than an arrangement.
+// Every refusal this transport can make about its own configuration is made
+// first, with nothing yet built and nothing yet bound, so a misconfigured
+// deployment fails at startup rather than after an address is already accepting.
+// The handler is built second, because acquiring the documentation bundle is the
+// expensive step and there is no reason to pay it for a deployment that is about
+// to be refused. Only then is anything bound.
+func ListenAndServe(ctx context.Context, cfg Config, transport HTTPConfig, listen ListenConfig) error {
+	target, cert, err := resolveListenTarget(listen)
+	if err != nil {
+		return err
+	}
+	handler, err := NewHTTPHandler(ctx, cfg, transport)
+	if err != nil {
+		return err
+	}
+	l, err := bindHTTPListener(target, cert, handler, cfg.Stderr)
+	if err != nil {
+		return err
+	}
+	return l.serve(ctx)
+}
+
+// listenTarget is a parsed listen address: what to bind, where, and whether a
+// plaintext listener is permitted there.
+type listenTarget struct {
+	network string
+	address string
+
+	// confined reports that a caller reaching this address is already on the
+	// machine — a loopback address or a Unix socket — so a listener presenting no
+	// certificate of its own exposes nothing to a network peer.
+	confined bool
+}
+
+// resolveListenTarget settles every refusal this transport can make about its
+// own configuration, and reaches nothing outside the configuration and the two
+// files it names.
+//
+// The address is parsed and the TLS material read first, because each is a
+// question about one setting. The confinement follows, because it is a question
+// about the two of them together: whether a plaintext listener — which is what
+// having no certificate means — may bind where the address says.
+func resolveListenTarget(listen ListenConfig) (listenTarget, *tls.Certificate, error) {
+	target, err := parseListenAddress(listen.Address)
+	if err != nil {
+		return listenTarget{}, nil, err
+	}
+	cert, err := loadListenerCertificate(listen)
+	if err != nil {
+		return listenTarget{}, nil, err
+	}
+	if cert == nil && !target.confined {
+		return listenTarget{}, nil, fmt.Errorf(
+			"a listener with no certificate serves plaintext, which is permitted only on loopback or on a "+
+				"Unix socket, and %q is neither: set mcp.tls.cert_file and mcp.tls.key_file so this process "+
+				"terminates TLS itself, or listen on 127.0.0.1, ::1, localhost, or unix: followed by a path",
+			listen.Address)
+	}
+	return target, cert, nil
+}
+
+// httpListener is a bound listener with the server that answers on it. Binding
+// and serving are separate so a caller can read the address that was actually
+// bound before any traffic reaches it.
+type httpListener struct {
+	ln   net.Listener
+	srv  *http.Server
+	cert *tls.Certificate
+}
+
+// bindHTTPListener binds the resolved target and builds the server that answers
+// on it. Every refusal is already behind it, so the only failure left here is
+// the bind itself.
+//
+// logw is where a connection-level failure is reported; a nil value is the
+// process's own error stream, matching every other stream default in this
+// package.
+func bindHTTPListener(target listenTarget, cert *tls.Certificate,
+	handler http.Handler, logw io.Writer) (*httpListener, error) {
+	ln, err := net.Listen(target.network, target.address)
+	if err != nil {
+		return nil, fmt.Errorf("listen on %s: %w", target.address, err)
+	}
+	if logw == nil {
+		logw = os.Stderr
+	}
+	srv := &http.Server{
+		Handler: handler,
+		// net/http reports a connection-level failure on its own logger, which
+		// writes to the process's standard error by default. It is pointed at the
+		// stream every other diagnostic here goes to instead, carrying the prefix
+		// every one of them carries, so one reader of one stream sees all of them.
+		ErrorLog: log.New(logw, "mcp: ", 0),
+	}
+	if cert != nil {
+		srv.TLSConfig = &tls.Config{Certificates: []tls.Certificate{*cert}, MinVersion: tls.VersionTLS12}
+	}
+	return &httpListener{ln: ln, srv: srv, cert: cert}, nil
+}
+
+// serve answers on the bound listener until ctx ends, then drains it within the
+// budget and closes it.
+//
+// Draining stops the listener accepting immediately and lets a request already
+// being answered finish, which is what makes the end of a run different from the
+// connection simply dropping: a caller that asked for something before the stop
+// still gets its answer. A request that has not finished inside the budget loses
+// its connection, so the process ends rather than being held open by one call.
+// The second stop request is not handled here — the command layer ends the
+// process outright on it, which is the shape every long-running command in this
+// binary takes.
+func (l *httpListener) serve(ctx context.Context) error {
+	served := make(chan error, 1)
+	go func() {
+		if l.cert != nil {
+			// The certificate is already loaded and installed on the TLS
+			// configuration, so the two file arguments are left empty rather than
+			// naming the same files a second time.
+			served <- l.srv.ServeTLS(l.ln, "", "")
+			return
+		}
+		served <- l.srv.Serve(l.ln)
+	}()
+
+	select {
+	case err := <-served:
+		return listenerExitError(err)
+	case <-ctx.Done():
+		// The budget is measured from the stop rather than inherited from the
+		// context that just ended, which has no time left to give.
+		drainCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), listenerDrainBudget)
+		defer cancel()
+		if err := l.srv.Shutdown(drainCtx); err != nil {
+			_ = l.srv.Close()
+		}
+		return listenerExitError(<-served)
+	}
+}
+
+// listenerExitError reads what serving returned. A server that was shut down or
+// closed reports that as an error, and here it is the ordinary end of a run
+// rather than a failure, so it is reported as no error at all.
+func listenerExitError(err error) error {
+	if errors.Is(err, http.ErrServerClosed) {
+		return nil
+	}
+	return err
+}
+
+// parseListenAddress reads a listen address into what it takes to bind it.
+//
+// A value carrying the Unix prefix is a socket path and is taken as written,
+// including a relative one: the path is the deployment's own and nothing here
+// re-anchors it. Everything else is a host and a port, and a value that is
+// neither is reported as neither rather than being bound as a host with no port.
+func parseListenAddress(raw string) (listenTarget, error) {
+	if raw == "" {
+		return listenTarget{}, errors.New("listen address is empty")
+	}
+	if path, isUnix := strings.CutPrefix(raw, unixAddressPrefix); isUnix {
+		if path == "" {
+			return listenTarget{}, fmt.Errorf(
+				"listen address %q names no socket path after %q", raw, unixAddressPrefix)
+		}
+		return listenTarget{network: "unix", address: path, confined: true}, nil
+	}
+	host, port, err := net.SplitHostPort(raw)
+	if err != nil {
+		return listenTarget{}, fmt.Errorf(
+			"listen address %q is neither host:port nor a path introduced by %q: %w", raw, unixAddressPrefix, err)
+	}
+	if port == "" {
+		return listenTarget{}, fmt.Errorf("listen address %q names no port", raw)
+	}
+	return listenTarget{network: "tcp", address: raw, confined: hostIsLoopback(host)}, nil
+}
+
+// hostIsLoopback reports whether a listener bound to this host accepts only from
+// the machine it runs on.
+//
+// An empty host is every interface the machine has, which is the opposite of
+// loopback however it is spelled. An address literal is read directly. The one
+// name is resolved, and every address behind it must be loopback: a name
+// resolving to both a loopback address and a routable one would accept from the
+// network on the second while looking confined on the first.
+func hostIsLoopback(host string) bool {
+	if host == "" {
+		return false
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		return ip.IsLoopback()
+	}
+	if host != loopbackHostname {
+		return false
+	}
+	addrs, err := net.LookupHost(host)
+	if err != nil || len(addrs) == 0 {
+		return false
+	}
+	for _, a := range addrs {
+		ip := net.ParseIP(a)
+		if ip == nil || !ip.IsLoopback() {
+			return false
+		}
+	}
+	return true
+}
+
+// loadListenerCertificate reads the certificate the listener presents, or
+// reports that the deployment configured none.
+//
+// The two paths are one setting in two halves: a certificate with no key cannot
+// be presented and a key with no certificate names nothing, so one without the
+// other is refused rather than silently falling back to plaintext — which would
+// turn a typo in one path into a listener serving unencrypted traffic.
+func loadListenerCertificate(listen ListenConfig) (*tls.Certificate, error) {
+	switch {
+	case listen.CertFile == "" && listen.KeyFile == "":
+		return nil, nil
+	case listen.CertFile == "":
+		return nil, errors.New(
+			"mcp.tls.key_file is set and mcp.tls.cert_file is not; a listener that terminates TLS needs both")
+	case listen.KeyFile == "":
+		return nil, errors.New(
+			"mcp.tls.cert_file is set and mcp.tls.key_file is not; a listener that terminates TLS needs both")
+	}
+	cert, err := tls.LoadX509KeyPair(listen.CertFile, listen.KeyFile)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"read the certificate and key named by mcp.tls.cert_file and mcp.tls.key_file: %w", err)
+	}
+	return &cert, nil
+}

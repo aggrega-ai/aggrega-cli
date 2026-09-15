@@ -69,6 +69,17 @@ type Config struct {
 	// answered as a resource that is not there, on every transport. That is the
 	// shape every test that is not about the family runs in.
 	RenderHelp HelpRenderer
+
+	// WorkspaceRoot is the workspace this process serves, fixed when it was
+	// launched: the --workspace-root flag when the operator set it, otherwise
+	// AGGREGA_WORKSPACE_ROOT. Empty resolves from the process working directory,
+	// which is what a client launching this server inside a project gets.
+	//
+	// It is where resolution begins for a call that names no workspace of its
+	// own; a call that does name one is answered in the workspace it named. It
+	// binds on every transport, because which workspace a process serves is a
+	// property of the process rather than of how a client reached it.
+	WorkspaceRoot string
 }
 
 // server holds the per-session transport state: the sole stdout writer
@@ -235,6 +246,7 @@ func Run(ctx context.Context, cfg Config) error {
 		toolchain:     cfg.Toolchain,
 		commandTools:  deriveCommandTools(cfg.Commands),
 		renderHelp:    cfg.RenderHelp,
+		startDir:      cfg.WorkspaceRoot,
 	}
 	return s.run(ctx, stdin)
 }

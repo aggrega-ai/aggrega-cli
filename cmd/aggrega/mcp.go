@@ -13,8 +13,23 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// helpListen is the listen flag's help text, held beside the wiring that reads
+// it so the promise a reader is given and the layer that keeps it sit together.
+//
+// It names the confinement because that is the one thing a reader can be
+// refused for at startup, and a reader who meets that refusal needs the two
+// settings that lift it in the same breath as the rule that raised it.
+const helpListen = "Serve the protocol over HTTP on this address instead of standard input and " +
+	"output, in one of two forms: host:port, or unix: followed by a filesystem path. Without " +
+	"it, and with no mcp.listen in the workspace configuration, the server speaks over standard " +
+	"input and output. A listener with no certificate serves plaintext and is permitted only on " +
+	"loopback (127.0.0.1, ::1, localhost) or on a Unix socket, which is the shape a deployment " +
+	"behind a terminating proxy takes; any other address needs mcp.tls.cert_file and " +
+	"mcp.tls.key_file, which this process then uses to terminate TLS itself. When set, overrides " +
+	"the mcp.listen config key."
+
 func newMCPCmd() *cobra.Command {
-	return &cobra.Command{
+	c := &cobra.Command{
 		Use:   "mcp",
 		Short: "Run a Model Context Protocol server over stdio for AI-assistant integration",
 		Long: `Run Aggrega as a Model Context Protocol (MCP) server over stdio, so an
@@ -61,14 +76,48 @@ is doing, and exits cleanly. A second request ends the process at once.`,
 		Args: cobra.NoArgs,
 		RunE: runMCP,
 	}
+	c.Flags().String("listen", "", helpListen)
+	return c
 }
 
+// runMCP starts the server on the transport the invocation selects.
+//
+// The two transports differ in how a client reaches the server and in nothing
+// else: the same configuration, the same workspace and the same tool surface go
+// to both, and the branch below is the whole of the difference.
+//
+// The listen address is read from the flag when the reader set it and from the
+// workspace configuration otherwise. Reading whether the flag CHANGED rather
+// than what it holds is what makes an unset flag fall through to the config key
+// instead of forcing an empty value over it — the same ladder the editor
+// backend's own launch dial takes.
 func runMCP(cmd *cobra.Command, args []string) error {
-	return mcp.Run(cmd.Context(), mcp.Config{
+	flagRoot, _ := cmd.Flags().GetString("workspace-root")
+	root, err := validateWorkspaceRootFlag(workspaceRootFromFlagOrEnv(cmd, flagRoot, nil))
+	if err != nil {
+		return err
+	}
+
+	// The workspace is read through the resolution every command reads, so the
+	// mcp block this launch honours is the one the cascade composed rather than
+	// one loaded a second time here.
+	ws, err := workspaceFromContext(cmd.Context())
+	if err != nil {
+		return err
+	}
+	settings := ws.Config().MCP
+
+	listen := settings.Listen
+	if cmd.Flags().Changed("listen") {
+		listen, _ = cmd.Flags().GetString("listen")
+	}
+
+	cfg := mcp.Config{
 		Stdin:         cmd.InOrStdin(),
 		Stdout:        cmd.OutOrStdout(),
 		Stderr:        cmd.ErrOrStderr(),
 		ServerVersion: provenanceCompilerVersion(),
+		WorkspaceRoot: root,
 		// Supplied for the same reason the command surface below is: the value
 		// belongs to this package and the server lives under it. Both halves of the
 		// stamp are read through the derivations this package already owns, so a
@@ -79,7 +128,26 @@ func runMCP(cmd *cobra.Command, args []string) error {
 		// Supplied from here for the same reason, and over the same tree: the
 		// help a cli:// read serves is the help this tree prints.
 		RenderHelp: commandHelp(cmd.Root()),
-	})
+	}
+
+	if listen == "" {
+		return mcp.Run(cmd.Context(), cfg)
+	}
+	// cmd.Context() is the run's context, which ends when the process is first
+	// asked to stop. The listener reads it as the signal to stop accepting and
+	// drain, so a termination request from a supervisor ends it on the same terms
+	// the standard-input transport ends on.
+	return mcp.ListenAndServe(cmd.Context(), cfg,
+		mcp.HTTPConfig{
+			AllowedOrigins:        settings.AllowedOrigins,
+			MaxBodyBytes:          settings.Limits.MaxBodyBytes,
+			MaxConcurrentRequests: settings.Limits.MaxConcurrentRequests,
+		},
+		mcp.ListenConfig{
+			Address:  listen,
+			CertFile: settings.TLS.CertFile,
+			KeyFile:  settings.TLS.KeyFile,
+		})
 }
 
 // commandSurface projects the live command tree into the surface the MCP server

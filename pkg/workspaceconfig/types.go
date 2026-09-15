@@ -861,6 +861,12 @@ type MCPConfig struct {
 // the serving process reads at startup to terminate TLS itself. Both are
 // paths to files; neither holds key material inline, which is the same
 // split SigningConfig draws between an inline public key and a key path.
+//
+// A relative path is resolved against the directory of the config file
+// that declared it, on the same terms as every other declaring-file-
+// relative path the cascade carries, so a certificate named beside the
+// configuration that names it is found wherever the process was launched
+// from.
 type MCPTLSConfig struct {
 	// CertFile is the path to the PEM certificate chain the listener
 	// presents. Set together with KeyFile; empty (the default) serves
