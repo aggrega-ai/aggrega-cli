@@ -57,7 +57,10 @@ pull.
 
 Push signs before it publishes: where signing applies, the signature is made
 over the manifest digest before any bytes reach the registry, so a failed
-signing refuses the push rather than leaving unsigned content published.`,
+signing refuses the push rather than leaving unsigned content published.
+
+Push refuses to replace content already published at the same version:
+publish changed content under a new version instead.`,
 		Example: `  # Publish to the workspace's default registry
   aggrega push catalog/components/api-server.yaml
 
