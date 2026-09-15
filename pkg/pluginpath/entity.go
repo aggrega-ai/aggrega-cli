@@ -24,7 +24,10 @@ func ErrPluginEntityNotFound() error { return errPluginEntityNotFound }
 var errPluginEntityNotFound = cerrors.Register("plugin-entity-not-found", cerrors.Meta{
 	ShortCode: "E0145",
 	Message:   "plugin reference is not a Plugin entity",
-	RulePlace: cerrors.RuleOverAuthoredInput(),
+	RulePlace: cerrors.RuleNoStageReaches("Plugin resolution evaluates the rule, when a reference is checked against the form its surface " +
+		"accepts and then translated to the Plugin entity it must name. Resolution loads the plugin a " +
+		"socket will run, so it happens ahead of every declared stage and no stage holds the reference or " +
+		"the entity index it is matched against."),
 })
 
 // EntityLookup adapts the artifact-resolving cascade into an entity-fronted

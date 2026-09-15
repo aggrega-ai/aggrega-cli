@@ -46,7 +46,10 @@ func ErrNoParserForFormat() error { return errNoParserForFormat }
 var errNoParserForFormat = cerrors.Register("no-parser-for-format", cerrors.Meta{
 	ShortCode: "E0098",
 	Message:   "no parser plugin advertises the requested format",
-	RulePlace: cerrors.RuleOverAuthoredInput(),
+	RulePlace: cerrors.RuleNoStageReaches("The parser socket evaluates the rule, when a source document's declared format is routed to " +
+		"the parser plugin advertising it and the catalog holds none. The routing settles how the document " +
+		"is read at all, so it runs ahead of every declared stage and no stage holds the advertised " +
+		"capability set it matches against."),
 })
 
 // ErrAmbiguousParserPlugin fires at resolution when a requested format is
@@ -62,7 +65,10 @@ func ErrAmbiguousParserPlugin() error { return errAmbiguousParserPlugin }
 var errAmbiguousParserPlugin = cerrors.Register("ambiguous-parser-plugin", cerrors.Meta{
 	ShortCode: "E0091",
 	Message:   "format is advertised by more than one parser plugin",
-	RulePlace: cerrors.RuleOverAuthoredInput(),
+	RulePlace: cerrors.RuleNoStageReaches("The parser socket evaluates the rule, when a source document's declared format is routed to " +
+		"the parser plugin advertising it and more than one does. The routing settles how the document is " +
+		"read at all, so it runs ahead of every declared stage and no stage holds the advertised " +
+		"capability set it matches against."),
 })
 
 // ParserPluginForFormat resolves a requested source format to the parser Plugin

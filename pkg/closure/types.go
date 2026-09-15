@@ -286,7 +286,10 @@ func ErrSourceTemplateProvidesRef() error { return errSourceTemplateProvidesRef 
 var errSourceTemplateProvidesRef = cerrors.Register("source-template-provides-ref", cerrors.Meta{
 	ShortCode: "E0112",
 	Message:   "resolve: source-template references .provides (invalid reverse reference)",
-	RulePlace: cerrors.RuleOverAuthoredInput(),
+	RulePlace: cerrors.RuleNoStageReaches("Lock-time local resolution evaluates the rule, over a source template met while the closure " +
+		"walk pins what a Release reaches. Locals feed provides and never the reverse, and the resolution " +
+		"runs while the closure is being computed rather than while anything is compiled, so no declared " +
+		"stage holds the template it reads."),
 })
 
 // ResolvedRef captures a single catalog-entity or Wasm-plugin
@@ -440,7 +443,10 @@ func ErrMVSConflict() error { return errMVSConflict }
 var errMVSConflict = cerrors.Register("version-selection-conflict", cerrors.Meta{
 	ShortCode: "E0107",
 	Message:   "resolve: minimal version selection conflict — incompatible library version requirements",
-	RulePlace: cerrors.RuleOverAuthoredInput(),
+	RulePlace: cerrors.RuleNoStageReaches("The closure walk evaluates the rule, when two library consumers it has reached require " +
+		"incompatible major versions of one library. The conflict is a fact about the requirements the " +
+		"walk has accumulated rather than about any one document, and the walk pins a Release's reachable " +
+		"entities rather than compiling them, so no declared stage holds it."),
 })
 
 // ErrUnresolvableURI reports a URI in the Release's closure that names
@@ -457,7 +463,9 @@ func ErrUnresolvableURI() error { return errUnresolvableURI }
 var errUnresolvableURI = cerrors.Register("unresolvable-uri", cerrors.Meta{
 	ShortCode: "E0114",
 	Message:   "resolve: no entity in the catalog matches this URI",
-	RulePlace: cerrors.RuleOverAuthoredInput(),
+	RulePlace: cerrors.RuleNoStageReaches("The closure walk evaluates the rule, when a reference it reached names no entity the catalog " +
+		"holds. The walk pins what a Release reaches rather than compiling it, so no declared stage of a " +
+		"compilation holds either the reference or the catalog it is resolved against."),
 })
 
 // UnresolvedEntityError is a resolution failure the walk raises for ONE
@@ -513,7 +521,9 @@ func ErrInvalidLibraryRef() error { return errInvalidLibraryRef }
 var errInvalidLibraryRef = cerrors.Register("invalid-library-ref", cerrors.Meta{
 	ShortCode: "E0106",
 	Message:   "resolve: invalid library reference URI",
-	RulePlace: cerrors.RuleOverAuthoredInput(),
+	RulePlace: cerrors.RuleNoStageReaches("The closure walk evaluates the rule, over a $ref or $import value met while pinning a " +
+		"Release's reachable entities. The walk reads the reference to decide what to fetch rather than " +
+		"to compile it, so no declared stage of a compilation holds the value the shape is judged on."),
 })
 
 // inputs bundles the four loaded structures ComputeClosure walks.

@@ -35,7 +35,10 @@ func ErrSubAggregateDepth() error { return errSubAggregateDepth }
 var errSubAggregateDepth = cerrors.Register("sub-aggregate-depth", cerrors.Meta{
 	ShortCode: "E0113",
 	Message:   "resolve: sub-aggregate inclusion depth exceeded",
-	RulePlace: cerrors.RuleOverAuthoredInput(),
+	RulePlace: cerrors.RuleNoStageReaches("The closure walk's transitive sub-aggregate descent evaluates the rule, bounding how deep an " +
+		"inclusion chain may run before the descent refuses to continue. The depth is a fact about the " +
+		"descent in flight, and the walk pins a Release's reachable entities rather than compiling them, " +
+		"so no declared stage holds it."),
 })
 
 // AggregateLoader loads the parsed body of a resolved (pinned) sub-aggregate so

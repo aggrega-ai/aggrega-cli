@@ -36,7 +36,11 @@ func ErrPersistentTemplateRequiresStatefulForm() error {
 var errPersistentTemplateRequiresStatefulForm = cerrors.Register("persistent-template-requires-stateful-form", cerrors.Meta{
 	ShortCode: "E0021",
 	Message:   "persistentTemplate volume requires form: stateful",
-	RulePlace: cerrors.RuleOverAuthoredInput(),
+	RulePlace: cerrors.RuleEvaluatedElsewhere("The provider guest rendering the node evaluates this, inside its own module and over the " +
+		"workload the host handed it: a per-replica claim template is coherent only on the shape that " +
+		"gives each replica a stable identity. Which workload shapes a target accepts is the provider's " +
+		"to know and differs between them, so no single rule in the dispatch could be right for every " +
+		"one, and no view of a compilation reaches the guest that decides it."),
 })
 
 // ErrScheduledFormRequiresSchedule is the companion constraint that a
@@ -50,7 +54,11 @@ func ErrScheduledFormRequiresSchedule() error { return errScheduledFormRequiresS
 var errScheduledFormRequiresSchedule = cerrors.Register("scheduled-form-requires-schedule", cerrors.Meta{
 	ShortCode: "E0025",
 	Message:   "form: scheduled requires a schedule",
-	RulePlace: cerrors.RuleOverAuthoredInput(),
+	RulePlace: cerrors.RuleEvaluatedElsewhere("The provider guest rendering the node evaluates this, inside its own module and over the " +
+		"workload the host handed it: a scheduled workload maps to a recurring resource, and with no " +
+		"schedule there is no recurrence to emit. Which workload shapes a target accepts is the " +
+		"provider's to know and differs between them, so no single rule in the dispatch could be right " +
+		"for every one, and no view of a compilation reaches the guest that decides it."),
 })
 
 // ErrScheduleRequiresScheduledForm is the reverse companion constraint: a
@@ -63,7 +71,11 @@ func ErrScheduleRequiresScheduledForm() error { return errScheduleRequiresSchedu
 var errScheduleRequiresScheduledForm = cerrors.Register("schedule-requires-scheduled-form", cerrors.Meta{
 	ShortCode: "E0024",
 	Message:   "schedule requires form: scheduled",
-	RulePlace: cerrors.RuleOverAuthoredInput(),
+	RulePlace: cerrors.RuleEvaluatedElsewhere("The provider guest rendering the node evaluates this, inside its own module and over the " +
+		"workload the host handed it: a schedule has no recurring resource to attach to unless the " +
+		"workload carries the scheduled shape. Which workload shapes a target accepts is the provider's " +
+		"to know and differs between them, so no single rule in the dispatch could be right for every " +
+		"one, and no view of a compilation reaches the guest that decides it."),
 })
 
 // ErrReferenceFormRequiresEndpoint is the companion constraint that a
@@ -76,7 +88,11 @@ func ErrReferenceFormRequiresEndpoint() error { return errReferenceFormRequiresE
 var errReferenceFormRequiresEndpoint = cerrors.Register("reference-form-requires-endpoint", cerrors.Meta{
 	ShortCode: "E0023",
 	Message:   "form: reference requires an endpoint",
-	RulePlace: cerrors.RuleOverAuthoredInput(),
+	RulePlace: cerrors.RuleEvaluatedElsewhere("The provider guest rendering the node evaluates this, inside its own module and over the " +
+		"workload the host handed it: a reference is an external endpoint pointer carrying no compute, " +
+		"so with no endpoint there is nothing for it to point at. Which workload shapes a target accepts " +
+		"is the provider's to know and differs between them, so no single rule in the dispatch could be " +
+		"right for every one, and no view of a compilation reaches the guest that decides it."),
 })
 
 // ErrEndpointRequiresReferenceForm is the reverse companion constraint: an
@@ -89,7 +105,11 @@ func ErrEndpointRequiresReferenceForm() error { return errEndpointRequiresRefere
 var errEndpointRequiresReferenceForm = cerrors.Register("endpoint-requires-reference-form", cerrors.Meta{
 	ShortCode: "E0019",
 	Message:   "endpoint requires form: reference",
-	RulePlace: cerrors.RuleOverAuthoredInput(),
+	RulePlace: cerrors.RuleEvaluatedElsewhere("The provider guest rendering the node evaluates this, inside its own module and over the " +
+		"workload the host handed it: an endpoint is meaningful only on the shape that carries no compute " +
+		"of its own. Which workload shapes a target accepts is the provider's to know and differs between " +
+		"them, so no single rule in the dispatch could be right for every one, and no view of a " +
+		"compilation reaches the guest that decides it."),
 })
 
 // ErrInvalidCronSchedule is emitted when a schedule fails the structural cron
@@ -102,7 +122,12 @@ func ErrInvalidCronSchedule() error { return errInvalidCronSchedule }
 var errInvalidCronSchedule = cerrors.Register("invalid-cron-schedule", cerrors.Meta{
 	ShortCode: "E0020",
 	Message:   "schedule is not a valid cron expression",
-	RulePlace: cerrors.RuleOverAuthoredInput(),
+	RulePlace: cerrors.RuleEvaluatedElsewhere("The provider guest rendering the node evaluates this, inside its own module and over the " +
+		"workload the host handed it: a schedule must be one of the accepted macros or a five-field " +
+		"crontab expression before the guest can emit a recurring resource from it. Which schedule forms " +
+		"a target accepts is the provider's to know and differs between them, so no single rule in the " +
+		"dispatch could be right for every one, and no view of a compilation reaches the guest that " +
+		"decides it."),
 })
 
 // NormalizeWorkloadForm maps an empty form to the stateless default and

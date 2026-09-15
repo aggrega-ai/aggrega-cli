@@ -28,7 +28,10 @@ func ErrQualifiedPluginReference() error { return errQualifiedPluginReference }
 var errQualifiedPluginReference = cerrors.Register("plugin-reference-must-not-be-registry-qualified", cerrors.Meta{
 	ShortCode: "E0102",
 	Message:   "wasm plugin reference must be the plugin coordinate identity (<pluginType>/<name>:<version>), not a registry-qualified or artifact path",
-	RulePlace: cerrors.RuleOverAuthoredInput(),
+	RulePlace: cerrors.RuleNoStageReaches("A pull binds this reference to its physical registry location, and the rule runs at that " +
+		"binding: an identity already leading with a registry host would be prefixed a second time. The " +
+		"pull fetches an entity before anything reads it, so no declared stage of a compilation holds the " +
+		"reference at the moment it is bound."),
 })
 
 // ErrUnscopedPluginReference is returned when a Plugin reference carries no
@@ -43,7 +46,10 @@ func ErrUnscopedPluginReference() error { return errUnscopedPluginReference }
 var errUnscopedPluginReference = cerrors.Register("plugin-reference-must-be-scoped", cerrors.Meta{
 	ShortCode: "E0104",
 	Message:   "wasm plugin reference must carry a pluginType scope (<pluginType>/<name>); an empty scope cannot bind to an OCI location",
-	RulePlace: cerrors.RuleOverAuthoredInput(),
+	RulePlace: cerrors.RuleNoStageReaches("A pull binds this reference to its physical registry location, and the rule runs at that " +
+		"binding: an identity carrying no pluginType scope forms a location no registry can serve. The " +
+		"pull fetches an entity before anything reads it, so no declared stage of a compilation holds the " +
+		"reference at the moment it is bound."),
 })
 
 // ErrUnscopedRecipeReference is returned when a Recipe / FeatureRecipe reference
@@ -58,7 +64,10 @@ func ErrUnscopedRecipeReference() error { return errUnscopedRecipeReference }
 var errUnscopedRecipeReference = cerrors.Register("recipe-reference-must-be-scoped", cerrors.Meta{
 	ShortCode: "E0105",
 	Message:   "recipe reference must be provider-scoped (<provider>/<name>); an empty provider cannot bind to an OCI location",
-	RulePlace: cerrors.RuleOverAuthoredInput(),
+	RulePlace: cerrors.RuleNoStageReaches("A pull binds this reference to its physical registry location, and the rule runs at that " +
+		"binding: a recipe identity carrying no provider scope forms a location no registry can serve. " +
+		"The pull fetches an entity before anything reads it, so no declared stage of a compilation holds " +
+		"the reference at the moment it is bound."),
 })
 
 // ErrAllVersionsRetracted is returned when every published version of an entity
@@ -75,7 +84,10 @@ func ErrAllVersionsRetracted() error { return errAllVersionsRetracted }
 var errAllVersionsRetracted = cerrors.Register("all-versions-retracted", cerrors.Meta{
 	ShortCode: "E0089",
 	Message:   "every published version this reference could select has been withdrawn",
-	RulePlace: cerrors.RuleOverAuthoredInput(),
+	RulePlace: cerrors.RuleNoStageReaches("A pull's registry-side version discovery evaluates the rule, over the published tag list " +
+		"minus whatever the workspace's withdrawal screen removed from it. Discovery reaches a registry " +
+		"and settles which version is fetched before anything reads the entity, so no declared stage of a " +
+		"compilation holds the tag list it selects over."),
 })
 
 // VersionExclusion is one published version a RetractionScreen removed from

@@ -81,7 +81,10 @@ func ErrDuplicateEntityIdentity() error { return errDuplicateEntityIdentity }
 var errDuplicateEntityIdentity = cerrors.Register("duplicate-entity-identity", cerrors.Meta{
 	ShortCode: "E0094",
 	Message:   "duplicate entity identity within a single catalog directory",
-	RulePlace: cerrors.RuleOverAuthoredInput(),
+	RulePlace: cerrors.RuleNoStageReaches("A catalog directory load evaluates the rule, as it indexes each entity file and claims that " +
+		"entity's identity for the directory it was found in. The load builds the catalog a later build " +
+		"resolves references against, so no declared stage of a compilation holds the directory index the " +
+		"claim is checked against."),
 })
 
 // ErrDuplicateRecipeIdentity is the recipe-specific facet of

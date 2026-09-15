@@ -152,7 +152,10 @@ func ErrEntityVersionPathMismatch() error { return errEntityVersionPathMismatch 
 var errEntityVersionPathMismatch = cerrors.Register("entity-version-path-mismatch", cerrors.Meta{
 	ShortCode: "E0134",
 	Message:   "oci: entity per-version subdirectory mismatch",
-	RulePlace: cerrors.RuleOverAuthoredInput(),
+	RulePlace: cerrors.RuleNoStageReaches("A push evaluates the rule, as the publication bundle walks the catalog tree and compares each " +
+		"entity file's per-version directory with the version that entity's own metadata declares. " +
+		"Publication reads a tree on disk rather than anything compiled, so no declared stage of a " +
+		"compilation holds the layout the comparison turns on."),
 })
 
 // ErrOCILocationCollision fires when two DISTINCT catalog identities map to the
@@ -169,7 +172,10 @@ func ErrOCILocationCollision() error { return errOCILocationCollision }
 var errOCILocationCollision = cerrors.Register("oci-location-collision", cerrors.Meta{
 	ShortCode: "E0141",
 	Message:   "oci: distinct catalog identities map to the same OCI repository location",
-	RulePlace: cerrors.RuleOverAuthoredInput(),
+	RulePlace: cerrors.RuleNoStageReaches("A whole-catalog validation evaluates the rule, mapping every catalog identity to the " +
+		"repository location it would publish to and refusing two distinct identities that land on one " +
+		"location. The collision is a fact about the catalog taken as a whole, which no compilation " +
+		"assembles, so no declared stage holds the identity set being compared."),
 })
 
 // ErrReferrerDiscoveryUnavailable is returned when an artifact's referrers

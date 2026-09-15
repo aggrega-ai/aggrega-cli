@@ -44,7 +44,10 @@ func ErrNoImporterForFormat() error { return errNoImporterForFormat }
 var errNoImporterForFormat = cerrors.Register("no-importer-for-format", cerrors.Meta{
 	ShortCode: "E0097",
 	Message:   "no importer plugin advertises the requested format",
-	RulePlace: cerrors.RuleOverAuthoredInput(),
+	RulePlace: cerrors.RuleNoStageReaches("An import evaluates the rule, when the requested source format is routed to the importer " +
+		"plugin advertising it and the catalog holds none. The import translates a foreign source " +
+		"description into entities before there is anything to compile, so no declared stage of a " +
+		"compilation holds the advertised capability set the routing matches against."),
 })
 
 // ErrAmbiguousImporterPlugin fires at resolution when a requested format is
@@ -60,7 +63,10 @@ func ErrAmbiguousImporterPlugin() error { return errAmbiguousImporterPlugin }
 var errAmbiguousImporterPlugin = cerrors.Register("ambiguous-importer-plugin", cerrors.Meta{
 	ShortCode: "E0090",
 	Message:   "format is advertised by more than one importer plugin",
-	RulePlace: cerrors.RuleOverAuthoredInput(),
+	RulePlace: cerrors.RuleNoStageReaches("An import evaluates the rule, when the requested source format is routed to the importer " +
+		"plugin advertising it and more than one does. The import translates a foreign source description " +
+		"into entities before there is anything to compile, so no declared stage of a compilation holds " +
+		"the advertised capability set the routing matches against."),
 })
 
 // importerCapabilityDiag is the importer socket's diagnostic set for the shared

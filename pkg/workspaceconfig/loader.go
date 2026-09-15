@@ -23,15 +23,18 @@ import (
 // A lockfile's load registers a near-identical sentence under a separate
 // condition, and that split is deliberate and is not to be unified. A workspace
 // configuration is written by an author, so a file that fails validation is
-// something its author can correct, which is why this condition declares a rule
-// over authored input; the lockfile's covers a file the machine writes, where
+// something its author can correct — a real rule, which this condition declares
+// as one no stage reaches; the lockfile's covers a file the machine writes, where
 // there is no authored rule to have broken, and declares no rule at all.
 func ErrConfigInvalid() error { return errConfigInvalid }
 
 var errConfigInvalid = cerrors.Register("workspace-config-invalid", cerrors.Meta{
 	ShortCode: "E0224",
 	Message:   "file failed schema validation",
-	RulePlace: cerrors.RuleOverAuthoredInput(),
+	RulePlace: cerrors.RuleNoStageReaches("Reading one layer of the workspace configuration evaluates the rule — against the schema, and " +
+		"against the further shape and value checks that layer carries. The configuration is read before " +
+		"any build begins, and by commands that run no build at all, so no declared stage of a " +
+		"compilation holds the document being judged."),
 })
 
 // ErrDuplicateProviderTarget reports that the composed provider list binds
@@ -47,7 +50,10 @@ func ErrDuplicateProviderTarget() error { return errDuplicateProviderTarget }
 var errDuplicateProviderTarget = cerrors.Register("duplicate-provider-target", cerrors.Meta{
 	ShortCode: "E0225",
 	Message:   "capability is bound to more than one provider plugin",
-	RulePlace: cerrors.RuleOverAuthoredInput(),
+	RulePlace: cerrors.RuleNoStageReaches("Workspace-configuration layer resolution evaluates the rule, over the provider bindings the " +
+		"cascade and its append companions compose into one list. The duplicate is a fact about the " +
+		"composed list rather than about any single layer, and resolution finishes before a build starts, " +
+		"so no declared stage of a compilation holds it."),
 })
 
 // ErrCapabilityOnCrossCuttingSocket reports that a cross-cutting socket
@@ -63,7 +69,10 @@ func ErrCapabilityOnCrossCuttingSocket() error { return errCapabilityOnCrossCutt
 var errCapabilityOnCrossCuttingSocket = cerrors.Register("capability-on-cross-cutting-socket", cerrors.Meta{
 	ShortCode: "E0223",
 	Message:   "a cross-cutting socket is bound by capability but attaches by uri",
-	RulePlace: cerrors.RuleOverAuthoredInput(),
+	RulePlace: cerrors.RuleNoStageReaches("Workspace-configuration layer resolution evaluates the rule, over the socket bindings the " +
+		"cascade composes, refusing a cross-cutting socket bound by capability when it attaches by uri. " +
+		"Resolution finishes before a build starts, so no declared stage of a compilation holds the " +
+		"composed bindings it reads."),
 })
 
 // ErrInertFieldOnProviderSocket reports that a provider-socket binding sets a
@@ -81,7 +90,10 @@ func ErrInertFieldOnProviderSocket() error { return errInertFieldOnProviderSocke
 var errInertFieldOnProviderSocket = cerrors.Register("inert-field-on-provider-socket", cerrors.Meta{
 	ShortCode: "E0228",
 	Message:   "a provider socket binding sets a field with no referent on that socket",
-	RulePlace: cerrors.RuleOverAuthoredInput(),
+	RulePlace: cerrors.RuleNoStageReaches("Workspace-configuration layer resolution evaluates the rule, over the provider bindings the " +
+		"cascade composes, refusing a field that names nothing on the provider socket. Resolution " +
+		"finishes before a build starts, so no declared stage of a compilation holds the composed " +
+		"bindings it reads."),
 })
 
 // ErrGovernanceRoleInvalid reports that a governance attachment declares no
@@ -99,7 +111,10 @@ func ErrGovernanceRoleInvalid() error { return errGovernanceRoleInvalid }
 var errGovernanceRoleInvalid = cerrors.Register("governance-role-invalid", cerrors.Meta{
 	ShortCode: "E0227",
 	Message:   "a governance attachment declares no role or an unknown role",
-	RulePlace: cerrors.RuleOverAuthoredInput(),
+	RulePlace: cerrors.RuleNoStageReaches("Workspace-configuration layer resolution evaluates the rule, over the governance attachments " +
+		"the cascade composes, refusing one whose role names no runner the dispatch reads attachments " +
+		"by. Resolution finishes before a build starts, so no declared stage of a compilation holds the " +
+		"composed attachments it reads."),
 })
 
 // ErrDuplicateRegistryAlias reports that a registry alias is already used by a
@@ -112,7 +127,10 @@ func ErrDuplicateRegistryAlias() error { return errDuplicateRegistryAlias }
 var errDuplicateRegistryAlias = cerrors.Register("duplicate-registry-alias", cerrors.Meta{
 	ShortCode: "E0226",
 	Message:   "registry alias is already used by another host",
-	RulePlace: cerrors.RuleOverAuthoredInput(),
+	RulePlace: cerrors.RuleNoStageReaches("A configuration write evaluates the rule, as a registry entry is composed into the document " +
+		"and its alias is checked against the entries already recorded there. The write edits a file " +
+		"rather than compiling anything, so no declared stage of a compilation holds the entry list the " +
+		"alias is checked against."),
 })
 
 // ErrAmbiguousRegistryAlias reports that a registry token matched the alias of
@@ -126,7 +144,10 @@ func ErrAmbiguousRegistryAlias() error { return errAmbiguousRegistryAlias }
 var errAmbiguousRegistryAlias = cerrors.Register("ambiguous-registry-alias", cerrors.Meta{
 	ShortCode: "E0222",
 	Message:   "registry alias matches more than one host",
-	RulePlace: cerrors.RuleOverAuthoredInput(),
+	RulePlace: cerrors.RuleNoStageReaches("Registry-token resolution evaluates the rule, once per invocation, when the token a command " +
+		"names matches the alias of more than one configured entry. The token comes from the invocation " +
+		"rather than from any document a build reads, so no declared stage of a compilation holds the " +
+		"value being resolved."),
 })
 
 // Load reads the workspace's .aggrega-config.yaml file at path,

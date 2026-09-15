@@ -22,7 +22,10 @@ func ErrCycle() error { return errCycle }
 var errCycle = cerrors.Register("reference-cycle", cerrors.Meta{
 	ShortCode: "E0146",
 	Message:   "circular reference expansion",
-	RulePlace: cerrors.RuleOverAuthoredInput(),
+	RulePlace: cerrors.RuleNoStageReaches("Reference expansion evaluates the rule, as a cross-document $ref or $import is followed and " +
+		"each new key is checked against the chain already in flight. That chain exists only inside the " +
+		"recursion doing the expanding, so no declared stage of a compilation holds the fact the rule " +
+		"turns on."),
 })
 
 // Check reports whether key is already in flight within stack. When it is,
