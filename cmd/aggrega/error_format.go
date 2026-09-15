@@ -50,6 +50,15 @@ import (
 //     errors.As matches only the first matching element, so a join of several
 //     envelopes would otherwise render one and silently drop the rest.
 //
+//     Running first is only half of it: the join is looked for along the
+//     chain, not on the outermost frame alone. Every branch below reaches
+//     through a wrap, so a join under one plain wrapping frame would reach a
+//     branch that matches one element and renders it as the whole failure —
+//     first place in the order buys nothing against a test the wrap defeats.
+//     The reach stops at the first frame a branch below claims, which is what
+//     leaves a join an envelope or a decoration deliberately sits above to
+//     the branch that renders the frame's own text with it.
+//
 //  2. A decoration next — a failure carrying added context that is not itself
 //     a diagnostic. It renders the failure it leads with and appends its own
 //     text. This runs ahead of the envelope because the envelope branch
@@ -154,9 +163,20 @@ func formatCompilerErrorAt(err error, pos diagnosticPosition) string {
 	// one: a join reached at the top level is a list of independent failures,
 	// each of which leads its own diagnostic, while a join reached beneath a
 	// "caused by (N):" marker is a list of details and stays a continuation.
-	type multiErr interface{ Unwrap() []error }
-	if me, ok := err.(multiErr); ok {
-		parts := me.Unwrap()
+	//
+	// The join is looked for ALONG THE CHAIN rather than on the outermost frame
+	// alone, and that reach is what makes this branch's precedence real. Every
+	// branch below reaches through a wrap; a test that did not would hand a
+	// wrapped join to the first branch that does, and each of those matches ONE
+	// element and renders it as the whole failure — so a report of several
+	// findings arrives as a report of the first, with the rest dropped silently.
+	//
+	// The walk stops at the first frame a branch below claims, so a join that a
+	// decoration or an envelope deliberately sits above stays that frame's
+	// detail: the branch claiming the frame renders the frame's own text and the
+	// join beneath it together. See firstRenderableFrame.
+	if frame, kind := firstRenderableFrame(err); kind == frameMulti {
+		parts, _ := joinedErrors(frame)
 		if len(parts) > 0 {
 			rendered := make([]string, 0, len(parts))
 			for _, sub := range parts {
@@ -407,8 +427,7 @@ func renderCompilerErrorChain(head *cerrors.CompilerError, shortCode string) str
 	depth := 0
 	link := head.Unwrap()
 	for link != nil {
-		if me, isMulti := link.(interface{ Unwrap() []error }); isMulti {
-			subs := me.Unwrap()
+		if subs, isMulti := joinedErrors(link); isMulti {
 			rendered := make([]string, 0, len(subs))
 			for _, sub := range subs {
 				if s := formatCompilerErrorAt(sub, continuingDiagnostic); s != "" {
@@ -451,6 +470,104 @@ func renderCompilerErrorChain(head *cerrors.CompilerError, shortCode string) str
 	return b.String()
 }
 
+// joinedErrors returns the errors a frame carries when it carries several at
+// once, and reports whether it does.
+//
+// It is the one place the multi-error shape is recognised. The shape is a
+// method returning a slice rather than a single error, and every reader here
+// asks for it through this function rather than spelling the assertion out
+// again. Two spellings of the question agree on every chain carrying no
+// wrapping frame, so a reader asking it of the outermost frame alone and a
+// reader asking it of a whole chain are indistinguishable until a wrap
+// appears — at which point the narrower one hands a wrapped join to a branch
+// that matches a single element and reports it as the whole failure. The
+// agreement is what makes a second spelling worth removing rather than
+// keeping in step.
+func joinedErrors(err error) ([]error, bool) {
+	multi, ok := err.(interface{ Unwrap() []error })
+	if !ok {
+		return nil, false
+	}
+	return multi.Unwrap(), true
+}
+
+// frameKind says what one frame of an error chain is, in the only terms the
+// dispatch above cares about: whether some branch renders that frame on terms
+// of its own, and if so which kind of branch.
+//
+// It exists so that a walk which passes through frames can tell the frames it
+// may pass through from the frames it may not. Passing through a frame no
+// branch claims loses nothing, because nothing below would have rendered it
+// differently. Passing through a frame a branch does claim loses exactly what
+// that branch would have said.
+type frameKind int
+
+const (
+	// frameOpaque is a frame no branch claims — a wrap adding context, or any
+	// error this file renders no differently from the text it already carries.
+	frameOpaque frameKind = iota
+	// frameMulti is a frame carrying several errors at once.
+	frameMulti
+	// frameEnvelope is a *cerrors.CompilerError.
+	frameEnvelope
+	// frameClaimed is a frame one of the branches below the multi-error branch
+	// renders on terms of its own: the decoration, and each structured domain
+	// type. A walk looking for something further down must stop at one of
+	// these rather than pass through it, because the text it contributes is
+	// reachable only through the branch that claims it.
+	frameClaimed
+)
+
+// classifyFrame reports which kind the single frame err is, looking at that
+// frame alone and never at what it wraps.
+//
+// The claimed set mirrors the detection branches above one for one, and that
+// correspondence is the whole point of collecting it here: a branch added above
+// without a kind added here would be a branch a walk is free to step over.
+func classifyFrame(err error) frameKind {
+	if _, ok := joinedErrors(err); ok {
+		return frameMulti
+	}
+	if _, ok := err.(*cerrors.CompilerError); ok {
+		return frameEnvelope
+	}
+	switch err.(type) {
+	case *skipContextError,
+		*resolver.ResolverError,
+		*validator.WorkloadValidationError,
+		*validator.ValidationError,
+		*analyzer.AnalysisError:
+		return frameClaimed
+	}
+	return frameOpaque
+}
+
+// firstRenderableFrame walks the single-Unwrap spine rooted at err and returns
+// the first frame some branch claims, together with the kind it was classified
+// as. It reports frameOpaque and a nil frame when the spine reaches no such
+// frame at all.
+//
+// It answers "what does this chain lead with, once the wraps above it are
+// discounted" — which is the question the multi-error branch has to ask,
+// because every branch beneath it reaches through a wrap and would otherwise
+// answer first. Stopping at the first claimed frame is what keeps the answer
+// honest: a join sitting beneath an envelope or beneath a decoration is that
+// frame's detail rather than the failure the reader leads with, and the branch
+// claiming the frame renders both the frame's own text and the join beneath it.
+//
+// It is not errors.As, which searches the whole error tree including the
+// branches of a multi-error, and so would report a frame reachable only by
+// descending into one of several joined elements — a frame that is one
+// finding's detail rather than anything the chain leads with.
+func firstRenderableFrame(err error) (error, frameKind) {
+	for cur := err; cur != nil; cur = stderrors.Unwrap(cur) {
+		if kind := classifyFrame(cur); kind != frameOpaque {
+			return cur, kind
+		}
+	}
+	return nil, frameOpaque
+}
+
 // hasRenderableFrame reports whether the chain rooted at err still reaches
 // a frame the chain walk renders on its own terms: a *CompilerError
 // envelope, or a multi-error fork. It decides whether a non-envelope link
@@ -463,12 +580,19 @@ func renderCompilerErrorChain(head *cerrors.CompilerError, shortCode string) str
 // spine renderCompilerErrorChain itself walks. It is not errors.As, which
 // searches the whole error tree including multi-error branches and so would
 // answer a different question than "will this walk reach another frame".
+//
+// It asks a DIFFERENT question from firstRenderableFrame and therefore keeps
+// its own walk, sharing only the per-frame classifier. This walk renders
+// envelopes and joins and nothing else, so a claimed frame is not a stopping
+// point for it: it steps over one and keeps looking, exactly as it would over
+// any other frame it cannot render. Collapsing the two walks into one answer
+// would have a claimed frame report itself renderable to a walk that cannot
+// render it, and the terminal link — the one carrying the flattened tail —
+// would then be skipped and its text lost.
 func hasRenderableFrame(err error) bool {
 	for cur := err; cur != nil; cur = stderrors.Unwrap(cur) {
-		if _, ok := cur.(*cerrors.CompilerError); ok {
-			return true
-		}
-		if _, ok := cur.(interface{ Unwrap() []error }); ok {
+		switch classifyFrame(cur) {
+		case frameEnvelope, frameMulti:
 			return true
 		}
 	}

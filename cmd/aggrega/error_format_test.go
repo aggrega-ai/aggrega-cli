@@ -558,3 +558,207 @@ func TestFormatCompilerError_SocketOutputShape_ReachesTheReader(t *testing.T) {
 		})
 	}
 }
+
+// joinOfThreeFindings builds the shape a pass reports when it found several
+// things wrong at once: three envelopes, each naming its own site, joined.
+//
+// Every guard below is built on one input so that what separates the cases is
+// only what sits ABOVE the join, which is the whole subject of those guards.
+func joinOfThreeFindings() error {
+	return stderrors.Join(
+		cerrors.Unidentified(cerrors.CatalogError, cerrors.SourceLocation{File: "a.yaml", Line: 11}, "finding alpha", nil, nil),
+		cerrors.Unidentified(cerrors.CatalogError, cerrors.SourceLocation{File: "b.yaml", Line: 22}, "finding beta", nil, nil),
+		cerrors.Unidentified(cerrors.CatalogError, cerrors.SourceLocation{File: "c.yaml", Line: 33}, "finding gamma", nil, nil),
+	)
+}
+
+// TestFormatCompilerError_JoinUnderAPlainWrap_RendersEveryElement is the guard
+// on the reach of the multi-error branch.
+//
+// A pass that found several things wrong reports them joined, and a caller one
+// frame up habitually names the step it was running with a plain wrap. That
+// wrap carries a single-error Unwrap, so a multi-error test applied to the
+// outermost frame alone answers no — while every branch below reaches through
+// the wrap, matches ONE of the joined elements and renders it as though it were
+// the whole failure. The remaining findings are dropped with nothing said, on a
+// surface whose entire job is to say what is wrong.
+//
+// So the assertion is not that the shape is handled but that the COUNT
+// survives: every element present, and the separator between them present as
+// many times as there are gaps.
+func TestFormatCompilerError_JoinUnderAPlainWrap_RendersEveryElement(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name string
+		err  error
+	}{
+		{"one wrap", fmt.Errorf("pillars: %w", joinOfThreeFindings())},
+		{"two wraps", fmt.Errorf("load: %w", fmt.Errorf("pillars: %w", joinOfThreeFindings()))},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := formatCompilerError(tc.err)
+			for _, want := range []string{"finding alpha", "finding beta", "finding gamma"} {
+				if n := strings.Count(got, want); n != 1 {
+					t.Errorf("finding %q rendered %d times, want exactly 1 — a wrap above a join must not cut the report down to its first element\n--- got ---\n%s", want, n, got)
+				}
+			}
+			if n := strings.Count(got, "\n---\n"); n != 2 {
+				t.Errorf("three findings must be separated by 2 rules, got %d\n--- got ---\n%s", n, got)
+			}
+		})
+	}
+}
+
+// TestFormatCompilerError_FrameAboveAJoin_KeepsThatFramesOwnRendering is the
+// other half of the same guard, and the half a widening of the reach above
+// would break.
+//
+// Several producers deliberately put a join UNDER a frame that renders it with
+// text of its own: an envelope naming the pass and counting what it found, a
+// decoration carrying a note the reader acts on. For those the join is a
+// detail, not the failure the reader leads with, and hoisting it would print
+// the findings while discarding the one line that says what they are findings
+// OF.
+//
+// Each row therefore asserts BOTH halves of the pairing: the owner's own text,
+// and the findings still beneath it. A hoist destroys the pairing in both
+// directions at once — the findings appear with the owner's line gone — so
+// asserting the two together is what makes a row discriminating rather than
+// merely satisfiable. A reach that stopped only at an envelope would pass the
+// first row and fail the rest; one that stopped nowhere would fail them all.
+//
+// What differs per row is only the marker the owning branch lays the findings
+// out with, which is a property of that branch rather than of this reach: an
+// envelope and a domain conversion render them beneath a counted "caused by"
+// marker, while a decoration's lead renders at the left margin and separates
+// them with the unindented rule.
+func TestFormatCompilerError_FrameAboveAJoin_KeepsThatFramesOwnRendering(t *testing.T) {
+	t.Parallel()
+	// The findings under the domain type are deliberately NOT envelopes. The
+	// envelope branch runs ahead of the domain branches and errors.As descends
+	// through a single-error frame into a join, so envelopes here would be
+	// claimed by that branch and the row would say nothing about this reach.
+	domainOverJoin := &resolver.ResolverError{
+		Entity:  "Aggregate my-app",
+		Field:   ".spec.parameters",
+		Message: "the frame's own sentence",
+		Err: stderrors.Join(
+			stderrors.New("plain alpha"), stderrors.New("plain beta"), stderrors.New("plain gamma"),
+		),
+	}
+	findings := []string{"finding alpha", "finding beta", "finding gamma"}
+	for _, tc := range []struct {
+		name        string
+		err         error
+		wantOwned   string
+		wantPresent []string
+	}{
+		{
+			// The shape a categorising boundary builds when it files several
+			// findings under one concern. The marker counting them is what says
+			// the join rendered as this envelope's detail rather than in place
+			// of it.
+			name:        "envelope",
+			err:         cerrors.Wrap(joinOfThreeFindings(), cerrors.CatalogError, cerrors.SourceLocation{}, "the pass found three things"),
+			wantOwned:   "the pass found three things",
+			wantPresent: append([]string{"caused by (3):"}, findings...),
+		},
+		{
+			// The decoration's note is often the only text naming what the
+			// author wrote wrong, which is why it is a named type at all. Its
+			// lead renders at the left margin, so the findings are separated by
+			// the unindented rule.
+			name:        "decoration",
+			err:         &skipContextError{err: joinOfThreeFindings(), note: "\nthe note the reader acts on"},
+			wantOwned:   "the note the reader acts on",
+			wantPresent: append([]string{"\n---\n"}, findings...),
+		},
+		{
+			// And the same frame one plain wrap down is still that frame: the
+			// reach passes through wraps and stops at the frame, not before it
+			// and not after it.
+			name:        "envelope under a plain wrap",
+			err:         fmt.Errorf("step: %w", cerrors.Wrap(joinOfThreeFindings(), cerrors.CatalogError, cerrors.SourceLocation{}, "the pass found three things")),
+			wantOwned:   "the pass found three things",
+			wantPresent: append([]string{"caused by (3):"}, findings...),
+		},
+		{
+			// A structured domain type renders through its own conversion, and
+			// that conversion keeps the join on the chain — so the frame's own
+			// subject leads and the findings follow it as its detail, which is
+			// the pairing a hoist destroys in both directions at once.
+			name:        "structured domain type",
+			err:         domainOverJoin,
+			wantOwned:   "the frame's own sentence",
+			wantPresent: []string{"caused by (3):", "plain alpha", "plain beta", "plain gamma"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := formatCompilerError(tc.err)
+			if !strings.Contains(got, tc.wantOwned) {
+				t.Errorf("the frame above the join must keep rendering its own text %q — hoisting the join discards it\n--- got ---\n%s", tc.wantOwned, got)
+			}
+			for _, want := range tc.wantPresent {
+				if !strings.Contains(got, want) {
+					t.Errorf("the join beneath must still render as this frame's detail; missing %q\n--- got ---\n%s", want, got)
+				}
+			}
+		})
+	}
+}
+
+// TestFormatCompilerError_NoJoinBeneath_RenderingUnchanged is the negative
+// control for the two guards above: chains with no join anywhere must render
+// exactly as they would with no reach at all, so a green on those two says
+// something about joins rather than about the formatter having been rewritten.
+func TestFormatCompilerError_NoJoinBeneath_RenderingUnchanged(t *testing.T) {
+	t.Parallel()
+	t.Run("plain wrap over a lone envelope", func(t *testing.T) {
+		t.Parallel()
+		got := formatCompilerError(fmt.Errorf("step: %w",
+			cerrors.Unidentified(cerrors.CatalogError, cerrors.SourceLocation{File: "a.yaml"}, "the only finding", nil, nil)))
+		if !strings.Contains(got, "the only finding") {
+			t.Errorf("a lone envelope under a wrap must still render\n--- got ---\n%s", got)
+		}
+		if strings.Contains(got, "\n---\n") {
+			t.Errorf("nothing was joined, so no separator may appear\n--- got ---\n%s", got)
+		}
+	})
+	t.Run("plain wrap over a plain error", func(t *testing.T) {
+		t.Parallel()
+		got := formatCompilerError(fmt.Errorf("step: %w", stderrors.New("the only text")))
+		if got != "step: the only text" {
+			t.Errorf("a chain naming nothing this formatter renders keeps its own flattened text; got %q", got)
+		}
+	})
+}
+
+// TestHasRenderableFrame_StepsOverAClaimedFrame pins the one semantic that must
+// NOT follow the reach above, because the two questions read alike and are not
+// alike.
+//
+// The chain walk asks whether the chain beneath a link still reaches a frame
+// THAT WALK renders — envelopes and joins, and nothing else. A structured
+// domain type is not one of those: the walk cannot render it, so it must step
+// over one and keep looking. Were it to report a claimed frame as renderable,
+// the walk above would traverse its link silently, find nothing it can render,
+// and end — and the terminal link's text, which carries the whole flattened
+// tail, would never be printed.
+func TestHasRenderableFrame_StepsOverAClaimedFrame(t *testing.T) {
+	t.Parallel()
+	buried := cerrors.Unidentified(cerrors.CatalogError, cerrors.SourceLocation{}, "buried envelope", nil, nil)
+	claimedOverEnvelope := &resolver.ResolverError{
+		Entity:  "Aggregate my-app",
+		Field:   ".f",
+		Message: "a frame this walk cannot render",
+		Err:     buried,
+	}
+	if !hasRenderableFrame(claimedOverEnvelope) {
+		t.Error("an envelope beneath a structured domain type is still reachable by the chain walk, so the walk must keep traversing toward it")
+	}
+	if hasRenderableFrame(&resolver.ResolverError{Entity: "Aggregate my-app", Field: ".f", Message: "m", Err: stderrors.New("leaf")}) {
+		t.Error("a chain reaching neither an envelope nor a join has nothing this walk renders")
+	}
+}
