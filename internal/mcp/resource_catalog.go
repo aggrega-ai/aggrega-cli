@@ -62,26 +62,26 @@ func catalogResourceTemplate() resourceTemplate {
 // identity, or an entity absent from the workspace is a well-formed
 // resource-not-found; a workspace resolution or load failure is an internal
 // error.
-func (s *server) readCatalogResource(uri string) (any, *rpcError) {
+func (s *server) readCatalogResource(uri string) (readResourceResult, *rpcError) {
 	_, body, ok := splitScheme(uri)
 	if !ok {
-		return nil, resourceNotFound(uri)
+		return readResourceResult{}, resourceNotFound(uri)
 	}
 	seg, identity, found := strings.Cut(strings.Trim(body, "/"), "/")
 	if !found || identity == "" {
-		return nil, resourceNotFound(uri)
+		return readResourceResult{}, resourceNotFound(uri)
 	}
 	kind, ok := catalogKindForSegment(seg)
 	if !ok {
-		return nil, resourceNotFound(uri)
+		return readResourceResult{}, resourceNotFound(uri)
 	}
 	cat, rerr := s.loadWorkspaceCatalog()
 	if rerr != nil {
-		return nil, rerr
+		return readResourceResult{}, rerr
 	}
 	data, ok := cat.EntityBytes(kind, identity)
 	if !ok {
-		return nil, resourceNotFound(uri)
+		return readResourceResult{}, resourceNotFound(uri)
 	}
 	return readResourceResult{
 		Contents: []resourceContents{{URI: uri, MimeType: catalogMimeType, Text: string(data)}},

@@ -108,13 +108,16 @@ func seedDocsWorkspace(t *testing.T) *server {
 }
 
 // readResource invokes resources/read for uri and returns the parsed result.
+// It asks in the handshake revision, which is the era every caller of this
+// helper is asserting about; the per-request revision's own reads are driven
+// through the message loop instead.
 func readResource(t *testing.T, s *server, uri string) (readResourceResult, *rpcError) {
 	t.Helper()
 	params, err := json.Marshal(readResourceParams{URI: uri})
 	if err != nil {
 		t.Fatalf("marshal params: %v", err)
 	}
-	res, rerr := s.handleResourcesRead(context.Background(), params)
+	res, rerr := s.handleResourcesRead(context.Background(), eraHandshake, params)
 	if rerr != nil {
 		return readResourceResult{}, rerr
 	}

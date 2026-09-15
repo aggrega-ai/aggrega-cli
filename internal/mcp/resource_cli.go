@@ -64,14 +64,14 @@ func cliRootResource() resource {
 // command whose help the binary cannot produce is likewise a resource-not-found.
 // ctx is the run's own. The production runner starts a subprocess under it, so
 // ending the run ends the child rather than waiting for it.
-func (s *server) readCliResource(ctx context.Context, uri string) (any, *rpcError) {
+func (s *server) readCliResource(ctx context.Context, uri string) (readResourceResult, *rpcError) {
 	_, body, ok := splitScheme(uri)
 	if !ok {
-		return nil, resourceNotFound(uri)
+		return readResourceResult{}, resourceNotFound(uri)
 	}
 	argv, ok := cliHelpArgs(body)
 	if !ok {
-		return nil, resourceNotFound(uri)
+		return readResourceResult{}, resourceNotFound(uri)
 	}
 	run := s.runCommand
 	if run == nil {
@@ -79,7 +79,7 @@ func (s *server) readCliResource(ctx context.Context, uri string) (any, *rpcErro
 	}
 	var stdout, stderr bytes.Buffer
 	if err := run(ctx, argv, &stdout, &stderr); err != nil {
-		return nil, resourceNotFound(uri)
+		return readResourceResult{}, resourceNotFound(uri)
 	}
 	text := stdout.String()
 	if strings.TrimSpace(text) == "" {

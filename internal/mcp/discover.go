@@ -24,15 +24,15 @@ type discoverResult struct {
 // It answers from the same three places the initialize handshake answers
 // from — the capability set, the server identity, and the connect-time
 // guidance — so a client reaches the same server whichever revision it
-// speaks, and neither answer can drift from the other. The content is
-// entirely the binary's own, which is what makes the result publicly
-// cacheable for a long window.
+// speaks, and neither answer can drift from the other.
+//
+// The envelope and the freshness hint are attached where every result's are,
+// so this handler states what discovery reports and nothing about how the
+// revision dresses it.
 func (s *server) handleDiscover() (any, *rpcError) {
 	return discoverResult{
-		perRequestEnvelope: s.completeEnvelope(),
-		cacheHint:          compiledInCacheHint(),
-		SupportedVersions:  supportedRevisions(),
-		Capabilities:       serverCapabilitySet(),
-		Instructions:       serverInstructions,
+		SupportedVersions: supportedRevisions(),
+		Capabilities:      serverCapabilitySet(),
+		Instructions:      serverInstructions,
 	}, nil
 }

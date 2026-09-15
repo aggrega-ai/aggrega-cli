@@ -9,10 +9,14 @@
 // It speaks two protocol revisions, so a client of either connects. In
 // 2026-07-28 a request states the revision it speaks and the capabilities
 // its sender offers, and server/discover advertises the revisions, the
-// tool, resource and prompt capabilities, and the connect-time guidance. In
-// 2025-06-18 the initialize handshake advertises the same, and a client
-// selects that revision by opening with it. Which revision a request speaks
-// is read off that request; nothing is remembered between them.
+// tool, resource and prompt capabilities, and the connect-time guidance.
+// Every answer that revision defines a shape for carries the kind of result
+// it is and the server's identity, and the ones it makes cacheable carry how
+// long the answer keeps and whether it may be shared. In 2025-06-18 the
+// initialize handshake advertises the same, and its results carry none of
+// that, since that revision defines none of it; a client selects that
+// revision by opening with the handshake. Which revision a request speaks is
+// read off that request; nothing is remembered between them.
 //
 // The transport is strict about stream ownership. stdout carries only
 // framed protocol messages — one compact JSON object per line — so a

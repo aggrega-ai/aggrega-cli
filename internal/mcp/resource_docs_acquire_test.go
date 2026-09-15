@@ -212,6 +212,61 @@ func TestDocsBundleAcquiredBeforeAMessageThatIsNotInitialize(t *testing.T) {
 	}
 }
 
+// TestDocsBundleAcquiredBeforeAFirstMessageInThePerRequestRevision is the same
+// witness in the other revision, and it is the one that could not be written
+// while the server spoke only one: a client speaking the per-request revision
+// sends no handshake at all, so nothing about its first message could ever have
+// triggered the acquisition.
+//
+// The first and only message is a tools/list stating its own revision. As with
+// the sibling above, the ordering is asserted where it happens — the target
+// seam records how many frames stdout had taken when it was reached — so a
+// count of zero says the acquisition preceded the answer rather than merely
+// having occurred somewhere inside the run.
+func TestDocsBundleAcquiredBeforeAFirstMessageInThePerRequestRevision(t *testing.T) {
+	t.Parallel()
+	s, _ := coldDocsWorkspace(t)
+
+	var out frameCounter
+	s.out = &out
+
+	framesAtAcquisition := -1
+	inner := s.docsTarget
+	s.docsTarget = func(tw *toolWorkspace, ref, version string, warn func(string)) (oras.ReadOnlyTarget, docscache.VerifyAtPull, error) {
+		framesAtAcquisition = out.frames
+		return inner(tw, ref, version, warn)
+	}
+
+	if err := s.run(context.Background(),
+		strings.NewReader(perRequestRequest(1, "tools/list", "")+"\n")); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+
+	if framesAtAcquisition < 0 {
+		t.Fatal("a run whose only message states its own revision never attempted the acquisition")
+	}
+	if framesAtAcquisition != 0 {
+		t.Errorf("the acquisition ran after %d frames had been answered; it must precede the first",
+			framesAtAcquisition)
+	}
+
+	resps := parseFrames(t, out.buf.String())
+	if len(resps) != 1 {
+		t.Fatalf("want 1 response, got %d", len(resps))
+	}
+	if resps[0].Error != nil {
+		t.Fatalf("tools/list returned an error envelope: %+v", resps[0].Error)
+	}
+
+	tw, err := s.resolveToolWorkspace("", nil)
+	if err != nil {
+		t.Fatalf("resolve workspace: %v", err)
+	}
+	if !docscache.Cached(tw.root, tw.cacheDir, docsTestRef, docsTestVersion) {
+		t.Error("the bundle cache is empty after a run that attempted the acquisition")
+	}
+}
+
 // TestDocsBundleAcquisitionRunsOncePerSession pins the trigger to one attempt.
 // A cold cache and an unreachable registry look identical from the trigger, so a
 // second attempt would pay the connect timeout again with nothing changed.

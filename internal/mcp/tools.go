@@ -106,7 +106,12 @@ type toolTextContent struct {
 // to live in. A failure carried here always carries corrective guidance in its
 // text block so the assistant can act on it rather than on an opaque code; the
 // rule that decides the channel is in the package documentation.
+//
+// It carries the per-request revision's envelope and no freshness hint. That
+// revision declares a tool result an ordinary result rather than a cacheable
+// one, so there is no window for it to state.
 type callToolResult struct {
+	perRequestEnvelope
 	Content           []toolTextContent `json:"content"`
 	StructuredContent json.RawMessage   `json:"structuredContent,omitempty"`
 	IsError           bool              `json:"isError,omitempty"`

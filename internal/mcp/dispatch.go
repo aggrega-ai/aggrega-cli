@@ -28,6 +28,10 @@ import (
 // request reaching for either from the wrong revision is told the server does
 // not serve that method.
 //
+// The result a handler composes is then stamped with whatever the request's own
+// revision asks a result to carry, in one place, so a handler never decides
+// that for itself.
+//
 // ctx is the run's own. It reaches every tool invocation and the resource reads
 // that leave the process, so ending the run ends what a call is doing rather
 // than only refusing the next message.
@@ -36,6 +40,16 @@ func (s *server) dispatch(ctx context.Context, req *rpcRequest) (any, *rpcError)
 	if protocolErr != nil {
 		return nil, protocolErr
 	}
+	result, rpcErr := s.route(ctx, era, req)
+	if rpcErr != nil {
+		return nil, rpcErr
+	}
+	return s.stampResult(era, result), nil
+}
+
+// route is the method table itself: it resolves a request to the handler that
+// answers it and returns what that handler composed, undressed.
+func (s *server) route(ctx context.Context, era protocolEra, req *rpcRequest) (any, *rpcError) {
 	switch req.Method {
 	case "initialize":
 		return s.handleInitialize(req.Params)
@@ -59,7 +73,7 @@ func (s *server) dispatch(ctx context.Context, req *rpcRequest) (any, *rpcError)
 	case "tools/call":
 		return s.handleToolsCall(ctx, req.Params)
 	case "resources/read":
-		return s.handleResourcesRead(ctx, req.Params)
+		return s.handleResourcesRead(ctx, era, req.Params)
 	default:
 		return nil, methodNotFound(req.Method)
 	}
@@ -96,8 +110,11 @@ func (s *server) handleResourcesList() (any, *rpcError) {
 	return listResourcesResult{Resources: out}, nil
 }
 
-// resourceNotFound builds the protocol's resource-not-found envelope for a URI
-// whose scheme is unrecognized or whose target is absent.
+// resourceNotFound builds the resource-not-found envelope for a URI whose
+// scheme is unrecognized or whose target is absent. It is the one place that
+// code is built, which is what lets refusalInEra re-code it for the revision
+// that retired it — so a reader here should not take the code as the one a
+// client necessarily sees.
 func resourceNotFound(uri string) *rpcError {
 	return &rpcError{Code: codeResourceNotFound, Message: "resource not found: " + uri}
 }
@@ -168,8 +185,14 @@ func negotiateProtocolVersion(requested string) string {
 // canonical JSON Schema; catalog:// serves a catalog entity's authored YAML from
 // the resolved workspace; cli:// serves a command's help. A missing URI is an
 // invalid-params error; an unrecognised scheme or an absent target is a
-// well-formed resource-not-found error.
-func (s *server) handleResourcesRead(ctx context.Context, params json.RawMessage) (any, *rpcError) {
+// well-formed not-found error in whichever code the request's revision uses.
+//
+// This is the one method whose result is not fresh for the same span whatever
+// it was asked for: most families serve content the process cannot see change,
+// and the catalog family serves the caller's own workspace. So the freshness
+// hint is chosen here, beside the branch that resolves the family, rather than
+// by the method.
+func (s *server) handleResourcesRead(ctx context.Context, era protocolEra, params json.RawMessage) (any, *rpcError) {
 	var p readResourceParams
 	if err := json.Unmarshal(params, &p); err != nil {
 		return nil, invalidRequestParams("resources/read", err)
@@ -179,18 +202,59 @@ func (s *server) handleResourcesRead(ctx context.Context, params json.RawMessage
 	}
 	scheme, _, ok := splitScheme(p.URI)
 	if !ok {
-		return nil, resourceNotFound(p.URI)
+		return nil, refusalInEra(era, resourceNotFound(p.URI))
 	}
+	var (
+		res  readResourceResult
+		rerr *rpcError
+		hint cacheHint
+	)
 	switch scheme {
 	case schemeLangref, schemeAuthoring:
-		return s.readDocsResource(p.URI)
+		// The bundle is pinned at the start of the run and never re-acquired
+		// while it lasts, so a page served from it is as fixed as one the
+		// binary carries.
+		res, rerr = s.readDocsResource(p.URI)
+		hint = compiledInCacheHint()
 	case schemeSchema:
-		return readSchemaResource(p.URI)
+		res, rerr = readSchemaResource(p.URI)
+		hint = compiledInCacheHint()
 	case schemeCatalog:
-		return s.readCatalogResource(p.URI)
+		// The only family read out of the caller's workspace, where their own
+		// editor can change the answer between one request and the next.
+		res, rerr = s.readCatalogResource(p.URI)
+		hint = workspaceCacheHint()
 	case schemeCli:
-		return s.readCliResource(ctx, p.URI)
+		// Produced by running the binary's own help, which is the command tree
+		// compiled into it.
+		res, rerr = s.readCliResource(ctx, p.URI)
+		hint = compiledInCacheHint()
 	default:
-		return nil, resourceNotFound(p.URI)
+		return nil, refusalInEra(era, resourceNotFound(p.URI))
 	}
+	if rerr != nil {
+		return nil, refusalInEra(era, rerr)
+	}
+	res.cacheHint = cacheHintFor(era, hint)
+	return res, nil
+}
+
+// refusalInEra re-codes a refusal whose code differs between the two
+// revisions, and is the only place in this server where one does.
+//
+// The per-request revision retired the resource-not-found code its
+// predecessors used and answers a URI no family resolves with the
+// invalid-params code instead, so the retired code never reaches a client
+// speaking that revision. Every other refusal travels unchanged, and the
+// refusal it is handed is never written through: the caller's value is left as
+// it was.
+//
+// It pairs with resourceNotFound, which is the one place that code is built.
+func refusalInEra(era protocolEra, err *rpcError) *rpcError {
+	if era != eraPerRequest || err.Code != codeResourceNotFound {
+		return err
+	}
+	recoded := *err
+	recoded.Code = codeInvalidParams
+	return &recoded
 }

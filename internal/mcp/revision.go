@@ -28,19 +28,16 @@ const (
 // for more input before it can finish.
 const resultTypeComplete = "complete"
 
-// cacheScopePublic marks a result no caller's identity shaped, which any
-// cache may therefore serve to any caller.
-const cacheScopePublic = "public"
+// The two scopes a cacheable result may declare: public for a result no
+// caller's identity shaped, which any cache may serve to any caller, and
+// private for one only a cache serving that same caller may reuse.
+const (
+	cacheScopePublic  = "public"
+	cacheScopePrivate = "private"
+)
 
 // compiledInFreshness is how long a client may reuse a result composed from
-// content carried inside the binary.
-//
-// The freshness a result advertises is chosen by where its content came from,
-// never by which method asked for it. Content compiled into the binary, or
-// read from the documentation bundle pinned for the run, cannot change while
-// the process lives, so it is public and stays fresh for a long window.
-// Content read out of the workspace changes under the caller's own editor
-// between one request and the next, so it is private and stale on arrival.
+// content that cannot change while the process lives.
 const compiledInFreshness = time.Hour
 
 // protocolEra is which of the two revisions a request is speaking. It is read
@@ -229,9 +226,97 @@ type cacheHint struct {
 	CacheScope string `json:"cacheScope,omitempty"`
 }
 
-// compiledInCacheHint is the hint for a result composed entirely from content
-// the binary carries, which no caller's workspace can change.
+// The freshness a result advertises is chosen by WHERE ITS CONTENT CAME FROM,
+// never by which method asked for it. That is why these two are the whole
+// table, and why a method picks one of them rather than declaring a window of
+// its own: two methods reading the same content would otherwise be free to
+// tell a client different things about how long it keeps.
+//
+// Content compiled into the binary, and content read from the documentation
+// bundle pinned at the start of the run, cannot change while the process lives
+// and is shaped by nothing about the caller: public, fresh for a long window.
+// Content read out of the caller's own workspace changes under their editor
+// between one request and the next, and belongs to them alone: private, and
+// stale the moment it arrives.
+//
+// compiledInCacheHint is the first of the two.
 func compiledInCacheHint() cacheHint {
 	window := compiledInFreshness.Milliseconds()
 	return cacheHint{TTLMs: &window, CacheScope: cacheScopePublic}
+}
+
+// workspaceCacheHint is the second: a window of zero, stated rather than left
+// out, so a client is told to read again rather than left to guess how long
+// the answer is good for.
+func workspaceCacheHint() cacheHint {
+	var window int64
+	return cacheHint{TTLMs: &window, CacheScope: cacheScopePrivate}
+}
+
+// cacheHintFor is the freshness hint a result carries back to a request in
+// this era. A handshake-revision result carries none, because that revision
+// defines no such field and a result carries nothing its own revision does not
+// define.
+func cacheHintFor(era protocolEra, hint cacheHint) cacheHint {
+	if era != eraPerRequest {
+		return cacheHint{}
+	}
+	return hint
+}
+
+// stampResult attaches what the per-request revision asks of a result: the
+// kind of result it is and the server's identity on every one of them, and the
+// freshness hint on the ones that revision makes cacheable.
+//
+// It is the single site that attaches them, so no handler decides for itself
+// whether its answer is decorated. A handler composes what it was asked for;
+// the revision the request spoke decides what travels with it.
+//
+// Every result reached here except one is composed entirely from content the
+// binary carries or from the bundle pinned for the run, so each takes the
+// compiled-in hint. resources/read is that one: its content comes from
+// whichever family the URI named, so its hint is chosen where the family is
+// resolved and this site leaves it as it found it.
+//
+// Two answers deliberately reach the end untouched. The per-request revision
+// defines neither ping nor initialize — its client-request set names ten
+// methods and neither is among them — so those answers belong to the handshake
+// revision and carry nothing this one adds, whatever metadata the request that
+// asked for them happened to carry.
+func (s *server) stampResult(era protocolEra, result any) any {
+	if era != eraPerRequest {
+		return result
+	}
+	envelope := s.completeEnvelope()
+	switch r := result.(type) {
+	case discoverResult:
+		r.perRequestEnvelope, r.cacheHint = envelope, compiledInCacheHint()
+		return r
+	case listToolsResult:
+		r.perRequestEnvelope, r.cacheHint = envelope, compiledInCacheHint()
+		return r
+	case listResourcesResult:
+		r.perRequestEnvelope, r.cacheHint = envelope, compiledInCacheHint()
+		return r
+	case listResourceTemplatesResult:
+		r.perRequestEnvelope, r.cacheHint = envelope, compiledInCacheHint()
+		return r
+	case listPromptsResult:
+		r.perRequestEnvelope, r.cacheHint = envelope, compiledInCacheHint()
+		return r
+	case readResourceResult:
+		r.perRequestEnvelope = envelope
+		return r
+	case getPromptResult:
+		r.perRequestEnvelope = envelope
+		return r
+	case *callToolResult:
+		// Stamped on a copy rather than through the pointer: the value belongs
+		// to whatever composed the tool's result, and writing into it would put
+		// this request's envelope on something a later request could be handed.
+		stamped := *r
+		stamped.perRequestEnvelope = envelope
+		return &stamped
+	}
+	return result
 }

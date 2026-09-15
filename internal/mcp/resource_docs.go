@@ -134,22 +134,22 @@ func docsRegistryTarget(tw *toolWorkspace, ref, version string, warn func(string
 // and reads the page offline — a cache miss or an absent page is reported as a
 // well-formed resource-not-found error, an integrity or read failure as an
 // internal error. The read never reaches the network.
-func (s *server) readDocsResource(uri string) (any, *rpcError) {
+func (s *server) readDocsResource(uri string) (readResourceResult, *rpcError) {
 	page, ok := bundlePageForURI(uri)
 	if !ok {
-		return nil, resourceNotFound(uri)
+		return readResourceResult{}, resourceNotFound(uri)
 	}
 	tw, err := s.resolveToolWorkspace("", nil)
 	if err != nil {
-		return nil, &rpcError{Code: codeInternalError, Message: "resolve workspace: " + err.Error()}
+		return readResourceResult{}, &rpcError{Code: codeInternalError, Message: "resolve workspace: " + err.Error()}
 	}
 	ref, version := s.docsBundleCoords(tw)
 	data, mimeType, rerr := docscache.ReadPage(tw.root, tw.cacheDir, ref, version, page)
 	if rerr != nil {
 		if errors.Is(rerr, docscache.ErrFetchNotFound()) || errors.Is(rerr, docscache.ErrPageNotFound()) {
-			return nil, resourceNotFound(uri)
+			return readResourceResult{}, resourceNotFound(uri)
 		}
-		return nil, &rpcError{Code: codeInternalError, Message: "read documentation resource: " + rerr.Error()}
+		return readResourceResult{}, &rpcError{Code: codeInternalError, Message: "read documentation resource: " + rerr.Error()}
 	}
 	return readResourceResult{
 		Contents: []resourceContents{{URI: uri, MimeType: mimeType, Text: string(data)}},

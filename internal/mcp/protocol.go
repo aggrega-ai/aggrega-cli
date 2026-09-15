@@ -28,8 +28,14 @@ const (
 const serverName = "aggrega"
 
 // JSON-RPC 2.0 and Model Context Protocol error codes. The first block is
-// the standard JSON-RPC range; resourceNotFound is the protocol-specific
-// code the read surface returns for an unknown resource URI.
+// the standard JSON-RPC range.
+//
+// resourceNotFound is the code the read surface returns for an unknown
+// resource URI to a client speaking the handshake revision. The 2026-07-28
+// revision retired it and answers that condition with invalidParams instead,
+// so it is kept both because one revision still emits it and because that
+// revision reserves it against reuse; which of the two a client sees is
+// settled in one place, where the read surface refuses.
 //
 // unsupportedProtocolVersion is allocated by the 2026-07-28 revision, which
 // also fixes the payload it carries: the revisions the server does speak and
@@ -169,8 +175,13 @@ type tool struct {
 	InputSchema json.RawMessage `json:"inputSchema,omitempty"`
 }
 
-// listToolsResult is the tools/list result envelope.
+// listToolsResult is the tools/list result envelope. The per-request revision
+// makes it a result a client may cache, so it carries that revision's envelope
+// and its freshness hint; both encode to nothing for a request in the
+// handshake revision, which defines neither.
 type listToolsResult struct {
+	perRequestEnvelope
+	cacheHint
 	Tools []tool `json:"tools"`
 }
 
@@ -183,8 +194,11 @@ type resource struct {
 	MimeType    string `json:"mimeType,omitempty"`
 }
 
-// listResourcesResult is the resources/list result envelope.
+// listResourcesResult is the resources/list result envelope. It is cacheable
+// in the per-request revision on the same terms as the other list results.
 type listResourcesResult struct {
+	perRequestEnvelope
+	cacheHint
 	Resources []resource `json:"resources"`
 }
 
@@ -199,8 +213,11 @@ type resourceTemplate struct {
 }
 
 // listResourceTemplatesResult is the resources/templates/list result
-// envelope.
+// envelope. It is cacheable in the per-request revision on the same terms as
+// the other list results.
 type listResourceTemplatesResult struct {
+	perRequestEnvelope
+	cacheHint
 	ResourceTemplates []resourceTemplate `json:"resourceTemplates"`
 }
 
@@ -219,8 +236,11 @@ type promptArgument struct {
 	Required    bool   `json:"required,omitempty"`
 }
 
-// listPromptsResult is the prompts/list result envelope.
+// listPromptsResult is the prompts/list result envelope. It is cacheable in
+// the per-request revision on the same terms as the other list results.
 type listPromptsResult struct {
+	perRequestEnvelope
+	cacheHint
 	Prompts []prompt `json:"prompts"`
 }
 
@@ -248,7 +268,12 @@ type promptMessage struct {
 
 // getPromptResult is the prompts/get result envelope: a short description of the
 // rendered prompt and the ordered messages that seed the authoring conversation.
+//
+// It carries the per-request revision's envelope and no freshness hint. That
+// revision declares a rendered prompt an ordinary result rather than a
+// cacheable one, so there is no window for it to state.
 type getPromptResult struct {
+	perRequestEnvelope
 	Description string          `json:"description,omitempty"`
 	Messages    []promptMessage `json:"messages"`
 }
@@ -277,6 +302,13 @@ type resourceContents struct {
 
 // readResourceResult is the resources/read result envelope: the contents of
 // the requested resource, served inline.
+//
+// It is cacheable in the per-request revision, and it is the one result whose
+// freshness is not fixed by the method: the read surface serves several
+// families out of different places, so the hint is chosen where the URI's
+// family is resolved rather than here.
 type readResourceResult struct {
+	perRequestEnvelope
+	cacheHint
 	Contents []resourceContents `json:"contents"`
 }

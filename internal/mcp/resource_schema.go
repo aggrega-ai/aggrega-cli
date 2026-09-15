@@ -52,18 +52,18 @@ func schemaResourceList() []resource {
 // kind, delegating the lookup to the embedded schema set so the served bytes are
 // the single-sourced schema, never a restatement. An empty or unknown kind is a
 // well-formed resource-not-found.
-func readSchemaResource(uri string) (any, *rpcError) {
+func readSchemaResource(uri string) (readResourceResult, *rpcError) {
 	_, body, ok := splitScheme(uri)
 	if !ok {
-		return nil, resourceNotFound(uri)
+		return readResourceResult{}, resourceNotFound(uri)
 	}
 	kind := strings.Trim(body, "/")
 	if kind == "" {
-		return nil, resourceNotFound(uri)
+		return readResourceResult{}, resourceNotFound(uri)
 	}
 	schema, ok := schemas.SchemaByKind(kind)
 	if !ok {
-		return nil, resourceNotFound(uri)
+		return readResourceResult{}, resourceNotFound(uri)
 	}
 	return readResourceResult{
 		Contents: []resourceContents{{URI: uri, MimeType: schemaMimeType, Text: schema}},
