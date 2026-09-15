@@ -81,11 +81,6 @@ fn name_shape_featurerecipe_rejects_non_matching() {
 }
 
 #[test]
-fn name_shape_aggregate_two_segment_kebab_passes() {
-    passes("Aggregate", "platform/payments-service");
-}
-
-#[test]
 fn name_shape_schemalibrary_pascalcase_passes() {
     passes("SchemaLibrary", "Probes");
     passes("SchemaLibrary", "BaseMappings");

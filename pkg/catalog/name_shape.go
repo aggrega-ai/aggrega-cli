@@ -36,9 +36,14 @@
 // than skipping when UMBRELLA_CHECKOUT is set.
 //
 // Per-entity-kind name shapes are documented at
-// aggrega-docs/language-reference/02-naming-conventions.md "Catalog
-// Entity Naming" and detailed in the per-entity reference pages under
-// aggrega-docs/language-reference/entities/.
+// aggrega-docs/architecture/13-catalog-and-registry.md "Catalog entity
+// name-shape enforcement" and detailed in the per-entity reference
+// pages under aggrega-docs/language-reference/entities/. They are a
+// different surface from the instance names a developer writes in an
+// Aggregate or a Release, which share one pattern regardless of kind;
+// that pattern is at
+// aggrega-docs/language-reference/02-naming-conventions.md "Instance
+// Names".
 
 package catalog
 
@@ -76,12 +81,6 @@ const RecipeNameShape = `^[a-z][a-z0-9-]*$`
 // with RecipeNameShape. Example matches: "k8s-secret-from-parameter",
 // "dotenv-secret", "compose-bridge-fr".
 const FeatureRecipeNameShape = `^[a-z][a-z0-9-]*$`
-
-// AggregateNameShape matches two kebab-case segments separated by "/".
-// Starting pattern; the hub catalog carries no Aggregate fixtures
-// today (Aggregates are developer-authored, not catalog-distributed).
-// Verified against the first hub Aggregate when one ships.
-const AggregateNameShape = `^[a-z][a-z0-9-]*/[a-z][a-z0-9-]*$`
 
 // --- Library name shapes ---
 //

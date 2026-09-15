@@ -141,31 +141,6 @@ func TestFeatureRecipeNameShape_MatchesSingleKebabSegment(t *testing.T) {
 	}
 }
 
-func TestAggregateNameShape_MatchesTwoKebabSegments(t *testing.T) {
-	// No hub fixtures available; pattern matches the entity-reference
-	// shape pending verification against the first published Aggregate.
-	re := regexp.MustCompile(AggregateNameShape)
-	cases := []struct {
-		input string
-		want  bool
-	}{
-		// Author-constructed positive (matches the documented shape)
-		{"core/db-module", true},
-		{"acme/web-service", true},
-		// Wrong segment count
-		{"db-module", false},
-		{"core/db-module/extra", false},
-		// Wrong character class
-		{"Core/db-module", false},
-		{"core/Db-module", false},
-	}
-	for _, tc := range cases {
-		if got := re.MatchString(tc.input); got != tc.want {
-			t.Errorf("AggregateNameShape.MatchString(%q) = %v, want %v", tc.input, got, tc.want)
-		}
-	}
-}
-
 func TestSchemaLibraryNameShape_MatchesPascalCase(t *testing.T) {
 	re := regexp.MustCompile(SchemaLibraryNameShape)
 	cases := []struct {
@@ -242,8 +217,8 @@ func TestNameShapeDeclarationsAreTextuallyExtractable(t *testing.T) {
 	}
 	text := string(source)
 
-	// The seven patterns the publishing linter's symmetry test extracts,
-	// paired with the compile-time constant each declaration must yield.
+	// The patterns the publishing linter's symmetry test extracts, paired
+	// with the compile-time constant each declaration must yield.
 	cases := []struct {
 		name string
 		want string
@@ -252,7 +227,6 @@ func TestNameShapeDeclarationsAreTextuallyExtractable(t *testing.T) {
 		{"FeatureNameShape", FeatureNameShape},
 		{"RecipeNameShape", RecipeNameShape},
 		{"FeatureRecipeNameShape", FeatureRecipeNameShape},
-		{"AggregateNameShape", AggregateNameShape},
 		{"SchemaLibraryNameShape", SchemaLibraryNameShape},
 		{"MappingLibraryNameShape", MappingLibraryNameShape},
 	}

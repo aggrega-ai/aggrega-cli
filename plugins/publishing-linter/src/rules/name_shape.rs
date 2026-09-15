@@ -89,7 +89,6 @@ pub const COMPONENT_NAME_SHAPE: &str = r"^[a-z][a-z0-9-]*/[a-z][a-z0-9-]*/[a-z][
 pub const FEATURE_NAME_SHAPE: &str = r"^[a-z][a-z0-9-]*/[a-z][a-z0-9-]*$";
 pub const RECIPE_NAME_SHAPE: &str = r"^[a-z][a-z0-9-]*$";
 pub const FEATURE_RECIPE_NAME_SHAPE: &str = r"^[a-z][a-z0-9-]*$";
-pub const AGGREGATE_NAME_SHAPE: &str = r"^[a-z][a-z0-9-]*/[a-z][a-z0-9-]*$";
 pub const SCHEMA_LIBRARY_NAME_SHAPE: &str = r"^[A-Z][A-Za-z0-9]*$";
 pub const MAPPING_LIBRARY_NAME_SHAPE: &str = r"^[A-Z][A-Za-z0-9]*$";
 pub const WORKLOAD_LIBRARY_NAME_SHAPE: &str = r"^[A-Z][A-Za-z0-9]*$";
@@ -107,7 +106,6 @@ pub const NAME_SHAPES: &[(&str, &str)] = &[
     ("Feature", FEATURE_NAME_SHAPE),
     ("Recipe", RECIPE_NAME_SHAPE),
     ("FeatureRecipe", FEATURE_RECIPE_NAME_SHAPE),
-    ("Aggregate", AGGREGATE_NAME_SHAPE),
     ("SchemaLibrary", SCHEMA_LIBRARY_NAME_SHAPE),
     ("MappingLibrary", MAPPING_LIBRARY_NAME_SHAPE),
     ("WorkloadLibrary", WORKLOAD_LIBRARY_NAME_SHAPE),
