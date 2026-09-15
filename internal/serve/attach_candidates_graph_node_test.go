@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/requestcancel"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 )
@@ -263,7 +264,7 @@ func graphNodeServer(t *testing.T, ws string, catalogDirs ...string) *Server {
 	srv.lazyCatalog = catalog.NewLazyLookup(ws, cacheDir, catalogDirs, nil)
 	reanchorTestWorkspace(t, srv)
 	srv.serverCtx, srv.serverCancel = context.WithCancel(context.Background())
-	srv.cancelTracker = newCancelRegistry()
+	srv.cancelTracker = requestcancel.New()
 	t.Cleanup(srv.serverCancel)
 	return srv
 }

@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/requestcancel"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 	"github.com/aggrega-ai/aggrega-cli/pkg/yamlpos"
@@ -45,7 +46,7 @@ func newTestSession(t *testing.T, launchRoot string, stdin io.Reader, stdout io.
 	// path, so initialize here; the per-request contexts handle() derives
 	// then have a live parent.
 	sess.serverCtx, sess.serverCancel = context.WithCancel(context.Background())
-	sess.cancelTracker = newCancelRegistry()
+	sess.cancelTracker = requestcancel.New()
 	// The harness stands in for a client that declared its workspace at connect,
 	// which is what makes a pushed diagnostic reach the test's own buffer. A test
 	// asserting the confinement declares something else and reads the silence.

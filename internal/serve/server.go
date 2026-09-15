@@ -281,6 +281,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/haltref"
 	"github.com/aggrega-ai/aggrega-cli/internal/importops"
 	"github.com/aggrega-ai/aggrega-cli/internal/pluginops"
+	"github.com/aggrega-ai/aggrega-cli/internal/requestcancel"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
@@ -721,7 +722,7 @@ func stampSource(diags []Diagnostic, src string) []Diagnostic {
 //
 //   - The per-request cancel registry (cancelTracker) is internally
 //     synchronized by its own mutex: each in-flight handler tracks and untracks
-//     its id under the lock, so concurrent track / untrack across the pool need
+//     its id under the lock, so concurrent Track / Untrack across the pool need
 //     no external lock.
 //
 //   - The workspace registry is internally synchronized by its own mutex, which
@@ -817,14 +818,14 @@ type session struct {
 	// cancelTracker maps an in-flight request's id to its per-request
 	// cancel func, so a specific running request is addressable by id.
 	// It stores the same per-request cancel handle handle already owns
-	// (a second address, not a second cancel authority); track / untrack
+	// (a second address, not a second cancel authority); Track / Untrack
 	// run inside handle for every id-bearing request. The per-id cancel
 	// pickup it exposes is wired to the $/cancelRequest notification,
 	// which the dispatch loop takes inline at its acceptance boundary
-	// rather than submitting to the pool — see cancelRegistry.
+	// rather than submitting to the pool — see requestcancel.Registry.
 	// Constructed lazily in dispatchLoop alongside serverCtx; the
 	// in-memory test harness may construct it earlier.
-	cancelTracker *cancelRegistry
+	cancelTracker *requestcancel.Registry
 
 	// pushRootValue holds the workspace root the daemon may push diagnostics
 	// for: the one the client declared at the handshake, or the launch

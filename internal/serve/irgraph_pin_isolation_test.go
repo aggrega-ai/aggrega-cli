@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/requestcancel"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
@@ -174,7 +175,7 @@ func newPinIsolationServer(t *testing.T, ws string, in io.Reader, out io.Writer,
 	// dispatchLoop initializes it on the concurrent path, but the serial path
 	// bypasses that, so seed it here.
 	srv.serverCtx, srv.serverCancel = context.WithCancel(context.Background())
-	srv.cancelTracker = newCancelRegistry()
+	srv.cancelTracker = requestcancel.New()
 	t.Cleanup(srv.serverCancel)
 	return srv
 }

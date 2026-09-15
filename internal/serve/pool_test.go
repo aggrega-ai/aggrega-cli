@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/requestcancel"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
@@ -490,7 +491,7 @@ func TestByteIdenticalToSequentialAtConcurrencyOne(t *testing.T) {
 		}
 		srv := newPoolTestServer(t, nil, &reference, 1, nil)
 		srv.serverCtx, srv.serverCancel = context.WithCancel(context.Background())
-		srv.cancelTracker = newCancelRegistry()
+		srv.cancelTracker = requestcancel.New()
 		ser := newSerializer(&reference)
 		go ser.run()
 		ser.emit(1, srv.handle(ser, 1, &req))

@@ -169,11 +169,16 @@ func TestHandshakeResultsCarryNoPerRequestEnvelope(t *testing.T) {
 	if len(resps) != 3 {
 		t.Fatalf("want 3 responses, got %d", len(resps))
 	}
-	for i, resp := range resps {
+	// Every response is asserted the same way, so this reads the batch as it
+	// came rather than looking each request's answer up. The failure names the
+	// id it read off the response, because the position a response landed at
+	// is not the position its request was sent at.
+	for _, resp := range resps {
 		fields := wireFields(t, resp)
 		for _, absent := range []string{"resultType", "_meta"} {
 			if raw, present := fields[absent]; present {
-				t.Errorf("response %d carries %q = %s on a handshake-revision result", i+1, absent, raw)
+				t.Errorf("the response to request %s carries %q = %s on a handshake-revision result",
+					resp.ID, absent, raw)
 			}
 		}
 	}

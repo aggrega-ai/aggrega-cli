@@ -121,8 +121,8 @@ func TestDiscoverGuidanceMatchesTheHandshakeGuidanceByte(t *testing.T) {
 		t.Fatalf("want 2 responses, got %d", len(resps))
 	}
 
-	fromHandshake := wireGuidance(t, wireFields(t, resps[0]))
-	fromDiscovery := wireGuidance(t, wireFields(t, resps[1]))
+	fromHandshake := wireGuidance(t, wireFields(t, responseFor(t, resps, 1)))
+	fromDiscovery := wireGuidance(t, wireFields(t, responseFor(t, resps, 2)))
 
 	if strings.TrimSpace(fromDiscovery) == "" {
 		t.Fatal("discovery carries empty guidance")

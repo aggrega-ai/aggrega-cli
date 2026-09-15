@@ -261,10 +261,14 @@ func TestReadFreshnessIsChosenByTheFamilyAndNotTheMethod(t *testing.T) {
 	}
 
 	for i, row := range rows {
-		if resps[i].Error != nil {
-			t.Fatalf("resources/read %s returned an error envelope: %+v", row.uri, resps[i].Error)
+		// The row's request was sent under id i+1, which is how its answer is
+		// found: the requests are answered concurrently, so where the answer
+		// landed in the batch says nothing about which row it belongs to.
+		resp := responseFor(t, resps, i+1)
+		if resp.Error != nil {
+			t.Fatalf("resources/read %s returned an error envelope: %+v", row.uri, resp.Error)
 		}
-		fields := wireFields(t, resps[i])
+		fields := wireFields(t, resp)
 		assertCarriesTheEnvelope(t, "resources/read "+row.uri, fields)
 		assertCarriesAFreshnessHint(t, "resources/read "+row.uri, fields, row.wantScope, row.wantWindow)
 	}
@@ -312,17 +316,21 @@ func TestReadNotFoundCodeIsTheOneTheRequestsRevisionUses(t *testing.T) {
 	}
 
 	for i, row := range rows {
-		if resps[i].Error == nil {
-			t.Errorf("%s: %s was answered rather than refused: %s", row.name, row.uri, resps[i].Result)
+		// The row's request was sent under id i+1, which is how its answer is
+		// found: the requests are answered concurrently, so where the answer
+		// landed in the batch says nothing about which row it belongs to.
+		resp := responseFor(t, resps, i+1)
+		if resp.Error == nil {
+			t.Errorf("%s: %s was answered rather than refused: %s", row.name, row.uri, resp.Result)
 			continue
 		}
-		if got := resps[i].Error.Code; got != codeInvalidParams {
+		if got := resp.Error.Code; got != codeInvalidParams {
 			t.Errorf("%s: %s refused with %d, want %d in this revision",
 				row.name, row.uri, got, codeInvalidParams)
 		}
-		if !strings.Contains(resps[i].Error.Message, row.uri) {
+		if !strings.Contains(resp.Error.Message, row.uri) {
 			t.Errorf("%s: the refusal does not name the URI it could not resolve: %q",
-				row.name, resps[i].Error.Message)
+				row.name, resp.Error.Message)
 		}
 	}
 }

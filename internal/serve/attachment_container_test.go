@@ -16,6 +16,7 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
+	"github.com/aggrega-ai/aggrega-cli/internal/requestcancel"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -264,7 +265,7 @@ func attachmentContainerServer(t *testing.T, ws string) *Server {
 	srv.lazyCatalog = catalog.NewLazyLookup(ws, cacheDir, catalogDirs, nil)
 	reanchorTestWorkspace(t, srv)
 	srv.serverCtx, srv.serverCancel = context.WithCancel(context.Background())
-	srv.cancelTracker = newCancelRegistry()
+	srv.cancelTracker = requestcancel.New()
 	t.Cleanup(srv.serverCancel)
 	return srv
 }

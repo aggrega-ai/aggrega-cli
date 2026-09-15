@@ -404,18 +404,20 @@ func TestToolsCallOverWire(t *testing.T) {
 	if len(resps) != 2 {
 		t.Fatalf("want 2 responses, got %d", len(resps))
 	}
+	toolsList := responseFor(t, resps, 1)
+	toolsCall := responseFor(t, resps, 2)
 	var tl listToolsResult
-	if err := json.Unmarshal(resps[0].Result, &tl); err != nil {
+	if err := json.Unmarshal(toolsList.Result, &tl); err != nil {
 		t.Fatalf("unmarshal tools/list: %v", err)
 	}
 	if len(tl.Tools) != len(toolRegistry) {
 		t.Fatalf("tools/list over wire returned %d tools, want %d", len(tl.Tools), len(toolRegistry))
 	}
-	if resps[1].Error != nil {
-		t.Fatalf("tools/call get-schema over wire errored: %+v", resps[1].Error)
+	if toolsCall.Error != nil {
+		t.Fatalf("tools/call get-schema over wire errored: %+v", toolsCall.Error)
 	}
 	var cr callToolResult
-	if err := json.Unmarshal(resps[1].Result, &cr); err != nil {
+	if err := json.Unmarshal(toolsCall.Result, &cr); err != nil {
 		t.Fatalf("unmarshal tools/call result: %v", err)
 	}
 	if cr.IsError || len(cr.Content) == 0 {

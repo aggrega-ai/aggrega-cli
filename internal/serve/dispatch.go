@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/requestcancel"
 )
 
 // jsonRPCRequest is the wire shape for an incoming request. ID is
@@ -204,7 +206,7 @@ func (s *session) dispatchLoop(runCtx context.Context, drainTimeout time.Duratio
 		s.serverCtx, s.serverCancel = context.WithCancel(context.Background())
 	}
 	if s.cancelTracker == nil {
-		s.cancelTracker = newCancelRegistry()
+		s.cancelTracker = requestcancel.New()
 	}
 	defer s.serverCancel()
 
@@ -381,7 +383,7 @@ func (s *session) dispatchLoop(runCtx context.Context, drainTimeout time.Duratio
 			if req.Method == "$/cancelRequest" {
 				var cp cancelParams
 				if json.Unmarshal(req.Params, &cp) == nil {
-					s.cancelTracker.cancel(cp.ID)
+					s.cancelTracker.Cancel(cp.ID)
 				}
 				ser.emit(seq, nil)
 				continue
@@ -488,11 +490,11 @@ func (s *session) handle(ser *serializer, seq int64, req *jsonRPCRequest) []byte
 	// Register the SAME per-request cancel handle under the request's id
 	// so a specific in-flight request is addressable by id. This is a
 	// second address for the child handle above, not a second cancel
-	// authority. Notifications carry no id and are not tracked (track is a
-	// no-op on an empty id). untrack pairs with the defer'd cancel, so the
+	// authority. Notifications carry no id and are not tracked (Track is a
+	// no-op on an empty id). Untrack pairs with the defer'd cancel, so the
 	// registry holds only currently in-flight requests.
-	s.cancelTracker.track(req.ID, cancel)
-	defer s.cancelTracker.untrack(req.ID)
+	s.cancelTracker.Track(req.ID, cancel)
+	defer s.cancelTracker.Untrack(req.ID)
 	sink := &requestSink{ser: ser, seq: seq}
 	ctx = withRequestSink(ctx, sink)
 	if s.testCtxHook != nil {

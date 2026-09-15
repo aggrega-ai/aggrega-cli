@@ -14,6 +14,7 @@ import (
 	"os"
 	"sync"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/requestcancel"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 )
 
@@ -125,7 +126,39 @@ type server struct {
 	// the caller supplied, built once per session in Run and never mutated, so
 	// every listing over it is byte-stable for the life of the session.
 	commandTools []toolSpec
+
+	// cancels maps an in-flight request's id to the cancel handle of that
+	// request's own context, so the client can end one call and leave every other
+	// one running. It is the registry both request-serving frontends share rather
+	// than a second one written here.
+	//
+	// serve is its single initialisation point: it runs before the loop accepts
+	// anything, so every goroutine that reads this field reads a write that already
+	// happened. A test may install its own beforehand to read the in-flight count.
+	cancels *requestcancel.Registry
+
+	// writeMu serialises the marshal-and-write of every response and guards the
+	// two fields below. Requests are answered on their own goroutines, so without
+	// it two responses emitted at once would interleave their bytes on the output
+	// stream and neither line would parse.
+	//
+	// writeErr holds the first failure any response write met, and writeFailed is
+	// closed when that first failure is recorded. Together they are how a failure
+	// met off the loop goroutine still reaches Run's caller and still stops the
+	// loop reading on into a stream nothing can be written to.
+	writeMu     sync.Mutex
+	writeErr    error
+	writeFailed chan struct{}
 }
+
+// errCancelledByClient is the cause recorded on a request's context when the
+// client cancels that request by id.
+//
+// It is what separates a cancellation from the run ending. Both end the same
+// per-request context, and only the first means the client has said it will not
+// use the result — which is the case the protocol asks a server to send nothing
+// further for. A run that ends still answers the request it was answering.
+var errCancelledByClient = errors.New("request cancelled by the client")
 
 // Run reads newline-delimited JSON-RPC 2.0 messages from cfg.Stdin,
 // answers each on cfg.Stdout, and returns when stdin reaches EOF or the run's
@@ -154,6 +187,19 @@ type server struct {
 // structural rather than an oversight: a tool whose work ignores the context runs
 // to its own completion — the context reaches it, but what it does with it is that
 // path's own contract.
+//
+// # One call at a time, ended by its own id
+//
+// Each request is answered on its own goroutine under a context derived from
+// ctx, so a client gets an answer to one call while another is still working,
+// and a notification — a cancellation above all — is read while a call runs
+// rather than queueing behind it. A cancellation names the request it ends; that
+// request's context ends and nothing further is written for it, while every
+// other call carries on. Cancelling an id nothing is working on does nothing.
+// The same bound applies as above: a tool that ignores its context runs to its
+// own completion.
+//
+// Run returns only once every request it accepted has finished.
 func Run(ctx context.Context, cfg Config) error {
 	stdout := cfg.Stdout
 	if stdout == nil {
@@ -206,11 +252,53 @@ type readResult struct {
 	err  error
 }
 
-// serve runs the message loop: read one newline-delimited message, handle
-// it, repeat until stdin reaches EOF. A blank line is skipped. The final
+// serve runs the message loop and reports what ended it. It is the loop's outer
+// half: it installs the per-run state the loop and the requests it dispatches
+// share, runs the loop, and reports a write failure in preference to whatever
+// the loop itself returned.
+//
+// The preference is the point. A response is now written on the goroutine of the
+// request it answers, where a returned error reaches nobody, so the loop can
+// reach a clean end-of-stream while a write has already failed. Reading the
+// recorded failure here — after messageLoop has returned, which is after every
+// in-flight request has finished — is what keeps Run's contract that a broken
+// transport is reported to its caller rather than swallowed.
+func (s *server) serve(ctx context.Context, stdin io.Reader) error {
+	if s.cancels == nil {
+		s.cancels = requestcancel.New()
+	}
+	s.writeMu.Lock()
+	if s.writeFailed == nil {
+		s.writeFailed = make(chan struct{})
+	}
+	writeFailed := s.writeFailed
+	s.writeMu.Unlock()
+
+	err := s.messageLoop(ctx, stdin, writeFailed)
+	if writeErr := s.writeFailure(); writeErr != nil {
+		return writeErr
+	}
+	return err
+}
+
+// messageLoop reads one newline-delimited message, puts it on its path, and
+// repeats until stdin reaches EOF. A blank line is skipped. The final
 // message may arrive without a trailing newline (ReadBytes returns the
 // bytes alongside io.EOF); it is handled before the loop returns, so no
 // message is dropped at end-of-stream.
+//
+// # Notifications inline, requests concurrently
+//
+// A notification is handled on this goroutine, immediately, because the one
+// thing a client sends while a call is running is a request to stop it: queueing
+// that behind the work it cancels would defeat it. A request is dispatched on its
+// own goroutine, so a second request is answered while the first is still
+// working, and so the id-keyed cancellation has something to reach.
+//
+// Every dispatched request finishes before this returns, which is what makes
+// "every id answered exactly once" true: a loop that returned out from under its
+// own goroutines would drop whatever they had not yet written, and a run that
+// ends still answers the request it was answering.
 //
 // A run whose context has ended stops accepting messages: the loop reads the run
 // at the top of each turn and again on a delivered line, so a message already
@@ -228,7 +316,13 @@ type readResult struct {
 // the exit path the select exists to keep it out of, so it is deliberately left
 // running rather than waited for. Every other exit path releases it, through
 // loopDone below.
-func (s *server) serve(ctx context.Context, stdin io.Reader) error {
+func (s *server) messageLoop(ctx context.Context, stdin io.Reader, writeFailed <-chan struct{}) error {
+	var inFlight sync.WaitGroup
+	// Deferred FIRST, so it runs LAST: the reader is released from a delivery
+	// nobody will take before the loop settles down to wait for the requests still
+	// working, rather than staying parked for the length of the longest one.
+	defer inFlight.Wait()
+
 	lines := make(chan readResult)
 	// loopDone releases the reader from a delivery the loop is no longer there to
 	// take. The channel is unbuffered, so a reader holding a line for a loop that
@@ -257,6 +351,12 @@ func (s *server) serve(ctx context.Context, stdin io.Reader) error {
 		select {
 		case <-ctx.Done():
 			return nil
+		case <-writeFailed:
+			// A response write failed on the goroutine of the request it answered.
+			// Reading on would mean accepting messages to answer into a stream
+			// nothing can be written to, so the loop stops here and serve reports
+			// the recorded failure.
+			return nil
 		case res = <-lines:
 			// A delivered line and the run's end can become ready in the same
 			// turn, and a select picks among ready cases at random. Reading the
@@ -268,7 +368,7 @@ func (s *server) serve(ctx context.Context, stdin io.Reader) error {
 			}
 		}
 		if trimmed := bytes.TrimSpace(res.line); len(trimmed) > 0 {
-			if writeErr := s.handleMessage(ctx, trimmed); writeErr != nil {
+			if writeErr := s.accept(ctx, &inFlight, trimmed); writeErr != nil {
 				return writeErr
 			}
 		}
@@ -281,13 +381,21 @@ func (s *server) serve(ctx context.Context, stdin io.Reader) error {
 	}
 }
 
-// handleMessage parses one message body and routes it. A parse failure
-// returns the JSON-RPC parse-error envelope with a null id. A
-// notification (absent id) is handled for its side effect and yields no
-// response. A request is dispatched and its result or error envelope is
-// framed to stdout. The returned error is non-nil only when writing the
-// response to stdout fails — a fatal transport condition.
-func (s *server) handleMessage(ctx context.Context, body []byte) error {
+// accept parses one message body and puts it on its path. A parse failure is
+// answered inline with the JSON-RPC parse-error envelope and a null id. A
+// notification (absent id) is handled inline for its side effect and yields no
+// response. A request is dispatched on its own goroutine, under a context
+// derived from the run's and registered under the request's id.
+//
+// The registration happens before the goroutine starts, so a cancellation
+// arriving in the very next message cannot find the id untracked. It is released
+// when the handler returns, so the registry holds only the requests currently in
+// flight.
+//
+// The returned error is non-nil only when an inline write fails — a fatal
+// transport condition. A write from a dispatched request cannot report one that
+// way and records it instead; see write.
+func (s *server) accept(ctx context.Context, inFlight *sync.WaitGroup, body []byte) error {
 	var req rpcRequest
 	if err := json.Unmarshal(body, &req); err != nil {
 		return s.writeError(nil, codeParseError, "parse error: "+err.Error())
@@ -296,11 +404,45 @@ func (s *server) handleMessage(ctx context.Context, body []byte) error {
 		s.handleNotification(&req)
 		return nil
 	}
-	result, rpcErr := s.dispatch(ctx, &req)
-	if rpcErr != nil {
-		return s.writeErrorEnvelope(req.ID, rpcErr)
+	reqCtx, cancel := context.WithCancelCause(ctx)
+	s.cancels.Track(req.ID, func() { cancel(errCancelledByClient) })
+	inFlight.Add(1)
+	go func() {
+		defer inFlight.Done()
+		// Releases the context when the request is done with it. It records no
+		// cause where the client's cancellation already recorded one, so answer's
+		// reading of the cause is unaffected by the order these run in.
+		defer cancel(nil)
+		defer s.cancels.Untrack(req.ID)
+		s.answer(reqCtx, &req)
+	}()
+	return nil
+}
+
+// answer dispatches one request and frames what it produced to stdout, unless
+// the client cancelled that request while it ran.
+//
+// The drop is keyed on the client's cancellation rather than on the request's
+// context being done, and that difference is the whole of it: ending the run
+// ends every per-request context too, and a run that ends still answers the
+// request it was answering. Only a cancellation by id means the client has said
+// it will not use the result.
+//
+// The race the protocol describes is accepted: a response already written when
+// the cancellation arrives stands.
+//
+// It returns nothing. A write failure here is met on a request's own goroutine,
+// where a returned error reaches nobody; write records it and serve reports it.
+func (s *server) answer(ctx context.Context, req *rpcRequest) {
+	result, rpcErr := s.dispatch(ctx, req)
+	if errors.Is(context.Cause(ctx), errCancelledByClient) {
+		return
 	}
-	return s.writeResult(req.ID, result)
+	if rpcErr != nil {
+		_ = s.writeErrorEnvelope(req.ID, rpcErr)
+		return
+	}
+	_ = s.writeResult(req.ID, result)
 }
 
 // writeResult frames a successful response carrying result to stdout.
@@ -328,16 +470,47 @@ func (s *server) writeErrorEnvelope(id json.RawMessage, env *rpcError) error {
 // write marshals resp and emits it as one newline-terminated line on
 // stdout. It is the single route from every response surface to the
 // output stream, so stdout carries nothing but framed protocol messages.
+//
+// Requests are answered on their own goroutines, so the marshal-and-write runs
+// under a mutex: two responses emitted at once would otherwise interleave their
+// bytes and neither line would parse. Nothing else acquires it.
+//
+// It also records the first failure any write meets, because a write from a
+// dispatched request returns to a goroutine nobody is reading, and serve still
+// owes its caller that error — a broken transport leaves no channel to report the
+// failure on.
 func (s *server) write(resp *rpcResponse) error {
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
 	b, err := json.Marshal(resp)
 	if err != nil {
-		return fmt.Errorf("marshal response: %w", err)
+		return s.recordWriteFailureLocked(fmt.Errorf("marshal response: %w", err))
 	}
 	b = append(b, '\n')
 	if _, err := s.out.Write(b); err != nil {
-		return fmt.Errorf("write response: %w", err)
+		return s.recordWriteFailureLocked(fmt.Errorf("write response: %w", err))
 	}
 	return nil
+}
+
+// recordWriteFailureLocked records err as the run's first write failure and
+// wakes the message loop, then returns err unchanged. The caller holds writeMu,
+// which is what makes the wake-up channel close exactly once.
+func (s *server) recordWriteFailureLocked(err error) error {
+	if s.writeErr == nil {
+		s.writeErr = err
+		if s.writeFailed != nil {
+			close(s.writeFailed)
+		}
+	}
+	return err
+}
+
+// writeFailure reports the first failure a response write met, or nil.
+func (s *server) writeFailure() error {
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+	return s.writeErr
 }
 
 // logf writes a diagnostic line to stderr. Every log surface routes here

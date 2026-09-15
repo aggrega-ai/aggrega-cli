@@ -124,15 +124,37 @@ func resourceNotFound(uri string) *rpcError {
 // notification confirms the handshake completed; unrecognized
 // notifications are logged to stderr and otherwise ignored, per the
 // protocol's forward-compatibility rule.
+//
+// It runs on the message loop's own goroutine rather than on a goroutine of its
+// own, so a cancellation takes effect at the moment it is read rather than
+// queueing behind the work it is cancelling.
 func (s *server) handleNotification(req *rpcRequest) {
 	switch req.Method {
 	case "notifications/initialized":
 		// Handshake complete; the client may now issue requests.
 	case "notifications/cancelled":
-		// No long-running request is cancellable in this surface yet.
+		s.handleCancelled(req.Params)
 	default:
 		s.logf("mcp: ignoring unrecognized notification %q", req.Method)
 	}
+}
+
+// handleCancelled ends the request the notification names, by routing its id to
+// the cancel registry. The named request's context is cancelled, its handler
+// observes that at its next interruption point, and nothing further is written
+// for it.
+//
+// Three cases come to nothing, and all three are what the protocol asks for.
+// Params that will not parse are dropped silently — a notification has no
+// response channel an error could be reported on. An id nothing is working on,
+// and an id whose request has already been answered, are both a lookup that
+// misses; the server keeps serving either way.
+func (s *server) handleCancelled(params json.RawMessage) {
+	var p cancelledParams
+	if err := json.Unmarshal(params, &p); err != nil {
+		return
+	}
+	s.cancels.Cancel(p.RequestID)
 }
 
 // handleInitialize answers the initialize handshake. It advertises the

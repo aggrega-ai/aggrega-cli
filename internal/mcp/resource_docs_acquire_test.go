@@ -56,6 +56,10 @@ func coldDocsWorkspace(t *testing.T) (*server, string) {
 // message, and which message a client sends first is exactly what the placement
 // must not depend on. The script reaches EOF at once, so the run acquires,
 // answers whatever the script carries, and returns.
+//
+// The responses come back in the order the wire carried them, which is not the
+// order the script sent the requests in. A test asking about a particular
+// request reads it with responseFor.
 func runServer(t *testing.T, s *server, requests ...string) []rpcResponse {
 	t.Helper()
 	var out bytes.Buffer

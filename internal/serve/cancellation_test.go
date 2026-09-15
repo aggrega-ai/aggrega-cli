@@ -16,94 +16,11 @@ import (
 	"time"
 )
 
-// TestCancelRegistryTrackUntrackLifecycle is the unit-level proof of the
-// per-request cancel registry: track records an id, untrack removes it,
-// cancel(id) fires the stored func, an unknown id is a safe no-op, and a
-// notification (empty id) is never tracked. This asserts registry
-// BEHAVIOR; it is not a live per-request cancel-by-id round-trip — no
-// dispatch method or notification routing is exercised, matching the
-// built-not-wired boundary.
-func TestCancelRegistryTrackUntrackLifecycle(t *testing.T) {
-	t.Parallel()
-	r := newCancelRegistry()
-
-	id := json.RawMessage(`"req-1"`)
-	ctx, cancel := context.WithCancel(context.Background())
-
-	if r.len() != 0 {
-		t.Fatalf("fresh registry len = %d; want 0", r.len())
-	}
-
-	r.track(id, cancel)
-	if r.len() != 1 {
-		t.Errorf("after track len = %d; want 1", r.len())
-	}
-
-	// cancel(id) must fire the stored func, cancelling the derived ctx.
-	r.cancel(id)
-	select {
-	case <-ctx.Done():
-	case <-time.After(time.Second):
-		t.Fatal("cancel(id) did not fire the registered cancel func")
-	}
-
-	r.untrack(id)
-	if r.len() != 0 {
-		t.Errorf("after untrack len = %d; want 0", r.len())
-	}
-
-	// cancel on an absent id is a safe no-op.
-	r.cancel(json.RawMessage(`"absent"`))
-
-	// A notification carries no id and is never tracked.
-	r.track(nil, func() {})
-	r.track(json.RawMessage{}, func() {})
-	if r.len() != 0 {
-		t.Errorf("notification (empty id) was tracked; len = %d; want 0", r.len())
-	}
-	// untrack / cancel on an empty id are no-ops too.
-	r.untrack(nil)
-	r.cancel(nil)
-}
-
-// TestCancelRegistryConcurrentTrackUntrackRaceClean fans out many
-// goroutines tracking and untracking distinct ids (and reading len /
-// firing cancel) on one registry. Under -race this fails if track /
-// untrack / cancel / len touch the map without the lock. It also proves
-// the track / untrack pairing is balanced: the registry returns to empty.
-func TestCancelRegistryConcurrentTrackUntrackRaceClean(t *testing.T) {
-	t.Parallel()
-	r := newCancelRegistry()
-
-	const workers = 32
-	var wg sync.WaitGroup
-	wg.Add(workers)
-	for w := 0; w < workers; w++ {
-		w := w
-		go func() {
-			defer wg.Done()
-			for i := 0; i < 50; i++ {
-				id := json.RawMessage(fmt.Sprintf(`"w%d-%d"`, w, i))
-				_, cancel := context.WithCancel(context.Background())
-				r.track(id, cancel)
-				r.len()
-				r.cancel(id)
-				r.untrack(id)
-			}
-		}()
-	}
-
-	done := make(chan struct{})
-	go func() { wg.Wait(); close(done) }()
-	select {
-	case <-done:
-	case <-time.After(10 * time.Second):
-		t.Fatal("registry fan-out did not complete")
-	}
-	if r.len() != 0 {
-		t.Errorf("registry not balanced after fan-out; len = %d; want 0", r.len())
-	}
-}
+// The registry's own unit tests — the track / untrack / cancel lifecycle and the
+// concurrent fan-out — live with the registry in internal/requestcancel. What
+// stays here drives the daemon's wiring: the $/cancelRequest notification, the
+// per-request context chain, and the balance of the registry under the pool.
+// cancellation.go names which test covers which call site the moved ones left.
 
 // TestDeadlineComposesOverPerRequestContext proves source (d): the
 // per-request context shape is a plain cancellable chain, so a deadline
@@ -309,7 +226,7 @@ func TestCancelTrackerEmptyAfterBurst(t *testing.T) {
 		t.Fatalf("dispatchLoop: %v", err)
 	}
 
-	if got := srv.cancelTracker.len(); got != 0 {
+	if got := srv.cancelTracker.Len(); got != 0 {
 		t.Errorf("cancel registry not empty after burst drained; len = %d; want 0", got)
 	}
 }
@@ -359,7 +276,7 @@ func TestCancelRequestByIdInterruptsHandler(t *testing.T) {
 
 	// Reach the registry by id and fire the pickup directly — the
 	// unit-level seam check, independent of notification routing.
-	srv.cancelTracker.cancel(json.RawMessage(fmt.Sprintf("%d", targetID)))
+	srv.cancelTracker.Cancel(json.RawMessage(fmt.Sprintf("%d", targetID)))
 
 	if _, err := stdinW.Write(framedNotification("aggrega/shutdown", nil)); err != nil {
 		t.Fatalf("write shutdown: %v", err)
@@ -498,9 +415,14 @@ func TestCancelRequestUnknownIdIsNoOp(t *testing.T) {
 // regression: the in-flight request's id token and the $/cancelRequest
 // params.id are JSON-encoded with DIFFERENT insignificant whitespace for
 // the same logical id. The cancel must still interrupt the handler,
-// proving the cancelKey canonicalization rather than a verbatim-byte
+// proving the registry's key canonicalization rather than a verbatim-byte
 // match. framedRequest emits a tight `"id":7`; the cancel params here are
 // hand-framed as `{"id": 7}` with a space before the value.
+//
+// This is the daemon's end-to-end cover for that canonicalization, which the
+// registry keeps unexported: no caller here can build a key, so the only way to
+// assert the rule from this package is to drive a differing spelling over the
+// wire and watch the handler stop.
 func TestCancelRequestNormalizesIdWhitespace(t *testing.T) {
 	t.Parallel()
 
@@ -539,8 +461,8 @@ func TestCancelRequestNormalizesIdWhitespace(t *testing.T) {
 
 	// Hand-frame a $/cancelRequest whose params.id carries whitespace the
 	// request's id token did not (`"id": 7` vs the request's `"id":7`).
-	// A verbatim-byte match would miss; cancelKey's json.Compact makes
-	// both resolve to the same registry key.
+	// A verbatim-byte match would miss; the registry's json.Compact makes
+	// both resolve to the same key.
 	cancelBody := `{"jsonrpc":"2.0","method":"$/cancelRequest","params":{"id": 7}}`
 	if _, err := stdinW.Write(rawFramed(cancelBody)); err != nil {
 		t.Fatalf("write cancel: %v", err)
@@ -561,6 +483,6 @@ func TestCancelRequestNormalizesIdWhitespace(t *testing.T) {
 	}
 
 	if atomic.LoadInt32(&observed) != 1 {
-		t.Errorf("whitespace-differing $/cancelRequest did not cancel the handler; cancelKey normalization failed")
+		t.Errorf("whitespace-differing $/cancelRequest did not cancel the handler; the registry's key normalization failed")
 	}
 }

@@ -75,6 +75,29 @@ type rpcResponse struct {
 	Error   *rpcError       `json:"error,omitempty"`
 }
 
+// cancelledParams is the params shape for the notifications/cancelled
+// notification: the id of the request the client is cancelling. The protocol
+// also allows an optional free-text reason, which is not declared here because
+// nothing reads it — an undeclared field is simply ignored when the params are
+// read, so a client that sends one is still understood.
+//
+// RequestID is captured as raw JSON — not decoded to a concrete number or
+// string — so it reaches the cancel registry through the same canonicalization
+// the in-flight request's own id took, with no decode-then-re-encode step that
+// could perturb the bytes.
+//
+// It is deliberately a second wire shape for the concept the other
+// request-serving frontend's cancel params also carry, and not a copy of a
+// mechanic. The two protocols spell the field differently — requestId here, id
+// there — and one struct answering to both wires would accept each protocol's
+// field name on the other's surface, which is a wider contract than either
+// states. What is single-sourced is the mechanic underneath: the registry the id
+// resolves against, and the key rule that resolves it, live in
+// internal/requestcancel and both frontends route into them.
+type cancelledParams struct {
+	RequestID json.RawMessage `json:"requestId"`
+}
+
 // rpcError carries the JSON-RPC 2.0 error envelope. Data is reserved for
 // structured detail a future method may attach; omitempty drops it from
 // the wire while it is nil.

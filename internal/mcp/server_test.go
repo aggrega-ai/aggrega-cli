@@ -15,6 +15,11 @@ import (
 // returns the parsed responses (one per stdout line), the raw stdout, the
 // raw stderr, and the Run error. The bytes.Buffer stdin reaches EOF after
 // the script, so Run returns on a clean EOF.
+//
+// The responses come back in the order the wire carried them, which is not the
+// order the script sent the requests in. A test asking about a particular
+// request reads it with responseFor; the slice is left in wire order so a test
+// that genuinely asserts on that order still has it.
 func drive(t *testing.T, requests ...string) (responses []rpcResponse, stdout, stderr string, runErr error) {
 	t.Helper()
 	in := strings.NewReader(strings.Join(requests, "\n") + "\n")
@@ -33,6 +38,34 @@ func drive(t *testing.T, requests ...string) (responses []rpcResponse, stdout, s
 		responses = append(responses, resp)
 	}
 	return responses, stdout, stderr, runErr
+}
+
+// responseFor returns the response carrying the given request id, failing the
+// test when nothing in the batch carries it.
+//
+// Every assertion about a particular request in a multi-request batch goes
+// through here, because a request is answered on its own goroutine: the order
+// responses reach the output stream is the order the handlers finished in, and
+// a second request can be answered while the first is still working. Neither
+// JSON-RPC nor the protocol promises response order, and a client correlates by
+// id for exactly this reason.
+//
+// It reads the batch rather than reordering it. A helper that sorted responses
+// into request order would make a positional assertion pass again with no edit,
+// which is the defect rather than the fix: it would hide the real behaviour and
+// blind any test that cares what order the wire actually carried.
+func responseFor(t *testing.T, resps []rpcResponse, id int) rpcResponse {
+	t.Helper()
+	answered := make([]string, 0, len(resps))
+	for _, resp := range resps {
+		answered = append(answered, string(resp.ID))
+		var got int
+		if err := json.Unmarshal(resp.ID, &got); err == nil && got == id {
+			return resp
+		}
+	}
+	t.Fatalf("no response carries id %d; the run answered ids %v", id, answered)
+	return rpcResponse{}
 }
 
 func TestInitializeHandshakeAdvertisesCapabilities(t *testing.T) {
@@ -106,10 +139,15 @@ func TestListMethodsReturnWellFormedResults(t *testing.T) {
 			t.Fatalf("list method returned error: %+v", r.Error)
 		}
 	}
+	toolsList := responseFor(t, resps, 1)
+	resourcesList := responseFor(t, resps, 2)
+	templatesList := responseFor(t, resps, 3)
+	promptsList := responseFor(t, resps, 4)
+
 	// tools/list carries the curated set: every registered tool, with a name,
 	// a non-empty description, and a well-formed JSON Schema for its arguments.
 	var tl listToolsResult
-	if err := json.Unmarshal(resps[0].Result, &tl); err != nil {
+	if err := json.Unmarshal(toolsList.Result, &tl); err != nil {
 		t.Fatalf("unmarshal tools/list: %v", err)
 	}
 	if len(tl.Tools) != len(toolRegistry) {
@@ -135,7 +173,7 @@ func TestListMethodsReturnWellFormedResults(t *testing.T) {
 	// least the component schema and the CLI root; the documentation and catalog
 	// families are templated rather than enumerated here.
 	var rl listResourcesResult
-	if err := json.Unmarshal(resps[1].Result, &rl); err != nil {
+	if err := json.Unmarshal(resourcesList.Result, &rl); err != nil {
 		t.Fatalf("unmarshal resources/list: %v", err)
 	}
 	gotResources := map[string]bool{}
@@ -147,13 +185,13 @@ func TestListMethodsReturnWellFormedResults(t *testing.T) {
 	}
 	for _, want := range []string{"schema://component", "cli://"} {
 		if !gotResources[want] {
-			t.Errorf("resources/list missing resource %q: %s", want, resps[1].Result)
+			t.Errorf("resources/list missing resource %q: %s", want, resourcesList.Result)
 		}
 	}
 	// resources/templates/list advertises every URI-template family: the two
 	// documentation families plus the schema, catalog, and CLI families.
 	var rt listResourceTemplatesResult
-	if err := json.Unmarshal(resps[2].Result, &rt); err != nil {
+	if err := json.Unmarshal(templatesList.Result, &rt); err != nil {
 		t.Fatalf("unmarshal resources/templates/list: %v", err)
 	}
 	gotTemplates := map[string]bool{}
@@ -165,13 +203,13 @@ func TestListMethodsReturnWellFormedResults(t *testing.T) {
 	}
 	for _, want := range []string{"langref://{path}", "authoring://{topic}", "schema://{kind}", "catalog://{kind}/{name}", "cli://{command}"} {
 		if !gotTemplates[want] {
-			t.Errorf("resources/templates/list missing template %q: %s", want, resps[2].Result)
+			t.Errorf("resources/templates/list missing template %q: %s", want, templatesList.Result)
 		}
 	}
 	// prompts/list carries the fixed persona and per-kind authoring set: every
 	// registered prompt, with a name, a non-empty description, and arguments.
 	var pl listPromptsResult
-	if err := json.Unmarshal(resps[3].Result, &pl); err != nil {
+	if err := json.Unmarshal(promptsList.Result, &pl); err != nil {
 		t.Fatalf("unmarshal prompts/list: %v", err)
 	}
 	if len(pl.Prompts) != len(promptRegistry) {
@@ -199,14 +237,17 @@ func TestDispatchStubsReturnWellFormedErrors(t *testing.T) {
 	if len(resps) != 3 {
 		t.Fatalf("want 3 responses, got %d", len(resps))
 	}
-	if resps[0].Error == nil || resps[0].Error.Code != codeInvalidParams {
-		t.Errorf("tools/call unknown-tool error = %+v, want code %d", resps[0].Error, codeInvalidParams)
+	toolsCall := responseFor(t, resps, 1)
+	if toolsCall.Error == nil || toolsCall.Error.Code != codeInvalidParams {
+		t.Errorf("tools/call unknown-tool error = %+v, want code %d", toolsCall.Error, codeInvalidParams)
 	}
-	if resps[1].Error == nil || resps[1].Error.Code != codeResourceNotFound {
-		t.Errorf("resources/read unknown-uri error = %+v, want code %d", resps[1].Error, codeResourceNotFound)
+	resourcesRead := responseFor(t, resps, 2)
+	if resourcesRead.Error == nil || resourcesRead.Error.Code != codeResourceNotFound {
+		t.Errorf("resources/read unknown-uri error = %+v, want code %d", resourcesRead.Error, codeResourceNotFound)
 	}
-	if resps[2].Error == nil || resps[2].Error.Code != codeMethodNotFound {
-		t.Errorf("unknown method error = %+v, want code %d", resps[2].Error, codeMethodNotFound)
+	unknownMethod := responseFor(t, resps, 3)
+	if unknownMethod.Error == nil || unknownMethod.Error.Code != codeMethodNotFound {
+		t.Errorf("unknown method error = %+v, want code %d", unknownMethod.Error, codeMethodNotFound)
 	}
 }
 
