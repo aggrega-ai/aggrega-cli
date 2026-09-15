@@ -515,11 +515,23 @@ func originFields() []originField {
 		sc("concurrency.pool_size", func(c Config) string { return strconv.Itoa(c.Concurrency.PoolSize) }),
 		sc("serve.build_on_inspect", func(c Config) string { return strconv.FormatBool(c.Serve.BuildOnInspect) }),
 		sc("serve.lint_on_validate", func(c Config) string { return strconv.FormatBool(c.Serve.LintOnValidate) }),
+		sc("mcp.listen", func(c Config) string { return c.MCP.Listen }),
+		sc("mcp.tls.cert_file", func(c Config) string { return c.MCP.TLS.CertFile }),
+		sc("mcp.tls.key_file", func(c Config) string { return c.MCP.TLS.KeyFile }),
+		sc("mcp.limits.max_body_bytes", func(c Config) string {
+			return strconv.FormatInt(c.MCP.Limits.MaxBodyBytes, 10)
+		}),
+		sc("mcp.limits.max_concurrent_requests", func(c Config) string {
+			return strconv.Itoa(c.MCP.Limits.MaxConcurrentRequests)
+		}),
 		sc("signing.fulcio_url", func(c Config) string { return c.Signing.FulcioURL }),
 		sc("signing.rekor_url", func(c Config) string { return c.Signing.RekorURL }),
 		sc("signing.timestamp_url", func(c Config) string { return c.Signing.TimestampURL }),
 		sc("signing.key_path", func(c Config) string { return c.Signing.KeyPath }),
 		sc("signing.required", func(c Config) string { return strconv.FormatBool(c.Signing.Required) }),
+		ls("mcp.allowed_origins",
+			func(c Config) string { return joinStrings(c.MCP.AllowedOrigins) },
+			func(c Config) string { return joinStrings(c.MCP.AllowedOrigins) }),
 		ls("signing.kinds",
 			func(c Config) string { return joinStrings(c.Signing.Kinds) },
 			func(c Config) string { return joinStrings(c.Signing.Kinds) }),

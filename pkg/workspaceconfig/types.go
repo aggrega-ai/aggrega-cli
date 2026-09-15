@@ -105,6 +105,12 @@ type Config struct {
 	Concurrency ConcurrencyConfig `yaml:"concurrency"`
 	Serve       ServeConfig       `yaml:"serve"`
 
+	// MCP carries the Model Context Protocol server's settings for the
+	// HTTP transport. Its Listen field is what selects that transport;
+	// with Listen empty the server speaks over standard input and output
+	// and nothing else in the block is read.
+	MCP MCPConfig `yaml:"mcp"`
+
 	// CompiledModuleCache carries the size cap for the on-disk
 	// compiled-module store. That store is machine-wide rather than
 	// per-workspace, so the setting is most at home in the global
@@ -809,17 +815,92 @@ type ServeConfig struct {
 	LintOnValidate bool `yaml:"lint_on_validate"`
 }
 
+// MCPConfig carries the Model Context Protocol server's settings for the
+// HTTP transport — the listen address that selects it, the certificate
+// and key that let the process terminate TLS itself, the origins it
+// accepts, and the caps it applies to the traffic it takes.
+//
+// Listen is the only field that decides anything on its own: with it
+// empty the server speaks the protocol over standard input and output
+// and no listener exists for the rest of the block to configure.
+// Distinct from ServeConfig, which carries the editor-backend daemon's
+// settings.
+type MCPConfig struct {
+	// Listen is the address the server listens on, in one of two forms:
+	// "host:port", or "unix:" followed by a filesystem path. Empty (the
+	// default) starts no listener and speaks over standard input and
+	// output. A --listen flag on the command overrides this key for one
+	// invocation.
+	//
+	// A plaintext address — one reached with neither TLS file set — is
+	// permitted only on loopback or on a Unix socket, which is the shape
+	// a deployment behind a terminating proxy uses. Any other plaintext
+	// address is refused before anything binds. The refusal is a
+	// startup-time decision rather than a schema one: the schema decides
+	// the value's shape and cannot tell one address from another.
+	Listen string `yaml:"listen"`
+
+	// TLS carries the certificate and key for terminating TLS inside the
+	// serving process. Both unset is the plaintext case above.
+	TLS MCPTLSConfig `yaml:"tls"`
+
+	// AllowedOrigins are the origins accepted on a request's Origin
+	// header. A request naming an origin absent from this list is
+	// refused; one naming a listed origin, or carrying no Origin header,
+	// is served. Empty (the default) therefore serves only callers that
+	// send no Origin header, which is the shape a client that is not a
+	// browser takes.
+	AllowedOrigins []string `yaml:"allowed_origins"`
+
+	// Limits carries the caps the listener applies to the traffic it
+	// accepts.
+	Limits MCPLimitsConfig `yaml:"limits"`
+}
+
+// MCPTLSConfig carries the paths to the certificate chain and private key
+// the serving process reads at startup to terminate TLS itself. Both are
+// paths to files; neither holds key material inline, which is the same
+// split SigningConfig draws between an inline public key and a key path.
+type MCPTLSConfig struct {
+	// CertFile is the path to the PEM certificate chain the listener
+	// presents. Set together with KeyFile; empty (the default) serves
+	// plaintext.
+	CertFile string `yaml:"cert_file"`
+	// KeyFile is the path to the PEM private key for CertFile's
+	// certificate. Set together with it; empty (the default) serves
+	// plaintext.
+	KeyFile string `yaml:"key_file"`
+}
+
+// MCPLimitsConfig carries the caps the HTTP listener applies to the
+// traffic it accepts, bounding one request's size and how many run at
+// once so a single caller cannot exhaust the serving process.
+//
+// Neither cap has an off value, which is the deliberate difference from
+// ParseCacheConfig and CompiledModuleCacheConfig: those bound a cache,
+// where an unbounded setting costs memory the operator chose to spend,
+// while these bound what an unauthenticated network peer can ask for
+// before it is refused.
+type MCPLimitsConfig struct {
+	// MaxBodyBytes is the largest request body the listener accepts. A
+	// larger body is refused and is not read past the cap. Default
+	// 4_194_304 (4 MiB); the schema's minimum is 1.
+	MaxBodyBytes int64 `yaml:"max_body_bytes"`
+	// MaxConcurrentRequests is how many requests the listener runs at
+	// once. A request arriving while that many are in flight is refused
+	// rather than queued. Default 16; the schema's minimum is 1.
+	MaxConcurrentRequests int `yaml:"max_concurrent_requests"`
+}
+
 // Default returns a Config populated with the documented defaults.
-// Seven documented defaults are NOT the Go zero-value and are seeded
-// explicitly: DefaultRegistry = "hub.aggrega.ai",
-// ArtifactCacheDir = ".aggrega/cache", Build.YAMLIndent = 2,
-// ParseCache.MaxEntries = 1000, ParseCache.MaxBytes = 100_000_000,
-// CompiledModuleCache.MaxBytes = 53_687_091_200, and
-// Concurrency.PoolSize = 4. Remaining fields stay at Go's
-// zero-value (AutoPull false, every Allow* flag false, every list nil,
-// every other string empty) — including
-// Build.HaltOnDeprecatedSeverity, whose empty value is the documented
-// default and means no recorded deprecation marker halts the build.
+// Which fields those are is stated by the body below and is deliberately
+// not repeated here: a list beside the literal it describes goes stale
+// at the next field that joins it, and nothing compares the two.
+// Every field the body does not name stays at Go's zero-value
+// (AutoPull false, every Allow* flag false, every list nil, every other
+// string empty) — including Build.HaltOnDeprecatedSeverity, whose empty
+// value is the documented default and means no recorded deprecation
+// marker halts the build.
 //
 // Callers that want a true zero-value Config use Config{} directly;
 // callers that want the documented baseline use Default(). The
@@ -841,6 +922,12 @@ func Default() Config {
 		},
 		Concurrency: ConcurrencyConfig{
 			PoolSize: 4,
+		},
+		MCP: MCPConfig{
+			Limits: MCPLimitsConfig{
+				MaxBodyBytes:          4_194_304,
+				MaxConcurrentRequests: 16,
+			},
 		},
 	}
 }
