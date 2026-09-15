@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -55,20 +56,31 @@ func defaultTransportConfig() HTTPConfig {
 }
 
 // newHTTPFixture starts a listener over the fixture command surface, with the
-// test-only authenticator installed.
+// test-only authenticator installed, under a run that never ends.
 func newHTTPFixture(t *testing.T, transport HTTPConfig, run commandRunner) *httpFixture {
 	t.Helper()
-	f := newUnauthenticatedHTTPFixture(t, transport, run)
+	return newHTTPFixtureUnderRun(t, context.Background(), transport, run)
+}
+
+// newHTTPFixtureUnderRun is newHTTPFixture with the run's own context supplied by
+// the caller, so a proof can end the run while a call is in flight. Every other
+// proof here runs under a context that never ends, which is the shape a serving
+// process holds for as long as it serves.
+func newHTTPFixtureUnderRun(t *testing.T, runCtx context.Context,
+	transport HTTPConfig, run commandRunner) *httpFixture {
+	t.Helper()
+	f := newUnauthenticatedHTTPFixture(t, runCtx, transport, run)
 	f.h.auth = acceptAllAuthenticator{}
 	return f
 }
 
 // newUnauthenticatedHTTPFixture starts a listener with the authenticator the
 // handler ships with, so what it serves is what a deployment serves.
-func newUnauthenticatedHTTPFixture(t *testing.T, transport HTTPConfig, run commandRunner) *httpFixture {
+func newUnauthenticatedHTTPFixture(t *testing.T, runCtx context.Context,
+	transport HTTPConfig, run commandRunner) *httpFixture {
 	t.Helper()
 	s := newCommandToolServer(t, run)
-	h, err := newHTTPHandler(context.Background(), s, transport)
+	h, err := newHTTPHandler(runCtx, s, transport)
 	if err != nil {
 		t.Fatalf("newHTTPHandler: %v", err)
 	}
@@ -130,6 +142,72 @@ func (f *httpFixture) exchange(method, path string, headers map[string]string, b
 		}
 	}
 	return out, nil
+}
+
+// exchangeResult carries one exchange back from the goroutine that issued it.
+// The answer travels rather than being asserted on where it was produced: the
+// testing package's failure calls belong to the test's own goroutine and nowhere
+// else.
+type exchangeResult struct {
+	got answer
+	err error
+}
+
+// issue posts one body to the endpoint from a goroutine of its own and hands the
+// result back on the channel it returns, for the proofs that need a request left
+// in flight while they do something else to the listener.
+func (f *httpFixture) issue(body string) <-chan exchangeResult {
+	out := make(chan exchangeResult, 1)
+	go func() {
+		got, err := f.exchange(http.MethodPost, endpointPath, nil, body)
+		out <- exchangeResult{got: got, err: err}
+	}()
+	return out
+}
+
+// awaitExchange reads back an exchange issued above, within the liveness
+// ceiling. The ceiling separates "returned" from "hung forever" and is the only
+// thing a clock decides anywhere in this file.
+func awaitExchange(t *testing.T, results <-chan exchangeResult, what string) answer {
+	t.Helper()
+	select {
+	case result := <-results:
+		if result.err != nil {
+			t.Fatalf("%s: %v", what, result.err)
+		}
+		return result.got
+	case <-time.After(runReturnCeiling):
+		t.Fatalf("%s never returned within the liveness ceiling", what)
+		return answer{}
+	}
+}
+
+// awaitEntered waits for a blocking seam to report it has been reached, within
+// the same liveness ceiling. Reaching the ceiling means the request never got
+// there at all, which is a different failure from whatever the proof went on to
+// assert, so it is reported as its own.
+func awaitEntered(t *testing.T, entered <-chan struct{}, what string) {
+	t.Helper()
+	select {
+	case <-entered:
+	case <-time.After(runReturnCeiling):
+		t.Fatalf("%s never reached the tool within the liveness ceiling", what)
+	}
+}
+
+// awaitCause reads back what a blocking seam recorded on its way out: the cause
+// its context carried, or nil where it left on its own release instead. A nil is
+// therefore a reading rather than an absence of one, which is what lets a proof
+// assert that nothing interrupted a call.
+func awaitCause(t *testing.T, ended <-chan error, what string) error {
+	t.Helper()
+	select {
+	case cause := <-ended:
+		return cause
+	case <-time.After(runReturnCeiling):
+		t.Fatalf("%s never left the tool within the liveness ceiling", what)
+		return nil
+	}
 }
 
 // wantRefusal asserts one status and one error code, and reports both sides when
@@ -540,7 +618,7 @@ func TestHTTPRoutingRefusesEverythingButPostOnTheEndpoint(t *testing.T) {
 // The second half is the control — without it, a listener refusing everything
 // with not-found would pass the first half.
 func TestHTTPUnknownPathIsAnsweredBeforeAuthentication(t *testing.T) {
-	f := newUnauthenticatedHTTPFixture(t, defaultTransportConfig(), nil)
+	f := newUnauthenticatedHTTPFixture(t, context.Background(), defaultTransportConfig(), nil)
 
 	unknown := f.send(t, http.MethodPost, "/not-the-endpoint", nil, `{"jsonrpc":"2.0","id":1,"method":"ping"}`)
 	if unknown.status != http.StatusNotFound {
@@ -676,7 +754,11 @@ func callFixtureToolBody(id int) string {
 //
 // A planted defect that acquires the slot with a blocking send instead of a
 // non-blocking one turns the second request into a wait rather than a refusal,
-// and this proof reaches its liveness ceiling instead of passing.
+// and this proof reaches its liveness ceiling instead of passing. The excess
+// request is therefore issued on a goroutine and read back against that ceiling
+// like every other request here: read inline, a defect that made it wait would
+// hang the whole package and be reported by the runner's own timeout, with no
+// assertion message naming what failed.
 func TestHTTPConcurrencyCapRefusesTheExcess(t *testing.T) {
 	entered := make(chan struct{}, 1)
 	release := make(chan struct{})
@@ -690,25 +772,10 @@ func TestHTTPConcurrencyCapRefusesTheExcess(t *testing.T) {
 	transport.MaxConcurrentRequests = 1
 	f := newHTTPFixture(t, transport, heldCommand(entered, release))
 
-	type exchangeResult struct {
-		got answer
-		err error
-	}
-	held := make(chan exchangeResult, 1)
-	go func() {
-		// The answer travels back and is read on the test's own goroutine: the
-		// testing package's failure calls belong there and nowhere else.
-		got, err := f.exchange(http.MethodPost, endpointPath, nil, callFixtureToolBody(1))
-		held <- exchangeResult{got: got, err: err}
-	}()
+	held := f.issue(callFixtureToolBody(1))
+	awaitEntered(t, entered, "the held request")
 
-	select {
-	case <-entered:
-	case <-time.After(runReturnCeiling):
-		t.Fatal("the held request never reached the tool within the liveness ceiling")
-	}
-
-	excess := f.post(t, nil, callFixtureToolBody(2))
+	excess := awaitExchange(t, f.issue(callFixtureToolBody(2)), "the excess request")
 	if excess.status != http.StatusServiceUnavailable {
 		t.Errorf("status = %d, want 503 (body %q)", excess.status, excess.raw)
 	}
@@ -721,20 +788,11 @@ func TestHTTPConcurrencyCapRefusesTheExcess(t *testing.T) {
 	}
 
 	releaseHeld()
-	select {
-	case result := <-held:
-		// Control: the slot the excess request could not take was held by a request
-		// that was itself served. Without this the assertion above would pass for a
-		// listener refusing everything.
-		if result.err != nil {
-			t.Fatalf("the held request failed: %v", result.err)
-		}
-		if result.got.status != http.StatusOK {
-			t.Errorf("the held request was answered %d, want 200 (body %q)",
-				result.got.status, result.got.raw)
-		}
-	case <-time.After(runReturnCeiling):
-		t.Error("the held request never returned within the liveness ceiling")
+	// Control: the slot the excess request could not take was held by a request
+	// that was itself served. Without this the assertion above would pass for a
+	// listener refusing everything.
+	if got := awaitExchange(t, held, "the held request"); got.status != http.StatusOK {
+		t.Errorf("the held request was answered %d, want 200 (body %q)", got.status, got.raw)
 	}
 }
 
@@ -848,6 +906,187 @@ func TestHTTPDisconnectEndsTheCallAndWritesNothing(t *testing.T) {
 				"assertion in the cancelled case would pass for a recorder that records nothing")
 		}
 	})
+}
+
+// Clause 9, continued: ending the run reaches a call that is already in flight,
+// and the cause it records says which of the two channels ended it.
+//
+// The cause is the assertion rather than a done context, because a done context
+// proves nothing about what ended it: the connection closing ends the same
+// context, and the two are answered differently. Reading the cause is the only
+// thing that tells them apart.
+//
+// That is what establishes run end reaching an in-flight request here with no
+// entry recorded by id anywhere: the watcher on the run's own context is the
+// whole of the path, and this drives it.
+//
+// The control runs first, on the same listener and through the same seam: a call
+// nobody interrupts is answered and records no cause at all. Without it the
+// assertions below would pass for a listener that ends every call it accepts.
+//
+// A planted defect that drops the run watcher leaves the second half at its
+// liveness ceiling — nothing ends the seam's context and the call never returns.
+func TestHTTPRunEndReachesACallAlreadyInFlight(t *testing.T) {
+	runCtx, endRun := context.WithCancel(context.Background())
+	defer endRun()
+
+	entered := make(chan struct{}, 2)
+	ended := make(chan error, 2)
+	// One token, taken by the control. The call after it finds the channel empty
+	// and stays in the seam until something ends its context, which is the state
+	// the run's end has to reach into.
+	release := make(chan struct{}, 1)
+	run := func(ctx context.Context, _ []string, _, _ io.Writer) error {
+		entered <- struct{}{}
+		select {
+		case <-release:
+			ended <- nil
+		case <-ctx.Done():
+			ended <- context.Cause(ctx)
+		}
+		return nil
+	}
+	f := newHTTPFixtureUnderRun(t, runCtx, defaultTransportConfig(), run)
+
+	control := f.issue(callFixtureToolBody(1))
+	awaitEntered(t, entered, "the control request")
+	release <- struct{}{}
+	if got := awaitExchange(t, control, "the control request"); got.status != http.StatusOK {
+		t.Fatalf("the control was answered %d, want 200 (body %q); a listener answering "+
+			"nothing would pass the assertions below", got.status, got.raw)
+	}
+	if cause := awaitCause(t, ended, "the control request"); cause != nil {
+		t.Fatalf("the control's context ended with %v; it was released, not interrupted", cause)
+	}
+
+	held := f.issue(callFixtureToolBody(2))
+	awaitEntered(t, entered, "the held request")
+	endRun()
+
+	if cause := awaitCause(t, ended, "the held request"); !errors.Is(cause, errRunEnded) {
+		t.Errorf("the seam recorded %v as the cause of its context ending; want the "+
+			"run-end cause, which is what separates the run ending from a caller "+
+			"that has gone", cause)
+	}
+
+	// The run ending is not a disconnect. The caller is still connected and still
+	// reading, so the request that was in flight is still answered.
+	if got := awaitExchange(t, held, "the held request"); got.status != http.StatusOK {
+		t.Errorf("the held request was answered %d, want 200 (body %q); a run that ends "+
+			"still answers the request it was answering", got.status, got.raw)
+	}
+}
+
+// Clause 9, continued: no request over this transport is ever recorded in the
+// shared cancel registry.
+//
+// The count is read while a call is blocked inside the tool, which is the one
+// moment an entry would exist if this transport recorded one. Read before or
+// after, a zero would say nothing at all: a transport that tracked every request
+// would report zero then too.
+//
+// The control is the synthetic entry below. A zero is a claim about the reader
+// until something shows the reader can see a one — without it this would pass
+// equally for a count taken from a registry this handler does not hold.
+func TestHTTPRequestsAreNotRecordedInTheCancelRegistry(t *testing.T) {
+	entered := make(chan struct{}, 1)
+	release := make(chan struct{})
+	releaseHeld := sync.OnceFunc(func() { close(release) })
+	defer releaseHeld()
+
+	f := newHTTPFixture(t, defaultTransportConfig(), heldCommand(entered, release))
+	held := f.issue(callFixtureToolBody(1))
+	awaitEntered(t, entered, "the held request")
+
+	if n := f.h.srv.cancels.Len(); n != 0 {
+		t.Errorf("the registry holds %d entries while a call over this transport is in "+
+			"flight; it records none, because the connection is what cancels a call here", n)
+	}
+
+	const synthetic = `"an-id-this-proof-tracked-itself"`
+	f.h.srv.cancels.Track(json.RawMessage(synthetic), func() {})
+	if n := f.h.srv.cancels.Len(); n != 1 {
+		t.Fatalf("the registry reports %d after one entry was tracked in it, so the zero "+
+			"above is a fact about the reader rather than about the transport", n)
+	}
+	f.h.srv.cancels.Untrack(json.RawMessage(synthetic))
+
+	releaseHeld()
+	if got := awaitExchange(t, held, "the held request"); got.status != http.StatusOK {
+		t.Errorf("the held request was answered %d, want 200 (body %q); the count above was "+
+			"read on the understanding that this request was in flight", got.status, got.raw)
+	}
+}
+
+// Clause 9, continued: a cancellation notification posted over this transport is
+// accepted and ends nothing.
+//
+// It names the id of a request this listener is holding open, so a transport
+// recording requests by id would end that request here. Two things say it did
+// not, and they fail independently: the seam reports it left on its own release
+// rather than on a cancelled context, and the request is answered with a body
+// rather than with the empty one a suppressed write leaves behind.
+//
+// This is the no-op the protocol permits for an id nothing is working on, and it
+// is what stands in place of an id-keyed cancellation on a transport where the
+// connection is the cancellation channel.
+//
+// A planted defect that records this transport's requests in the registry fails
+// the cause half and leaves the body half standing, which is measured rather
+// than assumed: the write guard reads only whether the connection has gone, so a
+// call ended by id is still answered. The body half is what would catch a defect
+// that restored a cause-reading guard alongside the tracking, and it is kept for
+// that reason rather than as a second reading of the first.
+func TestHTTPCancellationNotificationEndsNothing(t *testing.T) {
+	entered := make(chan struct{}, 1)
+	ended := make(chan error, 1)
+	release := make(chan struct{})
+	releaseHeld := sync.OnceFunc(func() { close(release) })
+	defer releaseHeld()
+
+	run := func(ctx context.Context, _ []string, _, _ io.Writer) error {
+		entered <- struct{}{}
+		select {
+		case <-release:
+			ended <- nil
+		case <-ctx.Done():
+			ended <- context.Cause(ctx)
+		}
+		return nil
+	}
+	f := newHTTPFixture(t, defaultTransportConfig(), run)
+
+	held := f.issue(callFixtureToolBody(1))
+	awaitEntered(t, entered, "the held request")
+
+	cancelled := f.post(t, nil,
+		`{"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":1}}`)
+	if cancelled.status != http.StatusAccepted {
+		t.Errorf("the cancellation was answered %d, want 202 (body %q)",
+			cancelled.status, cancelled.raw)
+	}
+	if cancelled.raw != "" {
+		t.Errorf("the cancellation was answered with a body: %q", cancelled.raw)
+	}
+
+	releaseHeld()
+	if cause := awaitCause(t, ended, "the request the cancellation named"); cause != nil {
+		t.Errorf("the named request's context ended with %v; the cancellation was supposed "+
+			"to reach a registry holding nothing for it", cause)
+	}
+	got := awaitExchange(t, held, "the request the cancellation named")
+	if got.status != http.StatusOK {
+		t.Errorf("the request the cancellation named was answered %d, want 200 (body %q)",
+			got.status, got.raw)
+	}
+	if got.frame.Error != nil {
+		t.Errorf("the request the cancellation named was answered with an error: %+v",
+			got.frame.Error)
+	}
+	if got.raw == "" {
+		t.Error("the request the cancellation named was answered with an empty body, which " +
+			"is what a suppressed write leaves behind")
+	}
 }
 
 // writeRecorder reports whether the handler wrote anything through it. Only what

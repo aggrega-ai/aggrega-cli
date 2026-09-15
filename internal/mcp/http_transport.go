@@ -58,9 +58,10 @@ const (
 // errRunEnded is the cause recorded on an HTTP request's context when the run
 // the listener belongs to ends while that request is still being answered.
 //
-// It is distinct from errCancelledByClient for the same reason the stdio
-// transport keeps those two apart: a run that ends still answers the request it
-// was answering, while a caller that has cancelled will not read the answer.
+// Recording a cause is what lets a reader of that context tell the run ending
+// from the caller going away, and the two are answered differently: a run that
+// ends still answers the request it was answering, while a caller whose
+// connection has closed will not read an answer and is written none.
 var errRunEnded = errors.New("the serving process is shutting down")
 
 // httpAuthenticator decides whether a request may reach the protocol surface.
@@ -197,6 +198,10 @@ func newHTTPHandler(runCtx context.Context, s *server, transport HTTPConfig) (*h
 		return nil, fmt.Errorf("mcp.limits.max_concurrent_requests must be positive, got %d",
 			transport.MaxConcurrentRequests)
 	}
+	// Nothing on this transport records an entry in the registry — the connection
+	// is what cancels here — but a cancellation notification may still arrive over
+	// it, and the notification path routes the id it names to the registry's
+	// pickup. Leaving the field nil would turn that permitted no-op into a crash.
 	if s.cancels == nil {
 		s.cancels = requestcancel.New()
 	}
@@ -301,29 +306,34 @@ func (h *httpHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // answer routes one id-bearing request and writes what it produced, unless the
 // caller stopped waiting for it.
 //
-// The request's context is the one net/http cancels when the connection closes,
-// with two cancellations composed onto it: the run ending, so a stop reaches the
-// work a request is doing, and the id-keyed pickup in the registry both
-// transports share, so a cancellation names the request it ends. The id is
-// registered before the work starts and released when it finishes, so the
-// registry holds only what is in flight.
+// The request's context is the connection's — the one net/http ends when that
+// connection closes — with the run's end composed onto it, so a stop reaches the
+// work a request is doing rather than only declining to accept the next request.
+// Those two are the whole of the cancellation here, and the connection is the
+// channel the protocol itself gives this transport: closing the response stream
+// is the cancellation signal, a server treats a caller's disconnect as
+// cancellation of that request, and no cancellation notification is expected for
+// it. So nothing is registered by id on this path. The id-keyed registry belongs
+// to stdio, where there is no per-request stream to close and a notification
+// naming the id is the only way a caller ends one request and leaves the rest
+// running; a cancellation that does arrive here still reaches that registry's
+// pickup and finds nothing, which is the no-op the protocol permits for an id
+// nothing is working on.
 //
-// Nothing is written when the caller has gone or has said it will not read the
-// answer. That leaves the exchange to be terminated with no protocol message,
-// which is this transport's form of the rule the stdio transport keeps by
-// dropping the line it would have framed.
+// The run ending does not suppress the answer: the caller is still connected and
+// still reading, so the request that was being answered is answered. A caller
+// that has gone is written nothing at all, which leaves the exchange to be
+// terminated with no protocol message — this transport's form of the rule the
+// stdio transport keeps by dropping the line it would have framed.
 func (h *httpHandler) answer(w http.ResponseWriter, r *http.Request, era protocolEra, req *rpcRequest) {
 	ctx, cancel := context.WithCancelCause(r.Context())
 	defer cancel(nil)
 	stopWatchingRun := context.AfterFunc(h.runCtx, func() { cancel(errRunEnded) })
 	defer stopWatchingRun()
 
-	h.srv.cancels.Track(req.ID, func() { cancel(errCancelledByClient) })
-	defer h.srv.cancels.Untrack(req.ID)
-
 	result, rpcErr := h.srv.dispatchInEra(ctx, era, req)
 
-	if r.Context().Err() != nil || errors.Is(context.Cause(ctx), errCancelledByClient) {
+	if r.Context().Err() != nil {
 		return
 	}
 	if rpcErr != nil {

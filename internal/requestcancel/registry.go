@@ -36,11 +36,11 @@ import (
 // construction (context.WithDeadline / WithTimeout layers on with no structural
 // change).
 //
-// The Registry tracks every id-bearing request for its in-flight lifetime and
-// exposes a per-id cancel pickup. A frontend wires that pickup to whatever its
-// protocol calls a cancellation notification: the dispatch loop routes that
-// notification's id to Cancel, so a client cancels a specific in-flight request
-// by id at runtime.
+// The Registry tracks the id-bearing requests a frontend enters into it, each
+// for its in-flight lifetime, and exposes a per-id cancel pickup. A frontend
+// wires that pickup to whatever its protocol calls a cancellation notification:
+// the dispatch loop routes that notification's id to Cancel, so a client cancels
+// a specific in-flight request by id at runtime.
 type Registry struct {
 	mu      sync.Mutex
 	cancels map[string]context.CancelFunc

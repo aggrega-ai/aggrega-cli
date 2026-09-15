@@ -8,9 +8,12 @@
 // Two transports reach the same server. The stdio transport frames
 // newline-delimited JSON-RPC 2.0 over stdin/stdout and is what the command
 // speaks. The HTTP transport answers one message per request against a
-// handler a caller constructs and mounts; it shares the routing, the
-// per-request revision and the cancel registry with stdio, and differs only
-// in how a message is framed on the way in and out.
+// handler a caller constructs and mounts; it shares the routing and the
+// per-request revision with stdio, and differs in how a message is framed on
+// the way in and out and in what ends a call already running. Over HTTP the
+// connection closing is the cancellation signal the protocol defines there, so
+// no request is recorded by id; stdio, which has no per-request stream to
+// close, cancels by id through the registry instead.
 //
 // It speaks two protocol revisions, so a client of either connects. In
 // 2026-07-28 a request states the revision it speaks and the capabilities
