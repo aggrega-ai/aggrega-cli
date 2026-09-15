@@ -453,6 +453,14 @@ func maximalWorkloadReference() types.Workload {
 // lists name different capabilities. Each value therefore carries exactly what
 // its own position admits, which makes this instance a configuration the product
 // would really load rather than one only the schema tolerates.
+//
+// The MCP block is filled in every field rather than only the two the schema
+// constrains, because the instance is what this direction validates: a field
+// left at its zero value is a field the schema is never asked about, and it
+// passes for want of a constraint rather than for being right. Its values are
+// one coherent deployment — a listener terminating TLS from the certificate
+// and key it names, an origin in the full form a browser sends, and both caps
+// at their documented defaults.
 func maximalAggregaConfig() workspaceconfig.Config {
 	signing := workspaceconfig.SigningConfig{
 		FulcioURL:    "https://fulcio.example.com",
@@ -528,7 +536,19 @@ func maximalAggregaConfig() workspaceconfig.Config {
 		ParseCache:  workspaceconfig.ParseCacheConfig{MaxEntries: 1000, MaxBytes: 100_000_000},
 		Concurrency: workspaceconfig.ConcurrencyConfig{PoolSize: 4},
 		Serve:       workspaceconfig.ServeConfig{BuildOnInspect: true, LintOnValidate: true},
-		Signing:     signing,
+		MCP: workspaceconfig.MCPConfig{
+			Listen: "0.0.0.0:8443",
+			TLS: workspaceconfig.MCPTLSConfig{
+				CertFile: "/certs/mcp-chain.pem",
+				KeyFile:  "/certs/mcp-key.pem",
+			},
+			AllowedOrigins: []string{"https://app.example.com"},
+			Limits: workspaceconfig.MCPLimitsConfig{
+				MaxBodyBytes:          4_194_304,
+				MaxConcurrentRequests: 16,
+			},
+		},
+		Signing: signing,
 		Registries: []workspaceconfig.RegistryConfig{{
 			Host:                         "hub.aggrega.ai",
 			Name:                         "hub",
