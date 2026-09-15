@@ -58,14 +58,16 @@ const (
 )
 
 // readRequestProtocol is the single home of era detection. It reads a
-// request's params metadata and returns the era the request is speaking,
-// along with the refusal the request has already earned where it named the
-// per-request revision without conforming to it.
+// request's params metadata and returns the era the request is speaking and
+// the revision it named, along with the refusal the request has already earned
+// where it named the per-request revision without conforming to it.
 //
-// It returns the era alone rather than the version string beside it, because
-// nothing downstream has a use for that string: it has already been checked
-// against what the server speaks, and every answer turns on the era. A caller
-// that needs more of the metadata widens this return where it needs it, so
+// The revision travels beside the era because the HTTP transport compares it
+// against the mirror header the per-request revision asks a request to carry,
+// and the body's own statement of its revision has nowhere else to come from.
+// It is empty for a handshake-era request, which states no revision, and for
+// every refusal, where there is no agreed revision to report. A caller that
+// needs more of the metadata than these two widens this return further, so
 // nothing travels here that no one reads.
 //
 // The era turns on whether the request carries any of the reserved
@@ -81,25 +83,25 @@ const (
 // the handshake era, which is the reading that decides nothing a handler has
 // not already decided: the handlers that need params parse them themselves and
 // refuse what they cannot read.
-func readRequestProtocol(params json.RawMessage) (protocolEra, *rpcError) {
+func readRequestProtocol(params json.RawMessage) (protocolEra, string, *rpcError) {
 	meta := readRequestMeta(params)
 	_, hasVersion := meta[metaKeyProtocolVersion]
 	_, hasCapabilities := meta[metaKeyClientCapabilities]
 	if !hasVersion && !hasCapabilities {
-		return eraHandshake, nil
+		return eraHandshake, "", nil
 	}
 
 	revision, wellFormed := metaString(meta, metaKeyProtocolVersion)
 	if !wellFormed {
-		return eraPerRequest, missingRequestMetadata(metaKeyProtocolVersion)
+		return eraPerRequest, "", missingRequestMetadata(metaKeyProtocolVersion)
 	}
 	if !hasCapabilities {
-		return eraPerRequest, missingRequestMetadata(metaKeyClientCapabilities)
+		return eraPerRequest, "", missingRequestMetadata(metaKeyClientCapabilities)
 	}
 	if !speaksRevision(revision) {
-		return eraPerRequest, unsupportedRevision(revision)
+		return eraPerRequest, "", unsupportedRevision(revision)
 	}
-	return eraPerRequest, nil
+	return eraPerRequest, revision, nil
 }
 
 // readRequestMeta decodes the metadata object a request carries in its

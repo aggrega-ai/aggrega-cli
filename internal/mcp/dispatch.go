@@ -36,10 +36,26 @@ import (
 // that leave the process, so ending the run ends what a call is doing rather
 // than only refusing the next message.
 func (s *server) dispatch(ctx context.Context, req *rpcRequest) (any, *rpcError) {
-	era, protocolErr := readRequestProtocol(req.Params)
+	era, _, protocolErr := readRequestProtocol(req.Params)
 	if protocolErr != nil {
 		return nil, protocolErr
 	}
+	return s.dispatchInEra(ctx, era, req)
+}
+
+// dispatchInEra is dispatch with the era already read: it routes the request
+// and stamps what the handler composed. It is the whole of the route from a
+// parsed request to an answer, and both transports arrive here.
+//
+// The split exists because one transport reads the era before it can finish
+// validating the request. The HTTP transport's header requirements are
+// era-scoped — a request in the per-request revision must mirror its body's
+// revision, method and target name in headers, and a handshake-revision request
+// must not be held to any of that — so it needs the era in hand before routing.
+// Without this entry point it would either read the same metadata a second time,
+// leaving two reads to drift apart, or grow a method table of its own, which is
+// the one thing the table above exists to prevent.
+func (s *server) dispatchInEra(ctx context.Context, era protocolEra, req *rpcRequest) (any, *rpcError) {
 	result, rpcErr := s.route(ctx, era, req)
 	if rpcErr != nil {
 		return nil, rpcErr

@@ -39,11 +39,17 @@ const serverName = "aggrega"
 //
 // unsupportedProtocolVersion is allocated by the 2026-07-28 revision, which
 // also fixes the payload it carries: the revisions the server does speak and
-// the one the request asked for. The other two codes that revision allocates
-// are not declared here, because this server never emits them: one reports a
-// mismatch between a request's transport headers and its body, and the other
-// reports a client capability the server needed and the request did not
-// declare, which nothing here requires.
+// the one the request asked for.
+//
+// headerMismatch is allocated by that same revision and reports a request whose
+// transport headers do not mirror its body. Only the HTTP transport can raise
+// it: the mirror headers exist so an intermediary can route a message without
+// parsing it, and the stdio transport has no headers at all.
+//
+// The third code that revision allocates is deliberately not declared. It
+// reports a client capability the server required and the request did not
+// offer, and nothing here requires one; it is transport-independent, so no
+// transport added later owns it either.
 const (
 	codeParseError                 = -32700
 	codeInvalidRequest             = -32600
@@ -51,6 +57,7 @@ const (
 	codeInvalidParams              = -32602
 	codeInternalError              = -32603
 	codeResourceNotFound           = -32002
+	codeHeaderMismatch             = -32020
 	codeUnsupportedProtocolVersion = -32022
 )
 

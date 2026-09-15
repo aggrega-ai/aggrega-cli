@@ -1,10 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Cognitio S.r.l.
 
-// Package mcp implements the stdio Model Context Protocol server invoked
-// by `aggrega mcp`. The server speaks newline-delimited JSON-RPC 2.0 over
-// stdin/stdout, and answers the list and dispatch methods an AI assistant
+// Package mcp implements the Model Context Protocol server invoked by
+// `aggrega mcp`, and answers the list and dispatch methods an AI assistant
 // uses to discover and invoke the server's surface.
+//
+// Two transports reach the same server. The stdio transport frames
+// newline-delimited JSON-RPC 2.0 over stdin/stdout and is what the command
+// speaks. The HTTP transport answers one message per request against a
+// handler a caller constructs and mounts; it shares the routing, the
+// per-request revision and the cancel registry with stdio, and differs only
+// in how a message is framed on the way in and out.
 //
 // It speaks two protocol revisions, so a client of either connects. In
 // 2026-07-28 a request states the revision it speaks and the capabilities
@@ -18,12 +24,13 @@
 // revision by opening with the handshake. Which revision a request speaks is
 // read off that request; nothing is remembered between them.
 //
-// The transport is strict about stream ownership. stdout carries only
+// The stdio transport is strict about stream ownership. stdout carries only
 // framed protocol messages — one compact JSON object per line — so a
 // connected client can parse the stream without heuristics; every log,
 // diagnostic, and error trace is written to stderr instead. The server
 // reads one message per line until stdin reaches EOF or the run ends,
-// then returns cleanly.
+// then returns cleanly. Requests are answered concurrently and a client
+// may cancel one by id, leaving every other one running.
 //
 // The package's contract is the wire protocol, not the Go API — no public
 // types outside this package consume Run beyond the command layer that
