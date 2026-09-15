@@ -7,10 +7,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
@@ -80,6 +82,112 @@ func (s *server) workspaceSelectionRefusal(args json.RawMessage) string {
 			"under workspace.catalog_dirs.")
 	}
 	return b.String()
+}
+
+// workspaceSelectionArguments is the set of arguments that name a workspace, as
+// one list. The transport that refuses them also withholds them from what it
+// advertises, and the two read the same names.
+var workspaceSelectionArguments = []string{argumentWorkspaceRoot, argumentCatalogDirs}
+
+// advertisedSchema reports the argument schema a tool is advertised under on the
+// transport this session serves.
+//
+// A caller that may not name a workspace is not offered the arguments that name
+// one. The schema is what a caller reads before it composes anything, so a
+// schema offering a property whose call is guaranteed to be refused is the same
+// defect the refusal exists to prevent, arriving one step earlier: it sends the
+// caller to compose a call that cannot succeed.
+func (s *server) advertisedSchema(spec toolSpec) json.RawMessage {
+	if s.transport != transportHTTP {
+		return json.RawMessage(spec.inputSchema)
+	}
+	return json.RawMessage(schemaWithoutProperties(spec.inputSchema, workspaceSelectionArguments))
+}
+
+// schemaWithoutProperties reports schema with the named properties removed from
+// what it declares and from what it requires, so what comes back neither offers
+// one of them nor demands one.
+//
+// It keeps the order of everything it does not remove, and hands back the
+// schema's own bytes when it removes nothing, so a schema declaring none of the
+// names is advertised exactly as authored. Order is kept rather than re-derived
+// because the advertised bytes are a determinism contract: one session
+// advertises the same bytes on every run, and an object rebuilt through an
+// unordered map would not.
+//
+// It reads the object the schema itself is and does not descend into
+// subschemas. A name a subschema buries is not one the arguments object
+// declares, and rewriting a subschema would change which calls a tool accepts
+// rather than which arguments it advertises.
+//
+// A schema it cannot read comes back unchanged. This removes what it can read,
+// and rewriting a document it could not parse would be composing one.
+func schemaWithoutProperties(schema string, names []string) string {
+	var doc types.OrderedMap[json.RawMessage]
+	if err := json.Unmarshal([]byte(schema), &doc); err != nil {
+		return schema
+	}
+
+	removed := false
+	if raw, ok := doc.Get("properties"); ok {
+		var declared types.OrderedMap[json.RawMessage]
+		if err := json.Unmarshal(raw, &declared); err != nil {
+			return schema
+		}
+		dropped := false
+		for _, name := range names {
+			if declared.Delete(name) {
+				dropped = true
+			}
+		}
+		if dropped {
+			encoded, err := json.Marshal(declared)
+			if err != nil {
+				return schema
+			}
+			doc.Set("properties", encoded)
+			removed = true
+		}
+	}
+
+	if raw, ok := doc.Get("required"); ok {
+		var demanded []string
+		if err := json.Unmarshal(raw, &demanded); err != nil {
+			return schema
+		}
+		kept := make([]string, 0, len(demanded))
+		for _, name := range demanded {
+			if slices.Contains(names, name) {
+				continue
+			}
+			kept = append(kept, name)
+		}
+		if len(kept) != len(demanded) {
+			// An emptied list is dropped rather than advertised as an empty one:
+			// requiring nothing and saying nothing about what is required are the
+			// same constraint, and the shorter of the two is the one a reader can
+			// act on.
+			if len(kept) == 0 {
+				doc.Delete("required")
+			} else {
+				encoded, err := json.Marshal(kept)
+				if err != nil {
+					return schema
+				}
+				doc.Set("required", encoded)
+			}
+			removed = true
+		}
+	}
+
+	if !removed {
+		return schema
+	}
+	out, err := json.Marshal(doc)
+	if err != nil {
+		return schema
+	}
+	return string(out)
 }
 
 // toolWorkspace is the per-call resolved workspace context the closure-driven

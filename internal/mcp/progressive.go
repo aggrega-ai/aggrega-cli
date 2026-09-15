@@ -172,7 +172,7 @@ func describeCapabilitiesInvoke(s *server, _ context.Context, args json.RawMessa
 		// definition — so a client discovers what the default list omits.
 		deferred := s.deferredTools()
 		for i := range deferred {
-			caps = append(caps, descriptorFor(deferred[i], true))
+			caps = append(caps, s.descriptorFor(deferred[i], true))
 		}
 	} else {
 		if !isKnownEntityKind(kind) {
@@ -210,7 +210,7 @@ func (s *server) capabilitiesForKind(kind string) []capabilityDescriptor {
 				continue
 			}
 			if toolServesKind(specs[i], kind) {
-				out = append(out, descriptorFor(specs[i], deferred))
+				out = append(out, s.descriptorFor(specs[i], deferred))
 			}
 		}
 	}
@@ -235,11 +235,17 @@ func toolServesKind(spec toolSpec, kind string) bool {
 
 // descriptorFor renders a tool's definition into the capability descriptor the
 // capability tool surfaces.
-func descriptorFor(spec toolSpec, deferred bool) capabilityDescriptor {
+//
+// It is the one route every capability listing takes, scoped to a kind or not,
+// so the definition surfaced here is the definition the default listing carries
+// — the arguments this session lets a caller send included. A listing that
+// composed its own descriptor would be free to surface a tool under arguments
+// the call surface refuses.
+func (s *server) descriptorFor(spec toolSpec, deferred bool) capabilityDescriptor {
 	return capabilityDescriptor{
 		Name:        spec.name,
 		Description: spec.description,
-		InputSchema: json.RawMessage(spec.inputSchema),
+		InputSchema: s.advertisedSchema(spec),
 		Deferred:    deferred,
 		Kinds:       spec.kinds,
 	}

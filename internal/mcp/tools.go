@@ -307,7 +307,9 @@ func articled(jsonType string) string {
 // The descriptions are this session's rather than the registry's bare ones,
 // because a curated tool discloses the generated tool that reaches the same
 // capability by running its command, and which commands a session was handed is
-// a property of that session.
+// a property of that session. The schemas are this session's for the same
+// reason: which arguments a caller may send depends on how it reached the
+// server, and the listing is where it reads them.
 func (s *server) handleToolsList() (any, *rpcError) {
 	curatedTools := s.curatedTools()
 	tools := make([]tool, 0, len(curatedTools))
@@ -315,7 +317,7 @@ func (s *server) handleToolsList() (any, *rpcError) {
 		tools = append(tools, tool{
 			Name:        curatedTools[i].name,
 			Description: curatedTools[i].description,
-			InputSchema: json.RawMessage(curatedTools[i].inputSchema),
+			InputSchema: s.advertisedSchema(curatedTools[i]),
 		})
 	}
 	return listToolsResult{Tools: tools}, nil
