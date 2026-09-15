@@ -18,17 +18,29 @@ func newMCPCmd() *cobra.Command {
 AI assistant can discover and drive Aggrega operations through a
 structured protocol instead of scraping command output.
 
-The server speaks newline-delimited JSON-RPC 2.0 on stdin/stdout,
-targeting MCP protocol revision 2025-06-18. It is normally spawned as a
-subprocess by an MCP-capable client, not run by hand; the client opens
-the connection with an initialize handshake, and the server replies with
-its protocol revision and the capabilities it advertises — tools,
-resources, and prompts.
+The server speaks newline-delimited JSON-RPC 2.0 on stdin/stdout. It is
+normally spawned as a subprocess by an MCP-capable client, not run by
+hand.
 
-Once initialized, the client discovers the server's surface through the
-list methods (tools, resources, resource templates, and prompts) and
-invokes it through tools/call and resources/read. The server exposes
-Aggrega operations — compiling and inspecting a Release, reading catalog
+It speaks two MCP protocol revisions, 2026-07-28 and 2025-06-18, so a
+client of either connects. In 2026-07-28 nothing is settled for the
+connection as a whole: every request states the protocol version it
+speaks and the capabilities its sender offers, and the server reads both
+from the request it is answering rather than holding anything between
+messages. In 2025-06-18 a client settles those same facts once, by
+opening the connection with an initialize handshake.
+
+Both revisions reach the same server, and a client learns the same
+things about it either way. A client on 2026-07-28 calls server/discover
+for the revisions the server speaks, the capabilities it advertises —
+tools, resources, and prompts — and the guidance it offers a model
+before the first call. A client on 2025-06-18 receives those same
+capabilities, and that same guidance, in the reply to its handshake.
+
+From there the client discovers the server's surface through the list
+methods (tools, resources, resource templates, and prompts) and invokes
+it through tools/call and resources/read. The server exposes Aggrega
+operations — compiling and inspecting a Release, reading catalog
 entities — as tools and resources an assistant can call directly.
 
 Stream discipline is strict: stdout carries only protocol messages, one
