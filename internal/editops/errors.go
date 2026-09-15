@@ -33,7 +33,10 @@ func ErrEditRefusedInvalidResult() error { return errEditRefusedInvalidResult }
 var errEditRefusedInvalidResult = cerrors.Register("edit-refused-invalid-result", cerrors.Meta{
 	ShortCode: "E0275",
 	Message:   "the edit was refused because the resulting document would not be valid, and nothing was written",
-	RulePlace: cerrors.RuleOverAuthoredInput(),
+	RulePlace: cerrors.RuleNoStageReaches("A document edit evaluates the rule, as the spliced result is validated against its own " +
+		"schema before anything is written and refused when that schema would not accept it. The " +
+		"edit shapes one document and compiles nothing, so no declared stage of a compilation holds " +
+		"the result being judged."),
 })
 
 // The conditions on which no edit is applied.

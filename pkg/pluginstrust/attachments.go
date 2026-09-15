@@ -59,7 +59,10 @@ func ErrVerdictAttachmentNotConfigured() error { return errVerdictAttachmentNotC
 var errVerdictAttachmentNotConfigured = cerrors.Register("verdict-attachment-not-configured", cerrors.Meta{
 	ShortCode: "E0247",
 	Message:   "a plugin recorded as trusted for an accept-or-reject verdict is no longer attached at any verdict role",
-	RulePlace: cerrors.RuleOverAuthoredInput(),
+	RulePlace: cerrors.RuleNoStageReaches("Composing a build's inputs evaluates the rule, as the verdict attachments the workspace " +
+		"configuration names are held to the record of the plugin identities trusted for them. The " +
+		"composition finishes before the pipeline starts, so no declared stage of a compilation " +
+		"holds the record or the attachment list it is compared against."),
 })
 
 // LoadOrStart reads the record at path, or starts an empty one when the file is

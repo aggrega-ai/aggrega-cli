@@ -114,7 +114,11 @@ func ErrPolicyViolation() error { return errPolicyViolation }
 var errPolicyViolation = cerrors.Register("policy-violation", cerrors.Meta{
 	ShortCode: "E0005",
 	Message:   "policy violation",
-	RulePlace: cerrors.RuleOverAuthoredInput(),
+	RulePlace: cerrors.RuleEvaluatedElsewhere("A plugin attached at the policy socket decides the rule, inside its own module and over the " +
+		"graph the host handed it, and this package raises the condition on the failing verdict that " +
+		"guest returned, surfacing the plugin's own message verbatim. The rule the plugin applied is " +
+		"its own and runs where no view of a compilation reaches, so there is no view for the rule " +
+		"dispatch to invoke a rule over."),
 })
 
 // ErrMalformedAttachmentRequirement is the ABI-stable sentinel for a

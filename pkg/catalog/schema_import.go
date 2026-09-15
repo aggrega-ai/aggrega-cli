@@ -259,7 +259,10 @@ func ErrUnusableSchemaImport() error { return errUnusableSchemaImport }
 var errUnusableSchemaImport = cerrors.Register("unusable-schema-import", cerrors.Meta{
 	ShortCode: "E0266",
 	Message:   "a schema `$import:` could not be applied",
-	RulePlace: cerrors.RuleOverAuthoredInput(),
+	RulePlace: cerrors.RuleNoStageReaches("A catalog entity's parse evaluates the rule, as each schema surface's authored import " +
+		"directive is substituted and both the directive and the shape of what it yielded are " +
+		"judged. The substitution runs once per entity and serves readers that compile nothing, so " +
+		"no declared stage of a compilation holds the surface being judged."),
 })
 
 // schemaImportError reports a fault in the authored directive, or in the shape of

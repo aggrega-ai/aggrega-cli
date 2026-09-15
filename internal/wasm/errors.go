@@ -859,7 +859,11 @@ func ErrWasmContractMismatch() error { return errWasmContractMismatch }
 var errWasmContractMismatch = cerrors.Register("wasm-contract-mismatch", cerrors.Meta{
 	ShortCode: "E0080",
 	Message:   "wasm: entity contract claim does not match plugin describe()",
-	RulePlace: cerrors.RuleOverAuthoredInput(),
+	RulePlace: cerrors.RuleEvaluatedElsewhere("This package evaluates the rule itself, at the plugin load boundary: it tests the " +
+		"contract a catalog entity claims for each export against the descriptor that plugin " +
+		"reported for itself. The half that decides the comparison is the output the guest returned " +
+		"rather than anything a compilation carries, so there is no view for the rule dispatch to " +
+		"invoke a rule over."),
 })
 
 // ErrWasmHostFunctionsStampMismatch indicates that a Plugin entity's stamped
@@ -886,7 +890,12 @@ func ErrWasmHostFunctionsStampMismatch() error { return errWasmHostFunctionsStam
 var errWasmHostFunctionsStampMismatch = cerrors.Register("wasm-host-function-set-mismatch", cerrors.Meta{
 	ShortCode: "E0084",
 	Message:   "wasm: stamped host-function record does not match .wasm imports",
-	RulePlace: cerrors.RuleOverAuthoredInput(),
+	RulePlace: cerrors.RuleEvaluatedElsewhere("This package evaluates the rule itself, at the boundary where a published plugin is " +
+		"acquired: it tests the host-function record an entity carries against the set it re-derives " +
+		"from the import section of the content-verified binary. Unlike its neighbours here the " +
+		"deciding half is read out of the artifact's own bytes rather than from anything the guest " +
+		"reported about itself, and the rule runs over that published artifact rather than over a " +
+		"compilation, so there is no view for the rule dispatch to invoke a rule over."),
 })
 
 // ErrWasmPluginTypeMismatch indicates that the plugin type expected at a load
@@ -910,7 +919,10 @@ func ErrWasmPluginTypeMismatch() error { return errWasmPluginTypeMismatch }
 var errWasmPluginTypeMismatch = cerrors.Register("wasm-plugin-type-mismatch", cerrors.Meta{
 	ShortCode: "E0087",
 	Message:   "wasm: declared plugin type does not match plugin describe()",
-	RulePlace: cerrors.RuleOverAuthoredInput(),
+	RulePlace: cerrors.RuleEvaluatedElsewhere("This package evaluates the rule itself, at the plugin load boundary: it tests the plugin " +
+		"type the load site expects against the type that plugin reported for itself. The half that " +
+		"decides the comparison is the output the guest returned rather than anything a compilation " +
+		"carries, so there is no view for the rule dispatch to invoke a rule over."),
 })
 
 // ErrWasmCommandsMirrorMismatch indicates that a Plugin entity's recorded
@@ -939,7 +951,10 @@ func ErrWasmCommandsMirrorMismatch() error { return errWasmCommandsMirrorMismatc
 var errWasmCommandsMirrorMismatch = cerrors.Register("wasm-command-set-mismatch", cerrors.Meta{
 	ShortCode: "E0079",
 	Message:   "wasm: recorded command mirror does not match plugin describe()",
-	RulePlace: cerrors.RuleOverAuthoredInput(),
+	RulePlace: cerrors.RuleEvaluatedElsewhere("This package evaluates the rule itself, at the plugin load boundary: it tests the command " +
+		"mirror an entity records against the commands that plugin declared for itself. The half " +
+		"that decides the comparison is the output the guest returned rather than anything a " +
+		"compilation carries, so there is no view for the rule dispatch to invoke a rule over."),
 })
 
 // ErrProducerConsumptionReentry indicates that a producer reached through the
@@ -990,5 +1005,8 @@ func ErrWasmPluginVersionMismatch() error { return errWasmPluginVersionMismatch 
 var errWasmPluginVersionMismatch = cerrors.Register("wasm-plugin-version-mismatch", cerrors.Meta{
 	ShortCode: "E0088",
 	Message:   "wasm: entity metadata.version does not match plugin describe()",
-	RulePlace: cerrors.RuleOverAuthoredInput(),
+	RulePlace: cerrors.RuleEvaluatedElsewhere("This package evaluates the rule itself, at the plugin load boundary: it tests the version " +
+		"an entity records against the build-provenance version that plugin reported for itself. The " +
+		"half that decides the comparison is the output the guest returned rather than anything a " +
+		"compilation carries, so there is no view for the rule dispatch to invoke a rule over."),
 })
