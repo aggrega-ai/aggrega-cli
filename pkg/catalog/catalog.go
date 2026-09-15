@@ -1470,12 +1470,17 @@ func parseAggregateEntity(data []byte, path string) (types.Aggregate, error) {
 }
 
 // parseSchemaLibraryEntity is the single per-entity SchemaLibrary resolution shared
-// by both backings: full unmarshal, kind-check, and the forbidden-keyword
+// by both backings: full unmarshal, kind-check, the forbidden-keyword
 // (ValidateSchemaEntry) / template-body (ValidateTemplateBody) scans the eager load
-// applies. Sharing it is what gives the lazy backing reject-parity once it resolves
-// libraries directly (no longer Prime-copied from an already-validated eager
-// Catalog): an invalid library the eager build rejects is rejected by the lazy
-// resolution too.
+// applies, and the `$instantiate:` substitution that resolves a template reference
+// into the entry's body. Sharing it is what gives the lazy backing reject-parity
+// once it resolves libraries directly (no longer Prime-copied from an
+// already-validated eager Catalog): an invalid library the eager build rejects is
+// rejected by the lazy resolution too.
+//
+// Substitution lands here, at the one place a library is turned into a value,
+// so every consumer downstream reads a resolved entry and none of them has to
+// know the entry was authored as a reference.
 func parseSchemaLibraryEntity(data []byte, path string) (types.SchemaLibrary, error) {
 	if _, err := envelope.ValidateBytes(envelope.KindSchemaLibrary, data, path); err != nil {
 		return types.SchemaLibrary{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, err.Error())
@@ -1487,14 +1492,33 @@ func parseSchemaLibraryEntity(data []byte, path string) (types.SchemaLibrary, er
 	if e.Kind != "SchemaLibrary" {
 		return types.SchemaLibrary{}, fmt.Errorf("expected kind SchemaLibrary, got %q", e.Kind)
 	}
-	for name, entry := range e.Spec.Schemas.All() {
-		if err := types.ValidateSchemaEntry(&entry); err != nil {
-			return types.SchemaLibrary{}, fmt.Errorf("SchemaLibrary %q schema %q: %w", e.Metadata.Name, name, err)
-		}
-	}
+	// Template bodies are scanned before any entry is resolved, so a body
+	// carrying a forbidden keyword literally is named as the template it is,
+	// rather than as whichever entry happened to instantiate it first.
 	for name, tmpl := range e.Spec.Templates.All() {
 		if err := types.ValidateTemplateBody(&tmpl); err != nil {
 			return types.SchemaLibrary{}, fmt.Errorf("SchemaLibrary %q template %q: %w", e.Metadata.Name, name, err)
+		}
+	}
+	for name, entry := range e.Spec.Schemas.All() {
+		inst, isRef, err := types.ParseInstantiation(&entry)
+		if err != nil {
+			return types.SchemaLibrary{}, fmt.Errorf("SchemaLibrary %q schema %q: %w", e.Metadata.Name, name, err)
+		}
+		if isRef {
+			body, err := types.InstantiateTemplate(&e, inst.Template, inst.Args)
+			if err != nil {
+				return types.SchemaLibrary{}, fmt.Errorf("SchemaLibrary %q schema %q: %w", e.Metadata.Name, name, err)
+			}
+			// Writing back at a key that already exists leaves both the value's
+			// position and the key sequence this loop is walking untouched.
+			e.Spec.Schemas.Set(name, types.SchemaEntry{Content: body})
+			continue
+		}
+		// InstantiateTemplate runs the forbidden-keyword scan itself, on the
+		// resolved body, so the scan here covers an entry authored as content.
+		if err := types.ValidateSchemaEntry(&entry); err != nil {
+			return types.SchemaLibrary{}, fmt.Errorf("SchemaLibrary %q schema %q: %w", e.Metadata.Name, name, err)
 		}
 	}
 	return e, nil

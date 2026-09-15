@@ -247,6 +247,155 @@ properties:
 	}
 }
 
+// schemaEntryFrom parses a single schema entry's YAML into a SchemaEntry,
+// capturing the raw node exactly as SchemaEntry.UnmarshalYAML does at
+// library parse time.
+func schemaEntryFrom(t *testing.T, src string) *SchemaEntry {
+	t.Helper()
+	var entry SchemaEntry
+	if err := yaml.Unmarshal([]byte(src), &entry); err != nil {
+		t.Fatalf("YAML unmarshal: %v", err)
+	}
+	return &entry
+}
+
+// TestParseInstantiation walks the three outcomes the helper distinguishes:
+// an ordinary entry, a well-formed reference, and each malformed shape an
+// entry carrying `$instantiate:` can take.
+func TestParseInstantiation(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name     string
+		src      string
+		wantRef  bool
+		wantTmpl string
+		wantArgs map[string]any
+		wantErr  string // substring; empty means no error expected
+	}{
+		{
+			name:    "ordinary entry carries no reference",
+			src:     "type: object\nproperties:\n  size:\n    type: string\n",
+			wantRef: false,
+		},
+		{
+			name:    "a scalar entry is not a reference",
+			src:     "true\n",
+			wantRef: false,
+		},
+		{
+			name:     "reference with bindings",
+			src:      "$instantiate: Probe\n$args:\n  port: 8080\n  path: /healthz\n",
+			wantRef:  true,
+			wantTmpl: "Probe",
+			wantArgs: map[string]any{"port": 8080, "path": "/healthz"},
+		},
+		{
+			name:     "reference with no bindings at all",
+			src:      "$instantiate: Probe\n",
+			wantRef:  true,
+			wantTmpl: "Probe",
+			wantArgs: nil,
+		},
+		{
+			name:     "reference with an explicitly empty binding block",
+			src:      "$instantiate: Probe\n$args: {}\n",
+			wantRef:  true,
+			wantTmpl: "Probe",
+			wantArgs: map[string]any{},
+		},
+		{
+			name:     "reference whose binding block is written out as null",
+			src:      "$instantiate: Probe\n$args:\n",
+			wantRef:  true,
+			wantTmpl: "Probe",
+			wantArgs: nil,
+		},
+		{
+			name:    "template name is not a scalar",
+			src:     "$instantiate:\n  - Probe\n  - Other\n$args: {}\n",
+			wantRef: true,
+			wantErr: "$instantiate must name a template as a scalar",
+		},
+		{
+			name:    "binding block is not a mapping",
+			src:     "$instantiate: Probe\n$args:\n  - 8080\n",
+			wantRef: true,
+			wantErr: "$args must be a mapping of parameter bindings",
+		},
+		{
+			name:    "a sibling key would be dropped",
+			src:     "$instantiate: Probe\n$args:\n  port: 8080\ndescription: a probe\n",
+			wantRef: true,
+			wantErr: `"description" would be dropped`,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			inst, isRef, err := ParseInstantiation(schemaEntryFrom(t, tc.src))
+			if isRef != tc.wantRef {
+				t.Fatalf("isRef = %v, want %v (err = %v)", isRef, tc.wantRef, err)
+			}
+			if tc.wantErr != "" {
+				if err == nil {
+					t.Fatalf("expected a refusal naming %q; got none", tc.wantErr)
+				}
+				if !strings.Contains(err.Error(), tc.wantErr) {
+					t.Fatalf("error = %v, want it to contain %q", err, tc.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("ParseInstantiation: %v", err)
+			}
+			if inst.Template != tc.wantTmpl {
+				t.Errorf("Template = %q, want %q", inst.Template, tc.wantTmpl)
+			}
+			if len(inst.Args) != len(tc.wantArgs) {
+				t.Fatalf("Args = %#v, want %#v", inst.Args, tc.wantArgs)
+			}
+			for k, want := range tc.wantArgs {
+				if got := inst.Args[k]; got != want {
+					t.Errorf("Args[%q] = %#v, want %#v", k, got, want)
+				}
+			}
+		})
+	}
+}
+
+// TestParseInstantiation_NilEntry pins the nil guard: a nil entry is an
+// ordinary entry, never a refusal.
+func TestParseInstantiation_NilEntry(t *testing.T) {
+	t.Parallel()
+	if _, isRef, err := ParseInstantiation(nil); isRef || err != nil {
+		t.Fatalf("ParseInstantiation(nil) = _, %v, %v; want false, nil", isRef, err)
+	}
+}
+
+// TestInstantiateTemplate_UndeclaredArgumentIsDeterministic pins the
+// diagnostic a reference binding two undeclared arguments produces. The
+// bindings arrive as a Go map, so without an ordering the reported name
+// varies between runs over identical input.
+func TestInstantiateTemplate_UndeclaredArgumentIsDeterministic(t *testing.T) {
+	t.Parallel()
+	lib := libraryWithTemplate(t)
+
+	const want = `argument "alpha" is not declared`
+	for i := range 64 {
+		_, err := InstantiateTemplate(lib, "Probe", map[string]any{
+			"port": 8080, "zulu": "z", "alpha": "a", "mike": "m",
+		})
+		if !errors.Is(err, ErrTemplateParamTypeMismatch()) {
+			t.Fatalf("run %d: expected ErrTemplateParamTypeMismatch; got %v", i, err)
+		}
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("run %d: error = %v, want it to name %s", i, err, want)
+		}
+	}
+}
+
 // findScalarUnderPath walks a mapping yaml.Node along a sequence of keys
 // and returns the leaf scalar node, or nil if any segment is missing.
 // Helper for substitution + clean-schema tests.

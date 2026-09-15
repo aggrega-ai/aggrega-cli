@@ -5,10 +5,19 @@ package types
 
 import (
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"go.yaml.in/yaml/v3"
+)
+
+// The two keys that make a schema entry a template reference rather than
+// authored content.
+const (
+	instantiateKey = "$instantiate"
+	argsKey        = "$args"
 )
 
 // ErrTemplateNotFound fires when a `$instantiate:` reference names a template
@@ -51,6 +60,97 @@ var errForbiddenKeyword = cerrors.Register("forbidden-keyword", cerrors.Meta{
 	Message:   "schemalibrary: forbidden JSON Schema keyword",
 	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
+
+// Instantiation is a schema entry authored as a template reference: the
+// template name its `$instantiate:` key supplies, together with the `$args:`
+// bindings that fill the template's declared parameters. Args is nil when the
+// entry declares no `$args:` block, which is the shape a template whose every
+// parameter carries a default is instantiated with.
+type Instantiation struct {
+	Template string
+	Args     map[string]any
+}
+
+// ParseInstantiation reports whether a schema entry is authored as a template
+// reference and, when it is, returns the template name and the decoded
+// `$args:` bindings. Three outcomes are distinguishable:
+//
+//   - false, nil error — an ordinary entry carrying no `$instantiate:` key.
+//     Its content is compiled as authored.
+//   - true, nil error — a well-formed reference, ready for
+//     InstantiateTemplate.
+//   - true, non-nil error — the entry carries `$instantiate:` but the
+//     reference is malformed, and the library is refused.
+//
+// A malformed reference is refused rather than passed along as ordinary
+// content. Content the substitution semantic cannot express would otherwise
+// reach the schema compiler unresolved and be rejected there against whichever
+// Component or Feature consumes the entry, naming neither the library, nor the
+// entry, nor the shape that is wrong.
+//
+// A reference carries `$instantiate:`, an optional `$args:` mapping, and
+// nothing else. Substitution composes no further content into the resolved
+// body, so a sibling key expresses an intent the semantic does not carry and
+// would be dropped without a word. An explicitly empty `$args:` is read as no
+// bindings rather than refused, which is the ordinary reading of the YAML an
+// author writes when a template needs none.
+func ParseInstantiation(entry *SchemaEntry) (Instantiation, bool, error) {
+	if entry == nil || entry.Content.Kind != yaml.MappingNode {
+		return Instantiation{}, false, nil
+	}
+
+	var (
+		inst      Instantiation
+		isRef     bool
+		argsNode  *yaml.Node
+		otherKeys []string
+	)
+	content := entry.Content.Content
+	for i := 0; i+1 < len(content); i += 2 {
+		key, val := content[i], content[i+1]
+		switch key.Value {
+		case instantiateKey:
+			isRef = true
+			if val.Kind != yaml.ScalarNode {
+				return Instantiation{}, true, fmt.Errorf(
+					"%s must name a template as a scalar (line %d)", instantiateKey, val.Line)
+			}
+			inst.Template = val.Value
+		case argsKey:
+			argsNode = val
+		default:
+			otherKeys = append(otherKeys, key.Value)
+		}
+	}
+	if !isRef {
+		return Instantiation{}, false, nil
+	}
+	if len(otherKeys) > 0 {
+		return Instantiation{}, true, fmt.Errorf(
+			"an entry using %s carries only %s and an optional %s, so %s would be dropped",
+			instantiateKey, instantiateKey, argsKey, quotedKeyList(otherKeys))
+	}
+	if argsNode != nil && argsNode.Tag != "!!null" {
+		if argsNode.Kind != yaml.MappingNode {
+			return Instantiation{}, true, fmt.Errorf(
+				"%s must be a mapping of parameter bindings (line %d)", argsKey, argsNode.Line)
+		}
+		if err := argsNode.Decode(&inst.Args); err != nil {
+			return Instantiation{}, true, fmt.Errorf("%s: %w", argsKey, err)
+		}
+	}
+	return inst, true, nil
+}
+
+// quotedKeyList renders a diagnostic's list of offending keys, each quoted so
+// the list stays readable when a key is empty or carries spaces.
+func quotedKeyList(names []string) string {
+	quoted := make([]string, len(names))
+	for i, n := range names {
+		quoted[i] = fmt.Sprintf("%q", n)
+	}
+	return strings.Join(quoted, ", ")
+}
 
 // InstantiateTemplate substitutes the named template's body with the
 // provided arguments and returns the resulting yaml.Node ready for the
@@ -101,8 +201,12 @@ func InstantiateTemplate(lib *SchemaLibrary, templateName string, args map[strin
 	}
 
 	// Reject `$args:` keys that name no declared parameter — surface as a
-	// type-mismatch-class error rather than silently ignore.
-	for argName := range args {
+	// type-mismatch-class error rather than silently ignore. The bindings
+	// arrive as a Go map, whose iteration order is unspecified, so the names
+	// are walked sorted: an entry binding two undeclared arguments otherwise
+	// names a different one from run to run, and the same input would produce
+	// two different diagnostics.
+	for _, argName := range slices.Sorted(maps.Keys(args)) {
 		if _, declared := tmpl.Params.Get(argName); !declared {
 			return yaml.Node{}, fmt.Errorf("%w: argument %q is not declared in template %q's $params", ErrTemplateParamTypeMismatch(), argName, templateName)
 		}
