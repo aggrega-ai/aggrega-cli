@@ -206,7 +206,7 @@ func TestExplainErrorSaysWhyTheWalkThroughIsMissing(t *testing.T) {
 	t.Parallel()
 	short, code, sentence := haltProbe(t)
 	// An empty workspace: no bundle cached, and this surface acquires at the
-	// handshake rather than here, so nothing is fetched.
+	// start of the run rather than here, so nothing is fetched.
 	s := pinnedDocsServer(t, t.TempDir())
 
 	payload, text := explainErrorPayload(t, s, explainErrorArgs{Message: haltDiagnostic(short, sentence)})

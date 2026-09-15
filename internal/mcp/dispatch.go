@@ -19,13 +19,13 @@ import (
 // the prompt surfaces list and render the authoring personas and the workflow
 // calling sequences. An unrecognized method returns the standard method-not-found
 // envelope.
-// ctx is the run's own. It reaches the handshake's bundle acquisition, every
-// tool invocation, and the resource reads that leave the process, so ending the
-// run ends what a call is doing rather than only refusing the next message.
+// ctx is the run's own. It reaches every tool invocation and the resource reads
+// that leave the process, so ending the run ends what a call is doing rather
+// than only refusing the next message.
 func (s *server) dispatch(ctx context.Context, req *rpcRequest) (any, *rpcError) {
 	switch req.Method {
 	case "initialize":
-		return s.handleInitialize(ctx, req.Params)
+		return s.handleInitialize(req.Params)
 	case "ping":
 		return struct{}{}, nil
 	case "tools/list":
@@ -101,11 +101,10 @@ func (s *server) handleNotification(req *rpcRequest) {
 // with the server's revision, since the negotiation can complete without
 // them.
 //
-// It is also where the documentation bundle is acquired, once per session and
-// ahead of any resource read, so that the read path stays offline: see
-// ensureDocsBundle, which reports its own outcome to the log stream and cannot
-// fail the handshake.
-func (s *server) handleInitialize(ctx context.Context, params json.RawMessage) (any, *rpcError) {
+// It reaches nothing outside the process: the documentation bundle is already
+// acquired by the time any message is answered, so this handler composes a
+// reply out of what the server was built with and nothing else.
+func (s *server) handleInitialize(params json.RawMessage) (any, *rpcError) {
 	var p initializeParams
 	if len(params) > 0 {
 		if err := json.Unmarshal(params, &p); err != nil {
@@ -116,7 +115,6 @@ func (s *server) handleInitialize(ctx context.Context, params json.RawMessage) (
 		s.logf("mcp: initialize from client %q version %q (protocol %q)",
 			p.ClientInfo.Name, p.ClientInfo.Version, p.ProtocolVersion)
 	}
-	s.ensureDocsBundle(ctx)
 	return initializeResult{
 		ProtocolVersion: negotiateProtocolVersion(p.ProtocolVersion),
 		Capabilities: serverCapabilities{

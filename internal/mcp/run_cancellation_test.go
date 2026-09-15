@@ -19,8 +19,8 @@ import (
 // the work it drives, and the per-invocation dispatch handed each of them a fresh
 // background context — so the whole surface's cancellation plumbing terminated
 // one line above the tools that needed it. The resource reads were the same: the
-// CLI-help read starts a subprocess and the handshake pulls the documentation
-// bundle from a registry, both on a context nobody could end.
+// CLI-help read starts a subprocess and the start-of-run acquisition pulls the
+// documentation bundle from a registry, both on a context nobody could end.
 //
 // These proofs ask whether ending the run ends what a call is doing. The
 // discriminator is the FRAME of the goroutine inside the tool, compared against a

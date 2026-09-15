@@ -71,25 +71,26 @@ func docsResourceTemplates() []resourceTemplate {
 // Nil selects the production resolution below.
 type docsTargetFor func(tw *toolWorkspace, ref, version string, warn func(string)) (oras.ReadOnlyTarget, docscache.VerifyAtPull, error)
 
-// ensureDocsBundle runs the first-use acquisition of the documentation bundle:
-// once per session, at the handshake, and never on a resource read.
+// ensureDocsBundle runs the acquisition of the documentation bundle: once per
+// serving process, before the first message is answered, and never on a resource
+// read.
 //
-// Siting it at the handshake rather than on the read is the whole of the offline
-// contract. ReadPage takes no target and cannot reach the network; folding a
-// fetch into the read would put a registry round-trip behind every documentation
-// request and make a served page's availability depend on connectivity at the
-// moment it is asked for. Acquiring once, ahead of any read, keeps the read
-// offline and the answer warm.
+// Siting it ahead of the message loop rather than on the read is the whole of
+// the offline contract. ReadPage takes no target and cannot reach the network;
+// folding a fetch into the read would put a registry round-trip behind every
+// documentation request and make a served page's availability depend on
+// connectivity at the moment it is asked for. Acquiring once, ahead of any read,
+// keeps the read offline and the answer warm.
 //
-// It never fails the handshake. An offline workspace, a registry that does not
-// serve the bundle, and a signature that does not verify each leave the cache
-// exactly as it was; the reason goes to the log stream and the documentation
-// resources answer resource-not-found, which is a poorer answer than a page and
-// a far better one than a refused session.
+// It never fails the run. An offline workspace, a registry that does not serve
+// the bundle, and a signature that does not verify each leave the cache exactly
+// as it was; the reason goes to the log stream and the documentation resources
+// answer resource-not-found, which is a poorer answer than a page and a far
+// better one than a refused session.
 //
 // ctx is the run's own, carried into the acquisition — a registry round trip —
-// so ending the run ends the fetch instead of leaving the handshake waiting on
-// a registry nobody is still interested in.
+// so ending the run ends the fetch instead of leaving the server waiting on a
+// registry nobody is still interested in.
 func (s *server) ensureDocsBundle(ctx context.Context) {
 	s.docsBundleOnce.Do(func() {
 		tw, err := s.resolveToolWorkspace("", nil)

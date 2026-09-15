@@ -92,16 +92,16 @@ type server struct {
 	docsBundleVersion string
 
 	// docsTarget resolves the OCI target the documentation bundle is pulled
-	// from at the session's first use. Nil reaches the registry through the
+	// from at the start of the run. Nil reaches the registry through the
 	// workspace's egress gate. A test injects one to drive the acquisition
 	// without a registry; everything after the target — the pull, the
 	// media-type check, the cache write and the read — stays production.
 	docsTarget docsTargetFor
 
-	// docsBundleOnce holds that acquisition to a single attempt per session.
-	// A cold cache and an unreachable registry are the same case from here, so
-	// re-attempting would mean paying the connect timeout again on a
-	// re-handshake with nothing having changed.
+	// docsBundleOnce holds that acquisition to a single attempt per serving
+	// process. A cold cache and an unreachable registry are the same case from
+	// here, so a second attempt would mean paying the connect timeout again with
+	// nothing having changed.
 	docsBundleOnce sync.Once
 
 	// runGenCatalog runs the catalog-generation helper for the gen-catalog
@@ -141,11 +141,12 @@ type server struct {
 //
 // # The caller's context
 //
-// ctx is the run's own, and it reaches every tool invocation and every resource
-// read: the tools that publish, pull, build, lint and search all carry it into
-// the work they drive, and the CLI-help resource carries it into the subprocess
-// it starts. So ending the run ends whatever a call was doing, rather than only
-// declining to accept the next message.
+// ctx is the run's own, and it reaches the start-of-run documentation
+// acquisition, every tool invocation and every resource read: the tools that
+// publish, pull, build, lint and search all carry it into the work they drive,
+// and the CLI-help resource carries it into the subprocess it starts. So ending
+// the run ends whatever a call was doing, rather than only declining to accept
+// the next message.
 //
 // Ending the run ends the message loop too, whether it is answering a message or
 // waiting for one, so a run ends on the first request to end it rather than
@@ -173,6 +174,26 @@ func Run(ctx context.Context, cfg Config) error {
 		toolchain:     cfg.Toolchain,
 		commandTools:  deriveCommandTools(cfg.Commands),
 	}
+	return s.run(ctx, stdin)
+}
+
+// run is the serving process's own lifecycle: acquire the documentation bundle
+// once, then answer messages until stdin reaches EOF or the run ends.
+//
+// The acquisition belongs to the process rather than to any one message, so it
+// runs here and not from a handler. A client that never sends a particular
+// message still finds the cache warm, and nothing about which message arrives
+// first decides whether the documentation resources can answer. It blocks the
+// first answer deliberately: a bundle acquired after a page has already been
+// asked for arrived too late for that page, and the read path stays incapable of
+// acquiring one for itself. It cannot fail the run — ensureDocsBundle reports
+// its own outcome to the log stream and returns either way.
+//
+// Run builds the server from its Config and enters here; a test builds one with
+// its own workspace and bundle seams and enters here too, so what a test drives
+// is what a client drives.
+func (s *server) run(ctx context.Context, stdin io.Reader) error {
+	s.ensureDocsBundle(ctx)
 	return s.serve(ctx, stdin)
 }
 

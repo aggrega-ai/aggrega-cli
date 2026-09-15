@@ -33,7 +33,7 @@ import (
 
 // TestDocsResourceServedFromARealRegistry stands up an in-process OCI registry,
 // publishes a documentation bundle to it, and drives a cold MCP session through
-// the handshake and a resource read.
+// the run's own acquisition and a resource read.
 func TestDocsResourceServedFromARealRegistry(t *testing.T) {
 	ctx := context.Background()
 
@@ -75,11 +75,11 @@ func TestDocsResourceServedFromARealRegistry(t *testing.T) {
 		t.Fatal("the workspace must start cold")
 	}
 
-	if _, rerr := s.handleInitialize(context.Background(), nil); rerr != nil {
-		t.Fatalf("initialize: %v", rerr)
+	if resps := runServer(t, s); len(resps) != 0 {
+		t.Fatalf("a run carrying no messages answered %d of them", len(resps))
 	}
 	if !strings.Contains(logged.String(), "acquired") {
-		t.Fatalf("the handshake did not acquire the bundle; log was: %s", logged.String())
+		t.Fatalf("the run did not acquire the bundle; log was: %s", logged.String())
 	}
 
 	rr, rerr := readResource(t, s, "langref://entities/component")
@@ -115,9 +115,7 @@ func TestDocsAcquisitionRefusedWhenTheWorkspaceIsOffline(t *testing.T) {
 
 	var logged strings.Builder
 	s := &server{out: io.Discard, logw: &logged, serverVersion: "9.9.9-fixture", startDir: ws}
-	if _, rerr := s.handleInitialize(context.Background(), nil); rerr != nil {
-		t.Fatalf("initialize must succeed offline; got %v", rerr)
-	}
+	runServer(t, s)
 	if !strings.Contains(logged.String(), "offline") {
 		t.Errorf("an offline workspace must report the egress refusal; log was: %s", logged.String())
 	}
