@@ -315,10 +315,10 @@ const offFrameworkEmissionBlocks = false
 // condition names no rule at all. [partitionOffFrameworkByDeclaredPlace] performs
 // that subtraction and guards those declarations in both directions.
 //
-// Measured 2026-09-14, at aggrega-cli 335cbaf7: 154, of 281 declared.
+// Measured 2026-09-15, at aggrega-cli c3828f72: 120, of 280 declared.
 //
 // Its composition at that revision, which a bare number cannot carry and which
-// decides how the figure is read: 149 conditions declaring a rule over authored
+// decides how the figure is read: 115 conditions declaring a rule over authored
 // input — the candidates, each of which could be expressed as a check — and 5
 // carrying no registration to declare a place on, which
 // [assertEveryConditionDeclaresItsPlace] names on every run. The second term is
@@ -328,16 +328,21 @@ const offFrameworkEmissionBlocks = false
 // unregistered condition raised outside the dispatch escape this bound entirely,
 // which is the one movement the bound exists to refuse.
 //
-// # This figure is NOT comparable with the recording it replaces
+// # One pair of recordings here is comparable and one is not
 //
-// The previous recording was 241, and the drop to 154 is not 87 rules moving into
-// the dispatch. No rule moved: the change that lowered it migrated nothing and
-// altered no raise path. What changed is the population the number is taken over.
-// The old one was MIXED — every condition raised outside the dispatch, counted
-// together whether its rule could be expressed as a check or could never be one —
-// and the new one is the conditions whose rules could be, plus the few that have
-// not said. Two recordings taken over different populations measure different
-// things, so the pair must not be read as a trend.
+// 241 and 154 were taken over DIFFERENT populations, so that pair must never be
+// read as a trend. No rule moved between them: the change that lowered it
+// migrated nothing and altered no raise path. What changed is the population the
+// number is taken over. The older one was MIXED — every condition raised outside
+// the dispatch, counted together whether its rule could be expressed as a check or
+// could never be one — and the present one is the conditions whose rules could be,
+// plus the few that have not said.
+//
+// 154 and 120 ARE comparable, both taken over that present population under the
+// criterion above. That fall is still not 34 rules moving into the dispatch: 32
+// conditions declared a place the ratchet excludes — another evaluator owns the
+// rule, or no stage of a compilation reaches it — and the remaining 2 was slack
+// the previous recording had been carrying rather than any movement at all.
 //
 // The slack the old recording carried is reclaimed by this one rather than left
 // standing, so the ratchet is exact again at the moment it is recorded. The bound
@@ -358,13 +363,13 @@ const offFrameworkEmissionBlocks = false
 // conditions.
 //
 // Those are now declared and counted apart, so nothing in this population is here
-// by construction. The 149 reach zero by being expressed as checks. The 5 reach
+// by construction. The 115 reach zero by being expressed as checks. The 5 reach
 // zero by acquiring a registration that declares where their rule belongs, or by
 // being deleted — a finite named set with a remedy per member, which is a
 // different thing from a structural remainder. So zero is a state this number can
 // arrive at, and [offFrameworkEmissionBlocks] flips in the edit that takes it
 // there.
-const offFrameworkEmissionCeiling = 154
+const offFrameworkEmissionCeiling = 120
 
 // unemittedSentinelsBlock decides whether a sentinel with no emission site at
 // all fails this test or is only reported. It is true.
