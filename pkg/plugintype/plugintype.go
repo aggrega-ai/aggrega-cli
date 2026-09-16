@@ -197,7 +197,9 @@ type Entry struct {
 	// Socket is the workspace socket name the type attaches at, or "" when the
 	// type is not a workspace-socket type.
 	Socket string
-	// Tier is the type's reproducibility tier.
+	// Tier is the type's reproducibility tier. It is a property of the plugin
+	// type itself rather than of the socket the type attaches at, so a type that
+	// attaches at no workspace socket carries a meaningful tier all the same.
 	Tier Tier
 	// Mechanism is how the type attaches to the host.
 	Mechanism Mechanism
@@ -227,11 +229,15 @@ var entries = []Entry{
 		LoadProfile: LoadProfileBuild,
 	},
 	{
-		Type:        PipelineStep,
-		Label:       "feature-recipe-pipeline",
-		MinExport:   MinExport{Name: "step"},
-		Socket:      "",
-		Tier:        TierOrthogonal,
+		Type:      PipelineStep,
+		Label:     "feature-recipe-pipeline",
+		MinExport: MinExport{Name: "step"},
+		Socket:    "",
+		// A pipeline step patches the documents a recipe renders, so its bytes reach
+		// the rendered output and it is pinned like every other output-shaping type.
+		// Attaching through catalog content rather than a workspace socket changes
+		// where the plugin is declared, not what its bytes reach.
+		Tier:        TierMutating,
 		Mechanism:   MechanismCatalogPipelineStep,
 		LoadProfile: LoadProfileBuild,
 	},

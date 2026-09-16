@@ -33,9 +33,14 @@ const (
 // place, pull (which caches verdict-socket plugins) and build (which resolves
 // them cache-not-pin) can never disagree on which sockets are verdict sockets. A
 // socket with no registry entry falls back to the orthogonal tier.
+//
+// The match is on the socket NAME, so a registry entry that attaches by some other
+// mechanism and therefore carries no socket name is never a match — not even for an
+// empty socket, which names no socket either. Reading such an entry's tier here
+// would answer a socket question with a type-keyed answer.
 func (s Socket) Tier() SocketTier {
 	for _, e := range plugintype.Entries() {
-		if e.Socket != string(s) {
+		if e.Socket == "" || e.Socket != string(s) {
 			continue
 		}
 		return socketTierFor(e.Tier)

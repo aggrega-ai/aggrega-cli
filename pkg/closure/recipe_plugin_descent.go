@@ -84,21 +84,40 @@ func entityNeedsNoPin(resolutionPath string) bool {
 //
 // A core provider resolved from the binary is not pinned: the build selects and
 // loads its rendering engine from the same binary, so a pin would record a digest
-// the pull never fetched and tie the closure to whichever binary wrote it.
+// the pull never fetched and tie the closure to whichever binary wrote it. That
+// exception is a property of where the artifact resolved from, so it is written
+// against the resolution path and leaves the type's own classification alone.
 //
-// Every other declared type IS pinned, even when the binary carries it. The plugins
-// this axis reaches — a recipe's pipeline steps and an output-shaping workspace-socket
-// attachment — put their bytes into the rendered output, and the lockfile pin is what
-// holds those bytes still until the next pull. Two things break without it: such a
-// plugin is adopted the moment it changes rather than at a pull, and the
-// workspace-socket reconstruction the build performs from the lockfile pins the
-// artifact regardless, so a pull that declined it writes a lockfile the very next
-// build reports as drifted.
+// Every other output-shaping type IS pinned, even when the binary carries it,
+// and which types those are is read from the canonical plugin-type registry
+// rather than restated here — see shapesRenderedOutput. The lockfile pin is what
+// holds an output-shaping plugin's bytes still until the next pull, and two
+// things break without it: such a plugin is adopted the moment it changes rather
+// than at a pull, and the workspace-socket reconstruction the build performs from
+// the lockfile pins the artifact regardless, so a pull that declined it writes a
+// lockfile the very next build reports as drifted.
 func artifactNeedsNoPin(resolutionPath string, declaredType plugintype.Type) bool {
 	if resolvedInLocalCatalog(resolutionPath) {
 		return true
 	}
-	return resolutionPath == ResolutionPathEmbedded && declaredType == plugintype.Provider
+	if resolutionPath == ResolutionPathEmbedded && declaredType == plugintype.Provider {
+		return true
+	}
+	return !shapesRenderedOutput(declaredType)
+}
+
+// shapesRenderedOutput reports whether a plugin of this declared type puts its
+// bytes into the rendered output, reading the classification from the canonical
+// plugin-type registry so the pin decision and the socket-facing classification
+// cannot disagree about a type.
+//
+// A type the registry does not carry is treated as output-shaping. The pin is the
+// safe direction: an artifact pinned when it need not be costs a lockfile row and
+// keeps output reproducible, while an unpinned output-shaping artifact silently
+// moves the bytes a build emits.
+func shapesRenderedOutput(declaredType plugintype.Type) bool {
+	entry, known := plugintype.Lookup(declaredType)
+	return !known || entry.Tier == plugintype.TierMutating
 }
 
 // DescendRecipePluginEntities is the entity descent of the two-pass
