@@ -28,6 +28,7 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline/pipelinetest"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
 )
 
@@ -247,17 +248,26 @@ func TestOutputComponentLabels_CollidesWithLiteral_HaltsBuild(t *testing.T) {
 	if !strings.Contains(err.Error(), "CATALOG_ERROR") {
 		t.Errorf("build error should be a loud CATALOG_ERROR; got: %s", err.Error())
 	}
-	// The outermost message names only the catalog path; the diagnostic a user
-	// acts on is the validation error carried in the chain, so assert there —
-	// asserting on err.Error() would pass while the actionable detail was lost.
+	// This diagnostic carries its position in two halves, so the assertions
+	// below read two surfaces rather than one. The file a reader opens rides
+	// the chain frame that carries the source location, and cerrors.CauseChain
+	// is what flattens the whole chain onto one line — each frame's own Error()
+	// reports itself alone, so reading any single frame drops the other half.
+	// The offending key and the two block names ride the validation detail,
+	// which is the sentence saying what to change. Asserting the file against
+	// the detail would ask the half holding the authored key to supply the
+	// half holding the document.
 	var ve *validator.ValidationError
 	if !errors.As(err, &ve) {
 		t.Fatalf("the build error must carry the validation detail; got: %v", err)
 	}
-	for _, want := range []string{`"hosting"`, "outputComponentLabels", "outputLabels", "api-server.yaml"} {
+	for _, want := range []string{`"hosting"`, "outputComponentLabels", "outputLabels"} {
 		if !strings.Contains(ve.Error(), want) {
 			t.Errorf("the validation detail must name %s; got: %s", want, ve.Error())
 		}
+	}
+	if chain := cerrors.CauseChain(err); !strings.Contains(chain, "api-server.yaml") {
+		t.Errorf("the rendered chain must name the file to open, api-server.yaml; got: %s", chain)
 	}
 }
 
