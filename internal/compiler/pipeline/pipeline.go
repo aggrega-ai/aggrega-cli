@@ -124,9 +124,11 @@ type Inputs struct {
 	Lockfile      *lockfile.Lockfile
 	WorkspaceRoot string
 
-	// PluginPins is where this run's plugin pins come from. It is REQUIRED by the
-	// graph entry, which refuses an unset one rather than reading a zero value in
-	// its place.
+	// PluginPins is where this run's plugin pins come from. It is REQUIRED by both
+	// exported entries that can reach the plugin resolver — the graph entry and
+	// the resolve-and-validate entry — each of which refuses an unset one rather
+	// than reading a zero value in its place. Both refuse, because a mandate held
+	// at one of two entries is one a caller escapes by picking the other.
 	//
 	// A pointer, and the pointer is the whole point: a caller that has no pin
 	// source and a caller that forgot to name one are different facts, and an
@@ -148,11 +150,11 @@ type Inputs struct {
 	// that pins govern, which is exactly the fact a pin-free source does not
 	// state.
 	//
-	// That refusal is what the read below the entry rests on: it carries no nil
+	// Those refusals are what the read below them rests on: it carries no nil
 	// test of its own, deliberately, because substituting a pin-free source for an
-	// unset one would restore the plausible-but-wrong zero the refusal exists to
+	// unset one would restore the plausible-but-wrong zero the refusals exist to
 	// stop. A caller reaching one of those helpers directly rather than through
-	// the entry therefore supplies a pin source as well, an explicitly pin-free
+	// an entry therefore supplies a pin source as well, an explicitly pin-free
 	// one where that is what it means.
 	PluginPins *pluginpath.PinSource
 
@@ -727,6 +729,21 @@ func ResolveAndValidate(
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	// The same refusal the graph entry makes, made here for the same reason: this
+	// is the other entry a caller can reach the plugin resolver through, by way of
+	// the annotation-transform role below. The pins address the versioned cache
+	// slot a plugin's bytes live in, so a run that names no pin source resolves
+	// against an empty address and misses a guest that is on disk — while a pinned
+	// posture over that emptiness states the opposite, that a recorded identity
+	// governs here. A caller with nothing to pin against says so, and saying so is
+	// what this refusal asks for. Refusing at both entries rather than at one is
+	// what keeps the obligation from ending at whichever entry a caller happened to
+	// pick.
+	if inputs.PluginPins == nil {
+		return stderrors.New("resolve: no plugin pin source was supplied; " +
+			"the pins address the versioned cache slot a plugin's bytes are read from, " +
+			"so a run without one resolves plugins against an empty address")
+	}
 
 	return resolver.ResolveAndUse(ctx, resolver.ResolveInputs{
 		Release:           inputs.Release,
@@ -1300,41 +1317,6 @@ func RunTier4Pipeline(
 	return out, err
 }
 
-// RunPipeline executes the 5-step compiler pipeline against caller-supplied
-// inputs and returns an [Outcome] carrying the rendered artifact map plus the IR
-// graph. The function performs no filesystem reads or writes beyond the
-// operations the supplied lookup callbacks perform; the caller is responsible for
-// any filesystem-side effects (writing artifacts to dist/, writing the
-// trace map to .trace/).
-//
-// Mid-run advisories — the binding-lint findings, the static-analysis advisory
-// stream, the governance sockets' warn and info verdicts, and the renderer's
-// warnings — are displayed on os.Stderr inline by this function AND ride out on
-// the Outcome, so a caller that reads no terminal receives every one of them as a
-// structured entry rather than having to redirect a process stream to see them.
-// The entries arrive in the order the display printed them, because each is
-// recorded beside its own display.
-//
-// # A run that stops still reports what it found
-//
-// The returned error and the returned Outcome are not alternatives. A halt any
-// phase raises comes back with the advisories the phases ahead of it had already
-// raised, so a caller that renders findings has them on the path where a reader
-// needs them most. Which of the two the caller is holding is not left to a
-// convention: [Outcome.Completed] answers with the payload only for a run that
-// finished, and [Outcome.Advisories] answers on either, so there is no spelling
-// that reads a stopped run as a finished one.
-//
-// A trace-file close failure is displayed and is deliberately not an advisory:
-// see Result.Advisories for why.
-//
-// The parameter map merged from Release.spec.parameters flows through to
-// the renderer (for orchestrator-time path-template evaluation). RunPipeline
-// runs inside resolver.ResolveAndUse's scope (via runStepsOneToFour →
-// BuildGraph), which owns that scope: the render completes inside the
-// callback, so the map is live for every render phase and reachable from no
-// caller once RunPipeline returns.
-//
 // buildPluginResolver constructs the hermetic build-time plugin-resolution
 // cascade from the pipeline inputs: the catalog's co-located artifact
 // directories, the workspace root + resolved cache directory, and the pin source
@@ -1353,9 +1335,9 @@ func RunTier4Pipeline(
 // signature verification. Where the source is pin-free, none of that is in force
 // and the site has declared as much.
 //
-// It reads the pin source with no nil test, deliberately: the entry refuses an
-// unset one, and a test here would substitute a pin-free source for an unset one
-// at exactly the site the refusal protects.
+// It reads the pin source with no nil test, deliberately: both entries that can
+// reach it refuse an unset one, and a test here would substitute a pin-free
+// source for an unset one at exactly the site those refusals protect.
 //
 // colocatedDirs is the catalog's artifact-reference → catalog-
 // directory map, feeding the co-located tier so a binary that embeds no core
@@ -1470,11 +1452,46 @@ func collectProviderGuestWarmers(graph *types.IRGraph, recipeLookup renderer.Rec
 	return warmers, nil
 }
 
-// RunPipeline shares Steps 1-4 with RunTier4Pipeline through the
-// unexported runStepsOneToFour helper, then runs Step 4b + Step 5.
-// First-error-fatal semantic is preserved for terminal phases:
-// analyser errors land as a joined error return so existing irgraph +
-// CLI build callers see the flattened error shape they already consume.
+// RunPipeline executes the 5-step compiler pipeline against caller-supplied
+// inputs and returns an [Outcome] carrying the rendered artifact map plus the IR
+// graph. The function performs no filesystem reads or writes beyond the
+// operations the supplied lookup callbacks perform; the caller is responsible for
+// any filesystem-side effects (writing artifacts to dist/, writing the
+// trace map to .trace/).
+//
+// It shares Steps 1-4 with [RunTier4Pipeline] through the unexported
+// runStepsOneToFour helper, then runs Step 4b + Step 5. First-error-fatal
+// semantic is preserved for terminal phases: analyser errors land as a joined
+// error return so existing irgraph + CLI build callers see the flattened error
+// shape they already consume.
+//
+// Mid-run advisories — the binding-lint findings, the static-analysis advisory
+// stream, the governance sockets' warn and info verdicts, and the renderer's
+// warnings — are displayed on os.Stderr inline by this function AND ride out on
+// the Outcome, so a caller that reads no terminal receives every one of them as a
+// structured entry rather than having to redirect a process stream to see them.
+// The entries arrive in the order the display printed them, because each is
+// recorded beside its own display.
+//
+// # A run that stops still reports what it found
+//
+// The returned error and the returned Outcome are not alternatives. A halt any
+// phase raises comes back with the advisories the phases ahead of it had already
+// raised, so a caller that renders findings has them on the path where a reader
+// needs them most. Which of the two the caller is holding is not left to a
+// convention: [Outcome.Completed] answers with the payload only for a run that
+// finished, and [Outcome.Advisories] answers on either, so there is no spelling
+// that reads a stopped run as a finished one.
+//
+// A trace-file close failure is displayed and is deliberately not an advisory:
+// see Result.Advisories for why.
+//
+// The parameter map merged from Release.spec.parameters flows through to
+// the renderer (for orchestrator-time path-template evaluation). RunPipeline
+// runs inside resolver.ResolveAndUse's scope (via runStepsOneToFour →
+// BuildGraph), which owns that scope: the render completes inside the
+// callback, so the map is live for every render phase and reachable from no
+// caller once RunPipeline returns.
 func RunPipeline(
 	ctx context.Context,
 	inputs Inputs,

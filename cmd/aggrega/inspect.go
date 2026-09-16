@@ -797,6 +797,17 @@ func renderReleaseFile(ctx context.Context, rw *workspaceconfig.ResolvedWorkspac
 		return fmt.Errorf("read aggregate %q: %w", aggPath, err)
 	}
 	catalogLookup := cat.CatalogLookup()
+	// A catalog directory walk enumerates authored entities and deliberately steps
+	// over the content-addressed cache, so a plugin this workspace acquired from a
+	// registry is reachable only through a cache-backed read. Without one the entity
+	// front finds no such plugin at all and a transform-role guest halts here as
+	// not-an-entity — while a build of the same documents resolves it and runs it.
+	// That divergence is the one thing this command promises not to produce, so the
+	// read is supplied rather than left absent.
+	//
+	// The view is built with no registry client, so this stays a local read: a slot
+	// the cache does not hold is a clean miss reported as such, never a fetch.
+	catalogLookup.PluginFromCache = catalog.NewLazyLookup(wsRoot, cacheDir, dirs, nil).PluginFromCacheByURI
 
 	// Build the graph through the one entry that produces one, so what this
 	// command draws is the graph a build would render rather than one assembled
