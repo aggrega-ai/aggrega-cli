@@ -390,11 +390,11 @@ func TestTheTopologyStageRulesThreadTheCallersSignalIntoTheRequirementShapeWalk(
 		t.Fatalf("the composition holds %d node(s); the arithmetic below needs at least 2", nodes)
 	}
 	// The walks this site performs, each rooted at the node axis: the
-	// attachment-requirement shape, the component-identity refusal, and the
-	// required-socket population. The identity walk is handed `ctx.Err` like the
-	// two around it, which is the thing this count exists to make somebody check
-	// when a walk is added.
-	const walks = 3
+	// attachment-requirement shape, the component-identity refusal, the
+	// identity-declared-once refusal, and the required-socket population. Each is
+	// handed `ctx.Err` like the ones around it, which is the thing this count
+	// exists to make somebody check when a walk is added.
+	const walks = 4
 	expectedReads := nodes * walks
 
 	t.Run("a caller that withdraws stops the walk before its first node", func(t *testing.T) {

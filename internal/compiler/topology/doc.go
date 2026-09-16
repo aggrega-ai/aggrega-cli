@@ -78,15 +78,28 @@
 //     order. The corresponding consumer-side commitment lives in the IR
 //     package's doc.go.
 //
-// A defensive sentinel ErrSubAggregateNameCollision halts flattenAggregate
-// if a flattened ID would overwrite an existing entry in the flat node
-// map — the condition is impossible by current schema (root-level
-// instance names cannot contain dots, so dotted sub-aggregate IDs cannot
-// collide with root-level names) but the guard defends against future
-// schema loosening or validation bypass that lets two flattened IDs
-// collide. The wrapped error carries the colliding ID, the dotted prefix
-// path that produced it, and the existing entry's source aggregate so
-// the diagnostic points the author at the precise authoring position.
+// Two flattened IDs meeting is two conditions, on the two paths that can
+// produce it, and they are kept apart because one is an authoring mistake
+// and the other is not.
+//
+// ErrSubAggregateNameCollision halts flattenAggregate if merging a loaded
+// module's nodes would overwrite an entry already in the flat node map. That
+// is impossible by current schema — every node a module contributes carries
+// that module's name ahead of its own, instance names cannot contain the dot
+// the two are joined with, and two modules imported under one name are one
+// duplicate key — so the guard defends against schema loosening or validation
+// bypass. The wrapped error carries the colliding ID, the dotted prefix path
+// that produced it, and the existing entry's source aggregate.
+//
+// ErrSubsystemComponentIdentityCollision covers two subsystems of one
+// Aggregate declaring a component under the same name, which is ordinary YAML
+// the schema accepts: a subsystem contributes nothing to the identity a
+// component carries, so both take one. That is not raised here. The walk
+// records every declaration on flattenResult.DeclaringSubsystems, lets the
+// node map keep the last of them, and ComponentIdentityIsDeclaredOnce — the
+// rule declared over the flattened composition — reports the pair. Recording
+// rather than halting is what makes the pair readable from the finished
+// composition at all, since the node map holds one component per identity.
 //
 // Mutator-plugin contract. The MutatorInput / MutatorOutput /
 // CompilationContext / MutatorGraph / MutatorNode types in

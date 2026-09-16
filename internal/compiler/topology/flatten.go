@@ -55,6 +55,26 @@ type flattenResult struct {
 	// A module a false `active` toggle removed is absent: nothing it declares was
 	// loaded, so no rule over the composed build has anything to say about it.
 	Modules []ModuleDeclaration
+	// DeclaringSubsystems is the subsystem every surviving component was declared
+	// under, keyed by the identity that component takes in the flattened set, in
+	// the order the walk met each declaration.
+	//
+	// It is a list per identity rather than one entry, because that is the whole
+	// of what it exists to carry. Nodes holds one component per identity by
+	// construction, so a second declaration of one identity replaces the first
+	// there and the pair is unobservable afterwards; here both are kept, which is
+	// what lets a rule over the flattened composition be asked whether one
+	// identity was declared twice.
+	//
+	// Ordered rather than a plain map because it is carried onward on the
+	// composition this stage produces, where an unordered set has no iteration
+	// order and the byte-identical-output contract forbids one. The order is the
+	// order flattening met each component, which is author order at every level.
+	//
+	// A component a false `active` toggle removed is absent, for the reason it is
+	// absent from Nodes: it was never composed, so nothing else can collide with
+	// it.
+	DeclaringSubsystems types.OrderedMap[[]string]
 }
 
 // ModuleDeclaration is one sub-module the composition brought in: the dotted
@@ -273,6 +293,13 @@ func flattenAggregate(
 				}
 				result.Nodes.Set(id, node)
 			}
+			// The module's own record travels with its nodes, so a pair of
+			// subsystems inside a module is reported by the same rule that reports
+			// a pair inside the importing document. The identities are already
+			// distinct by the merge above, so this copies rather than folds.
+			for id, declaring := range childResult.DeclaringSubsystems.All() {
+				result.DeclaringSubsystems.Set(id, declaring)
+			}
 			for id, feats := range childResult.FeatureAttachments {
 				result.FeatureAttachments[id] = append(result.FeatureAttachments[id], feats...)
 			}
@@ -323,10 +350,10 @@ func flattenAggregate(
 // rootPath is the dotted path the tree's top level hangs beneath — empty for an
 // Aggregate's own subsystems.
 //
-// Returns ErrSubAggregateNameCollision (wrapped) if a Set on the flat node map
-// would overwrite an existing entry. The collision is impossible by current schema
-// (root-level instance names cannot contain dots) but the guard defends against
-// future schema loosening or validation bypass.
+// The walk raises nothing when two subsystems declare a component under one
+// name. It records both declarations on the result's DeclaringSubsystems and
+// lets the node map keep the last of them; the rule declared over the flattened
+// composition reads that record and reports the pair.
 func flattenSubsystems(result *flattenResult, prefix, rootPath, sourceFile string, na types.NormalizedAggregate, params map[string]any) error {
 	return types.WalkInstanceTree(na.Aggregate().Spec.Subsystems, types.SubsystemTree(), rootPath, []scopeFeatureUses(nil),
 		types.InstanceTreeVisitor[types.Subsystem, types.ComponentInstance, []scopeFeatureUses]{
@@ -360,14 +387,13 @@ func flattenSubsystems(result *flattenResult, prefix, rootPath, sourceFile strin
 					result.Pruned.Set(nodeID, true)
 					return nil
 				}
-				if existing, exists := result.Nodes.Get(nodeID); exists {
-					return cerrors.Wrap(ErrSubAggregateNameCollision(), cerrors.DeveloperError, cerrors.SourceLocation{File: prefix},
-						cerrors.ComposeMessage(ErrSubAggregateNameCollision(), []string{
-							fmt.Sprintf("id %q", nodeID),
-							fmt.Sprintf("path %q", prefix),
-							fmt.Sprintf("collides with existing entry from %q", existing.SourceAggregate),
-						}, ""))
-				}
+				// Every declaration is recorded and the node map keeps the last of
+				// them. A second declaration of one identity is a fault, and the rule
+				// over the flattened composition is what reports it — halting here
+				// instead would report it from inside the production of the very
+				// facts that rule reads.
+				declaring, _ := result.DeclaringSubsystems.Get(nodeID)
+				result.DeclaringSubsystems.Set(nodeID, append(declaring, subsystemPath))
 				result.Nodes.Set(nodeID, &TopologyNode{
 					InstanceID:           nodeID,
 					ComponentType:        comp.Type,

@@ -100,21 +100,54 @@ var errDanglingUsesTarget = cerrors.Register("dangling-uses-target", cerrors.Met
 	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
-// ErrSubAggregateNameCollision fires from flattenAggregate when a Set
-// operation on the flat node map would overwrite an existing entry —
-// a condition impossible by the current Aggregate schema (root-level
-// instance names cannot contain dots, so dotted sub-aggregate IDs
-// cannot collide with root-level names) but defended-against in case
-// a future schema loosening or a code path bypassing validation lets
-// two flattened IDs collide. The wrapped error carries the colliding
-// ID, the dotted prefix path that produced it, and the existing
-// entry's source aggregate so the diagnostic points the author at the
-// precise authoring position.
+// ErrSubAggregateNameCollision fires from flattenAggregate when merging a
+// loaded module's nodes into the accumulating set would overwrite an entry
+// already there. It has exactly one raise site, the merge itself, and the
+// identity two subsystems of one Aggregate would share is a separate condition
+// — see [ErrSubsystemComponentIdentityCollision].
+//
+// The merge arm is not reachable through ordinary authoring. A module's nodes
+// all carry that module's dotted prefix, an instance name is written from
+// letters, digits, `-` and `_` so it cannot carry the dot the prefix is joined
+// with, and two modules imported under one name are one duplicate key the
+// document is refused for. So this backstops a composition assembled by
+// something other than the ordinary authoring path. The wrapped error carries
+// the colliding ID, the dotted prefix path that produced it, and the existing
+// entry's source aggregate.
 func ErrSubAggregateNameCollision() error { return errSubAggregateNameCollision }
 
 var errSubAggregateNameCollision = cerrors.Register("sub-aggregate-name-collision", cerrors.Meta{
 	ShortCode: "E0073",
 	Message:   "flattened node ID collision: rename one of the colliding instances so their flattened IDs differ",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
+})
+
+// ErrSubsystemComponentIdentityCollision fires when two component instances an
+// Aggregate declares in different subsystems would take one identity in the
+// flattened composition.
+//
+// A subsystem contributes nothing to the identity a component carries: the
+// composition keys a component on the name its author wrote, with the prefix of
+// the module contributing it ahead of it and nothing from the subsystem tree in
+// between. So two subsystems of one Aggregate may each declare a component under
+// the same name, which the schema accepts because they are distinct authored
+// keys, and the two then answer to one identity. The second would replace the
+// first and one of the components would be absent from the output with nothing
+// said about it, so the build halts instead (Invariant 4).
+//
+// The same name twice inside ONE subsystem is a different fault: those are one
+// duplicate key and the document is refused as it loads.
+//
+// It is raised by [ComponentIdentityIsDeclaredOnce], the rule declared over the
+// flattened composition, and by nothing else. The diagnostic carries the shared
+// identity and the subsystems that declared it, positioned by the framework at
+// the authored component key.
+func ErrSubsystemComponentIdentityCollision() error { return errSubsystemComponentIdentityCollision }
+
+var errSubsystemComponentIdentityCollision = cerrors.Register("subsystem-component-identity-collision", cerrors.Meta{
+	ShortCode: "E0294",
+	Message: "components in different subsystems take the same identity: rename one of them, " +
+		"since a subsystem contributes nothing to a component's identity",
 	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 

@@ -61,6 +61,20 @@ type TopologyResult struct {
 	// lets a consumer tell a reference to a deliberately-removed component apart
 	// from a reference to one that never existed.
 	Pruned types.OrderedMap[bool]
+	// DeclaringSubsystems is the subsystem every component in the composition was
+	// declared under, keyed by the identity that component carries here, in the
+	// order flattening met each declaration.
+	//
+	// It is a list per identity, and that is the whole of what it carries: Nodes
+	// holds one component per identity, so a second declaration of one identity
+	// replaces the first there and the two become indistinguishable from one. Both
+	// are kept here, and they stay readable for as long as this composition does —
+	// a rule over the flattened set reads it to ask whether one identity was
+	// declared more than once.
+	//
+	// A component a false `active` toggle removed is absent, exactly as it is
+	// absent from Nodes.
+	DeclaringSubsystems types.OrderedMap[[]string]
 	// StageView presents this composition to a check as the named facts complete
 	// once it is flattened, with every fact complete earlier answered by the
 	// presentation the resolve produced.
@@ -759,6 +773,7 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 		ExportedComponents:         flat.ExportedComponents,
 		ExportedComponentsDeclared: declaredExports,
 		Pruned:                     flat.Pruned,
+		DeclaringSubsystems:        flat.DeclaringSubsystems,
 	}
 	// Assigned only when one was built. Storing an absent presentation directly
 	// would leave the field non-nil while the value behind it is not there, so a

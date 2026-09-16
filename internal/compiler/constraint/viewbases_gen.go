@@ -1477,6 +1477,13 @@ func (GraphViewBase) NodeBoundaryPlacement(node string) (string, bool) {
 	panic("this presentation does not carry node-boundary-placement, which is read from topology.TopologyNode.BoundaryPath")
 }
 
+// NodeDeclaringSubsystems panics. This presentation does not carry
+// node-declaring-subsystems, which is read from
+// topology.TopologyResult.DeclaringSubsystems.
+func (GraphViewBase) NodeDeclaringSubsystems(node string) []string {
+	panic("this presentation does not carry node-declaring-subsystems, which is read from topology.TopologyResult.DeclaringSubsystems")
+}
+
 // ModuleContributedNodes panics. This presentation does not carry
 // module-contributed-nodes, which is read from
 // topology.TopologyNode.SourceAggregate.
@@ -2288,6 +2295,7 @@ type TopologyStageFacts interface {
 	ResolvedUsesSocketConnections(node string) types.OrderedMap[int]
 	PerEdgeAuthoredTarget(node string, socket string, alias string) string
 	NodeBoundaryPlacement(node string) (string, bool)
+	NodeDeclaringSubsystems(node string) []string
 	ModuleContributedNodes(module string) []string
 	ComponentDeactivated(node string) bool
 	BoundaryDeclaredComponentReferences() []string

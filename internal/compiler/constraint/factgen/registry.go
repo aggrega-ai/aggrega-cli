@@ -2755,6 +2755,41 @@ var facts = []factDecl{
 	},
 
 	{
+		Name:        "node-declaring-subsystems",
+		Stage:       "topology",
+		SourceField: "topology.TopologyResult.DeclaringSubsystems",
+		Subject:     []string{"node"},
+		Params:      []paramDecl{{Name: "node", Type: "string"}},
+		Returns:     "[]string",
+		Doc: "NodeDeclaringSubsystems are the subsystems that declared a " +
+			"component under the identity a node carries, in the order the " +
+			"composition met each declaration.\n\nOne entry is the ordinary " +
+			"answer and means one component was declared under that identity. " +
+			"More than one means several were, which is the whole reason the " +
+			"fact is a list: a subsystem contributes nothing to the identity a " +
+			"component carries, so two subsystems of one Aggregate may each " +
+			"declare a component under the same name — two distinct authored " +
+			"keys the schema accepts — and the two then answer to one " +
+			"identity.\n\nIt is a separate fact from the node set rather than " +
+			"something read off it, and it has to be: the node set holds one " +
+			"component per identity by construction, so the second declaration " +
+			"replaces the first there and nothing downstream can tell the pair " +
+			"from a single component. This is taken as each declaration is met " +
+			"and keeps both, which is what makes the pair answerable at " +
+			"all.\n\nThe value is complete when the composition is, and it stays " +
+			"complete for as long as the composition does. It is not a reading of " +
+			"something mid-production: nothing prunes it once the walk has " +
+			"finished, and reading it at any later point gives the same answer as " +
+			"reading it the moment flattening returned.\n\nEach subsystem is named " +
+			"by its dotted path within the document that declared the component, " +
+			"so a component a module contributed names the subsystems of that " +
+			"module's own document. An empty result means no component of that " +
+			"identity was composed — a name the composition never held, or one a " +
+			"false activation toggle removed, which the facts beside this one tell " +
+			"apart.",
+	},
+
+	{
 		Name:        "module-contributed-nodes",
 		Stage:       "topology",
 		SourceField: "topology.TopologyNode.SourceAggregate",

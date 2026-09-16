@@ -73,14 +73,14 @@
 //     stable snapshot. The corresponding producer-side commitment lives
 //     in the topology package's doc.go.
 //
-// The producer side defends against a sub-aggregate flattening collision
-// (the topology builder halts with ErrSubAggregateNameCollision if a
-// flattened node ID would overwrite an existing entry in the flat node
-// map). The collision case is impossible by current schema; the guard
-// is defensive against future schema loosening or validation bypass.
-// The IR builder relies on the producer's halt: by the time BuildIRContext
-// reads topo.Nodes and topo.Edges, the producer has guaranteed no
-// silent overwrite happened upstream.
+// Two flattened node IDs meeting is refused before the IR builder reads
+// anything, by two conditions on the two paths that produce it. The topology
+// builder halts with ErrSubAggregateNameCollision when merging a module's
+// nodes would overwrite an entry already in the map, which current schema
+// makes unreachable. Two subsystems of one Aggregate declaring a component
+// under one name is ordinary YAML, and the rule declared over the flattened
+// composition reports it. Either way, a compilation reaching BuildIRContext
+// carries no silent overwrite.
 //
 // The package depends on `pkg/types`, `pkg/resolver`, and
 // `internal/compiler/topology`; downstream consumers are

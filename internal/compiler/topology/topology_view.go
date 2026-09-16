@@ -65,6 +65,12 @@ type topologyView struct {
 	// composition. Only ever stores true, so presence is membership.
 	pruned types.OrderedMap[bool]
 
+	// declaringSubsystems is the subsystems that declared a component under each
+	// identity, in the order the composition met them. It holds every
+	// declaration rather than the surviving one, which is what lets a rule ask
+	// whether an identity was declared more than once.
+	declaringSubsystems types.OrderedMap[[]string]
+
 	// contributed is the nodes each module contributed, keyed by the module's
 	// dotted prefix and including the nodes its nested modules contributed.
 	contributed map[string][]string
@@ -94,14 +100,15 @@ func newTopologyView(
 	references []constraint.BoundaryComponentReferenceInstance,
 ) *topologyView {
 	v := &topologyView{
-		NormalizedView: earlier,
-		nodes:          flat.Nodes,
-		connections:    map[string]types.OrderedMap[int]{},
-		edges:          edges,
-		modules:        flat.Modules,
-		pruned:         flat.Pruned,
-		contributed:    map[string][]string{},
-		references:     references,
+		NormalizedView:      earlier,
+		nodes:               flat.Nodes,
+		connections:         map[string]types.OrderedMap[int]{},
+		edges:               edges,
+		modules:             flat.Modules,
+		pruned:              flat.Pruned,
+		declaringSubsystems: flat.DeclaringSubsystems,
+		contributed:         map[string][]string{},
+		references:          references,
 	}
 
 	// A connection an attachment contributed is excluded, the same exclusion the
@@ -152,6 +159,14 @@ func (v *topologyView) FlattenedNodeComponentType(node string) (string, bool) {
 func (v *topologyView) ComponentDeactivated(node string) bool {
 	removed, recorded := v.pruned.Get(node)
 	return recorded && removed
+}
+
+// NodeDeclaringSubsystems returns the subsystems that declared a component under
+// the identity a node carries, in the order the composition met each
+// declaration.
+func (v *topologyView) NodeDeclaringSubsystems(node string) []string {
+	declaring, _ := v.declaringSubsystems.Get(node)
+	return declaring
 }
 
 // ResolvedParameter returns the value one parameter resolved to for a node, and

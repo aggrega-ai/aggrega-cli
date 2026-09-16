@@ -61,7 +61,7 @@ const (
 	// SubjectDocumentMappingEntry is the subject kind (document, mapping-entry), keyed by 2 declared facts.
 	SubjectDocumentMappingEntry SubjectKind = "(document, mapping-entry)"
 
-	// SubjectNode is the subject kind node, keyed by 25 declared facts.
+	// SubjectNode is the subject kind node, keyed by 26 declared facts.
 	SubjectNode SubjectKind = "node"
 
 	// SubjectNodeSocket is the subject kind (node, socket), keyed by 13 declared facts.

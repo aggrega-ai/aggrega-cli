@@ -26,13 +26,13 @@ const topologyStageEntity = "Component"
 // The entity an identity finding from this stage is reported against, which is
 // deliberately not the one above.
 //
-// The kind decides the fault category a caller routes on, and these two rules
-// name two different faults. A broken presence mandate is declared on a catalog
-// Component, so the remedy is in the catalog and the kind says so. A component
-// whose identity cannot be stamped is a name its own author wrote in the
-// application they authored, so reporting it as a catalog fault would send that
-// author to a file holding nothing they can change — the failure a category
-// exists to prevent.
+// The kind decides the fault category a caller routes on, and these rules name
+// different faults. A broken presence mandate is declared on a catalog
+// Component, so the remedy is in the catalog and the kind says so. An identity
+// that cannot be stamped, and an identity a second component was also declared
+// under, are both names their own author wrote in the Aggregate they authored,
+// so reporting either as a catalog fault would send that author to a file
+// holding nothing they can change — the failure a category exists to prevent.
 //
 // The kind is named without an instance because this stage holds no aggregate
 // name to put after it: a composition carries the components a module tree
@@ -123,6 +123,24 @@ func runTopologyStageRules(
 		return err
 	}
 
+	// Every identity in the composition was declared by one component instance.
+	// A subsystem contributes nothing to the identity a component carries, so two
+	// subsystems of one Aggregate may each declare a component under one name and
+	// the two then answer to one identity — a pair the node set cannot show,
+	// because it holds one component per identity and the second simply replaced
+	// the first. The rule reads the declarations the flattening recorded instead,
+	// and is asked here because that is where a module's own subsystems have been
+	// read: asked over one authored document it would never see them.
+	identityDeclarationObjections, err := constraint.RunOnNodes(
+		ctx.Err,
+		topoResult.StageCoordinates,
+		topoResult.StageView,
+		topology.ComponentIdentityIsDeclaredOnce,
+	)
+	if err != nil {
+		return err
+	}
+
 	// Every dependency socket a component type declares as one that must carry a
 	// connection does carry one. Three surfaces can populate such a socket and
 	// the rule reads all three; the last of them is the connection set the
@@ -150,6 +168,8 @@ func runTopologyStageRules(
 	violations := resolver.FindingsFromObjections(objections, topologyStageEntity)
 	violations = append(violations,
 		resolver.FindingsFromObjections(identityObjections, topologyStageIdentityEntity)...)
+	violations = append(violations,
+		resolver.FindingsFromObjections(identityDeclarationObjections, topologyStageIdentityEntity)...)
 	violations = append(violations,
 		resolver.FindingsFromObjections(socketObjections, topologyStageEntity)...)
 	if len(violations) == 0 {
