@@ -50,6 +50,13 @@ type topologyView struct {
 	// value was built so a reader does not walk the edge set per node.
 	connections map[string]types.OrderedMap[int]
 
+	// edges is every connection the composition drew, in the order it drew them.
+	// The facts keyed by a connection are keyed rather than enumerated, so this
+	// is walked per read instead of folded: a connection set is small beside the
+	// node set, and folding it would hold a second index of what the
+	// composition already orders.
+	edges []NormalizedEdge
+
 	// modules is every sub-module the composition brought in, in the order
 	// flattening recorded them.
 	modules []ModuleDeclaration
@@ -90,6 +97,7 @@ func newTopologyView(
 		NormalizedView: earlier,
 		nodes:          flat.Nodes,
 		connections:    map[string]types.OrderedMap[int]{},
+		edges:          edges,
 		modules:        flat.Modules,
 		pruned:         flat.Pruned,
 		contributed:    map[string][]string{},
@@ -162,6 +170,19 @@ func (v *topologyView) ResolvedParameter(node string, name string) (any, bool) {
 // least one, in the order they were drawn.
 func (v *topologyView) ResolvedUsesSocketConnections(node string) types.OrderedMap[int] {
 	return v.connections[node]
+}
+
+// PerEdgeAuthoredTarget returns the target one connection names, as the document
+// that drew it wrote the name, empty when the composition drew no connection
+// there.
+func (v *topologyView) PerEdgeAuthoredTarget(node string, socket string, alias string) string {
+	for i := range v.edges {
+		e := v.edges[i]
+		if e.Source == node && e.Socket == socket && e.Alias == alias {
+			return e.AuthoredTarget
+		}
+	}
+	return ""
 }
 
 // NodeBoundaryPlacement returns the boundary a node was placed in, and whether

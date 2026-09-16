@@ -59,6 +59,7 @@ func normalizeUses(uses types.OrderedMap[types.UsesSocketValue], sourceNodeID, o
 				edges = append(edges, NormalizedEdge{
 					Source:                sourceNodeID,
 					Target:                target,
+					AuthoredTarget:        target,
 					Socket:                socket,
 					Alias:                 target,
 					OriginFeature:         originFeature,
@@ -97,6 +98,7 @@ func buildVerboseEdge(source, socket, alias string, entry types.VerboseUsesEntry
 	return NormalizedEdge{
 		Source:                source,
 		Target:                target,
+		AuthoredTarget:        target,
 		Socket:                socket,
 		Alias:                 alias,
 		Inject:                entry.Inject,

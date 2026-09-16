@@ -122,6 +122,38 @@ func runGraphStageRules(
 	}
 	out.Violations = append(out.Violations, violations...)
 
+	// No deployment entry redirects a connection the document that drew it
+	// already targeted, evaluated once per connection. Both targets are read as
+	// written rather than as resolved: a connection naming a module's published
+	// alias resolves to the component id behind it, so a comparison against the
+	// resolved target would report a disagreement between two documents that
+	// named the very same alias. Every offending entry is reported in one build
+	// rather than the first, so an author clears them in a single pass.
+	//
+	// 🔴 This rule declares the flattened composition rather than the finalised
+	// graph, because both targets it reads are complete once the composition is
+	// flattened. It is asked here all the same, and the reason is the axis: the
+	// flattened composition enumerates no connections, so the earliest
+	// enumeration a per-connection rule can be walked over is the one this scope
+	// holds. A declaration reading facts complete earlier than the suite that
+	// walks it is the expected shape, not a placement to correct.
+	// The traversal is instantiated at the presentation the rule declares rather
+	// than at the one this scope holds. Type inference would otherwise take the
+	// view from the argument and refuse the rule: a check carries its view as a
+	// type parameter, and a parameterised type does not widen with the interface
+	// it embeds, so the finalised graph's presentation satisfies the flattened
+	// composition's contract while the two check types remain unrelated.
+	violations, err = constraint.RunOnEdges[constraint.TopologyView](
+		ctx.Err,
+		coordinates,
+		out.GraphView,
+		topology.DeploymentKeepsTheDeclaredConnectionTarget,
+	)
+	if err != nil {
+		return err
+	}
+	out.Violations = append(out.Violations, violations...)
+
 	// The applicability a Feature declares over what it may attach to,
 	// evaluated once per attachment a node carries after the whole attachment
 	// cascade has folded. The merged set is the one the rule has to be asked

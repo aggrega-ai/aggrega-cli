@@ -2332,6 +2332,40 @@ var facts = []factDecl{
 	},
 
 	{
+		Name:        "per-edge-authored-target",
+		Stage:       "topology",
+		SourceField: "topology.NormalizedEdge.AuthoredTarget",
+		Subject:     []string{"edge"},
+		Params: []paramDecl{
+			{Name: "node", Type: "string"},
+			{Name: "socket", Type: "string"},
+			{Name: "alias", Type: "string"},
+		},
+		Returns: "string",
+		Doc: "PerEdgeAuthoredTarget is the target one connection names, as the " +
+			"document that drew it wrote the name — empty when the composition " +
+			"drew no connection there.\n\nIt answers for every connection " +
+			"whichever surface drew it: a component's own dependency block, an " +
+			"attachment's, and the deployment's edge surface alike. That breadth " +
+			"is what separates it from the authored targets read off the two " +
+			"authoring documents, each of which answers for one surface and one " +
+			"authoring form and reports every other connection as naming " +
+			"nothing.\n\nIt is a separate fact from the target a connection " +
+			"RESOLVED to, and the pair is not interchangeable. A connection may " +
+			"name a module's published alias rather than a component id; " +
+			"resolving that alias replaces the resolved target with the id the " +
+			"module publishes it for, while this keeps the name the author " +
+			"typed. So a rule comparing what one document wrote against what " +
+			"another wrote reads this on both sides — reading the resolved " +
+			"target for one of them would report a disagreement between two " +
+			"documents that named the very same alias.\n\nIt is keyed by the " +
+			"connection rather than by the surface that drew it, because a " +
+			"connection is drawn once: where two surfaces write one node, socket " +
+			"and alias, the composition keeps one connection and this names the " +
+			"target that connection carries.",
+	},
+
+	{
 		Name:        "node-boundary-placement",
 		Stage:       "topology",
 		SourceField: "topology.TopologyNode.BoundaryPath",

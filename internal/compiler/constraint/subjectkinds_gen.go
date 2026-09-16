@@ -64,7 +64,7 @@ const (
 	// SubjectNodeAttachmentSocket is the subject kind (node, attachment, socket), keyed by 4 declared facts.
 	SubjectNodeAttachmentSocket SubjectKind = "(node, attachment, socket)"
 
-	// SubjectEdge is the subject kind edge, keyed by 8 declared facts.
+	// SubjectEdge is the subject kind edge, keyed by 9 declared facts.
 	SubjectEdge SubjectKind = "edge"
 
 	// SubjectNodeAttachment is the subject kind (node, attachment), keyed by 19 declared facts.

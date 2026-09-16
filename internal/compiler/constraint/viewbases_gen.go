@@ -774,6 +774,13 @@ func (GraphViewBase) ResolvedUsesSocketConnections(node string) types.OrderedMap
 	panic("this presentation does not carry resolved-uses-socket-connections, which is read from topology.TopologyResult.Edges")
 }
 
+// PerEdgeAuthoredTarget panics. This presentation does not carry
+// per-edge-authored-target, which is read from
+// topology.NormalizedEdge.AuthoredTarget.
+func (GraphViewBase) PerEdgeAuthoredTarget(node string, socket string, alias string) string {
+	panic("this presentation does not carry per-edge-authored-target, which is read from topology.NormalizedEdge.AuthoredTarget")
+}
+
 // NodeBoundaryPlacement panics. This presentation does not carry
 // node-boundary-placement, which is read from
 // topology.TopologyNode.BoundaryPath.
@@ -1544,6 +1551,7 @@ type TopologyStageFacts interface {
 	FlattenedNodeComponentType(node string) (string, bool)
 	ResolvedParameter(node string, name string) (any, bool)
 	ResolvedUsesSocketConnections(node string) types.OrderedMap[int]
+	PerEdgeAuthoredTarget(node string, socket string, alias string) string
 	NodeBoundaryPlacement(node string) (string, bool)
 	ModuleContributedNodes(module string) []string
 	ComponentDeactivated(node string) bool

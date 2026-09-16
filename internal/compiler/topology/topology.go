@@ -6,7 +6,6 @@ package topology
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
@@ -218,12 +217,27 @@ type TopologyNode struct {
 //     atomicity is what lets attaching a Feature add edges to the graph
 //     without polluting the parent Component's apparent edge set.
 type NormalizedEdge struct {
-	Source        string
-	Target        string
-	Socket        string
-	Alias         string
-	Inject        *types.InjectBlock
-	OriginFeature string // non-empty if edge came from a Feature's uses
+	Source string
+	Target string
+	// AuthoredTarget is the target as the document that drew this edge wrote
+	// it, kept unchanged where Target is later rewritten.
+	//
+	// The two differ for exactly one class of edge: one whose author named a
+	// module's published alias rather than a component id. Resolving that alias
+	// replaces Target with the id the module publishes it for, and the string
+	// the author typed is gone from the edge afterwards. A rule comparing what
+	// one document wrote against what another wrote needs the typed string on
+	// both sides — a comparison against the resolved id would report a
+	// disagreement between two documents that named the very same alias.
+	//
+	// It is carried rather than recovered because the resolution is not
+	// invertible: several aliases may publish one component, so the id names no
+	// single alias to recover.
+	AuthoredTarget string
+	Socket         string
+	Alias          string
+	Inject         *types.InjectBlock
+	OriginFeature  string // non-empty if edge came from a Feature's uses
 	// OriginFeatureInstance is the per-attachment instance name of the
 	// Feature whose uses block produced this edge (empty for Component-own
 	// edges). It disambiguates two attachments of the same Feature type on
@@ -573,19 +587,17 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 	// component. This pass does data plumbing only: merge infra and append
 	// created edges. It NEVER retargets — a Release entry whose (node, socket,
 	// alias) matches an existing edge but names a conflicting target leaves that
-	// edge as the developer declared it, records the conflict, and skips the
-	// infra merge, which keeps a rejected retarget from half-applying. The
-	// recorded conflicts are reported together once the walk is complete, so an
-	// author sees every offending entry in one build rather than clearing them
-	// one build at a time. Conformance (Step 1), the target-existence rules, and
-	// the undeclared-socket halt are not this pass's concern.
+	// edge as the developer declared it and skips the infra merge, which keeps a
+	// rejected retarget from half-applying. The conflict is REPORTED by the rule
+	// declared over the finalised graph, not here: the target each document
+	// named survives onto the edge as a fact keyed by that edge, so the rule is
+	// asked once per connection over every consumer at once and reports every
+	// offending entry in one build. Conformance (Step 1), the target-existence
+	// rules, and the undeclared-socket halt are not this pass's concern either.
 	// Determinism: nodes in flat.Nodes author order; sockets and aliases in
 	// OrderedMap author order; created edges append after the Aggregate/Feature
-	// edges; recorded conflicts follow that same walk, so the diagnostic is
-	// ordered by the authoring surfaces rather than by a set that would have to
-	// be sorted back into an order.
+	// edges.
 	if cfg.ResolveResult != nil && cfg.ResolveResult.Release != nil {
-		var retargets []string
 		for nodeID, node := range flat.Nodes.All() {
 			ruses, ok := releaseComponentUses(cfg.ResolveResult.Release.Spec.Boundaries, node.BoundaryPath, nodeID)
 			if !ok {
@@ -603,11 +615,11 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 					if idx >= 0 {
 						// Configure an existing edge: merge infra only, never
 						// retarget. A conflicting target is a Loud Guardrail — the
-						// developer owns the architecture they declared.
-						if entry.Target != "" && entry.Target != edges[idx].Target {
-							retargets = append(retargets, fmt.Sprintf(
-								"release edge %s/%s/%s retargets developer-declared target %q to %q",
-								nodeID, socket, alias, edges[idx].Target, entry.Target))
+						// developer owns the architecture they declared — and the
+						// rule over the finalised graph is what raises it. The
+						// entry is skipped here so a rejected redirection cannot
+						// half-apply by leaving its infra behind.
+						if entry.Target != "" && entry.Target != edges[idx].AuthoredTarget {
 							continue
 						}
 						if entry.Infra.Len() > 0 {
@@ -634,25 +646,17 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 					// asks, so neither stage can answer it differently.
 					if resolver.ReleaseEntryCreatesEdge(entry) {
 						edges = append(edges, NormalizedEdge{
-							Source:        nodeID,
-							Target:        entry.Target,
-							Socket:        socket,
-							Alias:         alias,
-							Infra:         entry.Infra,
-							OriginRelease: true,
+							Source:         nodeID,
+							Target:         entry.Target,
+							AuthoredTarget: entry.Target,
+							Socket:         socket,
+							Alias:          alias,
+							Infra:          entry.Infra,
+							OriginRelease:  true,
 						})
 					}
 				}
 			}
-		}
-		// Every conflicting entry the walk met, reported as one halt. The halt
-		// lands after the walk rather than at the first conflict so the author is
-		// told about all of them at once; the walk's own bookkeeping — a
-		// conflicting entry keeps the declared target and takes no infra — is what
-		// makes carrying on past one conflict safe, and the edge set is discarded
-		// with the error in any case.
-		if len(retargets) > 0 {
-			return nil, fmt.Errorf("%w: %s", ErrReleaseEdgeRetarget(), strings.Join(retargets, "; "))
 		}
 	}
 
@@ -704,6 +708,11 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 	// a node nor a live alias is left standing as the author wrote it rather than
 	// being silently swallowed here — which is what lets the rules over the
 	// finalised graph refuse it loudly and say which of the two it is.
+	//
+	// The rewrite replaces the resolved target alone and leaves the authored one
+	// standing beside it, because the resolution is not invertible — several
+	// aliases may publish one component — and a rule comparing what one document
+	// wrote against what another wrote needs the typed string on both sides.
 	for i := range edges {
 		if _, isNode := flat.Nodes.Get(edges[i].Target); isNode {
 			continue

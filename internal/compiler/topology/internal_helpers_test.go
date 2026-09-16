@@ -4,7 +4,6 @@
 package topology
 
 import (
-	"errors"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
@@ -390,11 +389,17 @@ func TestBuild_ReleaseCreatesEdgeForUnmatchedSocket(t *testing.T) {
 	}
 }
 
-// TestBuild_ReleaseConflictingTargetHalts pins the no-retarget Loud Guardrail:
-// a Release entry that names a target differing from an existing
-// developer-declared edge's target halts with ErrReleaseEdgeRetarget — the
-// developer owns the architecture they declared.
-func TestBuild_ReleaseConflictingTargetHalts(t *testing.T) {
+// TestBuild_ReleaseConflictingTargetIsNotApplied pins the composition half of
+// the no-retarget Loud Guardrail: a Release entry naming a target that differs
+// from an existing developer-declared edge's leaves both that edge's target and
+// its infrastructure alone, so a redirection the build refuses is never
+// half-applied.
+//
+// The refusal itself is raised by the rule declared over the finalised graph and
+// is proved where that rule runs, over the whole connection set at once. What
+// stays provable here is what this pass does to the composition — which is what
+// makes carrying on past a conflict safe, and what a reader of this pass needs.
+func TestBuild_ReleaseConflictingTargetIsNotApplied(t *testing.T) {
 	t.Parallel()
 	agg := &types.Aggregate{}
 	uses := types.OrderedMap[types.UsesSocketValue]{}
@@ -403,7 +408,10 @@ func TestBuild_ReleaseConflictingTargetHalts(t *testing.T) {
 	agg.Spec.Components.Set("db", types.ComponentInstance{Type: "core/datastore/postgres"})
 	agg.Spec.Components.Set("other", types.ComponentInstance{Type: "core/datastore/postgres"})
 
-	rel := mkReleaseUses("api", relSocketAlias("databases", "db", types.ReleaseUsesEntry{Target: "other"}))
+	conflicting := types.OrderedMap[any]{}
+	conflicting.Set("replicas", 4)
+	rel := mkReleaseUses("api", relSocketAlias("databases", "db",
+		types.ReleaseUsesEntry{Target: "other", Infra: conflicting}))
 	rr := &resolver.ResolveResult{
 		Aggregate: agg,
 		Release:   rel,
@@ -413,9 +421,29 @@ func TestBuild_ReleaseConflictingTargetHalts(t *testing.T) {
 			"other": {BoundaryPath: "prod"},
 		},
 	}
-	_, err := Build(BuildConfig{ResolveResult: rr})
-	if !errors.Is(err, ErrReleaseEdgeRetarget()) {
-		t.Fatalf("want ErrReleaseEdgeRetarget; got %v", err)
+	res, err := Build(BuildConfig{ResolveResult: rr})
+	if err != nil {
+		t.Fatalf("the composition carries on past a conflicting entry; got %v", err)
+	}
+
+	var found bool
+	for _, e := range res.Edges {
+		if e.Source != "api" || e.Socket != "databases" || e.Alias != "db" {
+			continue
+		}
+		found = true
+		if e.Target != "db" {
+			t.Errorf("Target = %q, want db: a conflicting entry must not redirect the declared connection", e.Target)
+		}
+		if e.AuthoredTarget != "db" {
+			t.Errorf("AuthoredTarget = %q, want db: the rule that reports the conflict compares against this", e.AuthoredTarget)
+		}
+		if e.Infra.Len() != 0 {
+			t.Errorf("Infra = %v, want empty: a rejected redirection must not leave its infrastructure behind", e.Infra.Keys())
+		}
+	}
+	if !found {
+		t.Fatal("the declared connection is gone from the composition; a conflicting entry must leave it standing")
 	}
 }
 
