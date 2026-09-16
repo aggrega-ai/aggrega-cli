@@ -78,8 +78,8 @@ func TestBuildTool_InconsistentMappingRefuses(t *testing.T) {
 // TestDescribeTool_InconsistentMappingIsDescribedNotRefused pins the report verb's
 // side. Two things are asserted and both matter: the description the caller asked
 // for still arrives, and the fault is named. A tool that refused would satisfy
-// neither; a tool that stayed silent would satisfy only the first, which is the
-// state this work item exists to end.
+// neither; a tool that stayed silent would satisfy only the first, leaving the
+// caller holding a description that hides a fault it should have named.
 func TestDescribeTool_InconsistentMappingIsDescribedNotRefused(t *testing.T) {
 	s := newTestServer(t)
 	root, dirs, releasePath := mappingInconsistentWorkspace(t)

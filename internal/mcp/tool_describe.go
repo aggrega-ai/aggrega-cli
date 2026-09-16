@@ -136,8 +136,8 @@ var describeToolSpec = toolSpec{
 		"deployment is built FROM, not its shape — the resolved Aggregate and Manifest identities plus every catalog " +
 		"entity and shared library it reaches, with resolved versions. Use `name` to understand a building block " +
 		"before wiring it into an Aggregate, and `release` to see what a deployment depends on before building it. " +
-		"Optional `workspace_root` and `catalog_dirs` override discovery; `response_format` chooses detailed (full " +
-		"definition / every reference) or concise (identity and counts).",
+		"`response_format` chooses detailed (full definition / every reference) or concise (identity and counts).",
+	workspaceSelectionNote: "Optional `workspace_root` and `catalog_dirs` override discovery.",
 	inputSchema: `{
   "type": "object",
   "properties": {

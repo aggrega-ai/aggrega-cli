@@ -242,8 +242,8 @@ func writeFixtureFile(t *testing.T, path string, content []byte) {
 	}
 }
 
-// Clause 10, the refusal. A plaintext address that is neither loopback nor a
-// Unix socket is refused, and the refusal names the two settings that lift it.
+// A plaintext address that is neither loopback nor a Unix socket is refused
+// before anything binds, and the refusal names the two settings that lift it.
 //
 // The pair is what makes this a proof rather than an assertion about one string:
 // the SAME address binds and serves once a certificate is configured, so the
@@ -281,8 +281,8 @@ func TestListenAndServeRefusesBeforeItBuildsOrBinds(t *testing.T) {
 	}
 }
 
-// Clause 10, loopback. A plaintext listener on a loopback address serves the
-// protocol.
+// A plaintext listener on a loopback address serves the protocol, which is the
+// confinement's other half: it bounds where plaintext binds, never whether.
 func TestListenerServesPlaintextOnLoopback(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -292,8 +292,8 @@ func TestListenerServesPlaintextOnLoopback(t *testing.T) {
 	wantServed(t, status, body, "a plaintext listener on loopback")
 }
 
-// Clause 10, Unix socket. A plaintext listener on a Unix socket serves the
-// protocol, and the socket it bound is the path that was configured.
+// A plaintext listener on a Unix socket serves the protocol, and the socket it
+// bound is the path that was configured.
 func TestListenerServesPlaintextOnAUnixSocket(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -307,8 +307,8 @@ func TestListenerServesPlaintextOnAUnixSocket(t *testing.T) {
 	wantServed(t, status, body, "a plaintext listener on a Unix socket")
 }
 
-// Clause 10, TLS. With both TLS settings configured the process terminates TLS
-// itself and serves on an address the plaintext confinement refuses.
+// With both TLS settings configured the process terminates TLS itself and
+// serves on an address the plaintext confinement refuses.
 //
 // The client trusts only the generated certificate, so a listener that answered
 // in plaintext, or with anything else, would fail the handshake rather than be

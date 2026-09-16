@@ -51,36 +51,61 @@ import (
 // those two functions themselves, since the delegation between them is the one
 // construction site rather than a tool's failure return.
 //
+// One class recurs across the entries below, and it is a refusal rather than a
+// loss: a path argument naming a location outside the workspace a listener
+// serves. That workspace is fixed when the server starts, and such a path is
+// rejected at the argument — ahead of any resolution, compile, validation, lint,
+// generation or render — so nothing has run and there is nothing in hand. A
+// payload composed there would be invented rather than reported, which is the
+// failure this guard exists to prevent rather than a form of it.
+//
+// The count does not track how many path arguments a tool resolves. Where the
+// refusal is raised inside an operation that reports failure as an error, it is
+// carried out and answered once, so several refusing arguments reach a single
+// return.
+//
 // Every entry is a candidate for removal rather than a permanent fact. Reducing
 // one means a failure return started carrying what its run had found.
 var proseOnlyFailureReturns = map[string]int{
 	// Two pre-flight refusals — a missing release argument and a workspace that
 	// could not be resolved. Neither ran the compiler, so neither has findings.
-	// The render failure in this file carries its payload.
-	"tool_build.go": 2,
-	// The lint tool's argument refusals. Its post-run refusal carries the
-	// findings the run collected.
-	"tool_lint.go": 2,
+	// The third refuses a Release path this session may not name, decided before
+	// the dependency fill and the render. The render failure in this file carries
+	// its payload.
+	"tool_build.go": 3,
+	// The lint tool's argument refusals, and the refusal of a path this session
+	// may not name — raised where the path is resolved and carried back out as an
+	// error so it can be answered in the refusal's own words, since the label on
+	// the return beside it says the run reported findings and nothing was linted.
+	// That post-run refusal carries the findings the run collected.
+	"tool_lint.go": 3,
 	// The dependency-resolution tool's pre-flight refusals — a missing release
 	// argument, an empty or blank upgrade target, the refused argument combination,
-	// and a workspace that could not be resolved. None of them ran the resolution,
-	// so none has findings. Its post-run refusal carries the resolution the run had
-	// computed, which is what makes a drift verdict readable field by field.
-	"tool_pull.go": 5,
+	// a workspace that could not be resolved, and a Release path this session may
+	// not name. None of them ran the resolution, so none has findings. Its post-run
+	// refusal carries the resolution the run had computed, which is what makes a
+	// drift verdict readable field by field.
+	"tool_pull.go": 6,
 	// The generated command-tool surface. Its post-run failure path holds both
 	// captured streams and concatenates them into prose, so the bytes survive
 	// and the separation between output and diagnostics does not.
 	"commandtools.go": 2,
 	// The two graph-node tools. Both run the preview with the render skipped and
 	// refuse before any result is handed back, so at the failure return there is
-	// nothing structured in hand.
-	"tool_candidates.go":           12,
-	"tool_attachment_container.go": 6,
+	// nothing structured in hand. One entry each refuses a Release path this
+	// session may not name, decided ahead of the preview.
+	"tool_candidates.go":           13,
+	"tool_attachment_container.go": 7,
 	// Validation and description. Their closure-resolution refusals discard the
 	// stage attribution the resolution itself produced, and their payloads
 	// promise a validity field a consumer reads across scopes.
-	"tool_validate.go": 13,
-	"tool_describe.go": 6,
+	//
+	// Beyond those, validation refuses four paths this session may not name — the
+	// Release, the entity, and the plugin binary together with the entity it is
+	// cross-checked against — and description refuses one. Each is decided before
+	// the core behind it runs.
+	"tool_validate.go": 17,
+	"tool_describe.go": 7,
 	// Publishing. Whether the push returns a partially-populated result
 	// alongside its error is not established, so whether these lose anything is
 	// unmeasured rather than known.
@@ -95,15 +120,24 @@ var proseOnlyFailureReturns = map[string]int{
 	"tool_inventory.go": 4,
 	// Catalog generation. Its failure return drops the output accumulated before
 	// the failure, which the generated command-tool surface beside it keeps.
-	"tool_gencatalog.go": 5,
+	//
+	// Four of these are not that loss. This tool now resolves a workspace to name
+	// its paths against, which refuses when none resolves, and it refuses the
+	// plugin, output-directory and overlay paths a session may not name. The first
+	// of the four is a workspace refusal rather than a path one, and it is entered
+	// here for the same reason: all four are decided before generation starts,
+	// against an empty output buffer, so none of them drops anything.
+	"tool_gencatalog.go": 9,
 	// Position lookup, workspace description, the progressive surface, and the
-	// shared argument-decode helper: argument and context refusals.
+	// shared argument-decode helper: argument and context refusals. Position
+	// lookup carries one more, refusing a document path this session may not name
+	// before the lookup reads anything.
 	//
 	// The second entry against the dispatch surface is the refusal of a call that
 	// names a workspace the session does not let it name. It is decided from the
 	// arguments alone, before the named tool is entered, so no operation has run
 	// and there are no findings to carry.
-	"tool_insertion_point.go": 6,
+	"tool_insertion_point.go": 7,
 	"tool_workspace.go":       2,
 	"progressive.go":          1,
 	"tools.go":                2,

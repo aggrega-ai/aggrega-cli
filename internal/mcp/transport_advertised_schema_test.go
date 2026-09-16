@@ -30,6 +30,11 @@ type advertisement struct {
 	surface string
 	tool    string
 	schema  json.RawMessage
+	// description is read alongside the schema because the two travel in one
+	// answer: a caller reads both before it composes anything, so a sentence that
+	// disagrees with the schema beside it is only visible where both are held
+	// together.
+	description string
 }
 
 // advertisedOverHTTP reads every argument schema a caller reaching the listener
@@ -49,7 +54,10 @@ func advertisedOverHTTP(t *testing.T, f *httpFixture) []advertisement {
 		t.Fatalf("the tools/list result is not a listing: %v", err)
 	}
 	for _, entry := range listing.Tools {
-		out = append(out, advertisement{surface: "tools/list", tool: entry.Name, schema: entry.InputSchema})
+		out = append(out, advertisement{
+			surface: "tools/list", tool: entry.Name,
+			schema: entry.InputSchema, description: entry.Description,
+		})
 	}
 
 	called := f.post(t, modernHeaders("tools/call", describeCapabilitiesName),
@@ -79,7 +87,10 @@ func advertisedOverStdio(t *testing.T, s *server) []advertisement {
 		t.Fatalf("tools/list returned %T, not a listing", res)
 	}
 	for _, entry := range listing.Tools {
-		out = append(out, advertisement{surface: "tools/list", tool: entry.Name, schema: entry.InputSchema})
+		out = append(out, advertisement{
+			surface: "tools/list", tool: entry.Name,
+			schema: entry.InputSchema, description: entry.Description,
+		})
 	}
 
 	call := callDiscoveryTool(t, s, describeCapabilitiesName, map[string]any{})
@@ -118,7 +129,8 @@ func capabilitiesFromStructured(t *testing.T, structured json.RawMessage) []adve
 	out := make([]advertisement, 0, len(payload.Capabilities))
 	for _, c := range payload.Capabilities {
 		out = append(out, advertisement{
-			surface: describeCapabilitiesName, tool: c.Name, schema: c.InputSchema,
+			surface: describeCapabilitiesName, tool: c.Name,
+			schema: c.InputSchema, description: c.Description,
 		})
 	}
 	return out

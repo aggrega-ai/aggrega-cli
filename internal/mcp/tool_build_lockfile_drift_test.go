@@ -152,8 +152,8 @@ func TestBuildToolWithNoLockfileStillBuilds(t *testing.T) {
 	}
 }
 
-// TestBuildToolDriftIsClearedByTheRemedyItNames is the acceptance, and it is the
-// round trip rather than the refusal.
+// TestBuildToolDriftIsClearedByTheRemedyItNames asserts the round trip rather
+// than the refusal.
 //
 // A halt whose named next step does not work is worse than the silence it
 // replaced, so what is asserted is the sequence a caller actually performs:

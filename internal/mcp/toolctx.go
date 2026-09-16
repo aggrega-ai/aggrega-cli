@@ -90,6 +90,23 @@ func (s *server) workspaceSelectionRefusal(args json.RawMessage) string {
 // advertises, and the two read the same names.
 var workspaceSelectionArguments = []string{argumentWorkspaceRoot, argumentCatalogDirs}
 
+// advertisedDescription reports the description a tool is advertised under on
+// the transport this session serves.
+//
+// A tool that says something about naming a workspace says it only where a
+// caller may name one. The description and the argument schema travel in the
+// same answer, so a sentence offering an argument the schema beside it withholds
+// would send a caller to compose a call that cannot succeed — the same defect
+// the withholding exists to prevent, arriving in the prose instead of in the
+// schema. It is composed here, beside the schema it has to agree with, so the
+// two cannot be scoped in different places and come to disagree.
+func (s *server) advertisedDescription(spec toolSpec) string {
+	if spec.workspaceSelectionNote == "" || s.transport == transportHTTP {
+		return spec.description
+	}
+	return spec.description + " " + spec.workspaceSelectionNote
+}
+
 // advertisedSchema reports the argument schema a tool is advertised under on the
 // transport this session serves.
 //

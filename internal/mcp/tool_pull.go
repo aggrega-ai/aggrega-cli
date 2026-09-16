@@ -134,8 +134,8 @@ var pullToolSpec = toolSpec{
 		"from pins the workspace already carries, and this is what makes them exist. Pass `verify` to compare the recorded " +
 		"lockfile against what resolves today and write nothing, which is how you detect drift. Pass `upgrade_targets` " +
 		"with entity URIs to re-resolve only those, holding every other pin; no argument re-resolves everything at once, " +
-		"because that discards the whole lockfile and a tool call has nobody to confirm it. Optional `workspace_root` and " +
-		"`catalog_dirs` override discovery.",
+		"because that discards the whole lockfile and a tool call has nobody to confirm it.",
+	workspaceSelectionNote: "Optional `workspace_root` and `catalog_dirs` override discovery.",
 	inputSchema: `{
   "type": "object",
   "properties": {

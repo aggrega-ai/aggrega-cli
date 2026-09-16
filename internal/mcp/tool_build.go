@@ -195,8 +195,8 @@ var buildToolSpec = toolSpec{
 		"or to inspect one component's rendered output while authoring. In the detailed response format each file's rendered " +
 		"content is included; the concise format returns just the file paths. A render failure comes back as actionable " +
 		"guidance (route it through explain-error if needed) rather than a partial write. `auto_pull` resolves the " +
-		"Release's dependencies into the lockfile first, which reaches a registry and writes. Optional `workspace_root` " +
-		"and `catalog_dirs` override workspace and catalog discovery.",
+		"Release's dependencies into the lockfile first, which reaches a registry and writes.",
+	workspaceSelectionNote: "Optional `workspace_root` and `catalog_dirs` override workspace and catalog discovery.",
 	inputSchema: `{
   "type": "object",
   "properties": {

@@ -149,7 +149,7 @@ func TestTheHelpRendererReachesTheHTTPTransport(t *testing.T) {
 
 // serveOverHTTP drives one request against a handler built by the exported
 // constructor, with the test-only authenticator installed so the credential
-// check does not stand in front of the clause under test.
+// check does not stand in front of the behaviour under test.
 func serveOverHTTP(t *testing.T, cfg Config, body string) answer {
 	t.Helper()
 	h, err := NewHTTPHandler(context.Background(), cfg, defaultTransportConfig())

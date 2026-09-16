@@ -278,8 +278,11 @@ func TestDefaultDefinitionTokenBudget(t *testing.T) {
 	bytesTotal := 0
 	var disclosed int
 	for i := range served {
+		// The advertised description rather than the declared one: part of what a
+		// client loads is composed at the surface that answers, so summing the
+		// declared field would measure fewer bytes than reach the client.
 		bytesTotal += len(served[i].name)
-		bytesTotal += len(served[i].description)
+		bytesTotal += len(s.advertisedDescription(served[i]))
 		bytesTotal += len(served[i].inputSchema)
 		if len(served[i].description) > len(toolRegistry[i].description) {
 			disclosed++

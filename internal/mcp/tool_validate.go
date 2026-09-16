@@ -84,8 +84,9 @@ var validateToolSpec = toolSpec{
 		"dispatches to the same core the CLI validates with and returns whether the target is valid plus each " +
 		"diagnostic verbatim. The selectors are mutually exclusive: `type` needs `plugin`; `plugin` excludes `release`; " +
 		"`release` excludes a single-entity `entity`; and exactly one scope must be chosen. For a diagnostic you do " +
-		"not understand, pass its text to explain-error. Optional `workspace_root` and `catalog_dirs` override " +
-		"workspace and catalog discovery; `response_format` chooses detailed or concise (release scope).",
+		"not understand, pass its text to explain-error. `response_format` chooses detailed or concise " +
+		"(release scope).",
+	workspaceSelectionNote: "Optional `workspace_root` and `catalog_dirs` override workspace and catalog discovery.",
 	inputSchema: `{
   "type": "object",
   "properties": {

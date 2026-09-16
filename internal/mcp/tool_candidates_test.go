@@ -241,10 +241,10 @@ func TestAttachCandidatesAnswersEachOfItsThreeAddressingShapes(t *testing.T) {
 			t.Error("nodeLabels is empty, so the answer carries no basis a caller could audit it from")
 		}
 
-		// The join clause 4 asks for, and the strongest available proof that one
-		// matcher serves both shapes: feed the labels this answer reported back as
-		// a supplied set and require the identical candidate list. Two matchers
-		// would have to agree here, and a second one written later would not.
+		// The join, and the strongest available proof that one matcher serves both
+		// shapes: feed the labels this answer reported back as a supplied set and
+		// require the identical candidate list. Two matchers would have to agree
+		// here, and a second one written later would not.
 		var viaLabels attachCandidatesPayload
 		decodeStructured(t, callDiscoveryTool(t, gs, "attach-candidates", map[string]any{
 			"workspace_root": fsRoot,
@@ -348,8 +348,8 @@ func TestCandidacyToolsRefuseAnUnknownSubjectRatherThanAnsweringEmpty(t *testing
 	})
 }
 
-// TestConnectionCandidatesKeepsTheTwoHalvesDistinguishable is clause 2's proof:
-// the target half is complete and the socket half is open, and the response lets
+// TestConnectionCandidatesKeepsTheTwoHalvesDistinguishable asserts that the
+// target half is complete and the socket half is open, and that the response lets
 // a caller tell them apart.
 //
 // The ad-hoc row is the one that carries the requirement. A surface that refused
@@ -461,7 +461,7 @@ func TestConnectionCandidatesKeepsTheTwoHalvesDistinguishable(t *testing.T) {
 	})
 }
 
-// TestCandidacyToolsStateThatTheyCreateNothing is clause 5 on the surface a
+// TestCandidacyToolsStateThatTheyCreateNothing asserts on the surface a
 // caller actually reads. An assistant is exactly the caller that would otherwise
 // expect a proposed edit, and the neighbouring capability that would have written
 // source was retired on that ground.
@@ -517,9 +517,9 @@ func TestConnectionCandidatesSaysItHasNoCoordinateFreeForm(t *testing.T) {
 // each is surfaced by the capability tool for the kinds an author works in, and
 // invocable by name through the same dispatch as a curated tool.
 //
-// The pair is what matters. Clause 0's ruling is that the two halves ship
-// together, so a surface carrying one of them is a failure rather than a partial
-// success, and this is the assertion that would catch it.
+// The pair is what matters. The two halves ship together, so a surface carrying
+// one of them is a failure rather than a partial success, and this is the
+// assertion that would catch it.
 func TestBothCandidacyToolsAreDiscoverableAndInvocable(t *testing.T) {
 	s := newTestServer(t)
 

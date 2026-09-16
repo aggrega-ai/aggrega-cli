@@ -41,14 +41,25 @@ import (
 //
 // commandPath is the invocation path of the command a generated tool runs,
 // empty for a tool that runs its operation inside this server.
+//
+// description holds what is true of a tool however a caller reached it.
+// workspaceSelectionNote holds the part that is true only where a caller may
+// name a workspace of its own, and is left empty by a tool that says nothing
+// about one. The two are separate because a session that withholds those
+// arguments from what it advertises must withhold the sentence offering them in
+// the same breath: a description and the schema beside it travel in one payload,
+// so a caller reading the sentence and then being refused by the schema was told
+// two different things at once. Keeping the sentence in its own field gives it
+// one home rather than a second copy to be removed by pattern.
 type toolSpec struct {
-	name        string
-	operation   string
-	commandPath string
-	description string
-	inputSchema string
-	kinds       []string
-	invoke      func(s *server, ctx context.Context, args json.RawMessage) (*callToolResult, *rpcError)
+	name                   string
+	operation              string
+	commandPath            string
+	description            string
+	workspaceSelectionNote string
+	inputSchema            string
+	kinds                  []string
+	invoke                 func(s *server, ctx context.Context, args json.RawMessage) (*callToolResult, *rpcError)
 }
 
 // toolRegistry is the curated, always-loaded tool set the authoring loop lives
@@ -316,7 +327,7 @@ func (s *server) handleToolsList() (any, *rpcError) {
 	for i := range curatedTools {
 		tools = append(tools, tool{
 			Name:        curatedTools[i].name,
-			Description: curatedTools[i].description,
+			Description: s.advertisedDescription(curatedTools[i]),
 			InputSchema: s.advertisedSchema(curatedTools[i]),
 		})
 	}

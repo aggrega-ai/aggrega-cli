@@ -165,8 +165,8 @@ func listReleasesOverStdio(t *testing.T, workspaceRoot string) string {
 	return lines[0]
 }
 
-// Clause 12, the first two rows. A process launched over a workspace answers
-// from that workspace on either transport, and the two transports answer alike.
+// A process launched over a workspace answers from that workspace on either
+// transport, and the two transports answer alike.
 func TestTheLaunchedWorkspaceIsHonouredOnBothTransports(t *testing.T) {
 	root := rootedWorkspace(t)
 
@@ -190,8 +190,8 @@ func TestTheLaunchedWorkspaceIsHonouredOnBothTransports(t *testing.T) {
 	}
 }
 
-// Clause 12, the third row. A process launched without a workspace resolves from
-// the directory it was started in.
+// A process launched without a workspace resolves one from the directory it was
+// started in.
 //
 // The discriminator is this test's working directory against the two rows above,
 // which run in the package's own directory and still answer in the fixture: here

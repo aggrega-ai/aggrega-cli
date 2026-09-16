@@ -20,9 +20,9 @@ import (
 )
 
 // Every proof in this file drives a real listener over a real TCP connection.
-// Nothing here calls ServeHTTP directly with a synthetic recorder: the clauses
-// under test are about statuses, headers and a closed connection, and a handler
-// invoked in-process would let half of them pass without a transport existing.
+// Nothing here calls ServeHTTP directly with a synthetic recorder: what is under
+// test is statuses, headers and a closed connection, and a handler invoked
+// in-process would let half of it pass without a transport existing.
 //
 // # The test-only authenticator
 //
@@ -33,7 +33,7 @@ import (
 // value. The bypass exists because the feature under test in this file is the
 // transport — routing, header mirroring, status mapping, the caps and
 // cancellation — and a credential check standing in front of all of it would
-// leave every one of those clauses unreachable.
+// leave every one of those behaviours unreachable.
 //
 // Two proofs deliberately do NOT install it: the ordering proof, which shows an
 // unknown path answered before the credential is looked at, and the default
@@ -105,7 +105,7 @@ func (f *httpFixture) post(t *testing.T, headers map[string]string, body string)
 }
 
 // send drives one exchange against an arbitrary method and path, so the routing
-// clauses can reach what the endpoint does not serve.
+// proofs can reach what the endpoint does not serve.
 func (f *httpFixture) send(t *testing.T, method, path string, headers map[string]string, body string) answer {
 	t.Helper()
 	got, err := f.exchange(method, path, headers, body)
@@ -280,8 +280,8 @@ func base64Sentinel(name string) string {
 	return nameSentinelPrefix + base64.StdEncoding.EncodeToString([]byte(name)) + nameSentinelSuffix
 }
 
-// Clause 1. A well-formed request in the per-request revision is answered with
-// one JSON object carrying that revision's result envelope.
+// A well-formed request in the per-request revision is answered with one JSON
+// object carrying that revision's result envelope.
 func TestHTTPModernRequestIsAnsweredWithAStampedResult(t *testing.T) {
 	f := newHTTPFixture(t, defaultTransportConfig(), nil)
 
@@ -308,8 +308,8 @@ func TestHTTPModernRequestIsAnsweredWithAStampedResult(t *testing.T) {
 	}
 }
 
-// Clause 2. The mirror headers are checked against the body, and the check runs
-// before anything is routed.
+// The mirror headers are checked against the body, and the check runs before
+// anything is routed.
 //
 // The method table is a grid rather than a list: era times header-present is
 // four cells, and all four are reachable. The two per-request cells are here;
@@ -339,8 +339,7 @@ func TestHTTPMirrorHeadersAreCheckedAgainstTheBody(t *testing.T) {
 	})
 }
 
-// Clause 2, continued: the name header on the methods that address a target by
-// name.
+// The name header, on the methods that address a target by name.
 //
 // Every row below carries the same well-formed tools/call body naming a tool the
 // server does not serve, and differs only in the name header. The positive
@@ -374,8 +373,7 @@ func TestHTTPNameHeaderMirrorsTheAddressedTarget(t *testing.T) {
 	})
 }
 
-// Clause 2, continued: a name carried in the Base64 sentinel form is decoded
-// before it is compared.
+// A name carried in the Base64 sentinel form is decoded before it is compared.
 //
 // The control is the first row: the same request with the name carried
 // literally is served, so the second row's success is a fact about the decoding
@@ -412,8 +410,8 @@ func TestHTTPNameHeaderSentinelIsDecodedBeforeComparison(t *testing.T) {
 	})
 }
 
-// Clause 3. The three protocol outcomes that are not header mismatches, each
-// with the status its answer travels on.
+// The three protocol outcomes that are not header mismatches, each with the
+// status its answer travels on.
 func TestHTTPProtocolRefusalsCarryTheirOwnStatus(t *testing.T) {
 	f := newHTTPFixture(t, defaultTransportConfig(), nil)
 
@@ -453,8 +451,7 @@ func TestHTTPProtocolRefusalsCarryTheirOwnStatus(t *testing.T) {
 	})
 }
 
-// Clause 4. A notification is accepted with no body; a JSON-RPC response is
-// refused.
+// A notification is accepted with no body; a JSON-RPC response is refused.
 //
 // The first row's control is the second: the same listener answering a request
 // with a body. Without it an empty body would be indistinguishable from a
@@ -487,8 +484,8 @@ func TestHTTPResponseBodyIsRefused(t *testing.T) {
 	wantRefusal(t, got, http.StatusBadRequest, codeInvalidRequest, "JSON-RPC response body")
 }
 
-// Clause 5. A handshake-revision client is served over this transport exactly as
-// it is over the other one, statelessly.
+// A handshake-revision client is served over this transport exactly as it is
+// over the other one, statelessly.
 func TestHTTPHandshakeRevisionIsServedWithoutASession(t *testing.T) {
 	f := newHTTPFixture(t, defaultTransportConfig(), nil)
 
@@ -517,9 +514,9 @@ func TestHTTPHandshakeRevisionIsServedWithoutASession(t *testing.T) {
 	}
 }
 
-// Clause 5, continued: the version header on a handshake-revision request. The
-// two cells this era has — header present and header absent — plus the two
-// distinct faults a present one can carry.
+// The version header on a handshake-revision request: the two cells this era
+// has — header present and header absent — plus the two distinct faults a
+// present one can carry.
 func TestHTTPHandshakeRevisionVersionHeader(t *testing.T) {
 	f := newHTTPFixture(t, defaultTransportConfig(), nil)
 	const body = `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`
@@ -553,8 +550,7 @@ func TestHTTPHandshakeRevisionVersionHeader(t *testing.T) {
 	})
 }
 
-// Clause 5, continued: a session or stream-resumption header is answered as if
-// it were absent.
+// A session or stream-resumption header is answered as if it were absent.
 //
 // The proof is a byte comparison against the same request without them, which is
 // the only form that distinguishes "ignored" from "happened to also succeed".
@@ -579,7 +575,7 @@ func TestHTTPSessionAndResumptionHeadersAreIgnored(t *testing.T) {
 	}
 }
 
-// Clause 6. What the endpoint does not serve, and what is not the endpoint.
+// What the endpoint does not serve, and what is not the endpoint.
 func TestHTTPRoutingRefusesEverythingButPostOnTheEndpoint(t *testing.T) {
 	f := newHTTPFixture(t, defaultTransportConfig(), nil)
 
@@ -593,9 +589,8 @@ func TestHTTPRoutingRefusesEverythingButPostOnTheEndpoint(t *testing.T) {
 		}
 	}
 
-	// The two well-known metadata paths belong to the item that publishes the
-	// document they serve. Until then they are not this endpoint and are answered
-	// as every other path is.
+	// The two well-known metadata paths serve no document on this server, so they
+	// are not this endpoint and are answered as every other path is.
 	for _, path := range []string{
 		"/",
 		"/mcpx",
@@ -610,7 +605,7 @@ func TestHTTPRoutingRefusesEverythingButPostOnTheEndpoint(t *testing.T) {
 	}
 }
 
-// Clause 6, continued: the path is settled before the credential is looked at.
+// The path is settled before the credential is looked at.
 //
 // This one runs against the authenticator the handler SHIPS with, so the pair of
 // answers is what a deployment gives: an unknown path is not-found whether or not
@@ -642,7 +637,7 @@ func TestHTTPUnknownPathIsAnsweredBeforeAuthentication(t *testing.T) {
 	}
 }
 
-// Clause 7. Origin validation.
+// An origin is validated against the configured list.
 func TestHTTPOriginIsValidatedAgainstTheConfiguredList(t *testing.T) {
 	transport := defaultTransportConfig()
 	transport.AllowedOrigins = []string{"https://listed.example"}
@@ -674,9 +669,9 @@ func TestHTTPOriginIsValidatedAgainstTheConfiguredList(t *testing.T) {
 	})
 }
 
-// Clause 7, continued: with no origins configured, a request carrying an origin
-// is refused and one carrying none is served. That is the documented shape of an
-// empty list rather than an accident of it, so it is pinned.
+// With no origins configured, a request carrying an origin is refused and one
+// carrying none is served. That is the documented shape of an empty list rather
+// than an accident of it, so it is pinned.
 func TestHTTPEmptyOriginListAcceptsOnlyRequestsCarryingNoOrigin(t *testing.T) {
 	f := newHTTPFixture(t, defaultTransportConfig(), nil)
 	const body = `{"jsonrpc":"2.0","id":1,"method":"ping"}`
@@ -691,7 +686,7 @@ func TestHTTPEmptyOriginListAcceptsOnlyRequestsCarryingNoOrigin(t *testing.T) {
 	}
 }
 
-// Clause 8. The body cap, enforced before the body is decoded.
+// The body cap, enforced before the body is decoded.
 //
 // The control is the first row: a body under the cap on the same listener is
 // served, so the refusal below is a fact about the size rather than about the
@@ -745,7 +740,7 @@ func callFixtureToolBody(id int) string {
 		id, commandToolName("aggrega work"))
 }
 
-// Clause 8, continued: the concurrency cap, driven with a blocking seam.
+// The concurrency cap, driven with a blocking seam.
 //
 // The cap is one, so the held request occupies the only slot. The slot is taken
 // before the body is read, so by the time the tool reports it has been entered
@@ -796,8 +791,8 @@ func TestHTTPConcurrencyCapRefusesTheExcess(t *testing.T) {
 	}
 }
 
-// Clause 9. Closing the connection during a call ends that call's context and
-// nothing further is written for it.
+// Closing the connection during a call ends that call's context, and nothing
+// further is written for it.
 //
 // Two things are observed, and both are needed. The seam records the error that
 // ended its context, which is what shows the cancellation reached the work rather
@@ -908,8 +903,8 @@ func TestHTTPDisconnectEndsTheCallAndWritesNothing(t *testing.T) {
 	})
 }
 
-// Clause 9, continued: ending the run reaches a call that is already in flight,
-// and the cause it records says which of the two channels ended it.
+// Ending the run reaches a call that is already in flight, and the cause it
+// records says which of the two channels ended it.
 //
 // The cause is the assertion rather than a done context, because a done context
 // proves nothing about what ended it: the connection closing ends the same
@@ -977,8 +972,7 @@ func TestHTTPRunEndReachesACallAlreadyInFlight(t *testing.T) {
 	}
 }
 
-// Clause 9, continued: no request over this transport is ever recorded in the
-// shared cancel registry.
+// No request over this transport is ever recorded in the shared cancel registry.
 //
 // The count is read while a call is blocked inside the tool, which is the one
 // moment an entry would exist if this transport recorded one. Read before or
@@ -1018,8 +1012,8 @@ func TestHTTPRequestsAreNotRecordedInTheCancelRegistry(t *testing.T) {
 	}
 }
 
-// Clause 9, continued: a cancellation notification posted over this transport is
-// accepted and ends nothing.
+// A cancellation notification posted over this transport is accepted and ends
+// nothing.
 //
 // It names the id of a request this listener is holding open, so a transport
 // recording requests by id would end that request here. Two things say it did

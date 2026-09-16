@@ -244,7 +244,7 @@ func toolServesKind(spec toolSpec, kind string) bool {
 func (s *server) descriptorFor(spec toolSpec, deferred bool) capabilityDescriptor {
 	return capabilityDescriptor{
 		Name:        spec.name,
-		Description: spec.description,
+		Description: s.advertisedDescription(spec),
 		InputSchema: s.advertisedSchema(spec),
 		Deferred:    deferred,
 		Kinds:       spec.kinds,

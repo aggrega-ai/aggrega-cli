@@ -104,8 +104,8 @@ var cacheStatusToolSpec = toolSpec{
 		"`machine_wide_classes` names those classes directly. `provenance` names the plugin identities each recorded " +
 		"guest digest resolved for, marking a digest more than one identity shares — it is what gives a compiled " +
 		"module a name rather than an opaque key, and it is metadata rather than reclaimable content, so it is " +
-		"excluded from the totals. Optional `workspace_root` overrides discovery; without a resolvable workspace only " +
-		"the machine-wide classes are reported.",
+		"excluded from the totals. Without a resolvable workspace only the machine-wide classes are reported.",
+	workspaceSelectionNote: "Optional `workspace_root` overrides discovery.",
 	inputSchema: `{
   "type": "object",
   "properties": {
@@ -276,7 +276,8 @@ var registryListToolSpec = toolSpec{
 		"credential state reports presence only — never the credential, never its shape, and never whether the registry " +
 		"would accept it, which would take a network round trip. It is read from the machine-wide credential store, so " +
 		"it is the same answer in every workspace on this machine. Use it to find the host or alias other operations " +
-		"accept. Optional `workspace_root` overrides discovery.",
+		"accept.",
+	workspaceSelectionNote: "Optional `workspace_root` overrides discovery.",
 	inputSchema: `{
   "type": "object",
   "properties": {

@@ -45,8 +45,8 @@ var listEntitiesToolSpec = toolSpec{
 		"Call this first in an unfamiliar workspace: it takes no subject, so it is how you obtain the names the other " +
 		"tools accept — describe, validate and build refuse a name they cannot resolve rather than answering empty. A " +
 		"document counts as an entity when it declares both a kind and a name; foreign YAML declaring no kind is skipped. " +
-		"Optional `workspace_root` and `catalog_dirs` override discovery. Pair it with list-releases and join the two on " +
-		"kind, name and file.",
+		"Pair it with list-releases and join the two on kind, name and file.",
+	workspaceSelectionNote: "Optional `workspace_root` and `catalog_dirs` override discovery.",
 	inputSchema: `{
   "type": "object",
   "properties": {
@@ -129,8 +129,8 @@ var listReleasesToolSpec = toolSpec{
 		"Membership is decided by the file's own kind header, never by its name: a Release named without a conventional " +
 		"prefix is included, and a file merely named like one is not. Call this when you need to name a Release and do " +
 		"not know which exist — build, describe and validate each require one named and none can enumerate for you. " +
-		"Optional `workspace_root` overrides discovery. Feed a returned path straight to the `release` argument of " +
-		"describe or build.",
+		"Feed a returned path straight to the `release` argument of describe or build.",
+	workspaceSelectionNote: "Optional `workspace_root` overrides discovery.",
 	inputSchema: `{
   "type": "object",
   "properties": {
