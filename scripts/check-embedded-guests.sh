@@ -37,7 +37,7 @@ cd "$(dirname "$0")/.."
 MANIFEST="internal/wasm/embedded/embedded-plugins.tsv"
 EMBED_DIR="internal/wasm/embedded/plugins"
 [ -f "$MANIFEST" ] || { echo "check-embedded-guests: manifest not found: $MANIFEST" >&2; exit 1; }
-REBUILD_HINT="rebuild with: go generate ./internal/wasm/embedded/... && go build   (or ./scripts/build.sh from the umbrella root, which always regenerates)"
+REBUILD_HINT="rebuild with: go generate ./internal/wasm/embedded/... && go build   (or ./scripts/build.sh from the umbrella root, which needs no separate generate step)"
 
 MODCACHE="$(go env GOMODCACHE)"
 GOROOT_DIR="$(go env GOROOT)"

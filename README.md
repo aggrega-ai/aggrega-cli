@@ -23,10 +23,10 @@ go generate ./internal/wasm/embedded/... && go build ./cmd/aggrega
 ```
 
 In the umbrella workspace, the build script at `scripts/build.sh` (at the
-workspace root) always regenerates the guests before the compile that embeds
-them, so it needs no separate generate step. The
-`scripts/check-embedded-guests.sh` helper reports any embedded guest that is
-older than its source.
+workspace root) ensures the embedded guests are current before the compile
+that embeds them, so it needs no separate generate step. This repository's
+own `scripts/check-embedded-guests.sh` helper reports any embedded guest
+that is older than its source.
 
 ## Testing
 
