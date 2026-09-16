@@ -123,6 +123,40 @@ func (AggregateDocumentBase) ManifestRecipeMappingReference(document string, tie
 	panic("this presentation does not carry manifest-recipe-mapping-reference, which a Manifest document carries")
 }
 
+// FeatureRecipeSourceDeclared panics. This presentation does not carry
+// feature-recipe-source-declared, which a FeatureRecipe document carries.
+func (AggregateDocumentBase) FeatureRecipeSourceDeclared(document string) bool {
+	panic("this presentation does not carry feature-recipe-source-declared, which a FeatureRecipe document carries")
+}
+
+// FeatureRecipeValuesMappingDeclared panics. This presentation does not
+// carry feature-recipe-values-mapping-declared, which a FeatureRecipe
+// document carries.
+func (AggregateDocumentBase) FeatureRecipeValuesMappingDeclared(document string) bool {
+	panic("this presentation does not carry feature-recipe-values-mapping-declared, which a FeatureRecipe document carries")
+}
+
+// FeatureRecipeWorkloadDeclared panics. This presentation does not carry
+// feature-recipe-workload-declared, which a FeatureRecipe document
+// carries.
+func (AggregateDocumentBase) FeatureRecipeWorkloadDeclared(document string) bool {
+	panic("this presentation does not carry feature-recipe-workload-declared, which a FeatureRecipe document carries")
+}
+
+// FeatureRecipeArtifactsDeclared panics. This presentation does not carry
+// feature-recipe-artifacts-declared, which a FeatureRecipe document
+// carries.
+func (AggregateDocumentBase) FeatureRecipeArtifactsDeclared(document string) bool {
+	panic("this presentation does not carry feature-recipe-artifacts-declared, which a FeatureRecipe document carries")
+}
+
+// FeatureRecipeDeclaredCapability panics. This presentation does not carry
+// feature-recipe-declared-capability, which a FeatureRecipe document
+// carries.
+func (AggregateDocumentBase) FeatureRecipeDeclaredCapability(document string) string {
+	panic("this presentation does not carry feature-recipe-declared-capability, which a FeatureRecipe document carries")
+}
+
 // ComponentDocumentBase is a base for an implementation of DocumentView
 // that presents a Component.
 //
@@ -228,6 +262,40 @@ func (ComponentDocumentBase) ManifestRecipeMappingEntries(document string) []Man
 // manifest-recipe-mapping-reference, which a Manifest document carries.
 func (ComponentDocumentBase) ManifestRecipeMappingReference(document string, tier string, axis string, key string) (string, bool) {
 	panic("this presentation does not carry manifest-recipe-mapping-reference, which a Manifest document carries")
+}
+
+// FeatureRecipeSourceDeclared panics. This presentation does not carry
+// feature-recipe-source-declared, which a FeatureRecipe document carries.
+func (ComponentDocumentBase) FeatureRecipeSourceDeclared(document string) bool {
+	panic("this presentation does not carry feature-recipe-source-declared, which a FeatureRecipe document carries")
+}
+
+// FeatureRecipeValuesMappingDeclared panics. This presentation does not
+// carry feature-recipe-values-mapping-declared, which a FeatureRecipe
+// document carries.
+func (ComponentDocumentBase) FeatureRecipeValuesMappingDeclared(document string) bool {
+	panic("this presentation does not carry feature-recipe-values-mapping-declared, which a FeatureRecipe document carries")
+}
+
+// FeatureRecipeWorkloadDeclared panics. This presentation does not carry
+// feature-recipe-workload-declared, which a FeatureRecipe document
+// carries.
+func (ComponentDocumentBase) FeatureRecipeWorkloadDeclared(document string) bool {
+	panic("this presentation does not carry feature-recipe-workload-declared, which a FeatureRecipe document carries")
+}
+
+// FeatureRecipeArtifactsDeclared panics. This presentation does not carry
+// feature-recipe-artifacts-declared, which a FeatureRecipe document
+// carries.
+func (ComponentDocumentBase) FeatureRecipeArtifactsDeclared(document string) bool {
+	panic("this presentation does not carry feature-recipe-artifacts-declared, which a FeatureRecipe document carries")
+}
+
+// FeatureRecipeDeclaredCapability panics. This presentation does not carry
+// feature-recipe-declared-capability, which a FeatureRecipe document
+// carries.
+func (ComponentDocumentBase) FeatureRecipeDeclaredCapability(document string) string {
+	panic("this presentation does not carry feature-recipe-declared-capability, which a FeatureRecipe document carries")
 }
 
 // FeatureDocumentBase is a base for an implementation of DocumentView that
@@ -349,6 +417,40 @@ func (FeatureDocumentBase) ManifestRecipeMappingReference(document string, tier 
 	panic("this presentation does not carry manifest-recipe-mapping-reference, which a Manifest document carries")
 }
 
+// FeatureRecipeSourceDeclared panics. This presentation does not carry
+// feature-recipe-source-declared, which a FeatureRecipe document carries.
+func (FeatureDocumentBase) FeatureRecipeSourceDeclared(document string) bool {
+	panic("this presentation does not carry feature-recipe-source-declared, which a FeatureRecipe document carries")
+}
+
+// FeatureRecipeValuesMappingDeclared panics. This presentation does not
+// carry feature-recipe-values-mapping-declared, which a FeatureRecipe
+// document carries.
+func (FeatureDocumentBase) FeatureRecipeValuesMappingDeclared(document string) bool {
+	panic("this presentation does not carry feature-recipe-values-mapping-declared, which a FeatureRecipe document carries")
+}
+
+// FeatureRecipeWorkloadDeclared panics. This presentation does not carry
+// feature-recipe-workload-declared, which a FeatureRecipe document
+// carries.
+func (FeatureDocumentBase) FeatureRecipeWorkloadDeclared(document string) bool {
+	panic("this presentation does not carry feature-recipe-workload-declared, which a FeatureRecipe document carries")
+}
+
+// FeatureRecipeArtifactsDeclared panics. This presentation does not carry
+// feature-recipe-artifacts-declared, which a FeatureRecipe document
+// carries.
+func (FeatureDocumentBase) FeatureRecipeArtifactsDeclared(document string) bool {
+	panic("this presentation does not carry feature-recipe-artifacts-declared, which a FeatureRecipe document carries")
+}
+
+// FeatureRecipeDeclaredCapability panics. This presentation does not carry
+// feature-recipe-declared-capability, which a FeatureRecipe document
+// carries.
+func (FeatureDocumentBase) FeatureRecipeDeclaredCapability(document string) string {
+	panic("this presentation does not carry feature-recipe-declared-capability, which a FeatureRecipe document carries")
+}
+
 // ManifestDocumentBase is a base for an implementation of DocumentView
 // that presents a Manifest.
 //
@@ -443,6 +545,40 @@ func (ManifestDocumentBase) RecipeOutputComponentLabelKeys(document string) []st
 	panic("this presentation does not carry recipe-output-component-label-keys, which a Recipe document carries")
 }
 
+// FeatureRecipeSourceDeclared panics. This presentation does not carry
+// feature-recipe-source-declared, which a FeatureRecipe document carries.
+func (ManifestDocumentBase) FeatureRecipeSourceDeclared(document string) bool {
+	panic("this presentation does not carry feature-recipe-source-declared, which a FeatureRecipe document carries")
+}
+
+// FeatureRecipeValuesMappingDeclared panics. This presentation does not
+// carry feature-recipe-values-mapping-declared, which a FeatureRecipe
+// document carries.
+func (ManifestDocumentBase) FeatureRecipeValuesMappingDeclared(document string) bool {
+	panic("this presentation does not carry feature-recipe-values-mapping-declared, which a FeatureRecipe document carries")
+}
+
+// FeatureRecipeWorkloadDeclared panics. This presentation does not carry
+// feature-recipe-workload-declared, which a FeatureRecipe document
+// carries.
+func (ManifestDocumentBase) FeatureRecipeWorkloadDeclared(document string) bool {
+	panic("this presentation does not carry feature-recipe-workload-declared, which a FeatureRecipe document carries")
+}
+
+// FeatureRecipeArtifactsDeclared panics. This presentation does not carry
+// feature-recipe-artifacts-declared, which a FeatureRecipe document
+// carries.
+func (ManifestDocumentBase) FeatureRecipeArtifactsDeclared(document string) bool {
+	panic("this presentation does not carry feature-recipe-artifacts-declared, which a FeatureRecipe document carries")
+}
+
+// FeatureRecipeDeclaredCapability panics. This presentation does not carry
+// feature-recipe-declared-capability, which a FeatureRecipe document
+// carries.
+func (ManifestDocumentBase) FeatureRecipeDeclaredCapability(document string) string {
+	panic("this presentation does not carry feature-recipe-declared-capability, which a FeatureRecipe document carries")
+}
+
 // RecipeDocumentBase is a base for an implementation of DocumentView that
 // presents a Recipe.
 //
@@ -523,6 +659,166 @@ func (RecipeDocumentBase) ManifestRecipeMappingEntries(document string) []Manife
 // ManifestRecipeMappingReference panics. This presentation does not carry
 // manifest-recipe-mapping-reference, which a Manifest document carries.
 func (RecipeDocumentBase) ManifestRecipeMappingReference(document string, tier string, axis string, key string) (string, bool) {
+	panic("this presentation does not carry manifest-recipe-mapping-reference, which a Manifest document carries")
+}
+
+// FeatureRecipeSourceDeclared panics. This presentation does not carry
+// feature-recipe-source-declared, which a FeatureRecipe document carries.
+func (RecipeDocumentBase) FeatureRecipeSourceDeclared(document string) bool {
+	panic("this presentation does not carry feature-recipe-source-declared, which a FeatureRecipe document carries")
+}
+
+// FeatureRecipeValuesMappingDeclared panics. This presentation does not
+// carry feature-recipe-values-mapping-declared, which a FeatureRecipe
+// document carries.
+func (RecipeDocumentBase) FeatureRecipeValuesMappingDeclared(document string) bool {
+	panic("this presentation does not carry feature-recipe-values-mapping-declared, which a FeatureRecipe document carries")
+}
+
+// FeatureRecipeWorkloadDeclared panics. This presentation does not carry
+// feature-recipe-workload-declared, which a FeatureRecipe document
+// carries.
+func (RecipeDocumentBase) FeatureRecipeWorkloadDeclared(document string) bool {
+	panic("this presentation does not carry feature-recipe-workload-declared, which a FeatureRecipe document carries")
+}
+
+// FeatureRecipeArtifactsDeclared panics. This presentation does not carry
+// feature-recipe-artifacts-declared, which a FeatureRecipe document
+// carries.
+func (RecipeDocumentBase) FeatureRecipeArtifactsDeclared(document string) bool {
+	panic("this presentation does not carry feature-recipe-artifacts-declared, which a FeatureRecipe document carries")
+}
+
+// FeatureRecipeDeclaredCapability panics. This presentation does not carry
+// feature-recipe-declared-capability, which a FeatureRecipe document
+// carries.
+func (RecipeDocumentBase) FeatureRecipeDeclaredCapability(document string) string {
+	panic("this presentation does not carry feature-recipe-declared-capability, which a FeatureRecipe document carries")
+}
+
+// FeatureRecipeDocumentBase is a base for an implementation of
+// DocumentView that presents a FeatureRecipe.
+//
+// It declares a refusing method for every document-stage fact a
+// FeatureRecipe does not carry, and for none of the facts it does. The
+// omission is the design rather than an economy: a base supplying this
+// kind's own facts would satisfy FeatureRecipeDocumentFacts by method
+// promotion, so the assertion would hold an implementation to nothing and
+// a fact declared for this kind would compile everywhere and refuse only
+// when it was read.
+//
+// An implementation embeds it, writes a body for each fact this kind
+// carries, and asserts FeatureRecipeDocumentFacts. A fact then declared
+// for this kind fails to compile on those implementations, and a fact
+// declared for another kind does not reach them.
+type FeatureRecipeDocumentBase struct{}
+
+// RawAggregateText panics. This presentation does not carry
+// raw-aggregate-text, which an Aggregate document carries.
+func (FeatureRecipeDocumentBase) RawAggregateText(document string) []byte {
+	panic("this presentation does not carry raw-aggregate-text, which an Aggregate document carries")
+}
+
+// DeclaredParameterKeys panics. This presentation does not carry
+// declared-parameter-keys, which an Aggregate document carries.
+func (FeatureRecipeDocumentBase) DeclaredParameterKeys(document string) []string {
+	panic("this presentation does not carry declared-parameter-keys, which an Aggregate document carries")
+}
+
+// EntityAssertionNameSet panics. This presentation does not carry
+// entity-assertion-name-set, which a Component document carries.
+func (FeatureRecipeDocumentBase) EntityAssertionNameSet(document string) []string {
+	panic("this presentation does not carry entity-assertion-name-set, which a Component document carries")
+}
+
+// EntityAssertionDeclaringEntity panics. This presentation does not carry
+// entity-assertion-declaring-entity, which a Component document carries.
+func (FeatureRecipeDocumentBase) EntityAssertionDeclaringEntity(document string, assertion string) (string, bool) {
+	panic("this presentation does not carry entity-assertion-declaring-entity, which a Component document carries")
+}
+
+// ComponentSchemaPillarKeys panics. This presentation does not carry
+// component-schema-pillar-keys, which a Component document carries.
+func (FeatureRecipeDocumentBase) ComponentSchemaPillarKeys(document string) []string {
+	panic("this presentation does not carry component-schema-pillar-keys, which a Component document carries")
+}
+
+// FeatureSchemaPillarKeys panics. This presentation does not carry
+// feature-schema-pillar-keys, which a Feature document carries.
+func (FeatureRecipeDocumentBase) FeatureSchemaPillarKeys(document string) []string {
+	panic("this presentation does not carry feature-schema-pillar-keys, which a Feature document carries")
+}
+
+// ManifestAnnotationBindingKeys panics. This presentation does not carry
+// manifest-annotation-binding-keys, which a Manifest document carries.
+func (FeatureRecipeDocumentBase) ManifestAnnotationBindingKeys(document string) []string {
+	panic("this presentation does not carry manifest-annotation-binding-keys, which a Manifest document carries")
+}
+
+// ManifestAnnotationBindingFeature panics. This presentation does not
+// carry manifest-annotation-binding-feature, which a Manifest document
+// carries.
+func (FeatureRecipeDocumentBase) ManifestAnnotationBindingFeature(document string, binding string) (string, bool) {
+	panic("this presentation does not carry manifest-annotation-binding-feature, which a Manifest document carries")
+}
+
+// ManifestAnnotationBindingRoutes panics. This presentation does not carry
+// manifest-annotation-binding-routes, which a Manifest document carries.
+func (FeatureRecipeDocumentBase) ManifestAnnotationBindingRoutes(document string, binding string) []AnnotationBindingRoute {
+	panic("this presentation does not carry manifest-annotation-binding-routes, which a Manifest document carries")
+}
+
+// RecipeValuesMappingDeclared panics. This presentation does not carry
+// recipe-values-mapping-declared, which a Recipe document carries.
+func (FeatureRecipeDocumentBase) RecipeValuesMappingDeclared(document string) bool {
+	panic("this presentation does not carry recipe-values-mapping-declared, which a Recipe document carries")
+}
+
+// RecipeSourceDeclared panics. This presentation does not carry
+// recipe-source-declared, which a Recipe document carries.
+func (FeatureRecipeDocumentBase) RecipeSourceDeclared(document string) bool {
+	panic("this presentation does not carry recipe-source-declared, which a Recipe document carries")
+}
+
+// RecipeWorkloadDeclared panics. This presentation does not carry
+// recipe-workload-declared, which a Recipe document carries.
+func (FeatureRecipeDocumentBase) RecipeWorkloadDeclared(document string) bool {
+	panic("this presentation does not carry recipe-workload-declared, which a Recipe document carries")
+}
+
+// RecipeArtifactsDeclared panics. This presentation does not carry
+// recipe-artifacts-declared, which a Recipe document carries.
+func (FeatureRecipeDocumentBase) RecipeArtifactsDeclared(document string) bool {
+	panic("this presentation does not carry recipe-artifacts-declared, which a Recipe document carries")
+}
+
+// RecipeDeclaredCapability panics. This presentation does not carry
+// recipe-declared-capability, which a Recipe document carries.
+func (FeatureRecipeDocumentBase) RecipeDeclaredCapability(document string) string {
+	panic("this presentation does not carry recipe-declared-capability, which a Recipe document carries")
+}
+
+// RecipeOutputLabelKeys panics. This presentation does not carry
+// recipe-output-label-keys, which a Recipe document carries.
+func (FeatureRecipeDocumentBase) RecipeOutputLabelKeys(document string) []string {
+	panic("this presentation does not carry recipe-output-label-keys, which a Recipe document carries")
+}
+
+// RecipeOutputComponentLabelKeys panics. This presentation does not carry
+// recipe-output-component-label-keys, which a Recipe document carries.
+func (FeatureRecipeDocumentBase) RecipeOutputComponentLabelKeys(document string) []string {
+	panic("this presentation does not carry recipe-output-component-label-keys, which a Recipe document carries")
+}
+
+// ManifestRecipeMappingEntries panics. This presentation does not carry
+// manifest-recipe-mapping-entries, which a Manifest document carries.
+func (FeatureRecipeDocumentBase) ManifestRecipeMappingEntries(document string) []ManifestRecipeMapping {
+	panic("this presentation does not carry manifest-recipe-mapping-entries, which a Manifest document carries")
+}
+
+// ManifestRecipeMappingReference panics. This presentation does not carry
+// manifest-recipe-mapping-reference, which a Manifest document carries.
+func (FeatureRecipeDocumentBase) ManifestRecipeMappingReference(document string, tier string, axis string, key string) (string, bool) {
 	panic("this presentation does not carry manifest-recipe-mapping-reference, which a Manifest document carries")
 }
 
@@ -652,6 +948,40 @@ func (NormalizedViewBase) ManifestRecipeMappingEntries(document string) []Manife
 // manifest-recipe-mapping-reference, which a Manifest document carries.
 func (NormalizedViewBase) ManifestRecipeMappingReference(document string, tier string, axis string, key string) (string, bool) {
 	panic("this presentation does not carry manifest-recipe-mapping-reference, which a Manifest document carries")
+}
+
+// FeatureRecipeSourceDeclared panics. This presentation does not carry
+// feature-recipe-source-declared, which a FeatureRecipe document carries.
+func (NormalizedViewBase) FeatureRecipeSourceDeclared(document string) bool {
+	panic("this presentation does not carry feature-recipe-source-declared, which a FeatureRecipe document carries")
+}
+
+// FeatureRecipeValuesMappingDeclared panics. This presentation does not
+// carry feature-recipe-values-mapping-declared, which a FeatureRecipe
+// document carries.
+func (NormalizedViewBase) FeatureRecipeValuesMappingDeclared(document string) bool {
+	panic("this presentation does not carry feature-recipe-values-mapping-declared, which a FeatureRecipe document carries")
+}
+
+// FeatureRecipeWorkloadDeclared panics. This presentation does not carry
+// feature-recipe-workload-declared, which a FeatureRecipe document
+// carries.
+func (NormalizedViewBase) FeatureRecipeWorkloadDeclared(document string) bool {
+	panic("this presentation does not carry feature-recipe-workload-declared, which a FeatureRecipe document carries")
+}
+
+// FeatureRecipeArtifactsDeclared panics. This presentation does not carry
+// feature-recipe-artifacts-declared, which a FeatureRecipe document
+// carries.
+func (NormalizedViewBase) FeatureRecipeArtifactsDeclared(document string) bool {
+	panic("this presentation does not carry feature-recipe-artifacts-declared, which a FeatureRecipe document carries")
+}
+
+// FeatureRecipeDeclaredCapability panics. This presentation does not carry
+// feature-recipe-declared-capability, which a FeatureRecipe document
+// carries.
+func (NormalizedViewBase) FeatureRecipeDeclaredCapability(document string) string {
+	panic("this presentation does not carry feature-recipe-declared-capability, which a FeatureRecipe document carries")
 }
 
 // TopologyViewBase is a base for an implementation of TopologyView.
@@ -1802,6 +2132,27 @@ type RecipeDocumentFacts interface {
 	RecipeDeclaredCapability(document string) string
 	RecipeOutputLabelKeys(document string) []string
 	RecipeOutputComponentLabelKeys(document string) []string
+}
+
+// FeatureRecipeDocumentFacts are the document-stage facts a FeatureRecipe
+// carries.
+//
+// An implementation presenting a FeatureRecipe asserts it, and that
+// assertion is the thing a refusing base cannot supply. A fact declared
+// for this kind then fails to compile on the implementations claiming it,
+// and on no other; without the assertion the same declaration compiles
+// everywhere and refuses when it is read, which moves the discovery from
+// building to running.
+//
+// Each method is an accessor the view chain declares and documents. The
+// documentation is not repeated here: a fact's documentation has one home,
+// and a second copy would be the one that drifts.
+type FeatureRecipeDocumentFacts interface {
+	FeatureRecipeSourceDeclared(document string) bool
+	FeatureRecipeValuesMappingDeclared(document string) bool
+	FeatureRecipeWorkloadDeclared(document string) bool
+	FeatureRecipeArtifactsDeclared(document string) bool
+	FeatureRecipeDeclaredCapability(document string) string
 }
 
 // NormalizedStageFacts are the facts the normalized stage declares itself,

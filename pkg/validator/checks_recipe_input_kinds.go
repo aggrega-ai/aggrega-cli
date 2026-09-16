@@ -18,33 +18,38 @@ import (
 // capability the carve-out turns on then has two spellings instead of the one
 // below.
 
-// evalCapability is the capability a Recipe declares when it evaluates values
-// in memory and renders nothing.
+// evalCapability is the capability a Recipe or a FeatureRecipe declares when it
+// evaluates values in memory and renders nothing.
 //
-// It is named once and read by both rules below. A second spelling would let the
-// two halves disagree about which Recipes the carve-out covers, and the
-// disagreement would surface as a legitimate Recipe refused rather than as
-// anything failing.
+// It is named once and read by every rule the carve-out reaches, on both authored
+// kinds. A second spelling would let those rules disagree about which documents
+// the carve-out covers, and the disagreement would surface as a legitimate
+// document refused rather than as anything failing.
 //
 // The comparison against it is exact, which is the whole of what an author needs
 // to know about it: a capability declaration may carry a version pin, and a
 // pinned declaration is a different string from the bare name.
 const evalCapability = "eval"
 
-// evalForbiddenFieldAdvice is what an author does about an eval Recipe declaring
-// a rendering surface: the fields at fault, named as the author wrote them.
+// evalForbiddenFieldAdvice is what an author does about an eval Recipe or an eval
+// FeatureRecipe declaring a rendering surface: the fields at fault, named as the
+// author wrote them.
 //
 // It is the occurrence's advice rather than part of the condition's registered
 // sentence because which fields were declared is a property of the occurrence,
-// and a registered sentence is one static string per condition.
+// and a registered sentence is one static string per condition. One builder
+// serves both kinds because the sentence they close with is the same sentence;
+// what differs between them is the list handed in, which belongs to the rule.
 //
-// The order is the order the rule reads the fields, and it is fixed here rather
-// than derived from anything: identical input produces identical output, so a
-// Recipe declaring several of them names them the same way on every run and in
-// every reader's diff. It is deliberately not the order the Recipe's own
-// declaration lists those fields in, and must not be reordered to match it — the
-// reference documentation for this condition names the blocks in the order below,
-// so a reader meeting the diagnostic and the page meets one list rather than two.
+// The order is each rule's own and arrives already fixed: it is the order that
+// rule names the fields in, and it is not derived from anything, because
+// identical input produces identical output and a document declaring several
+// fields names them the same way on every run and in every reader's diff. The
+// two kinds order differently, and the difference is deliberate on both sides —
+// each matches the order the reference documentation for that kind's condition
+// names the blocks in, so a reader meeting the diagnostic and the page meets one
+// list rather than two. Neither is the order the kind's own declaration lists
+// those fields in, and neither may be reordered to match it.
 func evalForbiddenFieldAdvice(declared []string) string {
 	return fmt.Sprintf("forbidden fields declared: %s", strings.Join(declared, ", "))
 }

@@ -13,6 +13,13 @@ import (
 // It is the occurrence's advice rather than part of the condition's registered
 // sentence, and it is named here rather than written inline so the rule's remedy
 // has one spelling.
+//
+// One spelling serves the rule on both authored kinds that carry the pair of
+// keys. The remedy is the same remedy — write the source the overlay was meant
+// for, or drop the overlay — because the fault is the same fault, and the two
+// conditions differ only in which kind of document raised it. A second copy
+// would agree on the day it was written and would be free to drift into two
+// answers to one question.
 const valuesMappingRequiresSourceAdvice = "declare a source: pointer alongside valuesMapping " +
 	"(or remove the valuesMapping if no overlay is intended)"
 

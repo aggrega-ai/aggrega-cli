@@ -4,9 +4,7 @@
 package validator
 
 import (
-	"fmt"
-	"strings"
-
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
@@ -65,12 +63,22 @@ var errFeatureRecipeEvalProviderConstraint = cerrors.Register("feature-recipe-ev
 // source).
 // There is deliberately no at-least-one-input-kind rule: a FeatureRecipe may
 // be pure-wiring (provider + implements only) or inject-only.
+//
+// The eval rule is invoked first and the first failure is returned, and that
+// ordering is the rule's precedence rather than an arrangement. An eval
+// FeatureRecipe declaring a values overlay and no source satisfies both rules'
+// conditions, and the eval one is the finding an author needs: the overlay is
+// forbidden on that capability whatever else the document says, so telling them
+// to add a source would send them further from a document that loads. The
+// overlay is one of the fields the eval rule refuses, so it fires on every such
+// document and the values-mapping rule is reached only where no overlay is
+// declared at all.
 func ValidateFeatureRecipe(fr *types.FeatureRecipe, sourcePath string) error {
 	if fr == nil {
 		return nil
 	}
-	if fr.Spec.Capability == "eval" {
-		return validateFeatureRecipeEvalProvider(fr, sourcePath)
+	if err := validateFeatureRecipeEvalProvider(fr, sourcePath); err != nil {
+		return err
 	}
 	if err := validateFeatureRecipeValuesMapping(fr, sourcePath); err != nil {
 		return err
@@ -81,52 +89,76 @@ func ValidateFeatureRecipe(fr *types.FeatureRecipe, sourcePath string) error {
 // validateFeatureRecipeValuesMapping enforces the values-mapping rule:
 // valuesMapping requires source. A FeatureRecipe with valuesMapping but no
 // source has no chart/module to overlay values onto.
+//
+// The rule itself is declared rather than written out here: see
+// featureRecipeValuesMappingHasASource, which names the facts it reads and is
+// invoked once per presented document. What this function does is present the
+// document the load is holding and render whatever came back into the failure
+// shape this package's callers read.
+//
+// The rule raises at most one objection, because it is invoked once per document
+// and objects about the document as a whole, so the first failure is the only one
+// there can be. Taking the first rather than returning the set is what keeps this
+// function's result the single failure the sibling rule here returns.
 func validateFeatureRecipeValuesMapping(fr *types.FeatureRecipe, sourcePath string) error {
-	if fr.Spec.ValuesMapping.IsEmpty() {
+	// The presentation is held as the view the rule declared rather than as its
+	// own concrete type, because the entry takes the check and the view together
+	// and infers one type from both. Handing over the concrete type would infer
+	// that type and then refuse the rule, which declares the view.
+	var presented constraint.DocumentView = newFeatureRecipeDocumentView(sourcePath, fr)
+	failures := shapeRuleErrorsFrom(
+		constraint.RunOnDocument(
+			sourcePath,
+			presented,
+			featureRecipeValuesMappingHasASource,
+		),
+		ruleSubject{
+			Kind:    envelope.KindFeatureRecipe,
+			Name:    fr.Metadata.Name,
+			Version: fr.Metadata.Version,
+			Rule:    "values-mapping",
+		},
+	)
+	if len(failures) == 0 {
 		return nil
 	}
-	if !sourceIsEmpty(fr.Spec.Source) {
-		return nil
-	}
-	return NewShapeRuleError(ShapeRuleViolation{
-		Kind:       envelope.KindFeatureRecipe,
-		Name:       fr.Metadata.Name,
-		Version:    fr.Metadata.Version,
-		Path:       sourcePath,
-		Rule:       "values-mapping",
-		Suggestion: "declare a source: pointer alongside valuesMapping (or remove the valuesMapping if no overlay is intended)",
-		Err:        ErrFeatureRecipeValuesMappingRequiresSource(),
-	})
+	return failures[0]
 }
 
-// validateFeatureRecipeEvalProvider enforces the eval-provider constraint:
-// render input-kind fields must be empty. The at-least-one-input-kind check is
-// intentionally skipped — an eval FeatureRecipe declaring zero render kinds is
-// legitimate (it provides values / inject mutation without rendering).
+// validateFeatureRecipeEvalProvider enforces the eval-provider constraint: a
+// FeatureRecipe binding the eval capability declares no rendering surface.
+//
+// The rule itself is declared rather than written out here: see
+// featureRecipeEvalDeclaresNoRenderingSurface, which names the facts it reads —
+// the declared capability among them — and is invoked once per presented
+// document. What this function does is present the document the load is holding
+// and render whatever came back into the failure shape this package's callers
+// read.
+//
+// It is invoked for every FeatureRecipe rather than only for an eval one, because
+// the capability gate belongs to the rule. There is deliberately no
+// at-least-one-input-kind rule on this kind, so nothing else here depends on
+// knowing which capability the document binds.
+//
+// The rule raises at most one objection, for the reason
+// validateFeatureRecipeValuesMapping states.
 func validateFeatureRecipeEvalProvider(fr *types.FeatureRecipe, sourcePath string) error {
-	var declared []string
-	if !sourceIsEmpty(fr.Spec.Source) {
-		declared = append(declared, "source")
-	}
-	if !fr.Spec.ValuesMapping.IsEmpty() {
-		declared = append(declared, "valuesMapping")
-	}
-	if !fr.Spec.Workload.IsEmpty() {
-		declared = append(declared, "workload")
-	}
-	if fr.Spec.Artifacts.Len() > 0 {
-		declared = append(declared, "artifacts")
-	}
-	if len(declared) == 0 {
+	var presented constraint.DocumentView = newFeatureRecipeDocumentView(sourcePath, fr)
+	failures := shapeRuleErrorsFrom(
+		constraint.RunOnDocument(
+			sourcePath,
+			presented,
+			featureRecipeEvalDeclaresNoRenderingSurface,
+		),
+		ruleSubject{
+			Kind:    envelope.KindFeatureRecipe,
+			Name:    fr.Metadata.Name,
+			Version: fr.Metadata.Version,
+			Rule:    "eval",
+		},
+	)
+	if len(failures) == 0 {
 		return nil
 	}
-	return NewShapeRuleError(ShapeRuleViolation{
-		Kind:       envelope.KindFeatureRecipe,
-		Name:       fr.Metadata.Name,
-		Version:    fr.Metadata.Version,
-		Path:       sourcePath,
-		Rule:       "eval",
-		Suggestion: fmt.Sprintf("forbidden fields declared: %s", strings.Join(declared, ", ")),
-		Err:        ErrFeatureRecipeEvalProviderConstraint(),
-	})
+	return failures[0]
 }
