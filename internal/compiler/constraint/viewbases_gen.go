@@ -81,6 +81,24 @@ func (AggregateDocumentBase) RecipeSourceDeclared(document string) bool {
 	panic("this presentation does not carry recipe-source-declared, which a Recipe document carries")
 }
 
+// RecipeWorkloadDeclared panics. This presentation does not carry
+// recipe-workload-declared, which a Recipe document carries.
+func (AggregateDocumentBase) RecipeWorkloadDeclared(document string) bool {
+	panic("this presentation does not carry recipe-workload-declared, which a Recipe document carries")
+}
+
+// RecipeArtifactsDeclared panics. This presentation does not carry
+// recipe-artifacts-declared, which a Recipe document carries.
+func (AggregateDocumentBase) RecipeArtifactsDeclared(document string) bool {
+	panic("this presentation does not carry recipe-artifacts-declared, which a Recipe document carries")
+}
+
+// RecipeDeclaredCapability panics. This presentation does not carry
+// recipe-declared-capability, which a Recipe document carries.
+func (AggregateDocumentBase) RecipeDeclaredCapability(document string) string {
+	panic("this presentation does not carry recipe-declared-capability, which a Recipe document carries")
+}
+
 // ManifestRecipeMappingEntries panics. This presentation does not carry
 // manifest-recipe-mapping-entries, which a Manifest document carries.
 func (AggregateDocumentBase) ManifestRecipeMappingEntries(document string) []ManifestRecipeMapping {
@@ -156,6 +174,24 @@ func (ComponentDocumentBase) RecipeValuesMappingDeclared(document string) bool {
 // recipe-source-declared, which a Recipe document carries.
 func (ComponentDocumentBase) RecipeSourceDeclared(document string) bool {
 	panic("this presentation does not carry recipe-source-declared, which a Recipe document carries")
+}
+
+// RecipeWorkloadDeclared panics. This presentation does not carry
+// recipe-workload-declared, which a Recipe document carries.
+func (ComponentDocumentBase) RecipeWorkloadDeclared(document string) bool {
+	panic("this presentation does not carry recipe-workload-declared, which a Recipe document carries")
+}
+
+// RecipeArtifactsDeclared panics. This presentation does not carry
+// recipe-artifacts-declared, which a Recipe document carries.
+func (ComponentDocumentBase) RecipeArtifactsDeclared(document string) bool {
+	panic("this presentation does not carry recipe-artifacts-declared, which a Recipe document carries")
+}
+
+// RecipeDeclaredCapability panics. This presentation does not carry
+// recipe-declared-capability, which a Recipe document carries.
+func (ComponentDocumentBase) RecipeDeclaredCapability(document string) string {
+	panic("this presentation does not carry recipe-declared-capability, which a Recipe document carries")
 }
 
 // ManifestRecipeMappingEntries panics. This presentation does not carry
@@ -247,6 +283,24 @@ func (FeatureDocumentBase) RecipeSourceDeclared(document string) bool {
 	panic("this presentation does not carry recipe-source-declared, which a Recipe document carries")
 }
 
+// RecipeWorkloadDeclared panics. This presentation does not carry
+// recipe-workload-declared, which a Recipe document carries.
+func (FeatureDocumentBase) RecipeWorkloadDeclared(document string) bool {
+	panic("this presentation does not carry recipe-workload-declared, which a Recipe document carries")
+}
+
+// RecipeArtifactsDeclared panics. This presentation does not carry
+// recipe-artifacts-declared, which a Recipe document carries.
+func (FeatureDocumentBase) RecipeArtifactsDeclared(document string) bool {
+	panic("this presentation does not carry recipe-artifacts-declared, which a Recipe document carries")
+}
+
+// RecipeDeclaredCapability panics. This presentation does not carry
+// recipe-declared-capability, which a Recipe document carries.
+func (FeatureDocumentBase) RecipeDeclaredCapability(document string) string {
+	panic("this presentation does not carry recipe-declared-capability, which a Recipe document carries")
+}
+
 // ManifestRecipeMappingEntries panics. This presentation does not carry
 // manifest-recipe-mapping-entries, which a Manifest document carries.
 func (FeatureDocumentBase) ManifestRecipeMappingEntries(document string) []ManifestRecipeMapping {
@@ -321,6 +375,24 @@ func (ManifestDocumentBase) RecipeValuesMappingDeclared(document string) bool {
 // recipe-source-declared, which a Recipe document carries.
 func (ManifestDocumentBase) RecipeSourceDeclared(document string) bool {
 	panic("this presentation does not carry recipe-source-declared, which a Recipe document carries")
+}
+
+// RecipeWorkloadDeclared panics. This presentation does not carry
+// recipe-workload-declared, which a Recipe document carries.
+func (ManifestDocumentBase) RecipeWorkloadDeclared(document string) bool {
+	panic("this presentation does not carry recipe-workload-declared, which a Recipe document carries")
+}
+
+// RecipeArtifactsDeclared panics. This presentation does not carry
+// recipe-artifacts-declared, which a Recipe document carries.
+func (ManifestDocumentBase) RecipeArtifactsDeclared(document string) bool {
+	panic("this presentation does not carry recipe-artifacts-declared, which a Recipe document carries")
+}
+
+// RecipeDeclaredCapability panics. This presentation does not carry
+// recipe-declared-capability, which a Recipe document carries.
+func (ManifestDocumentBase) RecipeDeclaredCapability(document string) string {
+	panic("this presentation does not carry recipe-declared-capability, which a Recipe document carries")
 }
 
 // RecipeDocumentBase is a base for an implementation of DocumentView that
@@ -490,6 +562,24 @@ func (NormalizedViewBase) RecipeValuesMappingDeclared(document string) bool {
 // recipe-source-declared, which a Recipe document carries.
 func (NormalizedViewBase) RecipeSourceDeclared(document string) bool {
 	panic("this presentation does not carry recipe-source-declared, which a Recipe document carries")
+}
+
+// RecipeWorkloadDeclared panics. This presentation does not carry
+// recipe-workload-declared, which a Recipe document carries.
+func (NormalizedViewBase) RecipeWorkloadDeclared(document string) bool {
+	panic("this presentation does not carry recipe-workload-declared, which a Recipe document carries")
+}
+
+// RecipeArtifactsDeclared panics. This presentation does not carry
+// recipe-artifacts-declared, which a Recipe document carries.
+func (NormalizedViewBase) RecipeArtifactsDeclared(document string) bool {
+	panic("this presentation does not carry recipe-artifacts-declared, which a Recipe document carries")
+}
+
+// RecipeDeclaredCapability panics. This presentation does not carry
+// recipe-declared-capability, which a Recipe document carries.
+func (NormalizedViewBase) RecipeDeclaredCapability(document string) string {
+	panic("this presentation does not carry recipe-declared-capability, which a Recipe document carries")
 }
 
 // ManifestRecipeMappingEntries panics. This presentation does not carry
@@ -1647,6 +1737,9 @@ type ManifestDocumentFacts interface {
 type RecipeDocumentFacts interface {
 	RecipeValuesMappingDeclared(document string) bool
 	RecipeSourceDeclared(document string) bool
+	RecipeWorkloadDeclared(document string) bool
+	RecipeArtifactsDeclared(document string) bool
+	RecipeDeclaredCapability(document string) string
 }
 
 // NormalizedStageFacts are the facts the normalized stage declares itself,

@@ -513,6 +513,49 @@ type DocumentView interface {
 	// Keyed by document; read from types.RecipeSpec.Source.
 	RecipeSourceDeclared(document string) bool
 
+	// RecipeWorkloadDeclared reports whether the presented Recipe declares a
+	// workload body.
+	//
+	// It answers whether the author wrote the block at all, in any of the
+	// forms the block accepts — an inline template, a file import, a library
+	// import — and never what the body synthesizes to. The three forms are
+	// one authoring decision and a rule asking whether a workload exists is
+	// asking about that decision, so splitting them would hand every such rule
+	// three answers to recombine.
+	//
+	// Keyed by document; read from types.RecipeSpec.Workload.
+	RecipeWorkloadDeclared(document string) bool
+
+	// RecipeArtifactsDeclared reports whether the presented Recipe declares
+	// any artifact entry.
+	//
+	// It answers whether the block carries an entry rather than how many,
+	// because a rule over the Recipe's input kinds asks whether this one is
+	// present at all and would read every count above zero the same way. A
+	// count is also a different fact with a different life: an entry importing
+	// a bundle expands into one output per file when it is resolved, so a
+	// number the authored document carries is not the number of outputs.
+	// Nothing here reads inside an entry.
+	//
+	// Keyed by document; read from types.RecipeSpec.Artifacts.
+	RecipeArtifactsDeclared(document string) bool
+
+	// RecipeDeclaredCapability is the capability the presented Recipe
+	// declares, as the author wrote it.
+	//
+	// It carries the declaration's own text: the bare capability name where
+	// the author pinned no version, and the name together with the pin where
+	// they did. Nothing here splits the two apart. Which plugin version a pin
+	// selects is settled where the binding is resolved, and a fact answering
+	// that here would be answering about a provider under a name that promises
+	// an answer about the document.
+	//
+	// A Recipe declaring no capability answers with the empty string, which is
+	// the authored state rather than a convenience over a missing one.
+	//
+	// Keyed by document; read from types.RecipeSpec.Capability.
+	RecipeDeclaredCapability(document string) string
+
 	// ManifestRecipeMappingEntries are the entries of the presented Manifest's
 	// recipe mapping table, in author order within each axis: the components
 	// tier before the features tier, and within each tier the type axis before

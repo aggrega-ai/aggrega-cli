@@ -27,8 +27,8 @@ import (
 //
 // The eval-provider carve-out is two-sided:
 //
-//  1. Reject non-empty source / workload / artifacts (eval has no rendering
-//     surface).
+//  1. Reject non-empty source / workload / artifacts / valuesMapping (eval has
+//     no rendering surface).
 //  2. Exempt eval Recipes from the input-kinds rule (a Recipe declaring only
 //     `provides:` is legitimate eval-mode authoring).
 //
@@ -59,10 +59,9 @@ func ValidateRecipe(r *types.Recipe, sourcePath string) error {
 		return err
 	}
 
-	if r.Spec.Capability == "eval" {
-		return validateRecipeEvalProvider(r, sourcePath)
+	if err := validateRecipeEvalProvider(r, sourcePath); err != nil {
+		return err
 	}
-
 	if err := validateRecipeValuesMapping(r, sourcePath); err != nil {
 		return err
 	}
@@ -72,37 +71,42 @@ func ValidateRecipe(r *types.Recipe, sourcePath string) error {
 	return nil
 }
 
-// validateRecipeEvalProvider enforces the eval-provider constraint: input-kind
-// fields must be empty. The input-kinds rule is intentionally skipped here —
-// an eval Recipe declaring zero input kinds is legitimate (it provides values
-// without rendering anything).
+// validateRecipeEvalProvider enforces the eval-provider constraint: a Recipe
+// binding the eval capability declares no rendering surface.
+//
+// The rule itself is declared rather than written out here: see
+// recipeEvalDeclaresNoRenderingSurface, which names the facts it reads — the
+// declared capability among them — and is invoked once per presented document.
+// What this function does is present the document the load is holding and render
+// whatever came back into the failure shape this package's callers read.
+//
+// It is invoked for every Recipe rather than only for an eval one, because the
+// capability gate belongs to the rule. The values-mapping rule below is reached
+// on an eval Recipe as a result, and reaching it changes nothing: this rule
+// refuses any eval Recipe declaring an overlay and runs first, so an eval Recipe
+// arriving there declares none.
+//
+// The rule raises at most one objection, for the reason validateRecipeValuesMapping
+// states.
 func validateRecipeEvalProvider(r *types.Recipe, sourcePath string) error {
-	var declared []string
-	if !sourceIsEmpty(r.Spec.Source) {
-		declared = append(declared, "source")
-	}
-	if !r.Spec.Workload.IsEmpty() {
-		declared = append(declared, "workload")
-	}
-	if r.Spec.Artifacts.Len() > 0 {
-		declared = append(declared, "artifacts")
-	}
-	if !r.Spec.ValuesMapping.IsEmpty() {
-		declared = append(declared, "valuesMapping")
-	}
-
-	if len(declared) == 0 {
+	var presented constraint.DocumentView = newRecipeDocumentView(sourcePath, r)
+	failures := shapeRuleErrorsFrom(
+		constraint.RunOnDocument(
+			sourcePath,
+			presented,
+			recipeEvalDeclaresNoRenderingSurface,
+		),
+		ruleSubject{
+			Kind:    envelope.KindRecipe,
+			Name:    r.Metadata.Name,
+			Version: r.Metadata.Version,
+			Rule:    "eval",
+		},
+	)
+	if len(failures) == 0 {
 		return nil
 	}
-	return NewShapeRuleError(ShapeRuleViolation{
-		Kind:       envelope.KindRecipe,
-		Name:       r.Metadata.Name,
-		Version:    r.Metadata.Version,
-		Path:       sourcePath,
-		Rule:       "eval",
-		Suggestion: fmt.Sprintf("forbidden fields declared: %s", strings.Join(declared, ", ")),
-		Err:        ErrRecipeEvalProviderConstraint(),
-	})
+	return failures[0]
 }
 
 // validateRecipeOutputLabels rejects any spec.outputLabels key under a
@@ -255,26 +259,33 @@ func validateRecipeValuesMapping(r *types.Recipe, sourcePath string) error {
 //  2. Synthesized — workload (inline OR $import: file).
 //  3. Artifacts — at least one entry under artifacts.
 //
-// A Recipe with none of these declared has no rendering surface.
+// The rule itself is declared rather than written out here: see
+// recipeDeclaresAnInputKind, which names the facts it reads and carries the eval
+// carve-out as part of the rule rather than as a property of this call site.
+// What this function does is present the document the load is holding and render
+// whatever came back into the failure shape this package's callers read.
+//
+// The rule raises at most one objection, for the reason validateRecipeValuesMapping
+// states.
 func validateRecipeInputKinds(r *types.Recipe, sourcePath string) error {
-	if !sourceIsEmpty(r.Spec.Source) {
+	var presented constraint.DocumentView = newRecipeDocumentView(sourcePath, r)
+	failures := shapeRuleErrorsFrom(
+		constraint.RunOnDocument(
+			sourcePath,
+			presented,
+			recipeDeclaresAnInputKind,
+		),
+		ruleSubject{
+			Kind:    envelope.KindRecipe,
+			Name:    r.Metadata.Name,
+			Version: r.Metadata.Version,
+			Rule:    "input-kinds",
+		},
+	)
+	if len(failures) == 0 {
 		return nil
 	}
-	if !r.Spec.Workload.IsEmpty() {
-		return nil
-	}
-	if r.Spec.Artifacts.Len() > 0 {
-		return nil
-	}
-	return NewShapeRuleError(ShapeRuleViolation{
-		Kind:       envelope.KindRecipe,
-		Name:       r.Metadata.Name,
-		Version:    r.Metadata.Version,
-		Path:       sourcePath,
-		Rule:       "input-kinds",
-		Suggestion: "declare one of: source (with valuesMapping), workload, artifacts",
-		Err:        ErrRecipeNoInputKind(),
-	})
+	return failures[0]
 }
 
 // sourceIsEmpty reports whether the Recipe's Spec.Source field carries no

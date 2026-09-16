@@ -11,8 +11,8 @@ import (
 )
 
 // recipeDocumentView presents one authored Recipe to a check as named facts:
-// whether the document declares a values overlay, and whether it declares a
-// source pointer.
+// the capability the document declares, and whether it declares a values
+// overlay, a source pointer, a workload body or artifact entries.
 //
 // It answers about the one document it was built for, which is the framework's
 // contract rather than a simplification of it. The subject a check over a
@@ -26,7 +26,7 @@ import (
 // a convenience. A view presents facts already produced; holding the document
 // would leave every accessor free to read a field no fact declares, which is
 // exactly the reach a view exists to close. Each answer is produced here by the
-// one reader of its own question — the overlay's own emptiness test, and the
+// one reader of its own question — each block's own emptiness test, and the
 // source reader this package already uses everywhere it asks — so the fact stays
 // single-valued rather than gaining a second derivation that agrees today.
 //
@@ -54,20 +54,38 @@ type recipeDocumentView struct {
 
 	// source is whether the document declares a source pointer.
 	source bool
+
+	// workload is whether the document declares a workload body.
+	workload bool
+
+	// artifacts is whether the document declares any artifact entry.
+	artifacts bool
+
+	// capability is the capability the document declares, as authored.
+	capability string
 }
 
 // newRecipeDocumentView presents the Recipe a load is holding: the file it was
-// read from, and the two shape answers read out of that document.
+// read from, and the answers read out of that document.
 //
 // The answers are read here rather than taken from the caller because each has
 // exactly one producer in this package, and routing the presentation through
 // those producers is what keeps each fact single-valued. A caller passing its own
-// booleans could pass ones read from a different document, or read differently.
+// answers could pass ones read from a different document, or read differently.
+//
+// The capability is carried as authored and is not compared against anything
+// here. A view presents what the document says; which capability a rule cares
+// about is the rule's own business, and a presentation that answered "is this an
+// eval Recipe" would be presenting one rule's predicate as though it were a
+// property of the file.
 func newRecipeDocumentView(path string, r *types.Recipe) recipeDocumentView {
 	return recipeDocumentView{
 		path:          path,
 		valuesMapping: !r.Spec.ValuesMapping.IsEmpty(),
 		source:        !sourceIsEmpty(r.Spec.Source),
+		workload:      !r.Spec.Workload.IsEmpty(),
+		artifacts:     r.Spec.Artifacts.Len() > 0,
+		capability:    r.Spec.Capability,
 	}
 }
 
@@ -83,6 +101,27 @@ func (v recipeDocumentView) RecipeValuesMappingDeclared(document string) bool {
 func (v recipeDocumentView) RecipeSourceDeclared(document string) bool {
 	v.refuseOtherDocument(document, "RecipeSourceDeclared")
 	return v.source
+}
+
+// RecipeWorkloadDeclared reports whether the presented Recipe declares a
+// workload body.
+func (v recipeDocumentView) RecipeWorkloadDeclared(document string) bool {
+	v.refuseOtherDocument(document, "RecipeWorkloadDeclared")
+	return v.workload
+}
+
+// RecipeArtifactsDeclared reports whether the presented Recipe declares any
+// artifact entry.
+func (v recipeDocumentView) RecipeArtifactsDeclared(document string) bool {
+	v.refuseOtherDocument(document, "RecipeArtifactsDeclared")
+	return v.artifacts
+}
+
+// RecipeDeclaredCapability is the capability the presented Recipe declares, as
+// the author wrote it.
+func (v recipeDocumentView) RecipeDeclaredCapability(document string) string {
+	v.refuseOtherDocument(document, "RecipeDeclaredCapability")
+	return v.capability
 }
 
 // refuseOtherDocument refuses an accessor call naming a document this value was

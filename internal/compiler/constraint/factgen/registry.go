@@ -621,6 +621,57 @@ var facts = []factDecl{
 			"this answers. What the pointer contains is the engine's contract " +
 			"to define, so nothing here reads inside it.",
 	},
+	{
+		Name:        "recipe-workload-declared",
+		Stage:       "document",
+		SourceField: "types.RecipeSpec.Workload",
+		Subject:     []string{"document"},
+		Params:      []paramDecl{{Name: "document", Type: "string"}},
+		Returns:     "bool",
+		Doc: "RecipeWorkloadDeclared reports whether the presented Recipe " +
+			"declares a workload body.\n\nIt answers whether the author wrote " +
+			"the block at all, in any of the forms the block accepts — an " +
+			"inline template, a file import, a library import — and never what " +
+			"the body synthesizes to. The three forms are one authoring " +
+			"decision and a rule asking whether a workload exists is asking " +
+			"about that decision, so splitting them would hand every such rule " +
+			"three answers to recombine.",
+	},
+	{
+		Name:        "recipe-artifacts-declared",
+		Stage:       "document",
+		SourceField: "types.RecipeSpec.Artifacts",
+		Subject:     []string{"document"},
+		Params:      []paramDecl{{Name: "document", Type: "string"}},
+		Returns:     "bool",
+		Doc: "RecipeArtifactsDeclared reports whether the presented Recipe " +
+			"declares any artifact entry.\n\nIt answers whether the block " +
+			"carries an entry rather than how many, because a rule over the " +
+			"Recipe's input kinds asks whether this one is present at all and " +
+			"would read every count above zero the same way. A count is also a " +
+			"different fact with a different life: an entry importing a bundle " +
+			"expands into one output per file when it is resolved, so a number " +
+			"the authored document carries is not the number of outputs. " +
+			"Nothing here reads inside an entry.",
+	},
+	{
+		Name:        "recipe-declared-capability",
+		Stage:       "document",
+		SourceField: "types.RecipeSpec.Capability",
+		Subject:     []string{"document"},
+		Params:      []paramDecl{{Name: "document", Type: "string"}},
+		Returns:     "string",
+		Doc: "RecipeDeclaredCapability is the capability the presented Recipe " +
+			"declares, as the author wrote it.\n\nIt carries the declaration's " +
+			"own text: the bare capability name where the author pinned no " +
+			"version, and the name together with the pin where they did. " +
+			"Nothing here splits the two apart. Which plugin version a pin " +
+			"selects is settled where the binding is resolved, and a fact " +
+			"answering that here would be answering about a provider under a " +
+			"name that promises an answer about the document.\n\nA Recipe " +
+			"declaring no capability answers with the empty string, which is " +
+			"the authored state rather than a convenience over a missing one.",
+	},
 
 	{
 		Name:        "manifest-recipe-mapping-entries",
