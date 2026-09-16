@@ -290,6 +290,68 @@ func (v manifestDocumentView) ManifestAnnotationBindingRoutes(
 	return routes
 }
 
+// AnnotationBindingSubkeyTarget returns what one subkey written under an
+// annotation key has to satisfy — the Feature, the pillar and the path its value
+// is routed to — and whether the presented Manifest routes it anywhere at all.
+//
+// It takes no document argument, unlike the binding facts above, because it
+// needs none: the accessor's key is the binding and the subkey, and the document
+// is the presentation itself. A parameter here would be a value the caller has
+// to have and the answer does not depend on.
+//
+// The empty subkey asks about an annotation written as a bare value. Such a
+// value carries no subkey to route by, so it routes through the binding's single
+// declared path — and only where exactly one is declared across both pillars. A
+// binding declaring several is answered as routing nowhere rather than as
+// routing through whichever came first: the value cannot be split between them,
+// and picking one would deliver an author's single string into a field they did
+// not name.
+//
+// A subkey the binding's own map does not name is answered the same way, which
+// is one of the two things the second result separates. Whether the key names a
+// binding at all is the other, and a rule needing to tell them apart asks
+// ManifestAnnotationBindingFeature beside this.
+//
+// The pillar comes from the routing lookup rather than from a scan of the route
+// list, so the tie-break between a path declared under both pillars is the one
+// the compiler acts on rather than a second reading of it.
+func (v manifestDocumentView) AnnotationBindingSubkeyTarget(
+	binding string,
+	subkey string,
+) (constraint.AnnotationSubkeyTarget, bool) {
+	declared, ok := v.bindings.Lookup(binding)
+	if !ok {
+		return constraint.AnnotationSubkeyTarget{}, false
+	}
+	if subkey == "" {
+		switch {
+		case declared.Maps.Len() != 1:
+			return constraint.AnnotationSubkeyTarget{}, false
+		case len(declared.Maps.Infra) == 1:
+			return constraint.AnnotationSubkeyTarget{
+				FeatureType: declared.Feature,
+				Pillar:      bindingRoutePillarInfra,
+				Path:        declared.Maps.Infra[0],
+			}, true
+		default:
+			return constraint.AnnotationSubkeyTarget{
+				FeatureType: declared.Feature,
+				Pillar:      bindingRoutePillarValues,
+				Path:        declared.Maps.Values[0],
+			}, true
+		}
+	}
+	pillar, routed := declared.Maps.Lookup(subkey)
+	if !routed {
+		return constraint.AnnotationSubkeyTarget{}, false
+	}
+	return constraint.AnnotationSubkeyTarget{
+		FeatureType: declared.Feature,
+		Pillar:      pillar,
+		Path:        subkey,
+	}, true
+}
+
 // The two pillars an annotation binding routes into, named once here so the
 // presentation and any rule reading a route agree on the spelling rather than
 // each writing its own literal. They are the names the binding's author writes

@@ -993,25 +993,25 @@ spec:
 		AggregatePath:        "aggregate.yaml",
 		AnnotationProvenance: map[string]AnnotationProvenance{},
 	}
-	err := ExpandAnnotations(rr, CatalogLookup{})
+	err := ValidateAuthoredAnnotations(nil, rr, CatalogLookup{})
 	if err == nil {
 		t.Fatal("expected side-vs-pillar mismatch error; got nil")
 	}
 	msg := cerrors.CauseChain(err)
 	for _, want := range []string{
-		string(cerrors.DeveloperError),
+		"Aggregate test",
+		".spec.subsystems.data.annotations",
 		"feature.myco/rewrite-host",
 		"upstream",
 		"infra",
-		"aggregate",
 		"values",
 	} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("error message missing %q\nfull message: %s", want, msg)
 		}
 	}
-	if strings.Contains(msg, string(cerrors.OpsError)) {
-		t.Errorf("an Aggregate-authored annotation names the operator's domain\nfull message: %s", msg)
+	if strings.Contains(msg, "Release") {
+		t.Errorf("an Aggregate-authored annotation names the Release document\nfull message: %s", msg)
 	}
 }
 
@@ -1043,17 +1043,17 @@ spec:
 		ReleasePath:          "release.yaml",
 		AnnotationProvenance: map[string]AnnotationProvenance{},
 	}
-	err := ExpandAnnotations(rr, CatalogLookup{})
+	err := ValidateAuthoredAnnotations(nil, rr, CatalogLookup{})
 	if err == nil {
 		t.Fatal("expected side-vs-pillar mismatch error; got nil")
 	}
 	msg := cerrors.CauseChain(err)
 	for _, want := range []string{
-		"OPS_ERROR",
+		"Release test",
+		".spec.boundaries.prod.annotations",
 		"feature.myco/db-pool",
 		"pool",
 		"values",
-		"release",
 		"infra",
 	} {
 		if !strings.Contains(msg, want) {
@@ -1608,13 +1608,19 @@ spec:
 	}
 }
 
+// TestExpand_StructuredCrossSidePartition_AggregateOnlyValuesSubkeysFire pins
+// the cross-side partition on a structured value: an Aggregate-side annotation
+// declaring both a values-pillar and an infra-pillar subkey is refused for the
+// infra one.
+//
+// The refusal is asked over the authored entry, before expansion consumes it, so
+// the build halts at that rule and expansion is never reached with the crossing
+// in place. The finding names the subkey, the pillar it routes through and the
+// pillar the document it was written in may use — which is the same evidence the
+// expansion-time raise carried, positioned at the authored site instead of
+// composed into the sentence.
 func TestExpand_StructuredCrossSidePartition_AggregateOnlyValuesSubkeysFire(t *testing.T) {
 	t.Parallel()
-	// Aggregate-side annotation declares both values-pillar AND
-	// infra-pillar subkeys. The infra-pillar subkeys fail
-	// side-vs-pillar and accumulate to the collect-and-emit-all
-	// error list; the build halts with the composed error so the IR
-	// layer never sees the partial contribution.
 	aggSrc := `
 apiVersion: aggrega.ai/v1alpha1
 kind: Aggregate
@@ -1638,16 +1644,25 @@ spec:
 		AggregatePath:        "aggregate.yaml",
 		AnnotationProvenance: map[string]AnnotationProvenance{},
 	}
-	err := ExpandAnnotations(rr, structuredFeatureCatalog(t))
+	err := ValidateAuthoredAnnotations(nil, rr, structuredFeatureCatalog(t))
 	if err == nil {
-		t.Fatal("expected side-vs-pillar mismatch error for the infra-pillar subkey on the Aggregate side; got nil")
+		t.Fatal("expected a side-vs-pillar refusal for the infra-pillar subkey on the Aggregate side; got nil")
+	}
+	if !errors.Is(err, ErrAnnotationSidePillarMismatch()) {
+		t.Errorf("the refusal should carry the side-vs-pillar condition; got %v", err)
 	}
 	msg := cerrors.CauseChain(err)
 	if !strings.Contains(msg, "pool_size") {
 		t.Errorf("error should name the offending subkey (pool_size); got: %s", msg)
 	}
-	if !strings.Contains(msg, "aggregate") || !strings.Contains(msg, "infra") {
-		t.Errorf("error should name the authoring side (aggregate) and the routed pillar (infra); got: %s", msg)
+	if !strings.Contains(msg, "infra") || !strings.Contains(msg, "values") {
+		t.Errorf("error should name the routed pillar (infra) and the one the document may use (values); got: %s", msg)
+	}
+	// The locator positions the finding on the scope the author wrote the entry
+	// at, which is what a subject rooted at the authored site buys: the entry is
+	// written once on the subsystem and reaches every component it holds.
+	if !strings.Contains(msg, ".spec.subsystems.data.annotations") {
+		t.Errorf("error should position at the authored scope; got: %s", msg)
 	}
 }
 
@@ -1789,11 +1804,17 @@ spec:
 		AggregatePath:        "aggregate.yaml",
 		AnnotationProvenance: map[string]AnnotationProvenance{},
 	}
-	err := ExpandAnnotations(rr, structuredFeatureCatalog(t))
+	err := ValidateAuthoredAnnotations(nil, rr, structuredFeatureCatalog(t))
 	if err == nil {
-		t.Fatal("expected type-mismatch errors; got nil")
+		t.Fatal("expected type-mismatch refusals; got nil")
+	}
+	if !errors.Is(err, ErrAnnotationSubkeyNotConforming()) {
+		t.Errorf("the refusal should carry the subkey-conformance condition; got %v", err)
 	}
 	msg := cerrors.CauseChain(err)
+	// Both subkeys are reported in one build rather than one per build: the rule
+	// is invoked once per authored entry, and each invocation's finding is
+	// accumulated.
 	if !strings.Contains(msg, "db_name") {
 		t.Errorf("error should name db_name (declared type string, got integer); got: %s", msg)
 	}

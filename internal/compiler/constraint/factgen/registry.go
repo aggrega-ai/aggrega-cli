@@ -332,6 +332,32 @@ var records = []recordDecl{
 		},
 	},
 	{
+		Name: "AnnotationSubkeyTarget",
+		Doc: "AnnotationSubkeyTarget is what one authored annotation subkey has " +
+			"to satisfy: the Feature whose contract governs the value, the " +
+			"pillar of that contract the value lands in, and the dotted path " +
+			"within that pillar.\n\nIt is one fact rather than three because no " +
+			"part of it answers anything alone. A value is measured against a " +
+			"sub-contract located by a pillar and a path inside one Feature's " +
+			"document, so a reader holding any two of the three has located " +
+			"nothing — and a reader handed the three as separate answers would " +
+			"have to re-pair them, which is the re-derivation a declared fact " +
+			"exists to close.\n\nIt is a separate fact from the routing slots a " +
+			"binding declares, and the difference is that this one is the " +
+			"LOOKUP applied rather than the table read. The table says what a " +
+			"binding claims; this says which of those claims an authored subkey " +
+			"falls under, including the tie-break between a path declared in " +
+			"both pillar lists and the rule that a value written without " +
+			"subkeys routes through the binding's single declared path. Those " +
+			"are rules with one home, and a rule re-deriving them from the " +
+			"table would be a second copy of them.",
+		Fields: []recordField{
+			{Name: "FeatureType", Type: "string", Doc: "FeatureType is the Feature the binding routes to, as the binding's author wrote it."},
+			{Name: "Pillar", Type: "string", Doc: "Pillar is the configuration pillar of that Feature's contract the value lands in."},
+			{Name: "Path", Type: "string", Doc: "Path is the dotted path within that pillar the value is routed to."},
+		},
+	},
+	{
 		Name: "ManifestRecipeMapping",
 		Doc: "ManifestRecipeMapping is one entry of a Manifest's recipe " +
 			"mapping table, identified the way the table itself identifies " +
@@ -587,6 +613,40 @@ var facts = []factDecl{
 			"carried rather than sorted, because a rule reporting on a route " +
 			"reports in the order it read them, and that order is the order " +
 			"the findings reach the reader.",
+	},
+	{
+		Name:        "annotation-binding-subkey-target",
+		Stage:       "document",
+		SourceField: "types.AnnotationBinding",
+		Carrier:     "Manifest",
+		Subject:     []string{"document", "annotation-binding"},
+		Params: []paramDecl{
+			{Name: "binding", Type: "string"},
+			{Name: "subkey", Type: "string"},
+		},
+		Returns: "(AnnotationSubkeyTarget, bool)",
+		Doc: "AnnotationBindingSubkeyTarget is what one subkey written under an " +
+			"annotation key has to satisfy — the Feature, the pillar and the " +
+			"path its value is routed to — and whether the presented Manifest " +
+			"routes it anywhere at all.\n\nThe subkey is the key an author wrote " +
+			"inside a structured annotation value. An annotation written as a " +
+			"bare value has no subkey, and the empty subkey is how that shape is " +
+			"asked about: such a value routes through the binding's single " +
+			"declared path, so it is answered where exactly one path is declared " +
+			"across both pillars and reported absent where none or several are. " +
+			"That is the same reading the expansion applies, expressed once " +
+			"here rather than by every rule that needs it.\n\nThe second result " +
+			"separates a subkey the binding routes from one it does not, which " +
+			"is a finding in its own right and not a zero value: a key nobody " +
+			"declared a binding for and a subkey the binding's own map does not " +
+			"name are both answered as absent, and a rule needing to tell those " +
+			"apart asks the binding's Feature beside this.\n\nIt is a separate " +
+			"fact from the routing slots the binding declares, because this is " +
+			"the lookup applied where that is the table read. The table lists " +
+			"what the binding claims; this says which claim an authored subkey " +
+			"falls under, tie-break included — a path declared in both pillar " +
+			"lists routes through infra, which is the routing the compiler acts " +
+			"on and a separate condition advises about.",
 	},
 	{
 		Name:        "recipe-values-mapping-declared",
@@ -1283,6 +1343,54 @@ var facts = []factDecl{
 			"rule over either names a different authored site.\n" +
 			"\nWhat the sockets are checked against is a separate fact on a " +
 			"separate document: the socket set the attached Feature declares.",
+	},
+	{
+		Name:        "authored-annotation-subvalue",
+		Stage:       "normalized",
+		SourceField: "types.AnnotationValue",
+		Subject:     []string{"authored-annotation"},
+		Params: []paramDecl{
+			{Name: "document", Type: "string"},
+			{Name: "scope", Type: "string"},
+			{Name: "component", Type: "string"},
+			{Name: "key", Type: "string"},
+			{Name: "subkey", Type: "string"},
+		},
+		Returns: "(any, bool)",
+		Doc: "AuthoredAnnotationSubvalue is the value an author wrote at one " +
+			"annotation entry, and whether an entry stands there at all.\n" +
+			"\nIt is keyed by the site the entry was WRITTEN at rather than by " +
+			"the component the entry takes effect on, and that is the whole " +
+			"reason it is a fact of its own. An annotation written on a scope " +
+			"reaches every component that scope holds, so it is authored once " +
+			"and contributes many times: a fact keyed by a component would be " +
+			"asked once per component about one authored string, would be asked " +
+			"not at all for a scope holding none — silence indistinguishable " +
+			"from approval — and could not be asked at all where two scopes " +
+			"write against one component name, because the composition folds " +
+			"those into one entry and keeps the last.\n\nThe site is the " +
+			"authoring document, the scope's path within it, and the component " +
+			"key the entry was written under. The component key is empty for an " +
+			"entry written scope-wide, which is the shape a component-rooted " +
+			"key cannot express rather than an edge of it: such an entry names " +
+			"no component, and the scope's own block is the one place anyone " +
+			"can edit it. The document is carried apart from the scope because " +
+			"the two documents' scope paths are composed with separators of " +
+			"their own, and a key that ran them together would rest on those " +
+			"separators staying different with nothing comparing them.\n" +
+			"\nThe subkey is the key written inside a structured value, and is " +
+			"empty for a value written bare — so the empty subkey asks about " +
+			"the whole entry. The result is the value as authored, at whatever " +
+			"shape the author wrote it in, because what it is measured against " +
+			"is a contract declared elsewhere and narrowing it here would " +
+			"decide that measurement in advance.\n\nThe second result reports " +
+			"whether this presentation holds a routed value at those " +
+			"coordinates at all. Two shapes answer no and both are deliberate: " +
+			"coordinates nobody wrote, and an entry written as an opt-out — an " +
+			"explicit empty value, which is how an author removes an entry " +
+			"inherited from a scope above. An opt-out routes nothing, so there " +
+			"is no value to measure and no instance to be invoked for; a rule " +
+			"that judged one would refuse an author for removing something.",
 	},
 	{
 		Name:        "slot-required",

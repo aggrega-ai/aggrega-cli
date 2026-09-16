@@ -52,7 +52,7 @@ const (
 	// SubjectDocumentSchemaPillar is the subject kind (document, schema-pillar), keyed by 2 declared facts.
 	SubjectDocumentSchemaPillar SubjectKind = "(document, schema-pillar)"
 
-	// SubjectDocumentAnnotationBinding is the subject kind (document, annotation-binding), keyed by 4 declared facts.
+	// SubjectDocumentAnnotationBinding is the subject kind (document, annotation-binding), keyed by 5 declared facts.
 	SubjectDocumentAnnotationBinding SubjectKind = "(document, annotation-binding)"
 
 	// SubjectDocumentOutputLabel is the subject kind (document, output-label), keyed by 2 declared facts.
@@ -78,6 +78,9 @@ const (
 
 	// SubjectSubsystemAttachment is the subject kind (subsystem, attachment), keyed by 1 declared fact.
 	SubjectSubsystemAttachment SubjectKind = "(subsystem, attachment)"
+
+	// SubjectAuthoredAnnotation is the subject kind authored-annotation, keyed by 1 declared fact.
+	SubjectAuthoredAnnotation SubjectKind = "authored-annotation"
 
 	// SubjectNodeSlot is the subject kind (node, slot), keyed by 3 declared facts.
 	SubjectNodeSlot SubjectKind = "(node, slot)"
@@ -182,6 +185,7 @@ var SubjectKinds = []SubjectKindInfo{
 	{Kind: SubjectEdge, Coordinates: []string{"edge"}, Traversal: TraversalPull},
 	{Kind: SubjectNodeAttachment, Coordinates: []string{"node", "attachment"}, Traversal: TraversalPull},
 	{Kind: SubjectSubsystemAttachment, Coordinates: []string{"subsystem", "attachment"}, Traversal: TraversalPull},
+	{Kind: SubjectAuthoredAnnotation, Coordinates: []string{"authored-annotation"}, Traversal: TraversalPull},
 	{Kind: SubjectNodeSlot, Coordinates: []string{"node", "slot"}, Traversal: TraversalPull},
 	{Kind: SubjectNodeMechanism, Coordinates: []string{"node", "mechanism"}, Traversal: TraversalPull},
 	{Kind: SubjectNodeMechanismDeliveryKey, Coordinates: []string{"node", "mechanism", "delivery-key"}, Traversal: TraversalPull},

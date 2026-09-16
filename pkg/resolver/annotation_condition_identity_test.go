@@ -174,30 +174,38 @@ infra:
 // the located sub-schema refuses — and pins that both carry one condition.
 func TestAnnotationSubkeyNotConforming_RendersItsOutput(t *testing.T) {
 	t.Parallel()
-	feature := featureWithSchema(t, "core/monitoring", `
+	manifest := subkeyConformanceManifest(t)
+	catalog := subkeyConformanceCatalog(t, `
 values:
   level:
     type: string
     enum: [info, warn, error]
 `)
-	cache := newFeatureSchemaCache(nil)
 
-	undeclared := validateSubkeyValueAgainstFeatureSchema(cache, &feature, "values", "missing", "x")
+	undeclared := authoredAnnotationRefusal(t, manifest,
+		aggregateAnnotating(t, "feature.myco/monitoring:\n  missing: x\n"), nil, catalog)
 	assertIdentity(t, undeclared, ErrAnnotationSubkeyNotConforming(),
 		"annotation-subkey-not-conforming", "E0254")
-	const wantUndeclared = `annotation subkey does not conform to the target Feature's schema at the routed pillar: ` +
-		`annotation subkey "missing" is not declared at Feature "core/monitoring" spec.schema.values.missing`
+	const wantUndeclared = `annotation subkey does not conform to the target Feature's schema at the routed pillar ` +
+		`(Aggregate test, at .spec.components.api.annotations, ` +
+		`"missing", written under annotation "feature.myco/monitoring", ` +
+		`routed to Feature "core/monitoring:1.0.0", at pillar "values", ` +
+		`which that Feature declares no property for under "schema")`
 	if got := undeclared.Error(); got != wantUndeclared {
 		t.Errorf("undeclared-subkey output\n got: %s\nwant: %s", got, wantUndeclared)
 	}
 	assertNoCategoryToken(t, undeclared.Error())
 
-	nonConforming := validateSubkeyValueAgainstFeatureSchema(cache, &feature, "values", "level", "bogus")
+	nonConforming := authoredAnnotationRefusal(t, manifest,
+		aggregateAnnotating(t, "feature.myco/monitoring:\n  level: bogus\n"), nil, catalog)
 	assertIdentity(t, nonConforming, ErrAnnotationSubkeyNotConforming(),
 		"annotation-subkey-not-conforming", "E0254")
 	if got := nonConforming.Error(); !strings.HasPrefix(got,
-		`annotation subkey does not conform to the target Feature's schema at the routed pillar: `+
-			`annotation subkey "level" value bogus does not conform to Feature "core/monitoring" spec.schema.values.level: `) {
+		`annotation subkey does not conform to the target Feature's schema at the routed pillar `+
+			`(Aggregate test, at .spec.components.api.annotations, `+
+			`"level", written under annotation "feature.myco/monitoring", `+
+			`carrying the value "bogus", routed to Feature "core/monitoring:1.0.0", `+
+			`at pillar "values", which that Feature's schema refuses because `) {
 		t.Errorf("non-conforming-value output does not open with the condition and the occurrence; got: %s", got)
 	}
 	assertNoCategoryToken(t, nonConforming.Error())
@@ -208,25 +216,54 @@ values:
 // side and the diagnostic names it.
 func TestAnnotationSidePillarMismatch_RendersItsOutput(t *testing.T) {
 	t.Parallel()
-	aggregateSide := validateAnnotationSideCompatibility(
-		sideAggregate, "feature.myco/rewrite-host", "upstream", "infra", "aggregate.yaml")
+	// One binding per pillar, so each side can be driven across the partition:
+	// the Aggregate writes the infra-routed key and the Release the
+	// values-routed one, which are the two crossings the condition exists for.
+	manifest := loadManifest(t, `
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: test
+  version: "1.0.0"
+spec:
+  mappings:
+    features:
+      annotations:
+        feature.myco/rewrite-host:
+          feature: core/rewrite-host:1.0.0
+          maps:
+            infra:
+              - upstream
+        feature.myco/db-pool:
+          feature: core/db-pool:1.0.0
+          maps:
+            values:
+              - pool
+`)
+
+	aggregateSide := authoredAnnotationRefusal(t, manifest,
+		aggregateAnnotating(t, `feature.myco/rewrite-host: "api.example.com"`+"\n"),
+		nil, CatalogLookup{})
 	assertIdentity(t, aggregateSide, ErrAnnotationSidePillarMismatch(),
 		"annotation-side-pillar-mismatch", "E0255")
-	const wantAggregate = `annotation routes through a pillar its authoring side may not use: ` +
-		`annotation "feature.myco/rewrite-host" at aggregate.yaml routes through pillar "infra" at path "upstream", ` +
-		`but aggregate-side annotations may only route through pillar "values"`
+	const wantAggregate = `annotation routes through a pillar its authoring side may not use ` +
+		`(Aggregate test, at .spec.components.api.annotations, ` +
+		`"feature.myco/rewrite-host", which routes through pillar "infra", at path "upstream", ` +
+		`while the document it is written in may only route through "values")`
 	if got := aggregateSide.Error(); got != wantAggregate {
 		t.Errorf("Aggregate-side output\n got: %s\nwant: %s", got, wantAggregate)
 	}
 	assertNoCategoryToken(t, aggregateSide.Error())
 
-	releaseSide := validateAnnotationSideCompatibility(
-		sideRelease, "feature.myco/db-pool", "pool", "values", "release.yaml")
+	releaseSide := authoredAnnotationRefusal(t, manifest, nil,
+		releaseAnnotating(t, `feature.myco/db-pool: "shared"`+"\n"),
+		CatalogLookup{})
 	assertIdentity(t, releaseSide, ErrAnnotationSidePillarMismatch(),
 		"annotation-side-pillar-mismatch", "E0255")
-	const wantRelease = `annotation routes through a pillar its authoring side may not use: ` +
-		`annotation "feature.myco/db-pool" at release.yaml routes through pillar "values" at path "pool", ` +
-		`but release-side annotations may only route through pillar "infra"`
+	const wantRelease = `annotation routes through a pillar its authoring side may not use ` +
+		`(Release test, at .spec.boundaries.prod.components.api.annotations, ` +
+		`"feature.myco/db-pool", which routes through pillar "values", at path "pool", ` +
+		`while the document it is written in may only route through "infra")`
 	if got := releaseSide.Error(); got != wantRelease {
 		t.Errorf("Release-side output\n got: %s\nwant: %s", got, wantRelease)
 	}
@@ -276,17 +313,16 @@ spec:
 	assertNoCategoryToken(t, findings[0].Error())
 }
 
-// TestExpandAnnotations_SidePillarMismatch_SaysTheCategoryOnce pins the
-// composition through the expansion wrapper, which is the surface an author
-// actually meets: the wrapper supplies the scope the inner condition does not
-// know, and the category word appears once rather than at both levels.
+// TestAnnotationSidePillarMismatch_SaysTheCategoryOnce pins the composition an
+// author actually meets: the finding names its authoring document once, and the
+// category word appears once rather than at two levels.
 //
 // The annotation value is authored in the Aggregate, so the category named is
-// the developer's — the wrapper takes the domain registered for the document the
-// value lives in. The operator's domain is asserted absent for the same reason
+// the developer's — derived at the reporting boundary from the entity kind the
+// finding names. The operator's domain is asserted absent for the same reason
 // the developer's is counted rather than merely found: the value is named once,
 // by the surface it was written on, and never alongside a second one.
-func TestExpandAnnotations_SidePillarMismatch_SaysTheCategoryOnce(t *testing.T) {
+func TestAnnotationSidePillarMismatch_SaysTheCategoryOnce(t *testing.T) {
 	t.Parallel()
 	aggSrc := `
 apiVersion: aggrega.ai/v1alpha1
@@ -307,26 +343,34 @@ spec:
 		AggregatePath:        "aggregate.yaml",
 		AnnotationProvenance: map[string]AnnotationProvenance{},
 	}
-	err := ExpandAnnotations(rr, CatalogLookup{})
+	err := ValidateAuthoredAnnotations(nil, rr, CatalogLookup{})
 	if err == nil {
 		t.Fatal("expected the side-vs-pillar halt; got nil")
 	}
 	if !stderrors.Is(err, ErrAnnotationSidePillarMismatch()) {
-		t.Errorf("the halt should stay matchable through the expansion wrapper; got %v", err)
+		t.Errorf("the halt should stay matchable through the entry point; got %v", err)
 	}
 	if got, ok := cerrors.ShortCodeOf(err); !ok || got != "E0255" {
-		t.Errorf("ShortCodeOf through the wrapper = %q (found=%v), want %q", got, ok, "E0255")
+		t.Errorf("ShortCodeOf = %q (found=%v), want %q", got, ok, "E0255")
 	}
 	msg := err.Error()
-	if n := strings.Count(msg, string(cerrors.DeveloperError)); n != 1 {
-		t.Errorf("the category is said %d times, want exactly 1\nfull: %s", n, msg)
+	// The category is derived from the entity kind the finding names rather than
+	// written into the text, so it is asserted through the conversion that derives
+	// it and asserted ABSENT from the text — which is this file's standing
+	// property for every condition it renders.
+	assertNoCategoryToken(t, msg)
+	var re *ResolverError
+	if !stderrors.As(err, &re) {
+		t.Fatalf("expected a locator-bearing finding; got %T", err)
 	}
-	if strings.Contains(msg, string(cerrors.OpsError)) {
-		t.Errorf("an Aggregate-authored annotation names the operator's domain\nfull: %s", msg)
+	if got := re.ToCompilerError().Category(); got != cerrors.DeveloperError {
+		t.Errorf("derived category = %v, want %v", got, cerrors.DeveloperError)
 	}
-	// The wrapper's own contribution is the scope the inner condition cannot
-	// know, so it has to survive the raise rather than be replaced by it.
-	for _, want := range []string{"annotation expansion", "api", "feature.myco/rewrite-host"} {
+	// The subject the rule cannot know — which document, and where inside it —
+	// is supplied by the framework and by the conversion, so both survive.
+	for _, want := range []string{
+		"Aggregate test", ".spec.components.api.annotations", "feature.myco/rewrite-host",
+	} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("composed halt missing %q\nfull: %s", want, msg)
 		}

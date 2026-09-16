@@ -43,6 +43,7 @@ type traversalFixture struct {
 	edges         []EdgeInstance
 	connections   []CarriedConnectionInstance
 	references    []BoundaryComponentReferenceInstance
+	annotations   []AuthoredAnnotationInstance
 	boundaries    []AuthoredCoordinate
 	subsystems    []AuthoredCoordinate
 	modules       []AuthoredCoordinate
@@ -121,6 +122,10 @@ func (f traversalFixture) Boundaries() []AuthoredCoordinate { return f.boundarie
 
 func (f traversalFixture) BoundaryComponentReferences() []BoundaryComponentReferenceInstance {
 	return f.references
+}
+
+func (f traversalFixture) AuthoredAnnotations() []AuthoredAnnotationInstance {
+	return f.annotations
 }
 
 func (f traversalFixture) AssemblyPaths() []AuthoredCoordinate { return f.assemblyPaths }
@@ -394,6 +399,73 @@ func newTraversalFixture() traversalFixture {
 		boundaries: []AuthoredCoordinate{
 			{Value: "prod/edge", SourceFile: "release.yaml"},
 			{Value: "dev", SourceFile: "release.yaml"},
+		},
+		// Four entries covering every site an annotation can be written at, one per
+		// document and one per shape within each. The first is written on a nested
+		// Release scope's component, the second scope-wide on the scope above it,
+		// and the last two on the Aggregate — one inside a scope the author
+		// declared and one at the document's top level, where the scope path is
+		// empty because the scope holding it is one normalization synthesized. The
+		// two subkeys on one key at one site are what show the subkey is part of the
+		// identity and contributes no segment, and the entry with no subkey is the
+		// bare-value shape.
+		//
+		// The keys are deliberately of both spellings. Three carry a period, which
+		// is what an annotation key conventionally carries, and the locator dialect
+		// names the block and stops at one — because a segment it cannot tell from
+		// two segments is refused. The fourth carries none and is named in full. The
+		// pair is the whole statement of what a rule over this axis can position at.
+		annotations: []AuthoredAnnotationInstance{
+			{
+				Document:   AuthoringDocumentRelease,
+				Component:  "web",
+				Site:       AuthoredSite{ScopePath: "prod/edge", Component: "web"},
+				Key:        "feature.myco/db-pool",
+				Subkey:     "pool_size",
+				SourceFile: "release.yaml",
+			},
+			{
+				Document:   AuthoringDocumentRelease,
+				Component:  "web",
+				Site:       AuthoredSite{ScopePath: "prod/edge", Component: "web"},
+				Key:        "feature.myco/db-pool",
+				Subkey:     "max_connections",
+				SourceFile: "release.yaml",
+			},
+			// The routed axis, where the id the entry's component addresses and the
+			// key the file spells are two different strings: the coordinate carries
+			// the flattened id, the locator carries the routing keys.
+			{
+				Document:   AuthoringDocumentRelease,
+				Component:  "billing.api",
+				Site:       AuthoredSite{ScopePath: "prod/edge"},
+				RoutedKeys: []string{"aggregates", "billing", "components", "api"},
+				Key:        "feature.myco/tls",
+				Subkey:     "issuer",
+				SourceFile: "release.yaml",
+			},
+			{
+				Document:   AuthoringDocumentRelease,
+				Site:       AuthoredSite{ScopePath: "prod"},
+				Key:        "feature.myco/rewrite-host",
+				SourceFile: "release.yaml",
+			},
+			{
+				Document:   AuthoringDocumentAggregate,
+				Component:  "api",
+				Site:       AuthoredSite{ScopePath: "billing", Component: "api"},
+				Key:        "feature.myco/tls",
+				Subkey:     "issuer",
+				SourceFile: "billing/aggregate.yaml",
+			},
+			{
+				Document:   AuthoringDocumentAggregate,
+				Component:  "web",
+				Site:       AuthoredSite{Component: "web"},
+				Key:        "myco-tls",
+				Subkey:     "issuer",
+				SourceFile: "aggregate.yaml",
+			},
 		},
 		// One nested scope and one top-level scope, reverse-alphabetical so a sort
 		// would be visible. The nested one is what proves the locator names every
@@ -1259,6 +1331,36 @@ func traversalCases() []traversalCase {
 			want: []string{
 				"aggregate.yaml|.spec.aggregates.data",
 				"billing/aggregate.yaml|.spec.aggregates.ledger",
+			},
+		},
+		{
+			// The authored-annotation axis, whose transcript carries four separate
+			// properties.
+			//
+			// The two entries at one site under one key produce two invocations at
+			// ONE locator: the subkey is part of the identity and contributes no
+			// segment, both shown in the same pair of lines. The scope-wide entry
+			// names its scope and stops, with no component key beneath it — there is
+			// no component to name and naming one would point at an edit that would
+			// not fix the finding. The Aggregate-side entry at the document's top
+			// level names .spec.components.<name> rather than a scope, because the
+			// scope it arrives under is one normalization synthesized and no file
+			// spells it. And the two spellings of an annotation key show the dialect's
+			// own rule: a key carrying a period is a segment the dialect cannot tell
+			// from two segments, so the locator names the block that holds it and
+			// stops, while a key carrying none is named in full.
+			kind: SubjectAuthoredAnnotation,
+			run: func(cancelled Cancellation, f traversalFixture, v traversalView) ([]Objection, error) {
+				return RunOnAuthoredAnnotations(
+					cancelled, f, v, raisingCheck[AuthoredAnnotationSubject]())
+			},
+			want: []string{
+				"release.yaml|.spec.boundaries.prod.boundaries.edge.components.web.annotations",
+				"release.yaml|.spec.boundaries.prod.boundaries.edge.components.web.annotations",
+				"release.yaml|.spec.boundaries.prod.boundaries.edge.aggregates.billing.components.api.annotations",
+				"release.yaml|.spec.boundaries.prod.annotations",
+				"billing/aggregate.yaml|.spec.subsystems.billing.components.api.annotations",
+				"aggregate.yaml|.spec.components.web.annotations.myco-tls",
 			},
 		},
 	}
@@ -2229,6 +2331,36 @@ func coordinateFlowCases() []coordinateFlowCase {
 				})
 			},
 			want: []string{"data", "billing.ledger"},
+		},
+
+		// The authored-annotation axis, whose readback is the only assertion that
+		// can see three of its five coordinates at all. The locator names the block
+		// and stops wherever the key carries a period, and it never names the subkey
+		// on any spelling — so the provenance transcript cannot tell one entry from
+		// its sibling, and a traversal that dropped either would read as correct
+		// there. Every coordinate is read back here instead, in the order the kind
+		// declares them.
+		{
+			kind: SubjectAuthoredAnnotation,
+			seam: seamTraversal,
+			read: func(f traversalFixture) []string {
+				return readback(func(c Check[traversalView, AuthoredAnnotationSubject]) ([]Objection, error) {
+					return RunOnAuthoredAnnotations(nil, f, traversalView{}, c)
+				}, func(s AuthoredAnnotationSubject) string {
+					return strings.Join([]string{
+						s.AuthoringDocumentKind(), s.AnnotationScopePath(),
+						s.AnnotationComponentName(), s.AnnotationKey(), s.AnnotationSubkey(),
+					}, "|")
+				})
+			},
+			want: []string{
+				"release|prod/edge|web|feature.myco/db-pool|pool_size",
+				"release|prod/edge|web|feature.myco/db-pool|max_connections",
+				"release|prod/edge|billing.api|feature.myco/tls|issuer",
+				"release|prod||feature.myco/rewrite-host|",
+				"aggregate|billing|api|feature.myco/tls|issuer",
+				"aggregate||web|myco-tls|issuer",
+			},
 		},
 	}
 }

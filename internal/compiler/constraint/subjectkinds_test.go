@@ -429,8 +429,25 @@ var coordinateAccessors = map[string][]string{
 	// author typed — which is also why the locator is assembled from the same
 	// three.
 	"mapping-entry": {"MappingTier", "MappingAxis", "MappingKey"},
-	"node":          {"NodeID"},
-	"socket":        {"SocketName"},
+	// The fourth entry that is not one-to-one, and the reason is the
+	// carried-connection row's applied to an authoring surface rather than to a
+	// graph one. An annotation entry's identity is the document it was written
+	// in, the scope inside that document, the component key it was written under,
+	// the annotation key and the subkey within the value, all taken together: one
+	// annotation key is legitimately written at a scope and again on a component
+	// inside it, in both documents, with a subkey each, so no shorter tuple names
+	// an entry. The document is carried apart from the scope because the two
+	// documents compose their scope paths with separators of their own, and one
+	// joined value would rest on those separators staying different with nothing
+	// comparing them. The subkey's accessor carries no suffix for the reason the
+	// delivery-key and locals-key rows carry none: the coordinate's own word
+	// already says what the value is.
+	"authored-annotation": {
+		"AuthoringDocumentKind", "AnnotationScopePath", "AnnotationComponentName",
+		"AnnotationKey", "AnnotationSubkey",
+	},
+	"node":   {"NodeID"},
+	"socket": {"SocketName"},
 	"edge":          {"NodeID", "SocketName", "AliasName"},
 	"carried-connection": {
 		"NodeID", "CarrierKind", "CarrierAttachment", "SocketName", "AliasName", "TargetNodeID",
@@ -1224,6 +1241,20 @@ var subjectKindBindings = map[SubjectKind]struct {
 		make: func(f string) Subject {
 			return newSubsystemAttachmentSubject(f, "billing.payments", "tls",
 				"spec", "subsystems", "billing", "subsystems", "payments", "features", "tls")
+		},
+	},
+	SubjectAuthoredAnnotation: {
+		iface: reflect.TypeOf((*AuthoredAnnotationSubject)(nil)).Elem(),
+		// The component-keyed Release case, because it is the one carrying every
+		// element of the identity at once: a nested scope, a component inside it, and
+		// a subkey the locator deliberately does not name. The trailing segment is
+		// the annotation key, which the dialect drops because it carries a period —
+		// so the locator names the block that holds it.
+		make: func(f string) Subject {
+			return newAuthoredAnnotationSubject(f, AuthoringDocumentRelease, "prod/eu", "api",
+				"feature.myco/db-pool", "pool_size",
+				"spec", "boundaries", "prod", "boundaries", "eu",
+				"components", "api", "annotations", "feature.myco/db-pool")
 		},
 	},
 	SubjectModule: {

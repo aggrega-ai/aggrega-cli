@@ -635,6 +635,112 @@ func newSubsystemAttachmentSubject(
 	}
 }
 
+// AuthoredAnnotationSubject is the subject of a check invoked once per
+// annotation entry an author wrote, in either authoring document.
+//
+// Its single coordinate is the entry, whose identity is the authoring document,
+// the scope the entry sits in, the component key it was written under, the
+// annotation key and the subkey inside the value, all taken together — so it
+// carries an accessor for each element of that identity rather than one naming
+// the entry, on the same terms [CarriedConnectionSubject] does. No one of them
+// names an entry: one annotation key is legitimately written at a scope and
+// again on a component inside that scope, in both documents, with a subkey each.
+//
+// It is rooted at the AUTHORED SITE rather than at the component the entry takes
+// effect on, and the two are not equivalent. An annotation written on a scope
+// reaches every component that scope holds, so keyed by component it would be
+// asked once per component about one authored string, and not at all for a scope
+// holding none — which is silence a caller cannot tell from approval. Worse, the
+// composition folds a Release's components into one set keyed by bare name,
+// so where two scopes write against one component name every entry but one
+// becomes unreachable and the rule enumerates nothing for them. Keyed here, the
+// check is asked exactly once per entry the author wrote, and the locator names
+// the site they can edit.
+//
+// It is one kind over both authoring documents rather than one per document,
+// because the coordinate is the same site in either: an annotation entry inside
+// a scope, or inside a component of one. Which document it was written in is
+// carried as the coordinate's own value, which is what lets one condition cover
+// both and still name the scope nesting the author typed — and what keeps a
+// rule about the authoring side askable at all, since that side IS the document.
+//
+// The document is a separate accessor from the scope rather than a prefix inside
+// it. The two documents compose their scope paths with separators of their own,
+// so a single joined value would rest on those separators staying different,
+// with no symbol comparing them and nothing to fail the day either moved.
+type AuthoredAnnotationSubject interface {
+	Subject
+
+	// AuthoringDocumentKind is the document the entry was written in: one of
+	// [AuthoringDocumentAggregate] or [AuthoringDocumentRelease]. It is what
+	// tells a rule which authoring side wrote the value, which no other
+	// coordinate says.
+	AuthoringDocumentKind() string
+
+	// AnnotationScopePath is the scope the entry sits in, as every keyed fact
+	// takes it. It is the scope's path from its own document's scope set rather
+	// than a bare name, because both documents' scopes nest and two at different
+	// depths may carry one name. It is empty for an entry written at the
+	// document's top level, which is not a scope any file spells.
+	AnnotationScopePath() string
+
+	// AnnotationComponentName is the component key the entry was written under,
+	// empty for an entry written scope-wide.
+	//
+	// The empty case is a shape a component-rooted key cannot express rather
+	// than an edge of it: a scope-wide entry takes effect on every component the
+	// scope holds and none of those is a place anyone can edit, so the scope's
+	// own block is the site and it names no component.
+	AnnotationComponentName() string
+
+	// AnnotationKey is the annotation key the author wrote the entry under.
+	AnnotationKey() string
+
+	// AnnotationSubkey is the key written inside a structured annotation value,
+	// empty for a value written bare. It contributes no locator segment: a
+	// subkey is a dotted route into the Feature the binding targets and may be
+	// one authored key carrying the separator, so a locator built from it could
+	// name a path the file does not contain.
+	AnnotationSubkey() string
+
+	authoredAnnotation()
+}
+
+type authoredAnnotationSubject struct {
+	provenance
+	document  string
+	scope     string
+	component string
+	key       string
+	subkey    string
+}
+
+func (authoredAnnotationSubject) authoredAnnotation() {}
+
+func (s authoredAnnotationSubject) AuthoringDocumentKind() string { return s.document }
+
+func (s authoredAnnotationSubject) AnnotationScopePath() string { return s.scope }
+
+func (s authoredAnnotationSubject) AnnotationComponentName() string { return s.component }
+
+func (s authoredAnnotationSubject) AnnotationKey() string { return s.key }
+
+func (s authoredAnnotationSubject) AnnotationSubkey() string { return s.subkey }
+
+func newAuthoredAnnotationSubject(
+	sourceFile, document, scope, component, key, subkey string,
+	segments ...string,
+) AuthoredAnnotationSubject {
+	return authoredAnnotationSubject{
+		provenance: newProvenance(sourceFile, segments...),
+		document:   document,
+		scope:      scope,
+		component:  component,
+		key:        key,
+		subkey:     subkey,
+	}
+}
+
 // NodeAttachmentSocketSubject is the subject of a check invoked once per socket
 // an attachment WIRES in its own dependency block — never once per socket the
 // attached Feature declares. The axis is the enumerator's contract and is stated

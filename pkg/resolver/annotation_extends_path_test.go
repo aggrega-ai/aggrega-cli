@@ -62,33 +62,75 @@ func extendsFeatureFixture(t *testing.T) (composed compactform.Schema, feat *typ
 }
 
 // TestAnnotationPath_ExtendsFeature_ValuePath proves the annotation VALUE path
-// (validateSubkeyValueAgainstFeatureSchema → schemaFor) validates an extends-ing
-// Feature against the COMPOSED effective schema, not the child-only structural
-// schema. Site A of the holdout.
+// validates an extends-ing Feature against the COMPOSED effective schema rather
+// than against the child-only structural one, driven through the declared rule's
+// own entry point.
+//
+// The value path and the binding-target path below now read one compiled
+// contract, produced once by the presentation both rules are asked over, so the
+// composed-schema property holds for both by construction rather than by two
+// producers agreeing. The pair is kept as two tests because the two rules answer
+// different questions about the same Feature — one about what the Manifest
+// declares, one about what an author wrote through it — and each has to be shown
+// reaching the inherited key.
 func TestAnnotationPath_ExtendsFeature_ValuePath(t *testing.T) {
 	composed, feat := extendsFeatureFixture(t)
-	eff := func(string) (compactform.Schema, bool) { return composed, true }
 
-	// Composed cache: the INHERITED threshold is validated — 5 conforms, 99 (over
-	// the inherited maximum 10) is rejected.
-	if err := validateSubkeyValueAgainstFeatureSchema(newFeatureSchemaCache(eff), feat, "values", "threshold", 5); err != nil {
+	manifest := loadManifest(t, `
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: test
+  version: "1.0.0"
+spec:
+  mappings:
+    features:
+      annotations:
+        feature.test/tune:
+          feature: core/test/child-feat
+          maps:
+            values:
+              - threshold
+`)
+	featureLookup := func(uri string) (types.Feature, bool) {
+		if uri == "core/test/child-feat" {
+			return *feat, true
+		}
+		return types.Feature{}, false
+	}
+	composedLookup := CatalogLookup{
+		Feature:         featureLookup,
+		EffectiveSchema: func(string) (compactform.Schema, bool) { return composed, true },
+	}
+
+	// The INHERITED threshold is validated: 5 conforms, 99 exceeds the inherited
+	// maximum of 10.
+	if err := authoredAnnotationRefusal(t, manifest,
+		aggregateAnnotating(t, "feature.test/tune:\n  threshold: 5\n"),
+		nil, composedLookup); err != nil {
 		t.Errorf("threshold=5 is valid under the inherited maximum 10; got %v", err)
 	}
-	if err := validateSubkeyValueAgainstFeatureSchema(newFeatureSchemaCache(eff), feat, "values", "threshold", 99); err == nil {
+	if err := authoredAnnotationRefusal(t, manifest,
+		aggregateAnnotating(t, "feature.test/tune:\n  threshold: 99\n"),
+		nil, composedLookup); err == nil {
 		t.Error("threshold=99 exceeds the inherited maximum 10; must be rejected against the composed schema")
 	}
-	// Structural-only cache (nil accessor, pre-fix): the inherited key is
-	// unrecognised — proving the fix changes behavior.
-	if err := validateSubkeyValueAgainstFeatureSchema(newFeatureSchemaCache(nil), feat, "values", "threshold", 5); err == nil {
-		t.Error("structural child-only schema lacks the inherited threshold; expected the pre-fix undeclared-subkey rejection")
+	// Structural-only lookup: the child's own schema declares no threshold, so the
+	// inherited key is unrecognised and the conforming value is refused — which is
+	// what shows the composed reading above is doing the work.
+	structuralLookup := CatalogLookup{Feature: featureLookup}
+	if err := authoredAnnotationRefusal(t, manifest,
+		aggregateAnnotating(t, "feature.test/tune:\n  threshold: 5\n"),
+		nil, structuralLookup); err == nil {
+		t.Error("the structural child-only schema lacks the inherited threshold; expected an undeclared-subkey refusal")
 	}
 }
 
 // TestAnnotationPath_ExtendsFeature_BindingTarget proves the annotation
-// BINDING-TARGET path (ValidateAnnotationBindingTargets) recognises a binding
-// that routes through a pillar key INHERITED from the parent, against the
-// composed effective schema. Site B of the holdout — a distinct entry point
-// (keyed by binding.Feature), so it needs its own end-to-end proof.
+// BINDING-TARGET path recognises a binding routing through a pillar key
+// INHERITED from the parent, against the composed effective schema. It is a
+// distinct entry point keyed by the binding's Feature, so it carries its own
+// end-to-end proof.
 func TestAnnotationPath_ExtendsFeature_BindingTarget(t *testing.T) {
 	composed, feat := extendsFeatureFixture(t)
 

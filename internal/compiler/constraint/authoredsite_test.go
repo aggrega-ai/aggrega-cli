@@ -68,6 +68,13 @@ spec:
   components:
     web:
       type: core/service:1.0.0
+      # An annotation key written without the locator dialect's separator, which
+      # is the spelling the dialect can name in full. The keys carrying one are
+      # in the Release below, where the walk confirms the locator stops at this
+      # block instead.
+      annotations:
+        myco-tls:
+          issuer: internal
       uses:
         zebra:
           primary:
@@ -126,6 +133,11 @@ spec:
       components:
         api:
           type: core/service:1.0.0
+          # An annotation written on a component inside a scope the author
+          # declared, which is the Aggregate side's component-keyed site.
+          annotations:
+            feature.myco/tls:
+              issuer: internal
           uses:
             db:
               - store
@@ -166,6 +178,12 @@ spec:
   aggregate: storefront
   boundaries:
     prod:
+      # A scope-wide annotation, which reaches every component the scope holds
+      # and has no component key of its own — so a locator over it names this
+      # block and stops, which is the shape a component-rooted path cannot
+      # express.
+      annotations:
+        feature.myco/rewrite-host: "api.example.com"
       boundaries:
         edge:
           directory: "regions/{{ .boundary_name }}"
@@ -181,12 +199,28 @@ spec:
           aggregates:
             billing:
               components:
-                api: {}
+                # An annotation written inside a routing entry. The id this
+                # component addresses is "billing.api" and appears nowhere in
+                # this file, so the locator names these keys and the id reaches
+                # a rule as the subject's own coordinate.
+                api:
+                  annotations:
+                    feature.myco/tls:
+                      issuer: internal
           components:
             # The deployment's own edge surface, wiring a socket the application
             # declared and left unbound. A connection drawn here is authored on
             # the deployment, so its locator names this entry.
             web:
+              # An annotation whose key carries the locator dialect's separator,
+              # which an annotation key conventionally does. A locator over it
+              # names this block and stops, because a segment the dialect cannot
+              # tell from two segments is refused — so the entry's own key
+              # reaches a reader as the subject's coordinate instead.
+              annotations:
+                feature.myco/db-pool:
+                  pool_size: 20
+                  max_connections: 100
               uses:
                 zebra:
                   spare:

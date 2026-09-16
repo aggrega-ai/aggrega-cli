@@ -185,6 +185,25 @@ func (c *coordinateSet) Boundaries() []constraint.AuthoredCoordinate {
 	return authoredCoordinates(c.view.boundaryPaths)
 }
 
+// AuthoredAnnotations returns every annotation entry either authoring document
+// declares, in the order the presentation recorded them: the Release's scopes
+// before the Aggregate's, each document's scopes in the order it declares them
+// with an enclosing scope before the scopes nested inside it, and within a scope
+// its own entries before its components'.
+//
+// It delegates to the presentation rather than re-reading the documents, on the
+// rule this type states for every axis a fact already names: the coordinate a
+// rule is invoked for and the value it then reads come from one walk, so the two
+// cannot disagree about which entries the author wrote.
+//
+// The instances carry no source file, for the reason the scope axes carry none:
+// this presentation holds the documents rather than the paths they were read
+// from, and a caller converting what the rules raise supplies the document each
+// finding is attributed to.
+func (c *coordinateSet) AuthoredAnnotations() []constraint.AuthoredAnnotationInstance {
+	return c.view.annotations
+}
+
 // authoredCoordinates presents recorded scope paths as the coordinate shape the
 // scope traversals take, preserving the order they were recorded in.
 func authoredCoordinates(paths []string) []constraint.AuthoredCoordinate {

@@ -117,6 +117,18 @@ func (v *manifestNormalizedView) ManifestAnnotationBindingRoutes(
 	return v.bindings.ManifestAnnotationBindingRoutes(document, binding)
 }
 
+// AnnotationBindingSubkeyTarget returns what one subkey written under an
+// annotation key has to satisfy — the Feature, the pillar and the path its value
+// is routed to — and whether the presented Manifest routes it anywhere at all.
+//
+// It delegates like the binding facts above, so the routing lookup has one
+// reading rather than a second one here that agrees with it today.
+func (v *manifestNormalizedView) AnnotationBindingSubkeyTarget(
+	binding string, subkey string,
+) (constraint.AnnotationSubkeyTarget, bool) {
+	return v.bindings.AnnotationBindingSubkeyTarget(binding, subkey)
+}
+
 // CompiledFeatureSchema returns the contract of a Feature a binding targets,
 // resolved, and whether there was a contract that resolved at all.
 //

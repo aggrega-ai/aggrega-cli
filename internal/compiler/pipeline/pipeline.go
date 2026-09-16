@@ -763,6 +763,16 @@ func ResolveAndValidate(
 		if err := resolver.ValidateAnnotationBindingTargets(resolveResult, catalogLookup); err != nil {
 			return fmt.Errorf("annotation binding validation: %w", err)
 		}
+		// The rules over what an author WROTE in an annotation, asked after the
+		// rule over what the Manifest's bindings declare and before expansion
+		// consumes either. The order is the same one the binding rule's own
+		// position rests on: a broken binding is reported against the Manifest
+		// first, so an annotation routed through it is not reported against the
+		// document that wrote the value.
+		if err := resolver.ValidateAuthoredAnnotations(
+			ctx.Err, resolveResult, catalogLookup); err != nil {
+			return fmt.Errorf("annotation validation: %w", err)
+		}
 		// The binding-overlap lint is collected, never printed here: it joins the
 		// one advisory drain below, which is what carries a finding to both front
 		// ends. A finding written straight to the stream reaches the terminal and

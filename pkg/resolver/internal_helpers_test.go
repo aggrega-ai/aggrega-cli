@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
-	"go.yaml.in/yaml/v3"
 )
 
 // TestAnnotationRegistry_KeysReturnsAuthorOrder pins the Keys accessor.
@@ -366,50 +365,57 @@ func TestCheckArrayConstraints_EveryBranch(t *testing.T) {
 	}
 }
 
-// TestValidateSubkeyValueAgainstFeatureSchema_EveryBranch pins the
-// validator's documented dispatch:
-//   - nil feature → nil (defensive soft-skip)
-//   - compile failure → nil (defensive soft-skip per default-to-skip discipline)
-//   - skippable branch (escape-hatch in schema) → nil
-//   - found=false (property not declared) → a halt naming the subkey
-//   - declared property carries no `type` field → nil (relaxed default)
-//   - declared type mismatches runtime Go type → a halt naming both
-//   - declared type matches runtime → nil
-func TestValidateSubkeyValueAgainstFeatureSchema_EveryBranch(t *testing.T) {
+// TestAnnotationSubkeyConformance_EveryBranch pins the conformance rule's
+// documented dispatch, on the Release side so the infra pillar is the one
+// under test:
+//   - declared type mismatches the value the author wrote → a halt naming both
+//   - declared type matches → no finding
+//   - a subkey the binding routes and the Feature declares no property for → a
+//     halt naming the subkey
+//
+// The nil-contract branch is pinned separately, over a build resolving against
+// no catalog, where it is the whole of what the rule can see.
+func TestAnnotationSubkeyConformance_EveryBranch(t *testing.T) {
 	t.Parallel()
-	// (a) Nil feature.
-	if err := validateSubkeyValueAgainstFeatureSchema(newFeatureSchemaCache(nil), nil, "infra", "port", 8080); err != nil {
-		t.Errorf("nil feature: expected nil; got %v", err)
-	}
-	// (b) Type mismatch — string supplied for an integer-typed schema.
-	cache := newFeatureSchemaCache(nil)
-	// Build a Feature with a real schema (compile must succeed).
-	var schemaNode yaml.Node
-	if err := yaml.Unmarshal([]byte(`infra:
+	manifest := loadManifest(t, `
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: test
+  version: "1.0.0"
+spec:
+  mappings:
+    features:
+      annotations:
+        feature.myco/sizing:
+          feature: core/sizing:1.0.0
+          maps:
+            infra:
+              - port
+              - undeclared
+`)
+	catalog := mockCatalogLookup(map[string]types.Feature{
+		"core/sizing:1.0.0": featureWithSchema(t, "core/sizing", `
+infra:
   port: { type: integer }
-`), &schemaNode); err != nil {
-		t.Fatalf("schema unmarshal: %v", err)
-	}
-	doc := &schemaNode
-	if doc.Kind == yaml.DocumentNode && len(doc.Content) > 0 {
-		doc = doc.Content[0]
-	}
-	feature := &types.Feature{
-		Metadata: types.FeatureMetadata{Name: "test/feat", Version: "1.0.0"},
-		Spec:     types.FeatureSpec{Schema: *doc},
-	}
-	// Integer expected; string supplied → mismatch error.
-	err := validateSubkeyValueAgainstFeatureSchema(cache, feature, "infra", "port", "not-an-integer")
+`),
+	})
+
+	// Integer expected; a string supplied.
+	err := authoredAnnotationRefusal(t, manifest, nil,
+		releaseAnnotating(t, `feature.myco/sizing:`+"\n"+`  port: "not-an-integer"`+"\n"), catalog)
 	if err == nil || !stderrors.Is(err, ErrAnnotationSubkeyNotConforming()) {
 		t.Errorf("type mismatch: expected the subkey-conformance condition; got %v", err)
 	}
-	// Integer expected; integer supplied → no error.
-	if err := validateSubkeyValueAgainstFeatureSchema(cache, feature, "infra", "port", 8080); err != nil {
-		t.Errorf("matching type: expected nil; got %v", err)
+	// Integer expected; an integer supplied.
+	if err := authoredAnnotationRefusal(t, manifest, nil,
+		releaseAnnotating(t, "feature.myco/sizing:\n  port: 8080\n"), catalog); err != nil {
+		t.Errorf("matching type: expected no finding; got %v", err)
 	}
-	// (c) Subkey not declared on the schema.
-	err = validateSubkeyValueAgainstFeatureSchema(cache, feature, "infra", "undeclared", "anything")
-	if err == nil || !strings.Contains(err.Error(), "is not declared") {
+	// A subkey the binding routes and the Feature's contract declares nothing for.
+	err = authoredAnnotationRefusal(t, manifest, nil,
+		releaseAnnotating(t, "feature.myco/sizing:\n  undeclared: anything\n"), catalog)
+	if err == nil || !strings.Contains(err.Error(), "declares no property for") {
 		t.Errorf("subkey not declared: expected a halt naming the subkey; got %v", err)
 	}
 }
@@ -448,15 +454,20 @@ func TestExpandBindingStructured_ReleaseSideInfraPathFires(t *testing.T) {
 }
 
 // TestExpandBindingStructured_MultipleSubkeysCollectErrors pins the
-// collect-and-emit-all discipline: when multiple subkeys fail
-// independent checks (one unknown subkey + one side-vs-pillar
-// mismatch), both errors surface in the returned slice rather than
-// halting on the first.
+// collect-and-emit-all discipline over the faults expansion still reports: two
+// subkeys the binding's own map names neither of, reported together rather than
+// one per build.
+//
+// Only that class remains here. The faults over what the routed value IS — the
+// pillar its authoring side may use, and the contract the target Feature
+// declares — are asked over the authored entry before expansion runs, so
+// reporting them here as well would make one rule report itself twice for one
+// input.
 func TestExpandBindingStructured_MultipleSubkeysCollectErrors(t *testing.T) {
 	t.Parallel()
 	value := types.AnnotationValue{Structured: types.OrderedMap[any]{}}
 	value.Structured.Set("unknown_subkey", "x")
-	value.Structured.Set("db_name", "y") // routes to values; release-side fails
+	value.Structured.Set("also_unknown", "y")
 	binding := types.AnnotationBinding{
 		Feature: "feature.myco/db-pool",
 		Maps: types.AnnotationBindingMaps{
@@ -510,11 +521,17 @@ func TestExpandBindingStructured_UnknownSubkeyAccumulatesError(t *testing.T) {
 	}
 }
 
-// TestExpandBindingStructured_ValuesPillarOnReleaseSideFails pins the
-// side-vs-pillar enforcement: a Release-side annotation whose subkey
-// routes to the values pillar produces an error (the subkey would be
-// inaccessible at expansion).
-func TestExpandBindingStructured_ValuesPillarOnReleaseSideFails(t *testing.T) {
+// TestExpandBindingStructured_ValuesPillarOnReleaseSideContributesNothing pins
+// what expansion does with a subkey routed to the other side's pillar: it fires
+// no contribution and reports nothing.
+//
+// Reporting is not expansion's to do here. Which side may route through which
+// pillar is a declared rule asked over the authored entry before expansion runs,
+// so a document that crossed the partition has already halted — and a second
+// report at this site would make one rule report itself twice for one input. The
+// gate that remains is the routing itself, and this pins that it still routes
+// nothing.
+func TestExpandBindingStructured_ValuesPillarOnReleaseSideContributesNothing(t *testing.T) {
 	t.Parallel()
 	value := types.AnnotationValue{Structured: types.OrderedMap[any]{}}
 	value.Structured.Set("db_name", "prod-db")
@@ -524,7 +541,7 @@ func TestExpandBindingStructured_ValuesPillarOnReleaseSideFails(t *testing.T) {
 			Values: []string{"db_name"},
 		},
 	}
-	_, errs := expandBindingStructured(
+	out, errs := expandBindingStructured(
 		types.BoundaryFeature{Type: binding.Feature},
 		"feature.myco/db-pool",
 		value,
@@ -534,8 +551,12 @@ func TestExpandBindingStructured_ValuesPillarOnReleaseSideFails(t *testing.T) {
 		nil,
 		"release.yaml:boundaries.prod.annotations.feature.myco/db-pool",
 	)
-	if len(errs) != 1 {
-		t.Fatalf("expected 1 side-vs-pillar error; got %d: %v", len(errs), errs)
+	if len(errs) != 0 {
+		t.Fatalf("expected no expansion-time error; got %d: %v", len(errs), errs)
+	}
+	if out.Infra.Len() != 0 {
+		t.Errorf("a values-routed subkey must contribute nothing to the infra pillar; got %d entr(ies)",
+			out.Infra.Len())
 	}
 }
 

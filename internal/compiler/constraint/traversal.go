@@ -1878,3 +1878,65 @@ func RunOnSubsystemAttachments[V View](
 			return out
 		})
 }
+
+// RunOnAuthoredAnnotations invokes check once per annotation entry an author
+// wrote, in the order the enumerator returns them.
+//
+// The set is walked flat rather than per document or per scope, because the
+// derived kind carries one coordinate whose identity is the whole of the
+// document, the site and the entry's keys: one order over the whole set,
+// promised by one enumerator. Walking it per scope would need one walk per
+// document and would leave an entry written at a document's top level outside
+// both, since that shape sits in a scope the compiler synthesized and the scope
+// axes exclude.
+//
+// The locator is the site the author wrote, then the annotation block, then the
+// key: .spec.boundaries.<a>.boundaries.<b>.components.<c>.annotations.<key> for
+// an entry on a component of a nested Release scope, and
+// .spec.subsystems.<s>.annotations.<key> for one written on an Aggregate scope
+// itself. The container's key is repeated for each level of a nested scope,
+// because that is how both documents spell one, and a scope-wide entry names the
+// scope and stops — there is no component to name, and naming one would point at
+// an edit that would not fix the finding. It is assembled through the shared
+// authored-site rule rather than a spelling of its own, so an entry written
+// inside a Release's routing entry names the keys that entry spells, exactly
+// as a rule over the routed component itself does.
+//
+// The subkey contributes no segment. It is a dotted route into the Feature the
+// binding targets rather than a key of the document the locator names, and it may
+// be one authored key carrying the dialect's own separator — so a locator built
+// from it would name a path no file contains. It reaches the check as the
+// subject's own coordinate instead, which is the division [authoredLocator] draws
+// for every value that is legitimate as a coordinate and refused as a segment.
+//
+// An entry whose document this rule cannot name gets no segments, which is the
+// mechanical form of not inventing a locator: the scope nesting is selected by
+// the document, and a document outside the closed pair selects none.
+func RunOnAuthoredAnnotations[V View](
+	cancelled Cancellation,
+	annotations AuthoredAnnotationEnumerator,
+	view V,
+	check Check[V, AuthoredAnnotationSubject],
+) ([]Objection, error) {
+	var out []Objection
+	for _, entry := range annotations.AuthoredAnnotations() {
+		if err := cancelled.err(); err != nil {
+			return nil, err
+		}
+		var segments []string
+		if nesting, named := carrierNesting(entry.Document); named {
+			tail := make([]string, 0, len(entry.RoutedKeys)+2)
+			tail = append(tail, entry.RoutedKeys...)
+			tail = append(tail, authoredKeyAnnotations, entry.Key)
+			segments = authoredSiteSegments(nesting, entry.Site, tail...)
+		}
+		subject := newAuthoredAnnotationSubject(
+			entry.SourceFile, entry.Document,
+			entry.Site.ScopePath, entry.Component,
+			entry.Key, entry.Subkey,
+			segments...,
+		)
+		out = append(out, check.Run(view, subject)...)
+	}
+	return out, nil
+}

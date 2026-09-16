@@ -428,6 +428,93 @@ type BoundaryComponentReferenceInstance struct {
 	RoutedKeys []string
 }
 
+// AuthoredAnnotationInstance is one annotation entry an author wrote: which
+// document, which site inside it, which key, and which subkey of the value.
+//
+// It is the authored site paired with the entry's own keys, and the pairing is
+// what makes it an identity. One annotation key is legitimately written at a
+// scope and again on a component inside that scope, in either document, so a key
+// alone names several entries; and a structured value carries a contribution per
+// subkey, each written on its own line and each judged on its own.
+//
+// The set is what the two documents SAY and not what the cascade computes. An
+// entry written at a scope appears here once, at the scope, however many
+// components inherit it — and an entry a nearer scope overrides appears here too,
+// because the author wrote it and a rule over what was written is asked about it.
+type AuthoredAnnotationInstance struct {
+	// Document is which authoring document the entry sits in, one of
+	// [AuthoringDocumentAggregate] or [AuthoringDocumentRelease]. It selects the
+	// scope nesting the site path is spelled with, and it is what a rule about
+	// the authoring side reads.
+	Document string
+
+	// Component is the component the entry was written on, by the identity every
+	// keyed fact takes, and empty for an entry written scope-wide.
+	//
+	// It is carried apart from the site's own component key, which the site
+	// populates only where the scope named the component directly. A Release
+	// names components on two axes and spells the key differently on each: one
+	// names the component under the id it carries once the composition is
+	// flattened, the other routes a sub-module and names a component inside it
+	// under the LOCAL name it carries there. So the id and the authored key are
+	// two values on the routed axis, and a coordinate derived from the locator
+	// would key the entry by a name that is not the one facts are keyed by.
+	Component string
+
+	// Site names the scope the entry was written in, and the component it was
+	// keyed under when the scope named the component directly. The zero site
+	// names the document's top-level shape, which is what an entry under a scope
+	// normalization synthesized has to read as.
+	Site AuthoredSite
+
+	// RoutedKeys are the authoring keys reaching the entry from inside its scope
+	// when a routing entry declared its component — the routing container, the
+	// module, the component container and the local name — and nothing at all
+	// when the scope named the component directly or when the entry is
+	// scope-wide.
+	//
+	// They are the same keys [BoundaryComponentReferenceInstance] carries and
+	// exist for the same reason: the id the entry's component addresses appears
+	// nowhere in the file, so a locator built from it would spell a key the
+	// document does not contain.
+	RoutedKeys []string
+
+	// Key is the annotation key the author wrote the entry under.
+	Key string
+
+	// Subkey is the key written inside a structured value, empty for a value
+	// written bare. An entry whose value carries several subkeys is enumerated
+	// once per subkey, because each is a separate authored contribution routed
+	// to its own destination.
+	Subkey string
+
+	// SourceFile is the workspace-relative document the entry was written in,
+	// empty when it has no single-file origin.
+	SourceFile string
+}
+
+// AuthoredAnnotationEnumerator supplies the authored-annotation set: every
+// annotation entry either authoring document declares, at every site that can
+// declare one, each carrying the site it was written at.
+//
+// It is a flat axis rather than one nested under the scope axes, and for the
+// reason [BoundaryComponentReferenceEnumerator] is flat: the entry's identity is
+// the whole of its document, site and keys, so nesting it under a scope axis
+// would key it by something that does not distinguish it — and it would inherit
+// that axis's exclusion of the scope the compiler synthesizes, which is where
+// every entry of a document written without named scopes lives.
+//
+// One enumerator covers both documents because the entries are one axis: a rule
+// over what an author wrote in an annotation is asked the same question of
+// either document, and the document is carried on each instance rather than
+// splitting the axis in two. That is the opposite of the scope axes, which are
+// two enumerators because a scope of one document is not a scope of the other.
+type AuthoredAnnotationEnumerator interface {
+	// AuthoredAnnotations returns every authored annotation entry, in a
+	// deterministic order the implementation declares.
+	AuthoredAnnotations() []AuthoredAnnotationInstance
+}
+
 // NodeEnumerator supplies the node set: every component instance in the
 // flattened set, a sub-aggregate's nodes included.
 //

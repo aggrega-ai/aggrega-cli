@@ -69,6 +69,12 @@ func (AggregateDocumentBase) ManifestAnnotationBindingRoutes(document string, bi
 	panic("this presentation does not carry manifest-annotation-binding-routes, which a Manifest document carries")
 }
 
+// AnnotationBindingSubkeyTarget panics. This presentation does not carry
+// annotation-binding-subkey-target, which a Manifest document carries.
+func (AggregateDocumentBase) AnnotationBindingSubkeyTarget(binding string, subkey string) (AnnotationSubkeyTarget, bool) {
+	panic("this presentation does not carry annotation-binding-subkey-target, which a Manifest document carries")
+}
+
 // RecipeValuesMappingDeclared panics. This presentation does not carry
 // recipe-values-mapping-declared, which a Recipe document carries.
 func (AggregateDocumentBase) RecipeValuesMappingDeclared(document string) bool {
@@ -208,6 +214,12 @@ func (ComponentDocumentBase) ManifestAnnotationBindingFeature(document string, b
 // manifest-annotation-binding-routes, which a Manifest document carries.
 func (ComponentDocumentBase) ManifestAnnotationBindingRoutes(document string, binding string) []AnnotationBindingRoute {
 	panic("this presentation does not carry manifest-annotation-binding-routes, which a Manifest document carries")
+}
+
+// AnnotationBindingSubkeyTarget panics. This presentation does not carry
+// annotation-binding-subkey-target, which a Manifest document carries.
+func (ComponentDocumentBase) AnnotationBindingSubkeyTarget(binding string, subkey string) (AnnotationSubkeyTarget, bool) {
+	panic("this presentation does not carry annotation-binding-subkey-target, which a Manifest document carries")
 }
 
 // RecipeValuesMappingDeclared panics. This presentation does not carry
@@ -361,6 +373,12 @@ func (FeatureDocumentBase) ManifestAnnotationBindingFeature(document string, bin
 // manifest-annotation-binding-routes, which a Manifest document carries.
 func (FeatureDocumentBase) ManifestAnnotationBindingRoutes(document string, binding string) []AnnotationBindingRoute {
 	panic("this presentation does not carry manifest-annotation-binding-routes, which a Manifest document carries")
+}
+
+// AnnotationBindingSubkeyTarget panics. This presentation does not carry
+// annotation-binding-subkey-target, which a Manifest document carries.
+func (FeatureDocumentBase) AnnotationBindingSubkeyTarget(binding string, subkey string) (AnnotationSubkeyTarget, bool) {
+	panic("this presentation does not carry annotation-binding-subkey-target, which a Manifest document carries")
 }
 
 // RecipeValuesMappingDeclared panics. This presentation does not carry
@@ -650,6 +668,12 @@ func (RecipeDocumentBase) ManifestAnnotationBindingRoutes(document string, bindi
 	panic("this presentation does not carry manifest-annotation-binding-routes, which a Manifest document carries")
 }
 
+// AnnotationBindingSubkeyTarget panics. This presentation does not carry
+// annotation-binding-subkey-target, which a Manifest document carries.
+func (RecipeDocumentBase) AnnotationBindingSubkeyTarget(binding string, subkey string) (AnnotationSubkeyTarget, bool) {
+	panic("this presentation does not carry annotation-binding-subkey-target, which a Manifest document carries")
+}
+
 // ManifestRecipeMappingEntries panics. This presentation does not carry
 // manifest-recipe-mapping-entries, which a Manifest document carries.
 func (RecipeDocumentBase) ManifestRecipeMappingEntries(document string) []ManifestRecipeMapping {
@@ -766,6 +790,12 @@ func (FeatureRecipeDocumentBase) ManifestAnnotationBindingFeature(document strin
 // manifest-annotation-binding-routes, which a Manifest document carries.
 func (FeatureRecipeDocumentBase) ManifestAnnotationBindingRoutes(document string, binding string) []AnnotationBindingRoute {
 	panic("this presentation does not carry manifest-annotation-binding-routes, which a Manifest document carries")
+}
+
+// AnnotationBindingSubkeyTarget panics. This presentation does not carry
+// annotation-binding-subkey-target, which a Manifest document carries.
+func (FeatureRecipeDocumentBase) AnnotationBindingSubkeyTarget(binding string, subkey string) (AnnotationSubkeyTarget, bool) {
+	panic("this presentation does not carry annotation-binding-subkey-target, which a Manifest document carries")
 }
 
 // RecipeValuesMappingDeclared panics. This presentation does not carry
@@ -894,6 +924,12 @@ func (NormalizedViewBase) ManifestAnnotationBindingFeature(document string, bind
 // manifest-annotation-binding-routes, which a Manifest document carries.
 func (NormalizedViewBase) ManifestAnnotationBindingRoutes(document string, binding string) []AnnotationBindingRoute {
 	panic("this presentation does not carry manifest-annotation-binding-routes, which a Manifest document carries")
+}
+
+// AnnotationBindingSubkeyTarget panics. This presentation does not carry
+// annotation-binding-subkey-target, which a Manifest document carries.
+func (NormalizedViewBase) AnnotationBindingSubkeyTarget(binding string, subkey string) (AnnotationSubkeyTarget, bool) {
+	panic("this presentation does not carry annotation-binding-subkey-target, which a Manifest document carries")
 }
 
 // RecipeValuesMappingDeclared panics. This presentation does not carry
@@ -1100,6 +1136,12 @@ func (TopologyViewBase) AttachmentAuthoredUsesSocketNames(node string, attachmen
 // types.Subsystem.Features.
 func (TopologyViewBase) SubsystemAttachmentDeclaration(subsystem string, attachment string) (AttachmentDeclaration, bool) {
 	panic("this presentation does not carry subsystem-attachment-declaration, which is read from types.Subsystem.Features")
+}
+
+// AuthoredAnnotationSubvalue panics. This presentation does not carry
+// authored-annotation-subvalue, which is read from types.AnnotationValue.
+func (TopologyViewBase) AuthoredAnnotationSubvalue(document string, scope string, component string, key string, subkey string) (any, bool) {
+	panic("this presentation does not carry authored-annotation-subvalue, which is read from types.AnnotationValue")
 }
 
 // SlotRequired panics. This presentation does not carry slot-required,
@@ -2108,6 +2150,7 @@ type ManifestDocumentFacts interface {
 	ManifestAnnotationBindingKeys(document string) []string
 	ManifestAnnotationBindingFeature(document string, binding string) (string, bool)
 	ManifestAnnotationBindingRoutes(document string, binding string) []AnnotationBindingRoute
+	AnnotationBindingSubkeyTarget(binding string, subkey string) (AnnotationSubkeyTarget, bool)
 	ManifestRecipeMappingEntries(document string) []ManifestRecipeMapping
 	ManifestRecipeMappingReference(document string, tier string, axis string, key string) (string, bool)
 }
@@ -2183,6 +2226,7 @@ type NormalizedStageFacts interface {
 	AuthoredAttachmentType(node string, attachment string) (string, bool)
 	AttachmentAuthoredUsesSocketNames(node string, attachment string) []string
 	SubsystemAttachmentDeclaration(subsystem string, attachment string) (AttachmentDeclaration, bool)
+	AuthoredAnnotationSubvalue(document string, scope string, component string, key string, subkey string) (any, bool)
 	SlotRequired(componentType string, slot string) bool
 	AuthoredInjectBlockPresent(node string) bool
 	AuthoredInjectMechanismNames(node string) []string

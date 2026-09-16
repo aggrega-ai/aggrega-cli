@@ -414,20 +414,17 @@ func expandBindingScalar(
 	if err != nil {
 		return out, []error{wrapAnnotationOpsErrorStage(key, "parse", err)}
 	}
-	if err := validateAnnotationSideCompatibility(side, key, path, pillar, sourceLocation); err != nil {
-		return out, []error{err}
-	}
-	if err := validateSubkeyValueAgainstFeatureSchema(cache, feature, pillar, path, value); err != nil {
-		return out, []error{err}
-	}
 	if value == "" {
 		return out, nil
 	}
 	if pillar == "infra" {
 		types.SetLeafAtPath(&out.Infra, path, value)
 	}
-	// Release-side bindings whose single path lives in Maps.Values
-	// fail side-vs-pillar above; the contribution is dropped.
+	// A Release-side binding whose single path lives in Maps.Values contributes
+	// nothing here. Which side may route through which pillar is a declared rule
+	// asked over the authored entry before expansion runs, so a document that
+	// crossed the partition has already halted and the gate above is the routing
+	// itself rather than a second reading of that rule.
 	return out, nil
 }
 
@@ -476,21 +473,12 @@ func expandBindingStructured(
 			))
 			continue
 		}
-		if err := validateAnnotationSideCompatibility(side, key+"."+subkey, subkey, pillar, sourceLocation); err != nil {
-			errs = append(errs, err)
-			continue
-		}
-		if err := validateSubkeyValueAgainstFeatureSchema(cache, feature, pillar, subkey, subvalue); err != nil {
-			errs = append(errs, err)
-			continue
-		}
 		if pillar == "infra" {
 			types.SetLeafAtPath(&out.Infra, subkey, subvalue)
 		}
-		// Release-side subkeys routing to values pillar are filtered
-		// by the side-vs-pillar check above; they accumulate to errs
-		// and don't fire. Aggregate-side handles the symmetric case
-		// through the same code path with side=sideAggregate.
+		// A subkey routing to the other side's pillar contributes nothing here, on
+		// the reading the scalar branch states: the partition is a declared rule
+		// asked over the authored entry before expansion runs.
 	}
 	return out, errs
 }
@@ -533,12 +521,6 @@ func synthesizeAggregateFeatureFromAnnotation(
 		if err != nil {
 			return out, []error{wrapAnnotationOpsErrorStage(key, "parse", err)}
 		}
-		if err := validateAnnotationSideCompatibility(sideAggregate, key, path, pillar, sourceLocation); err != nil {
-			return out, []error{err}
-		}
-		if err := validateSubkeyValueAgainstFeatureSchema(cache, feature, pillar, path, *value.Scalar); err != nil {
-			return out, []error{err}
-		}
 		if *value.Scalar != "" && pillar == "values" {
 			types.SetLeafAtPath(&out.Values, path, *value.Scalar)
 		}
@@ -554,14 +536,6 @@ func synthesizeAggregateFeatureFromAnnotation(
 					"annotation subkey %q on key %q at %s is not declared in binding map; declared paths: %v",
 					subkey, key, sourceLocation, declared,
 				))
-				continue
-			}
-			if err := validateAnnotationSideCompatibility(sideAggregate, key+"."+subkey, subkey, pillar, sourceLocation); err != nil {
-				errs = append(errs, err)
-				continue
-			}
-			if err := validateSubkeyValueAgainstFeatureSchema(cache, feature, pillar, subkey, subvalue); err != nil {
-				errs = append(errs, err)
 				continue
 			}
 			if pillar == "values" {
@@ -802,48 +776,6 @@ func wrapAnnotationOpsError(boundaryPath, componentName, key, stage string, inne
 func wrapAggregateAnnotationError(componentPath, key, stage string, inner error) error {
 	return cerrors.Wrap(inner, aggregateCategory(), cerrors.SourceLocation{},
 		fmt.Sprintf("annotation %s failed at aggregate component %q key %q", stage, componentPath, key))
-}
-
-// validateAnnotationSideCompatibility enforces the
-// Aggregate-as-Authoring-Surface invariant's pillar partition:
-// Aggregate-side annotations may only route through binding paths
-// targeting the values pillar; Release-side annotations may only route
-// through paths targeting infra.
-//
-// Permitted: side=sideAggregate paired with pillar="values";
-// side=sideRelease paired with pillar="infra". Any other pairing raises
-// [ErrAnnotationSidePillarMismatch], naming the annotation key, the routed
-// path, the routed pillar, the authoring side, and the source location so the
-// operator can navigate from the diagnostic to the authoring site. The
-// category the diagnostic prints is derived per occurrence at the reporting
-// boundary rather than written into the text here, so one condition reported
-// against two authoring surfaces names each of them correctly.
-//
-// The function is side-of-authoring focused; bindings declaring paths
-// in both pillars route the side-compatible subset on each pass and
-// trigger no mismatch.
-func validateAnnotationSideCompatibility(side, annotationKey, path, pillar, sourceLocation string) error {
-	switch {
-	case side == sideAggregate && pillar == "values":
-		return nil
-	case side == sideRelease && pillar == "infra":
-		return nil
-	}
-	return fmt.Errorf(
-		"%w: annotation %q at %s routes through pillar %q at path %q, but %s-side annotations may only route through pillar %q",
-		ErrAnnotationSidePillarMismatch(), annotationKey, sourceLocation, pillar, path, side, allowedPillarFor(side),
-	)
-}
-
-// allowedPillarFor returns the pillar each authoring side is permitted
-// to route annotations through. The mapping is part of the
-// Aggregate-as-Authoring-Surface invariant and is consulted only when
-// building the side-vs-pillar mismatch error message.
-func allowedPillarFor(side string) string {
-	if side == sideAggregate {
-		return "values"
-	}
-	return "infra"
 }
 
 // recordAnnotationProvenance writes the side-table entry for a synthetic Feature

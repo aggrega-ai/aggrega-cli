@@ -122,6 +122,25 @@ type normalizedView struct {
 	subsystemPaths []string
 	boundaryPaths  []string
 
+	// annotations is every annotation entry either authoring document declares,
+	// in the order the enumerating axis returns them: the Release's scopes
+	// before the Aggregate's, each document's scopes in the order it declares
+	// them, and within a scope its own entries before its components'.
+	//
+	// It is recorded by the same walks that fill the maps above rather than
+	// derived from them afterwards, for the reason the scope orders are: a Go map
+	// holds no order, and the order is a property of the authored document.
+	annotations []constraint.AuthoredAnnotationInstance
+
+	// annotationValues is the value each of those entries carries, keyed by the
+	// entry's own coordinates.
+	//
+	// It is filled in the same walk that appends the instance, which is what
+	// keeps the two answers about one entry from disagreeing: an entry present in
+	// the enumeration and absent here would make a rule invoked for it read as an
+	// entry nobody wrote.
+	annotationValues map[authoredAnnotationCoordinates]any
+
 	// componentContracts is the resolved contract of each component type in
 	// play, produced once when this value was built.
 	componentContracts map[string]resolvedContract
@@ -130,6 +149,24 @@ type normalizedView struct {
 	// play, produced once when this value was built and keyed by the type, the
 	// socket and the pillar together.
 	socketContracts map[socketPillarKey]resolvedContract
+}
+
+// authoredAnnotationCoordinates identifies one authored annotation entry as this
+// presentation keys it: the document it was written in, the scope inside that
+// document, the component it was written on, the annotation key and the subkey
+// within the value.
+//
+// It is a struct key rather than a joined string because every part of it is a
+// value an author typed, and an author's key may carry whatever separator a join
+// would pick — at which point two distinct entries would collide on one composed
+// key, silently and in favour of whichever was recorded last. An annotation key
+// conventionally carries a period, so that is not a remote case here.
+type authoredAnnotationCoordinates struct {
+	document  string
+	scope     string
+	component string
+	key       string
+	subkey    string
 }
 
 // socketPillarKey identifies one socket's contract over one of the two pillars a
@@ -198,6 +235,7 @@ func newNormalizedView(
 		releaseComponents:  map[string]types.BoundaryComponent{},
 		subsystemFeatures:  map[string]types.OrderedMap[types.FeatureInstance]{},
 		boundaryFeatures:   map[string]types.OrderedMap[types.BoundaryFeature]{},
+		annotationValues:   map[authoredAnnotationCoordinates]any{},
 		componentContracts: map[string]resolvedContract{},
 		socketContracts:    map[socketPillarKey]resolvedContract{},
 	}
@@ -205,12 +243,13 @@ func newNormalizedView(
 	for _, p := range collectComponentInstances(na) {
 		v.instances[p.name] = p.inst
 	}
-	if agg := na.Aggregate(); agg != nil {
-		collectSubsystemFeatures("", agg.Spec.Subsystems, v.subsystemFeatures, &v.subsystemPaths)
-	}
+	// The Release is read before the Aggregate so its entries lead the
+	// annotation axis, which is the order a rule over that axis raises in.
 	if release != nil {
-		collectBoundaryContent(
-			types.NormalizeRelease(release), v.releaseComponents, v.boundaryFeatures, &v.boundaryPaths)
+		v.collectBoundaryContent(types.NormalizeRelease(release))
+	}
+	if agg := na.Aggregate(); agg != nil {
+		v.collectSubsystemContent("", agg.Spec.Subsystems)
 	}
 
 	v.resolveContracts()
@@ -252,11 +291,14 @@ func NewNormalizedView(
 // The order is appended here rather than recovered from the map afterwards
 // because the map holds none: the sequence is the author's and this walk is
 // where the authored document is read.
-func collectSubsystemFeatures(
+// It also records every annotation entry the scope and its components declare,
+// in the same walk. Recording them here is what keeps one reading of the document
+// tree: a second walk would agree with this one the day it was written and be
+// free to disagree afterwards about which scopes are synthesized, with nothing
+// comparing the two.
+func (v *normalizedView) collectSubsystemContent(
 	path string,
 	subsystems types.OrderedMap[types.Subsystem],
-	out map[string]types.OrderedMap[types.FeatureInstance],
-	order *[]string,
 ) {
 	for name, sub := range subsystems.All() {
 		child := name
@@ -266,10 +308,26 @@ func collectSubsystemFeatures(
 			child = path + "." + name
 		}
 		if !sub.Synthesized {
-			out[child] = sub.Features
-			*order = append(*order, child)
+			v.subsystemFeatures[child] = sub.Features
+			v.subsystemPaths = append(v.subsystemPaths, child)
 		}
-		collectSubsystemFeatures(child, sub.Subsystems, out, order)
+		// A synthesized scope declares no annotations of its own: it is a container
+		// normalization generated to hold components an author wrote at the
+		// document's top level, so recording its own block would name a key no file
+		// spells. Its components are recorded, at the top-level shape the author did
+		// write, which is what the empty scope path names.
+		if !sub.Synthesized {
+			v.recordAnnotations(
+				constraint.AuthoringDocumentAggregate, "",
+				constraint.AuthoredSite{ScopePath: child}, nil, sub.Annotations)
+		}
+		for component, inst := range sub.Components.All() {
+			v.recordAnnotations(
+				constraint.AuthoringDocumentAggregate, component,
+				constraint.AuthoredSite{ScopePath: child, Component: component},
+				nil, inst.Annotations)
+		}
+		v.collectSubsystemContent(child, sub.Subsystems)
 	}
 }
 
@@ -282,12 +340,20 @@ func collectSubsystemFeatures(
 // the same reasoning its counterpart on the other authoring document does: the
 // operator declared no such scope, so naming one would report at a key the file
 // does not contain.
-func collectBoundaryContent(
-	nr types.NormalizedRelease,
-	components map[string]types.BoundaryComponent,
-	features map[string]types.OrderedMap[types.BoundaryFeature],
-	order *[]string,
-) {
+// It also records every annotation entry the scope and its components declare,
+// in the same walk and for the reason its counterpart on the other authoring
+// document does.
+//
+// The component entries are read through the declaration axis rather than the
+// folded one, because the two answer differently for a routed entry and the
+// difference is exactly what a locator needs: the fold keys every component by
+// the id it carries once the composition is flattened, while a routed entry is
+// written under the LOCAL name it carries inside the module it came from, so a
+// locator built from the id would spell a key the document does not contain. The
+// declaration carries both — the id every keyed fact takes, and the authoring
+// keys reaching it — so an entry is recorded under one and positioned by the
+// other.
+func (v *normalizedView) collectBoundaryContent(nr types.NormalizedRelease) {
 	rel := nr.Release()
 	if rel == nil {
 		return
@@ -295,12 +361,36 @@ func collectBoundaryContent(
 	var walk func(path string, b types.Boundary)
 	walk = func(path string, b types.Boundary) {
 		if !b.Synthesized {
-			features[path] = b.Features
-			*order = append(*order, path)
+			v.boundaryFeatures[path] = b.Features
+			v.boundaryPaths = append(v.boundaryPaths, path)
+			// A synthesized scope declares no annotations of its own, on the reading
+			// its counterpart on the other authoring document states: it is a
+			// container the compiler generated, so its own block is a key no file
+			// spells.
+			v.recordAnnotations(
+				constraint.AuthoringDocumentRelease, "",
+				constraint.AuthoredSite{ScopePath: path}, nil, b.Annotations)
 		}
 		declared := types.BoundaryComponents(b)
 		for name, bc := range declared.All() {
-			components[name] = bc
+			v.releaseComponents[name] = bc
+		}
+		for _, decl := range types.BoundaryComponentDeclarations(b) {
+			site := constraint.AuthoredSite{ScopePath: path}
+			var routed []string
+			// The scope's own component axis is what the boundary spells under
+			// `components`, so membership there is the exact discriminator — not the
+			// declaration's key path, which would be read for its shape. An id on
+			// both axes is a document placing one node twice, which the Release
+			// refuses when it loads, so it does not reach here.
+			if _, direct := b.Components.Get(decl.ID); direct {
+				site.Component = decl.ID
+			} else {
+				routed = decl.Locator
+			}
+			v.recordAnnotations(
+				constraint.AuthoringDocumentRelease, decl.ID,
+				site, routed, decl.Component.Annotations)
 		}
 		for name, child := range b.Boundaries.All() {
 			next := name
@@ -317,6 +407,89 @@ func collectBoundaryContent(
 		}
 		walk(start, b)
 	}
+}
+
+// recordAnnotations appends one instance per routed value an annotation block
+// declares, and records the value each instance carries.
+//
+// A structured value contributes one instance per subkey, because each subkey is
+// a separate authored contribution routed to its own destination and judged on
+// its own; a value written bare contributes one instance with no subkey. Both
+// are recorded under the coordinates the enumerated instance carries, in one
+// step, so the two answers about one entry cannot disagree.
+//
+// An entry carrying no value at all routes nothing and is deliberately not
+// recorded. That is how an author removes an entry a scope above declared, so a
+// rule invoked for one would be judging a removal.
+//
+// A subkey whose own value is absent is left out on the same reading: it is the
+// per-subkey form of the same opt-out, and the compiler routes nothing for it.
+func (v *normalizedView) recordAnnotations(
+	document string,
+	component string,
+	site constraint.AuthoredSite,
+	routedKeys []string,
+	annotations types.OrderedMap[*types.AnnotationValue],
+) {
+	for key, value := range annotations.All() {
+		switch {
+		case value.IsStructured():
+			for subkey, subvalue := range value.Structured.All() {
+				if subvalue == nil {
+					continue
+				}
+				v.recordAnnotation(document, component, site, routedKeys, key, subkey, subvalue)
+			}
+		case value.IsScalar():
+			v.recordAnnotation(document, component, site, routedKeys, key, "", *value.Scalar)
+		}
+	}
+}
+
+// recordAnnotation appends one enumerated entry and the value it carries.
+func (v *normalizedView) recordAnnotation(
+	document string,
+	component string,
+	site constraint.AuthoredSite,
+	routedKeys []string,
+	key string,
+	subkey string,
+	value any,
+) {
+	v.annotations = append(v.annotations, constraint.AuthoredAnnotationInstance{
+		Document:   document,
+		Component:  component,
+		Site:       site,
+		RoutedKeys: routedKeys,
+		Key:        key,
+		Subkey:     subkey,
+	})
+	v.annotationValues[authoredAnnotationCoordinates{
+		document:  document,
+		scope:     site.ScopePath,
+		component: component,
+		key:       key,
+		subkey:    subkey,
+	}] = value
+}
+
+// AuthoredAnnotationSubvalue returns the value an author wrote at one annotation
+// entry, and whether this presentation holds a routed value there at all.
+func (v *normalizedView) AuthoredAnnotationSubvalue(
+	document string,
+	scope string,
+	component string,
+	key string,
+	subkey string,
+) (any, bool) {
+	value, ok := v.annotationValues[authoredAnnotationCoordinates{
+		document:  document,
+		scope:     scope,
+		component: component,
+		key:       key,
+		subkey:    subkey,
+	}]
+	return value, ok
 }
 
 // resolveContracts resolves every declared contract this presentation can be
