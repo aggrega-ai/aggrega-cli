@@ -11,6 +11,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
@@ -89,6 +90,7 @@ func TestProvidesPublicationAdvisoryReportsWithoutHaltingTheBuild(t *testing.T) 
 		AggregateRawBytes: aggBytes,
 		AggregatePath:     fullstackAggregatePath,
 		WorkspaceConfig:   fixtureWorkspaceConfig(),
+		PluginPins:        pluginpath.NoPins(),
 		CompilerVersion:   fixtureCompilerVersion,
 	}
 	baseBinding := cat.RecipeLookupWithManifest(manifest).Recipe

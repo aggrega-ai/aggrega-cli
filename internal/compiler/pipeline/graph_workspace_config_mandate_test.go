@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
@@ -27,6 +28,20 @@ import (
 func defaultWorkspaceConfigForTest() *workspaceconfig.Config {
 	c := workspaceconfig.Default()
 	return &c
+}
+
+// fixtureInputs is the inputs a fixture with no workspace at all runs against:
+// the defaults in force, and no pin source, both stated rather than omitted.
+//
+// It exists because both are REQUIRED at the entry, so every fixture would
+// otherwise repeat the same two assignments — and a repetition is what drifts
+// when a third mandate is added. A fixture needing more fields starts from this
+// value and sets them.
+func fixtureInputs() Inputs {
+	return Inputs{
+		WorkspaceConfig: defaultWorkspaceConfigForTest(),
+		PluginPins:      pluginpath.NoPins(),
+	}
 }
 
 // TestTheGraphEntryRefusesARunThatSuppliedNoWorkspaceConfiguration drives the one
@@ -110,6 +125,7 @@ func TestTheGraphEntryAcceptsASuppliedButEmptyWorkspaceConfiguration(t *testing.
 			AggregatePath:     fixture.aggregatePath,
 			ReleasePath:       fixture.releasePath,
 			WorkspaceConfig:   &workspaceconfig.Config{},
+			PluginPins:        pluginpath.NoPins(),
 			CompilerVersion:   invocationVersion,
 		},
 		cat.CatalogLookup(),

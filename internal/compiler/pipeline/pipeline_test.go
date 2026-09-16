@@ -13,6 +13,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
@@ -87,6 +88,7 @@ func TestRunPipelineProducesExpectedArtifactsFromInMemoryInputs(t *testing.T) {
 			AggregateRawBytes: aggBytes,
 			AggregatePath:     fullstackAggregatePath,
 			WorkspaceConfig:   fixtureWorkspaceConfig(),
+			PluginPins:        pluginpath.NoPins(),
 			CompilerVersion:   fixtureCompilerVersion,
 		},
 		wiredLookup(cat, manifest),
@@ -190,6 +192,7 @@ func TestRunPipelineReturnsEmptyTraceWhenIncludeTraceFalse(t *testing.T) {
 			Release: rel, Manifest: manifest,
 			AggregateRawBytes: aggBytes, AggregatePath: fullstackAggregatePath,
 			WorkspaceConfig: fixtureWorkspaceConfig(),
+			PluginPins:      pluginpath.NoPins(),
 			CompilerVersion: fixtureCompilerVersion,
 		},
 		wiredLookup(cat, manifest), cat.RecipeLookupWithManifest(manifest), cat.SubAggregateLoader(),
@@ -234,6 +237,7 @@ func TestRunPipelinePopulatesTraceWhenIncludeTraceTrue(t *testing.T) {
 			Release: rel, Manifest: manifest,
 			AggregateRawBytes: aggBytes, AggregatePath: fullstackAggregatePath,
 			WorkspaceConfig: fixtureWorkspaceConfig(),
+			PluginPins:      pluginpath.NoPins(),
 			CompilerVersion: fixtureCompilerVersion,
 		},
 		wiredLookup(cat, manifest), cat.RecipeLookupWithManifest(manifest), cat.SubAggregateLoader(),
@@ -297,6 +301,7 @@ func TestRunPipelineWritesNoFilesystemArtifacts(t *testing.T) {
 			Release: rel, Manifest: manifest,
 			AggregateRawBytes: aggBytes, AggregatePath: fullstackAggregatePath,
 			WorkspaceConfig: fixtureWorkspaceConfig(),
+			PluginPins:      pluginpath.NoPins(),
 			CompilerVersion: fixtureCompilerVersion,
 		},
 		wiredLookup(cat, manifest), cat.RecipeLookupWithManifest(manifest), cat.SubAggregateLoader(),

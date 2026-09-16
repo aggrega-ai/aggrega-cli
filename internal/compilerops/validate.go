@@ -12,6 +12,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
@@ -226,6 +227,12 @@ func Validate(ctx context.Context, in ValidateInputs) *ValidateResult {
 		// never written through.
 		WorkspaceConfig: &in.WorkspaceConfig,
 		Lockfile:        in.Lockfile,
+		// A Release-scoped validation runs the same resolution a build of the same
+		// documents runs, so it makes the same claim: the recorded identities
+		// govern what its plugins resolve to. Validating against a different pin
+		// model from the build would report on a composition the build never
+		// produces.
+		PluginPins:      pluginpath.RecordedPins(lockfile.PluginPins(in.Lockfile)),
 		CompilerVersion: in.CompilerVersion,
 	}
 	// The governance attachment list the pipeline dispatches and the digests

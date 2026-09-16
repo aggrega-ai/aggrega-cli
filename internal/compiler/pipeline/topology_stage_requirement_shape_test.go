@@ -15,6 +15,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/analyzer"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
@@ -75,6 +76,7 @@ func compileMalformedWorkspace(
 			AggregatePath:     invocationAggregatePath,
 			ReleasePath:       invocationReleasePath,
 			WorkspaceConfig:   defaultWorkspaceConfigForTest(),
+			PluginPins:        pluginpath.NoPins(),
 			CompilerVersion:   invocationVersion,
 		},
 		cat.CatalogLookup(),

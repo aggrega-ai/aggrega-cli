@@ -147,7 +147,7 @@ func buildHostScopeFixture(t *testing.T, manifestPath, releasePath string) hostS
 	}
 	recipeLookup := cat.RecipeLookupWithManifest(manifest)
 	lookup := buildEntityPluginLookup(
-		Inputs{WorkspaceConfig: defaultWorkspaceConfigForTest()}, catalogLookup,
+		fixtureInputs(), catalogLookup,
 	)
 
 	// The provider dispatch the build itself uses, rather than a stand-in. The

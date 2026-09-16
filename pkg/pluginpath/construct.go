@@ -94,6 +94,70 @@ type PinMaps struct {
 	BundleDigests map[string]string
 }
 
+// PinSource is a construction site's written answer to where its plugin pins
+// come from. A surface that drives the compiler states one, so the answer is read
+// off the site rather than inferred from which workspace handles that site happens
+// to hold.
+//
+// It exists because the two facts it separates used to be one value. A site whose
+// pin source recorded nothing and a site with no pin source at all both produced
+// an empty PinMaps under the pinned posture — a construction asserting that a
+// recorded identity governs what it resolves while holding nothing to address the
+// versioned cache slot with. Those are different facts, and only one of them is a
+// state a caller meant. Threading a source makes the second unrepresentable: a
+// site states where its pins come from, and a site that states nothing is refused
+// where it enters the compiler rather than read as the first.
+//
+// The value names a SOURCE and never a posture. The posture follows from the
+// source, which is what leaves a caller that derives its posture from its own pin
+// set free to go on doing so by calling [NewResolver] directly — the publish-time
+// linter does exactly that, because naming a pinned posture over an empty set
+// would read as a pin nobody has.
+//
+// The zero value is deliberately not a usable source. A source is obtained from
+// [NoPins] or [RecordedPins], so "there are none" is something a caller writes
+// rather than something an omission produces.
+type PinSource struct {
+	posture PinPosture
+	pins    PinMaps
+}
+
+// NoPins is the written answer "no recorded identity governs what this site
+// resolves". It carries the pin-free base posture, under which a reference that
+// resolves without a pin has found the state the site declared rather than a gap,
+// so no unrecorded-identity advisory is raised for it.
+//
+// It is the honest source for a surface that has no record to read: one that is
+// producing the record rather than consuming it, and a harness that synthesizes
+// its documents in memory and runs against no workspace at all.
+func NoPins() *PinSource {
+	return &PinSource{posture: PinPostureNone}
+}
+
+// RecordedPins is the written answer "the identities recorded for this workspace
+// govern what this site resolves", carrying the maps already derived from that
+// record. It carries the pinned posture, under which every tier's resolved bytes
+// verify against the supplied digests and a reference resolving without one is
+// worth telling the reader about.
+//
+// An empty PinMaps is a valid argument and keeps its full meaning: a record that
+// pins no plugin yet still declares that pins govern here. That is precisely the
+// fact [NoPins] does not state, and keeping the two spellings apart is the whole
+// purpose of the type.
+func RecordedPins(pins PinMaps) *PinSource {
+	return &PinSource{posture: PinPostureLockfile, pins: pins}
+}
+
+// Resolver constructs the Resolver this pin source describes, over the tier
+// sources the caller supplies.
+//
+// It is the only way to turn a source into a Resolver, so the posture and the
+// maps cannot be drawn from different sources and recombined. It routes through
+// [NewResolver], which stays the single construction entry point.
+func (s *PinSource) Resolver(rc ResolutionContext) Resolver {
+	return NewResolver(rc, s.posture, s.pins)
+}
+
 // NewResolver is the single construction entry point for a Resolver. It composes
 // the caller-neutral tier sources with an explicitly-named pin posture and the
 // already-derived pin maps, so no site hand-populates the struct and the

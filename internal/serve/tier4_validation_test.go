@@ -18,6 +18,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/analyzer"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/yamlpos"
 )
@@ -612,6 +613,7 @@ func TestRunTier4Validation_CrossFileAnalyzerViolationsFilteredToValidatedFile(t
 			AggregateRawBytes: resolved.AggBytes,
 			AggregatePath:     relAggPath,
 			WorkspaceConfig:   &wsCfg,
+			PluginPins:        pluginpath.NoPins(),
 		},
 		view.AsCatalogLookup(),
 		view.RecipeLookupWithManifest(resolved.Manifest).Recipe,

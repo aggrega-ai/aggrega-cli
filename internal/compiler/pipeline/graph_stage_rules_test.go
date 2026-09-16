@@ -16,6 +16,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/analyzer"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 )
 
@@ -94,6 +95,7 @@ func compileWorkspace(
 			// the omission rather than the compiler.
 			ReleasePath:     fixture.releasePath,
 			WorkspaceConfig: defaultWorkspaceConfigForTest(),
+			PluginPins:      pluginpath.NoPins(),
 			CompilerVersion: invocationVersion,
 		},
 		cat.CatalogLookup(),

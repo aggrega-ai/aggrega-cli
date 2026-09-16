@@ -16,6 +16,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/compactform"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
@@ -548,6 +549,11 @@ func runRenderTiers(ctx context.Context, res *EntityResult, h entityHarness, loo
 		AggregateRawBytes: h.aggregateBytes,
 		AggregatePath:     h.aggregatePath,
 		WorkspaceConfig:   &wsCfg,
+		// No workspace means no recorded closure, so nothing was ever going to
+		// pin what this harness resolves. Written rather than omitted: the
+		// pin-free source is what this probe MEANS, and an omission would be a
+		// different fact wearing the same face.
+		PluginPins: pluginpath.NoPins(),
 	}
 
 	// Tier 2: resolution, guards, IR construction — no render. A missing

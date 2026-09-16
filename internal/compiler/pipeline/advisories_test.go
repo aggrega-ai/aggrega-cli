@@ -16,6 +16,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 )
 
@@ -160,6 +161,7 @@ func tier4OverFixtureWithErr(t *testing.T, aggregate []byte) (*pipeline.Tier4Res
 			AggregateRawBytes: aggregate,
 			AggregatePath:     advisoryOverrideAggregatePath,
 			WorkspaceConfig:   fixtureWorkspaceConfig(),
+			PluginPins:        pluginpath.NoPins(),
 			CompilerVersion:   fixtureCompilerVersion,
 		}, wiredLookup(cat, manifest), cat.RecipeLookupWithManifest(manifest).Recipe, nil)
 	})

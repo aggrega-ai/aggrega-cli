@@ -154,7 +154,7 @@ func buildStepFixture(t *testing.T, manifestPath, releasePath string) stepBuild 
 	recipeLookup := cat.RecipeLookupWithManifest(manifest)
 
 	lookup := buildEntityPluginLookup(
-		Inputs{WorkspaceConfig: defaultWorkspaceConfigForTest()}, catalogLookup,
+		fixtureInputs(), catalogLookup,
 	)
 
 	result, renderErr := renderStepFixture(t, out, catalogLookup, recipeLookup, lookup)

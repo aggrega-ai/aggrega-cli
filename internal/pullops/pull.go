@@ -25,6 +25,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/egress"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginstrust"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pullverify"
 	"github.com/aggrega-ai/aggrega-cli/pkg/registryhost"
@@ -914,6 +915,12 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 			// whose bytes are not already cached halts rather than resolving to
 			// something unpinned.
 			WorkspaceRoot: workspaceRoot,
+			// Stated rather than left out, and pin-free rather than pinned-but-empty.
+			// This pass produces the record, so no recorded identity governs what it
+			// resolves, and a pinned claim here would report every guest it resolves
+			// as missing a digest that was never going to exist yet — advising a pull
+			// from inside the pull.
+			PluginPins: pluginpath.NoPins(),
 		},
 		pullLookup,
 		lazyView.RecipeLookupWithManifest(manifest).Recipe,

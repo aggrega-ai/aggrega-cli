@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 )
 
@@ -162,6 +163,7 @@ func compileDocuments(t *testing.T, catalogPath, releasePath string, aggregate [
 			AggregatePath:     invocationAggregatePath,
 			ReleasePath:       releasePath,
 			WorkspaceConfig:   defaultWorkspaceConfigForTest(),
+			PluginPins:        pluginpath.NoPins(),
 			CompilerVersion:   invocationVersion,
 		},
 		cat.CatalogLookup(),

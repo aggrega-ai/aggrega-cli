@@ -19,6 +19,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/plugintype"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
@@ -107,6 +108,7 @@ func loadAdHocSocketForSockets(t *testing.T) (pipeline.Inputs, resolver.CatalogL
 		AggregateRawBytes: aggBytes,
 		AggregatePath:     aggregatePath,
 		WorkspaceConfig:   fixtureWorkspaceConfig(),
+		PluginPins:        pluginpath.NoPins(),
 		CompilerVersion:   fixtureCompilerVersion,
 	}, cat.CatalogLookup(), cat.RecipeLookupWithManifest(manifest), cat.SubAggregateLoader()
 }

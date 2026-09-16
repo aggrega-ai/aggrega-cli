@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/plugintype"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -89,11 +90,26 @@ var transformGuardRunners = []struct {
 // transformGuardInputs builds pipeline inputs carrying exactly one transform
 // attachment in the given role, with lf as the pass's lockfile — nil for a pass
 // that has none to read.
+//
+// The pin source is derived from lf so each case states what its own pass means,
+// exactly as the two production surfaces these cases model do. A pass with no
+// record names a pin-free source: it is the pass that WRITES the record, so no
+// recorded identity governs what it resolves. A pass handed a record names a
+// recorded source over that record's derived pins, so the record governs
+// whatever it happens to pin — an empty one included.
+//
+// Naming it is not optional here. These runners reach the resolver construction
+// directly rather than through the graph entry, so the entry's refusal never runs
+// for them and an omitted source is read by nothing that could report it.
 func transformGuardInputs(t *testing.T, role plugintype.Role, lf *lockfile.Lockfile) Inputs {
 	t.Helper()
 	cfg := &workspaceconfig.Config{}
 	cfg.Plugins.Governance = []workspaceconfig.PluginRef{{URI: transformGuardCoordinate, Role: role}}
-	return Inputs{WorkspaceConfig: cfg, WorkspaceRoot: t.TempDir(), Lockfile: lf}
+	pins := pluginpath.NoPins()
+	if lf != nil {
+		pins = pluginpath.RecordedPins(lockfile.PluginPins(lf))
+	}
+	return Inputs{WorkspaceConfig: cfg, WorkspaceRoot: t.TempDir(), Lockfile: lf, PluginPins: pins}
 }
 
 // TestTransformSocketResolvesFromTheCacheWhenNoLockfileSuppliesTheAddress holds

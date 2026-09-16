@@ -9,6 +9,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
@@ -95,8 +96,14 @@ func BuildToBuffer(ctx context.Context, in BuildInputs, opts pipeline.Options) (
 		// A pointer into this call's own inputs value, so the composition below
 		// re-points it at the copy it rewrites and the caller's configuration is
 		// never written through.
-		WorkspaceConfig:                  &in.WorkspaceConfig,
-		Lockfile:                         in.Lockfile,
+		WorkspaceConfig: &in.WorkspaceConfig,
+		Lockfile:        in.Lockfile,
+		// A build consumes a recorded closure, so the recorded identities govern
+		// what its plugins resolve to. That stays true of a build whose record
+		// pins no plugin yet: the claim is that pins govern here, not that any
+		// exist, which is what keeps an unrecorded guest worth reporting on this
+		// path.
+		PluginPins:                       pluginpath.RecordedPins(lockfile.PluginPins(in.Lockfile)),
 		WorkspaceRoot:                    in.WorkspaceRoot,
 		MappingLibraries:                 view.MappingLibraries(),
 		WorkloadLibraries:                view.WorkloadLibraries(),

@@ -124,6 +124,38 @@ type Inputs struct {
 	Lockfile      *lockfile.Lockfile
 	WorkspaceRoot string
 
+	// PluginPins is where this run's plugin pins come from. It is REQUIRED by the
+	// graph entry, which refuses an unset one rather than reading a zero value in
+	// its place.
+	//
+	// A pointer, and the pointer is the whole point: a caller that has no pin
+	// source and a caller that forgot to name one are different facts, and an
+	// empty pin map reports the second as the first. The pins address the
+	// VERSIONED cache slot a plugin's bytes live in, so a construction holding
+	// none probes the unversioned slot and misses a guest that is on disk — and
+	// under a pinned posture it does so while asserting that a recorded identity
+	// governs what it resolves. A caller with genuinely nothing to pin against
+	// says so with pluginpath.NoPins, which is a value it WRITES; the omission it
+	// used to be indistinguishable from is now refused.
+	//
+	// It sits beside Lockfile rather than being derived from it because the two
+	// answer different questions. Three other readers need the record itself —
+	// build-time source-artifact resolution, the transform tier's cache
+	// fall-through, and the reconstruction of the recorded transform attachments —
+	// and none of them is a pin. A surface whose pins come from the record derives
+	// them with lockfile.PluginPins and hands the result to
+	// pluginpath.RecordedPins, so a record that pins nothing yet still declares
+	// that pins govern, which is exactly the fact a pin-free source does not
+	// state.
+	//
+	// That refusal is what the read below the entry rests on: it carries no nil
+	// test of its own, deliberately, because substituting a pin-free source for an
+	// unset one would restore the plausible-but-wrong zero the refusal exists to
+	// stop. A caller reaching one of those helpers directly rather than through
+	// the entry therefore supplies a pin source as well, an explicitly pin-free
+	// one where that is what it means.
+	PluginPins *pluginpath.PinSource
+
 	// MappingLibraries is the resolved MappingLibrary set (local catalog plus
 	// lockfile-pinned libraries bridged in at load), keyed by bare name. It
 	// flows to the renderer so a Recipe / FeatureRecipe valuesMapping's
@@ -1068,6 +1100,17 @@ func buildGraphCollectingFindings(
 			"the label-transform and annotation-transform roles are read from it, so a " +
 			"graph built without one silently skips them")
 	}
+	// The same shape one field over, and refused for the same reason. The pins
+	// address the versioned cache slot a plugin's bytes live in, so a run that
+	// names no pin source resolves against an empty address and misses a guest
+	// that is on disk — while a pinned posture over that emptiness states the
+	// opposite, that a recorded identity governs here. A caller with nothing to
+	// pin against says so, and saying so is what this refusal asks for.
+	if inputs.PluginPins == nil {
+		return stderrors.New("graph build: no plugin pin source was supplied; " +
+			"the pins address the versioned cache slot a plugin's bytes are read from, " +
+			"so a graph built without one resolves plugins against an empty address")
+	}
 	return resolveAndFlatten(ctx, inputs, catalogLookup, recipeFor, subAggregateLoader,
 		func(resolveResult *resolver.ResolveResult, topoResult *topology.TopologyResult) error {
 			// Step 2b: label-transform governance role. Config-driven off the
@@ -1294,43 +1337,36 @@ func RunTier4Pipeline(
 //
 // buildPluginResolver constructs the hermetic build-time plugin-resolution
 // cascade from the pipeline inputs: the catalog's co-located artifact
-// directories, the workspace root + resolved cache directory, and the lockfile
-// digest pins. The
+// directories, the workspace root + resolved cache directory, and the pin source
+// the caller wrote onto the inputs. The
 // puller is left nil — the build never fetches from a registry (AOT purity), so
-// a cache miss is a loud halt rather than a network round-trip. Pins make every
-// tier's resolved bytes verify against the lockfile digest, so a drifted or
-// substituted artifact halts on the pin regardless of which tier produced it.
-// For a plugin row that carries a verified signature fact, the recorded
-// signature-bundle digest is threaded through too, so the resolver re-hashes the
-// cached bundle blob against it before the guest loads — an offline integrity
-// gate that re-runs no signature verification. colocatedDirs is the catalog's artifact-reference → catalog-
+// a cache miss is a loud halt rather than a network round-trip.
+//
+// The pins and the posture both come from that source and are never derived here,
+// so this function cannot turn a caller that supplied no source into one that
+// pins nothing. Where the source is a recorded closure, its pins make every
+// tier's resolved bytes verify against the recorded digest, so a drifted or
+// substituted artifact halts on the pin regardless of which tier produced it, and
+// a row carrying a verified signature fact also carries the recorded
+// signature-bundle digest, which the resolver re-hashes the cached bundle blob
+// against before the guest loads — an offline integrity gate that re-runs no
+// signature verification. Where the source is pin-free, none of that is in force
+// and the site has declared as much.
+//
+// It reads the pin source with no nil test, deliberately: the entry refuses an
+// unset one, and a test here would substitute a pin-free source for an unset one
+// at exactly the site the refusal protects.
+//
+// colocatedDirs is the catalog's artifact-reference → catalog-
 // directory map, feeding the co-located tier so a binary that embeds no core
 // guests resolves them from beside their catalog entities; nil at a socket with
 // no catalog access, which disables that tier.
 func buildPluginResolver(inputs Inputs, colocatedDirs map[string]string) pluginpath.Resolver {
-	var pins pluginpath.PinMaps
-	if inputs.Lockfile != nil && len(inputs.Lockfile.Plugins) > 0 {
-		pinDigests := make(map[string]string, len(inputs.Lockfile.Plugins))
-		versions := make(map[string]string, len(inputs.Lockfile.Plugins))
-		bundleDigests := make(map[string]string, len(inputs.Lockfile.Plugins))
-		for _, wp := range inputs.Lockfile.Plugins {
-			pinDigests[wp.URI] = wp.Digest
-			versions[wp.URI] = wp.ResolvedVersion
-			if wp.Signature != nil && wp.Signature.BundleDigest != "" {
-				bundleDigests[wp.URI] = wp.Signature.BundleDigest
-			}
-		}
-		pins.Pins = pinDigests
-		pins.PinVersions = versions
-		if len(bundleDigests) > 0 {
-			pins.BundleDigests = bundleDigests
-		}
-	}
-	return pluginpath.NewResolver(pluginpath.ResolutionContext{
+	return inputs.PluginPins.Resolver(pluginpath.ResolutionContext{
 		ColocatedDirs: colocatedDirs,
 		WorkspaceRoot: inputs.WorkspaceRoot,
 		CacheDir:      inputs.WorkspaceConfig.ResolvedArtifactCacheDir(),
-	}, pluginpath.PinPostureLockfile, pins)
+	})
 }
 
 // buildEntityPluginLookup fronts the build-time artifact cascade with the

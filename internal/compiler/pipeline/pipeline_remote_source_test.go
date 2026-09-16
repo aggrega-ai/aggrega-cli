@@ -20,6 +20,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourcecache"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/cacheslot"
@@ -157,6 +158,11 @@ func TestRunPipelineResolvesRemoteSourceThroughProductionPath(t *testing.T) {
 	}
 	cat := loadRemoteSrcCatalog(t)
 
+	// The pin source is derived from this pass's own record, which is what the
+	// build surface does. Both halves of this proof derive it the same way, so the
+	// lockfile stays the single thing that differs between them.
+	lf := remoteSrcLockfile(digest)
+
 	result, err := runPipelineCompleted(
 		context.Background(),
 		pipeline.Inputs{
@@ -165,7 +171,8 @@ func TestRunPipelineResolvesRemoteSourceThroughProductionPath(t *testing.T) {
 			AggregateRawBytes: aggBytes,
 			AggregatePath:     remoteSrcAggregatePath,
 			WorkspaceConfig:   fixtureWorkspaceConfig(),
-			Lockfile:          remoteSrcLockfile(digest),
+			Lockfile:          lf,
+			PluginPins:        pluginpath.RecordedPins(lockfile.PluginPins(lf)),
 			WorkspaceRoot:     root,
 			CompilerVersion:   fixtureCompilerVersion,
 		},
@@ -224,7 +231,10 @@ func TestRunPipelineRemoteSourceFailsWithoutLockfile(t *testing.T) {
 			AggregatePath:     remoteSrcAggregatePath,
 			WorkspaceConfig:   fixtureWorkspaceConfig(),
 			CompilerVersion:   fixtureCompilerVersion,
-			// Lockfile + WorkspaceRoot intentionally unset.
+			// Lockfile + WorkspaceRoot intentionally unset. The pin source is
+			// derived from that absent record exactly as the other half derives it
+			// from a present one, so this proof still varies one thing.
+			PluginPins: pluginpath.RecordedPins(lockfile.PluginPins(nil)),
 		},
 		cat.CatalogLookup(),
 		cat.RecipeLookupWithManifest(manifest),

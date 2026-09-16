@@ -17,6 +17,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/plugintype"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
@@ -104,6 +105,7 @@ func loadGovernanceWire(t *testing.T, variant string) (pipeline.Inputs, resolver
 		AggregateRawBytes: aggBytes,
 		AggregatePath:     aggPath,
 		WorkspaceConfig:   fixtureWorkspaceConfig(),
+		PluginPins:        pluginpath.NoPins(),
 		CompilerVersion:   fixtureCompilerVersion,
 	}
 	return inputs, cat.CatalogLookup(), cat.RecipeLookupWithManifest(manifest), cat.SubAggregateLoader()

@@ -21,7 +21,7 @@ import (
 // gate and reaches entity translation: the form check layers with, it does not
 // replace, entity existence.
 func TestBuildEntityPluginLookup_EntityOnlyFormGate(t *testing.T) {
-	inputs := Inputs{WorkspaceConfig: defaultWorkspaceConfigForTest()}
+	inputs := fixtureInputs()
 
 	entityConsulted := false
 	catalogLookup := resolver.CatalogLookup{

@@ -194,6 +194,13 @@ func loadInputs(in Input) (*loadedWorkspace, error) {
 			// Plugin entity in the catalog.
 			PluginPathLookup: in.PluginPathLookup,
 			WorkspaceConfig:  &wsCfg,
+			// A fixture workspace has no recorded closure, so no recorded identity
+			// was ever going to govern what it resolves; its guests come from the
+			// embedded set or from beside their catalog entities. Written rather
+			// than omitted, for the same reason the configuration above is: a
+			// fixture that stated nothing would be standing in for a build that
+			// cannot exist.
+			PluginPins: pluginpath.NoPins(),
 		},
 		catalogLookup:      cat.CatalogLookup(),
 		recipeLookup:       cat.RecipeLookupWithManifest(manifest),

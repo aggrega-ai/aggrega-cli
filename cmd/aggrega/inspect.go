@@ -22,6 +22,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/redact"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
@@ -828,6 +829,14 @@ func renderReleaseFile(ctx context.Context, rw *workspaceconfig.ResolvedWorkspac
 			// thing this command promises not to do.
 			WorkspaceConfig: &wsCfg,
 			WorkspaceRoot:   wsRoot,
+			// A pinned claim over an empty set, and both halves are deliberate.
+			// This command inspects a workspace whose plugins a recorded closure
+			// IS meant to govern, so the claim is the true one and a pin-free
+			// source would state the opposite. It holds none of those pins yet,
+			// because this path reads the catalog without the record — so an
+			// unrecorded-identity advisory is raised for every guest it resolves,
+			// which is the honest report of that gap rather than a silence.
+			PluginPins: pluginpath.RecordedPins(pluginpath.PinMaps{}),
 		},
 		catalogLookup,
 		cat.RecipeLookupWithManifest(manifest).Recipe,
