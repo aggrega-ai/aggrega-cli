@@ -216,21 +216,29 @@ var errUsesPrunedComponent = cerrors.Register("uses-target-not-active", cerrors.
 	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
-// ErrReexportCycle fires from flattenAggregate when resolving a re-exported
-// component alias walks a chain of exported aliases that loops back on itself
-// before reaching a concrete node. A parent aggregate may re-publish a child
-// module's exported alias under a new name; resolving that re-export follows
-// the child's alias table to the underlying node. An acyclic inclusion tree
-// makes such a loop unconstructible through normal authoring, so this is a
-// backstop: rather than following the chain forever, the walk halts (Invariant
-// 4). The wrapped error names the alias chain it walked so the author can see
-// where the references close the loop.
+// ErrReexportCycle fires from resolveExportTarget when the alias chain it walks
+// revisits an alias it has already visited, so following the chain further
+// would never land on a node. An Aggregate may re-publish a module's exported
+// alias under a name of its own, and resolving such an alias follows the chain
+// of re-publications to the node it ultimately names.
+//
+// Nothing an author writes assembles a chain that loops. The inclusion tree is
+// acyclic and every export value is qualified more deeply than the frame it is
+// resolved in, so a well-formed chain strictly descends and terminates; the
+// visited set backstops an alias table assembled by something other than the
+// ordinary authoring path, and the walk halts rather than following it forever
+// (Invariant 4). The wrapped error names the chain it walked, which is a note
+// for whoever is debugging the build rather than an authoring instruction.
 func ErrReexportCycle() error { return errReexportCycle }
 
 var errReexportCycle = cerrors.Register("reexport-cycle", cerrors.Meta{
 	ShortCode: "E0070",
 	Message:   "re-exported component alias forms a cycle",
-	RulePlace: cerrors.RuleOverAuthoredInput(),
+	RulePlace: cerrors.NotARule("A re-published component alias table walked back to an alias it had " +
+		"already visited, so following it further would never land on a node. It reports an invariant " +
+		"of this program's own construction: the inclusion tree is acyclic and every export value is " +
+		"qualified more deeply than the frame it is resolved in, so no authored Aggregate assembles a " +
+		"chain that loops."),
 })
 
 // ErrMutatorPatchRejected fires when a mutator plugin returns a JSON Patch
