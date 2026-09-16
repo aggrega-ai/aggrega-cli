@@ -448,7 +448,7 @@ var coordinateAccessors = map[string][]string{
 	},
 	"node":   {"NodeID"},
 	"socket": {"SocketName"},
-	"edge":          {"NodeID", "SocketName", "AliasName"},
+	"edge":   {"NodeID", "SocketName", "AliasName"},
 	"carried-connection": {
 		"NodeID", "CarrierKind", "CarrierAttachment", "SocketName", "AliasName", "TargetNodeID",
 	},

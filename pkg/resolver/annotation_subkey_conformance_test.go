@@ -71,14 +71,14 @@ func TestSubkeyConformance_FullValidationNotTypeOnly(t *testing.T) {
 		value   string
 		wantErr bool
 	}{
-		{"level", "info", false},  // conforms
-		{"level", "bogus", true},  // enum violation (type-only would pass)
-		{"port", "8080", false},   // conforms
-		{"port", "0", true},       // below minimum (type-only would pass)
-		{"port", "70000", true},   // above maximum
-		{"name", "api", false},    // conforms
-		{"name", "API", true},     // pattern violation (type-only would pass)
-		{"missing", "x", true},    // the binding routes it; the Feature declares none
+		{"level", "info", false}, // conforms
+		{"level", "bogus", true}, // enum violation (type-only would pass)
+		{"port", "8080", false},  // conforms
+		{"port", "0", true},      // below minimum (type-only would pass)
+		{"port", "70000", true},  // above maximum
+		{"name", "api", false},   // conforms
+		{"name", "API", true},    // pattern violation (type-only would pass)
+		{"missing", "x", true},   // the binding routes it; the Feature declares none
 	}
 	for _, c := range cases {
 		aggregate := aggregateAnnotating(t, fmt.Sprintf(
