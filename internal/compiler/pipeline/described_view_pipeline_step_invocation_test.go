@@ -19,7 +19,6 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
-	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
 // The workspace these proofs compile. It is its own fixture because no other one
@@ -155,7 +154,7 @@ func buildStepFixture(t *testing.T, manifestPath, releasePath string) stepBuild 
 	recipeLookup := cat.RecipeLookupWithManifest(manifest)
 
 	lookup := buildEntityPluginLookup(
-		Inputs{WorkspaceConfig: workspaceconfig.Default()}, catalogLookup,
+		Inputs{WorkspaceConfig: defaultWorkspaceConfigForTest()}, catalogLookup,
 	)
 
 	result, renderErr := renderStepFixture(t, out, catalogLookup, recipeLookup, lookup)

@@ -479,10 +479,14 @@ func TestCelEmbedded_LabelTransformDrivesFeatureAttachment(t *testing.T) {
 	catDirs := []string{catalogDir, standardCatalogDir(t)}
 	releasePath := filepath.Join(root, "release.yaml")
 
-	// Negative control: no attachment, so the selector is unsatisfied.
-	errNeg := pullThen(t, root, releasePath, catDirs, "workspace: {}\noffline: true\n", "out-neg")
+	// Negative control: no attachment, so the selector is unsatisfied — and the
+	// refusal is asserted at the acquisition, which is where the rules declared
+	// over the finalised graph are now asked. A workspace the acquisition declines
+	// writes no lockfile, so there is nothing to build afterwards and the fault is
+	// pinned where it is raised.
+	errNeg := pullOnly(t, root, releasePath, catDirs, "workspace: {}\noffline: true\n")
 	if errNeg == nil {
-		t.Fatal("negative control: the feature's selector should be unsatisfied and halt the build")
+		t.Fatal("negative control: the feature's selector should be unsatisfied and the workspace refused")
 	}
 	if !errors.Is(errNeg, analyzer.ErrSelectorViolation()) {
 		t.Fatalf("negative control: want ErrSelectorViolation, got: %v", errNeg)
@@ -504,13 +508,18 @@ func TestCelEmbedded_LabelTransformDrivesFeatureAttachment(t *testing.T) {
 
 // TestCelEmbedded_LabelTransformConfinementIsEnforced drives the guest into the
 // label confinement from both directions a policy can reach it, and requires the
-// build to refuse loudly each time.
+// workspace to be refused loudly each time.
 //
 // The confinement matters because a plugin attached to shape labels is the
 // invited exception to the rule that nothing invents infrastructure: the
-// invitation is exactly as wide as the role. A policy naming a node the build
-// does not have, or dropping a label the node does not carry, is reaching past
-// the label set it was invited to shape.
+// invitation is exactly as wide as the role. A policy naming a node the
+// deployment does not have, or dropping a label the node does not carry, is
+// reaching past the label set it was invited to shape.
+//
+// The refusal is asserted at the acquisition, which is where a label-transform
+// attachment now runs. A workspace the acquisition declines writes no lockfile,
+// so there is no build to assert on afterwards and the fault is pinned where it
+// is raised.
 func TestCelEmbedded_LabelTransformConfinementIsEnforced(t *testing.T) {
 	nonInteractive(t)
 
@@ -519,7 +528,7 @@ func TestCelEmbedded_LabelTransformConfinementIsEnforced(t *testing.T) {
 		policy string
 	}{
 		{
-			name:   "a decision naming a node the build does not have",
+			name:   "a decision naming a node the deployment does not have",
 			policy: `{"labels": [{"node": "no-such-node", "key": "tier", "value": "gold"}]}`,
 		},
 		{
@@ -531,9 +540,9 @@ func TestCelEmbedded_LabelTransformConfinementIsEnforced(t *testing.T) {
 		t.Run(arm.name, func(t *testing.T) {
 			root, catalogDir := celWorkspace(t)
 			writeFixture(t, filepath.Join(root, "policy.cel"), arm.policy)
-			err := pullThen(t, root, filepath.Join(root, "release.yaml"),
+			err := pullOnly(t, root, filepath.Join(root, "release.yaml"),
 				[]string{catalogDir, standardCatalogDir(t)},
-				celAttachment("label-transform", "policy.cel", ""), "out")
+				celAttachment("label-transform", "policy.cel", ""))
 			if err == nil {
 				t.Fatal("a change outside the label set must be refused, not applied")
 			}
@@ -618,6 +627,10 @@ func TestCelEmbedded_AnnotationTransformExpandsIntoAFeature(t *testing.T) {
 // TestCelEmbedded_AnnotationTransformConfinementIsEnforced drives the guest into
 // the annotation confinement: a decision naming a component the deployment does
 // not have must be refused loudly rather than applied or dropped.
+//
+// The refusal is asserted at the acquisition, which is where an
+// annotation-transform attachment now runs; a declined workspace writes no
+// lockfile, so the fault is pinned where it is raised.
 func TestCelEmbedded_AnnotationTransformConfinementIsEnforced(t *testing.T) {
 	nonInteractive(t)
 
@@ -629,9 +642,9 @@ func TestCelEmbedded_AnnotationTransformConfinementIsEnforced(t *testing.T) {
                             "annotation_key": "gate.example.com/tier",
                             "annotation_value": "gold",
                           }]}`)
-	err := pullThen(t, root, filepath.Join(root, "release.yaml"),
+	err := pullOnly(t, root, filepath.Join(root, "release.yaml"),
 		[]string{catalogDir, standardCatalogDir(t)},
-		celAttachment("annotation-transform", "policy.cel", ""), "out")
+		celAttachment("annotation-transform", "policy.cel", ""))
 	if err == nil {
 		t.Fatal("an annotation naming a component the deployment does not have must be refused")
 	}
@@ -695,12 +708,16 @@ func TestCelEmbedded_BothAuthoredFormsShapeTheBuild(t *testing.T) {
 }
 
 // TestCelEmbedded_AMalformedDecisionHaltsRatherThanChangingTheBuild proves a
-// decision the guest cannot read stops the build with a fault naming the file and
+// decision the guest cannot read stops the run with a fault naming the file and
 // what a decision must name — never a silently dropped change.
 //
-// A dropped change is the dangerous failure here: the build would complete,
-// render output, and simply not carry the label or annotation the operator
-// attached a policy to add.
+// A dropped change is the dangerous failure here: the run would complete, render
+// output, and simply not carry the label or annotation the operator attached a
+// policy to add.
+//
+// The halt is asserted at the acquisition, which is where a transform attachment
+// now runs; a declined workspace writes no lockfile, so the fault is pinned
+// where it is raised.
 func TestCelEmbedded_AMalformedDecisionHaltsRatherThanChangingTheBuild(t *testing.T) {
 	nonInteractive(t)
 
@@ -732,11 +749,11 @@ func TestCelEmbedded_AMalformedDecisionHaltsRatherThanChangingTheBuild(t *testin
 		t.Run(arm.name, func(t *testing.T) {
 			root, catalogDir := celAnnotationWorkspace(t)
 			writeFixture(t, filepath.Join(root, "policy.cel"), arm.policy)
-			err := pullThen(t, root, filepath.Join(root, "release.yaml"),
+			err := pullOnly(t, root, filepath.Join(root, "release.yaml"),
 				[]string{catalogDir, standardCatalogDir(t)},
-				celAttachment(arm.role, "policy.cel", ""), "out")
+				celAttachment(arm.role, "policy.cel", ""))
 			if err == nil {
-				t.Fatal("a decision the guest cannot read must stop the build, not be dropped")
+				t.Fatal("a decision the guest cannot read must stop the run, not be dropped")
 			}
 			if !strings.Contains(err.Error(), "policy.cel") {
 				t.Fatalf("the fault must name the file, got: %v", err)

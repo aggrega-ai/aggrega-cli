@@ -105,6 +105,9 @@ func renderRegion(render func(chain, []kind, []tupleShare) ([]byte, error)) ([]b
 	if err := validateFacts(); err != nil {
 		return nil, err
 	}
+	if _, err := deriveCarriers(facts, stages); err != nil {
+		return nil, err
+	}
 	c, err := deriveChain()
 	if err != nil {
 		return nil, err
@@ -127,6 +130,9 @@ var targets = map[string]func(chain, []kind, []tupleShare) ([]byte, error){
 	"subjectkinds_gen.go": func(_ chain, kinds []kind, _ []tupleShare) ([]byte, error) {
 		return emitSubjectKinds(kinds)
 	},
+	"viewbases_gen.go": func(c chain, _ []kind, _ []tupleShare) ([]byte, error) {
+		return emitViewBases(c)
+	},
 	"constraint-placement-table.md": emitPlacementTable,
 }
 
@@ -135,8 +141,9 @@ var targets = map[string]func(chain, []kind, []tupleShare) ([]byte, error){
 //
 // Every derivation runs for every target, so a registry that does not derive —
 // an unoccupied stage, a stage chain with an unordered pair in it, a fact naming
-// no carrier — halts generation of all of them rather than only of the one that
-// happens to read the broken part.
+// no source carrier, a document-stage fact whose authored kind neither derives
+// nor is declared — halts generation of all of them rather than only of the one
+// that happens to read the broken part.
 func generateFor(base string) ([]byte, error) {
 	render, ok := targets[base]
 	if !ok {
@@ -148,6 +155,9 @@ func generateFor(base string) ([]byte, error) {
 			base, strings.Join(sorted(names), ", "))
 	}
 	if err := validateFacts(); err != nil {
+		return nil, err
+	}
+	if _, err := deriveCarriers(facts, stages); err != nil {
 		return nil, err
 	}
 	c, err := deriveChain()

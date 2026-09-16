@@ -405,9 +405,19 @@ var coordinateAccessors = map[string][]string{
 	// what identifies one binding among the registry's entries. A Name suffix
 	// would suggest the binding carries a name of its own beside its key.
 	"annotation-binding": {"AnnotationBindingKey"},
-	"node":               {"NodeID"},
-	"socket":             {"SocketName"},
-	"edge":               {"NodeID", "SocketName", "AliasName"},
+	// The third entry that is not one-to-one, and the reason is the one the
+	// edge row gives applied to an authoring table. A mapping entry's identity
+	// is the tier it is written under, the axis it keys on and the key the
+	// author wrote, taken together: a tier holds two axes and an axis holds many
+	// keys, so a key alone names as many entries as there are axes, and the
+	// entry itself names no scalar a check could use. Each accessor is the
+	// coordinate's own name plus what the value is, and all three are values the
+	// author typed — which is also why the locator is assembled from the same
+	// three.
+	"mapping-entry": {"MappingTier", "MappingAxis", "MappingKey"},
+	"node":          {"NodeID"},
+	"socket":        {"SocketName"},
+	"edge":          {"NodeID", "SocketName", "AliasName"},
 	"carried-connection": {
 		"NodeID", "CarrierKind", "CarrierAttachment", "SocketName", "AliasName", "TargetNodeID",
 	},
@@ -944,6 +954,18 @@ var subjectKindBindings = map[SubjectKind]struct {
 		make: func(f string) Subject {
 			return newDocumentAnnotationBindingSubject(f, "feature.example/rewrite-host",
 				"spec", "mappings", "features", "annotations", "feature.example/rewrite-host")
+		},
+	},
+	SubjectDocumentMappingEntry: {
+		iface: reflect.TypeOf((*DocumentMappingEntrySubject)(nil)).Elem(),
+		// The features tier on the name axis, because it is the arm whose two
+		// authored keys differ from the component tier's: a binding that reached
+		// for the wrong tier or the wrong axis would still produce a locator of
+		// the right depth.
+		make: func(f string) Subject {
+			return newDocumentMappingEntrySubject(f,
+				MappingTierFeatures, MappingAxisName, "logs",
+				"spec", "mappings", "features", "name", "logs")
 		},
 	},
 	SubjectNode: {

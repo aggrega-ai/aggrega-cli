@@ -317,18 +317,25 @@ const offFrameworkEmissionBlocks = false
 // all. [partitionOffFrameworkByDeclaredPlace] performs
 // that subtraction and guards those declarations in both directions.
 //
-// Measured 2026-09-15, at aggrega-cli 6493d6e9: 111, of 280 declared.
+// Measured 2026-09-16, on the tree the revision carrying this edit records: 109,
+// of 280 declared. Re-derive it by running this package verbosely — the census
+// prints every term below, so the figure is checkable rather than remembered.
 //
-// Its composition at that revision, which a bare number cannot carry and which
-// decides how the figure is read: 106 conditions declaring a rule over authored
-// input — the candidates, each of which could be expressed as a check — and 5
-// carrying no registration to declare a place on, which
-// [assertEveryConditionDeclaresItsPlace] names on every run. The second term is
-// counted here rather than subtracted, because a condition with no declaration
-// has an UNKNOWN place rather than a place outside the dispatch, and the safe
-// direction for an unknown is to count it. Subtracting it would let a new
-// unregistered condition raised outside the dispatch escape this bound entirely,
-// which is the one movement the bound exists to refuse.
+// Its composition, quoted from that run rather than recomputed, because a bare
+// number cannot carry how the figure is read: 239 of the 280 declared conditions
+// are emitted outside the dispatch, and 130 of those declare that their rule is
+// not one of the framework's own — 32 owned by another evaluator, 30 reached by
+// no declared stage, 68 naming no rule at all — leaving the 109 this ceiling
+// bounds. What remains is the candidates, each of which could be expressed as a
+// check, plus the conditions carrying nothing to declare a place ON: the 6
+// forwarding declarations and the 5 conditions no registration binds, which
+// [assertEveryConditionDeclaresItsPlace] names on every run and which together
+// cap that second term at 11. Those are counted here rather than subtracted,
+// because a condition with no declaration has an UNKNOWN place rather than a
+// place outside the dispatch, and the safe direction for an unknown is to count
+// it. Subtracting them would let a new unregistered condition raised outside the
+// dispatch escape this bound entirely, which is the one movement the bound
+// exists to refuse.
 //
 // # One recording here is not comparable with the rest
 //
@@ -375,7 +382,7 @@ const offFrameworkEmissionBlocks = false
 // different thing from a structural remainder. So zero is a state this number can
 // arrive at, and [offFrameworkEmissionBlocks] flips in the edit that takes it
 // there.
-const offFrameworkEmissionCeiling = 111
+const offFrameworkEmissionCeiling = 109
 
 // unemittedSentinelsBlock decides whether a sentinel with no emission site at
 // all fails this test or is only reported. It is true.

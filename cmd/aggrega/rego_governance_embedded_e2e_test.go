@@ -151,6 +151,21 @@ func pullThen(t *testing.T, root, releasePath string, catDirs []string, config, 
 	return dispatchBuildWithDiag(context.Background(), rw, releasePath, catDirs, false, buildDiagOptions{quiet: true}, buildops.RunOptions{OutDir: filepath.Join(root, outDir)}, os.Stderr, os.Stderr)
 }
 
+// pullOnly pulls the workspace and returns the pull's own error, for a proof
+// whose subject is a workspace the acquisition itself declines.
+//
+// It is a separate helper rather than a flag on pullThen because the two treat a
+// pull error oppositely: pullThen reads one as a harness fault and stops the
+// test, which is right when the pull is a precondition. Here the pull IS the
+// subject — a workspace it refuses writes no lockfile, so there is no build to
+// assert on afterwards, and pinning the fault anywhere but where it is raised
+// would assert on a second, consequential failure instead of the first.
+func pullOnly(t *testing.T, root, releasePath string, catDirs []string, config string) error {
+	t.Helper()
+	rw := resolveWorkspaceWithConfig(t, root, config)
+	return pullRun(context.Background(), pullConfig{ReleasePath: releasePath, CatalogDirs: catDirs, ws: rw, DiagOut: os.Stderr, Out: os.Stderr, diag: buildDiagOptions{quiet: true}})
+}
+
 // TestRegoEmbedded_IRVerdictSeverityRouting proves the guest attached over the
 // build graph reports each of the three severities and that the build outcome
 // follows: a halting decision stops the build with ErrPolicyViolation, while a
@@ -585,10 +600,14 @@ spec:
 	catDirs := []string{catalogDir, standardCatalogDir(t)}
 	releasePath := filepath.Join(root, "release.yaml")
 
-	// Negative control: no attachment, so the selector is unsatisfied.
-	errNeg := pullThen(t, root, releasePath, catDirs, "workspace: {}\noffline: true\n", "out-neg")
+	// Negative control: no attachment, so the selector is unsatisfied — and the
+	// refusal is asserted at the acquisition, which is where the rules declared
+	// over the finalised graph are now asked. A workspace the acquisition declines
+	// writes no lockfile, so there is nothing to build afterwards and the fault is
+	// pinned where it is raised.
+	errNeg := pullOnly(t, root, releasePath, catDirs, "workspace: {}\noffline: true\n")
 	if errNeg == nil {
-		t.Fatal("negative control: the feature's selector should be unsatisfied and halt the build")
+		t.Fatal("negative control: the feature's selector should be unsatisfied and the workspace refused")
 	}
 	if !errors.Is(errNeg, analyzer.ErrSelectorViolation()) {
 		t.Fatalf("negative control: want ErrSelectorViolation, got: %v", errNeg)
@@ -615,13 +634,18 @@ labels contains {"node": id, "key": "role.aggrega.ai/kind", "value": "cache"} if
 
 // TestRegoEmbedded_LabelTransformConfinementIsEnforced drives the guest into the
 // label confinement from both directions a policy can reach it, and requires the
-// build to refuse loudly each time.
+// workspace to be refused loudly each time.
 //
 // The confinement matters because a plugin attached to shape labels is the
 // invited exception to the rule that nothing invents infrastructure: the
-// invitation is exactly as wide as the role. A policy naming a node the build
-// does not have, or dropping a label the node does not carry, is reaching past
-// the label set it was invited to shape.
+// invitation is exactly as wide as the role. A policy naming a node the
+// deployment does not have, or dropping a label the node does not carry, is
+// reaching past the label set it was invited to shape.
+//
+// The refusal is asserted at the acquisition, which is where a label-transform
+// attachment now runs. A workspace the acquisition declines writes no lockfile,
+// so there is no build to assert on afterwards and the fault is pinned where it
+// is raised.
 func TestRegoEmbedded_LabelTransformConfinementIsEnforced(t *testing.T) {
 	nonInteractive(t)
 
@@ -630,7 +654,7 @@ func TestRegoEmbedded_LabelTransformConfinementIsEnforced(t *testing.T) {
 		policy string
 	}{
 		{
-			name: "a decision naming a node the build does not have",
+			name: "a decision naming a node the deployment does not have",
 			policy: `package tagging
 
 import rego.v1
@@ -653,9 +677,9 @@ labels contains {"node": id, "key": "never.example.com/set", "op": "remove"} if 
 		t.Run(arm.name, func(t *testing.T) {
 			root, catalogDir := regoWorkspace(t)
 			writeFixture(t, filepath.Join(root, "policy.rego"), arm.policy)
-			err := pullThen(t, root, filepath.Join(root, "release.yaml"),
+			err := pullOnly(t, root, filepath.Join(root, "release.yaml"),
 				[]string{catalogDir, standardCatalogDir(t)},
-				regoAttachment("label-transform", "policy.rego", ""), "out")
+				regoAttachment("label-transform", "policy.rego", ""))
 			if err == nil {
 				t.Fatal("a change outside the label set must be refused, not applied")
 			}
@@ -829,6 +853,10 @@ annotations contains {
 // TestRegoEmbedded_AnnotationTransformConfinementIsEnforced drives the guest
 // into the annotation confinement: a decision naming a component the deployment
 // does not have must be refused loudly rather than applied or dropped.
+//
+// The refusal is asserted at the acquisition, which is where an
+// annotation-transform attachment now runs; a declined workspace writes no
+// lockfile, so the fault is pinned where it is raised.
 func TestRegoEmbedded_AnnotationTransformConfinementIsEnforced(t *testing.T) {
 	nonInteractive(t)
 
@@ -844,9 +872,9 @@ annotations contains {
 	"annotation_value": "gold",
 } if { true }
 `)
-	err := pullThen(t, root, filepath.Join(root, "release.yaml"),
+	err := pullOnly(t, root, filepath.Join(root, "release.yaml"),
 		[]string{catalogDir, standardCatalogDir(t)},
-		regoAttachment("annotation-transform", "policy.rego", ""), "out")
+		regoAttachment("annotation-transform", "policy.rego", ""))
 	if err == nil {
 		t.Fatal("an annotation naming a component the deployment does not have must be refused")
 	}

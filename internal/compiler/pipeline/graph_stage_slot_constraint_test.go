@@ -705,7 +705,7 @@ func TestTheGraphStageRulesThreadTheCallersSignalIntoTheSlotWalk(t *testing.T) {
 	if nodes < 2 {
 		t.Fatalf("the graph holds %d node(s); one consultation and one per node are the same number", nodes)
 	}
-	before := len(out.Analysis.Errors)
+	before := len(out.Violations)
 	if before == 0 {
 		t.Fatal("the spliced document produced no violation, so nothing distinguishes a stopped walk from a silent one")
 	}
@@ -730,14 +730,14 @@ func TestTheGraphStageRulesThreadTheCallersSignalIntoTheSlotWalk(t *testing.T) {
 		out.IRGraph, out.GraphView, watched, releaseFileOf(out.ResolveResult), out.AttachmentSites, out.CarriedConnections,
 	)
 
-	if err := runGraphStageRules(withdrawn, out); !errors.Is(err, context.Canceled) {
+	if err := runGraphStageRules(withdrawn, out.GraphScope); !errors.Is(err, context.Canceled) {
 		t.Fatalf("the graph-stage rules returned %v for a caller that withdrew, want the withdrawal", err)
 	}
 	if lookups != 1 {
 		t.Errorf("the slot axis was consulted %d time(s) for a caller that withdrew during the first node; want exactly 1 of the graph's %d node(s)",
 			lookups, nodes)
 	}
-	if after := len(out.Analysis.Errors); after != before {
+	if after := len(out.Violations); after != before {
 		t.Errorf("a stopped walk still appended %d violation(s)", after-before)
 	}
 }

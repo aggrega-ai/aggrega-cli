@@ -16,7 +16,6 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
-	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
 // mergeFormatAssembler is a synthetic merge-boundary provider engine whose
@@ -160,7 +159,7 @@ func TestRenderPolicyHCL_MergedProducerFormatOverridesExtension(t *testing.T) {
 	}
 	t.Logf("merged Files[%q].Format = %q (producer format survived the merge)", fk, res.Files[fk].Format)
 
-	arts, err := sortedRenderedArtifacts(ctx, Inputs{WorkspaceConfig: workspaceconfig.Default()}, hclParserCatalogLookup(), res.Files)
+	arts, err := sortedRenderedArtifacts(ctx, Inputs{WorkspaceConfig: defaultWorkspaceConfigForTest()}, hclParserCatalogLookup(), res.Files)
 	if err != nil {
 		t.Fatalf("sortedRenderedArtifacts (merged producer hcl over .json): %v", err)
 	}
@@ -189,7 +188,7 @@ func TestRenderPolicyHCL_MergedProducerFormatOverridesExtension(t *testing.T) {
 	if _, ok := formatKeyEndingWith(t, ctrl.Files, "resource.json"); ok {
 		t.Errorf("control merged file carries a producer format; expected none (Files=%v)", ctrl.Files)
 	}
-	ctrlArts, err := sortedRenderedArtifacts(ctx, Inputs{WorkspaceConfig: workspaceconfig.Default()}, hclParserCatalogLookup(), ctrl.Files)
+	ctrlArts, err := sortedRenderedArtifacts(ctx, Inputs{WorkspaceConfig: defaultWorkspaceConfigForTest()}, hclParserCatalogLookup(), ctrl.Files)
 	if err != nil {
 		t.Fatalf("sortedRenderedArtifacts (control untagged .json): %v", err)
 	}
@@ -227,7 +226,7 @@ func TestRenderPolicyHCL_MergedMixedRoutesPerFile(t *testing.T) {
 		t.Fatalf("beta merged format missing/wrong: %v", res.Files)
 	}
 
-	arts, err := sortedRenderedArtifacts(ctx, Inputs{WorkspaceConfig: workspaceconfig.Default()}, hclParserCatalogLookup(), res.Files)
+	arts, err := sortedRenderedArtifacts(ctx, Inputs{WorkspaceConfig: defaultWorkspaceConfigForTest()}, hclParserCatalogLookup(), res.Files)
 	if err != nil {
 		t.Fatalf("sortedRenderedArtifacts (mixed merged output): %v", err)
 	}
@@ -280,7 +279,7 @@ func TestRenderPolicyHCL_MergedUntaggedExtensionFallback(t *testing.T) {
 		}
 	}
 
-	arts, err := sortedRenderedArtifacts(ctx, Inputs{WorkspaceConfig: workspaceconfig.Default()}, hclParserCatalogLookup(), res.Files)
+	arts, err := sortedRenderedArtifacts(ctx, Inputs{WorkspaceConfig: defaultWorkspaceConfigForTest()}, hclParserCatalogLookup(), res.Files)
 	if err != nil {
 		t.Fatalf("sortedRenderedArtifacts (untagged merged output): %v", err)
 	}
@@ -319,7 +318,7 @@ func TestRenderPolicyHCL_MergedRoutingDeterministic(t *testing.T) {
 			"resource.json": {Content: []byte(hclArtifact), Format: "hcl"},
 			"native.json":   {Content: []byte(`{"a":1}`), Format: ""},
 		})
-		arts, err := sortedRenderedArtifacts(ctx, Inputs{WorkspaceConfig: workspaceconfig.Default()}, hclParserCatalogLookup(), res.Files)
+		arts, err := sortedRenderedArtifacts(ctx, Inputs{WorkspaceConfig: defaultWorkspaceConfigForTest()}, hclParserCatalogLookup(), res.Files)
 		if err != nil {
 			t.Fatalf("sortedRenderedArtifacts: %v", err)
 		}

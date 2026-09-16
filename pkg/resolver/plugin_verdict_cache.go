@@ -25,14 +25,22 @@ type VerdictPluginTierSources struct {
 	CacheDir      string
 }
 
-// ResolveVerdictPluginFromCache resolves a verdict-socket (policy / linter)
-// plugin from the pull-populated cache by its entity URI, with no lockfile pin.
-// It reads the Plugin entity from the cache (manifest root of trust) to obtain
+// ResolveVerdictPluginFromCache resolves a plugin from the pull-populated cache
+// by its entity URI, with no lockfile pin. It reads the Plugin entity from the
+// cache (manifest root of trust) to obtain
 // the entity's authored contract and runtime limits and the .wasm layer content
 // digest, then resolves the executable through the shared artifact cascade keyed
 // by that digest — the same verified content-cache read the pinned path uses, so
 // the .wasm is digest-checked exactly as a pinned plugin's is. The entity axis is
 // never pinned or drift-gated; only its bytes are integrity-checked.
+//
+// It serves every socket that must resolve a guest without a lockfile pin: the
+// gates that return an accept-or-reject verdict, which are cached at pull and
+// never pinned; and a transform role on a pass that has no lockfile to read
+// because it is the pass that writes one. The name carries the verdict tier's
+// vocabulary because that tier was its first caller; the resolution itself is
+// tier-neutral, and what differs between callers is only which record, if any,
+// they supply as trusted.
 //
 // trusted carries the digests recorded as trusted for verdict-returning plugins,
 // keyed by plugin identity. The caller derives them from whatever records
@@ -80,14 +88,14 @@ type VerdictPluginTierSources struct {
 // naming the plugin and wrapping oci.ErrFetchNotFound.
 func ResolveVerdictPluginFromCache(sources VerdictPluginTierSources, trusted pluginpath.PinMaps, pluginFromCache func(uri string) (types.Plugin, string, bool, error), uri string) (pluginpath.ResolvedPlugin, error) {
 	if pluginFromCache == nil {
-		return pluginpath.ResolvedPlugin{}, fmt.Errorf("resolve verdict-socket plugin %q: no cache-backed catalog lookup: %w", uri, oci.ErrFetchNotFound())
+		return pluginpath.ResolvedPlugin{}, fmt.Errorf("resolve cached plugin %q: no cache-backed catalog lookup: %w", uri, oci.ErrFetchNotFound())
 	}
 	entity, wasmDigest, ok, err := pluginFromCache(uri)
 	if err != nil {
 		return pluginpath.ResolvedPlugin{}, err
 	}
 	if !ok {
-		return pluginpath.ResolvedPlugin{}, fmt.Errorf("resolve verdict-socket plugin %q: %s: %w",
+		return pluginpath.ResolvedPlugin{}, fmt.Errorf("resolve cached plugin %q: %s: %w",
 			uri, "not present in the content cache; run `aggrega pull --release <release>` first", oci.ErrFetchNotFound())
 	}
 	// A Plugin entity's artifact reference IS its identity coordinate, which is
@@ -98,7 +106,7 @@ func ResolveVerdictPluginFromCache(sources VerdictPluginTierSources, trusted plu
 	if recorded, isRecorded := trusted.Pins[artifactRef]; isRecorded && recorded != "" {
 		if recorded != wasmDigest {
 			return pluginpath.ResolvedPlugin{}, fmt.Errorf(
-				"resolve verdict-socket plugin %q: the digest recorded as trusted for it is %s, but the plugin manifest in the content cache reports %s; "+
+				"resolve cached plugin %q: the digest recorded as trusted for it is %s, but the plugin manifest in the content cache reports %s; "+
 					"review what changed and re-record the trusted digest, or restore the recorded artifact: %w",
 				artifactRef, recorded, wasmDigest, ErrVerdictPluginTrustMismatch())
 		}

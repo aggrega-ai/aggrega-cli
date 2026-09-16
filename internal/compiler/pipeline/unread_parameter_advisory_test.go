@@ -13,7 +13,6 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
-	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
 // declareUnreadParameter returns the aggregate bytes with one optional
@@ -75,7 +74,7 @@ func TestUnreadParameterAdvisoryReachesTheDiagnosticStream(t *testing.T) {
 		Manifest:          manifest,
 		AggregateRawBytes: declareUnreadParameter(t, aggBytes),
 		AggregatePath:     fullstackAggregatePath,
-		WorkspaceConfig:   workspaceconfig.Default(),
+		WorkspaceConfig:   fixtureWorkspaceConfig(),
 		CompilerVersion:   fixtureCompilerVersion,
 	}
 

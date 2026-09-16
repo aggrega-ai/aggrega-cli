@@ -4,11 +4,16 @@
 package main
 
 import (
+	"bytes"
+	"context"
 	stderrors "errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/buildops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
@@ -156,11 +161,21 @@ func TestWithSkipContext_NoteAssertsTheClosureMembershipDistinction(t *testing.T
 	}
 }
 
-// TestWithSkipContext_OuterLabelSurvives guards the one thing recursing on the
-// decorated failure alone would drop: text a frame ABOVE the decoration
-// contributed. The in-build pull wraps its failure with the step that was
-// running, and that label is what tells the reader which step failed.
-func TestWithSkipContext_OuterLabelSurvives(t *testing.T) {
+// TestWithSkipContext_FormatterCarriesAFrameAboveTheDecoration guards the one
+// thing recursing on the decorated failure alone would drop: text a frame ABOVE
+// the decoration contributed. A step label is what tells the reader which step
+// failed, so the formatter carries it across rather than rendering the decorated
+// failure on its own.
+//
+// WHAT THIS PROVES AND WHAT IT DOES NOT, stated because the two are easy to
+// confuse. It builds its own wrapping frame, so its whole subject is the
+// FORMATTER: given a frame above a decoration, that frame reaches the reader.
+// It says nothing about whether any production path puts a frame there, and it
+// keeps passing with every such frame deleted. The guard for the frame the
+// in-build fill actually contributes is
+// TestBuildAutoPull_StepLabelReachesTheReader below, which constructs no wrap
+// and drives the command instead.
+func TestWithSkipContext_FormatterCarriesAFrameAboveTheDecoration(t *testing.T) {
 	failure := cerrors.Wrap(fmt.Errorf("boom"), cerrors.CatalogError,
 		cerrors.SourceLocation{File: "/cat/base/components/server.yaml"}, "unmarshal Component")
 	decorated := withSkipContext(failure, []catalog.SkippedEntity{refusedRecipeSkip()})
@@ -171,6 +186,56 @@ func TestWithSkipContext_OuterLabelSurvives(t *testing.T) {
 	}
 	if !strings.Contains(rendered, "catalog files skipped at load") {
 		t.Errorf("the note must survive a wrap above the decoration; rendered:\n%s", rendered)
+	}
+}
+
+// TestBuildAutoPull_StepLabelReachesTheReader drives a build whose fill fails
+// and asserts the step label reaches the terminal. It constructs no error and no
+// wrap: the fixture refuses a Recipe the Release's closure reaches, the fill's
+// resolution fails on it, and every frame in the rendered diagnostic is one the
+// product put there.
+//
+// That is the whole point of it. A reader meeting a build that stopped needs to
+// know WHICH step stopped it, and the only thing carrying that here is the frame
+// the fill contributes. A guard that supplies that frame itself would keep
+// passing with the product's own frame deleted, so this one takes the frame from
+// the product or fails.
+//
+// It also asserts the decoration is what the formatter rendered, because the
+// label survives on that branch and is deliberately discarded on the envelope
+// branch. Without it a future change that routes this failure to a different
+// branch would take the label with it, and a prefix assertion alone cannot tell
+// the two apart.
+func TestBuildAutoPull_StepLabelReachesTheReader(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	releasePath, catalogRoot := writeValidWorkspace(t, root)
+	// The Release's closure is exactly one Component, one Recipe and one
+	// Provider, so refusing that Recipe is what makes the fill's resolution fail
+	// with a refusal the load recorded — the shape the pull's own annotator
+	// decorates.
+	writeFixture(t, filepath.Join(catalogRoot, "recipes", "helm", "server.yaml"),
+		refusedRecipe("server-recipe", "1.0.0", "helm"))
+
+	lockfilePath := filepath.Join(root, "release.lock")
+	if _, err := os.Stat(lockfilePath); !os.IsNotExist(err) {
+		t.Fatalf("precondition: the fill must be the step that runs, so there must be no lockfile yet; stat err = %v", err)
+	}
+
+	var diagBuf, outBuf bytes.Buffer
+	err := dispatchBuildWithDiag(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
+		releasePath, []string{catalogRoot}, false, buildDiagOptions{},
+		buildops.RunOptions{AutoPull: true}, &diagBuf, &outBuf)
+	if err == nil {
+		t.Fatal("the fill must fail on a refused in-closure Recipe; there is no diagnostic to read")
+	}
+	rendered := formatCompilerError(err)
+
+	if !strings.HasPrefix(rendered, "auto-pull: ") {
+		t.Errorf("the step label the fill contributes must reach the terminal; rendered:\n%s", rendered)
+	}
+	if !strings.Contains(rendered, "skipped at load") {
+		t.Errorf("the failure must reach the reader through the decoration, which is the branch that carries the label; rendered:\n%s", rendered)
 	}
 }
 

@@ -165,6 +165,70 @@ func newDocumentAnnotationBindingSubject(
 	}
 }
 
+// DocumentMappingEntrySubject is the subject of a check invoked once per entry
+// of the presented Manifest's recipe mapping table.
+//
+// It is a separate kind from the document itself for the reason a declared
+// binding is: "once per entry" is a different once, and the subject can name the
+// entry's authored site where a document subject names only the file.
+//
+// Its coordinate is composite, and it carries an accessor for each element of
+// that composite rather than one naming the entry. An entry's identity is the
+// tier it is written under, the axis it keys on and the key the author wrote,
+// taken together — a tier holds two axes and an axis holds many keys, so no one
+// of the three names an entry, and the entry itself names no scalar a check
+// could use. The three together name exactly one, because each axis is a mapping
+// and a mapping holds one value per key.
+type DocumentMappingEntrySubject interface {
+	Subject
+
+	// MappingTier is the mapping tier the entry is written under, as the
+	// author wrote it: one of [MappingTierComponents] or [MappingTierFeatures].
+	// It is what tells a rule whether the entry names a Recipe or a
+	// FeatureRecipe, which the key alone cannot say.
+	MappingTier() string
+
+	// MappingAxis is the keying axis within that tier the entry is written
+	// under, as the author wrote it: one of [MappingAxisType] or
+	// [MappingAxisName]. It is in the identity because one tier holds both, so
+	// one key legitimately appears on each and the two are separate entries.
+	MappingAxis() string
+
+	// MappingKey is the key the entry is declared under — the component type,
+	// feature type or instance name the entry maps. The document itself is the
+	// other coordinate, and SourceFile names it.
+	MappingKey() string
+
+	documentMappingEntry()
+}
+
+type documentMappingEntrySubject struct {
+	provenance
+	tier string
+	axis string
+	key  string
+}
+
+func (documentMappingEntrySubject) documentMappingEntry() {}
+
+func (s documentMappingEntrySubject) MappingTier() string { return s.tier }
+
+func (s documentMappingEntrySubject) MappingAxis() string { return s.axis }
+
+func (s documentMappingEntrySubject) MappingKey() string { return s.key }
+
+func newDocumentMappingEntrySubject(
+	sourceFile, tier, axis, key string,
+	segments ...string,
+) DocumentMappingEntrySubject {
+	return documentMappingEntrySubject{
+		provenance: newProvenance(sourceFile, segments...),
+		tier:       tier,
+		axis:       axis,
+		key:        key,
+	}
+}
+
 // NodeSubject is the subject of a check invoked once per node: one component
 // instance in the flattened set, a sub-aggregate's nodes included.
 //

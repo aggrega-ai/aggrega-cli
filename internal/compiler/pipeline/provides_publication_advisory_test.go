@@ -13,7 +13,6 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
-	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
 // The reading over what a bound Recipe publishes is exit-code-neutral, and this
@@ -89,7 +88,7 @@ func TestProvidesPublicationAdvisoryReportsWithoutHaltingTheBuild(t *testing.T) 
 		Manifest:          manifest,
 		AggregateRawBytes: aggBytes,
 		AggregatePath:     fullstackAggregatePath,
-		WorkspaceConfig:   workspaceconfig.Default(),
+		WorkspaceConfig:   fixtureWorkspaceConfig(),
 		CompilerVersion:   fixtureCompilerVersion,
 	}
 	baseBinding := cat.RecipeLookupWithManifest(manifest).Recipe

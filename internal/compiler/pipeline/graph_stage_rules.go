@@ -15,7 +15,7 @@ import (
 )
 
 // runGraphStageRules invokes the rules declared over the finalised graph and
-// folds what they raised into the analysis the build already carries.
+// accumulates what they raised onto the scope that holds it.
 //
 // A rule needs a presentation for the facts it reads and an enumeration for the
 // subjects it is invoked once per. Both are built from the products this scope
@@ -25,19 +25,20 @@ import (
 // silently uninvoked over the ones it can.
 //
 // It reports the reason a walk stopped and nothing else. A rule raising is not
-// an error here: an advisory joins the warning stream the caller surfaces, and
-// a violation joins the slice the build gates on, exactly as the readings
-// beside it do.
+// an error here, and that is the load-bearing part: the suite walks its whole
+// axis and every rule in it before anyone reads what it accumulated, so one
+// offending connection costs a document neither the rest of that rule's axis
+// nor anything the rules beside it would have reported. A caller that refuses
+// on a finding refuses once, holding all of them.
 //
-// # Two streams, chosen by the severity the rule declared
+// # Two collections, chosen by the severity the rule declared
 //
-// A violation is appended to the analysis result's violation slice and an
-// advisory to its warning slice, and which one a rule reaches is decided by the
-// severity on its own declaration rather than by anything here. The analysis
-// result is the one the caller already holds, so a violation appended here
-// reaches the gate that halts the build and the joined error a build caller
-// reads, while an advisory reaches neither of those and is surfaced alongside a
-// build that finishes — the same two destinations the readings beside it use.
+// A violation is appended to the scope's violation slice and an advisory to its
+// advisory slice, and which one a rule reaches is decided by the severity on its
+// own declaration rather than by anything here. What each collection then means
+// is the caller's: the pipeline folds the first into the slice a build gates on
+// and the second into the warning stream it displays, and a surface with neither
+// of those refuses on the first and carries the second.
 //
 // The rules are invoked in the order the readings beside them run, so the order
 // a caller sees findings in does not depend on which reading produced them.
@@ -54,7 +55,7 @@ import (
 // is final, which is before anything renders.
 func runGraphStageRules(
 	ctx context.Context,
-	out *stepsOneToFourOutput,
+	out *GraphScope,
 ) error {
 	// An absent presentation or an absent graph is an internal inconsistency
 	// rather than a document the author can fix: this scope built both a moment
@@ -86,7 +87,7 @@ func runGraphStageRules(
 	if err != nil {
 		return err
 	}
-	out.Analysis.Errors = append(out.Analysis.Errors, analyzer.ErrorsFromObjections(violations)...)
+	out.Violations = append(out.Violations, violations...)
 
 	// The applicability a Feature declares over what it may attach to,
 	// evaluated once per attachment a node carries after the whole attachment
@@ -105,7 +106,7 @@ func runGraphStageRules(
 	if err != nil {
 		return err
 	}
-	out.Analysis.Errors = append(out.Analysis.Errors, analyzer.ErrorsFromObjections(violations)...)
+	out.Violations = append(out.Violations, violations...)
 
 	// The label constraint an attachment slot declares over what may fill it,
 	// evaluated once per slot each node's component type declares. The axis is
@@ -125,7 +126,7 @@ func runGraphStageRules(
 	if err != nil {
 		return err
 	}
-	out.Analysis.Errors = append(out.Analysis.Errors, analyzer.ErrorsFromObjections(violations)...)
+	out.Violations = append(out.Violations, violations...)
 
 	// Each presence mandate a node's component type declares is satisfied by some
 	// attachment of the type it names. The satisfying set is the node's merged
@@ -147,7 +148,7 @@ func runGraphStageRules(
 	if err != nil {
 		return err
 	}
-	out.Analysis.Errors = append(out.Analysis.Errors, analyzer.ErrorsFromObjections(violations)...)
+	out.Violations = append(out.Violations, violations...)
 
 	// Each attachment slot a node's component type declares required is bound by
 	// some attachment. It walks the same declared slot axis as the constraint
@@ -169,7 +170,7 @@ func runGraphStageRules(
 	if err != nil {
 		return err
 	}
-	out.Analysis.Errors = append(out.Analysis.Errors, analyzer.ErrorsFromObjections(violations)...)
+	out.Violations = append(out.Violations, violations...)
 
 	// No delivery key a component declares for itself is also delivered by one of
 	// that component's own dependency connections, evaluated once per key the
@@ -196,7 +197,7 @@ func runGraphStageRules(
 	if err != nil {
 		return err
 	}
-	out.Analysis.Errors = append(out.Analysis.Errors, analyzer.ErrorsFromObjections(violations)...)
+	out.Violations = append(out.Violations, violations...)
 
 	// No delivery key one of a component's dependency connections delivers is
 	// also delivered by another of that component's connections, evaluated once
@@ -221,7 +222,7 @@ func runGraphStageRules(
 	if err != nil {
 		return err
 	}
-	out.Analysis.Errors = append(out.Analysis.Errors, analyzer.ErrorsFromObjections(violations)...)
+	out.Violations = append(out.Violations, violations...)
 
 	// No delivery entry on any connection reads from a key the component the
 	// connection points at does not publish, evaluated once per connection the
@@ -244,7 +245,7 @@ func runGraphStageRules(
 	if err != nil {
 		return err
 	}
-	out.Analysis.Errors = append(out.Analysis.Errors, analyzer.ErrorsFromObjections(violations)...)
+	out.Violations = append(out.Violations, violations...)
 
 	// No connection dictates a delivery mechanism the socket it is wired into
 	// does not permit, evaluated once per connection the composition drew
@@ -267,7 +268,7 @@ func runGraphStageRules(
 	if err != nil {
 		return err
 	}
-	out.Analysis.Errors = append(out.Analysis.Errors, analyzer.ErrorsFromObjections(violations)...)
+	out.Violations = append(out.Violations, violations...)
 
 	advisories, err := constraint.RunOnNodeAttachmentPillarLeaves(
 		ctx.Err,
@@ -281,7 +282,7 @@ func runGraphStageRules(
 	if err != nil {
 		return err
 	}
-	out.Analysis.Warnings = append(out.Analysis.Warnings, analyzer.AdvisoriesFromObjections(advisories)...)
+	out.Advisories = append(out.Advisories, advisories...)
 	return nil
 }
 

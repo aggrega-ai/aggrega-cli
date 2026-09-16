@@ -24,7 +24,6 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourcecache"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/cacheslot"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/metadata"
-	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 	"oras.land/oras-go/v2/content/memory"
 )
 
@@ -165,7 +164,7 @@ func TestRunPipelineResolvesRemoteSourceThroughProductionPath(t *testing.T) {
 			Manifest:          manifest,
 			AggregateRawBytes: aggBytes,
 			AggregatePath:     remoteSrcAggregatePath,
-			WorkspaceConfig:   workspaceconfig.Default(),
+			WorkspaceConfig:   fixtureWorkspaceConfig(),
 			Lockfile:          remoteSrcLockfile(digest),
 			WorkspaceRoot:     root,
 			CompilerVersion:   fixtureCompilerVersion,
@@ -223,7 +222,7 @@ func TestRunPipelineRemoteSourceFailsWithoutLockfile(t *testing.T) {
 			Manifest:          manifest,
 			AggregateRawBytes: aggBytes,
 			AggregatePath:     remoteSrcAggregatePath,
-			WorkspaceConfig:   workspaceconfig.Default(),
+			WorkspaceConfig:   fixtureWorkspaceConfig(),
 			CompilerVersion:   fixtureCompilerVersion,
 			// Lockfile + WorkspaceRoot intentionally unset.
 		},

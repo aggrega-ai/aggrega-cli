@@ -446,17 +446,17 @@ func TestTheGraphStageRulesThreadTheCallersSignalIntoTheApplicabilityWalk(t *tes
 		t.Fatalf("the fixture graph holds %d connection(s); the connection walk would stop first and this proof would be about that one",
 			len(out.IRGraph.Spec.Edges))
 	}
-	before := len(out.Analysis.Errors)
+	before := len(out.Violations)
 	if before == 0 {
 		t.Fatal("the spliced document produced no violation, so nothing distinguishes a stopped walk from a silent one")
 	}
 
 	withdrawn, withdraw := context.WithCancel(context.Background())
 	withdraw()
-	if err := runGraphStageRules(withdrawn, out); !errors.Is(err, context.Canceled) {
+	if err := runGraphStageRules(withdrawn, out.GraphScope); !errors.Is(err, context.Canceled) {
 		t.Fatalf("the graph-stage rules returned %v for a caller that withdrew, want the withdrawal", err)
 	}
-	if after := len(out.Analysis.Errors); after != before {
+	if after := len(out.Violations); after != before {
 		t.Errorf("a stopped walk still appended %d violation(s)", after-before)
 	}
 }

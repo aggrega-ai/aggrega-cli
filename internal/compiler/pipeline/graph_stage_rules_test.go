@@ -17,7 +17,6 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
-	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
 // The workspace the advisory proof compiles. It is a different one from the
@@ -94,7 +93,7 @@ func compileWorkspace(
 			// leave that axis unpositioned, so a proof over it would be measuring
 			// the omission rather than the compiler.
 			ReleasePath:     fixture.releasePath,
-			WorkspaceConfig: workspaceconfig.Default(),
+			WorkspaceConfig: defaultWorkspaceConfigForTest(),
 			CompilerVersion: invocationVersion,
 		},
 		cat.CatalogLookup(),

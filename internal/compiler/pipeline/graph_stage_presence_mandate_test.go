@@ -478,9 +478,9 @@ func TestTheGraphStageRulesThreadTheCallersSignalIntoThePresenceMandateWalk(t *t
 	// about a document that really offends both rules rather than about one that
 	// happens to offend neither.
 	var uncancelledEarlier, uncancelledThisWalk int
-	for _, violation := range out.Analysis.Errors {
+	for _, violation := range out.Violations {
 		switch {
-		case errors.Is(violation.Sentinel, resolver.ErrMissingRequiredFeature()):
+		case errors.Is(violation.Sentinel(), resolver.ErrMissingRequiredFeature()):
 			uncancelledThisWalk++
 		default:
 			uncancelledEarlier++
@@ -496,18 +496,18 @@ func TestTheGraphStageRulesThreadTheCallersSignalIntoThePresenceMandateWalk(t *t
 
 	var reads int
 	signal := countingCancellation{reads: &reads, withdrawAfter: firstReadOfThisWalk}
-	// A fresh analysis, so what is read below is what this invocation appended
+	// A fresh collection, so what is read below is what this invocation appended
 	// rather than what the compile already had.
-	out.Analysis = &analyzer.AnalysisResult{}
-	err := runGraphStageRules(signal, out)
+	out.Violations = nil
+	err := runGraphStageRules(signal, out.GraphScope)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("err = %v; want the caller's withdrawal", err)
 	}
 
 	var earlier, thisWalk int
-	for _, violation := range out.Analysis.Errors {
+	for _, violation := range out.Violations {
 		switch {
-		case errors.Is(violation.Sentinel, resolver.ErrMissingRequiredFeature()):
+		case errors.Is(violation.Sentinel(), resolver.ErrMissingRequiredFeature()):
 			thisWalk++
 		default:
 			earlier++

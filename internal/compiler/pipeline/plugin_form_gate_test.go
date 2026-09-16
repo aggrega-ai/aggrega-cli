@@ -11,7 +11,6 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
-	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
 // TestBuildEntityPluginLookup_EntityOnlyFormGate proves the pipeline's real
@@ -22,7 +21,7 @@ import (
 // gate and reaches entity translation: the form check layers with, it does not
 // replace, entity existence.
 func TestBuildEntityPluginLookup_EntityOnlyFormGate(t *testing.T) {
-	inputs := Inputs{WorkspaceConfig: workspaceconfig.Default()}
+	inputs := Inputs{WorkspaceConfig: defaultWorkspaceConfigForTest()}
 
 	entityConsulted := false
 	catalogLookup := resolver.CatalogLookup{

@@ -88,11 +88,14 @@ func BuildToBuffer(ctx context.Context, in BuildInputs, opts pipeline.Options) (
 	// helper returns an already-relative path unchanged, so a caller that had
 	// converted already is unaffected.
 	inputs := pipeline.Inputs{
-		Release:                          r.Release,
-		Manifest:                         r.Manifest,
-		AggregateRawBytes:                r.AggBytes,
-		AggregatePath:                    catalog.RelativeToWorkspace(in.WorkspaceRoot, r.AggregatePath),
-		WorkspaceConfig:                  in.WorkspaceConfig,
+		Release:           r.Release,
+		Manifest:          r.Manifest,
+		AggregateRawBytes: r.AggBytes,
+		AggregatePath:     catalog.RelativeToWorkspace(in.WorkspaceRoot, r.AggregatePath),
+		// A pointer into this call's own inputs value, so the composition below
+		// re-points it at the copy it rewrites and the caller's configuration is
+		// never written through.
+		WorkspaceConfig:                  &in.WorkspaceConfig,
 		Lockfile:                         in.Lockfile,
 		WorkspaceRoot:                    in.WorkspaceRoot,
 		MappingLibraries:                 view.MappingLibraries(),

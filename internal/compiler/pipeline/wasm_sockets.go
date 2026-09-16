@@ -21,6 +21,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
+	"github.com/aggrega-ai/aggrega-cli/pkg/ociref"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/plugintype"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
@@ -38,25 +39,91 @@ import (
 // The attachment's tier selects how an unpinned gate plugin resolves — and for
 // the governance socket the tier is a property of the attachment's role, so each
 // runner passes the tier it knows statically rather than reading it from the
-// socket. A mutating attachment (a label-transform governance role) resolves
-// strictly through the pinned entity-fronted cascade — its plugin shapes output
-// bytes and is pinned in the lockfile. A verdict attachment (a verdict governance
-// role, or the linter socket) renders an accept/reject verdict without shaping
+// socket. A mutating attachment (a label-transform or annotation-transform
+// governance role) resolves strictly through the pinned entity-fronted cascade —
+// its plugin shapes output bytes and is pinned in the lockfile. A verdict
+// attachment (a verdict governance role, or the linter socket) renders an
+// accept/reject verdict without shaping
 // output, so its plugin is cached at pull but not pinned (cache-not-pin): the
 // entity-fronted cascade is tried first (honoring a pin / Tier-1 / embed source),
 // and an unpinned gate plugin that misses there resolves from the pull-populated
 // cache by URI.
+//
+// A mutating attachment gains that same fall-through in exactly one state: no
+// lockfile was supplied at all. The pins are what address the versioned cache
+// slot a mutating guest's bytes live in, so a caller with no lockfile addresses
+// the unversioned slot and misses a guest that is on disk — the acquisition pass
+// is the standing case, since it is the pass that WRITES the lockfile and so has
+// none to read. Deriving the address from the cached manifest instead is what
+// closes that loop. The state is deliberately "no lockfile", not "no pin for this
+// plugin": a caller that supplied one has declared that pins govern here, so a
+// mutating attachment missing from it is an unpinned output-shaping guest and
+// still halts. Where the catalog serves no cache-backed Plugin read there is no
+// manifest to derive from, and the pinned cascade's own halt is the honest one.
 func resolveSocketLookup(inputs Inputs, catalogLookup resolver.CatalogLookup, tier workspaceconfig.SocketTier) pluginpath.Lookup {
 	if inputs.PluginPathLookup != nil {
 		return inputs.PluginPathLookup
 	}
 	base := buildEntityPluginLookup(inputs, catalogLookup)
 	if tier != workspaceconfig.SocketTierVerdict {
-		return base
+		if inputs.Lockfile != nil || catalogLookup.PluginFromCache == nil {
+			return base
+		}
+		return resolver.VerdictLookup(base, func(entityURI string) (pluginpath.ResolvedPlugin, error) {
+			return resolveTransformSocketPluginFromCache(inputs, catalogLookup, entityURI)
+		})
 	}
 	return resolver.VerdictLookup(base, func(entityURI string) (pluginpath.ResolvedPlugin, error) {
 		return resolveVerdictSocketPluginFromCache(inputs, catalogLookup, entityURI)
 	})
+}
+
+// resolveTransformSocketPluginFromCache resolves a transform-role governance
+// plugin from the content cache when no lockfile supplied its address. It reads
+// the Plugin entity from the cache (manifest root of trust) for the entity's
+// authored contract and runtime limits and the .wasm layer content digest, then
+// resolves the executable through the shared artifact cascade keyed by that
+// manifest-derived digest — the same verified cache read the pinned path
+// performs, so the .wasm is digest-checked exactly as a pinned plugin's is.
+//
+// No recorded digests are supplied, and that is the honest value rather than an
+// omission: a transform attachment's recorded identity is the lockfile pin, and
+// this resolution runs only where there is no lockfile to hold one. The digests
+// recorded for the gates that return an accept-or-reject verdict address a
+// different axis and must not be applied here.
+//
+// The cache slot holding the entity is addressed by the reference the acquisition
+// wrote it under, which carries a version; a reconstructed attachment names its
+// plugin by bare coordinate, so the version is taken from the entity the catalog
+// resolves for that coordinate. A reference that already carries a version is
+// passed through untouched, so the authored form is never rewritten.
+func resolveTransformSocketPluginFromCache(inputs Inputs, catalogLookup resolver.CatalogLookup, entityURI string) (pluginpath.ResolvedPlugin, error) {
+	sources := resolver.VerdictPluginTierSources{
+		ColocatedDirs: catalogLookup.PluginColocatedDirs,
+		WorkspaceRoot: inputs.WorkspaceRoot,
+		CacheDir:      inputs.WorkspaceConfig.ResolvedArtifactCacheDir(),
+	}
+	return resolver.ResolveVerdictPluginFromCache(sources, pluginpath.PinMaps{}, catalogLookup.PluginFromCache, versionedEntityRef(catalogLookup, entityURI))
+}
+
+// versionedEntityRef returns the reference the content cache holds a Plugin
+// entity under: the caller's reference when it already carries a version tag,
+// else that reference with the version of the entity the catalog resolves for it
+// appended. A reference the catalog matches no entity for, or an entity carrying
+// no version, is returned unchanged — there is nothing to append, and the cache
+// read reports its own clean miss.
+func versionedEntityRef(catalogLookup resolver.CatalogLookup, entityURI string) string {
+	if _, _, hasVersion := ociref.SplitVersionTag(entityURI); hasVersion {
+		return entityURI
+	}
+	if catalogLookup.Plugin == nil {
+		return entityURI
+	}
+	entity, ok := catalogLookup.Plugin(entityURI)
+	if !ok || entity.Metadata.Version == "" {
+		return entityURI
+	}
+	return entityURI + ":" + entity.Metadata.Version
 }
 
 // resolveVerdictSocketPluginFromCache resolves a verdict-socket (policy / linter)

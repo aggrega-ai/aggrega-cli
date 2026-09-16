@@ -17,7 +17,6 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
-	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
 // The proofs in this file cover the rule about a presence mandate whose
@@ -75,7 +74,7 @@ func compileMalformedWorkspace(
 			AggregateRawBytes: aggregate,
 			AggregatePath:     invocationAggregatePath,
 			ReleasePath:       invocationReleasePath,
-			WorkspaceConfig:   workspaceconfig.Default(),
+			WorkspaceConfig:   defaultWorkspaceConfigForTest(),
 			CompilerVersion:   invocationVersion,
 		},
 		cat.CatalogLookup(),

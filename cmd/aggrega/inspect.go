@@ -821,6 +821,13 @@ func renderReleaseFile(ctx context.Context, rw *workspaceconfig.ResolvedWorkspac
 			ReleasePath:       releasePath,
 			RootAggregateFile: catalog.RelativeToWorkspace(wsRoot, aggPath),
 			CompilerVersion:   provenanceCompilerVersion(),
+			// The workspace's own configuration, live, plus the root and cache
+			// directory a transform-role guest resolves through. A transform role
+			// shapes the graph, so drawing the graph without it would draw a
+			// composition no build of the same documents produces — which is the one
+			// thing this command promises not to do.
+			WorkspaceConfig: &wsCfg,
+			WorkspaceRoot:   wsRoot,
 		},
 		catalogLookup,
 		cat.RecipeLookupWithManifest(manifest).Recipe,

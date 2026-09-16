@@ -177,6 +177,27 @@ type factDecl struct {
 	// shape of same-semantics-under-a-different-name duplication.
 	SourceField string
 
+	// Carrier names the authored document kind that carries this fact — the
+	// kind a user writes as the document's own kind, and never the Go
+	// structure the value is read out of, which SourceField names. The two
+	// slots both say "carrier" and mean different things: one is where the
+	// value sits in the compiler, the other is what a user would have to open
+	// in order to change it.
+	//
+	// It applies at the document stage alone. That stage presents one authored
+	// document, so it has two axes — when the fact is complete, and which kind
+	// of document carries it. Every later stage presents one compilation, which
+	// has one carrier and so nothing for a second axis to distinguish; a
+	// declaration at such a stage is refused rather than ignored, because a
+	// value nothing reads is a value a reviewer trusts.
+	//
+	// It is declared only where the kind does not derive from SourceField.
+	// Where the source carrier is one authored entity's spec type, the kind is
+	// read from that type's own name, and declaring it again would give one
+	// kind two homes — so a declaration repeating a successful derivation is
+	// refused alongside one that contradicts it.
+	Carrier string
+
 	// Subject is the coordinate list the fact is keyed by, outermost first —
 	// so {"node", "socket"} means the fact is asked once per socket per node.
 	// The subject-kind set is derived from these lists and from nothing else.

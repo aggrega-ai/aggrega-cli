@@ -33,7 +33,13 @@ func ErrUnsatisfiableEntityVersion() error { return errUnsatisfiableEntityVersio
 var errUnsatisfiableEntityVersion = cerrors.Register("unsatisfiable-entity-version", cerrors.Meta{
 	ShortCode: "E0103",
 	Message:   "no catalog version satisfies the referenced version constraint",
-	RulePlace: cerrors.RuleOverAuthoredInput(),
+	RulePlace: cerrors.RuleNoStageReaches("Resolving a catalog entity's extends parent evaluates the rule, as it matches " +
+		"that parent reference's version constraint against the versions the freshly loaded catalog holds " +
+		"under the referenced name. The resolution runs over the whole catalog at the load, ahead of the " +
+		"build that later resolves references against it, so no declared stage of a compilation holds the " +
+		"version candidates the constraint is matched against. The version select hands the condition to " +
+		"every caller that asks it to resolve a reference, and the extends resolution is the one that " +
+		"reports it: the rest either drop it for a not-found or translate it into a condition of their own."),
 })
 
 // SplitVersionedURI splits a URI like "core/api-server:1.0.0" into its base

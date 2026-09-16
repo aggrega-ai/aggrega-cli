@@ -116,7 +116,7 @@ func loadComposeExampleForSockets(t *testing.T) (pipeline.Inputs, resolver.Catal
 		Manifest:          manifest,
 		AggregateRawBytes: aggBytes,
 		AggregatePath:     aggPath,
-		WorkspaceConfig:   workspaceconfig.Default(),
+		WorkspaceConfig:   fixtureWorkspaceConfig(),
 		CompilerVersion:   fixtureCompilerVersion,
 	}
 	return inputs, cat.CatalogLookup(), cat.RecipeLookupWithManifest(manifest), cat.SubAggregateLoader()

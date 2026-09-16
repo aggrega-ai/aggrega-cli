@@ -48,11 +48,26 @@ func ProviderBindings(lf *Lockfile) map[string]string {
 // role-less entry — so reconstruction reads the authored role rather than
 // inferring one.
 func MutatorAttachments(lf *Lockfile) []workspaceconfig.PluginRef {
-	if len(lf.Mutators) == 0 {
+	return MutatorAttachmentRefs(lf.Mutators)
+}
+
+// MutatorAttachmentRefs reconstructs the attachment list from a recorded
+// attachment slice, which is the unit [MutatorAttachments] reads out of a
+// lockfile. The contract is that function's, because this is the body it
+// delegates to.
+//
+// It is reachable on its own so the operation that PRODUCES the records can run
+// the very attachments it is about to record, at a moment when there is no
+// lockfile yet to read them back from. That is what makes the graph such an
+// operation draws the graph a later build reconstructs from what it wrote: both
+// run the same attachment list, with the same pinned settings and the same
+// source content, because it is one reconstruction rather than two.
+func MutatorAttachmentRefs(atts []MutatorAttachment) []workspaceconfig.PluginRef {
+	if len(atts) == 0 {
 		return nil
 	}
-	refs := make([]workspaceconfig.PluginRef, 0, len(lf.Mutators))
-	for _, m := range lf.Mutators {
+	refs := make([]workspaceconfig.PluginRef, 0, len(atts))
+	for _, m := range atts {
 		ref := workspaceconfig.PluginRef{URI: m.Plugin, Function: m.Function, Role: plugintype.Role(m.Role)}
 		if len(m.Settings) > 0 || len(m.Sources) > 0 {
 			with := &workspaceconfig.PluginRefWith{Settings: m.Settings}

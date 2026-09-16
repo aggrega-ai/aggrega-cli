@@ -95,6 +95,25 @@ var errManifestCrossBindingPillarCollision = cerrors.Register("manifest-cross-bi
 	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
+// ErrMalformedRecipeReference fires when a Manifest mapping value carries more
+// slash-separated segments than a Recipe / FeatureRecipe reference accepts. The
+// verdict comes from the reference string alone, so the diagnostic names the
+// shape the author typed and the shapes a reference accepts, instead of
+// reporting the entity as absent: the recipe may be present in the catalog and
+// correctly named, and only unreachable through the shape written. That is why
+// it is distinct from the condition raised for a reference the catalog does not
+// hold, whose remedy — add a Manifest mapping for the type — is a step the author
+// of a mis-shaped mapping has already taken.
+//
+// The accepted shape itself has a single home; see [RecipeReferenceSegments].
+func ErrMalformedRecipeReference() error { return errMalformedRecipeReference }
+
+var errMalformedRecipeReference = cerrors.Register("malformed-recipe-reference", cerrors.Meta{
+	ShortCode: "E0095",
+	Message:   "malformed recipe reference in a Manifest mapping value",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
+})
+
 // ErrAnnotationBindingTargetUnresolved wraps a Manifest annotation binding
 // whose declared route cannot be resolved against the Feature it targets: the
 // Feature is absent from the loaded catalog, its spec.schema does not compile,

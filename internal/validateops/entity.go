@@ -535,12 +535,19 @@ func buildEntityHarness(implements, recipeURI string, comp *types.Component, loo
 // through the pipeline itself; the accumulated result carries only this scope's
 // deterministic report.
 func runRenderTiers(ctx context.Context, res *EntityResult, h entityHarness, lookup resolver.CatalogLookup, recipeLookup renderer.RecipeLookup, subAggregateLoader topology.SubAggregateLoader, suppressUnsupportedFieldWarnings bool) error {
+	// A single-entity harness runs against no workspace at all — it synthesizes
+	// its Release in memory — so the defaults are the configuration in force, and
+	// they are supplied explicitly rather than left unset: an unsupplied
+	// configuration is refused at the graph entry, and the two facts are not the
+	// same. Nothing is attached under these defaults, so the transform roles are
+	// a no-op here for the right reason.
+	wsCfg := workspaceconfig.Default()
 	inputs := pipeline.Inputs{
 		Release:           h.release,
 		Manifest:          h.manifest,
 		AggregateRawBytes: h.aggregateBytes,
 		AggregatePath:     h.aggregatePath,
-		WorkspaceConfig:   workspaceconfig.Default(),
+		WorkspaceConfig:   &wsCfg,
 	}
 
 	// Tier 2: resolution, guards, IR construction — no render. A missing

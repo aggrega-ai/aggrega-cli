@@ -600,6 +600,10 @@ func TestRunTier4Validation_CrossFileAnalyzerViolationsFilteredToValidatedFile(t
 	// SourceFile records sit in the same coordinate system as the
 	// catalog accessors' sub-aggregate paths.
 	relAggPath := catalog.RelativeToWorkspace(srv.workspaceRoot, aggPath)
+	// A copy of the daemon's configuration, as the production path also hands the
+	// pipeline one it is free to re-point: the field is read by the pipeline and
+	// never written through to the server's own value.
+	wsCfg := srv.wsConfig
 	tier4, _ := pipeline.RunTier4Pipeline(
 		context.Background(),
 		pipeline.Inputs{
@@ -607,7 +611,7 @@ func TestRunTier4Validation_CrossFileAnalyzerViolationsFilteredToValidatedFile(t
 			Manifest:          resolved.Manifest,
 			AggregateRawBytes: resolved.AggBytes,
 			AggregatePath:     relAggPath,
-			WorkspaceConfig:   srv.wsConfig,
+			WorkspaceConfig:   &wsCfg,
 		},
 		view.AsCatalogLookup(),
 		view.RecipeLookupWithManifest(resolved.Manifest).Recipe,

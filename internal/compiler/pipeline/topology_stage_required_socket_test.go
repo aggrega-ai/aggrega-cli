@@ -13,7 +13,6 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
-	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
 // The proofs in this file cover the required uses-socket rule as the build
@@ -162,7 +161,7 @@ func compileDocuments(t *testing.T, catalogPath, releasePath string, aggregate [
 			AggregateRawBytes: aggregate,
 			AggregatePath:     invocationAggregatePath,
 			ReleasePath:       releasePath,
-			WorkspaceConfig:   workspaceconfig.Default(),
+			WorkspaceConfig:   defaultWorkspaceConfigForTest(),
 			CompilerVersion:   invocationVersion,
 		},
 		cat.CatalogLookup(),

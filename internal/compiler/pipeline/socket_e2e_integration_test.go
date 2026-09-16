@@ -68,7 +68,7 @@ func loadFullstackForSockets(t *testing.T) (pipeline.Inputs, resolver.CatalogLoo
 		Manifest:          manifest,
 		AggregateRawBytes: aggBytes,
 		AggregatePath:     fullstackAggregatePath,
-		WorkspaceConfig:   workspaceconfig.Default(),
+		WorkspaceConfig:   fixtureWorkspaceConfig(),
 		CompilerVersion:   fixtureCompilerVersion,
 	}
 	return inputs, cat.CatalogLookup(), cat.RecipeLookupWithManifest(manifest), cat.SubAggregateLoader()
@@ -164,7 +164,7 @@ func loadFullstackWithProofBinding(t *testing.T) (pipeline.Inputs, resolver.Cata
 		Manifest:          manifest,
 		AggregateRawBytes: aggBytes,
 		AggregatePath:     fullstackAggregatePath,
-		WorkspaceConfig:   workspaceconfig.Default(),
+		WorkspaceConfig:   fixtureWorkspaceConfig(),
 		CompilerVersion:   fixtureCompilerVersion,
 	}
 	return inputs, cat.CatalogLookup(), cat.RecipeLookupWithManifest(manifest), cat.SubAggregateLoader()

@@ -56,8 +56,8 @@ func newDocumentSubject(sourceFile string) DocumentSubject {
 // presenting the next document. A parameter here would be one this function
 // never reads.
 //
-// No production path invokes it, and it is nonetheless load-bearing, because it
-// is the framework's minimal entry and this package's own controls rest on that.
+// It is the framework's minimal entry, and this package's own controls rest on
+// that rather than on anything a caller does with it.
 // The programs under testdata that must compile and must not compile differ from
 // one another in the subject kind their check declares and in nothing else, which
 // is what makes a compile failure there attributable to the kinds refusing to
@@ -161,6 +161,61 @@ func RunOnDocumentAnnotationBindings[V View](
 			sourceFile, binding,
 			documentSpecSegments(
 				authoredKeyMappings, authoredKeyFeatures, authoredKeyAnnotations, binding,
+			)...,
+		)
+		out = append(out, check.Run(view, subject)...)
+	}
+	return out
+}
+
+// RunOnDocumentMappingEntries invokes check once per entry of the presented
+// Manifest's recipe mapping table, in the order the entries are given.
+//
+// It is a push entry for the reason [RunOnDocumentAnnotationBindings] is, and the
+// reason is the outer coordinate rather than anything about a Manifest: the kind
+// is rooted at a document, and no point in the compilation holds a materialised
+// document set to walk. What differs is the coordinate inside it — a Manifest's
+// mapping entries are a set once the document is in hand, so this entry walks
+// them.
+//
+// entries are the declared mapping entries, and the caller presents them in the
+// deterministic order the fact that enumerates them declares. That obligation is
+// the same one every enumerator interface carries, and it lands here because the
+// push side of the framework has no enumerator to put it on: a check raises in
+// the order it is invoked, so this order is the order diagnostics appear in.
+// Nothing here sorts and nothing here derives an entry.
+//
+// It takes the record the enumerating fact returns rather than three parallel
+// lists, and that is single-sourcing rather than convenience. An entry's identity
+// is its tier, its axis and its key taken together, so a signature splitting them
+// would hand the framework three lists to re-pair by position — the same
+// re-derivation the composite fact exists to close, arrived at through the
+// traversal instead of through the view.
+//
+// A locator names .spec.mappings.<tier>.<axis>.<key>, the site the entry is
+// authored at, assembled through the same helper every other document-level site
+// uses so one authored shape has one spelling. The tier and axis reach the
+// locator as the author's own words because that is what they are — the entry's
+// coordinates and the file's keys are the same two strings, which is why the
+// vocabulary a rule branches on is declared from the authoring keys rather than
+// beside them.
+//
+// It takes no [Cancellation] and returns no error, for the reason
+// [RunOnDocumentParameters] states: the signal is read once per outermost
+// coordinate, the outermost coordinate here is the document, and the loop over
+// documents is the caller's.
+func RunOnDocumentMappingEntries[V View](
+	sourceFile string,
+	entries []ManifestRecipeMapping,
+	view V,
+	check Check[V, DocumentMappingEntrySubject],
+) []Objection {
+	var out []Objection
+	for _, entry := range entries {
+		subject := newDocumentMappingEntrySubject(
+			sourceFile, entry.Tier, entry.Axis, entry.Key,
+			documentSpecSegments(
+				authoredKeyMappings, entry.Tier, entry.Axis, entry.Key,
 			)...,
 		)
 		out = append(out, check.Run(view, subject)...)

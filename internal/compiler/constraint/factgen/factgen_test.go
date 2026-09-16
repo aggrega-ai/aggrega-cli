@@ -21,6 +21,7 @@ import (
 var inRepoTargets = map[string][]string{
 	"views_gen.go":        {".."},
 	"subjectkinds_gen.go": {".."},
+	"viewbases_gen.go":    {".."},
 }
 
 // externalTargets names each target whose committed copy lives outside this

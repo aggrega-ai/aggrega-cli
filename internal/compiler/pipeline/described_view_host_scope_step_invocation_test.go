@@ -22,7 +22,6 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
-	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
 // The proofs in this file are about the one condition the pipeline-step proofs
@@ -148,7 +147,7 @@ func buildHostScopeFixture(t *testing.T, manifestPath, releasePath string) hostS
 	}
 	recipeLookup := cat.RecipeLookupWithManifest(manifest)
 	lookup := buildEntityPluginLookup(
-		Inputs{WorkspaceConfig: workspaceconfig.Default()}, catalogLookup,
+		Inputs{WorkspaceConfig: defaultWorkspaceConfigForTest()}, catalogLookup,
 	)
 
 	// The provider dispatch the build itself uses, rather than a stand-in. The

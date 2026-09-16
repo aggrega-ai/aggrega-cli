@@ -514,11 +514,15 @@ func writeInvocationSection(b *strings.Builder, c chain) error {
 		// page. What the read establishes is invocation, so invocation is all this
 		// says.
 		b.WriteString("**Every declared check is invoked from a production path.** Each check below\n")
-		b.WriteString("runs at the stage its declared view fixes.\n\n")
+		b.WriteString("runs at the stage its declared view fixes, where that view is one this\n")
+		b.WriteString("generator emitted — a check against a locally declared view fixes no stage in\n")
+		b.WriteString("the generated chain, and its stage cell says so rather than naming one.\n\n")
 	default:
 		b.WriteString("**Some declared checks are invoked and some are not, and the column below is\n")
 		b.WriteString("the only place that difference is visible.** An invoked check runs at the\n")
-		b.WriteString("stage its declared view fixes.\n\n")
+		b.WriteString("stage its declared view fixes, where that view is one this generator\n")
+		b.WriteString("emitted — a check against a locally declared view fixes no stage in the\n")
+		b.WriteString("generated chain, and its stage cell says so rather than naming one.\n\n")
 	}
 
 	b.WriteString("| Check | Declared in | Stage | Invoked |\n")

@@ -485,7 +485,7 @@ func TestTheGraphStageRulesThreadTheCallersSignalIntoTheRequiredSlotWalk(t *test
 	if nodes < 2 {
 		t.Fatalf("the graph holds %d node(s); nodes+1 and 2*nodes are the same number", nodes)
 	}
-	before := len(out.Analysis.Errors)
+	before := len(out.Violations)
 	if before == 0 {
 		t.Fatal("the spliced catalog produced no violation, so nothing distinguishes a stopped walk from a silent one")
 	}
@@ -514,14 +514,14 @@ func TestTheGraphStageRulesThreadTheCallersSignalIntoTheRequiredSlotWalk(t *test
 		out.IRGraph, out.GraphView, watched, releaseFileOf(out.ResolveResult), out.AttachmentSites, out.CarriedConnections,
 	)
 
-	if err := runGraphStageRules(withdrawn, out); !errors.Is(err, context.Canceled) {
+	if err := runGraphStageRules(withdrawn, out.GraphScope); !errors.Is(err, context.Canceled) {
 		t.Fatalf("the graph-stage rules returned %v for a caller that withdrew, want the withdrawal", err)
 	}
 	if lookups != nodes+1 {
 		t.Errorf("the slot axis was consulted %d time(s) for a caller that withdrew during this walk's first node; want exactly %d — the walk before it over the graph's %d node(s), plus this walk's first",
 			lookups, nodes+1, nodes)
 	}
-	if after := len(out.Analysis.Errors); after != before {
+	if after := len(out.Violations); after != before {
 		t.Errorf("a stopped walk still appended %d violation(s)", after-before)
 	}
 }

@@ -205,7 +205,7 @@ func ResolveClosure(ctx context.Context, in ClosureInputs) (*ResolvedClosure, *C
 	// it and leave the rest reporting a present recipe as absent. Only the first
 	// fault is reported, because the closure walk that follows would halt on it
 	// anyway.
-	if faults := catalog.ManifestRecipeReferenceFaults(manifest); len(faults) > 0 {
+	if faults := resolver.ManifestRecipeReferenceFaults(manifest); len(faults) > 0 {
 		return nil, &ClosureError{
 			Stage: ClosureStageManifestReferenceShape,
 			msg:   faults[0].Error(),

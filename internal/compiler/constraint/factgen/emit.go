@@ -292,9 +292,15 @@ func emitPlacementTable(c chain, kinds []kind, shares []tupleShare) ([]byte, err
 	b.WriteString("A check's stage is where it would be invoked; whether anything invokes it is a\n")
 	b.WriteString("separate question, answered for each declared check in the next section. Read\n")
 	b.WriteString("that section before reading a stage row as a guard.\n\n")
-	b.WriteString("The measured census this registry was declared from keeps the read-site\n")
-	b.WriteString("counts and the near-duplicate reasoning a generated table cannot carry. For\n")
-	b.WriteString("placement, this table supersedes it.\n\n")
+	// No paragraph here points at the material this registry was declared from,
+	// and the absence is deliberate rather than an omission to be filled in. This
+	// prose is a string literal in a Go file, which is a user-visible surface, so
+	// such a pointer could not name its target — and one that names nothing tells
+	// a reader something exists while leaving them unable to reach it. What it
+	// would have claimed is covered here anyway or is false: this page's authority
+	// for placement is stated above, and the near-duplicate risk a generated table
+	// supposedly cannot carry is exactly what the shared-tuple section below calls
+	// itself the mitigation for.
 
 	if err := writeInvocationSection(&b, c); err != nil {
 		return nil, err

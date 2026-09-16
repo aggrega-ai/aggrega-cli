@@ -163,9 +163,15 @@ func TestApplyGovernanceComposition_SuppliesBothHalvesInOneCall(t *testing.T) {
 		{URI: "governance/opa-gate:1.0.0", Role: plugintype.RoleIRVerdict},
 	}
 
-	inputs := pipeline.Inputs{WorkspaceConfig: cfg, Lockfile: &lockfile.Lockfile{}}
+	inputs := pipeline.Inputs{WorkspaceConfig: &cfg, Lockfile: &lockfile.Lockfile{}}
 	if err := ApplyGovernanceComposition(&inputs, view, releasePath); err != nil {
 		t.Fatalf("ApplyGovernanceComposition: %v", err)
+	}
+	// The composition rewrote a copy and pointed the inputs at it, leaving the
+	// caller's own configuration as authored. That is what stops a long-lived
+	// surface leaking one request's reconstructed attachments into the next.
+	if len(cfg.Plugins.Governance) != 2 {
+		t.Errorf("the composition wrote through to the caller's configuration: got %+v", cfg.Plugins.Governance)
 	}
 
 	if got := inputs.VerdictPluginTrust.Pins[trustFixtureCoordinate]; got != trustFixtureDigest {

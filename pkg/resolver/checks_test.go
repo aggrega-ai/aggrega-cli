@@ -205,8 +205,11 @@ func TestAggregateDocumentViewRefusesEntityAssertionNames(t *testing.T) {
 		if !ok {
 			t.Fatalf("refusal is not a string: %#v", recovered)
 		}
-		if !strings.Contains(message, "inheritance chain") {
-			t.Errorf("refusal does not say why it cannot answer: %s", message)
+		for _, want := range []string{"entity-assertion-name-set", "Component document"} {
+			if !strings.Contains(message, want) {
+				t.Errorf("refusal does not name %q — the fact it cannot answer and the "+
+					"document kind that carries it: %s", want, message)
+			}
 		}
 	}()
 	presented.EntityAssertionNameSet(aggregatePath)

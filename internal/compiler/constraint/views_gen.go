@@ -235,6 +235,36 @@ type AnnotationBindingRoute struct {
 	Path string
 }
 
+// ManifestRecipeMapping is one entry of a Manifest's recipe mapping table,
+// identified the way the table itself identifies it: the tier it is
+// written under, the axis it keys on, and the key the author wrote.
+//
+// It is one fact rather than three because no one of the three names an
+// entry. A tier holds two axes and an axis holds many keys, so a key alone
+// names as many entries as there are axes, and a reader holding the three
+// as separate lists would have to re-pair them by position — which is
+// the re-derivation a declared fact exists to close. The three together
+// name exactly one entry, because each axis is a mapping and a mapping
+// holds one value per key.
+//
+// The tier is one of the two keys a Manifest writes under mappings, and
+// the axis one of the two a tier writes under; both are carried as the
+// words the author typed, so a rule reporting on an entry reports it in
+// the author's own spelling.
+type ManifestRecipeMapping struct {
+	// Tier is the mapping tier the entry is written under, as the author wrote
+	// it.
+	Tier string
+
+	// Axis is the keying axis within that tier the entry is written under, as
+	// the author wrote it.
+	Axis string
+
+	// Key is the key the entry is declared under, which is what the mapping
+	// maps.
+	Key string
+}
+
 // View is the base every stage's view embeds. It declares no fact of its
 // own; it carries the contract every view shares.
 //
@@ -396,6 +426,75 @@ type DocumentView interface {
 	// Keyed by (document, annotation-binding); read from
 	// types.AnnotationBinding.Maps.
 	ManifestAnnotationBindingRoutes(document string, binding string) []AnnotationBindingRoute
+
+	// RecipeValuesMappingDeclared reports whether the presented Recipe
+	// declares a values overlay.
+	//
+	// It answers whether the author wrote the block at all, in any of the
+	// forms the block accepts — an inline template, a file import, a library
+	// import — and never what the overlay resolves to. The three forms are
+	// one authoring decision and a rule asking whether an overlay exists is
+	// asking about that decision, so splitting them would hand every such rule
+	// three answers to recombine.
+	//
+	// Keyed by document; read from types.RecipeSpec.ValuesMapping.
+	RecipeValuesMappingDeclared(document string) bool
+
+	// RecipeSourceDeclared reports whether the presented Recipe declares a
+	// source pointer.
+	//
+	// It is a separate fact from the values overlay above rather than the
+	// other half of one, because the two are written at two authored keys: a
+	// fact naming both carriers would be a fact about two sites, and a rule
+	// reading it could not say which of them the author is being sent to.
+	//
+	// Whether a source is present is a shape question and is the whole of what
+	// this answers. What the pointer contains is the engine's contract to
+	// define, so nothing here reads inside it.
+	//
+	// Keyed by document; read from types.RecipeSpec.Source.
+	RecipeSourceDeclared(document string) bool
+
+	// ManifestRecipeMappingEntries are the entries of the presented Manifest's
+	// recipe mapping table, in author order within each axis: the components
+	// tier before the features tier, and within each tier the type axis before
+	// the name axis.
+	//
+	// A mapping entry is how a Manifest says which Recipe or FeatureRecipe
+	// renders a component or a feature — the key names what is being mapped
+	// and the value names the recipe. This fact is the entry set; what one
+	// entry maps to is a fact of its own, keyed by the entry.
+	//
+	// The order inside an axis is the author's and is carried rather than
+	// sorted, because a rule invoked once per entry raises in invocation order
+	// and that order is the order the findings reach the reader. The order
+	// BETWEEN the four is fixed here rather than carried, because the two
+	// tiers are keys of a mapping rather than a sequence and so is the pair of
+	// axes inside a tier: there is no author order between them to carry, and
+	// a rule reporting in invocation order needs one that does not move.
+	//
+	// Keyed by (document, mapping-entry); read from
+	// types.ManifestSpec.Mappings.
+	ManifestRecipeMappingEntries(document string) []ManifestRecipeMapping
+
+	// ManifestRecipeMappingReference is the Recipe or FeatureRecipe reference
+	// one mapping entry names, and whether the presented Manifest declares an
+	// entry at those coordinates at all.
+	//
+	// The second result is load-bearing on the terms every other two-result
+	// fact states: coordinates nobody wrote and a declared entry naming the
+	// empty reference are different findings, and a rule that cannot tell them
+	// apart reports the wrong one.
+	//
+	// Its source carrier names the structure and not one of its fields, which
+	// is the honest naming here rather than a looser one. A tier holds the
+	// type axis and the name axis as two sibling maps of identical shape, and
+	// which of the two an entry sits in is the entry's own axis coordinate —
+	// so naming either field would state half the source and leave the other
+	// half to be discovered from the accessor's parameters.
+	//
+	// Keyed by (document, mapping-entry); read from types.MappingTier.
+	ManifestRecipeMappingReference(document string, tier string, axis string, key string) (string, bool)
 }
 
 // NormalizedView exposes the facts complete at the normalized stage: both

@@ -40,7 +40,7 @@ const (
 )
 
 const (
-	// SubjectDocument is the subject kind document, keyed by 2 declared facts.
+	// SubjectDocument is the subject kind document, keyed by 4 declared facts.
 	SubjectDocument SubjectKind = "document"
 
 	// SubjectDocumentParameter is the subject kind (document, parameter), keyed by 1 declared fact.
@@ -51,6 +51,9 @@ const (
 
 	// SubjectDocumentAnnotationBinding is the subject kind (document, annotation-binding), keyed by 4 declared facts.
 	SubjectDocumentAnnotationBinding SubjectKind = "(document, annotation-binding)"
+
+	// SubjectDocumentMappingEntry is the subject kind (document, mapping-entry), keyed by 2 declared facts.
+	SubjectDocumentMappingEntry SubjectKind = "(document, mapping-entry)"
 
 	// SubjectNode is the subject kind node, keyed by 25 declared facts.
 	SubjectNode SubjectKind = "node"
@@ -164,6 +167,7 @@ var SubjectKinds = []SubjectKindInfo{
 	{Kind: SubjectDocumentParameter, Coordinates: []string{"document", "parameter"}, Traversal: TraversalPush},
 	{Kind: SubjectDocumentAssertion, Coordinates: []string{"document", "assertion"}, Traversal: TraversalPush},
 	{Kind: SubjectDocumentAnnotationBinding, Coordinates: []string{"document", "annotation-binding"}, Traversal: TraversalPush},
+	{Kind: SubjectDocumentMappingEntry, Coordinates: []string{"document", "mapping-entry"}, Traversal: TraversalPush},
 	{Kind: SubjectNode, Coordinates: []string{"node"}, Traversal: TraversalPull},
 	{Kind: SubjectNodeSocket, Coordinates: []string{"node", "socket"}, Traversal: TraversalPull},
 	{Kind: SubjectNodeAttachmentSocket, Coordinates: []string{"node", "attachment", "socket"}, Traversal: TraversalPull},

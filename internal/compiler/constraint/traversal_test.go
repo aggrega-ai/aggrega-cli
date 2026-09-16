@@ -1618,6 +1618,43 @@ func coordinateFlowCases() []coordinateFlowCase {
 			},
 		},
 
+		// The Manifest's mapping-entry kind reads through its push entry, so the
+		// entries come from the caller. Four are presented rather than two: the
+		// coordinate is composite, so a readback over one tier or one axis could
+		// not tell a constructor that carried the entry's own tier and axis from
+		// one that carried a constant. The four differ in every element of the
+		// triple, and the two keys are deliberately not prefixes of one another,
+		// so a readback that truncated or confused any of them would not still
+		// compare equal.
+		{
+			kind: SubjectDocumentMappingEntry,
+			seam: seamTraversal,
+			read: func(_ traversalFixture) []string {
+				return readback(func(
+					c Check[traversalView, DocumentMappingEntrySubject],
+				) ([]Objection, error) {
+					return RunOnDocumentMappingEntries(
+						documentFile,
+						[]ManifestRecipeMapping{
+							{Tier: MappingTierComponents, Axis: MappingAxisType, Key: "core/compute/api"},
+							{Tier: MappingTierComponents, Axis: MappingAxisName, Key: "web"},
+							{Tier: MappingTierFeatures, Axis: MappingAxisType, Key: "core/dns"},
+							{Tier: MappingTierFeatures, Axis: MappingAxisName, Key: "logs"},
+						},
+						traversalView{}, c,
+					), nil
+				}, func(s DocumentMappingEntrySubject) string {
+					return s.SourceFile() + "|" + s.MappingTier() + "|" + s.MappingAxis() + "|" + s.MappingKey()
+				})
+			},
+			want: []string{
+				documentFile + "|components|type|core/compute/api",
+				documentFile + "|components|name|web",
+				documentFile + "|features|type|core/dns",
+				documentFile + "|features|name|logs",
+			},
+		},
+
 		// The node kind reads its identifier and never its authored name, and the
 		// fixture makes the difference visible: the second node's identifier is
 		// qualified by the container it was reached through while its authored name is

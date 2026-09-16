@@ -14,7 +14,6 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
-	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
 // The near-miss advisories are exit-code-neutral, and this file is where that is
@@ -186,7 +185,7 @@ func TestNearMissAdvisoryReportsWithoutHaltingTheBuild(t *testing.T) {
 				Manifest:          manifest,
 				AggregateRawBytes: probe.splice(t, aggBytes),
 				AggregatePath:     fullstackAggregatePath,
-				WorkspaceConfig:   workspaceconfig.Default(),
+				WorkspaceConfig:   fixtureWorkspaceConfig(),
 				CompilerVersion:   fixtureCompilerVersion,
 			}
 

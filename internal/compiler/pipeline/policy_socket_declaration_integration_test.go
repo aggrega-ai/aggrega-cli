@@ -106,7 +106,7 @@ func loadAdHocSocketForSockets(t *testing.T) (pipeline.Inputs, resolver.CatalogL
 		Manifest:          manifest,
 		AggregateRawBytes: aggBytes,
 		AggregatePath:     aggregatePath,
-		WorkspaceConfig:   workspaceconfig.Default(),
+		WorkspaceConfig:   fixtureWorkspaceConfig(),
 		CompilerVersion:   fixtureCompilerVersion,
 	}, cat.CatalogLookup(), cat.RecipeLookupWithManifest(manifest), cat.SubAggregateLoader()
 }

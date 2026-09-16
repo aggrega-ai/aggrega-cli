@@ -17,7 +17,6 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
-	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
 // readFixtureBytes reads a fixture document, failing the test rather than
@@ -160,7 +159,7 @@ func tier4OverFixtureWithErr(t *testing.T, aggregate []byte) (*pipeline.Tier4Res
 			Manifest:          manifest,
 			AggregateRawBytes: aggregate,
 			AggregatePath:     advisoryOverrideAggregatePath,
-			WorkspaceConfig:   workspaceconfig.Default(),
+			WorkspaceConfig:   fixtureWorkspaceConfig(),
 			CompilerVersion:   fixtureCompilerVersion,
 		}, wiredLookup(cat, manifest), cat.RecipeLookupWithManifest(manifest).Recipe, nil)
 	})

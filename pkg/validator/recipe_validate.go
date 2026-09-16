@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
 )
@@ -210,25 +211,39 @@ func validateRecipeOutputComponentLabels(r *types.Recipe, sourcePath string) err
 // validateRecipeValuesMapping enforces the values-mapping rule: valuesMapping requires
 // source.
 //
-// Sourced-mode authoring presents a Source pointer alongside a values overlay.
-// A Recipe with valuesMapping but no Source has no chart/module to overlay
-// values onto.
+// The rule itself is declared rather than written out here: see
+// recipeValuesMappingHasASource, which names the facts it reads and is invoked
+// once per presented document. What this function does is present the document
+// the load is holding and render whatever came back into the failure shape this
+// package's callers read.
+//
+// The rule raises at most one objection, because it is invoked once per document
+// and objects about the document as a whole, so the first failure is the only one
+// there can be. Taking the first rather than returning the set is what keeps this
+// function's result the single failure every other rule here returns.
 func validateRecipeValuesMapping(r *types.Recipe, sourcePath string) error {
-	if r.Spec.ValuesMapping.IsEmpty() {
+	// The presentation is held as the view the rule declared rather than as its
+	// own concrete type, because the entry takes the check and the view together
+	// and infers one type from both. Handing over the concrete type would infer
+	// that type and then refuse the rule, which declares the view.
+	var presented constraint.DocumentView = newRecipeDocumentView(sourcePath, r)
+	failures := shapeRuleErrorsFrom(
+		constraint.RunOnDocument(
+			sourcePath,
+			presented,
+			recipeValuesMappingHasASource,
+		),
+		ruleSubject{
+			Kind:    envelope.KindRecipe,
+			Name:    r.Metadata.Name,
+			Version: r.Metadata.Version,
+			Rule:    "values-mapping",
+		},
+	)
+	if len(failures) == 0 {
 		return nil
 	}
-	if !sourceIsEmpty(r.Spec.Source) {
-		return nil
-	}
-	return NewShapeRuleError(ShapeRuleViolation{
-		Kind:       envelope.KindRecipe,
-		Name:       r.Metadata.Name,
-		Version:    r.Metadata.Version,
-		Path:       sourcePath,
-		Rule:       "values-mapping",
-		Suggestion: "declare a source: pointer alongside valuesMapping (or remove the valuesMapping if no overlay is intended)",
-		Err:        ErrRecipeValuesMappingRequiresSource(),
-	})
+	return failures[0]
 }
 
 // validateRecipeInputKinds enforces the input-kinds rule: at least one input kind

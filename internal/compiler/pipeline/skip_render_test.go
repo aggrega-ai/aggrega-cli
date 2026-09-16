@@ -14,7 +14,6 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
-	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
 // loadFullstackInputs loads the fullstack-app fixture into the RunPipeline
@@ -46,7 +45,7 @@ func loadFullstackInputs(t *testing.T) (pipeline.Inputs, resolver.CatalogLookup,
 		Manifest:          manifest,
 		AggregateRawBytes: aggBytes,
 		AggregatePath:     fullstackAggregatePath,
-		WorkspaceConfig:   workspaceconfig.Default(),
+		WorkspaceConfig:   fixtureWorkspaceConfig(),
 		CompilerVersion:   fixtureCompilerVersion,
 	}
 	return inputs, wiredLookup(cat, manifest), cat.RecipeLookupWithManifest(manifest), cat

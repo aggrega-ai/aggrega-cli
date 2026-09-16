@@ -23,11 +23,20 @@ import (
 // asking about another document is a mistake rather than a lookup that misses —
 // the accessor says so instead of answering.
 //
-// It satisfies [constraint.DocumentView], which declares one fact an Aggregate
-// cannot carry: an Aggregate has no entity inheritance chain, so
-// EntityAssertionNameSet refuses rather than projecting something. The reasoning
-// for refusing sits on that method.
+// It satisfies [constraint.DocumentView], which declares facts an Aggregate
+// cannot carry — an entity's inheritance chain, a Manifest's annotation
+// bindings, a Recipe's overlay and source pointer. The embedded base supplies
+// those and refuses each at the point a check reads it, naming the document kind
+// that does carry it. What holds this type to the facts an Aggregate itself
+// carries is the obligation asserted at the bottom of this file: an Aggregate
+// fact added to the registry stops this type compiling, and a fact carried by
+// any other kind does not reach it.
 type aggregateDocumentView struct {
+	// AggregateDocumentBase supplies the document-stage facts an Aggregate does
+	// not carry, and declares nothing for the ones it does — so this type writes
+	// bodies for exactly the Aggregate's own facts.
+	constraint.AggregateDocumentBase
+
 	// path is the workspace-relative file the document was read from. It is the
 	// document coordinate itself, which is why an accessor's argument is checked
 	// against it.
@@ -69,55 +78,22 @@ func (v aggregateDocumentView) DeclaredParameterKeys(document string) []string {
 	return v.contract.Keys()
 }
 
-// EntityAssertionNameSet refuses: an Aggregate declares no entity inheritance
-// chain, so this view holds no assertion names to present.
-//
-// Refusing is deliberate where returning an empty set would compile and read like
-// an answer. An empty set is the truthful answer for an entity that declares no
-// assertions, so nothing downstream could tell that answer apart from this one:
-// the value would be plausible, permanent, and wrong. A rule reading assertion
-// names is presented a catalog entity's document, which is a different document
-// and therefore a different presentation.
-func (v aggregateDocumentView) EntityAssertionNameSet(string) []string {
-	panic("aggregateDocumentView presents an Aggregate, which declares no entity " +
-		"inheritance chain: present the catalog entity's own document to read its assertion names")
-}
-
-// ManifestAnnotationBindingKeys refuses: an Aggregate declares no annotation
-// binding registry, so this view holds no binding keys to present.
-//
-// Refusing where an empty set would compile is the same judgement the refusal
-// above makes, and it bites harder here. A rule invoked once per binding over an
-// empty set is invoked never, and a rule that never runs raises nothing — which
-// is indistinguishable from a rule that ran and approved.
-func (v aggregateDocumentView) ManifestAnnotationBindingKeys(string) []string {
-	panic("aggregateDocumentView presents an Aggregate, which declares no annotation binding " +
-		"registry: present the Manifest to read its binding keys")
-}
-
-// ManifestAnnotationBindingFeature refuses, for the reason above.
-func (v aggregateDocumentView) ManifestAnnotationBindingFeature(string, string) (string, bool) {
-	panic("aggregateDocumentView presents an Aggregate, which declares no annotation binding " +
-		"registry: present the Manifest to read a binding's Feature")
-}
-
-// ManifestAnnotationBindingRoutes refuses, for the reason above.
-func (v aggregateDocumentView) ManifestAnnotationBindingRoutes(string, string) []constraint.AnnotationBindingRoute {
-	panic("aggregateDocumentView presents an Aggregate, which declares no annotation binding " +
-		"registry: present the Manifest to read a binding's routes")
-}
-
 // manifestDocumentView presents one authored Manifest to a check as named facts:
-// the annotation binding keys its registry declares, and the Feature each of
-// those bindings routes to.
+// the annotation binding keys its registry declares, the Feature each of those
+// bindings routes to, and the entries of its recipe mapping table with the
+// reference each of those entries names.
 //
 // It is the Manifest's counterpart to [aggregateDocumentView] and is deliberately
 // the same shape rather than a shape of its own: both satisfy the one generated
 // [constraint.DocumentView], both answer only about the document they were built
-// for, and both refuse the facts their document cannot carry. A separate
-// Manifest-only view interface written beside that one would give the document
-// stage two contracts, and a check would then have to know which of them it was
-// handed.
+// for, and both take the facts their document cannot carry from the same base. A
+// separate Manifest-only view interface written beside that one would give the
+// document stage two contracts, and a check would then have to know which of them
+// it was handed.
+//
+// What holds it to the facts a Manifest itself carries is the obligation asserted
+// at the bottom of this file: a Manifest fact added to the registry stops this
+// type compiling, and a fact carried by any other kind does not reach it.
 //
 // It answers about the one document it was built for, on the same terms
 // [aggregateDocumentView] does: an accessor asked about another document refuses
@@ -129,7 +105,19 @@ func (v aggregateDocumentView) ManifestAnnotationBindingRoutes(string, string) [
 // annotation binding at. That is also the surface annotation expansion consumes,
 // so presenting it is presenting the whole of what the compiler acts on, and the
 // fact's own declaration states the same site so a rule meets it there.
+//
+// It presents the mapping table on the same terms: the four axis maps written
+// under mappings.components and mappings.features, which are the whole of what a
+// Manifest says about which recipe renders what. A Manifest declaring no tier at
+// all presents no entries, which is the same answer a declared-but-empty tier
+// gives — the two are not distinguished here because nothing downstream asks the
+// question, and a rule needing it would read the tier rather than the entry set.
 type manifestDocumentView struct {
+	// ManifestDocumentBase supplies the document-stage facts a Manifest does not
+	// carry, and declares nothing for the ones it does — so this type writes
+	// bodies for exactly the Manifest's own facts.
+	constraint.ManifestDocumentBase
+
 	// path is the workspace-relative file the Manifest was read from. It is the
 	// document coordinate itself, which is why an accessor's argument is checked
 	// against it.
@@ -142,6 +130,35 @@ type manifestDocumentView struct {
 	// read, so presenting from it keeps one reading of it instead of a second
 	// one here that agrees with it today.
 	bindings *AnnotationRegistry
+
+	// mappings are the document's recipe mapping entries, in the order the
+	// enumerating fact declares. It is the answer and not the table, on the
+	// same terms the registry above is: a view presents facts already
+	// produced, and holding the table would leave an accessor free to read a
+	// field no fact declares.
+	mappings []constraint.ManifestRecipeMapping
+
+	// references is what each of those entries maps to, keyed by the entry's
+	// own coordinates.
+	//
+	// It is built in the same walk that produces the entry list rather than in
+	// a second one, which is what keeps the two answers about one table from
+	// disagreeing: an entry present in the list and absent from this map would
+	// make a rule invoked for it read as an entry nobody declared.
+	references map[mappingEntryCoordinates]string
+}
+
+// mappingEntryCoordinates is one mapping entry's identity as the presentation
+// keys it: the tier, the axis and the key together.
+//
+// It is a struct key rather than a joined string because the three are authored
+// values and an author's key may contain whatever separator a join would pick —
+// at which point two distinct entries would collide on one composed key, silently
+// and in favour of whichever was written last.
+type mappingEntryCoordinates struct {
+	tier string
+	axis string
+	key  string
 }
 
 // newManifestDocumentView presents the Manifest a caller is holding: the file it
@@ -151,8 +168,63 @@ type manifestDocumentView struct {
 // exactly one producer, and routing the presentation through that producer is
 // what keeps the fact single-valued. A caller passing its own registry could pass
 // one built from a different document.
+// The mapping table is read here, in one walk producing both answers, for the
+// reason the registry is derived rather than taken: a caller passing its own
+// entry list could pass one built from a different document, and two walks over
+// one table could disagree about which entries it holds.
 func newManifestDocumentView(path string, manifest *types.Manifest) manifestDocumentView {
-	return manifestDocumentView{path: path, bindings: BuildAnnotationRegistry(manifest)}
+	v := manifestDocumentView{path: path, bindings: BuildAnnotationRegistry(manifest)}
+	if manifest == nil {
+		return v
+	}
+	v.references = make(map[mappingEntryCoordinates]string)
+	read := func(tier, axis string, entries types.OrderedMap[string]) {
+		for _, key := range entries.Keys() {
+			reference, ok := entries.Get(key)
+			if !ok {
+				continue
+			}
+			v.mappings = append(v.mappings, constraint.ManifestRecipeMapping{
+				Tier: tier, Axis: axis, Key: key,
+			})
+			v.references[mappingEntryCoordinates{tier: tier, axis: axis, key: key}] = reference
+		}
+	}
+	readTier := func(tier string, entries *types.MappingTier) {
+		if entries == nil {
+			return
+		}
+		read(tier, constraint.MappingAxisType, entries.Type)
+		read(tier, constraint.MappingAxisName, entries.Name)
+	}
+	readTier(constraint.MappingTierComponents, manifest.Spec.Mappings.Components)
+	readTier(constraint.MappingTierFeatures, manifest.Spec.Mappings.Features)
+	return v
+}
+
+// ManifestRecipeMappingEntries returns the entries of the presented Manifest's
+// recipe mapping table, in the order the fact declares: the components tier
+// before the features tier, and within each the type axis before the name axis,
+// each axis in author order.
+func (v manifestDocumentView) ManifestRecipeMappingEntries(
+	document string,
+) []constraint.ManifestRecipeMapping {
+	v.refuseOtherDocument(document, "ManifestRecipeMappingEntries")
+	return v.mappings
+}
+
+// ManifestRecipeMappingReference returns the Recipe or FeatureRecipe reference
+// the entry at those coordinates names, and whether the presented Manifest
+// declares an entry there at all.
+func (v manifestDocumentView) ManifestRecipeMappingReference(
+	document string,
+	tier string,
+	axis string,
+	key string,
+) (string, bool) {
+	v.refuseOtherDocument(document, "ManifestRecipeMappingReference")
+	reference, ok := v.references[mappingEntryCoordinates{tier: tier, axis: axis, key: key}]
+	return reference, ok
 }
 
 // ManifestAnnotationBindingKeys returns the annotation keys the presented
@@ -228,30 +300,6 @@ const (
 	bindingRoutePillarValues = "values"
 )
 
-// RawAggregateText refuses: a Manifest is not an Aggregate, so this view holds no
-// Aggregate text to present.
-func (v manifestDocumentView) RawAggregateText(string) []byte {
-	panic("manifestDocumentView presents a Manifest: present the Aggregate to read its text " +
-		"as authored")
-}
-
-// DeclaredParameterKeys refuses: a Manifest declares no parameter contract, so
-// this view holds no parameter names to present.
-//
-// An empty set is the truthful answer for an Aggregate declaring no parameters,
-// so nothing downstream could tell that answer apart from this one.
-func (v manifestDocumentView) DeclaredParameterKeys(string) []string {
-	panic("manifestDocumentView presents a Manifest, which declares no parameter contract: " +
-		"present the Aggregate to read its declared parameters")
-}
-
-// EntityAssertionNameSet refuses: a Manifest declares no entity inheritance
-// chain, so this view holds no assertion names to present.
-func (v manifestDocumentView) EntityAssertionNameSet(string) []string {
-	panic("manifestDocumentView presents a Manifest, which declares no entity inheritance " +
-		"chain: present the catalog entity's own document to read its assertion names")
-}
-
 // refuseOtherDocument refuses an accessor call naming a document this value was
 // not built for, for the reason [aggregateDocumentView.refuseOtherDocument]
 // states.
@@ -283,7 +331,16 @@ func (v aggregateDocumentView) refuseOtherDocument(document, accessor string) {
 //
 // Both are asserted against the one generated interface, which is what makes the
 // two presentations the same shape rather than two shapes that agree today.
+//
+// The per-kind assertions are the half the embedded base cannot supply.
+// Embedding makes every document-stage fact compile, so the view assertion alone
+// would accept a presentation answering none of them; naming each kind's own
+// obligation is what makes a fact added to the registry fail on the
+// presentations of that kind, and on no other.
 var (
 	_ constraint.DocumentView = aggregateDocumentView{}
 	_ constraint.DocumentView = manifestDocumentView{}
+
+	_ constraint.AggregateDocumentFacts = aggregateDocumentView{}
+	_ constraint.ManifestDocumentFacts  = manifestDocumentView{}
 )

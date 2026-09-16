@@ -90,7 +90,7 @@ func TestClosureComputeCallSiteCensus(t *testing.T) {
 		if _, ok := expected[path]; !ok {
 			t.Errorf("%s computes a closure and is not in the census.\n"+
 				"A closure walk reports a mis-shaped Manifest mapping value as an entity the catalog "+
-				"does not hold. Call catalog.ManifestRecipeReferenceFaults on the composed Manifest "+
+				"does not hold. Call resolver.ManifestRecipeReferenceFaults on the composed Manifest"+
 				"before the walk, then add this path here with the reason it computes its own closure.", path)
 		}
 	}

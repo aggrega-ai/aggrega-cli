@@ -4,6 +4,7 @@
 package compilerops
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
@@ -132,20 +133,33 @@ func VerdictPluginTrust(view *catalog.LazyLookup, wsCfg workspaceconfig.Config, 
 //     enforcement conditional on the lockfile would turn a failed lockfile read
 //     into a way to run the gates unchecked.
 //
-// It mutates the inputs in place, and both fields it writes are the caller's own
-// per-build value copy — the workspace config on pipeline.Inputs is a value, so
-// rewriting its attachment list touches this build's inputs and never the config
-// on disk or another request's.
+// It mutates the inputs in place. The rewritten attachment list lands on a COPY
+// of the workspace configuration, which the inputs are then pointed at: the
+// configuration reaches the pipeline by pointer, and a long-lived surface hands
+// the same one to every request it serves, so writing the list through that
+// pointer would rewrite the caller's own configuration and leak this build's
+// reconstructed attachments into the next request. Copying here is what keeps
+// the rewrite scoped to this build, and it leaves the config on disk and every
+// other request's untouched.
+//
+// A caller that supplied no configuration is refused: there is nothing to
+// compose onto, and the graph entry refuses such a run anyway, so reporting it
+// at the composition names the omission where it can still be fixed.
 func ApplyGovernanceComposition(in *pipeline.Inputs, view *catalog.LazyLookup, releasePath string) error {
-	trusted, err := VerdictPluginTrust(view, in.WorkspaceConfig, releasePath)
+	if in.WorkspaceConfig == nil {
+		return errors.New("governance composition: no workspace configuration was supplied on the pipeline inputs")
+	}
+	trusted, err := VerdictPluginTrust(view, *in.WorkspaceConfig, releasePath)
 	if err != nil {
 		return err
 	}
 	in.VerdictPluginTrust = trusted
 	if in.Lockfile != nil {
-		in.WorkspaceConfig.Plugins.Governance = append(
+		composed := *in.WorkspaceConfig
+		composed.Plugins.Governance = append(
 			lockfile.MutatorAttachments(in.Lockfile),
 			in.WorkspaceConfig.Plugins.VerdictGovernanceRefs()...)
+		in.WorkspaceConfig = &composed
 	}
 	return nil
 }

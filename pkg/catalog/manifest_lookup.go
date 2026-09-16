@@ -16,6 +16,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/entitykind"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/ociref"
+	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
 )
@@ -158,31 +159,13 @@ var errProviderBindingUnsatisfied = cerrors.Register("provider-binding-unsatisfi
 // the value pins, and one whose bare name two capabilities both offer, since
 // neither resolves to a recipe the author can be said to have chosen. A mapping
 // value whose shape a reference cannot express is
-// ErrMalformedRecipeReference instead, so the absent-from-the-catalog claim is
-// only made about a reference that could have resolved.
+// [resolver.ErrMalformedRecipeReference] instead, so the absent-from-the-catalog
+// claim is only made about a reference that could have resolved.
 func ErrNoRecipeResolved() error { return errNoRecipeResolved }
 
 var errNoRecipeResolved = cerrors.Register("no-recipe-resolved", cerrors.Meta{
 	ShortCode: "E0099",
 	Message:   "no recipe resolved for component/feature instance: add an explicit Manifest mapping for its type",
-	RulePlace: cerrors.RuleOverAuthoredInput(),
-})
-
-// ErrMalformedRecipeReference fires when a Manifest mapping value carries more
-// slash-separated segments than a Recipe / FeatureRecipe reference accepts. The
-// verdict comes from the reference string alone, so the diagnostic names the
-// shape the author typed and the shapes a reference accepts, instead of
-// reporting the entity as absent: the recipe may be present in the catalog and
-// correctly named, and only unreachable through the shape written. That is why
-// it is distinct from ErrNoRecipeResolved, whose remedy — add a Manifest mapping
-// for the type — is a step the author of a mis-shaped mapping has already taken.
-// The accepted shape itself has a single home beside the resolution ladder that
-// enforces it; see recipeReferenceMaxSegments.
-func ErrMalformedRecipeReference() error { return errMalformedRecipeReference }
-
-var errMalformedRecipeReference = cerrors.Register("malformed-recipe-reference", cerrors.Meta{
-	ShortCode: "E0095",
-	Message:   "malformed recipe reference in a Manifest mapping value",
 	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
@@ -366,30 +349,16 @@ func (c *Catalog) featureTypeToFeatureRecipeWithManifest(manifest *types.Manifes
 	}
 }
 
-// The shape a Recipe / FeatureRecipe reference accepts has ONE home: these two
-// declarations, sitting beside the resolution ladder that enforces them. The
-// ladder below reads the ceiling, RecipeByURI's godoc points here instead of
-// restating it, and the shape diagnostic quotes the shape statement verbatim.
-// Keeping it single-sourced is load-bearing rather than tidy: a ladder that
-// grows a reference position beyond the capability one widens the accepted
-// shape, and a count or a shape list restated anywhere else would go quietly
-// false, because no gate reads prose. Whoever adds the position edits these
-// two lines and every reader follows.
-const (
-	recipeReferenceMaxSegments = 2
-
-	acceptedRecipeReferenceShapes = `"name", "name:version", "capability/name" or "capability/name:version"`
-)
-
-// recipeReferenceSegments counts the slash-separated segments in a Recipe /
-// FeatureRecipe reference and reports whether that count exceeds what the
-// resolution ladder accepts. It reads the reference string only — no catalog
-// lookup — which is what lets a mis-shaped reference be reported as a shape
-// fault rather than as an entity the catalog does not hold.
-func recipeReferenceSegments(uri string) (int, bool) {
-	n := strings.Count(uri, "/") + 1
-	return n, n > recipeReferenceMaxSegments
-}
+// The shape a Recipe / FeatureRecipe reference accepts has ONE home, and it is
+// no longer in this package: it travels with the rule that enforces it, in
+// pkg/resolver, which this package depends on. The ladder below reads the
+// ceiling through [resolver.RecipeReferenceSegments] and quotes the shape
+// statement from [resolver.AcceptedRecipeReferenceShapes]; RecipeByURI's godoc
+// points there instead of restating it. Keeping it single-sourced is
+// load-bearing rather than tidy: a ladder that grows a reference position beyond
+// the capability one widens the accepted shape, and a count or a shape list
+// restated here would go quietly false, because no gate reads prose. Whoever
+// adds the position edits those two declarations and every reader follows.
 
 // RecipeByURI resolves a Manifest mapping value (a Recipe URI) to its catalog
 // Recipe. The catalog is keyed by capability-scoped identity
@@ -405,10 +374,11 @@ func recipeReferenceSegments(uri string) (int, bool) {
 //  3. Bare ("mariadb-rds:1.0.0" or "mariadb-rds") — a scan across every
 //     capability, with the version selected within each one.
 //
-// A Recipe URI therefore carries at most recipeReferenceMaxSegments segments,
-// whose declaration above is the single home for the accepted shape: strings.Cut
-// splits on the FIRST "/" only, so a segment past the ceiling stays inside the
-// name candidate and matches no Metadata.Name.
+// A Recipe URI therefore carries at most the segments
+// [resolver.RecipeReferenceSegments] measures against, whose declaration is the
+// single home for the accepted shape: strings.Cut splits on the FIRST "/" only,
+// so a segment past the ceiling stays inside the name candidate and matches no
+// Metadata.Name.
 //
 // Version selection is the shared three-form rule every by-name catalog lookup
 // applies: an exact pin resolves that version, a caret pin the highest in range,
@@ -907,16 +877,18 @@ func (c *Catalog) resolveComponentRecipeForVerify(manifest *types.Manifest, inst
 			// runs only after the lookup misses, so it never changes which
 			// references resolve.
 			//
-			// DELIBERATE second reading, not a leftover: ManifestRecipeReferenceFaults
-			// judges the same shape earlier, before any closure walk, and halts on the
-			// first fault. This pass is the RESILIENT surface — the one an editor maps
-			// to diagnostics — and it enumerates every fault rather than stopping at
-			// one, so removing it would cost an author authoring several mis-shaped
-			// mappings all but the first squiggle. Do not "unify" the two: the grammar
-			// itself is single-sourced in the constant pair above, which is what keeps
-			// them from disagreeing.
-			if n, tooMany := recipeReferenceSegments(uri); tooMany {
-				return fmt.Errorf("%w: component %q (type %q): the Manifest maps it to %q, which carries %d slash-separated segments; a recipe reference accepts %s; correct the mapping value in the Manifest", ErrMalformedRecipeReference(), instanceName, componentType, uri, n, acceptedRecipeReferenceShapes)
+			// DELIBERATE second reading, not a leftover, and the two are rooted at
+			// different coordinates rather than being one reading written twice.
+			// resolver.ManifestRecipeReferenceFaults judges the same shape earlier,
+			// over the authored mapping entry, and names the key the author wrote.
+			// This one is rooted at the component instance whose resolution missed,
+			// so it names the instance and its type — the coordinates an instance-
+			// keyed reader has and a mapping-keyed one does not.
+			//
+			// Do not "unify" the two: the grammar itself is single-sourced in
+			// pkg/resolver, which is what keeps them from disagreeing.
+			if n, tooMany := resolver.RecipeReferenceSegments(uri); tooMany {
+				return fmt.Errorf("%w: component %q (type %q): the Manifest maps it to %q, which carries %d slash-separated segments; a recipe reference accepts %s; correct the mapping value in the Manifest", resolver.ErrMalformedRecipeReference(), instanceName, componentType, uri, n, resolver.AcceptedRecipeReferenceShapes)
 			}
 			return fmt.Errorf("%w: component %q (type %q): the Manifest maps it to recipe %q, which is not in the catalog", ErrNoRecipeResolved(), instanceName, componentType, uri)
 		}
@@ -937,11 +909,12 @@ func (c *Catalog) resolveFeatureRecipeForVerify(manifest *types.Manifest, instan
 	}
 	if ok {
 		if _, found := c.FeatureRecipeByURI(uri); !found {
-			// Deliberate second reading for the same reason the component branch
-			// records: this pass enumerates every fault where the load-time check
-			// halts on the first, and the grammar is single-sourced either way.
-			if n, tooMany := recipeReferenceSegments(uri); tooMany {
-				return fmt.Errorf("%w: feature %q (type %q): the Manifest maps it to %q, which carries %d slash-separated segments; a feature recipe reference accepts %s; correct the mapping value in the Manifest", ErrMalformedRecipeReference(), instanceName, featureType, uri, n, acceptedRecipeReferenceShapes)
+			// Deliberate second reading for the reason the component branch records:
+			// this one is rooted at the feature instance where the earlier reading is
+			// rooted at the authored mapping key, and the grammar is single-sourced
+			// either way.
+			if n, tooMany := resolver.RecipeReferenceSegments(uri); tooMany {
+				return fmt.Errorf("%w: feature %q (type %q): the Manifest maps it to %q, which carries %d slash-separated segments; a feature recipe reference accepts %s; correct the mapping value in the Manifest", resolver.ErrMalformedRecipeReference(), instanceName, featureType, uri, n, resolver.AcceptedRecipeReferenceShapes)
 			}
 			return fmt.Errorf("%w: feature %q (type %q): the Manifest maps it to feature recipe %q, which is not in the catalog", ErrNoRecipeResolved(), instanceName, featureType, uri)
 		}

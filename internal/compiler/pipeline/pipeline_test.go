@@ -24,6 +24,19 @@ func wiredLookup(cat *catalog.Catalog, _ *types.Manifest) resolver.CatalogLookup
 	return cat.CatalogLookup()
 }
 
+// fixtureWorkspaceConfig is the configuration a fixture with no workspace file
+// runs against, as a pointer the pipeline inputs can carry. Supplied explicitly
+// because the graph entry refuses an unsupplied configuration: the roles that
+// shape the graph are read off it, so "the defaults are in force" and "nobody
+// said" are different runs and only the first is one anybody asked for.
+//
+// A fresh value per call, so a test that attaches a plugin to the one it gets
+// cannot reach a test that did not.
+func fixtureWorkspaceConfig() *workspaceconfig.Config {
+	c := workspaceconfig.Default()
+	return &c
+}
+
 const (
 	fullstackAggregatePath = "../../../internal/compiler/testdata/fullstack-app/aggregate.yaml"
 	fullstackReleasePath   = "../../../internal/compiler/testdata/fullstack-app/release.yaml"
@@ -73,7 +86,7 @@ func TestRunPipelineProducesExpectedArtifactsFromInMemoryInputs(t *testing.T) {
 			Manifest:          manifest,
 			AggregateRawBytes: aggBytes,
 			AggregatePath:     fullstackAggregatePath,
-			WorkspaceConfig:   workspaceconfig.Default(),
+			WorkspaceConfig:   fixtureWorkspaceConfig(),
 			CompilerVersion:   fixtureCompilerVersion,
 		},
 		wiredLookup(cat, manifest),
@@ -176,7 +189,7 @@ func TestRunPipelineReturnsEmptyTraceWhenIncludeTraceFalse(t *testing.T) {
 		pipeline.Inputs{
 			Release: rel, Manifest: manifest,
 			AggregateRawBytes: aggBytes, AggregatePath: fullstackAggregatePath,
-			WorkspaceConfig: workspaceconfig.Default(),
+			WorkspaceConfig: fixtureWorkspaceConfig(),
 			CompilerVersion: fixtureCompilerVersion,
 		},
 		wiredLookup(cat, manifest), cat.RecipeLookupWithManifest(manifest), cat.SubAggregateLoader(),
@@ -220,7 +233,7 @@ func TestRunPipelinePopulatesTraceWhenIncludeTraceTrue(t *testing.T) {
 		pipeline.Inputs{
 			Release: rel, Manifest: manifest,
 			AggregateRawBytes: aggBytes, AggregatePath: fullstackAggregatePath,
-			WorkspaceConfig: workspaceconfig.Default(),
+			WorkspaceConfig: fixtureWorkspaceConfig(),
 			CompilerVersion: fixtureCompilerVersion,
 		},
 		wiredLookup(cat, manifest), cat.RecipeLookupWithManifest(manifest), cat.SubAggregateLoader(),
@@ -283,7 +296,7 @@ func TestRunPipelineWritesNoFilesystemArtifacts(t *testing.T) {
 		pipeline.Inputs{
 			Release: rel, Manifest: manifest,
 			AggregateRawBytes: aggBytes, AggregatePath: fullstackAggregatePath,
-			WorkspaceConfig: workspaceconfig.Default(),
+			WorkspaceConfig: fixtureWorkspaceConfig(),
 			CompilerVersion: fixtureCompilerVersion,
 		},
 		wiredLookup(cat, manifest), cat.RecipeLookupWithManifest(manifest), cat.SubAggregateLoader(),

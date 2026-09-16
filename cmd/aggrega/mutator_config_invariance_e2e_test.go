@@ -116,28 +116,43 @@ spec:
         variables:
           NODE_LABELS: "{{ range $k, $v := .context.labels }}{{ $v }};{{ end }}"
 `)
-	writeFixtureEntity(t, catalogDir, "plugin/governance/tag-injector/1.0.0/plugin.yaml", `apiVersion: aggrega.ai/v1alpha1
+	writeColocatedGovernanceGuest(t, catalogDir, "tag-injector", "mutate", mutatorBytes)
+	return root, catalogDir
+}
+
+// writeColocatedGovernanceGuest writes a governance Plugin entity declaring one
+// export into the fixture catalog and lays its .wasm beside the entity, so the
+// guest resolves through the co-located tier and carries no registry artifact
+// pin.
+//
+// The export the entity declares and the export the guest actually serves are
+// the same claim read from two sides: the entity is what the closure pins, and
+// the guest's own describe() is what the host validates before dispatch. A
+// fixture that declares one and ships a guest serving another attaches a plugin
+// nothing can run, which is exactly what a transform attachment is no longer
+// permitted to be — every configured transform role is dispatched, at the
+// acquisition as well as at the build.
+//
+// The .wasm filename is derived from the coordinate rather than spelled here, so
+// the file staged is the file the resolver reads.
+func writeColocatedGovernanceGuest(t *testing.T, catalogDir, name, export string, guest []byte) {
+	t.Helper()
+	writeFixtureEntity(t, catalogDir, "plugin/governance/"+name+"/1.0.0/plugin.yaml", `apiVersion: aggrega.ai/v1alpha1
 kind: Plugin
 metadata:
-  name: tag-injector
+  name: `+name+`
   version: "1.0.0"
   pluginType: governance
 spec:
   abiVersion: v1alpha1
   exports:
-    - name: mutate
+    - name: `+export+`
 `)
-
-	// The mutator .wasm resolves through the co-located tier: it sits beside its
-	// plugin.yaml in the catalog directory the indexer maps into
-	// PluginColocatedDirs. The filename is derived from the coordinate rather than
-	// spelled here, so the file staged is the file the resolver reads.
-	colocatedDir := filepath.Join(catalogDir, "plugin", "governance", "tag-injector", "1.0.0")
-	leaf := pluginpath.PluginLeaf("governance/tag-injector")
-	if err := os.WriteFile(filepath.Join(colocatedDir, leaf), mutatorBytes, 0o644); err != nil {
-		t.Fatalf("write colocated mutator: %v", err)
+	colocatedDir := filepath.Join(catalogDir, "plugin", "governance", name, "1.0.0")
+	leaf := pluginpath.PluginLeaf("governance/" + name)
+	if err := os.WriteFile(filepath.Join(colocatedDir, leaf), guest, 0o644); err != nil {
+		t.Fatalf("write colocated governance guest %s: %v", name, err)
 	}
-	return root, catalogDir
 }
 
 // resolveLocalWorkspace writes the .aggrega-config.yaml at root with the supplied
@@ -157,20 +172,23 @@ func resolveLocalWorkspace(t *testing.T, root, pluginsBlock string) *workspaceco
 // TestAnnotationTransformSocket_RolePinnedThroughLockfile proves the second
 // transform role round-trips through the real pull -> lockfile -> reconstruction
 // path: an attachment authored at role annotation-transform is pinned with its
-// role and reconstructs at that role, so the build dispatches it at the
-// annotation runner (Step 1) rather than the label runner. Before the role was
-// pinned, a lockfile-driven build reconstructed every transform attachment as
+// role and reconstructs at that role, so a build dispatches it at the annotation
+// runner rather than the label runner. Before the role was pinned, a
+// lockfile-driven build reconstructed every transform attachment as
 // label-transform, silently routing an annotation attachment to the wrong runner.
 //
-// The proof is the pull -> lockfile capture and the reconstruction role; it does
-// not build (the harness guest exports mutate, not transform_annotations — the
-// lockfile role round-trip under test is independent of the guest's exports,
-// which the build-stage dispatch, not the pull, matches to the role).
+// The attachment names a guest that genuinely serves the annotation role. The
+// acquisition dispatches every configured transform role, so an attachment whose
+// guest does not declare the role's export is a workspace the acquisition
+// declines — and a fixture attaching one would prove the refusal rather than the
+// role round-trip it exists for.
 func TestAnnotationTransformSocket_RolePinnedThroughLockfile(t *testing.T) {
 	mutatorBytes := wasmtest.EnsureFixtureBytes(t, "mutator-proof-go.wasm")
+	annotationBytes := wasmtest.EnsureFixtureBytes(t, "annotation-injector-go.wasm")
 	root, catalogDir := localMutatorWorkspace(t, mutatorBytes)
+	writeColocatedGovernanceGuest(t, catalogDir, "annotation-injector", "transform_annotations", annotationBytes)
 	catDirs := []string{catalogDir, standardCatalogDir(t)}
-	const socket = "governance/tag-injector"
+	const socket = "governance/annotation-injector"
 
 	rwPull := resolveLocalWorkspace(t, root, "plugins:\n  governance:\n    - uri: "+socket+":1.0.0\n      role: annotation-transform\n")
 	releasePath := filepath.Join(root, "release.yaml")

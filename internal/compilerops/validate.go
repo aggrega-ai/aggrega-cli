@@ -221,9 +221,12 @@ func Validate(ctx context.Context, in ValidateInputs) *ValidateResult {
 		Manifest:          in.Manifest,
 		AggregateRawBytes: in.AggBytes,
 		AggregatePath:     in.AggregatePath,
-		WorkspaceConfig:   in.WorkspaceConfig,
-		Lockfile:          in.Lockfile,
-		CompilerVersion:   in.CompilerVersion,
+		// A pointer into this call's own inputs value, so the composition below
+		// re-points it at the copy it rewrites and the caller's configuration is
+		// never written through.
+		WorkspaceConfig: &in.WorkspaceConfig,
+		Lockfile:        in.Lockfile,
+		CompilerVersion: in.CompilerVersion,
 	}
 	// The governance attachment list the pipeline dispatches and the digests
 	// recorded as trusted for its verdict attachments arrive through the one

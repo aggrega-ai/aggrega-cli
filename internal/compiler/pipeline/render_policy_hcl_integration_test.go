@@ -74,7 +74,7 @@ func renderPolicyHCLInputs(t *testing.T, requireResourceType string) Inputs {
 	t.Helper()
 	guest := wasmtest.EnsureFixtureBytes(t, "policy-render-hcl-go.wasm")
 	inputs := Inputs{
-		WorkspaceConfig: workspaceconfig.Default(),
+		WorkspaceConfig: defaultWorkspaceConfigForTest(),
 	}
 	inputs.WorkspaceConfig.Plugins.Governance = []workspaceconfig.PluginRef{{
 		URI:  "proof://policy-render-hcl",
@@ -120,7 +120,7 @@ func assembled(files map[string][]byte, formats map[string]string) map[string]re
 // artifact's tree empty — the byte-identity guarantee for the YAML/JSON paths.
 func TestRenderPolicyHCL_TreeOnlyForNonNative(t *testing.T) {
 	ctx := context.Background()
-	arts, err := sortedRenderedArtifacts(ctx, Inputs{WorkspaceConfig: workspaceconfig.Default()}, hclParserCatalogLookup(), assembled(renderPolicyHCLFiles(), nil))
+	arts, err := sortedRenderedArtifacts(ctx, Inputs{WorkspaceConfig: defaultWorkspaceConfigForTest()}, hclParserCatalogLookup(), assembled(renderPolicyHCLFiles(), nil))
 	if err != nil {
 		t.Fatalf("sortedRenderedArtifacts: %v", err)
 	}
@@ -173,7 +173,7 @@ func TestRenderPolicyHCL_ProducerFormatSelectsParser(t *testing.T) {
 
 	// With the producer-declared format, selection resolves to hcl and the host
 	// parses the artifact into a tree.
-	tagged, err := sortedRenderedArtifacts(ctx, Inputs{WorkspaceConfig: workspaceconfig.Default()}, hclParserCatalogLookup(), assembled(files, map[string]string{"module": "hcl"}))
+	tagged, err := sortedRenderedArtifacts(ctx, Inputs{WorkspaceConfig: defaultWorkspaceConfigForTest()}, hclParserCatalogLookup(), assembled(files, map[string]string{"module": "hcl"}))
 	if err != nil {
 		t.Fatalf("sortedRenderedArtifacts (producer-tagged): %v", err)
 	}
@@ -197,7 +197,7 @@ func TestRenderPolicyHCL_ProducerFormatSelectsParser(t *testing.T) {
 
 	// Control: the same extension-less path with no producer format selects no
 	// format, so its tree stays empty.
-	untagged, err := sortedRenderedArtifacts(ctx, Inputs{WorkspaceConfig: workspaceconfig.Default()}, hclParserCatalogLookup(), assembled(files, nil))
+	untagged, err := sortedRenderedArtifacts(ctx, Inputs{WorkspaceConfig: defaultWorkspaceConfigForTest()}, hclParserCatalogLookup(), assembled(files, nil))
 	if err != nil {
 		t.Fatalf("sortedRenderedArtifacts (untagged): %v", err)
 	}
@@ -224,7 +224,7 @@ func TestRenderPolicyHCL_ProducerFormatOverridesExtension(t *testing.T) {
 	// native JSON and carry no tree.
 	files := map[string][]byte{"resource.json": []byte(hclArtifact)}
 
-	tagged, err := sortedRenderedArtifacts(ctx, Inputs{WorkspaceConfig: workspaceconfig.Default()}, hclParserCatalogLookup(), assembled(files, map[string]string{"resource.json": "hcl"}))
+	tagged, err := sortedRenderedArtifacts(ctx, Inputs{WorkspaceConfig: defaultWorkspaceConfigForTest()}, hclParserCatalogLookup(), assembled(files, map[string]string{"resource.json": "hcl"}))
 	if err != nil {
 		t.Fatalf("sortedRenderedArtifacts (producer hcl over .json): %v", err)
 	}
@@ -249,7 +249,7 @@ func TestRenderPolicyHCL_ProducerFormatOverridesExtension(t *testing.T) {
 	// Control: the same .json path with no producer format takes the extension
 	// path to native JSON, which the host does not pre-parse, so the tree stays
 	// empty. This is exactly what the producer tag overrode above.
-	untagged, err := sortedRenderedArtifacts(ctx, Inputs{WorkspaceConfig: workspaceconfig.Default()}, hclParserCatalogLookup(), assembled(files, nil))
+	untagged, err := sortedRenderedArtifacts(ctx, Inputs{WorkspaceConfig: defaultWorkspaceConfigForTest()}, hclParserCatalogLookup(), assembled(files, nil))
 	if err != nil {
 		t.Fatalf("sortedRenderedArtifacts (untagged .json): %v", err)
 	}
@@ -280,7 +280,7 @@ func TestRenderPolicyHCL_MixedOutputRoutesPerFile(t *testing.T) {
 		"main.tf.json": "json",
 	}
 
-	arts, err := sortedRenderedArtifacts(ctx, Inputs{WorkspaceConfig: workspaceconfig.Default()}, hclParserCatalogLookup(), assembled(files, formats))
+	arts, err := sortedRenderedArtifacts(ctx, Inputs{WorkspaceConfig: defaultWorkspaceConfigForTest()}, hclParserCatalogLookup(), assembled(files, formats))
 	if err != nil {
 		t.Fatalf("sortedRenderedArtifacts (mixed output): %v", err)
 	}
@@ -333,7 +333,7 @@ func TestRenderPolicyHCL_UntaggedExtensionFallback(t *testing.T) {
 	ctx := context.Background()
 	files := map[string][]byte{"main.tf": []byte(hclArtifact)}
 
-	arts, err := sortedRenderedArtifacts(ctx, Inputs{WorkspaceConfig: workspaceconfig.Default()}, hclParserCatalogLookup(), assembled(files, nil))
+	arts, err := sortedRenderedArtifacts(ctx, Inputs{WorkspaceConfig: defaultWorkspaceConfigForTest()}, hclParserCatalogLookup(), assembled(files, nil))
 	if err != nil {
 		t.Fatalf("sortedRenderedArtifacts (untagged .tf): %v", err)
 	}
@@ -413,7 +413,7 @@ func TestRenderPolicyHCL_AllowReadsTree(t *testing.T) {
 // across two independent hermetic invocations.
 func TestRenderPolicyHCL_ParsedTreeVerbatim(t *testing.T) {
 	ctx := context.Background()
-	res, load := parserSeam(Inputs{WorkspaceConfig: workspaceconfig.Default()}, hclParserCatalogLookup())
+	res, load := parserSeam(Inputs{WorkspaceConfig: defaultWorkspaceConfigForTest()}, hclParserCatalogLookup())
 
 	first, err := parsersocket.ParseArtifact(ctx, res, load, "hcl", []byte(hclArtifact), nil)
 	if err != nil {

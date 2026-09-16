@@ -168,6 +168,11 @@ func loadInputs(in Input) (*loadedWorkspace, error) {
 		return nil, fmt.Errorf("load aggregate: %w", err)
 	}
 
+	// A fixture workspace carries no configuration file, so the defaults are the
+	// configuration in force. Supplied explicitly: the graph entry refuses an
+	// unsupplied configuration, and a fixture that ran against no configuration at
+	// all would be running a different composition from the build it stands in for.
+	wsCfg := workspaceconfig.Default()
 	return &loadedWorkspace{
 		inputs: pipeline.Inputs{
 			Release:            rel,
@@ -188,7 +193,7 @@ func loadInputs(in Input) (*loadedWorkspace, error) {
 			// cascade — including the co-located tier a fixture stages beside its
 			// Plugin entity in the catalog.
 			PluginPathLookup: in.PluginPathLookup,
-			WorkspaceConfig:  workspaceconfig.Default(),
+			WorkspaceConfig:  &wsCfg,
 		},
 		catalogLookup:      cat.CatalogLookup(),
 		recipeLookup:       cat.RecipeLookupWithManifest(manifest),

@@ -20,14 +20,17 @@ import (
 // the complete set of non-test files permitted to call it, relative to the
 // module root.
 //
-// Two names rather than one, because they close different halves. The builder
+// Three names rather than one, because they close different halves. The builder
 // is the primitive: it turns a flattened composition into a graph, and it is
 // reachable from any package under this module, so nothing in the language
 // stops a surface calling it directly — which is what two command-layer
-// surfaces did. The chokepoint is the entry that runs the whole sequence around
-// that primitive; it is exported because those surfaces need it, and being
-// exported it is a second door that has to be watched for the same reason the
-// first one is.
+// surfaces did. Around that primitive sit two entries running the whole
+// sequence, differing only in what they do with what the rules raised: the
+// exported one refuses a graph any of them rejected, and the collecting one
+// hands the findings to a caller that reports them itself. Each is a door, and
+// each has to be watched for the same reason the first one is — the exported
+// one because any package may call it, the collecting one because a second
+// in-package caller would be a surface quietly opting out of the refusal.
 //
 // The map is the specification, not a record of what happens to be there. A new
 // entry here is a deliberate decision that a surface may construct a graph,
@@ -39,8 +42,10 @@ var graphConstructionHomes = map[string][]string{
 	},
 	"BuildGraph": {
 		"cmd/aggrega/inspect.go",
-		"internal/compiler/pipeline/pipeline.go",
 		"internal/pullops/pull.go",
+	},
+	"buildGraphCollectingFindings": {
+		"internal/compiler/pipeline/pipeline.go",
 	},
 }
 

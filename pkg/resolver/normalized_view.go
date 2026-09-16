@@ -49,12 +49,25 @@ import (
 //
 // # What it cannot answer
 //
-// The pre-interpolation Aggregate text and an entity's assertion names are facts
-// of a document this presentation does not hold, so the accessors for them
-// refuse rather than answering. An empty result would be the truthful answer for
-// a document that declares none, so nothing downstream could tell that answer
-// apart from a presentation with nothing to project: the value would be
-// plausible, permanent and wrong.
+// Every fact of one authored document is refused here rather than answered,
+// because this presents a compilation and not one of the documents it was
+// compiled from. An empty result would be the truthful answer for a document
+// that declares none, so nothing downstream could tell that answer apart from a
+// presentation with nothing to project: the value would be plausible, permanent
+// and wrong. Those refusals come from the embedded base rather than being
+// written here.
+//
+// The parameter names the application's contract declares are the one such fact
+// this could answer and does not. They survive normalization, so the value is
+// still reachable from here — but the presentation of the authored document
+// produces that fact already, reading the bytes as authored where this would
+// read the parsed and interpolated document, and two producers of one fact are
+// free to disagree about it with nothing comparing them. Refusing keeps the fact
+// with the single presentation holding the document it is a fact of.
+//
+// It asserts the normalized stage's own obligation and no document kind's: it
+// presents a compilation rather than one authored document, so claiming a kind
+// would state something about this presentation that is not true of it.
 //
 // # Values are handed over uncopied
 //
@@ -62,6 +75,11 @@ import (
 // this value keeps that contract rather than inventing a second policy: what an
 // accessor returns aliases what the compilation already holds.
 type normalizedView struct {
+	// NormalizedViewBase supplies the document-stage facts this presentation does
+	// not carry, and declares nothing at the normalized stage — so this type
+	// writes bodies for exactly the facts that stage declares.
+	constraint.NormalizedViewBase
+
 	// aggregate is the normalized application document.
 	aggregate types.NormalizedAggregate
 
@@ -401,75 +419,6 @@ type ContractResolutionFailure struct {
 
 	// Err is why the contract did not resolve.
 	Err error
-}
-
-// ---------------------------------------------------------------- document facts
-
-// RawAggregateText refuses: this presentation holds the documents after
-// parameter interpolation, and the pre-interpolation text is a separate fact of
-// a document it does not carry.
-//
-// Refusing is deliberate where returning empty bytes would compile and read like
-// an answer. Empty is the truthful answer for a document with no text, so
-// nothing downstream could tell that answer apart from this one, and a reference
-// census over empty text reports every declaration as unread.
-func (v *normalizedView) RawAggregateText(string) []byte {
-	panic("the normalized presentation holds the interpolated documents: present the document " +
-		"before interpolation to read the text as authored")
-}
-
-// DeclaredParameterKeys returns the parameter names the application's contract
-// declares, in author order.
-func (v *normalizedView) DeclaredParameterKeys(string) []string {
-	agg := v.aggregate.Aggregate()
-	if agg == nil {
-		return nil
-	}
-	return agg.Spec.Parameters.Keys()
-}
-
-// EntityAssertionNameSet refuses: this presentation holds the two authoring
-// documents, neither of which declares an entity inheritance chain, so it holds
-// no assertion names to present.
-//
-// An empty set is the truthful answer for an entity that declares none, so
-// nothing downstream could tell that answer apart from this one. A rule reading
-// assertion names is presented the catalog entity's own document.
-func (v *normalizedView) EntityAssertionNameSet(string) []string {
-	panic("the normalized presentation holds the authoring documents, which declare no entity " +
-		"inheritance chain: present the catalog entity's own document to read its assertion names")
-}
-
-// ManifestAnnotationBindingKeys refuses: this presentation holds the two
-// authoring documents, and an annotation binding registry is declared on neither
-// of them.
-//
-// Refusing rather than returning an empty set is the same judgement the two
-// refusals above make. An empty set is the truthful answer for a Manifest whose
-// registry declares nothing, so nothing downstream could tell that answer apart
-// from this one — and a rule invoked once per binding over an empty set is
-// invoked never, which reads exactly like a rule that ran and approved.
-func (v *normalizedView) ManifestAnnotationBindingKeys(string) []string {
-	panic("the normalized presentation holds the authoring documents, which declare no " +
-		"annotation binding registry: present the Manifest to read its binding keys")
-}
-
-// ManifestAnnotationBindingFeature refuses, for the reason above.
-//
-// The refusal covers the second result too. Answering (\"\", false) would say the
-// presented document declares no such binding, which is a claim about a Manifest
-// this presentation does not hold rather than an answer about one it does.
-func (v *normalizedView) ManifestAnnotationBindingFeature(string, string) (string, bool) {
-	panic("the normalized presentation holds the authoring documents, which declare no " +
-		"annotation binding registry: present the Manifest to read a binding's Feature")
-}
-
-// ManifestAnnotationBindingRoutes refuses, for the reason above. An empty slice
-// would say the binding routes nowhere, which is a truthful answer for a binding
-// that does, so nothing downstream could tell that answer apart from this one.
-func (v *normalizedView) ManifestAnnotationBindingRoutes(string, string) []constraint.AnnotationBindingRoute {
-	panic("the normalized presentation holds the authoring documents, which declare no " +
-		"annotation binding registry: present the Manifest to read a binding's routes")
 }
 
 // ---------------------------------------------------------------- instance facts
@@ -1266,4 +1215,14 @@ func sortedSocketPillarKeys(m map[socketPillarKey]resolvedContract) []socketPill
 
 // The compiler holds this type to the contract rather than a comment claiming
 // it: a signature drifting from the declared facts stops compiling here.
-var _ constraint.NormalizedView = (*normalizedView)(nil)
+//
+// The second assertion is the half the embedded base cannot supply. Embedding
+// makes every fact the chain declares compile, so the view assertion alone would
+// accept a presentation answering none of them; naming this stage's own
+// obligation is what makes a fact added at this stage fail here. No document
+// kind's obligation is asserted, for the reason the type's own documentation
+// gives: this presents a compilation rather than one authored document.
+var (
+	_ constraint.NormalizedView       = (*normalizedView)(nil)
+	_ constraint.NormalizedStageFacts = (*normalizedView)(nil)
+)

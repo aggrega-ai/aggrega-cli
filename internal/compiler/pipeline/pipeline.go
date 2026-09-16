@@ -68,7 +68,42 @@ type Inputs struct {
 	// to AggregatePath, so callers that supply a single workspace-relative path
 	// are unaffected.
 	RootAggregateFile string
-	WorkspaceConfig   workspaceconfig.Config
+
+	// WorkspaceConfig is the workspace configuration this run is composed
+	// against. It is REQUIRED by the graph entry, which refuses a nil one rather
+	// than reading a zero value in its place.
+	//
+	// A pointer, and the pointer is the whole point: an empty configuration and an
+	// unsupplied one are different facts, and the zero value of a configuration
+	// struct reports the second as the first. The governance attachments live
+	// under it, and two of the roles attached there SHAPE THE GRAPH — the
+	// label-transform role that runs between the flatten and the build, and the
+	// annotation-transform role that runs inside the resolve. Each reads its
+	// attachment list off this field and returns immediately when the list is
+	// empty, so reading a zero value in place of an absent one skips both roles in
+	// silence: the run is then indistinguishable from a workspace that attached
+	// nothing, and the graph it produces is not the graph a build of the same
+	// documents produces. A plausible zero value that is wrong is indistinguishable
+	// from a real answer, which is why this one is refused rather than read — the
+	// same reason a facts presentation refuses to answer a question it cannot see
+	// rather than returning a confident "no".
+	//
+	// The pointed-to value is the pipeline's to READ, never to write: a caller
+	// hands over a pointer into its own configuration, and a long-lived surface
+	// serving many runs hands the same one to each. A surface that needs to run
+	// against an altered configuration copies it and points the field at the copy,
+	// which is what the governance composition does when it rewrites the
+	// attachment list.
+	//
+	// That refusal is what every read of this field below the entry rests on:
+	// those reads carry no nil test of their own, deliberately, because a read
+	// substituting an empty configuration for an absent one would restore at each
+	// site exactly the plausible-but-wrong zero the refusal exists to stop — and it
+	// would restore it at the sites the refusal was put there to protect. A caller
+	// reaching one of those helpers directly rather than through the entry therefore
+	// supplies a configuration as well, an explicitly empty one where that is what
+	// it means.
+	WorkspaceConfig *workspaceconfig.Config
 
 	// CompilerVersion is the build identity stamped into IR provenance
 	// (IRGraph.Spec.Provenance.CompilerVersion). The command layer supplies the
@@ -468,55 +503,18 @@ type Tier4Result struct {
 // returns, so the outputs, the merged parameter map among them, are valid for
 // the whole continuation.
 type stepsOneToFourOutput struct {
-	ResolveResult *resolver.ResolveResult
-	Topology      *topology.TopologyResult
-	IRGraph       *types.IRGraph
-	FeatureOrder  ir.FeatureOrder
-	Analysis      *analyzer.AnalysisResult
-
-	// AttachmentSites names, per attachment leaf, where the contribution that
-	// won that leaf was written. It is carried alongside the graph because the
-	// graph cannot answer the question: the cascade folds every scope's
-	// contribution into one entry and keeps the winning value, not the contest
-	// that produced it. A rule invoked over such a leaf needs the site to point
-	// its finding at an edit somebody can make.
-	AttachmentSites ir.AttachmentSites
-
-	// CarriedConnections pairs every connection the composition drew with the
-	// surface that drew it and with the delivery that connection dictates as
-	// authored. It is carried alongside the graph for the same class of reason
-	// the sites are: the graph records which attachment instance drew an edge
-	// and never which surface declared that attachment, and it stores a
-	// delivery as one string per delivery key, so the authored distinction
-	// between a literal and a reference to a published key is gone from it.
-	CarriedConnections *ir.CarriedConnections
-
-	// GraphView presents the finalised graph to a check as the named facts
-	// complete once the whole attachment cascade and the annotation-driven
-	// expansion have run, with every fact complete earlier answered by the
-	// presentation the flattening produced.
+	// GraphScope is the scope the graph construction produced, embedded rather
+	// than copied field by field: every product this bundle adds to is one of
+	// that scope's, so re-declaring them here would be a second set of fields
+	// holding one set of values, free to be filled from somewhere else.
 	//
-	// It is built here because this is the one place holding both products at
-	// once: a presentation of a stage embeds the presentation of the stage below
-	// it rather than re-reading that stage's own inputs, so it can only be built
-	// where both are in hand. A rule placed at this stage reads it; a rule placed
-	// later reads a presentation that embeds it in turn.
-	//
-	// Nil when either product is absent.
-	GraphView constraint.GraphView
+	// Among them are the per-attachment-leaf sites, the carriers paired with
+	// each connection's authored delivery, the presentation of the finalised
+	// graph and the enumeration of it — each carried alongside the graph
+	// because the graph itself cannot answer what they answer.
+	*GraphScope
 
-	// GraphCoordinates is the enumeration the finalised graph carries: the node
-	// set, the connections, each node's merged attachment set, and the axes a
-	// rule at this stage is invoked once per.
-	//
-	// It is built here for the reason the presentation beside it is, and it is
-	// carried rather than rebuilt by each consumer: the rules at this stage and
-	// the rules over what the render's plugins report are invoked over the same
-	// node and attachment axes, and a second derivation of either would be free
-	// to disagree with the one the earlier rules were invoked over.
-	//
-	// Nil when either product the enumeration reads is absent.
-	GraphCoordinates *ir.GraphStageCoordinates
+	Analysis *analyzer.AnalysisResult
 
 	// AssertionErr carries the first failing Component or Feature assertion, or
 	// nil when every assertion passed. It is produced inside runStepsOneToFour
@@ -532,15 +530,16 @@ type stepsOneToFourOutput struct {
 // runStepsOneToFour executes the pre-render phases of the compiler pipeline
 // (resolve, topology, IR finalisation, analyse, and Component / Feature
 // assertion evaluation) and invokes use with the phase outputs while still
-// inside the resolve scope. It routes through BuildGraph →
+// inside the resolve scope. It routes through the graph entry →
 // resolver.ResolveAndUse, so use runs while the parameter map is live and the
 // resolved view cannot outlive the scope. Used by both RunTier4Pipeline
 // (which renders nothing) and RunPipeline (which renders from the same outputs).
 //
-// Every check whose inputs are complete before render lives here rather than on
-// one consumer's path. That is what makes the two entry points agree: a rule
-// placed on the render path alone would let a validation surface report a clean
-// verdict on a document a build rejects.
+// Every check whose inputs are complete before render runs before use, either
+// in the graph entry or here, rather than on one consumer's path. That is what
+// makes the two entry points agree: a rule placed on the render path alone
+// would let a validation surface report a clean verdict on a document a build
+// rejects.
 //
 // Behavior on phase failure: a resolve, topology or IR failure returns the error
 // without invoking use. An analyzer error is non-fatal — the structured
@@ -561,52 +560,21 @@ func runStepsOneToFour(
 		return err
 	}
 
-	// Steps 1-3: resolve, topology flatten, label transform, graph build —
-	// through BuildGraph, the one entry that produces a graph. The release
-	// inspection and `aggrega pull`'s per-component source resolution reach it
-	// too, so what those surfaces hold is the graph a build would render rather
-	// than one assembled beside it.
-	return BuildGraph(ctx, inputs, catalogLookup, recipeFor, subAggregateLoader, func(gs *GraphScope) error {
-		resolveResult := gs.ResolveResult
-		topoResult := gs.Topology
+	// Steps 1-3: resolve, topology flatten, label transform, graph build, and
+	// the rules declared over the finalised graph — through the graph entry,
+	// the one place that produces a graph. The release inspection and `aggrega
+	// pull`'s per-component source resolution reach it too, so what those
+	// surfaces hold is the graph a build would render rather than one assembled
+	// beside it.
+	//
+	// The collecting entry is the one taken here, because this path has a
+	// reporting channel of its own: what the rules raised joins the same
+	// violation slice the governance verdicts below join, so one run reports
+	// both rather than stopping at whichever came first.
+	return buildGraphCollectingFindings(ctx, inputs, catalogLookup, recipeFor, subAggregateLoader, func(gs *GraphScope) error {
 		graph := gs.IRGraph
 
-		out := &stepsOneToFourOutput{
-			ResolveResult:   resolveResult,
-			Topology:        topoResult,
-			IRGraph:         graph,
-			FeatureOrder:    gs.FeatureOrder,
-			AttachmentSites: gs.AttachmentSites,
-		}
-
-		// The carriers and the authored deliveries, paired with the connection
-		// set the composition produced. Built from that set rather than from the
-		// authoring documents, so the connections a rule is invoked for are the
-		// connections the build actually drew.
-		out.CarriedConnections = ir.NewCarriedConnections(graph, topoResult, resolveResult)
-
-		// The presentation of the graph just finalised, extending the one the
-		// flattening produced. Built here because this is where every product it
-		// takes is in hand — the graph, the presentation below it, and the
-		// per-leaf sites: a stage's presentation embeds the stage below it rather
-		// than re-reading that stage's inputs, so building it anywhere else would
-		// mean producing a second answer to facts this one already answers.
-		out.GraphView = ir.NewGraphView(
-			graph, topoResult.StageView, out.AttachmentSites, out.CarriedConnections)
-
-		// The enumeration of the same graph, built beside the presentation
-		// because it reads that presentation for the axes a fact already names.
-		// The deployment's file comes from the resolve result, which already
-		// carries it so downstream phases can build source locations without
-		// re-discovering it. The per-leaf sites come from the fold that produced
-		// them rather than being recovered here: which scope's contribution won
-		// any one leaf is settled while the cascade folds, and re-running that
-		// precedence would be a second answer to a question the build already
-		// answered.
-		out.GraphCoordinates = ir.NewGraphStageCoordinates(
-			graph, out.GraphView, catalogLookup, releaseFileOf(out.ResolveResult),
-			out.AttachmentSites, out.CarriedConnections,
-		)
+		out := &stepsOneToFourOutput{GraphScope: gs}
 
 		if err := ctx.Err(); err != nil {
 			return err
@@ -623,16 +591,15 @@ func runStepsOneToFour(
 		}
 		out.Analysis = analysis
 
-		// The rules declared over the finalised graph are invoked here, against
-		// the presentation built above and the coordinates of the same graph.
-		// This is the site that holds both, which is why the invocation sits
-		// beside the analysis rather than inside it: the analysis is handed the
-		// graph and the catalog and would have to build a second presentation of
-		// its own to ask a rule anything, and one fact with two producers is two
-		// answers free to disagree.
-		if err := runGraphStageRules(ctx, out); err != nil {
-			return err
-		}
+		// What the rules declared over the finalised graph raised, folded onto
+		// the two streams this path reports on: a violation joins the slice the
+		// build gates on and the Tier-4 surface reads as a diagnostic, and an
+		// advisory joins the warning stream displayed below. The fold is here
+		// rather than at the raise because which stream a finding belongs on is
+		// a property of this path's reporting rather than of the rule, and a
+		// surface with no such streams is handed the findings themselves.
+		analysis.Errors = append(analysis.Errors, analyzer.ErrorsFromObjections(gs.Violations)...)
+		analysis.Warnings = append(analysis.Warnings, analyzer.AdvisoriesFromObjections(gs.Advisories)...)
 
 		// Step 4b: ir-verdict governance role. Config-driven off the ir-verdict
 		// attachments in WorkspaceConfig.Plugins.Governance — a no-op when
@@ -942,6 +909,56 @@ type GraphScope struct {
 	// AttachmentSites is the per-attachment-leaf record of which scope's
 	// contribution won that leaf, settled while the cascade folded.
 	AttachmentSites ir.AttachmentSites
+
+	// CarriedConnections pairs every connection the composition drew with the
+	// surface that drew it and with the delivery that connection dictates as
+	// authored. It is carried alongside the graph because the graph cannot
+	// answer either question: the graph records which attachment instance drew
+	// a connection and never which surface declared that attachment, and it
+	// stores a delivery as one string per delivery key, so the authored
+	// distinction between a literal and a reference to a published key is gone
+	// from it.
+	CarriedConnections *ir.CarriedConnections
+
+	// GraphView presents the finalised graph to a check as the named facts
+	// complete once the whole attachment cascade and the annotation-driven
+	// expansion have run, with every fact complete earlier answered by the
+	// presentation the flattening produced.
+	//
+	// It is built here because this is the one place holding both products at
+	// once: a presentation of a stage embeds the presentation of the stage below
+	// it rather than re-reading that stage's own inputs, so it can only be built
+	// where both are in hand. A rule placed at this stage reads it; a rule placed
+	// later reads a presentation that embeds it in turn.
+	//
+	// Nil when either product is absent.
+	GraphView constraint.GraphView
+
+	// GraphCoordinates is the enumeration the finalised graph carries: the node
+	// set, the connections, each node's merged attachment set, and the axes a
+	// rule at this stage is invoked once per.
+	//
+	// It is built here for the reason the presentation beside it is, and it is
+	// carried rather than rebuilt by each consumer: the rules at this stage and
+	// the rules over what the render's plugins report are invoked over the same
+	// node and attachment axes, and a second derivation of either would be free
+	// to disagree with the one the earlier rules were invoked over.
+	//
+	// Nil when either product the enumeration reads is absent.
+	GraphCoordinates *ir.GraphStageCoordinates
+
+	// Violations holds every finding the rules declared over the finalised
+	// graph raised at halting severity, in the order they were raised, and
+	// Advisories holds the ones they raised at advisory severity.
+	//
+	// They are slices on the scope rather than a returned error because a rule
+	// raising is not a reason to stop asking the others: the suite walks its
+	// whole axis and every rule in it, so one offending connection costs a
+	// document neither the rest of that rule's axis nor anything the rules
+	// beside it would have reported. A surface that gates on findings reads the
+	// first slice; a surface that surfaces warnings reads the second.
+	Violations []constraint.Objection
+	Advisories []constraint.Objection
 }
 
 // BuildGraph is the one entry that produces a compiler graph, and every surface
@@ -962,10 +979,19 @@ type GraphScope struct {
 //   - resolve and flatten, which runs the guard suite and the rules declared
 //     over the flattened composition;
 //   - the label-transform governance role, which sits between the flatten and
-//     the build precisely so its tags reach the graph. Unconfigured it returns
-//     before resolving anything, so a caller that attaches no such plugin gets
-//     a byte-identical graph either way;
+//     the build precisely so its tags reach the graph. With a workspace that
+//     attaches no such plugin it returns before resolving anything, so an
+//     unattached build is byte-identical to a build without the role;
 //   - the graph build itself.
+//
+// # A caller that supplied no workspace configuration is refused
+//
+// The transform roles above read their attachment lists off the inputs'
+// workspace configuration, so a caller that never supplied one gets them
+// skipped — silently, and producing a graph no build of the same documents
+// would produce. That is refused here rather than tolerated: the attachments
+// are the caller's to supply, so the data stays per-caller, but the obligation
+// to supply them is checked once, at the one entry every graph goes through.
 //
 // use is invoked with the products while the resolve scope is still open, so a
 // consumer reads the parameter map and the resolved view live. Nothing here
@@ -974,6 +1000,23 @@ type GraphScope struct {
 //
 // A resolve, guard, topology, transform or build failure returns the error
 // without invoking use.
+//
+// # A graph the declared rules reject is not handed over
+//
+// The rules declared over the finalised graph are asked here, and a graph any
+// of them rejected is refused before use sees it. That is what makes this entry
+// worth going through for a surface that renders nothing: an inspection that
+// drew the graph and published it, or an acquisition that pinned it and wrote a
+// lockfile, would be publishing a composition a build of the same documents
+// rejects.
+//
+// The whole suite runs before the refusal, so the refusal names every finding
+// rather than the first: a caller fixing one authoring mistake is shown the
+// others in the same run.
+//
+// A surface with a reporting channel of its own takes
+// [buildGraphCollectingFindings] instead and surfaces the findings on that
+// channel, alongside whatever else it found.
 func BuildGraph(
 	ctx context.Context,
 	inputs Inputs,
@@ -982,15 +1025,58 @@ func BuildGraph(
 	subAggregateLoader topology.SubAggregateLoader,
 	use func(*GraphScope) error,
 ) error {
+	return buildGraphCollectingFindings(ctx, inputs, catalogLookup, recipeFor, subAggregateLoader,
+		func(gs *GraphScope) error {
+			if err := joinedAnalysisHalt(analyzer.ErrorsFromObjections(gs.Violations)); err != nil {
+				return err
+			}
+			return use(gs)
+		})
+}
+
+// buildGraphCollectingFindings is [BuildGraph] for a caller that reports the
+// findings itself: it asks the same rules and hands the scope over with what
+// they raised on it, rather than refusing.
+//
+// The two exist separately because the refusal is the only thing that differs,
+// and it is a caller's property rather than the graph's. A surface that renders
+// nothing has no channel of its own to report on, so a finding it was handed
+// would have nowhere to go and the offending document would pass; a surface
+// that already joins violations from several sources into one verdict has one,
+// and refusing here would cost it the findings its other sources were about to
+// contribute to the same run.
+//
+// Everything else — the sequence, the scope the products are valid for, and the
+// failure behaviour — is [BuildGraph]'s, because this is the body it delegates
+// to.
+func buildGraphCollectingFindings(
+	ctx context.Context,
+	inputs Inputs,
+	catalogLookup resolver.CatalogLookup,
+	recipeFor resolver.RecipeBinding,
+	subAggregateLoader topology.SubAggregateLoader,
+	use func(*GraphScope) error,
+) error {
+	// Before anything resolves. The roles that shape the graph read their
+	// attachment lists off the workspace configuration and treat an empty list as
+	// "nothing attached", so an absent configuration and an empty one produce the
+	// same run — and only one of them is a run anybody asked for. Refusing here
+	// rather than at each caller is what makes a caller added later inherit the
+	// obligation instead of having to remember it.
+	if inputs.WorkspaceConfig == nil {
+		return stderrors.New("graph build: no workspace configuration was supplied; " +
+			"the label-transform and annotation-transform roles are read from it, so a " +
+			"graph built without one silently skips them")
+	}
 	return resolveAndFlatten(ctx, inputs, catalogLookup, recipeFor, subAggregateLoader,
 		func(resolveResult *resolver.ResolveResult, topoResult *topology.TopologyResult) error {
 			// Step 2b: label-transform governance role. Config-driven off the
 			// label-transform attachments in WorkspaceConfig.Plugins.Governance — a
-			// no-op when unconfigured, so an unattached build is byte-identical to a
-			// build without the role. When configured, each plugin auto-tags node
-			// labels via JSON Patch (the narrow mutation exception); the tags flow
-			// into the graph because the build below reads its labels from this same
-			// topoResult.
+			// no-op when the workspace attaches none, so an unattached build is
+			// byte-identical to a build without the role. When configured, each
+			// plugin auto-tags node labels via JSON Patch (the narrow mutation
+			// exception); the tags flow into the graph because the build below reads
+			// its labels from this same topoResult.
 			if err := runMutatorSocket(ctx, inputs, catalogLookup, topoResult); err != nil {
 				return err
 			}
@@ -1010,14 +1096,79 @@ func BuildGraph(
 				return fmt.Errorf("IR graph construction: %w", err)
 			}
 
-			return use(&GraphScope{
+			gs := &GraphScope{
 				ResolveResult:   resolveResult,
 				Topology:        topoResult,
 				IRGraph:         graph,
 				FeatureOrder:    featureOrder,
 				AttachmentSites: attachmentSites,
-			})
+			}
+
+			// The carriers and the authored deliveries, paired with the connection
+			// set the composition produced. Built from that set rather than from the
+			// authoring documents, so the connections a rule is invoked for are the
+			// connections the build actually drew.
+			gs.CarriedConnections = ir.NewCarriedConnections(graph, topoResult, resolveResult)
+
+			// The presentation of the graph just finalised, extending the one the
+			// flattening produced. Built here because this is where every product it
+			// takes is in hand — the graph, the presentation below it, and the
+			// per-leaf sites: a stage's presentation embeds the stage below it rather
+			// than re-reading that stage's inputs, so building it anywhere else would
+			// mean producing a second answer to facts this one already answers.
+			gs.GraphView = ir.NewGraphView(
+				graph, topoResult.StageView, gs.AttachmentSites, gs.CarriedConnections)
+
+			// The enumeration of the same graph, built beside the presentation
+			// because it reads that presentation for the axes a fact already names.
+			// The deployment's file comes from the resolve result, which already
+			// carries it so downstream phases can build source locations without
+			// re-discovering it. The per-leaf sites come from the fold that produced
+			// them rather than being recovered here: which scope's contribution won
+			// any one leaf is settled while the cascade folds, and re-running that
+			// precedence would be a second answer to a question the build already
+			// answered.
+			gs.GraphCoordinates = ir.NewGraphStageCoordinates(
+				graph, gs.GraphView, catalogLookup, releaseFileOf(gs.ResolveResult),
+				gs.AttachmentSites, gs.CarriedConnections,
+			)
+
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+
+			// The rules declared over the finalised graph are asked here, against
+			// the presentation and the enumeration built above. This is the site
+			// that holds both, and it sits in the graph entry rather than on one
+			// consumer's path because every surface that holds a graph holds one
+			// these rules have an opinion about: a rule asked on the render path
+			// alone would let an inspection publish, and an acquisition pin, a
+			// composition the build of the same documents refuses.
+			if err := runGraphStageRules(ctx, gs); err != nil {
+				return err
+			}
+
+			return use(gs)
 		})
+}
+
+// joinedAnalysisHalt renders the violations a run accumulated into the joined
+// halt its callers already read, or nil when nothing was raised.
+//
+// It is one function rather than a loop at each halting surface because the
+// shape is the contract: an existing caller matches the class of a violation
+// through the joined error, so two renderings of the same slice would be two
+// shapes a caller has to recognise, and the second one would be free to drift
+// from the first.
+func joinedAnalysisHalt(violations []analyzer.AnalysisError) error {
+	if len(violations) == 0 {
+		return nil
+	}
+	errs := make([]error, len(violations))
+	for i := range violations {
+		errs[i] = violations[i].ToCompilerError()
+	}
+	return stderrors.Join(errs...)
 }
 
 // RunTier4Pipeline executes the pre-render phases of the compiler pipeline
@@ -1307,12 +1458,8 @@ func RunPipeline(
 		// Step 4: convert analyzer errors to the joined-error shape that
 		// pre-extraction RunPipeline returned. Preserves the first-error-fatal
 		// semantic existing callers (irgraph, CLI build) consume.
-		if len(stepsOut.Analysis.Errors) > 0 {
-			errs := make([]error, len(stepsOut.Analysis.Errors))
-			for i := range stepsOut.Analysis.Errors {
-				errs[i] = stepsOut.Analysis.Errors[i].ToCompilerError()
-			}
-			return stderrors.Join(errs...)
+		if err := joinedAnalysisHalt(stepsOut.Analysis.Errors); err != nil {
+			return err
 		}
 
 		resolveResult := stepsOut.ResolveResult

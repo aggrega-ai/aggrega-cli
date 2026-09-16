@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -723,7 +724,7 @@ func TestVerifyRecipeResolution_ShapeFaultVersusAbsentEntity(t *testing.T) {
 	if shapeErr == nil {
 		t.Fatalf("a reference past the segment ceiling must halt")
 	}
-	if !errors.Is(shapeErr, ErrMalformedRecipeReference()) {
+	if !errors.Is(shapeErr, resolver.ErrMalformedRecipeReference()) {
 		t.Errorf("expected ErrMalformedRecipeReference in chain; got %v", shapeErr)
 	}
 	if errors.Is(shapeErr, ErrNoRecipeResolved()) {
@@ -733,9 +734,9 @@ func TestVerifyRecipeResolution_ShapeFaultVersusAbsentEntity(t *testing.T) {
 		t.Errorf("a shape fault must not claim the entity is absent; got %v", shapeErr)
 	}
 	for _, want := range []string{
-		`"core/eval/present:1.0.0"`,   // the shape the author typed
-		"3 slash-separated segments",  // and its segment count
-		acceptedRecipeReferenceShapes, // the shapes a reference accepts
+		`"core/eval/present:1.0.0"`,            // the shape the author typed
+		"3 slash-separated segments",           // and its segment count
+		resolver.AcceptedRecipeReferenceShapes, // the shapes a reference accepts
 		"correct the mapping value in the Manifest",
 		`"core/eval/cred:1.0.0"`, // the feature twin fires too
 	} {
@@ -752,7 +753,7 @@ func TestVerifyRecipeResolution_ShapeFaultVersusAbsentEntity(t *testing.T) {
 	if !errors.Is(absentErr, ErrNoRecipeResolved()) {
 		t.Errorf("expected ErrNoRecipeResolved in chain; got %v", absentErr)
 	}
-	if errors.Is(absentErr, ErrMalformedRecipeReference()) {
+	if errors.Is(absentErr, resolver.ErrMalformedRecipeReference()) {
 		t.Errorf("an absent entity must not report as a shape fault; got %v", absentErr)
 	}
 	for _, want := range []string{

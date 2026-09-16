@@ -653,7 +653,7 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	// express matches no entity, so the walk would report a recipe that is in the
 	// catalog as absent. This path computes its own closure rather than going
 	// through the shared resolver, so it carries the check itself.
-	if faults := catalog.ManifestRecipeReferenceFaults(manifest); len(faults) > 0 {
+	if faults := resolver.ManifestRecipeReferenceFaults(manifest); len(faults) > 0 {
 		return Result{}, cfg.annotate(faults[0], skipped)
 	}
 	cl, err := closure.ComputeClosure(ctx, rel, manifest, types.Normalize(aggregate), wsCfg, lookup)
@@ -863,6 +863,35 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	// about to acquire, so anything reading the file in between would read a
 	// closure this run never produced.
 	var assembled *lockfile.Lockfile
+	// The configuration the graph below is built against: this workspace's own,
+	// with the transform-role attachments replaced by the reconstruction of the
+	// records this pass just resolved.
+	//
+	// The substitution is what makes the graph drawn here the graph a later build
+	// draws. A transform attachment's settings and source content reach the guest
+	// from the RECORD, never from live configuration or the host filesystem, so a
+	// live attachment handed straight over arrives carrying no source content at
+	// all — the guest then runs on an empty input set and decides nothing, which is
+	// indistinguishable from a guest that ran and found nothing to do. Running the
+	// reconstruction instead means both passes run one attachment list: the content
+	// is identical by construction, because this pass read those files a moment ago
+	// and is about to record exactly what it read.
+	//
+	// Only the transform half is composed here, and the omission of the verdict
+	// half is deliberate. The graph entry dispatches the two roles that shape the
+	// graph and nothing else, so no verdict-role attachment runs on this path;
+	// carrying the verdict list into a configuration nothing on this path reads
+	// would state, to the next reader, that those gates ran.
+	//
+	// It would also be a second composition of the governance attachment list, and
+	// that list has one home for a reason that does not apply here but would apply
+	// to whatever this site grew into: composing it is the same act as acquiring
+	// the digests recorded as trusted for the verdict attachments, and a surface
+	// that composes without acquiring runs every configured gate while holding none
+	// of them to the identity that was reviewed — silently, because an unsupplied
+	// record is indistinguishable from a workspace that has recorded nothing.
+	graphCfg := wsCfg
+	graphCfg.Plugins.Governance = lockfile.MutatorAttachmentRefs(mutatorAttachments)
 	// The graph entry scopes the resolved view + parameter map to this
 	// callback, so the entire source-descent runs while parameters are live
 	// and nothing here can hold them past it. The descent reads BoundaryInfra
@@ -875,6 +904,16 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 			AggregateRawBytes: aggBytes,
 			AggregatePath:     catalog.RelativeToWorkspace(workspaceRoot, aggRes.Path),
 			CompilerVersion:   cfg.CompilerVersion,
+			// The composed configuration above, not the live one: a transform-role
+			// attachment shapes the graph, so a graph drawn without it is not the
+			// graph these pins describe.
+			WorkspaceConfig: &graphCfg,
+			// The root and the cache directory the transform tier resolves a
+			// non-embedded guest through. No lockfile: this pass is the one that
+			// writes it, so there is nothing yet to pin against, and an attachment
+			// whose bytes are not already cached halts rather than resolving to
+			// something unpinned.
+			WorkspaceRoot: workspaceRoot,
 		},
 		pullLookup,
 		lazyView.RecipeLookupWithManifest(manifest).Recipe,
@@ -890,11 +929,24 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 			// congruent with rendering. Per-instance infra is the resolved entry.Infra,
 			// so no Release-side join is needed.
 			//
-			// Building a graph here is acyclic: it consumes topology, resolve and
-			// catalog and copies the recipe source pointer, never a fetched artifact,
-			// so nothing it reads depends on the sources this pass is about to
-			// resolve. What that costs is the graph-build failure surface, which this
-			// operation therefore inherits.
+			// Building a graph here is acyclic, and the claim is about WHICH
+			// artifacts it depends on rather than about none at all. It consumes
+			// topology, resolve and catalog and copies each recipe source pointer
+			// without fetching it, so nothing it reads depends on the per-component
+			// sources this pass is about to resolve.
+			//
+			// It does dispatch the guests of the transform-role attachments, whose
+			// bytes are a different axis and are already in hand: the closure walk
+			// records each transform plugin's entity on the pinned axis and the
+			// plugin-artifact descent above brings its .wasm down, both before this
+			// point. So the dependency runs one way — the graph build reads an axis
+			// this pass finished, never one it is still resolving.
+			//
+			// What that costs is the graph-build failure surface, which this operation
+			// therefore inherits, now including a transform attachment whose guest
+			// will not resolve. That is the same refusal a build of the same workspace
+			// raises, arriving at the pass that writes the record rather than at the
+			// first pass to read it.
 			graph := gs.IRGraph
 
 			// Key per-instance infra by the Manifest-mapped entity URI — the same

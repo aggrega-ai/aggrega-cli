@@ -10,6 +10,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
 // The verdict sockets resolve a cached-not-pinned gate plugin through one shared
@@ -18,6 +19,15 @@ import (
 // because the zero value of that input is a LEGAL value meaning "nothing is
 // recorded" — so a wiring that never supplies it produces exactly the resolution
 // it produced before the record existed, with nothing failing and nothing warning.
+//
+// Each test supplies an EXPLICITLY EMPTY workspace configuration, and empty is
+// what these fixtures mean: the resolution under test is driven by the recorded
+// digests and by the cache reader on the catalog lookup, and the workspace
+// contributes no artifact cache directory of its own. It is supplied rather than
+// left out because these drive the resolution helper directly instead of through
+// the graph entry, which is where an unsupplied configuration is refused — below
+// that entry the configuration is read without a nil test, since the refusal is
+// what establishes there is one to read.
 
 // cachedVerdictGate returns a cache reader serving one Plugin entity for a
 // verdict gate, the coordinate that entity's identity derives, and the .wasm
@@ -45,10 +55,13 @@ func TestVerdictSocketHonoursADisagreeingRecordedDigest(t *testing.T) {
 	lookup, coordinate, _ := cachedVerdictGate()
 
 	const wrong = "sha256:2222222222222222222222222222222222222222222222222222222222222222"
-	inputs := Inputs{VerdictPluginTrust: pluginpath.PinMaps{
-		Pins:        map[string]string{coordinate: wrong},
-		PinVersions: map[string]string{coordinate: wrong},
-	}}
+	inputs := Inputs{
+		WorkspaceConfig: &workspaceconfig.Config{},
+		VerdictPluginTrust: pluginpath.PinMaps{
+			Pins:        map[string]string{coordinate: wrong},
+			PinVersions: map[string]string{coordinate: wrong},
+		},
+	}
 
 	_, err := resolveVerdictSocketPluginFromCache(inputs, lookup, "governance/opa-gate:1.2.0")
 	if err == nil {
@@ -68,7 +81,8 @@ func TestVerdictSocketHonoursADisagreeingRecordedDigest(t *testing.T) {
 func TestVerdictSocketResolvesPinFreeWithoutRecordedDigests(t *testing.T) {
 	lookup, _, _ := cachedVerdictGate()
 
-	_, err := resolveVerdictSocketPluginFromCache(Inputs{}, lookup, "governance/opa-gate:1.2.0")
+	_, err := resolveVerdictSocketPluginFromCache(
+		Inputs{WorkspaceConfig: &workspaceconfig.Config{}}, lookup, "governance/opa-gate:1.2.0")
 	if err == nil {
 		t.Fatal("the fixture holds no guest bytes, so the resolution cannot succeed; the A/B would be vacuous")
 	}
@@ -84,10 +98,13 @@ func TestVerdictSocketResolvesPinFreeWithoutRecordedDigests(t *testing.T) {
 func TestVerdictSocketAcceptsAnAgreeingRecordedDigest(t *testing.T) {
 	lookup, coordinate, manifestDigest := cachedVerdictGate()
 
-	inputs := Inputs{VerdictPluginTrust: pluginpath.PinMaps{
-		Pins:        map[string]string{coordinate: manifestDigest},
-		PinVersions: map[string]string{coordinate: manifestDigest},
-	}}
+	inputs := Inputs{
+		WorkspaceConfig: &workspaceconfig.Config{},
+		VerdictPluginTrust: pluginpath.PinMaps{
+			Pins:        map[string]string{coordinate: manifestDigest},
+			PinVersions: map[string]string{coordinate: manifestDigest},
+		},
+	}
 
 	_, err := resolveVerdictSocketPluginFromCache(inputs, lookup, "governance/opa-gate:1.2.0")
 	if errors.Is(err, resolver.ErrVerdictPluginTrustMismatch()) {

@@ -415,21 +415,23 @@ spec:
 	releasePath := filepath.Join(root, "release.yaml")
 
 	// Negative control: NO mutator attached. The appliesTo constraint is
-	// unsatisfied (the node lacks role.aggrega.ai/kind=cache) and the build halts
-	// with ErrSelectorViolation.
+	// unsatisfied (the node lacks role.aggrega.ai/kind=cache) and the workspace is
+	// refused with ErrSelectorViolation.
+	//
+	// The refusal is asserted at the acquisition, which is where the rules declared
+	// over the finalised graph are now asked. A workspace the acquisition declines
+	// writes no lockfile, so there is nothing to build afterwards, and asserting on
+	// a build that follows a refused pull would pin a second, consequential failure
+	// instead of the one the fixture exists for.
 	rwNoMutator := resolveWorkspaceWithConfig(t, root, "workspace: {}\noffline: true\n")
-	if err := pullRun(context.Background(), pullConfig{ReleasePath: releasePath, CatalogDirs: catDirs, ws: rwNoMutator, DiagOut: os.Stderr, Out: os.Stderr, diag: buildDiagOptions{quiet: true}}); err != nil {
-		t.Fatalf("pull (no mutator): %v", err)
-	}
-	outNeg := filepath.Join(root, "out-neg")
-	errNeg := dispatchBuildWithDiag(context.Background(), rwNoMutator, releasePath, catDirs, false, buildDiagOptions{quiet: true}, buildops.RunOptions{OutDir: outNeg}, os.Stderr, os.Stderr)
+	errNeg := pullRun(context.Background(), pullConfig{ReleasePath: releasePath, CatalogDirs: catDirs, ws: rwNoMutator, DiagOut: os.Stderr, Out: os.Stderr, diag: buildDiagOptions{quiet: true}})
 	if errNeg == nil {
-		t.Fatal("negative control: build with no mutator succeeded; the feature's appliesTo should be unsatisfied and halt the build")
+		t.Fatal("negative control: the workspace with no mutator was accepted; the feature's appliesTo should be unsatisfied and refused")
 	}
 	if !errors.Is(errNeg, analyzer.ErrSelectorViolation()) {
 		t.Fatalf("negative control: want ErrSelectorViolation (the injected label is load-bearing), got: %v", errNeg)
 	}
-	t.Logf("negative control PASS: no mutator -> appliesTo unsatisfied -> build halts with ErrSelectorViolation")
+	t.Logf("negative control PASS: no mutator -> appliesTo unsatisfied -> the workspace is refused with ErrSelectorViolation")
 
 	// Positive: attach the label-injector, which sets role.aggrega.ai/kind=cache
 	// on the node matched by its pre-existing component.aggrega.ai/type=server

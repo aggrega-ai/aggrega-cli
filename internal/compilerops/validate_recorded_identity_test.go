@@ -108,7 +108,11 @@ func TestGovernanceCompositionCarriesTheRecordedSources(t *testing.T) {
 
 	compose := func(lf *lockfile.Lockfile) []string {
 		t.Helper()
-		in := pipeline.Inputs{WorkspaceConfig: wsCfg, Lockfile: lf}
+		// A fresh copy per call: the composition re-points the field at the
+		// configuration it rewrites, so sharing one across both calls would let the
+		// first call's reconstructed attachments reach the second.
+		cfg := wsCfg
+		in := pipeline.Inputs{WorkspaceConfig: &cfg, Lockfile: lf}
 		if err := ApplyGovernanceComposition(&in, view, releasePath); err != nil {
 			t.Fatalf("compose: %v", err)
 		}

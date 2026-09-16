@@ -103,7 +103,7 @@ func loadGovernanceWire(t *testing.T, variant string) (pipeline.Inputs, resolver
 		Manifest:          manifest,
 		AggregateRawBytes: aggBytes,
 		AggregatePath:     aggPath,
-		WorkspaceConfig:   workspaceconfig.Default(),
+		WorkspaceConfig:   fixtureWorkspaceConfig(),
 		CompilerVersion:   fixtureCompilerVersion,
 	}
 	return inputs, cat.CatalogLookup(), cat.RecipeLookupWithManifest(manifest), cat.SubAggregateLoader()

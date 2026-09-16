@@ -103,6 +103,48 @@ const (
 	// names it.
 	authoredKeyMappings    = "mappings"
 	authoredKeyAnnotations = "annotations"
+
+	// authoredKeyType and authoredKeyName are the two keys a Manifest's
+	// mapping tier writes its entries under. They sit here with the rest for
+	// the reason the pair above does, and they are the one place in this block
+	// whose values are also read back OUT of a locator: the exported tier and
+	// axis vocabulary below is declared from these constants rather than
+	// beside them, so the words a rule reads off a subject and the segments a
+	// locator is assembled from cannot come to disagree.
+	authoredKeyType = "type"
+	authoredKeyName = "name"
+)
+
+// The mapping tiers a Manifest's mapping table is written under, and the axes
+// each tier keys on. A rule reading [DocumentMappingEntrySubject.MappingTier] or
+// [DocumentMappingEntrySubject.MappingAxis] compares against these rather than
+// against a literal of its own.
+//
+// The sets are closed, and closed because the authoring surface closes them: a
+// Manifest's mappings block accepts the two tier keys and no other, and a tier
+// accepts the two axis keys and no other. A third of either would be a change to
+// what a Manifest may say.
+//
+// Each is declared from the authoring key the locator is assembled from rather
+// than spelled again, so the word a rule branches on and the segment a finding is
+// positioned at are one value. Two spellings would agree the day they were
+// written and be free to drift afterwards, with nothing comparing them.
+const (
+	// MappingTierComponents is the tier whose entries map component types and
+	// component instance names onto Recipes.
+	MappingTierComponents = authoredKeyComponents
+
+	// MappingTierFeatures is the tier whose entries map feature types and
+	// feature instance names onto FeatureRecipes.
+	MappingTierFeatures = authoredKeyFeatures
+
+	// MappingAxisType is the axis whose keys are types, which routes every
+	// instance of the type it names.
+	MappingAxisType = authoredKeyType
+
+	// MappingAxisName is the axis whose keys are instance names, which routes
+	// the one instance it names.
+	MappingAxisName = authoredKeyName
 )
 
 // scopeNesting describes one authoring axis whose scopes nest: the key the
