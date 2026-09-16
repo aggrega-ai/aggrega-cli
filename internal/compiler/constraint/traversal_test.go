@@ -1645,6 +1645,49 @@ func coordinateFlowCases() []coordinateFlowCase {
 			},
 		},
 
+		// The Recipe's output-label kind reads through its push entry, so the block
+		// and the keys both come from the caller. It is read back over TWO calls
+		// rather than one, because the entry walks one block per call: a readback
+		// over a single block could not tell a constructor carrying the block it
+		// was invoked with from one carrying a constant, which is the coordinate
+		// that makes this kind composite. Two keys are presented per call for the
+		// reason the parameter case states, none of the four is a prefix of
+		// another, and each pair is presented in the order alphabetical sorting
+		// would reverse — so a readback that truncated, confused or sorted them
+		// would not still compare equal.
+		{
+			kind: SubjectDocumentOutputLabel,
+			seam: seamTraversal,
+			read: func(_ traversalFixture) []string {
+				of := func(s DocumentOutputLabelSubject) string {
+					return s.SourceFile() + "|" + s.OutputLabelBlock() + "|" + s.OutputLabelKey()
+				}
+				literal := readback(func(
+					c Check[traversalView, DocumentOutputLabelSubject],
+				) ([]Objection, error) {
+					return RunOnDocumentOutputLabels(
+						documentFile, OutputLabelBlockLiteral,
+						[]string{"tier", "cost-centre"}, traversalView{}, c,
+					), nil
+				}, of)
+				promoted := readback(func(
+					c Check[traversalView, DocumentOutputLabelSubject],
+				) ([]Objection, error) {
+					return RunOnDocumentOutputLabels(
+						documentFile, OutputLabelBlockPromoted,
+						[]string{"region", "hosting"}, traversalView{}, c,
+					), nil
+				}, of)
+				return append(literal, promoted...)
+			},
+			want: []string{
+				documentFile + "|outputLabels|tier",
+				documentFile + "|outputLabels|cost-centre",
+				documentFile + "|outputComponentLabels|region",
+				documentFile + "|outputComponentLabels|hosting",
+			},
+		},
+
 		// The Manifest's mapping-entry kind reads through its push entry, so the
 		// entries come from the caller. Four are presented rather than two: the
 		// coordinate is composite, so a readback over one tier or one axis could

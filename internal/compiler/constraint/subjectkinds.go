@@ -168,6 +168,68 @@ func newDocumentSchemaPillarSubject(
 	}
 }
 
+// DocumentOutputLabelSubject is the subject of a check invoked once per
+// output-label key the presented Recipe declares.
+//
+// It is a separate kind from the document itself for the reason a declared
+// parameter is: "once per declared key" is a different once, and the subject can
+// name the block the key was written in where a document subject names only the
+// file.
+//
+// Its coordinate is composite, and it carries an accessor for each element of
+// that composite rather than one naming the declaration. A Recipe declares such
+// keys in two blocks — one carrying literal values written in place, one naming
+// keys whose values are taken from the component being rendered — and one key
+// legitimately appears in each. So the key alone names up to two declarations,
+// which is exactly the pair a rule about the two blocks meeting on a key exists
+// to refuse, and the block alone names the whole block rather than an entry in
+// it. The two together name one.
+//
+// It is one kind over both blocks rather than one per block, because the two
+// are the same coordinate shape at two authored sites: a key inside one of the
+// Recipe's own label blocks. Which block a key was written in is carried as the
+// coordinate's own value, which is what lets one condition cover both and still
+// name the block the author typed.
+type DocumentOutputLabelSubject interface {
+	Subject
+
+	// OutputLabelBlock is the block the key is declared in, as the author wrote
+	// it: one of [OutputLabelBlockLiteral] or [OutputLabelBlockPromoted]. It is
+	// what tells a rule which of the two the author is being sent to, which the
+	// key alone cannot say.
+	OutputLabelBlock() string
+
+	// OutputLabelKey is the label key the check was invoked for, as the author
+	// wrote it. The document itself is the other coordinate, and SourceFile
+	// names it.
+	OutputLabelKey() string
+
+	documentOutputLabel()
+}
+
+type documentOutputLabelSubject struct {
+	provenance
+	block string
+	key   string
+}
+
+func (documentOutputLabelSubject) documentOutputLabel() {}
+
+func (s documentOutputLabelSubject) OutputLabelBlock() string { return s.block }
+
+func (s documentOutputLabelSubject) OutputLabelKey() string { return s.key }
+
+func newDocumentOutputLabelSubject(
+	sourceFile, block, key string,
+	segments ...string,
+) DocumentOutputLabelSubject {
+	return documentOutputLabelSubject{
+		provenance: newProvenance(sourceFile, segments...),
+		block:      block,
+		key:        key,
+	}
+}
+
 // DocumentAnnotationBindingSubject is the subject of a check invoked once per
 // annotation binding the presented Manifest's registry declares.
 //

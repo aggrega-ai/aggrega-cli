@@ -211,6 +211,69 @@ func RunOnDocumentSchemaPillars[V View](
 	return out
 }
 
+// RunOnDocumentOutputLabels invokes check once per output-label key one block of
+// the presented Recipe declares, in the order the keys are given.
+//
+// It is a push entry like [RunOnDocumentParameters], and for the same reason: the
+// coordinate it is rooted at is the document, which no point in the compilation
+// holds a set of. What differs is the coordinate inside it. The keys one block
+// declares are a set once the document is in hand, so this entry walks them.
+//
+// block names which of the Recipe's two label blocks the keys were written in:
+// one of [OutputLabelBlockLiteral] or [OutputLabelBlockPromoted]. It is taken
+// from the caller rather than inferred, because a presentation answers both
+// blocks and only the caller knows which of the two it is walking; it reaches the
+// subject as a coordinate and the locator as a segment, from this one argument,
+// so the block a rule names and the block a finding is positioned in are the same
+// string by construction.
+//
+// A block is walked in one call rather than both in one, and that is what keeps a
+// caller able to order two rules over the same keys: a rule settled across a whole
+// block before another rule is asked anything is expressed by invoking each in
+// turn, which a single entry walking both could not express.
+//
+// keys are the keys the check is invoked for, and the caller presents them in a
+// deterministic order it declares — the order the fact enumerating that block
+// declares, which is the author's where the block carries one and a sorted order
+// where it does not. That obligation is the same one every enumerator interface
+// carries, and it lands here because the push side of the framework has no
+// enumerator to put it on: a check raises in the order it is invoked, so this
+// order is the order diagnostics appear in. Nothing here sorts and nothing here
+// derives a key.
+//
+// A locator names .spec.<block>.<key>, the site the key is authored at, assembled
+// through the same helper every other document-level site uses so one authored
+// shape has one spelling.
+//
+// 🔴 A label key routinely carries the locator dialect's own separator — a
+// reserved key opens with a namespace spelled with dots — so the assembly stops
+// at the block for exactly those keys, and the locator names the block rather
+// than the entry. That is the dialect's own rule rather than a shortfall here,
+// and it is why the key is carried as a coordinate as well: a rule naming the key
+// reads it from the subject, where it is the author's text whatever it contains.
+//
+// It takes no [Cancellation] and returns no error, for the reason
+// [RunOnDocumentParameters] states: the signal is read once per outermost
+// coordinate, the outermost coordinate here is the document, and the loop over
+// documents is the caller's.
+func RunOnDocumentOutputLabels[V View](
+	sourceFile string,
+	block string,
+	keys []string,
+	view V,
+	check Check[V, DocumentOutputLabelSubject],
+) []Objection {
+	var out []Objection
+	for _, key := range keys {
+		subject := newDocumentOutputLabelSubject(
+			sourceFile, block, key,
+			documentSpecSegments(block, key)...,
+		)
+		out = append(out, check.Run(view, subject)...)
+	}
+	return out
+}
+
 // RunOnDocumentAnnotationBindings invokes check once per annotation binding the
 // presented Manifest's registry declares, in the order the bindings are given.
 //

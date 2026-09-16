@@ -410,6 +410,15 @@ var coordinateAccessors = map[string][]string{
 	// what identifies one binding among the registry's entries. A Name suffix
 	// would suggest the binding carries a name of its own beside its key.
 	"annotation-binding": {"AnnotationBindingKey"},
+	// Not one-to-one either, and the reason is the mapping-entry row's applied to
+	// a surface with two authoring blocks. An output-label declaration's identity
+	// is the block it was written in together with the key the author wrote: one
+	// key legitimately appears in each block — which is the pair a rule about the
+	// two meeting exists to refuse — so the key alone names up to two
+	// declarations. Each accessor is the coordinate's own name plus what the value
+	// is, and both are values the author typed, which is also why the locator is
+	// assembled from the same two.
+	"output-label": {"OutputLabelBlock", "OutputLabelKey"},
 	// The third entry that is not one-to-one, and the reason is the one the
 	// edge row gives applied to an authoring table. A mapping entry's identity
 	// is the tier it is written under, the axis it keys on and the key the
@@ -969,6 +978,19 @@ var subjectKindBindings = map[SubjectKind]struct {
 		make: func(f string) Subject {
 			return newDocumentAnnotationBindingSubject(f, "feature.example/rewrite-host",
 				"spec", "mappings", "features", "annotations", "feature.example/rewrite-host")
+		},
+	},
+	SubjectDocumentOutputLabel: {
+		iface: reflect.TypeOf((*DocumentOutputLabelSubject)(nil)).Elem(),
+		// A key in neither reserved namespace, because the coordinate is the key the
+		// author wrote and carries no verdict on it — a binding built from a reserved
+		// key would read as though it did. It is also separator-free, which is what
+		// exercises the locator assembly to full depth: a reserved key necessarily
+		// carries the dialect's separator, so its own segment would be dropped and
+		// the constructor's deepest argument would go unexercised.
+		make: func(f string) Subject {
+			return newDocumentOutputLabelSubject(f, OutputLabelBlockPromoted, "hosting",
+				"spec", OutputLabelBlockPromoted, "hosting")
 		},
 	},
 	SubjectDocumentMappingEntry: {

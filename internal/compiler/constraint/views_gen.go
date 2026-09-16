@@ -556,6 +556,46 @@ type DocumentView interface {
 	// Keyed by document; read from types.RecipeSpec.Capability.
 	RecipeDeclaredCapability(document string) string
 
+	// RecipeOutputLabelKeys are the keys the presented Recipe's literal
+	// output-label block declares, in sorted order.
+	//
+	// They are the keys as authored, whatever namespace they sit in, and that
+	// is what makes a rule over them possible: a key claiming a reserved
+	// namespace is exactly what a set already filtered to the admissible ones
+	// could not report. A Recipe declaring no such block declares none.
+	//
+	// The order is sorted rather than the author's, and the departure from
+	// every other authored-key fact here is forced by the block's own shape.
+	// The block is a mapping, whose iteration order is unspecified, so there
+	// is no author order to carry and a walk would otherwise present the keys
+	// differently on different runs. A rule invoked once per key raises in
+	// invocation order, and that order is the order the findings reach the
+	// reader — so sorting is what makes the first finding the same one every
+	// time.
+	//
+	// Keyed by (document, output-label); read from
+	// types.RecipeSpec.OutputLabels.
+	RecipeOutputLabelKeys(document string) []string
+
+	// RecipeOutputComponentLabelKeys are the component label keys the
+	// presented Recipe promotes onto its rendered output, in author order.
+	//
+	// It is a second fact rather than the other half of one, because the two
+	// blocks are written at two authored keys: a fact naming both would be a
+	// fact about two sites, and a rule reading it could not say which of them
+	// the author is being sent to. A Recipe declaring no such block declares
+	// none.
+	//
+	// The order is the author's and is carried rather than sorted, because the
+	// block is a sequence and a sequence has one. That is the other half of
+	// what the literal block's own fact states about its sorting: the two
+	// orders differ because the two blocks differ in shape, not because either
+	// rule wanted a different one.
+	//
+	// Keyed by (document, output-label); read from
+	// types.RecipeSpec.OutputComponentLabels.
+	RecipeOutputComponentLabelKeys(document string) []string
+
 	// ManifestRecipeMappingEntries are the entries of the presented Manifest's
 	// recipe mapping table, in author order within each axis: the components
 	// tier before the features tier, and within each tier the type axis before

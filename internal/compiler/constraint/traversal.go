@@ -97,6 +97,15 @@ const (
 	authoredKeyAssertions = "assertions"
 	authoredKeySchema     = "schema"
 
+	// authoredKeyOutputLabels and authoredKeyOutputComponentLabels are the two
+	// keys a Recipe writes its output-label declarations under. They sit here
+	// with the rest, and they are the second place in this block whose values
+	// are also carried as a coordinate: the exported block vocabulary below is
+	// declared from them rather than beside them, so the word a rule reports and
+	// the segment a finding is positioned at cannot come to disagree.
+	authoredKeyOutputLabels          = "outputLabels"
+	authoredKeyOutputComponentLabels = "outputComponentLabels"
+
 	// authoredKeyMappings and authoredKeyAnnotations are the two keys a
 	// Manifest's annotation registry is written under. They sit here with the
 	// rest rather than beside the one traversal that spells them, because the
@@ -147,6 +156,30 @@ const (
 	// MappingAxisName is the axis whose keys are instance names, which routes
 	// the one instance it names.
 	MappingAxisName = authoredKeyName
+)
+
+// The two blocks a Recipe declares output-label keys in. A rule reading
+// [DocumentOutputLabelSubject.OutputLabelBlock] compares against these rather
+// than against a literal of its own, and a caller presenting a block names one
+// of them rather than spelling it.
+//
+// The set is closed, and closed because the authoring surface closes it: a
+// Recipe declares label keys destined for its rendered output at these two keys
+// and no other. A third would be a change to what a Recipe may say.
+//
+// Each is declared from the authoring key the locator is assembled from rather
+// than spelled again, so the word a diagnostic names the block by and the
+// segment a finding is positioned at are one value. Two spellings would agree
+// the day they were written and be free to drift afterwards, with nothing
+// comparing them.
+const (
+	// OutputLabelBlockLiteral is the block whose entries are label keys with
+	// the values written in place beside them.
+	OutputLabelBlockLiteral = authoredKeyOutputLabels
+
+	// OutputLabelBlockPromoted is the block whose entries name label keys whose
+	// values are taken from the component instance being rendered.
+	OutputLabelBlockPromoted = authoredKeyOutputComponentLabels
 )
 
 // scopeNesting describes one authoring axis whose scopes nest: the key the

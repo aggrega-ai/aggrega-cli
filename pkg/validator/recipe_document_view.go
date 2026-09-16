@@ -5,14 +5,16 @@ package validator
 
 import (
 	"fmt"
+	"sort"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // recipeDocumentView presents one authored Recipe to a check as named facts:
-// the capability the document declares, and whether it declares a values
-// overlay, a source pointer, a workload body or artifact entries.
+// the capability the document declares, whether it declares a values overlay, a
+// source pointer, a workload body or artifact entries, and the keys each of its
+// two output-label blocks declares.
 //
 // It answers about the one document it was built for, which is the framework's
 // contract rather than a simplification of it. The subject a check over a
@@ -63,6 +65,49 @@ type recipeDocumentView struct {
 
 	// capability is the capability the document declares, as authored.
 	capability string
+
+	// outputLabelKeys are the keys the literal output-label block declares, in
+	// sorted order.
+	outputLabelKeys []string
+
+	// outputComponentLabelKeys are the label keys the promoted block declares,
+	// in the order the author wrote them.
+	outputComponentLabelKeys []string
+}
+
+// authoredOutputLabelKeys returns the keys a literal output-label block
+// declares, sorted.
+//
+// The sort is here rather than at a rule, because the order is a property of the
+// fact this produces: the block is a mapping, whose iteration order the language
+// leaves unspecified, so an unsorted walk would present one authored document's
+// keys in a different order on different runs and the first finding a rule
+// reported would move with it. Sorting once, where the fact is produced, is what
+// makes the answer the same answer every time — and it is the only place that can
+// hold it, since a rule invoked once per key never sees the set.
+func authoredOutputLabelKeys(block map[string]string) []string {
+	keys := make([]string, 0, len(block))
+	for key := range block {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+// authoredOutputComponentLabelKeys returns the label keys a promoted block
+// declares, in the order the author wrote them.
+//
+// It copies rather than handing back the authored slice, so a value presented to
+// a rule cannot be reordered through the presentation. Nothing sorts here: the
+// block is a sequence, so the author's order is the one it carries and the one a
+// rule's findings appear in.
+func authoredOutputComponentLabelKeys(block []string) []string {
+	if len(block) == 0 {
+		return nil
+	}
+	keys := make([]string, len(block))
+	copy(keys, block)
+	return keys
 }
 
 // newRecipeDocumentView presents the Recipe a load is holding: the file it was
@@ -80,12 +125,14 @@ type recipeDocumentView struct {
 // property of the file.
 func newRecipeDocumentView(path string, r *types.Recipe) recipeDocumentView {
 	return recipeDocumentView{
-		path:          path,
-		valuesMapping: !r.Spec.ValuesMapping.IsEmpty(),
-		source:        !sourceIsEmpty(r.Spec.Source),
-		workload:      !r.Spec.Workload.IsEmpty(),
-		artifacts:     r.Spec.Artifacts.Len() > 0,
-		capability:    r.Spec.Capability,
+		path:                     path,
+		valuesMapping:            !r.Spec.ValuesMapping.IsEmpty(),
+		source:                   !sourceIsEmpty(r.Spec.Source),
+		workload:                 !r.Spec.Workload.IsEmpty(),
+		artifacts:                r.Spec.Artifacts.Len() > 0,
+		capability:               r.Spec.Capability,
+		outputLabelKeys:          authoredOutputLabelKeys(r.Spec.OutputLabels),
+		outputComponentLabelKeys: authoredOutputComponentLabelKeys(r.Spec.OutputComponentLabels),
 	}
 }
 
@@ -122,6 +169,24 @@ func (v recipeDocumentView) RecipeArtifactsDeclared(document string) bool {
 func (v recipeDocumentView) RecipeDeclaredCapability(document string) string {
 	v.refuseOtherDocument(document, "RecipeDeclaredCapability")
 	return v.capability
+}
+
+// RecipeOutputLabelKeys returns the keys the presented Recipe's literal
+// output-label block declares, in sorted order.
+//
+// They are the keys as authored, whatever namespace they sit in, so a key
+// claiming a reserved one is among them — which is the whole of what a rule over
+// them reports on.
+func (v recipeDocumentView) RecipeOutputLabelKeys(document string) []string {
+	v.refuseOtherDocument(document, "RecipeOutputLabelKeys")
+	return v.outputLabelKeys
+}
+
+// RecipeOutputComponentLabelKeys returns the component label keys the presented
+// Recipe promotes onto its rendered output, in the order the author wrote them.
+func (v recipeDocumentView) RecipeOutputComponentLabelKeys(document string) []string {
+	v.refuseOtherDocument(document, "RecipeOutputComponentLabelKeys")
+	return v.outputComponentLabelKeys
 }
 
 // refuseOtherDocument refuses an accessor call naming a document this value was

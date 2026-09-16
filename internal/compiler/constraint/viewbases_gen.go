@@ -99,6 +99,18 @@ func (AggregateDocumentBase) RecipeDeclaredCapability(document string) string {
 	panic("this presentation does not carry recipe-declared-capability, which a Recipe document carries")
 }
 
+// RecipeOutputLabelKeys panics. This presentation does not carry
+// recipe-output-label-keys, which a Recipe document carries.
+func (AggregateDocumentBase) RecipeOutputLabelKeys(document string) []string {
+	panic("this presentation does not carry recipe-output-label-keys, which a Recipe document carries")
+}
+
+// RecipeOutputComponentLabelKeys panics. This presentation does not carry
+// recipe-output-component-label-keys, which a Recipe document carries.
+func (AggregateDocumentBase) RecipeOutputComponentLabelKeys(document string) []string {
+	panic("this presentation does not carry recipe-output-component-label-keys, which a Recipe document carries")
+}
+
 // ManifestRecipeMappingEntries panics. This presentation does not carry
 // manifest-recipe-mapping-entries, which a Manifest document carries.
 func (AggregateDocumentBase) ManifestRecipeMappingEntries(document string) []ManifestRecipeMapping {
@@ -192,6 +204,18 @@ func (ComponentDocumentBase) RecipeArtifactsDeclared(document string) bool {
 // recipe-declared-capability, which a Recipe document carries.
 func (ComponentDocumentBase) RecipeDeclaredCapability(document string) string {
 	panic("this presentation does not carry recipe-declared-capability, which a Recipe document carries")
+}
+
+// RecipeOutputLabelKeys panics. This presentation does not carry
+// recipe-output-label-keys, which a Recipe document carries.
+func (ComponentDocumentBase) RecipeOutputLabelKeys(document string) []string {
+	panic("this presentation does not carry recipe-output-label-keys, which a Recipe document carries")
+}
+
+// RecipeOutputComponentLabelKeys panics. This presentation does not carry
+// recipe-output-component-label-keys, which a Recipe document carries.
+func (ComponentDocumentBase) RecipeOutputComponentLabelKeys(document string) []string {
+	panic("this presentation does not carry recipe-output-component-label-keys, which a Recipe document carries")
 }
 
 // ManifestRecipeMappingEntries panics. This presentation does not carry
@@ -301,6 +325,18 @@ func (FeatureDocumentBase) RecipeDeclaredCapability(document string) string {
 	panic("this presentation does not carry recipe-declared-capability, which a Recipe document carries")
 }
 
+// RecipeOutputLabelKeys panics. This presentation does not carry
+// recipe-output-label-keys, which a Recipe document carries.
+func (FeatureDocumentBase) RecipeOutputLabelKeys(document string) []string {
+	panic("this presentation does not carry recipe-output-label-keys, which a Recipe document carries")
+}
+
+// RecipeOutputComponentLabelKeys panics. This presentation does not carry
+// recipe-output-component-label-keys, which a Recipe document carries.
+func (FeatureDocumentBase) RecipeOutputComponentLabelKeys(document string) []string {
+	panic("this presentation does not carry recipe-output-component-label-keys, which a Recipe document carries")
+}
+
 // ManifestRecipeMappingEntries panics. This presentation does not carry
 // manifest-recipe-mapping-entries, which a Manifest document carries.
 func (FeatureDocumentBase) ManifestRecipeMappingEntries(document string) []ManifestRecipeMapping {
@@ -393,6 +429,18 @@ func (ManifestDocumentBase) RecipeArtifactsDeclared(document string) bool {
 // recipe-declared-capability, which a Recipe document carries.
 func (ManifestDocumentBase) RecipeDeclaredCapability(document string) string {
 	panic("this presentation does not carry recipe-declared-capability, which a Recipe document carries")
+}
+
+// RecipeOutputLabelKeys panics. This presentation does not carry
+// recipe-output-label-keys, which a Recipe document carries.
+func (ManifestDocumentBase) RecipeOutputLabelKeys(document string) []string {
+	panic("this presentation does not carry recipe-output-label-keys, which a Recipe document carries")
+}
+
+// RecipeOutputComponentLabelKeys panics. This presentation does not carry
+// recipe-output-component-label-keys, which a Recipe document carries.
+func (ManifestDocumentBase) RecipeOutputComponentLabelKeys(document string) []string {
+	panic("this presentation does not carry recipe-output-component-label-keys, which a Recipe document carries")
 }
 
 // RecipeDocumentBase is a base for an implementation of DocumentView that
@@ -580,6 +628,18 @@ func (NormalizedViewBase) RecipeArtifactsDeclared(document string) bool {
 // recipe-declared-capability, which a Recipe document carries.
 func (NormalizedViewBase) RecipeDeclaredCapability(document string) string {
 	panic("this presentation does not carry recipe-declared-capability, which a Recipe document carries")
+}
+
+// RecipeOutputLabelKeys panics. This presentation does not carry
+// recipe-output-label-keys, which a Recipe document carries.
+func (NormalizedViewBase) RecipeOutputLabelKeys(document string) []string {
+	panic("this presentation does not carry recipe-output-label-keys, which a Recipe document carries")
+}
+
+// RecipeOutputComponentLabelKeys panics. This presentation does not carry
+// recipe-output-component-label-keys, which a Recipe document carries.
+func (NormalizedViewBase) RecipeOutputComponentLabelKeys(document string) []string {
+	panic("this presentation does not carry recipe-output-component-label-keys, which a Recipe document carries")
 }
 
 // ManifestRecipeMappingEntries panics. This presentation does not carry
@@ -1740,6 +1800,8 @@ type RecipeDocumentFacts interface {
 	RecipeWorkloadDeclared(document string) bool
 	RecipeArtifactsDeclared(document string) bool
 	RecipeDeclaredCapability(document string) string
+	RecipeOutputLabelKeys(document string) []string
+	RecipeOutputComponentLabelKeys(document string) []string
 }
 
 // NormalizedStageFacts are the facts the normalized stage declares itself,
