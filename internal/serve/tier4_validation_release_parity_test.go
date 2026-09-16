@@ -377,6 +377,7 @@ func TestRunTier4ValidationReleaseCoreParity(t *testing.T) {
 				Manifest:        resolved.Manifest,
 				AggBytes:        resolved.AggBytes,
 				AggregatePath:   relAggPath,
+				WorkspaceRoot:   srv.workspaceRoot,
 				WorkspaceConfig: srv.wsConfig,
 				CompilerVersion: srv.compilerVersion,
 			})

@@ -373,6 +373,7 @@ func TestValidateToolReleaseScopeCoreParity(t *testing.T) {
 				Manifest:        resolved.Manifest,
 				AggBytes:        resolved.AggBytes,
 				AggregatePath:   resolved.AggregatePath,
+				WorkspaceRoot:   tw.root,
 				WorkspaceConfig: tw.cfg,
 				CompilerVersion: s.serverVersion,
 			})

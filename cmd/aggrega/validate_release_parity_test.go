@@ -349,6 +349,7 @@ func cliOracleValidate(t *testing.T, rw *workspaceconfig.ResolvedWorkspace, rele
 		Manifest:        resolved.Manifest,
 		AggBytes:        resolved.AggBytes,
 		AggregatePath:   catalog.RelativeToWorkspace(wsRoot, resolved.AggregatePath),
+		WorkspaceRoot:   wsRoot,
 		WorkspaceConfig: wsCfg,
 		CompilerVersion: provenanceCompilerVersion(),
 	})

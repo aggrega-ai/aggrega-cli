@@ -219,6 +219,7 @@ func (s *Server) runTier4Validation(ctx context.Context, releasePath, file strin
 		Manifest:        resolved.Manifest,
 		AggBytes:        resolved.AggBytes,
 		AggregatePath:   relAggPath,
+		WorkspaceRoot:   s.workspaceRoot,
 		WorkspaceConfig: s.wsConfig,
 		CompilerVersion: s.compilerVersion,
 	})

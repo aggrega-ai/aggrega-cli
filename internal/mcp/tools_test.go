@@ -209,7 +209,7 @@ func TestValidateToolMatchesCompilerops(t *testing.T) {
 	vr := compilerops.Validate(context.Background(), compilerops.ValidateInputs{
 		View: view, Closure: resolved.Closure, Release: resolved.Release, ReleasePath: releasePath,
 		Manifest: resolved.Manifest,
-		AggBytes: resolved.AggBytes, AggregatePath: resolved.AggregatePath, WorkspaceConfig: wsCfg, CompilerVersion: "test",
+		AggBytes: resolved.AggBytes, AggregatePath: resolved.AggregatePath, WorkspaceRoot: root, WorkspaceConfig: wsCfg, CompilerVersion: "test",
 	})
 	if len(vr.ResolutionFindings) == 0 {
 		t.Fatalf("known-bad fixture produced no resolution finding; ValidateResult=%+v", vr)

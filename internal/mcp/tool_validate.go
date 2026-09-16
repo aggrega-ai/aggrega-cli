@@ -253,6 +253,7 @@ func validateReleaseScope(s *server, ctx context.Context, a validateArgs, releas
 		AggBytes:        resolved.AggBytes,
 		Lockfile:        lf,
 		AggregatePath:   resolved.AggregatePath,
+		WorkspaceRoot:   tw.root,
 		WorkspaceConfig: tw.cfg,
 		CompilerVersion: s.serverVersion,
 	})

@@ -174,6 +174,7 @@ func validateRelease(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace,
 		AggBytes:        resolved.AggBytes,
 		Lockfile:        lf,
 		AggregatePath:   catalog.RelativeToWorkspace(wsRoot, resolved.AggregatePath),
+		WorkspaceRoot:   wsRoot,
 		WorkspaceConfig: wsCfg,
 		CompilerVersion: provenanceCompilerVersion(),
 	})

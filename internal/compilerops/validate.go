@@ -63,9 +63,10 @@ func ResolveValidationClosure(ctx context.Context, in ValidationClosureInputs) (
 // catalog closure the extends and pillar gates scope to. Release, Manifest,
 // AggBytes, and AggregatePath are the pipeline's Steps 1-4 inputs;
 // AggregatePath is a source-location label (no I/O). WorkspaceConfig and
-// CompilerVersion feed the pipeline's resolution and provenance. ReleasePath
-// locates the record the verdict-plugin trust gate reads and carries its own
-// contract below.
+// CompilerVersion feed the pipeline's resolution and provenance, and
+// WorkspaceRoot anchors every cache address the resolution reads through; it
+// carries its own contract below. ReleasePath locates the record the
+// verdict-plugin trust gate reads and carries its own contract below.
 type ValidateInputs struct {
 	View     *catalog.LazyLookup
 	Closure  closure.Closure
@@ -104,8 +105,24 @@ type ValidateInputs struct {
 	// that validates at editing cadence supplies none deliberately, so that it neither
 	// re-derives the record on every keystroke nor republishes what the surfaces that
 	// do read it have already reported.
-	Lockfile        *lockfile.Lockfile
-	AggregatePath   string
+	Lockfile      *lockfile.Lockfile
+	AggregatePath string
+	// WorkspaceRoot is the workspace's own directory, and it anchors every cache
+	// address this validation resolves through: the plugin cascade's content-cache
+	// tier and the two governance sockets that read a guest from the cache each
+	// compose their path as this root joined with the configured cache directory.
+	//
+	// Omitting it does not disable those reads — it re-points them, which is why it
+	// is supplied rather than left to a default. The configured cache directory
+	// carries a default of its own and is never empty, so the cache tier is entered
+	// either way; with no root the composed path stays relative and the read lands
+	// under whatever directory the process was started in. A plugin whose bytes live
+	// only in the workspace cache then resolves when the command happens to run at
+	// the workspace root and is reported unresolvable from anywhere else — same
+	// documents, same machine, different answer. Supplying it is what makes a
+	// validation read the same cache a build of those documents reads, from any
+	// working directory.
+	WorkspaceRoot   string
 	WorkspaceConfig workspaceconfig.Config
 	CompilerVersion string
 }
@@ -226,7 +243,12 @@ func Validate(ctx context.Context, in ValidateInputs) *ValidateResult {
 		// re-points it at the copy it rewrites and the caller's configuration is
 		// never written through.
 		WorkspaceConfig: &in.WorkspaceConfig,
-		Lockfile:        in.Lockfile,
+		// The root the cache addresses are composed against. It travels with the
+		// configuration because the two are one address: the configuration names the
+		// cache directory and this names what that directory is relative to, so a
+		// resolution handed one without the other reads a cache somewhere else.
+		WorkspaceRoot: in.WorkspaceRoot,
+		Lockfile:      in.Lockfile,
 		// A Release-scoped validation runs the same resolution a build of the same
 		// documents runs, so it makes the same claim: the recorded identities
 		// govern what its plugins resolve to. Validating against a different pin

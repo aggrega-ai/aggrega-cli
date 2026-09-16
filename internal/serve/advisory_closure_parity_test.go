@@ -179,6 +179,7 @@ func sharedClosureAdvisories(t *testing.T, srv *Server, releasePath string) (lin
 		Manifest:        resolved.Manifest,
 		AggBytes:        resolved.AggBytes,
 		AggregatePath:   catalog.RelativeToWorkspace(srv.workspaceRoot, resolved.AggregatePath),
+		WorkspaceRoot:   srv.workspaceRoot,
 		WorkspaceConfig: srv.wsConfig,
 		CompilerVersion: srv.compilerVersion,
 	})
