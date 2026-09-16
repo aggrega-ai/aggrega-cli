@@ -7,9 +7,11 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
@@ -90,5 +92,62 @@ func TestResolveClosure_InconsistentMappingIsCarriedAsAFinding(t *testing.T) {
 	// instead of having nothing else to report.
 	if resolved.Release == nil || resolved.Manifest == nil || resolved.Aggregate == nil {
 		t.Fatalf("a carried finding must leave the resolution complete; got %+v", resolved)
+	}
+}
+
+// TestResolveClosure_InconsistentMappingFindingNamesTheManifestFile pins the one
+// property of this finding that no assertion above reaches: it tells the author
+// WHICH FILE to open.
+//
+// The finding is about a mapping entry, and a mapping entry is a coordinate inside
+// a document rather than a document — so nothing in the entry's own coordinates
+// says where it was written. The file is carried separately, from the Manifest
+// resolution that read it, and a reader who loses it is left with a mapping key
+// and no way to find the table it sits in. That is a user-facing regression rather
+// than a presentation change, which is why it is asserted rather than left to the
+// text assertions above, none of which would move if the file disappeared.
+//
+// Both halves are asserted because each covers a distinct way of losing it. A
+// finding whose source pointer stopped carrying the file would leave every surface
+// that POSITIONS a diagnostic — the editor daemon, the assistant-facing tool
+// protocol — with nothing to position at, while the printed sentence read exactly
+// as before. A finding whose printed sentence stopped naming it would leave a
+// terminal reader with nowhere to go, while the structural pointer stayed intact.
+// Neither half implies the other.
+//
+// It asserts the file the Release's own manifest pointer names, so the assertion
+// fails on a finding that named some OTHER file just as it fails on one that named
+// none.
+func TestResolveClosure_InconsistentMappingFindingNamesTheManifestFile(t *testing.T) {
+	t.Parallel()
+	resolved, cerr := ResolveClosure(context.Background(), extendsMappingWorkspace(t, "release-unrelated-recipe.yaml"))
+	if cerr != nil {
+		t.Fatalf("an inconsistent mapping must be carried as a finding, not a resolution failure; got stage=%d %v",
+			cerr.Stage, cerr)
+	}
+	if len(resolved.ManifestConsistencyFindings) != 1 {
+		t.Fatalf("want exactly one mapping finding; got %d: %v",
+			len(resolved.ManifestConsistencyFindings), resolved.ManifestConsistencyFindings)
+	}
+	finding := resolved.ManifestConsistencyFindings[0]
+
+	cwd, err := filepath.Abs(".")
+	if err != nil {
+		t.Fatalf("abs cwd: %v", err)
+	}
+	wantFile := filepath.Join(cwd, "testdata", "extends-mapping", "manifest-unrelated-recipe.yaml")
+
+	var compilerErr *cerrors.CompilerError
+	if !errors.As(finding, &compilerErr) {
+		t.Fatalf("the mapping finding must carry a source pointer a positioning surface can read; got %T: %v",
+			finding, finding)
+	}
+	if got := compilerErr.Source().File; got != wantFile {
+		t.Errorf("the mapping finding's source pointer must name the Manifest the Release points at:\n want %q\n  got %q",
+			wantFile, got)
+	}
+	if got := finding.Error(); !strings.Contains(got, wantFile) {
+		t.Errorf("the printed mapping diagnostic must name the Manifest file, since a terminal reader has no other pointer:\n want it to contain %q\n  got %q",
+			wantFile, got)
 	}
 }
