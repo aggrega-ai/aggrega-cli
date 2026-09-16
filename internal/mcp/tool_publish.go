@@ -279,10 +279,18 @@ func (s *server) publishEntityConfig(a publishEntityArgs) (publishops.PushConfig
 	}
 	pluginPath := ""
 	if strings.TrimSpace(a.Plugin) != "" {
-		pluginPath = tw.absWorkspacePath(strings.TrimSpace(a.Plugin))
+		resolved, refusal := tw.workspacePath(publishEntityToolName, "plugin", strings.TrimSpace(a.Plugin))
+		if refusal != "" {
+			return publishops.PushConfig{}, refusal
+		}
+		pluginPath = resolved
+	}
+	entityPath, refusal := tw.workspacePath(publishEntityToolName, "entity", strings.TrimSpace(a.Entity))
+	if refusal != "" {
+		return publishops.PushConfig{}, refusal
 	}
 	return publishops.PushConfig{
-		EntityPath:        tw.absWorkspacePath(strings.TrimSpace(a.Entity)),
+		EntityPath:        entityPath,
 		Registry:          a.Registry,
 		DryRun:            a.DryRun,
 		Sign:              a.Sign,
@@ -459,8 +467,12 @@ func (s *server) publishArtifactConfig(a publishArtifactArgs) (publishops.PushAr
 	if refusal := missingDestination(publishArtifactToolName, a.Registry, tw); refusal != "" {
 		return publishops.PushArtifactConfig{}, refusal
 	}
+	filePath, refusal := tw.workspacePath(publishArtifactToolName, "file", strings.TrimSpace(a.File))
+	if refusal != "" {
+		return publishops.PushArtifactConfig{}, refusal
+	}
 	return publishops.PushArtifactConfig{
-		FilePath:          tw.absWorkspacePath(strings.TrimSpace(a.File)),
+		FilePath:          filePath,
 		Name:              strings.TrimSpace(a.Name),
 		Tag:               strings.TrimSpace(a.Tag),
 		MediaType:         a.MediaType,
@@ -875,7 +887,11 @@ func (s *server) deprecateArtifactConfig(a deprecateArtifactArgs) (publishops.De
 	}
 	batchPath := ""
 	if from != "" {
-		batchPath = tw.absWorkspacePath(from)
+		resolved, refusal := tw.workspacePath(deprecateArtifactToolName, "from", from)
+		if refusal != "" {
+			return publishops.DeprecateConfig{}, refusal
+		}
+		batchPath = resolved
 	}
 	return publishops.DeprecateConfig{
 		Reference:      reference,

@@ -119,7 +119,18 @@ func insertionPointInvoke(s *server, ctx context.Context, args json.RawMessage) 
 		return errorResult(explainToolError("Could not resolve the workspace to locate an insertion point in.", err, ""))
 	}
 
-	result, err := serve.InsertionPoint(tw.root, a.File, a.Container, enc)
+	// The document is resolved here, through the one helper, before the operation
+	// that reads it is reached. That operation confines the file to the root as
+	// well — it must, since it is reached from another surface too — but a caller
+	// refused there is answered in that operation's vocabulary rather than in this
+	// surface's, and over a listener the sentence a caller needs is the one naming
+	// the workspace this server was started over.
+	file, refusal := tw.workspacePath("insertion-point", "file", a.File)
+	if refusal != "" {
+		return errorResult(refusal)
+	}
+
+	result, err := serve.InsertionPoint(tw.root, file, a.Container, enc)
 	if err != nil {
 		return errorResult(explainDiagnostic(fmt.Sprintf(
 			"No insertion point can be reported for %s in %q: %s", renderContainerPath(a.Container), a.File,

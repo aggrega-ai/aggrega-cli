@@ -115,7 +115,8 @@ func TestValidateToolEntityScopeCoreParity(t *testing.T) {
 		}
 		payload := unmarshalValidatePayload(t, res)
 
-		_, coreErr := validateops.ValidateEntity(context.Background(), tw.root, tw.cacheDir, tw.dirs, tw.absWorkspacePath(entityPath), false)
+		_, coreErr := validateops.ValidateEntity(context.Background(), tw.root, tw.cacheDir, tw.dirs,
+			resolvedEntityPath(t, tw, entityPath), false)
 		if coreErr != nil {
 			t.Fatalf("core rejected the clean fixture: %v", coreErr)
 		}
@@ -134,12 +135,26 @@ func TestValidateToolEntityScopeCoreParity(t *testing.T) {
 		})
 		payload := unmarshalValidatePayload(t, res)
 
-		_, coreErr := validateops.ValidateEntity(context.Background(), tw.root, tw.cacheDir, tw.dirs, tw.absWorkspacePath(entityPath), false)
+		_, coreErr := validateops.ValidateEntity(context.Background(), tw.root, tw.cacheDir, tw.dirs,
+			resolvedEntityPath(t, tw, entityPath), false)
 		if coreErr == nil {
 			t.Fatalf("expected the core to reject a Release as a single-entity target")
 		}
 		assertHaltParity(t, payload, coreErr)
 	})
+}
+
+// resolvedEntityPath resolves an entity path the way the validate tool resolves
+// it, so a parity comparison drives the core over the same file the tool drove it
+// over. A refusal is fatal rather than ignored: these fixtures are inside the
+// workspace, so one would mean the comparison is no longer measuring parity.
+func resolvedEntityPath(t *testing.T, tw *toolWorkspace, entity string) string {
+	t.Helper()
+	resolved, refusal := tw.workspacePath("validate", "entity", entity)
+	if refusal != "" {
+		t.Fatalf("the fixture entity path was refused: %s", refusal)
+	}
+	return resolved
 }
 
 // TestValidateToolPluginScopeCoreParity proves the plugin-binary scope's MCP

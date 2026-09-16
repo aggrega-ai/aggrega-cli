@@ -12,6 +12,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
@@ -201,6 +202,11 @@ type toolWorkspace struct {
 	cfg      workspaceconfig.Config
 	cacheDir string
 	dirs     []string
+
+	// transport is carried here rather than read from the server at each call
+	// site, so the one helper that resolves a path argument has everything its
+	// answer depends on and a tool cannot reach around it to a different rule.
+	transport transportMode
 }
 
 // resolveToolWorkspace resolves the workspace a tool call operates in. An
@@ -223,11 +229,12 @@ func (s *server) resolveToolWorkspace(rootArg string, catalogDirs []string) (*to
 	cfg := rw.Config()
 	root := rw.Root()
 	tw := &toolWorkspace{
-		rw:       rw,
-		root:     root,
-		cfg:      cfg,
-		cacheDir: cfg.ResolvedArtifactCacheDir(),
-		dirs:     workspaceconfig.ResolveCatalogDirs(catalogDirs, cfg, root),
+		rw:        rw,
+		root:      root,
+		cfg:       cfg,
+		cacheDir:  cfg.ResolvedArtifactCacheDir(),
+		dirs:      workspaceconfig.ResolveCatalogDirs(catalogDirs, cfg, root),
+		transport: s.transport,
 	}
 	return tw, nil
 }
@@ -253,23 +260,82 @@ func (tw *toolWorkspace) newView(lf *lockfile.Lockfile) *catalog.LazyLookup {
 	return v
 }
 
-// absWorkspacePath resolves a path a tool call named to an absolute path. A
-// relative path is taken against the workspace root, so a call can name its
-// subject by a workspace-relative path or an absolute one interchangeably.
+// workspacePath resolves a path a tool call named, in the way the transport this
+// session speaks allows, and reports the corrective text for a path that
+// transport does not let the call name. An empty refusal means the resolved path
+// may be used; a non-empty one means nothing was resolved and the refusal is the
+// answer.
 //
-// It is the one home of that contract for every path argument on this surface —
+// It is the ONE home of that contract for every path argument on this surface —
 // a Release, an entity document, a plugin executable, an artifact file, a batch
-// file. The contract is deliberately the same for all of them: a caller here
-// names the workspace it means on the call itself, so a path outside that root is
-// something it can address rather than something it has strayed into, and a rule
-// that admitted an absolute Release while refusing an absolute entity would be
-// one no caller could predict from the rest of this surface.
-func (tw *toolWorkspace) absWorkspacePath(p string) string {
-	if filepath.IsAbs(p) {
-		return p
+// file, a generated entity's output directory. Two rules meet here, and which one
+// applies is a property of who is calling rather than of which argument is being
+// resolved:
+//
+// A client that launched this process reaches it over the process's own streams
+// and is at this machine's keyboard, so it names the workspace it means on the
+// call itself. A path outside that root is something such a caller can address
+// rather than something it has strayed into, and a rule that admitted an absolute
+// Release while refusing an absolute entity would be one no caller could predict
+// from the rest of this surface. So a path is taken as it is named, relative
+// values against the workspace root.
+//
+// A caller reaching a listener is somewhere else entirely and does not own this
+// machine, so it names its subject relative to the one workspace the process
+// serves and reaches nothing beyond it. The containment judgement is
+// [pathscope.Resolve]'s, which is the one home for whether a path stays inside a
+// root; nothing here re-derives it, and the refusal below is this surface's own
+// sentence attached to that verdict.
+//
+// tool and argument are the caller's own words for what is being resolved — the
+// tool's advertised name and the argument's — so the refusal names what to
+// correct in the spelling a caller sent, and so the guard over this package can
+// hold the set of arguments that resolve a path to a hand-written inventory.
+//
+// The empty value resolves to the workspace root and is never refused, which is
+// what a caller that omits an optional path argument has always been answered
+// with. [pathscope.Resolve] refuses an empty relative path and leaves that
+// meaning to the site holding it, which is here.
+func (tw *toolWorkspace) workspacePath(tool, argument, raw string) (string, string) {
+	rel := raw
+	if rel == "" {
+		rel = "."
 	}
-	return filepath.Join(tw.root, p)
+	if tw.transport != transportHTTP {
+		if filepath.IsAbs(rel) {
+			return filepath.Clean(rel), ""
+		}
+		return filepath.Join(tw.root, rel), ""
+	}
+	if resolved, ok := pathscope.Resolve(tw.root, rel); ok {
+		return resolved, ""
+	}
+	// A value that lands inside the root but was not written relative to it is a
+	// caller spelling a location on this machine for a file it may perfectly well
+	// read. It is answered with the spelling to use instead, because the
+	// correction is one edit and withholding it would make a usable call read as
+	// an out-of-bounds one.
+	if inside, ok := pathscope.Relative(tw.root, raw); ok {
+		return "", fmt.Sprintf("%s's '%s' names a location on the machine this server runs on. It serves one "+
+			"workspace, fixed when it was started (%s), and a call names its subject by a path relative to that "+
+			"root: send %q instead.", tool, argument, tw.root, inside)
+	}
+	return "", fmt.Sprintf("%s's '%s' must name a path inside the workspace this server serves (%s), written "+
+		"relative to that root; %s lies outside it. This server serves one workspace, fixed when it was started, "+
+		"and reads nothing beyond it.", tool, argument, tw.root, pathscope.ReportedName(tw.root, raw))
 }
+
+// pathRefusal carries a path refusal out of an operation that reports failures as
+// errors rather than as corrective text.
+//
+// It exists because the answer a caller gets must be the refusal's own sentence.
+// An operation's error return is labelled at its call site with what that
+// operation's failure means — a lint run's errors are reported as findings that
+// halt publication — and a containment refusal wearing that label would tell the
+// caller something untrue about what happened.
+type pathRefusal struct{ text string }
+
+func (e *pathRefusal) Error() string { return e.text }
 
 // loadReleaseLockfile loads the per-Release lockfile beside releasePath,
 // best-effort: an absent or unreadable lockfile yields nil, and the caller

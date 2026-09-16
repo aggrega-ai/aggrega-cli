@@ -244,7 +244,10 @@ func pullInvoke(s *server, ctx context.Context, args json.RawMessage) (*callTool
 		return errorResult(explainToolError(
 			"Could not resolve the workspace for the dependency resolution.", err, "release"))
 	}
-	releasePath := tw.absWorkspacePath(release)
+	releasePath, refusal := tw.workspacePath("pull", "release", release)
+	if refusal != "" {
+		return errorResult(refusal)
+	}
 
 	// The render the resolution conserved is dropped here, and the drop is the
 	// answer rather than an omission: this tool reports what was pinned, and a

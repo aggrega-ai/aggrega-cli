@@ -344,11 +344,19 @@ func TestGenCatalogToolInvokesCore(t *testing.T) {
 		_, _ = io.WriteString(out, "generated out/core/helm-provider/1.0.0/plugin.yaml\n")
 		return nil
 	}
+	// The three paths are resolved against the workspace, as every other path
+	// argument on this surface is, so the expectations are composed from the
+	// workspace this server resolves rather than from the spellings sent.
+	ws := resolvedToolWorkspace(t, s, "", nil)
 	res := callTool(t, s, "gen-catalog", genCatalogArgs{FromEmbedded: true, Output: "out", Overlay: "overlays"})
 	if res.IsError {
 		t.Fatalf("gen-catalog reported error: %s", res.Content[0].Text)
 	}
-	wantEmbedded := gencatalog.Options{FromEmbedded: true, OutputDir: "out", OverlayPath: "overlays"}
+	wantEmbedded := gencatalog.Options{
+		FromEmbedded: true,
+		OutputDir:    filepath.Join(ws.root, "out"),
+		OverlayPath:  filepath.Join(ws.root, "overlays"),
+	}
 	if gotOpts != wantEmbedded {
 		t.Fatalf("gen-catalog options = %+v, want %+v", gotOpts, wantEmbedded)
 	}
@@ -361,7 +369,11 @@ func TestGenCatalogToolInvokesCore(t *testing.T) {
 	if res.IsError {
 		t.Fatalf("gen-catalog (single) reported error: %s", res.Content[0].Text)
 	}
-	wantSingle := gencatalog.Options{PluginPath: "p.wasm", OutputDir: "out", OverlayPath: "o.yaml"}
+	wantSingle := gencatalog.Options{
+		PluginPath:  filepath.Join(ws.root, "p.wasm"),
+		OutputDir:   filepath.Join(ws.root, "out"),
+		OverlayPath: filepath.Join(ws.root, "o.yaml"),
+	}
 	if gotOpts != wantSingle {
 		t.Fatalf("gen-catalog single options = %+v, want %+v", gotOpts, wantSingle)
 	}

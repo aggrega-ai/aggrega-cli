@@ -107,11 +107,37 @@ func genCatalogInvoke(s *server, ctx context.Context, args json.RawMessage) (*ca
 		return errorResult("gen-catalog requires an 'overlay' path (a directory with from_embedded, a file with plugin)")
 	}
 
+	// The three paths resolve through the same helper every other path argument on
+	// this surface goes through, so they are named relative to the workspace and,
+	// over a listener, stay inside it. The output directory is the one argument here
+	// that is WRITTEN to rather than read, which is why it is resolved rather than
+	// passed on as it arrived.
+	tw, err := s.resolveToolWorkspace("", nil)
+	if err != nil {
+		return errorResult(explainToolError("Could not resolve the workspace to generate entities in.", err, "plugin"))
+	}
+	pluginPath := ""
+	if trimmed := strings.TrimSpace(a.Plugin); trimmed != "" {
+		resolved, refusal := tw.workspacePath("gen-catalog", "plugin", trimmed)
+		if refusal != "" {
+			return errorResult(refusal)
+		}
+		pluginPath = resolved
+	}
+	outputDir, refusal := tw.workspacePath("gen-catalog", "output_dir", strings.TrimSpace(a.Output))
+	if refusal != "" {
+		return errorResult(refusal)
+	}
+	overlayPath, refusal := tw.workspacePath("gen-catalog", "overlay", strings.TrimSpace(a.Overlay))
+	if refusal != "" {
+		return errorResult(refusal)
+	}
+
 	opts := gencatalog.Options{
 		FromEmbedded: a.FromEmbedded,
-		PluginPath:   strings.TrimSpace(a.Plugin),
-		OutputDir:    strings.TrimSpace(a.Output),
-		OverlayPath:  strings.TrimSpace(a.Overlay),
+		PluginPath:   pluginPath,
+		OutputDir:    outputDir,
+		OverlayPath:  overlayPath,
 	}
 	run := s.runGenCatalog
 	if run == nil {

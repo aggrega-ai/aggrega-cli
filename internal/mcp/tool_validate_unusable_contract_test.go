@@ -76,7 +76,7 @@ func TestValidateToolRefusesAnUnusableContract(t *testing.T) {
 	// compared against it. A payload comparison alone would be satisfied by a
 	// refusal for an unrelated reason.
 	_, coreErr := validateops.ValidateEntity(context.Background(),
-		tw.root, tw.cacheDir, tw.dirs, tw.absWorkspacePath(entityPath), false)
+		tw.root, tw.cacheDir, tw.dirs, resolvedEntityPath(t, tw, entityPath), false)
 	if coreErr == nil {
 		t.Fatalf("the core accepted a contract no validator can be built from.\n" +
 			"INVARIANT: a declared contract nothing can be measured against is refused.\n" +

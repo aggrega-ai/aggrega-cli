@@ -244,7 +244,10 @@ func buildInvoke(s *server, ctx context.Context, args json.RawMessage) (*callToo
 	if err != nil {
 		return errorResult(explainToolError("Could not resolve the workspace for the build.", err, "release"))
 	}
-	releasePath := tw.absWorkspacePath(a.Release)
+	releasePath, refusal := tw.workspacePath("build", "release", a.Release)
+	if refusal != "" {
+		return errorResult(refusal)
+	}
 
 	// The fill, before anything reads the lockfile, because what it writes is what
 	// the render then resolves against. Whether it runs is composed in the workspace

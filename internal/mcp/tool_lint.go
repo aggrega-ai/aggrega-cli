@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -168,6 +169,14 @@ func lintInvoke(s *server, ctx context.Context, args json.RawMessage) (*callTool
 	}
 	var stdout, stderr bytes.Buffer
 	if err := run(ctx, req, &stdout, &stderr); err != nil {
+		// A path this session may not name is answered with the refusal's own
+		// sentence. The label below says the run reported findings, which is what
+		// every other failure here means and is not what this one means: nothing
+		// was linted, so there is nothing for a caller to go and fix in a document.
+		var refused *pathRefusal
+		if errors.As(err, &refused) {
+			return errorResult(refused.text)
+		}
 		detail := strings.TrimSpace(stderr.String())
 		if detail == "" {
 			detail = err.Error()
@@ -211,14 +220,26 @@ func (s *server) lintInProcess(ctx context.Context, req lintRequest, stdout, std
 		return err
 	}
 	if req.release != "" {
-		return lintops.RunRelease(ctx, tw.rw, tw.absWorkspacePath(req.release), nil, stdout, stderr, req.collect)
+		releasePath, refusal := tw.workspacePath("lint", "release", req.release)
+		if refusal != "" {
+			return &pathRefusal{text: refusal}
+		}
+		return lintops.RunRelease(ctx, tw.rw, releasePath, nil, stdout, stderr, req.collect)
 	}
 	pluginPath := req.plugin
 	if pluginPath != "" {
-		pluginPath = tw.absWorkspacePath(pluginPath)
+		resolved, refusal := tw.workspacePath("lint", "plugin", pluginPath)
+		if refusal != "" {
+			return &pathRefusal{text: refusal}
+		}
+		pluginPath = resolved
+	}
+	entityPath, refusal := tw.workspacePath("lint", "entity", req.entity)
+	if refusal != "" {
+		return &pathRefusal{text: refusal}
 	}
 	return lintops.RunEntity(ctx, lintops.Config{
-		EntityPath:     tw.absWorkspacePath(req.entity),
+		EntityPath:     entityPath,
 		PrePublish:     req.prePublish,
 		PluginPath:     pluginPath,
 		PolicyResolver: func(_ string, ws bool) bool { return ws },

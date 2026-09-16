@@ -240,7 +240,10 @@ func (s *server) describeRelease(ctx context.Context, a describeArgs, release st
 	if err != nil {
 		return errorResult(explainToolError("Could not resolve the workspace for the Release.", err, "release"))
 	}
-	releasePath := tw.absWorkspacePath(release)
+	releasePath, refusal := tw.workspacePath("describe", "release", release)
+	if refusal != "" {
+		return errorResult(refusal)
+	}
 	lf := loadReleaseLockfile(releasePath)
 	view := tw.newView(lf)
 
