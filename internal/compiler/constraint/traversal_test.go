@@ -1590,6 +1590,33 @@ func coordinateFlowCases() []coordinateFlowCase {
 			want: []string{documentFile + "|port-set"},
 		},
 
+		// The schema-pillar kind reads through its push entry, so the keys come
+		// from the caller. Two are presented for the reason the parameter case
+		// states: one instance cannot tell a walk from an invocation that ignored
+		// what it was handed. The two keys are deliberately not prefixes of one
+		// another, so a readback that truncated or confused them would not still
+		// compare equal, and they are presented in an order alphabetical sorting
+		// would reverse, so one that sorted would not compare equal either.
+		{
+			kind: SubjectDocumentSchemaPillar,
+			seam: seamTraversal,
+			read: func(_ traversalFixture) []string {
+				return readback(func(
+					c Check[traversalView, DocumentSchemaPillarSubject],
+				) ([]Objection, error) {
+					return RunOnDocumentSchemaPillars(
+						documentFile, []string{"values", "infra"}, traversalView{}, c,
+					), nil
+				}, func(s DocumentSchemaPillarSubject) string {
+					return s.SourceFile() + "|" + s.SchemaPillarKey()
+				})
+			},
+			want: []string{
+				documentFile + "|values",
+				documentFile + "|infra",
+			},
+		},
+
 		// The Manifest's annotation-binding kind reads through its push entry, so
 		// the keys come from the caller. Two are presented for the reason the
 		// parameter case states: one instance cannot tell a walk from an

@@ -165,6 +165,52 @@ func RunOnDocumentAssertions[V View](
 	return out
 }
 
+// RunOnDocumentSchemaPillars invokes check once per top-level key the presented
+// document's schema block declares, in the order the keys are given.
+//
+// It is a push entry like [RunOnDocumentParameters], and for the same reason: the
+// coordinate it is rooted at is the document, which no point in the compilation
+// holds a set of. What differs is the coordinate inside it. The keys a schema
+// block declares are a set once the document is in hand, so this entry walks them.
+//
+// keys are the top-level keys the check is invoked for, and the caller presents
+// them in a deterministic order it declares — the order the author wrote them in.
+// That obligation is the same one every enumerator interface carries, and it lands
+// here because the push side of the framework has no enumerator to put it on: a
+// check raises in the order it is invoked, so this order is the order diagnostics
+// appear in. Nothing here sorts and nothing here derives a key.
+//
+// It serves both authored kinds that carry the block, and takes neither as an
+// argument. Which kind a key was read from is the carrier axis, which the view
+// carries: a caller presents the document it is holding, and the facts that
+// presentation answers are the facts that kind carries. The coordinate is the same
+// site in either.
+//
+// A locator names .spec.schema.<key>, the site the key is authored at, assembled
+// through the same helper every other document-level site uses so one authored
+// shape has one spelling.
+//
+// It takes no [Cancellation] and returns no error, for the reason
+// [RunOnDocumentParameters] states: the signal is read once per outermost
+// coordinate, the outermost coordinate here is the document, and the loop over
+// documents is the caller's.
+func RunOnDocumentSchemaPillars[V View](
+	sourceFile string,
+	keys []string,
+	view V,
+	check Check[V, DocumentSchemaPillarSubject],
+) []Objection {
+	var out []Objection
+	for _, key := range keys {
+		subject := newDocumentSchemaPillarSubject(
+			sourceFile, key,
+			documentSpecSegments(authoredKeySchema, key)...,
+		)
+		out = append(out, check.Run(view, subject)...)
+	}
+	return out
+}
+
 // RunOnDocumentAnnotationBindings invokes check once per annotation binding the
 // presented Manifest's registry declares, in the order the bindings are given.
 //

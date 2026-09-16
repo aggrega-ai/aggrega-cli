@@ -482,6 +482,45 @@ var facts = []factDecl{
 			"tell them apart reports the wrong one.",
 	},
 	{
+		Name:        "component-schema-pillar-keys",
+		Stage:       "document",
+		SourceField: "types.ComponentSpec.Schema",
+		Subject:     []string{"document", "schema-pillar"},
+		Params:      []paramDecl{{Name: "document", Type: "string"}},
+		Returns:     "[]string",
+		Doc: "ComponentSchemaPillarKeys are the top-level keys the presented " +
+			"Component's schema block declares, in author order.\n\nThey are the " +
+			"keys the author wrote rather than the data pillars the block may " +
+			"carry, and that is the whole of what makes a rule over them " +
+			"possible: a key naming no pillar is exactly what a set already " +
+			"filtered to the pillars could not report. An entity declaring no " +
+			"schema block declares none, and so does one stating that its pillars " +
+			"are the entity it extends.\n\nThe order is the author's and is " +
+			"carried rather than sorted, because a rule invoked once per key " +
+			"raises in invocation order and that order is the order the findings " +
+			"reach the reader.",
+	},
+	{
+		Name:        "feature-schema-pillar-keys",
+		Stage:       "document",
+		SourceField: "types.FeatureSpec.Schema",
+		Subject:     []string{"document", "schema-pillar"},
+		Params:      []paramDecl{{Name: "document", Type: "string"}},
+		Returns:     "[]string",
+		Doc: "FeatureSchemaPillarKeys are the top-level keys the presented " +
+			"Feature's schema block declares, in author order.\n\nIt is a second " +
+			"fact rather than one fact over both authored kinds, and the " +
+			"plurality is forced rather than chosen: a fact is filed under exactly " +
+			"one authored document kind, so a single fact would be readable from " +
+			"one kind's presentation and would refuse the other at the point a " +
+			"rule read it. The two kinds write the block under the same key and " +
+			"one rule governs both, which is why the second fact is a declaration " +
+			"rather than a second design.\n\nWhat the keys are, and why they are " +
+			"carried in the author's order, is what the Component's own fact " +
+			"states; it is not restated here, because a fact's documentation has " +
+			"one home and a second copy would be the one that drifts.",
+	},
+	{
 		Name:        "manifest-annotation-binding-keys",
 		Stage:       "document",
 		SourceField: "types.MappingTier.Annotations",

@@ -95,6 +95,7 @@ const (
 	authoredKeyComponents = "components"
 	authoredKeyAggregates = "aggregates"
 	authoredKeyAssertions = "assertions"
+	authoredKeySchema     = "schema"
 
 	// authoredKeyMappings and authoredKeyAnnotations are the two keys a
 	// Manifest's annotation registry is written under. They sit here with the

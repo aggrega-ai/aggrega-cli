@@ -125,6 +125,49 @@ func newDocumentAssertionSubject(sourceFile, assertion string, segments ...strin
 	}
 }
 
+// DocumentSchemaPillarSubject is the subject of a check invoked once per
+// top-level key the presented document's schema block declares.
+//
+// The coordinate is the key the author wrote rather than the pillar it was meant
+// to name, and that is the whole reason the kind exists: the key set is what an
+// author writes and the pillar set is what the contract admits, so a key naming
+// no pillar has a coordinate here and would have none on a kind keyed by pillar.
+//
+// It is one kind over both authored document kinds that carry the block. Which
+// document a key was read from is the carrier axis, which the facts carry; the
+// coordinate is the same site in either — a key inside one document's schema
+// block — so a second kind would draw a distinction neither the locator nor a
+// rule over it can see.
+type DocumentSchemaPillarSubject interface {
+	Subject
+
+	// SchemaPillarKey is the top-level schema key the check was invoked for, as
+	// the author wrote it. The document itself is the other coordinate, and
+	// SourceFile names it.
+	SchemaPillarKey() string
+
+	documentSchemaPillar()
+}
+
+type documentSchemaPillarSubject struct {
+	provenance
+	key string
+}
+
+func (documentSchemaPillarSubject) documentSchemaPillar() {}
+
+func (s documentSchemaPillarSubject) SchemaPillarKey() string { return s.key }
+
+func newDocumentSchemaPillarSubject(
+	sourceFile, key string,
+	segments ...string,
+) DocumentSchemaPillarSubject {
+	return documentSchemaPillarSubject{
+		provenance: newProvenance(sourceFile, segments...),
+		key:        key,
+	}
+}
+
 // DocumentAnnotationBindingSubject is the subject of a check invoked once per
 // annotation binding the presented Manifest's registry declares.
 //

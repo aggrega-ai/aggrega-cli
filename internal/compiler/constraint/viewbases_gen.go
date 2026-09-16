@@ -38,6 +38,18 @@ func (AggregateDocumentBase) EntityAssertionDeclaringEntity(document string, ass
 	panic("this presentation does not carry entity-assertion-declaring-entity, which a Component document carries")
 }
 
+// ComponentSchemaPillarKeys panics. This presentation does not carry
+// component-schema-pillar-keys, which a Component document carries.
+func (AggregateDocumentBase) ComponentSchemaPillarKeys(document string) []string {
+	panic("this presentation does not carry component-schema-pillar-keys, which a Component document carries")
+}
+
+// FeatureSchemaPillarKeys panics. This presentation does not carry
+// feature-schema-pillar-keys, which a Feature document carries.
+func (AggregateDocumentBase) FeatureSchemaPillarKeys(document string) []string {
+	panic("this presentation does not carry feature-schema-pillar-keys, which a Feature document carries")
+}
+
 // ManifestAnnotationBindingKeys panics. This presentation does not carry
 // manifest-annotation-binding-keys, which a Manifest document carries.
 func (AggregateDocumentBase) ManifestAnnotationBindingKeys(document string) []string {
@@ -109,6 +121,12 @@ func (ComponentDocumentBase) DeclaredParameterKeys(document string) []string {
 	panic("this presentation does not carry declared-parameter-keys, which an Aggregate document carries")
 }
 
+// FeatureSchemaPillarKeys panics. This presentation does not carry
+// feature-schema-pillar-keys, which a Feature document carries.
+func (ComponentDocumentBase) FeatureSchemaPillarKeys(document string) []string {
+	panic("this presentation does not carry feature-schema-pillar-keys, which a Feature document carries")
+}
+
 // ManifestAnnotationBindingKeys panics. This presentation does not carry
 // manifest-annotation-binding-keys, which a Manifest document carries.
 func (ComponentDocumentBase) ManifestAnnotationBindingKeys(document string) []string {
@@ -152,6 +170,95 @@ func (ComponentDocumentBase) ManifestRecipeMappingReference(document string, tie
 	panic("this presentation does not carry manifest-recipe-mapping-reference, which a Manifest document carries")
 }
 
+// FeatureDocumentBase is a base for an implementation of DocumentView that
+// presents a Feature.
+//
+// It declares a refusing method for every document-stage fact a Feature
+// does not carry, and for none of the facts it does. The omission is the
+// design rather than an economy: a base supplying this kind's own facts
+// would satisfy FeatureDocumentFacts by method promotion, so the assertion
+// would hold an implementation to nothing and a fact declared for this
+// kind would compile everywhere and refuse only when it was read.
+//
+// An implementation embeds it, writes a body for each fact this kind
+// carries, and asserts FeatureDocumentFacts. A fact then declared for this
+// kind fails to compile on those implementations, and a fact declared for
+// another kind does not reach them.
+type FeatureDocumentBase struct{}
+
+// RawAggregateText panics. This presentation does not carry
+// raw-aggregate-text, which an Aggregate document carries.
+func (FeatureDocumentBase) RawAggregateText(document string) []byte {
+	panic("this presentation does not carry raw-aggregate-text, which an Aggregate document carries")
+}
+
+// DeclaredParameterKeys panics. This presentation does not carry
+// declared-parameter-keys, which an Aggregate document carries.
+func (FeatureDocumentBase) DeclaredParameterKeys(document string) []string {
+	panic("this presentation does not carry declared-parameter-keys, which an Aggregate document carries")
+}
+
+// EntityAssertionNameSet panics. This presentation does not carry
+// entity-assertion-name-set, which a Component document carries.
+func (FeatureDocumentBase) EntityAssertionNameSet(document string) []string {
+	panic("this presentation does not carry entity-assertion-name-set, which a Component document carries")
+}
+
+// EntityAssertionDeclaringEntity panics. This presentation does not carry
+// entity-assertion-declaring-entity, which a Component document carries.
+func (FeatureDocumentBase) EntityAssertionDeclaringEntity(document string, assertion string) (string, bool) {
+	panic("this presentation does not carry entity-assertion-declaring-entity, which a Component document carries")
+}
+
+// ComponentSchemaPillarKeys panics. This presentation does not carry
+// component-schema-pillar-keys, which a Component document carries.
+func (FeatureDocumentBase) ComponentSchemaPillarKeys(document string) []string {
+	panic("this presentation does not carry component-schema-pillar-keys, which a Component document carries")
+}
+
+// ManifestAnnotationBindingKeys panics. This presentation does not carry
+// manifest-annotation-binding-keys, which a Manifest document carries.
+func (FeatureDocumentBase) ManifestAnnotationBindingKeys(document string) []string {
+	panic("this presentation does not carry manifest-annotation-binding-keys, which a Manifest document carries")
+}
+
+// ManifestAnnotationBindingFeature panics. This presentation does not
+// carry manifest-annotation-binding-feature, which a Manifest document
+// carries.
+func (FeatureDocumentBase) ManifestAnnotationBindingFeature(document string, binding string) (string, bool) {
+	panic("this presentation does not carry manifest-annotation-binding-feature, which a Manifest document carries")
+}
+
+// ManifestAnnotationBindingRoutes panics. This presentation does not carry
+// manifest-annotation-binding-routes, which a Manifest document carries.
+func (FeatureDocumentBase) ManifestAnnotationBindingRoutes(document string, binding string) []AnnotationBindingRoute {
+	panic("this presentation does not carry manifest-annotation-binding-routes, which a Manifest document carries")
+}
+
+// RecipeValuesMappingDeclared panics. This presentation does not carry
+// recipe-values-mapping-declared, which a Recipe document carries.
+func (FeatureDocumentBase) RecipeValuesMappingDeclared(document string) bool {
+	panic("this presentation does not carry recipe-values-mapping-declared, which a Recipe document carries")
+}
+
+// RecipeSourceDeclared panics. This presentation does not carry
+// recipe-source-declared, which a Recipe document carries.
+func (FeatureDocumentBase) RecipeSourceDeclared(document string) bool {
+	panic("this presentation does not carry recipe-source-declared, which a Recipe document carries")
+}
+
+// ManifestRecipeMappingEntries panics. This presentation does not carry
+// manifest-recipe-mapping-entries, which a Manifest document carries.
+func (FeatureDocumentBase) ManifestRecipeMappingEntries(document string) []ManifestRecipeMapping {
+	panic("this presentation does not carry manifest-recipe-mapping-entries, which a Manifest document carries")
+}
+
+// ManifestRecipeMappingReference panics. This presentation does not carry
+// manifest-recipe-mapping-reference, which a Manifest document carries.
+func (FeatureDocumentBase) ManifestRecipeMappingReference(document string, tier string, axis string, key string) (string, bool) {
+	panic("this presentation does not carry manifest-recipe-mapping-reference, which a Manifest document carries")
+}
+
 // ManifestDocumentBase is a base for an implementation of DocumentView
 // that presents a Manifest.
 //
@@ -190,6 +297,18 @@ func (ManifestDocumentBase) EntityAssertionNameSet(document string) []string {
 // entity-assertion-declaring-entity, which a Component document carries.
 func (ManifestDocumentBase) EntityAssertionDeclaringEntity(document string, assertion string) (string, bool) {
 	panic("this presentation does not carry entity-assertion-declaring-entity, which a Component document carries")
+}
+
+// ComponentSchemaPillarKeys panics. This presentation does not carry
+// component-schema-pillar-keys, which a Component document carries.
+func (ManifestDocumentBase) ComponentSchemaPillarKeys(document string) []string {
+	panic("this presentation does not carry component-schema-pillar-keys, which a Component document carries")
+}
+
+// FeatureSchemaPillarKeys panics. This presentation does not carry
+// feature-schema-pillar-keys, which a Feature document carries.
+func (ManifestDocumentBase) FeatureSchemaPillarKeys(document string) []string {
+	panic("this presentation does not carry feature-schema-pillar-keys, which a Feature document carries")
 }
 
 // RecipeValuesMappingDeclared panics. This presentation does not carry
@@ -242,6 +361,18 @@ func (RecipeDocumentBase) EntityAssertionNameSet(document string) []string {
 // entity-assertion-declaring-entity, which a Component document carries.
 func (RecipeDocumentBase) EntityAssertionDeclaringEntity(document string, assertion string) (string, bool) {
 	panic("this presentation does not carry entity-assertion-declaring-entity, which a Component document carries")
+}
+
+// ComponentSchemaPillarKeys panics. This presentation does not carry
+// component-schema-pillar-keys, which a Component document carries.
+func (RecipeDocumentBase) ComponentSchemaPillarKeys(document string) []string {
+	panic("this presentation does not carry component-schema-pillar-keys, which a Component document carries")
+}
+
+// FeatureSchemaPillarKeys panics. This presentation does not carry
+// feature-schema-pillar-keys, which a Feature document carries.
+func (RecipeDocumentBase) FeatureSchemaPillarKeys(document string) []string {
+	panic("this presentation does not carry feature-schema-pillar-keys, which a Feature document carries")
 }
 
 // ManifestAnnotationBindingKeys panics. This presentation does not carry
@@ -316,6 +447,18 @@ func (NormalizedViewBase) EntityAssertionNameSet(document string) []string {
 // entity-assertion-declaring-entity, which a Component document carries.
 func (NormalizedViewBase) EntityAssertionDeclaringEntity(document string, assertion string) (string, bool) {
 	panic("this presentation does not carry entity-assertion-declaring-entity, which a Component document carries")
+}
+
+// ComponentSchemaPillarKeys panics. This presentation does not carry
+// component-schema-pillar-keys, which a Component document carries.
+func (NormalizedViewBase) ComponentSchemaPillarKeys(document string) []string {
+	panic("this presentation does not carry component-schema-pillar-keys, which a Component document carries")
+}
+
+// FeatureSchemaPillarKeys panics. This presentation does not carry
+// feature-schema-pillar-keys, which a Feature document carries.
+func (NormalizedViewBase) FeatureSchemaPillarKeys(document string) []string {
+	panic("this presentation does not carry feature-schema-pillar-keys, which a Feature document carries")
 }
 
 // ManifestAnnotationBindingKeys panics. This presentation does not carry
@@ -1450,6 +1593,23 @@ type AggregateDocumentFacts interface {
 type ComponentDocumentFacts interface {
 	EntityAssertionNameSet(document string) []string
 	EntityAssertionDeclaringEntity(document string, assertion string) (string, bool)
+	ComponentSchemaPillarKeys(document string) []string
+}
+
+// FeatureDocumentFacts are the document-stage facts a Feature carries.
+//
+// An implementation presenting a Feature asserts it, and that assertion is
+// the thing a refusing base cannot supply. A fact declared for this kind
+// then fails to compile on the implementations claiming it, and on no
+// other; without the assertion the same declaration compiles everywhere
+// and refuses when it is read, which moves the discovery from building to
+// running.
+//
+// Each method is an accessor the view chain declares and documents. The
+// documentation is not repeated here: a fact's documentation has one home,
+// and a second copy would be the one that drifts.
+type FeatureDocumentFacts interface {
+	FeatureSchemaPillarKeys(document string) []string
 }
 
 // ManifestDocumentFacts are the document-stage facts a Manifest carries.

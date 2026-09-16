@@ -8,6 +8,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
+	"go.yaml.in/yaml/v3"
 )
 
 // componentDocumentView presents one authored Component to a check as named
@@ -34,11 +35,36 @@ import (
 // itself carries is the obligation asserted at the bottom of this file: a
 // Component fact added to the registry stops this type compiling, and a fact
 // carried by any other kind does not reach it.
+// componentPresentation names which of a Component's document-stage facts a
+// presentation was built to answer.
+//
+// It exists because the Component's facts are read off two different things. The
+// assertion facts are read off the chain a resolve walked, which a load holding
+// one file does not have; the schema keys are read off the authored block, which
+// a resolve holding a merged chain no longer distinguishes from its base's. So a
+// presentation carries one or the other, while the obligation interface holds this
+// type to answering all of them — and the honest answer to the facts it was not
+// built for is a refusal rather than an empty one, which a rule cannot tell from
+// an entity that declared nothing.
+//
+// The values are the phrase the refusal reads, so what a presentation carries is
+// said once rather than once in the field and again in each message.
+type componentPresentation string
+
+const (
+	componentExtendsChain componentPresentation = "the chain the Component extends"
+	componentSchemaBlock  componentPresentation = "the Component's authored schema block"
+)
+
 type componentDocumentView struct {
 	// ComponentDocumentBase supplies the document-stage facts a Component does
 	// not carry, and declares nothing for the ones it does — so this type writes
 	// bodies for exactly the Component's own facts.
 	constraint.ComponentDocumentBase
+
+	// presents is what this value was built from, and every accessor outside that
+	// presentation refuses.
+	presents componentPresentation
 
 	// path is the workspace-relative file the document was read from. It is the
 	// document coordinate itself, which is why an accessor's argument is checked
@@ -63,6 +89,11 @@ type componentDocumentView struct {
 	// the names are: a second walk could reach a different entity for a name
 	// and nothing would compare the two.
 	declaredBy map[string]string
+
+	// pillarKeys are the top-level keys the authored schema block declares, in
+	// the order the author wrote them. They are the Component's half of the
+	// schema-block presentation and are empty on every other.
+	pillarKeys []string
 }
 
 // newComponentDocumentView presents the Component a resolve is holding: the file
@@ -80,7 +111,11 @@ type componentDocumentView struct {
 // under a different rule contributes again, because the chain then carries two
 // rules under one name.
 func newComponentDocumentView(path string, chain []types.Component) componentDocumentView {
-	v := componentDocumentView{path: path, declaredBy: map[string]string{}}
+	v := componentDocumentView{
+		presents:   componentExtendsChain,
+		path:       path,
+		declaredBy: map[string]string{},
+	}
 	declared := map[string]string{}
 	for i := len(chain) - 1; i >= 0; i-- {
 		for name, rule := range chain[i].Spec.Assertions.All() {
@@ -104,6 +139,7 @@ func newComponentDocumentView(path string, chain []types.Component) componentDoc
 // author order.
 func (v componentDocumentView) EntityAssertionNameSet(document string) []string {
 	v.refuseOtherDocument(document, "EntityAssertionNameSet")
+	v.refuseOtherPresentation(componentExtendsChain, "EntityAssertionNameSet")
 	return v.declarations
 }
 
@@ -117,8 +153,21 @@ func (v componentDocumentView) EntityAssertionNameSet(document string) []string 
 // restatement of it nearer the leaf.
 func (v componentDocumentView) EntityAssertionDeclaringEntity(document, assertion string) (string, bool) {
 	v.refuseOtherDocument(document, "EntityAssertionDeclaringEntity")
+	v.refuseOtherPresentation(componentExtendsChain, "EntityAssertionDeclaringEntity")
 	entity, declared := v.declaredBy[assertion]
 	return entity, declared
+}
+
+// ComponentSchemaPillarKeys returns the top-level keys the presented Component's
+// schema block declares, in the order the author wrote them.
+//
+// They are the keys as authored and not the pillars they were meant to name, so a
+// key naming no pillar is among them — which is the whole of what a rule over them
+// reports on.
+func (v componentDocumentView) ComponentSchemaPillarKeys(document string) []string {
+	v.refuseOtherDocument(document, "ComponentSchemaPillarKeys")
+	v.refuseOtherPresentation(componentSchemaBlock, "ComponentSchemaPillarKeys")
+	return v.pillarKeys
 }
 
 // assertionNames returns the distinct assertion names the presented Component
@@ -129,6 +178,38 @@ func (v componentDocumentView) EntityAssertionDeclaringEntity(document, assertio
 // derived in the same walk the fact is: two walks over one chain could disagree
 // about which names it holds.
 func (v componentDocumentView) assertionNames() []string { return v.names }
+
+// newComponentSchemaBlockView presents the schema block a load is holding: the
+// file the Component was read from, and the block's own mapping node.
+//
+// mapping is the node after the caller has settled which of the block's authoring
+// shapes it holds, so the keys are read from a mapping and from nothing else. That
+// settling has one home, at [ValidateSchemaPillars], and passing the settled node
+// is what keeps it there: a second reading here could admit a shape that one
+// rejects, or reject one it admits.
+func newComponentSchemaBlockView(path string, mapping *yaml.Node) componentDocumentView {
+	return componentDocumentView{
+		presents:   componentSchemaBlock,
+		path:       path,
+		pillarKeys: authoredSchemaPillarKeys(mapping),
+	}
+}
+
+// refuseOtherPresentation refuses an accessor call for a fact this value was not
+// built to answer, because answering would report an absence the document does not
+// have — a rule cannot tell an empty answer from an entity that declared nothing.
+func (v componentDocumentView) refuseOtherPresentation(
+	presentation componentPresentation,
+	accessor string,
+) {
+	if v.presents == presentation {
+		return
+	}
+	panic(fmt.Sprintf(
+		"componentDocumentView.%s asked of a presentation built from %s: "+
+			"the fact is read from %s, so present that",
+		accessor, v.presents, presentation))
+}
 
 // refuseOtherDocument refuses an accessor call naming a document this value was
 // not built for, because answering would hand back this document's fact under

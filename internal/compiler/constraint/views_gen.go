@@ -395,6 +395,43 @@ type DocumentView interface {
 	// Keyed by (document, assertion); read from types.ComponentMetadata.Name.
 	EntityAssertionDeclaringEntity(document string, assertion string) (string, bool)
 
+	// ComponentSchemaPillarKeys are the top-level keys the presented
+	// Component's schema block declares, in author order.
+	//
+	// They are the keys the author wrote rather than the data pillars the
+	// block may carry, and that is the whole of what makes a rule over them
+	// possible: a key naming no pillar is exactly what a set already filtered
+	// to the pillars could not report. An entity declaring no schema block
+	// declares none, and so does one stating that its pillars are the entity
+	// it extends.
+	//
+	// The order is the author's and is carried rather than sorted, because a
+	// rule invoked once per key raises in invocation order and that order is
+	// the order the findings reach the reader.
+	//
+	// Keyed by (document, schema-pillar); read from
+	// types.ComponentSpec.Schema.
+	ComponentSchemaPillarKeys(document string) []string
+
+	// FeatureSchemaPillarKeys are the top-level keys the presented Feature's
+	// schema block declares, in author order.
+	//
+	// It is a second fact rather than one fact over both authored kinds, and
+	// the plurality is forced rather than chosen: a fact is filed under
+	// exactly one authored document kind, so a single fact would be readable
+	// from one kind's presentation and would refuse the other at the point a
+	// rule read it. The two kinds write the block under the same key and one
+	// rule governs both, which is why the second fact is a declaration rather
+	// than a second design.
+	//
+	// What the keys are, and why they are carried in the author's order, is
+	// what the Component's own fact states; it is not restated here, because a
+	// fact's documentation has one home and a second copy would be the one
+	// that drifts.
+	//
+	// Keyed by (document, schema-pillar); read from types.FeatureSpec.Schema.
+	FeatureSchemaPillarKeys(document string) []string
+
 	// ManifestAnnotationBindingKeys are the annotation keys the presented
 	// Manifest's binding registry declares, in author order.
 	//

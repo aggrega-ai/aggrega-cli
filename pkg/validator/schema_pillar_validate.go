@@ -6,9 +6,11 @@ package validator
 import (
 	"fmt"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 	"github.com/aggrega-ai/aggrega-cli/pkg/compactform"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
 	jsonvalidator "github.com/aggrega-ai/aggrega-cli/pkg/validator/jsonschema"
 	"go.yaml.in/yaml/v3"
 )
@@ -51,11 +53,14 @@ const InheritedSchemaMarker = "inherited"
 // nothing) is settled by the published entity schema at load; this function
 // admits the marker rather than restating that rule.
 //
-// Errors are cerrors.CatalogError-categorised CompilerError values carrying
-// the source file path and offending line so authors locate the fragment
-// from the diagnostic alone. Validation runs fragment-level (as authored)
-// rather than post-extends-resolution: an error in a base entity surfaces
-// at the base file, not at every derived entity's merged view.
+// Errors are cerrors.CatalogError-categorised CompilerError values carrying the
+// source file path, so authors locate the fragment from the diagnostic alone. A
+// refusal of the block's shape or of a pillar body carries the offending line as
+// well; a refusal of a key that names no pillar carries the key's authored
+// locator instead, which names the site rather than a position in the file.
+// Validation runs fragment-level (as authored) rather than
+// post-extends-resolution: an error in a base entity surfaces at the base file,
+// not at every derived entity's merged view.
 //
 // The function is called from pkg/catalog/catalog.go's pillar validation after
 // the indexing walk
@@ -94,39 +99,19 @@ func ValidateSchemaPillars(
 		)
 	}
 
+	// Whether every key names a pillar is settled over the whole block before any
+	// body is compiled, rather than key by key as the walk reaches them. The two
+	// questions are ordered rather than interleaved: this one asks whether a key
+	// names a pillar at all, the compile below asks what is inside one, and the
+	// second is unaskable until the first is settled — a body beneath a key no
+	// consumer reads is a contract nothing would ever measure against.
+	if failure := unknownSchemaPillarFailure(entityKind, entityName, filePath, node); failure != nil {
+		return failure
+	}
+
 	for i := 0; i+1 < len(node.Content); i += 2 {
 		keyNode := node.Content[i]
 		valueNode := node.Content[i+1]
-		if !allowedSchemaPillars[keyNode.Value] {
-			// The diagnostic composes through the condition's registered
-			// sentence rather than emitting the clause alone, so it opens with
-			// that sentence and carries the occurrence's clause after it.
-			// Leading with the sentence is structural rather than stylistic:
-			// the chain walk that renders a halt prints the outermost frame
-			// whose text the output does not already carry, so a message that
-			// did not lead with it would print the sentence a second time as a
-			// redundant continuation line.
-			//
-			// The clause names the pillar vocabulary a second time, after the
-			// sentence has already said the key names no pillar. That is a
-			// cost rather than an oversight, and it is the price of the split:
-			// the sentence is one static string per condition, so it can name
-			// neither the entity at fault, nor the key met, nor the keys the
-			// block admits, nor where the pillar set is documented — and every
-			// one of those is what an author acts on. Reducing the clause to
-			// the offending key alone would delete them from a diagnostic the
-			// sentence cannot carry them in.
-			return cerrors.Wrap(
-				ErrUnknownSchemaPillar(),
-				cerrors.CatalogError,
-				cerrors.SourceLocation{File: filePath, Line: keyNode.Line},
-				cerrors.ComposeMessage(ErrUnknownSchemaPillar(), nil, fmt.Sprintf(
-					"%s %q: spec.schema unknown pillar key %q; allowed: values, infra, provides. "+
-						"See vocabulary/data-pillars.md for the canonical pillar set.",
-					entityKind, entityName, keyNode.Value,
-				)),
-			)
-		}
 		opts := []compactform.CompileOption{
 			compactform.WithConsumerFile(filePath),
 		}
@@ -147,6 +132,87 @@ func ValidateSchemaPillars(
 	}
 
 	return nil
+}
+
+// unknownSchemaPillarFailure enforces the pillar-key rule over one entity's
+// schema block: every top-level key names one of the data pillars.
+//
+// The rule itself is declared rather than written out here — see
+// componentSchemaKeyNamesAPillar and featureSchemaKeyNamesAPillar, which share one
+// predicate and raise one condition. What this function does is present the block
+// the load is holding, pick the declaration for the kind that holds it, and render
+// whatever came back into the failure shape this package's callers read.
+//
+// mapping is the block's own mapping node, after the caller has settled which of
+// its authoring shapes is in hand. Passing the settled node is what keeps that
+// settling in one place.
+//
+// It returns the FIRST finding rather than the set, because the caller returns one
+// error and a block with two offending keys is two renames the author makes from
+// the same file. The rule is invoked once per key regardless, so which finding is
+// first is the order the author wrote the keys in rather than an artifact of the
+// walk.
+//
+// The finding is positioned at the file AND at the key: the file is what a reader
+// opens, and the key is what they change. The two travel in separate fields of one
+// location for exactly that reason — folding the key into the file would displace
+// the path, and a single string cannot be both without one of them losing. What the
+// migrated form does not carry is the key's LINE: the framework attributes a finding
+// to an authored site rather than to a position in a file, so no line reaches the
+// conversion. An author is sent to the file and to the key within it.
+//
+// It panics on an entity kind that carries no schema block, for the reason the
+// failure constructors in this package panic on an unmappable kind: the kind
+// reaches here as a constant chosen at the call site, never from an authored
+// document, so an unrecognised one means a caller passed something no declaration
+// covers — and answering nil would silently pass every block of that kind.
+func unknownSchemaPillarFailure(entityKind, entityName, filePath string, mapping *yaml.Node) error {
+	var (
+		objections []constraint.Objection
+		kind       envelope.Kind
+	)
+	switch entityKind {
+	case string(envelope.KindComponent):
+		// The presentation is held as the view the rule declared rather than as
+		// its own concrete type, because the entry takes the check and the view
+		// together and infers one type from both. Handing over the concrete type
+		// would infer that type and then refuse the rule, which declares the view.
+		presented := newComponentSchemaBlockView(filePath, mapping)
+		var view constraint.DocumentView = presented
+		objections = constraint.RunOnDocumentSchemaPillars(
+			filePath, presented.ComponentSchemaPillarKeys(filePath), view,
+			componentSchemaKeyNamesAPillar,
+		)
+		kind = envelope.KindComponent
+	case string(envelope.KindFeature):
+		presented := newFeatureSchemaBlockView(filePath, mapping)
+		var view constraint.DocumentView = presented
+		objections = constraint.RunOnDocumentSchemaPillars(
+			filePath, presented.FeatureSchemaPillarKeys(filePath), view,
+			featureSchemaKeyNamesAPillar,
+		)
+		kind = envelope.KindFeature
+	default:
+		panic(fmt.Sprintf("validator: entity kind %q declares no schema block, so its pillar keys "+
+			"cannot be checked; pass the kind of an entity that carries one", entityKind))
+	}
+
+	failures := shapeRuleErrorsFrom(objections, ruleSubject{
+		Kind: kind,
+		Name: entityName,
+		Rule: "schema-pillars",
+	})
+	if len(failures) == 0 {
+		return nil
+	}
+	// The conversion renders one failure per objection in the order they were
+	// raised, so the first failure and the first objection are about one key.
+	return cerrors.Wrap(
+		failures[0],
+		cerrors.CatalogError,
+		cerrors.SourceLocation{File: filePath, Locator: objections[0].Locator()},
+		failures[0].Error(),
+	)
 }
 
 // UnusableContract is one declared schema contract whose body compiles and then

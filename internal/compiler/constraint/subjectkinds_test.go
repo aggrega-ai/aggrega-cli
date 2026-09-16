@@ -401,6 +401,11 @@ var coordinateAccessors = map[string][]string{
 	"document":  {"SourceFile"},
 	"parameter": {"ParameterName"},
 	"assertion": {"AssertionName"},
+	// The suffix says the value is the key the author wrote at the top of the
+	// schema block, which is what identifies one entry among the block's. A Name
+	// suffix would suggest the pillar it was meant to name, and the coordinate is
+	// exactly the case where the key names no pillar at all.
+	"schema-pillar": {"SchemaPillarKey"},
 	// The suffix says the value is the key a binding is declared under, which is
 	// what identifies one binding among the registry's entries. A Name suffix
 	// would suggest the binding carries a name of its own beside its key.
@@ -947,6 +952,16 @@ var subjectKindBindings = map[SubjectKind]struct {
 		iface: reflect.TypeOf((*DocumentAssertionSubject)(nil)).Elem(),
 		make: func(f string) Subject {
 			return newDocumentAssertionSubject(f, "port-set", "spec", "assertions", "port-set")
+		},
+	},
+	SubjectDocumentSchemaPillar: {
+		iface: reflect.TypeOf((*DocumentSchemaPillarSubject)(nil)).Elem(),
+		// A key the block's own contract admits, because the coordinate is the key
+		// the author wrote and nothing else. A binding built from a key naming no
+		// pillar would read as though the coordinate carried a verdict on the key,
+		// which is the one thing this kind is defined not to do.
+		make: func(f string) Subject {
+			return newDocumentSchemaPillarSubject(f, "values", "spec", "schema", "values")
 		},
 	},
 	SubjectDocumentAnnotationBinding: {

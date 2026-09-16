@@ -49,6 +49,9 @@ const (
 	// SubjectDocumentAssertion is the subject kind (document, assertion), keyed by 2 declared facts.
 	SubjectDocumentAssertion SubjectKind = "(document, assertion)"
 
+	// SubjectDocumentSchemaPillar is the subject kind (document, schema-pillar), keyed by 2 declared facts.
+	SubjectDocumentSchemaPillar SubjectKind = "(document, schema-pillar)"
+
 	// SubjectDocumentAnnotationBinding is the subject kind (document, annotation-binding), keyed by 4 declared facts.
 	SubjectDocumentAnnotationBinding SubjectKind = "(document, annotation-binding)"
 
@@ -166,6 +169,7 @@ var SubjectKinds = []SubjectKindInfo{
 	{Kind: SubjectDocument, Coordinates: []string{"document"}, Traversal: TraversalPush},
 	{Kind: SubjectDocumentParameter, Coordinates: []string{"document", "parameter"}, Traversal: TraversalPush},
 	{Kind: SubjectDocumentAssertion, Coordinates: []string{"document", "assertion"}, Traversal: TraversalPush},
+	{Kind: SubjectDocumentSchemaPillar, Coordinates: []string{"document", "schema-pillar"}, Traversal: TraversalPush},
 	{Kind: SubjectDocumentAnnotationBinding, Coordinates: []string{"document", "annotation-binding"}, Traversal: TraversalPush},
 	{Kind: SubjectDocumentMappingEntry, Coordinates: []string{"document", "mapping-entry"}, Traversal: TraversalPush},
 	{Kind: SubjectNode, Coordinates: []string{"node"}, Traversal: TraversalPull},
