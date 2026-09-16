@@ -32,9 +32,9 @@ type flattenResult struct {
 	ExportedComponents types.OrderedMap[string]
 	// Pruned is the set of flattened node IDs a false `active` toggle removed
 	// from the topology. Pruned nodes are absent from Nodes (so their own edges
-	// and attachments never materialize); the set is retained so the
-	// dangling-target sweep can tell a survivor's edge into a deliberately
-	// pruned target apart from an edge into a target that never existed.
+	// and attachments never materialize); the set is retained so the rules over
+	// the finalised graph can tell a survivor's edge into a deliberately pruned
+	// target apart from an edge into a target that never existed.
 	//
 	// Only ever stores true, so presence is membership. Ordered rather than a
 	// plain map because the set is carried onward to a consumer downstream of
@@ -422,7 +422,7 @@ func collectAttachments(result *flattenResult, nodeID string, comp types.Compone
 //
 //   - the resolved node ID when candidate (or a followed alias) names a node;
 //   - candidate unchanged when it names neither a node nor a child alias, so the
-//     downstream dangling-target guardrail halts on the unresolved reference;
+//     rule over the finalised graph halts on the unresolved reference;
 //   - ErrReexportCycle when the alias chain revisits an alias before reaching a
 //     node, naming the walked chain.
 //

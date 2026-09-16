@@ -589,11 +589,11 @@ func TestBuild_ExportAliasEdgeTargetResolves(t *testing.T) {
 	}
 }
 
-// TestBuild_UnknownEdgeTargetHalts — a `uses` edge whose target is neither a
-// node nor a known export alias still halts the build with ErrDanglingUsesTarget.
-// Export-alias resolution must not soften the Loud Guardrail for genuinely
-// dangling targets.
-func TestBuild_UnknownEdgeTargetHalts(t *testing.T) {
+// TestBuild_UnknownEdgeTargetIsLeftUnresolved — a `uses` edge whose target is
+// neither a node nor a known export alias keeps the target the author wrote.
+// Export-alias resolution must not soften it into something that resolves, which
+// is what would let the rule over the finalised graph approve it.
+func TestBuild_UnknownEdgeTargetIsLeftUnresolved(t *testing.T) {
 	t.Parallel()
 	uses := types.OrderedMap[types.UsesSocketValue]{}
 	uses.Set("databases", types.UsesSocketValue{Compact: []string{"data.nonexistent"}})
@@ -609,18 +609,21 @@ func TestBuild_UnknownEdgeTargetHalts(t *testing.T) {
 		},
 	}
 
-	_, err := Build(BuildConfig{
+	result, err := Build(BuildConfig{
 		ResolveResult: &resolver.ResolveResult{
 			Aggregate:     agg,
 			BoundaryInfra: map[string]*resolver.BoundaryInfra{},
 		},
 		LoadSubAggregate: exportModuleLoader(),
 	})
-	if err == nil {
-		t.Fatal("expected ErrDanglingUsesTarget for unknown edge target, got nil")
+	if err != nil {
+		t.Fatalf("the composition must reach the graph for the rule over it to be asked; got %v", err)
 	}
-	if !errors.Is(err, ErrDanglingUsesTarget()) {
-		t.Errorf("expected ErrDanglingUsesTarget, got %v", err)
+	if len(result.Edges) != 1 || result.Edges[0].Target != "data.nonexistent" {
+		t.Fatalf("edges = %+v; want the target left exactly as authored", result.Edges)
+	}
+	if _, held := result.Nodes.Get("data.nonexistent"); held {
+		t.Error("the target must answer to no node, or the fixture no longer poses the question")
 	}
 }
 
@@ -713,12 +716,13 @@ func TestBuild_TransitiveReexportEdgeTargetResolves(t *testing.T) {
 	}
 }
 
-// TestBuild_TransitiveReexportDanglingHalts — an intermediate module re-exports
-// a nonexistent grandchild path. Transitive resolution leaves the export value
-// unresolved (it names neither a node nor a live alias), so the consuming edge
-// halts loudly with ErrDanglingUsesTarget rather than resolving to a phantom
-// target. The Loud Guardrail survives the multi-hop re-export path.
-func TestBuild_TransitiveReexportDanglingHalts(t *testing.T) {
+// TestBuild_TransitiveReexportLeavesTheTargetUnresolved — an intermediate module
+// re-exports a nonexistent grandchild path. Transitive resolution leaves the
+// export value unresolved (it names neither a node nor a live alias), so the
+// consuming edge keeps a target nothing answers to rather than acquiring a
+// phantom one. That is what the rule over the finalised graph then refuses, and
+// a resolution that invented a target would leave it nothing to object to.
+func TestBuild_TransitiveReexportLeavesTheTargetUnresolved(t *testing.T) {
 	t.Parallel()
 	uses := types.OrderedMap[types.UsesSocketValue]{}
 	uses.Set("databases", types.UsesSocketValue{Compact: []string{"mid.db_endpoint"}})
@@ -734,18 +738,21 @@ func TestBuild_TransitiveReexportDanglingHalts(t *testing.T) {
 		},
 	}
 
-	_, err := Build(BuildConfig{
+	result, err := Build(BuildConfig{
 		ResolveResult: &resolver.ResolveResult{
 			Aggregate:     agg,
 			BoundaryInfra: map[string]*resolver.BoundaryInfra{},
 		},
 		LoadSubAggregate: reexportModuleLoader("gc.nonexistent"),
 	})
-	if err == nil {
-		t.Fatal("expected ErrDanglingUsesTarget for a multi-hop dangling re-export, got nil")
+	if err != nil {
+		t.Fatalf("the composition must reach the graph for the rule over it to be asked; got %v", err)
 	}
-	if !errors.Is(err, ErrDanglingUsesTarget()) {
-		t.Errorf("expected ErrDanglingUsesTarget, got %v", err)
+	if len(result.Edges) != 1 {
+		t.Fatalf("edge count = %d, want exactly 1; got %+v", len(result.Edges), result.Edges)
+	}
+	if _, held := result.Nodes.Get(result.Edges[0].Target); held {
+		t.Errorf("target %q answers to a node; the multi-hop re-export resolved to a phantom instead of being left unresolved", result.Edges[0].Target)
 	}
 }
 

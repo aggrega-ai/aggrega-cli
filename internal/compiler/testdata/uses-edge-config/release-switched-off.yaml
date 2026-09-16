@@ -1,0 +1,16 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: uses-edge-config-release-switched-off
+  environment: local
+  version: "1.0.0"
+spec:
+  aggregate: uses-edge-config-switched-off-app
+  manifest: uses-edge-config-manifest
+  boundaries:
+    cluster:
+      directory: ./dist/cluster
+      components:
+        api: {}
+        db: {}
+        redis: {}

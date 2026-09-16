@@ -4,6 +4,7 @@
 package topology
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"slices"
@@ -626,30 +627,49 @@ func TestTheRequiredSocketWalkStopsPartwayOnCancellation(t *testing.T) {
 	}
 }
 
-// TestTheShortFormItemNamingNoTargetIsRefusedBeforeThisRuleIsAsked pins where an
-// item that names no target is reported, because it is the one authoring shape
-// whose answer is not readable off the rule.
+// TestTheShortFormItemNamingNoTargetIsNotThisRulesToReport pins where an item
+// that names no target is reported, because it is the one authoring shape whose
+// answer is not readable off the rule.
 //
 // The item populates nothing an author could act on, so the component's own
 // dependency block does not count it. But normalisation projects one entry per
 // item the short form lists, so the composed connection set — which this rule
-// also reads — does carry one, and a reading taken from that surface alone would
-// treat the socket as populated. It does not come to that: the entry names no
-// component, so the rule about a connection reaching nothing refuses the
-// composition first, and the author is told the precise thing they wrote.
+// also reads — does carry one, and the socket therefore reads as populated here.
+// That is the right answer for this rule and not a gap: the entry names no
+// component, so it is the rule about a connection reaching nothing that has the
+// precise sentence for what the author wrote, and that rule is asked over the
+// finalised graph. Its refusal is proved there.
+//
+// What this pins is that the two do not both report one input. A required-socket
+// finding here would tell the author to populate a socket they did populate, over
+// an entry whose real fault is the empty target.
 //
 // The row is here rather than in the table above because the table's helper
-// requires a composition that composes, and this one deliberately does not.
-func TestTheShortFormItemNamingNoTargetIsRefusedBeforeThisRuleIsAsked(t *testing.T) {
+// requires a composition that composes, and this one carries a fault a later rule
+// reports.
+func TestTheShortFormItemNamingNoTargetIsNotThisRulesToReport(t *testing.T) {
 	t.Parallel()
-	_, err := buildResultWith(t, requiredSocketCompactEmptyItem, "", "")
-	if err == nil {
-		t.Fatal("an item naming no target must be refused")
-	}
-	if !errors.Is(err, ErrDanglingUsesTarget()) {
-		t.Fatalf("the refusal must name the connection reaching nothing; got %v", err)
+	result, err := buildResultWith(t, requiredSocketCompactEmptyItem, "", "")
+	if err != nil {
+		t.Fatalf("the composition must reach the graph for the rule over it to be asked; got %v", err)
 	}
 	if errors.Is(err, resolver.ErrMissingRequiredSocket()) {
-		t.Fatalf("the required-socket rule must not also report this input; got %v", err)
+		t.Fatalf("the required-socket rule must not report this input; got %v", err)
+	}
+	objections, runErr := constraint.RunOnNodeSockets(
+		context.Background().Err,
+		result.StageCoordinates,
+		result.StageCoordinates,
+		result.StageView,
+		resolver.RequiredSocketIsPopulated,
+	)
+	if runErr != nil {
+		t.Fatalf("traversal: %v", runErr)
+	}
+	if len(objections) != 0 {
+		t.Fatalf("this rule must stay silent on an item naming no target; it raised %d objection(s)", len(objections))
+	}
+	if len(result.Edges) != 1 || result.Edges[0].Target != "" {
+		t.Fatalf("edges = %+v; want the empty target carried through to the rule that reports it", result.Edges)
 	}
 }

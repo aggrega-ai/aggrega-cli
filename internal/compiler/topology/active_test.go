@@ -192,7 +192,17 @@ func buildAgg(t *testing.T, agg *types.Aggregate, loader SubAggregateLoader) (*T
 	})
 }
 
-func TestBuild_SurvivorUsesPrunedHalts(t *testing.T) {
+// TestBuild_SurvivorUsesPrunedKeepsTheRemovalRecorded pins the half of the
+// classification this stage owns: a survivor's edge into a switched-off
+// component survives, and the removed name stays on the pruned set.
+//
+// The two together are what let the rules over the finalised graph tell a target
+// the author switched off from one that never existed and give each its own
+// sentence. Dropping either would collapse the two into one finding, silently,
+// because a rule reading a name the stage no longer carries sees exactly what it
+// sees for a name that was never written. The refusal itself is proved where the
+// graph exists.
+func TestBuild_SurvivorUsesPrunedKeepsTheRemovalRecorded(t *testing.T) {
 	t.Parallel()
 	uses := types.OrderedMap[types.UsesSocketValue]{}
 	uses.Set("databases", types.UsesSocketValue{Compact: []string{"main-db"}})
@@ -201,31 +211,45 @@ func TestBuild_SurvivorUsesPrunedHalts(t *testing.T) {
 	components.Set("main-db", types.ComponentInstance{Type: "core/datastore/postgres", Active: activeFlag("false")})
 	agg := &types.Aggregate{Spec: types.AggregateSpec{Components: components}}
 
-	_, err := buildAgg(t, agg, nil)
-	if !errors.Is(err, ErrUsesPrunedComponent()) {
-		t.Fatalf("expected ErrUsesPrunedComponent, got %v", err)
+	result, err := buildAgg(t, agg, nil)
+	if err != nil {
+		t.Fatalf("the composition must reach the graph for the rules over it to be asked; got %v", err)
 	}
-	if errors.Is(err, ErrDanglingUsesTarget()) {
-		t.Error("a pruned target must not be classified as a generic dangling target")
+	if len(result.Edges) != 1 || result.Edges[0].Target != "main-db" {
+		t.Fatalf("edges = %+v; want exactly the survivor's edge into the switched-off target", result.Edges)
+	}
+	if _, held := result.Nodes.Get("main-db"); held {
+		t.Error("a switched-off component must not be in the node set")
+	}
+	if _, removed := result.Pruned.Get("main-db"); !removed {
+		t.Error("the removed name must stay on the pruned set; without it the removal reads as a target that never existed")
 	}
 }
 
-func TestBuild_DanglingTargetStillClassifiedDangling(t *testing.T) {
+// TestBuild_DanglingTargetIsNotRecordedAsRemoved is the other side of the same
+// distinction: a target that never existed must not appear on the pruned set, or
+// the rule naming the activation toggle would claim an author switched off
+// something they never wrote.
+func TestBuild_DanglingTargetIsNotRecordedAsRemoved(t *testing.T) {
 	t.Parallel()
-	// A survivor edge to a target that never existed keeps ErrDanglingUsesTarget
-	// — the pruned classification must not swallow the pre-existing guardrail.
 	uses := types.OrderedMap[types.UsesSocketValue]{}
 	uses.Set("databases", types.UsesSocketValue{Compact: []string{"ghost"}})
 	components := types.OrderedMap[types.ComponentInstance]{}
 	components.Set("api", types.ComponentInstance{Type: "core/compute/api-server", Uses: uses})
 	agg := &types.Aggregate{Spec: types.AggregateSpec{Components: components}}
 
-	_, err := buildAgg(t, agg, nil)
-	if !errors.Is(err, ErrDanglingUsesTarget()) {
-		t.Fatalf("expected ErrDanglingUsesTarget, got %v", err)
+	result, err := buildAgg(t, agg, nil)
+	if err != nil {
+		t.Fatalf("the composition must reach the graph for the rules over it to be asked; got %v", err)
 	}
-	if errors.Is(err, ErrUsesPrunedComponent()) {
-		t.Error("a never-existent target must not be classified as pruned")
+	if len(result.Edges) != 1 || result.Edges[0].Target != "ghost" {
+		t.Fatalf("edges = %+v; want exactly the edge into the target that never existed", result.Edges)
+	}
+	if _, held := result.Nodes.Get("ghost"); held {
+		t.Error("the target must answer to no node, or the fixture no longer poses the question")
+	}
+	if _, removed := result.Pruned.Get("ghost"); removed {
+		t.Error("a name nothing ever declared must not be recorded as removed")
 	}
 }
 

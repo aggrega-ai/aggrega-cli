@@ -454,10 +454,18 @@ func TestBuild_ReleaseSameTargetConfigures(t *testing.T) {
 	}
 }
 
-// TestBuild_ReleaseDanglingTargetHalts pins the dangling-target Loud Guardrail
-// for a Release-wired edge: a Release entry wiring a new edge to a non-existent
-// component halts with ErrDanglingUsesTarget.
-func TestBuild_ReleaseDanglingTargetHalts(t *testing.T) {
+// TestBuild_ReleaseDanglingTargetCarriesTheUnresolvedTarget pins what this stage
+// hands on for a Release-wired edge whose target no component answers to: the
+// edge survives with the target the operator wrote, unrewritten.
+//
+// That is the precondition the rule refusing it reads. The refusal itself is the
+// rule over the finalised graph, so it is proved where that graph exists — the
+// end-to-end proof driving a Release edge to a non-existent target through a
+// whole build, and the graph-stage proofs over the presentation. Asserting a halt
+// here would be asserting it at a stage that no longer decides it, and a stage
+// that dropped the edge instead would leave that rule with nothing to be asked
+// about while both proofs still passed on some other document.
+func TestBuild_ReleaseDanglingTargetCarriesTheUnresolvedTarget(t *testing.T) {
 	t.Parallel()
 	agg := &types.Aggregate{}
 	agg.Spec.Components.Set("api", types.ComponentInstance{Type: "core/server"})
@@ -468,17 +476,26 @@ func TestBuild_ReleaseDanglingTargetHalts(t *testing.T) {
 		Release:       rel,
 		BoundaryInfra: map[string]*resolver.BoundaryInfra{"api": {BoundaryPath: "prod"}},
 	}
-	_, err := Build(BuildConfig{ResolveResult: rr})
-	if !errors.Is(err, ErrDanglingUsesTarget()) {
-		t.Fatalf("want ErrDanglingUsesTarget; got %v", err)
+	result, err := Build(BuildConfig{ResolveResult: rr})
+	if err != nil {
+		t.Fatalf("the composition must reach the graph for the rule over it to be asked; got %v", err)
+	}
+	if len(result.Edges) != 1 {
+		t.Fatalf("edge count = %d, want exactly 1; got %+v", len(result.Edges), result.Edges)
+	}
+	if got := result.Edges[0].Target; got != "ghost" {
+		t.Errorf("target = %q, want %q — a rewritten or emptied target would leave the rule reading something the operator did not write", got, "ghost")
+	}
+	if _, held := result.Nodes.Get("ghost"); held {
+		t.Error("the target must answer to no node, or the fixture no longer poses the question")
 	}
 }
 
-// TestBuild_AggregateDanglingTargetHalts pins that the dangling-target guardrail
-// is origin-agnostic: a developer-authored Aggregate edge to a non-existent
-// target halts with the same ErrDanglingUsesTarget as the Release-wired case —
-// no silent drop.
-func TestBuild_AggregateDanglingTargetHalts(t *testing.T) {
+// TestBuild_AggregateDanglingTargetCarriesTheUnresolvedTarget is the same
+// assertion for a developer-authored edge, which is what makes the stage's
+// behaviour origin-agnostic: neither origin is dropped and neither is rewritten,
+// so one rule over the finalised graph judges both.
+func TestBuild_AggregateDanglingTargetCarriesTheUnresolvedTarget(t *testing.T) {
 	t.Parallel()
 	agg := &types.Aggregate{}
 	uses := types.OrderedMap[types.UsesSocketValue]{}
@@ -486,9 +503,18 @@ func TestBuild_AggregateDanglingTargetHalts(t *testing.T) {
 	agg.Spec.Components.Set("api", types.ComponentInstance{Type: "core/server", Uses: uses})
 
 	rr := &resolver.ResolveResult{Aggregate: agg}
-	_, err := Build(BuildConfig{ResolveResult: rr})
-	if !errors.Is(err, ErrDanglingUsesTarget()) {
-		t.Fatalf("want ErrDanglingUsesTarget for a dangling Aggregate edge; got %v", err)
+	result, err := Build(BuildConfig{ResolveResult: rr})
+	if err != nil {
+		t.Fatalf("the composition must reach the graph for the rule over it to be asked; got %v", err)
+	}
+	if len(result.Edges) != 1 {
+		t.Fatalf("edge count = %d, want exactly 1; got %+v", len(result.Edges), result.Edges)
+	}
+	if got := result.Edges[0].Target; got != "ghost-db" {
+		t.Errorf("target = %q, want %q", got, "ghost-db")
+	}
+	if _, held := result.Nodes.Get("ghost-db"); held {
+		t.Error("the target must answer to no node, or the fixture no longer poses the question")
 	}
 }
 

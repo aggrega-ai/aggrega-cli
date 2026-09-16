@@ -577,8 +577,8 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 	// infra merge, which keeps a rejected retarget from half-applying. The
 	// recorded conflicts are reported together once the walk is complete, so an
 	// author sees every offending entry in one build rather than clearing them
-	// one build at a time. Conformance (Step 1), dangling-target, and
-	// undeclared-socket halts are not this pass's concern.
+	// one build at a time. Conformance (Step 1), the target-existence rules, and
+	// the undeclared-socket halt are not this pass's concern.
 	// Determinism: nodes in flat.Nodes author order; sockets and aliases in
 	// OrderedMap author order; created edges append after the Aggregate/Feature
 	// edges; recorded conflicts follow that same walk, so the diagnostic is
@@ -627,8 +627,8 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 					// edge rather than creating one, so it draws nothing here;
 					// whether it found an edge to configure is settled by the
 					// unbound-configuration sweep below, once every edge exists.
-					// Target existence is enforced by the origin-agnostic
-					// dangling-target sweep below, not here. Whether the entry
+					// Target existence is enforced by the rules declared over
+					// the finalised graph, not here. Whether the entry
 					// creates an edge at all is the resolver's rule, asked
 					// through the one predicate the required-socket rule also
 					// asks, so neither stage can answer it differently.
@@ -677,8 +677,8 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 
 	// Drop exported-component aliases whose resolved target was pruned. A pruned
 	// component must not be published as part of the module's public interface;
-	// dropping the alias before the dangling sweep keeps a stale export from
-	// pointing at a component that no longer exists. The aliases are collected
+	// dropping the alias before the targets are resolved keeps a stale export
+	// from standing in for a component that no longer exists. The aliases are collected
 	// first and deleted after the walk: deleting during iteration would mutate
 	// the key order the walk is reading.
 	var prunedAliases []string
@@ -700,9 +700,10 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 	// target that is not itself a node but is a known alias. Applies uniformly to
 	// every edge origin (the edges slice already aggregates developer, Feature, and
 	// Release-wired edges) and walks in author order so the rewrite is deterministic.
-	// Runs after pruned aliases are dropped and before the dangling sweep, so a
-	// target that resolves to neither a node nor a live alias still halts loudly
-	// below rather than being silently swallowed here.
+	// Runs after pruned aliases are dropped, so a target that resolves to neither
+	// a node nor a live alias is left standing as the author wrote it rather than
+	// being silently swallowed here — which is what lets the rules over the
+	// finalised graph refuse it loudly and say which of the two it is.
 	for i := range edges {
 		if _, isNode := flat.Nodes.Get(edges[i].Target); isNode {
 			continue
@@ -712,26 +713,15 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 		}
 	}
 
-	// Origin-agnostic dangling-target guardrail. Every edge — developer-authored
-	// (Aggregate), Feature-projected, or Release-wired — must point at a node
-	// that exists in the resolved topology. A dangling target is a Loud Guardrail
-	// (Invariant 4), not a silent drop: an unresolved target would otherwise
-	// leave the consumer's inject silently empty. Walks in author order and halts
-	// on the first offending edge for deterministic output. A target that was
-	// pruned by a false `active` toggle is classified apart from one that never
-	// existed, so the author sees why the target is missing.
-	for _, e := range edges {
-		if _, exists := flat.Nodes.Get(e.Target); !exists {
-			if _, gone := flat.Pruned.Get(e.Target); gone {
-				return nil, fmt.Errorf(
-					"%w: uses edge %s/%s/%s targets %q, which was pruned from the topology because its active toggle resolved to false",
-					ErrUsesPrunedComponent(), e.Source, e.Socket, e.Alias, e.Target)
-			}
-			return nil, fmt.Errorf(
-				"%w: uses edge %s/%s/%s targets %q, which is not a component in the topology",
-				ErrDanglingUsesTarget(), e.Source, e.Socket, e.Alias, e.Target)
-		}
-	}
+	// An edge whose target answers to no surviving component is NOT refused here.
+	// The rules that refuse it are declared over the finalised graph, where the
+	// target a connection resolved to is a named fact and the connection is
+	// presented once whichever surface drew it — so the two are asked over every
+	// origin at once and report every offending connection in one build instead
+	// of the first. Both classifications survive that move: a target the
+	// composition removed by a false `active` toggle is reported apart from one
+	// that never existed, and the removed names are carried on the result below
+	// for exactly that reason.
 
 	// Guard sub-aggregate components post-flatten. The resolve-stage guards see
 	// only the root Aggregate's Components + Subsystems, never the loaded
@@ -1100,8 +1090,9 @@ func authoredAttachments(attachments []FeatureAttachment) types.OrderedMap[types
 //     list the sockets that do exist. Such an entry is skipped here whenever the
 //     consuming component's type is in view, whether the rule already ran before
 //     flattening or runs over the flattened sub-aggregate nodes afterwards.
-//   - A target that names no component belongs to the dangling-target sweep: an
-//     entry with a target does create an edge, so it never reaches this guard.
+//   - A target that names no component belongs to the rule over the finalised
+//     graph that reports exactly that: an entry with a target does create an
+//     edge, so it never reaches this guard.
 //   - A consuming component pruned by a false `active` toggle takes its whole
 //     edge set with it by design. The entry is inert because the operator turned
 //     the component off, not because the entry is wrong.
@@ -1245,7 +1236,7 @@ type scopeFeatureUses struct {
 // boundary component's `features` contributes the same edge from that one
 // component. Neither may declare `values`, and neither creates compute: the
 // edge connects components that already exist, so a target naming no component
-// halts at the dangling-target sweep like any other edge.
+// is refused by the rule over the finalised graph like any other connection.
 //
 // Per level the boundary's own attachments come before that level's
 // per-component ones, which is the breadth order the IR feature cascade reads

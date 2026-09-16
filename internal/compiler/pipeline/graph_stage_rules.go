@@ -11,6 +11,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/ir"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 )
 
@@ -83,6 +84,38 @@ func runGraphStageRules(
 		coordinates,
 		out.GraphView,
 		analyzer.EdgeTargetSatisfiesSocketSelector,
+	)
+	if err != nil {
+		return err
+	}
+	out.Violations = append(out.Violations, violations...)
+
+	// Each connection points at a component the composition holds, evaluated once
+	// per connection. The two rules beside each other are one absence split by its
+	// cause: a target nothing answers to, and a target an activation toggle
+	// removed. They read the target the connection RESOLVED to, which is why they
+	// are asked here — an export alias is rewritten and every authoring surface
+	// has drawn by the time the graph is final, so the earlier reading would refuse
+	// a reference that does resolve and would miss one drawn later. Both are asked
+	// over the whole connection set, so a connection an attachment projected or the
+	// deployment wired is refused exactly as a component's own is, and every
+	// offending connection is reported in one build rather than the first.
+	violations, err = constraint.RunOnEdges(
+		ctx.Err,
+		coordinates,
+		out.GraphView,
+		topology.ConnectionTargetIsAComponent,
+	)
+	if err != nil {
+		return err
+	}
+	out.Violations = append(out.Violations, violations...)
+
+	violations, err = constraint.RunOnEdges(
+		ctx.Err,
+		coordinates,
+		out.GraphView,
+		topology.ConnectionTargetIsActive,
 	)
 	if err != nil {
 		return err

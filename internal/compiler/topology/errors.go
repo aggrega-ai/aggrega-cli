@@ -77,15 +77,21 @@ var errUnboundReleaseEdgeConfig = cerrors.Register("unbound-release-edge-config"
 })
 
 // ErrDanglingUsesTarget fires when a `uses` edge names a target component
-// that is not present in the resolved topology — origin-agnostic: a
-// developer-authored Aggregate edge and a Release-wired edge are checked
-// alike. A dangling target is a Loud Guardrail, not a silent drop: an edge
-// to a non-existent target would otherwise vanish and leave the consumer's
-// inject silently empty. The wrapped error names the consuming node, the
-// socket, the alias, and the missing target so the author can correct the
-// reference. The check is the structural sibling of the uses-socket
-// allowlist (the socket must be declared and the target must resolve before
-// an edge is type-checked at Step 4).
+// that is not present in the assembled graph — origin-agnostic: a
+// developer-authored Aggregate edge, a Feature-projected edge and a
+// Release-wired edge are checked alike. A dangling target is a Loud Guardrail,
+// not a silent drop: an edge to a non-existent target would otherwise vanish
+// and leave the consumer's inject silently empty.
+//
+// It is raised by [ConnectionTargetIsAComponent], the rule declared over the
+// finalised graph, and by nothing else. The diagnostic carries the missing
+// target and the socket it was wired into, positioned by the framework at the
+// authored entry in the document that drew the connection — so an edge an
+// attachment or a deployment drew names that document rather than a dependency
+// block the consuming component does not have.
+//
+// A target the composition removed by a false `active` toggle is reported by
+// [ErrUsesPrunedComponent] instead, so an author is told which of the two it is.
 func ErrDanglingUsesTarget() error { return errDanglingUsesTarget }
 
 var errDanglingUsesTarget = cerrors.Register("dangling-uses-target", cerrors.Meta{
@@ -155,17 +161,20 @@ var errInvalidActive = cerrors.Register("active-toggle-not-a-boolean", cerrors.M
 	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
-// ErrUsesPrunedComponent fires from the origin-agnostic dangling-target
-// sweep when a surviving component's `uses` edge targets a component that
-// was pruned from the topology because its `active` toggle resolved to
-// false. It is the pruned-target sibling of ErrDanglingUsesTarget: the
-// target is not merely absent, it was deliberately removed, so the
+// ErrUsesPrunedComponent fires when a surviving component's `uses` edge targets
+// a component that was pruned from the composition because its `active` toggle
+// resolved to false. It is the pruned-target sibling of ErrDanglingUsesTarget:
+// the target is not merely absent, it was deliberately removed, so the
 // diagnostic distinguishes the two rather than reporting a generic dangling
 // reference. Pruning a component that a survivor still depends on would
 // otherwise leave the consumer's inject silently empty, so the build halts
-// (Invariant 4). The wrapped error names the surviving consumer, the pruned
-// target, and that the target was pruned because its `active` resolved to
-// false so the author can either keep the target present or drop the edge.
+// (Invariant 4).
+//
+// It is raised by [ConnectionTargetIsActive], the rule declared over the
+// finalised graph, and by nothing else — origin-agnostic in the same way its
+// sibling is. The diagnostic carries the pruned target and the socket it was
+// wired into, positioned by the framework at the authored entry, so the author
+// can either keep the target present or drop the edge.
 func ErrUsesPrunedComponent() error { return errUsesPrunedComponent }
 
 var errUsesPrunedComponent = cerrors.Register("uses-target-not-active", cerrors.Meta{

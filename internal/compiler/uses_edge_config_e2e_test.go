@@ -21,6 +21,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline/pipelinetest"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
+	"github.com/aggrega-ai/aggrega-cli/pkg/usesedge"
 )
 
 const usesEdgeMergedPath = "dist/cluster/compose/docker-compose.yaml"
@@ -230,6 +231,36 @@ func TestUsesEdgeConfig_Guardrails(t *testing.T) {
 		if !errors.Is(err, topology.ErrDanglingUsesTarget()) {
 			t.Fatalf("want ErrDanglingUsesTarget for a Release edge to a non-existent target; got %v", err)
 		}
+		// The same match through the accessor an integration author can import.
+		// It is asserted directly rather than inferred from the two facts that
+		// imply it — that the published accessor forwards, and that the build
+		// error matches the one it forwards to — because what an integration
+		// relies on is this one expression, and an inference is not a
+		// measurement of it.
+		if !errors.Is(err, usesedge.ErrDanglingUsesTarget()) {
+			t.Fatalf("the published accessor must match the build's own halt; got %v", err)
+		}
+	})
+
+	t.Run("switched_off_target", func(t *testing.T) {
+		t.Parallel()
+		// A target the author switched off is refused under its own condition
+		// rather than under the one for a name nothing answers to, because the
+		// edit that fixes it is a different edit. Both halves are asserted: a
+		// predicate that stopped separating the two would keep refusing this
+		// workspace, under the wrong sentence, and a one-sided assertion would
+		// pass on it.
+		_, err := pipelinetest.BuildE(t, pipelinetest.Input{
+			ReleasePath:  "testdata/uses-edge-config/release-switched-off.yaml",
+			CatalogPaths: []string{"testdata/uses-edge-config/catalog/base"},
+		})
+		if !errors.Is(err, topology.ErrUsesPrunedComponent()) {
+			t.Fatalf("want ErrUsesPrunedComponent for a connection into a switched-off component; got %v", err)
+		}
+		if errors.Is(err, topology.ErrDanglingUsesTarget()) {
+			t.Fatalf("a switched-off target must not also be reported as a name nothing answers to; got %v", err)
+		}
+		t.Logf("the build refused with: %v", err)
 	})
 
 	t.Run("selector_origin_agnostic", func(t *testing.T) {

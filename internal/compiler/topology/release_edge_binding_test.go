@@ -364,11 +364,22 @@ spec:
 	}
 }
 
-// TestReleaseEdgeConfig_TargetThatNamesNothingIsDangling proves an entry naming
-// a target no component answers to is reported as a dangling target rather than
-// as unbound configuration. An entry with a target draws its edge, so it is
-// never unbound — which is what keeps the more informative halt in front.
-func TestReleaseEdgeConfig_TargetThatNamesNothingIsDangling(t *testing.T) {
+// TestReleaseEdgeConfig_TargetThatNamesNothingIsNotUnboundConfiguration proves an
+// entry naming a target no component answers to is not reported as unbound
+// configuration. An entry with a target draws its edge, so it is never unbound —
+// which is what keeps the entry in front of the rule that has the informative
+// sentence for it, the one over the finalised graph about a connection reaching
+// nothing.
+//
+// It asserts the absence rather than the refusal because the two rules are asked
+// at different stages now: this one here, the other where the graph exists. The
+// refusal is proved there, end to end, over exactly this authoring shape.
+//
+// Every component is placed in the boundary deliberately. The fixture's whole
+// point is one fault, and an unplaced component is a second one the composition
+// reports on its own — which would let this pass on a refusal that has nothing to
+// do with the target.
+func TestReleaseEdgeConfig_TargetThatNamesNothingIsNotUnboundConfiguration(t *testing.T) {
 	t.Parallel()
 	const relYAML = `apiVersion: aggrega.ai/v1alpha1
 kind: Release
@@ -378,6 +389,7 @@ spec:
   boundaries:
     prod:
       components:
+        db: {}
         api:
           uses:
             databases:
@@ -386,12 +398,24 @@ spec:
                 infra:
                   storage_class: fast
 `
-	err := buildWith(t, flatAggregate, relYAML, "")
+	result, err := buildResultWith(t, flatAggregate, relYAML, "")
+	if err != nil {
+		t.Fatalf("the composition must reach the graph for the rule over it to be asked; got %v", err)
+	}
 	if errors.Is(err, ErrUnboundReleaseEdgeConfig()) {
 		t.Fatalf("a missing target must not be reported as unbound configuration; got %v", err)
 	}
-	if !errors.Is(err, ErrDanglingUsesTarget()) {
-		t.Fatalf("want the dangling-target halt; got %v", err)
+	spare := -1
+	for i, e := range result.Edges {
+		if e.Source == "api" && e.Socket == "databases" && e.Alias == "spare" {
+			spare = i
+		}
+	}
+	if spare < 0 {
+		t.Fatalf("the entry must draw its edge, or it would be unbound configuration after all; edges = %+v", result.Edges)
+	}
+	if got := result.Edges[spare].Target; got != "nowhere" {
+		t.Errorf("target = %q, want %q", got, "nowhere")
 	}
 }
 

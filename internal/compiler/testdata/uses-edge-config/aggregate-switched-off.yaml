@@ -1,0 +1,24 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: uses-edge-config-switched-off-app
+  version: "1.0.0"
+spec:
+  components:
+    api:
+      type: core/api
+      # The developer wires the databases socket to a component the author has
+      # switched off below, which is the one shape that produces a target that is
+      # absent from the composition AND recorded as deliberately removed.
+      uses:
+        databases:
+          main:
+            target: db
+            values:
+              protocol: grpc
+              statement_cache: 200
+    db:
+      type: core/db
+      active: "false"
+    redis:
+      type: core/cache
