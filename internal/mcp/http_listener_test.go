@@ -12,6 +12,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"io"
 	"math/big"
@@ -519,6 +520,57 @@ func TestTheDrainIsBoundedSoAParkedCallCannotHoldTheProcessOpen(t *testing.T) {
 	cancel()
 	if err := f.awaitServeReturn(t); err != nil {
 		t.Errorf("serving reported %v; a drain that ran out of budget is not a failure", err)
+	}
+}
+
+// A peer that never finishes its request headers loses its connection, so
+// asserting nothing is not a way to hold one.
+//
+// The headers are read before the handler is called at all, so neither the
+// authenticator nor the concurrency slot stands in front of this: both are
+// claimed inside ServeHTTP, and a peer that stops mid-header never gets that
+// far. It reaches no gate because it presents nothing any gate could refuse.
+//
+// Nothing here measures how long the budget is. The assertion is that the
+// connection ends at all, which holds for any finite bound and fails for the
+// zero value that means no deadline; the ceiling separates "ends" from "never"
+// and is not a performance budget.
+//
+// The control is the well-formed request underneath, posted to the SAME listener
+// while the half-open connection is still held. Without it this would pass
+// against a listener that had stopped serving everyone, which is the opposite of
+// what is being claimed.
+func TestAPeerThatNeverFinishesItsHeadersLosesItsConnection(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	f := startListener(t, ctx, ListenConfig{Address: "127.0.0.1:0"})
+	hostPort := loopbackHostPort(t, f.l)
+
+	conn, err := net.Dial("tcp", hostPort)
+	if err != nil {
+		t.Fatalf("dial %s: %v", hostPort, err)
+	}
+	defer func() { _ = conn.Close() }()
+	// A request line and one header, and then nothing: no terminating blank line,
+	// so the header block a server waits for never arrives.
+	if _, err := io.WriteString(conn, "POST "+endpointPath+" HTTP/1.1\r\nHost: "+hostPort+"\r\n"); err != nil {
+		t.Fatalf("write a partial request: %v", err)
+	}
+
+	status, body := postModernToolsList(t, http.DefaultClient, loopbackURL(t, f.l, "http"))
+	wantServed(t, status, body, "a well-formed request while a peer holds a half-open connection")
+
+	// Reading to the end of the connection is how its end is observed: whatever
+	// the server does with it, closing it ends this read. The deadline here is
+	// the client's own, so a listener that never closed shows up as this read
+	// timing out rather than as a test that hangs.
+	if err := conn.SetReadDeadline(time.Now().Add(runReturnCeiling)); err != nil {
+		t.Fatalf("set the liveness ceiling: %v", err)
+	}
+	if _, err := io.Copy(io.Discard, conn); errors.Is(err, os.ErrDeadlineExceeded) {
+		t.Fatal("the half-open connection was still held at the liveness ceiling, " +
+			"so a peer that has asserted nothing can hold a connection indefinitely")
 	}
 }
 

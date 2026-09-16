@@ -45,6 +45,38 @@ const loopbackHostname = "localhost"
 // caller of a stopping process should expect.
 const listenerDrainBudget = 2 * time.Second
 
+// listenerHeaderBudget bounds how long a peer that has asserted nothing may hold
+// a connection while it delivers its request headers.
+//
+// A connection is accepted before anything about the caller is known, and the
+// headers are read before the handler sees the request at all — so every check
+// the handler makes, the credential among them, sits behind this read. Without a
+// bound, a peer that opens a connection and stops mid-header holds a connection,
+// a goroutine and a file descriptor for as long as it likes, having presented
+// nothing that could be refused. It is the same question the drain budget above
+// answers at the other end of a connection's life, and it is answered the same
+// way: with a fixed number rather than a setting, because how long a peer that
+// has asserted nothing may hold a connection is not a thing a deployment differs
+// about.
+//
+// Seconds rather than milliseconds because a client on a slow or distant link
+// still deserves to finish a header block that a working one sends in a single
+// round trip, and single-digit seconds because nothing beyond that is a client
+// still making progress. It also bounds the TLS handshake, which net/http
+// derives from the smallest of the read and write deadlines set here, and which
+// is this same question one layer down.
+const listenerHeaderBudget = 5 * time.Second
+
+// listenerIdleBudget bounds how long a connection may sit between requests
+// before it is closed.
+//
+// A caller that will ask again keeps its connection rather than paying for
+// another handshake, which is what makes a minute the useful number: long enough
+// that an interactive caller's next request reuses the connection it already
+// has, short enough that a peer which has stopped asking does not hold one
+// indefinitely.
+const listenerIdleBudget = time.Minute
+
 // ListenConfig carries what selects and shapes the listener itself, as distinct
 // from HTTPConfig, which carries what the handler applies to traffic already
 // accepted.
@@ -209,7 +241,20 @@ func bindHTTPListener(target listenTarget, cert *tls.Certificate,
 		// writes to the process's standard error by default. It is pointed at the
 		// stream every other diagnostic here goes to instead, carrying the prefix
 		// every one of them carries, so one reader of one stream sees all of them.
-		ErrorLog: log.New(logw, "mcp: ", 0),
+		ErrorLog:          log.New(logw, "mcp: ", 0),
+		ReadHeaderTimeout: listenerHeaderBudget,
+		IdleTimeout:       listenerIdleBudget,
+		// ReadTimeout and WriteTimeout are left at zero, which means no deadline,
+		// and that is the decision rather than the omission: they bound a whole
+		// request and a whole response, and both are legitimately long here. A
+		// call can drive a build that runs for minutes, and a request body can
+		// carry an authored document of any size, so a deadline on either would
+		// cut work that is progressing. The two budgets above bound a peer that is
+		// not progressing at all, which is the different question. Setting either
+		// of these to complete the set would also reach further than it looks:
+		// net/http takes the TLS handshake bound from the smallest of the three
+		// read and write deadlines, so a value below the header budget shortens
+		// the handshake too.
 	}
 	if cert != nil {
 		srv.TLSConfig = &tls.Config{Certificates: []tls.Certificate{*cert}, MinVersion: tls.VersionTLS12}
