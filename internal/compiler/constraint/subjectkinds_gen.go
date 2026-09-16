@@ -46,7 +46,7 @@ const (
 	// SubjectDocumentParameter is the subject kind (document, parameter), keyed by 1 declared fact.
 	SubjectDocumentParameter SubjectKind = "(document, parameter)"
 
-	// SubjectDocumentAssertion is the subject kind (document, assertion), keyed by 1 declared fact.
+	// SubjectDocumentAssertion is the subject kind (document, assertion), keyed by 2 declared facts.
 	SubjectDocumentAssertion SubjectKind = "(document, assertion)"
 
 	// SubjectDocumentAnnotationBinding is the subject kind (document, annotation-binding), keyed by 4 declared facts.

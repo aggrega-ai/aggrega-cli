@@ -454,6 +454,34 @@ var facts = []factDecl{
 			"chain root's first.",
 	},
 	{
+		Name:        "entity-assertion-declaring-entity",
+		Stage:       "document",
+		SourceField: "types.ComponentMetadata.Name",
+		Carrier:     "Component",
+		Subject:     []string{"document", "assertion"},
+		Params: []paramDecl{
+			{Name: "document", Type: "string"},
+			{Name: "assertion", Type: "string"},
+		},
+		Returns: "(string, bool)",
+		Doc: "EntityAssertionDeclaringEntity is the entity that declares an " +
+			"assertion name nearest the root of the chain the presented entity " +
+			"extends, and whether the chain declares that name at all.\n\nThe " +
+			"chain is walked root-first and the first declarer answers, so a " +
+			"name several entities declare answers with the one furthest from " +
+			"the presented entity. The tie-break belongs in the declaration " +
+			"because the fact is keyed by the name alone and has to yield one " +
+			"answer: an implementor left to pick would pick the nearest as " +
+			"readily, and a rule reporting a name that carries two rules would " +
+			"then name a restatement rather than the entity the name " +
+			"originates on.\n\nA name no ancestor declares answers with the " +
+			"presented entity itself, which is the only declarer there. The " +
+			"second result is false only for a name no entity along the chain " +
+			"declares: a name nobody declared and a declaration by an entity " +
+			"carrying no name are different findings, and a rule that cannot " +
+			"tell them apart reports the wrong one.",
+	},
+	{
 		Name:        "manifest-annotation-binding-keys",
 		Stage:       "document",
 		SourceField: "types.MappingTier.Annotations",

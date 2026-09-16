@@ -32,6 +32,12 @@ func (AggregateDocumentBase) EntityAssertionNameSet(document string) []string {
 	panic("this presentation does not carry entity-assertion-name-set, which a Component document carries")
 }
 
+// EntityAssertionDeclaringEntity panics. This presentation does not carry
+// entity-assertion-declaring-entity, which a Component document carries.
+func (AggregateDocumentBase) EntityAssertionDeclaringEntity(document string, assertion string) (string, bool) {
+	panic("this presentation does not carry entity-assertion-declaring-entity, which a Component document carries")
+}
+
 // ManifestAnnotationBindingKeys panics. This presentation does not carry
 // manifest-annotation-binding-keys, which a Manifest document carries.
 func (AggregateDocumentBase) ManifestAnnotationBindingKeys(document string) []string {
@@ -180,6 +186,12 @@ func (ManifestDocumentBase) EntityAssertionNameSet(document string) []string {
 	panic("this presentation does not carry entity-assertion-name-set, which a Component document carries")
 }
 
+// EntityAssertionDeclaringEntity panics. This presentation does not carry
+// entity-assertion-declaring-entity, which a Component document carries.
+func (ManifestDocumentBase) EntityAssertionDeclaringEntity(document string, assertion string) (string, bool) {
+	panic("this presentation does not carry entity-assertion-declaring-entity, which a Component document carries")
+}
+
 // RecipeValuesMappingDeclared panics. This presentation does not carry
 // recipe-values-mapping-declared, which a Recipe document carries.
 func (ManifestDocumentBase) RecipeValuesMappingDeclared(document string) bool {
@@ -224,6 +236,12 @@ func (RecipeDocumentBase) DeclaredParameterKeys(document string) []string {
 // entity-assertion-name-set, which a Component document carries.
 func (RecipeDocumentBase) EntityAssertionNameSet(document string) []string {
 	panic("this presentation does not carry entity-assertion-name-set, which a Component document carries")
+}
+
+// EntityAssertionDeclaringEntity panics. This presentation does not carry
+// entity-assertion-declaring-entity, which a Component document carries.
+func (RecipeDocumentBase) EntityAssertionDeclaringEntity(document string, assertion string) (string, bool) {
+	panic("this presentation does not carry entity-assertion-declaring-entity, which a Component document carries")
 }
 
 // ManifestAnnotationBindingKeys panics. This presentation does not carry
@@ -292,6 +310,12 @@ func (NormalizedViewBase) DeclaredParameterKeys(document string) []string {
 // entity-assertion-name-set, which a Component document carries.
 func (NormalizedViewBase) EntityAssertionNameSet(document string) []string {
 	panic("this presentation does not carry entity-assertion-name-set, which a Component document carries")
+}
+
+// EntityAssertionDeclaringEntity panics. This presentation does not carry
+// entity-assertion-declaring-entity, which a Component document carries.
+func (NormalizedViewBase) EntityAssertionDeclaringEntity(document string, assertion string) (string, bool) {
+	panic("this presentation does not carry entity-assertion-declaring-entity, which a Component document carries")
 }
 
 // ManifestAnnotationBindingKeys panics. This presentation does not carry
@@ -1425,6 +1449,7 @@ type AggregateDocumentFacts interface {
 // and a second copy would be the one that drifts.
 type ComponentDocumentFacts interface {
 	EntityAssertionNameSet(document string) []string
+	EntityAssertionDeclaringEntity(document string, assertion string) (string, bool)
 }
 
 // ManifestDocumentFacts are the document-stage facts a Manifest carries.

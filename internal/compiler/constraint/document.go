@@ -116,6 +116,55 @@ func RunOnDocumentParameters[V View](
 	return out
 }
 
+// RunOnDocumentAssertions invokes check once per assertion the presented
+// document's entity declares, in the order the assertions are given.
+//
+// It is a push entry like [RunOnDocumentParameters], and for the same reason: the
+// coordinate it is rooted at is the document, which no point in the compilation
+// holds a set of. What differs is the coordinate inside it. The assertions an
+// entity declares are a set once the document and the entities it extends are in
+// hand, so this entry walks them — the outer coordinate is presented and the
+// inner one is enumerated.
+//
+// assertions are the assertion names the check is invoked for, and the caller
+// presents them in a deterministic order it declares — the chain root's first,
+// and within each entity the order its author wrote. That obligation is the same
+// one every enumerator interface carries, and it lands here because the push side
+// of the framework has no enumerator to put it on: a check raises in the order it
+// is invoked, so this order is the order diagnostics appear in. Nothing here
+// sorts and nothing here derives a name.
+//
+// A name is presented once however many entities along the chain declare it,
+// because the subject is the assertion rather than one entity's declaration of
+// it: a rule about a name shared by two entities has one finding to report and
+// one site to send the author to. The multiplicity is a fact the view carries,
+// which is where a rule reading it asks.
+//
+// A locator names .spec.assertions.<name>, the site the assertion is authored at,
+// assembled through the same helper every other document-level site uses so one
+// authored shape has one spelling.
+//
+// It takes no [Cancellation] and returns no error, for the reason
+// [RunOnDocumentParameters] states: the signal is read once per outermost
+// coordinate, the outermost coordinate here is the document, and the loop over
+// documents is the caller's.
+func RunOnDocumentAssertions[V View](
+	sourceFile string,
+	assertions []string,
+	view V,
+	check Check[V, DocumentAssertionSubject],
+) []Objection {
+	var out []Objection
+	for _, assertion := range assertions {
+		subject := newDocumentAssertionSubject(
+			sourceFile, assertion,
+			documentSpecSegments(authoredKeyAssertions, assertion)...,
+		)
+		out = append(out, check.Run(view, subject)...)
+	}
+	return out
+}
+
 // RunOnDocumentAnnotationBindings invokes check once per annotation binding the
 // presented Manifest's registry declares, in the order the bindings are given.
 //
