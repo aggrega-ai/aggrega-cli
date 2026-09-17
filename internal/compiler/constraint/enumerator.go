@@ -373,10 +373,14 @@ type AttachmentLeaf struct {
 // boundary declares: the id the entry addresses in the flattened composition,
 // and where the entry itself was written.
 //
-// The id is the identity rather than a nesting under a boundary, and that is a
-// property of the authoring surface rather than a simplification of it: one id
-// declared twice is refused when the deployment document loads, so no two entries
-// share one and the id names exactly one entry across the whole document. The
+// The id is the identity rather than a nesting under a boundary, and that rests
+// on a rule rather than on the authoring surface: the rule over
+// [BoundaryPlacementInstance] refuses a document that places one component twice,
+// and it is asked when the Release document loads, so by the time this axis is
+// enumerated no two entries share an id and the id names exactly one entry across
+// the whole document. A reader needing the entries a document DECLARES,
+// collisions and all, enumerates the placements instead — the two axes are
+// separate for exactly that reason. The
 // boundary therefore reaches the locator as provenance and keys nothing, the same
 // division [ConnectionCarrier] draws for a connection's carrier.
 //
@@ -399,7 +403,7 @@ type BoundaryComponentReferenceInstance struct {
 	// the coordinate every fact keyed at this entry takes.
 	ID string
 
-	// SourceFile is the workspace-relative deployment document the entry was
+	// SourceFile is the workspace-relative Release document the entry was
 	// written in, empty when it has no single-file origin.
 	SourceFile string
 
@@ -513,6 +517,93 @@ type AuthoredAnnotationEnumerator interface {
 	// AuthoredAnnotations returns every authored annotation entry, in a
 	// deterministic order the implementation declares.
 	AuthoredAnnotations() []AuthoredAnnotationInstance
+}
+
+// The axes a Release's boundary places something on. The set is closed: a
+// boundary names a component in its own component block, names one inside a
+// routing entry under the local name it carries there, or routes a whole
+// sub-module without naming any component at all. There is no fourth block an
+// author writes a placement in.
+//
+// The axis is part of a placement's identity rather than a label describing it.
+// One boundary can name a component directly under the id it carries once the
+// composition is flattened AND reach the same component through a routing entry,
+// which is two entries the author wrote at two keys; and a sub-module's dotted
+// prefix can equal a component's id. So a placement is identified by its boundary,
+// its reference and the block it was written in, and any two of the three leave
+// pairs a rule could not tell apart.
+const (
+	// PlacementNamedComponent is a component the boundary names in its own
+	// components block, under the id it carries once the composition is
+	// flattened.
+	PlacementNamedComponent = "named-component"
+
+	// PlacementRoutedComponent is a component named inside a routing entry,
+	// under the local name it carries within the sub-module that holds it.
+	PlacementRoutedComponent = "routed-component"
+
+	// PlacementRoutedModule is a routing entry itself: a whole sub-module routed
+	// into the boundary, which places every component that module contains
+	// whether or not the entry names any of them.
+	PlacementRoutedModule = "routed-module"
+)
+
+// BoundaryPlacementInstance is one placement together with where it was written:
+// the coordinates that identify it, and the authoring keys a locator is built
+// from.
+//
+// The site and the keys are provenance and key nothing, the division
+// [BoundaryComponentReferenceInstance] already draws. They are taken from the
+// reconciliation that resolved the entry rather than derived beside it, so the
+// reference and the keys cannot come to disagree about which entry they describe.
+type BoundaryPlacementInstance struct {
+	// Placement is the coordinate tuple, and it is [BoundaryPlacement] itself
+	// rather than a copy of its fields: the fact reports that record and a rule
+	// over this axis is invoked once per one of them, so the entry a rule is
+	// invoked for and the set it reads back are spelled by one type and cannot
+	// come to describe an entry differently.
+	Placement BoundaryPlacement
+
+	// Site names the boundary the entry sits in, and the component key it was
+	// written under when the boundary named the component directly.
+	//
+	// An empty scope path is the boundary the compiler synthesized to hold the
+	// entries an author wrote at the document's top level. That is not a scope
+	// any file spells, so an entry under one names the top-level shape the author
+	// did write — the collapse [AuthoredSite] already declares.
+	Site AuthoredSite
+
+	// RoutedKeys are the authoring keys reaching the entry from inside its
+	// boundary — the routing container and the module for a routed sub-module,
+	// and those plus the component container and the local name for a component
+	// named inside one — and nothing at all when the boundary named the
+	// component directly.
+	RoutedKeys []string
+
+	// SourceFile is the workspace-relative Release document the entry was
+	// written in, empty when it has no single-file origin.
+	SourceFile string
+}
+
+// BoundaryPlacementEnumerator supplies the placement set: everything a
+// Release's boundaries place, on every axis they place on, each carrying the
+// site it was written at.
+//
+// It is a flat axis rather than one nested under the boundary set, and for the
+// reason [BoundaryComponentReferenceEnumerator] is flat: a placement's identity
+// is the whole of its boundary, its reference and its axis, so nesting it under
+// the boundary axis would key it by something that does not distinguish it — and
+// it would inherit that axis's exclusion of the boundary the compiler synthesizes
+// to hold entries written at a document's top level, which is where every
+// placement of a Release written without named boundaries lives.
+//
+// Collisions are NOT reconciled: two entries placing one component are both
+// enumerated, which is the whole point of the axis. A reader wanting the
+// reconciled set asks the flattened node set instead.
+type BoundaryPlacementEnumerator interface {
+	// BoundaryPlacements returns every placement the Release's boundaries
+	// declare, in a deterministic order the implementation declares.
+	BoundaryPlacements() []BoundaryPlacementInstance
 }
 
 // NodeEnumerator supplies the node set: every component instance in the

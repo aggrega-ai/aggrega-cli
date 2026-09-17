@@ -163,6 +163,12 @@ func (AggregateDocumentBase) FeatureRecipeDeclaredCapability(document string) st
 	panic("this presentation does not carry feature-recipe-declared-capability, which a FeatureRecipe document carries")
 }
 
+// ReleaseBoundaryPlacements panics. This presentation does not carry
+// release-boundary-placements, which a Release document carries.
+func (AggregateDocumentBase) ReleaseBoundaryPlacements() []BoundaryPlacement {
+	panic("this presentation does not carry release-boundary-placements, which a Release document carries")
+}
+
 // ComponentDocumentBase is a base for an implementation of DocumentView
 // that presents a Component.
 //
@@ -308,6 +314,12 @@ func (ComponentDocumentBase) FeatureRecipeArtifactsDeclared(document string) boo
 // carries.
 func (ComponentDocumentBase) FeatureRecipeDeclaredCapability(document string) string {
 	panic("this presentation does not carry feature-recipe-declared-capability, which a FeatureRecipe document carries")
+}
+
+// ReleaseBoundaryPlacements panics. This presentation does not carry
+// release-boundary-placements, which a Release document carries.
+func (ComponentDocumentBase) ReleaseBoundaryPlacements() []BoundaryPlacement {
+	panic("this presentation does not carry release-boundary-placements, which a Release document carries")
 }
 
 // FeatureDocumentBase is a base for an implementation of DocumentView that
@@ -469,6 +481,12 @@ func (FeatureDocumentBase) FeatureRecipeDeclaredCapability(document string) stri
 	panic("this presentation does not carry feature-recipe-declared-capability, which a FeatureRecipe document carries")
 }
 
+// ReleaseBoundaryPlacements panics. This presentation does not carry
+// release-boundary-placements, which a Release document carries.
+func (FeatureDocumentBase) ReleaseBoundaryPlacements() []BoundaryPlacement {
+	panic("this presentation does not carry release-boundary-placements, which a Release document carries")
+}
+
 // ManifestDocumentBase is a base for an implementation of DocumentView
 // that presents a Manifest.
 //
@@ -597,6 +615,12 @@ func (ManifestDocumentBase) FeatureRecipeDeclaredCapability(document string) str
 	panic("this presentation does not carry feature-recipe-declared-capability, which a FeatureRecipe document carries")
 }
 
+// ReleaseBoundaryPlacements panics. This presentation does not carry
+// release-boundary-placements, which a Release document carries.
+func (ManifestDocumentBase) ReleaseBoundaryPlacements() []BoundaryPlacement {
+	panic("this presentation does not carry release-boundary-placements, which a Release document carries")
+}
+
 // RecipeDocumentBase is a base for an implementation of DocumentView that
 // presents a Recipe.
 //
@@ -718,6 +742,12 @@ func (RecipeDocumentBase) FeatureRecipeArtifactsDeclared(document string) bool {
 // carries.
 func (RecipeDocumentBase) FeatureRecipeDeclaredCapability(document string) string {
 	panic("this presentation does not carry feature-recipe-declared-capability, which a FeatureRecipe document carries")
+}
+
+// ReleaseBoundaryPlacements panics. This presentation does not carry
+// release-boundary-placements, which a Release document carries.
+func (RecipeDocumentBase) ReleaseBoundaryPlacements() []BoundaryPlacement {
+	panic("this presentation does not carry release-boundary-placements, which a Release document carries")
 }
 
 // FeatureRecipeDocumentBase is a base for an implementation of
@@ -850,6 +880,177 @@ func (FeatureRecipeDocumentBase) ManifestRecipeMappingEntries(document string) [
 // manifest-recipe-mapping-reference, which a Manifest document carries.
 func (FeatureRecipeDocumentBase) ManifestRecipeMappingReference(document string, tier string, axis string, key string) (string, bool) {
 	panic("this presentation does not carry manifest-recipe-mapping-reference, which a Manifest document carries")
+}
+
+// ReleaseBoundaryPlacements panics. This presentation does not carry
+// release-boundary-placements, which a Release document carries.
+func (FeatureRecipeDocumentBase) ReleaseBoundaryPlacements() []BoundaryPlacement {
+	panic("this presentation does not carry release-boundary-placements, which a Release document carries")
+}
+
+// ReleaseDocumentBase is a base for an implementation of DocumentView that
+// presents a Release.
+//
+// It declares a refusing method for every document-stage fact a Release
+// does not carry, and for none of the facts it does. The omission is the
+// design rather than an economy: a base supplying this kind's own facts
+// would satisfy ReleaseDocumentFacts by method promotion, so the assertion
+// would hold an implementation to nothing and a fact declared for this
+// kind would compile everywhere and refuse only when it was read.
+//
+// An implementation embeds it, writes a body for each fact this kind
+// carries, and asserts ReleaseDocumentFacts. A fact then declared for this
+// kind fails to compile on those implementations, and a fact declared for
+// another kind does not reach them.
+type ReleaseDocumentBase struct{}
+
+// RawAggregateText panics. This presentation does not carry
+// raw-aggregate-text, which an Aggregate document carries.
+func (ReleaseDocumentBase) RawAggregateText(document string) []byte {
+	panic("this presentation does not carry raw-aggregate-text, which an Aggregate document carries")
+}
+
+// DeclaredParameterKeys panics. This presentation does not carry
+// declared-parameter-keys, which an Aggregate document carries.
+func (ReleaseDocumentBase) DeclaredParameterKeys(document string) []string {
+	panic("this presentation does not carry declared-parameter-keys, which an Aggregate document carries")
+}
+
+// EntityAssertionNameSet panics. This presentation does not carry
+// entity-assertion-name-set, which a Component document carries.
+func (ReleaseDocumentBase) EntityAssertionNameSet(document string) []string {
+	panic("this presentation does not carry entity-assertion-name-set, which a Component document carries")
+}
+
+// EntityAssertionDeclaringEntity panics. This presentation does not carry
+// entity-assertion-declaring-entity, which a Component document carries.
+func (ReleaseDocumentBase) EntityAssertionDeclaringEntity(document string, assertion string) (string, bool) {
+	panic("this presentation does not carry entity-assertion-declaring-entity, which a Component document carries")
+}
+
+// ComponentSchemaPillarKeys panics. This presentation does not carry
+// component-schema-pillar-keys, which a Component document carries.
+func (ReleaseDocumentBase) ComponentSchemaPillarKeys(document string) []string {
+	panic("this presentation does not carry component-schema-pillar-keys, which a Component document carries")
+}
+
+// FeatureSchemaPillarKeys panics. This presentation does not carry
+// feature-schema-pillar-keys, which a Feature document carries.
+func (ReleaseDocumentBase) FeatureSchemaPillarKeys(document string) []string {
+	panic("this presentation does not carry feature-schema-pillar-keys, which a Feature document carries")
+}
+
+// ManifestAnnotationBindingKeys panics. This presentation does not carry
+// manifest-annotation-binding-keys, which a Manifest document carries.
+func (ReleaseDocumentBase) ManifestAnnotationBindingKeys(document string) []string {
+	panic("this presentation does not carry manifest-annotation-binding-keys, which a Manifest document carries")
+}
+
+// ManifestAnnotationBindingFeature panics. This presentation does not
+// carry manifest-annotation-binding-feature, which a Manifest document
+// carries.
+func (ReleaseDocumentBase) ManifestAnnotationBindingFeature(document string, binding string) (string, bool) {
+	panic("this presentation does not carry manifest-annotation-binding-feature, which a Manifest document carries")
+}
+
+// ManifestAnnotationBindingRoutes panics. This presentation does not carry
+// manifest-annotation-binding-routes, which a Manifest document carries.
+func (ReleaseDocumentBase) ManifestAnnotationBindingRoutes(document string, binding string) []AnnotationBindingRoute {
+	panic("this presentation does not carry manifest-annotation-binding-routes, which a Manifest document carries")
+}
+
+// AnnotationBindingSubkeyTarget panics. This presentation does not carry
+// annotation-binding-subkey-target, which a Manifest document carries.
+func (ReleaseDocumentBase) AnnotationBindingSubkeyTarget(binding string, subkey string) (AnnotationSubkeyTarget, bool) {
+	panic("this presentation does not carry annotation-binding-subkey-target, which a Manifest document carries")
+}
+
+// RecipeValuesMappingDeclared panics. This presentation does not carry
+// recipe-values-mapping-declared, which a Recipe document carries.
+func (ReleaseDocumentBase) RecipeValuesMappingDeclared(document string) bool {
+	panic("this presentation does not carry recipe-values-mapping-declared, which a Recipe document carries")
+}
+
+// RecipeSourceDeclared panics. This presentation does not carry
+// recipe-source-declared, which a Recipe document carries.
+func (ReleaseDocumentBase) RecipeSourceDeclared(document string) bool {
+	panic("this presentation does not carry recipe-source-declared, which a Recipe document carries")
+}
+
+// RecipeWorkloadDeclared panics. This presentation does not carry
+// recipe-workload-declared, which a Recipe document carries.
+func (ReleaseDocumentBase) RecipeWorkloadDeclared(document string) bool {
+	panic("this presentation does not carry recipe-workload-declared, which a Recipe document carries")
+}
+
+// RecipeArtifactsDeclared panics. This presentation does not carry
+// recipe-artifacts-declared, which a Recipe document carries.
+func (ReleaseDocumentBase) RecipeArtifactsDeclared(document string) bool {
+	panic("this presentation does not carry recipe-artifacts-declared, which a Recipe document carries")
+}
+
+// RecipeDeclaredCapability panics. This presentation does not carry
+// recipe-declared-capability, which a Recipe document carries.
+func (ReleaseDocumentBase) RecipeDeclaredCapability(document string) string {
+	panic("this presentation does not carry recipe-declared-capability, which a Recipe document carries")
+}
+
+// RecipeOutputLabelKeys panics. This presentation does not carry
+// recipe-output-label-keys, which a Recipe document carries.
+func (ReleaseDocumentBase) RecipeOutputLabelKeys(document string) []string {
+	panic("this presentation does not carry recipe-output-label-keys, which a Recipe document carries")
+}
+
+// RecipeOutputComponentLabelKeys panics. This presentation does not carry
+// recipe-output-component-label-keys, which a Recipe document carries.
+func (ReleaseDocumentBase) RecipeOutputComponentLabelKeys(document string) []string {
+	panic("this presentation does not carry recipe-output-component-label-keys, which a Recipe document carries")
+}
+
+// ManifestRecipeMappingEntries panics. This presentation does not carry
+// manifest-recipe-mapping-entries, which a Manifest document carries.
+func (ReleaseDocumentBase) ManifestRecipeMappingEntries(document string) []ManifestRecipeMapping {
+	panic("this presentation does not carry manifest-recipe-mapping-entries, which a Manifest document carries")
+}
+
+// ManifestRecipeMappingReference panics. This presentation does not carry
+// manifest-recipe-mapping-reference, which a Manifest document carries.
+func (ReleaseDocumentBase) ManifestRecipeMappingReference(document string, tier string, axis string, key string) (string, bool) {
+	panic("this presentation does not carry manifest-recipe-mapping-reference, which a Manifest document carries")
+}
+
+// FeatureRecipeSourceDeclared panics. This presentation does not carry
+// feature-recipe-source-declared, which a FeatureRecipe document carries.
+func (ReleaseDocumentBase) FeatureRecipeSourceDeclared(document string) bool {
+	panic("this presentation does not carry feature-recipe-source-declared, which a FeatureRecipe document carries")
+}
+
+// FeatureRecipeValuesMappingDeclared panics. This presentation does not
+// carry feature-recipe-values-mapping-declared, which a FeatureRecipe
+// document carries.
+func (ReleaseDocumentBase) FeatureRecipeValuesMappingDeclared(document string) bool {
+	panic("this presentation does not carry feature-recipe-values-mapping-declared, which a FeatureRecipe document carries")
+}
+
+// FeatureRecipeWorkloadDeclared panics. This presentation does not carry
+// feature-recipe-workload-declared, which a FeatureRecipe document
+// carries.
+func (ReleaseDocumentBase) FeatureRecipeWorkloadDeclared(document string) bool {
+	panic("this presentation does not carry feature-recipe-workload-declared, which a FeatureRecipe document carries")
+}
+
+// FeatureRecipeArtifactsDeclared panics. This presentation does not carry
+// feature-recipe-artifacts-declared, which a FeatureRecipe document
+// carries.
+func (ReleaseDocumentBase) FeatureRecipeArtifactsDeclared(document string) bool {
+	panic("this presentation does not carry feature-recipe-artifacts-declared, which a FeatureRecipe document carries")
+}
+
+// FeatureRecipeDeclaredCapability panics. This presentation does not carry
+// feature-recipe-declared-capability, which a FeatureRecipe document
+// carries.
+func (ReleaseDocumentBase) FeatureRecipeDeclaredCapability(document string) string {
+	panic("this presentation does not carry feature-recipe-declared-capability, which a FeatureRecipe document carries")
 }
 
 // NormalizedViewBase is a base for an implementation of NormalizedView.
@@ -1018,6 +1219,12 @@ func (NormalizedViewBase) FeatureRecipeArtifactsDeclared(document string) bool {
 // carries.
 func (NormalizedViewBase) FeatureRecipeDeclaredCapability(document string) string {
 	panic("this presentation does not carry feature-recipe-declared-capability, which a FeatureRecipe document carries")
+}
+
+// ReleaseBoundaryPlacements panics. This presentation does not carry
+// release-boundary-placements, which a Release document carries.
+func (NormalizedViewBase) ReleaseBoundaryPlacements() []BoundaryPlacement {
+	panic("this presentation does not carry release-boundary-placements, which a Release document carries")
 }
 
 // TopologyViewBase is a base for an implementation of TopologyView.
@@ -2203,6 +2410,22 @@ type FeatureRecipeDocumentFacts interface {
 	FeatureRecipeWorkloadDeclared(document string) bool
 	FeatureRecipeArtifactsDeclared(document string) bool
 	FeatureRecipeDeclaredCapability(document string) string
+}
+
+// ReleaseDocumentFacts are the document-stage facts a Release carries.
+//
+// An implementation presenting a Release asserts it, and that assertion is
+// the thing a refusing base cannot supply. A fact declared for this kind
+// then fails to compile on the implementations claiming it, and on no
+// other; without the assertion the same declaration compiles everywhere
+// and refuses when it is read, which moves the discovery from building to
+// running.
+//
+// Each method is an accessor the view chain declares and documents. The
+// documentation is not repeated here: a fact's documentation has one home,
+// and a second copy would be the one that drifts.
+type ReleaseDocumentFacts interface {
+	ReleaseBoundaryPlacements() []BoundaryPlacement
 }
 
 // NormalizedStageFacts are the facts the normalized stage declares itself,

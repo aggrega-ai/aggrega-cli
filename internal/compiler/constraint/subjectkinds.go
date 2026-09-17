@@ -741,6 +741,101 @@ func newAuthoredAnnotationSubject(
 	}
 }
 
+// BoundaryPlacementSubject is the subject of a check invoked once per thing a
+// Release's boundary places: a component it names, a component named inside a
+// routing entry, or a whole sub-module it routes.
+//
+// Its single coordinate is the placement, whose identity is the authoring
+// document, the boundary it sits in, what it addresses and the block it was
+// written in, all taken together — so it carries an accessor for each element of
+// that identity rather than one naming the placement, on the same terms
+// [AuthoredAnnotationSubject] and [CarriedConnectionSubject] do.
+//
+// No shorter tuple names a placement, and the reason is the fault this kind
+// exists to see. One boundary can name a component directly under the id it
+// carries once the composition is flattened and reach the same component again
+// through a routing entry — two entries the author wrote at two keys, addressing
+// one component — and a routed sub-module's dotted prefix can equal a component's
+// id. So the axis is in the identity rather than beside it.
+//
+// It is rooted at the AUTHORED ENTRY rather than at the component the entry
+// addresses, and that is what makes it admissible at all. The component-keyed
+// coordinate [BoundaryComponentReferenceSubject] carries is de-duplicated by
+// construction — its own declaration says one id names exactly one entry across
+// the whole document — so a rule over a document that declares one twice could
+// not be invoked for both entries, and the second would be silence a caller
+// cannot tell from approval.
+//
+// It carries the authoring document even though a Release's boundaries are the
+// only scope that places anything today. The value is not decoration: the locator
+// assembly selects the scope nesting from it through the closed pair every other
+// authored-site traversal selects through, so hard-coding the boundary nesting
+// here would be a second statement of the document-to-nesting correspondence with
+// nothing comparing the two.
+type BoundaryPlacementSubject interface {
+	Subject
+
+	// AuthoringDocumentKind is the document the placement was written in: one of
+	// [AuthoringDocumentAggregate] or [AuthoringDocumentRelease].
+	AuthoringDocumentKind() string
+
+	// BoundaryPath is the boundary the placement was written in, as every keyed
+	// fact takes it. It is the boundary's path from its own document's scope set
+	// rather than a bare name, because boundaries nest and two at different
+	// depths may carry one name. It is empty for a placement inside the boundary
+	// normalization synthesized to hold entries written at the document's top
+	// level, which is not a boundary any file spells.
+	BoundaryPath() string
+
+	// PlacementReference is what the entry addresses: the id a component entry
+	// names in the flattened composition, or the dotted prefix of a routed
+	// sub-module.
+	//
+	// The suffix says the value is a reference rather than a component id for the
+	// reason [BoundaryComponentReferenceSubject.ComponentReference] states — the
+	// axis is what a Release ASKED FOR, and an entry addressing something
+	// nothing answers to is enumerated exactly as one that resolves is.
+	PlacementReference() string
+
+	// PlacementAxis is the block the entry was written in: one of
+	// [PlacementNamedComponent], [PlacementRoutedComponent] or
+	// [PlacementRoutedModule].
+	PlacementAxis() string
+
+	boundaryPlacement()
+}
+
+type boundaryPlacementSubject struct {
+	provenance
+	document  string
+	boundary  string
+	reference string
+	axis      string
+}
+
+func (boundaryPlacementSubject) boundaryPlacement() {}
+
+func (s boundaryPlacementSubject) AuthoringDocumentKind() string { return s.document }
+
+func (s boundaryPlacementSubject) BoundaryPath() string { return s.boundary }
+
+func (s boundaryPlacementSubject) PlacementReference() string { return s.reference }
+
+func (s boundaryPlacementSubject) PlacementAxis() string { return s.axis }
+
+func newBoundaryPlacementSubject(
+	sourceFile, document, boundary, reference, axis string,
+	segments ...string,
+) BoundaryPlacementSubject {
+	return boundaryPlacementSubject{
+		provenance: newProvenance(sourceFile, segments...),
+		document:   document,
+		boundary:   boundary,
+		reference:  reference,
+		axis:       axis,
+	}
+}
+
 // NodeAttachmentSocketSubject is the subject of a check invoked once per socket
 // an attachment WIRES in its own dependency block — never once per socket the
 // attached Feature declares. The axis is the enumerator's contract and is stated

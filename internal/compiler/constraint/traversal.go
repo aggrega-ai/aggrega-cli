@@ -1940,3 +1940,63 @@ func RunOnAuthoredAnnotations[V View](
 	}
 	return out, nil
 }
+
+// RunOnBoundaryPlacements invokes check once per thing a Release's boundaries
+// place, in the order the enumerator returns them.
+//
+// The set is walked flat rather than per boundary, because the derived kind
+// carries one coordinate whose identity is the whole of the document, the
+// boundary, the reference and the axis: one order over the whole set, promised by
+// one enumerator. Walking it per boundary would leave every placement of a
+// Release written without named boundaries outside the walk, since that shape
+// sits in a boundary the compiler synthesized and the boundary axis excludes.
+//
+// The locator is the site the entry was written at, then whatever routing keys
+// reach it: .spec.boundaries.<a>.boundaries.<b>.components.<c> for a component a
+// nested boundary names directly, .spec.components.<c> for one in the boundary
+// normalization synthesized, .spec.boundaries.<a>.aggregates.<m>.components.<local>
+// for a component named inside a routing entry, and .spec.boundaries.<a>.aggregates.<m>
+// for the routing entry itself. The container's key is repeated for each level of
+// a nested boundary, because that is how the document spells one — joining the
+// boundary path in as a single segment would name a key no file contains. It is
+// assembled through the shared authored-site rule rather than a spelling of its
+// own, so a routed placement names the keys its routing entry spells, exactly as
+// a rule over the routed component itself does.
+//
+// A component the boundary names directly carries the id it holds once the
+// composition is flattened as its own authoring key, and that id carries the
+// locator dialect's separator whenever a sub-module contributed the component —
+// so the locator names the component block and stops, and the id reaches the
+// author as the value the rule raises. That is the division [authoredLocator]
+// draws for a value legitimate as a coordinate and refused as a segment, and it
+// is the standing trade rather than this rule's loss.
+//
+// A placement whose document this rule cannot name gets no segments, which is the
+// mechanical form of not inventing a locator: the scope nesting is selected by the
+// document, and a document outside the closed pair selects none.
+func RunOnBoundaryPlacements[V View](
+	cancelled Cancellation,
+	placements BoundaryPlacementEnumerator,
+	view V,
+	check Check[V, BoundaryPlacementSubject],
+) ([]Objection, error) {
+	var out []Objection
+	for _, entry := range placements.BoundaryPlacements() {
+		if err := cancelled.err(); err != nil {
+			return nil, err
+		}
+		var segments []string
+		if nesting, named := carrierNesting(entry.Placement.Document); named {
+			segments = authoredSiteSegments(nesting, entry.Site, entry.RoutedKeys...)
+		}
+		out = append(out, check.Run(view, newBoundaryPlacementSubject(
+			entry.SourceFile,
+			entry.Placement.Document,
+			entry.Placement.BoundaryPath,
+			entry.Placement.Reference,
+			entry.Placement.Axis,
+			segments...,
+		))...)
+	}
+	return out, nil
+}

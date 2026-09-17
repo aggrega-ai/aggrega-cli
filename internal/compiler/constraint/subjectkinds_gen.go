@@ -61,6 +61,9 @@ const (
 	// SubjectDocumentMappingEntry is the subject kind (document, mapping-entry), keyed by 2 declared facts.
 	SubjectDocumentMappingEntry SubjectKind = "(document, mapping-entry)"
 
+	// SubjectBoundaryPlacement is the subject kind boundary-placement, keyed by 1 declared fact.
+	SubjectBoundaryPlacement SubjectKind = "boundary-placement"
+
 	// SubjectNode is the subject kind node, keyed by 26 declared facts.
 	SubjectNode SubjectKind = "node"
 
@@ -179,6 +182,7 @@ var SubjectKinds = []SubjectKindInfo{
 	{Kind: SubjectDocumentAnnotationBinding, Coordinates: []string{"document", "annotation-binding"}, Traversal: TraversalPush},
 	{Kind: SubjectDocumentOutputLabel, Coordinates: []string{"document", "output-label"}, Traversal: TraversalPush},
 	{Kind: SubjectDocumentMappingEntry, Coordinates: []string{"document", "mapping-entry"}, Traversal: TraversalPush},
+	{Kind: SubjectBoundaryPlacement, Coordinates: []string{"boundary-placement"}, Traversal: TraversalPull},
 	{Kind: SubjectNode, Coordinates: []string{"node"}, Traversal: TraversalPull},
 	{Kind: SubjectNodeSocket, Coordinates: []string{"node", "socket"}, Traversal: TraversalPull},
 	{Kind: SubjectNodeAttachmentSocket, Coordinates: []string{"node", "attachment", "socket"}, Traversal: TraversalPull},

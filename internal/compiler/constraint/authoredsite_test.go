@@ -231,7 +231,23 @@ spec:
             # over it names this block and stops — which is what the walk
             # confirms, and why the entry sits here rather than being implied.
             data.reader: {}
+            # The same component the routing entry above already names, written
+            # here a second time under the id it carries once the composition is
+            # flattened. One boundary reaching one component through both of its
+            # blocks is a shape an author can write, and it is the pair that
+            # makes the block an entry was written in part of a placement's
+            # identity rather than a label beside it: the two entries agree on
+            # every other coordinate.
+            billing.api: {}
     dev:
+      # A routing entry naming no component at all, which is the shape that
+      # carries a whole sub-module into a boundary: every component that module
+      # contains is placed here, and none of them is spelled in this file. So
+      # the site a locator over that placement names is this one key — the whole
+      # of what this document says about it — and the module's own prefix
+      # reaches a rule as the subject's coordinate.
+      aggregates:
+        data: {}
       components:
         web: {}
 `,

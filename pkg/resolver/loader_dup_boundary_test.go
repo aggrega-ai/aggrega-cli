@@ -53,11 +53,16 @@ func TestLoadRelease_DuplicateBoundaryComponentHalts(t *testing.T) {
 	}
 	// The locator points at the SECOND declaration — the one the author can
 	// delete — while the message carries both.
+	//
+	// It spells the boundary nesting level by level, under the container's own key
+	// each time, because that is how the document spells a nested boundary. A
+	// locator joining the boundary path in as one segment would name a key no file
+	// contains.
 	var re *ResolverError
 	if !errors.As(err, &re) {
 		t.Fatalf("want a *ResolverError; got %T", err)
 	}
-	if re.Field != `.spec.boundaries["outer/inner"].components["api"]` {
+	if re.Field != ".spec.boundaries.outer.boundaries.inner.components.api" {
 		t.Errorf("locator must name the second declaration site; got %q", re.Field)
 	}
 }
@@ -239,7 +244,7 @@ func TestLoadRelease_RoutedModulePlacedTwiceHalts(t *testing.T) {
 	if !errors.As(err, &re) {
 		t.Fatalf("want a *ResolverError; got %T", err)
 	}
-	if re.Field != `.spec.boundaries["west"].aggregates["data"]` {
+	if re.Field != ".spec.boundaries.west.aggregates.data" {
 		t.Errorf("the locator must point at the second routing entry; got %q", re.Field)
 	}
 }

@@ -43,6 +43,7 @@ type traversalFixture struct {
 	edges         []EdgeInstance
 	connections   []CarriedConnectionInstance
 	references    []BoundaryComponentReferenceInstance
+	placements    []BoundaryPlacementInstance
 	annotations   []AuthoredAnnotationInstance
 	boundaries    []AuthoredCoordinate
 	subsystems    []AuthoredCoordinate
@@ -122,6 +123,10 @@ func (f traversalFixture) Boundaries() []AuthoredCoordinate { return f.boundarie
 
 func (f traversalFixture) BoundaryComponentReferences() []BoundaryComponentReferenceInstance {
 	return f.references
+}
+
+func (f traversalFixture) BoundaryPlacements() []BoundaryPlacementInstance {
+	return f.placements
 }
 
 func (f traversalFixture) AuthoredAnnotations() []AuthoredAnnotationInstance {
@@ -387,6 +392,87 @@ func newTraversalFixture() traversalFixture {
 				ID:         "web",
 				SourceFile: "release-flat.yaml",
 				Site:       AuthoredSite{Component: "web"},
+			},
+		},
+		// Everything the same Release's boundaries place, which is the axis the
+		// reference set above cannot express: that one reports the entries left
+		// after the two component axes are reconciled, this one reports what each
+		// block declared, so the two entries a document wrote against one
+		// component both survive here.
+		//
+		// Five entries covering all three blocks a boundary places in and both
+		// locator shapes between them. The first is a boundary's own component
+		// entry. The second and third are ONE component reached through both of
+		// the boundary's blocks, agreeing on every coordinate but the block they
+		// were written in — which is what makes that block part of the identity
+		// rather than a label beside it, and is the collision the rule over this
+		// axis exists to see. The second is also the one shape where the
+		// coordinate and the locator diverge: the id a sub-module qualified
+		// carries the dialect's separator, so the locator names the block that
+		// holds it and the id survives only as a coordinate. The fourth is a
+		// routing entry itself, which places every component its module contains
+		// while naming none of them. The fifth is written in the boundary the
+		// compiler synthesizes to hold what an author wrote at the document's top
+		// level, so it names the top-level shape and no boundary at all — and it
+		// is the entry a walk keyed on the boundary set would lose, since that
+		// set excludes the synthesized one.
+		//
+		// Reverse-alphabetical by boundary, so a sort anywhere in the traversal
+		// would be visible.
+		placements: []BoundaryPlacementInstance{
+			{
+				Placement: BoundaryPlacement{
+					Document:     AuthoringDocumentRelease,
+					BoundaryPath: "prod/edge",
+					Reference:    "web",
+					Axis:         PlacementNamedComponent,
+				},
+				Site:       AuthoredSite{ScopePath: "prod/edge"},
+				RoutedKeys: []string{"components", "web"},
+				SourceFile: "release.yaml",
+			},
+			{
+				Placement: BoundaryPlacement{
+					Document:     AuthoringDocumentRelease,
+					BoundaryPath: "prod/edge",
+					Reference:    "billing.api",
+					Axis:         PlacementNamedComponent,
+				},
+				Site:       AuthoredSite{ScopePath: "prod/edge"},
+				RoutedKeys: []string{"components", "billing.api"},
+				SourceFile: "release.yaml",
+			},
+			{
+				Placement: BoundaryPlacement{
+					Document:     AuthoringDocumentRelease,
+					BoundaryPath: "prod/edge",
+					Reference:    "billing.api",
+					Axis:         PlacementRoutedComponent,
+				},
+				Site:       AuthoredSite{ScopePath: "prod/edge"},
+				RoutedKeys: []string{"aggregates", "billing", "components", "api"},
+				SourceFile: "release.yaml",
+			},
+			{
+				Placement: BoundaryPlacement{
+					Document:     AuthoringDocumentRelease,
+					BoundaryPath: "dev",
+					Reference:    "data",
+					Axis:         PlacementRoutedModule,
+				},
+				Site:       AuthoredSite{ScopePath: "dev"},
+				RoutedKeys: []string{"aggregates", "data"},
+				SourceFile: "release.yaml",
+			},
+			{
+				Placement: BoundaryPlacement{
+					Document:     AuthoringDocumentRelease,
+					BoundaryPath: "",
+					Reference:    "web",
+					Axis:         PlacementNamedComponent,
+				},
+				Site:       AuthoredSite{Component: "web"},
+				SourceFile: "release-flat.yaml",
 			},
 		},
 		// One nested scope and one top-level scope, reverse-alphabetical so a sort
@@ -1362,6 +1448,50 @@ func traversalCases() []traversalCase {
 				"billing/aggregate.yaml|.spec.subsystems.billing.components.api.annotations",
 				"aggregate.yaml|.spec.components.web.annotations.myco-tls",
 			},
+		},
+		{
+			// The placement axis, whose transcript carries four properties the
+			// reference axis above cannot show.
+			//
+			// The walk is flat over the whole set rather than per boundary, and
+			// the last entry is what proves it: that placement sits in the
+			// boundary the compiler synthesizes, which the boundary axis
+			// excludes, so a per-boundary walk would enumerate four of these five
+			// and its silence on the fifth would read as a document that placed
+			// nothing there. Its locator names the top-level shape the author did
+			// write and no boundary at all, which is the same collapse the
+			// component-rooted kinds take.
+			//
+			// The second entry is the dialect's standing trade: an id a
+			// sub-module qualified carries the separator, so the locator names
+			// the components block that holds it and stops, while the id itself
+			// reaches the author as the raised value. The pair it forms with the
+			// third is what the transcript alone cannot resolve — the two are one
+			// component reached through two blocks, and nothing in a locator
+			// names the block — which is what the coordinate readback is for.
+			//
+			// The third and fourth reach into a routing entry, and the keys the
+			// author typed arrive whole — the component container and the local
+			// name for a component named inside one, the routing container and
+			// the module for the entry itself. The nested boundary spells each
+			// level under the container's key again, which is what joining the
+			// boundary path in as one segment would have got wrong.
+			kind: SubjectBoundaryPlacement,
+			run: func(cancelled Cancellation, f traversalFixture, v traversalView) ([]Objection, error) {
+				return RunOnBoundaryPlacements(cancelled, f, v, raisingCheck[BoundaryPlacementSubject]())
+			},
+			want: []string{
+				"release.yaml|.spec.boundaries.prod.boundaries.edge.components.web",
+				"release.yaml|.spec.boundaries.prod.boundaries.edge.components",
+				"release.yaml|.spec.boundaries.prod.boundaries.edge.aggregates.billing.components.api",
+				"release.yaml|.spec.boundaries.dev.aggregates.data",
+				"release-flat.yaml|.spec.components.web",
+			},
+			// The second and third entries place ONE component and produce two
+			// different locators, which is the axis coordinate seen from the
+			// provenance side: each names the block its own entry was written
+			// in, so an author is sent to the entry they would edit rather than
+			// to whichever of the two the walk reached first.
 		},
 	}
 }
@@ -2360,6 +2490,45 @@ func coordinateFlowCases() []coordinateFlowCase {
 				"release|prod||feature.myco/rewrite-host|",
 				"aggregate|billing|api|feature.myco/tls|issuer",
 				"aggregate||web|myco-tls|issuer",
+			},
+		},
+
+		// The placement axis, whose readback is the only assertion that can see
+		// three of its four coordinates at all. The provenance transcript above
+		// sees the boundary only as the levels of a locator, cannot see the axis
+		// anywhere — two blocks under one boundary produce locators that differ
+		// by their keys rather than by anything naming the block — and loses the
+		// reference outright on the two entries where the dialect stops short of
+		// it. So a traversal that dropped any of the three would read as correct
+		// there, and this is what would fail.
+		//
+		// The second and third records are what the axis coordinate is for: they
+		// share a document, a boundary and a reference and differ in the block
+		// alone, so a traversal that dropped the axis would hand a rule two
+		// records it could not tell apart — and the rule reading them exists
+		// precisely to report that the document placed one component twice. The
+		// empty boundary path on the last is a coordinate in its own right rather
+		// than a missing value: it is the boundary normalization synthesized,
+		// which no file spells.
+		{
+			kind: SubjectBoundaryPlacement,
+			seam: seamTraversal,
+			read: func(f traversalFixture) []string {
+				return readback(func(c Check[traversalView, BoundaryPlacementSubject]) ([]Objection, error) {
+					return RunOnBoundaryPlacements(nil, f, traversalView{}, c)
+				}, func(s BoundaryPlacementSubject) string {
+					return strings.Join([]string{
+						s.AuthoringDocumentKind(), s.BoundaryPath(),
+						s.PlacementReference(), s.PlacementAxis(),
+					}, "|")
+				})
+			},
+			want: []string{
+				"release|prod/edge|web|named-component",
+				"release|prod/edge|billing.api|named-component",
+				"release|prod/edge|billing.api|routed-component",
+				"release|dev|data|routed-module",
+				"release||web|named-component",
 			},
 		},
 	}

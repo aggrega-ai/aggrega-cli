@@ -380,6 +380,39 @@ var records = []recordDecl{
 			{Name: "Key", Type: "string", Doc: "Key is the key the entry is declared under, which is what the mapping maps."},
 		},
 	},
+	{
+		Name: "BoundaryPlacement",
+		Doc: "BoundaryPlacement is one thing a Release's boundary places, as the " +
+			"coordinates that identify it: the authoring document it was " +
+			"written in, the boundary it sits in, what it addresses, and the " +
+			"block it was written in.\n\nIt is one fact rather than four " +
+			"because no part of it names a placement alone. One boundary can " +
+			"name a component directly under the id it carries once the " +
+			"composition is flattened AND reach the same component again " +
+			"through a routing entry — two entries the author wrote at two " +
+			"keys — and a routed sub-module's dotted prefix can equal a " +
+			"component's id, so any two of the coordinates leave pairs nothing " +
+			"could tell apart. That is exactly the collision a rule over this " +
+			"axis exists to see, so a reader handed the coordinates as " +
+			"separate lists would have to re-pair them by position, which is " +
+			"the re-derivation a declared fact exists to close.\n\nReference " +
+			"is what the entry ADDRESSES rather than what the composition " +
+			"holds: the id a component entry names once the composition is " +
+			"flattened — resolved from the local name for a routed entry, " +
+			"because inside its module that is the only name it has — or the " +
+			"dotted prefix of a routed sub-module. Whether anything answers to " +
+			"it is a separate question asked of the flattened set.\n\nIt is " +
+			"also the coordinate tuple of the subject a rule over this axis is " +
+			"invoked once per, so the entry a rule is invoked for and the set " +
+			"it reads back are spelled by one type and cannot come to describe " +
+			"an entry differently.",
+		Fields: []recordField{
+			{Name: "Document", Type: "string", Doc: "Document is which authoring document the placement was written in, one of [AuthoringDocumentAggregate] or [AuthoringDocumentRelease]. It selects the scope nesting the boundary path is spelled with."},
+			{Name: "BoundaryPath", Type: "string", Doc: "BoundaryPath is the boundary the placement was written in, joined the way that axis joins its levels. It is empty for a placement inside the boundary normalization synthesizes to hold the entries an author wrote at the document's top level, which is not a boundary any file spells."},
+			{Name: "Reference", Type: "string", Doc: "Reference is the id a component entry addresses in the flattened composition, or the dotted prefix of a routed sub-module."},
+			{Name: "Axis", Type: "string", Doc: "Axis is the block the entry was written in: one of [PlacementNamedComponent], [PlacementRoutedComponent] or [PlacementRoutedModule]."},
+		},
+	},
 }
 
 // declarationCompelsImplementation is the paragraph a fact carries when its
@@ -916,6 +949,45 @@ var facts = []factDecl{
 			"name that promises an answer about the document.\n\nA FeatureRecipe " +
 			"declaring no capability answers with the empty string, which is the " +
 			"authored state rather than a convenience over a missing one.",
+	},
+	{
+		Name:        "release-boundary-placements",
+		Stage:       "document",
+		SourceField: "types.ReleaseSpec.Boundaries",
+		Subject:     []string{"boundary-placement"},
+		Returns:     "[]BoundaryPlacement",
+		Doc: "ReleaseBoundaryPlacements is everything the presented Release's " +
+			"boundaries place, in the order the document declares it — a " +
+			"boundary's own component entries, then the sub-modules it routes and " +
+			"the components those entries name, then the boundaries nested inside " +
+			"it.\n\nIt reports the DECLARATIONS and never the reconciled component " +
+			"set, and that difference is the whole of why it is a fact of its own. " +
+			"The reconciled reading folds two entries resolving to one id together " +
+			"and keeps the later, so a document placing one component twice " +
+			"presents as a document that placed it once — precisely the shape a " +
+			"rule over placement exists to see. Both readings are available from " +
+			"one parsed document at any time, so this is a choice of source rather " +
+			"than a moment: it is complete as soon as the document is parsed, it " +
+			"stands unchanged for as long as that document is presented, and there " +
+			"is no window outside which it answers differently.\n\nEach element " +
+			"carries the coordinates that identify one placement: the authoring " +
+			"document, the boundary, what the entry addresses, and the block it " +
+			"was written in. The axis is part of the identity because one boundary " +
+			"can name a component directly under the id it carries once the " +
+			"composition is flattened and reach the same component again through a " +
+			"routing entry, and because a routed sub-module's dotted prefix can " +
+			"equal a component's id — so any two of the three leave pairs nothing " +
+			"could tell apart.\n\nA routed sub-module appears whether or not its " +
+			"entry names a component, because routing a module into a boundary " +
+			"places every component that module contains: it is the only record of " +
+			"a placement whose components cannot be enumerated until the module's " +
+			"own document is loaded.\n\nIt walks the Release after " +
+			"normalization, so a document declaring its components at the top " +
+			"level rather than under named boundaries is covered by the same walk " +
+			"— normalization gives such a document a boundary of its own holding " +
+			"exactly those entries, and that boundary spells no level, so its " +
+			"entries carry the empty boundary path and are named at the top-level " +
+			"shape their author wrote.",
 	},
 
 	// -------------------------------------------------------------- normalized
@@ -2876,8 +2948,14 @@ var facts = []factDecl{
 			"where the question is asked — a rule over an entry is invoked once " +
 			"per entry the deployment wrote — and read with no key because the " +
 			"set is the axis itself. The id identifies the entry across the whole " +
-			"deployment rather than within one boundary: one id declared twice is " +
-			"refused when the Release loads, so no two entries share one.\n\nAn " +
+			"Release rather than within one boundary, and that rests on a rule " +
+			"rather than on the authoring surface: the rule over the placements " +
+			"beside this fact refuses a document that places one component twice, " +
+			"and it is asked when the Release document loads, so by the time " +
+			"anything reads this fact no two entries share an id. A reader " +
+			"needing the entries a document DECLARES, collisions and all, asks " +
+			"that fact instead — the two are separate for exactly that " +
+			"reason.\n\nAn " +
 			"entry the deployment wrote at its own top level appears here like " +
 			"any other. Normalizing such a document gives it a boundary of its " +
 			"own holding exactly those entries, so the axis covers that authoring " +

@@ -446,6 +446,24 @@ var coordinateAccessors = map[string][]string{
 		"AuthoringDocumentKind", "AnnotationScopePath", "AnnotationComponentName",
 		"AnnotationKey", "AnnotationSubkey",
 	},
+	// The fifth entry that is not one-to-one, and the reason is the identity the
+	// coordinate has to carry in order to be an identity at all. A placement's
+	// identity is the document it was written in, the boundary it sits in, what
+	// the entry addresses and the block it was written in, all taken together:
+	// one boundary can name a component directly under the id it carries once the
+	// composition is flattened AND reach the same component through a routing
+	// entry, and a routed sub-module's dotted prefix can equal a component's id,
+	// so any two of the three leave pairs nothing could tell apart — which is
+	// exactly the collision the rule over this kind exists to report. The
+	// document is carried even though one authoring document places anything
+	// today, because the locator assembly selects the scope nesting from it
+	// through the same closed pair every other authored-site traversal selects
+	// through. The reference's accessor says reference rather than component for
+	// the boundary-component-reference row's reason, and carries the placement's
+	// own word because the value is a sub-module prefix on one of the three axes.
+	"boundary-placement": {
+		"AuthoringDocumentKind", "BoundaryPath", "PlacementReference", "PlacementAxis",
+	},
 	"node":   {"NodeID"},
 	"socket": {"SocketName"},
 	"edge":   {"NodeID", "SocketName", "AliasName"},
@@ -1264,6 +1282,24 @@ var subjectKindBindings = map[SubjectKind]struct {
 		// so the locator names only the level the declaring file spells.
 		make: func(f string) Subject {
 			return newModuleSubject(f, "data.inner", "spec", "aggregates", "inner")
+		},
+	},
+	SubjectBoundaryPlacement: {
+		iface: reflect.TypeOf((*BoundaryPlacementSubject)(nil)).Elem(),
+		// The routed case under a nested boundary, because it is the one carrying
+		// every element of the identity at once and the one where the coordinate
+		// and the locator's last segment are different strings: the Release
+		// writes the component's local name inside the routing entry, and the id
+		// it addresses is that name under the routed module's own prefix, which
+		// appears in no file. Every segment is separator-free, which is what
+		// exercises the locator assembly to full depth — a segment carrying the
+		// dialect's separator stops it, so the constructor's deepest arguments
+		// would go unexercised.
+		make: func(f string) Subject {
+			return newBoundaryPlacementSubject(f, AuthoringDocumentRelease, "prod/edge",
+				"data.store", PlacementRoutedComponent,
+				"spec", "boundaries", "prod", "boundaries", "edge",
+				"aggregates", "data", "components", "store")
 		},
 	},
 	SubjectBoundaryComponentReference: {
