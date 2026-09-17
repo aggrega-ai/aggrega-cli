@@ -206,7 +206,7 @@ func (v componentDocumentView) refuseOtherPresentation(
 		return
 	}
 	panic(fmt.Sprintf(
-		"componentDocumentView.%s asked of a presentation built from %s: "+
+		"componentDocumentView.%s asked of a view built from %s: "+
 			"the fact is read from %s, so present that",
 		accessor, v.presents, presentation))
 }

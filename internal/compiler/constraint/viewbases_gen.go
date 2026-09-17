@@ -26,147 +26,146 @@ import "github.com/aggrega-ai/aggrega-cli/pkg/types"
 // for another kind does not reach them.
 type AggregateDocumentBase struct{}
 
-// EntityAssertionNameSet panics. This presentation does not carry
+// EntityAssertionNameSet panics. This view does not carry
 // entity-assertion-name-set, which a Component document carries.
 func (AggregateDocumentBase) EntityAssertionNameSet(document string) []string {
-	panic("this presentation does not carry entity-assertion-name-set, which a Component document carries")
+	panic("this view does not carry entity-assertion-name-set, which a Component document carries")
 }
 
-// EntityAssertionDeclaringEntity panics. This presentation does not carry
+// EntityAssertionDeclaringEntity panics. This view does not carry
 // entity-assertion-declaring-entity, which a Component document carries.
 func (AggregateDocumentBase) EntityAssertionDeclaringEntity(document string, assertion string) (string, bool) {
-	panic("this presentation does not carry entity-assertion-declaring-entity, which a Component document carries")
+	panic("this view does not carry entity-assertion-declaring-entity, which a Component document carries")
 }
 
-// ComponentSchemaPillarKeys panics. This presentation does not carry
+// ComponentSchemaPillarKeys panics. This view does not carry
 // component-schema-pillar-keys, which a Component document carries.
 func (AggregateDocumentBase) ComponentSchemaPillarKeys(document string) []string {
-	panic("this presentation does not carry component-schema-pillar-keys, which a Component document carries")
+	panic("this view does not carry component-schema-pillar-keys, which a Component document carries")
 }
 
-// FeatureSchemaPillarKeys panics. This presentation does not carry
+// FeatureSchemaPillarKeys panics. This view does not carry
 // feature-schema-pillar-keys, which a Feature document carries.
 func (AggregateDocumentBase) FeatureSchemaPillarKeys(document string) []string {
-	panic("this presentation does not carry feature-schema-pillar-keys, which a Feature document carries")
+	panic("this view does not carry feature-schema-pillar-keys, which a Feature document carries")
 }
 
-// ManifestAnnotationBindingKeys panics. This presentation does not carry
+// ManifestAnnotationBindingKeys panics. This view does not carry
 // manifest-annotation-binding-keys, which a Manifest document carries.
 func (AggregateDocumentBase) ManifestAnnotationBindingKeys(document string) []string {
-	panic("this presentation does not carry manifest-annotation-binding-keys, which a Manifest document carries")
+	panic("this view does not carry manifest-annotation-binding-keys, which a Manifest document carries")
 }
 
-// ManifestAnnotationBindingFeature panics. This presentation does not
-// carry manifest-annotation-binding-feature, which a Manifest document
-// carries.
+// ManifestAnnotationBindingFeature panics. This view does not carry
+// manifest-annotation-binding-feature, which a Manifest document carries.
 func (AggregateDocumentBase) ManifestAnnotationBindingFeature(document string, binding string) (string, bool) {
-	panic("this presentation does not carry manifest-annotation-binding-feature, which a Manifest document carries")
+	panic("this view does not carry manifest-annotation-binding-feature, which a Manifest document carries")
 }
 
-// ManifestAnnotationBindingRoutes panics. This presentation does not carry
+// ManifestAnnotationBindingRoutes panics. This view does not carry
 // manifest-annotation-binding-routes, which a Manifest document carries.
 func (AggregateDocumentBase) ManifestAnnotationBindingRoutes(document string, binding string) []AnnotationBindingRoute {
-	panic("this presentation does not carry manifest-annotation-binding-routes, which a Manifest document carries")
+	panic("this view does not carry manifest-annotation-binding-routes, which a Manifest document carries")
 }
 
-// AnnotationBindingSubkeyTarget panics. This presentation does not carry
+// AnnotationBindingSubkeyTarget panics. This view does not carry
 // annotation-binding-subkey-target, which a Manifest document carries.
 func (AggregateDocumentBase) AnnotationBindingSubkeyTarget(binding string, subkey string) (AnnotationSubkeyTarget, bool) {
-	panic("this presentation does not carry annotation-binding-subkey-target, which a Manifest document carries")
+	panic("this view does not carry annotation-binding-subkey-target, which a Manifest document carries")
 }
 
-// RecipeValuesMappingDeclared panics. This presentation does not carry
+// RecipeValuesMappingDeclared panics. This view does not carry
 // recipe-values-mapping-declared, which a Recipe document carries.
 func (AggregateDocumentBase) RecipeValuesMappingDeclared(document string) bool {
-	panic("this presentation does not carry recipe-values-mapping-declared, which a Recipe document carries")
+	panic("this view does not carry recipe-values-mapping-declared, which a Recipe document carries")
 }
 
-// RecipeSourceDeclared panics. This presentation does not carry
+// RecipeSourceDeclared panics. This view does not carry
 // recipe-source-declared, which a Recipe document carries.
 func (AggregateDocumentBase) RecipeSourceDeclared(document string) bool {
-	panic("this presentation does not carry recipe-source-declared, which a Recipe document carries")
+	panic("this view does not carry recipe-source-declared, which a Recipe document carries")
 }
 
-// RecipeWorkloadDeclared panics. This presentation does not carry
+// RecipeWorkloadDeclared panics. This view does not carry
 // recipe-workload-declared, which a Recipe document carries.
 func (AggregateDocumentBase) RecipeWorkloadDeclared(document string) bool {
-	panic("this presentation does not carry recipe-workload-declared, which a Recipe document carries")
+	panic("this view does not carry recipe-workload-declared, which a Recipe document carries")
 }
 
-// RecipeArtifactsDeclared panics. This presentation does not carry
+// RecipeArtifactsDeclared panics. This view does not carry
 // recipe-artifacts-declared, which a Recipe document carries.
 func (AggregateDocumentBase) RecipeArtifactsDeclared(document string) bool {
-	panic("this presentation does not carry recipe-artifacts-declared, which a Recipe document carries")
+	panic("this view does not carry recipe-artifacts-declared, which a Recipe document carries")
 }
 
-// RecipeDeclaredCapability panics. This presentation does not carry
+// RecipeDeclaredCapability panics. This view does not carry
 // recipe-declared-capability, which a Recipe document carries.
 func (AggregateDocumentBase) RecipeDeclaredCapability(document string) string {
-	panic("this presentation does not carry recipe-declared-capability, which a Recipe document carries")
+	panic("this view does not carry recipe-declared-capability, which a Recipe document carries")
 }
 
-// RecipeOutputLabelKeys panics. This presentation does not carry
+// RecipeOutputLabelKeys panics. This view does not carry
 // recipe-output-label-keys, which a Recipe document carries.
 func (AggregateDocumentBase) RecipeOutputLabelKeys(document string) []string {
-	panic("this presentation does not carry recipe-output-label-keys, which a Recipe document carries")
+	panic("this view does not carry recipe-output-label-keys, which a Recipe document carries")
 }
 
-// RecipeOutputComponentLabelKeys panics. This presentation does not carry
+// RecipeOutputComponentLabelKeys panics. This view does not carry
 // recipe-output-component-label-keys, which a Recipe document carries.
 func (AggregateDocumentBase) RecipeOutputComponentLabelKeys(document string) []string {
-	panic("this presentation does not carry recipe-output-component-label-keys, which a Recipe document carries")
+	panic("this view does not carry recipe-output-component-label-keys, which a Recipe document carries")
 }
 
-// ManifestRecipeMappingEntries panics. This presentation does not carry
+// ManifestRecipeMappingEntries panics. This view does not carry
 // manifest-recipe-mapping-entries, which a Manifest document carries.
 func (AggregateDocumentBase) ManifestRecipeMappingEntries(document string) []ManifestRecipeMapping {
-	panic("this presentation does not carry manifest-recipe-mapping-entries, which a Manifest document carries")
+	panic("this view does not carry manifest-recipe-mapping-entries, which a Manifest document carries")
 }
 
-// ManifestRecipeMappingReference panics. This presentation does not carry
+// ManifestRecipeMappingReference panics. This view does not carry
 // manifest-recipe-mapping-reference, which a Manifest document carries.
 func (AggregateDocumentBase) ManifestRecipeMappingReference(document string, tier string, axis string, key string) (string, bool) {
-	panic("this presentation does not carry manifest-recipe-mapping-reference, which a Manifest document carries")
+	panic("this view does not carry manifest-recipe-mapping-reference, which a Manifest document carries")
 }
 
-// FeatureRecipeSourceDeclared panics. This presentation does not carry
+// FeatureRecipeSourceDeclared panics. This view does not carry
 // feature-recipe-source-declared, which a FeatureRecipe document carries.
 func (AggregateDocumentBase) FeatureRecipeSourceDeclared(document string) bool {
-	panic("this presentation does not carry feature-recipe-source-declared, which a FeatureRecipe document carries")
+	panic("this view does not carry feature-recipe-source-declared, which a FeatureRecipe document carries")
 }
 
-// FeatureRecipeValuesMappingDeclared panics. This presentation does not
-// carry feature-recipe-values-mapping-declared, which a FeatureRecipe
-// document carries.
+// FeatureRecipeValuesMappingDeclared panics. This view does not carry
+// feature-recipe-values-mapping-declared, which a FeatureRecipe document
+// carries.
 func (AggregateDocumentBase) FeatureRecipeValuesMappingDeclared(document string) bool {
-	panic("this presentation does not carry feature-recipe-values-mapping-declared, which a FeatureRecipe document carries")
+	panic("this view does not carry feature-recipe-values-mapping-declared, which a FeatureRecipe document carries")
 }
 
-// FeatureRecipeWorkloadDeclared panics. This presentation does not carry
+// FeatureRecipeWorkloadDeclared panics. This view does not carry
 // feature-recipe-workload-declared, which a FeatureRecipe document
 // carries.
 func (AggregateDocumentBase) FeatureRecipeWorkloadDeclared(document string) bool {
-	panic("this presentation does not carry feature-recipe-workload-declared, which a FeatureRecipe document carries")
+	panic("this view does not carry feature-recipe-workload-declared, which a FeatureRecipe document carries")
 }
 
-// FeatureRecipeArtifactsDeclared panics. This presentation does not carry
+// FeatureRecipeArtifactsDeclared panics. This view does not carry
 // feature-recipe-artifacts-declared, which a FeatureRecipe document
 // carries.
 func (AggregateDocumentBase) FeatureRecipeArtifactsDeclared(document string) bool {
-	panic("this presentation does not carry feature-recipe-artifacts-declared, which a FeatureRecipe document carries")
+	panic("this view does not carry feature-recipe-artifacts-declared, which a FeatureRecipe document carries")
 }
 
-// FeatureRecipeDeclaredCapability panics. This presentation does not carry
+// FeatureRecipeDeclaredCapability panics. This view does not carry
 // feature-recipe-declared-capability, which a FeatureRecipe document
 // carries.
 func (AggregateDocumentBase) FeatureRecipeDeclaredCapability(document string) string {
-	panic("this presentation does not carry feature-recipe-declared-capability, which a FeatureRecipe document carries")
+	panic("this view does not carry feature-recipe-declared-capability, which a FeatureRecipe document carries")
 }
 
-// ReleaseBoundaryPlacements panics. This presentation does not carry
+// ReleaseBoundaryPlacements panics. This view does not carry
 // release-boundary-placements, which a Release document carries.
 func (AggregateDocumentBase) ReleaseBoundaryPlacements() []BoundaryPlacement {
-	panic("this presentation does not carry release-boundary-placements, which a Release document carries")
+	panic("this view does not carry release-boundary-placements, which a Release document carries")
 }
 
 // ComponentDocumentBase is a base for an implementation of DocumentView
@@ -185,141 +184,140 @@ func (AggregateDocumentBase) ReleaseBoundaryPlacements() []BoundaryPlacement {
 // for another kind does not reach them.
 type ComponentDocumentBase struct{}
 
-// RawAggregateText panics. This presentation does not carry
-// raw-aggregate-text, which an Aggregate document carries.
+// RawAggregateText panics. This view does not carry raw-aggregate-text,
+// which an Aggregate document carries.
 func (ComponentDocumentBase) RawAggregateText(document string) []byte {
-	panic("this presentation does not carry raw-aggregate-text, which an Aggregate document carries")
+	panic("this view does not carry raw-aggregate-text, which an Aggregate document carries")
 }
 
-// DeclaredParameterKeys panics. This presentation does not carry
+// DeclaredParameterKeys panics. This view does not carry
 // declared-parameter-keys, which an Aggregate document carries.
 func (ComponentDocumentBase) DeclaredParameterKeys(document string) []string {
-	panic("this presentation does not carry declared-parameter-keys, which an Aggregate document carries")
+	panic("this view does not carry declared-parameter-keys, which an Aggregate document carries")
 }
 
-// FeatureSchemaPillarKeys panics. This presentation does not carry
+// FeatureSchemaPillarKeys panics. This view does not carry
 // feature-schema-pillar-keys, which a Feature document carries.
 func (ComponentDocumentBase) FeatureSchemaPillarKeys(document string) []string {
-	panic("this presentation does not carry feature-schema-pillar-keys, which a Feature document carries")
+	panic("this view does not carry feature-schema-pillar-keys, which a Feature document carries")
 }
 
-// ManifestAnnotationBindingKeys panics. This presentation does not carry
+// ManifestAnnotationBindingKeys panics. This view does not carry
 // manifest-annotation-binding-keys, which a Manifest document carries.
 func (ComponentDocumentBase) ManifestAnnotationBindingKeys(document string) []string {
-	panic("this presentation does not carry manifest-annotation-binding-keys, which a Manifest document carries")
+	panic("this view does not carry manifest-annotation-binding-keys, which a Manifest document carries")
 }
 
-// ManifestAnnotationBindingFeature panics. This presentation does not
-// carry manifest-annotation-binding-feature, which a Manifest document
-// carries.
+// ManifestAnnotationBindingFeature panics. This view does not carry
+// manifest-annotation-binding-feature, which a Manifest document carries.
 func (ComponentDocumentBase) ManifestAnnotationBindingFeature(document string, binding string) (string, bool) {
-	panic("this presentation does not carry manifest-annotation-binding-feature, which a Manifest document carries")
+	panic("this view does not carry manifest-annotation-binding-feature, which a Manifest document carries")
 }
 
-// ManifestAnnotationBindingRoutes panics. This presentation does not carry
+// ManifestAnnotationBindingRoutes panics. This view does not carry
 // manifest-annotation-binding-routes, which a Manifest document carries.
 func (ComponentDocumentBase) ManifestAnnotationBindingRoutes(document string, binding string) []AnnotationBindingRoute {
-	panic("this presentation does not carry manifest-annotation-binding-routes, which a Manifest document carries")
+	panic("this view does not carry manifest-annotation-binding-routes, which a Manifest document carries")
 }
 
-// AnnotationBindingSubkeyTarget panics. This presentation does not carry
+// AnnotationBindingSubkeyTarget panics. This view does not carry
 // annotation-binding-subkey-target, which a Manifest document carries.
 func (ComponentDocumentBase) AnnotationBindingSubkeyTarget(binding string, subkey string) (AnnotationSubkeyTarget, bool) {
-	panic("this presentation does not carry annotation-binding-subkey-target, which a Manifest document carries")
+	panic("this view does not carry annotation-binding-subkey-target, which a Manifest document carries")
 }
 
-// RecipeValuesMappingDeclared panics. This presentation does not carry
+// RecipeValuesMappingDeclared panics. This view does not carry
 // recipe-values-mapping-declared, which a Recipe document carries.
 func (ComponentDocumentBase) RecipeValuesMappingDeclared(document string) bool {
-	panic("this presentation does not carry recipe-values-mapping-declared, which a Recipe document carries")
+	panic("this view does not carry recipe-values-mapping-declared, which a Recipe document carries")
 }
 
-// RecipeSourceDeclared panics. This presentation does not carry
+// RecipeSourceDeclared panics. This view does not carry
 // recipe-source-declared, which a Recipe document carries.
 func (ComponentDocumentBase) RecipeSourceDeclared(document string) bool {
-	panic("this presentation does not carry recipe-source-declared, which a Recipe document carries")
+	panic("this view does not carry recipe-source-declared, which a Recipe document carries")
 }
 
-// RecipeWorkloadDeclared panics. This presentation does not carry
+// RecipeWorkloadDeclared panics. This view does not carry
 // recipe-workload-declared, which a Recipe document carries.
 func (ComponentDocumentBase) RecipeWorkloadDeclared(document string) bool {
-	panic("this presentation does not carry recipe-workload-declared, which a Recipe document carries")
+	panic("this view does not carry recipe-workload-declared, which a Recipe document carries")
 }
 
-// RecipeArtifactsDeclared panics. This presentation does not carry
+// RecipeArtifactsDeclared panics. This view does not carry
 // recipe-artifacts-declared, which a Recipe document carries.
 func (ComponentDocumentBase) RecipeArtifactsDeclared(document string) bool {
-	panic("this presentation does not carry recipe-artifacts-declared, which a Recipe document carries")
+	panic("this view does not carry recipe-artifacts-declared, which a Recipe document carries")
 }
 
-// RecipeDeclaredCapability panics. This presentation does not carry
+// RecipeDeclaredCapability panics. This view does not carry
 // recipe-declared-capability, which a Recipe document carries.
 func (ComponentDocumentBase) RecipeDeclaredCapability(document string) string {
-	panic("this presentation does not carry recipe-declared-capability, which a Recipe document carries")
+	panic("this view does not carry recipe-declared-capability, which a Recipe document carries")
 }
 
-// RecipeOutputLabelKeys panics. This presentation does not carry
+// RecipeOutputLabelKeys panics. This view does not carry
 // recipe-output-label-keys, which a Recipe document carries.
 func (ComponentDocumentBase) RecipeOutputLabelKeys(document string) []string {
-	panic("this presentation does not carry recipe-output-label-keys, which a Recipe document carries")
+	panic("this view does not carry recipe-output-label-keys, which a Recipe document carries")
 }
 
-// RecipeOutputComponentLabelKeys panics. This presentation does not carry
+// RecipeOutputComponentLabelKeys panics. This view does not carry
 // recipe-output-component-label-keys, which a Recipe document carries.
 func (ComponentDocumentBase) RecipeOutputComponentLabelKeys(document string) []string {
-	panic("this presentation does not carry recipe-output-component-label-keys, which a Recipe document carries")
+	panic("this view does not carry recipe-output-component-label-keys, which a Recipe document carries")
 }
 
-// ManifestRecipeMappingEntries panics. This presentation does not carry
+// ManifestRecipeMappingEntries panics. This view does not carry
 // manifest-recipe-mapping-entries, which a Manifest document carries.
 func (ComponentDocumentBase) ManifestRecipeMappingEntries(document string) []ManifestRecipeMapping {
-	panic("this presentation does not carry manifest-recipe-mapping-entries, which a Manifest document carries")
+	panic("this view does not carry manifest-recipe-mapping-entries, which a Manifest document carries")
 }
 
-// ManifestRecipeMappingReference panics. This presentation does not carry
+// ManifestRecipeMappingReference panics. This view does not carry
 // manifest-recipe-mapping-reference, which a Manifest document carries.
 func (ComponentDocumentBase) ManifestRecipeMappingReference(document string, tier string, axis string, key string) (string, bool) {
-	panic("this presentation does not carry manifest-recipe-mapping-reference, which a Manifest document carries")
+	panic("this view does not carry manifest-recipe-mapping-reference, which a Manifest document carries")
 }
 
-// FeatureRecipeSourceDeclared panics. This presentation does not carry
+// FeatureRecipeSourceDeclared panics. This view does not carry
 // feature-recipe-source-declared, which a FeatureRecipe document carries.
 func (ComponentDocumentBase) FeatureRecipeSourceDeclared(document string) bool {
-	panic("this presentation does not carry feature-recipe-source-declared, which a FeatureRecipe document carries")
+	panic("this view does not carry feature-recipe-source-declared, which a FeatureRecipe document carries")
 }
 
-// FeatureRecipeValuesMappingDeclared panics. This presentation does not
-// carry feature-recipe-values-mapping-declared, which a FeatureRecipe
-// document carries.
+// FeatureRecipeValuesMappingDeclared panics. This view does not carry
+// feature-recipe-values-mapping-declared, which a FeatureRecipe document
+// carries.
 func (ComponentDocumentBase) FeatureRecipeValuesMappingDeclared(document string) bool {
-	panic("this presentation does not carry feature-recipe-values-mapping-declared, which a FeatureRecipe document carries")
+	panic("this view does not carry feature-recipe-values-mapping-declared, which a FeatureRecipe document carries")
 }
 
-// FeatureRecipeWorkloadDeclared panics. This presentation does not carry
+// FeatureRecipeWorkloadDeclared panics. This view does not carry
 // feature-recipe-workload-declared, which a FeatureRecipe document
 // carries.
 func (ComponentDocumentBase) FeatureRecipeWorkloadDeclared(document string) bool {
-	panic("this presentation does not carry feature-recipe-workload-declared, which a FeatureRecipe document carries")
+	panic("this view does not carry feature-recipe-workload-declared, which a FeatureRecipe document carries")
 }
 
-// FeatureRecipeArtifactsDeclared panics. This presentation does not carry
+// FeatureRecipeArtifactsDeclared panics. This view does not carry
 // feature-recipe-artifacts-declared, which a FeatureRecipe document
 // carries.
 func (ComponentDocumentBase) FeatureRecipeArtifactsDeclared(document string) bool {
-	panic("this presentation does not carry feature-recipe-artifacts-declared, which a FeatureRecipe document carries")
+	panic("this view does not carry feature-recipe-artifacts-declared, which a FeatureRecipe document carries")
 }
 
-// FeatureRecipeDeclaredCapability panics. This presentation does not carry
+// FeatureRecipeDeclaredCapability panics. This view does not carry
 // feature-recipe-declared-capability, which a FeatureRecipe document
 // carries.
 func (ComponentDocumentBase) FeatureRecipeDeclaredCapability(document string) string {
-	panic("this presentation does not carry feature-recipe-declared-capability, which a FeatureRecipe document carries")
+	panic("this view does not carry feature-recipe-declared-capability, which a FeatureRecipe document carries")
 }
 
-// ReleaseBoundaryPlacements panics. This presentation does not carry
+// ReleaseBoundaryPlacements panics. This view does not carry
 // release-boundary-placements, which a Release document carries.
 func (ComponentDocumentBase) ReleaseBoundaryPlacements() []BoundaryPlacement {
-	panic("this presentation does not carry release-boundary-placements, which a Release document carries")
+	panic("this view does not carry release-boundary-placements, which a Release document carries")
 }
 
 // FeatureDocumentBase is a base for an implementation of DocumentView that
@@ -338,153 +336,152 @@ func (ComponentDocumentBase) ReleaseBoundaryPlacements() []BoundaryPlacement {
 // another kind does not reach them.
 type FeatureDocumentBase struct{}
 
-// RawAggregateText panics. This presentation does not carry
-// raw-aggregate-text, which an Aggregate document carries.
+// RawAggregateText panics. This view does not carry raw-aggregate-text,
+// which an Aggregate document carries.
 func (FeatureDocumentBase) RawAggregateText(document string) []byte {
-	panic("this presentation does not carry raw-aggregate-text, which an Aggregate document carries")
+	panic("this view does not carry raw-aggregate-text, which an Aggregate document carries")
 }
 
-// DeclaredParameterKeys panics. This presentation does not carry
+// DeclaredParameterKeys panics. This view does not carry
 // declared-parameter-keys, which an Aggregate document carries.
 func (FeatureDocumentBase) DeclaredParameterKeys(document string) []string {
-	panic("this presentation does not carry declared-parameter-keys, which an Aggregate document carries")
+	panic("this view does not carry declared-parameter-keys, which an Aggregate document carries")
 }
 
-// EntityAssertionNameSet panics. This presentation does not carry
+// EntityAssertionNameSet panics. This view does not carry
 // entity-assertion-name-set, which a Component document carries.
 func (FeatureDocumentBase) EntityAssertionNameSet(document string) []string {
-	panic("this presentation does not carry entity-assertion-name-set, which a Component document carries")
+	panic("this view does not carry entity-assertion-name-set, which a Component document carries")
 }
 
-// EntityAssertionDeclaringEntity panics. This presentation does not carry
+// EntityAssertionDeclaringEntity panics. This view does not carry
 // entity-assertion-declaring-entity, which a Component document carries.
 func (FeatureDocumentBase) EntityAssertionDeclaringEntity(document string, assertion string) (string, bool) {
-	panic("this presentation does not carry entity-assertion-declaring-entity, which a Component document carries")
+	panic("this view does not carry entity-assertion-declaring-entity, which a Component document carries")
 }
 
-// ComponentSchemaPillarKeys panics. This presentation does not carry
+// ComponentSchemaPillarKeys panics. This view does not carry
 // component-schema-pillar-keys, which a Component document carries.
 func (FeatureDocumentBase) ComponentSchemaPillarKeys(document string) []string {
-	panic("this presentation does not carry component-schema-pillar-keys, which a Component document carries")
+	panic("this view does not carry component-schema-pillar-keys, which a Component document carries")
 }
 
-// ManifestAnnotationBindingKeys panics. This presentation does not carry
+// ManifestAnnotationBindingKeys panics. This view does not carry
 // manifest-annotation-binding-keys, which a Manifest document carries.
 func (FeatureDocumentBase) ManifestAnnotationBindingKeys(document string) []string {
-	panic("this presentation does not carry manifest-annotation-binding-keys, which a Manifest document carries")
+	panic("this view does not carry manifest-annotation-binding-keys, which a Manifest document carries")
 }
 
-// ManifestAnnotationBindingFeature panics. This presentation does not
-// carry manifest-annotation-binding-feature, which a Manifest document
-// carries.
+// ManifestAnnotationBindingFeature panics. This view does not carry
+// manifest-annotation-binding-feature, which a Manifest document carries.
 func (FeatureDocumentBase) ManifestAnnotationBindingFeature(document string, binding string) (string, bool) {
-	panic("this presentation does not carry manifest-annotation-binding-feature, which a Manifest document carries")
+	panic("this view does not carry manifest-annotation-binding-feature, which a Manifest document carries")
 }
 
-// ManifestAnnotationBindingRoutes panics. This presentation does not carry
+// ManifestAnnotationBindingRoutes panics. This view does not carry
 // manifest-annotation-binding-routes, which a Manifest document carries.
 func (FeatureDocumentBase) ManifestAnnotationBindingRoutes(document string, binding string) []AnnotationBindingRoute {
-	panic("this presentation does not carry manifest-annotation-binding-routes, which a Manifest document carries")
+	panic("this view does not carry manifest-annotation-binding-routes, which a Manifest document carries")
 }
 
-// AnnotationBindingSubkeyTarget panics. This presentation does not carry
+// AnnotationBindingSubkeyTarget panics. This view does not carry
 // annotation-binding-subkey-target, which a Manifest document carries.
 func (FeatureDocumentBase) AnnotationBindingSubkeyTarget(binding string, subkey string) (AnnotationSubkeyTarget, bool) {
-	panic("this presentation does not carry annotation-binding-subkey-target, which a Manifest document carries")
+	panic("this view does not carry annotation-binding-subkey-target, which a Manifest document carries")
 }
 
-// RecipeValuesMappingDeclared panics. This presentation does not carry
+// RecipeValuesMappingDeclared panics. This view does not carry
 // recipe-values-mapping-declared, which a Recipe document carries.
 func (FeatureDocumentBase) RecipeValuesMappingDeclared(document string) bool {
-	panic("this presentation does not carry recipe-values-mapping-declared, which a Recipe document carries")
+	panic("this view does not carry recipe-values-mapping-declared, which a Recipe document carries")
 }
 
-// RecipeSourceDeclared panics. This presentation does not carry
+// RecipeSourceDeclared panics. This view does not carry
 // recipe-source-declared, which a Recipe document carries.
 func (FeatureDocumentBase) RecipeSourceDeclared(document string) bool {
-	panic("this presentation does not carry recipe-source-declared, which a Recipe document carries")
+	panic("this view does not carry recipe-source-declared, which a Recipe document carries")
 }
 
-// RecipeWorkloadDeclared panics. This presentation does not carry
+// RecipeWorkloadDeclared panics. This view does not carry
 // recipe-workload-declared, which a Recipe document carries.
 func (FeatureDocumentBase) RecipeWorkloadDeclared(document string) bool {
-	panic("this presentation does not carry recipe-workload-declared, which a Recipe document carries")
+	panic("this view does not carry recipe-workload-declared, which a Recipe document carries")
 }
 
-// RecipeArtifactsDeclared panics. This presentation does not carry
+// RecipeArtifactsDeclared panics. This view does not carry
 // recipe-artifacts-declared, which a Recipe document carries.
 func (FeatureDocumentBase) RecipeArtifactsDeclared(document string) bool {
-	panic("this presentation does not carry recipe-artifacts-declared, which a Recipe document carries")
+	panic("this view does not carry recipe-artifacts-declared, which a Recipe document carries")
 }
 
-// RecipeDeclaredCapability panics. This presentation does not carry
+// RecipeDeclaredCapability panics. This view does not carry
 // recipe-declared-capability, which a Recipe document carries.
 func (FeatureDocumentBase) RecipeDeclaredCapability(document string) string {
-	panic("this presentation does not carry recipe-declared-capability, which a Recipe document carries")
+	panic("this view does not carry recipe-declared-capability, which a Recipe document carries")
 }
 
-// RecipeOutputLabelKeys panics. This presentation does not carry
+// RecipeOutputLabelKeys panics. This view does not carry
 // recipe-output-label-keys, which a Recipe document carries.
 func (FeatureDocumentBase) RecipeOutputLabelKeys(document string) []string {
-	panic("this presentation does not carry recipe-output-label-keys, which a Recipe document carries")
+	panic("this view does not carry recipe-output-label-keys, which a Recipe document carries")
 }
 
-// RecipeOutputComponentLabelKeys panics. This presentation does not carry
+// RecipeOutputComponentLabelKeys panics. This view does not carry
 // recipe-output-component-label-keys, which a Recipe document carries.
 func (FeatureDocumentBase) RecipeOutputComponentLabelKeys(document string) []string {
-	panic("this presentation does not carry recipe-output-component-label-keys, which a Recipe document carries")
+	panic("this view does not carry recipe-output-component-label-keys, which a Recipe document carries")
 }
 
-// ManifestRecipeMappingEntries panics. This presentation does not carry
+// ManifestRecipeMappingEntries panics. This view does not carry
 // manifest-recipe-mapping-entries, which a Manifest document carries.
 func (FeatureDocumentBase) ManifestRecipeMappingEntries(document string) []ManifestRecipeMapping {
-	panic("this presentation does not carry manifest-recipe-mapping-entries, which a Manifest document carries")
+	panic("this view does not carry manifest-recipe-mapping-entries, which a Manifest document carries")
 }
 
-// ManifestRecipeMappingReference panics. This presentation does not carry
+// ManifestRecipeMappingReference panics. This view does not carry
 // manifest-recipe-mapping-reference, which a Manifest document carries.
 func (FeatureDocumentBase) ManifestRecipeMappingReference(document string, tier string, axis string, key string) (string, bool) {
-	panic("this presentation does not carry manifest-recipe-mapping-reference, which a Manifest document carries")
+	panic("this view does not carry manifest-recipe-mapping-reference, which a Manifest document carries")
 }
 
-// FeatureRecipeSourceDeclared panics. This presentation does not carry
+// FeatureRecipeSourceDeclared panics. This view does not carry
 // feature-recipe-source-declared, which a FeatureRecipe document carries.
 func (FeatureDocumentBase) FeatureRecipeSourceDeclared(document string) bool {
-	panic("this presentation does not carry feature-recipe-source-declared, which a FeatureRecipe document carries")
+	panic("this view does not carry feature-recipe-source-declared, which a FeatureRecipe document carries")
 }
 
-// FeatureRecipeValuesMappingDeclared panics. This presentation does not
-// carry feature-recipe-values-mapping-declared, which a FeatureRecipe
-// document carries.
+// FeatureRecipeValuesMappingDeclared panics. This view does not carry
+// feature-recipe-values-mapping-declared, which a FeatureRecipe document
+// carries.
 func (FeatureDocumentBase) FeatureRecipeValuesMappingDeclared(document string) bool {
-	panic("this presentation does not carry feature-recipe-values-mapping-declared, which a FeatureRecipe document carries")
+	panic("this view does not carry feature-recipe-values-mapping-declared, which a FeatureRecipe document carries")
 }
 
-// FeatureRecipeWorkloadDeclared panics. This presentation does not carry
+// FeatureRecipeWorkloadDeclared panics. This view does not carry
 // feature-recipe-workload-declared, which a FeatureRecipe document
 // carries.
 func (FeatureDocumentBase) FeatureRecipeWorkloadDeclared(document string) bool {
-	panic("this presentation does not carry feature-recipe-workload-declared, which a FeatureRecipe document carries")
+	panic("this view does not carry feature-recipe-workload-declared, which a FeatureRecipe document carries")
 }
 
-// FeatureRecipeArtifactsDeclared panics. This presentation does not carry
+// FeatureRecipeArtifactsDeclared panics. This view does not carry
 // feature-recipe-artifacts-declared, which a FeatureRecipe document
 // carries.
 func (FeatureDocumentBase) FeatureRecipeArtifactsDeclared(document string) bool {
-	panic("this presentation does not carry feature-recipe-artifacts-declared, which a FeatureRecipe document carries")
+	panic("this view does not carry feature-recipe-artifacts-declared, which a FeatureRecipe document carries")
 }
 
-// FeatureRecipeDeclaredCapability panics. This presentation does not carry
+// FeatureRecipeDeclaredCapability panics. This view does not carry
 // feature-recipe-declared-capability, which a FeatureRecipe document
 // carries.
 func (FeatureDocumentBase) FeatureRecipeDeclaredCapability(document string) string {
-	panic("this presentation does not carry feature-recipe-declared-capability, which a FeatureRecipe document carries")
+	panic("this view does not carry feature-recipe-declared-capability, which a FeatureRecipe document carries")
 }
 
-// ReleaseBoundaryPlacements panics. This presentation does not carry
+// ReleaseBoundaryPlacements panics. This view does not carry
 // release-boundary-placements, which a Release document carries.
 func (FeatureDocumentBase) ReleaseBoundaryPlacements() []BoundaryPlacement {
-	panic("this presentation does not carry release-boundary-placements, which a Release document carries")
+	panic("this view does not carry release-boundary-placements, which a Release document carries")
 }
 
 // ManifestDocumentBase is a base for an implementation of DocumentView
@@ -503,122 +500,122 @@ func (FeatureDocumentBase) ReleaseBoundaryPlacements() []BoundaryPlacement {
 // for another kind does not reach them.
 type ManifestDocumentBase struct{}
 
-// RawAggregateText panics. This presentation does not carry
-// raw-aggregate-text, which an Aggregate document carries.
+// RawAggregateText panics. This view does not carry raw-aggregate-text,
+// which an Aggregate document carries.
 func (ManifestDocumentBase) RawAggregateText(document string) []byte {
-	panic("this presentation does not carry raw-aggregate-text, which an Aggregate document carries")
+	panic("this view does not carry raw-aggregate-text, which an Aggregate document carries")
 }
 
-// DeclaredParameterKeys panics. This presentation does not carry
+// DeclaredParameterKeys panics. This view does not carry
 // declared-parameter-keys, which an Aggregate document carries.
 func (ManifestDocumentBase) DeclaredParameterKeys(document string) []string {
-	panic("this presentation does not carry declared-parameter-keys, which an Aggregate document carries")
+	panic("this view does not carry declared-parameter-keys, which an Aggregate document carries")
 }
 
-// EntityAssertionNameSet panics. This presentation does not carry
+// EntityAssertionNameSet panics. This view does not carry
 // entity-assertion-name-set, which a Component document carries.
 func (ManifestDocumentBase) EntityAssertionNameSet(document string) []string {
-	panic("this presentation does not carry entity-assertion-name-set, which a Component document carries")
+	panic("this view does not carry entity-assertion-name-set, which a Component document carries")
 }
 
-// EntityAssertionDeclaringEntity panics. This presentation does not carry
+// EntityAssertionDeclaringEntity panics. This view does not carry
 // entity-assertion-declaring-entity, which a Component document carries.
 func (ManifestDocumentBase) EntityAssertionDeclaringEntity(document string, assertion string) (string, bool) {
-	panic("this presentation does not carry entity-assertion-declaring-entity, which a Component document carries")
+	panic("this view does not carry entity-assertion-declaring-entity, which a Component document carries")
 }
 
-// ComponentSchemaPillarKeys panics. This presentation does not carry
+// ComponentSchemaPillarKeys panics. This view does not carry
 // component-schema-pillar-keys, which a Component document carries.
 func (ManifestDocumentBase) ComponentSchemaPillarKeys(document string) []string {
-	panic("this presentation does not carry component-schema-pillar-keys, which a Component document carries")
+	panic("this view does not carry component-schema-pillar-keys, which a Component document carries")
 }
 
-// FeatureSchemaPillarKeys panics. This presentation does not carry
+// FeatureSchemaPillarKeys panics. This view does not carry
 // feature-schema-pillar-keys, which a Feature document carries.
 func (ManifestDocumentBase) FeatureSchemaPillarKeys(document string) []string {
-	panic("this presentation does not carry feature-schema-pillar-keys, which a Feature document carries")
+	panic("this view does not carry feature-schema-pillar-keys, which a Feature document carries")
 }
 
-// RecipeValuesMappingDeclared panics. This presentation does not carry
+// RecipeValuesMappingDeclared panics. This view does not carry
 // recipe-values-mapping-declared, which a Recipe document carries.
 func (ManifestDocumentBase) RecipeValuesMappingDeclared(document string) bool {
-	panic("this presentation does not carry recipe-values-mapping-declared, which a Recipe document carries")
+	panic("this view does not carry recipe-values-mapping-declared, which a Recipe document carries")
 }
 
-// RecipeSourceDeclared panics. This presentation does not carry
+// RecipeSourceDeclared panics. This view does not carry
 // recipe-source-declared, which a Recipe document carries.
 func (ManifestDocumentBase) RecipeSourceDeclared(document string) bool {
-	panic("this presentation does not carry recipe-source-declared, which a Recipe document carries")
+	panic("this view does not carry recipe-source-declared, which a Recipe document carries")
 }
 
-// RecipeWorkloadDeclared panics. This presentation does not carry
+// RecipeWorkloadDeclared panics. This view does not carry
 // recipe-workload-declared, which a Recipe document carries.
 func (ManifestDocumentBase) RecipeWorkloadDeclared(document string) bool {
-	panic("this presentation does not carry recipe-workload-declared, which a Recipe document carries")
+	panic("this view does not carry recipe-workload-declared, which a Recipe document carries")
 }
 
-// RecipeArtifactsDeclared panics. This presentation does not carry
+// RecipeArtifactsDeclared panics. This view does not carry
 // recipe-artifacts-declared, which a Recipe document carries.
 func (ManifestDocumentBase) RecipeArtifactsDeclared(document string) bool {
-	panic("this presentation does not carry recipe-artifacts-declared, which a Recipe document carries")
+	panic("this view does not carry recipe-artifacts-declared, which a Recipe document carries")
 }
 
-// RecipeDeclaredCapability panics. This presentation does not carry
+// RecipeDeclaredCapability panics. This view does not carry
 // recipe-declared-capability, which a Recipe document carries.
 func (ManifestDocumentBase) RecipeDeclaredCapability(document string) string {
-	panic("this presentation does not carry recipe-declared-capability, which a Recipe document carries")
+	panic("this view does not carry recipe-declared-capability, which a Recipe document carries")
 }
 
-// RecipeOutputLabelKeys panics. This presentation does not carry
+// RecipeOutputLabelKeys panics. This view does not carry
 // recipe-output-label-keys, which a Recipe document carries.
 func (ManifestDocumentBase) RecipeOutputLabelKeys(document string) []string {
-	panic("this presentation does not carry recipe-output-label-keys, which a Recipe document carries")
+	panic("this view does not carry recipe-output-label-keys, which a Recipe document carries")
 }
 
-// RecipeOutputComponentLabelKeys panics. This presentation does not carry
+// RecipeOutputComponentLabelKeys panics. This view does not carry
 // recipe-output-component-label-keys, which a Recipe document carries.
 func (ManifestDocumentBase) RecipeOutputComponentLabelKeys(document string) []string {
-	panic("this presentation does not carry recipe-output-component-label-keys, which a Recipe document carries")
+	panic("this view does not carry recipe-output-component-label-keys, which a Recipe document carries")
 }
 
-// FeatureRecipeSourceDeclared panics. This presentation does not carry
+// FeatureRecipeSourceDeclared panics. This view does not carry
 // feature-recipe-source-declared, which a FeatureRecipe document carries.
 func (ManifestDocumentBase) FeatureRecipeSourceDeclared(document string) bool {
-	panic("this presentation does not carry feature-recipe-source-declared, which a FeatureRecipe document carries")
+	panic("this view does not carry feature-recipe-source-declared, which a FeatureRecipe document carries")
 }
 
-// FeatureRecipeValuesMappingDeclared panics. This presentation does not
-// carry feature-recipe-values-mapping-declared, which a FeatureRecipe
-// document carries.
+// FeatureRecipeValuesMappingDeclared panics. This view does not carry
+// feature-recipe-values-mapping-declared, which a FeatureRecipe document
+// carries.
 func (ManifestDocumentBase) FeatureRecipeValuesMappingDeclared(document string) bool {
-	panic("this presentation does not carry feature-recipe-values-mapping-declared, which a FeatureRecipe document carries")
+	panic("this view does not carry feature-recipe-values-mapping-declared, which a FeatureRecipe document carries")
 }
 
-// FeatureRecipeWorkloadDeclared panics. This presentation does not carry
+// FeatureRecipeWorkloadDeclared panics. This view does not carry
 // feature-recipe-workload-declared, which a FeatureRecipe document
 // carries.
 func (ManifestDocumentBase) FeatureRecipeWorkloadDeclared(document string) bool {
-	panic("this presentation does not carry feature-recipe-workload-declared, which a FeatureRecipe document carries")
+	panic("this view does not carry feature-recipe-workload-declared, which a FeatureRecipe document carries")
 }
 
-// FeatureRecipeArtifactsDeclared panics. This presentation does not carry
+// FeatureRecipeArtifactsDeclared panics. This view does not carry
 // feature-recipe-artifacts-declared, which a FeatureRecipe document
 // carries.
 func (ManifestDocumentBase) FeatureRecipeArtifactsDeclared(document string) bool {
-	panic("this presentation does not carry feature-recipe-artifacts-declared, which a FeatureRecipe document carries")
+	panic("this view does not carry feature-recipe-artifacts-declared, which a FeatureRecipe document carries")
 }
 
-// FeatureRecipeDeclaredCapability panics. This presentation does not carry
+// FeatureRecipeDeclaredCapability panics. This view does not carry
 // feature-recipe-declared-capability, which a FeatureRecipe document
 // carries.
 func (ManifestDocumentBase) FeatureRecipeDeclaredCapability(document string) string {
-	panic("this presentation does not carry feature-recipe-declared-capability, which a FeatureRecipe document carries")
+	panic("this view does not carry feature-recipe-declared-capability, which a FeatureRecipe document carries")
 }
 
-// ReleaseBoundaryPlacements panics. This presentation does not carry
+// ReleaseBoundaryPlacements panics. This view does not carry
 // release-boundary-placements, which a Release document carries.
 func (ManifestDocumentBase) ReleaseBoundaryPlacements() []BoundaryPlacement {
-	panic("this presentation does not carry release-boundary-placements, which a Release document carries")
+	panic("this view does not carry release-boundary-placements, which a Release document carries")
 }
 
 // RecipeDocumentBase is a base for an implementation of DocumentView that
@@ -637,117 +634,116 @@ func (ManifestDocumentBase) ReleaseBoundaryPlacements() []BoundaryPlacement {
 // another kind does not reach them.
 type RecipeDocumentBase struct{}
 
-// RawAggregateText panics. This presentation does not carry
-// raw-aggregate-text, which an Aggregate document carries.
+// RawAggregateText panics. This view does not carry raw-aggregate-text,
+// which an Aggregate document carries.
 func (RecipeDocumentBase) RawAggregateText(document string) []byte {
-	panic("this presentation does not carry raw-aggregate-text, which an Aggregate document carries")
+	panic("this view does not carry raw-aggregate-text, which an Aggregate document carries")
 }
 
-// DeclaredParameterKeys panics. This presentation does not carry
+// DeclaredParameterKeys panics. This view does not carry
 // declared-parameter-keys, which an Aggregate document carries.
 func (RecipeDocumentBase) DeclaredParameterKeys(document string) []string {
-	panic("this presentation does not carry declared-parameter-keys, which an Aggregate document carries")
+	panic("this view does not carry declared-parameter-keys, which an Aggregate document carries")
 }
 
-// EntityAssertionNameSet panics. This presentation does not carry
+// EntityAssertionNameSet panics. This view does not carry
 // entity-assertion-name-set, which a Component document carries.
 func (RecipeDocumentBase) EntityAssertionNameSet(document string) []string {
-	panic("this presentation does not carry entity-assertion-name-set, which a Component document carries")
+	panic("this view does not carry entity-assertion-name-set, which a Component document carries")
 }
 
-// EntityAssertionDeclaringEntity panics. This presentation does not carry
+// EntityAssertionDeclaringEntity panics. This view does not carry
 // entity-assertion-declaring-entity, which a Component document carries.
 func (RecipeDocumentBase) EntityAssertionDeclaringEntity(document string, assertion string) (string, bool) {
-	panic("this presentation does not carry entity-assertion-declaring-entity, which a Component document carries")
+	panic("this view does not carry entity-assertion-declaring-entity, which a Component document carries")
 }
 
-// ComponentSchemaPillarKeys panics. This presentation does not carry
+// ComponentSchemaPillarKeys panics. This view does not carry
 // component-schema-pillar-keys, which a Component document carries.
 func (RecipeDocumentBase) ComponentSchemaPillarKeys(document string) []string {
-	panic("this presentation does not carry component-schema-pillar-keys, which a Component document carries")
+	panic("this view does not carry component-schema-pillar-keys, which a Component document carries")
 }
 
-// FeatureSchemaPillarKeys panics. This presentation does not carry
+// FeatureSchemaPillarKeys panics. This view does not carry
 // feature-schema-pillar-keys, which a Feature document carries.
 func (RecipeDocumentBase) FeatureSchemaPillarKeys(document string) []string {
-	panic("this presentation does not carry feature-schema-pillar-keys, which a Feature document carries")
+	panic("this view does not carry feature-schema-pillar-keys, which a Feature document carries")
 }
 
-// ManifestAnnotationBindingKeys panics. This presentation does not carry
+// ManifestAnnotationBindingKeys panics. This view does not carry
 // manifest-annotation-binding-keys, which a Manifest document carries.
 func (RecipeDocumentBase) ManifestAnnotationBindingKeys(document string) []string {
-	panic("this presentation does not carry manifest-annotation-binding-keys, which a Manifest document carries")
+	panic("this view does not carry manifest-annotation-binding-keys, which a Manifest document carries")
 }
 
-// ManifestAnnotationBindingFeature panics. This presentation does not
-// carry manifest-annotation-binding-feature, which a Manifest document
-// carries.
+// ManifestAnnotationBindingFeature panics. This view does not carry
+// manifest-annotation-binding-feature, which a Manifest document carries.
 func (RecipeDocumentBase) ManifestAnnotationBindingFeature(document string, binding string) (string, bool) {
-	panic("this presentation does not carry manifest-annotation-binding-feature, which a Manifest document carries")
+	panic("this view does not carry manifest-annotation-binding-feature, which a Manifest document carries")
 }
 
-// ManifestAnnotationBindingRoutes panics. This presentation does not carry
+// ManifestAnnotationBindingRoutes panics. This view does not carry
 // manifest-annotation-binding-routes, which a Manifest document carries.
 func (RecipeDocumentBase) ManifestAnnotationBindingRoutes(document string, binding string) []AnnotationBindingRoute {
-	panic("this presentation does not carry manifest-annotation-binding-routes, which a Manifest document carries")
+	panic("this view does not carry manifest-annotation-binding-routes, which a Manifest document carries")
 }
 
-// AnnotationBindingSubkeyTarget panics. This presentation does not carry
+// AnnotationBindingSubkeyTarget panics. This view does not carry
 // annotation-binding-subkey-target, which a Manifest document carries.
 func (RecipeDocumentBase) AnnotationBindingSubkeyTarget(binding string, subkey string) (AnnotationSubkeyTarget, bool) {
-	panic("this presentation does not carry annotation-binding-subkey-target, which a Manifest document carries")
+	panic("this view does not carry annotation-binding-subkey-target, which a Manifest document carries")
 }
 
-// ManifestRecipeMappingEntries panics. This presentation does not carry
+// ManifestRecipeMappingEntries panics. This view does not carry
 // manifest-recipe-mapping-entries, which a Manifest document carries.
 func (RecipeDocumentBase) ManifestRecipeMappingEntries(document string) []ManifestRecipeMapping {
-	panic("this presentation does not carry manifest-recipe-mapping-entries, which a Manifest document carries")
+	panic("this view does not carry manifest-recipe-mapping-entries, which a Manifest document carries")
 }
 
-// ManifestRecipeMappingReference panics. This presentation does not carry
+// ManifestRecipeMappingReference panics. This view does not carry
 // manifest-recipe-mapping-reference, which a Manifest document carries.
 func (RecipeDocumentBase) ManifestRecipeMappingReference(document string, tier string, axis string, key string) (string, bool) {
-	panic("this presentation does not carry manifest-recipe-mapping-reference, which a Manifest document carries")
+	panic("this view does not carry manifest-recipe-mapping-reference, which a Manifest document carries")
 }
 
-// FeatureRecipeSourceDeclared panics. This presentation does not carry
+// FeatureRecipeSourceDeclared panics. This view does not carry
 // feature-recipe-source-declared, which a FeatureRecipe document carries.
 func (RecipeDocumentBase) FeatureRecipeSourceDeclared(document string) bool {
-	panic("this presentation does not carry feature-recipe-source-declared, which a FeatureRecipe document carries")
+	panic("this view does not carry feature-recipe-source-declared, which a FeatureRecipe document carries")
 }
 
-// FeatureRecipeValuesMappingDeclared panics. This presentation does not
-// carry feature-recipe-values-mapping-declared, which a FeatureRecipe
-// document carries.
+// FeatureRecipeValuesMappingDeclared panics. This view does not carry
+// feature-recipe-values-mapping-declared, which a FeatureRecipe document
+// carries.
 func (RecipeDocumentBase) FeatureRecipeValuesMappingDeclared(document string) bool {
-	panic("this presentation does not carry feature-recipe-values-mapping-declared, which a FeatureRecipe document carries")
+	panic("this view does not carry feature-recipe-values-mapping-declared, which a FeatureRecipe document carries")
 }
 
-// FeatureRecipeWorkloadDeclared panics. This presentation does not carry
+// FeatureRecipeWorkloadDeclared panics. This view does not carry
 // feature-recipe-workload-declared, which a FeatureRecipe document
 // carries.
 func (RecipeDocumentBase) FeatureRecipeWorkloadDeclared(document string) bool {
-	panic("this presentation does not carry feature-recipe-workload-declared, which a FeatureRecipe document carries")
+	panic("this view does not carry feature-recipe-workload-declared, which a FeatureRecipe document carries")
 }
 
-// FeatureRecipeArtifactsDeclared panics. This presentation does not carry
+// FeatureRecipeArtifactsDeclared panics. This view does not carry
 // feature-recipe-artifacts-declared, which a FeatureRecipe document
 // carries.
 func (RecipeDocumentBase) FeatureRecipeArtifactsDeclared(document string) bool {
-	panic("this presentation does not carry feature-recipe-artifacts-declared, which a FeatureRecipe document carries")
+	panic("this view does not carry feature-recipe-artifacts-declared, which a FeatureRecipe document carries")
 }
 
-// FeatureRecipeDeclaredCapability panics. This presentation does not carry
+// FeatureRecipeDeclaredCapability panics. This view does not carry
 // feature-recipe-declared-capability, which a FeatureRecipe document
 // carries.
 func (RecipeDocumentBase) FeatureRecipeDeclaredCapability(document string) string {
-	panic("this presentation does not carry feature-recipe-declared-capability, which a FeatureRecipe document carries")
+	panic("this view does not carry feature-recipe-declared-capability, which a FeatureRecipe document carries")
 }
 
-// ReleaseBoundaryPlacements panics. This presentation does not carry
+// ReleaseBoundaryPlacements panics. This view does not carry
 // release-boundary-placements, which a Release document carries.
 func (RecipeDocumentBase) ReleaseBoundaryPlacements() []BoundaryPlacement {
-	panic("this presentation does not carry release-boundary-placements, which a Release document carries")
+	panic("this view does not carry release-boundary-placements, which a Release document carries")
 }
 
 // FeatureRecipeDocumentBase is a base for an implementation of
@@ -767,125 +763,124 @@ func (RecipeDocumentBase) ReleaseBoundaryPlacements() []BoundaryPlacement {
 // declared for another kind does not reach them.
 type FeatureRecipeDocumentBase struct{}
 
-// RawAggregateText panics. This presentation does not carry
-// raw-aggregate-text, which an Aggregate document carries.
+// RawAggregateText panics. This view does not carry raw-aggregate-text,
+// which an Aggregate document carries.
 func (FeatureRecipeDocumentBase) RawAggregateText(document string) []byte {
-	panic("this presentation does not carry raw-aggregate-text, which an Aggregate document carries")
+	panic("this view does not carry raw-aggregate-text, which an Aggregate document carries")
 }
 
-// DeclaredParameterKeys panics. This presentation does not carry
+// DeclaredParameterKeys panics. This view does not carry
 // declared-parameter-keys, which an Aggregate document carries.
 func (FeatureRecipeDocumentBase) DeclaredParameterKeys(document string) []string {
-	panic("this presentation does not carry declared-parameter-keys, which an Aggregate document carries")
+	panic("this view does not carry declared-parameter-keys, which an Aggregate document carries")
 }
 
-// EntityAssertionNameSet panics. This presentation does not carry
+// EntityAssertionNameSet panics. This view does not carry
 // entity-assertion-name-set, which a Component document carries.
 func (FeatureRecipeDocumentBase) EntityAssertionNameSet(document string) []string {
-	panic("this presentation does not carry entity-assertion-name-set, which a Component document carries")
+	panic("this view does not carry entity-assertion-name-set, which a Component document carries")
 }
 
-// EntityAssertionDeclaringEntity panics. This presentation does not carry
+// EntityAssertionDeclaringEntity panics. This view does not carry
 // entity-assertion-declaring-entity, which a Component document carries.
 func (FeatureRecipeDocumentBase) EntityAssertionDeclaringEntity(document string, assertion string) (string, bool) {
-	panic("this presentation does not carry entity-assertion-declaring-entity, which a Component document carries")
+	panic("this view does not carry entity-assertion-declaring-entity, which a Component document carries")
 }
 
-// ComponentSchemaPillarKeys panics. This presentation does not carry
+// ComponentSchemaPillarKeys panics. This view does not carry
 // component-schema-pillar-keys, which a Component document carries.
 func (FeatureRecipeDocumentBase) ComponentSchemaPillarKeys(document string) []string {
-	panic("this presentation does not carry component-schema-pillar-keys, which a Component document carries")
+	panic("this view does not carry component-schema-pillar-keys, which a Component document carries")
 }
 
-// FeatureSchemaPillarKeys panics. This presentation does not carry
+// FeatureSchemaPillarKeys panics. This view does not carry
 // feature-schema-pillar-keys, which a Feature document carries.
 func (FeatureRecipeDocumentBase) FeatureSchemaPillarKeys(document string) []string {
-	panic("this presentation does not carry feature-schema-pillar-keys, which a Feature document carries")
+	panic("this view does not carry feature-schema-pillar-keys, which a Feature document carries")
 }
 
-// ManifestAnnotationBindingKeys panics. This presentation does not carry
+// ManifestAnnotationBindingKeys panics. This view does not carry
 // manifest-annotation-binding-keys, which a Manifest document carries.
 func (FeatureRecipeDocumentBase) ManifestAnnotationBindingKeys(document string) []string {
-	panic("this presentation does not carry manifest-annotation-binding-keys, which a Manifest document carries")
+	panic("this view does not carry manifest-annotation-binding-keys, which a Manifest document carries")
 }
 
-// ManifestAnnotationBindingFeature panics. This presentation does not
-// carry manifest-annotation-binding-feature, which a Manifest document
-// carries.
+// ManifestAnnotationBindingFeature panics. This view does not carry
+// manifest-annotation-binding-feature, which a Manifest document carries.
 func (FeatureRecipeDocumentBase) ManifestAnnotationBindingFeature(document string, binding string) (string, bool) {
-	panic("this presentation does not carry manifest-annotation-binding-feature, which a Manifest document carries")
+	panic("this view does not carry manifest-annotation-binding-feature, which a Manifest document carries")
 }
 
-// ManifestAnnotationBindingRoutes panics. This presentation does not carry
+// ManifestAnnotationBindingRoutes panics. This view does not carry
 // manifest-annotation-binding-routes, which a Manifest document carries.
 func (FeatureRecipeDocumentBase) ManifestAnnotationBindingRoutes(document string, binding string) []AnnotationBindingRoute {
-	panic("this presentation does not carry manifest-annotation-binding-routes, which a Manifest document carries")
+	panic("this view does not carry manifest-annotation-binding-routes, which a Manifest document carries")
 }
 
-// AnnotationBindingSubkeyTarget panics. This presentation does not carry
+// AnnotationBindingSubkeyTarget panics. This view does not carry
 // annotation-binding-subkey-target, which a Manifest document carries.
 func (FeatureRecipeDocumentBase) AnnotationBindingSubkeyTarget(binding string, subkey string) (AnnotationSubkeyTarget, bool) {
-	panic("this presentation does not carry annotation-binding-subkey-target, which a Manifest document carries")
+	panic("this view does not carry annotation-binding-subkey-target, which a Manifest document carries")
 }
 
-// RecipeValuesMappingDeclared panics. This presentation does not carry
+// RecipeValuesMappingDeclared panics. This view does not carry
 // recipe-values-mapping-declared, which a Recipe document carries.
 func (FeatureRecipeDocumentBase) RecipeValuesMappingDeclared(document string) bool {
-	panic("this presentation does not carry recipe-values-mapping-declared, which a Recipe document carries")
+	panic("this view does not carry recipe-values-mapping-declared, which a Recipe document carries")
 }
 
-// RecipeSourceDeclared panics. This presentation does not carry
+// RecipeSourceDeclared panics. This view does not carry
 // recipe-source-declared, which a Recipe document carries.
 func (FeatureRecipeDocumentBase) RecipeSourceDeclared(document string) bool {
-	panic("this presentation does not carry recipe-source-declared, which a Recipe document carries")
+	panic("this view does not carry recipe-source-declared, which a Recipe document carries")
 }
 
-// RecipeWorkloadDeclared panics. This presentation does not carry
+// RecipeWorkloadDeclared panics. This view does not carry
 // recipe-workload-declared, which a Recipe document carries.
 func (FeatureRecipeDocumentBase) RecipeWorkloadDeclared(document string) bool {
-	panic("this presentation does not carry recipe-workload-declared, which a Recipe document carries")
+	panic("this view does not carry recipe-workload-declared, which a Recipe document carries")
 }
 
-// RecipeArtifactsDeclared panics. This presentation does not carry
+// RecipeArtifactsDeclared panics. This view does not carry
 // recipe-artifacts-declared, which a Recipe document carries.
 func (FeatureRecipeDocumentBase) RecipeArtifactsDeclared(document string) bool {
-	panic("this presentation does not carry recipe-artifacts-declared, which a Recipe document carries")
+	panic("this view does not carry recipe-artifacts-declared, which a Recipe document carries")
 }
 
-// RecipeDeclaredCapability panics. This presentation does not carry
+// RecipeDeclaredCapability panics. This view does not carry
 // recipe-declared-capability, which a Recipe document carries.
 func (FeatureRecipeDocumentBase) RecipeDeclaredCapability(document string) string {
-	panic("this presentation does not carry recipe-declared-capability, which a Recipe document carries")
+	panic("this view does not carry recipe-declared-capability, which a Recipe document carries")
 }
 
-// RecipeOutputLabelKeys panics. This presentation does not carry
+// RecipeOutputLabelKeys panics. This view does not carry
 // recipe-output-label-keys, which a Recipe document carries.
 func (FeatureRecipeDocumentBase) RecipeOutputLabelKeys(document string) []string {
-	panic("this presentation does not carry recipe-output-label-keys, which a Recipe document carries")
+	panic("this view does not carry recipe-output-label-keys, which a Recipe document carries")
 }
 
-// RecipeOutputComponentLabelKeys panics. This presentation does not carry
+// RecipeOutputComponentLabelKeys panics. This view does not carry
 // recipe-output-component-label-keys, which a Recipe document carries.
 func (FeatureRecipeDocumentBase) RecipeOutputComponentLabelKeys(document string) []string {
-	panic("this presentation does not carry recipe-output-component-label-keys, which a Recipe document carries")
+	panic("this view does not carry recipe-output-component-label-keys, which a Recipe document carries")
 }
 
-// ManifestRecipeMappingEntries panics. This presentation does not carry
+// ManifestRecipeMappingEntries panics. This view does not carry
 // manifest-recipe-mapping-entries, which a Manifest document carries.
 func (FeatureRecipeDocumentBase) ManifestRecipeMappingEntries(document string) []ManifestRecipeMapping {
-	panic("this presentation does not carry manifest-recipe-mapping-entries, which a Manifest document carries")
+	panic("this view does not carry manifest-recipe-mapping-entries, which a Manifest document carries")
 }
 
-// ManifestRecipeMappingReference panics. This presentation does not carry
+// ManifestRecipeMappingReference panics. This view does not carry
 // manifest-recipe-mapping-reference, which a Manifest document carries.
 func (FeatureRecipeDocumentBase) ManifestRecipeMappingReference(document string, tier string, axis string, key string) (string, bool) {
-	panic("this presentation does not carry manifest-recipe-mapping-reference, which a Manifest document carries")
+	panic("this view does not carry manifest-recipe-mapping-reference, which a Manifest document carries")
 }
 
-// ReleaseBoundaryPlacements panics. This presentation does not carry
+// ReleaseBoundaryPlacements panics. This view does not carry
 // release-boundary-placements, which a Release document carries.
 func (FeatureRecipeDocumentBase) ReleaseBoundaryPlacements() []BoundaryPlacement {
-	panic("this presentation does not carry release-boundary-placements, which a Release document carries")
+	panic("this view does not carry release-boundary-placements, which a Release document carries")
 }
 
 // ReleaseDocumentBase is a base for an implementation of DocumentView that
@@ -904,153 +899,152 @@ func (FeatureRecipeDocumentBase) ReleaseBoundaryPlacements() []BoundaryPlacement
 // another kind does not reach them.
 type ReleaseDocumentBase struct{}
 
-// RawAggregateText panics. This presentation does not carry
-// raw-aggregate-text, which an Aggregate document carries.
+// RawAggregateText panics. This view does not carry raw-aggregate-text,
+// which an Aggregate document carries.
 func (ReleaseDocumentBase) RawAggregateText(document string) []byte {
-	panic("this presentation does not carry raw-aggregate-text, which an Aggregate document carries")
+	panic("this view does not carry raw-aggregate-text, which an Aggregate document carries")
 }
 
-// DeclaredParameterKeys panics. This presentation does not carry
+// DeclaredParameterKeys panics. This view does not carry
 // declared-parameter-keys, which an Aggregate document carries.
 func (ReleaseDocumentBase) DeclaredParameterKeys(document string) []string {
-	panic("this presentation does not carry declared-parameter-keys, which an Aggregate document carries")
+	panic("this view does not carry declared-parameter-keys, which an Aggregate document carries")
 }
 
-// EntityAssertionNameSet panics. This presentation does not carry
+// EntityAssertionNameSet panics. This view does not carry
 // entity-assertion-name-set, which a Component document carries.
 func (ReleaseDocumentBase) EntityAssertionNameSet(document string) []string {
-	panic("this presentation does not carry entity-assertion-name-set, which a Component document carries")
+	panic("this view does not carry entity-assertion-name-set, which a Component document carries")
 }
 
-// EntityAssertionDeclaringEntity panics. This presentation does not carry
+// EntityAssertionDeclaringEntity panics. This view does not carry
 // entity-assertion-declaring-entity, which a Component document carries.
 func (ReleaseDocumentBase) EntityAssertionDeclaringEntity(document string, assertion string) (string, bool) {
-	panic("this presentation does not carry entity-assertion-declaring-entity, which a Component document carries")
+	panic("this view does not carry entity-assertion-declaring-entity, which a Component document carries")
 }
 
-// ComponentSchemaPillarKeys panics. This presentation does not carry
+// ComponentSchemaPillarKeys panics. This view does not carry
 // component-schema-pillar-keys, which a Component document carries.
 func (ReleaseDocumentBase) ComponentSchemaPillarKeys(document string) []string {
-	panic("this presentation does not carry component-schema-pillar-keys, which a Component document carries")
+	panic("this view does not carry component-schema-pillar-keys, which a Component document carries")
 }
 
-// FeatureSchemaPillarKeys panics. This presentation does not carry
+// FeatureSchemaPillarKeys panics. This view does not carry
 // feature-schema-pillar-keys, which a Feature document carries.
 func (ReleaseDocumentBase) FeatureSchemaPillarKeys(document string) []string {
-	panic("this presentation does not carry feature-schema-pillar-keys, which a Feature document carries")
+	panic("this view does not carry feature-schema-pillar-keys, which a Feature document carries")
 }
 
-// ManifestAnnotationBindingKeys panics. This presentation does not carry
+// ManifestAnnotationBindingKeys panics. This view does not carry
 // manifest-annotation-binding-keys, which a Manifest document carries.
 func (ReleaseDocumentBase) ManifestAnnotationBindingKeys(document string) []string {
-	panic("this presentation does not carry manifest-annotation-binding-keys, which a Manifest document carries")
+	panic("this view does not carry manifest-annotation-binding-keys, which a Manifest document carries")
 }
 
-// ManifestAnnotationBindingFeature panics. This presentation does not
-// carry manifest-annotation-binding-feature, which a Manifest document
-// carries.
+// ManifestAnnotationBindingFeature panics. This view does not carry
+// manifest-annotation-binding-feature, which a Manifest document carries.
 func (ReleaseDocumentBase) ManifestAnnotationBindingFeature(document string, binding string) (string, bool) {
-	panic("this presentation does not carry manifest-annotation-binding-feature, which a Manifest document carries")
+	panic("this view does not carry manifest-annotation-binding-feature, which a Manifest document carries")
 }
 
-// ManifestAnnotationBindingRoutes panics. This presentation does not carry
+// ManifestAnnotationBindingRoutes panics. This view does not carry
 // manifest-annotation-binding-routes, which a Manifest document carries.
 func (ReleaseDocumentBase) ManifestAnnotationBindingRoutes(document string, binding string) []AnnotationBindingRoute {
-	panic("this presentation does not carry manifest-annotation-binding-routes, which a Manifest document carries")
+	panic("this view does not carry manifest-annotation-binding-routes, which a Manifest document carries")
 }
 
-// AnnotationBindingSubkeyTarget panics. This presentation does not carry
+// AnnotationBindingSubkeyTarget panics. This view does not carry
 // annotation-binding-subkey-target, which a Manifest document carries.
 func (ReleaseDocumentBase) AnnotationBindingSubkeyTarget(binding string, subkey string) (AnnotationSubkeyTarget, bool) {
-	panic("this presentation does not carry annotation-binding-subkey-target, which a Manifest document carries")
+	panic("this view does not carry annotation-binding-subkey-target, which a Manifest document carries")
 }
 
-// RecipeValuesMappingDeclared panics. This presentation does not carry
+// RecipeValuesMappingDeclared panics. This view does not carry
 // recipe-values-mapping-declared, which a Recipe document carries.
 func (ReleaseDocumentBase) RecipeValuesMappingDeclared(document string) bool {
-	panic("this presentation does not carry recipe-values-mapping-declared, which a Recipe document carries")
+	panic("this view does not carry recipe-values-mapping-declared, which a Recipe document carries")
 }
 
-// RecipeSourceDeclared panics. This presentation does not carry
+// RecipeSourceDeclared panics. This view does not carry
 // recipe-source-declared, which a Recipe document carries.
 func (ReleaseDocumentBase) RecipeSourceDeclared(document string) bool {
-	panic("this presentation does not carry recipe-source-declared, which a Recipe document carries")
+	panic("this view does not carry recipe-source-declared, which a Recipe document carries")
 }
 
-// RecipeWorkloadDeclared panics. This presentation does not carry
+// RecipeWorkloadDeclared panics. This view does not carry
 // recipe-workload-declared, which a Recipe document carries.
 func (ReleaseDocumentBase) RecipeWorkloadDeclared(document string) bool {
-	panic("this presentation does not carry recipe-workload-declared, which a Recipe document carries")
+	panic("this view does not carry recipe-workload-declared, which a Recipe document carries")
 }
 
-// RecipeArtifactsDeclared panics. This presentation does not carry
+// RecipeArtifactsDeclared panics. This view does not carry
 // recipe-artifacts-declared, which a Recipe document carries.
 func (ReleaseDocumentBase) RecipeArtifactsDeclared(document string) bool {
-	panic("this presentation does not carry recipe-artifacts-declared, which a Recipe document carries")
+	panic("this view does not carry recipe-artifacts-declared, which a Recipe document carries")
 }
 
-// RecipeDeclaredCapability panics. This presentation does not carry
+// RecipeDeclaredCapability panics. This view does not carry
 // recipe-declared-capability, which a Recipe document carries.
 func (ReleaseDocumentBase) RecipeDeclaredCapability(document string) string {
-	panic("this presentation does not carry recipe-declared-capability, which a Recipe document carries")
+	panic("this view does not carry recipe-declared-capability, which a Recipe document carries")
 }
 
-// RecipeOutputLabelKeys panics. This presentation does not carry
+// RecipeOutputLabelKeys panics. This view does not carry
 // recipe-output-label-keys, which a Recipe document carries.
 func (ReleaseDocumentBase) RecipeOutputLabelKeys(document string) []string {
-	panic("this presentation does not carry recipe-output-label-keys, which a Recipe document carries")
+	panic("this view does not carry recipe-output-label-keys, which a Recipe document carries")
 }
 
-// RecipeOutputComponentLabelKeys panics. This presentation does not carry
+// RecipeOutputComponentLabelKeys panics. This view does not carry
 // recipe-output-component-label-keys, which a Recipe document carries.
 func (ReleaseDocumentBase) RecipeOutputComponentLabelKeys(document string) []string {
-	panic("this presentation does not carry recipe-output-component-label-keys, which a Recipe document carries")
+	panic("this view does not carry recipe-output-component-label-keys, which a Recipe document carries")
 }
 
-// ManifestRecipeMappingEntries panics. This presentation does not carry
+// ManifestRecipeMappingEntries panics. This view does not carry
 // manifest-recipe-mapping-entries, which a Manifest document carries.
 func (ReleaseDocumentBase) ManifestRecipeMappingEntries(document string) []ManifestRecipeMapping {
-	panic("this presentation does not carry manifest-recipe-mapping-entries, which a Manifest document carries")
+	panic("this view does not carry manifest-recipe-mapping-entries, which a Manifest document carries")
 }
 
-// ManifestRecipeMappingReference panics. This presentation does not carry
+// ManifestRecipeMappingReference panics. This view does not carry
 // manifest-recipe-mapping-reference, which a Manifest document carries.
 func (ReleaseDocumentBase) ManifestRecipeMappingReference(document string, tier string, axis string, key string) (string, bool) {
-	panic("this presentation does not carry manifest-recipe-mapping-reference, which a Manifest document carries")
+	panic("this view does not carry manifest-recipe-mapping-reference, which a Manifest document carries")
 }
 
-// FeatureRecipeSourceDeclared panics. This presentation does not carry
+// FeatureRecipeSourceDeclared panics. This view does not carry
 // feature-recipe-source-declared, which a FeatureRecipe document carries.
 func (ReleaseDocumentBase) FeatureRecipeSourceDeclared(document string) bool {
-	panic("this presentation does not carry feature-recipe-source-declared, which a FeatureRecipe document carries")
+	panic("this view does not carry feature-recipe-source-declared, which a FeatureRecipe document carries")
 }
 
-// FeatureRecipeValuesMappingDeclared panics. This presentation does not
-// carry feature-recipe-values-mapping-declared, which a FeatureRecipe
-// document carries.
+// FeatureRecipeValuesMappingDeclared panics. This view does not carry
+// feature-recipe-values-mapping-declared, which a FeatureRecipe document
+// carries.
 func (ReleaseDocumentBase) FeatureRecipeValuesMappingDeclared(document string) bool {
-	panic("this presentation does not carry feature-recipe-values-mapping-declared, which a FeatureRecipe document carries")
+	panic("this view does not carry feature-recipe-values-mapping-declared, which a FeatureRecipe document carries")
 }
 
-// FeatureRecipeWorkloadDeclared panics. This presentation does not carry
+// FeatureRecipeWorkloadDeclared panics. This view does not carry
 // feature-recipe-workload-declared, which a FeatureRecipe document
 // carries.
 func (ReleaseDocumentBase) FeatureRecipeWorkloadDeclared(document string) bool {
-	panic("this presentation does not carry feature-recipe-workload-declared, which a FeatureRecipe document carries")
+	panic("this view does not carry feature-recipe-workload-declared, which a FeatureRecipe document carries")
 }
 
-// FeatureRecipeArtifactsDeclared panics. This presentation does not carry
+// FeatureRecipeArtifactsDeclared panics. This view does not carry
 // feature-recipe-artifacts-declared, which a FeatureRecipe document
 // carries.
 func (ReleaseDocumentBase) FeatureRecipeArtifactsDeclared(document string) bool {
-	panic("this presentation does not carry feature-recipe-artifacts-declared, which a FeatureRecipe document carries")
+	panic("this view does not carry feature-recipe-artifacts-declared, which a FeatureRecipe document carries")
 }
 
-// FeatureRecipeDeclaredCapability panics. This presentation does not carry
+// FeatureRecipeDeclaredCapability panics. This view does not carry
 // feature-recipe-declared-capability, which a FeatureRecipe document
 // carries.
 func (ReleaseDocumentBase) FeatureRecipeDeclaredCapability(document string) string {
-	panic("this presentation does not carry feature-recipe-declared-capability, which a FeatureRecipe document carries")
+	panic("this view does not carry feature-recipe-declared-capability, which a FeatureRecipe document carries")
 }
 
 // NormalizedViewBase is a base for an implementation of NormalizedView.
@@ -1072,159 +1066,158 @@ func (ReleaseDocumentBase) FeatureRecipeDeclaredCapability(document string) stri
 // refuse.
 type NormalizedViewBase struct{}
 
-// RawAggregateText panics. This presentation does not carry
-// raw-aggregate-text, which an Aggregate document carries.
+// RawAggregateText panics. This view does not carry raw-aggregate-text,
+// which an Aggregate document carries.
 func (NormalizedViewBase) RawAggregateText(document string) []byte {
-	panic("this presentation does not carry raw-aggregate-text, which an Aggregate document carries")
+	panic("this view does not carry raw-aggregate-text, which an Aggregate document carries")
 }
 
-// DeclaredParameterKeys panics. This presentation does not carry
+// DeclaredParameterKeys panics. This view does not carry
 // declared-parameter-keys, which an Aggregate document carries.
 func (NormalizedViewBase) DeclaredParameterKeys(document string) []string {
-	panic("this presentation does not carry declared-parameter-keys, which an Aggregate document carries")
+	panic("this view does not carry declared-parameter-keys, which an Aggregate document carries")
 }
 
-// EntityAssertionNameSet panics. This presentation does not carry
+// EntityAssertionNameSet panics. This view does not carry
 // entity-assertion-name-set, which a Component document carries.
 func (NormalizedViewBase) EntityAssertionNameSet(document string) []string {
-	panic("this presentation does not carry entity-assertion-name-set, which a Component document carries")
+	panic("this view does not carry entity-assertion-name-set, which a Component document carries")
 }
 
-// EntityAssertionDeclaringEntity panics. This presentation does not carry
+// EntityAssertionDeclaringEntity panics. This view does not carry
 // entity-assertion-declaring-entity, which a Component document carries.
 func (NormalizedViewBase) EntityAssertionDeclaringEntity(document string, assertion string) (string, bool) {
-	panic("this presentation does not carry entity-assertion-declaring-entity, which a Component document carries")
+	panic("this view does not carry entity-assertion-declaring-entity, which a Component document carries")
 }
 
-// ComponentSchemaPillarKeys panics. This presentation does not carry
+// ComponentSchemaPillarKeys panics. This view does not carry
 // component-schema-pillar-keys, which a Component document carries.
 func (NormalizedViewBase) ComponentSchemaPillarKeys(document string) []string {
-	panic("this presentation does not carry component-schema-pillar-keys, which a Component document carries")
+	panic("this view does not carry component-schema-pillar-keys, which a Component document carries")
 }
 
-// FeatureSchemaPillarKeys panics. This presentation does not carry
+// FeatureSchemaPillarKeys panics. This view does not carry
 // feature-schema-pillar-keys, which a Feature document carries.
 func (NormalizedViewBase) FeatureSchemaPillarKeys(document string) []string {
-	panic("this presentation does not carry feature-schema-pillar-keys, which a Feature document carries")
+	panic("this view does not carry feature-schema-pillar-keys, which a Feature document carries")
 }
 
-// ManifestAnnotationBindingKeys panics. This presentation does not carry
+// ManifestAnnotationBindingKeys panics. This view does not carry
 // manifest-annotation-binding-keys, which a Manifest document carries.
 func (NormalizedViewBase) ManifestAnnotationBindingKeys(document string) []string {
-	panic("this presentation does not carry manifest-annotation-binding-keys, which a Manifest document carries")
+	panic("this view does not carry manifest-annotation-binding-keys, which a Manifest document carries")
 }
 
-// ManifestAnnotationBindingFeature panics. This presentation does not
-// carry manifest-annotation-binding-feature, which a Manifest document
-// carries.
+// ManifestAnnotationBindingFeature panics. This view does not carry
+// manifest-annotation-binding-feature, which a Manifest document carries.
 func (NormalizedViewBase) ManifestAnnotationBindingFeature(document string, binding string) (string, bool) {
-	panic("this presentation does not carry manifest-annotation-binding-feature, which a Manifest document carries")
+	panic("this view does not carry manifest-annotation-binding-feature, which a Manifest document carries")
 }
 
-// ManifestAnnotationBindingRoutes panics. This presentation does not carry
+// ManifestAnnotationBindingRoutes panics. This view does not carry
 // manifest-annotation-binding-routes, which a Manifest document carries.
 func (NormalizedViewBase) ManifestAnnotationBindingRoutes(document string, binding string) []AnnotationBindingRoute {
-	panic("this presentation does not carry manifest-annotation-binding-routes, which a Manifest document carries")
+	panic("this view does not carry manifest-annotation-binding-routes, which a Manifest document carries")
 }
 
-// AnnotationBindingSubkeyTarget panics. This presentation does not carry
+// AnnotationBindingSubkeyTarget panics. This view does not carry
 // annotation-binding-subkey-target, which a Manifest document carries.
 func (NormalizedViewBase) AnnotationBindingSubkeyTarget(binding string, subkey string) (AnnotationSubkeyTarget, bool) {
-	panic("this presentation does not carry annotation-binding-subkey-target, which a Manifest document carries")
+	panic("this view does not carry annotation-binding-subkey-target, which a Manifest document carries")
 }
 
-// RecipeValuesMappingDeclared panics. This presentation does not carry
+// RecipeValuesMappingDeclared panics. This view does not carry
 // recipe-values-mapping-declared, which a Recipe document carries.
 func (NormalizedViewBase) RecipeValuesMappingDeclared(document string) bool {
-	panic("this presentation does not carry recipe-values-mapping-declared, which a Recipe document carries")
+	panic("this view does not carry recipe-values-mapping-declared, which a Recipe document carries")
 }
 
-// RecipeSourceDeclared panics. This presentation does not carry
+// RecipeSourceDeclared panics. This view does not carry
 // recipe-source-declared, which a Recipe document carries.
 func (NormalizedViewBase) RecipeSourceDeclared(document string) bool {
-	panic("this presentation does not carry recipe-source-declared, which a Recipe document carries")
+	panic("this view does not carry recipe-source-declared, which a Recipe document carries")
 }
 
-// RecipeWorkloadDeclared panics. This presentation does not carry
+// RecipeWorkloadDeclared panics. This view does not carry
 // recipe-workload-declared, which a Recipe document carries.
 func (NormalizedViewBase) RecipeWorkloadDeclared(document string) bool {
-	panic("this presentation does not carry recipe-workload-declared, which a Recipe document carries")
+	panic("this view does not carry recipe-workload-declared, which a Recipe document carries")
 }
 
-// RecipeArtifactsDeclared panics. This presentation does not carry
+// RecipeArtifactsDeclared panics. This view does not carry
 // recipe-artifacts-declared, which a Recipe document carries.
 func (NormalizedViewBase) RecipeArtifactsDeclared(document string) bool {
-	panic("this presentation does not carry recipe-artifacts-declared, which a Recipe document carries")
+	panic("this view does not carry recipe-artifacts-declared, which a Recipe document carries")
 }
 
-// RecipeDeclaredCapability panics. This presentation does not carry
+// RecipeDeclaredCapability panics. This view does not carry
 // recipe-declared-capability, which a Recipe document carries.
 func (NormalizedViewBase) RecipeDeclaredCapability(document string) string {
-	panic("this presentation does not carry recipe-declared-capability, which a Recipe document carries")
+	panic("this view does not carry recipe-declared-capability, which a Recipe document carries")
 }
 
-// RecipeOutputLabelKeys panics. This presentation does not carry
+// RecipeOutputLabelKeys panics. This view does not carry
 // recipe-output-label-keys, which a Recipe document carries.
 func (NormalizedViewBase) RecipeOutputLabelKeys(document string) []string {
-	panic("this presentation does not carry recipe-output-label-keys, which a Recipe document carries")
+	panic("this view does not carry recipe-output-label-keys, which a Recipe document carries")
 }
 
-// RecipeOutputComponentLabelKeys panics. This presentation does not carry
+// RecipeOutputComponentLabelKeys panics. This view does not carry
 // recipe-output-component-label-keys, which a Recipe document carries.
 func (NormalizedViewBase) RecipeOutputComponentLabelKeys(document string) []string {
-	panic("this presentation does not carry recipe-output-component-label-keys, which a Recipe document carries")
+	panic("this view does not carry recipe-output-component-label-keys, which a Recipe document carries")
 }
 
-// ManifestRecipeMappingEntries panics. This presentation does not carry
+// ManifestRecipeMappingEntries panics. This view does not carry
 // manifest-recipe-mapping-entries, which a Manifest document carries.
 func (NormalizedViewBase) ManifestRecipeMappingEntries(document string) []ManifestRecipeMapping {
-	panic("this presentation does not carry manifest-recipe-mapping-entries, which a Manifest document carries")
+	panic("this view does not carry manifest-recipe-mapping-entries, which a Manifest document carries")
 }
 
-// ManifestRecipeMappingReference panics. This presentation does not carry
+// ManifestRecipeMappingReference panics. This view does not carry
 // manifest-recipe-mapping-reference, which a Manifest document carries.
 func (NormalizedViewBase) ManifestRecipeMappingReference(document string, tier string, axis string, key string) (string, bool) {
-	panic("this presentation does not carry manifest-recipe-mapping-reference, which a Manifest document carries")
+	panic("this view does not carry manifest-recipe-mapping-reference, which a Manifest document carries")
 }
 
-// FeatureRecipeSourceDeclared panics. This presentation does not carry
+// FeatureRecipeSourceDeclared panics. This view does not carry
 // feature-recipe-source-declared, which a FeatureRecipe document carries.
 func (NormalizedViewBase) FeatureRecipeSourceDeclared(document string) bool {
-	panic("this presentation does not carry feature-recipe-source-declared, which a FeatureRecipe document carries")
+	panic("this view does not carry feature-recipe-source-declared, which a FeatureRecipe document carries")
 }
 
-// FeatureRecipeValuesMappingDeclared panics. This presentation does not
-// carry feature-recipe-values-mapping-declared, which a FeatureRecipe
-// document carries.
+// FeatureRecipeValuesMappingDeclared panics. This view does not carry
+// feature-recipe-values-mapping-declared, which a FeatureRecipe document
+// carries.
 func (NormalizedViewBase) FeatureRecipeValuesMappingDeclared(document string) bool {
-	panic("this presentation does not carry feature-recipe-values-mapping-declared, which a FeatureRecipe document carries")
+	panic("this view does not carry feature-recipe-values-mapping-declared, which a FeatureRecipe document carries")
 }
 
-// FeatureRecipeWorkloadDeclared panics. This presentation does not carry
+// FeatureRecipeWorkloadDeclared panics. This view does not carry
 // feature-recipe-workload-declared, which a FeatureRecipe document
 // carries.
 func (NormalizedViewBase) FeatureRecipeWorkloadDeclared(document string) bool {
-	panic("this presentation does not carry feature-recipe-workload-declared, which a FeatureRecipe document carries")
+	panic("this view does not carry feature-recipe-workload-declared, which a FeatureRecipe document carries")
 }
 
-// FeatureRecipeArtifactsDeclared panics. This presentation does not carry
+// FeatureRecipeArtifactsDeclared panics. This view does not carry
 // feature-recipe-artifacts-declared, which a FeatureRecipe document
 // carries.
 func (NormalizedViewBase) FeatureRecipeArtifactsDeclared(document string) bool {
-	panic("this presentation does not carry feature-recipe-artifacts-declared, which a FeatureRecipe document carries")
+	panic("this view does not carry feature-recipe-artifacts-declared, which a FeatureRecipe document carries")
 }
 
-// FeatureRecipeDeclaredCapability panics. This presentation does not carry
+// FeatureRecipeDeclaredCapability panics. This view does not carry
 // feature-recipe-declared-capability, which a FeatureRecipe document
 // carries.
 func (NormalizedViewBase) FeatureRecipeDeclaredCapability(document string) string {
-	panic("this presentation does not carry feature-recipe-declared-capability, which a FeatureRecipe document carries")
+	panic("this view does not carry feature-recipe-declared-capability, which a FeatureRecipe document carries")
 }
 
-// ReleaseBoundaryPlacements panics. This presentation does not carry
+// ReleaseBoundaryPlacements panics. This view does not carry
 // release-boundary-placements, which a Release document carries.
 func (NormalizedViewBase) ReleaseBoundaryPlacements() []BoundaryPlacement {
-	panic("this presentation does not carry release-boundary-placements, which a Release document carries")
+	panic("this view does not carry release-boundary-placements, which a Release document carries")
 }
 
 // TopologyViewBase is a base for an implementation of TopologyView.
@@ -1251,380 +1244,379 @@ type TopologyViewBase struct {
 	NormalizedViewBase
 }
 
-// InstanceComponentType panics. This presentation does not carry
+// InstanceComponentType panics. This view does not carry
 // instance-component-type, which is read from
 // types.ComponentInstance.Type.
 func (TopologyViewBase) InstanceComponentType(node string) (string, bool) {
-	panic("this presentation does not carry instance-component-type, which is read from types.ComponentInstance.Type")
+	panic("this view does not carry instance-component-type, which is read from types.ComponentInstance.Type")
 }
 
-// SocketRequired panics. This presentation does not carry socket-required,
-// which is read from types.UsesSchemaEntry.Required.
+// SocketRequired panics. This view does not carry socket-required, which
+// is read from types.UsesSchemaEntry.Required.
 func (TopologyViewBase) SocketRequired(componentType string, socket string) bool {
-	panic("this presentation does not carry socket-required, which is read from types.UsesSchemaEntry.Required")
+	panic("this view does not carry socket-required, which is read from types.UsesSchemaEntry.Required")
 }
 
-// SocketInjectMechanismNames panics. This presentation does not carry
+// SocketInjectMechanismNames panics. This view does not carry
 // socket-inject-mechanism-names, which is read from
 // types.UsesSchemaEntry.Inject.
 func (TopologyViewBase) SocketInjectMechanismNames(componentType string, socket string) []string {
-	panic("this presentation does not carry socket-inject-mechanism-names, which is read from types.UsesSchemaEntry.Inject")
+	panic("this view does not carry socket-inject-mechanism-names, which is read from types.UsesSchemaEntry.Inject")
 }
 
-// AttachmentSocketInjectMechanismNames panics. This presentation does not
-// carry attachment-socket-inject-mechanism-names, which is read from
+// AttachmentSocketInjectMechanismNames panics. This view does not carry
+// attachment-socket-inject-mechanism-names, which is read from
 // types.UsesSchemaEntry.Inject.
 func (TopologyViewBase) AttachmentSocketInjectMechanismNames(featureType string, socket string) []string {
-	panic("this presentation does not carry attachment-socket-inject-mechanism-names, which is read from types.UsesSchemaEntry.Inject")
+	panic("this view does not carry attachment-socket-inject-mechanism-names, which is read from types.UsesSchemaEntry.Inject")
 }
 
-// PerEdgeTarget panics. This presentation does not carry per-edge-target,
-// which is read from types.VerboseUsesEntry.Target.
+// PerEdgeTarget panics. This view does not carry per-edge-target, which is
+// read from types.VerboseUsesEntry.Target.
 func (TopologyViewBase) PerEdgeTarget(node string, socket string, alias string) string {
-	panic("this presentation does not carry per-edge-target, which is read from types.VerboseUsesEntry.Target")
+	panic("this view does not carry per-edge-target, which is read from types.VerboseUsesEntry.Target")
 }
 
-// PerEdgeValues panics. This presentation does not carry per-edge-values,
-// which is read from types.VerboseUsesEntry.Values.
+// PerEdgeValues panics. This view does not carry per-edge-values, which is
+// read from types.VerboseUsesEntry.Values.
 func (TopologyViewBase) PerEdgeValues(node string, socket string, alias string) types.OrderedMap[any] {
-	panic("this presentation does not carry per-edge-values, which is read from types.VerboseUsesEntry.Values")
+	panic("this view does not carry per-edge-values, which is read from types.VerboseUsesEntry.Values")
 }
 
-// AuthoredPerEdgeInject panics. This presentation does not carry
+// AuthoredPerEdgeInject panics. This view does not carry
 // authored-per-edge-inject, which is read from
 // types.VerboseUsesEntry.Inject.
 func (TopologyViewBase) AuthoredPerEdgeInject(node string, socket string, alias string) types.OrderedMap[any] {
-	panic("this presentation does not carry authored-per-edge-inject, which is read from types.VerboseUsesEntry.Inject")
+	panic("this view does not carry authored-per-edge-inject, which is read from types.VerboseUsesEntry.Inject")
 }
 
-// CompactSocketTargets panics. This presentation does not carry
+// CompactSocketTargets panics. This view does not carry
 // compact-socket-targets, which is read from
 // types.UsesSocketValue.Compact.
 func (TopologyViewBase) CompactSocketTargets(node string, socket string) []string {
-	panic("this presentation does not carry compact-socket-targets, which is read from types.UsesSocketValue.Compact")
+	panic("this view does not carry compact-socket-targets, which is read from types.UsesSocketValue.Compact")
 }
 
-// AuthoredUsesSocketConnections panics. This presentation does not carry
+// AuthoredUsesSocketConnections panics. This view does not carry
 // authored-uses-socket-connections, which is read from
 // types.ComponentInstance.Uses.
 func (TopologyViewBase) AuthoredUsesSocketConnections(node string) types.OrderedMap[int] {
-	panic("this presentation does not carry authored-uses-socket-connections, which is read from types.ComponentInstance.Uses")
+	panic("this view does not carry authored-uses-socket-connections, which is read from types.ComponentInstance.Uses")
 }
 
-// AuthoredUsesSocketEntryAliases panics. This presentation does not carry
+// AuthoredUsesSocketEntryAliases panics. This view does not carry
 // authored-uses-socket-entry-aliases, which is read from
 // types.ComponentInstance.Uses.
 func (TopologyViewBase) AuthoredUsesSocketEntryAliases(node string, socket string) []string {
-	panic("this presentation does not carry authored-uses-socket-entry-aliases, which is read from types.ComponentInstance.Uses")
+	panic("this view does not carry authored-uses-socket-entry-aliases, which is read from types.ComponentInstance.Uses")
 }
 
-// AuthoredAttachmentNames panics. This presentation does not carry
+// AuthoredAttachmentNames panics. This view does not carry
 // authored-attachment-names, which is read from
 // types.ComponentInstance.Features.
 func (TopologyViewBase) AuthoredAttachmentNames(node string) []string {
-	panic("this presentation does not carry authored-attachment-names, which is read from types.ComponentInstance.Features")
+	panic("this view does not carry authored-attachment-names, which is read from types.ComponentInstance.Features")
 }
 
-// AuthoredAttachmentType panics. This presentation does not carry
+// AuthoredAttachmentType panics. This view does not carry
 // authored-attachment-type, which is read from types.FeatureInstance.Type.
 func (TopologyViewBase) AuthoredAttachmentType(node string, attachment string) (string, bool) {
-	panic("this presentation does not carry authored-attachment-type, which is read from types.FeatureInstance.Type")
+	panic("this view does not carry authored-attachment-type, which is read from types.FeatureInstance.Type")
 }
 
-// AttachmentAuthoredUsesSocketNames panics. This presentation does not
-// carry attachment-authored-uses-socket-names, which is read from
+// AttachmentAuthoredUsesSocketNames panics. This view does not carry
+// attachment-authored-uses-socket-names, which is read from
 // types.FeatureInstance.Uses.
 func (TopologyViewBase) AttachmentAuthoredUsesSocketNames(node string, attachment string) []string {
-	panic("this presentation does not carry attachment-authored-uses-socket-names, which is read from types.FeatureInstance.Uses")
+	panic("this view does not carry attachment-authored-uses-socket-names, which is read from types.FeatureInstance.Uses")
 }
 
-// SubsystemAttachmentDeclaration panics. This presentation does not carry
+// SubsystemAttachmentDeclaration panics. This view does not carry
 // subsystem-attachment-declaration, which is read from
 // types.Subsystem.Features.
 func (TopologyViewBase) SubsystemAttachmentDeclaration(subsystem string, attachment string) (AttachmentDeclaration, bool) {
-	panic("this presentation does not carry subsystem-attachment-declaration, which is read from types.Subsystem.Features")
+	panic("this view does not carry subsystem-attachment-declaration, which is read from types.Subsystem.Features")
 }
 
-// AuthoredAnnotationSubvalue panics. This presentation does not carry
+// AuthoredAnnotationSubvalue panics. This view does not carry
 // authored-annotation-subvalue, which is read from types.AnnotationValue.
 func (TopologyViewBase) AuthoredAnnotationSubvalue(document string, scope string, component string, key string, subkey string) (any, bool) {
-	panic("this presentation does not carry authored-annotation-subvalue, which is read from types.AnnotationValue")
+	panic("this view does not carry authored-annotation-subvalue, which is read from types.AnnotationValue")
 }
 
-// SlotRequired panics. This presentation does not carry slot-required,
-// which is read from types.AttachmentSlot.Required.
+// SlotRequired panics. This view does not carry slot-required, which is
+// read from types.AttachmentSlot.Required.
 func (TopologyViewBase) SlotRequired(componentType string, slot string) bool {
-	panic("this presentation does not carry slot-required, which is read from types.AttachmentSlot.Required")
+	panic("this view does not carry slot-required, which is read from types.AttachmentSlot.Required")
 }
 
-// AuthoredInjectBlockPresent panics. This presentation does not carry
+// AuthoredInjectBlockPresent panics. This view does not carry
 // authored-inject-block-present, which is read from
 // types.ComponentInstance.Inject.
 func (TopologyViewBase) AuthoredInjectBlockPresent(node string) bool {
-	panic("this presentation does not carry authored-inject-block-present, which is read from types.ComponentInstance.Inject")
+	panic("this view does not carry authored-inject-block-present, which is read from types.ComponentInstance.Inject")
 }
 
-// AuthoredInjectMechanismNames panics. This presentation does not carry
+// AuthoredInjectMechanismNames panics. This view does not carry
 // authored-inject-mechanism-names, which is read from
 // types.ComponentInstance.Inject.
 func (TopologyViewBase) AuthoredInjectMechanismNames(node string) []string {
-	panic("this presentation does not carry authored-inject-mechanism-names, which is read from types.ComponentInstance.Inject")
+	panic("this view does not carry authored-inject-mechanism-names, which is read from types.ComponentInstance.Inject")
 }
 
-// AuthoredInjectDeliveryKeys panics. This presentation does not carry
+// AuthoredInjectDeliveryKeys panics. This view does not carry
 // authored-inject-delivery-keys, which is read from
 // types.ComponentInstance.Inject.
 func (TopologyViewBase) AuthoredInjectDeliveryKeys(node string, mechanism string) []string {
-	panic("this presentation does not carry authored-inject-delivery-keys, which is read from types.ComponentInstance.Inject")
+	panic("this view does not carry authored-inject-delivery-keys, which is read from types.ComponentInstance.Inject")
 }
 
-// AuthoredInjectProvidesReference panics. This presentation does not carry
+// AuthoredInjectProvidesReference panics. This view does not carry
 // authored-inject-provides-reference, which is read from
 // types.ComponentInstance.Inject.
 func (TopologyViewBase) AuthoredInjectProvidesReference(node string, mechanism string, deliveryKey string) (string, bool) {
-	panic("this presentation does not carry authored-inject-provides-reference, which is read from types.ComponentInstance.Inject")
+	panic("this view does not carry authored-inject-provides-reference, which is read from types.ComponentInstance.Inject")
 }
 
-// AuthoredValuesPillar panics. This presentation does not carry
+// AuthoredValuesPillar panics. This view does not carry
 // authored-values-pillar, which is read from
 // types.ComponentInstance.Values.
 func (TopologyViewBase) AuthoredValuesPillar(node string, pillar string) types.OrderedMap[any] {
-	panic("this presentation does not carry authored-values-pillar, which is read from types.ComponentInstance.Values")
+	panic("this view does not carry authored-values-pillar, which is read from types.ComponentInstance.Values")
 }
 
-// AuthoredAttachmentBlock panics. This presentation does not carry
+// AuthoredAttachmentBlock panics. This view does not carry
 // authored-attachment-block, which is read from
 // types.ComponentInstance.Features.
 func (TopologyViewBase) AuthoredAttachmentBlock(node string) types.OrderedMap[types.FeatureInstance] {
-	panic("this presentation does not carry authored-attachment-block, which is read from types.ComponentInstance.Features")
+	panic("this view does not carry authored-attachment-block, which is read from types.ComponentInstance.Features")
 }
 
-// SocketSelector panics. This presentation does not carry socket-selector,
-// which is read from types.UsesSchemaEntry.Selector.
+// SocketSelector panics. This view does not carry socket-selector, which
+// is read from types.UsesSchemaEntry.Selector.
 func (TopologyViewBase) SocketSelector(componentType string, socket string) string {
-	panic("this presentation does not carry socket-selector, which is read from types.UsesSchemaEntry.Selector")
+	panic("this view does not carry socket-selector, which is read from types.UsesSchemaEntry.Selector")
 }
 
-// AttachmentSocketSelector panics. This presentation does not carry
+// AttachmentSocketSelector panics. This view does not carry
 // attachment-socket-selector, which is read from
 // types.UsesSchemaEntry.Selector.
 func (TopologyViewBase) AttachmentSocketSelector(featureType string, socket string) string {
-	panic("this presentation does not carry attachment-socket-selector, which is read from types.UsesSchemaEntry.Selector")
+	panic("this view does not carry attachment-socket-selector, which is read from types.UsesSchemaEntry.Selector")
 }
 
-// SlotSelector panics. This presentation does not carry slot-selector,
-// which is read from types.AttachmentSlot.Selector.
+// SlotSelector panics. This view does not carry slot-selector, which is
+// read from types.AttachmentSlot.Selector.
 func (TopologyViewBase) SlotSelector(componentType string, slot string) string {
-	panic("this presentation does not carry slot-selector, which is read from types.AttachmentSlot.Selector")
+	panic("this view does not carry slot-selector, which is read from types.AttachmentSlot.Selector")
 }
 
-// SlotInjectMechanismNames panics. This presentation does not carry
+// SlotInjectMechanismNames panics. This view does not carry
 // slot-inject-mechanism-names, which is read from
 // types.AttachmentSlot.Inject.
 func (TopologyViewBase) SlotInjectMechanismNames(componentType string, slot string) []string {
-	panic("this presentation does not carry slot-inject-mechanism-names, which is read from types.AttachmentSlot.Inject")
+	panic("this view does not carry slot-inject-mechanism-names, which is read from types.AttachmentSlot.Inject")
 }
 
-// FeatureAppliesTo panics. This presentation does not carry
-// feature-applies-to, which is read from types.FeatureSpec.AppliesTo.
+// FeatureAppliesTo panics. This view does not carry feature-applies-to,
+// which is read from types.FeatureSpec.AppliesTo.
 func (TopologyViewBase) FeatureAppliesTo(featureType string) string {
-	panic("this presentation does not carry feature-applies-to, which is read from types.FeatureSpec.AppliesTo")
+	panic("this view does not carry feature-applies-to, which is read from types.FeatureSpec.AppliesTo")
 }
 
-// FeatureAppliesToAnyOf panics. This presentation does not carry
+// FeatureAppliesToAnyOf panics. This view does not carry
 // feature-applies-to-any-of, which is read from
 // types.FeatureSpec.AppliesToAnyOf.
 func (TopologyViewBase) FeatureAppliesToAnyOf(featureType string) []types.SelectorTerm {
-	panic("this presentation does not carry feature-applies-to-any-of, which is read from types.FeatureSpec.AppliesToAnyOf")
+	panic("this view does not carry feature-applies-to-any-of, which is read from types.FeatureSpec.AppliesToAnyOf")
 }
 
-// AttachmentFeatureLabels panics. This presentation does not carry
+// AttachmentFeatureLabels panics. This view does not carry
 // attachment-feature-labels, which is read from
 // types.FeatureMetadata.Labels.
 func (TopologyViewBase) AttachmentFeatureLabels(featureType string) types.OrderedMap[string] {
-	panic("this presentation does not carry attachment-feature-labels, which is read from types.FeatureMetadata.Labels")
+	panic("this view does not carry attachment-feature-labels, which is read from types.FeatureMetadata.Labels")
 }
 
-// RequiredAttachmentMandates panics. This presentation does not carry
+// RequiredAttachmentMandates panics. This view does not carry
 // required-attachment-mandates, which is read from
 // types.RequiredAttachmentTypes(annotations).
 func (TopologyViewBase) RequiredAttachmentMandates(componentType string) []types.RequiredAttachmentType {
-	panic("this presentation does not carry required-attachment-mandates, which is read from types.RequiredAttachmentTypes(annotations)")
+	panic("this view does not carry required-attachment-mandates, which is read from types.RequiredAttachmentTypes(annotations)")
 }
 
-// DeclaredSocketNames panics. This presentation does not carry
+// DeclaredSocketNames panics. This view does not carry
 // declared-socket-names, which is read from
 // types.ComponentSpec.UsesSchema.
 func (TopologyViewBase) DeclaredSocketNames(componentType string) []string {
-	panic("this presentation does not carry declared-socket-names, which is read from types.ComponentSpec.UsesSchema")
+	panic("this view does not carry declared-socket-names, which is read from types.ComponentSpec.UsesSchema")
 }
 
-// DeclaredInjectMechanismNames panics. This presentation does not carry
+// DeclaredInjectMechanismNames panics. This view does not carry
 // declared-inject-mechanism-names, which is read from
 // types.ComponentSpec.Inject.
 func (TopologyViewBase) DeclaredInjectMechanismNames(componentType string) []string {
-	panic("this presentation does not carry declared-inject-mechanism-names, which is read from types.ComponentSpec.Inject")
+	panic("this view does not carry declared-inject-mechanism-names, which is read from types.ComponentSpec.Inject")
 }
 
-// AttachmentDeclaredSocketNames panics. This presentation does not carry
+// AttachmentDeclaredSocketNames panics. This view does not carry
 // attachment-declared-socket-names, which is read from
 // types.FeatureSpec.UsesSchema.
 func (TopologyViewBase) AttachmentDeclaredSocketNames(featureType string) []string {
-	panic("this presentation does not carry attachment-declared-socket-names, which is read from types.FeatureSpec.UsesSchema")
+	panic("this view does not carry attachment-declared-socket-names, which is read from types.FeatureSpec.UsesSchema")
 }
 
-// DeclaredSlotNames panics. This presentation does not carry
-// declared-slot-names, which is read from
-// types.ComponentSpec.FeaturesSchema.
+// DeclaredSlotNames panics. This view does not carry declared-slot-names,
+// which is read from types.ComponentSpec.FeaturesSchema.
 func (TopologyViewBase) DeclaredSlotNames(componentType string) []string {
-	panic("this presentation does not carry declared-slot-names, which is read from types.ComponentSpec.FeaturesSchema")
+	panic("this view does not carry declared-slot-names, which is read from types.ComponentSpec.FeaturesSchema")
 }
 
-// CatalogComponentPresent panics. This presentation does not carry
+// CatalogComponentPresent panics. This view does not carry
 // catalog-component-present, which is read from
 // resolver.CatalogLookup.Component(componentType).
 func (TopologyViewBase) CatalogComponentPresent(componentType string) bool {
-	panic("this presentation does not carry catalog-component-present, which is read from resolver.CatalogLookup.Component(componentType)")
+	panic("this view does not carry catalog-component-present, which is read from resolver.CatalogLookup.Component(componentType)")
 }
 
-// CatalogFeaturePresent panics. This presentation does not carry
+// CatalogFeaturePresent panics. This view does not carry
 // catalog-feature-present, which is read from
 // resolver.CatalogLookup.Feature(featureType).
 func (TopologyViewBase) CatalogFeaturePresent(featureType string) bool {
-	panic("this presentation does not carry catalog-feature-present, which is read from resolver.CatalogLookup.Feature(featureType)")
+	panic("this view does not carry catalog-feature-present, which is read from resolver.CatalogLookup.Feature(featureType)")
 }
 
-// ComponentTypeIsLocalPath panics. This presentation does not carry
+// ComponentTypeIsLocalPath panics. This view does not carry
 // component-type-is-local-path, which is read from
 // resolver.IsRelativePathRef(componentType).
 func (TopologyViewBase) ComponentTypeIsLocalPath(componentType string) bool {
-	panic("this presentation does not carry component-type-is-local-path, which is read from resolver.IsRelativePathRef(componentType)")
+	panic("this view does not carry component-type-is-local-path, which is read from resolver.IsRelativePathRef(componentType)")
 }
 
-// ReleasePerEdgeTarget panics. This presentation does not carry
+// ReleasePerEdgeTarget panics. This view does not carry
 // release-per-edge-target, which is read from
 // types.ReleaseUsesEntry.Target.
 func (TopologyViewBase) ReleasePerEdgeTarget(node string, socket string, alias string) string {
-	panic("this presentation does not carry release-per-edge-target, which is read from types.ReleaseUsesEntry.Target")
+	panic("this view does not carry release-per-edge-target, which is read from types.ReleaseUsesEntry.Target")
 }
 
-// ReleasePerEdgeInfra panics. This presentation does not carry
+// ReleasePerEdgeInfra panics. This view does not carry
 // release-per-edge-infra, which is read from types.ReleaseUsesEntry.Infra.
 func (TopologyViewBase) ReleasePerEdgeInfra(node string, socket string, alias string) types.OrderedMap[any] {
-	panic("this presentation does not carry release-per-edge-infra, which is read from types.ReleaseUsesEntry.Infra")
+	panic("this view does not carry release-per-edge-infra, which is read from types.ReleaseUsesEntry.Infra")
 }
 
-// ReleaseAuthoredUsesSocketConnections panics. This presentation does not
-// carry release-authored-uses-socket-connections, which is read from
+// ReleaseAuthoredUsesSocketConnections panics. This view does not carry
+// release-authored-uses-socket-connections, which is read from
 // types.BoundaryComponent.Uses.
 func (TopologyViewBase) ReleaseAuthoredUsesSocketConnections(node string) types.OrderedMap[int] {
-	panic("this presentation does not carry release-authored-uses-socket-connections, which is read from types.BoundaryComponent.Uses")
+	panic("this view does not carry release-authored-uses-socket-connections, which is read from types.BoundaryComponent.Uses")
 }
 
-// ReleaseAuthoredUsesSocketEntryAliases panics. This presentation does not
-// carry release-authored-uses-socket-entry-aliases, which is read from
+// ReleaseAuthoredUsesSocketEntryAliases panics. This view does not carry
+// release-authored-uses-socket-entry-aliases, which is read from
 // types.BoundaryComponent.Uses.
 func (TopologyViewBase) ReleaseAuthoredUsesSocketEntryAliases(node string, socket string) []string {
-	panic("this presentation does not carry release-authored-uses-socket-entry-aliases, which is read from types.BoundaryComponent.Uses")
+	panic("this view does not carry release-authored-uses-socket-entry-aliases, which is read from types.BoundaryComponent.Uses")
 }
 
-// ReleaseComponentEntryPresent panics. This presentation does not carry
+// ReleaseComponentEntryPresent panics. This view does not carry
 // release-component-entry-present, which is read from
 // types.Boundary.Components.
 func (TopologyViewBase) ReleaseComponentEntryPresent(node string) bool {
-	panic("this presentation does not carry release-component-entry-present, which is read from types.Boundary.Components")
+	panic("this view does not carry release-component-entry-present, which is read from types.Boundary.Components")
 }
 
-// ReleaseComponentInfra panics. This presentation does not carry
+// ReleaseComponentInfra panics. This view does not carry
 // release-component-infra, which is read from
 // types.BoundaryComponent.Infra.
 func (TopologyViewBase) ReleaseComponentInfra(node string) types.OrderedMap[any] {
-	panic("this presentation does not carry release-component-infra, which is read from types.BoundaryComponent.Infra")
+	panic("this view does not carry release-component-infra, which is read from types.BoundaryComponent.Infra")
 }
 
-// BoundaryAttachmentDeclaration panics. This presentation does not carry
+// BoundaryAttachmentDeclaration panics. This view does not carry
 // boundary-attachment-declaration, which is read from
 // types.Boundary.Features.
 func (TopologyViewBase) BoundaryAttachmentDeclaration(boundary string, attachment string) (AttachmentDeclaration, bool) {
-	panic("this presentation does not carry boundary-attachment-declaration, which is read from types.Boundary.Features")
+	panic("this view does not carry boundary-attachment-declaration, which is read from types.Boundary.Features")
 }
 
-// ReleaseAttachmentType panics. This presentation does not carry
+// ReleaseAttachmentType panics. This view does not carry
 // release-attachment-type, which is read from types.BoundaryFeature.Type.
 func (TopologyViewBase) ReleaseAttachmentType(node string, attachment string) (string, bool) {
-	panic("this presentation does not carry release-attachment-type, which is read from types.BoundaryFeature.Type")
+	panic("this view does not carry release-attachment-type, which is read from types.BoundaryFeature.Type")
 }
 
-// ReleaseAttachmentAuthoredUsesSocketNames panics. This presentation does
-// not carry release-attachment-authored-uses-socket-names, which is read
-// from types.BoundaryFeature.Uses.
+// ReleaseAttachmentAuthoredUsesSocketNames panics. This view does not
+// carry release-attachment-authored-uses-socket-names, which is read from
+// types.BoundaryFeature.Uses.
 func (TopologyViewBase) ReleaseAttachmentAuthoredUsesSocketNames(node string, attachment string) []string {
-	panic("this presentation does not carry release-attachment-authored-uses-socket-names, which is read from types.BoundaryFeature.Uses")
+	panic("this view does not carry release-attachment-authored-uses-socket-names, which is read from types.BoundaryFeature.Uses")
 }
 
-// AuthoredComponentSchemaText panics. This presentation does not carry
+// AuthoredComponentSchemaText panics. This view does not carry
 // authored-component-schema-text, which is read from
 // types.ComponentSpec.Schema.
 func (TopologyViewBase) AuthoredComponentSchemaText(componentType string) []byte {
-	panic("this presentation does not carry authored-component-schema-text, which is read from types.ComponentSpec.Schema")
+	panic("this view does not carry authored-component-schema-text, which is read from types.ComponentSpec.Schema")
 }
 
-// SocketValueSchemaText panics. This presentation does not carry
+// SocketValueSchemaText panics. This view does not carry
 // socket-value-schema-text, which is read from
 // types.UsesSchemaEntry.ValueSchema.
 func (TopologyViewBase) SocketValueSchemaText(componentType string, socket string) []byte {
-	panic("this presentation does not carry socket-value-schema-text, which is read from types.UsesSchemaEntry.ValueSchema")
+	panic("this view does not carry socket-value-schema-text, which is read from types.UsesSchemaEntry.ValueSchema")
 }
 
-// SocketInfraSchemaText panics. This presentation does not carry
+// SocketInfraSchemaText panics. This view does not carry
 // socket-infra-schema-text, which is read from
 // types.UsesSchemaEntry.InfraSchema.
 func (TopologyViewBase) SocketInfraSchemaText(componentType string, socket string) []byte {
-	panic("this presentation does not carry socket-infra-schema-text, which is read from types.UsesSchemaEntry.InfraSchema")
+	panic("this view does not carry socket-infra-schema-text, which is read from types.UsesSchemaEntry.InfraSchema")
 }
 
-// CompiledComponentSchema panics. This presentation does not carry
+// CompiledComponentSchema panics. This view does not carry
 // compiled-component-schema, which is read from
 // resolver.CompileComponentSchema(catalog, componentType).
 func (TopologyViewBase) CompiledComponentSchema(componentType string) (map[string]any, bool) {
-	panic("this presentation does not carry compiled-component-schema, which is read from resolver.CompileComponentSchema(catalog, componentType)")
+	panic("this view does not carry compiled-component-schema, which is read from resolver.CompileComponentSchema(catalog, componentType)")
 }
 
-// CompiledSocketValueSchema panics. This presentation does not carry
+// CompiledSocketValueSchema panics. This view does not carry
 // compiled-socket-value-schema, which is read from
 // resolver.CompileSocketPillarSchema(catalog, componentType, socket,
 // "values").
 func (TopologyViewBase) CompiledSocketValueSchema(componentType string, socket string) (map[string]any, bool) {
-	panic("this presentation does not carry compiled-socket-value-schema, which is read from resolver.CompileSocketPillarSchema(catalog, componentType, socket, \"values\")")
+	panic("this view does not carry compiled-socket-value-schema, which is read from resolver.CompileSocketPillarSchema(catalog, componentType, socket, \"values\")")
 }
 
-// CompiledSocketInfraSchema panics. This presentation does not carry
+// CompiledSocketInfraSchema panics. This view does not carry
 // compiled-socket-infra-schema, which is read from
 // resolver.CompileSocketPillarSchema(catalog, componentType, socket,
 // "infra").
 func (TopologyViewBase) CompiledSocketInfraSchema(componentType string, socket string) (map[string]any, bool) {
-	panic("this presentation does not carry compiled-socket-infra-schema, which is read from resolver.CompileSocketPillarSchema(catalog, componentType, socket, \"infra\")")
+	panic("this view does not carry compiled-socket-infra-schema, which is read from resolver.CompileSocketPillarSchema(catalog, componentType, socket, \"infra\")")
 }
 
-// CompiledFeatureSchema panics. This presentation does not carry
+// CompiledFeatureSchema panics. This view does not carry
 // compiled-feature-schema, which is read from
 // resolver.CompileFeatureSchema(catalog, featureType).
 func (TopologyViewBase) CompiledFeatureSchema(featureType string) (map[string]any, bool) {
-	panic("this presentation does not carry compiled-feature-schema, which is read from resolver.CompileFeatureSchema(catalog, featureType)")
+	panic("this view does not carry compiled-feature-schema, which is read from resolver.CompileFeatureSchema(catalog, featureType)")
 }
 
-// DeclaredProvidesKeys panics. This presentation does not carry
+// DeclaredProvidesKeys panics. This view does not carry
 // declared-provides-keys, which is read from
 // resolver.ComponentProvidesKeys(component, libraries).
 func (TopologyViewBase) DeclaredProvidesKeys(componentType string) []string {
-	panic("this presentation does not carry declared-provides-keys, which is read from resolver.ComponentProvidesKeys(component, libraries)")
+	panic("this view does not carry declared-provides-keys, which is read from resolver.ComponentProvidesKeys(component, libraries)")
 }
 
-// ResolvedParameterContext panics. This presentation does not carry
+// ResolvedParameterContext panics. This view does not carry
 // resolved-parameter-context, which is read from
 // resolver.ApplyParameterDefaults(contract, params).
 func (TopologyViewBase) ResolvedParameterContext(document string) map[string]any {
-	panic("this presentation does not carry resolved-parameter-context, which is read from resolver.ApplyParameterDefaults(contract, params)")
+	panic("this view does not carry resolved-parameter-context, which is read from resolver.ApplyParameterDefaults(contract, params)")
 }
 
 // GraphViewBase is a base for an implementation of GraphView.
@@ -1649,81 +1641,80 @@ type GraphViewBase struct {
 	TopologyViewBase
 }
 
-// FlattenedNodeComponentType panics. This presentation does not carry
+// FlattenedNodeComponentType panics. This view does not carry
 // flattened-node-component-type, which is read from
 // topology.TopologyNode.ComponentType.
 func (GraphViewBase) FlattenedNodeComponentType(node string) (string, bool) {
-	panic("this presentation does not carry flattened-node-component-type, which is read from topology.TopologyNode.ComponentType")
+	panic("this view does not carry flattened-node-component-type, which is read from topology.TopologyNode.ComponentType")
 }
 
-// ResolvedParameter panics. This presentation does not carry
-// resolved-parameter, which is read from
-// topology.TopologyNode.ResolvedParameters.
+// ResolvedParameter panics. This view does not carry resolved-parameter,
+// which is read from topology.TopologyNode.ResolvedParameters.
 func (GraphViewBase) ResolvedParameter(node string, name string) (any, bool) {
-	panic("this presentation does not carry resolved-parameter, which is read from topology.TopologyNode.ResolvedParameters")
+	panic("this view does not carry resolved-parameter, which is read from topology.TopologyNode.ResolvedParameters")
 }
 
-// ResolvedUsesSocketConnections panics. This presentation does not carry
+// ResolvedUsesSocketConnections panics. This view does not carry
 // resolved-uses-socket-connections, which is read from
 // topology.TopologyResult.Edges.
 func (GraphViewBase) ResolvedUsesSocketConnections(node string) types.OrderedMap[int] {
-	panic("this presentation does not carry resolved-uses-socket-connections, which is read from topology.TopologyResult.Edges")
+	panic("this view does not carry resolved-uses-socket-connections, which is read from topology.TopologyResult.Edges")
 }
 
-// PerEdgeAuthoredTarget panics. This presentation does not carry
+// PerEdgeAuthoredTarget panics. This view does not carry
 // per-edge-authored-target, which is read from
 // topology.NormalizedEdge.AuthoredTarget.
 func (GraphViewBase) PerEdgeAuthoredTarget(node string, socket string, alias string) string {
-	panic("this presentation does not carry per-edge-authored-target, which is read from topology.NormalizedEdge.AuthoredTarget")
+	panic("this view does not carry per-edge-authored-target, which is read from topology.NormalizedEdge.AuthoredTarget")
 }
 
-// PerEdgeConnectionDrawn panics. This presentation does not carry
+// PerEdgeConnectionDrawn panics. This view does not carry
 // per-edge-connection-drawn, which is read from
 // topology.TopologyResult.Edges.
 func (GraphViewBase) PerEdgeConnectionDrawn(node string, socket string, alias string) bool {
-	panic("this presentation does not carry per-edge-connection-drawn, which is read from topology.TopologyResult.Edges")
+	panic("this view does not carry per-edge-connection-drawn, which is read from topology.TopologyResult.Edges")
 }
 
-// ReleaseAuthoredEdgeConfigurations panics. This presentation does not
-// carry release-authored-edge-configurations, which is read from
+// ReleaseAuthoredEdgeConfigurations panics. This view does not carry
+// release-authored-edge-configurations, which is read from
 // types.BoundaryComponent.Uses.
 func (GraphViewBase) ReleaseAuthoredEdgeConfigurations() []ReleaseEdgeConfiguration {
-	panic("this presentation does not carry release-authored-edge-configurations, which is read from types.BoundaryComponent.Uses")
+	panic("this view does not carry release-authored-edge-configurations, which is read from types.BoundaryComponent.Uses")
 }
 
-// NodeBoundaryPlacement panics. This presentation does not carry
+// NodeBoundaryPlacement panics. This view does not carry
 // node-boundary-placement, which is read from
 // topology.TopologyNode.BoundaryPath.
 func (GraphViewBase) NodeBoundaryPlacement(node string) (string, bool) {
-	panic("this presentation does not carry node-boundary-placement, which is read from topology.TopologyNode.BoundaryPath")
+	panic("this view does not carry node-boundary-placement, which is read from topology.TopologyNode.BoundaryPath")
 }
 
-// NodeDeclaringSubsystems panics. This presentation does not carry
+// NodeDeclaringSubsystems panics. This view does not carry
 // node-declaring-subsystems, which is read from
 // topology.TopologyResult.DeclaringSubsystems.
 func (GraphViewBase) NodeDeclaringSubsystems(node string) []string {
-	panic("this presentation does not carry node-declaring-subsystems, which is read from topology.TopologyResult.DeclaringSubsystems")
+	panic("this view does not carry node-declaring-subsystems, which is read from topology.TopologyResult.DeclaringSubsystems")
 }
 
-// ModuleContributedNodes panics. This presentation does not carry
+// ModuleContributedNodes panics. This view does not carry
 // module-contributed-nodes, which is read from
 // topology.TopologyNode.SourceAggregate.
 func (GraphViewBase) ModuleContributedNodes(module string) []string {
-	panic("this presentation does not carry module-contributed-nodes, which is read from topology.TopologyNode.SourceAggregate")
+	panic("this view does not carry module-contributed-nodes, which is read from topology.TopologyNode.SourceAggregate")
 }
 
-// ComponentDeactivated panics. This presentation does not carry
+// ComponentDeactivated panics. This view does not carry
 // component-deactivated, which is read from
 // topology.TopologyResult.Pruned.
 func (GraphViewBase) ComponentDeactivated(node string) bool {
-	panic("this presentation does not carry component-deactivated, which is read from topology.TopologyResult.Pruned")
+	panic("this view does not carry component-deactivated, which is read from topology.TopologyResult.Pruned")
 }
 
-// BoundaryDeclaredComponentReferences panics. This presentation does not
-// carry boundary-declared-component-references, which is read from
+// BoundaryDeclaredComponentReferences panics. This view does not carry
+// boundary-declared-component-references, which is read from
 // types.Boundary.Components.
 func (GraphViewBase) BoundaryDeclaredComponentReferences() []string {
-	panic("this presentation does not carry boundary-declared-component-references, which is read from types.Boundary.Components")
+	panic("this view does not carry boundary-declared-component-references, which is read from types.Boundary.Components")
 }
 
 // DescribedViewBase is a base for an implementation of DescribedView.
@@ -1750,69 +1741,69 @@ type DescribedViewBase struct {
 	GraphViewBase
 }
 
-// PerLeafAttachmentProvenance panics. This presentation does not carry
+// PerLeafAttachmentProvenance panics. This view does not carry
 // per-leaf-attachment-provenance, which is read from
 // types.IRFeatureEntry.ValuesProvenance and .InfraProvenance.
 func (DescribedViewBase) PerLeafAttachmentProvenance(node string, attachment string, pillar string, leaf string) LeafProvenance {
-	panic("this presentation does not carry per-leaf-attachment-provenance, which is read from types.IRFeatureEntry.ValuesProvenance and .InfraProvenance")
+	panic("this view does not carry per-leaf-attachment-provenance, which is read from types.IRFeatureEntry.ValuesProvenance and .InfraProvenance")
 }
 
-// PerLeafAttachmentAuthoredComponent panics. This presentation does not
-// carry per-leaf-attachment-authored-component, which is read from
+// PerLeafAttachmentAuthoredComponent panics. This view does not carry
+// per-leaf-attachment-authored-component, which is read from
 // ir.AttachmentSites.
 func (DescribedViewBase) PerLeafAttachmentAuthoredComponent(node string, attachment string, pillar string, leaf string) string {
-	panic("this presentation does not carry per-leaf-attachment-authored-component, which is read from ir.AttachmentSites")
+	panic("this view does not carry per-leaf-attachment-authored-component, which is read from ir.AttachmentSites")
 }
 
-// NodeLabels panics. This presentation does not carry node-labels, which
-// is read from types.IRNode.Labels.
+// NodeLabels panics. This view does not carry node-labels, which is read
+// from types.IRNode.Labels.
 func (DescribedViewBase) NodeLabels(node string) types.OrderedMap[string] {
-	panic("this presentation does not carry node-labels, which is read from types.IRNode.Labels")
+	panic("this view does not carry node-labels, which is read from types.IRNode.Labels")
 }
 
-// PerEdgeOriginFeatureType panics. This presentation does not carry
+// PerEdgeOriginFeatureType panics. This view does not carry
 // per-edge-origin-feature-type, which is read from
 // types.IREdge.OriginFeature.
 func (DescribedViewBase) PerEdgeOriginFeatureType(node string, socket string, alias string) string {
-	panic("this presentation does not carry per-edge-origin-feature-type, which is read from types.IREdge.OriginFeature")
+	panic("this view does not carry per-edge-origin-feature-type, which is read from types.IREdge.OriginFeature")
 }
 
-// PerEdgeResolvedTarget panics. This presentation does not carry
+// PerEdgeResolvedTarget panics. This view does not carry
 // per-edge-resolved-target, which is read from types.IREdge.Target.
 func (DescribedViewBase) PerEdgeResolvedTarget(node string, socket string, alias string) string {
-	panic("this presentation does not carry per-edge-resolved-target, which is read from types.IREdge.Target")
+	panic("this view does not carry per-edge-resolved-target, which is read from types.IREdge.Target")
 }
 
-// AttachmentResolvedType panics. This presentation does not carry
+// AttachmentResolvedType panics. This view does not carry
 // attachment-resolved-type, which is read from types.IRFeatureEntry.Type.
 func (DescribedViewBase) AttachmentResolvedType(node string, attachment string) string {
-	panic("this presentation does not carry attachment-resolved-type, which is read from types.IRFeatureEntry.Type")
+	panic("this view does not carry attachment-resolved-type, which is read from types.IRFeatureEntry.Type")
 }
 
-// MergedAttachmentNames panics. This presentation does not carry
+// MergedAttachmentNames panics. This view does not carry
 // merged-attachment-names, which is read from
 // types.IRSpec.FeatureValuesMapping.
 func (DescribedViewBase) MergedAttachmentNames(node string) []string {
-	panic("this presentation does not carry merged-attachment-names, which is read from types.IRSpec.FeatureValuesMapping")
+	panic("this view does not carry merged-attachment-names, which is read from types.IRSpec.FeatureValuesMapping")
 }
 
-// UsesInjectDeliverySockets panics. This presentation does not carry
+// UsesInjectDeliverySockets panics. This view does not carry
 // uses-inject-delivery-sockets, which is read from types.IREdge.Inject.
 func (DescribedViewBase) UsesInjectDeliverySockets(node string, mechanism string, key string) []string {
-	panic("this presentation does not carry uses-inject-delivery-sockets, which is read from types.IREdge.Inject")
+	panic("this view does not carry uses-inject-delivery-sockets, which is read from types.IREdge.Inject")
 }
 
-// PerEdgeInject panics. This presentation does not carry per-edge-inject,
-// which is read from types.IREdge.Inject.
+// PerEdgeInject panics. This view does not carry per-edge-inject, which is
+// read from types.IREdge.Inject.
 func (DescribedViewBase) PerEdgeInject(node string, socket string, alias string) types.OrderedMap[types.OrderedMap[string]] {
-	panic("this presentation does not carry per-edge-inject, which is read from types.IREdge.Inject")
+	panic("this view does not carry per-edge-inject, which is read from types.IREdge.Inject")
 }
 
-// CarriedConnectionAuthoredDelivery panics. This presentation does not
-// carry carried-connection-authored-delivery, which is read from
+// CarriedConnectionAuthoredDelivery panics. This view does not carry
+// carried-connection-authored-delivery, which is read from
 // ir.CarriedConnections.
 func (DescribedViewBase) CarriedConnectionAuthoredDelivery(node string, carrier string, attachment string, socket string, alias string, target string) []types.OrderedMap[any] {
-	panic("this presentation does not carry carried-connection-authored-delivery, which is read from ir.CarriedConnections")
+	panic("this view does not carry carried-connection-authored-delivery, which is read from ir.CarriedConnections")
 }
 
 // HydratedViewBase is a base for an implementation of HydratedView.
@@ -1839,281 +1830,279 @@ type HydratedViewBase struct {
 	DescribedViewBase
 }
 
-// StepPluginCompatibleCapabilities panics. This presentation does not
-// carry step-plugin-compatible-capabilities, which is read from
+// StepPluginCompatibleCapabilities panics. This view does not carry
+// step-plugin-compatible-capabilities, which is read from
 // wasm.PluginDescriptor.Capabilities.
 func (HydratedViewBase) StepPluginCompatibleCapabilities(node string, step string) []string {
-	panic("this presentation does not carry step-plugin-compatible-capabilities, which is read from wasm.PluginDescriptor.Capabilities")
+	panic("this view does not carry step-plugin-compatible-capabilities, which is read from wasm.PluginDescriptor.Capabilities")
 }
 
-// StepExportScope panics. This presentation does not carry
-// step-export-scope, which is read from wasm.PluginExport.Scope.
+// StepExportScope panics. This view does not carry step-export-scope,
+// which is read from wasm.PluginExport.Scope.
 func (HydratedViewBase) StepExportScope(node string, step string) string {
-	panic("this presentation does not carry step-export-scope, which is read from wasm.PluginExport.Scope")
+	panic("this view does not carry step-export-scope, which is read from wasm.PluginExport.Scope")
 }
 
-// ProviderBoundaryAssembly panics. This presentation does not carry
+// ProviderBoundaryAssembly panics. This view does not carry
 // provider-boundary-assembly, which is read from
 // wasm.ProviderContract.BoundaryAssembly.
 func (HydratedViewBase) ProviderBoundaryAssembly(node string) string {
-	panic("this presentation does not carry provider-boundary-assembly, which is read from wasm.ProviderContract.BoundaryAssembly")
+	panic("this view does not carry provider-boundary-assembly, which is read from wasm.ProviderContract.BoundaryAssembly")
 }
 
-// ProviderCrossBoundaryLinking panics. This presentation does not carry
+// ProviderCrossBoundaryLinking panics. This view does not carry
 // provider-cross-boundary-linking, which is read from
 // wasm.ProviderContract.CrossBoundaryLinking.
 func (HydratedViewBase) ProviderCrossBoundaryLinking(node string) bool {
-	panic("this presentation does not carry provider-cross-boundary-linking, which is read from wasm.ProviderContract.CrossBoundaryLinking")
+	panic("this view does not carry provider-cross-boundary-linking, which is read from wasm.ProviderContract.CrossBoundaryLinking")
 }
 
-// NodeDeclaresAuthoredSource panics. This presentation does not carry
+// NodeDeclaresAuthoredSource panics. This view does not carry
 // node-declares-authored-source, which is read from
 // types.RecipeSpec.Source.
 func (HydratedViewBase) NodeDeclaresAuthoredSource(node string) bool {
-	panic("this presentation does not carry node-declares-authored-source, which is read from types.RecipeSpec.Source")
+	panic("this view does not carry node-declares-authored-source, which is read from types.RecipeSpec.Source")
 }
 
-// NodeRenderedName panics. This presentation does not carry
-// node-rendered-name, which is read from
-// rendercore.RenderedNameOutput.Name.
+// NodeRenderedName panics. This view does not carry node-rendered-name,
+// which is read from rendercore.RenderedNameOutput.Name.
 func (HydratedViewBase) NodeRenderedName(node string) string {
-	panic("this presentation does not carry node-rendered-name, which is read from rendercore.RenderedNameOutput.Name")
+	panic("this view does not carry node-rendered-name, which is read from rendercore.RenderedNameOutput.Name")
 }
 
-// NodeRenderingProvider panics. This presentation does not carry
+// NodeRenderingProvider panics. This view does not carry
 // node-rendering-provider, which is read from types.RecipeSpec.Capability.
 func (HydratedViewBase) NodeRenderingProvider(node string) string {
-	panic("this presentation does not carry node-rendering-provider, which is read from types.RecipeSpec.Capability")
+	panic("this view does not carry node-rendering-provider, which is read from types.RecipeSpec.Capability")
 }
 
-// AttachmentRenderingProvider panics. This presentation does not carry
+// AttachmentRenderingProvider panics. This view does not carry
 // attachment-rendering-provider, which is read from
 // types.FeatureRecipeSpec.Capability.
 func (HydratedViewBase) AttachmentRenderingProvider(node string, attachment string) string {
-	panic("this presentation does not carry attachment-rendering-provider, which is read from types.FeatureRecipeSpec.Capability")
+	panic("this view does not carry attachment-rendering-provider, which is read from types.FeatureRecipeSpec.Capability")
 }
 
-// AttachmentExecutionScope panics. This presentation does not carry
+// AttachmentExecutionScope panics. This view does not carry
 // attachment-execution-scope, which is read from
 // types.FeatureRecipeSpec.ExecutionScope.
 func (HydratedViewBase) AttachmentExecutionScope(node string, attachment string) string {
-	panic("this presentation does not carry attachment-execution-scope, which is read from types.FeatureRecipeSpec.ExecutionScope")
+	panic("this view does not carry attachment-execution-scope, which is read from types.FeatureRecipeSpec.ExecutionScope")
 }
 
-// AttachmentStepPluginCompatibleCapabilities panics. This presentation
-// does not carry attachment-step-plugin-compatible-capabilities, which is
-// read from wasm.PluginDescriptor.Capabilities.
+// AttachmentStepPluginCompatibleCapabilities panics. This view does not
+// carry attachment-step-plugin-compatible-capabilities, which is read from
+// wasm.PluginDescriptor.Capabilities.
 func (HydratedViewBase) AttachmentStepPluginCompatibleCapabilities(node string, attachment string, step string) []string {
-	panic("this presentation does not carry attachment-step-plugin-compatible-capabilities, which is read from wasm.PluginDescriptor.Capabilities")
+	panic("this view does not carry attachment-step-plugin-compatible-capabilities, which is read from wasm.PluginDescriptor.Capabilities")
 }
 
-// AttachmentStepExportScope panics. This presentation does not carry
+// AttachmentStepExportScope panics. This view does not carry
 // attachment-step-export-scope, which is read from
 // wasm.PluginExport.Scope.
 func (HydratedViewBase) AttachmentStepExportScope(node string, attachment string, step string) string {
-	panic("this presentation does not carry attachment-step-export-scope, which is read from wasm.PluginExport.Scope")
+	panic("this view does not carry attachment-step-export-scope, which is read from wasm.PluginExport.Scope")
 }
 
-// BoundaryAttachmentRenderingProvider panics. This presentation does not
-// carry boundary-attachment-rendering-provider, which is read from
+// BoundaryAttachmentRenderingProvider panics. This view does not carry
+// boundary-attachment-rendering-provider, which is read from
 // types.FeatureRecipeSpec.Capability.
 func (HydratedViewBase) BoundaryAttachmentRenderingProvider(boundary string, attachment string) string {
-	panic("this presentation does not carry boundary-attachment-rendering-provider, which is read from types.FeatureRecipeSpec.Capability")
+	panic("this view does not carry boundary-attachment-rendering-provider, which is read from types.FeatureRecipeSpec.Capability")
 }
 
-// BoundaryAttachmentStepPluginCompatibleCapabilities panics. This
-// presentation does not carry
-// boundary-attachment-step-plugin-compatible-capabilities, which is read
-// from wasm.PluginDescriptor.Capabilities.
+// BoundaryAttachmentStepPluginCompatibleCapabilities panics. This view
+// does not carry boundary-attachment-step-plugin-compatible-capabilities,
+// which is read from wasm.PluginDescriptor.Capabilities.
 func (HydratedViewBase) BoundaryAttachmentStepPluginCompatibleCapabilities(boundary string, attachment string, step string) []string {
-	panic("this presentation does not carry boundary-attachment-step-plugin-compatible-capabilities, which is read from wasm.PluginDescriptor.Capabilities")
+	panic("this view does not carry boundary-attachment-step-plugin-compatible-capabilities, which is read from wasm.PluginDescriptor.Capabilities")
 }
 
-// BoundaryAttachmentStepExportScope panics. This presentation does not
-// carry boundary-attachment-step-export-scope, which is read from
+// BoundaryAttachmentStepExportScope panics. This view does not carry
+// boundary-attachment-step-export-scope, which is read from
 // wasm.PluginExport.Scope.
 func (HydratedViewBase) BoundaryAttachmentStepExportScope(boundary string, attachment string, step string) string {
-	panic("this presentation does not carry boundary-attachment-step-export-scope, which is read from wasm.PluginExport.Scope")
+	panic("this view does not carry boundary-attachment-step-export-scope, which is read from wasm.PluginExport.Scope")
 }
 
-// AuthoredNodeProvides panics. This presentation does not carry
+// AuthoredNodeProvides panics. This view does not carry
 // authored-node-provides, which is read from types.RecipeSpec.Provides.
 func (HydratedViewBase) AuthoredNodeProvides(node string, key string) string {
-	panic("this presentation does not carry authored-node-provides, which is read from types.RecipeSpec.Provides")
+	panic("this view does not carry authored-node-provides, which is read from types.RecipeSpec.Provides")
 }
 
-// DeclaredLocalsKeys panics. This presentation does not carry
+// DeclaredLocalsKeys panics. This view does not carry
 // declared-locals-keys, which is read from types.RecipeSpec.Locals.
 func (HydratedViewBase) DeclaredLocalsKeys(node string) []string {
-	panic("this presentation does not carry declared-locals-keys, which is read from types.RecipeSpec.Locals")
+	panic("this view does not carry declared-locals-keys, which is read from types.RecipeSpec.Locals")
 }
 
-// AuthoredNodeLocals panics. This presentation does not carry
+// AuthoredNodeLocals panics. This view does not carry
 // authored-node-locals, which is read from types.RecipeSpec.Locals.
 func (HydratedViewBase) AuthoredNodeLocals(node string, key string) string {
-	panic("this presentation does not carry authored-node-locals, which is read from types.RecipeSpec.Locals")
+	panic("this view does not carry authored-node-locals, which is read from types.RecipeSpec.Locals")
 }
 
-// AttachmentDeclaredLocalsKeys panics. This presentation does not carry
+// AttachmentDeclaredLocalsKeys panics. This view does not carry
 // attachment-declared-locals-keys, which is read from
 // types.FeatureRecipeSpec.Locals.
 func (HydratedViewBase) AttachmentDeclaredLocalsKeys(node string, attachment string) []string {
-	panic("this presentation does not carry attachment-declared-locals-keys, which is read from types.FeatureRecipeSpec.Locals")
+	panic("this view does not carry attachment-declared-locals-keys, which is read from types.FeatureRecipeSpec.Locals")
 }
 
-// AttachmentAuthoredLocals panics. This presentation does not carry
+// AttachmentAuthoredLocals panics. This view does not carry
 // attachment-authored-locals, which is read from
 // types.FeatureRecipeSpec.Locals.
 func (HydratedViewBase) AttachmentAuthoredLocals(node string, attachment string, key string) string {
-	panic("this presentation does not carry attachment-authored-locals, which is read from types.FeatureRecipeSpec.Locals")
+	panic("this view does not carry attachment-authored-locals, which is read from types.FeatureRecipeSpec.Locals")
 }
 
-// BoundaryAttachmentDeclaredLocalsKeys panics. This presentation does not
-// carry boundary-attachment-declared-locals-keys, which is read from
+// BoundaryAttachmentDeclaredLocalsKeys panics. This view does not carry
+// boundary-attachment-declared-locals-keys, which is read from
 // types.FeatureRecipeSpec.Locals.
 func (HydratedViewBase) BoundaryAttachmentDeclaredLocalsKeys(boundary string, attachment string) []string {
-	panic("this presentation does not carry boundary-attachment-declared-locals-keys, which is read from types.FeatureRecipeSpec.Locals")
+	panic("this view does not carry boundary-attachment-declared-locals-keys, which is read from types.FeatureRecipeSpec.Locals")
 }
 
-// BoundaryAttachmentAuthoredLocals panics. This presentation does not
-// carry boundary-attachment-authored-locals, which is read from
+// BoundaryAttachmentAuthoredLocals panics. This view does not carry
+// boundary-attachment-authored-locals, which is read from
 // types.FeatureRecipeSpec.Locals.
 func (HydratedViewBase) BoundaryAttachmentAuthoredLocals(boundary string, attachment string, key string) string {
-	panic("this presentation does not carry boundary-attachment-authored-locals, which is read from types.FeatureRecipeSpec.Locals")
+	panic("this view does not carry boundary-attachment-authored-locals, which is read from types.FeatureRecipeSpec.Locals")
 }
 
-// BoundaryAttachmentExecutionScope panics. This presentation does not
-// carry boundary-attachment-execution-scope, which is read from
+// BoundaryAttachmentExecutionScope panics. This view does not carry
+// boundary-attachment-execution-scope, which is read from
 // types.FeatureRecipeSpec.ExecutionScope.
 func (HydratedViewBase) BoundaryAttachmentExecutionScope(boundary string, attachment string) string {
-	panic("this presentation does not carry boundary-attachment-execution-scope, which is read from types.FeatureRecipeSpec.ExecutionScope")
+	panic("this view does not carry boundary-attachment-execution-scope, which is read from types.FeatureRecipeSpec.ExecutionScope")
 }
 
-// AuthoredNodeTemplateText panics. This presentation does not carry
+// AuthoredNodeTemplateText panics. This view does not carry
 // authored-node-template-text, which is read from
 // renderer.RecipeTemplateFields(recipe).
 func (HydratedViewBase) AuthoredNodeTemplateText(node string, field string) string {
-	panic("this presentation does not carry authored-node-template-text, which is read from renderer.RecipeTemplateFields(recipe)")
+	panic("this view does not carry authored-node-template-text, which is read from renderer.RecipeTemplateFields(recipe)")
 }
 
-// AttachmentAuthoredTemplateText panics. This presentation does not carry
+// AttachmentAuthoredTemplateText panics. This view does not carry
 // attachment-authored-template-text, which is read from
 // renderer.AttachmentTemplateFields(fr).
 func (HydratedViewBase) AttachmentAuthoredTemplateText(node string, attachment string, field string) string {
-	panic("this presentation does not carry attachment-authored-template-text, which is read from renderer.AttachmentTemplateFields(fr)")
+	panic("this view does not carry attachment-authored-template-text, which is read from renderer.AttachmentTemplateFields(fr)")
 }
 
-// BoundaryAttachmentAuthoredTemplateText panics. This presentation does
-// not carry boundary-attachment-authored-template-text, which is read from
+// BoundaryAttachmentAuthoredTemplateText panics. This view does not carry
+// boundary-attachment-authored-template-text, which is read from
 // renderer.BoundaryScopeFRTemplateFields(fr).
 func (HydratedViewBase) BoundaryAttachmentAuthoredTemplateText(boundary string, attachment string, field string) string {
-	panic("this presentation does not carry boundary-attachment-authored-template-text, which is read from renderer.BoundaryScopeFRTemplateFields(fr)")
+	panic("this view does not carry boundary-attachment-authored-template-text, which is read from renderer.BoundaryScopeFRTemplateFields(fr)")
 }
 
-// BoundaryAuthoredPathTemplateText panics. This presentation does not
-// carry boundary-authored-path-template-text, which is read from
+// BoundaryAuthoredPathTemplateText panics. This view does not carry
+// boundary-authored-path-template-text, which is read from
 // renderer.BoundaryPathTemplateFields(b).
 func (HydratedViewBase) BoundaryAuthoredPathTemplateText(boundary string, field string) string {
-	panic("this presentation does not carry boundary-authored-path-template-text, which is read from renderer.BoundaryPathTemplateFields(b)")
+	panic("this view does not carry boundary-authored-path-template-text, which is read from renderer.BoundaryPathTemplateFields(b)")
 }
 
-// ProviderArtifactTemplateDelimiters panics. This presentation does not
-// carry provider-artifact-template-delimiters, which is read from
+// ProviderArtifactTemplateDelimiters panics. This view does not carry
+// provider-artifact-template-delimiters, which is read from
 // wasm.ProviderContract.ArtifactDelimiters.
 func (HydratedViewBase) ProviderArtifactTemplateDelimiters(node string) ArtifactTemplateDelimiters {
-	panic("this presentation does not carry provider-artifact-template-delimiters, which is read from wasm.ProviderContract.ArtifactDelimiters")
+	panic("this view does not carry provider-artifact-template-delimiters, which is read from wasm.ProviderContract.ArtifactDelimiters")
 }
 
-// AttachmentProviderArtifactTemplateDelimiters panics. This presentation
-// does not carry attachment-provider-artifact-template-delimiters, which
-// is read from wasm.ProviderContract.ArtifactDelimiters.
+// AttachmentProviderArtifactTemplateDelimiters panics. This view does not
+// carry attachment-provider-artifact-template-delimiters, which is read
+// from wasm.ProviderContract.ArtifactDelimiters.
 func (HydratedViewBase) AttachmentProviderArtifactTemplateDelimiters(node string, attachment string) ArtifactTemplateDelimiters {
-	panic("this presentation does not carry attachment-provider-artifact-template-delimiters, which is read from wasm.ProviderContract.ArtifactDelimiters")
+	panic("this view does not carry attachment-provider-artifact-template-delimiters, which is read from wasm.ProviderContract.ArtifactDelimiters")
 }
 
-// BoundaryAttachmentProviderArtifactTemplateDelimiters panics. This
-// presentation does not carry
+// BoundaryAttachmentProviderArtifactTemplateDelimiters panics. This view
+// does not carry
 // boundary-attachment-provider-artifact-template-delimiters, which is read
 // from wasm.ProviderContract.ArtifactDelimiters.
 func (HydratedViewBase) BoundaryAttachmentProviderArtifactTemplateDelimiters(boundary string, attachment string) ArtifactTemplateDelimiters {
-	panic("this presentation does not carry boundary-attachment-provider-artifact-template-delimiters, which is read from wasm.ProviderContract.ArtifactDelimiters")
+	panic("this view does not carry boundary-attachment-provider-artifact-template-delimiters, which is read from wasm.ProviderContract.ArtifactDelimiters")
 }
 
-// ArtifactsEntryImportReference panics. This presentation does not carry
+// ArtifactsEntryImportReference panics. This view does not carry
 // artifacts-entry-import-reference, which is read from
 // types.RecipeSpec.Artifacts.
 func (HydratedViewBase) ArtifactsEntryImportReference(node string, entry string) string {
-	panic("this presentation does not carry artifacts-entry-import-reference, which is read from types.RecipeSpec.Artifacts")
+	panic("this view does not carry artifacts-entry-import-reference, which is read from types.RecipeSpec.Artifacts")
 }
 
-// ArtifactsEntryLibraryDeclared panics. This presentation does not carry
+// ArtifactsEntryLibraryDeclared panics. This view does not carry
 // artifacts-entry-library-declared, which is read from
 // renderer.RenderInput.ArtifactsLibraries.
 func (HydratedViewBase) ArtifactsEntryLibraryDeclared(node string, entry string) bool {
-	panic("this presentation does not carry artifacts-entry-library-declared, which is read from renderer.RenderInput.ArtifactsLibraries")
+	panic("this view does not carry artifacts-entry-library-declared, which is read from renderer.RenderInput.ArtifactsLibraries")
 }
 
-// ArtifactsEntryBundleDeclared panics. This presentation does not carry
+// ArtifactsEntryBundleDeclared panics. This view does not carry
 // artifacts-entry-bundle-declared, which is read from
 // renderer.RenderInput.ArtifactsLibraries.
 func (HydratedViewBase) ArtifactsEntryBundleDeclared(node string, entry string) bool {
-	panic("this presentation does not carry artifacts-entry-bundle-declared, which is read from renderer.RenderInput.ArtifactsLibraries")
+	panic("this view does not carry artifacts-entry-bundle-declared, which is read from renderer.RenderInput.ArtifactsLibraries")
 }
 
-// ArtifactsEntryBundleFileNames panics. This presentation does not carry
+// ArtifactsEntryBundleFileNames panics. This view does not carry
 // artifacts-entry-bundle-file-names, which is read from
 // types.ArtifactsLibraryEntry.Files.
 func (HydratedViewBase) ArtifactsEntryBundleFileNames(node string, entry string) []string {
-	panic("this presentation does not carry artifacts-entry-bundle-file-names, which is read from types.ArtifactsLibraryEntry.Files")
+	panic("this view does not carry artifacts-entry-bundle-file-names, which is read from types.ArtifactsLibraryEntry.Files")
 }
 
-// ArtifactsEntryBundleNestedImportFiles panics. This presentation does not
-// carry artifacts-entry-bundle-nested-import-files, which is read from
+// ArtifactsEntryBundleNestedImportFiles panics. This view does not carry
+// artifacts-entry-bundle-nested-import-files, which is read from
 // types.ArtifactsLibraryEntry.Files.
 func (HydratedViewBase) ArtifactsEntryBundleNestedImportFiles(node string, entry string) []string {
-	panic("this presentation does not carry artifacts-entry-bundle-nested-import-files, which is read from types.ArtifactsLibraryEntry.Files")
+	panic("this view does not carry artifacts-entry-bundle-nested-import-files, which is read from types.ArtifactsLibraryEntry.Files")
 }
 
-// RecipeValuesMappingImportReference panics. This presentation does not
-// carry recipe-values-mapping-import-reference, which is read from
+// RecipeValuesMappingImportReference panics. This view does not carry
+// recipe-values-mapping-import-reference, which is read from
 // types.RecipeSpec.ValuesMapping.
 func (HydratedViewBase) RecipeValuesMappingImportReference(node string, field string) string {
-	panic("this presentation does not carry recipe-values-mapping-import-reference, which is read from types.RecipeSpec.ValuesMapping")
+	panic("this view does not carry recipe-values-mapping-import-reference, which is read from types.RecipeSpec.ValuesMapping")
 }
 
-// RecipeValuesMappingLibraryDeclared panics. This presentation does not
-// carry recipe-values-mapping-library-declared, which is read from
+// RecipeValuesMappingLibraryDeclared panics. This view does not carry
+// recipe-values-mapping-library-declared, which is read from
 // renderer.RenderInput.MappingLibraries.
 func (HydratedViewBase) RecipeValuesMappingLibraryDeclared(node string, field string) bool {
-	panic("this presentation does not carry recipe-values-mapping-library-declared, which is read from renderer.RenderInput.MappingLibraries")
+	panic("this view does not carry recipe-values-mapping-library-declared, which is read from renderer.RenderInput.MappingLibraries")
 }
 
-// RecipeValuesMappingEntryDeclared panics. This presentation does not
-// carry recipe-values-mapping-entry-declared, which is read from
+// RecipeValuesMappingEntryDeclared panics. This view does not carry
+// recipe-values-mapping-entry-declared, which is read from
 // renderer.RenderInput.MappingLibraries.
 func (HydratedViewBase) RecipeValuesMappingEntryDeclared(node string, field string) bool {
-	panic("this presentation does not carry recipe-values-mapping-entry-declared, which is read from renderer.RenderInput.MappingLibraries")
+	panic("this view does not carry recipe-values-mapping-entry-declared, which is read from renderer.RenderInput.MappingLibraries")
 }
 
-// RecipeWorkloadImportReference panics. This presentation does not carry
+// RecipeWorkloadImportReference panics. This view does not carry
 // recipe-workload-import-reference, which is read from
 // types.RecipeSpec.Workload.
 func (HydratedViewBase) RecipeWorkloadImportReference(node string, field string) string {
-	panic("this presentation does not carry recipe-workload-import-reference, which is read from types.RecipeSpec.Workload")
+	panic("this view does not carry recipe-workload-import-reference, which is read from types.RecipeSpec.Workload")
 }
 
-// RecipeWorkloadLibraryDeclared panics. This presentation does not carry
+// RecipeWorkloadLibraryDeclared panics. This view does not carry
 // recipe-workload-library-declared, which is read from
 // renderer.RenderInput.WorkloadLibraries.
 func (HydratedViewBase) RecipeWorkloadLibraryDeclared(node string, field string) bool {
-	panic("this presentation does not carry recipe-workload-library-declared, which is read from renderer.RenderInput.WorkloadLibraries")
+	panic("this view does not carry recipe-workload-library-declared, which is read from renderer.RenderInput.WorkloadLibraries")
 }
 
-// RecipeWorkloadEntryDeclared panics. This presentation does not carry
+// RecipeWorkloadEntryDeclared panics. This view does not carry
 // recipe-workload-entry-declared, which is read from
 // renderer.RenderInput.WorkloadLibraries.
 func (HydratedViewBase) RecipeWorkloadEntryDeclared(node string, field string) bool {
-	panic("this presentation does not carry recipe-workload-entry-declared, which is read from renderer.RenderInput.WorkloadLibraries")
+	panic("this view does not carry recipe-workload-entry-declared, which is read from renderer.RenderInput.WorkloadLibraries")
 }
 
 // EmittedViewBase is a base for an implementation of EmittedView.
@@ -2140,133 +2129,133 @@ type EmittedViewBase struct {
 	HydratedViewBase
 }
 
-// ResolvedNodeProvides panics. This presentation does not carry
+// ResolvedNodeProvides panics. This view does not carry
 // resolved-node-provides, which is read from renderer.NodeProvides.
 func (EmittedViewBase) ResolvedNodeProvides(node string, key string) (string, bool) {
-	panic("this presentation does not carry resolved-node-provides, which is read from renderer.NodeProvides")
+	panic("this view does not carry resolved-node-provides, which is read from renderer.NodeProvides")
 }
 
-// ValuesMappingTemplateRefs panics. This presentation does not carry
+// ValuesMappingTemplateRefs panics. This view does not carry
 // values-mapping-template-refs, which is read from
 // gotmpl.CollectTemplateFieldAccesses(valuesMapping.Inline).
 func (EmittedViewBase) ValuesMappingTemplateRefs(node string) ([]string, bool) {
-	panic("this presentation does not carry values-mapping-template-refs, which is read from gotmpl.CollectTemplateFieldAccesses(valuesMapping.Inline)")
+	panic("this view does not carry values-mapping-template-refs, which is read from gotmpl.CollectTemplateFieldAccesses(valuesMapping.Inline)")
 }
 
-// ResolvedNodeSourceDeclared panics. This presentation does not carry
+// ResolvedNodeSourceDeclared panics. This view does not carry
 // resolved-node-source-declared, which is read from
 // types.RecipeSpec.Source.
 func (EmittedViewBase) ResolvedNodeSourceDeclared(node string) bool {
-	panic("this presentation does not carry resolved-node-source-declared, which is read from types.RecipeSpec.Source")
+	panic("this view does not carry resolved-node-source-declared, which is read from types.RecipeSpec.Source")
 }
 
-// ParsedNodeWorkloadPresent panics. This presentation does not carry
+// ParsedNodeWorkloadPresent panics. This view does not carry
 // parsed-node-workload-present, which is read from
 // renderer.PhaseBState.ParsedWorkload.
 func (EmittedViewBase) ParsedNodeWorkloadPresent(node string) bool {
-	panic("this presentation does not carry parsed-node-workload-present, which is read from renderer.PhaseBState.ParsedWorkload")
+	panic("this view does not carry parsed-node-workload-present, which is read from renderer.PhaseBState.ParsedWorkload")
 }
 
-// NodeInjectDeliveries panics. This presentation does not carry
+// NodeInjectDeliveries panics. This view does not carry
 // node-inject-deliveries, which is read from types.InjectPipe.
 func (EmittedViewBase) NodeInjectDeliveries(node string) []InjectDelivery {
-	panic("this presentation does not carry node-inject-deliveries, which is read from types.InjectPipe")
+	panic("this view does not carry node-inject-deliveries, which is read from types.InjectPipe")
 }
 
-// AttachmentInjectMappingMechanisms panics. This presentation does not
-// carry attachment-inject-mapping-mechanisms, which is read from
+// AttachmentInjectMappingMechanisms panics. This view does not carry
+// attachment-inject-mapping-mechanisms, which is read from
 // types.FeatureRecipeSpec.InjectMapping.
 func (EmittedViewBase) AttachmentInjectMappingMechanisms(node string, attachment string) []InjectMappingMechanism {
-	panic("this presentation does not carry attachment-inject-mapping-mechanisms, which is read from types.FeatureRecipeSpec.InjectMapping")
+	panic("this view does not carry attachment-inject-mapping-mechanisms, which is read from types.FeatureRecipeSpec.InjectMapping")
 }
 
-// ArtifactTemplateText panics. This presentation does not carry
+// ArtifactTemplateText panics. This view does not carry
 // artifact-template-text, which is read from types.RecipeSpec.Artifacts.
 func (EmittedViewBase) ArtifactTemplateText(node string, artifact string) string {
-	panic("this presentation does not carry artifact-template-text, which is read from types.RecipeSpec.Artifacts")
+	panic("this view does not carry artifact-template-text, which is read from types.RecipeSpec.Artifacts")
 }
 
-// ArtifactRecordedContentPin panics. This presentation does not carry
+// ArtifactRecordedContentPin panics. This view does not carry
 // artifact-recorded-content-pin, which is read from
 // types.RecipeSpec.ArtifactDigests.
 func (EmittedViewBase) ArtifactRecordedContentPin(node string, artifact string) (string, bool) {
-	panic("this presentation does not carry artifact-recorded-content-pin, which is read from types.RecipeSpec.ArtifactDigests")
+	panic("this view does not carry artifact-recorded-content-pin, which is read from types.RecipeSpec.ArtifactDigests")
 }
 
-// ArtifactImportedPath panics. This presentation does not carry
+// ArtifactImportedPath panics. This view does not carry
 // artifact-imported-path, which is read from types.RecipeSpec.Artifacts.
 func (EmittedViewBase) ArtifactImportedPath(node string, artifact string) string {
-	panic("this presentation does not carry artifact-imported-path, which is read from types.RecipeSpec.Artifacts")
+	panic("this view does not carry artifact-imported-path, which is read from types.RecipeSpec.Artifacts")
 }
 
-// AttachmentResolvedSourceDeclared panics. This presentation does not
-// carry attachment-resolved-source-declared, which is read from
+// AttachmentResolvedSourceDeclared panics. This view does not carry
+// attachment-resolved-source-declared, which is read from
 // types.FeatureRecipeSpec.Source.
 func (EmittedViewBase) AttachmentResolvedSourceDeclared(node string, attachment string) bool {
-	panic("this presentation does not carry attachment-resolved-source-declared, which is read from types.FeatureRecipeSpec.Source")
+	panic("this view does not carry attachment-resolved-source-declared, which is read from types.FeatureRecipeSpec.Source")
 }
 
-// AttachmentParsedWorkloadPresent panics. This presentation does not carry
+// AttachmentParsedWorkloadPresent panics. This view does not carry
 // attachment-parsed-workload-present, which is read from
 // types.FeatureRecipeSpec.Workload.
 func (EmittedViewBase) AttachmentParsedWorkloadPresent(node string, attachment string) bool {
-	panic("this presentation does not carry attachment-parsed-workload-present, which is read from types.FeatureRecipeSpec.Workload")
+	panic("this view does not carry attachment-parsed-workload-present, which is read from types.FeatureRecipeSpec.Workload")
 }
 
-// AttachmentArtifactTemplateText panics. This presentation does not carry
+// AttachmentArtifactTemplateText panics. This view does not carry
 // attachment-artifact-template-text, which is read from
 // types.FeatureRecipeSpec.Artifacts.
 func (EmittedViewBase) AttachmentArtifactTemplateText(node string, attachment string, artifact string) string {
-	panic("this presentation does not carry attachment-artifact-template-text, which is read from types.FeatureRecipeSpec.Artifacts")
+	panic("this view does not carry attachment-artifact-template-text, which is read from types.FeatureRecipeSpec.Artifacts")
 }
 
-// AttachmentArtifactRecordedContentPin panics. This presentation does not
-// carry attachment-artifact-recorded-content-pin, which is read from
+// AttachmentArtifactRecordedContentPin panics. This view does not carry
+// attachment-artifact-recorded-content-pin, which is read from
 // types.FeatureRecipeSpec.ArtifactDigests.
 func (EmittedViewBase) AttachmentArtifactRecordedContentPin(node string, attachment string, artifact string) (string, bool) {
-	panic("this presentation does not carry attachment-artifact-recorded-content-pin, which is read from types.FeatureRecipeSpec.ArtifactDigests")
+	panic("this view does not carry attachment-artifact-recorded-content-pin, which is read from types.FeatureRecipeSpec.ArtifactDigests")
 }
 
-// AttachmentArtifactImportedPath panics. This presentation does not carry
+// AttachmentArtifactImportedPath panics. This view does not carry
 // attachment-artifact-imported-path, which is read from
 // types.FeatureRecipeSpec.Artifacts.
 func (EmittedViewBase) AttachmentArtifactImportedPath(node string, attachment string, artifact string) string {
-	panic("this presentation does not carry attachment-artifact-imported-path, which is read from types.FeatureRecipeSpec.Artifacts")
+	panic("this view does not carry attachment-artifact-imported-path, which is read from types.FeatureRecipeSpec.Artifacts")
 }
 
-// BoundaryAttachmentResolvedSourceDeclared panics. This presentation does
-// not carry boundary-attachment-resolved-source-declared, which is read
-// from types.FeatureRecipeSpec.Source.
+// BoundaryAttachmentResolvedSourceDeclared panics. This view does not
+// carry boundary-attachment-resolved-source-declared, which is read from
+// types.FeatureRecipeSpec.Source.
 func (EmittedViewBase) BoundaryAttachmentResolvedSourceDeclared(boundary string, attachment string) bool {
-	panic("this presentation does not carry boundary-attachment-resolved-source-declared, which is read from types.FeatureRecipeSpec.Source")
+	panic("this view does not carry boundary-attachment-resolved-source-declared, which is read from types.FeatureRecipeSpec.Source")
 }
 
-// BoundaryAttachmentParsedWorkloadPresent panics. This presentation does
-// not carry boundary-attachment-parsed-workload-present, which is read
-// from types.FeatureRecipeSpec.Workload.
+// BoundaryAttachmentParsedWorkloadPresent panics. This view does not carry
+// boundary-attachment-parsed-workload-present, which is read from
+// types.FeatureRecipeSpec.Workload.
 func (EmittedViewBase) BoundaryAttachmentParsedWorkloadPresent(boundary string, attachment string) bool {
-	panic("this presentation does not carry boundary-attachment-parsed-workload-present, which is read from types.FeatureRecipeSpec.Workload")
+	panic("this view does not carry boundary-attachment-parsed-workload-present, which is read from types.FeatureRecipeSpec.Workload")
 }
 
-// BoundaryAttachmentArtifactTemplateText panics. This presentation does
-// not carry boundary-attachment-artifact-template-text, which is read from
+// BoundaryAttachmentArtifactTemplateText panics. This view does not carry
+// boundary-attachment-artifact-template-text, which is read from
 // types.FeatureRecipeSpec.Artifacts.
 func (EmittedViewBase) BoundaryAttachmentArtifactTemplateText(boundary string, attachment string, artifact string) string {
-	panic("this presentation does not carry boundary-attachment-artifact-template-text, which is read from types.FeatureRecipeSpec.Artifacts")
+	panic("this view does not carry boundary-attachment-artifact-template-text, which is read from types.FeatureRecipeSpec.Artifacts")
 }
 
-// BoundaryAttachmentArtifactRecordedContentPin panics. This presentation
-// does not carry boundary-attachment-artifact-recorded-content-pin, which
-// is read from types.FeatureRecipeSpec.ArtifactDigests.
+// BoundaryAttachmentArtifactRecordedContentPin panics. This view does not
+// carry boundary-attachment-artifact-recorded-content-pin, which is read
+// from types.FeatureRecipeSpec.ArtifactDigests.
 func (EmittedViewBase) BoundaryAttachmentArtifactRecordedContentPin(boundary string, attachment string, artifact string) (string, bool) {
-	panic("this presentation does not carry boundary-attachment-artifact-recorded-content-pin, which is read from types.FeatureRecipeSpec.ArtifactDigests")
+	panic("this view does not carry boundary-attachment-artifact-recorded-content-pin, which is read from types.FeatureRecipeSpec.ArtifactDigests")
 }
 
-// BoundaryAttachmentArtifactImportedPath panics. This presentation does
-// not carry boundary-attachment-artifact-imported-path, which is read from
+// BoundaryAttachmentArtifactImportedPath panics. This view does not carry
+// boundary-attachment-artifact-imported-path, which is read from
 // types.FeatureRecipeSpec.Artifacts.
 func (EmittedViewBase) BoundaryAttachmentArtifactImportedPath(boundary string, attachment string, artifact string) string {
-	panic("this presentation does not carry boundary-attachment-artifact-imported-path, which is read from types.FeatureRecipeSpec.Artifacts")
+	panic("this view does not carry boundary-attachment-artifact-imported-path, which is read from types.FeatureRecipeSpec.Artifacts")
 }
 
 // DispatchedViewBase is a base for an implementation of DispatchedView.
@@ -2293,25 +2282,25 @@ type DispatchedViewBase struct {
 	EmittedViewBase
 }
 
-// EmittedFileOriginSet panics. This presentation does not carry
+// EmittedFileOriginSet panics. This view does not carry
 // emitted-file-origin-set, which is read from
 // renderer.PhaseBState.EmittedFiles.
 func (DispatchedViewBase) EmittedFileOriginSet(node string, path string) []string {
-	panic("this presentation does not carry emitted-file-origin-set, which is read from renderer.PhaseBState.EmittedFiles")
+	panic("this view does not carry emitted-file-origin-set, which is read from renderer.PhaseBState.EmittedFiles")
 }
 
-// AttachmentEmittedFileOriginSet panics. This presentation does not carry
+// AttachmentEmittedFileOriginSet panics. This view does not carry
 // attachment-emitted-file-origin-set, which is read from
 // renderer.PhaseBState.EmittedFiles.
 func (DispatchedViewBase) AttachmentEmittedFileOriginSet(node string, attachment string, path string) []string {
-	panic("this presentation does not carry attachment-emitted-file-origin-set, which is read from renderer.PhaseBState.EmittedFiles")
+	panic("this view does not carry attachment-emitted-file-origin-set, which is read from renderer.PhaseBState.EmittedFiles")
 }
 
-// BoundaryAttachmentEmittedFileOriginSet panics. This presentation does
-// not carry boundary-attachment-emitted-file-origin-set, which is read
-// from renderer.PhaseBState.EmittedFiles.
+// BoundaryAttachmentEmittedFileOriginSet panics. This view does not carry
+// boundary-attachment-emitted-file-origin-set, which is read from
+// renderer.PhaseBState.EmittedFiles.
 func (DispatchedViewBase) BoundaryAttachmentEmittedFileOriginSet(boundary string, attachment string, path string) []string {
-	panic("this presentation does not carry boundary-attachment-emitted-file-origin-set, which is read from renderer.PhaseBState.EmittedFiles")
+	panic("this view does not carry boundary-attachment-emitted-file-origin-set, which is read from renderer.PhaseBState.EmittedFiles")
 }
 
 // RenderedViewBase is a base for an implementation of RenderedView.
@@ -2338,53 +2327,53 @@ type RenderedViewBase struct {
 	DispatchedViewBase
 }
 
-// AssemblyGroupProviderSet panics. This presentation does not carry
+// AssemblyGroupProviderSet panics. This view does not carry
 // assembly-group-provider-set, which is read from
 // renderer.AssemblyContribution.Provider.
 func (RenderedViewBase) AssemblyGroupProviderSet(assemblyPath string) []string {
-	panic("this presentation does not carry assembly-group-provider-set, which is read from renderer.AssemblyContribution.Provider")
+	panic("this view does not carry assembly-group-provider-set, which is read from renderer.AssemblyContribution.Provider")
 }
 
-// AssemblyGroupBoundarySet panics. This presentation does not carry
+// AssemblyGroupBoundarySet panics. This view does not carry
 // assembly-group-boundary-set, which is read from
 // renderer.AssemblyContribution.Boundaries.
 func (RenderedViewBase) AssemblyGroupBoundarySet(assemblyPath string, provider string) []string {
-	panic("this presentation does not carry assembly-group-boundary-set, which is read from renderer.AssemblyContribution.Boundaries")
+	panic("this view does not carry assembly-group-boundary-set, which is read from renderer.AssemblyContribution.Boundaries")
 }
 
-// AssemblyGroupProviderAssembly panics. This presentation does not carry
+// AssemblyGroupProviderAssembly panics. This view does not carry
 // assembly-group-provider-assembly, which is read from
 // wasm.ProviderContract.BoundaryAssembly.
 func (RenderedViewBase) AssemblyGroupProviderAssembly(assemblyPath string, provider string) string {
-	panic("this presentation does not carry assembly-group-provider-assembly, which is read from wasm.ProviderContract.BoundaryAssembly")
+	panic("this view does not carry assembly-group-provider-assembly, which is read from wasm.ProviderContract.BoundaryAssembly")
 }
 
-// AssemblyGroupAssemblerProvided panics. This presentation does not carry
+// AssemblyGroupAssemblerProvided panics. This view does not carry
 // assembly-group-assembler-provided, which is read from
 // types.PluginSpec.Exports.
 func (RenderedViewBase) AssemblyGroupAssemblerProvided(assemblyPath string, provider string) bool {
-	panic("this presentation does not carry assembly-group-assembler-provided, which is read from types.PluginSpec.Exports")
+	panic("this view does not carry assembly-group-assembler-provided, which is read from types.PluginSpec.Exports")
 }
 
-// AssemblyGroupAssemblyNameAnnotation panics. This presentation does not
-// carry assembly-group-assembly-name-annotation, which is read from
+// AssemblyGroupAssemblyNameAnnotation panics. This view does not carry
+// assembly-group-assembly-name-annotation, which is read from
 // wasm.ProviderContract.AssemblyNameAnnotation.
 func (RenderedViewBase) AssemblyGroupAssemblyNameAnnotation(assemblyPath string, provider string) (string, bool) {
-	panic("this presentation does not carry assembly-group-assembly-name-annotation, which is read from wasm.ProviderContract.AssemblyNameAnnotation")
+	panic("this view does not carry assembly-group-assembly-name-annotation, which is read from wasm.ProviderContract.AssemblyNameAnnotation")
 }
 
-// AssemblyGroupBoundaryAssemblyNames panics. This presentation does not
-// carry assembly-group-boundary-assembly-names, which is read from
+// AssemblyGroupBoundaryAssemblyNames panics. This view does not carry
+// assembly-group-boundary-assembly-names, which is read from
 // resolver.ResolveResult.BoundaryAnnotations.
 func (RenderedViewBase) AssemblyGroupBoundaryAssemblyNames(assemblyPath string, provider string) types.OrderedMap[string] {
-	panic("this presentation does not carry assembly-group-boundary-assembly-names, which is read from resolver.ResolveResult.BoundaryAnnotations")
+	panic("this view does not carry assembly-group-boundary-assembly-names, which is read from resolver.ResolveResult.BoundaryAnnotations")
 }
 
-// AssemblyGroupDerivedNames panics. This presentation does not carry
+// AssemblyGroupDerivedNames panics. This view does not carry
 // assembly-group-derived-names, which is read from
 // rendercore.RenderNodeOutput.DerivedKeys.
 func (RenderedViewBase) AssemblyGroupDerivedNames(assemblyPath string, provider string) []DerivedNameDeclaration {
-	panic("this presentation does not carry assembly-group-derived-names, which is read from rendercore.RenderNodeOutput.DerivedKeys")
+	panic("this view does not carry assembly-group-derived-names, which is read from rendercore.RenderNodeOutput.DerivedKeys")
 }
 
 // AggregateDocumentFacts are the document-stage facts an Aggregate

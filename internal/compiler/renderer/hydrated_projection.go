@@ -713,7 +713,7 @@ func (i attachmentCarrierInputs) readableEmittedFacts(
 		}
 		return nil, cerrors.Unidentified(cerrors.CatalogError, cerrors.SourceLocation{File: findingFile},
 			"the files this FeatureRecipe emitted could not be checked for two of its blocks "+
-				"meeting on one output name — internal error: the render published no presentation "+
+				"meeting on one output name — internal error: the render published no view "+
 				"over its emission. This is a fault in the compiler rather than in the "+
 				"FeatureRecipe, so there is nothing to correct in the catalog", nil, nil)
 	}

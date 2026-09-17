@@ -607,7 +607,7 @@ var facts = []factDecl{
 			"fact rather than one fact over both authored kinds, and the " +
 			"plurality is forced rather than chosen: a fact is filed under exactly " +
 			"one authored document kind, so a single fact would be readable from " +
-			"one kind's presentation and would refuse the other at the point a " +
+			"one kind's view and would refuse the other at the point a " +
 			"rule read it. The two kinds write the block under the same key and " +
 			"one rule governs both, which is why the second fact is a declaration " +
 			"rather than a second design.\n\nWhat the keys are, and why they are " +
@@ -1492,7 +1492,7 @@ var facts = []factDecl{
 			"shape the author wrote it in, because what it is measured against " +
 			"is a contract declared elsewhere and narrowing it here would " +
 			"decide that measurement in advance.\n\nThe second result reports " +
-			"whether this presentation holds a routed value at those " +
+			"whether this view holds a routed value at those " +
 			"coordinates at all. Two shapes answer no and both are deliberate: " +
 			"coordinates nobody wrote, and an entry written as an opt-out — an " +
 			"explicit empty value, which is how an author removes an entry " +
@@ -2586,11 +2586,11 @@ var facts = []factDecl{
 			"negative, and whether the catalog holds the type at all is the " +
 			"separate fact beside this one. A contract that failed to resolve is " +
 			"reported by whatever holds the resolution, once, rather than left to " +
-			"every rule reading a bare absence to infer — a presentation that " +
+			"every rule reading a bare absence to infer — a view that " +
 			"resolves the bound Features up front keeps that failure and reports " +
 			"it, while one that resolves per call keeps nothing afterwards and " +
 			"reports nothing, which is why a rule over this fact is invoked on a " +
-			"presentation that holds the resolution.\n\nThe resolved document holds " +
+			"view that holds the resolution.\n\nThe resolved document holds " +
 			"no order. A rule selects from it by key, which iterates nothing; one " +
 			"that walked the whole document to build output would put a " +
 			"byte-identical result at the mercy of map iteration.",

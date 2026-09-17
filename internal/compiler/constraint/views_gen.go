@@ -553,10 +553,10 @@ type DocumentView interface {
 	// It is a second fact rather than one fact over both authored kinds, and
 	// the plurality is forced rather than chosen: a fact is filed under
 	// exactly one authored document kind, so a single fact would be readable
-	// from one kind's presentation and would refuse the other at the point a
-	// rule read it. The two kinds write the block under the same key and one
-	// rule governs both, which is why the second fact is a declaration rather
-	// than a second design.
+	// from one kind's view and would refuse the other at the point a rule read
+	// it. The two kinds write the block under the same key and one rule
+	// governs both, which is why the second fact is a declaration rather than
+	// a second design.
 	//
 	// What the keys are, and why they are carried in the author's order, is
 	// what the Component's own fact states; it is not restated here, because a
@@ -1328,13 +1328,13 @@ type NormalizedView interface {
 	// elsewhere and narrowing it here would decide that measurement in
 	// advance.
 	//
-	// The second result reports whether this presentation holds a routed value
-	// at those coordinates at all. Two shapes answer no and both are
-	// deliberate: coordinates nobody wrote, and an entry written as an opt-out
-	// — an explicit empty value, which is how an author removes an entry
-	// inherited from a scope above. An opt-out routes nothing, so there is no
-	// value to measure and no instance to be invoked for; a rule that judged
-	// one would refuse an author for removing something.
+	// The second result reports whether this view holds a routed value at
+	// those coordinates at all. Two shapes answer no and both are deliberate:
+	// coordinates nobody wrote, and an entry written as an opt-out — an
+	// explicit empty value, which is how an author removes an entry inherited
+	// from a scope above. An opt-out routes nothing, so there is no value to
+	// measure and no instance to be invoked for; a rule that judged one would
+	// refuse an author for removing something.
 	//
 	// Keyed by authored-annotation; read from types.AnnotationValue.
 	AuthoredAnnotationSubvalue(document string, scope string, component string, key string, subkey string) (any, bool)
@@ -2420,10 +2420,10 @@ type NormalizedView interface {
 	// holds the type at all is the separate fact beside this one. A contract
 	// that failed to resolve is reported by whatever holds the resolution,
 	// once, rather than left to every rule reading a bare absence to infer —
-	// a presentation that resolves the bound Features up front keeps that
-	// failure and reports it, while one that resolves per call keeps nothing
-	// afterwards and reports nothing, which is why a rule over this fact is
-	// invoked on a presentation that holds the resolution.
+	// a view that resolves the bound Features up front keeps that failure and
+	// reports it, while one that resolves per call keeps nothing afterwards
+	// and reports nothing, which is why a rule over this fact is invoked on a
+	// view that holds the resolution.
 	//
 	// The resolved document holds no order. A rule selects from it by key,
 	// which iterates nothing; one that walked the whole document to build

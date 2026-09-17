@@ -72,7 +72,7 @@ func runGraphStageRules(
 	coordinates := out.GraphCoordinates
 	if coordinates == nil {
 		return fmt.Errorf(
-			"graph-stage rules: the compilation produced no presentation of the finalised graph to invoke them against")
+			"graph-stage rules: the compilation produced no view of the finalised graph to invoke them against")
 	}
 
 	// The label constraint a dependency socket declares over what may satisfy

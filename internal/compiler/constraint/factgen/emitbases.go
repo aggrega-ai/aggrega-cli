@@ -174,7 +174,7 @@ func writeFactMethods(b *strings.Builder, name string, fs []factDecl) {
 }
 
 // refusalSentence is what a base's method says when it is reached: which fact
-// this presentation does not carry, and what does carry it.
+// this view does not carry, and what does carry it.
 //
 // The two halves of the answer differ by stage, because the registry records two
 // different things. A document-stage fact names the authored document kind, which
@@ -182,10 +182,10 @@ func writeFactMethods(b *strings.Builder, name string, fs []factDecl) {
 // whole stage, so what a reader needs is the field it is read from.
 func refusalSentence(f factDecl, carrier string) string {
 	if carrier != "" {
-		return fmt.Sprintf("this presentation does not carry %s, which %s %s document carries",
+		return fmt.Sprintf("this view does not carry %s, which %s %s document carries",
 			f.Name, article(carrier), carrier)
 	}
-	return fmt.Sprintf("this presentation does not carry %s, which is read from %s",
+	return fmt.Sprintf("this view does not carry %s, which is read from %s",
 		f.Name, f.SourceField)
 }
 
