@@ -20,7 +20,11 @@ func ErrPipelineTargetAbsent() error { return errPipelineTargetAbsent }
 var errPipelineTargetAbsent = cerrors.Register("pipeline-target-absent", cerrors.Meta{
 	ShortCode: "E0011",
 	Message:   "pipeline patch targets a document not present in the set",
-	RulePlace: cerrors.RuleOverAuthoredInput(),
+	RulePlace: cerrors.NotARule("A patch addresses a scope and key the document set does not hold. Every operation " +
+		"reaching this check is one a guest returned at render time — a pipeline step's patches over the " +
+		"documents a node emitted, or a provider's cross-boundary link wiring over the files a dispatch " +
+		"group assembled — so the address it names is a product of the render rather than anything an " +
+		"author wrote. No predicate over authored content decides it."),
 })
 
 // ErrPipelineStepFailed is the walk's umbrella sentinel for a step that
@@ -72,5 +76,10 @@ func ErrPipelineTargetOpaque() error { return errPipelineTargetOpaque }
 var errPipelineTargetOpaque = cerrors.Register("pipeline-target-opaque", cerrors.Meta{
 	ShortCode: "E0012",
 	Message:   "pipeline patch targets an opaque (non-structured) unit",
-	RulePlace: cerrors.RuleOverAuthoredInput(),
+	RulePlace: cerrors.NotARule("A patch addresses a unit the codec gave no tree-view, so there is no addressable tree " +
+		"to apply it against. Both sides of that are render-time products: the operations are ones a guest " +
+		"returned — a pipeline step's patches over the documents a node emitted, or a provider's " +
+		"cross-boundary link wiring over the files a dispatch group assembled — and whether a unit is " +
+		"structured is the codec's own call over those same documents. No predicate over authored content " +
+		"decides it."),
 })

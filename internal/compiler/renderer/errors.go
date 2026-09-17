@@ -596,7 +596,11 @@ func ErrPipelineTargetNotEmitted() error { return errPipelineTargetNotEmitted }
 var errPipelineTargetNotEmitted = cerrors.Register("pipeline-target-not-emitted", cerrors.Meta{
 	ShortCode: "E0052",
 	Message:   "pipeline PATCH targets a document the node did not emit",
-	RulePlace: cerrors.RuleOverAuthoredInput(),
+	RulePlace: cerrors.NotARule("This condition carries no predicate of its own. It is the renderer's halting identity " +
+		"for the pipeline walk's absent-target cause, selected by matching that cause as a node's walk " +
+		"returns. What decides the underlying condition is whether the documents a node emitted hold the " +
+		"scope and key an operation a guest returned addresses — both of them products of the render. No " +
+		"predicate over authored content decides it."),
 })
 
 // ErrPipelineHostScopeUnavailable fires when a pipeline step performs a
