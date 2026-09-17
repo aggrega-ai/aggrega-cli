@@ -23,7 +23,11 @@ func ErrDuplicateTriadIdentity() error { return errDuplicateTriadIdentity }
 var errDuplicateTriadIdentity = cerrors.Register("duplicate-triad-identity", cerrors.Meta{
 	ShortCode: "E0152",
 	Message:   "duplicate Aggregate/Manifest identity (metadata.name) in the Release directory",
-	RulePlace: cerrors.RuleOverAuthoredInput(),
+	RulePlace: cerrors.RuleNoStageReaches("The same-directory scan evaluates the rule, while it is indexing the " +
+		"Release directory's Aggregates and Manifests by metadata.name for a bare-identity reference to resolve " +
+		"against, when two entities of one kind claim one name. The scan reads the directory in order to decide " +
+		"which documents a build will open, and it refuses a collision even between two files neither reference " +
+		"names, so it happens ahead of every declared stage and no stage holds the files it walked."),
 })
 
 // ErrTriadRefUnresolvable fires when a bare-identity aggregate:/manifest:
