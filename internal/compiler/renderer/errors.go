@@ -410,11 +410,28 @@ func ErrCircularImport() error { return refcycle.ErrCycle() }
 // cannot leak into authored source. The per-surface wrapping context names
 // which surface carried the host.
 //
-// The reference an entity itself authors is refused earlier, by that
-// entity's schema, which admits no `oci://` prefix at any of the three
-// $import positions on Recipe or FeatureRecipe. What still reaches this
-// sentinel is the reference no schema can describe: one read out of a
-// library entry's own body, which the consuming entity did not write.
+// # Why no rule over the authored reference is declared for it
+//
+// The reference an entity itself authors never reaches this sentinel. A Recipe
+// or FeatureRecipe carrying an `oci://` prefix at any of its three $import
+// positions is refused when its document envelope is validated as the catalog
+// loads, because no entity schema admits one there. That file is skipped, so the
+// catalog holds nothing under the identity it declares, and every surface that
+// renders then fails resolving the reference to it — ahead of any render. A rule
+// declared over the authored reference could not be invoked ahead of that, and
+// the declaration would read as enforcement while nothing could reach it.
+//
+// What still reaches this sentinel is the reference no entity schema describes:
+// one lifted out of a library entry's own body by the recursion the mapping and
+// workload resolvers perform. A library entry body is under no such constraint,
+// and the reference is one the consuming entity never wrote, so no rule over
+// that entity's authored text can see it however completely its own references
+// are covered.
+//
+// The arms that raise this condition therefore stay where they are: they are the
+// refusal for a reference the recursion lifts out of a library entry's body, for
+// the values mapping and the workload a FeatureRecipe carries, and for a caller
+// assembling a render's input without loading it through the catalog first.
 func ErrHostInLibraryImport() error { return errHostInLibraryImport }
 
 var errHostInLibraryImport = cerrors.Register("host-in-library-import", cerrors.Meta{
