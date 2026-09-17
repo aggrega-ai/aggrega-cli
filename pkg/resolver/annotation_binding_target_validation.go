@@ -20,13 +20,19 @@ import (
 // any of them routes to a Feature the catalog does not hold or to a pillar path
 // that Feature does not declare.
 //
-// It presents the documents and names the rule rather than walking the registry
-// itself: the rule is declared in this package as a constraint, so where it runs
-// follows from the facts it reads, and the provenance its findings carry is
-// supplied by the framework rather than assembled here. The binding keys are read
-// back off the presentation rather than off the Manifest beside it — they are one
-// of the facts the presentation states, so reading them anywhere else would be
-// answering from a second source that happens to agree.
+// It presents the Manifest beside the catalog and names the rule rather than
+// walking the registry itself: the rule is declared in this package as a
+// constraint, so where it runs follows from the facts it reads, and the
+// provenance its findings carry is supplied by the framework rather than
+// assembled here. The binding keys are read back off the presentation rather than
+// off the Manifest beside it — they are one of the facts the presentation states,
+// so reading them anywhere else would be answering from a second source that
+// happens to agree.
+//
+// It presents one authored document and the catalog, and nothing composed. That
+// is what the rule reads, and building a compilation to hand it would assert that
+// the rule cannot be asked before one exists — which is exactly the claim the
+// stage it is placed at denies.
 //
 // It is asked here, before annotation expansion, and that position is load-bearing
 // rather than incidental. Expansion consumes the binding, so a binding naming a
@@ -64,12 +70,8 @@ func ValidateAnnotationBindingTargets(result *ResolveResult, catalogLookup Catal
 	if catalogLookup.Feature == nil {
 		return nil
 	}
-	presented := newManifestNormalizedView(
-		manifestDocumentOf(result), result.Manifest,
-		newNormalizedView(
-			normalizedAggregateOf(result), result.Release, catalogLookup, result.Parameters),
-		catalogLookup,
-	)
+	presented := newManifestCatalogView(
+		manifestDocumentOf(result), result.Manifest, catalogLookup)
 	document := manifestDocumentOf(result)
 
 	findings := unresolvableTargetFindings(presented)
@@ -77,7 +79,7 @@ func ValidateAnnotationBindingTargets(result *ResolveResult, catalogLookup Catal
 		constraint.RunOnDocumentAnnotationBindings(
 			document,
 			presented.ManifestAnnotationBindingKeys(document),
-			constraint.NormalizedView(presented),
+			constraint.CatalogView(presented),
 			annotationBindingResolvesAgainstItsTargetFeature,
 		),
 		"Manifest",
@@ -102,11 +104,10 @@ func manifestDocumentOf(*ResolveResult) string {
 	return ""
 }
 
-// normalizedAggregateOf is the application document the embedded presentation is
-// built from, normalized. A resolve holding none presents an empty one rather
-// than nothing: the facts the rule asked here reads are the Manifest's and the
-// catalog's, and an absent application declares no instance for the rest to be
-// wrong about.
+// normalizedAggregateOf is the application document an embedded presentation of a
+// compilation is built from, normalized. A resolve holding none presents an empty
+// one rather than nothing: an absent application declares no instance for a rule
+// to be wrong about, so the presentation is still answerable rather than absent.
 func normalizedAggregateOf(result *ResolveResult) types.NormalizedAggregate {
 	if result.Aggregate == nil {
 		return types.Normalize(&types.Aggregate{})
@@ -124,7 +125,7 @@ func normalizedAggregateOf(result *ResolveResult) types.NormalizedAggregate {
 // the binding's own condition rather than to a condition of its own, because what
 // the author asked for is a binding that resolves and this is one of the ways it
 // does not.
-func unresolvableTargetFindings(v *manifestNormalizedView) []*ResolverError {
+func unresolvableTargetFindings(v *manifestCatalogView) []*ResolverError {
 	failures := v.unresolvableTargets()
 	if len(failures) == 0 {
 		return nil

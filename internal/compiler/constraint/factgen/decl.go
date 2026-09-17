@@ -184,12 +184,22 @@ type factDecl struct {
 	// value sits in the compiler, the other is what a user would have to open
 	// in order to change it.
 	//
-	// It applies at the document stage alone. That stage presents one authored
-	// document, so it has two axes — when the fact is complete, and which kind
-	// of document carries it. Every later stage presents one compilation, which
-	// has one carrier and so nothing for a second axis to distinguish; a
-	// declaration at such a stage is refused rather than ignored, because a
-	// value nothing reads is a value a reviewer trusts.
+	// It applies at the document stage alone, because that is the only stage
+	// whose presentation VARIES BY AUTHORED DOCUMENT KIND: it presents one
+	// authored document of whichever kind a caller hands over, so it has two
+	// axes — when the fact is complete, and which kind of document carries it.
+	// Every other stage has a single carrier and so nothing for a second axis to
+	// distinguish, for one of two reasons: it presents one compilation, which is
+	// one thing; or it presents one authored document of a kind the stage itself
+	// fixes, which the catalog stage does. A declaration at such a stage is
+	// refused rather than ignored, because a value nothing reads is a value a
+	// reviewer trusts.
+	//
+	// 🔴 A single-kind stage sidesteps the axis only while it stays single-kind,
+	// and nothing here enforces that: the refusal keys on a non-empty carrier, so
+	// a fact declared at such a stage with no carrier passes. What the first fact
+	// of a second kind there would owe is written on that stage's own declaration
+	// in the registry.
 	//
 	// It is declared only where the kind does not derive from SourceField.
 	// Where the source carrier is one authored entity's spec type, the kind is

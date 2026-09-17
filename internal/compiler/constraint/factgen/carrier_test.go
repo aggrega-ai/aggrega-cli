@@ -86,7 +86,11 @@ func TestDeriveCarriersRefusals(t *testing.T) {
 			}},
 			stages: append(documentStages(),
 				stageDecl{Name: "graph", Extends: documentStage, Holds: "one graph", HostPowers: noHostPowers}),
-			wants: []string{`fact "probe" declares carrier "Component" at stage "graph"`, "one compilation"},
+			wants: []string{
+				`fact "probe" declares carrier "Component" at stage "graph"`,
+				"varies by authored document kind",
+				"a single carrier",
+			},
 		},
 		{
 			name:   "a declaration repeats what the source carrier already derives",
@@ -188,6 +192,61 @@ func TestDeriveCarriersAcceptsTheShapesItIsFor(t *testing.T) {
 	}
 	if got := len(groups[1].Facts); got != 1 {
 		t.Errorf("the Aggregate group carries %d fact(s); want 1", got)
+	}
+}
+
+// TestDeriveCarriersAdmitsASingleKindStageDeclaringNoCarrier pins the one thing
+// the derivation cannot see, so that it is a recorded decision rather than a
+// trap somebody meets later.
+//
+// A stage after the root may present one authored document rather than a
+// compilation — the catalog stage does, holding one Manifest beside the catalog
+// it resolves against. Such a stage is single-kind, so it needs no carrier and
+// declares none, and this derivation admits it: the refusal keys on a NON-EMPTY
+// carrier at a non-document stage, so a fact with no carrier trips nothing
+// wherever it sits.
+//
+// That admission is correct for a single-kind stage and silent for one that has
+// stopped being single-kind. The first fact of a SECOND document kind at such a
+// stage passes here exactly as this one does, while the stage's accessors then
+// answer two kinds with no axis separating them. Nothing in this package can
+// refuse that, which is why the obligation is written on the stage's own
+// declaration in the registry — and why this test exists rather than an
+// assertion nobody can write.
+func TestDeriveCarriersAdmitsASingleKindStageDeclaringNoCarrier(t *testing.T) {
+	t.Parallel()
+	facts := []factDecl{
+		documentFact("derived-kind", "types.FeatureSpec.Schema", ""),
+		{
+			Name:        "single-kind-stage-fact",
+			Stage:       "catalog",
+			SourceField: "resolver.CatalogLookup.Feature(featureType)",
+			Subject:     []string{"document", "annotation-binding"},
+			Returns:     "bool",
+			Doc: "A fact at a stage presenting one authored document of a fixed kind, " +
+				"which declares no carrier because the stage itself names the kind.",
+		},
+	}
+	stages := append(documentStages(), stageDecl{
+		Name:       "catalog",
+		Extends:    documentStage,
+		Holds:      "one authored document together with the catalog it resolves against",
+		HostPowers: noHostPowers,
+	})
+
+	groups, err := deriveCarriers(facts, stages)
+	if err != nil {
+		t.Fatalf("the derivation refused a single-kind stage declaring no carrier: %v", err)
+	}
+	if len(groups) != 1 {
+		t.Fatalf("derived %d carrier group(s); want 1 — the carrier axis groups document-stage "+
+			"facts alone, so a fact at the single-kind stage joins no group", len(groups))
+	}
+	for _, f := range groups[0].Facts {
+		if f.Name == "single-kind-stage-fact" {
+			t.Errorf("the fact at the single-kind stage was grouped under kind %q; the axis "+
+				"applies at the document stage alone", groups[0].Kind)
+		}
 	}
 }
 

@@ -23,8 +23,11 @@ import (
 // Feature attachment. Both halves of that have to be real for the routing to mean
 // anything: the Feature has to exist, and each field the binding names has to be
 // one the Feature declares. Neither is knowable from the Manifest alone, which is
-// what places this reading after the catalog becomes reachable rather than at the
-// document the binding is written on.
+// what places this reading at the stage holding one authored document beside the
+// catalog it resolves against, rather than at the document the binding is written
+// on. It needs nothing beyond that pair — no Aggregate, no Release, nothing
+// normalized — so it reads none of a compilation's facts and declares no view
+// that carries them.
 //
 // It halts. A binding routing to a field nothing declares delivers its value
 // nowhere, and admitting the build would produce an attachment silently missing
@@ -65,13 +68,13 @@ import (
 // it routes, and what to edit follow, each captioned, because the registered
 // wording names none of them.
 var annotationBindingResolvesAgainstItsTargetFeature = constraint.Check[
-	constraint.NormalizedView,
+	constraint.CatalogView,
 	constraint.DocumentAnnotationBindingSubject,
 ]{
 	Sentinel: ErrAnnotationBindingTargetUnresolved(),
 	Severity: constraint.SeverityFatal,
 	Run: func(
-		v constraint.NormalizedView,
+		v constraint.CatalogView,
 		s constraint.DocumentAnnotationBindingSubject,
 	) []constraint.Objection {
 		document, key := s.SourceFile(), s.AnnotationBindingKey()

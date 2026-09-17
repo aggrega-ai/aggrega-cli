@@ -35,8 +35,40 @@ var stages = []stageDecl{
 		HostPowers: noHostPowers,
 	},
 	{
-		Name:    "normalized",
+		Name:    "catalog",
 		Extends: "document",
+		Holds: "one authored document as the document stage hands it over, " +
+			"together with the catalog its own references resolve against — " +
+			"nothing composed into a compilation, and no second document read",
+		// Resolving what the presented document names is what completes these
+		// facts, and a catalog entry is reached either as a directory in the
+		// workspace or as a published artifact fetched into it. That is the same
+		// pair the stage after this one declares, and for the same reason: the
+		// reach is the catalog's, not the compilation's.
+		//
+		// 🔴 THIS STAGE PRESENTS ONE AUTHORED DOCUMENT AND NOT A COMPILATION, so
+		// it is the second stage the carrier axis could apply at — and the only
+		// reason it does not is that every fact here is carried by one kind, the
+		// Manifest, which the stage itself fixes. A stage whose facts all name one
+		// kind has a single carrier, so there is nothing for a second axis to
+		// distinguish and no carrier is declared.
+		//
+		// 🔴 THE FIRST FACT A SECOND DOCUMENT KIND NEEDS HERE ENDS THAT, AND
+		// NOTHING WILL STOP YOU. deriveCarriers refuses a NON-EMPTY carrier
+		// declared away from the document stage, and a fact declared here with no
+		// carrier trips nothing — so the day a Release or a Recipe fact lands
+		// here, the stage silently starts answering two kinds through one set of
+		// accessors with no axis separating them. Making the axis apply at more
+		// than one stage is the change that owes: per-kind bases and obligation
+		// interfaces here as well as at the root, and a carrier declaration that
+		// is refused today. It is deferred rather than avoided, and it is written
+		// on the declaration rather than only in a record so that whoever adds
+		// that fact meets it where they are working.
+		HostPowers: []hostPower{powerFilesystem, powerArtifactFetch},
+	},
+	{
+		Name:    "normalized",
+		Extends: "catalog",
 		Holds: "both authoring documents normalized and parameter-interpolated, " +
 			"with the catalog reachable",
 		// Resolving the catalog entity an instance names is what makes these
@@ -2051,7 +2083,7 @@ var facts = []factDecl{
 	},
 	{
 		Name:        "catalog-feature-present",
-		Stage:       "normalized",
+		Stage:       "catalog",
 		SourceField: "resolver.CatalogLookup.Feature(featureType)",
 		Subject:     []string{"node", "attachment"},
 		Params:      []paramDecl{{Name: "featureType", Type: "string"}},
@@ -2072,7 +2104,15 @@ var facts = []factDecl{
 			"socket and for a type no catalog entry was found for, so a rule that " +
 			"turns on the difference settles this one first.\n\nIt answers presence " +
 			"in the catalog and nothing about whether there is a catalog to " +
-			"consult, which is settled where the view is produced.",
+			"consult, which is settled where the view is produced.\n\nIt is " +
+			"complete as soon as the catalog is reachable — the answer is a " +
+			"function of a type name and the catalog, and nothing normalized " +
+			"enters it — so it lands at the catalog stage rather than at the one " +
+			"after it. Its stage and its key answer different questions and do " +
+			"not have to agree: the stage is where the ANSWER is complete, while " +
+			"the key is what a rule reading it is invoked once per. A rule asked " +
+			"of an attachment is invoked where a node set exists and reads this " +
+			"fact there, because a stage contains the stage it extends.",
 	},
 	{
 		Name:        "component-type-is-local-path",
@@ -2695,7 +2735,7 @@ var facts = []factDecl{
 	},
 	{
 		Name:        "compiled-feature-schema",
-		Stage:       "normalized",
+		Stage:       "catalog",
 		SourceField: "resolver.CompileFeatureSchema(catalog, featureType)",
 		Subject:     []string{"document", "annotation-binding"},
 		Params:      []paramDecl{{Name: "featureType", Type: "string"}},
@@ -2725,8 +2765,13 @@ var facts = []factDecl{
 			"resolves the bound Features up front keeps that failure and reports " +
 			"it, while one that resolves per call keeps nothing afterwards and " +
 			"reports nothing, which is why a rule over this fact is invoked on a " +
-			"view that holds the resolution.\n\nThe resolved document holds " +
-			"no order. A rule selects from it by key, which iterates nothing; one " +
+			"view that holds the resolution.\n\nIt is complete as soon as the " +
+			"catalog is reachable — the contract is a function of a Feature type " +
+			"and the catalog, and nothing normalized enters it — so it lands at " +
+			"the catalog stage. That is what lets a rule reading it be invoked " +
+			"over a view holding one authored Manifest and the catalog, rather " +
+			"than over a compilation it has no question about.\n\nThe resolved " +
+			"document holds no order. A rule selects from it by key, which iterates nothing; one " +
 			"that walked the whole document to build output would put a " +
 			"byte-identical result at the mercy of map iteration.",
 	},

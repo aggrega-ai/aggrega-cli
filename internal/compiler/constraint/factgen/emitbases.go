@@ -105,8 +105,11 @@ func emitViewBases(c chain) ([]byte, error) {
 		}
 	}
 
-	// Every later stage has one carrier, so its base refuses the facts of the
-	// stage it extends and, by embedding, of everything that stage contains.
+	// Every stage after the root has a single carrier — a compilation for most of
+	// them, one authored kind the stage itself fixes for a stage presenting one
+	// document — so its base is per stage rather than per kind: it refuses the
+	// facts of the stage it extends and, by embedding, of everything that stage
+	// contains.
 	for i := 1; i < len(c.order); i++ {
 		name := baseName(c.order[i].Name)
 		prev := c.order[i-1].Name
@@ -179,7 +182,8 @@ func writeFactMethods(b *strings.Builder, name string, fs []factDecl) {
 // The two halves of the answer differ by stage, because the registry records two
 // different things. A document-stage fact names the authored document kind, which
 // is the axis that stage carries. A later-stage fact has one carrier for the
-// whole stage, so what a reader needs is the field it is read from.
+// whole stage — a compilation, or the one authored kind that stage fixes — so
+// what a reader needs is the field it is read from.
 func refusalSentence(f factDecl, carrier string) string {
 	if carrier != "" {
 		return fmt.Sprintf("this view does not carry %s, which %s %s document carries",

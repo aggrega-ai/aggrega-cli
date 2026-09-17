@@ -1046,16 +1046,108 @@ type DocumentView interface {
 	ReleaseBoundaryPlacements() []BoundaryPlacement
 }
 
-// NormalizedView exposes the facts complete at the normalized stage: both
-// authoring documents normalized and parameter-interpolated, with the
-// catalog reachable.
+// CatalogView exposes the facts complete at the catalog stage: one
+// authored document as the document stage hands it over, together with the
+// catalog its own references resolve against — nothing composed into a
+// compilation, and no second document read.
 //
 // It embeds DocumentView, so every fact complete earlier is readable here
 // and the containment is a compile-time fact rather than a documented
 // convention. A check declaring this view is placed at this stage, because
 // it is the earliest one at which every fact the check reads is complete.
-type NormalizedView interface {
+type CatalogView interface {
 	DocumentView
+
+	// CatalogFeaturePresent reports whether the catalog this build resolves
+	// against holds a Feature entry for the type an attachment names.
+	//
+	// It is a separate fact from whether a Component entry is held, because
+	// the two are separate catalog kinds reached through separate lookups. One
+	// fact spanning both would have to pick a kind, and would answer for the
+	// wrong one wherever the other applied.
+	//
+	// It is keyed per attachment as well as per node although the answer
+	// follows from the attachment's type alone, for the reason the sockets
+	// that type declares are: nothing on the attachment surface can change the
+	// answer, so the repetition across two attachments of one type is
+	// recomputation rather than storage, and a rule over it is asked of an
+	// attachment.
+	//
+	// It is what the socket set the attached Feature declares cannot answer.
+	// That set comes back empty both for a Feature declaring no socket and for
+	// a type no catalog entry was found for, so a rule that turns on the
+	// difference settles this one first.
+	//
+	// It answers presence in the catalog and nothing about whether there is a
+	// catalog to consult, which is settled where the view is produced.
+	//
+	// It is complete as soon as the catalog is reachable — the answer is a
+	// function of a type name and the catalog, and nothing normalized enters
+	// it — so it lands at the catalog stage rather than at the one after it.
+	// Its stage and its key answer different questions and do not have to
+	// agree: the stage is where the ANSWER is complete, while the key is what
+	// a rule reading it is invoked once per. A rule asked of an attachment is
+	// invoked where a node set exists and reads this fact there, because a
+	// stage contains the stage it extends.
+	//
+	// Keyed by (node, attachment); read from
+	// resolver.CatalogLookup.Feature(featureType).
+	CatalogFeaturePresent(featureType string) bool
+
+	// CompiledFeatureSchema is the contract a Feature type declares over the
+	// pillars an attachment of it may carry, resolved: the authored document
+	// with every shorthand expanded and every cross-document reference
+	// followed, and whether there was a contract that resolved at all.
+	//
+	// It is the Feature's counterpart to a component type's resolved contract,
+	// and a separate fact rather than the same one over another key, for the
+	// reason the presence facts beside them are separate: the two are
+	// different catalog kinds reached through different lookups, so one fact
+	// spanning both would have to pick a kind and would answer for the wrong
+	// one wherever the other applied.
+	//
+	// Where a Feature composes onto a parent, the composed contract is what
+	// resolves, not the child's own text. An attachment inherits the parent's
+	// pillar keys, so a reader handed the child-only document would find a key
+	// absent that the attachment may legitimately carry.
+	//
+	// The second result reports whether there is a resolved contract to read,
+	// and nothing finer. It does not separate a Feature declaring no contract,
+	// a Feature type the catalog does not hold, and a contract that failed to
+	// resolve: all three arrive as the same negative, and whether the catalog
+	// holds the type at all is the separate fact beside this one. A contract
+	// that failed to resolve is reported by whatever holds the resolution,
+	// once, rather than left to every rule reading a bare absence to infer —
+	// a view that resolves the bound Features up front keeps that failure and
+	// reports it, while one that resolves per call keeps nothing afterwards
+	// and reports nothing, which is why a rule over this fact is invoked on a
+	// view that holds the resolution.
+	//
+	// It is complete as soon as the catalog is reachable — the contract is a
+	// function of a Feature type and the catalog, and nothing normalized
+	// enters it — so it lands at the catalog stage. That is what lets a rule
+	// reading it be invoked over a view holding one authored Manifest and the
+	// catalog, rather than over a compilation it has no question about.
+	//
+	// The resolved document holds no order. A rule selects from it by key,
+	// which iterates nothing; one that walked the whole document to build
+	// output would put a byte-identical result at the mercy of map iteration.
+	//
+	// Keyed by (document, annotation-binding); read from
+	// resolver.CompileFeatureSchema(catalog, featureType).
+	CompiledFeatureSchema(featureType string) (map[string]any, bool)
+}
+
+// NormalizedView exposes the facts complete at the normalized stage: both
+// authoring documents normalized and parameter-interpolated, with the
+// catalog reachable.
+//
+// It embeds CatalogView, so every fact complete earlier is readable here
+// and the containment is a compile-time fact rather than a documented
+// convention. A check declaring this view is placed at this stage, because
+// it is the earliest one at which every fact the check reads is complete.
+type NormalizedView interface {
+	CatalogView
 
 	// InstanceComponentType is the component type a named instance declares,
 	// and whether an instance of that name exists at all.
@@ -1818,33 +1910,6 @@ type NormalizedView interface {
 	// resolver.CatalogLookup.Component(componentType).
 	CatalogComponentPresent(componentType string) bool
 
-	// CatalogFeaturePresent reports whether the catalog this build resolves
-	// against holds a Feature entry for the type an attachment names.
-	//
-	// It is a separate fact from whether a Component entry is held, because
-	// the two are separate catalog kinds reached through separate lookups. One
-	// fact spanning both would have to pick a kind, and would answer for the
-	// wrong one wherever the other applied.
-	//
-	// It is keyed per attachment as well as per node although the answer
-	// follows from the attachment's type alone, for the reason the sockets
-	// that type declares are: nothing on the attachment surface can change the
-	// answer, so the repetition across two attachments of one type is
-	// recomputation rather than storage, and a rule over it is asked of an
-	// attachment.
-	//
-	// It is what the socket set the attached Feature declares cannot answer.
-	// That set comes back empty both for a Feature declaring no socket and for
-	// a type no catalog entry was found for, so a rule that turns on the
-	// difference settles this one first.
-	//
-	// It answers presence in the catalog and nothing about whether there is a
-	// catalog to consult, which is settled where the view is produced.
-	//
-	// Keyed by (node, attachment); read from
-	// resolver.CatalogLookup.Feature(featureType).
-	CatalogFeaturePresent(featureType string) bool
-
 	// ComponentTypeIsLocalPath reports whether a component type reference
 	// addresses a file beside the authoring document rather than an entity a
 	// catalog holds — the explicit relative-path prefix entity resolution
@@ -2524,43 +2589,6 @@ type NormalizedView interface {
 	// resolver.CompileSocketPillarSchema(catalog, componentType, socket,
 	// "infra").
 	CompiledSocketInfraSchema(componentType string, socket string) (map[string]any, bool)
-
-	// CompiledFeatureSchema is the contract a Feature type declares over the
-	// pillars an attachment of it may carry, resolved: the authored document
-	// with every shorthand expanded and every cross-document reference
-	// followed, and whether there was a contract that resolved at all.
-	//
-	// It is the Feature's counterpart to a component type's resolved contract,
-	// and a separate fact rather than the same one over another key, for the
-	// reason the presence facts beside them are separate: the two are
-	// different catalog kinds reached through different lookups, so one fact
-	// spanning both would have to pick a kind and would answer for the wrong
-	// one wherever the other applied.
-	//
-	// Where a Feature composes onto a parent, the composed contract is what
-	// resolves, not the child's own text. An attachment inherits the parent's
-	// pillar keys, so a reader handed the child-only document would find a key
-	// absent that the attachment may legitimately carry.
-	//
-	// The second result reports whether there is a resolved contract to read,
-	// and nothing finer. It does not separate a Feature declaring no contract,
-	// a Feature type the catalog does not hold, and a contract that failed to
-	// resolve: all three arrive as the same negative, and whether the catalog
-	// holds the type at all is the separate fact beside this one. A contract
-	// that failed to resolve is reported by whatever holds the resolution,
-	// once, rather than left to every rule reading a bare absence to infer —
-	// a view that resolves the bound Features up front keeps that failure and
-	// reports it, while one that resolves per call keeps nothing afterwards
-	// and reports nothing, which is why a rule over this fact is invoked on a
-	// view that holds the resolution.
-	//
-	// The resolved document holds no order. A rule selects from it by key,
-	// which iterates nothing; one that walked the whole document to build
-	// output would put a byte-identical result at the mercy of map iteration.
-	//
-	// Keyed by (document, annotation-binding); read from
-	// resolver.CompileFeatureSchema(catalog, featureType).
-	CompiledFeatureSchema(featureType string) (map[string]any, bool)
 
 	// DeclaredProvidesKeys are the names a component type's contract declares
 	// its realization will publish — the output half of that contract,

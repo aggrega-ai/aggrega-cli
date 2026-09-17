@@ -1263,6 +1263,215 @@ func (ReleaseDocumentBase) FeatureRecipeDeclaredCapability(document string) stri
 	panic("this view does not carry feature-recipe-declared-capability, which a FeatureRecipe document carries")
 }
 
+// CatalogViewBase is a base for an implementation of CatalogView.
+//
+// It declares a refusing method for every fact complete before the catalog
+// stage, and for none of that stage's own. The name is the stage whose
+// implementations embed it rather than the stage whose facts it refuses,
+// and the two are one stage apart on purpose: a base supplying its own
+// stage's facts would satisfy CatalogStageFacts by method promotion, so
+// the assertion below would hold an implementation to nothing and a fact
+// added at this stage would compile everywhere and refuse only when it was
+// read.
+//
+// An implementation embeds it, writes a body for each fact the catalog
+// stage declares, and asserts CatalogStageFacts. A fact added at this
+// stage then fails to compile on those implementations. An implementation
+// that instead delegates the earlier stages to a value of an earlier view
+// needs no base at all: delegation already answers everything this would
+// refuse.
+type CatalogViewBase struct{}
+
+// RawAggregateText panics. This view does not carry raw-aggregate-text,
+// which an Aggregate document carries.
+func (CatalogViewBase) RawAggregateText(document string) []byte {
+	panic("this view does not carry raw-aggregate-text, which an Aggregate document carries")
+}
+
+// DeclaredParameterKeys panics. This view does not carry
+// declared-parameter-keys, which an Aggregate document carries.
+func (CatalogViewBase) DeclaredParameterKeys(document string) []string {
+	panic("this view does not carry declared-parameter-keys, which an Aggregate document carries")
+}
+
+// EntityAssertionNameSet panics. This view does not carry
+// entity-assertion-name-set, which a Component document carries.
+func (CatalogViewBase) EntityAssertionNameSet(document string) []string {
+	panic("this view does not carry entity-assertion-name-set, which a Component document carries")
+}
+
+// EntityAssertionDeclaringEntity panics. This view does not carry
+// entity-assertion-declaring-entity, which a Component document carries.
+func (CatalogViewBase) EntityAssertionDeclaringEntity(document string, assertion string) (string, bool) {
+	panic("this view does not carry entity-assertion-declaring-entity, which a Component document carries")
+}
+
+// ComponentSchemaPillarKeys panics. This view does not carry
+// component-schema-pillar-keys, which a Component document carries.
+func (CatalogViewBase) ComponentSchemaPillarKeys(document string) []string {
+	panic("this view does not carry component-schema-pillar-keys, which a Component document carries")
+}
+
+// FeatureSchemaPillarKeys panics. This view does not carry
+// feature-schema-pillar-keys, which a Feature document carries.
+func (CatalogViewBase) FeatureSchemaPillarKeys(document string) []string {
+	panic("this view does not carry feature-schema-pillar-keys, which a Feature document carries")
+}
+
+// ComponentExtendsChainCycleEdge panics. This view does not carry
+// component-extends-chain-cycle-edge, which a Component document carries.
+func (CatalogViewBase) ComponentExtendsChainCycleEdge(document string) (ExtendsChainCycleEdge, bool) {
+	panic("this view does not carry component-extends-chain-cycle-edge, which a Component document carries")
+}
+
+// ComponentExtendsChainLength panics. This view does not carry
+// component-extends-chain-length, which a Component document carries.
+func (CatalogViewBase) ComponentExtendsChainLength(document string) (int, bool) {
+	panic("this view does not carry component-extends-chain-length, which a Component document carries")
+}
+
+// FeatureExtendsChainCycleEdge panics. This view does not carry
+// feature-extends-chain-cycle-edge, which a Feature document carries.
+func (CatalogViewBase) FeatureExtendsChainCycleEdge(document string) (ExtendsChainCycleEdge, bool) {
+	panic("this view does not carry feature-extends-chain-cycle-edge, which a Feature document carries")
+}
+
+// FeatureExtendsChainLength panics. This view does not carry
+// feature-extends-chain-length, which a Feature document carries.
+func (CatalogViewBase) FeatureExtendsChainLength(document string) (int, bool) {
+	panic("this view does not carry feature-extends-chain-length, which a Feature document carries")
+}
+
+// ManifestExtendsChainCycleEdge panics. This view does not carry
+// manifest-extends-chain-cycle-edge, which a Manifest document carries.
+func (CatalogViewBase) ManifestExtendsChainCycleEdge(document string) (ExtendsChainCycleEdge, bool) {
+	panic("this view does not carry manifest-extends-chain-cycle-edge, which a Manifest document carries")
+}
+
+// ManifestExtendsChainLength panics. This view does not carry
+// manifest-extends-chain-length, which a Manifest document carries.
+func (CatalogViewBase) ManifestExtendsChainLength(document string) (int, bool) {
+	panic("this view does not carry manifest-extends-chain-length, which a Manifest document carries")
+}
+
+// ManifestAnnotationBindingKeys panics. This view does not carry
+// manifest-annotation-binding-keys, which a Manifest document carries.
+func (CatalogViewBase) ManifestAnnotationBindingKeys(document string) []string {
+	panic("this view does not carry manifest-annotation-binding-keys, which a Manifest document carries")
+}
+
+// ManifestAnnotationBindingFeature panics. This view does not carry
+// manifest-annotation-binding-feature, which a Manifest document carries.
+func (CatalogViewBase) ManifestAnnotationBindingFeature(document string, binding string) (string, bool) {
+	panic("this view does not carry manifest-annotation-binding-feature, which a Manifest document carries")
+}
+
+// ManifestAnnotationBindingRoutes panics. This view does not carry
+// manifest-annotation-binding-routes, which a Manifest document carries.
+func (CatalogViewBase) ManifestAnnotationBindingRoutes(document string, binding string) []AnnotationBindingRoute {
+	panic("this view does not carry manifest-annotation-binding-routes, which a Manifest document carries")
+}
+
+// AnnotationBindingSubkeyTarget panics. This view does not carry
+// annotation-binding-subkey-target, which a Manifest document carries.
+func (CatalogViewBase) AnnotationBindingSubkeyTarget(binding string, subkey string) (AnnotationSubkeyTarget, bool) {
+	panic("this view does not carry annotation-binding-subkey-target, which a Manifest document carries")
+}
+
+// RecipeValuesMappingDeclared panics. This view does not carry
+// recipe-values-mapping-declared, which a Recipe document carries.
+func (CatalogViewBase) RecipeValuesMappingDeclared(document string) bool {
+	panic("this view does not carry recipe-values-mapping-declared, which a Recipe document carries")
+}
+
+// RecipeSourceDeclared panics. This view does not carry
+// recipe-source-declared, which a Recipe document carries.
+func (CatalogViewBase) RecipeSourceDeclared(document string) bool {
+	panic("this view does not carry recipe-source-declared, which a Recipe document carries")
+}
+
+// RecipeWorkloadDeclared panics. This view does not carry
+// recipe-workload-declared, which a Recipe document carries.
+func (CatalogViewBase) RecipeWorkloadDeclared(document string) bool {
+	panic("this view does not carry recipe-workload-declared, which a Recipe document carries")
+}
+
+// RecipeArtifactsDeclared panics. This view does not carry
+// recipe-artifacts-declared, which a Recipe document carries.
+func (CatalogViewBase) RecipeArtifactsDeclared(document string) bool {
+	panic("this view does not carry recipe-artifacts-declared, which a Recipe document carries")
+}
+
+// RecipeDeclaredCapability panics. This view does not carry
+// recipe-declared-capability, which a Recipe document carries.
+func (CatalogViewBase) RecipeDeclaredCapability(document string) string {
+	panic("this view does not carry recipe-declared-capability, which a Recipe document carries")
+}
+
+// RecipeOutputLabelKeys panics. This view does not carry
+// recipe-output-label-keys, which a Recipe document carries.
+func (CatalogViewBase) RecipeOutputLabelKeys(document string) []string {
+	panic("this view does not carry recipe-output-label-keys, which a Recipe document carries")
+}
+
+// RecipeOutputComponentLabelKeys panics. This view does not carry
+// recipe-output-component-label-keys, which a Recipe document carries.
+func (CatalogViewBase) RecipeOutputComponentLabelKeys(document string) []string {
+	panic("this view does not carry recipe-output-component-label-keys, which a Recipe document carries")
+}
+
+// ManifestRecipeMappingEntries panics. This view does not carry
+// manifest-recipe-mapping-entries, which a Manifest document carries.
+func (CatalogViewBase) ManifestRecipeMappingEntries(document string) []ManifestRecipeMapping {
+	panic("this view does not carry manifest-recipe-mapping-entries, which a Manifest document carries")
+}
+
+// ManifestRecipeMappingReference panics. This view does not carry
+// manifest-recipe-mapping-reference, which a Manifest document carries.
+func (CatalogViewBase) ManifestRecipeMappingReference(document string, tier string, axis string, key string) (string, bool) {
+	panic("this view does not carry manifest-recipe-mapping-reference, which a Manifest document carries")
+}
+
+// FeatureRecipeSourceDeclared panics. This view does not carry
+// feature-recipe-source-declared, which a FeatureRecipe document carries.
+func (CatalogViewBase) FeatureRecipeSourceDeclared(document string) bool {
+	panic("this view does not carry feature-recipe-source-declared, which a FeatureRecipe document carries")
+}
+
+// FeatureRecipeValuesMappingDeclared panics. This view does not carry
+// feature-recipe-values-mapping-declared, which a FeatureRecipe document
+// carries.
+func (CatalogViewBase) FeatureRecipeValuesMappingDeclared(document string) bool {
+	panic("this view does not carry feature-recipe-values-mapping-declared, which a FeatureRecipe document carries")
+}
+
+// FeatureRecipeWorkloadDeclared panics. This view does not carry
+// feature-recipe-workload-declared, which a FeatureRecipe document
+// carries.
+func (CatalogViewBase) FeatureRecipeWorkloadDeclared(document string) bool {
+	panic("this view does not carry feature-recipe-workload-declared, which a FeatureRecipe document carries")
+}
+
+// FeatureRecipeArtifactsDeclared panics. This view does not carry
+// feature-recipe-artifacts-declared, which a FeatureRecipe document
+// carries.
+func (CatalogViewBase) FeatureRecipeArtifactsDeclared(document string) bool {
+	panic("this view does not carry feature-recipe-artifacts-declared, which a FeatureRecipe document carries")
+}
+
+// FeatureRecipeDeclaredCapability panics. This view does not carry
+// feature-recipe-declared-capability, which a FeatureRecipe document
+// carries.
+func (CatalogViewBase) FeatureRecipeDeclaredCapability(document string) string {
+	panic("this view does not carry feature-recipe-declared-capability, which a FeatureRecipe document carries")
+}
+
+// ReleaseBoundaryPlacements panics. This view does not carry
+// release-boundary-placements, which a Release document carries.
+func (CatalogViewBase) ReleaseBoundaryPlacements() []BoundaryPlacement {
+	panic("this view does not carry release-boundary-placements, which a Release document carries")
+}
+
 // NormalizedViewBase is a base for an implementation of NormalizedView.
 //
 // It declares a refusing method for every fact complete before the
@@ -1274,202 +1483,31 @@ func (ReleaseDocumentBase) FeatureRecipeDeclaredCapability(document string) stri
 // nothing and a fact added at this stage would compile everywhere and
 // refuse only when it was read.
 //
+// It embeds CatalogViewBase, so one embedding covers every earlier stage
+// rather than repeating those refusals here.
+//
 // An implementation embeds it, writes a body for each fact the normalized
 // stage declares, and asserts NormalizedStageFacts. A fact added at this
 // stage then fails to compile on those implementations. An implementation
 // that instead delegates the earlier stages to a value of an earlier view
 // needs no base at all: delegation already answers everything this would
 // refuse.
-type NormalizedViewBase struct{}
-
-// RawAggregateText panics. This view does not carry raw-aggregate-text,
-// which an Aggregate document carries.
-func (NormalizedViewBase) RawAggregateText(document string) []byte {
-	panic("this view does not carry raw-aggregate-text, which an Aggregate document carries")
+type NormalizedViewBase struct {
+	CatalogViewBase
 }
 
-// DeclaredParameterKeys panics. This view does not carry
-// declared-parameter-keys, which an Aggregate document carries.
-func (NormalizedViewBase) DeclaredParameterKeys(document string) []string {
-	panic("this view does not carry declared-parameter-keys, which an Aggregate document carries")
+// CatalogFeaturePresent panics. This view does not carry
+// catalog-feature-present, which is read from
+// resolver.CatalogLookup.Feature(featureType).
+func (NormalizedViewBase) CatalogFeaturePresent(featureType string) bool {
+	panic("this view does not carry catalog-feature-present, which is read from resolver.CatalogLookup.Feature(featureType)")
 }
 
-// EntityAssertionNameSet panics. This view does not carry
-// entity-assertion-name-set, which a Component document carries.
-func (NormalizedViewBase) EntityAssertionNameSet(document string) []string {
-	panic("this view does not carry entity-assertion-name-set, which a Component document carries")
-}
-
-// EntityAssertionDeclaringEntity panics. This view does not carry
-// entity-assertion-declaring-entity, which a Component document carries.
-func (NormalizedViewBase) EntityAssertionDeclaringEntity(document string, assertion string) (string, bool) {
-	panic("this view does not carry entity-assertion-declaring-entity, which a Component document carries")
-}
-
-// ComponentSchemaPillarKeys panics. This view does not carry
-// component-schema-pillar-keys, which a Component document carries.
-func (NormalizedViewBase) ComponentSchemaPillarKeys(document string) []string {
-	panic("this view does not carry component-schema-pillar-keys, which a Component document carries")
-}
-
-// FeatureSchemaPillarKeys panics. This view does not carry
-// feature-schema-pillar-keys, which a Feature document carries.
-func (NormalizedViewBase) FeatureSchemaPillarKeys(document string) []string {
-	panic("this view does not carry feature-schema-pillar-keys, which a Feature document carries")
-}
-
-// ComponentExtendsChainCycleEdge panics. This view does not carry
-// component-extends-chain-cycle-edge, which a Component document carries.
-func (NormalizedViewBase) ComponentExtendsChainCycleEdge(document string) (ExtendsChainCycleEdge, bool) {
-	panic("this view does not carry component-extends-chain-cycle-edge, which a Component document carries")
-}
-
-// ComponentExtendsChainLength panics. This view does not carry
-// component-extends-chain-length, which a Component document carries.
-func (NormalizedViewBase) ComponentExtendsChainLength(document string) (int, bool) {
-	panic("this view does not carry component-extends-chain-length, which a Component document carries")
-}
-
-// FeatureExtendsChainCycleEdge panics. This view does not carry
-// feature-extends-chain-cycle-edge, which a Feature document carries.
-func (NormalizedViewBase) FeatureExtendsChainCycleEdge(document string) (ExtendsChainCycleEdge, bool) {
-	panic("this view does not carry feature-extends-chain-cycle-edge, which a Feature document carries")
-}
-
-// FeatureExtendsChainLength panics. This view does not carry
-// feature-extends-chain-length, which a Feature document carries.
-func (NormalizedViewBase) FeatureExtendsChainLength(document string) (int, bool) {
-	panic("this view does not carry feature-extends-chain-length, which a Feature document carries")
-}
-
-// ManifestExtendsChainCycleEdge panics. This view does not carry
-// manifest-extends-chain-cycle-edge, which a Manifest document carries.
-func (NormalizedViewBase) ManifestExtendsChainCycleEdge(document string) (ExtendsChainCycleEdge, bool) {
-	panic("this view does not carry manifest-extends-chain-cycle-edge, which a Manifest document carries")
-}
-
-// ManifestExtendsChainLength panics. This view does not carry
-// manifest-extends-chain-length, which a Manifest document carries.
-func (NormalizedViewBase) ManifestExtendsChainLength(document string) (int, bool) {
-	panic("this view does not carry manifest-extends-chain-length, which a Manifest document carries")
-}
-
-// ManifestAnnotationBindingKeys panics. This view does not carry
-// manifest-annotation-binding-keys, which a Manifest document carries.
-func (NormalizedViewBase) ManifestAnnotationBindingKeys(document string) []string {
-	panic("this view does not carry manifest-annotation-binding-keys, which a Manifest document carries")
-}
-
-// ManifestAnnotationBindingFeature panics. This view does not carry
-// manifest-annotation-binding-feature, which a Manifest document carries.
-func (NormalizedViewBase) ManifestAnnotationBindingFeature(document string, binding string) (string, bool) {
-	panic("this view does not carry manifest-annotation-binding-feature, which a Manifest document carries")
-}
-
-// ManifestAnnotationBindingRoutes panics. This view does not carry
-// manifest-annotation-binding-routes, which a Manifest document carries.
-func (NormalizedViewBase) ManifestAnnotationBindingRoutes(document string, binding string) []AnnotationBindingRoute {
-	panic("this view does not carry manifest-annotation-binding-routes, which a Manifest document carries")
-}
-
-// AnnotationBindingSubkeyTarget panics. This view does not carry
-// annotation-binding-subkey-target, which a Manifest document carries.
-func (NormalizedViewBase) AnnotationBindingSubkeyTarget(binding string, subkey string) (AnnotationSubkeyTarget, bool) {
-	panic("this view does not carry annotation-binding-subkey-target, which a Manifest document carries")
-}
-
-// RecipeValuesMappingDeclared panics. This view does not carry
-// recipe-values-mapping-declared, which a Recipe document carries.
-func (NormalizedViewBase) RecipeValuesMappingDeclared(document string) bool {
-	panic("this view does not carry recipe-values-mapping-declared, which a Recipe document carries")
-}
-
-// RecipeSourceDeclared panics. This view does not carry
-// recipe-source-declared, which a Recipe document carries.
-func (NormalizedViewBase) RecipeSourceDeclared(document string) bool {
-	panic("this view does not carry recipe-source-declared, which a Recipe document carries")
-}
-
-// RecipeWorkloadDeclared panics. This view does not carry
-// recipe-workload-declared, which a Recipe document carries.
-func (NormalizedViewBase) RecipeWorkloadDeclared(document string) bool {
-	panic("this view does not carry recipe-workload-declared, which a Recipe document carries")
-}
-
-// RecipeArtifactsDeclared panics. This view does not carry
-// recipe-artifacts-declared, which a Recipe document carries.
-func (NormalizedViewBase) RecipeArtifactsDeclared(document string) bool {
-	panic("this view does not carry recipe-artifacts-declared, which a Recipe document carries")
-}
-
-// RecipeDeclaredCapability panics. This view does not carry
-// recipe-declared-capability, which a Recipe document carries.
-func (NormalizedViewBase) RecipeDeclaredCapability(document string) string {
-	panic("this view does not carry recipe-declared-capability, which a Recipe document carries")
-}
-
-// RecipeOutputLabelKeys panics. This view does not carry
-// recipe-output-label-keys, which a Recipe document carries.
-func (NormalizedViewBase) RecipeOutputLabelKeys(document string) []string {
-	panic("this view does not carry recipe-output-label-keys, which a Recipe document carries")
-}
-
-// RecipeOutputComponentLabelKeys panics. This view does not carry
-// recipe-output-component-label-keys, which a Recipe document carries.
-func (NormalizedViewBase) RecipeOutputComponentLabelKeys(document string) []string {
-	panic("this view does not carry recipe-output-component-label-keys, which a Recipe document carries")
-}
-
-// ManifestRecipeMappingEntries panics. This view does not carry
-// manifest-recipe-mapping-entries, which a Manifest document carries.
-func (NormalizedViewBase) ManifestRecipeMappingEntries(document string) []ManifestRecipeMapping {
-	panic("this view does not carry manifest-recipe-mapping-entries, which a Manifest document carries")
-}
-
-// ManifestRecipeMappingReference panics. This view does not carry
-// manifest-recipe-mapping-reference, which a Manifest document carries.
-func (NormalizedViewBase) ManifestRecipeMappingReference(document string, tier string, axis string, key string) (string, bool) {
-	panic("this view does not carry manifest-recipe-mapping-reference, which a Manifest document carries")
-}
-
-// FeatureRecipeSourceDeclared panics. This view does not carry
-// feature-recipe-source-declared, which a FeatureRecipe document carries.
-func (NormalizedViewBase) FeatureRecipeSourceDeclared(document string) bool {
-	panic("this view does not carry feature-recipe-source-declared, which a FeatureRecipe document carries")
-}
-
-// FeatureRecipeValuesMappingDeclared panics. This view does not carry
-// feature-recipe-values-mapping-declared, which a FeatureRecipe document
-// carries.
-func (NormalizedViewBase) FeatureRecipeValuesMappingDeclared(document string) bool {
-	panic("this view does not carry feature-recipe-values-mapping-declared, which a FeatureRecipe document carries")
-}
-
-// FeatureRecipeWorkloadDeclared panics. This view does not carry
-// feature-recipe-workload-declared, which a FeatureRecipe document
-// carries.
-func (NormalizedViewBase) FeatureRecipeWorkloadDeclared(document string) bool {
-	panic("this view does not carry feature-recipe-workload-declared, which a FeatureRecipe document carries")
-}
-
-// FeatureRecipeArtifactsDeclared panics. This view does not carry
-// feature-recipe-artifacts-declared, which a FeatureRecipe document
-// carries.
-func (NormalizedViewBase) FeatureRecipeArtifactsDeclared(document string) bool {
-	panic("this view does not carry feature-recipe-artifacts-declared, which a FeatureRecipe document carries")
-}
-
-// FeatureRecipeDeclaredCapability panics. This view does not carry
-// feature-recipe-declared-capability, which a FeatureRecipe document
-// carries.
-func (NormalizedViewBase) FeatureRecipeDeclaredCapability(document string) string {
-	panic("this view does not carry feature-recipe-declared-capability, which a FeatureRecipe document carries")
-}
-
-// ReleaseBoundaryPlacements panics. This view does not carry
-// release-boundary-placements, which a Release document carries.
-func (NormalizedViewBase) ReleaseBoundaryPlacements() []BoundaryPlacement {
-	panic("this view does not carry release-boundary-placements, which a Release document carries")
+// CompiledFeatureSchema panics. This view does not carry
+// compiled-feature-schema, which is read from
+// resolver.CompileFeatureSchema(catalog, featureType).
+func (NormalizedViewBase) CompiledFeatureSchema(featureType string) (map[string]any, bool) {
+	panic("this view does not carry compiled-feature-schema, which is read from resolver.CompileFeatureSchema(catalog, featureType)")
 }
 
 // TopologyViewBase is a base for an implementation of TopologyView.
@@ -1731,13 +1769,6 @@ func (TopologyViewBase) CatalogComponentPresent(componentType string) bool {
 	panic("this view does not carry catalog-component-present, which is read from resolver.CatalogLookup.Component(componentType)")
 }
 
-// CatalogFeaturePresent panics. This view does not carry
-// catalog-feature-present, which is read from
-// resolver.CatalogLookup.Feature(featureType).
-func (TopologyViewBase) CatalogFeaturePresent(featureType string) bool {
-	panic("this view does not carry catalog-feature-present, which is read from resolver.CatalogLookup.Feature(featureType)")
-}
-
 // ComponentTypeIsLocalPath panics. This view does not carry
 // component-type-is-local-path, which is read from
 // resolver.IsRelativePathRef(componentType).
@@ -1848,13 +1879,6 @@ func (TopologyViewBase) CompiledSocketValueSchema(componentType string, socket s
 // "infra").
 func (TopologyViewBase) CompiledSocketInfraSchema(componentType string, socket string) (map[string]any, bool) {
 	panic("this view does not carry compiled-socket-infra-schema, which is read from resolver.CompileSocketPillarSchema(catalog, componentType, socket, \"infra\")")
-}
-
-// CompiledFeatureSchema panics. This view does not carry
-// compiled-feature-schema, which is read from
-// resolver.CompileFeatureSchema(catalog, featureType).
-func (TopologyViewBase) CompiledFeatureSchema(featureType string) (map[string]any, bool) {
-	panic("this view does not carry compiled-feature-schema, which is read from resolver.CompileFeatureSchema(catalog, featureType)")
 }
 
 // DeclaredProvidesKeys panics. This view does not carry
@@ -2766,6 +2790,24 @@ type ReleaseDocumentFacts interface {
 	ReleaseBoundaryPlacements() []BoundaryPlacement
 }
 
+// CatalogStageFacts are the facts the catalog stage declares itself, and
+// not the ones it reads through the stages it contains.
+//
+// An implementation of CatalogView asserts it, and that assertion is the
+// thing a refusing base cannot supply. A fact declared at this stage then
+// fails to compile on the implementations claiming it, and on no other;
+// without the assertion the same declaration compiles everywhere and
+// refuses when it is read, which moves the discovery from building to
+// running.
+//
+// Each method is an accessor the view chain declares and documents. The
+// documentation is not repeated here: a fact's documentation has one home,
+// and a second copy would be the one that drifts.
+type CatalogStageFacts interface {
+	CatalogFeaturePresent(featureType string) bool
+	CompiledFeatureSchema(featureType string) (map[string]any, bool)
+}
+
 // NormalizedStageFacts are the facts the normalized stage declares itself,
 // and not the ones it reads through the stages it contains.
 //
@@ -2815,7 +2857,6 @@ type NormalizedStageFacts interface {
 	AttachmentDeclaredSocketNames(featureType string) []string
 	DeclaredSlotNames(componentType string) []string
 	CatalogComponentPresent(componentType string) bool
-	CatalogFeaturePresent(featureType string) bool
 	ComponentTypeIsLocalPath(componentType string) bool
 	ReleasePerEdgeTarget(node string, socket string, alias string) string
 	ReleasePerEdgeInfra(node string, socket string, alias string) types.OrderedMap[any]
@@ -2832,7 +2873,6 @@ type NormalizedStageFacts interface {
 	CompiledComponentSchema(componentType string) (map[string]any, bool)
 	CompiledSocketValueSchema(componentType string, socket string) (map[string]any, bool)
 	CompiledSocketInfraSchema(componentType string, socket string) (map[string]any, bool)
-	CompiledFeatureSchema(featureType string) (map[string]any, bool)
 	DeclaredProvidesKeys(componentType string) []string
 	ResolvedParameterContext(document string) map[string]any
 }

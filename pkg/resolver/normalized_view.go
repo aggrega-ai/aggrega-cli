@@ -1389,13 +1389,18 @@ func sortedSocketPillarKeys(m map[socketPillarKey]resolvedContract) []socketPill
 // The compiler holds this type to the contract rather than a comment claiming
 // it: a signature drifting from the declared facts stops compiling here.
 //
-// The second assertion is the half the embedded base cannot supply. Embedding
+// The stage assertions are the half the embedded base cannot supply. Embedding
 // makes every fact the chain declares compile, so the view assertion alone would
-// accept a presentation answering none of them; naming this stage's own
-// obligation is what makes a fact added at this stage fail here. No document
-// kind's obligation is asserted, for the reason the type's own documentation
-// gives: this presents a compilation rather than one authored document.
+// accept a presentation answering none of them; naming a stage's own obligation
+// is what makes a fact added at that stage fail here. Two stages are named
+// because this type writes bodies for two: its own, and the catalog stage's, whose
+// facts it answers from the catalog it already holds. Without the second, a fact
+// added at that stage would compile here and refuse when a check read it. No
+// document kind's obligation is asserted, for the reason the type's own
+// documentation gives: this presents a compilation rather than one authored
+// document.
 var (
 	_ constraint.NormalizedView       = (*normalizedView)(nil)
 	_ constraint.NormalizedStageFacts = (*normalizedView)(nil)
+	_ constraint.CatalogStageFacts    = (*normalizedView)(nil)
 )

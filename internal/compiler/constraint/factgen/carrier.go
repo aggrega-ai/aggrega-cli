@@ -8,16 +8,27 @@ import (
 	"strings"
 )
 
-// documentStage is the stage presenting one authored document rather than a
-// compilation, and it is the only stage the carrier axis applies at.
+// documentStage is the stage whose presentation VARIES BY AUTHORED DOCUMENT
+// KIND, and it is the only stage the carrier axis applies at.
 //
 // It is spelled here rather than read off the chain's root, because the axis
-// belongs to what a stage HOLDS and not to where it sits. A stage presenting an
-// authored document has two axes — when a fact is complete, and which kind of
-// document carries it — while every later stage presents one compilation, which
-// has one carrier and so nothing to distinguish. Reading the root instead would
-// attach the axis to whichever stage happened to be first, which is a different
-// claim that happens to agree today.
+// belongs to what a stage HOLDS and not to where it sits. This stage presents
+// one authored document of whichever kind a caller hands over, so it has two
+// axes — when a fact is complete, and which kind of document carries it. Every
+// other stage has a SINGLE carrier and so nothing for a second axis to
+// distinguish, and that holds for two different reasons rather than one: a stage
+// presenting one compilation has one carrier because a compilation is one thing,
+// and a stage presenting one authored document of a FIXED kind has one carrier
+// because the stage itself names the kind. Reading the root instead would attach
+// the axis to whichever stage happened to be first, which is a different claim
+// that happens to agree today.
+//
+// 🔴 The second of those reasons is a real stage and not a hypothetical: the
+// catalog stage holds one authored Manifest beside the catalog it resolves
+// against. It is single-kind, so it needs no carrier and declares none — and the
+// refusal below cannot tell that from a stage that needs one and forgot, because
+// it keys on a NON-EMPTY carrier. The registry's declaration of that stage
+// carries what the first fact of a second kind there would owe.
 //
 // A spelled name can be wrong, so deriveCarriers refuses a registry declaring no
 // stage of this name rather than silently treating every fact as a later-stage
@@ -85,8 +96,9 @@ func deriveCarrier(sourceField string) (string, bool) {
 //
 // Four shapes are refused, and none of them is available to the language.
 //
-// A carrier declared at a stage other than the document stage, because that
-// stage's presentation is one compilation and a second axis over it would name a
+// A carrier declared at a stage other than the document stage, because such a
+// stage has a single carrier — a compilation, or one authored document of the
+// kind the stage itself fixes — and a second axis over it would name a
 // distinction that does not exist.
 //
 // A document-stage fact naming no kind at all — neither derived nor declared —
@@ -122,8 +134,9 @@ func deriveCarriers(fs []factDecl, ss []stageDecl) ([]carrierGroup, error) {
 			if f.Carrier != "" {
 				return nil, fmt.Errorf(
 					"fact %q declares carrier %q at stage %q, and the carrier axis applies at the %q "+
-						"stage alone; every later stage presents one compilation, which has one "+
-						"carrier and so nothing for a declaration to distinguish",
+						"stage alone, because that is the only stage whose presentation varies by "+
+						"authored document kind; every other stage has a single carrier and so "+
+						"nothing for a declaration to distinguish",
 					f.Name, f.Carrier, f.Stage, documentStage)
 			}
 			continue
