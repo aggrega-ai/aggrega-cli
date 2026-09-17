@@ -4,6 +4,8 @@
 package resolver
 
 import (
+	"fmt"
+
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 	"github.com/aggrega-ai/aggrega-cli/internal/gotmpl"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -26,6 +28,48 @@ import (
 // are read through, and therefore the root a reference census over the Aggregate's
 // own text is taken under.
 const parametersReferenceRoot = ".parameters"
+
+// aggregateTextParsesAsATemplate reports an Aggregate whose authored text is not
+// a Go template, so no value a Release fulfils can be carried into it.
+//
+// An Aggregate's text is rendered as one template before it is read as a
+// document: that is how a `{{ .parameters.<key> }}` reference receives the value
+// the Release supplied for that key. Text the template parser refuses is
+// therefore not yet a document at all, and every later reading of it would be
+// taken over text the author's own references were never substituted into.
+//
+// It halts, because there is no shape of this fault that leaves a usable
+// document behind.
+//
+// It reads one fact, the document's authored text, and parses it through the one
+// parse the interpolation itself uses — see parseAggregateTemplate, which is why
+// the two cannot come to disagree about which text is a template. Asking the
+// question through any other function set would leave a document this rule
+// accepted and the render refused.
+//
+// Its subject is the document, which carries no locator: the fault belongs to
+// the file as a whole rather than to an element inside it, so what the parser
+// says about where it stopped travels in the detail. A template offset is not a
+// key the author wrote, and a locator carries authored keys.
+var aggregateTextParsesAsATemplate = constraint.Check[
+	constraint.DocumentView,
+	constraint.DocumentSubject,
+]{
+	Sentinel: ErrInvalidParameterRef(),
+	Severity: constraint.SeverityFatal,
+	Run: func(
+		v constraint.DocumentView,
+		s constraint.DocumentSubject,
+	) []constraint.Objection {
+		_, err := parseAggregateTemplate(v.RawAggregateText(s.SourceFile()))
+		if err == nil {
+			return nil
+		}
+		return []constraint.Objection{
+			s.Raise(ErrInvalidParameterRef(), fmt.Sprintf("template parse error: %v", err)),
+		}
+	},
+}
 
 // declaredParameterRead reports a parameter the Aggregate's contract declares
 // that no reference in the Aggregate's own text reads.

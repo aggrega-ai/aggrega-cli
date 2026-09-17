@@ -222,6 +222,13 @@ func resolveFromInputs(ctx context.Context, in ResolveInputs) (*ResolveResult, e
 	if err != nil {
 		return nil, err
 	}
+	// One presentation of the authored document serves both readings of it below
+	// — the rule that refuses text which is not a template, and the advisory over
+	// the declared parameters. Two presentations of one document would be two
+	// values answering for the same file, which is the confusion the accessors'
+	// own document argument exists to refuse.
+	var presented constraint.DocumentView = newAggregateDocumentView(
+		in.AggregatePath, in.AggregateRawBytes, contract)
 	// Apply contract-declared defaults to slots the Release omitted, so
 	// the contract validator and downstream template interpolation see
 	// the resolved values. Three-case semantic for nested-object
@@ -230,6 +237,27 @@ func resolveFromInputs(ctx context.Context, in ResolveInputs) (*ResolveResult, e
 	params = ApplyParameterDefaults(contract, params)
 	if verrs := ValidateParametersAgainstContract(contract, params, in.AggregatePath); len(verrs) > 0 {
 		return nil, aggregateParameterViolations(verrs)
+	}
+
+	// The authored text has to be a template before it can be rendered as one.
+	// The rule is declared rather than written out here: see
+	// aggregateTextParsesAsATemplate, which names the fact it reads. It is asked
+	// at this point because the interpolation below would otherwise meet the same
+	// fault first, and the raise there carries no file — the document is
+	// presented to the rule, so the finding names it.
+	//
+	// The document is named by its path rather than by the name its metadata
+	// declares, which is the one place this package's entity reference departs
+	// from that convention and does so because it has to: the document has not
+	// been read yet, and it cannot be, since its text is not a template. The path
+	// is also what the reader opens.
+	if refusals := FindingsFromObjections(
+		constraint.RunOnDocument(in.AggregatePath, presented, aggregateTextParsesAsATemplate),
+		fmt.Sprintf("Aggregate %s", in.AggregatePath),
+	); len(refusals) > 0 {
+		// The rule is invoked once per document and objects about the document as
+		// a whole, so the first refusal is the only one there can be.
+		return nil, refusals[0]
 	}
 
 	// Interpolate the raw Aggregate bytes with the merged parameter map.
@@ -265,18 +293,18 @@ func resolveFromInputs(ctx context.Context, in ResolveInputs) (*ResolveResult, e
 	agg = *na.Aggregate()
 
 	// Advisory reading of the declared parameters against the references the
-	// Aggregate's own text makes. It runs here because this is the one point
-	// holding both halves the presentation needs — the contract shallow-loaded
-	// above, and the raw text still carrying its reference expressions, which
-	// interpolation consumed on the way to the parsed aggregate. The aggregate is
-	// parsed by now only so the finding can name it.
+	// Aggregate's own text makes. It runs here rather than beside the rule above,
+	// which reads the same presentation, because the finding names the document by
+	// the name its metadata declares and the document is parsed only by now. Both
+	// halves the presentation itself needs — the contract shallow-loaded above,
+	// and the raw text still carrying its reference expressions, which
+	// interpolation consumed on the way to the parsed aggregate — were in hand
+	// before the interpolation ran, which is why one presentation serves both.
 	//
 	// The declared names are read back off the presentation rather than from the
 	// contract value beside it: they are one of the facts the presentation states,
 	// so reading them anywhere else would be answering from a second source that
 	// happens to agree.
-	var presented constraint.DocumentView = newAggregateDocumentView(
-		in.AggregatePath, in.AggregateRawBytes, contract)
 	advisories := FindingsFromObjections(
 		constraint.RunOnDocumentParameters(
 			in.AggregatePath,
