@@ -2095,6 +2095,27 @@ func (HydratedViewBase) RecipeValuesMappingEntryDeclared(node string, field stri
 	panic("this presentation does not carry recipe-values-mapping-entry-declared, which is read from renderer.RenderInput.MappingLibraries")
 }
 
+// RecipeWorkloadImportReference panics. This presentation does not carry
+// recipe-workload-import-reference, which is read from
+// types.RecipeSpec.Workload.
+func (HydratedViewBase) RecipeWorkloadImportReference(node string, field string) string {
+	panic("this presentation does not carry recipe-workload-import-reference, which is read from types.RecipeSpec.Workload")
+}
+
+// RecipeWorkloadLibraryDeclared panics. This presentation does not carry
+// recipe-workload-library-declared, which is read from
+// renderer.RenderInput.WorkloadLibraries.
+func (HydratedViewBase) RecipeWorkloadLibraryDeclared(node string, field string) bool {
+	panic("this presentation does not carry recipe-workload-library-declared, which is read from renderer.RenderInput.WorkloadLibraries")
+}
+
+// RecipeWorkloadEntryDeclared panics. This presentation does not carry
+// recipe-workload-entry-declared, which is read from
+// renderer.RenderInput.WorkloadLibraries.
+func (HydratedViewBase) RecipeWorkloadEntryDeclared(node string, field string) bool {
+	panic("this presentation does not carry recipe-workload-entry-declared, which is read from renderer.RenderInput.WorkloadLibraries")
+}
+
 // EmittedViewBase is a base for an implementation of EmittedView.
 //
 // It declares a refusing method for every fact complete before the emitted
@@ -2673,6 +2694,9 @@ type DescribedStageFacts interface {
 	RecipeValuesMappingImportReference(node string, field string) string
 	RecipeValuesMappingLibraryDeclared(node string, field string) bool
 	RecipeValuesMappingEntryDeclared(node string, field string) bool
+	RecipeWorkloadImportReference(node string, field string) string
+	RecipeWorkloadLibraryDeclared(node string, field string) bool
+	RecipeWorkloadEntryDeclared(node string, field string) bool
 }
 
 // HydratedStageFacts are the facts the hydrated stage declares itself, and

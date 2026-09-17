@@ -85,7 +85,7 @@ func declaredValuesMappingHalt(
 	view := newDescribedView(
 		context.Background(), graph, stubGraphFacts{},
 		recipes, RecipeLookup{}, nil, newStepDescriptorMemo(), nil, nil,
-		nil, nil, libs,
+		nil, nil, libs, nil,
 	)
 	if view == nil {
 		t.Fatal("the presentation was not built; there is nothing for the rules to read")
@@ -486,7 +486,7 @@ func TestValuesMappingImportRules_ReportEveryOffendingNode(t *testing.T) {
 	view := newDescribedView(
 		context.Background(), graph, stubGraphFacts{},
 		recipes, RecipeLookup{}, nil, newStepDescriptorMemo(), nil, nil,
-		nil, nil, valuesMappingImportLibraries(),
+		nil, nil, valuesMappingImportLibraries(), nil,
 	)
 	if view == nil {
 		t.Fatal("the presentation was not built")

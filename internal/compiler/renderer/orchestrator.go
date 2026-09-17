@@ -812,7 +812,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 	result.DescribedView = newDescribedView(
 		ctx, graph, input.GraphView, nodeRecipes, recipeLookup, releaseOf(input.ResolveResult),
 		input.stepDescriptors, input.PluginPathLookup, engineFactory, renderedNames,
-		input.ArtifactsLibraries, input.MappingLibraries,
+		input.ArtifactsLibraries, input.MappingLibraries, input.WorkloadLibraries,
 	)
 
 	// The rules declared over that presentation are invoked here, against the
@@ -914,6 +914,20 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// the library set the load resolved — are complete once the Recipe is
 		// bound, so nothing is gained by waiting and a whole render is spent by it.
 		if err := runValuesMappingImportRule(ctx, result.DescribedView, describedAxes); err != nil {
+			return nil, err
+		}
+
+		// The rules over the workload library import a node's own Recipe writes,
+		// asked against the same presentation and the same enumeration.
+		//
+		// They are asked here, ahead of the node walk, for the reason the values
+		// mapping beside them is: a reference naming an entry no library declares
+		// would otherwise be met partway through the walk, after every earlier node
+		// had rendered — and later within a node than the values mapping, since a
+		// workload is resolved after it. Both facts they read — the reference the
+		// author wrote and the library set the load resolved — are complete once the
+		// Recipe is bound.
+		if err := runWorkloadImportRule(ctx, result.DescribedView, describedAxes); err != nil {
 			return nil, err
 		}
 

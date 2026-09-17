@@ -117,7 +117,7 @@ func declaredTemplateFieldHalt(t *testing.T, fr *types.FeatureRecipe) error {
 	view := newDescribedView(
 		context.Background(), graph, stubGraphFacts{},
 		recipes, lookup, nil, newStepDescriptorMemo(), nil, nil,
-		nil, nil, nil,
+		nil, nil, nil, nil,
 	)
 	if view == nil {
 		t.Fatal("the presentation was not built; there is nothing for the rules to read")

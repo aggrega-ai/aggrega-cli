@@ -102,7 +102,7 @@ func declaredArtifactsEntryHalt(
 	view := newDescribedView(
 		context.Background(), graph, stubGraphFacts{},
 		recipes, RecipeLookup{}, nil, newStepDescriptorMemo(), nil, nil,
-		nil, libs, nil,
+		nil, libs, nil, nil,
 	)
 	if view == nil {
 		t.Fatal("the presentation was not built; there is nothing for the rules to read")
@@ -504,7 +504,7 @@ func TestArtifactsEntryImportRules_ReadTheFactsTheirDeclarationNames(t *testing.
 	view := newDescribedView(
 		context.Background(), graph, stubGraphFacts{},
 		recipes, RecipeLookup{}, nil, newStepDescriptorMemo(), nil, nil,
-		nil, artifactsEntryLibraries(), nil,
+		nil, artifactsEntryLibraries(), nil, nil,
 	)
 	if view == nil {
 		t.Fatal("the presentation was not built")

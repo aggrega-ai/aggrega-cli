@@ -184,6 +184,20 @@ var errWorkloadImportShape = cerrors.Register("workload-import-shape", cerrors.M
 // ErrWorkloadLibraryNotFound fires when a bare-name workload-library import
 // names a WorkloadLibrary absent from the resolved set (the local catalog plus
 // any lockfile-pinned libraries bridged in at load).
+//
+// # Why no rule over the authored reference is declared for it
+//
+// A workload reference naming a library nothing publishes is refused as the
+// Release's dependencies are resolved, under the condition raised for a reference
+// the catalog holds no entity for — and that resolution precedes the render on
+// every surface that renders at all. So a rule declared over the authored reference
+// could not be invoked ahead of the resolution that already refuses it, and the
+// declaration would read as enforcement while nothing could reach it.
+//
+// The arms that raise this condition stay where they are: they are the refusal for
+// the workload a FeatureRecipe carries, for a reference lifted out of a library
+// entry's own body by the recursion, and for a caller assembling a render's input
+// without resolving dependencies first.
 func ErrWorkloadLibraryNotFound() error { return errWorkloadLibraryNotFound }
 
 var errWorkloadLibraryNotFound = cerrors.Register("workload-library-not-found", cerrors.Meta{

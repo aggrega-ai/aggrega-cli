@@ -2613,6 +2613,126 @@ var ValuesMappingImportNamesADeclaredEntry = constraint.Check[
 	},
 }
 
+// The rules over the workload import a node's own Recipe writes are keyed by the
+// same Recipe spec-root coordinate the values-mapping rules above are, and carry the
+// same two properties: the key is fixed by the authoring surface and carries no
+// locator separator, so a finding is positioned exactly at .spec.workload in the
+// Recipe's own file and owes no captioned stand-in; and the node is a coordinate the
+// subject carries and the locator does not, deliberately absent from every detail
+// below, because the fault is in the Recipe's text rather than in any one node that
+// binds it.
+
+// workloadLibraryReference splits a node's authored workload import reference into
+// the library and entry it names, and reports whether the field carries a library
+// reference at all.
+//
+// It is the split the consumption site resolves the reference with rather than a
+// second reading of the same grammar, so a library a rule names in a finding is the
+// library the resolution looked for.
+//
+// A field the fact answers empty for carries no library reference — the workload is
+// written inline, supplied by a file of the workspace, or refused elsewhere as
+// host-bearing — and reports false, which is what leaves every rule below declining
+// it rather than judging it. A coordinate naming a field other than the workload
+// answers empty for the same reason and declines the same way.
+func workloadLibraryReference(ref string) (library, entry string, held bool) {
+	if ref == "" {
+		return "", "", false
+	}
+	library, entry, ok := splitLibraryImportRef(ref, "/workloads/")
+	if !ok {
+		return "", "", false
+	}
+	return library, entry, true
+}
+
+// WorkloadImportIsWellShaped reports a workload import whose reference does not name
+// an entry the compiler can look for.
+//
+// The reference reaches this rule already read as a library import — it carries the
+// `#/workloads/` fragment and no registry host — so what is left to judge is whether
+// the two halves that fragment separates are both there. A reference naming an empty
+// entry is the production shape of that fault: the fragment is present, the library
+// is named, and there is nothing after the prefix for the library to be asked about.
+//
+// # What it deliberately does not judge
+//
+// A reference whose library half carries the retired `@` version separator splits
+// cleanly and is not reported here. The resolution beneath refuses it with a steer to
+// the colon form, and that refusal is reached on a path this rule does not stand in
+// front of — the reference is resolved as a dependency before any render begins,
+// under the condition that names an unusable library reference. Declaring a predicate
+// here for a reference this stage is never asked about would put a rule in the
+// enforced set that nothing can invoke, which reads exactly like a rule that ran and
+// approved.
+//
+// The reference is the value the registered sentence is about, so it stands bare. The
+// advice names the shape the reference has to take, because the remedy is a single
+// edit and stating it is cheaper for the reader than describing it.
+var WorkloadImportIsWellShaped = constraint.Check[
+	constraint.DescribedView,
+	constraint.NodeRecipeImportFieldSubject,
+]{
+	Sentinel: ErrWorkloadImportShape(),
+	Severity: constraint.SeverityFatal,
+	Run: func(
+		v constraint.DescribedView,
+		s constraint.NodeRecipeImportFieldSubject,
+	) []constraint.Objection {
+		ref := v.RecipeWorkloadImportReference(s.NodeID(), s.RecipeImportField())
+		if ref == "" {
+			return nil
+		}
+		if _, _, held := workloadLibraryReference(ref); held {
+			return nil
+		}
+		return []constraint.Objection{s.RaiseWithAdvice(
+			ErrWorkloadImportShape(),
+			"name the library and the entry either side of the fragment — write "+
+				"<Library>#/workloads/<entry>",
+			constraint.Uncaptioned(ref),
+		)}
+	},
+}
+
+// WorkloadImportNamesADeclaredEntry reports a workload import naming an entry the
+// WorkloadLibrary it resolved to does not declare.
+//
+// It declines a field whose library was not found at all, because a library nothing
+// declares declares no entry either — and the resolution that refuses an absent
+// library is reached before any render begins, so a build meeting that fault never
+// reaches this rule to be told about the entry instead.
+//
+// The entry is the value the registered sentence is about, so it stands bare; the
+// library is captioned beside it because an entry name means nothing without the
+// document it was looked for in, and the two are written by different authors often
+// enough that the reader may have to open a library they did not publish.
+var WorkloadImportNamesADeclaredEntry = constraint.Check[
+	constraint.DescribedView,
+	constraint.NodeRecipeImportFieldSubject,
+]{
+	Sentinel: ErrWorkloadEntryNotFound(),
+	Severity: constraint.SeverityFatal,
+	Run: func(
+		v constraint.DescribedView,
+		s constraint.NodeRecipeImportFieldSubject,
+	) []constraint.Objection {
+		ref := v.RecipeWorkloadImportReference(s.NodeID(), s.RecipeImportField())
+		library, entry, held := workloadLibraryReference(ref)
+		if !held || !v.RecipeWorkloadLibraryDeclared(s.NodeID(), s.RecipeImportField()) {
+			return nil
+		}
+		if v.RecipeWorkloadEntryDeclared(s.NodeID(), s.RecipeImportField()) {
+			return nil
+		}
+		return []constraint.Objection{s.RaiseWith(
+			ErrWorkloadEntryNotFound(),
+			constraint.Uncaptioned(entry),
+			constraint.Captioned("WorkloadLibrary", library),
+		)}
+	},
+}
+
 // ArtifactsEntryImportIsWellShaped reports an artifacts entry whose library
 // import the compiler will not resolve for a reason in the reference or in the
 // bundle's own bodies.

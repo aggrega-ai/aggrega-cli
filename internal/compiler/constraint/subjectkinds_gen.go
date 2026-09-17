@@ -154,7 +154,7 @@ const (
 	// SubjectNodeArtifactsEntry is the subject kind (node, artifacts-entry), keyed by 5 declared facts.
 	SubjectNodeArtifactsEntry SubjectKind = "(node, artifacts-entry)"
 
-	// SubjectNodeRecipeImportField is the subject kind (node, recipe-import-field), keyed by 3 declared facts.
+	// SubjectNodeRecipeImportField is the subject kind (node, recipe-import-field), keyed by 6 declared facts.
 	SubjectNodeRecipeImportField SubjectKind = "(node, recipe-import-field)"
 
 	// SubjectNodeArtifact is the subject kind (node, artifact), keyed by 5 declared facts.

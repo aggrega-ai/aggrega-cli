@@ -124,6 +124,18 @@ type describedView struct {
 	// would reach for such a build.
 	mappingLibraries map[string]types.MappingLibrary
 
+	// workloadLibraries is the WorkloadLibrary set the load resolved, keyed by
+	// bare name, read only for the facts about what an authored workload import
+	// reference resolves to.
+	//
+	// It is held rather than reached for, on the reading the two library sets
+	// beside it carry: the set arrives on the render's input already resolved, and
+	// a presentation resolving one itself would be a second reading of the
+	// catalog. A render given none answers every fact over it as a field naming a
+	// library nothing declares, which is the same answer the render's own resolver
+	// would reach for such a build.
+	workloadLibraries map[string]types.WorkloadLibrary
+
 	// recipeLookup resolves the FeatureRecipe an attachment binds. It is the
 	// same lookup the render resolves attachments through, so a fact about an
 	// attachment names the document the render actually bound.
@@ -203,8 +215,8 @@ type describedView struct {
 // returns nil, on the same reading the deployment document carries: a render
 // given none has no entry importing a library that could resolve, so the facts
 // over it answer as they would for a library nothing declares — which is an
-// answer rather than an absence. The MappingLibrary set is taken on the same
-// reading and for the same reason.
+// answer rather than an absence. The MappingLibrary and WorkloadLibrary sets are
+// taken on the same reading and for the same reason.
 func newDescribedView(
 	ctx context.Context,
 	graph *types.IRGraph,
@@ -218,6 +230,7 @@ func newDescribedView(
 	renderedNames NodeRenderedNames,
 	artifactsLibraries map[string]types.ArtifactsLibrary,
 	mappingLibraries map[string]types.MappingLibrary,
+	workloadLibraries map[string]types.WorkloadLibrary,
 ) constraint.DescribedView {
 	if graph == nil || earlier == nil || descriptors == nil {
 		return nil
@@ -235,6 +248,7 @@ func newDescribedView(
 		renderedNames:      renderedNames,
 		artifactsLibraries: artifactsLibraries,
 		mappingLibraries:   mappingLibraries,
+		workloadLibraries:  workloadLibraries,
 	}
 }
 
@@ -807,6 +821,94 @@ func (v *describedView) recipeValuesMappingLookup(node string, field string) map
 		return mappingLibraryLookup{}
 	}
 	return lookUpMappingLibraryEntry(authored.Import, v.mappingLibraries)
+}
+
+// RecipeWorkloadImportReference returns the library reference a node's own Recipe
+// supplies its workload by, as written and before anything resolves it.
+//
+// It answers for the workload field alone and empty for every other field the
+// coordinate names, so a rule reading it is handed the one field it governs.
+//
+// It answers for the bare-name library form alone. A workload written inline, one
+// supplied by a file of the workspace, and one whose reference carries a registry
+// host each answer empty: the first names no reference at all, the second names a
+// path rather than a library, and the third is refused where it is consumed as a
+// host-bearing reference rather than read as a library one. The three tests are made
+// here rather than in each rule, so a rule over this fact is handed the one authoring
+// form it governs.
+//
+// It reads the same field the render resolves, through the same two predicates that
+// resolution dispatches its authoring modes on, so a reference this presents is the
+// reference the render will resolve.
+func (v *describedView) RecipeWorkloadImportReference(node string, field string) string {
+	authored, held := v.recipeWorkloadImport(node, field)
+	if !held {
+		return ""
+	}
+	return authored.Import
+}
+
+// RecipeWorkloadLibraryDeclared reports whether the WorkloadLibrary a node's own
+// Recipe supplies its workload from is in the set the load resolved.
+//
+// A field naming no library, and a reference that does not split into the bare-name
+// shape, both report false: neither names a library the set could hold. A rule
+// telling those apart from a library genuinely missing reads the reference fact
+// beside this one.
+func (v *describedView) RecipeWorkloadLibraryDeclared(node string, field string) bool {
+	return v.recipeWorkloadLookup(node, field).LibraryFound
+}
+
+// RecipeWorkloadEntryDeclared reports whether the WorkloadLibrary a node's own
+// Recipe supplies its workload from declares the entry that reference asks for.
+//
+// It reports false wherever the library itself was not found, because a library the
+// set does not hold declares nothing.
+func (v *describedView) RecipeWorkloadEntryDeclared(node string, field string) bool {
+	return v.recipeWorkloadLookup(node, field).EntryFound
+}
+
+// recipeWorkloadImport returns a node's own Recipe workload and whether that Recipe
+// supplies it by a bare-name library import, for the one coordinate that names the
+// workload field.
+//
+// A coordinate naming any other field reports false, which is what leaves a rule over
+// this axis declining the fields it does not govern rather than judging them. A node
+// with no bound Recipe reports false too, which is the honest reading: the fields are
+// enumerated rather than looked up, so a coordinate reaching here that the document
+// does not write names nothing.
+func (v *describedView) recipeWorkloadImport(
+	node string, field string,
+) (types.WorkloadTemplate, bool) {
+	if field != recipeFieldWorkload {
+		return types.WorkloadTemplate{}, false
+	}
+	recipe, ok := v.recipes[node]
+	if !ok || recipe == nil {
+		return types.WorkloadTemplate{}, false
+	}
+	authored := recipe.Spec.Workload
+	if authored.HasOCIPrefix() || !authored.IsLibraryImport() {
+		return types.WorkloadTemplate{}, false
+	}
+	return authored, true
+}
+
+// recipeWorkloadLookup resolves a node's own workload import reference against the
+// resolved WorkloadLibrary set, through the single reading the render resolves that
+// import through.
+//
+// It is one helper under two accessors rather than two resolutions, and the reason is
+// not brevity: the two facts are two steps of one cascade, so two resolutions would be
+// two readings of one reference, each free to answer for a different step of a
+// different reading. The zero value is what a field naming no library resolves to, and
+// every step of it reports the absence its own accessor reports.
+func (v *describedView) recipeWorkloadLookup(node string, field string) workloadLibraryLookup {
+	authored, held := v.recipeWorkloadImport(node, field)
+	if !held {
+		return workloadLibraryLookup{}
+	}
+	return lookUpWorkloadLibraryEntry(authored.Import, v.workloadLibraries)
 }
 
 // artifactsEntry returns one entry of a node's own Recipe artifacts block, and
