@@ -6,48 +6,53 @@ package validator
 import (
 	"fmt"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
 )
 
-// maxInheritanceDepth bounds how far an extends chain may run. It is a
-// sanity guard on authoring rather than a termination safeguard: the walk
-// below terminates on its own, because every step records the entity it
-// reached and stops the moment it reaches one twice.
+// maxInheritanceDepth bounds how far an extends chain may run. It is a guard on
+// authoring rather than a termination safeguard: the walk below terminates on
+// its own, because every step records the entity it reached and stops the moment
+// it reaches one twice.
+//
+// It is read by the rules over a chain's length rather than by the walk, which
+// is what keeps one bound governing every authored kind that declares extends.
 const maxInheritanceDepth = 10
 
-// chainFaultKind names which of the three chain-structural failures a walk
-// stopped on. Each carries its own condition and its own remedy, so they are
+// chainFaultKind names which of the two chain-structural failures a walk stops
+// on. Each carries its own condition and its own remedy, so they are
 // distinguished at the point of detection rather than at the point of
 // reporting.
+//
+// The chain's LENGTH is not among them, and the absence is the design rather
+// than an omission: a chain running past the bound is judged by a declared rule
+// over the shape this walk produces, so the walk measures the length and stops
+// judging it. What remains here are the two shapes that stop the walk from
+// producing a shape at all — one of which is itself a declared rule, and is
+// carried out of the walk as a fact rather than as a diagnostic.
 type chainFaultKind int
 
 const (
 	// chainFaultCycle: following the chain reached an entity already in it.
 	chainFaultCycle chainFaultKind = iota
-	// chainFaultDepth: the chain terminated cleanly but runs past the bound.
-	chainFaultDepth
 	// chainFaultMissingParent: a link named an entity the lookup cannot serve.
 	chainFaultMissingParent
 )
 
-// chainFault is what a failed chain walk reports: which failure, and the
+// chainFault is what a stopped chain walk reports: which failure, and the
 // coordinates a reader needs to act on it.
 //
-// From and Link are the two halves of one edge — the entity that declares the
+// from and link are the two halves of one edge — the entity that declares the
 // offending extends, and the reference it declares. Naming the edge rather than
 // one endpoint is what makes a cycle actionable: the entity a resolution was
 // requested for is rarely the one carrying the link that closes the loop, so a
 // diagnostic naming only the former tells an author to look in the wrong file.
 type chainFault struct {
 	kind chainFaultKind
-	// from is the entity whose extends declaration is at fault. Empty for a
-	// depth fault, which is a property of the chain rather than of one edge.
+	// from is the entity whose extends declaration is at fault.
 	from string
-	// link is the extends reference declared on from. Empty for a depth fault.
+	// link is the extends reference declared on from.
 	link string
-	// depth is the number of entities the chain reached. Set for a depth fault
-	// and zero otherwise.
-	depth int
 }
 
 // ExtendsChainSpec carries everything an extends chain walk needs that differs
@@ -100,10 +105,29 @@ func (s ExtendsChainSpec[T]) name(v T) string {
 // walk order — start first, then its parent, then its parent's parent — or the
 // failure for the one structural fault that stopped it, reported against start.
 //
-// It is the single home for the extends walk and for the three diagnostics that
+// It is the single home for the extends walk and for the three conditions that
 // walk can produce. Every path that follows an extends chain calls it, so the
 // cycle rule, the depth bound, the identity the visited set is keyed on and the
 // words each failure is reported in are decided once rather than per kind.
+//
+// # Two of the three conditions are declared rules, and one is not
+//
+// A chain that returns to an entity already in it, and one that ends cleanly
+// past the depth bound, are each a declared rule over a declared fact — see
+// componentExtendsChainReachesNoEntityTwice and
+// componentExtendsChainStaysWithinTheDepthBound, together with their Feature and
+// Manifest carriers. What this function does for those two is present the shape
+// its own walk produced and render whatever came back, exactly as every other
+// path in this package that invokes a rule does.
+//
+// A link naming an entity the lookup cannot serve stays a raise here, because
+// there is no shape to present: the walk cannot reach the entity, so nothing it
+// could hand a rule would describe the chain the author wrote.
+//
+// kind selects which carrier's declarations are asked, and a kind none of them
+// covers is refused rather than passed. Silently passing would leave a whole
+// authored kind's chains ungoverned by two rules that every other kind's are
+// held to, with nothing in the build saying so.
 //
 // # Why the visited set is keyed on the RESOLVED link
 //
@@ -120,25 +144,126 @@ func (s ExtendsChainSpec[T]) name(v T) string {
 //
 // # Why the depth bound is applied AFTER the walk
 //
-// The two safeguards answer different questions and must not preempt each
-// other. Testing the bound inside the loop lets a long cycle trip it before it
-// closes, and the author is then told to shorten a chain whose length is not
-// the problem — advice that cannot fix their files. Because the visited set
-// bounds the walk on its own, the length can be judged once the shape is known:
-// a chain that closes on itself is a cycle at any length, and only a chain that
-// ends cleanly can be too deep.
+// The two rules answer different questions and must not preempt each other.
+// Testing the bound inside the loop lets a long cycle trip it before it closes,
+// and the author is then told to shorten a chain whose length is not the problem
+// — advice that cannot fix their files. Because the visited set bounds the walk
+// on its own, the length can be judged once the shape is known: a chain that
+// closes on itself is a cycle at any length, and only a chain that ends cleanly
+// can be too deep.
+//
+// That ordering is now carried by the facts rather than by this sequence. A
+// chain closing on itself reports no length at all, so the rule over the bound
+// has no subject on exactly the input the cycle rule raises for — and the two
+// may be asked in either order without the ordering being something a later
+// reader has to know to preserve.
 func ResolveExtendsChain[T any](kind envelope.Kind, start T, spec ExtendsChainSpec[T]) ([]T, *ValidationError) {
 	chain, fault := walkExtendsChain(start, spec)
+	if fault != nil && fault.kind == chainFaultMissingParent {
+		return nil, unresolvableParentError(kind, spec.name(start), fault, spec.MissingParent)
+	}
+
+	shape := extendsChainShape{reached: len(chain)}
 	if fault != nil {
-		return nil, chainFaultError(kind, spec.name(start), fault, spec.MissingParent)
+		shape = extendsChainShape{
+			cycle: constraint.ExtendsChainCycleEdge{
+				Declaring: fault.from,
+				Reference: fault.link,
+			},
+			closes: true,
+		}
+	}
+	if failure := extendsChainShapeFailure(kind, spec.name(start), shape); failure != nil {
+		return nil, failure
 	}
 	return chain, nil
+}
+
+// extendsChainShapeFailure runs the two rules over a chain's shape and renders
+// whatever they raised into the failure shape this package's callers read.
+//
+// It picks the declarations for the kind the chain was walked for, because a
+// fact is filed under exactly one authored document kind: a rule reading a
+// Component's chain facts off a Manifest's presentation would be refused at the
+// point it read them, so the kind chooses the pair rather than the presentation
+// being made to answer for all of them.
+//
+// Both rules are invoked rather than the first raising one short-circuiting the
+// second, and nothing about the order is load-bearing: a chain closing on itself
+// has no length to report, so the depth rule has no subject on exactly the input
+// the cycle rule raises for. That exclusion lives in the fact, which is what lets
+// this read as two rules asked about one shape instead of a sequence a later
+// reader has to preserve.
+//
+// It returns the first failure rather than the set, because the walk returns one
+// and because at most one can be raised: the two rules' subjects do not overlap.
+//
+// It panics on a kind that declares no chain facts, for the reason the failure
+// constructors in this package panic on an unmappable kind: the kind reaches here
+// as a constant chosen at the call site, never from an authored document, so an
+// unrecognised one means a caller began walking a new kind's chains without
+// declaring that kind's facts — and answering nil would leave those chains
+// ungoverned in silence.
+func extendsChainShapeFailure(
+	kind envelope.Kind,
+	name string,
+	shape extendsChainShape,
+) *ValidationError {
+	var objections []constraint.Objection
+	switch kind {
+	case envelope.KindComponent:
+		// The presentation is held as the view the rule declared rather than as
+		// its own concrete type, because the entry takes the check and the view
+		// together and infers one type from both. Handing over the concrete type
+		// would infer that type and then refuse the rule, which declares the view.
+		presented := newComponentExtendsChainShapeView(shape)
+		var view constraint.DocumentView = presented
+		objections = append(objections,
+			constraint.RunOnDocument("", view, componentExtendsChainReachesNoEntityTwice)...)
+		objections = append(objections,
+			constraint.RunOnDocument("", view, componentExtendsChainStaysWithinTheDepthBound)...)
+	case envelope.KindFeature:
+		presented := newFeatureExtendsChainShapeView(shape)
+		var view constraint.DocumentView = presented
+		objections = append(objections,
+			constraint.RunOnDocument("", view, featureExtendsChainReachesNoEntityTwice)...)
+		objections = append(objections,
+			constraint.RunOnDocument("", view, featureExtendsChainStaysWithinTheDepthBound)...)
+	case envelope.KindManifest:
+		presented := newManifestChainDocumentView(shape)
+		var view constraint.DocumentView = presented
+		objections = append(objections,
+			constraint.RunOnDocument("", view, manifestExtendsChainReachesNoEntityTwice)...)
+		objections = append(objections,
+			constraint.RunOnDocument("", view, manifestExtendsChainStaysWithinTheDepthBound)...)
+	default:
+		panic(fmt.Sprintf(
+			"validator: entity kind %q declares no extends-chain facts, so a chain walked for it "+
+				"cannot be judged; declare that kind's chain facts, or walk the chain for a kind "+
+				"that carries them", kind))
+	}
+
+	failures := shapeRuleErrorsFrom(objections, ruleSubject{
+		Kind: kind,
+		Name: name,
+		Rule: "extends",
+	})
+	if len(failures) == 0 {
+		return nil
+	}
+	return failures[0]
 }
 
 // walkExtendsChain is the walk itself, kept separate from the diagnostic so the
 // two halves can be read independently. It is unexported, and
 // ResolveExtendsChain is the only way to reach it, so no caller can walk a
 // chain and then report its fault in words of its own.
+//
+// It measures the chain and judges nothing about its length. The bound is a
+// declared rule over the shape this produces, so a chain past it comes back here
+// as an ordinary chain and is refused one step out — which is also why the walk
+// needs no length guard to terminate: the visited set bounds it, because every
+// step records the entity it reached and stops the moment it reaches one twice.
 func walkExtendsChain[T any](start T, spec ExtendsChainSpec[T]) ([]T, *chainFault) {
 	chain := []T{start}
 	visited := map[string]bool{spec.Key(start): true}
@@ -162,20 +287,21 @@ func walkExtendsChain[T any](start T, spec ExtendsChainSpec[T]) ([]T, *chainFaul
 		current = parent
 	}
 
-	if len(chain) > maxInheritanceDepth {
-		return nil, &chainFault{kind: chainFaultDepth, depth: len(chain)}
-	}
 	return chain, nil
 }
 
-// chainFaultError renders a chain fault as the validation failure reported
-// against the entity the resolution was requested for.
+// unresolvableParentError renders the one chain fault that is not a declared
+// rule as the validation failure reported against the entity the resolution was
+// requested for.
 //
-// It is the single home for the three diagnostics, so every path that walks an
-// extends chain reports the same words for the same failure. Each message
-// supplies only what the condition's own registered sentence cannot carry: the
-// edge at fault for a cycle and an unresolvable parent, and the bound against
-// the length reached for a chain that is too deep.
+// It is the single home for that diagnostic, so every path that walks an extends
+// chain reports the same words for it. The message supplies only what the
+// condition's own registered sentence cannot carry: the edge at fault.
+//
+// It is the only fault still rendered here, and the reason is the input rather
+// than the wording. The other two are declared rules over the shape the walk
+// produced; this one is raised where the walk could not produce a shape at all,
+// because the entity the reference names is not there to be reached.
 //
 // missingParent is the one part of the wording that cannot be shared, because
 // an extends reference does not resolve against the same thing for every kind:
@@ -185,39 +311,28 @@ func walkExtendsChain[T any](start T, spec ExtendsChainSpec[T]) ([]T, *chainFaul
 // by the caller and everything else about the failure — the condition, the
 // field path, the entity it is reported against — stays here. A nil
 // missingParent takes the catalog wording.
-func chainFaultError(kind envelope.Kind, name string, f *chainFault, missingParent func(from, link string) (string, string)) *ValidationError {
-	switch f.kind {
-	case chainFaultCycle:
-		return NewValidationError(kind, name, ValidationDetail{
-			FieldPath:  ".spec.extends",
-			Constraint: fmt.Sprintf("%s extends %s, which is already in the chain", f.from, f.link),
-			Suggestion: fmt.Sprintf("Remove the extends on %s, or point it at an entity outside the chain", f.from),
-			Err:        ErrCyclicExtension(),
-		})
-	case chainFaultDepth:
-		return NewValidationError(kind, name, ValidationDetail{
-			FieldPath:  ".spec.extends",
-			Constraint: fmt.Sprintf("the bound is %d and this chain reaches %d", maxInheritanceDepth, f.depth),
-			Suggestion: "Shorten the chain, or extend a base that sits closer to its root",
-			Err:        ErrExtendsChainTooDeep(),
-		})
-	case chainFaultMissingParent:
-		constraint := fmt.Sprintf("%s extends %s, which no catalog entity provides", f.from, f.link)
-		suggestion := "Verify the extends reference names an entity present in the catalog"
-		if missingParent != nil {
-			constraint, suggestion = missingParent(f.from, f.link)
-		}
-		return NewValidationError(kind, name, ValidationDetail{
-			FieldPath:  ".spec.extends",
-			Constraint: constraint,
-			Suggestion: suggestion,
-			Err:        ErrInheritanceMerge(),
-		})
+//
+// It panics on any other fault kind rather than returning a failure carrying no
+// condition, because a kind reaching here without a diagnostic is a defect in the
+// compiler that would otherwise surface as an unattributed halt.
+func unresolvableParentError(
+	kind envelope.Kind,
+	name string,
+	f *chainFault,
+	missingParent func(from, link string) (string, string),
+) *ValidationError {
+	if f.kind != chainFaultMissingParent {
+		panic(fmt.Sprintf("validator: extends-chain fault kind %d carries no diagnostic here", f.kind))
 	}
-	// Unreachable through walkExtendsChain, which is the only producer of a
-	// chainFault and sets one of the three kinds above. It panics rather than
-	// returning a failure carrying no condition, because a kind added to the
-	// enumeration without a diagnostic here is a defect in the compiler that
-	// would otherwise surface as an unattributed halt.
-	panic(fmt.Sprintf("validator: extends-chain fault kind %d carries no diagnostic", f.kind))
+	required := fmt.Sprintf("%s extends %s, which no catalog entity provides", f.from, f.link)
+	suggestion := "Verify the extends reference names an entity present in the catalog"
+	if missingParent != nil {
+		required, suggestion = missingParent(f.from, f.link)
+	}
+	return NewValidationError(kind, name, ValidationDetail{
+		FieldPath:  ".spec.extends",
+		Constraint: required,
+		Suggestion: suggestion,
+		Err:        ErrInheritanceMerge(),
+	})
 }

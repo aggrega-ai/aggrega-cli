@@ -362,6 +362,41 @@ const (
 	bindingRoutePillarValues = "values"
 )
 
+// ManifestExtendsChainCycleEdge refuses: this view presents one Manifest
+// document, and the fact is read off a walk of the chain that document heads.
+//
+// Both chain facts refuse here rather than being answered from the document,
+// and the ground is that the answer is not in the document. The reference a
+// Manifest declares is one string; whether following it returns to a file
+// already in the chain, and how many files the chain reaches, are properties of
+// the walk that follows it — and the walk resolves each reference against the
+// Release's directory, which this presentation neither holds nor may reach.
+// Answering from the document would report an absence the chain does not have,
+// and a rule cannot tell that from a Manifest that heads no chain at all.
+//
+// Which presentation does answer them is named rather than left to a reader: the
+// walk builds its own, beside the rules it invokes.
+func (v manifestDocumentView) ManifestExtendsChainCycleEdge(
+	document string,
+) (constraint.ExtendsChainCycleEdge, bool) {
+	panic(v.refuseChainFact("ManifestExtendsChainCycleEdge"))
+}
+
+// ManifestExtendsChainLength refuses, for the reason
+// [manifestDocumentView.ManifestExtendsChainCycleEdge] states.
+func (v manifestDocumentView) ManifestExtendsChainLength(document string) (int, bool) {
+	panic(v.refuseChainFact("ManifestExtendsChainLength"))
+}
+
+// refuseChainFact is what this view says about a chain fact, which it was not
+// built to answer.
+func (v manifestDocumentView) refuseChainFact(accessor string) string {
+	return fmt.Sprintf(
+		"manifestDocumentView.%s asked of a view built from one Manifest document: the fact is "+
+			"read from a walk of the chain that document heads, so present that walk",
+		accessor)
+}
+
 // refuseOtherDocument refuses an accessor call naming a document this value was
 // not built for, for the reason [aggregateDocumentView.refuseOtherDocument]
 // states.

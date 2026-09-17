@@ -314,6 +314,27 @@ var records = []recordDecl{
 		},
 	},
 	{
+		Name: "ExtendsChainCycleEdge",
+		Doc: "ExtendsChainCycleEdge is the edge at which an extends chain returns " +
+			"to an entity already in it: the entity whose extends declaration " +
+			"closes the loop, and the reference that declaration names.\n\nIt is " +
+			"one fact rather than two because neither half sends an author " +
+			"anywhere on its own. An entity without the reference names a file to " +
+			"open and not the line to change, since an entity may legitimately " +
+			"declare an extends that is not the offending one; a reference " +
+			"without the entity names a target and leaves the author to find " +
+			"which of the chain's entities pointed at it. Splitting the pair " +
+			"would also hand a rule two values it has to re-pair, which is the " +
+			"re-derivation a declared fact exists to close.\n\nThe entity that " +
+			"closes a loop is rarely the entity a resolution was requested for, " +
+			"which is why the edge is carried at all rather than left to a " +
+			"reader who has the presented document already.",
+		Fields: []recordField{
+			{Name: "Declaring", Type: "string", Doc: "Declaring is the entity whose extends declaration reaches an entity already in the chain, named the way a diagnostic names that entity."},
+			{Name: "Reference", Type: "string", Doc: "Reference is the extends reference that declaration names, as its author wrote it — which is the text the author edits, and not the identity the reference resolved to."},
+		},
+	},
+	{
 		Name: "AnnotationBindingRoute",
 		Doc: "AnnotationBindingRoute is one routing slot an annotation binding " +
 			"claims on the Feature it targets: the pillar the value lands in " +
@@ -614,6 +635,120 @@ var facts = []factDecl{
 			"carried in the author's order, is what the Component's own fact " +
 			"states; it is not restated here, because a fact's documentation has " +
 			"one home and a second copy would be the one that drifts.",
+	},
+	{
+		Name:        "component-extends-chain-cycle-edge",
+		Stage:       "document",
+		SourceField: "types.ComponentSpec.Extends",
+		Subject:     []string{"document"},
+		Params:      []paramDecl{{Name: "document", Type: "string"}},
+		Returns:     "(ExtendsChainCycleEdge, bool)",
+		Doc: "ComponentExtendsChainCycleEdge is the edge at which the chain the " +
+			"presented Component extends returns to an entity already in it, and " +
+			"whether the chain closes on itself at all.\n\nThe second result is " +
+			"load-bearing rather than a zero value: a chain that closes on itself " +
+			"and a chain whose entities carry no names would otherwise answer the " +
+			"same, and a rule that cannot tell them apart reports the wrong one.\n\n" +
+			"The chain is followed outward from the presented Component and stops " +
+			"at the first entity it reaches twice, so the edge answered is the one " +
+			"that closes the loop rather than any earlier edge along it. The " +
+			"tie-break belongs in the declaration because the fact is keyed by the " +
+			"document alone and has to yield one answer: an implementor left to " +
+			"pick would as readily answer the edge the walk started on, which every " +
+			"chain has and which is the one edge an author must not be sent to.\n\n" +
+			"Membership is decided on the entity a reference resolved to rather " +
+			"than on the reference text, because the two are written in different " +
+			"vocabularies — an author may pin a version in the reference while the " +
+			"entity names itself without one — so a fact comparing the texts would " +
+			"report an edge one lap further round the loop than the edge at fault.",
+	},
+	{
+		Name:        "component-extends-chain-length",
+		Stage:       "document",
+		SourceField: "types.ComponentSpec.Extends",
+		Subject:     []string{"document"},
+		Params:      []paramDecl{{Name: "document", Type: "string"}},
+		Returns:     "(int, bool)",
+		Doc: "ComponentExtendsChainLength is how many entities the chain the " +
+			"presented Component extends reaches, and whether that chain ends " +
+			"cleanly.\n\nA chain that closes on itself has no length to report, " +
+			"which is what the second result says and why it is not answered as a " +
+			"zero. The ordering between the two questions a chain's shape raises " +
+			"is carried here rather than left to whoever invokes the rules over " +
+			"them: a rule comparing this count against a bound would otherwise " +
+			"judge a loop by its length, and an author told to shorten a chain has " +
+			"been handed advice that cannot remove a loop. Because the ordering is " +
+			"in the fact, the two rules may be invoked in either order and only the " +
+			"one whose subject the chain actually has can raise.\n\nThe count is of " +
+			"entities rather than of edges, so a Component extending nothing reaches " +
+			"one.",
+	},
+	{
+		Name:        "feature-extends-chain-cycle-edge",
+		Stage:       "document",
+		SourceField: "types.FeatureSpec.Extends",
+		Subject:     []string{"document"},
+		Params:      []paramDecl{{Name: "document", Type: "string"}},
+		Returns:     "(ExtendsChainCycleEdge, bool)",
+		Doc: "FeatureExtendsChainCycleEdge is the edge at which the chain the " +
+			"presented Feature extends returns to an entity already in it, and " +
+			"whether the chain closes on itself at all.\n\nIt is a second fact " +
+			"rather than one fact over both authored kinds that declare extends " +
+			"this way, and the plurality is forced rather than chosen: a fact is " +
+			"filed under exactly one authored document kind, so a single fact would " +
+			"be readable from one kind's view and would refuse the other at the " +
+			"point a rule read it. What the edge is, how the chain is followed and " +
+			"why membership is decided on the resolved entity are what the " +
+			"Component's own fact states; they are not restated here, because a " +
+			"fact's documentation has one home and a second copy would be the one " +
+			"that drifts.",
+	},
+	{
+		Name:        "feature-extends-chain-length",
+		Stage:       "document",
+		SourceField: "types.FeatureSpec.Extends",
+		Subject:     []string{"document"},
+		Params:      []paramDecl{{Name: "document", Type: "string"}},
+		Returns:     "(int, bool)",
+		Doc: "FeatureExtendsChainLength is how many entities the chain the presented " +
+			"Feature extends reaches, and whether that chain ends cleanly.\n\nIt is " +
+			"the Feature carrier's declaration of what the Component's own length " +
+			"fact declares for a Component. Why there are two, and why a chain that " +
+			"closes on itself has no length to report, is stated there.",
+	},
+	{
+		Name:        "manifest-extends-chain-cycle-edge",
+		Stage:       "document",
+		SourceField: "types.ManifestSpec.Extends",
+		Subject:     []string{"document"},
+		Params:      []paramDecl{{Name: "document", Type: "string"}},
+		Returns:     "(ExtendsChainCycleEdge, bool)",
+		Doc: "ManifestExtendsChainCycleEdge is the edge at which the chain the " +
+			"presented Manifest extends returns to a Manifest already in it, and " +
+			"whether the chain closes on itself at all.\n\nIt is the Manifest " +
+			"carrier's declaration of what the Component's own cycle fact declares " +
+			"for a Component, and the reason there are three is stated on the " +
+			"Feature's.\n\nOne thing about it is the Manifest's own and is stated " +
+			"here because no other carrier's declaration could: a link is a FILE. " +
+			"Two Manifest files may legally declare one name, so they are two links " +
+			"and a chain passing through both has not met itself — while the edge " +
+			"this answers names each link the way its author named it, which is the " +
+			"text an author reads rather than the path a machine composed.",
+	},
+	{
+		Name:        "manifest-extends-chain-length",
+		Stage:       "document",
+		SourceField: "types.ManifestSpec.Extends",
+		Subject:     []string{"document"},
+		Params:      []paramDecl{{Name: "document", Type: "string"}},
+		Returns:     "(int, bool)",
+		Doc: "ManifestExtendsChainLength is how many Manifests the chain the " +
+			"presented Manifest extends reaches, and whether that chain ends " +
+			"cleanly.\n\nIt is the Manifest carrier's declaration of what the " +
+			"Component's own length fact declares for a Component. Why there are " +
+			"three, and why a chain that closes on itself has no length to report, " +
+			"is stated there. The count is of files rather than of names, for the " +
+			"reason the Manifest's own cycle fact gives.",
 	},
 	{
 		Name:        "manifest-annotation-binding-keys",

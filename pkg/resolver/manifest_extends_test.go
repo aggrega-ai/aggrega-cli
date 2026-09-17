@@ -411,8 +411,9 @@ func TestResolveManifestExtends_DepthBoundAdmitsTenAndRefusesEleven(t *testing.T
 				t.Errorf("depth refusal = %v; it must not also report the condition an absent parent reports", err)
 			}
 			want := fmt.Sprintf(
-				"%s (Manifest %s, at .spec.extends, the bound is 10 and this chain reaches 11). "+
-					"Shorten the chain, or extend a base that sits closer to its root",
+				"%s (Manifest %s, rule extends). "+
+					"the bound is 10 and this chain reaches 11; shorten the chain, or extend a "+
+					"base that sits closer to its root",
 				validator.ErrExtendsChainTooDeep().Error(), chainManifestName(0))
 			if err.Error() != want {
 				t.Errorf("depth refusal message =\n\t%q\nwant\n\t%q", err.Error(), want)
@@ -459,7 +460,11 @@ func TestResolveManifestExtends_ALoopIsReportedAsALoopAtEveryLength(t *testing.T
 				if errors.Is(err, validator.ErrExtendsChainTooDeep()) {
 					t.Errorf("a %s loop of %d reports the over-deep-chain condition; shortening a loop does not remove it: %v", style, length, err)
 				}
-				if strings.Contains(err.Error(), "Shorten the chain") {
+				// Matched without regard to case, so the assertion keeps biting if
+				// the advice is ever reworded to open a sentence differently: a
+				// phrase this looks for in one casing alone would pass trivially
+				// the moment that casing moved, and nothing would say so.
+				if strings.Contains(strings.ToLower(err.Error()), "shorten the chain") {
 					t.Errorf("a %s loop of %d is answered with advice to shorten it: %v", style, length, err)
 				}
 			})
@@ -530,8 +535,9 @@ func TestResolveManifestExtends_CycleNamesWhichEdge(t *testing.T) {
 			}
 			from := chainManifestName(tc.from)
 			want := fmt.Sprintf(
-				"%s (Manifest %s, at .spec.extends, %s extends %s, which is already in the chain). "+
-					"Remove the extends on %s, or point it at an entity outside the chain",
+				"%s (Manifest %s, rule extends). "+
+					"%s extends %s, which is already in the chain; remove the extends on %s, or "+
+					"point it at an entity outside the chain",
 				validator.ErrCyclicExtension().Error(), chainManifestName(0),
 				from, tc.style.ref(chainManifestName(tc.link)), from)
 			if err.Error() != want {

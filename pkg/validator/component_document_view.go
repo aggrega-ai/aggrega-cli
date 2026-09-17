@@ -52,8 +52,9 @@ import (
 type componentPresentation string
 
 const (
-	componentExtendsChain componentPresentation = "the chain the Component extends"
-	componentSchemaBlock  componentPresentation = "the Component's authored schema block"
+	componentExtendsChain      componentPresentation = "the assertions declared across the chain the Component extends"
+	componentExtendsChainShape componentPresentation = "the shape of the chain the Component extends"
+	componentSchemaBlock       componentPresentation = "the Component's authored schema block"
 )
 
 type componentDocumentView struct {
@@ -94,6 +95,10 @@ type componentDocumentView struct {
 	// the order the author wrote them. They are the Component's half of the
 	// schema-block presentation and are empty on every other.
 	pillarKeys []string
+
+	// shape is what the walk found about the chain's structure, on a
+	// presentation built from that walk and empty on every other.
+	shape extendsChainShape
 }
 
 // newComponentDocumentView presents the Component a resolve is holding: the file
@@ -168,6 +173,42 @@ func (v componentDocumentView) ComponentSchemaPillarKeys(document string) []stri
 	v.refuseOtherDocument(document, "ComponentSchemaPillarKeys")
 	v.refuseOtherPresentation(componentSchemaBlock, "ComponentSchemaPillarKeys")
 	return v.pillarKeys
+}
+
+// newComponentExtendsChainShapeView presents what a walk found about the shape
+// of the chain a Component extends.
+//
+// It is a second constructor rather than a second field on the first, because
+// the two are built at different moments from different things: the assertion
+// presentation is built from a chain that walked cleanly, and this one is built
+// from the walk's outcome whether it did or not. A constructor answering both
+// would have to accept a chain it may not have.
+//
+// The document has no file of its own, because the chain is assembled from
+// entities reached by reference rather than from one file a caller read. The
+// finding a rule over it raises is attributed to the entity the resolution was
+// requested for instead.
+func newComponentExtendsChainShapeView(shape extendsChainShape) componentDocumentView {
+	return componentDocumentView{presents: componentExtendsChainShape, shape: shape}
+}
+
+// ComponentExtendsChainCycleEdge returns the edge at which the chain the
+// presented Component extends returns to an entity already in it, and whether
+// the chain closes on itself at all.
+func (v componentDocumentView) ComponentExtendsChainCycleEdge(
+	document string,
+) (constraint.ExtendsChainCycleEdge, bool) {
+	v.refuseOtherDocument(document, "ComponentExtendsChainCycleEdge")
+	v.refuseOtherPresentation(componentExtendsChainShape, "ComponentExtendsChainCycleEdge")
+	return v.shape.cycleEdge()
+}
+
+// ComponentExtendsChainLength returns how many entities the chain the presented
+// Component extends reaches, and whether that chain ends cleanly.
+func (v componentDocumentView) ComponentExtendsChainLength(document string) (int, bool) {
+	v.refuseOtherDocument(document, "ComponentExtendsChainLength")
+	v.refuseOtherPresentation(componentExtendsChainShape, "ComponentExtendsChainLength")
+	return v.shape.length()
 }
 
 // assertionNames returns the distinct assertion names the presented Component

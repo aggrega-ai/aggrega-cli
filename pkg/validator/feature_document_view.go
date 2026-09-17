@@ -58,11 +58,36 @@ func authoredSchemaPillarKeys(mapping *yaml.Node) []string {
 // the facts a Feature itself carries is the obligation asserted at the bottom of
 // this file: a Feature fact added to the registry stops this type compiling, and a
 // fact carried by any other kind does not reach it.
+// featurePresentation names which of a Feature's document-stage facts a
+// presentation was built to answer.
+//
+// It exists for the reason the Component's own does: the Feature's facts are read
+// off two different things. The schema keys are read off the authored block, which
+// a resolve holding a walked chain no longer distinguishes from its base's; the
+// chain's shape is read off that walk, which a load holding one file does not have.
+// So a presentation carries one or the other, while the obligation interface holds
+// this type to answering all of them — and the honest answer to the facts it was
+// not built for is a refusal rather than an empty one, which a rule cannot tell
+// from a Feature that declared nothing.
+//
+// The values are the phrase the refusal reads, so what a presentation carries is
+// said once rather than once in the field and again in each message.
+type featurePresentation string
+
+const (
+	featureSchemaBlock       featurePresentation = "the Feature's authored schema block"
+	featureExtendsChainShape featurePresentation = "the shape of the chain the Feature extends"
+)
+
 type featureDocumentView struct {
 	// FeatureDocumentBase supplies the document-stage facts a Feature does not
 	// carry, and declares nothing for the ones it does — so this type writes
 	// bodies for exactly the Feature's own facts.
 	constraint.FeatureDocumentBase
+
+	// presents is what this value was built from, and every accessor outside that
+	// presentation refuses.
+	presents featurePresentation
 
 	// path is the workspace-relative file the document was read from. It is the
 	// document coordinate itself, which is why an accessor's argument is checked
@@ -72,6 +97,10 @@ type featureDocumentView struct {
 	// pillarKeys are the top-level keys the authored schema block declares, in
 	// the order the author wrote them.
 	pillarKeys []string
+
+	// shape is what the walk found about the chain's structure, on a
+	// presentation built from that walk and empty on every other.
+	shape extendsChainShape
 }
 
 // newFeatureSchemaBlockView presents the schema block a load is holding: the file
@@ -81,7 +110,25 @@ type featureDocumentView struct {
 // shapes it holds, for the reason the Component's own constructor gives: the
 // settling has one home and a second reading here could diverge from it.
 func newFeatureSchemaBlockView(path string, mapping *yaml.Node) featureDocumentView {
-	return featureDocumentView{path: path, pillarKeys: authoredSchemaPillarKeys(mapping)}
+	return featureDocumentView{
+		presents:   featureSchemaBlock,
+		path:       path,
+		pillarKeys: authoredSchemaPillarKeys(mapping),
+	}
+}
+
+// newFeatureExtendsChainShapeView presents what a walk found about the shape of
+// the chain a Feature extends.
+//
+// It is a second constructor rather than a second field on the first, for the
+// reason the Component's own states: the two are built at different moments from
+// different things, and a constructor answering both would have to accept a chain
+// it may not have.
+//
+// The document has no file of its own, because the chain is assembled from
+// entities reached by reference rather than from one file a caller read.
+func newFeatureExtendsChainShapeView(shape extendsChainShape) featureDocumentView {
+	return featureDocumentView{presents: featureExtendsChainShape, shape: shape}
 }
 
 // FeatureSchemaPillarKeys returns the top-level keys the presented Feature's
@@ -92,7 +139,43 @@ func newFeatureSchemaBlockView(path string, mapping *yaml.Node) featureDocumentV
 // reports on.
 func (v featureDocumentView) FeatureSchemaPillarKeys(document string) []string {
 	v.refuseOtherDocument(document, "FeatureSchemaPillarKeys")
+	v.refuseOtherPresentation(featureSchemaBlock, "FeatureSchemaPillarKeys")
 	return v.pillarKeys
+}
+
+// FeatureExtendsChainCycleEdge returns the edge at which the chain the presented
+// Feature extends returns to an entity already in it, and whether the chain
+// closes on itself at all.
+func (v featureDocumentView) FeatureExtendsChainCycleEdge(
+	document string,
+) (constraint.ExtendsChainCycleEdge, bool) {
+	v.refuseOtherDocument(document, "FeatureExtendsChainCycleEdge")
+	v.refuseOtherPresentation(featureExtendsChainShape, "FeatureExtendsChainCycleEdge")
+	return v.shape.cycleEdge()
+}
+
+// FeatureExtendsChainLength returns how many entities the chain the presented
+// Feature extends reaches, and whether that chain ends cleanly.
+func (v featureDocumentView) FeatureExtendsChainLength(document string) (int, bool) {
+	v.refuseOtherDocument(document, "FeatureExtendsChainLength")
+	v.refuseOtherPresentation(featureExtendsChainShape, "FeatureExtendsChainLength")
+	return v.shape.length()
+}
+
+// refuseOtherPresentation refuses an accessor call for a fact this value was not
+// built to answer, because answering would report an absence the document does not
+// have — a rule cannot tell an empty answer from a Feature that declared nothing.
+func (v featureDocumentView) refuseOtherPresentation(
+	presentation featurePresentation,
+	accessor string,
+) {
+	if v.presents == presentation {
+		return
+	}
+	panic(fmt.Sprintf(
+		"featureDocumentView.%s asked of a view built from %s: "+
+			"the fact is read from %s, so present that",
+		accessor, v.presents, presentation))
 }
 
 // refuseOtherDocument refuses an accessor call naming a document this value was

@@ -50,6 +50,42 @@ func (AggregateDocumentBase) FeatureSchemaPillarKeys(document string) []string {
 	panic("this view does not carry feature-schema-pillar-keys, which a Feature document carries")
 }
 
+// ComponentExtendsChainCycleEdge panics. This view does not carry
+// component-extends-chain-cycle-edge, which a Component document carries.
+func (AggregateDocumentBase) ComponentExtendsChainCycleEdge(document string) (ExtendsChainCycleEdge, bool) {
+	panic("this view does not carry component-extends-chain-cycle-edge, which a Component document carries")
+}
+
+// ComponentExtendsChainLength panics. This view does not carry
+// component-extends-chain-length, which a Component document carries.
+func (AggregateDocumentBase) ComponentExtendsChainLength(document string) (int, bool) {
+	panic("this view does not carry component-extends-chain-length, which a Component document carries")
+}
+
+// FeatureExtendsChainCycleEdge panics. This view does not carry
+// feature-extends-chain-cycle-edge, which a Feature document carries.
+func (AggregateDocumentBase) FeatureExtendsChainCycleEdge(document string) (ExtendsChainCycleEdge, bool) {
+	panic("this view does not carry feature-extends-chain-cycle-edge, which a Feature document carries")
+}
+
+// FeatureExtendsChainLength panics. This view does not carry
+// feature-extends-chain-length, which a Feature document carries.
+func (AggregateDocumentBase) FeatureExtendsChainLength(document string) (int, bool) {
+	panic("this view does not carry feature-extends-chain-length, which a Feature document carries")
+}
+
+// ManifestExtendsChainCycleEdge panics. This view does not carry
+// manifest-extends-chain-cycle-edge, which a Manifest document carries.
+func (AggregateDocumentBase) ManifestExtendsChainCycleEdge(document string) (ExtendsChainCycleEdge, bool) {
+	panic("this view does not carry manifest-extends-chain-cycle-edge, which a Manifest document carries")
+}
+
+// ManifestExtendsChainLength panics. This view does not carry
+// manifest-extends-chain-length, which a Manifest document carries.
+func (AggregateDocumentBase) ManifestExtendsChainLength(document string) (int, bool) {
+	panic("this view does not carry manifest-extends-chain-length, which a Manifest document carries")
+}
+
 // ManifestAnnotationBindingKeys panics. This view does not carry
 // manifest-annotation-binding-keys, which a Manifest document carries.
 func (AggregateDocumentBase) ManifestAnnotationBindingKeys(document string) []string {
@@ -200,6 +236,30 @@ func (ComponentDocumentBase) DeclaredParameterKeys(document string) []string {
 // feature-schema-pillar-keys, which a Feature document carries.
 func (ComponentDocumentBase) FeatureSchemaPillarKeys(document string) []string {
 	panic("this view does not carry feature-schema-pillar-keys, which a Feature document carries")
+}
+
+// FeatureExtendsChainCycleEdge panics. This view does not carry
+// feature-extends-chain-cycle-edge, which a Feature document carries.
+func (ComponentDocumentBase) FeatureExtendsChainCycleEdge(document string) (ExtendsChainCycleEdge, bool) {
+	panic("this view does not carry feature-extends-chain-cycle-edge, which a Feature document carries")
+}
+
+// FeatureExtendsChainLength panics. This view does not carry
+// feature-extends-chain-length, which a Feature document carries.
+func (ComponentDocumentBase) FeatureExtendsChainLength(document string) (int, bool) {
+	panic("this view does not carry feature-extends-chain-length, which a Feature document carries")
+}
+
+// ManifestExtendsChainCycleEdge panics. This view does not carry
+// manifest-extends-chain-cycle-edge, which a Manifest document carries.
+func (ComponentDocumentBase) ManifestExtendsChainCycleEdge(document string) (ExtendsChainCycleEdge, bool) {
+	panic("this view does not carry manifest-extends-chain-cycle-edge, which a Manifest document carries")
+}
+
+// ManifestExtendsChainLength panics. This view does not carry
+// manifest-extends-chain-length, which a Manifest document carries.
+func (ComponentDocumentBase) ManifestExtendsChainLength(document string) (int, bool) {
+	panic("this view does not carry manifest-extends-chain-length, which a Manifest document carries")
 }
 
 // ManifestAnnotationBindingKeys panics. This view does not carry
@@ -364,6 +424,30 @@ func (FeatureDocumentBase) EntityAssertionDeclaringEntity(document string, asser
 // component-schema-pillar-keys, which a Component document carries.
 func (FeatureDocumentBase) ComponentSchemaPillarKeys(document string) []string {
 	panic("this view does not carry component-schema-pillar-keys, which a Component document carries")
+}
+
+// ComponentExtendsChainCycleEdge panics. This view does not carry
+// component-extends-chain-cycle-edge, which a Component document carries.
+func (FeatureDocumentBase) ComponentExtendsChainCycleEdge(document string) (ExtendsChainCycleEdge, bool) {
+	panic("this view does not carry component-extends-chain-cycle-edge, which a Component document carries")
+}
+
+// ComponentExtendsChainLength panics. This view does not carry
+// component-extends-chain-length, which a Component document carries.
+func (FeatureDocumentBase) ComponentExtendsChainLength(document string) (int, bool) {
+	panic("this view does not carry component-extends-chain-length, which a Component document carries")
+}
+
+// ManifestExtendsChainCycleEdge panics. This view does not carry
+// manifest-extends-chain-cycle-edge, which a Manifest document carries.
+func (FeatureDocumentBase) ManifestExtendsChainCycleEdge(document string) (ExtendsChainCycleEdge, bool) {
+	panic("this view does not carry manifest-extends-chain-cycle-edge, which a Manifest document carries")
+}
+
+// ManifestExtendsChainLength panics. This view does not carry
+// manifest-extends-chain-length, which a Manifest document carries.
+func (FeatureDocumentBase) ManifestExtendsChainLength(document string) (int, bool) {
+	panic("this view does not carry manifest-extends-chain-length, which a Manifest document carries")
 }
 
 // ManifestAnnotationBindingKeys panics. This view does not carry
@@ -536,6 +620,30 @@ func (ManifestDocumentBase) FeatureSchemaPillarKeys(document string) []string {
 	panic("this view does not carry feature-schema-pillar-keys, which a Feature document carries")
 }
 
+// ComponentExtendsChainCycleEdge panics. This view does not carry
+// component-extends-chain-cycle-edge, which a Component document carries.
+func (ManifestDocumentBase) ComponentExtendsChainCycleEdge(document string) (ExtendsChainCycleEdge, bool) {
+	panic("this view does not carry component-extends-chain-cycle-edge, which a Component document carries")
+}
+
+// ComponentExtendsChainLength panics. This view does not carry
+// component-extends-chain-length, which a Component document carries.
+func (ManifestDocumentBase) ComponentExtendsChainLength(document string) (int, bool) {
+	panic("this view does not carry component-extends-chain-length, which a Component document carries")
+}
+
+// FeatureExtendsChainCycleEdge panics. This view does not carry
+// feature-extends-chain-cycle-edge, which a Feature document carries.
+func (ManifestDocumentBase) FeatureExtendsChainCycleEdge(document string) (ExtendsChainCycleEdge, bool) {
+	panic("this view does not carry feature-extends-chain-cycle-edge, which a Feature document carries")
+}
+
+// FeatureExtendsChainLength panics. This view does not carry
+// feature-extends-chain-length, which a Feature document carries.
+func (ManifestDocumentBase) FeatureExtendsChainLength(document string) (int, bool) {
+	panic("this view does not carry feature-extends-chain-length, which a Feature document carries")
+}
+
 // RecipeValuesMappingDeclared panics. This view does not carry
 // recipe-values-mapping-declared, which a Recipe document carries.
 func (ManifestDocumentBase) RecipeValuesMappingDeclared(document string) bool {
@@ -670,6 +778,42 @@ func (RecipeDocumentBase) FeatureSchemaPillarKeys(document string) []string {
 	panic("this view does not carry feature-schema-pillar-keys, which a Feature document carries")
 }
 
+// ComponentExtendsChainCycleEdge panics. This view does not carry
+// component-extends-chain-cycle-edge, which a Component document carries.
+func (RecipeDocumentBase) ComponentExtendsChainCycleEdge(document string) (ExtendsChainCycleEdge, bool) {
+	panic("this view does not carry component-extends-chain-cycle-edge, which a Component document carries")
+}
+
+// ComponentExtendsChainLength panics. This view does not carry
+// component-extends-chain-length, which a Component document carries.
+func (RecipeDocumentBase) ComponentExtendsChainLength(document string) (int, bool) {
+	panic("this view does not carry component-extends-chain-length, which a Component document carries")
+}
+
+// FeatureExtendsChainCycleEdge panics. This view does not carry
+// feature-extends-chain-cycle-edge, which a Feature document carries.
+func (RecipeDocumentBase) FeatureExtendsChainCycleEdge(document string) (ExtendsChainCycleEdge, bool) {
+	panic("this view does not carry feature-extends-chain-cycle-edge, which a Feature document carries")
+}
+
+// FeatureExtendsChainLength panics. This view does not carry
+// feature-extends-chain-length, which a Feature document carries.
+func (RecipeDocumentBase) FeatureExtendsChainLength(document string) (int, bool) {
+	panic("this view does not carry feature-extends-chain-length, which a Feature document carries")
+}
+
+// ManifestExtendsChainCycleEdge panics. This view does not carry
+// manifest-extends-chain-cycle-edge, which a Manifest document carries.
+func (RecipeDocumentBase) ManifestExtendsChainCycleEdge(document string) (ExtendsChainCycleEdge, bool) {
+	panic("this view does not carry manifest-extends-chain-cycle-edge, which a Manifest document carries")
+}
+
+// ManifestExtendsChainLength panics. This view does not carry
+// manifest-extends-chain-length, which a Manifest document carries.
+func (RecipeDocumentBase) ManifestExtendsChainLength(document string) (int, bool) {
+	panic("this view does not carry manifest-extends-chain-length, which a Manifest document carries")
+}
+
 // ManifestAnnotationBindingKeys panics. This view does not carry
 // manifest-annotation-binding-keys, which a Manifest document carries.
 func (RecipeDocumentBase) ManifestAnnotationBindingKeys(document string) []string {
@@ -797,6 +941,42 @@ func (FeatureRecipeDocumentBase) ComponentSchemaPillarKeys(document string) []st
 // feature-schema-pillar-keys, which a Feature document carries.
 func (FeatureRecipeDocumentBase) FeatureSchemaPillarKeys(document string) []string {
 	panic("this view does not carry feature-schema-pillar-keys, which a Feature document carries")
+}
+
+// ComponentExtendsChainCycleEdge panics. This view does not carry
+// component-extends-chain-cycle-edge, which a Component document carries.
+func (FeatureRecipeDocumentBase) ComponentExtendsChainCycleEdge(document string) (ExtendsChainCycleEdge, bool) {
+	panic("this view does not carry component-extends-chain-cycle-edge, which a Component document carries")
+}
+
+// ComponentExtendsChainLength panics. This view does not carry
+// component-extends-chain-length, which a Component document carries.
+func (FeatureRecipeDocumentBase) ComponentExtendsChainLength(document string) (int, bool) {
+	panic("this view does not carry component-extends-chain-length, which a Component document carries")
+}
+
+// FeatureExtendsChainCycleEdge panics. This view does not carry
+// feature-extends-chain-cycle-edge, which a Feature document carries.
+func (FeatureRecipeDocumentBase) FeatureExtendsChainCycleEdge(document string) (ExtendsChainCycleEdge, bool) {
+	panic("this view does not carry feature-extends-chain-cycle-edge, which a Feature document carries")
+}
+
+// FeatureExtendsChainLength panics. This view does not carry
+// feature-extends-chain-length, which a Feature document carries.
+func (FeatureRecipeDocumentBase) FeatureExtendsChainLength(document string) (int, bool) {
+	panic("this view does not carry feature-extends-chain-length, which a Feature document carries")
+}
+
+// ManifestExtendsChainCycleEdge panics. This view does not carry
+// manifest-extends-chain-cycle-edge, which a Manifest document carries.
+func (FeatureRecipeDocumentBase) ManifestExtendsChainCycleEdge(document string) (ExtendsChainCycleEdge, bool) {
+	panic("this view does not carry manifest-extends-chain-cycle-edge, which a Manifest document carries")
+}
+
+// ManifestExtendsChainLength panics. This view does not carry
+// manifest-extends-chain-length, which a Manifest document carries.
+func (FeatureRecipeDocumentBase) ManifestExtendsChainLength(document string) (int, bool) {
+	panic("this view does not carry manifest-extends-chain-length, which a Manifest document carries")
 }
 
 // ManifestAnnotationBindingKeys panics. This view does not carry
@@ -933,6 +1113,42 @@ func (ReleaseDocumentBase) ComponentSchemaPillarKeys(document string) []string {
 // feature-schema-pillar-keys, which a Feature document carries.
 func (ReleaseDocumentBase) FeatureSchemaPillarKeys(document string) []string {
 	panic("this view does not carry feature-schema-pillar-keys, which a Feature document carries")
+}
+
+// ComponentExtendsChainCycleEdge panics. This view does not carry
+// component-extends-chain-cycle-edge, which a Component document carries.
+func (ReleaseDocumentBase) ComponentExtendsChainCycleEdge(document string) (ExtendsChainCycleEdge, bool) {
+	panic("this view does not carry component-extends-chain-cycle-edge, which a Component document carries")
+}
+
+// ComponentExtendsChainLength panics. This view does not carry
+// component-extends-chain-length, which a Component document carries.
+func (ReleaseDocumentBase) ComponentExtendsChainLength(document string) (int, bool) {
+	panic("this view does not carry component-extends-chain-length, which a Component document carries")
+}
+
+// FeatureExtendsChainCycleEdge panics. This view does not carry
+// feature-extends-chain-cycle-edge, which a Feature document carries.
+func (ReleaseDocumentBase) FeatureExtendsChainCycleEdge(document string) (ExtendsChainCycleEdge, bool) {
+	panic("this view does not carry feature-extends-chain-cycle-edge, which a Feature document carries")
+}
+
+// FeatureExtendsChainLength panics. This view does not carry
+// feature-extends-chain-length, which a Feature document carries.
+func (ReleaseDocumentBase) FeatureExtendsChainLength(document string) (int, bool) {
+	panic("this view does not carry feature-extends-chain-length, which a Feature document carries")
+}
+
+// ManifestExtendsChainCycleEdge panics. This view does not carry
+// manifest-extends-chain-cycle-edge, which a Manifest document carries.
+func (ReleaseDocumentBase) ManifestExtendsChainCycleEdge(document string) (ExtendsChainCycleEdge, bool) {
+	panic("this view does not carry manifest-extends-chain-cycle-edge, which a Manifest document carries")
+}
+
+// ManifestExtendsChainLength panics. This view does not carry
+// manifest-extends-chain-length, which a Manifest document carries.
+func (ReleaseDocumentBase) ManifestExtendsChainLength(document string) (int, bool) {
+	panic("this view does not carry manifest-extends-chain-length, which a Manifest document carries")
 }
 
 // ManifestAnnotationBindingKeys panics. This view does not carry
@@ -1100,6 +1316,42 @@ func (NormalizedViewBase) ComponentSchemaPillarKeys(document string) []string {
 // feature-schema-pillar-keys, which a Feature document carries.
 func (NormalizedViewBase) FeatureSchemaPillarKeys(document string) []string {
 	panic("this view does not carry feature-schema-pillar-keys, which a Feature document carries")
+}
+
+// ComponentExtendsChainCycleEdge panics. This view does not carry
+// component-extends-chain-cycle-edge, which a Component document carries.
+func (NormalizedViewBase) ComponentExtendsChainCycleEdge(document string) (ExtendsChainCycleEdge, bool) {
+	panic("this view does not carry component-extends-chain-cycle-edge, which a Component document carries")
+}
+
+// ComponentExtendsChainLength panics. This view does not carry
+// component-extends-chain-length, which a Component document carries.
+func (NormalizedViewBase) ComponentExtendsChainLength(document string) (int, bool) {
+	panic("this view does not carry component-extends-chain-length, which a Component document carries")
+}
+
+// FeatureExtendsChainCycleEdge panics. This view does not carry
+// feature-extends-chain-cycle-edge, which a Feature document carries.
+func (NormalizedViewBase) FeatureExtendsChainCycleEdge(document string) (ExtendsChainCycleEdge, bool) {
+	panic("this view does not carry feature-extends-chain-cycle-edge, which a Feature document carries")
+}
+
+// FeatureExtendsChainLength panics. This view does not carry
+// feature-extends-chain-length, which a Feature document carries.
+func (NormalizedViewBase) FeatureExtendsChainLength(document string) (int, bool) {
+	panic("this view does not carry feature-extends-chain-length, which a Feature document carries")
+}
+
+// ManifestExtendsChainCycleEdge panics. This view does not carry
+// manifest-extends-chain-cycle-edge, which a Manifest document carries.
+func (NormalizedViewBase) ManifestExtendsChainCycleEdge(document string) (ExtendsChainCycleEdge, bool) {
+	panic("this view does not carry manifest-extends-chain-cycle-edge, which a Manifest document carries")
+}
+
+// ManifestExtendsChainLength panics. This view does not carry
+// manifest-extends-chain-length, which a Manifest document carries.
+func (NormalizedViewBase) ManifestExtendsChainLength(document string) (int, bool) {
+	panic("this view does not carry manifest-extends-chain-length, which a Manifest document carries")
 }
 
 // ManifestAnnotationBindingKeys panics. This view does not carry
@@ -2410,6 +2662,8 @@ type ComponentDocumentFacts interface {
 	EntityAssertionNameSet(document string) []string
 	EntityAssertionDeclaringEntity(document string, assertion string) (string, bool)
 	ComponentSchemaPillarKeys(document string) []string
+	ComponentExtendsChainCycleEdge(document string) (ExtendsChainCycleEdge, bool)
+	ComponentExtendsChainLength(document string) (int, bool)
 }
 
 // FeatureDocumentFacts are the document-stage facts a Feature carries.
@@ -2426,6 +2680,8 @@ type ComponentDocumentFacts interface {
 // and a second copy would be the one that drifts.
 type FeatureDocumentFacts interface {
 	FeatureSchemaPillarKeys(document string) []string
+	FeatureExtendsChainCycleEdge(document string) (ExtendsChainCycleEdge, bool)
+	FeatureExtendsChainLength(document string) (int, bool)
 }
 
 // ManifestDocumentFacts are the document-stage facts a Manifest carries.
@@ -2441,6 +2697,8 @@ type FeatureDocumentFacts interface {
 // documentation is not repeated here: a fact's documentation has one home,
 // and a second copy would be the one that drifts.
 type ManifestDocumentFacts interface {
+	ManifestExtendsChainCycleEdge(document string) (ExtendsChainCycleEdge, bool)
+	ManifestExtendsChainLength(document string) (int, bool)
 	ManifestAnnotationBindingKeys(document string) []string
 	ManifestAnnotationBindingFeature(document string, binding string) (string, bool)
 	ManifestAnnotationBindingRoutes(document string, binding string) []AnnotationBindingRoute
