@@ -614,7 +614,7 @@ func (v *normalizedView) InstanceComponentType(node string) (string, bool) {
 func (v *normalizedView) AuthoredValuesPillar(node string, pillar string) types.OrderedMap[any] {
 	if pillar != authoredValuesPillarName {
 		panic(fmt.Sprintf(
-			"a component instance authors the %q pillar only; %q is authored on the deployment document "+
+			"a component instance authors the %q pillar only; %q is authored on the Release document "+
 				"and is a separate fact", authoredValuesPillarName, pillar))
 	}
 	return v.instances[node].Values

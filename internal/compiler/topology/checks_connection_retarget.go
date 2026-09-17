@@ -69,9 +69,9 @@ var DeploymentKeepsTheDeclaredConnectionTarget = constraint.Check[
 		}
 		return []constraint.Objection{s.RaiseWithAdvice(
 			ErrReleaseEdgeRetarget(),
-			"Drop the target from the deployment entry to configure the connection as it was declared, or change the target where the connection is declared.",
+			"Drop the target from the Release entry to configure the connection as it was declared, or change the target where the connection is declared.",
 			constraint.Captioned("declared target", declared),
-			constraint.Captioned("target the deployment names", named),
+			constraint.Captioned("target the Release names", named),
 			constraint.Captioned("wired into socket", s.SocketName()),
 		)}
 	},

@@ -58,7 +58,7 @@ var ConnectionTargetIsAComponent = constraint.Check[
 		}
 		return []constraint.Objection{s.RaiseWithAdvice(
 			ErrDanglingUsesTarget(),
-			"Point the target at a component the application declares, or declare a component under that name.",
+			"Point the target at a component the Aggregate declares, or declare a component under that name.",
 			constraint.Uncaptioned(target),
 			constraint.Captioned("wired into socket", s.SocketName()),
 		)}
