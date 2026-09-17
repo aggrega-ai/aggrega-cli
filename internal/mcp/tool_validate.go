@@ -13,6 +13,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 	"github.com/aggrega-ai/aggrega-cli/internal/validateops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
+	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 )
 
 // validateArgs is the validate tool's argument shape. It mirrors the CLI verb
@@ -419,21 +420,33 @@ func validateDiagnostics(vr *compilerops.ValidateResult, consistencyFindings []e
 	if vr.VerdictTrustError != nil {
 		out = append(out, vr.VerdictTrustError.Error())
 	}
+	// The resolver-class findings are taken once into a local, so the phase-error
+	// guard below asks its question of the same slice this loop published.
+	var perViolation []*resolver.ResolverError
 	if vr.Tier4 != nil {
-		for _, ve := range vr.Tier4.ResolveDiagnostics {
-			out = append(out, ve.Error())
-		}
-		if vr.Tier4.Analysis != nil {
-			for _, ae := range vr.Tier4.Analysis.Errors {
-				out = append(out, ae.Error())
-			}
+		perViolation = vr.Tier4.ResolveDiagnostics
+	}
+	for _, ve := range perViolation {
+		out = append(out, ve.Error())
+	}
+	if vr.Tier4 != nil && vr.Tier4.Analysis != nil {
+		for _, ae := range vr.Tier4.Analysis.Errors {
+			out = append(out, ae.Error())
 		}
 	}
 	// A non-resolver pre-analyzer phase error carries no per-violation structure;
-	// surface it only when the resolver produced no structured diagnostic, so a
-	// resolver failure is not double-reported. Cancellation is not a diagnostic.
+	// surface it only when the resolver did not already publish it finding by
+	// finding, so a resolver failure is not double-reported. Cancellation is not a
+	// diagnostic.
+	//
+	// Whether it was already published is asked of the run error itself and never of
+	// whether the slice above was empty. That slice also carries the findings a rule
+	// raises for an emitting run alone, which reach a surface like this one on a run
+	// whose failure is elsewhere and on a run that did not fail at all — so reading
+	// its length would take such a finding as evidence about the phase error and drop
+	// the only line describing it.
 	if vr.RunErr != nil && !isCancellation(vr.RunErr) &&
-		(vr.Tier4 == nil || len(vr.Tier4.ResolveDiagnostics) == 0) {
+		!runErrPublishedPerViolation(vr.RunErr, perViolation) {
 		out = append(out, vr.RunErr.Error())
 	}
 	for _, f := range vr.ResolutionFindings {
@@ -480,6 +493,41 @@ func releaseAdvisories(vr *compilerops.ValidateResult, lf *lockfile.Lockfile) []
 // which validation yields no diagnostics.
 func isCancellation(err error) bool {
 	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
+}
+
+// runErrPublishedPerViolation reports whether the pre-render run error has
+// already been published finding by finding among the resolver-class
+// diagnostics, which is what decides whether the closure-level fall-back has
+// anything left to say about it.
+//
+// It reads the ERROR's own shape rather than the published slice's length,
+// because the two stopped answering the same question once a rule could raise a
+// finding that refuses only a run producing something to apply: such a finding
+// travels out of the pipeline on the same slice, on a run whose failure is
+// somewhere else entirely and on a run that did not fail at all. The published
+// slice still bounds the answer — an error whose per-violation extraction
+// yielded nothing was not published however it is shaped — so it is a parameter
+// rather than something re-derived here.
+//
+// The two shapes are the two the pipeline extracts into that slice: a group,
+// which carries its violations, and a single finding, which is the one-element
+// case.
+//
+// Every front end reading a validation result asks this same question of it, and
+// the reading is written out per front end deliberately rather than shared. Its
+// one structural home is the entry that fills the slice, which would mark each
+// entry with whether the run error produced it and leave a consumer no reading to
+// reproduce at all; short of that, a shared consumer-side copy would single-source
+// the reproduction rather than the fact and hide that it is one. Each copy reads
+// the same two error shapes that entry extracts, so the copies are comparable by
+// inspection.
+func runErrPublishedPerViolation(runErr error, published []*resolver.ResolverError) bool {
+	if len(published) == 0 {
+		return false
+	}
+	var multi *resolver.MultiResolverError
+	var single *resolver.ResolverError
+	return errors.As(runErr, &multi) || errors.As(runErr, &single)
 }
 
 // renderValidateText renders the human-readable release-scope validate result.

@@ -318,6 +318,12 @@ func serveCoreHasErrors(vr *compilerops.ValidateResult) bool {
 // daemon's mapping does — the resolver classes surface the violation Message
 // (resolverFindingToDiagnostic), while the closure classes surface the error's
 // full text — so the assertion is an independent oracle of that mapping.
+//
+// The unresolved-component case reads the subject-free rendering rather than the
+// bare Message field, and the difference is the assertion's whole falsifiability:
+// a finding raised through the constraint framework supplies no Message of its
+// own, and an empty expectation is one every diagnostic contains, so a test
+// written against that field could not fail.
 func serveExpectedFinding(t *testing.T, name string, vr *compilerops.ValidateResult) string {
 	t.Helper()
 	switch name {
@@ -328,7 +334,14 @@ func serveExpectedFinding(t *testing.T, name string, vr *compilerops.ValidateRes
 	case "resolve-failing":
 		return vr.Tier4.ResolveDiagnostics[0].Message
 	case "resolution-incomplete":
-		return vr.ResolutionFindings[0].Error()
+		if vr.Tier4 == nil || len(vr.Tier4.ResolveDiagnostics) == 0 {
+			t.Fatalf("the unmapped-instance fixture produced no per-violation finding; ValidateResult=%+v", vr)
+		}
+		want := vr.Tier4.ResolveDiagnostics[0].MessageWithoutSubject()
+		if want == "" {
+			t.Fatalf("the unmapped-instance finding rendered no text, so the assertion below could not fail")
+		}
+		return want
 	case "input-kind-capability-failing":
 		return vr.InputKindErrors[0].Error()
 	default:
@@ -427,6 +440,25 @@ func TestRunTier4ValidationReleaseCoreParity(t *testing.T) {
 			}
 			if !found {
 				t.Fatalf("core finding %q did not reach any serve diagnostic\n diags: %v", want, diagMessages(diags))
+			}
+
+			// The unmapped-instance case additionally pins that the published
+			// diagnostic names the instance at fault. The text comparison above is
+			// satisfied by the condition's registered sentence alone, which every
+			// instance of the condition shares, so without this the case would pass
+			// over a finding that had lost the one value telling the author where to
+			// look.
+			if c.name == "resolution-incomplete" {
+				named := false
+				for _, d := range diags {
+					if strings.Contains(d.Message, `"backend"`) {
+						named = true
+						break
+					}
+				}
+				if !named {
+					t.Fatalf("no diagnostic names the unmapped instance\n diags: %v", diagMessages(diags))
+				}
 			}
 
 			// The input-kind case additionally pins the daemon's class prefix, the

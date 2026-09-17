@@ -135,7 +135,16 @@ type ValidateInputs struct {
 // disagreed with the record of the plugin identities trusted for its verdict
 // attachments and validation stopped before the pipeline ran; otherwise Tier4 and
 // RunErr carry the Steps 1-4 pipeline outcome and ResolutionFindings carries the
-// resolution-completeness findings over the built IR graph.
+// resolution-completeness findings its own producer still owns over the built IR
+// graph — both feature attachment axes in full, and the component axis for a
+// mapping value whose shape no recipe reference can express.
+//
+// Whether a component instance resolves to a recipe at all is not among them. It
+// is decided earlier, over the flattened composition, where the node set is
+// complete; each such finding travels out of the pipeline on
+// Tier4.ResolveDiagnostics, the same channel the resolver-class violations
+// arrive on, and a caller reading only ResolutionFindings for that axis would
+// find it empty over a workspace that has one.
 //
 // InputKindErrors is an additional error class computed after the pipeline gates
 // (only when the extends and pillar gates both passed): each entry names a

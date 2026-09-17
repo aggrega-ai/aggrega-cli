@@ -95,6 +95,23 @@ type topologyView struct {
 	// holds one instance per connection drawn, so folding the two together here
 	// would remove the subject before any rule saw it.
 	edgeConfigurations []constraint.ReleaseEdgeConfigurationInstance
+
+	// recipeResolutions is what each node's Recipe resolution came to, joined
+	// once when this value was built.
+	//
+	// It is folded here rather than resolved per read because four facts project
+	// it and a rule asked about a node reads all four: resolving per read would
+	// perform the same join four times per node, and the join scans the recipe
+	// index for a node nothing maps. Folding also keeps the four answers about
+	// one node consistent with each other, which per-read resolution could not
+	// promise if the index moved between them.
+	//
+	// A node absent from the map resolved to nothing, which is the same answer a
+	// node the mapping does not reach gives. The two are not separated here
+	// because nothing separates them downstream either: a build whose catalog
+	// resolves no recipe has resolved no instance to one, exactly as the
+	// catalog-presence facts on the stage this value contains already report.
+	recipeResolutions map[string]resolver.NodeRecipeResolution
 }
 
 // newTopologyView presents the composition the build has just flattened.
@@ -109,6 +126,7 @@ func newTopologyView(
 	earlier constraint.NormalizedView,
 	references []constraint.BoundaryComponentReferenceInstance,
 	edgeConfigurations []constraint.ReleaseEdgeConfigurationInstance,
+	resolveRecipe nodeRecipeResolver,
 ) *topologyView {
 	v := &topologyView{
 		NormalizedView:      earlier,
@@ -121,6 +139,21 @@ func newTopologyView(
 		contributed:         map[string][]string{},
 		references:          references,
 		edgeConfigurations:  edgeConfigurations,
+		recipeResolutions:   map[string]resolver.NodeRecipeResolution{},
+	}
+
+	// Each node's Recipe resolution, joined once, over the flattened set — so a
+	// component a sub-aggregate contributed is resolved by the same join as one
+	// the application declared, under the qualified identity the composition gave
+	// it. That identity is what the mapping's name axis is matched against, and
+	// it exists only here.
+	if resolveRecipe != nil {
+		for nodeID, node := range flat.Nodes.All() {
+			if node == nil {
+				continue
+			}
+			v.recipeResolutions[nodeID] = resolveRecipe(nodeID, node.ComponentType)
+		}
 	}
 
 	// A connection an attachment contributed is excluded, the same exclusion the
@@ -156,6 +189,17 @@ func newTopologyView(
 	return v
 }
 
+// nodeRecipeResolver joins the Manifest's mapping table and the catalog's recipe
+// index into the answer about one component instance, given the identity the
+// composition gave it and the type it carries.
+//
+// It is a callback rather than a direct reach for the package that owns the
+// mapping mechanic, for the reason the sub-aggregate loader beside it is one:
+// that package reads this one, so reaching it from here would close a cycle.
+// The seam also keeps a composition built from in-memory fixtures resolvable
+// without a filesystem catalog behind it.
+type nodeRecipeResolver func(instanceName, componentType string) resolver.NodeRecipeResolution
+
 // FlattenedNodeComponentType returns the component type a node in the flattened
 // set carries, and whether a node of that name is in the set at all.
 func (v *topologyView) FlattenedNodeComponentType(node string) (string, bool) {
@@ -164,6 +208,33 @@ func (v *topologyView) FlattenedNodeComponentType(node string) (string, bool) {
 		return "", false
 	}
 	return n.ComponentType, true
+}
+
+// NodeMappedRecipeReference returns the Recipe reference the Manifest's mapping
+// names for a node, and whether the mapping reached that node at all.
+func (v *topologyView) NodeMappedRecipeReference(node string) (string, bool) {
+	resolution := v.recipeResolutions[node]
+	return resolution.Reference, resolution.Mapped
+}
+
+// NodeRecipeMappingAmbiguousKeys returns the version-distinct mapping keys a
+// node's component type matched when the lookup could not choose between them,
+// empty when it settled.
+func (v *topologyView) NodeRecipeMappingAmbiguousKeys(node string) []string {
+	return v.recipeResolutions[node].AmbiguousKeys
+}
+
+// NodeMappedRecipePresent returns whether the catalog holds a Recipe at the
+// reference the Manifest's mapping names for a node.
+func (v *topologyView) NodeMappedRecipePresent(node string) bool {
+	return v.recipeResolutions[node].Present
+}
+
+// NodeRecipePinCandidates returns the catalog Recipes offered as pin candidates
+// for a node the Manifest's mapping did not reach, sorted, empty for a node it
+// did.
+func (v *topologyView) NodeRecipePinCandidates(node string) []string {
+	return v.recipeResolutions[node].PinCandidates
 }
 
 // ComponentDeactivated returns whether the composition removed a component
@@ -537,5 +608,31 @@ func newStageView(cfg BuildConfig, flat *flattenResult, edges []NormalizedEdge) 
 		flat, edges, earlier,
 		boundaryComponentReferences(rr.Release),
 		releaseEdgeConfigurations(rr.Release, rr.ReleasePath),
+		nodeRecipeResolverOver(cfg.CatalogLookup, rr.Manifest),
 	)
+}
+
+// nodeRecipeResolverOver binds the Manifest this build is compiling against to
+// the catalog's own joint resolution, so the composition resolves each node
+// through the same lookup the render resolves through.
+//
+// It returns nil when the catalog resolves no recipes, which is what a build
+// running without a recipe index has: no instance resolved to a Recipe. The
+// facts over the result then answer as they do for a node the mapping does not
+// reach, which is the reading the catalog-presence facts on the stage this one
+// contains already take.
+//
+// The Manifest is bound here rather than carried into the view because the view
+// projects facts and holds no authored document: binding it at the seam is what
+// keeps the presentation free of a document it does not present.
+func nodeRecipeResolverOver(
+	catalog resolver.CatalogLookup,
+	manifest *types.Manifest,
+) nodeRecipeResolver {
+	if catalog.NodeRecipeResolution == nil {
+		return nil
+	}
+	return func(instanceName, componentType string) resolver.NodeRecipeResolution {
+		return catalog.NodeRecipeResolution(manifest, instanceName, componentType)
+	}
 }

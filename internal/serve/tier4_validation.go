@@ -287,13 +287,24 @@ func (s *Server) runTier4Validation(ctx context.Context, releasePath, file strin
 	// Resolver-class violations (Step 1) — Tier-A position recovery
 	// from the structured ResolveDiagnostics slice. The slice is
 	// populated uniformly for both single- and multi-violation cases.
-	if tier4 != nil && len(tier4.ResolveDiagnostics) > 0 {
-		for _, ve := range tier4.ResolveDiagnostics {
-			diags = append(diags, resolverFindingToDiagnostic(ve, editorSeverityError, doc, idx))
-		}
-	} else if vr.RunErr != nil {
-		// Non-resolver pre-analyzer phase error (topology / IR / guards
-		// without per-violation structure). Tier-D fall-back at file:1:1.
+	var perViolation []*resolver.ResolverError
+	if tier4 != nil {
+		perViolation = tier4.ResolveDiagnostics
+	}
+	for _, ve := range perViolation {
+		diags = append(diags, resolverFindingToDiagnostic(ve, editorSeverityError, doc, idx))
+	}
+
+	// Non-resolver pre-analyzer phase error (topology / IR / guards
+	// without per-violation structure). Tier-D fall-back at file:1:1.
+	//
+	// Whether it is owed is asked of the run error itself and never of whether
+	// the slice above was empty. That slice also carries the findings a rule
+	// raises for an emitting run alone, which reach a surface like this one on a
+	// run whose failure is elsewhere and on a run that did not fail at all — so
+	// reading its length would take such a finding as evidence about the phase
+	// error and publish nothing where the author has no other way to see it.
+	if vr.RunErr != nil && !runErrPublishedPerViolation(vr.RunErr, perViolation) {
 		diags = append(diags, Diagnostic{
 			Line:           1,
 			Column:         1,
@@ -498,6 +509,32 @@ func resolverFindingToDiagnostic(ve *resolver.ResolverError, severity string, do
 // violation reported to an editor and the same violation reported on a
 // terminal cannot point at different keys. Do not add a local walker — the
 // guard test in yamlpos pins the caller set for exactly that reason.
+
+// runErrPublishedPerViolation reports whether the pre-render run error has
+// already been published finding by finding among the resolver-class
+// diagnostics, which is what decides whether the closure-level fall-back has
+// anything left to say about it.
+//
+// It reads the ERROR's own shape rather than the published slice's length,
+// because the two stopped answering the same question once a rule could raise a
+// finding that refuses only a run producing something to apply: such a finding
+// travels out of this pipeline on the same slice, on a run whose failure is
+// somewhere else entirely and on a run that did not fail at all. The published
+// slice still bounds the answer — an error whose per-violation extraction
+// yielded nothing was not published however it is shaped — so it is a parameter
+// rather than something re-derived here.
+//
+// The two shapes are the two the pipeline extracts into that slice: a group,
+// which carries its violations, and a single finding, which is the one-element
+// case.
+func runErrPublishedPerViolation(runErr error, published []*resolver.ResolverError) bool {
+	if len(published) == 0 {
+		return false
+	}
+	var multi *resolver.MultiResolverError
+	var single *resolver.ResolverError
+	return errors.As(runErr, &multi) || errors.As(runErr, &single)
+}
 
 // tier4PhaseErrorMessage formats a non-resolver pre-analyzer phase
 // error into the Tier-D message shape. RunTier4Pipeline wraps phase

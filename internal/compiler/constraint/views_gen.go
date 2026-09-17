@@ -2806,6 +2806,132 @@ type TopologyView interface {
 	// Keyed by node; read from topology.TopologyNode.ComponentType.
 	FlattenedNodeComponentType(node string) (string, bool)
 
+	// NodeMappedRecipeReference is the Recipe reference the Manifest's mapping
+	// table names for a node, verbatim as the author wrote it, and whether the
+	// mapping reached that node at all.
+	//
+	// It is a fact of the compilation keyed by a node, and not a reading of
+	// the Manifest. The question it answers is what THIS NODE resolved to,
+	// which the mapping table cannot answer on its own: resolution is
+	// name-wins-over-type, so the answer depends on the identity the
+	// composition gave the node as much as on the type it carries, and a node
+	// a sub-aggregate contributed carries a qualified identity no authored
+	// document spells. The compiler already performs that resolution to decide
+	// which Recipe the node renders through, so this projects an answer
+	// already reached rather than reaching for a document.
+	//
+	// That is why it lands where the flattened node set is complete rather
+	// than where the Manifest is first in hand. Keyed earlier it would be
+	// asked only about the nodes one authoring document declares, and a rule
+	// over it would report success for every component a sub-aggregate
+	// contributes — a silence indistinguishable from approval.
+	//
+	// The second result reports whether a mapping key reached the node, and
+	// nothing finer. A lookup that REFUSED reports not-mapped here too,
+	// because it named no reference to return; the keys it refused over are a
+	// separate fact, and a rule that has to tell an unmapped node from a
+	// refused lookup reads that one first. Collapsing the two would send an
+	// author to write a mapping entry for a type the table already maps twice.
+	//
+	// A reference is what the author wrote and not a resolved entity. Whether
+	// the catalog holds a Recipe at it is a separate fact, and a rule needing
+	// both asks both.
+	//
+	// Keyed by node; read from resolver.NodeRecipeResolution.Reference.
+	NodeMappedRecipeReference(node string) (string, bool)
+
+	// NodeRecipeMappingAmbiguousKeys are the version-distinct mapping keys a
+	// node's component type matched when no key matched it exactly and more
+	// than one matched its base, in the order the mapping table declares them.
+	//
+	// It is empty when the lookup settled — on one key, or on none. So a
+	// non-empty answer is the refusal itself rather than a hint about one, and
+	// a rule reads this before asking whether the node was mapped: the refusal
+	// names no reference, so it reports as unmapped there, and a rule reading
+	// that alone would tell the author to add an entry the table already
+	// carries twice.
+	//
+	// The keys travel rather than a bare refusal flag because they are the
+	// remedy. An author shown which keys collide can pin the authored type's
+	// version or remove a duplicate key; an author told only that a lookup was
+	// ambiguous can do neither, and the compiler is the only party that knows
+	// which keys matched.
+	//
+	// A type the table maps at two distinct versions is legal authoring and is
+	// deliberately not reported here. An exact key match wins before any base
+	// match is considered, so an instance whose authored type pins a version
+	// resolves against that key and this fact stays empty for it. The refusal
+	// is relative to the INSTANCE, not to the table: the same table refuses an
+	// unpinned instance and resolves a pinned one, which is why the fact is
+	// keyed by a node rather than by a mapping entry.
+	//
+	// The order is the mapping table's own and is carried rather than sorted,
+	// so a diagnostic names the keys in the order the author reads them in the
+	// document.
+	//
+	// Keyed by node; read from resolver.NodeRecipeResolution.AmbiguousKeys.
+	NodeRecipeMappingAmbiguousKeys(node string) []string
+
+	// NodeMappedRecipePresent reports whether the catalog holds a Recipe at
+	// the reference the Manifest's mapping names for a node.
+	//
+	// It is false for a node no mapping reached, because there is no reference
+	// to resolve — so it is read together with the reference fact beside it
+	// rather than alone. The pair separates the two faults an author acts on
+	// differently: a node nothing maps needs a mapping entry written, and a
+	// node mapped at a reference the catalog does not hold needs the reference
+	// corrected or the Recipe published.
+	//
+	// It is a catalog read keyed by a node, and the key is what places it. The
+	// answer follows from the reference and the catalog alone, both of which
+	// are settled earlier; the NODE is what a rule over it is invoked once
+	// per, and the node set is complete only once the composition is
+	// flattened.
+	//
+	// A reference the catalog does not hold reports false whatever the reason
+	// — a Recipe absent outright, one present at a version the reference
+	// does not select, and one whose bare name two capabilities both answer to
+	// all read the same here. Which of those it was belongs to the path that
+	// resolves references, which reports it with the context that path has;
+	// this says only that nothing the author can be said to have chosen came
+	// back.
+	//
+	// Keyed by node; read from resolver.NodeRecipeResolution.Present.
+	NodeMappedRecipePresent(node string) bool
+
+	// NodeRecipePinCandidates are the catalog Recipes whose declared
+	// implements satisfies a node's component type, as the identities an
+	// author would write into a mapping value, sorted.
+	//
+	// They are a suggestion and never a resolution. Resolution is
+	// mapping-only: the compiler never chooses a Recipe by what it declares it
+	// implements, so a Recipe named here is one the author may pin and never
+	// one the build will pick. The declaration informs the choice, the author
+	// makes it, and the mapping entry records it.
+	//
+	// The set is resolved only for a node that needs one, and is empty
+	// otherwise. A node the Manifest already maps has had its choice made, so
+	// offering candidates for it would name alternatives to a decision already
+	// taken; a node whose lookup refused has a fault in the mapping table's
+	// keys rather than a missing entry, so candidates would suggest the wrong
+	// edit. An empty answer therefore means no candidate is OFFERED, which is
+	// not the same as no Recipe implementing the type existing — a rule
+	// distinguishing those reads the mapping facts beside this one first.
+	//
+	// The identities come back sorted. They are gathered from a recipe index
+	// that holds no authoring order, so there is no author order to preserve
+	// and sorting is what makes the same input produce the same diagnostic on
+	// every run.
+	//
+	// It is deliberately blind to a type's extends ancestry, which is a
+	// narrower set than the rule judging whether an operator-written mapping
+	// is consistent reads. Widening the suggestions to Recipes implementing a
+	// base would change which candidates a diagnostic lists, and what to
+	// suggest is a separate choice from what to accept.
+	//
+	// Keyed by node; read from resolver.NodeRecipeResolution.PinCandidates.
+	NodeRecipePinCandidates(node string) []string
+
 	// ResolvedParameter is the value one named parameter resolved to for a
 	// node, and whether the node resolved that name at all.
 	//

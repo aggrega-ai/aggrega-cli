@@ -1938,6 +1938,34 @@ func (GraphViewBase) FlattenedNodeComponentType(node string) (string, bool) {
 	panic("this view does not carry flattened-node-component-type, which is read from topology.TopologyNode.ComponentType")
 }
 
+// NodeMappedRecipeReference panics. This view does not carry
+// node-mapped-recipe-reference, which is read from
+// resolver.NodeRecipeResolution.Reference.
+func (GraphViewBase) NodeMappedRecipeReference(node string) (string, bool) {
+	panic("this view does not carry node-mapped-recipe-reference, which is read from resolver.NodeRecipeResolution.Reference")
+}
+
+// NodeRecipeMappingAmbiguousKeys panics. This view does not carry
+// node-recipe-mapping-ambiguous-keys, which is read from
+// resolver.NodeRecipeResolution.AmbiguousKeys.
+func (GraphViewBase) NodeRecipeMappingAmbiguousKeys(node string) []string {
+	panic("this view does not carry node-recipe-mapping-ambiguous-keys, which is read from resolver.NodeRecipeResolution.AmbiguousKeys")
+}
+
+// NodeMappedRecipePresent panics. This view does not carry
+// node-mapped-recipe-present, which is read from
+// resolver.NodeRecipeResolution.Present.
+func (GraphViewBase) NodeMappedRecipePresent(node string) bool {
+	panic("this view does not carry node-mapped-recipe-present, which is read from resolver.NodeRecipeResolution.Present")
+}
+
+// NodeRecipePinCandidates panics. This view does not carry
+// node-recipe-pin-candidates, which is read from
+// resolver.NodeRecipeResolution.PinCandidates.
+func (GraphViewBase) NodeRecipePinCandidates(node string) []string {
+	panic("this view does not carry node-recipe-pin-candidates, which is read from resolver.NodeRecipeResolution.PinCandidates")
+}
+
 // ResolvedParameter panics. This view does not carry resolved-parameter,
 // which is read from topology.TopologyNode.ResolvedParameters.
 func (GraphViewBase) ResolvedParameter(node string, name string) (any, bool) {
@@ -2908,6 +2936,10 @@ type NormalizedStageFacts interface {
 // and a second copy would be the one that drifts.
 type TopologyStageFacts interface {
 	FlattenedNodeComponentType(node string) (string, bool)
+	NodeMappedRecipeReference(node string) (string, bool)
+	NodeRecipeMappingAmbiguousKeys(node string) []string
+	NodeMappedRecipePresent(node string) bool
+	NodeRecipePinCandidates(node string) []string
 	ResolvedParameter(node string, name string) (any, bool)
 	ResolvedUsesSocketConnections(node string) types.OrderedMap[int]
 	PerEdgeAuthoredTarget(node string, socket string, alias string) string

@@ -21,6 +21,7 @@ import (
 	"io"
 	"os"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
@@ -267,11 +268,28 @@ type Options struct {
 	// mutates it. Left false — the common case — the pipeline renders as usual.
 	SkipRender bool
 	// RecipeResolutionVerifier, when set, runs after IR-build and before render
-	// to assert every component/feature instance resolves to exactly one recipe
-	// (halting loudly on a no-recipe instance or an unmapped ambiguously-
-	// implemented type). Left nil — e.g. by callers that build the IR for
-	// inspection rather than render — the check is skipped. Catalog supplies
-	// VerifyRecipeResolution, whose signature this matches.
+	// to assert that every attachment resolves to exactly one recipe (halting
+	// loudly on a no-recipe attachment or an unmapped ambiguously-implemented
+	// type). Left nil — e.g. by callers that build the IR for inspection rather
+	// than render — it is skipped. Catalog supplies VerifyRecipeResolution,
+	// whose signature this matches.
+	//
+	// It no longer answers for the component instances themselves. That axis is
+	// a rule declared over the flattened composition, asked where the node set
+	// is complete, because the instance list this ran over omits a component a
+	// sub-aggregate contributes — so the two together cover what this alone
+	// once claimed to.
+	//
+	// 🔴 Setting it also declares that this run EMITS something a person will
+	// apply, which is a second job its name does not carry and a caller cannot
+	// discover from the signature. It is the only declaration a caller of this
+	// entry makes that separates a run producing artifacts from one whose whole
+	// product is a picture of the same documents, so emitsSomethingToApply
+	// reads it, and a rule declaring the severity that refuses only an emitting
+	// run refuses on exactly the runs that set this. The bound that carries
+	// with that reading is stated on emitsSomethingToApply: a second such rule
+	// inherits the answer callers gave for this one, and giving it an answer of
+	// its own means a declaration of its own here.
 	RecipeResolutionVerifier func(*types.Manifest, *types.IRGraph) error
 
 	// NodeProgress, when set, is invoked once per node during Step 5 render as
@@ -323,6 +341,39 @@ type Options struct {
 	// diagnostics carried out-of-band; it never re-renders and never changes the
 	// emitted bytes. Left false — the default — the class surfaces.
 	SuppressUnsupportedFieldWarnings bool
+}
+
+// emitsSomethingToApply reports whether this run produces something a person
+// will apply, which is what decides whether a finding raised at
+// [constraint.SeverityEmissionFatal] refuses the run or travels out of it.
+//
+// It is read here, once, rather than at the gate that acts on it, because the
+// question is about the RUN and not about any one condition: this entry serves an
+// artifact-producing surface and a surface that draws a picture of the same
+// documents, and only the caller knows which it is.
+//
+// # Why it is read off the resolution gate, and the bound that carries
+//
+// The resolution gate is the one thing a caller of this entry declares that
+// separates the two postures: an artifact-producing surface asks for it and a
+// surface that draws a picture leaves it off, deliberately, so that a graph still
+// comes back over an incomplete resolution. Reading the posture from that
+// declaration is what keeps every such surface behaving exactly as it did before
+// a rule was expressed at this severity.
+//
+// 🔴 The bound: a caller cannot yet declare emission INDEPENDENTLY of that gate.
+// So a second condition expressed at this severity inherits the answer callers
+// gave for recipe resolution, which is right only while the two postures coincide
+// — and giving it an answer of its own means a declaration of its own here, not a
+// second reading of this one.
+//
+// The render-skip option is deliberately NOT what is read. A surface that draws a
+// picture may still run the render — the daemon's inspection does, when its
+// build-on-inspect dial is on, and that dial's own contract is that turning it on
+// adds the render's advisories and never a check that would refuse. Keying on
+// render-skip would break exactly that.
+func (o Options) emitsSomethingToApply() bool {
+	return o.RecipeResolutionVerifier != nil
 }
 
 // emitRenderWarnings writes the render step's advisory warnings to w: first the
@@ -505,13 +556,21 @@ func (o Outcome) Advisories() []renderer.Diagnostic {
 // caller can construct diagnostics from whichever phases completed.
 //
 // ResolveDiagnostics carries the per-violation slice extracted from the
-// resolver's error return. Populated for both single-violation and
+// resolver's error return, followed by the findings a rule raised at the
+// severity that refuses only a run emitting something a person will apply.
+// The extraction is populated for both single-violation and
 // multi-violation cases: single-violation wraps the embedded
 // *ResolverError as a one-element slice; multi-violation pulls the
-// preserved Violations slice from MultiResolverError. Empty only when
-// Step 1 succeeded (the function-level error is nil) or when the error
-// chain carries no *ResolverError at all. Tier-4 position-recovery
-// walks the slice with a uniform code path regardless of cardinality.
+// preserved Violations slice from MultiResolverError. Tier-4
+// position-recovery walks the slice with a uniform code path regardless of
+// cardinality.
+//
+// 🔴 A populated slice does NOT imply a failing run, and reading it as one is
+// the mistake this sentence exists to prevent. This entry emits nothing, so a
+// finding of that severity is reported here and returns no error — which is
+// exactly what makes a validation surface able to describe a composition it
+// would refuse to build from. The run's verdict is the returned error and
+// never the length of this slice.
 //
 // Advisories carries the exit-code-neutral advisories the phases raised, in the
 // order they raised them, and never contributes to a verdict: a caller renders
@@ -884,7 +943,7 @@ func resolveAndFlatten(
 	catalogLookup resolver.CatalogLookup,
 	recipeFor resolver.RecipeBinding,
 	subAggregateLoader topology.SubAggregateLoader,
-	use func(*resolver.ResolveResult, *topology.TopologyResult) error,
+	use func(*resolver.ResolveResult, *topology.TopologyResult, []*resolver.ResolverError) error,
 ) error {
 	return ResolveAndValidate(ctx, inputs, catalogLookup, recipeFor, func(resolveResult *resolver.ResolveResult) error {
 		if err := ctx.Err(); err != nil {
@@ -914,7 +973,9 @@ func resolveAndFlatten(
 				// the unavailable node skipped). A remaining real violation halts.
 				var multi *resolver.MultiResolverError
 				if stderrors.As(err, &multi) && len(dropCatalogViewInconsistencies(multi.Violations)) == 0 {
-					return use(resolveResult, topoResult)
+					// The composition stopped inside the guard, so the rules over it
+					// were never asked and there is nothing for a later entry to carry.
+					return use(resolveResult, topoResult, nil)
 				}
 			}
 			return fmt.Errorf("topology construction: %w", err)
@@ -931,11 +992,18 @@ func resolveAndFlatten(
 		// alone, which is the same reason the checks before the render sit in one
 		// place: a rule asked on one consumer's path would let another report a
 		// clean verdict on a document the build rejects.
-		if err := runTopologyStageRules(ctx, topoResult); err != nil {
+		//
+		// What a rule declaring the emission severity raised is handed on rather
+		// than halting here. This site is inside the one entry every surface
+		// reaches a graph through, so refusing here would refuse an inspection and
+		// an acquisition exactly as it refuses a build — which is the distinction
+		// that severity exists to keep.
+		carried, err := runTopologyStageRules(ctx, topoResult)
+		if err != nil {
 			return err
 		}
 
-		return use(resolveResult, topoResult)
+		return use(resolveResult, topoResult, carried)
 	})
 }
 
@@ -1018,6 +1086,31 @@ type GraphScope struct {
 	// first slice; a surface that surfaces warnings reads the second.
 	Violations []constraint.Objection
 	Advisories []constraint.Objection
+
+	// EmissionViolations holds the findings raised at the severity that refuses a
+	// run emitting something a person will apply, already converted to the shape
+	// this compiler's positioned diagnostics take.
+	//
+	// It is a third slice rather than a flag on the first, because the two answer
+	// different questions and a reader of either must not have to consult the
+	// other: what is in Violations refuses whoever built this graph, and what is
+	// here refuses only a caller that says its own run emits. Folding them would
+	// make the first slice's meaning depend on a value beside it.
+	//
+	// It carries converted findings where the two slices above carry raw
+	// objections, and the reason is the document each finding is attributed to: a
+	// rule's findings name the authoring surface whose author fixes them, which is
+	// known at the site that invoked the rule and nowhere afterwards. Converting
+	// at the invocation is what lets a mapping rule report against the Manifest
+	// while the rules beside it report against the application, and a slice of raw
+	// objections would have lost that by the time anything read it.
+	//
+	// 🔴 A caller that carries this slice and never reads it reports the finding to
+	// NOBODY. That is the honest state of the two entries that produce a graph for
+	// a caller which renders nothing: they have no finding channel, so the
+	// objection reaches them and stops. Stated because a slice named on a scope
+	// reads as one somebody surfaces.
+	EmissionViolations []*resolver.ResolverError
 }
 
 // BuildGraph is the one entry that produces a compiler graph, and every surface
@@ -1076,6 +1169,20 @@ type GraphScope struct {
 // A surface with a reporting channel of its own takes
 // [buildGraphCollectingFindings] instead and surfaces the findings on that
 // channel, alongside whatever else it found.
+//
+// # What is carried rather than refused, and what that costs here
+//
+// A finding raised at the severity that refuses only a run emitting something a
+// person will apply is NOT refused here, and this entry is the reason that
+// severity exists: it is the one entry an inspection, an acquisition and a build
+// all reach, so refusing here would refuse the first two for a fault that only
+// makes the third's output wrong. Such findings arrive on
+// [GraphScope.EmissionViolations] for a caller that knows what its own run is.
+//
+// 🔴 This entry itself reads them nowhere, so a surface that stops here is told
+// nothing about them. That is what the two surfaces taking this entry already do
+// with the conditions concerned, and it is stated rather than left to be
+// inferred from a slice being present on the scope.
 func BuildGraph(
 	ctx context.Context,
 	inputs Inputs,
@@ -1139,7 +1246,11 @@ func buildGraphCollectingFindings(
 			"so a graph built without one resolves plugins against an empty address")
 	}
 	return resolveAndFlatten(ctx, inputs, catalogLookup, recipeFor, subAggregateLoader,
-		func(resolveResult *resolver.ResolveResult, topoResult *topology.TopologyResult) error {
+		func(
+			resolveResult *resolver.ResolveResult,
+			topoResult *topology.TopologyResult,
+			carried []*resolver.ResolverError,
+		) error {
 			// Step 2b: label-transform governance role. Config-driven off the
 			// label-transform attachments in WorkspaceConfig.Plugins.Governance — a
 			// no-op when the workspace attaches none, so an unattached build is
@@ -1172,6 +1283,12 @@ func buildGraphCollectingFindings(
 				IRGraph:         graph,
 				FeatureOrder:    featureOrder,
 				AttachmentSites: attachmentSites,
+				// What the rules over the flattened composition raised at the
+				// severity that refuses only an emitting run, carried forward
+				// unchanged. It is filled here rather than accumulated below because
+				// it was produced one stage earlier, and the scope is the first thing
+				// a consumer of either stage holds.
+				EmissionViolations: carried,
 			}
 
 			// The carriers and the authored deliveries, paired with the connection
@@ -1241,6 +1358,43 @@ func joinedAnalysisHalt(violations []analyzer.AnalysisError) error {
 	return stderrors.Join(errs...)
 }
 
+// emissionRefusal renders the findings that refuse an emitting run into the
+// grouped halt this compiler's surfaces already read, or nil when none was
+// raised.
+//
+// The group is returned even for a single finding, where the resolve's own
+// aggregation hands the finding back bare. The two differ because the readers
+// differ: a surface reading this one walks the violation slice to position each
+// finding on its own authoring key, and a bare finding gives it nothing to walk,
+// so the cardinality would decide whether the positions arrive.
+//
+// The summary is the per-finding lines rather than a count of them, which is what
+// the field is for. A count reads correctly and is strictly worse where it
+// matters: a caller that flattens an error and its causes into one line stops at
+// a grouped error, because the group unwraps to a slice rather than to a single
+// cause — so a summary carrying only a count drops every finding's text at the
+// one surface that has nowhere else to put it.
+//
+// The group names no document of its own, and that is not an omission. Each
+// finding names the authoring surface whose author fixes it, and the findings
+// that reach this severity need not agree: a group naming one document would be
+// wrong for every finding that named another, silently, at the head of the
+// report.
+func emissionRefusal(findings []*resolver.ResolverError) error {
+	if len(findings) == 0 {
+		return nil
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "%d instance(s) the emitted output would be wrong for:", len(findings))
+	for _, f := range findings {
+		fmt.Fprintf(&b, "\n  - %s: %s", f.Field, f.MessageWithoutSubject())
+	}
+	return &resolver.MultiResolverError{
+		Summary:    b.String(),
+		Violations: findings,
+	}
+}
+
 // RunTier4Pipeline executes the pre-render phases of the compiler pipeline
 // (resolve, topology, IR finalisation, analyse, Component / Feature assertions)
 // against caller-supplied inputs. The daemon's runTier4Validation consumes this
@@ -1272,6 +1426,7 @@ func RunTier4Pipeline(
 	inputs.AdvisoryLog = &AdvisoryLog{}
 	out := &Tier4Result{}
 	var assertionErr error
+	var emissionViolations []*resolver.ResolverError
 	err := runStepsOneToFour(ctx, inputs, catalogLookup, recipeFor, subAggregateLoader, func(stepsOut *stepsOneToFourOutput) error {
 		// Capture the phase outputs inside the resolve scope, which
 		// resolver.ResolveAndUse closes once this returns. Tier-4 runs no
@@ -1280,6 +1435,7 @@ func RunTier4Pipeline(
 		out.IRGraph = stepsOut.IRGraph
 		out.Analysis = stepsOut.Analysis
 		assertionErr = stepsOut.AssertionErr
+		emissionViolations = stepsOut.EmissionViolations
 		return nil
 	})
 
@@ -1323,6 +1479,18 @@ func RunTier4Pipeline(
 			out.ResolveDiagnostics = []*resolver.ResolverError{single}
 		}
 	}
+
+	// The findings that refuse only an emitting run join the same slice, and this
+	// entry emits nothing — it produces diagnostics for a surface that draws a
+	// picture of the documents. So they are surfaced rather than refused, which is
+	// what that severity asks of an entry like this one, and they are surfaced on
+	// the channel the rest of the per-violation findings arrive on so a consumer
+	// positions all of them with one code path.
+	//
+	// Appended unconditionally rather than only on a failing run: this entry
+	// returns no error for them, so gating the append on one would surface them
+	// exactly when something ELSE had already gone wrong.
+	out.ResolveDiagnostics = append(out.ResolveDiagnostics, emissionViolations...)
 
 	return out, err
 }
@@ -1547,7 +1715,19 @@ func RunPipeline(
 		// document. One arm — a type nothing implements — additionally needs a
 		// Recipe authored before any mapping can name it, but the reader still
 		// acts on the Manifest first, and a category names one document.
-		if opts.RecipeResolutionVerifier != nil {
+		//
+		// The gate has two producers and one switch. The rules declared over the
+		// flattened composition answered for every component instance, including
+		// the ones a sub-aggregate contributed — which is the whole set only that
+		// stage holds — and their findings arrived here rather than halting at the
+		// stage that raised them. The verifier answers for the attachment axes no
+		// node-keyed rule covers. Both are the same gate the caller asked for, so
+		// both are read under the one declaration, and the declared rules are read
+		// first because their findings are positioned per instance.
+		if opts.emitsSomethingToApply() {
+			if err := emissionRefusal(stepsOut.EmissionViolations); err != nil {
+				return cerrors.Wrap(err, cerrors.OpsError, cerrors.SourceLocation{}, "recipe resolution")
+			}
 			if err := opts.RecipeResolutionVerifier(inputs.Manifest, graph); err != nil {
 				return cerrors.Wrap(err, cerrors.OpsError, cerrors.SourceLocation{}, "recipe resolution")
 			}

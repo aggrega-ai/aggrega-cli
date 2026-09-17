@@ -115,6 +115,85 @@ type CatalogLookup struct {
 	// backing that holds the Components supplies the resolver. May be nil, which
 	// declares that the caller's catalog resolves no ancestry.
 	ComponentAncestry func(componentType string) ([]string, error)
+	// NodeRecipeResolution reports what the Manifest's mapping table and this
+	// catalog together say about one component instance's Recipe: the reference
+	// the mapping names, whether the catalog holds a Recipe at it, the keys a
+	// version-tolerant match could not choose between, and the Recipes that
+	// implement the instance's type.
+	//
+	// It takes the Manifest because the answer is a joint one. The mapping table
+	// alone says which reference an instance's type names and the catalog alone
+	// says which references resolve; neither answers "did this instance end up
+	// with a Recipe", which is the question. The two are joined by whichever
+	// backing holds the recipe index, so the join happens once and every reader
+	// reads that one answer.
+	//
+	// It is a derivation the compiler already performs rather than a new reach:
+	// the same resolution decides which Recipe a node renders through.
+	//
+	// May be nil, and a nil field resolves nothing — every instance comes back
+	// mapped to no reference, which is the same answer a caller reads for an
+	// instance the Manifest's mapping does not reach. That is the reading the
+	// catalog-presence lookups beside it already take, and it is the honest one
+	// here for the same reason: a surface holding no recipe index has resolved no
+	// instance to a Recipe, and reporting otherwise would claim a resolution
+	// nothing performed.
+	NodeRecipeResolution func(
+		manifest *types.Manifest, instanceName, componentType string,
+	) NodeRecipeResolution
+}
+
+// NodeRecipeResolution is what one component instance's Recipe resolution came
+// to: the four coordinates a reader needs to tell the outcomes apart.
+//
+// The outcomes are held apart rather than collapsed into a reference-or-not
+// answer, because they have different remedies and one of them is not the
+// instance's fault at all. An instance the Manifest maps to a reference the
+// catalog holds is resolved. An instance no mapping key reaches needs a mapping
+// entry written. An instance whose mapping names a reference the catalog does
+// not hold needs the reference corrected or the Recipe published. And an
+// instance whose type matches several version-distinct mapping keys is a defect
+// in the mapping table rather than in the instance — the lookup cannot choose
+// without guessing, so it refuses.
+//
+// Collapsing any pair of those would send an author to the wrong file, which is
+// why this carries four coordinates rather than a reference and a flag.
+type NodeRecipeResolution struct {
+	// Reference is the Recipe reference the Manifest's mapping names for this
+	// instance, verbatim as the author wrote it. Empty when Mapped is false.
+	Reference string
+
+	// Mapped reports whether the Manifest's mapping reached this instance at
+	// all, under the name-wins-over-type precedence the mapping table carries.
+	// It is false both for an instance nothing maps and for one whose lookup
+	// refused, which is why AmbiguousKeys is read first by anything that has to
+	// tell those two apart.
+	Mapped bool
+
+	// Present reports whether the catalog holds a Recipe at Reference. It is
+	// false whenever Mapped is false, because there is no reference to resolve.
+	Present bool
+
+	// AmbiguousKeys are the version-distinct mapping keys this instance's type
+	// matched when no key matched it exactly and more than one matched its base.
+	// Empty when the lookup settled on one key or on none.
+	//
+	// The keys travel rather than a bare flag because they are the remedy: an
+	// author told which keys collide can pin the authored type's version or
+	// remove a duplicate key, and told only that the lookup was ambiguous can do
+	// neither.
+	AmbiguousKeys []string
+
+	// PinCandidates are the catalog Recipes whose declared implements satisfies
+	// this instance's type, as identities an author can write into a mapping
+	// value, sorted.
+	//
+	// They are a suggestion and never a resolution: resolution is mapping-only,
+	// so a Recipe listed here is a candidate the author may pin and never one
+	// the compiler will choose. The set is resolved only for an instance that
+	// needs one — an instance the Manifest already maps is offered none, because
+	// scanning the recipe index for it would pay for a set nothing reads.
+	PinCandidates []string
 }
 
 // RunGuards evaluates the rules that can be asked of the two authoring documents

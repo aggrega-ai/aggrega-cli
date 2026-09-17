@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -607,11 +608,21 @@ func TestNameTier_DuplicateIdentityDetected(t *testing.T) {
 	}
 }
 
-// TestVerifyRecipeResolution_HaltsLoudly pins the pre-render resolution-
-// completeness pass: an unmapped type implemented by >1 recipe halts naming the
-// colliding recipes; an unimplemented type halts as no-recipe; a mapped type
-// resolves cleanly.
-func TestVerifyRecipeResolution_HaltsLoudly(t *testing.T) {
+// TestNodeRecipeResolution_SeparatesTheOutcomesARuleActsOn pins the catalog's
+// half of the per-instance resolution: an unmapped type comes back unmapped with
+// the implementing recipes offered as pin candidates; an unimplemented type comes
+// back unmapped with none; a mapped type comes back mapped and present.
+//
+// It asserts the RESOLUTION and not a halt, because the halt is no longer this
+// package's: the rule reading these outcomes is declared over the flattened
+// composition and asked where the node set is complete, which is the only point
+// at which a component a sub-aggregate contributed is in the set being walked.
+// The halt it produces — once per node class, through a real compilation — is
+// proved beside that rule's invocation site. What stays here is the half this
+// package owns, which is that the four outcomes are told apart at all: a producer
+// collapsing any pair of them would send an author to the wrong file, and no
+// assertion over a joined error could see which pair had collapsed.
+func TestNodeRecipeResolution_SeparatesTheOutcomesARuleActsOn(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	writeCatalogEntity(t, dir, "r1.yaml", recipeYAML("db-a", "app/db"))
@@ -622,26 +633,89 @@ func TestVerifyRecipeResolution_HaltsLoudly(t *testing.T) {
 	}
 	empty := &types.Manifest{}
 
-	gAmbig := &types.IRGraph{}
-	gAmbig.Spec.Nodes.Set("db-x", types.IRNode{Component: "app/db"})
-	err = c.VerifyRecipeResolution(empty, gAmbig)
-	if err == nil || !errors.Is(err, ErrNoRecipeResolved()) {
-		t.Errorf("expected ErrNoRecipeResolved for unmapped 2-impl type; got %v", err)
-	} else if !strings.Contains(err.Error(), "db-a") || !strings.Contains(err.Error(), "db-b") {
-		t.Errorf("candidate-list error must name both implementing recipes; got %v", err)
+	unmapped := c.nodeRecipeResolution(empty, "db-x", "app/db")
+	if unmapped.Mapped {
+		t.Errorf("a type no mapping reaches must come back unmapped; got %+v", unmapped)
+	}
+	if len(unmapped.AmbiguousKeys) != 0 {
+		t.Errorf("a type no mapping reaches is not a refused lookup; got keys %v", unmapped.AmbiguousKeys)
+	}
+	if !slices.Contains(unmapped.PinCandidates, "eval/db-a:1.0.0") ||
+		!slices.Contains(unmapped.PinCandidates, "eval/db-b:1.0.0") {
+		t.Errorf("the candidates must name both implementing recipes; got %v", unmapped.PinCandidates)
 	}
 
-	gNone := &types.IRGraph{}
-	gNone.Spec.Nodes.Set("x", types.IRNode{Component: "app/none"})
-	if err := c.VerifyRecipeResolution(empty, gNone); err == nil || !errors.Is(err, ErrNoRecipeResolved()) {
-		t.Errorf("expected ErrNoRecipeResolved for unimplemented type; got %v", err)
+	unimplemented := c.nodeRecipeResolution(empty, "x", "app/none")
+	if unimplemented.Mapped || len(unimplemented.PinCandidates) != 0 {
+		t.Errorf("a type nothing implements must come back unmapped with no candidate; got %+v", unimplemented)
 	}
 
 	comp := &types.MappingTier{}
 	comp.Type.Set("app/db", "db-a:1.0.0")
 	mapped := &types.Manifest{Spec: types.ManifestSpec{Mappings: types.ManifestMappings{Components: comp}}}
-	if err := c.VerifyRecipeResolution(mapped, gAmbig); err != nil {
-		t.Errorf("a mapped type should resolve cleanly; got %v", err)
+	resolved := c.nodeRecipeResolution(mapped, "db-x", "app/db")
+	if !resolved.Mapped || !resolved.Present {
+		t.Errorf("a mapped type whose recipe the catalog holds must come back mapped and present; got %+v", resolved)
+	}
+	if resolved.Reference != "db-a:1.0.0" {
+		t.Errorf("reference = %q, want the mapping value verbatim", resolved.Reference)
+	}
+	// A mapped instance is offered no candidates: the author has already chosen,
+	// and scanning the index for one would pay for a set nothing reads.
+	if len(resolved.PinCandidates) != 0 {
+		t.Errorf("a mapped instance must be offered no pin candidates; got %v", resolved.PinCandidates)
+	}
+
+	// The component arm of the joined producer now reports only a reference whose
+	// shape no recipe reference can express, so a graph whose only fault is an
+	// unmapped component reaches it clean.
+	gUnmapped := &types.IRGraph{}
+	gUnmapped.Spec.Nodes.Set("db-x", types.IRNode{Component: "app/db"})
+	if err := c.VerifyRecipeResolution(empty, gUnmapped); err != nil {
+		t.Errorf("the post-graph producer must not report an unmapped component a second time; got %v", err)
+	}
+}
+
+// TestNodeRecipeResolution_RefusesAnUnpinnedInstanceAndResolvesAPinnedOne pins
+// the catalog's half of the ambiguity refusal, in both directions.
+//
+// A mapping table holding one type at two distinct versions is legal authoring.
+// What the lookup cannot do is choose between those keys for an instance whose
+// authored type pins no version, and the keys it could not choose between travel
+// with the refusal because they are the remedy.
+func TestNodeRecipeResolution_RefusesAnUnpinnedInstanceAndResolvesAPinnedOne(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	writeCatalogEntity(t, dir, "r1.yaml", recipeYAML("db-a", "app/db"))
+	c, err := LoadAll("", dir)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	comp := &types.MappingTier{}
+	comp.Type.Set("app/db:1.0.0", "db-a:1.0.0")
+	comp.Type.Set("app/db:2.0.0", "db-a:1.0.0")
+	doubled := &types.Manifest{Spec: types.ManifestSpec{Mappings: types.ManifestMappings{Components: comp}}}
+
+	refused := c.nodeRecipeResolution(doubled, "db-x", "app/db")
+	if refused.Mapped {
+		t.Errorf("a refused lookup names no reference; got %+v", refused)
+	}
+	if got := refused.AmbiguousKeys; len(got) != 2 ||
+		!slices.Contains(got, "app/db:1.0.0") || !slices.Contains(got, "app/db:2.0.0") {
+		t.Errorf("the refusal must carry both colliding keys; got %v", got)
+	}
+	// Candidates would suggest writing a mapping entry, which is the wrong edit for
+	// a table that already carries two.
+	if len(refused.PinCandidates) != 0 {
+		t.Errorf("a refused lookup must offer no pin candidates; got %v", refused.PinCandidates)
+	}
+
+	pinned := c.nodeRecipeResolution(doubled, "db-x", "app/db:2.0.0")
+	if !pinned.Mapped || !pinned.Present {
+		t.Errorf("an exactly-pinned instance must resolve against the key it names; got %+v", pinned)
+	}
+	if len(pinned.AmbiguousKeys) != 0 {
+		t.Errorf("an exact key match wins before any base match; got keys %v", pinned.AmbiguousKeys)
 	}
 }
 
@@ -727,24 +801,46 @@ func TestVerifyRecipeResolution_ShapeFaultVersusAbsentEntity(t *testing.T) {
 	if errors.Is(absentErr, resolver.ErrMalformedRecipeReference()) {
 		t.Errorf("an absent entity must not report as a shape fault; got %v", absentErr)
 	}
-	for _, want := range []string{
-		`recipe "no-such-recipe:1.0.0", which is not in the catalog`,
-		`feature recipe "no-such-feature-recipe:1.0.0", which is not in the catalog`,
-	} {
-		if !strings.Contains(absentErr.Error(), want) {
-			t.Errorf("missing-entity diagnostic changed; expected %q in %v", want, absentErr)
-		}
+	// The FEATURE arm only. The component arm of the same discrimination is made
+	// by the rule asked over the flattened composition, which reports an absent
+	// recipe before this producer runs, so asserting it here would be asserting on
+	// a reading that no longer happens.
+	if want := `feature recipe "no-such-feature-recipe:1.0.0", which is not in the catalog`; !strings.Contains(absentErr.Error(), want) {
+		t.Errorf("missing-entity diagnostic changed; expected %q in %v", want, absentErr)
+	}
+	// The component side of the same input, read through the producer that now
+	// owns it: mapped, and absent from the catalog. Read here rather than left to
+	// the rule's own proofs because it is the other half of THIS test's
+	// discrimination — a shape fault and an absent entity are both mapped values,
+	// and a producer that reported them the same way would be invisible from the
+	// feature arm alone.
+	componentAbsent := c.nodeRecipeResolution(
+		manifestFor("no-such-recipe:1.0.0", "no-such-feature-recipe:1.0.0"), "db", compType)
+	if !componentAbsent.Mapped || componentAbsent.Present {
+		t.Errorf("a component mapped to an absent recipe must come back mapped and not present; got %+v", componentAbsent)
+	}
+	if componentAbsent.Reference != "no-such-recipe:1.0.0" {
+		t.Errorf("reference = %q, want the mapping value verbatim", componentAbsent.Reference)
+	}
+	componentShape := c.nodeRecipeResolution(
+		manifestFor("core/eval/present:1.0.0", "core/eval/cred:1.0.0"), "db", compType)
+	if !componentShape.Mapped || componentShape.Present {
+		t.Errorf("a component mapped past the segment ceiling must come back mapped and not present; got %+v", componentShape)
 	}
 }
 
-// TestCatalogImmunity_UnmappedSingleImplementerHalts pins the de-fallback
-// permanently: an instance with NO Manifest mapping halts even when EXACTLY ONE
-// recipe implements its type. Under the removed implements-search fallback the
-// lone implementer resolved silently; resolution is now mapping-only, so the
-// build halts with the implementing recipe named as a pin candidate. This is
-// red against the pre-removal code (which returned nil for a single implementer)
-// and green after — the fallback is provably gone.
-func TestCatalogImmunity_UnmappedSingleImplementerHalts(t *testing.T) {
+// TestCatalogImmunity_UnmappedSingleImplementerStaysUnresolved pins the
+// de-fallback permanently: an instance with NO Manifest mapping stays unresolved
+// even when EXACTLY ONE recipe implements its type. Under the removed
+// implements-search fallback the lone implementer resolved silently; resolution
+// is mapping-only, so the instance comes back unmapped with that recipe offered
+// as a pin candidate. This is red against the pre-removal code (which resolved a
+// single implementer) and green after — the fallback is provably gone.
+//
+// It reads the resolution rather than a halt because the halt belongs to the rule
+// asked over the flattened composition; what this pins is the input that rule
+// reads, which is where the fallback would have to reappear to come back at all.
+func TestCatalogImmunity_UnmappedSingleImplementerStaysUnresolved(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	writeCatalogEntity(t, dir, "r.yaml", recipeYAML("only-db", "app/db"))
@@ -752,15 +848,15 @@ func TestCatalogImmunity_UnmappedSingleImplementerHalts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	g := &types.IRGraph{}
-	g.Spec.Nodes.Set("db", types.IRNode{Component: "app/db"})
 
-	err = c.VerifyRecipeResolution(&types.Manifest{}, g)
-	if err == nil || !errors.Is(err, ErrNoRecipeResolved()) {
-		t.Fatalf("an unmapped instance with exactly ONE implementer must halt with ErrNoRecipeResolved; got %v", err)
+	resolution := c.nodeRecipeResolution(&types.Manifest{}, "db", "app/db")
+	if resolution.Mapped || resolution.Present {
+		t.Fatalf("an unmapped instance with exactly ONE implementer must stay unresolved; got %+v", resolution)
 	}
-	if !strings.Contains(err.Error(), "only-db") {
-		t.Errorf("the halt must name the lone implementer as a pin candidate; got %v", err)
+	if !slices.ContainsFunc(resolution.PinCandidates, func(candidate string) bool {
+		return strings.Contains(candidate, "only-db")
+	}) {
+		t.Errorf("the lone implementer must be offered as a pin candidate; got %v", resolution.PinCandidates)
 	}
 }
 

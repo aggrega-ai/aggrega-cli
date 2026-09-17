@@ -192,6 +192,13 @@ func TestValidateToolCleanFixture(t *testing.T) {
 
 // TestValidateToolMatchesCompilerops asserts the validate tool surfaces exactly
 // the diagnostic compilerops.Validate produces for a known-bad Release.
+//
+// The known-bad Release maps no recipe for its one component, and that finding
+// travels on the per-violation channel the pipeline fills — the same channel the
+// resolver-class violations arrive on — rather than on the resolution-findings
+// slice, whose producer no longer asks whether a component instance resolves at
+// all. The tool renders every entry of that channel with the finding's own full
+// text, so the verbatim comparison below is unchanged.
 func TestValidateToolMatchesCompilerops(t *testing.T) {
 	root, catalogDir, releasePath := badWorkspace(t)
 
@@ -211,10 +218,18 @@ func TestValidateToolMatchesCompilerops(t *testing.T) {
 		Manifest: resolved.Manifest,
 		AggBytes: resolved.AggBytes, AggregatePath: resolved.AggregatePath, WorkspaceRoot: root, WorkspaceConfig: wsCfg, CompilerVersion: "test",
 	})
-	if len(vr.ResolutionFindings) == 0 {
-		t.Fatalf("known-bad fixture produced no resolution finding; ValidateResult=%+v", vr)
+	if vr.Tier4 == nil || len(vr.Tier4.ResolveDiagnostics) == 0 {
+		t.Fatalf("known-bad fixture produced no per-violation finding; ValidateResult=%+v", vr)
 	}
-	wantDiag := vr.ResolutionFindings[0].Error()
+	wantDiag := vr.Tier4.ResolveDiagnostics[0].Error()
+	// The fixture's fault is its one unmapped component instance, so the finding
+	// has to name that instance. Without this the case would still pass over a
+	// finding that had lost it, because the condition's registered sentence is
+	// shared by every instance of the condition and the comparison below would
+	// match on that alone.
+	if !strings.Contains(wantDiag, `"backend"`) {
+		t.Fatalf("the finding does not name the unmapped instance, so this case no longer exercises its class: %q", wantDiag)
+	}
 
 	// The tool over the same workspace must report the same diagnostic verbatim.
 	s := newTestServer(t)

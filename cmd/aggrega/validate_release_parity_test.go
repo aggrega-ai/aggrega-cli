@@ -19,12 +19,15 @@ package main
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
+	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
@@ -278,7 +281,7 @@ func cliCoreUnderlyingDiagTexts(vr *compilerops.ValidateResult) []string {
 		}
 	}
 	if vr.RunErr != nil && !isCancellation(vr.RunErr) &&
-		(vr.Tier4 == nil || len(vr.Tier4.ResolveDiagnostics) == 0) {
+		!runErrPublishedPerViolation(vr.RunErr, tier4ResolveDiagnostics(vr)) {
 		out = append(out, vr.RunErr.Error())
 	}
 	for _, f := range vr.ResolutionFindings {
@@ -288,6 +291,23 @@ func cliCoreUnderlyingDiagTexts(vr *compilerops.ValidateResult) []string {
 		out = append(out, e.Error())
 	}
 	return out
+}
+
+// tier4ResolveDiagnostics reads the resolver-class per-violation slice off a
+// result that may have stopped before the pipeline ran.
+//
+// Both oracles in this file call the renderer's own phase-error predicate rather
+// than writing a fourth copy of it. What they exist to check is which findings
+// reach which stream and whether each one's own text survives verbatim; a second
+// spelling of the predicate here would report a disagreement about the predicate
+// as a routing fault, which it is not. The predicate's own two directions are
+// pinned by the fall-back test in this package, which drives a workspace built
+// for each of them.
+func tier4ResolveDiagnostics(vr *compilerops.ValidateResult) []*resolver.ResolverError {
+	if vr.Tier4 == nil {
+		return nil
+	}
+	return vr.Tier4.ResolveDiagnostics
 }
 
 // cliDiagOutRoutedTexts is the subset of underlying texts the detailed renderer
@@ -310,7 +330,7 @@ func cliDiagOutRoutedTexts(vr *compilerops.ValidateResult) []string {
 		}
 	}
 	if vr.RunErr != nil && !isCancellation(vr.RunErr) &&
-		(vr.Tier4 == nil || len(vr.Tier4.ResolveDiagnostics) == 0) {
+		!runErrPublishedPerViolation(vr.RunErr, tier4ResolveDiagnostics(vr)) {
 		out = append(out, vr.RunErr.Error())
 	}
 	for _, f := range vr.ResolutionFindings {
@@ -456,6 +476,156 @@ func TestValidateReleaseCoreParity(t *testing.T) {
 				if !strings.Contains(diagDet.String(), txt) {
 					t.Errorf("detailed diagOut dropped streamed finding %q:\n%s", txt, diagDet.String())
 				}
+			}
+		})
+	}
+}
+
+// cliFailingAssertionOverlayComponent declares a Component whose build-time
+// assertion never holds, so every instance of it fails the assertion phase. It is
+// otherwise the shared catalog's own contract for this type, so the fault this
+// fixture carries is the assertion and nothing else.
+const cliFailingAssertionOverlayComponent = `apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: core/compute/api-server
+  version: "1.0.0"
+  labels:
+    component.aggrega.ai/type: "server"
+spec:
+  inject: ["env"]
+  assertions:
+    replicas-are-explicit: '{{ fail "this contract requires replicas to be declared explicitly" }}'
+  schema:
+    infra:
+      port: { type: integer, default: 8080 }
+      replicas: { type: integer, default: 1 }
+    provides:
+      host: { type: string, required: true }
+      service_port: { type: string, required: true }
+`
+
+// TestRenderReleaseValidationPublishesPhaseErrorBesidePerViolationFindings pins
+// both directions of the closure-level fall-back for a pre-render phase error
+// that carries no per-violation structure of its own. They pull in opposite
+// directions, and a rule satisfying only one is wrong in the other:
+//
+//   - a phase error must still reach the operator when per-violation findings were
+//     published alongside it but do not describe it — and this verb flattens each
+//     diagnostic with its cause chain precisely because that frame carries the
+//     offending entity, the assertion, and the assertion's own author-written
+//     message, so dropping the line drops all of it;
+//   - a run error that WAS published finding by finding must not also be published
+//     as a closure-level line, which would report one failure twice.
+//
+// The first row needs a workspace carrying two independent faults at once: an
+// instance the Manifest maps no recipe for, whose finding travels out of the
+// pipeline on the per-violation channel without failing the run, and a Component
+// contract whose build-time assertion fails, which is a phase error with nothing
+// per-violation about it. No other case in this package carries two faults
+// together.
+func TestRenderReleaseValidationPublishesPhaseErrorBesidePerViolationFindings(t *testing.T) {
+	cases := []struct {
+		name string
+		// fixture is the workspace to validate.
+		fixture cliReleaseParityCase
+		// wantFallback is whether the run error is expected to reach diagOut as a
+		// closure-level line of its own.
+		wantFallback bool
+		// wantInstanceNamed is the instance a per-violation finding must name, or
+		// empty where the fixture declares no component at all.
+		wantInstanceNamed string
+	}{
+		{
+			name: "a phase error beside per-violation findings that do not describe it",
+			fixture: cliReleaseParityCase{
+				aggregate: cliBackendAggregate,
+				manifest:  cliEmptyManifest,
+				overlay: map[string]string{
+					"components/api-server.yaml": cliFailingAssertionOverlayComponent,
+				},
+			},
+			wantFallback:      true,
+			wantInstanceNamed: `"backend"`,
+		},
+		{
+			name: "a resolver-class failure already published finding by finding",
+			fixture: cliReleaseParityCase{
+				aggregate: cliResolveFailingAggregate,
+				manifest:  cliEmptyManifest,
+				release:   cliEmptyBoundaryRelease,
+			},
+			wantFallback: false,
+		},
+	}
+
+	for _, c := range cases {
+		c := c
+		t.Run(c.name, func(t *testing.T) {
+			root, dirs := writeCLIReleaseParityWorkspace(t, c.fixture)
+			rw, err := workspaceconfig.Resolve(root, root)
+			if err != nil {
+				t.Fatalf("resolve workspace: %v", err)
+			}
+			releasePath := filepath.Join(root, "release.yaml")
+
+			// The oracle is the same core over the same resolved inputs
+			// validateRelease builds internally, so the expected fall-back text is
+			// derived from the run error rather than transcribed from it.
+			vr := cliOracleValidate(t, rw, releasePath, dirs)
+
+			// Fixture sanity, stated per axis so a fixture that stopped carrying one
+			// of its two faults fails here rather than passing the assertions below
+			// for the wrong reason.
+			if vr.RunErr == nil {
+				t.Fatalf("the fixture produced no run error, so it no longer exercises this case; ValidateResult=%+v", vr)
+			}
+			if len(tier4ResolveDiagnostics(vr)) == 0 {
+				t.Fatalf("the fixture produced no per-violation finding, so it no longer exercises this case; ValidateResult=%+v", vr)
+			}
+
+			var diag, out bytes.Buffer
+			if verdict := renderReleaseValidation(vr, nil, nil, releasePath, compilerops.VerbosityDetailed, &diag, &out); verdict == nil {
+				t.Fatalf("the fixture validated clean, so neither direction is exercised\n diagOut:\n%s", diag.String())
+			}
+
+			fallback := cerrors.CauseChain(vr.RunErr)
+			wantLine := fmt.Sprintf("  %s\n", fallback)
+
+			// Occurrences the other streams already contribute, so the count below
+			// measures the fall-back alone even where a stream happens to flatten to
+			// the same text — which is what a single-violation run does.
+			base := 0
+			for _, ve := range tier4ResolveDiagnostics(vr) {
+				if cerrors.CauseChain(ve) == fallback {
+					base++
+				}
+			}
+			if vr.Tier4 != nil && vr.Tier4.Analysis != nil {
+				for _, ae := range vr.Tier4.Analysis.Errors {
+					if cerrors.CauseChain(ae) == fallback {
+						base++
+					}
+				}
+			}
+			for _, f := range vr.ResolutionFindings {
+				if cerrors.CauseChain(f) == fallback {
+					base++
+				}
+			}
+
+			want := base
+			if c.wantFallback {
+				want++
+			}
+			if got := strings.Count(diag.String(), wantLine); got != want {
+				t.Fatalf("the run error was written %d time(s) as a closure-level line; want %d (%d of them from the other streams)\n line: %q\n diagOut:\n%s",
+					got, want, base, wantLine, diag.String())
+			}
+
+			if c.wantInstanceNamed != "" && !strings.Contains(diag.String(), c.wantInstanceNamed) {
+				t.Fatalf("no diagnostic names %s, so the per-violation half of this fixture is not being published\n diagOut:\n%s",
+					c.wantInstanceNamed, diag.String())
 			}
 		})
 	}

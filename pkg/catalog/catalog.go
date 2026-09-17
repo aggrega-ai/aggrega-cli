@@ -1918,6 +1918,14 @@ func (c *Catalog) CatalogLookup() resolver.CatalogLookup {
 		ProviderPlugin:      c.ProviderPluginByName,
 		ParserPlugin:        c.ParserPluginForFormat,
 		PluginColocatedDirs: c.PluginColocatedDirs(),
+		// The recipe lookups and the joint instance resolution are served here so
+		// a rule asked at a stage of the compilation reads the same recipe index
+		// the render resolves through. They were absent while nothing but the
+		// mapping-consistency gate read them, and that gate builds its own lookup
+		// because it also needs an ancestry resolver this adapter cannot supply.
+		Recipe:               c.RecipeByURI,
+		FeatureRecipe:        c.FeatureRecipeByURI,
+		NodeRecipeResolution: c.nodeRecipeResolution,
 	}
 }
 

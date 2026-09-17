@@ -192,7 +192,29 @@ func (l *LazyLookup) AsCatalogLookup() resolver.CatalogLookup {
 		// a registry-resolved (Tier-2) entity lives in a content-addressed cache
 		// slot and never appears here.
 		PluginColocatedDirs: l.pluginColocatedDirs(),
+		// The recipe lookups and the joint instance resolution over the
+		// lazily-enumerated recipe set, so a rule asked at a stage of the
+		// compilation reads the same complete enumeration the build's own
+		// resolution reads. Each takes l.mu when it is called rather than now, so
+		// handing the methods over from under the lock is not a re-entry.
+		Recipe:               l.RecipeByURI,
+		FeatureRecipe:        l.FeatureRecipeByURI,
+		NodeRecipeResolution: l.NodeRecipeResolution,
 	}
+}
+
+// NodeRecipeResolution joins the Manifest's mapping table and the
+// lazily-enumerated recipe set into the answer about one component instance, so
+// a rule asked over the composition reads the same complete enumeration the
+// build's own resolution reads rather than a partially-walked one.
+func (l *LazyLookup) NodeRecipeResolution(
+	manifest *types.Manifest,
+	instanceName string,
+	componentType string,
+) resolver.NodeRecipeResolution {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.recipeCatalog().nodeRecipeResolution(manifest, instanceName, componentType)
 }
 
 // pluginColocatedDirs maps each Tier-1-enumerated Plugin entity's bare-identity

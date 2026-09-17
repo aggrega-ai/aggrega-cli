@@ -222,8 +222,51 @@ func versionTolerantTypeGet(typeMap types.OrderedMap[string], lookupType string)
 	case 1:
 		return matchURI, true, nil
 	default:
-		return "", false, fmt.Errorf("%w: type %q matches version-distinct keys %v — pin the authored type's version or remove the duplicate mapping keys", ErrAmbiguousTypeMapping(), lookupType, matchedKeys)
+		return "", false, &ambiguousTypeMapping{lookupType: lookupType, keys: matchedKeys}
 	}
+}
+
+// ambiguousTypeMapping is the refusal a version-tolerant match returns when an
+// authored type matches no key exactly and matches more than one key's base.
+//
+// It is a type rather than a formatted error so the keys survive the refusal. A
+// reader that has to say WHICH keys collide — the diagnostic an author acts on,
+// and the rule that reports the same condition where the node set is complete —
+// would otherwise have to recover them by reading the sentence back, which is a
+// second parser for a message the first one wrote.
+//
+// The sentence is composed here and nowhere else, so the two readers report the
+// same collision in the same words. It unwraps to the registered condition, so a
+// caller matching by identity keeps matching.
+type ambiguousTypeMapping struct {
+	// lookupType is the authored type whose lookup refused.
+	lookupType string
+
+	// keys are the version-distinct mapping keys sharing that type's base, in
+	// the order the mapping table declares them.
+	keys []string
+}
+
+func (e *ambiguousTypeMapping) Error() string {
+	return fmt.Sprintf(
+		"%s: type %q matches version-distinct keys %v — pin the authored type's version or "+
+			"remove the duplicate mapping keys", ErrAmbiguousTypeMapping(), e.lookupType, e.keys)
+}
+
+func (e *ambiguousTypeMapping) Unwrap() error { return ErrAmbiguousTypeMapping() }
+
+// ambiguousMappingKeys returns the version-distinct keys a refused lookup could
+// not choose between, and whether the failure was that refusal at all.
+//
+// It reads the refusal through its own type rather than through the registered
+// condition, because the condition alone says which rule was broken and this
+// needs the values the occurrence carried.
+func ambiguousMappingKeys(err error) ([]string, bool) {
+	var ambiguous *ambiguousTypeMapping
+	if !errors.As(err, &ambiguous) {
+		return nil, false
+	}
+	return ambiguous.keys, true
 }
 
 // nameThenType resolves a mapping tier with name-wins-over-type precedence:
@@ -284,11 +327,11 @@ func (c *Catalog) componentTypeToRecipeWithManifest(manifest *types.Manifest) fu
 		// A mapping entry is answered whether or not its URI resolves — the
 		// precedence rule is stated once, on RecipeLookupWithManifest. The
 		// unresolvable case is a miss here, and which stage reports it depends
-		// on the caller: one that loaded the catalog eagerly surfaces it as a
-		// CATALOG_ERROR at the resolution-completeness pass, which names the
-		// mapping value the author wrote; one that resolved the Release's
-		// dependency closure first never reaches that pass, because that
-		// resolution already stopped on the URI no catalog entity matches.
+		// on the caller: one compiling the documents halts at the rule asked over
+		// the flattened composition, which names the mapping value the author
+		// wrote; one that resolved the Release's dependency closure first never
+		// reaches that rule, because that resolution already stopped on the URI no
+		// catalog entity matches.
 		if uri, ok, err := componentMappingURI(manifest, instanceName, componentType); err == nil && ok {
 			r, found := c.RecipeByURI(uri)
 			if !found {
@@ -298,9 +341,8 @@ func (c *Catalog) componentTypeToRecipeWithManifest(manifest *types.Manifest) fu
 		}
 		// Resolution is mapping-only: an unmapped type is a miss here. The
 		// catalog never chooses a recipe by spec.implements — an unmapped
-		// instance halts loudly in the pre-render resolution-completeness pass
-		// (resolveComponentRecipeForVerify), which names the implementing
-		// recipes as pin candidates.
+		// instance halts loudly at the rule asked over the flattened composition,
+		// which names the implementing recipes as pin candidates.
 		return nil, false
 	}
 }
@@ -771,51 +813,61 @@ func featureRecipesImplementing(frs map[string]types.FeatureRecipe, featureType 
 	return ids
 }
 
-// resolveComponentRecipeForVerify verifies that one component instance resolves
-// through an explicit Manifest mapping. Resolution is mapping-only: a mapped
-// instance whose recipe is in the catalog resolves cleanly; a mapping to an
-// absent recipe (dangling) or no mapping at all halts loudly. An unmapped
-// instance always halts regardless of how many recipes implement its type — the
-// diagnostic lists those recipes as pin candidates (implements suggests; the
-// author chooses; the Manifest records). nil means the instance resolves cleanly.
-func (c *Catalog) resolveComponentRecipeForVerify(manifest *types.Manifest, instanceName, componentType string) error {
+// componentRecipeReferenceShapeForVerify reports a component instance whose
+// Manifest mapping names a reference no Recipe reference shape can express.
+//
+// It is what remains here of the per-component resolution reading. Whether an
+// instance resolves to a Recipe at all — unmapped, mapped at a reference the
+// catalog does not hold, or matching several version-distinct mapping keys — is
+// a rule declared over the flattened composition and asked where the node set is
+// complete, which is before this runs. Asking it again here would report one
+// violation twice.
+//
+// The shape reading stays because it is a different condition with a different
+// carrier, and one this function has always been a DELIBERATE second reading of
+// rather than the only one: resolver.ManifestRecipeReferenceFaults judges the
+// same shape over the authored mapping entry and names the key the author wrote,
+// while this is rooted at the component instance whose resolution missed and
+// names the instance and its type — the coordinates an instance-keyed reader has
+// and a mapping-keyed one does not. Do not "unify" the two: the grammar itself
+// is single-sourced in pkg/resolver, which is what keeps them from disagreeing.
+//
+// A reference the shape cannot express is reported as a shape fault rather than
+// as an absent recipe, because the recipe it names may well be in the catalog
+// and calling it absent sends the author looking for the wrong thing. The
+// reading runs only after the lookup misses, so it never changes which
+// references resolve. nil means there is no shape fault to report, whether the
+// instance resolved or was reported by the rule above.
+func (c *Catalog) componentRecipeReferenceShapeForVerify(manifest *types.Manifest, instanceName, componentType string) error {
 	uri, ok, err := ComponentRecipeURI(manifest, instanceName, componentType)
-	if err != nil {
-		return err // ambiguous version-distinct type mapping (already a loud sentinel)
-	}
-	if ok {
-		if _, found := c.RecipeByURI(uri); !found {
-			// A reference the shape cannot express is reported as a shape fault:
-			// the recipe it names may well be in the catalog, so calling it
-			// absent sends the author looking for the wrong thing. The check
-			// runs only after the lookup misses, so it never changes which
-			// references resolve.
-			//
-			// DELIBERATE second reading, not a leftover, and the two are rooted at
-			// different coordinates rather than being one reading written twice.
-			// resolver.ManifestRecipeReferenceFaults judges the same shape earlier,
-			// over the authored mapping entry, and names the key the author wrote.
-			// This one is rooted at the component instance whose resolution missed,
-			// so it names the instance and its type — the coordinates an instance-
-			// keyed reader has and a mapping-keyed one does not.
-			//
-			// Do not "unify" the two: the grammar itself is single-sourced in
-			// pkg/resolver, which is what keeps them from disagreeing.
-			if n, tooMany := resolver.RecipeReferenceSegments(uri); tooMany {
-				return fmt.Errorf("%w: component %q (type %q): the Manifest maps it to %q, which carries %d slash-separated segments; a recipe reference accepts %s; correct the mapping value in the Manifest", resolver.ErrMalformedRecipeReference(), instanceName, componentType, uri, n, resolver.AcceptedRecipeReferenceShapes)
-			}
-			return fmt.Errorf("%w: component %q (type %q): the Manifest maps it to recipe %q, which is not in the catalog", ErrNoRecipeResolved(), instanceName, componentType, uri)
-		}
+	if err != nil || !ok {
+		// A refused lookup names no reference, so there is no shape to judge; the
+		// refusal itself is the rule's above.
 		return nil
 	}
-	if candidates := recipesImplementing(c.Recipes, componentType); len(candidates) > 0 {
-		return fmt.Errorf("%w: component %q (type %q); recipes implementing it: %v; pin one in the Manifest", ErrNoRecipeResolved(), instanceName, componentType, candidates)
+	if _, found := c.RecipeByURI(uri); found {
+		return nil
 	}
-	return fmt.Errorf("%w: component %q (type %q); no recipe implements this type", ErrNoRecipeResolved(), instanceName, componentType)
+	n, tooMany := resolver.RecipeReferenceSegments(uri)
+	if !tooMany {
+		return nil
+	}
+	return fmt.Errorf("%w: component %q (type %q): the Manifest maps it to %q, which carries %d slash-separated segments; a recipe reference accepts %s; correct the mapping value in the Manifest", resolver.ErrMalformedRecipeReference(), instanceName, componentType, uri, n, resolver.AcceptedRecipeReferenceShapes)
 }
 
-// resolveFeatureRecipeForVerify is the FeatureRecipe analogue of
-// resolveComponentRecipeForVerify.
+// resolveFeatureRecipeForVerify verifies that one feature instance resolves
+// through an explicit Manifest mapping. Resolution is mapping-only: a mapped
+// instance whose feature recipe is in the catalog resolves cleanly; a mapping to
+// an absent feature recipe (dangling) or no mapping at all halts loudly. An
+// unmapped instance always halts regardless of how many feature recipes
+// implement its type — the diagnostic lists those as pin candidates (implements
+// suggests; the author chooses; the Manifest records). nil means the instance
+// resolves cleanly.
+//
+// It still carries the whole reading, where the component side carries only the
+// reference-shape half: the two attachment axes it is walked over are not the
+// node axis, so the rule asked over the flattened composition — which is keyed by
+// node — is not asked about them and nothing here would be reported twice.
 func (c *Catalog) resolveFeatureRecipeForVerify(manifest *types.Manifest, instanceName, featureType string) error {
 	uri, ok, err := FeatureRecipeURI(manifest, instanceName, featureType)
 	if err != nil {
@@ -840,16 +892,25 @@ func (c *Catalog) resolveFeatureRecipeForVerify(manifest *types.Manifest, instan
 	return fmt.Errorf("%w: feature %q (type %q); no feature recipe implements this type", ErrNoRecipeResolved(), instanceName, featureType)
 }
 
-// ResolutionFindings is the shared resolution-completeness producer: it walks
-// every component and feature instance in the IR and returns one error per
-// instance that does NOT resolve through an explicit Manifest mapping (unmapped
-// — naming the implementing recipes as pin candidates — or mapped to a recipe
-// absent from the catalog). The slice is in IR author order; an empty slice
-// means every instance resolves cleanly. Both surfaces consume this single
+// ResolutionFindings is the shared resolution-completeness producer over the
+// axes no rule keyed by a node covers: it walks every feature instance in the
+// IR, on both attachment axes, and returns one error per instance that does NOT
+// resolve through an explicit Manifest mapping (unmapped — naming the
+// implementing feature recipes as pin candidates — or mapped to a feature recipe
+// absent from the catalog). The slice is in IR author order; an empty slice means
+// every instance it covers resolves cleanly. Both surfaces consume this single
 // routine so they cannot drift: the CLI build joins the slice into a loud halt
 // (VerifyRecipeResolution); the serve daemon maps each finding to a resilient
 // diagnostic. The mapping-only cascade matches the renderer's — the catalog
 // never chooses a recipe by spec.implements.
+//
+// The component axis is walked here for one condition only: a mapping value whose
+// SHAPE no recipe reference can express. Whether a component instance resolves to
+// a recipe at all is a rule declared over the flattened composition, asked where
+// the node set is complete — which is earlier than this, and is the only point at
+// which a component a sub-aggregate contributed is in the set being walked. A
+// build carrying such a fault therefore halts before this runs, and asking the
+// same question here would report one violation twice.
 func (c *Catalog) ResolutionFindings(manifest *types.Manifest, graph *types.IRGraph) []error {
 	if graph == nil {
 		return nil
@@ -857,7 +918,7 @@ func (c *Catalog) ResolutionFindings(manifest *types.Manifest, graph *types.IRGr
 	var errs []error
 	for _, nodeID := range graph.Spec.Nodes.Keys() {
 		node, _ := graph.Spec.Nodes.Get(nodeID)
-		if err := c.resolveComponentRecipeForVerify(manifest, nodeID, node.Component); err != nil {
+		if err := c.componentRecipeReferenceShapeForVerify(manifest, nodeID, node.Component); err != nil {
 			errs = append(errs, err)
 		}
 	}

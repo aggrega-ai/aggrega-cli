@@ -391,16 +391,17 @@ func TestTheTopologyStageRulesThreadTheCallersSignalIntoTheRequirementShapeWalk(
 	}
 	// The walks this site performs, each rooted at the node axis: the
 	// attachment-requirement shape, the component-identity refusal, the
-	// identity-declared-once refusal, and the required-socket population. Each is
+	// identity-declared-once refusal, the required-socket population, the
+	// recipe-resolution refusal, and the mapping-ambiguity refusal. Each is
 	// handed `ctx.Err` like the ones around it, which is the thing this count
 	// exists to make somebody check when a walk is added.
-	const walks = 4
+	const walks = 6
 	expectedReads := nodes * walks
 
 	t.Run("a caller that withdraws stops the walk before its first node", func(t *testing.T) {
 		var reads int
 		signal := countingCancellation{reads: &reads, withdrawAfter: 0}
-		err := runTopologyStageRules(signal, clean.Topology)
+		_, err := runTopologyStageRules(signal, clean.Topology)
 		if !errors.Is(err, context.Canceled) {
 			t.Fatalf("err = %v; want the caller's withdrawal", err)
 		}
@@ -417,7 +418,7 @@ func TestTheTopologyStageRulesThreadTheCallersSignalIntoTheRequirementShapeWalk(
 		// other signal would read nothing here and the site would return nil.
 		var seen int
 		signal := countingCancellation{reads: &seen, withdrawAfter: nodes + 1}
-		if err := runTopologyStageRules(signal, clean.Topology); !errors.Is(err, context.Canceled) {
+		if _, err := runTopologyStageRules(signal, clean.Topology); !errors.Is(err, context.Canceled) {
 			t.Fatalf("err = %v; want the caller's withdrawal, read by a walk after the first", err)
 		}
 		if seen != nodes+2 {
@@ -429,7 +430,7 @@ func TestTheTopologyStageRulesThreadTheCallersSignalIntoTheRequirementShapeWalk(
 	t.Run("a caller that does not withdraw reaches every node of every walk", func(t *testing.T) {
 		var seen int
 		signal := countingCancellation{reads: &seen, withdrawAfter: expectedReads + 1}
-		if err := runTopologyStageRules(signal, clean.Topology); err != nil {
+		if _, err := runTopologyStageRules(signal, clean.Topology); err != nil {
 			t.Fatalf("a composition carrying no broken declaration returned %v", err)
 		}
 		// The control. It is what makes the count above a measure of walks that

@@ -10,6 +10,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/analyzer"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
+	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 )
 
@@ -40,8 +41,84 @@ const topologyStageEntity = "Component"
 // the finding, and it names the authored key either way.
 const topologyStageIdentityEntity = "Aggregate"
 
+// The entity a finding about a node's Recipe mapping is reported against, and it
+// is a third kind rather than either of the two above.
+//
+// Every arm of the two mapping rules asks for an entry under the Manifest's own
+// mapping table — written, corrected, or pinned at a version — so the remedy is
+// in the Manifest whichever arm fired. The kind decides the fault category a
+// caller routes on, and a category names one document: reporting these against
+// the component would send the reader into the catalog, and against the
+// application would send them into a file that records no mapping at all.
+const topologyStageMappingEntity = "Manifest"
+
+// topologyStageFindings accumulates what this site's rules raised, holding apart
+// the findings that refuse any run from the findings that refuse only a run
+// emitting something a person will apply.
+//
+// It exists so that which stream a finding lands on is read from the DECLARED
+// severity of the rule that raised it rather than chosen by hand at each call.
+// Routing by hand is how a rule comes to declare one consequence and receive
+// another: both spellings compile, both read correctly, and nothing compares
+// them. Here the declaration is the only input, so the two cannot disagree.
+//
+// 🔴 The bound, stated because an unstated one reads as full coverage: this
+// holds at THIS site and at no other. Every other suite still chooses its
+// stream by hand, so a rule invoked from one of them receives whatever that
+// call site appends it to, whatever it declared — which is the defect above,
+// still live everywhere this accumulator is not. Migrating the rest is not
+// this site's to do; reading it as already done is the mistake this paragraph
+// prevents.
+type topologyStageFindings struct {
+	// halting refuses every caller of this stage, which is what this site does
+	// with a finding: it returns it, and the graph entry that reaches this stage
+	// has no channel to carry one on.
+	halting []*resolver.ResolverError
+
+	// carried travels out of this stage instead, for an entry that decides
+	// whether its own run is one that emits.
+	carried []*resolver.ResolverError
+}
+
+// record routes what one rule raised, converting it to this boundary's finding
+// shape under the entity that rule's findings are attributed to.
+//
+// An unknown severity is refused rather than defaulted. A default would pick one
+// of the two streams for a value neither of them names, which is a consequence
+// nobody declared — and picking the carried stream would silence the rule on
+// every surface while picking the halting one would refuse a run the rule never
+// meant to refuse.
+//
+// The advisory severity is among the values refused here, and that is a bound of
+// this site rather than of the severity: this stage reports before the analysis
+// exists, so there is no warning stream to append to. A rule declared advisory
+// belongs at a stage that has one.
+func (f *topologyStageFindings) record(
+	severity constraint.Severity,
+	entity string,
+	objections []constraint.Objection,
+) error {
+	if len(objections) == 0 {
+		return nil
+	}
+	switch severity {
+	case constraint.SeverityFatal:
+		f.halting = append(f.halting, resolver.FindingsFromObjections(objections, entity)...)
+	case constraint.SeverityEmissionFatal:
+		f.carried = append(f.carried, resolver.FindingsFromObjections(objections, entity)...)
+	default:
+		return fmt.Errorf(
+			"topology-stage rules: a rule raised %d finding(s) at severity %q, which this site "+
+				"carries no stream for; it reports before the analysis exists, so it holds a "+
+				"halting stream and a stream for findings that refuse only a run that emits",
+			len(objections), severity)
+	}
+	return nil
+}
+
 // runTopologyStageRules invokes the rules declared over the flattened
-// composition and returns what they raised as a halt.
+// composition, returning what the halting ones raised as a halt and what the
+// rest raised for the caller to decide about.
 //
 // A rule needs a presentation for the facts it reads and an enumeration for the
 // subjects it is invoked once per. The stage that flattened the composition
@@ -51,7 +128,7 @@ const topologyStageIdentityEntity = "Aggregate"
 // facts cannot answer for and would leave the rule silently uninvoked over the
 // ones it can.
 //
-// # Why the findings halt here rather than joining a later stream
+// # Why the halting findings halt here rather than joining a later stream
 //
 // This stage has no diagnostic slice to append to: the analysis that carries one
 // is built two stages later, and the products it is built from do not exist yet.
@@ -67,18 +144,29 @@ const topologyStageIdentityEntity = "Aggregate"
 // facts complete at buys — the author is told about the broken declaration
 // before anything downstream reasons about what it declares.
 //
+// # Why one class of finding is handed back instead
+//
+// A rule declaring the emission severity says its finding refuses a run that
+// emits something a person will apply and is carried by a run that only
+// describes the composition. This site cannot make that distinction: it runs
+// inside the one entry every surface reaches a graph through, so a halt returned
+// here refuses an inspection and an acquisition exactly as it refuses a build.
+// Such findings therefore travel out with the composition, and the entry that
+// knows what its own run is decides.
+//
 // It reports the reason a walk stopped and nothing else when nothing was raised.
 func runTopologyStageRules(
 	ctx context.Context,
 	topoResult *topology.TopologyResult,
-) error {
+) ([]*resolver.ResolverError, error) {
 	// A build holding no resolve result produces no presentation of this stage,
 	// because the earlier stage's facts are answered from the documents that
 	// result carries. There is nothing to ask a rule, and nothing to report: the
 	// caller supplied no composition rather than a faulty one.
 	if topoResult == nil || topoResult.StageView == nil || topoResult.StageCoordinates == nil {
-		return nil
+		return nil, nil
 	}
+	var found topologyStageFindings
 
 	// Each presence mandate a node's component type declares is well formed.
 	// An annotation value is an opaque string that nothing upstream has
@@ -96,7 +184,12 @@ func runTopologyStageRules(
 		analyzer.AttachmentRequirementWellFormed,
 	)
 	if err != nil {
-		return err
+		return nil, err
+	}
+	if err := found.record(
+		analyzer.AttachmentRequirementWellFormed.Severity, topologyStageEntity, objections,
+	); err != nil {
+		return nil, err
 	}
 
 	// Every node's identity can be the name its emitted resources are stamped
@@ -120,7 +213,12 @@ func runTopologyStageRules(
 		analyzer.ComponentIdentityIsUsable,
 	)
 	if err != nil {
-		return err
+		return nil, err
+	}
+	if err := found.record(
+		analyzer.ComponentIdentityIsUsable.Severity, topologyStageIdentityEntity, identityObjections,
+	); err != nil {
+		return nil, err
 	}
 
 	// Every identity in the composition was declared by one component instance.
@@ -138,7 +236,14 @@ func runTopologyStageRules(
 		topology.ComponentIdentityIsDeclaredOnce,
 	)
 	if err != nil {
-		return err
+		return nil, err
+	}
+	if err := found.record(
+		topology.ComponentIdentityIsDeclaredOnce.Severity,
+		topologyStageIdentityEntity,
+		identityDeclarationObjections,
+	); err != nil {
+		return nil, err
 	}
 
 	// Every dependency socket a component type declares as one that must carry a
@@ -157,27 +262,74 @@ func runTopologyStageRules(
 		resolver.RequiredSocketIsPopulated,
 	)
 	if err != nil {
-		return err
+		return nil, err
+	}
+	if err := found.record(
+		resolver.RequiredSocketIsPopulated.Severity, topologyStageEntity, socketObjections,
+	); err != nil {
+		return nil, err
 	}
 
-	// One halt carrying every rule's findings, rule by rule. A document offending
-	// against more than one is reported for all of them rather than for whichever
-	// rule ran first: they are asked at one stage, so there is no later pass that
-	// would report the rest, and halting on the first would make the author fix
-	// one fault to discover the next.
-	violations := resolver.FindingsFromObjections(objections, topologyStageEntity)
-	violations = append(violations,
-		resolver.FindingsFromObjections(identityObjections, topologyStageIdentityEntity)...)
-	violations = append(violations,
-		resolver.FindingsFromObjections(identityDeclarationObjections, topologyStageIdentityEntity)...)
-	violations = append(violations,
-		resolver.FindingsFromObjections(socketObjections, topologyStageEntity)...)
-	if len(violations) == 0 {
-		return nil
+	// Every component instance the composition holds resolves to a Recipe the
+	// catalog holds, through an explicit entry in the Manifest's mapping table.
+	// The node set it walks has to be complete, and a component a sub-aggregate
+	// contributes joins that set only when the composition is flattened — asked
+	// over the application's own instance list the rule would never be invoked for
+	// one, and a rule that is never invoked reports exactly what a rule that ran
+	// and approved reports. So this is the earliest stage that can ask it, and the
+	// enumeration here is the flattened composition's own.
+	//
+	// It declares the emission severity, so what it raises is handed back rather
+	// than halting every caller of this stage.
+	resolutionObjections, err := constraint.RunOnNodes(
+		ctx.Err,
+		topoResult.StageCoordinates,
+		topoResult.StageView,
+		catalog.NodeResolvesToARecipe,
+	)
+	if err != nil {
+		return nil, err
 	}
-	return &resolver.MultiResolverError{
+	if err := found.record(
+		catalog.NodeResolvesToARecipe.Severity, topologyStageMappingEntity, resolutionObjections,
+	); err != nil {
+		return nil, err
+	}
+
+	// No component instance's type matches several version-distinct mapping keys
+	// with none matching it exactly. It is the sibling of the rule above over the
+	// one outcome that rule passes over: a refused lookup names no reference, so
+	// it reads there as an instance nothing maps, and the two faults have opposite
+	// remedies. It is asked once per instance rather than once per mapping entry
+	// because a table holding one type at two versions is legal authoring — an
+	// exact key match wins first, so the same table resolves a pinned instance and
+	// refuses an unpinned one.
+	ambiguityObjections, err := constraint.RunOnNodes(
+		ctx.Err,
+		topoResult.StageCoordinates,
+		topoResult.StageView,
+		catalog.NodeTypeMappingIsUnambiguous,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if err := found.record(
+		catalog.NodeTypeMappingIsUnambiguous.Severity, topologyStageMappingEntity, ambiguityObjections,
+	); err != nil {
+		return nil, err
+	}
+
+	// One halt carrying every halting rule's findings, rule by rule. A document
+	// offending against more than one is reported for all of them rather than for
+	// whichever rule ran first: they are asked at one stage, so there is no later
+	// pass that would report the rest, and halting on the first would make the
+	// author fix one fault to discover the next.
+	if len(found.halting) == 0 {
+		return found.carried, nil
+	}
+	return found.carried, &resolver.MultiResolverError{
 		Entity:     topologyStageEntity,
-		Summary:    fmt.Sprintf("%d violation(s) over the composed topology", len(violations)),
-		Violations: violations,
+		Summary:    fmt.Sprintf("%d violation(s) over the composed topology", len(found.halting)),
+		Violations: found.halting,
 	}
 }

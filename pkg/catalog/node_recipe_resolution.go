@@ -1,0 +1,60 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Cognitio S.r.l.
+
+package catalog
+
+import (
+	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
+)
+
+// nodeRecipeResolution joins the Manifest's mapping table and this catalog's
+// recipe index into the single answer about one component instance: which
+// reference the mapping names for it, whether the catalog holds a Recipe there,
+// which keys a version-tolerant match could not choose between, and which
+// Recipes implement the instance's type.
+//
+// It is the derivation the compiler already performs, projected rather than
+// repeated: the same mapping lookup and the same recipe lookup decide which
+// Recipe a node renders through, and this reads their outcome instead of
+// deciding anything of its own. That is what makes the answer available to a
+// rule asked where the node set is complete without the rule reaching for the
+// Manifest, which is a document a compilation-stage view does not carry.
+//
+// The pin candidates are resolved only for an instance no mapping reached. An
+// instance the Manifest maps needs no candidate offered — the author has already
+// chosen — and scanning the recipe index for one would pay for a set nothing
+// reads. An instance whose lookup refused is offered none either: the fault is
+// in the mapping table's keys rather than in a missing entry, so candidates
+// would suggest the wrong edit.
+//
+// A refused lookup yields no reference and no candidates, and the keys it could
+// not choose between travel instead. That ordering is the whole reason the keys
+// are a field: a reader seeing an unmapped instance and a reader seeing a
+// refused lookup have to act differently, and an answer carrying only "not
+// mapped" cannot tell them which they have.
+func (c *Catalog) nodeRecipeResolution(
+	manifest *types.Manifest,
+	instanceName string,
+	componentType string,
+) resolver.NodeRecipeResolution {
+	uri, mapped, err := ComponentRecipeURI(manifest, instanceName, componentType)
+	if keys, refused := ambiguousMappingKeys(err); refused {
+		return resolver.NodeRecipeResolution{AmbiguousKeys: keys}
+	}
+	if err != nil {
+		// No other refusal shape exists today, and one added later is reported as
+		// an instance nothing mapped rather than silently resolved: this is a
+		// projection of a lookup it does not own, so inventing an outcome for a
+		// failure it cannot classify would state something about the mapping table
+		// that the lookup never said.
+		return resolver.NodeRecipeResolution{}
+	}
+	if mapped {
+		_, present := c.RecipeByURI(uri)
+		return resolver.NodeRecipeResolution{Reference: uri, Mapped: true, Present: present}
+	}
+	return resolver.NodeRecipeResolution{
+		PinCandidates: recipesImplementing(c.Recipes, componentType),
+	}
+}
