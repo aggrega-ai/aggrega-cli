@@ -86,6 +86,35 @@ type CatalogLookup struct {
 	// proceed. May be nil in catalog-less paths; a consumer that needs it then
 	// resolves nothing and halts as no-parser-available.
 	ParserPlugin func(format string) (types.Plugin, error)
+	// Recipe returns the catalog Recipe a Manifest mapping value names, plus a
+	// found flag. The reference is the mapping value verbatim, in whichever of
+	// the accepted reference shapes the author wrote it. May be nil, and a nil
+	// field finds nothing — which a rule over a mapping entry reads as an entry
+	// whose recipe does not resolve, the same answer it reads for a reference the
+	// catalog holds no entry for, and which it passes over rather than reports.
+	Recipe func(reference string) (types.Recipe, bool)
+	// FeatureRecipe is the FeatureRecipe analogue of Recipe, for a mapping value
+	// written under the features tier. It is a separate field rather than one
+	// lookup spanning both, because the two are separate catalog kinds reached
+	// through separate lookups, and one field would have to pick a kind and would
+	// answer for the wrong one wherever the other applied. May be nil, on the same
+	// terms.
+	FeatureRecipe func(reference string) (types.FeatureRecipe, bool)
+	// ComponentAncestry reports the extends ancestry of a component type: the
+	// mapping key of every base it descends from, nearest parent first. A type the
+	// resolver finds no entry for has no ancestry and no error, because "the type
+	// is absent from the catalog" belongs to the path that resolves types; a chain
+	// that cannot be walked returns the chain's own fault, so a caller reports the
+	// chain rather than a mapping.
+	//
+	// It is supplied per caller rather than derived from the Component lookup
+	// beside it, and that is load-bearing. A catalog shell assembled over a
+	// backing whose Component index is empty by construction resolves no ancestry
+	// at all, and a gate wired to such a shell's own resolver would refuse every
+	// mapping onto a base's Recipe — silently, and only on that path. So the
+	// backing that holds the Components supplies the resolver. May be nil, which
+	// declares that the caller's catalog resolves no ancestry.
+	ComponentAncestry func(componentType string) ([]string, error)
 }
 
 // RunGuards evaluates the rules that can be asked of the two authoring documents

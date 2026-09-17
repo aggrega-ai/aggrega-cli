@@ -308,40 +308,11 @@ func TestVerifyManifestImplementsConsistency_CaretAware(t *testing.T) {
 	}
 }
 
-// TestManifestMappingConsistent pins the bidirectional version truth table the
-// consistency check applies between a Manifest mapping key and the mapped
-// recipe's spec.implements. The key may be bare or version-pinned; the
-// implements may be bare, exact, or caret. A bare key imposes no version
-// constraint (base match suffices, including against a version-pinned
-// implements); a version-pinned key is judged by exact/caret/base
-// satisfaction.
-func TestManifestMappingConsistent(t *testing.T) {
-	t.Parallel()
-
-	cases := []struct {
-		name      string
-		impl, key string
-		want      bool
-	}{
-		{"bare key, bare impl, same base", "core/datastore/postgres", "core/datastore/postgres", true},
-		{"bare key, versioned impl, same base", "core/datastore/postgres:1.0.0", "core/datastore/postgres", true},
-		{"bare key, caret impl, same base", "core/datastore/postgres:^1.0.0", "core/datastore/postgres", true},
-		{"versioned key, bare impl, same base", "core/datastore/postgres", "core/datastore/postgres:1.0.0", true},
-		{"versioned key, exact impl, same version", "core/datastore/postgres:1.0.0", "core/datastore/postgres:1.0.0", true},
-		{"versioned key in caret range", "core/api:^1.0.0", "core/api:1.2.0", true},
-		{"versioned key out of caret range", "core/api:^1.0.0", "core/api:2.0.0", false},
-		{"versioned key, exact impl, version mismatch", "core/api:1.0.0", "core/api:2.0.0", false},
-		{"bare key, differing base", "core/datastore/mysql", "core/datastore/postgres", false},
-		{"versioned key, differing base", "core/datastore/mysql:1.0.0", "core/datastore/postgres:1.0.0", false},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := manifestMappingConsistent(tc.impl, tc.key); got != tc.want {
-				t.Errorf("manifestMappingConsistent(impl=%q, key=%q) = %v; want %v", tc.impl, tc.key, got, tc.want)
-			}
-		})
-	}
-}
+// The version truth table for the satisfaction rule itself moved with the rule,
+// into the package that declares it. What stays here is the coverage over this
+// method, which is the caller: the cases either side of this note drive the same
+// table through the presentation this method builds, so the rule's own table and
+// its use through a real catalog are both exercised.
 
 // TestVerifyManifestImplementsConsistency_BareKeyVersionedImpl pins the
 // regressed case end-to-end through the public verifier: a bare mapping key

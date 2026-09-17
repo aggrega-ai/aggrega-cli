@@ -53,6 +53,55 @@ type manifestCatalogView struct {
 	// targetContracts is the resolved contract of each Feature a binding targets,
 	// produced once when this value was built.
 	targetContracts map[string]resolvedContract
+
+	// ancestries is the extends chain of each component type a rule has asked
+	// about, kept with whatever the walk produced.
+	//
+	// It is filled on the ask rather than up front, unlike the contracts above,
+	// and the difference is a property a mapping reading depends on: a rule asks
+	// for an ancestry only after a mapping has already failed the direct
+	// comparison, so a Manifest whose entries all match resolves no chain at all.
+	// Resolving every mapped type when this value was built would make that walk
+	// unconditional and the saving unavailable.
+	ancestries map[string]resolvedAncestry
+
+	// ancestriesAsked is the component types in ancestries, in the order they
+	// were first asked about.
+	//
+	// The order is carried rather than recovered by sorting, because the ask
+	// order is the order the mapping table declares its entries and that is the
+	// order a reader meets the faults in. A map has no order of its own, so
+	// leaving it to be sorted later would report the same faults in a different
+	// sequence from the findings beside them.
+	ancestriesAsked []string
+}
+
+// resolvedAncestry is one component type's extends chain as the catalog answered
+// it: the bases, and whatever the walk failed with.
+//
+// The failure is kept rather than collapsed into the absence of bases, because
+// the two are different answers. A type the catalog holds no entry for has no
+// bases and no fault, and a chain that could not be walked has no bases either —
+// a reader handed only the bases could not tell them apart, and one of them is a
+// defect to report while the other is not.
+type resolvedAncestry struct {
+	bases []string
+	err   error
+}
+
+// componentAncestryWalkFailure is one component type whose extends chain could
+// not be walked, and why.
+//
+// It is the value a fault is composed from, not the fault itself. Keeping the two
+// apart is what lets one resolution serve a diagnostic without the resolution
+// deciding the verdict.
+type componentAncestryWalkFailure struct {
+	// ComponentType is the type whose chain did not walk.
+	ComponentType string
+
+	// Err is the walk's own fault, which is what a caller matching the chain's
+	// condition keeps matching against.
+	Err error
 }
 
 // newManifestCatalogView presents the Manifest a caller is holding beside the
@@ -71,6 +120,7 @@ func newManifestCatalogView(
 		manifestDocumentView: newManifestDocumentView(path, manifest),
 		catalog:              catalog,
 		targetContracts:      map[string]resolvedContract{},
+		ancestries:           map[string]resolvedAncestry{},
 	}
 	for _, key := range v.ManifestAnnotationBindingKeys(path) {
 		featureType, declared := v.ManifestAnnotationBindingFeature(path, key)
@@ -109,6 +159,61 @@ func (v *manifestCatalogView) CatalogFeaturePresent(featureType string) bool {
 // that set is not one of its subjects.
 func (v *manifestCatalogView) CompiledFeatureSchema(featureType string) (map[string]any, bool) {
 	return v.targetContracts[featureType].resolved()
+}
+
+// MappedRecipeImplements returns what the Recipe or FeatureRecipe a mapping
+// reference names declares it implements, and whether that reference resolves in
+// the catalog at all.
+//
+// It reaches the catalog through the one nil-tolerant resolution this package
+// declares for the question, which is what the presentation of a compilation
+// reads for the same fact — so the two answer from one lookup rather than from
+// two that agree today.
+func (v *manifestCatalogView) MappedRecipeImplements(tier string, reference string) (string, bool) {
+	return mappedRecipeImplements(v.catalog, tier, reference)
+}
+
+// MappedTypeExtendsAncestry returns the mapping keys of every base a component
+// type descends from, nearest parent first, and whether the chain could be walked
+// at all.
+//
+// It resolves on the first ask and answers from that resolution afterwards, so a
+// type asked about twice is walked once and cannot be answered two different ways
+// within one reading. A chain that did not walk is kept with its fault, which is
+// what [manifestCatalogView.unwalkableAncestries] reports and what makes the
+// second result meaningful: a reader handed only the bases could not tell a type
+// with no ancestry from one whose chain is broken.
+func (v *manifestCatalogView) MappedTypeExtendsAncestry(componentType string) ([]string, bool) {
+	resolved, asked := v.ancestries[componentType]
+	if !asked {
+		bases, err := componentAncestryOf(v.catalog, componentType)
+		resolved = resolvedAncestry{bases: bases, err: err}
+		v.ancestries[componentType] = resolved
+		v.ancestriesAsked = append(v.ancestriesAsked, componentType)
+	}
+	if resolved.err != nil {
+		return nil, false
+	}
+	return resolved.bases, true
+}
+
+// unwalkableAncestries names each component type a rule asked about whose extends
+// chain could not be walked, paired with the walk's own fault, in the order the
+// types were asked about.
+//
+// It is how the failing outcome leaves this value, and it is a method rather than
+// a declared fact for the reason its counterpart beside it is one: a rule reads
+// the outcome and never produces it, so the fault is reported by the caller that
+// holds the resolution, once, rather than raised again by every rule that met the
+// absence.
+func (v *manifestCatalogView) unwalkableAncestries() []componentAncestryWalkFailure {
+	var out []componentAncestryWalkFailure
+	for _, componentType := range v.ancestriesAsked {
+		if err := v.ancestries[componentType].err; err != nil {
+			out = append(out, componentAncestryWalkFailure{ComponentType: componentType, Err: err})
+		}
+	}
+	return out
 }
 
 // unresolvableTargets names each Feature a binding targets whose declared

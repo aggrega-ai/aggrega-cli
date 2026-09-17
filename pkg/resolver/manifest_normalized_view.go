@@ -117,6 +117,18 @@ func (v *manifestNormalizedView) CompiledFeatureSchema(featureType string) (map[
 	return v.bindings.CompiledFeatureSchema(featureType)
 }
 
+// MappedTypeExtendsAncestry returns the mapping keys of every base a component
+// type descends from, and whether the chain could be walked.
+//
+// It delegates for the reason the contract above does: the presentation embedded
+// here answers the same fact by walking per call and keeping nothing, so a rule
+// that needs the walk's own fault told apart from an empty ancestry has to reach
+// the value that kept it. Delegating also means one walk per type across both
+// presentations rather than one per presentation.
+func (v *manifestNormalizedView) MappedTypeExtendsAncestry(componentType string) ([]string, bool) {
+	return v.bindings.MappedTypeExtendsAncestry(componentType)
+}
+
 // The compiler holds this type to the contract rather than a comment claiming it:
 // a signature drifting from the declared facts stops compiling here.
 var _ constraint.NormalizedView = (*manifestNormalizedView)(nil)

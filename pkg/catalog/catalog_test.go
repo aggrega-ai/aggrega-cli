@@ -41,6 +41,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"go.yaml.in/yaml/v3"
 )
@@ -631,7 +632,7 @@ spec:
 	}
 	var r types.Recipe
 	for _, rr := range c.Recipes {
-		if implementsSatisfies(rr.Spec.Implements, "core/rel") {
+		if resolver.ImplementsSatisfies(rr.Spec.Implements, "core/rel") {
 			r = rr
 			break
 		}

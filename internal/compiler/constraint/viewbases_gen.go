@@ -1496,6 +1496,20 @@ type NormalizedViewBase struct {
 	CatalogViewBase
 }
 
+// MappedRecipeImplements panics. This view does not carry
+// mapped-recipe-implements, which is read from
+// resolver.MappedRecipeImplements(catalog, tier, reference).
+func (NormalizedViewBase) MappedRecipeImplements(tier string, reference string) (string, bool) {
+	panic("this view does not carry mapped-recipe-implements, which is read from resolver.MappedRecipeImplements(catalog, tier, reference)")
+}
+
+// MappedTypeExtendsAncestry panics. This view does not carry
+// mapped-type-extends-ancestry, which is read from
+// resolver.CatalogLookup.ComponentAncestry(componentType).
+func (NormalizedViewBase) MappedTypeExtendsAncestry(componentType string) ([]string, bool) {
+	panic("this view does not carry mapped-type-extends-ancestry, which is read from resolver.CatalogLookup.ComponentAncestry(componentType)")
+}
+
 // CatalogFeaturePresent panics. This view does not carry
 // catalog-feature-present, which is read from
 // resolver.CatalogLookup.Feature(featureType).
@@ -2804,6 +2818,8 @@ type ReleaseDocumentFacts interface {
 // documentation is not repeated here: a fact's documentation has one home,
 // and a second copy would be the one that drifts.
 type CatalogStageFacts interface {
+	MappedRecipeImplements(tier string, reference string) (string, bool)
+	MappedTypeExtendsAncestry(componentType string) ([]string, bool)
 	CatalogFeaturePresent(featureType string) bool
 	CompiledFeatureSchema(featureType string) (map[string]any, bool)
 }

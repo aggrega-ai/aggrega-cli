@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -457,7 +458,7 @@ spec:
 	}
 	var fr types.FeatureRecipe
 	for _, ffr := range c.FeatureRecipes {
-		if implementsSatisfies(ffr.Spec.Implements, "feature/example") {
+		if resolver.ImplementsSatisfies(ffr.Spec.Implements, "feature/example") {
 			fr = ffr
 			break
 		}

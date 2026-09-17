@@ -70,37 +70,7 @@ func TestSelectEntityVersion_VersionlessFallback(t *testing.T) {
 	}
 }
 
-// implementsSatisfies is the single caret-aware per-entry implements matcher:
-// given one recipe's spec.implements (impl) and a concrete component-type
-// request (componentType), it reports whether impl satisfies the request under
-// the three-form rule (exact, caret-range, unversioned base). These cases pin
-// the caret semantics — the implements SEARCH and the manifest-mapping
-// consistency check both consume it, so this coverage guards both surfaces.
-func TestImplementsSatisfies(t *testing.T) {
-	t.Parallel()
-
-	cases := []struct {
-		name                string
-		impl, componentType string
-		want                bool
-	}{
-		{"exact match", "core/api-server:1.0.0", "core/api-server:1.0.0", true},
-		{"caret in range", "core/api-server:^1.0.0", "core/api-server:1.5.3", true},
-		{"caret out of range", "core/api-server:^1.0.0", "core/api-server:2.0.0", false},
-		{"caret base mismatch", "other/thing:^1.0.0", "core/api-server:1.5.0", false},
-		{"unversioned impl matches versioned request", "core/api-server", "core/api-server:1.0.0", true},
-		{"unversioned impl and unversioned request", "core/api-server", "core/api-server", true},
-		{"versioned impl cannot match unversioned request", "core/api-server:1.0.0", "core/api-server", false},
-		{"non-caret version mismatch same base", "core/api-server:1.0.0", "core/api-server:2.0.0", false},
-		{"prerelease caller within prerelease caret baseline", "core/api-server:^1.0.0-beta", "core/api-server:1.0.0-rc1", true},
-		{"caret cannot match unparseable request version", "core/api-server:^1.0.0", "core/api-server:not-a-version", false},
-		{"unrelated base is a miss", "core/api-server:1.0.0", "different/component:1.0.0", false},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := implementsSatisfies(tc.impl, tc.componentType); got != tc.want {
-				t.Errorf("implementsSatisfies(%q, %q) = %v; want %v", tc.impl, tc.componentType, got, tc.want)
-			}
-		})
-	}
-}
+// The caret-semantics table for the implements matcher itself moved with the
+// matcher, into the package that declares the rule reading it. The inverse
+// direction above stays here, because the index lookup it exercises is this
+// package's.

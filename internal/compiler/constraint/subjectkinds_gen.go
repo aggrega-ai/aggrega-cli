@@ -58,7 +58,7 @@ const (
 	// SubjectDocumentOutputLabel is the subject kind (document, output-label), keyed by 2 declared facts.
 	SubjectDocumentOutputLabel SubjectKind = "(document, output-label)"
 
-	// SubjectDocumentMappingEntry is the subject kind (document, mapping-entry), keyed by 2 declared facts.
+	// SubjectDocumentMappingEntry is the subject kind (document, mapping-entry), keyed by 4 declared facts.
 	SubjectDocumentMappingEntry SubjectKind = "(document, mapping-entry)"
 
 	// SubjectBoundaryPlacement is the subject kind boundary-placement, keyed by 1 declared fact.

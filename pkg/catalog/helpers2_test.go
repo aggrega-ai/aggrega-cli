@@ -7,6 +7,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -115,7 +116,7 @@ spec:
 	if len(recipesImplementing(c.Recipes, "core/compute/api")) > 0 {
 		var r types.Recipe
 		for _, rr := range c.Recipes {
-			if implementsSatisfies(rr.Spec.Implements, "core/compute/api") {
+			if resolver.ImplementsSatisfies(rr.Spec.Implements, "core/compute/api") {
 				r = rr
 				break
 			}

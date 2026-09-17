@@ -1065,6 +1065,80 @@ var facts = []factDecl{
 			"state half the source and leave the other half to be discovered " +
 			"from the accessor's parameters.",
 	},
+	{
+		Name:        "mapped-recipe-implements",
+		Stage:       "catalog",
+		SourceField: "resolver.MappedRecipeImplements(catalog, tier, reference)",
+		Subject:     []string{"document", "mapping-entry"},
+		Params: []paramDecl{
+			{Name: "tier", Type: "string"},
+			{Name: "reference", Type: "string"},
+		},
+		Returns: "(string, bool)",
+		Doc: "MappedRecipeImplements is the type the Recipe or FeatureRecipe a " +
+			"mapping reference names declares it implements, and whether that " +
+			"reference resolves in the catalog at all.\n\nA recipe's declared " +
+			"implements is a consistency anchor rather than a dispatch " +
+			"mechanism: the mapping value names the recipe directly, and this " +
+			"is what a rule compares the mapped key against.\n\nThe tier " +
+			"selects which catalog kind the reference is resolved as, because " +
+			"the components tier names Recipes and the features tier names " +
+			"FeatureRecipes and the reference string alone does not say which. " +
+			"One fact serves both rather than two facts serving one tier each, " +
+			"because the pair is one question asked of whichever kind the entry " +
+			"was written under — the tier is a coordinate of the entry, the way " +
+			"the reference is, and a rule holding an entry holds both.\n\nThe " +
+			"second result reports whether a recipe was found to read the " +
+			"declaration off, and nothing finer. A reference the catalog holds " +
+			"no entry for is a resolution concern owned by the path that " +
+			"resolves references, which reports it with the richer context that " +
+			"path has — including, for an entity skipped at a tolerant load, " +
+			"why it went missing. So a rule reading this passes such an entry " +
+			"over rather than reporting it, and the better diagnostic is the " +
+			"one the author gets.\n\nIt is keyed per mapping entry although the " +
+			"answer follows from the tier and the reference alone, for the " +
+			"reason the catalog presence facts are keyed per attachment: the " +
+			"stage is where the ANSWER is complete, while the key is what a " +
+			"rule reading it is invoked once per, and a rule about a mapping " +
+			"entry is invoked once per entry.\n\nIt is complete as soon as the " +
+			"catalog is reachable — the answer is a function of a reference and " +
+			"the catalog, and nothing normalized enters it — so it lands at the " +
+			"catalog stage rather than at the one after it.",
+	},
+	{
+		Name:        "mapped-type-extends-ancestry",
+		Stage:       "catalog",
+		SourceField: "resolver.CatalogLookup.ComponentAncestry(componentType)",
+		Subject:     []string{"document", "mapping-entry"},
+		Params:      []paramDecl{{Name: "componentType", Type: "string"}},
+		Returns:     "([]string, bool)",
+		Doc: "MappedTypeExtendsAncestry are the mapping keys of every base a " +
+			"component type descends from, nearest parent first, and whether " +
+			"the chain could be walked at all.\n\nEach ancestor is rendered as " +
+			"the key an author would write for that base type, so a rule " +
+			"offering an ancestor to the same comparison it applies to the " +
+			"mapped key itself is offering the same shape of value. That is " +
+			"what lets a Recipe written against a base serve everything " +
+			"extending that base: the specialization needs a mapping entry and " +
+			"no Recipe of its own.\n\nA type the catalog holds no entry for has " +
+			"no ancestry and the chain is still walkable. The two are " +
+			"deliberately not distinguished here, because \"the mapped type is " +
+			"absent\" belongs to the path that resolves types and not to a " +
+			"judgement about a mapping.\n\nThe second result reports a chain " +
+			"that could not be walked — a loop, or a link naming a type that " +
+			"does not resolve. It is the one outcome a rule cannot act on: the " +
+			"mapping may be perfectly well written, and reporting it as the " +
+			"fault would send the author to the wrong file. So a rule reading " +
+			"this passes such an entry over, and the fault is reported by " +
+			"whatever holds the resolution, once, rather than raised again by " +
+			"every rule that met the absence.\n\nIt is keyed per mapping entry " +
+			"for the reason the fact beside it is, and it is complete as soon " +
+			"as the catalog is reachable: the chain is a function of a type " +
+			"name and the catalog's own Component entries, and nothing " +
+			"normalized enters it.\n\nThe order is the chain's and is carried " +
+			"rather than sorted, because an extends chain is a sequence and has " +
+			"one.",
+	},
 
 	{
 		Name:        "feature-recipe-source-declared",

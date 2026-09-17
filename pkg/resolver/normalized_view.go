@@ -974,6 +974,33 @@ func (v *normalizedView) CatalogFeaturePresent(featureType string) bool {
 	return lookupFeature(v.catalog, featureType) != nil
 }
 
+// MappedRecipeImplements returns what the Recipe or FeatureRecipe a mapping
+// reference names declares it implements, and whether that reference resolves in
+// the catalog at all.
+//
+// It is answered here although this presents a compilation and no Manifest,
+// because the fact is a catalog read keyed by a reference: the stage this value
+// contains declares it, so every fact of that stage is answerable here or a rule
+// reading one would refuse at read time rather than fail to compile.
+func (v *normalizedView) MappedRecipeImplements(tier string, reference string) (string, bool) {
+	return mappedRecipeImplements(v.catalog, tier, reference)
+}
+
+// MappedTypeExtendsAncestry returns the mapping keys of every base a component
+// type descends from, nearest parent first, and whether the chain could be walked.
+//
+// It resolves per call and keeps nothing, which is the difference between this and
+// the presentation of one Manifest beside the catalog: a rule that needs the
+// walk's own fault told apart from an empty ancestry has to reach the value that
+// kept it, and this one reports the outcome without holding it.
+func (v *normalizedView) MappedTypeExtendsAncestry(componentType string) ([]string, bool) {
+	bases, err := componentAncestryOf(v.catalog, componentType)
+	if err != nil {
+		return nil, false
+	}
+	return bases, true
+}
+
 // ComponentTypeIsLocalPath reports whether a component type is addressed as a
 // path beside the authoring document rather than as a catalog identity.
 func (v *normalizedView) ComponentTypeIsLocalPath(componentType string) bool {
