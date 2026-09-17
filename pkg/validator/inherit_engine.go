@@ -69,12 +69,13 @@ type InheritanceResult struct {
 // Inherited labels and annotations are not merged here — that happens on
 // the typed entity in ResolveComponentExtends and ResolveFeatureExtends.
 func ResolveInheritance(entry CatalogEntry, lookup func(uri string) (CatalogEntry, bool)) InheritanceResult {
-	chain, fault := walkExtendsChain(entry,
-		func(e CatalogEntry) string { return e.URI },
-		func(e CatalogEntry) string { return e.Extends },
-		lookup)
-	if fault != nil {
-		return InheritanceResult{Errors: []*ValidationError{chainFaultError(entry.Kind, entry.URI, fault)}}
+	chain, verr := ResolveExtendsChain(entry.Kind, entry, ExtendsChainSpec[CatalogEntry]{
+		Key:        func(e CatalogEntry) string { return e.URI },
+		ParentLink: func(e CatalogEntry) string { return e.Extends },
+		Lookup:     lookup,
+	})
+	if verr != nil {
+		return InheritanceResult{Errors: []*ValidationError{verr}}
 	}
 
 	var result InheritanceResult

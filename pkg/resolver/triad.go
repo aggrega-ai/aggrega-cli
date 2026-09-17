@@ -72,9 +72,10 @@ type ResolvedAggregate struct {
 }
 
 // ResolvedManifest is the Manifest counterpart of [ResolvedAggregate]. A Manifest
-// has no catalog or registry tier (it is deployment-side operator config), so it
-// resolves only from a `./`/`../` file or the same-directory scan; Path and Bytes
-// are always the on-disk file and its content.
+// has no catalog or registry tier (it is operator configuration authored beside
+// the Release), so it resolves only from a `./`/`../` file or the
+// same-directory scan; Path and Bytes are always the on-disk file and its
+// content.
 type ResolvedManifest struct {
 	Manifest *types.Manifest
 	Path     string

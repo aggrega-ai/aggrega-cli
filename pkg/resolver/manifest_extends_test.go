@@ -269,29 +269,30 @@ spec:
 	}
 }
 
-// The tests from here to the end of this file characterise the Manifest extends
-// walk against three faults, so that a repair is verifiable rather than argued.
-// Two of the three are repaired and the rows holding them assert the repaired
-// behaviour; the third is still present, and the rows holding it assert the
-// defect rather than what the walk ought to do:
+// The tests from here to the end of this file hold the properties a Manifest
+// extends chain is walked under. Each was written against a fault the walk
+// carried, and each now asserts the repaired behaviour:
 //
-//   - REPAIRED — which of the two conditions a cyclic chain is reported as no
-//     longer depends on which of the two legal ways of writing an extends
-//     reference the author chose. Chain membership is keyed on each link's
-//     resolved file path, so one file is one link however its reference is
-//     spelled, and both forms change over at the same length.
-//   - REPAIRED — the cycle diagnostic names the edge that closes the loop,
-//     whichever way the references are written, rather than an earlier edge
-//     whose extends declaration is legal.
-//   - STILL WRONG — a cyclic chain of ten or more links is reported as an
-//     over-deep chain, so the author is told to shorten a loop, which cannot
-//     remove it. The bound is tested as the first statement of every step,
-//     before that step can recognise it has returned to a file already in the
-//     chain. Testing it after the walk instead, as the shared entity-inheritance
-//     walk does, reports a loop as a loop at every length.
+//   - which of the conditions a cyclic chain is reported as no longer depends
+//     on which of the two legal ways of writing an extends reference the author
+//     chose. Chain membership is keyed on each link's resolved file path, so one
+//     file is one link however its reference is spelled.
+//   - the cycle diagnostic names the edge that closes the loop, whichever way
+//     the references are written, rather than an earlier edge whose extends
+//     declaration is legal.
+//   - a loop is reported as a loop at every length. The depth bound is judged
+//     once the walk has ended, so a loop longer than the bound still closes on
+//     itself first and is reported as the loop it is — the author is never told
+//     to shorten a chain whose length was not the problem.
+//   - a chain that ends cleanly and runs past the bound reports the condition
+//     that names an over-deep chain, which is the condition a Component's or a
+//     Feature's chain reports for the same fault.
+//   - a reference that resolves to nothing keeps the advice a Manifest author
+//     can act on — the Release's own directory, never the catalog — and carries
+//     the failure that looking there produced.
 //
-// Each test names again, at its own site, which part of what it asserts is the
-// remaining defect and which part is behaviour a further repair must preserve.
+// Each test names again, at its own site, which property it holds and what
+// breaking it would look like.
 
 // extendsRefStyle spells an extends reference in one of the two forms a
 // Manifest's extends accepts: an explicit relative path to the file, or the bare
@@ -371,12 +372,12 @@ func writeManifestChain(t *testing.T, dir string, n int, style extendsRefStyle, 
 // the visited set. The accepted row is the control: without it every refusal
 // here could be satisfied by a walk that refused everything.
 //
-// 🔴 The refusal is reported under the inheritance-merge condition — the same
-// identity a parent that resolves to nothing reports — rather than under the
-// condition that names an over-deep extends chain, which is what a Component's
-// or a Feature's chain reports for this fault. A consumer matching on the
-// identity therefore cannot tell the two apart. That is the before-picture, not
-// the contract.
+// 🔴 The refusal is reported under the condition that names an over-deep extends
+// chain, which is the condition a Component's or a Feature's chain reports for
+// the same fault, and NOT under the inheritance-merge condition a parent that
+// resolves to nothing reports. Both halves are asserted: a consumer matching on
+// the identity has to be able to tell an over-deep chain from an absent parent,
+// and one identity standing for both is what made that impossible.
 func TestResolveManifestExtends_DepthBoundAdmitsTenAndRefusesEleven(t *testing.T) {
 	t.Parallel()
 	for _, style := range []extendsRefStyle{pathStyleRef, identityStyleRef} {
@@ -403,91 +404,79 @@ func TestResolveManifestExtends_DepthBoundAdmitsTenAndRefusesEleven(t *testing.T
 			if err == nil {
 				t.Fatal("a chain of eleven Manifests must halt")
 			}
-			if !errors.Is(err, validator.ErrInheritanceMerge()) {
-				t.Errorf("depth refusal = %v; want the inheritance-merge condition", err)
+			if !errors.Is(err, validator.ErrExtendsChainTooDeep()) {
+				t.Errorf("depth refusal = %v; want the over-deep-chain condition", err)
 			}
-			// 🔴 The defect, pinned. Should this ever hold, the walk has been
-			// repaired and this expectation is the one to update — it is not
-			// evidence of a regression.
-			if errors.Is(err, validator.ErrExtendsChainTooDeep()) {
-				t.Error("a Manifest depth refusal now reports the over-deep-chain condition, which it does not today")
+			if errors.Is(err, validator.ErrInheritanceMerge()) {
+				t.Errorf("depth refusal = %v; it must not also report the condition an absent parent reports", err)
 			}
-			want := fmt.Sprintf("Manifest %q extends chain exceeds maximum depth of 10; reduce the chain length", chainManifestName(0))
-			if !strings.Contains(err.Error(), want) {
-				t.Errorf("depth refusal text = %q; want it to carry %q", err.Error(), want)
+			want := fmt.Sprintf(
+				"%s (Manifest %s, at .spec.extends, the bound is 10 and this chain reaches 11). "+
+					"Shorten the chain, or extend a base that sits closer to its root",
+				validator.ErrExtendsChainTooDeep().Error(), chainManifestName(0))
+			if err.Error() != want {
+				t.Errorf("depth refusal message =\n\t%q\nwant\n\t%q", err.Error(), want)
 			}
 		})
 	}
 }
 
-// TestResolveManifestExtends_ReportedConditionDependsOnReferenceStyle pins which
-// of two conditions a cyclic Manifest chain is reported as, at the length where
-// the answer changes and on both ways of writing an extends reference.
+// TestResolveManifestExtends_ALoopIsReportedAsALoopAtEveryLength pins the whole
+// of what a cyclic Manifest chain is reported as: the cycle condition, at every
+// length, on both ways of writing an extends reference.
 //
-// The name states a fault the walk no longer has. Chain membership is keyed on
-// each link's resolved file path, so a file is one link whichever legal form
-// names it, and the two forms change over at the same length. Holding that
-// convergence is now the rows' job: a walk keying on anything spelled
-// differently in the two forms takes an extra lap on a path-style loop, which
-// moves the path-style rows while leaving the identity-style rows where they
-// are.
+// Two independent faults are held here and a row failing tells them apart.
 //
-// The changeover length follows from the depth bound being tested as the first
-// statement of every step:
+// The lengths cover both sides of the depth bound. A loop that closes before the
+// bound is reached was always reported as a loop; one longer than the bound is
+// the case the bound used to claim first, and the advice the author was handed —
+// shorten the chain — cannot remove a loop. The bound is judged once the walk has
+// ended, so a chain that closes on itself is a loop whatever its length, and only
+// a chain that ends cleanly can be too deep. The final row is that other side: an
+// acyclic chain past the bound, which must report depth and never the cycle, so
+// the rows above cannot be satisfied by a walk that simply stopped judging length.
 //
-//	loop of L links   the walk is back at the head on step L with the chain L
-//	                  long; the bound is tested first in that step and refuses
-//	                  from a chain length of 10 — so a loop of nine or fewer is
-//	                  reported as a loop, and one of ten or more as an over-deep
-//	                  chain
-//
-// 🔴 A row expecting depth pins what is STILL WRONG: a loop is a loop at every
-// length, and shortening one does not remove it, so the advice that author is
-// handed cannot fix their files. Testing the bound after the walk completes, as
-// the shared entity-inheritance walk does, makes every length report the loop,
-// and a row expecting depth is then the one to update. A row expecting the cycle
-// asserts behaviour that is correct now, and that repair must preserve it.
-func TestResolveManifestExtends_ReportedConditionDependsOnReferenceStyle(t *testing.T) {
+// Both reference styles run at every length because a link is a file, so the two
+// legal ways of naming one file are one link. A walk keying chain membership on
+// anything spelled differently in the two forms — a reference compared against a
+// name — takes an extra lap around a path-style loop, which moves the path-style
+// rows and leaves the identity-style rows where they are.
+func TestResolveManifestExtends_ALoopIsReportedAsALoopAtEveryLength(t *testing.T) {
 	t.Parallel()
-	for _, tc := range []struct {
-		name      string
-		style     extendsRefStyle
-		length    int
-		wantDepth bool
-	}{
-		{"path-style loop of eight reports the cycle", pathStyleRef, 8, false},
-		{"path-style loop of nine reports the cycle, as identity-style does", pathStyleRef, 9, false},
-		{"identity-style loop of nine reports the cycle", identityStyleRef, 9, false},
-		{"identity-style loop of ten reports depth", identityStyleRef, 10, true},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
+	for _, style := range []extendsRefStyle{pathStyleRef, identityStyleRef} {
+		for _, length := range []int{2, 3, 8, 9, 10, 12, 25} {
+			t.Run(fmt.Sprintf("%s/loop of %d", style, length), func(t *testing.T) {
+				t.Parallel()
+				dir := t.TempDir()
+				head := writeManifestChain(t, dir, length, style, true)
+				_, err := ResolveManifestExtends(dir, head)
+				if err == nil {
+					t.Fatalf("a %s loop of %d must halt", style, length)
+				}
+				if !errors.Is(err, validator.ErrCyclicExtension()) {
+					t.Errorf("a %s loop of %d must report the cycle condition; got: %v", style, length, err)
+				}
+				if errors.Is(err, validator.ErrExtendsChainTooDeep()) {
+					t.Errorf("a %s loop of %d reports the over-deep-chain condition; shortening a loop does not remove it: %v", style, length, err)
+				}
+				if strings.Contains(err.Error(), "Shorten the chain") {
+					t.Errorf("a %s loop of %d is answered with advice to shorten it: %v", style, length, err)
+				}
+			})
+		}
+		t.Run(style.String()+"/acyclic chain past the bound still reports depth", func(t *testing.T) {
 			t.Parallel()
 			dir := t.TempDir()
-			head := writeManifestChain(t, dir, tc.length, tc.style, true)
+			head := writeManifestChain(t, dir, 11, style, false)
 			_, err := ResolveManifestExtends(dir, head)
 			if err == nil {
-				t.Fatalf("a %s loop of %d must halt", tc.style, tc.length)
+				t.Fatalf("an acyclic %s chain of eleven must halt", style)
 			}
-			cycle := errors.Is(err, validator.ErrCyclicExtension())
-			depth := errors.Is(err, validator.ErrInheritanceMerge()) &&
-				strings.Contains(err.Error(), "exceeds maximum depth")
-			if tc.wantDepth {
-				if !depth {
-					t.Errorf("a %s loop of %d reports depth today; got: %v", tc.style, tc.length, err)
-				}
-				// 🔴 Reporting the cycle here is the RIGHT answer and is not what
-				// happens today. Should this hold, the walk has been repaired and
-				// this row is the one to update.
-				if cycle {
-					t.Errorf("a %s loop of %d now reports the cycle condition, which it does not today; got: %v", tc.style, tc.length, err)
-				}
-				return
+			if !errors.Is(err, validator.ErrExtendsChainTooDeep()) {
+				t.Errorf("an acyclic %s chain of eleven must report the over-deep-chain condition; got: %v", style, err)
 			}
-			if !cycle {
-				t.Errorf("a %s loop of %d must report the cycle condition; got: %v", tc.style, tc.length, err)
-			}
-			if depth {
-				t.Errorf("a %s loop of %d must not report depth; got: %v", tc.style, tc.length, err)
+			if errors.Is(err, validator.ErrCyclicExtension()) {
+				t.Errorf("an acyclic %s chain of eleven must not report a cycle; got: %v", style, err)
 			}
 		})
 	}
@@ -513,10 +502,8 @@ func TestResolveManifestExtends_ReportedConditionDependsOnReferenceStyle(t *test
 // identity-style row is the control the path-style row converged onto, and it is
 // unchanged.
 //
-// Nothing this test asserts is still wrong. What is still wrong sits at a length
-// this test does not reach: a loop of ten or more links trips the depth bound
-// and never reaches this diagnostic at all, which the reference-style test above
-// holds instead.
+// The edge is what this test holds; that the diagnostic is reached at every
+// length is held by the loop test above.
 func TestResolveManifestExtends_CycleNamesWhichEdge(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
@@ -541,10 +528,14 @@ func TestResolveManifestExtends_CycleNamesWhichEdge(t *testing.T) {
 			if !errors.Is(err, validator.ErrCyclicExtension()) {
 				t.Fatalf("a %s loop of three must report the cycle condition; got: %v", tc.style, err)
 			}
-			want := fmt.Sprintf("Manifest %q extends %q, which is already in the chain; remove the circular reference",
-				chainManifestName(tc.from), tc.style.ref(chainManifestName(tc.link)))
-			if !strings.Contains(err.Error(), want) {
-				t.Errorf("cycle diagnostic = %q; want it to name the edge %q", err.Error(), want)
+			from := chainManifestName(tc.from)
+			want := fmt.Sprintf(
+				"%s (Manifest %s, at .spec.extends, %s extends %s, which is already in the chain). "+
+					"Remove the extends on %s, or point it at an entity outside the chain",
+				validator.ErrCyclicExtension().Error(), chainManifestName(0),
+				from, tc.style.ref(chainManifestName(tc.link)), from)
+			if err.Error() != want {
+				t.Errorf("cycle diagnostic =\n\t%q\nwant\n\t%q", err.Error(), want)
 			}
 		})
 	}
@@ -617,9 +608,9 @@ func TestResolveManifestExtends_MissingParentCarriesDirectoryAdviceAndResolveErr
 				t.Errorf("missing-parent refusal = %v; want the inheritance-merge condition", err)
 			}
 			want := fmt.Sprintf(
-				"%s: Manifest %q extends %q, which could not be resolved: %v; "+
-					"verify the extends reference is a relative path or the name of a Manifest in the Release's directory",
-				validator.ErrInheritanceMerge().Error(), "child", tc.ref, resolveErr)
+				"%s (Manifest child, at .spec.extends, child extends %s, which could not be resolved: %v). "+
+					"Verify the extends reference is a relative path or the name of a Manifest in the Release's directory",
+				validator.ErrInheritanceMerge().Error(), tc.ref, resolveErr)
 			if err.Error() != want {
 				t.Errorf("missing-parent message =\n\t%q\nwant\n\t%q", err.Error(), want)
 			}

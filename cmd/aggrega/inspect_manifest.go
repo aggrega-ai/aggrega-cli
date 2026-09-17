@@ -44,8 +44,8 @@ func renderManifestFile(_ context.Context, _ *workspaceconfig.ResolvedWorkspace,
 	}
 	// Resolve the extends chain through the shared build-path funnel so the
 	// inspector's composed mappings cannot drift from the compiler's.
-	resolved, err := resolver.ResolveManifestExtends(filepath.Dir(path),
-		resolver.ResolvedManifest{Manifest: m, Path: path, Bytes: data})
+	child := resolver.ResolvedManifest{Manifest: m, Path: path, Bytes: data}
+	resolved, err := resolver.ResolveManifestExtends(filepath.Dir(path), child)
 	if err != nil {
 		return fmt.Errorf("resolve extends: %w", err)
 	}
@@ -62,7 +62,7 @@ func renderManifestFile(_ context.Context, _ *workspaceconfig.ResolvedWorkspace,
 	identifier := identifierVersion(resolved.Metadata.Name, resolved.Metadata.Version)
 	renderHeader(opts, "Manifest", identifier)
 
-	if chain := manifestExtendsChain(filepath.Dir(path), m); chain != "" {
+	if chain := manifestExtendsChain(filepath.Dir(path), child); chain != "" {
 		fmt.Fprintf(opts.out, "Extends: %s\n", chain)
 	}
 
@@ -87,41 +87,35 @@ func renderManifestFile(_ context.Context, _ *workspaceconfig.ResolvedWorkspace,
 	return nil
 }
 
-// manifestExtendsChain follows the extends references from child toward root
-// ancestor, returning the flat display string `A which extends B which extends
-// C`. It collects names only — the mapping composition is the job of
-// resolver.ResolveManifestExtends; this walk reuses the same per-link
-// resolver.ResolveManifest the composition uses, so the chain it reports is the
-// chain the composition folds. A child with no extends reference yields "".
-func manifestExtendsChain(releaseDir string, child *types.Manifest) string {
-	if child == nil || child.Spec.Extends == "" {
+// manifestExtendsChain names the Manifests an extends chain folds, child first,
+// as the flat display string `A which extends B which extends C`. A child with
+// no extends reference yields "".
+//
+// The chain comes from the resolver's own walk rather than from a second one
+// here, so the names displayed are the links that were folded. A walk of its
+// own would need its own answer to what makes two links the same — and keying
+// that on metadata.name, the only identity a bare Manifest carries, reports a
+// loop wherever two files in one chain share a name, which is legal input the
+// composition accepts.
+//
+// A chain the walk refuses yields "" rather than a partial rendering: this is
+// decoration on a resolved Manifest, and every path that reaches it has already
+// composed the same chain, so a fault here has already been reported as the
+// command's own failure.
+func manifestExtendsChain(releaseDir string, child resolver.ResolvedManifest) string {
+	if child.Manifest == nil || child.Manifest.Spec.Extends == "" {
 		return ""
 	}
-	parts := []string{child.Metadata.Name}
-	current := child
-	visited := map[string]bool{child.Metadata.Name: true}
-	for current.Spec.Extends != "" && len(parts) < maxManifestChainDisplay {
-		res, err := resolver.ResolveManifest(releaseDir, current.Spec.Extends)
-		if err != nil {
-			parts = append(parts, current.Spec.Extends+" (unresolved)")
-			break
-		}
-		parent := res.Manifest
-		if visited[parent.Metadata.Name] {
-			parts = append(parts, parent.Metadata.Name+" (cycle)")
-			break
-		}
-		visited[parent.Metadata.Name] = true
-		parts = append(parts, parent.Metadata.Name)
-		current = parent
+	chain, err := resolver.ManifestExtendsChain(releaseDir, child)
+	if err != nil {
+		return ""
+	}
+	parts := make([]string, len(chain))
+	for i, link := range chain {
+		parts[i] = link.Manifest.Metadata.Name
 	}
 	return strings.Join(parts, " which extends ")
 }
-
-// maxManifestChainDisplay bounds the extends-chain display walk so a pathological
-// chain cannot loop unboundedly during rendering. The resolver enforces its own
-// depth bound on the composition; this is the presentation-side guard.
-const maxManifestChainDisplay = 16
 
 // renderManifestMappingTable prints one mapping tier as a two-column table:
 // the abstract type on the left, the bound Recipe / FeatureRecipe on the right.

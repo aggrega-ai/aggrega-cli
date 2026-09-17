@@ -253,8 +253,8 @@ func TestValidationError_ZeroValueIsRefusedAtConversion(t *testing.T) {
 }
 
 // TestBothRaisePathsOpenWithOneSentence pins the property this composition
-// exists for: a condition raised through the structured failure and the same
-// condition raised as a wrapped error report the SAME opening sentence.
+// exists for: a condition raised through the structured failure and a condition
+// raised as a wrapped error report the SAME opening sentence.
 //
 // Before the two shapes shared one opening, no single sentence was true of a
 // condition raised both ways — the wrapped form rendered the registered wording
@@ -262,6 +262,14 @@ func TestValidationError_ZeroValueIsRefusedAtConversion(t *testing.T) {
 // matching a diagnostic against the reference documentation had two texts to
 // reconcile for one rule. The assertion reads the sentence off the condition
 // rather than restating it, so it cannot pass against a second copy.
+//
+// 🔴 The wrapped half is a SYNTHESISED instance of the wrap shape rather than a
+// transcript of any one call site, and the difference is worth stating because a
+// synthesised example that reads as a transcript is how a test comes to assert a
+// shape nothing produces. What is under test is the two composers agreeing on
+// their opening, which is a property of the mechanisms and not of one condition:
+// every chain-structural failure is raised structurally, while the wrap shape
+// carries conditions raised across the loader, the resolver and the catalog.
 func TestBothRaisePathsOpenWithOneSentence(t *testing.T) {
 	t.Parallel()
 	sentinel := validator.ErrCyclicExtension()
@@ -272,7 +280,7 @@ func TestBothRaisePathsOpenWithOneSentence(t *testing.T) {
 		Constraint: "circular extends detected: example/data/beta:1.0.0 already in chain",
 		Err:        sentinel,
 	}).Error()
-	wrapped := fmt.Errorf("%w: Manifest %q extends %q, which is already in the chain", sentinel, "cycle-a", "./manifest-b.yaml").Error()
+	wrapped := fmt.Errorf("%w: %q is already in the chain", sentinel, "example/data/beta:1.0.0").Error()
 
 	for label, got := range map[string]string{"structured": structured, "wrapped": wrapped} {
 		if !strings.HasPrefix(got, sentence) {

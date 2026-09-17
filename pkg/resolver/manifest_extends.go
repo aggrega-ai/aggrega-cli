@@ -9,12 +9,64 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
+	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
 )
 
-// maxManifestExtendsDepth bounds the Manifest extends chain so a
-// pathological author cannot force unbounded parent resolution. The bound
-// matches the entity-inheritance walker's depth ceiling.
-const maxManifestExtendsDepth = 10
+// ManifestExtendsChain follows a Manifest's extends chain and returns it in
+// walk order — the child first, then the Manifest it extends, and so on to the
+// root ancestor — or the failure for the one structural fault that stopped it.
+//
+// Each reference is resolved against releaseDir the same way the Release's own
+// manifest reference resolves: an explicit relative-path file, or a
+// same-directory identity. The walk itself is the one every kind that declares
+// extends runs, so a Manifest loop, a Manifest chain past the depth bound and a
+// Manifest reference naming nothing report the same three conditions a
+// Component's or a Feature's chain reports, in the same words. What a Manifest
+// supplies of its own is what only a Manifest knows: that a link is a FILE, so
+// two files declaring one metadata.name are two links; and that its references
+// resolve beside the Release rather than in the catalog, so an author whose
+// reference names nothing is sent to the directory it was looked for in,
+// carrying the failure that looking produced.
+//
+// ResolveManifestExtends composes exactly this chain. A caller that needs to
+// report the chain rather than fold it reads it here, so no second walk can
+// disagree with the composition about what the chain is.
+func ManifestExtendsChain(releaseDir string, child ResolvedManifest) ([]ResolvedManifest, error) {
+	if child.Manifest == nil {
+		return nil, nil
+	}
+	// Why the reason is captured here rather than returned by the walk: the
+	// walk asks only whether a reference resolved, because for a catalog
+	// entity there is nothing more to say than that the catalog does not hold
+	// it. A Manifest reference fails for reasons an author acts on — a file
+	// that is not there, a name the directory scan did not index — so the
+	// reason is recorded where it is produced and read back in MissingParent.
+	// One variable is enough: the walk stops at the first reference it cannot
+	// follow, so at most one failure is ever recorded.
+	var resolveFailure error
+	chain, verr := validator.ResolveExtendsChain(envelope.KindManifest, child,
+		validator.ExtendsChainSpec[ResolvedManifest]{
+			Key:        func(m ResolvedManifest) string { return manifestLinkKey(m.Path) },
+			Name:       func(m ResolvedManifest) string { return m.Manifest.Metadata.Name },
+			ParentLink: func(m ResolvedManifest) string { return m.Manifest.Spec.Extends },
+			Lookup: func(ref string) (ResolvedManifest, bool) {
+				parent, err := ResolveManifest(releaseDir, ref)
+				if err != nil {
+					resolveFailure = err
+					return ResolvedManifest{}, false
+				}
+				return parent, true
+			},
+			MissingParent: func(from, link string) (string, string) {
+				return fmt.Sprintf("%s extends %s, which could not be resolved: %v", from, link, resolveFailure),
+					"Verify the extends reference is a relative path or the name of a Manifest in the Release's directory"
+			},
+		})
+	if verr != nil {
+		return nil, verr
+	}
+	return chain, nil
+}
 
 // ResolveManifestExtends composes a Manifest's extends chain into a single
 // resolved Manifest. A Manifest may declare a single extends reference to a
@@ -28,56 +80,28 @@ const maxManifestExtendsDepth = 10
 // dictionary, preserving the constant-time per-tier lookup the recipe
 // cascade relies on.
 //
-// The chain is walked iteratively from child toward root ancestor, starting
-// from the child's own resolution. Each extends reference is resolved
-// against releaseDir the same way the Release's own manifest reference
-// resolves — an explicit relative-path file or a same-directory identity.
-// Composition then folds the chain from the root ancestor down to the child
-// so child keys win.
+// The chain is the one ManifestExtendsChain walks; composition then folds it
+// from the root ancestor down to the child so child keys win.
 //
-// Chain membership is keyed on each link's resolved file path, so a chain is
-// circular exactly when it reaches a file it has already folded. Two
-// Manifest files that happen to declare the same metadata.name are distinct
-// links, and one file is a single link however its reference is written.
-//
-// A Manifest with no extends reference is returned unchanged. A reference
-// that cannot be resolved, a chain that revisits a file already in the
-// chain, and a chain that exceeds the depth bound each halt with a
-// diagnostic naming the offending reference.
+// A Manifest with no extends reference is returned unchanged. A reference that
+// cannot be resolved, a chain that revisits a file already in the chain, and a
+// chain that exceeds the depth bound each halt with the failure the walk
+// reports.
 func ResolveManifestExtends(releaseDir string, child ResolvedManifest) (*types.Manifest, error) {
 	if child.Manifest == nil || child.Manifest.Spec.Extends == "" {
 		return child.Manifest, nil
 	}
 
-	chain := []*types.Manifest{child.Manifest}
-	visited := map[string]bool{manifestLinkKey(child.Path): true}
-	current := child.Manifest
-
-	for current.Spec.Extends != "" {
-		if len(chain) >= maxManifestExtendsDepth {
-			return nil, fmt.Errorf("%w: Manifest %q extends chain exceeds maximum depth of %d; reduce the chain length",
-				validator.ErrInheritanceMerge(), child.Manifest.Metadata.Name, maxManifestExtendsDepth)
-		}
-
-		parentRef := current.Spec.Extends
-		parentRes, err := ResolveManifest(releaseDir, parentRef)
-		if err != nil {
-			return nil, fmt.Errorf("%w: Manifest %q extends %q, which could not be resolved: %v; verify the extends reference is a relative path or the name of a Manifest in the Release's directory",
-				validator.ErrInheritanceMerge(), current.Metadata.Name, parentRef, err)
-		}
-
-		parentKey := manifestLinkKey(parentRes.Path)
-		if visited[parentKey] {
-			return nil, fmt.Errorf("%w: Manifest %q extends %q, which is already in the chain; remove the circular reference",
-				validator.ErrCyclicExtension(), current.Metadata.Name, parentRef)
-		}
-
-		visited[parentKey] = true
-		chain = append(chain, parentRes.Manifest)
-		current = parentRes.Manifest
+	chain, err := ManifestExtendsChain(releaseDir, child)
+	if err != nil {
+		return nil, err
 	}
 
-	return composeManifestChain(chain), nil
+	links := make([]*types.Manifest, len(chain))
+	for i, link := range chain {
+		links[i] = link.Manifest
+	}
+	return composeManifestChain(links), nil
 }
 
 // manifestLinkKey is the chain-membership key for one resolved link: its file

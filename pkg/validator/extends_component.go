@@ -152,12 +152,13 @@ func ComponentAncestry(comp types.Component, lookup ComponentLookup) ([]types.Co
 // hold are each reported there, in the words every other entity path reports
 // them in.
 func collectComponentChain(child types.Component, lookup ComponentLookup) ([]types.Component, []*ValidationError) {
-	chain, fault := walkExtendsChain(child,
-		func(c types.Component) string { return c.Metadata.Name },
-		func(c types.Component) string { return c.Spec.Extends },
-		lookup)
-	if fault != nil {
-		return nil, []*ValidationError{chainFaultError(envelope.KindComponent, child.Metadata.Name, fault)}
+	chain, verr := ResolveExtendsChain(envelope.KindComponent, child, ExtendsChainSpec[types.Component]{
+		Key:        func(c types.Component) string { return c.Metadata.Name },
+		ParentLink: func(c types.Component) string { return c.Spec.Extends },
+		Lookup:     lookup,
+	})
+	if verr != nil {
+		return nil, []*ValidationError{verr}
 	}
 	return chain, nil
 }
@@ -165,12 +166,13 @@ func collectComponentChain(child types.Component, lookup ComponentLookup) ([]typ
 // collectFeatureChain is the Feature analogue of collectComponentChain, over
 // the same shared walk.
 func collectFeatureChain(child types.Feature, lookup FeatureLookup) ([]types.Feature, []*ValidationError) {
-	chain, fault := walkExtendsChain(child,
-		func(f types.Feature) string { return f.Metadata.Name },
-		func(f types.Feature) string { return f.Spec.Extends },
-		lookup)
-	if fault != nil {
-		return nil, []*ValidationError{chainFaultError(envelope.KindFeature, child.Metadata.Name, fault)}
+	chain, verr := ResolveExtendsChain(envelope.KindFeature, child, ExtendsChainSpec[types.Feature]{
+		Key:        func(f types.Feature) string { return f.Metadata.Name },
+		ParentLink: func(f types.Feature) string { return f.Spec.Extends },
+		Lookup:     lookup,
+	})
+	if verr != nil {
+		return nil, []*ValidationError{verr}
 	}
 	return chain, nil
 }
