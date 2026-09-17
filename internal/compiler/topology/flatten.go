@@ -171,7 +171,7 @@ func evalActive(active *types.ActiveFlag, nodeID string) (bool, error) {
 //     branch (copyVisited) so siblings don't poison each other; a
 //     repeat type URI on the same branch produces ErrSubAggregateLoad
 //     wrapping a "circular" message.
-//   - The `depth` counter is bounded by maxSubAggregateDepth (10);
+//   - The `depth` counter is bounded by maxSubAggregateDepth;
 //     exceeding it produces ErrMaxDepth. The depth bound subsumes cycle
 //     detection when the visited-set check would have otherwise allowed
 //     infinite recursion via type-renaming tricks.

@@ -21,11 +21,25 @@ var errSubAggregateLoad = cerrors.Register("sub-aggregate-not-loadable", cerrors
 })
 
 // ErrMaxDepth fires from flattenAggregate when sub-aggregate inclusion
-// recursion exceeds maxSubAggregateDepth (currently 10). The bound
+// recursion exceeds maxSubAggregateDepth. The bound
 // caps both pathological-depth authoring mistakes and any sub-aggregate
 // cycle that would otherwise recurse to stack-overflow. The wrapped
 // error carries the depth reached and the prefix path of the offending
 // chain.
+//
+// The rule stays here rather than being asked over a completed
+// composition, because this raise IS the recursion's termination bound
+// rather than a report of one. It is the first statement of
+// flattenAggregate, ahead of any work, and it stands in for the cycle
+// check beside it as well: the visited set is keyed by sub-aggregate
+// type URI, so two type URIs that resolve to one document would recur
+// forever without it. A rule asked over the composition would be reached
+// by the same documents this raise is and would take its place, and
+// taking its place removes the bound that lets a composition exist to
+// ask over. The condition is still one about what an author wrote — an
+// inclusion chain deeper than the bound is a thing an author can write —
+// so what is declined is where the rule is asked and not whether it is a
+// rule.
 func ErrMaxDepth() error { return errMaxDepth }
 
 var errMaxDepth = cerrors.Register("sub-aggregate-nesting-depth-exceeded", cerrors.Meta{
