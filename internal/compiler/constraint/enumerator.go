@@ -1204,6 +1204,29 @@ type ArtifactsEntryEnumerator interface {
 	ArtifactsEntries(node string) []AuthoredCoordinate
 }
 
+// RecipeImportFieldEnumerator supplies the spec-root fields one node's own
+// Recipe supplies by `$import:` rather than by writing the content itself,
+// named by the keys the author typed.
+//
+// It is a separate axis from [NodeTemplateFieldEnumerator] beside it, and the
+// pair is not two readings of one set. That one enumerates the fields carrying
+// text the author wrote in this document, which is the whole of what a rule over
+// authored text can parse. A field supplied by an import carries no such text —
+// the content arrives when the render resolves the reference — so it is absent
+// from that axis by construction, and a rule about the reference itself would be
+// invoked zero times for exactly the fields it exists to refuse.
+//
+// The two axes are disjoint rather than overlapping: a field is written inline or
+// it is imported, and the authoring surface admits no third state. So a Recipe
+// contributes each of its spec-root template-bearing fields to exactly one of
+// them, and unifying the two would hand one coordinate two contents whose
+// accessors would answer for whichever reading was asked last.
+type RecipeImportFieldEnumerator interface {
+	// RecipeImportFields returns the spec-root fields a node's own Recipe
+	// supplies by `$import:`, in the fixed order the enumeration declares them.
+	RecipeImportFields(node string) []AuthoredCoordinate
+}
+
 // ArtifactEnumerator supplies the artifacts one node's own Recipe projects, and
 // only those.
 //

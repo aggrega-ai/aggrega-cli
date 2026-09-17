@@ -318,6 +318,11 @@ spec:
 		// this block and stops, and the walk confirms the block itself is a site the
 		// document holds. The third carries none, so the untruncated locator is walked
 		// through the key as well — neither shape proves the other.
+		//
+		// Its workload is supplied by an import while its values mapping is written
+		// inline, which is what the import-field axis walks here and what keeps both
+		// axes over this document expressible at once: a field is written inline or
+		// supplied by an import and never both, so the two axes name different keys.
 		"recipes/web.yaml": `
 apiVersion: aggrega.ai/v1alpha1
 kind: Recipe
@@ -325,6 +330,8 @@ metadata:
   name: web
 spec:
   valuesMapping: "replicaCount: 2"
+  workload:
+    $import: BaseWorkloads#/workloads/StatelessService
   locals:
     fullname: "{{ .context.instance_id }}"
   provides:
@@ -344,12 +351,21 @@ spec:
 		// point: an entry's file comes from the entry the enumerator handed over, so a
 		// walk taking it from the node it entered would attribute every entry to the
 		// first Recipe and the locators would resolve there anyway.
+		//
+		// Both of the spec-root fields an author may supply by import are supplied
+		// that way here, which is what shows one document contributing more than one
+		// coordinate on that axis. Neither is claimed by the inline template-field
+		// axis, so nothing about this document has to be read two ways.
 		"recipes/api.yaml": `
 apiVersion: aggrega.ai/v1alpha1
 kind: Recipe
 metadata:
   name: api
 spec:
+  valuesMapping:
+    $import: ChartWrapValues#/mappings/SingleWorkloadChart
+  workload:
+    $import: BaseWorkloads#/workloads/StatelessService
   locals:
     prefix: "{{ .context.instance_id }}"
   artifacts:

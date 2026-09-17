@@ -154,6 +154,9 @@ const (
 	// SubjectNodeArtifactsEntry is the subject kind (node, artifacts-entry), keyed by 5 declared facts.
 	SubjectNodeArtifactsEntry SubjectKind = "(node, artifacts-entry)"
 
+	// SubjectNodeRecipeImportField is the subject kind (node, recipe-import-field), keyed by 3 declared facts.
+	SubjectNodeRecipeImportField SubjectKind = "(node, recipe-import-field)"
+
 	// SubjectNodeArtifact is the subject kind (node, artifact), keyed by 5 declared facts.
 	SubjectNodeArtifact SubjectKind = "(node, artifact)"
 
@@ -219,6 +222,7 @@ var SubjectKinds = []SubjectKindInfo{
 	{Kind: SubjectBoundaryAttachmentTemplateField, Coordinates: []string{"boundary", "attachment", "template-field"}, Traversal: TraversalPull},
 	{Kind: SubjectBoundaryPathTemplateField, Coordinates: []string{"boundary", "path-template-field"}, Traversal: TraversalPull},
 	{Kind: SubjectNodeArtifactsEntry, Coordinates: []string{"node", "artifacts-entry"}, Traversal: TraversalPull},
+	{Kind: SubjectNodeRecipeImportField, Coordinates: []string{"node", "recipe-import-field"}, Traversal: TraversalPull},
 	{Kind: SubjectNodeArtifact, Coordinates: []string{"node", "artifact"}, Traversal: TraversalPull},
 	{Kind: SubjectNodeAttachmentArtifact, Coordinates: []string{"node", "attachment", "artifact"}, Traversal: TraversalPull},
 	{Kind: SubjectBoundaryAttachmentArtifact, Coordinates: []string{"boundary", "attachment", "artifact"}, Traversal: TraversalPull},

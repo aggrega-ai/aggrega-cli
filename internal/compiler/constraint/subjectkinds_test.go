@@ -529,6 +529,12 @@ var coordinateAccessors = map[string][]string{
 	// authored block read at two moments, so the accessor names are what keep a
 	// check from being written against the wrong one and still compiling.
 	"artifacts-entry": {"ArtifactsEntryKey"},
+	// The value is the Recipe's own spec-root key the author wrote an `$import:`
+	// under, so the accessor names the field rather than anything that field's
+	// content resolves to. A template-field accessor would be the wrong reading
+	// twice over: it names a field carrying text this document holds, and an
+	// imported field holds none.
+	"recipe-import-field": {"RecipeImportField"},
 }
 
 // subjectContractAccessors names the accessors [Subject] itself supplies, so a
@@ -1250,6 +1256,15 @@ var subjectKindBindings = map[SubjectKind]struct {
 		// unexercised, which is the one thing a binding is here to reach.
 		make: func(f string) Subject {
 			return newNodeArtifactsEntrySubject(f, "web", "values-yaml", "spec", "artifacts", "values-yaml")
+		},
+	},
+	SubjectNodeRecipeImportField: {
+		iface: reflect.TypeOf((*NodeRecipeImportFieldSubject)(nil)).Elem(),
+		// The authoring surface fixes this axis's coordinate to a Recipe spec-root
+		// key, so the value carries no dialect separator and the locator assembles
+		// in full — which is what reaches the constructor's deepest argument.
+		make: func(f string) Subject {
+			return newNodeRecipeImportFieldSubject(f, "web", "valuesMapping", "spec", "valuesMapping")
 		},
 	},
 	SubjectNodeAttachmentArtifact: {

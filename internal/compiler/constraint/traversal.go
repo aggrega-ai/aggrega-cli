@@ -1479,6 +1479,49 @@ func RunOnNodeArtifactsEntries[V View](
 	})
 }
 
+// RunOnNodeRecipeImportFields invokes check once per spec-root field each node's
+// own Recipe supplies by `$import:`, in node order and then the fixed order the
+// enumeration declares its fields in.
+//
+// The locator is .spec.<field> in the Recipe's own file, where <field> is the key
+// the author wrote the `$import:` under — which is the coordinate the subject
+// carries, before anything resolves what the reference stands for. The field names
+// are the Recipe's own spec-root keys, fixed by the authoring surface and free of
+// the locator dialect's separator, so the locator is exact and a rule over this
+// kind owes no captioned stand-in for a position it could not reach.
+//
+// The node contributes no segment, on the reading every node-rooted kind whose
+// locator names a Recipe carries: the fault is in the Recipe's text rather than in
+// any one node that binds it, so a node key spliced onto a Recipe-rooted locator
+// would point an author at an instance when the edit is in the entry every
+// instance shares.
+//
+// The axis is what the author WROTE and not what the reference resolved to, which
+// is the whole reason it stands beside [RunOnNodeTemplateFields] rather than being
+// reached through it. An imported field's content exists only once the import has
+// succeeded, so a rule about the import would be invoked no times for a field whose
+// import failed — which is the one outcome indistinguishable from a rule that ran
+// and approved.
+func RunOnNodeRecipeImportFields[V View](
+	cancelled Cancellation,
+	nodes NodeEnumerator,
+	fields RecipeImportFieldEnumerator,
+	view V,
+	check Check[V, NodeRecipeImportFieldSubject],
+) ([]Objection, error) {
+	return runOverNodes(cancelled, nodes, view, check.Run, func(node NodeInstance) []NodeRecipeImportFieldSubject {
+		declared := fields.RecipeImportFields(node.ID)
+		out := make([]NodeRecipeImportFieldSubject, 0, len(declared))
+		for _, field := range declared {
+			out = append(out, newNodeRecipeImportFieldSubject(
+				field.SourceFile, node.ID, field.Value,
+				documentSpecSegments(field.Value)...,
+			))
+		}
+		return out
+	})
+}
+
 // RunOnNodeArtifacts invokes check once per artifact each node projects, in node
 // order and then artifact order.
 //

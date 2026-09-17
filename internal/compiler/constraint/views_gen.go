@@ -4046,6 +4046,78 @@ type DescribedView interface {
 	// Keyed by (node, artifacts-entry); read from
 	// types.ArtifactsLibraryEntry.Files.
 	ArtifactsEntryBundleNestedImportFiles(node string, entry string) []string
+
+	// RecipeValuesMappingImportReference is the library reference a node's own
+	// Recipe supplies its values mapping by, as written and before anything
+	// resolves it.
+	//
+	// It answers for the values-mapping field and for no other field the
+	// coordinate names, so a rule reading it is handed the one field it
+	// governs and is not left telling the Recipe's import-bearing fields apart
+	// itself.
+	//
+	// It is the bare-name `<Library>#/mappings/<entry>` form and only that
+	// form. A values mapping written inline answers empty, because it names no
+	// library; so does one supplied by a file of the workspace, which names a
+	// path rather than a library; and so does one whose reference carries a
+	// registry host, which is refused where it is consumed as a host-bearing
+	// reference rather than read as a library one.
+	//
+	// It is the text as the author wrote it and not a parsed form, because
+	// what a rule over it reports is the string the author has to correct, and
+	// because the library half and the entry half are read back out of it by
+	// the same split the consumption site resolves it with.
+	//
+	// A node with no bound Recipe answers empty — the fields are enumerated
+	// rather than guessed, so a coordinate reaching here that the document
+	// does not write names nothing.
+	//
+	// Keyed by (node, recipe-import-field); read from
+	// types.RecipeSpec.ValuesMapping.
+	RecipeValuesMappingImportReference(node string, field string) string
+
+	// RecipeValuesMappingLibraryDeclared reports whether the MappingLibrary a
+	// node's own Recipe supplies its values mapping from is in the set the
+	// catalog resolved — the local catalog plus any lockfile-pinned
+	// libraries bridged in at load.
+	//
+	// It is false for a field naming no library at all, and false for one
+	// whose reference does not split into the bare-name shape: neither names a
+	// library the set could hold. A rule telling those cases apart from a
+	// library genuinely absent from the set reads the reference beside this,
+	// which is why the two are declared as separate facts rather than folded
+	// into one answer that would report three situations as one.
+	//
+	// It is answered from the same resolution the render resolves a
+	// values-mapping import through, so a library this reports present is the
+	// library that resolution will find. Two readings of one set would agree
+	// the day they were written and would be free to differ afterwards, with
+	// nothing comparing them.
+	//
+	// Keyed by (node, recipe-import-field); read from
+	// renderer.RenderInput.MappingLibraries.
+	RecipeValuesMappingLibraryDeclared(node string, field string) bool
+
+	// RecipeValuesMappingEntryDeclared reports whether the MappingLibrary a
+	// node's own Recipe supplies its values mapping from declares the entry
+	// that reference asks for.
+	//
+	// It is false wherever the library itself was not found, because a library
+	// the set does not hold declares nothing — so a rule refusing an absent
+	// entry reads the library fact beside this one and declines when that is
+	// what is missing. Answering the entry question emptily for an absent
+	// library is what keeps the two questions from both being reported for one
+	// authoring mistake, and reading them in that order is what puts the
+	// author in front of the outer fault first.
+	//
+	// It is declared apart from the library fact rather than folded into a
+	// single resolution verdict because the two are separate remedies: one is
+	// a library to publish or to pin, the other an entry name to correct
+	// inside a library that is already there.
+	//
+	// Keyed by (node, recipe-import-field); read from
+	// renderer.RenderInput.MappingLibraries.
+	RecipeValuesMappingEntryDeclared(node string, field string) bool
 }
 
 // HydratedView exposes the facts complete at the hydrated stage: per-node

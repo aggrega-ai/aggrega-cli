@@ -81,6 +81,13 @@ type traversalFixture struct {
 	// written last under a key that cannot tell them apart.
 	artifactsEntries map[string][]AuthoredCoordinate
 
+	// recipeImportFields is the axis over the Recipe spec-root fields an author
+	// supplies by import. It is stored apart from nodeFields above because the two
+	// are disjoint sets over the same block of a Recipe: a field is written inline
+	// or it is imported, and one store serving both would present a field under a
+	// key that cannot say which of the two it was.
+	recipeImportFields map[string][]AuthoredCoordinate
+
 	attachPipeline         map[string][]AuthoredCoordinate
 	boundaryAttachPipeline map[string][]AuthoredCoordinate
 
@@ -228,6 +235,10 @@ func (f traversalFixture) Artifacts(node string) []AuthoredCoordinate {
 
 func (f traversalFixture) ArtifactsEntries(node string) []AuthoredCoordinate {
 	return f.artifactsEntries[fixtureKey(node)]
+}
+
+func (f traversalFixture) RecipeImportFields(node string) []AuthoredCoordinate {
+	return f.recipeImportFields[fixtureKey(node)]
 }
 
 func (f traversalFixture) AttachmentPipelineSteps(node, attachment string) []AuthoredCoordinate {
@@ -786,6 +797,33 @@ func newTraversalFixture() traversalFixture {
 			},
 			fixtureKey("billing.api"): {
 				{Value: "metrics.json", SourceFile: "recipes/api.yaml"},
+			},
+		},
+
+		// The Recipe spec-root fields each node's own Recipe supplies by import.
+		// The first node supplies one and the second supplies both, which is what
+		// shows the walk carrying on past a node, one node contributing more than
+		// one field, and each field's file coming from the field the enumerator
+		// handed over rather than from the node it was reached through.
+		//
+		// The first node's field is the WORKLOAD and never its values mapping, and
+		// the asymmetry is the point rather than an oversight: the template-field
+		// axis above declares that node's values mapping as inline text, and a field
+		// is written inline or supplied by an import and never both. A node
+		// appearing on both axes under one field name would model a document the
+		// authoring surface cannot express.
+		//
+		// The values are the authoring surface's own spec-root keys, so none carries
+		// the locator dialect's separator and every locator on this axis is
+		// assembled in full. That is a property of the axis rather than of these
+		// entries: there is no authored spelling here that could truncate one.
+		recipeImportFields: map[string][]AuthoredCoordinate{
+			fixtureKey("web"): {
+				{Value: "workload", SourceFile: "recipes/web.yaml"},
+			},
+			fixtureKey("billing.api"): {
+				{Value: "valuesMapping", SourceFile: "recipes/api.yaml"},
+				{Value: "workload", SourceFile: "recipes/api.yaml"},
 			},
 		},
 
@@ -1413,6 +1451,32 @@ func traversalCases() []traversalCase {
 				"recipes/web.yaml|.spec.artifacts",
 				"recipes/web.yaml|.spec.artifacts",
 				"recipes/api.yaml|.spec.artifacts",
+			},
+		},
+		{
+			// The Recipe spec-root fields an author supplies by import, walked over
+			// both nodes. Every locator names its field in full, which is the property
+			// the axis carries and the artifacts axis beside it cannot: these
+			// coordinates are the authoring surface's own keys rather than filenames,
+			// so none of them can carry the dialect's separator.
+			//
+			// The first invocation is one node's single field; the next two are the
+			// second node's pair, in the fixed order the enumeration declares its
+			// fields in and not the document's — a Recipe writes these keys in whatever
+			// order it likes and the axis does not follow it.
+			//
+			// The last two carry the second node's own Recipe: the file comes from the
+			// enumerated field, not from the node, so a walk taking the file from the
+			// node it entered would spell the first Recipe three times.
+			kind: SubjectNodeRecipeImportField,
+			run: func(cancelled Cancellation, f traversalFixture, v traversalView) ([]Objection, error) {
+				return RunOnNodeRecipeImportFields(cancelled, f, f, v,
+					raisingCheck[NodeRecipeImportFieldSubject]())
+			},
+			want: []string{
+				"recipes/web.yaml|.spec.workload",
+				"recipes/api.yaml|.spec.valuesMapping",
+				"recipes/api.yaml|.spec.workload",
 			},
 		},
 		{
@@ -2427,6 +2491,32 @@ func coordinateFlowCases() []coordinateFlowCase {
 				"web|settings.yaml",
 				"web|config.yaml",
 				"billing.api|metrics.json",
+			},
+		},
+
+		// The Recipe spec-root fields an author supplies by import. The locator names
+		// each field in full here, so the transcript above already tells the three
+		// invocations apart — which is exactly why this readback is not redundant: it
+		// is the only assertion that the coordinate reaches the SUBJECT rather than
+		// only the locator. A traversal spelling the locator from the enumerated
+		// coordinate while handing the subject an empty one would read as correct
+		// there and fails here, and every rule over this kind selects the field it
+		// governs by reading that coordinate — so a coordinate arriving empty would
+		// leave every one of them declining every field.
+		{
+			kind: SubjectNodeRecipeImportField,
+			seam: seamTraversal,
+			read: func(f traversalFixture) []string {
+				return readback(func(c Check[traversalView, NodeRecipeImportFieldSubject]) ([]Objection, error) {
+					return RunOnNodeRecipeImportFields(nil, f, f, traversalView{}, c)
+				}, func(s NodeRecipeImportFieldSubject) string {
+					return s.NodeID() + "|" + s.RecipeImportField()
+				})
+			},
+			want: []string{
+				"web|workload",
+				"billing.api|valuesMapping",
+				"billing.api|workload",
 			},
 		},
 

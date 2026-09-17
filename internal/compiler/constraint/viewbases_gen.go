@@ -2074,6 +2074,27 @@ func (HydratedViewBase) ArtifactsEntryBundleNestedImportFiles(node string, entry
 	panic("this presentation does not carry artifacts-entry-bundle-nested-import-files, which is read from types.ArtifactsLibraryEntry.Files")
 }
 
+// RecipeValuesMappingImportReference panics. This presentation does not
+// carry recipe-values-mapping-import-reference, which is read from
+// types.RecipeSpec.ValuesMapping.
+func (HydratedViewBase) RecipeValuesMappingImportReference(node string, field string) string {
+	panic("this presentation does not carry recipe-values-mapping-import-reference, which is read from types.RecipeSpec.ValuesMapping")
+}
+
+// RecipeValuesMappingLibraryDeclared panics. This presentation does not
+// carry recipe-values-mapping-library-declared, which is read from
+// renderer.RenderInput.MappingLibraries.
+func (HydratedViewBase) RecipeValuesMappingLibraryDeclared(node string, field string) bool {
+	panic("this presentation does not carry recipe-values-mapping-library-declared, which is read from renderer.RenderInput.MappingLibraries")
+}
+
+// RecipeValuesMappingEntryDeclared panics. This presentation does not
+// carry recipe-values-mapping-entry-declared, which is read from
+// renderer.RenderInput.MappingLibraries.
+func (HydratedViewBase) RecipeValuesMappingEntryDeclared(node string, field string) bool {
+	panic("this presentation does not carry recipe-values-mapping-entry-declared, which is read from renderer.RenderInput.MappingLibraries")
+}
+
 // EmittedViewBase is a base for an implementation of EmittedView.
 //
 // It declares a refusing method for every fact complete before the emitted
@@ -2649,6 +2670,9 @@ type DescribedStageFacts interface {
 	ArtifactsEntryBundleDeclared(node string, entry string) bool
 	ArtifactsEntryBundleFileNames(node string, entry string) []string
 	ArtifactsEntryBundleNestedImportFiles(node string, entry string) []string
+	RecipeValuesMappingImportReference(node string, field string) string
+	RecipeValuesMappingLibraryDeclared(node string, field string) bool
+	RecipeValuesMappingEntryDeclared(node string, field string) bool
 }
 
 // HydratedStageFacts are the facts the hydrated stage declares itself, and

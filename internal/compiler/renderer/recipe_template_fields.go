@@ -190,6 +190,50 @@ func inlineTemplateFieldsOf(
 	return out
 }
 
+// RecipeImportFields presents every spec-root field a Recipe supplies by
+// `$import:` rather than by writing the content itself, as the one enumeration of
+// that set.
+//
+// It is the counterpart of [RecipeTemplateFields] and the two are disjoint by
+// construction: the authoring surface lets a field be written inline or imported
+// and admits no third state, so each of these fields lands on exactly one of the
+// two enumerations. That is why a field is absent here the moment it carries
+// inline text, and why nothing has to reconcile the two sets.
+//
+// # Why the artifacts block is not here
+//
+// An artifacts entry is also supplied by `$import:`, and it is deliberately left
+// to its own enumeration: the artifacts block is keyed, so its coordinate is the
+// entry's own key rather than a spec-root field name, and a rule over it is
+// invoked once per entry. Folding both into one axis would hand the framework two
+// coordinate shapes under one name.
+//
+// # What it does NOT decide
+//
+// It reports which fields carry an import, never whether the reference is one the
+// compiler can resolve. A field naming a path in the workspace and one carrying a
+// registry host are both present here, because both are imports the author wrote;
+// which of them a given rule governs is settled by the facts declared over this
+// coordinate and by the rule reading them, not by narrowing the axis. Narrowing it
+// instead would make the axis mean one rule rather than the document.
+//
+// The order is fixed rather than the document's own, because a Recipe's spec-root
+// keys are a fixed set: a caller reporting the first offending field reports the
+// same field on every run.
+func RecipeImportFields(recipe *types.Recipe) []string {
+	if recipe == nil {
+		return nil
+	}
+	var out []string
+	if recipe.Spec.ValuesMapping.Import != "" {
+		out = append(out, recipeFieldValuesMapping)
+	}
+	if recipe.Spec.Workload.Import != "" {
+		out = append(out, recipeFieldWorkload)
+	}
+	return out
+}
+
 // RecipeTemplateFieldReadsWithArtifactDelimiters reports whether one enumerated
 // field's text is parsed with the delimiter pair the node's provider declares for
 // an artifact rather than with the pair every other authored template uses.

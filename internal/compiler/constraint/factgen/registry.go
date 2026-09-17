@@ -4326,6 +4326,96 @@ var facts = []factDecl{
 			"content.",
 	},
 
+	// The three facts below are keyed by a spec-root FIELD of a node's own
+	// Recipe rather than by anything that field's content resolves to, and the
+	// distinction is the whole reason the coordinate exists. A values mapping
+	// supplied by a library import has no authored text at all in the Recipe
+	// that consumes it — the text arrives when the render resolves the import —
+	// so the template-field coordinate beside this one does not name it, and a
+	// rule keyed by that coordinate is invoked no times for exactly the fields
+	// these facts exist to refuse. The field name is there from the moment the
+	// Recipe is bound, whatever the reference resolves to or fails to.
+	{
+		Name:        "recipe-values-mapping-import-reference",
+		Stage:       "described",
+		SourceField: "types.RecipeSpec.ValuesMapping",
+		Subject:     []string{"node", "recipe-import-field"},
+		Params: []paramDecl{
+			{Name: "node", Type: "string"},
+			{Name: "field", Type: "string"},
+		},
+		Returns: "string",
+		Doc: "RecipeValuesMappingImportReference is the library reference a node's " +
+			"own Recipe supplies its values mapping by, as written and before " +
+			"anything resolves it.\n\nIt answers for the values-mapping field and " +
+			"for no other field the coordinate names, so a rule reading it is " +
+			"handed the one field it governs and is not left telling the Recipe's " +
+			"import-bearing fields apart itself.\n\nIt is the bare-name " +
+			"`<Library>#/mappings/<entry>` form and only that form. A values " +
+			"mapping written inline answers empty, because it names no library; so " +
+			"does one supplied by a file of the workspace, which names a path " +
+			"rather than a library; and so does one whose reference carries a " +
+			"registry host, which is refused where it is consumed as a " +
+			"host-bearing reference rather than read as a library one.\n\nIt is " +
+			"the text as the author wrote it and not a parsed form, because what a " +
+			"rule over it reports is the string the author has to correct, and " +
+			"because the library half and the entry half are read back out of it " +
+			"by the same split the consumption site resolves it with.\n\nA node " +
+			"with no bound Recipe answers empty — the fields are enumerated rather " +
+			"than guessed, so a coordinate reaching here that the document does " +
+			"not write names nothing.",
+	},
+	{
+		Name:        "recipe-values-mapping-library-declared",
+		Stage:       "described",
+		SourceField: "renderer.RenderInput.MappingLibraries",
+		Subject:     []string{"node", "recipe-import-field"},
+		Params: []paramDecl{
+			{Name: "node", Type: "string"},
+			{Name: "field", Type: "string"},
+		},
+		Returns: "bool",
+		Doc: "RecipeValuesMappingLibraryDeclared reports whether the MappingLibrary " +
+			"a node's own Recipe supplies its values mapping from is in the set the " +
+			"catalog resolved — the local catalog plus any lockfile-pinned " +
+			"libraries bridged in at load.\n\nIt is false for a field naming no " +
+			"library at all, and false for one whose reference does not split into " +
+			"the bare-name shape: neither names a library the set could hold. A " +
+			"rule telling those cases apart from a library genuinely absent from " +
+			"the set reads the reference beside this, which is why the two are " +
+			"declared as separate facts rather than folded into one answer that " +
+			"would report three situations as one.\n\nIt is answered from the same " +
+			"resolution the render resolves a values-mapping import through, so a " +
+			"library this reports present is the library that resolution will " +
+			"find. Two readings of one set would agree the day they were written " +
+			"and would be free to differ afterwards, with nothing comparing them.",
+	},
+	{
+		Name:        "recipe-values-mapping-entry-declared",
+		Stage:       "described",
+		SourceField: "renderer.RenderInput.MappingLibraries",
+		Subject:     []string{"node", "recipe-import-field"},
+		Params: []paramDecl{
+			{Name: "node", Type: "string"},
+			{Name: "field", Type: "string"},
+		},
+		Returns: "bool",
+		Doc: "RecipeValuesMappingEntryDeclared reports whether the MappingLibrary a " +
+			"node's own Recipe supplies its values mapping from declares the entry " +
+			"that reference asks for.\n\nIt is false wherever the library itself " +
+			"was not found, because a library the set does not hold declares " +
+			"nothing — so a rule refusing an absent entry reads the library fact " +
+			"beside this one and declines when that is what is missing. Answering " +
+			"the entry question emptily for an absent library is what keeps the " +
+			"two questions from both being reported for one authoring mistake, and " +
+			"reading them in that order is what puts the author in front of the " +
+			"outer fault first.\n\nIt is declared apart from the library fact " +
+			"rather than folded into a single resolution verdict because the two " +
+			"are separate remedies: one is a library to publish or to pin, the " +
+			"other an entry name to correct inside a library that is already " +
+			"there.",
+	},
+
 	// ---------------------------------------------------------------- hydrated
 
 	{

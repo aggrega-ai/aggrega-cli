@@ -600,6 +600,103 @@ func runArtifactsEntryImportRule(
 	return objectionsAsHalt(raised, "artifacts entries whose library import the compiler cannot resolve")
 }
 
+// valuesMappingImportAxes is the axis pair the rules over a node's own authored
+// values-mapping import are invoked once per: the node set, and the spec-root
+// fields each node's Recipe supplies by `$import:`.
+//
+// Naming both together is what makes the inner one un-skippable: a value supplying
+// nodes but no field enumeration does not compile here, so these rules cannot be
+// invoked over an empty subject set by a caller that merely forgot one axis — and
+// a rule invoked zero times reports exactly what a rule that ran and approved
+// reports.
+type valuesMappingImportAxes interface {
+	constraint.NodeEnumerator
+	constraint.RecipeImportFieldEnumerator
+}
+
+// runValuesMappingImportRule invokes the rules declared over the values-mapping
+// library import a node's own Recipe writes, and returns what they raised as the
+// render's halt.
+//
+// It runs before anything renders, which is where the question belongs: the
+// reference and the resolved library set are both complete once the Recipe is
+// bound, and everything after this point is work whose output a failed import was
+// always going to discard. Asking where the import is resolved instead would refuse
+// the same input after every earlier node had rendered.
+//
+// It carries no plugin-resolution guard, for the reason the authored-text readings
+// beside it carry none: nothing about a library reference depends on a plugin, so a
+// render that resolved none still owes these refusals.
+//
+// # The order the two are asked in is the order the resolution decides them
+//
+// The shape of the reference, then the entry inside the library it names. The
+// second declines a field whose library was not found, so the order is not what
+// keeps one mistake reported once — but it is what keeps a build reporting several
+// independent faults in the order an author works through them, and it is the order
+// the resolution beneath reaches them in.
+//
+// # What this does NOT reach, stated because an unstated bound reads as coverage
+//
+// The axis is a node's OWN Recipe. A values mapping a FeatureRecipe carries reaches
+// the same resolution through its own consumption site, and no key here enumerates
+// it — so these rules are not invoked over it, and that carrier keeps the refusal
+// the resolution makes, which is retained for exactly this reason.
+//
+// Nor does the axis reach a reference lifted out of a library entry's own body. An
+// entry whose body is itself a field-root `$import:` re-enters the resolution with
+// a target the consuming Recipe never wrote, and a rule over authored text cannot
+// see such a target at all — so every fault a nested target can raise is left to
+// the refusal beneath, whatever this declares about the authored reference.
+//
+// The condition raised for a library the set does not hold is not declared here
+// either, and the reason is reachability rather than scope: an authored reference
+// naming a library nothing declares is refused as the Release's dependencies are
+// resolved, before any render begins, so a rule over it at this stage could not be
+// invoked from a build at all.
+//
+// So what the declaration adds on this carrier is a position and a classification —
+// never a refusal the build did not already make.
+//
+// # Why each rule is named at its own call rather than walked in a loop
+//
+// A loop over the two would read as the tidier arrangement and is the wrong one,
+// because of what the framework's own coverage read can see: that read resolves a
+// call to a declaration and follows nothing through a value, so a check reached
+// through a slice element is attributable to no call site. The placement table
+// would then report two declared rules as invoked by nothing, with nothing saying
+// which two — an instrument whose subject is where a rule is enforced, made blind
+// to the rules this declares.
+//
+// The cancellation signal is the caller's own, so a long walk over a large graph
+// stops within one node of the caller asking it to.
+func runValuesMappingImportRule(
+	ctx context.Context,
+	view constraint.DescribedView,
+	coordinates valuesMappingImportAxes,
+) error {
+	if view == nil || coordinates == nil {
+		return nil
+	}
+
+	raised, err := constraint.RunOnNodeRecipeImportFields(
+		ctx.Err, coordinates, coordinates, view, ValuesMappingImportIsWellShaped,
+	)
+	if err != nil {
+		return err
+	}
+
+	objections, err := constraint.RunOnNodeRecipeImportFields(
+		ctx.Err, coordinates, coordinates, view, ValuesMappingImportNamesADeclaredEntry,
+	)
+	if err != nil {
+		return err
+	}
+	raised = append(raised, objections...)
+
+	return objectionsAsHalt(raised, "values-mapping imports the compiler cannot resolve")
+}
+
 type authoredLocalsAxes interface {
 	constraint.NodeEnumerator
 	constraint.LocalsKeyEnumerator

@@ -236,6 +236,46 @@ func (c *describedStageCoordinates) ArtifactsEntries(node string) []constraint.A
 	return out
 }
 
+// RecipeImportFields returns the spec-root fields a node's own Recipe supplies by
+// `$import:`, in the fixed order the enumeration declares them.
+//
+// The enumeration is [RecipeImportFields] — the one home of that set — so a field
+// presented here is a field the presentation beside it can answer, and a field
+// added to the set arrives on both surfaces at once. Reproducing the set here
+// would let the axis and the presentation cover different fields, and the field
+// whichever of them omitted would be unchecked with nothing reporting it.
+//
+// The axis is what the author WROTE and not what the reference resolved to, which
+// is the whole reason it stands beside the template-field axis rather than being
+// reached through it. An imported field's content exists only once the import has
+// succeeded, so a rule about the import itself would be invoked no times for
+// exactly the fields it exists to refuse — which reports what a rule that ran and
+// approved reports.
+//
+// The Recipe is the one the render bound to the node, and it is the same map the
+// presentation reads each field's authored reference out of — so a field
+// enumerated here is a field that presentation can answer.
+//
+// Each coordinate is positioned at the Recipe rather than at the Aggregate the
+// component was authored in, because the field is written in the Recipe and that
+// is the document an author edits. The Recipe's name stands in for its path, for
+// the reason the provides axis states.
+func (c *describedStageCoordinates) RecipeImportFields(node string) []constraint.AuthoredCoordinate {
+	recipe, held := c.recipes[node]
+	if !held || recipe == nil {
+		return nil
+	}
+	fields := RecipeImportFields(recipe)
+	if len(fields) == 0 {
+		return nil
+	}
+	out := make([]constraint.AuthoredCoordinate, 0, len(fields))
+	for _, field := range fields {
+		out = append(out, constraint.AuthoredCoordinate{Value: field, SourceFile: recipe.Metadata.Name})
+	}
+	return out
+}
+
 // LocalsKeys returns the locals a node's Recipe declares, in the order that
 // Recipe declares them.
 //
@@ -690,4 +730,5 @@ var (
 	_ constraint.BoundaryAttachmentPipelineStepEnumerator = (*describedStageCoordinates)(nil)
 	_ constraint.BoundaryPathTemplateFieldEnumerator      = (*describedStageCoordinates)(nil)
 	_ constraint.NodeTemplateFieldEnumerator              = (*describedStageCoordinates)(nil)
+	_ constraint.RecipeImportFieldEnumerator              = (*describedStageCoordinates)(nil)
 )

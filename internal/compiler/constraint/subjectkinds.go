@@ -2244,6 +2244,71 @@ func newNodeArtifactsEntrySubject(
 	}
 }
 
+// NodeRecipeImportFieldSubject is the subject of a check invoked once per
+// spec-root field a node's own Recipe supplies by `$import:`, named by the key
+// the author wrote.
+//
+// # Why it is a separate kind from the template field beside it
+//
+// [NodeTemplateFieldSubject] is keyed by a field carrying template text the
+// author wrote in this document, and a field supplied by an import carries none:
+// the content arrives when the render resolves the reference. So an imported
+// field contributes no instance of that kind at all, and a check keyed by it is
+// invoked no times for exactly the fields a rule about the reference exists to
+// refuse — which reports what a rule that ran and approved reports.
+//
+// This kind is keyed by the field name, which is there from the moment the Recipe
+// is bound and does not depend on the resolution the rules over it judge. The two
+// kinds are disjoint rather than overlapping, because the authoring surface admits
+// no field that is both written inline and imported.
+//
+// # What the locator names
+//
+// A finding is positioned at .spec.<field> in the Recipe's own file. The field
+// names are the Recipe's own spec-root keys, which the authoring surface fixes and
+// which carry no separator, so the locator is exact rather than truncated — and a
+// rule over this kind therefore owes no captioned stand-in for a position it could
+// not reach.
+//
+// The Recipe is what the locator names rather than the Aggregate binding the node,
+// because the fault is in the Recipe's text: a node key spliced onto it would point
+// an author at one instance when the edit is in the entry every instance shares.
+type NodeRecipeImportFieldSubject interface {
+	Subject
+
+	// NodeID identifies the node whose Recipe supplies the field, as every keyed
+	// fact takes it.
+	NodeID() string
+
+	// RecipeImportField is the Recipe spec-root key the check was invoked for:
+	// the key the author wrote the `$import:` under.
+	RecipeImportField() string
+
+	nodeRecipeImportField()
+}
+
+type nodeRecipeImportFieldSubject struct {
+	provenance
+	node  string
+	field string
+}
+
+func (nodeRecipeImportFieldSubject) nodeRecipeImportField() {}
+
+func (s nodeRecipeImportFieldSubject) NodeID() string { return s.node }
+
+func (s nodeRecipeImportFieldSubject) RecipeImportField() string { return s.field }
+
+func newNodeRecipeImportFieldSubject(
+	sourceFile, node, field string, segments ...string,
+) NodeRecipeImportFieldSubject {
+	return nodeRecipeImportFieldSubject{
+		provenance: newProvenance(sourceFile, segments...),
+		node:       node,
+		field:      field,
+	}
+}
+
 // NodeAttachmentArtifactSubject is the subject of a check invoked once per
 // artifact the FeatureRecipe one attachment binds on a node projects.
 //
