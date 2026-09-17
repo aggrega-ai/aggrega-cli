@@ -27,18 +27,40 @@ type SchemaConsumer struct {
 // not available to scan); err is for a hard read/parse failure.
 type LibraryBodyFunc func(lib ResolvedLibrary) (entryBodies []*yaml.Node, found bool, err error)
 
-// TemplateConsumer pairs a consuming entity URI with a template body so a
-// template-axis discovery can scan it for a field-root `$import:` reference. For a
-// Recipe or FeatureRecipe the Template is the axis's own field body in
-// `$import: <ref>` directive form; during transitive descent it is a library
-// entry's own body, which may itself carry a field-root `$import:`.
+// TemplateConsumer pairs a consuming entity URI with the one thing a template-axis
+// discovery reads from it. Exactly one of the two content fields is populated, and
+// which one says how the reference reached the walk rather than what it means.
 //
 // Every template axis shares this shape, so the per-axis names below are aliases
 // rather than separate types: the axis says which surface is being walked, and the
 // consumer shape is the same one on all of them.
 type TemplateConsumer struct {
-	URI      string
+	URI string
+
+	// Template is a template BODY to scan for a field-root `$import:` directive —
+	// a library entry's own content during transitive descent, which is a document
+	// and has lines.
 	Template string
+
+	// Reference is an `$import:` target already read off an authored field, passed
+	// exactly as the document parser produced it.
+	//
+	// It is a field of its own rather than a directive string assembled around the
+	// target, because rendering the target back into `$import: <target>` for the
+	// body scanner to re-read is a SECOND reading of a value that was already read
+	// — and the two readings do not agree on every input. The body scanner stops at
+	// the first line break, which a document reader has no reason to do, so a
+	// reference the render side resolves is one the scanner can decline to see, and
+	// the dependency it carries reaches no lockfile.
+	Reference string
+}
+
+// templateBody is the shared fixpoint's body type on a template axis: which of the
+// two readings applies to this consumer, carried through the frontier so a library
+// discovered from an authored reference still has its own body scanned.
+type templateBody struct {
+	body      string
+	reference string
 }
 
 // TemplateBodyFunc returns the entry bodies of a resolved library on a template
@@ -61,9 +83,10 @@ type (
 )
 
 // discoverConsumer is the driver's uniform view of a consumer: the URI that
-// references a library and the body to scan for those references. The body type
-// varies by axis — a parsed node on the schema axis, a template string on the
-// others — which is the one thing the shared fixpoint is parameterised on.
+// references a library and the content to read those references out of. The
+// content type varies by axis — a parsed node on the schema axis, a template body
+// or an already-read reference on the others — which is the one thing the shared
+// fixpoint is parameterised on.
 type discoverConsumer[B any] struct {
 	URI  string
 	Body B
@@ -141,14 +164,33 @@ func discoverLibraries[B any](
 // The axis is a parameter rather than baked into the function name, so an axis
 // added to the declared set is discovered here without a new entry point.
 func (c *Closure) DiscoverTemplateLibraries(ctx context.Context, axis LibraryAxis, lookup Lookup, consumers []TemplateConsumer, body TemplateBodyFunc) error {
-	dcs := make([]discoverConsumer[string], 0, len(consumers))
+	dcs := make([]discoverConsumer[templateBody], 0, len(consumers))
 	for _, tc := range consumers {
-		dcs = append(dcs, discoverConsumer[string]{URI: tc.URI, Body: tc.Template})
+		dcs = append(dcs, discoverConsumer[templateBody]{
+			URI:  tc.URI,
+			Body: templateBody{body: tc.Template, reference: tc.Reference},
+		})
+	}
+	// A discovered library's own entries are bodies whichever way its consumer's
+	// reference arrived, so the frontier rebuilt from them carries bodies only.
+	bodies := func(lib ResolvedLibrary) ([]templateBody, bool, error) {
+		entries, found, err := body(lib)
+		if err != nil || !found {
+			return nil, found, err
+		}
+		out := make([]templateBody, 0, len(entries))
+		for _, e := range entries {
+			out = append(out, templateBody{body: e})
+		}
+		return out, true, nil
 	}
 	return discoverLibraries(ctx, c, axis, lookup, dcs,
-		func(s *walkState, a LibraryAxis, tmpl, consumerURI string) error {
-			return s.walkImportInto(a, tmpl, consumerURI)
-		}, body)
+		func(s *walkState, a LibraryAxis, tb templateBody, consumerURI string) error {
+			if tb.reference != "" {
+				return s.walkImportRef(a, tb.reference, consumerURI)
+			}
+			return s.walkImportInto(a, tb.body, consumerURI)
+		}, bodies)
 }
 
 // DiscoverMappingLibraries discovers the MappingLibrary closure reachable from a

@@ -109,14 +109,18 @@ func collectTemplateConsumers(
 	return append(recipeConsumers, frConsumers...)
 }
 
-// importConsumer renders a field that carries an `$import:` target back into its
-// authored directive form for the discovery walker, which scans a template body
-// for a field-root `$import:`. An inline body carries no import and yields none.
+// importConsumer carries a field's `$import:` target to discovery exactly as the
+// document parser produced it. An inline body carries no import and yields none.
+//
+// The target is passed as the consumer's reference rather than rendered back into
+// `$import: <target>` directive text, because the render side reads this same
+// field verbatim: one value, one reading, and no room for the two halves of the
+// compiler to disagree about which library the entity depends on.
 func importConsumer(uri, importTarget string) []TemplateConsumer {
 	if importTarget == "" {
 		return nil
 	}
-	return []TemplateConsumer{{URI: uri, Template: "$import: " + importTarget}}
+	return []TemplateConsumer{{URI: uri, Reference: importTarget}}
 }
 
 // discoverClosureLibraries is the single producer of the closure's SchemaLibrary
@@ -195,9 +199,9 @@ func discoverClosureLibraries(ctx context.Context, cl *Closure, src LibrarySourc
 // valuesMapping for a field-root `$import:` reference and descends the discovered
 // libraries transitively.
 //
-// A valuesMapping is presented to the walker in its authored `$import: <ref>`
-// directive form; an inline values template and a local-file import carry no
-// library reference and are skipped by the walker's identity gate.
+// A valuesMapping's `$import:` target reaches the walker as the reference itself;
+// an inline values template and a local-file import carry no library reference and
+// are skipped by the walker's identity gate.
 func discoverClosureMappingLibraries(ctx context.Context, cl *Closure, src LibrarySource, lookup Lookup) error {
 	consumers := collectTemplateConsumers(cl, src,
 		func(uri string, r types.Recipe) []TemplateConsumer {
@@ -289,9 +293,9 @@ func discoverClosureArtifactsLibraries(ctx context.Context, cl *Closure, src Lib
 	return cl.DiscoverTemplateLibraries(ctx, LibraryAxisNamed("ArtifactsLibraries"), lookup, consumers, body)
 }
 
-// artifactsImportConsumers renders every artifacts-map entry that carries an
-// `$import:` target into a consumer in authored directive form. An inline body
-// yields no consumer. Author order of the entries is preserved.
+// artifactsImportConsumers carries every artifacts-map entry's `$import:` target
+// to discovery as the reference itself. An inline body yields no consumer. Author
+// order of the entries is preserved.
 func artifactsImportConsumers(uri string, artifacts types.OrderedMap[types.ArtifactEntry]) []TemplateConsumer {
 	var out []TemplateConsumer
 	for _, k := range artifacts.Keys() {

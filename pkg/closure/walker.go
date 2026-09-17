@@ -463,14 +463,16 @@ func (c *Closure) WalkMappingImport(template, consumerURI string) error {
 	return nil
 }
 
-// walkImportInto inspects a template body for a field-root `$import:` reference on
-// the given axis and records the resulting library edge. Per the file-import
+// walkImportInto lifts a field-root `$import:` reference out of a template BODY
+// on the given axis and records the library edge it carries. Per the file-import
 // vocabulary, `$import:` is whole-content replacement at the field root only and is
 // never embedded, so scanning the first token is sufficient.
 //
-// A local-file import (no fragment) and the host-bearing `oci://…` form are not
-// cross-library references and are ignored here: the file import is inlined at its
-// consumption site and the host form is rejected there.
+// It is for a body — a library entry's own content during transitive descent, which
+// is a document and has lines. A reference a consuming entity's own field carries
+// was read off that field when the document was parsed, so it is recorded through
+// walkImportRef directly and never rendered back into directive text to be read a
+// second time under these rules.
 func (s *walkState) walkImportInto(axis LibraryAxis, template, consumerURI string) error {
 	trimmed := strings.TrimSpace(template)
 	if !strings.HasPrefix(trimmed, "$import:") {
@@ -481,14 +483,22 @@ func (s *walkState) walkImportInto(axis LibraryAxis, template, consumerURI strin
 	if newline := strings.IndexByte(rest, '\n'); newline >= 0 {
 		rest = rest[:newline]
 	}
-	url := strings.TrimSpace(rest)
-	if url == "" {
+	return s.walkImportRef(axis, strings.TrimSpace(rest), consumerURI)
+}
+
+// walkImportRef records the library edge an `$import:` reference carries on the
+// given axis. It is the single reading of a reference into an edge: the authored
+// path reaches it with the value the document parser produced, and the transitive
+// path reaches it with the value walkImportInto lifted out of a library body.
+//
+// A local-file import (no fragment) and the host-bearing `oci://…` form are not
+// cross-library references and are ignored here: the file import is inlined at its
+// consumption site and the host form is rejected there.
+func (s *walkState) walkImportRef(axis LibraryAxis, ref, consumerURI string) error {
+	if ref == "" || !axis.IsRef(ref) {
 		return nil
 	}
-	if !axis.IsRef(url) {
-		return nil
-	}
-	libName, version, fragment, err := axis.ParseRef(url)
+	libName, version, fragment, err := axis.ParseRef(ref)
 	if err != nil {
 		return err
 	}

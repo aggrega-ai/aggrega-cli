@@ -28,6 +28,15 @@ import (
 //   - yaml.MappingNode with exactly one entry, key "$import", string-
 //     scalar value → import mode; the value goes to importTarget.
 //   - Any other shape → wrapped sentinel error with file:line provenance.
+//
+// One refusal here is about the import target's CONTENT rather than the node's
+// shape, and it carries its own condition for that reason: an import target
+// addressing a library entry and carrying whitespace is refused with
+// [ErrLibraryReferenceWhitespace], not with the shape sentinel, because the
+// shape is one of the two the field admits and saying otherwise would send the
+// author looking at the wrong thing. It is refused at the document read, where
+// the line the author wrote is still known — every later reader of the value has
+// only the string.
 func unmarshalImportable(node *yaml.Node, sentinel error) (inline, importTarget string, err error) {
 	if node == nil {
 		return "", "", nil
@@ -46,6 +55,10 @@ func unmarshalImportable(node *yaml.Node, sentinel error) (inline, importTarget 
 		}
 		if valNode.Kind != yaml.ScalarNode {
 			return "", "", fmt.Errorf("%w: $import value must be a string scalar at line %d", sentinel, valNode.Line)
+		}
+		if IdentityRefCarriesWhitespace(valNode.Value) {
+			return "", "", fmt.Errorf("%w: $import target %q at line %d",
+				ErrLibraryReferenceWhitespace(), valNode.Value, valNode.Line)
 		}
 		return "", valNode.Value, nil
 	default:

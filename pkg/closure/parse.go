@@ -35,9 +35,21 @@ func isIdentityRefWithFragment(value, fragmentPrefix string) bool {
 // selected version); the library name carries no registry host. Inputs that are
 // not the identity shape on fragmentPrefix return a wrapped ErrInvalidLibraryRef
 // naming the offending string.
+//
+// A reference carrying whitespace is refused here under
+// [types.ErrLibraryReferenceWhitespace] rather than being trimmed into something
+// resolvable. The document read refuses an AUTHORED reference under the same
+// condition, so this arm is what covers a reference this package lifts out of a
+// library entry's own body during transitive descent — text no document read
+// ever saw. Refusing rather than trimming is what keeps the version floor honest:
+// a trailing space inside the floor is carried into the lockfile as part of the
+// selected version, naming a version no artifact publishes.
 func parseIdentityRefWithFragment(s, fragmentPrefix string) (libraryName, version, fragment string, err error) {
 	if !isIdentityRefWithFragment(s, fragmentPrefix) {
 		return "", "", "", fmt.Errorf("%w: %q", ErrInvalidLibraryRef(), s)
+	}
+	if types.IdentityRefCarriesWhitespace(s) {
+		return "", "", "", fmt.Errorf("%w: %q", types.ErrLibraryReferenceWhitespace(), s)
 	}
 	hash := strings.IndexByte(s, '#')
 	doc := s[:hash]
