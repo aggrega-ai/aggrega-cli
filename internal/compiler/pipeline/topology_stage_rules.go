@@ -177,7 +177,7 @@ func runTopologyStageRules(
 	}
 	return &resolver.MultiResolverError{
 		Entity:     topologyStageEntity,
-		Summary:    fmt.Sprintf("%d violation(s) over the composed application", len(violations)),
+		Summary:    fmt.Sprintf("%d violation(s) over the composed topology", len(violations)),
 		Violations: violations,
 	}
 }
