@@ -20,7 +20,12 @@ func ErrDeprecatedEntity() error { return errDeprecatedEntity }
 var errDeprecatedEntity = cerrors.Register("deprecated-entity", cerrors.Meta{
 	ShortCode: "E0122",
 	Message:   "deprecation: build consumes a deprecated entity",
-	RulePlace: cerrors.RuleOverAuthoredInput(),
+	RulePlace: cerrors.RuleNoStageReaches("Composing a build's inputs evaluates the rule, as the markers the " +
+		"lockfile and the plugin trust record already hold are weighed against the severity threshold the " +
+		"workspace configuration names. The composition finishes before the pipeline starts, and the one " +
+		"stage that declares the workspace-configuration power produces its facts by resolving plugin " +
+		"references and calling across the guest boundary — so a rule placed there would load and call the " +
+		"very plugin this one exists to refuse."),
 })
 
 // HaltFor returns the halt a configured threshold produces for one recorded

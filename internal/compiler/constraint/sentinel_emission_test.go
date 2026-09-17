@@ -317,15 +317,15 @@ const offFrameworkEmissionBlocks = false
 // all. [partitionOffFrameworkByDeclaredPlace] performs
 // that subtraction and guards those declarations in both directions.
 //
-// Measured 2026-09-17, on the tree the revision carrying this edit records: 98,
+// Measured 2026-09-17, on the tree the revision carrying this edit records: 95,
 // of 281 declared. Re-derive it by running this package verbosely — the census
 // prints every term below, so the figure is checkable rather than remembered.
 //
 // Its composition, quoted from that run rather than recomputed, because a bare
 // number cannot carry how the figure is read: 229 of the 281 declared conditions
-// are emitted outside the dispatch, and 131 of those declare that their rule is
-// not one of the framework's own — 32 owned by another evaluator, 30 reached by
-// no declared stage, 69 naming no rule at all — leaving the 98 this ceiling
+// are emitted outside the dispatch, and 134 of those declare that their rule is
+// not one of the framework's own — 32 owned by another evaluator, 32 reached by
+// no declared stage, 70 naming no rule at all — leaving the 95 this ceiling
 // bounds. What remains is the candidates, each of which could be expressed as a
 // check, plus the conditions carrying nothing to declare a place ON: the 6
 // forwarding declarations and the 5 conditions no registration binds, which
@@ -386,7 +386,7 @@ const offFrameworkEmissionBlocks = false
 // here would be derived rather than quoted and would be wrong in a way no run
 // contradicts. So zero is a state this number can arrive at, and
 // [offFrameworkEmissionBlocks] flips in the edit that takes it there.
-const offFrameworkEmissionCeiling = 98
+const offFrameworkEmissionCeiling = 95
 
 // unemittedSentinelsBlock decides whether a sentinel with no emission site at
 // all fails this test or is only reported. It is true.

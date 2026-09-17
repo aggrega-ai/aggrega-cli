@@ -15,7 +15,10 @@ func ErrSchemeNotAllowed() error { return errSchemeNotAllowed }
 var errSchemeNotAllowed = cerrors.Register("scheme-not-allowed", cerrors.Meta{
 	ShortCode: "E0128",
 	Message:   "externalinputs: URL scheme is not allowed",
-	RulePlace: cerrors.RuleOverAuthoredInput(),
+	RulePlace: cerrors.NotARule("A render asked the host to fetch a URL whose scheme sits outside the set the " +
+		"host will fetch over, so the fetch was refused. It reports an operation this host does not perform " +
+		"rather than a rule refusing content, since the URL is one the render produced and no authored " +
+		"document enumerates it."),
 })
 
 // ErrAcquisitionDisabled reports that an unpinned URL was requested by a render
