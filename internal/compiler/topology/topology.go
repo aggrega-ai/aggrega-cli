@@ -674,14 +674,21 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 		}
 	}
 
-	// Release per-edge configuration that reached no edge. The edge set is final
-	// for Release purposes once the pass above has run — every entry that named
-	// a target drew its edge, and every entry that omitted one had its chance to
-	// land on an existing edge. An entry still carrying `infra` at this point
-	// applies to nothing: the infrastructure the operator authored would be
-	// absent from the output while the build reported success.
+	// Release per-edge configuration naming a component the composition does not
+	// hold. The edge set is final for Release purposes once the pass above has
+	// run — every entry that named a target drew its edge, and every entry that
+	// omitted one had its chance to land on an existing edge. An entry still
+	// carrying `infra` at this point applies to nothing: the infrastructure the
+	// operator authored would be absent from the output while the build reported
+	// success.
+	//
+	// The same fault on a component the composition DOES hold is asked once the
+	// composition is built, as a rule declared over the Release's authored
+	// per-edge surface — it is invoked once per authored entry, so it reports
+	// every offending entry with the authored locator of each rather than the
+	// first one this walk reaches.
 	if cfg.ResolveResult != nil && cfg.ResolveResult.Release != nil {
-		if err := guardUnboundReleaseEdgeConfig(flat, edges, cfg.ResolveResult.Release, cfg.CatalogLookup); err != nil {
+		if err := guardUnboundReleaseEdgeConfig(flat, edges, cfg.ResolveResult.Release); err != nil {
 			return nil, err
 		}
 	}
@@ -867,6 +874,35 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 					"%d unresolved boundary component reference(s)", len(referenceErrs)),
 				Sentinel:   ErrUnresolvedBoundaryComponent(),
 				Violations: referenceErrs,
+			}
+		}
+
+		// The reach rule, asked of every entry the Release's per-edge `uses`
+		// surface wrote. It reads the connection set, which is final only once
+		// every surface that draws one has drawn it, and the consuming
+		// component's type, which a sub-module contributes only when its own
+		// document is loaded — so this is the earliest point holding its
+		// evidence.
+		//
+		// It is asked after the rules above rather than before, and the order is
+		// a decision rather than an accident. An entry on a component nothing
+		// answers to is a fault those rules name at the component's own key,
+		// which is where an author fixes it; asking this one first would report
+		// the same document at the entry instead and leave the component's own
+		// fault unstated.
+		configErrs, err := guardReleaseEdgeConfiguration(ctx.Err, cfg, stageView)
+		if err != nil {
+			return nil, err
+		}
+		if len(configErrs) > 0 {
+			// A condition for its neighbours' reason: one rule, one sentence
+			// true of every finding, one fix to name.
+			return result, &resolver.MultiResolverError{
+				Entity: "release per-edge configuration",
+				Summary: fmt.Sprintf(
+					"%d unbound release per-edge configuration(s)", len(configErrs)),
+				Sentinel:   ErrUnboundReleaseEdgeConfig(),
+				Violations: configErrs,
 			}
 		}
 	}
@@ -1099,32 +1135,40 @@ func authoredAttachments(attachments []FeatureAttachment) types.OrderedMap[types
 }
 
 // guardUnboundReleaseEdgeConfig halts when a Release per-edge `uses` entry
-// carries `infra` that no edge will ever receive. It runs after the Release edge
-// pass, where the edge set becomes final: an entry naming a target has drawn its
-// edge by then, and an entry omitting one has had its chance to land on an edge
-// the Aggregate or a Feature declared. Configuration still holding no edge at
-// that point is authoring that does nothing, and accepting it silently would put
-// the operator's infrastructure out of the output while the build succeeds.
+// carries `infra` and names a consuming component the composition does not hold.
+// It runs inside the flattening, after the Release edge pass, where the edge set
+// becomes final: an entry naming a target has drawn its edge by then, and an
+// entry omitting one has had its chance to land on an edge the Aggregate or a
+// Feature declared. Configuration still holding no edge at that point is
+// authoring that does nothing, and accepting it silently would put the operator's
+// infrastructure out of the output while the build succeeds.
 //
 // Three conditions are deliberately NOT this guard's, and each is left to the
 // rule that owns it, so a halt added here cannot disable one of them:
 //
+//   - An entry on a socket the consuming component's usesSchema DOES declare,
+//     where nothing drew the edge, belongs to the declared rule over the
+//     Release's authored per-edge surface, which is invoked once per authored
+//     entry and therefore reports every offending entry with the authored locator
+//     of each. That rule is asked after the composition is built.
 //   - A socket the consuming component's usesSchema does not declare belongs to
 //     the undeclared-socket rule, which produces the better diagnostic — it can
-//     list the sockets that do exist. Such an entry is skipped here whenever the
-//     consuming component's type is in view, whether the rule already ran before
-//     flattening or runs over the flattened sub-aggregate nodes afterwards.
-//   - A target that names no component belongs to the rule over the finalised
-//     graph that reports exactly that: an entry with a target does create an
-//     edge, so it never reaches this guard.
+//     list the sockets that do exist.
+//   - A target naming no component belongs to the rule over the finalised graph
+//     that reports exactly that. An entry naming a target draws its edge wherever
+//     the Release edge pass reached it, so it carries configuration that did land
+//     somewhere and the fault is the target rather than the configuration.
 //   - A consuming component pruned by a false `active` toggle takes its whole
 //     edge set with it by design. The entry is inert because the operator turned
 //     the component off, not because the entry is wrong.
 //
-// A node absent from the topology altogether is this guard's, because the entry
-// configures nothing for the same reason and nothing else reports it. The
-// diagnostic says which case it is so the author knows whether to correct the
-// node name or to wire the edge.
+// A component absent from the composition is reported by more than one rule, and
+// this one reaches it first: the rule over what a boundary names reports every
+// entry addressing a component nothing answers to, and its subject set covers
+// this one. This guard is asked inside the flattening while that rule is asked
+// after it, so which of the two a document meets is settled by position rather
+// than by either rule's own reading. That is a property of where the two sit and
+// not a claim that nothing else reports the class.
 //
 // The entries come from the shared Release-boundary walk, so the first offender
 // is the same one on every run of the same input. That walk visits every
@@ -1135,7 +1179,6 @@ func guardUnboundReleaseEdgeConfig(
 	flat *flattenResult,
 	edges []NormalizedEdge,
 	release *types.Release,
-	catalog resolver.CatalogLookup,
 ) error {
 	if release == nil {
 		return nil
@@ -1157,30 +1200,11 @@ func guardUnboundReleaseEdgeConfig(
 		if _, pruned := flat.Pruned.Get(ref.NodeID); pruned {
 			continue
 		}
-		node, isNode := flat.Nodes.Get(ref.NodeID)
-		if !isNode {
+		if _, isNode := flat.Nodes.Get(ref.NodeID); !isNode {
 			return fmt.Errorf(
 				"%w: release edge %s/%s/%s sets infra on %q, which is not a component in the topology",
 				ErrUnboundReleaseEdgeConfig(), ref.NodeID, ref.Socket, ref.Alias, ref.NodeID)
 		}
-		// Without a catalog view, or with a component type absent from it, whether
-		// the socket is declared cannot be answered — and the answer is what
-		// separates this rule from the undeclared-socket one. Both cases are
-		// classified by their own rules elsewhere; guessing here would take a halt
-		// from a rule that reports it better.
-		if catalog.Component == nil {
-			continue
-		}
-		catComp, found := catalog.Component(node.ComponentType)
-		if !found {
-			continue
-		}
-		if _, declared := catComp.Spec.UsesSchema.Get(ref.Socket); !declared {
-			continue
-		}
-		return fmt.Errorf(
-			"%w: release edge %s/%s/%s sets infra but no edge is bound there: an entry without a target configures an edge that must already exist, so give the entry a target to wire the edge or remove the entry",
-			ErrUnboundReleaseEdgeConfig(), ref.NodeID, ref.Socket, ref.Alias)
 	}
 	return nil
 }

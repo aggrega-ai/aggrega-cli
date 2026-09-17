@@ -7,25 +7,9 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
-
-// releaseEdgeEntry is one operator-authored per-edge connection collected from
-// a Release: the consuming node ID, the socket and alias the entry sits under,
-// the boundary path it was authored in (for diagnostics), and the entry itself.
-// synthesized is true when the containing boundary is the compiler-synthesized
-// default — the component was authored at the top-level `.spec.components`
-// surface, so [releaseComponentFieldPath] renders its diagnostics at that root
-// shape rather than under the generated `default` boundary.
-type releaseEdgeEntry struct {
-	nodeID       string
-	socket       string
-	alias        string
-	boundaryPath string
-	locator      []string
-	synthesized  bool
-	entry        types.ReleaseUsesEntry
-}
 
 // releaseComponentFieldPath renders the authoring field locator for a Release
 // boundary component, the Release-side mirror of [componentFieldPath]. A
@@ -58,42 +42,90 @@ func releaseComponentFieldPath(boundaryPath string, locator []string, synthesize
 }
 
 // ReleaseEdgeEntry is one operator-authored per-edge connection collected from a
-// Release, in the shape a consumer outside this package reads it: the consuming
-// node ID, the socket and alias the entry sits under, and the entry itself.
+// Release: the consuming node ID, the socket and alias the entry sits under, the
+// entry itself, and where in the document the author wrote it.
 //
-// It exists because the same Release edge surface is validated at two stages —
+// It exists because the same Release edge surface is read at several points —
 // once for every consuming node whose component type is knowable before
-// flattening, and once after flattening for the nodes that only exist then. Both
-// read the entries through [ReleaseEdgeEntries], so neither can disagree with the
-// other about which entries a Release declares or in what order.
+// flattening, once after flattening for the nodes that only exist then, and once
+// as the axis a rule over an authored entry is invoked along. All of them read
+// the entries through [ReleaseEdgeEntries], so none can disagree with the others
+// about which entries a Release declares or in what order.
+//
+// The authoring site travels with the entry rather than being recovered by a
+// second walk of the same tree. It is settled where the walk reaches the entry —
+// which boundary held it, and which keys the author typed to reach the component
+// — and a consumer matching an entry back against the document afterwards would
+// be deriving a second answer to a question this walk already answered.
 type ReleaseEdgeEntry struct {
 	NodeID string
 	Socket string
 	Alias  string
-	Entry  types.ReleaseUsesEntry
+
+	// BoundaryScopePath is the boundary the entry was written in, joined the way
+	// that axis joins its levels.
+	//
+	// It is empty for an entry inside the boundary normalization synthesizes to
+	// hold the components an author wrote at the document's top level. That is
+	// not a boundary any file spells, so an entry under one is named at the
+	// top-level shape the author did write, and the empty path is what says so.
+	BoundaryScopePath string
+
+	// ComponentKeys are the authoring keys reaching the consuming component's
+	// own block from inside its boundary: the component container and the key
+	// the author wrote when the boundary named the component directly, and the
+	// routing container, the module, the component container and the local name
+	// when a routing entry named it.
+	ComponentKeys []string
+
+	Entry types.ReleaseUsesEntry
 }
 
 // ReleaseEdgeEntries walks the Release boundary tree (outer to inner, author
 // order) and flattens every per-edge `uses` entry on every boundary component
 // into a deterministic slice.
 //
-// The boundary path each entry was authored in is deliberately not carried: a
-// consumer outside this package addresses the consuming node by its flattened ID,
-// and a boundary-qualified authoring locator is only meaningful where the
-// pre-flatten document shape is still in view.
+// The boundary each entry sits in is composed through the one rule that composes
+// a boundary's scope path, so the value splits back into the levels a locator
+// names rather than resting on a separator spelled here.
+//
+// The components of one boundary are read through the reconciled per-boundary
+// map, which folds an entry a routing entry names together with one the boundary
+// names directly. Nothing is lost to that fold: a Release placing one component
+// twice is refused when the document loads, so by the time anything walks this
+// the two entries cannot both exist.
 func ReleaseEdgeEntries(release *types.Release) []ReleaseEdgeEntry {
-	refs := collectReleaseEdgeEntries(release)
-	if len(refs) == 0 {
+	if release == nil {
 		return nil
 	}
-	out := make([]ReleaseEdgeEntry, 0, len(refs))
-	for _, r := range refs {
-		out = append(out, ReleaseEdgeEntry{
-			NodeID: r.nodeID,
-			Socket: r.socket,
-			Alias:  r.alias,
-			Entry:  r.entry,
-		})
+	var out []ReleaseEdgeEntry
+	var walk func(scopePath string, b types.Boundary)
+	walk = func(scopePath string, b types.Boundary) {
+		components := types.BoundaryComponents(b)
+		for nodeID, bc := range components.All() {
+			if bc.Uses.Len() == 0 {
+				continue
+			}
+			locator := types.BoundaryComponentLocator(b, nodeID)
+			for socket, aliases := range bc.Uses.All() {
+				for alias, e := range aliases.All() {
+					out = append(out, ReleaseEdgeEntry{
+						NodeID:            nodeID,
+						Socket:            socket,
+						Alias:             alias,
+						BoundaryScopePath: scopePath,
+						ComponentKeys:     locator,
+						Entry:             e,
+					})
+				}
+			}
+		}
+		for name, nested := range b.Boundaries.All() {
+			walk(constraint.JoinBoundaryScope(scopePath, name, nested.Synthesized), nested)
+		}
+	}
+	for name, b := range release.Spec.Boundaries.All() {
+		walk(constraint.JoinBoundaryScope("", name, b.Synthesized), b)
 	}
 	return out
 }
@@ -114,53 +146,6 @@ func ReleaseEdgeEntries(release *types.Release) []ReleaseEdgeEntry {
 // wires it — a document rejected for a connection the build itself makes.
 func ReleaseEntryCreatesEdge(entry types.ReleaseUsesEntry) bool {
 	return entry.Target != ""
-}
-
-// collectReleaseEdgeEntries walks the Release boundary tree (outer to inner,
-// author order) and flattens every per-edge `uses` entry on every boundary
-// component into a deterministic slice. Shared by the resolution guards that need
-// the Release edge surface — undeclared-socket validation and per-edge infra
-// conformance — so both agree on which entries exist and in what order.
-// [ReleaseEdgeEntries] projects the same walk for consumers outside this package.
-func collectReleaseEdgeEntries(release *types.Release) []releaseEdgeEntry {
-	if release == nil {
-		return nil
-	}
-	var out []releaseEdgeEntry
-	var walk func(path string, b types.Boundary)
-	walk = func(path string, b types.Boundary) {
-		components := types.BoundaryComponents(b)
-		for nodeID, bc := range components.All() {
-			if bc.Uses.Len() == 0 {
-				continue
-			}
-			locator := types.BoundaryComponentLocator(b, nodeID)
-			for socket, aliases := range bc.Uses.All() {
-				for alias, e := range aliases.All() {
-					out = append(out, releaseEdgeEntry{
-						nodeID:       nodeID,
-						socket:       socket,
-						alias:        alias,
-						boundaryPath: path,
-						locator:      locator,
-						synthesized:  b.Synthesized,
-						entry:        e,
-					})
-				}
-			}
-		}
-		for name, nested := range b.Boundaries.All() {
-			child := name
-			if path != "" {
-				child = path + "/" + name
-			}
-			walk(child, nested)
-		}
-	}
-	for name, b := range release.Spec.Boundaries.All() {
-		walk(name, b)
-	}
-	return out
 }
 
 // ValidateFeatureUsesAgainstSchema validates an attachment's `uses` block against

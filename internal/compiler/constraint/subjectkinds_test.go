@@ -464,6 +464,22 @@ var coordinateAccessors = map[string][]string{
 	"boundary-placement": {
 		"AuthoringDocumentKind", "BoundaryPath", "PlacementReference", "PlacementAxis",
 	},
+	// The sixth entry that is not one-to-one, and the reason is the edge row's
+	// applied to an authored entry rather than to a drawn connection. An entry's
+	// identity is the document it was written in, the boundary it sits in, and
+	// the consuming component, socket and alias it was keyed under, all taken
+	// together: the last three are the connection's own identity, and the
+	// boundary joins them because the Release writes this surface inside a
+	// boundary's component entry, which is the block an author edits. The
+	// document is carried even though one authoring document writes this surface,
+	// because the locator assembly selects the scope nesting from it through the
+	// same closed pair every other authored-site traversal selects through. The
+	// last three reuse the edge row's accessor names rather than spelling
+	// Release-specific ones, because one accessor name means one thing wherever
+	// it appears and which set a value came from is said by the kind carrying it.
+	"release-edge-configuration": {
+		"AuthoringDocumentKind", "BoundaryPath", "NodeID", "SocketName", "AliasName",
+	},
 	"node":   {"NodeID"},
 	"socket": {"SocketName"},
 	"edge":   {"NodeID", "SocketName", "AliasName"},
@@ -1300,6 +1316,24 @@ var subjectKindBindings = map[SubjectKind]struct {
 				"data.store", PlacementRoutedComponent,
 				"spec", "boundaries", "prod", "boundaries", "edge",
 				"aggregates", "data", "components", "store")
+		},
+	},
+	SubjectReleaseEdgeConfiguration: {
+		iface: reflect.TypeOf((*ReleaseEdgeConfigurationSubject)(nil)).Elem(),
+		// The entry on a routed component under a nested boundary, because it is
+		// the one carrying every element of the identity at once and reaching the
+		// locator's full depth: the boundary spells each level under its own
+		// container key, the routing entry contributes two more keys, and the
+		// `uses` container, the socket and the alias follow the component. Every
+		// segment is separator-free, which is what exercises the assembly to that
+		// depth — a segment carrying the dialect's separator stops it, so the
+		// constructor's deepest arguments would go unexercised.
+		make: func(f string) Subject {
+			return newReleaseEdgeConfigurationSubject(f, AuthoringDocumentRelease, "prod/edge",
+				"data.store", "database", "primary",
+				"spec", "boundaries", "prod", "boundaries", "edge",
+				"aggregates", "data", "components", "store",
+				"uses", "database", "primary")
 		},
 	},
 	SubjectBoundaryComponentReference: {

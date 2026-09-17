@@ -73,7 +73,7 @@ const (
 	// SubjectNodeAttachmentSocket is the subject kind (node, attachment, socket), keyed by 4 declared facts.
 	SubjectNodeAttachmentSocket SubjectKind = "(node, attachment, socket)"
 
-	// SubjectEdge is the subject kind edge, keyed by 9 declared facts.
+	// SubjectEdge is the subject kind edge, keyed by 10 declared facts.
 	SubjectEdge SubjectKind = "edge"
 
 	// SubjectNodeAttachment is the subject kind (node, attachment), keyed by 19 declared facts.
@@ -102,6 +102,9 @@ const (
 
 	// SubjectNodeParameter is the subject kind (node, parameter), keyed by 1 declared fact.
 	SubjectNodeParameter SubjectKind = "(node, parameter)"
+
+	// SubjectReleaseEdgeConfiguration is the subject kind release-edge-configuration, keyed by 1 declared fact.
+	SubjectReleaseEdgeConfiguration SubjectKind = "release-edge-configuration"
 
 	// SubjectModule is the subject kind module, keyed by 1 declared fact.
 	SubjectModule SubjectKind = "module"
@@ -196,6 +199,7 @@ var SubjectKinds = []SubjectKindInfo{
 	{Kind: SubjectNodePillarLeaf, Coordinates: []string{"node", "pillar", "leaf"}, Traversal: TraversalPull},
 	{Kind: SubjectBoundaryAttachment, Coordinates: []string{"boundary", "attachment"}, Traversal: TraversalPull},
 	{Kind: SubjectNodeParameter, Coordinates: []string{"node", "parameter"}, Traversal: TraversalPull},
+	{Kind: SubjectReleaseEdgeConfiguration, Coordinates: []string{"release-edge-configuration"}, Traversal: TraversalPull},
 	{Kind: SubjectModule, Coordinates: []string{"module"}, Traversal: TraversalPull},
 	{Kind: SubjectBoundaryComponentReference, Coordinates: []string{"boundary-component-reference"}, Traversal: TraversalPull},
 	{Kind: SubjectNodeAttachmentPillarLeaf, Coordinates: []string{"node", "attachment", "pillar", "leaf"}, Traversal: TraversalPull},

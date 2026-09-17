@@ -44,6 +44,7 @@ type traversalFixture struct {
 	connections   []CarriedConnectionInstance
 	references    []BoundaryComponentReferenceInstance
 	placements    []BoundaryPlacementInstance
+	edgeConfigs   []ReleaseEdgeConfigurationInstance
 	annotations   []AuthoredAnnotationInstance
 	boundaries    []AuthoredCoordinate
 	subsystems    []AuthoredCoordinate
@@ -127,6 +128,10 @@ func (f traversalFixture) BoundaryComponentReferences() []BoundaryComponentRefer
 
 func (f traversalFixture) BoundaryPlacements() []BoundaryPlacementInstance {
 	return f.placements
+}
+
+func (f traversalFixture) ReleaseEdgeConfigurations() []ReleaseEdgeConfigurationInstance {
+	return f.edgeConfigs
 }
 
 func (f traversalFixture) AuthoredAnnotations() []AuthoredAnnotationInstance {
@@ -470,6 +475,62 @@ func newTraversalFixture() traversalFixture {
 					BoundaryPath: "",
 					Reference:    "web",
 					Axis:         PlacementNamedComponent,
+				},
+				Site:       AuthoredSite{Component: "web"},
+				SourceFile: "release-flat.yaml",
+			},
+		},
+		// Everything the same Release's per-edge `uses` surface writes, which is
+		// the axis the connection set above cannot express: that one holds one
+		// instance per connection DRAWN, so an entry whose connection nothing drew
+		// is absent from it by construction and appears only here.
+		//
+		// Three entries covering both locator shapes and both component axes. The
+		// first is an entry on a component a boundary names directly, under a
+		// nested boundary — the shape that proves the locator spells each level of
+		// the nesting under the container's key again rather than joining the
+		// boundary path in as one segment. The second reaches into a routing
+		// entry, so the keys the author typed arrive whole and the id the entry is
+		// keyed by appears in no file. The third is written in the boundary the
+		// compiler synthesizes to hold what an author wrote at the document's top
+		// level, so it names the top-level shape and no boundary at all — and it
+		// is the entry a walk keyed on the boundary set would lose, since that set
+		// excludes the synthesized one.
+		//
+		// Reverse-alphabetical by socket within the first boundary, so a sort
+		// anywhere in the traversal would be visible.
+		edgeConfigs: []ReleaseEdgeConfigurationInstance{
+			{
+				Configuration: ReleaseEdgeConfiguration{
+					Document:     AuthoringDocumentRelease,
+					BoundaryPath: "prod/edge",
+					Node:         "web",
+					Socket:       "database",
+					Alias:        "primary",
+				},
+				Site:          AuthoredSite{ScopePath: "prod/edge"},
+				ComponentKeys: []string{"components", "web"},
+				SourceFile:    "release.yaml",
+			},
+			{
+				Configuration: ReleaseEdgeConfiguration{
+					Document:     AuthoringDocumentRelease,
+					BoundaryPath: "prod/edge",
+					Node:         "billing.api",
+					Socket:       "cache",
+					Alias:        "sessions",
+				},
+				Site:          AuthoredSite{ScopePath: "prod/edge"},
+				ComponentKeys: []string{"aggregates", "billing", "components", "api"},
+				SourceFile:    "release.yaml",
+			},
+			{
+				Configuration: ReleaseEdgeConfiguration{
+					Document:     AuthoringDocumentRelease,
+					BoundaryPath: "",
+					Node:         "web",
+					Socket:       "queue",
+					Alias:        "jobs",
 				},
 				Site:       AuthoredSite{Component: "web"},
 				SourceFile: "release-flat.yaml",
@@ -1492,6 +1553,38 @@ func traversalCases() []traversalCase {
 			// provenance side: each names the block its own entry was written
 			// in, so an author is sent to the entry they would edit rather than
 			// to whichever of the two the walk reached first.
+		},
+		{
+			// The authored per-edge axis, whose transcript shows three
+			// properties no connection-keyed walk can.
+			//
+			// Every locator reaches past the consuming component into the
+			// `uses` container, the socket and the alias, which is what makes
+			// the finding actionable: an author is sent to the entry they wrote
+			// rather than to the component holding it.
+			//
+			// The first two are one boundary reached two ways — a component the
+			// boundary names directly and one named inside a routing entry —
+			// and the keys the author typed arrive whole in each, so the routed
+			// entry names its module and local name rather than the qualified
+			// id it is keyed by.
+			//
+			// The third sits in the boundary the compiler synthesizes, which the
+			// boundary axis excludes, so a per-boundary walk would enumerate two
+			// of these three and its silence on the third would read as a
+			// Release that wrote nothing there. Its locator names the top-level
+			// shape the author did write and no boundary at all, which is the
+			// same collapse the component-rooted kinds take.
+			kind: SubjectReleaseEdgeConfiguration,
+			run: func(cancelled Cancellation, f traversalFixture, v traversalView) ([]Objection, error) {
+				return RunOnReleaseEdgeConfigurations(
+					cancelled, f, v, raisingCheck[ReleaseEdgeConfigurationSubject]())
+			},
+			want: []string{
+				"release.yaml|.spec.boundaries.prod.boundaries.edge.components.web.uses.database.primary",
+				"release.yaml|.spec.boundaries.prod.boundaries.edge.aggregates.billing.components.api.uses.cache.sessions",
+				"release-flat.yaml|.spec.components.web.uses.queue.jobs",
+			},
 		},
 	}
 }
@@ -2529,6 +2622,41 @@ func coordinateFlowCases() []coordinateFlowCase {
 				"release|prod/edge|billing.api|routed-component",
 				"release|dev|data|routed-module",
 				"release||web|named-component",
+			},
+		},
+
+		// The authored per-edge axis, whose readback is the only assertion that
+		// can see three of its five coordinates at all. The provenance transcript
+		// above sees the boundary only as the levels of a locator, and it loses
+		// the node outright on the routed entry, where the locator names the local
+		// name the author wrote while the coordinate is the qualified id. So a
+		// traversal that dropped either would read as correct there, and this is
+		// what would fail.
+		//
+		// The socket and the alias appear in both the locator and the coordinates,
+		// and they are read back anyway: a rule keys every fact it reads by them,
+		// so a traversal supplying the locator and dropping the coordinate would
+		// have the check read facts for the empty pair while its finding pointed at
+		// the right line. The empty boundary path on the last is a coordinate in
+		// its own right rather than a missing value: it is the boundary
+		// normalization synthesized, which no file spells.
+		{
+			kind: SubjectReleaseEdgeConfiguration,
+			seam: seamTraversal,
+			read: func(f traversalFixture) []string {
+				return readback(func(c Check[traversalView, ReleaseEdgeConfigurationSubject]) ([]Objection, error) {
+					return RunOnReleaseEdgeConfigurations(nil, f, traversalView{}, c)
+				}, func(s ReleaseEdgeConfigurationSubject) string {
+					return strings.Join([]string{
+						s.AuthoringDocumentKind(), s.BoundaryPath(),
+						s.NodeID(), s.SocketName(), s.AliasName(),
+					}, "|")
+				})
+			},
+			want: []string{
+				"release|prod/edge|web|database|primary",
+				"release|prod/edge|billing.api|cache|sessions",
+				"release||web|queue|jobs",
 			},
 		},
 	}

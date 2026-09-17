@@ -606,6 +606,63 @@ type BoundaryPlacementEnumerator interface {
 	BoundaryPlacements() []BoundaryPlacementInstance
 }
 
+// ReleaseEdgeConfigurationInstance is one entry the Release's per-edge `uses`
+// surface writes, together with where it was written: the coordinates that
+// identify it, and the authoring keys a locator is built from.
+//
+// The site and the keys are provenance and key nothing, the division
+// [BoundaryComponentReferenceInstance] already draws. They are taken from the
+// walk that reached the entry rather than recovered by matching it back against
+// the document, so the coordinates and the keys cannot come to disagree about
+// which entry they describe.
+type ReleaseEdgeConfigurationInstance struct {
+	// Configuration is the coordinate tuple, and it is
+	// [ReleaseEdgeConfiguration] itself rather than a copy of its fields: the
+	// fact reports that record and a rule over this axis is invoked once per one
+	// of them, so the entry a rule is invoked for and the set it reads back are
+	// spelled by one type and cannot come to describe an entry differently.
+	Configuration ReleaseEdgeConfiguration
+
+	// Site names the boundary the entry sits in, and the component key it was
+	// written under when the entry sits in the boundary normalization
+	// synthesized.
+	//
+	// An empty scope path is that synthesized boundary. It is not a scope any
+	// file spells, so an entry under one names the top-level shape the author did
+	// write — the collapse [AuthoredSite] already declares.
+	Site AuthoredSite
+
+	// ComponentKeys are the authoring keys reaching the consuming component's own
+	// block from inside its boundary — the component container and the key the
+	// author wrote, or the routing container, the module, the component container
+	// and the local name for a component a routing entry names — and nothing at
+	// all for an entry in the synthesized boundary, where the component travels
+	// on the site instead.
+	ComponentKeys []string
+
+	// SourceFile is the workspace-relative Release document the entry was written
+	// in, empty when it has no single-file origin.
+	SourceFile string
+}
+
+// ReleaseEdgeConfigurationEnumerator supplies the authored per-edge set: every
+// entry the Release's edge surface writes, each carrying the site it was written
+// at.
+//
+// It is a flat axis rather than one nested under the node set, and the reason is
+// the one that makes the axis exist at all: an entry may name a consuming
+// component the composition does not hold, so nesting it under the nodes would
+// drop exactly the entries a rule over this axis has to be invoked for.
+//
+// Entries that drew no connection are enumerated exactly as entries that drew one
+// are. The connection set holds one instance per connection DRAWN, so this is the
+// only axis on which an entry that drew none is reachable.
+type ReleaseEdgeConfigurationEnumerator interface {
+	// ReleaseEdgeConfigurations returns every entry the Release's per-edge `uses`
+	// surface writes, in a deterministic order the implementation declares.
+	ReleaseEdgeConfigurations() []ReleaseEdgeConfigurationInstance
+}
+
 // NodeEnumerator supplies the node set: every component instance in the
 // flattened set, a sub-aggregate's nodes included.
 //

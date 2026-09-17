@@ -85,6 +85,16 @@ type topologyView struct {
 	// folding the two together here would remove the subject before any rule saw
 	// it.
 	references []constraint.BoundaryComponentReferenceInstance
+
+	// edgeConfigurations is every entry the Release's per-edge `uses` surface
+	// writes, in the order the document declares them.
+	//
+	// It is what the Release wrote and is deliberately not reconciled against the
+	// connection set above: an entry whose connection nothing drew is exactly the
+	// entry a rule over this axis exists to be asked about, and the connection set
+	// holds one instance per connection drawn, so folding the two together here
+	// would remove the subject before any rule saw it.
+	edgeConfigurations []constraint.ReleaseEdgeConfigurationInstance
 }
 
 // newTopologyView presents the composition the build has just flattened.
@@ -98,6 +108,7 @@ func newTopologyView(
 	edges []NormalizedEdge,
 	earlier constraint.NormalizedView,
 	references []constraint.BoundaryComponentReferenceInstance,
+	edgeConfigurations []constraint.ReleaseEdgeConfigurationInstance,
 ) *topologyView {
 	v := &topologyView{
 		NormalizedView:      earlier,
@@ -109,6 +120,7 @@ func newTopologyView(
 		declaringSubsystems: flat.DeclaringSubsystems,
 		contributed:         map[string][]string{},
 		references:          references,
+		edgeConfigurations:  edgeConfigurations,
 	}
 
 	// A connection an attachment contributed is excluded, the same exclusion the
@@ -191,13 +203,34 @@ func (v *topologyView) ResolvedUsesSocketConnections(node string) types.OrderedM
 // that drew it wrote the name, empty when the composition drew no connection
 // there.
 func (v *topologyView) PerEdgeAuthoredTarget(node string, socket string, alias string) string {
+	e, drawn := v.connectionAt(node, socket, alias)
+	if !drawn {
+		return ""
+	}
+	return e.AuthoredTarget
+}
+
+// PerEdgeConnectionDrawn returns whether the composition drew a connection at one
+// coordinate, whichever surface drew it.
+func (v *topologyView) PerEdgeConnectionDrawn(node string, socket string, alias string) bool {
+	_, drawn := v.connectionAt(node, socket, alias)
+	return drawn
+}
+
+// connectionAt returns the connection the composition drew at one coordinate, and
+// whether it drew one at all.
+//
+// It is the one lookup both connection-keyed facts read, so membership and the
+// value a member carries are two readings of one search rather than two searches
+// free to disagree about which connection they found.
+func (v *topologyView) connectionAt(node, socket, alias string) (NormalizedEdge, bool) {
 	for i := range v.edges {
 		e := v.edges[i]
 		if e.Source == node && e.Socket == socket && e.Alias == alias {
-			return e.AuthoredTarget
+			return e, true
 		}
 	}
-	return ""
+	return NormalizedEdge{}, false
 }
 
 // NodeBoundaryPlacement returns the boundary a node was placed in, and whether
@@ -251,6 +284,75 @@ func (v *topologyView) BoundaryDeclaredComponentReferences() []string {
 // invoked for and the set that fact reports cannot come to disagree.
 func (v *topologyView) BoundaryComponentReferences() []constraint.BoundaryComponentReferenceInstance {
 	return v.references
+}
+
+// ReleaseAuthoredEdgeConfigurations returns every entry the Release's per-edge
+// `uses` surface writes, in the order the document declares them.
+//
+// It projects the coordinates off the one walk this value took rather than
+// walking the document a second time, so the entry a rule is invoked for and the
+// set this fact reports cannot come to describe an entry differently.
+func (v *topologyView) ReleaseAuthoredEdgeConfigurations() []constraint.ReleaseEdgeConfiguration {
+	if len(v.edgeConfigurations) == 0 {
+		return nil
+	}
+	out := make([]constraint.ReleaseEdgeConfiguration, 0, len(v.edgeConfigurations))
+	for _, entry := range v.edgeConfigurations {
+		out = append(out, entry.Configuration)
+	}
+	return out
+}
+
+// ReleaseEdgeConfigurations returns every entry the Release's per-edge `uses`
+// surface writes, each carrying the site it was written at, in the order the
+// document declares them.
+func (v *topologyView) ReleaseEdgeConfigurations() []constraint.ReleaseEdgeConfigurationInstance {
+	return v.edgeConfigurations
+}
+
+// releaseEdgeConfigurations folds the entries a Release's per-edge `uses` surface
+// writes into the shape a traversal over them enumerates.
+//
+// The walk is the resolver's own, which is what keeps this axis and the guards
+// over the same surface agreeing on which entries a Release declares and in what
+// order. It supplies the boundary each entry sits in and the keys the author
+// typed to reach the consuming component, so nothing here re-derives an authoring
+// site the walk already settled.
+//
+// An entry in the boundary normalization synthesized names the top-level shape
+// its author wrote: that boundary spells no level, so the keys relative to it
+// have nothing to be relative to and the component travels on the site instead —
+// the same division the boundary-component axis draws. Such a boundary holds no
+// routing entries, so its entries are always the direct ones.
+func releaseEdgeConfigurations(
+	rel *types.Release,
+	sourceFile string,
+) []constraint.ReleaseEdgeConfigurationInstance {
+	entries := resolver.ReleaseEdgeEntries(rel)
+	if len(entries) == 0 {
+		return nil
+	}
+	out := make([]constraint.ReleaseEdgeConfigurationInstance, 0, len(entries))
+	for _, e := range entries {
+		instance := constraint.ReleaseEdgeConfigurationInstance{
+			Configuration: constraint.ReleaseEdgeConfiguration{
+				Document:     constraint.AuthoringDocumentRelease,
+				BoundaryPath: e.BoundaryScopePath,
+				Node:         e.NodeID,
+				Socket:       e.Socket,
+				Alias:        e.Alias,
+			},
+			SourceFile: sourceFile,
+		}
+		if e.BoundaryScopePath == "" {
+			instance.Site = constraint.AuthoredSite{Component: e.NodeID}
+		} else {
+			instance.Site = constraint.AuthoredSite{ScopePath: e.BoundaryScopePath}
+			instance.ComponentKeys = e.ComponentKeys
+		}
+		out = append(out, instance)
+	}
+	return out
 }
 
 // boundaryComponentReferences folds the component entries a deployment's
@@ -413,6 +515,7 @@ var (
 	_ constraint.NodeEnumerator                       = (*topologyView)(nil)
 	_ constraint.NodeSocketEnumerator                 = (*topologyView)(nil)
 	_ constraint.BoundaryComponentReferenceEnumerator = (*topologyView)(nil)
+	_ constraint.ReleaseEdgeConfigurationEnumerator   = (*topologyView)(nil)
 	_ StageAxes                                       = (*topologyView)(nil)
 )
 
@@ -430,5 +533,9 @@ func newStageView(cfg BuildConfig, flat *flattenResult, edges []NormalizedEdge) 
 	}
 	earlier := resolver.NewNormalizedView(
 		types.Normalize(rr.Aggregate), rr.Release, cfg.CatalogLookup, rr.Parameters)
-	return newTopologyView(flat, edges, earlier, boundaryComponentReferences(rr.Release))
+	return newTopologyView(
+		flat, edges, earlier,
+		boundaryComponentReferences(rr.Release),
+		releaseEdgeConfigurations(rr.Release, rr.ReleasePath),
+	)
 }

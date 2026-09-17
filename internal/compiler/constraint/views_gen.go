@@ -347,6 +347,58 @@ type BoundaryPlacement struct {
 	Axis string
 }
 
+// ReleaseEdgeConfiguration is one entry a Release's per-edge `uses`
+// surface writes, as the coordinates that identify it: the authoring
+// document it was written in, the boundary it sits in, and the consuming
+// component, socket and alias it was keyed under.
+//
+// It is one fact rather than five because no shorter tuple names an entry.
+// The consumer, the socket and the alias together identify a connection,
+// which is the key every fact about one takes; the boundary is part of the
+// identity because a Release writes its per-edge surface inside a
+// boundary's own component entry, so the boundary is where an author edits
+// the entry and two boundaries are two separate blocks. A reader handed
+// the coordinates as separate lists would have to re-pair them by
+// position, which is the re-derivation a declared fact exists to close.
+//
+// It reports what the Release WROTE and never what the composition drew.
+// An entry that drew no connection appears here exactly as one that drew a
+// connection does, because the Release wrote it either way and whether
+// anything answers to it is a different question, asked of the connection
+// set by the fact keyed per connection. That separation is the whole of
+// why this axis exists: the connection set holds one instance per
+// connection DRAWN, so an entry that drew none is absent from it by
+// construction and a rule over such an entry could never be invoked for
+// one.
+//
+// It is also the coordinate tuple of the subject a rule over this axis is
+// invoked once per, so the entry a rule is invoked for and the set it
+// reads back are spelled by one type and cannot come to describe an entry
+// differently.
+type ReleaseEdgeConfiguration struct {
+	// Document is which authoring document the entry was written in, one of
+	// [AuthoringDocumentAggregate] or [AuthoringDocumentRelease]. It selects
+	// the scope nesting the boundary path is spelled with.
+	Document string
+
+	// BoundaryPath is the boundary the entry was written in, joined the way
+	// that axis joins its levels. It is empty for an entry inside the boundary
+	// normalization synthesizes to hold the components an author wrote at the
+	// document's top level, which is not a boundary any file spells.
+	BoundaryPath string
+
+	// Node is the consuming component the entry was keyed under, by the
+	// identity every keyed fact takes.
+	Node string
+
+	// Socket is the dependency socket the entry sits under.
+	Socket string
+
+	// Alias names the entry within its socket, which is the key the author
+	// wrote.
+	Alias string
+}
+
 // View is the base every stage's view embeds. It declares no fact of its
 // own; it carries the contract every view shares.
 //
@@ -2619,6 +2671,83 @@ type TopologyView interface {
 	//
 	// Keyed by edge; read from topology.NormalizedEdge.AuthoredTarget.
 	PerEdgeAuthoredTarget(node string, socket string, alias string) string
+
+	// PerEdgeConnectionDrawn reports whether the composition drew a connection
+	// at one coordinate, whichever surface drew it.
+	//
+	// It is membership of the connection set and nothing finer. A rule asking
+	// what an authored entry achieved needs this and cannot take it from the
+	// target a connection names: that fact answers with the empty string where
+	// nothing was drawn, and an authored target may itself be empty, so the
+	// two cases share one answer there and a reader taking emptiness for
+	// absence would read a drawn connection as one that was never drawn.
+	// Membership is a separate question from what the member carries, and it
+	// is declared separately for that reason rather than folded into the
+	// answer beside it.
+	//
+	// It answers for the whole connection set rather than for one surface's
+	// contribution, which is what a rule over an entry that configures rather
+	// than creates needs: such an entry applies to a connection some other
+	// document drew, so a reading bounded to the entry's own surface would
+	// report every one of them as carrying nothing.
+	//
+	// False is the answer for a coordinate no surface reached and for one
+	// whose consuming component the composition does not hold, and the two are
+	// deliberately one answer: no connection was drawn either way. A rule
+	// needing to tell them apart reads the flattened node set beside this,
+	// which is the fact reporting membership of the composition.
+	//
+	// Keyed by edge; read from topology.TopologyResult.Edges.
+	PerEdgeConnectionDrawn(node string, socket string, alias string) bool
+
+	// ReleaseAuthoredEdgeConfigurations is every entry the Release's per-edge
+	// `uses` surface writes, in the order the document declares them — an
+	// enclosing boundary before the boundaries nested inside it, and within a
+	// boundary its components in author order, each component's sockets in
+	// author order and each socket's aliases in author order.
+	//
+	// It reports what the Release WROTE and never which of those entries
+	// reached a connection. The connection set holds one instance per
+	// connection DRAWN, so an entry that drew none — one carrying
+	// configuration for a connection some other document was expected to draw,
+	// where nothing drew it — is absent from that set by construction. A
+	// rule over such an entry can therefore be invoked over this axis and over
+	// no other, which is the whole of why the axis exists.
+	//
+	// Each element carries the coordinates that identify one entry, and the
+	// boundary is among them because the Release writes this surface inside a
+	// boundary's own component entry: that entry is the site an author edits,
+	// and two boundaries writing one component are two separate blocks.
+	// Nothing is folded away between them — a Release that places one
+	// component in two boundaries is refused when the document loads, so by
+	// the time anything reads this fact each component is written in exactly
+	// one boundary and the reconciled reading beside it loses no entry.
+	//
+	// It walks the Release after normalization, so a document declaring its
+	// components at the top level rather than under named boundaries is
+	// covered by the same walk — normalization gives such a document a
+	// boundary of its own holding exactly those entries, and that boundary
+	// spells no level, so its entries carry the empty boundary path and are
+	// named at the top-level shape their author wrote.
+	//
+	// It is the Release's surface alone. An Aggregate writes per-edge entries
+	// too, in a component's own dependency block, and those are read by the
+	// facts over that surface: they are written by another hand on another
+	// document and carry another contract, so one axis spanning both would
+	// answer a rule about the operator's entries with the developer's.
+	//
+	// Declaring a fact puts its accessor on its stage's view interface, and
+	// every later stage carries that interface by embedding — so a view
+	// presenting any of those stages answers the accessor whether or not a
+	// check asks it. The declaration compels the implementation; nothing
+	// compels the declaration. This accessor is implemented for that reason
+	// rather than because a check reads it, which accounts for its presence
+	// without warranting it: a fact no check reads remains a candidate for
+	// removal.
+	//
+	// Keyed by release-edge-configuration; read from
+	// types.BoundaryComponent.Uses.
+	ReleaseAuthoredEdgeConfigurations() []ReleaseEdgeConfiguration
 
 	// NodeBoundaryPlacement is the boundary a node was placed in, and whether
 	// anything placed it at all.

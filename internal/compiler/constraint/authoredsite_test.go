@@ -207,6 +207,16 @@ spec:
                   annotations:
                     feature.myco/tls:
                       issuer: internal
+                  # A per-edge entry on a component named inside a routing
+                  # entry. It carries operator configuration and no target, so
+                  # it configures a connection some other document is expected
+                  # to draw — the shape that is absent from the connection set
+                  # whenever nothing draws one.
+                  uses:
+                    cache:
+                      sessions:
+                        infra:
+                          maxmemory: 256mb
           components:
             # The deployment's own edge surface, wiring a socket the application
             # declared and left unbound. A connection drawn here is authored on
@@ -225,6 +235,15 @@ spec:
                 zebra:
                   spare:
                     target: cache-standby
+                # A per-edge entry carrying operator configuration for a
+                # connection this document does not draw, on a component the
+                # boundary names directly. Its locator reaches past the
+                # component into the socket and the alias, which is the entry an
+                # author edits.
+                database:
+                  primary:
+                    infra:
+                      instance_class: db.r6g.large
             # The direct axis naming a component a sub-module contributed, which
             # this document has to spell with that module's dotted prefix. The
             # key therefore carries the locator dialect's separator, so a locator
@@ -276,6 +295,15 @@ spec:
         tls:
           infra:
             pool_size: 20
+      # A per-edge entry written in the single-scope form, so the boundary
+      # holding it is the one normalization synthesizes and no key here spells
+      # it. Its locator names this top-level shape and reaches past the
+      # component into the socket and the alias.
+      uses:
+        queue:
+          jobs:
+            infra:
+              visibility_timeout: 30
 `,
 		// It carries a values mapping and a step input as well as the blocks the
 		// other node-rooted axes walk, because the template-field axis reaches every

@@ -413,6 +413,42 @@ var records = []recordDecl{
 			{Name: "Axis", Type: "string", Doc: "Axis is the block the entry was written in: one of [PlacementNamedComponent], [PlacementRoutedComponent] or [PlacementRoutedModule]."},
 		},
 	},
+	{
+		Name: "ReleaseEdgeConfiguration",
+		Doc: "ReleaseEdgeConfiguration is one entry a Release's per-edge `uses` " +
+			"surface writes, as the coordinates that identify it: the " +
+			"authoring document it was written in, the boundary it sits in, " +
+			"and the consuming component, socket and alias it was keyed " +
+			"under.\n\nIt is one fact rather than five because no shorter " +
+			"tuple names an entry. The consumer, the socket and the alias " +
+			"together identify a connection, which is the key every fact " +
+			"about one takes; the boundary is part of the identity because a " +
+			"Release writes its per-edge surface inside a boundary's own " +
+			"component entry, so the boundary is where an author edits the " +
+			"entry and two boundaries are two separate blocks. A reader " +
+			"handed the coordinates as separate lists would have to re-pair " +
+			"them by position, which is the re-derivation a declared fact " +
+			"exists to close.\n\nIt reports what the Release WROTE and never " +
+			"what the composition drew. An entry that drew no connection " +
+			"appears here exactly as one that drew a connection does, because " +
+			"the Release wrote it either way and whether anything answers to " +
+			"it is a different question, asked of the connection set by the " +
+			"fact keyed per connection. That separation is the whole of why " +
+			"this axis exists: the connection set holds one instance per " +
+			"connection DRAWN, so an entry that drew none is absent from it " +
+			"by construction and a rule over such an entry could never be " +
+			"invoked for one.\n\nIt is also the coordinate tuple of the " +
+			"subject a rule over this axis is invoked once per, so the entry " +
+			"a rule is invoked for and the set it reads back are spelled by " +
+			"one type and cannot come to describe an entry differently.",
+		Fields: []recordField{
+			{Name: "Document", Type: "string", Doc: "Document is which authoring document the entry was written in, one of [AuthoringDocumentAggregate] or [AuthoringDocumentRelease]. It selects the scope nesting the boundary path is spelled with."},
+			{Name: "BoundaryPath", Type: "string", Doc: "BoundaryPath is the boundary the entry was written in, joined the way that axis joins its levels. It is empty for an entry inside the boundary normalization synthesizes to hold the components an author wrote at the document's top level, which is not a boundary any file spells."},
+			{Name: "Node", Type: "string", Doc: "Node is the consuming component the entry was keyed under, by the identity every keyed fact takes."},
+			{Name: "Socket", Type: "string", Doc: "Socket is the dependency socket the entry sits under."},
+			{Name: "Alias", Type: "string", Doc: "Alias names the entry within its socket, which is the key the author wrote."},
+		},
+	},
 }
 
 // declarationCompelsImplementation is the paragraph a fact carries when its
@@ -2792,6 +2828,83 @@ var facts = []factDecl{
 			"connection is drawn once: where two surfaces write one node, socket " +
 			"and alias, the composition keeps one connection and this names the " +
 			"target that connection carries.",
+	},
+
+	{
+		Name:        "per-edge-connection-drawn",
+		Stage:       "topology",
+		SourceField: "topology.TopologyResult.Edges",
+		Subject:     []string{"edge"},
+		Params: []paramDecl{
+			{Name: "node", Type: "string"},
+			{Name: "socket", Type: "string"},
+			{Name: "alias", Type: "string"},
+		},
+		Returns: "bool",
+		Doc: "PerEdgeConnectionDrawn reports whether the composition drew a " +
+			"connection at one coordinate, whichever surface drew it.\n\nIt is " +
+			"membership of the connection set and nothing finer. A rule asking " +
+			"what an authored entry achieved needs this and cannot take it from " +
+			"the target a connection names: that fact answers with the empty " +
+			"string where nothing was drawn, and an authored target may itself " +
+			"be empty, so the two cases share one answer there and a reader " +
+			"taking emptiness for absence would read a drawn connection as one " +
+			"that was never drawn. Membership is a separate question from what " +
+			"the member carries, and it is declared separately for that reason " +
+			"rather than folded into the answer beside it.\n\nIt answers for " +
+			"the whole connection set rather than for one surface's " +
+			"contribution, which is what a rule over an entry that configures " +
+			"rather than creates needs: such an entry applies to a connection " +
+			"some other document drew, so a reading bounded to the entry's own " +
+			"surface would report every one of them as carrying nothing.\n\n" +
+			"False is the answer for a coordinate no surface reached and for " +
+			"one whose consuming component the composition does not hold, and " +
+			"the two are deliberately one answer: no connection was drawn " +
+			"either way. A rule needing to tell them apart reads the flattened " +
+			"node set beside this, which is the fact reporting membership of " +
+			"the composition.",
+	},
+
+	{
+		Name:        "release-authored-edge-configurations",
+		Stage:       "topology",
+		SourceField: "types.BoundaryComponent.Uses",
+		Subject:     []string{"release-edge-configuration"},
+		Returns:     "[]ReleaseEdgeConfiguration",
+		Doc: "ReleaseAuthoredEdgeConfigurations is every entry the Release's per-edge " +
+			"`uses` surface writes, in the order the document declares them — an " +
+			"enclosing boundary before the boundaries nested inside it, and " +
+			"within a boundary its components in author order, each component's " +
+			"sockets in author order and each socket's aliases in author " +
+			"order.\n\nIt reports what the Release WROTE and never which of " +
+			"those entries reached a connection. The connection set holds one " +
+			"instance per connection DRAWN, so an entry that drew none — one " +
+			"carrying configuration for a connection some other document was " +
+			"expected to draw, where nothing drew it — is absent from that set " +
+			"by construction. A rule over such an entry can therefore be invoked " +
+			"over this axis and over no other, which is the whole of why the " +
+			"axis exists.\n\nEach element carries the coordinates that identify " +
+			"one entry, and the boundary is among them because the Release " +
+			"writes this surface inside a boundary's own component entry: that " +
+			"entry is the site an author edits, and two boundaries writing one " +
+			"component are two separate blocks. Nothing is folded away between " +
+			"them — a Release that places one component in two boundaries is " +
+			"refused when the document loads, so by the time anything reads this " +
+			"fact each component is written in exactly one boundary and the " +
+			"reconciled reading beside it loses no entry.\n\nIt walks the " +
+			"Release after normalization, so a document declaring its components " +
+			"at the top level rather than under named boundaries is covered by " +
+			"the same walk — normalization gives such a document a boundary of " +
+			"its own holding exactly those entries, and that boundary spells no " +
+			"level, so its entries carry the empty boundary path and are named " +
+			"at the top-level shape their author wrote.\n\nIt is the Release's " +
+			"surface alone. An Aggregate writes per-edge entries too, in a " +
+			"component's own dependency block, and those are read by the facts " +
+			"over that surface: they are written by another hand on another " +
+			"document and carry another contract, so one axis spanning both " +
+			"would answer a rule about the operator's entries with the " +
+			"developer's." +
+			declarationCompelsImplementation,
 	},
 
 	{

@@ -42,6 +42,13 @@ import (
 // so a rule's values read as further entries in the finding's value list rather
 // than as one opaque entry inside it.
 //
+// The advice travels beside them rather than among them, because the two land in
+// different parts of the composition: the values name what the finding is about
+// and are quoted, while the advice is a sentence naming the edit. A conversion
+// reading only the values would drop the remedy of every rule that carries one —
+// silently, since such a rule composes a perfectly readable diagnostic without
+// it, and nothing compares what the rule wrote against what the reader received.
+//
 // The entity names the document the findings are about, and it is supplied
 // rather than derived because the rules reporting through here span both
 // authoring documents: a rule over what the deployment wrote is not attributable
@@ -148,6 +155,7 @@ func findings(
 			Entity:  entity,
 			Field:   field,
 			Message: strings.Join(o.RenderedDetail(), ", "),
+			Advice:  o.Advice(),
 			Err:     o.Sentinel(),
 		})
 	}

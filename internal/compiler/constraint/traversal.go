@@ -2000,3 +2000,65 @@ func RunOnBoundaryPlacements[V View](
 	}
 	return out, nil
 }
+
+// RunOnReleaseEdgeConfigurations invokes check once per entry the Release's
+// per-edge `uses` surface writes, in the order the enumerator returns them.
+//
+// The set is walked flat rather than per node, because an entry may name a
+// consuming component the composition does not hold: a walk rooted at the node
+// set would drop exactly the entries a rule over this axis has to be invoked for,
+// and its silence on them would read as a Release that wrote nothing there.
+//
+// The locator is the boundary the entry sits in, then the keys reaching the
+// consuming component's own block, then the `uses` container, the socket and the
+// alias: .spec.boundaries.<a>.components.<c>.uses.<socket>.<alias> for a
+// component a boundary names directly,
+// .spec.boundaries.<a>.aggregates.<m>.components.<local>.uses.<socket>.<alias>
+// for one named inside a routing entry, and .spec.components.<c>.uses.<socket>.<alias>
+// for an entry in the boundary normalization synthesized. The container's key is
+// repeated for each level of a nested boundary, because that is how the document
+// spells one. It is assembled through the shared authored-site rule rather than a
+// spelling of its own, so an entry on a routed component names the keys its
+// routing entry spells, exactly as a rule over that component itself does.
+//
+// A component the boundary names directly carries the id it holds once the
+// composition is flattened as its own authoring key, and that id carries the
+// locator dialect's separator whenever a sub-module contributed the component —
+// so the locator names the component block and stops there, and the id reaches
+// the author as the value the rule raises. That is the division [authoredLocator]
+// draws for a value legitimate as a coordinate and refused as a segment, and it
+// is the standing trade rather than this rule's loss.
+//
+// An entry whose document this rule cannot name gets no segments, which is the
+// mechanical form of not inventing a locator: the scope nesting is selected by
+// the document, and a document outside the closed pair selects none.
+func RunOnReleaseEdgeConfigurations[V View](
+	cancelled Cancellation,
+	configurations ReleaseEdgeConfigurationEnumerator,
+	view V,
+	check Check[V, ReleaseEdgeConfigurationSubject],
+) ([]Objection, error) {
+	var out []Objection
+	for _, entry := range configurations.ReleaseEdgeConfigurations() {
+		if err := cancelled.err(); err != nil {
+			return nil, err
+		}
+		var segments []string
+		if nesting, named := carrierNesting(entry.Configuration.Document); named {
+			tail := make([]string, 0, len(entry.ComponentKeys)+3)
+			tail = append(tail, entry.ComponentKeys...)
+			tail = append(tail, authoredKeyUses, entry.Configuration.Socket, entry.Configuration.Alias)
+			segments = authoredSiteSegments(nesting, entry.Site, tail...)
+		}
+		out = append(out, check.Run(view, newReleaseEdgeConfigurationSubject(
+			entry.SourceFile,
+			entry.Configuration.Document,
+			entry.Configuration.BoundaryPath,
+			entry.Configuration.Node,
+			entry.Configuration.Socket,
+			entry.Configuration.Alias,
+			segments...,
+		))...)
+	}
+	return out, nil
+}

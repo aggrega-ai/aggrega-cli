@@ -131,10 +131,20 @@ func buildResultWith(t *testing.T, aggYAML, relYAML, modYAML string) (*TopologyR
 			return mod, "mod.yaml", nil, nil
 		}
 	}
+	var releasePath string
+	if rel != nil {
+		// A real build carries the file each document was read from, and a rule
+		// declared over this stage positions its findings with it. A fixture
+		// leaving it empty would prove such a rule's locator and never its file,
+		// so the fixture names one — the same name for every fixture, because
+		// which name it is carries nothing.
+		releasePath = "release.yaml"
+	}
 	return Build(BuildConfig{
 		ResolveResult: &resolver.ResolveResult{
 			Aggregate:            agg,
 			Release:              rel,
+			ReleasePath:          releasePath,
 			BoundaryInfra:        boundaryInfra,
 			RoutedAggregateInfra: routedInfra,
 		},

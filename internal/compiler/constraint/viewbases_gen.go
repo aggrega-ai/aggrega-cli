@@ -1677,6 +1677,20 @@ func (GraphViewBase) PerEdgeAuthoredTarget(node string, socket string, alias str
 	panic("this presentation does not carry per-edge-authored-target, which is read from topology.NormalizedEdge.AuthoredTarget")
 }
 
+// PerEdgeConnectionDrawn panics. This presentation does not carry
+// per-edge-connection-drawn, which is read from
+// topology.TopologyResult.Edges.
+func (GraphViewBase) PerEdgeConnectionDrawn(node string, socket string, alias string) bool {
+	panic("this presentation does not carry per-edge-connection-drawn, which is read from topology.TopologyResult.Edges")
+}
+
+// ReleaseAuthoredEdgeConfigurations panics. This presentation does not
+// carry release-authored-edge-configurations, which is read from
+// types.BoundaryComponent.Uses.
+func (GraphViewBase) ReleaseAuthoredEdgeConfigurations() []ReleaseEdgeConfiguration {
+	panic("this presentation does not carry release-authored-edge-configurations, which is read from types.BoundaryComponent.Uses")
+}
+
 // NodeBoundaryPlacement panics. This presentation does not carry
 // node-boundary-placement, which is read from
 // topology.TopologyNode.BoundaryPath.
@@ -2517,6 +2531,8 @@ type TopologyStageFacts interface {
 	ResolvedParameter(node string, name string) (any, bool)
 	ResolvedUsesSocketConnections(node string) types.OrderedMap[int]
 	PerEdgeAuthoredTarget(node string, socket string, alias string) string
+	PerEdgeConnectionDrawn(node string, socket string, alias string) bool
+	ReleaseAuthoredEdgeConfigurations() []ReleaseEdgeConfiguration
 	NodeBoundaryPlacement(node string) (string, bool)
 	NodeDeclaringSubsystems(node string) []string
 	ModuleContributedNodes(module string) []string

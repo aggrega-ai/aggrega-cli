@@ -836,6 +836,96 @@ func newBoundaryPlacementSubject(
 	}
 }
 
+// ReleaseEdgeConfigurationSubject is the subject of a check invoked once per
+// entry the Release's per-edge `uses` surface writes.
+//
+// It is a separate kind from the connection rather than a narrowing of it, and
+// the difference is what the kind exists for. The connection axis enumerates one
+// instance per connection the composition DREW, whichever surface drew it; this
+// one enumerates one instance per entry the Release WROTE. The two sets overlap
+// and neither contains the other: an entry that configures a connection some
+// other document drew appears in both, a connection an Aggregate drew and no
+// Release entry configures appears only on the connection axis, and an entry
+// whose connection nothing drew appears only here. A rule about what the operator
+// authored, asked of the connection axis, would never be invoked for that last
+// case — which is the case such a rule exists for.
+//
+// The coordinates carry the boundary because the Release writes this surface
+// inside a boundary's own component entry, so the boundary is where an author
+// edits the entry. They carry the authoring document for the reason
+// [BoundaryPlacementSubject]'s do: the locator assembly selects the scope nesting
+// from it through the closed pair every other authored-site traversal selects
+// through, so hard-coding the boundary nesting here would be a second statement
+// of the document-to-nesting correspondence with nothing comparing the two.
+type ReleaseEdgeConfigurationSubject interface {
+	Subject
+
+	// AuthoringDocumentKind is the document the entry was written in: one of
+	// [AuthoringDocumentAggregate] or [AuthoringDocumentRelease].
+	AuthoringDocumentKind() string
+
+	// BoundaryPath is the boundary the entry was written in, as every keyed fact
+	// takes it. It is the boundary's path from its own document's scope set
+	// rather than a bare name, because boundaries nest and two at different
+	// depths may carry one name. It is empty for an entry inside the boundary
+	// normalization synthesized to hold components written at the document's top
+	// level, which is not a boundary any file spells.
+	BoundaryPath() string
+
+	// NodeID is the consuming component the entry was keyed under, by the
+	// identity every keyed fact takes.
+	//
+	// It is what the entry ADDRESSES rather than a component the composition is
+	// known to hold: an entry naming a component nothing answers to is
+	// enumerated exactly as one naming a component that exists, and which it is
+	// is a question the flattened node set answers.
+	NodeID() string
+
+	// SocketName is the dependency socket the entry sits under.
+	SocketName() string
+
+	// AliasName names the entry within its socket, which is the key the author
+	// wrote.
+	AliasName() string
+
+	releaseEdgeConfiguration()
+}
+
+type releaseEdgeConfigurationSubject struct {
+	provenance
+	document string
+	boundary string
+	node     string
+	socket   string
+	alias    string
+}
+
+func (releaseEdgeConfigurationSubject) releaseEdgeConfiguration() {}
+
+func (s releaseEdgeConfigurationSubject) AuthoringDocumentKind() string { return s.document }
+
+func (s releaseEdgeConfigurationSubject) BoundaryPath() string { return s.boundary }
+
+func (s releaseEdgeConfigurationSubject) NodeID() string { return s.node }
+
+func (s releaseEdgeConfigurationSubject) SocketName() string { return s.socket }
+
+func (s releaseEdgeConfigurationSubject) AliasName() string { return s.alias }
+
+func newReleaseEdgeConfigurationSubject(
+	sourceFile, document, boundary, node, socket, alias string,
+	segments ...string,
+) ReleaseEdgeConfigurationSubject {
+	return releaseEdgeConfigurationSubject{
+		provenance: newProvenance(sourceFile, segments...),
+		document:   document,
+		boundary:   boundary,
+		node:       node,
+		socket:     socket,
+		alias:      alias,
+	}
+}
+
 // NodeAttachmentSocketSubject is the subject of a check invoked once per socket
 // an attachment WIRES in its own dependency block — never once per socket the
 // attached Feature declares. The axis is the enumerator's contract and is stated

@@ -575,10 +575,23 @@ var errVerdictPluginTrustMismatch = cerrors.Register("verdict-plugin-trust-misma
 // A raise site that has nothing of its own to add leaves Message empty. That is
 // the shape for wrapping an error that is already a composed diagnostic for the
 // same condition: see Error for what such a finding renders.
+// Advice is what THIS occurrence tells the author to do, empty for a condition
+// whose registered sentence says the whole of it. It is a separate field from
+// Message because the two land in different parts of a composed diagnostic: the
+// message names the values the finding is about and is quoted among them, while
+// the advice is a sentence naming the edit. A raise site that folded its remedy
+// into Message would have it rendered as one more quoted value, reading as one
+// more thing the finding is about.
+//
+// It is per occurrence rather than per condition because that is the only place
+// it can be true: a condition whose remedy differs between its own violation
+// classes has no single sentence to register beside its identity, and a
+// registered one would be wrong at whichever class it did not describe.
 type ResolverError struct {
 	Entity  string // e.g. "Aggregate my-app"
 	Field   string // e.g. ".spec.components.bad name"
 	Message string // what this occurrence supplied, not a description of the condition
+	Advice  string // what this occurrence tells the author to do, empty where the condition's own sentence says it
 	Err     error  // sentinel for errors.Is
 }
 
@@ -632,13 +645,13 @@ func (e *ResolverError) Error() string {
 // drift from the other: which values follow the sentence, and what a finding
 // that supplied no Message of its own renders.
 func (e *ResolverError) compose(values []string) string {
-	if e.Message == "" && e.Err != nil {
+	if e.Message == "" && e.Advice == "" && e.Err != nil {
 		return e.Err.Error()
 	}
 	if e.Message != "" {
 		values = append(values, e.Message)
 	}
-	return cerrors.ComposeMessage(e.Err, values, "")
+	return cerrors.ComposeMessage(e.Err, values, e.Advice)
 }
 
 // MessageWithoutSubject renders the finding for a surface that shows the subject
