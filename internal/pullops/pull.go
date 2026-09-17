@@ -459,7 +459,7 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	// Compose the Manifest's extends chain so the closure walk and recipe
 	// resolution see the inherited mappings rather than the child's own
 	// entries alone. A Manifest with no extends reference is unchanged.
-	manifest, err := resolver.ResolveManifestExtends(releaseDir, manRes.Manifest)
+	manifest, err := resolver.ResolveManifestExtends(releaseDir, manRes)
 	if err != nil {
 		return Result{}, fmt.Errorf("compose manifest extends: %w", err)
 	}

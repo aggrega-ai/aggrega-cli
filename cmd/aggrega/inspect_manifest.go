@@ -44,7 +44,8 @@ func renderManifestFile(_ context.Context, _ *workspaceconfig.ResolvedWorkspace,
 	}
 	// Resolve the extends chain through the shared build-path funnel so the
 	// inspector's composed mappings cannot drift from the compiler's.
-	resolved, err := resolver.ResolveManifestExtends(filepath.Dir(path), m)
+	resolved, err := resolver.ResolveManifestExtends(filepath.Dir(path),
+		resolver.ResolvedManifest{Manifest: m, Path: path, Bytes: data})
 	if err != nil {
 		return fmt.Errorf("resolve extends: %w", err)
 	}

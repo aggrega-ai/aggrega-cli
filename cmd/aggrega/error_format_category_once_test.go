@@ -203,16 +203,25 @@ func categoryOnceManifest(t *testing.T, src string) *types.Manifest {
 	return &m
 }
 
-// TestAnnotationExpansionHaltNamesTheCategoryOnce reads the two annotation
-// wraps at the boundary an author meets them: the expansion pass raises the
-// halt, and the formatter renders it.
+// TestAnnotationExpansionHaltNamesTheCategoryOnce reads the annotation halt at
+// the boundary an author meets it: the rules over what an author wrote in an
+// annotation raise it, and the formatter renders it.
 //
-// Both wrap an inner failure that carries a registered condition, which is the
-// shape where a second category word can reach one line — the wrap supplies the
-// word, and anything the inner chain contributes lands on the same line. The
-// scope each wrap adds, the boundary and component and annotation key, is what
-// the inner condition cannot know, so it is asserted too: the wrap has to
-// survive rendering rather than be replaced by what it wraps.
+// 🔴 Both cases drive ValidateAuthoredAnnotations, and that entry point is what
+// the halt's own home dictates rather than a convenience. The side-versus-pillar
+// partition is a declared rule asked over the authored entry BEFORE expansion
+// consumes it, and it is the same entry point the compile pipeline asks one step
+// ahead of expansion. Expansion itself routes a crossed entry nowhere and
+// returns no error, so a call into ExpandAnnotations here would assert against a
+// nil and this file would quietly stop covering the rendering it exists for.
+//
+// Each finding carries a registered condition and reaches the formatter through
+// the conversion that derives its category, which is the shape where a second
+// category word can reach one line — the head supplies the word, and anything
+// the finding's own text contributes lands on the same line. The scope the
+// finding adds, the boundary and component and annotation key, is what the
+// condition alone cannot know, so it is asserted too: it has to survive
+// rendering rather than be replaced.
 func TestAnnotationExpansionHaltNamesTheCategoryOnce(t *testing.T) {
 	t.Parallel()
 
@@ -239,12 +248,11 @@ spec:
 			t.Fatalf("release unmarshal: %v", err)
 		}
 		rr := &resolver.ResolveResult{
-			Manifest:             categoryOnceManifest(t, categoryOnceValuesManifest),
-			Release:              &rel,
-			ReleasePath:          "release.yaml",
-			AnnotationProvenance: map[string]resolver.AnnotationProvenance{},
+			Manifest:    categoryOnceManifest(t, categoryOnceValuesManifest),
+			Release:     &rel,
+			ReleasePath: "release.yaml",
 		}
-		err := resolver.ExpandAnnotations(rr, resolver.CatalogLookup{})
+		err := resolver.ValidateAuthoredAnnotations(nil, rr, resolver.CatalogLookup{})
 		if err == nil {
 			t.Fatal("expected the side-vs-pillar halt; got nil")
 		}
@@ -276,12 +284,11 @@ spec:
 			t.Fatalf("aggregate unmarshal: %v", err)
 		}
 		rr := &resolver.ResolveResult{
-			Manifest:             categoryOnceManifest(t, categoryOnceInfraManifest),
-			Aggregate:            types.Normalize(&agg).Aggregate(),
-			AggregatePath:        "aggregate.yaml",
-			AnnotationProvenance: map[string]resolver.AnnotationProvenance{},
+			Manifest:      categoryOnceManifest(t, categoryOnceInfraManifest),
+			Aggregate:     types.Normalize(&agg).Aggregate(),
+			AggregatePath: "aggregate.yaml",
 		}
-		err := resolver.ExpandAnnotations(rr, resolver.CatalogLookup{})
+		err := resolver.ValidateAuthoredAnnotations(nil, rr, resolver.CatalogLookup{})
 		if err == nil {
 			t.Fatal("expected the side-vs-pillar halt; got nil")
 		}

@@ -190,7 +190,7 @@ func ResolveClosure(ctx context.Context, in ClosureInputs) (*ResolvedClosure, *C
 			err:   err,
 		}
 	}
-	manifest, err := resolver.ResolveManifestExtends(releaseDir, manRes.Manifest)
+	manifest, err := resolver.ResolveManifestExtends(releaseDir, manRes)
 	if err != nil {
 		return nil, &ClosureError{
 			Stage: ClosureStageComposeManifest,

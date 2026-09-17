@@ -5,6 +5,7 @@ package resolver
 
 import (
 	"fmt"
+	"path/filepath"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
@@ -27,52 +28,64 @@ const maxManifestExtendsDepth = 10
 // dictionary, preserving the constant-time per-tier lookup the recipe
 // cascade relies on.
 //
-// The chain is walked iteratively from child toward root ancestor. Each
-// extends reference is resolved against releaseDir the same way the
-// Release's own manifest reference resolves — an explicit relative-path
-// file or a same-directory identity. Composition then folds the chain from
-// the root ancestor down to the child so child keys win.
+// The chain is walked iteratively from child toward root ancestor, starting
+// from the child's own resolution. Each extends reference is resolved
+// against releaseDir the same way the Release's own manifest reference
+// resolves — an explicit relative-path file or a same-directory identity.
+// Composition then folds the chain from the root ancestor down to the child
+// so child keys win.
+//
+// Chain membership is keyed on each link's resolved file path, so a chain is
+// circular exactly when it reaches a file it has already folded. Two
+// Manifest files that happen to declare the same metadata.name are distinct
+// links, and one file is a single link however its reference is written.
 //
 // A Manifest with no extends reference is returned unchanged. A reference
-// that cannot be resolved, a chain that revisits a Manifest already in the
+// that cannot be resolved, a chain that revisits a file already in the
 // chain, and a chain that exceeds the depth bound each halt with a
 // diagnostic naming the offending reference.
-func ResolveManifestExtends(releaseDir string, child *types.Manifest) (*types.Manifest, error) {
-	if child == nil || child.Spec.Extends == "" {
-		return child, nil
+func ResolveManifestExtends(releaseDir string, child ResolvedManifest) (*types.Manifest, error) {
+	if child.Manifest == nil || child.Manifest.Spec.Extends == "" {
+		return child.Manifest, nil
 	}
 
-	chain := []*types.Manifest{child}
-	visited := map[string]bool{child.Metadata.Name: true}
-	current := child
+	chain := []*types.Manifest{child.Manifest}
+	visited := map[string]bool{manifestLinkKey(child.Path): true}
+	current := child.Manifest
 
 	for current.Spec.Extends != "" {
 		if len(chain) >= maxManifestExtendsDepth {
 			return nil, fmt.Errorf("%w: Manifest %q extends chain exceeds maximum depth of %d; reduce the chain length",
-				validator.ErrInheritanceMerge(), child.Metadata.Name, maxManifestExtendsDepth)
+				validator.ErrInheritanceMerge(), child.Manifest.Metadata.Name, maxManifestExtendsDepth)
 		}
 
 		parentRef := current.Spec.Extends
-		if visited[parentRef] {
-			return nil, fmt.Errorf("%w: Manifest %q extends %q, which is already in the chain; remove the circular reference",
-				validator.ErrCyclicExtension(), current.Metadata.Name, parentRef)
-		}
-
 		parentRes, err := ResolveManifest(releaseDir, parentRef)
 		if err != nil {
 			return nil, fmt.Errorf("%w: Manifest %q extends %q, which could not be resolved: %v; verify the extends reference is a relative path or the name of a Manifest in the Release's directory",
 				validator.ErrInheritanceMerge(), current.Metadata.Name, parentRef, err)
 		}
-		parent := parentRes.Manifest
 
-		visited[parentRef] = true
-		visited[parent.Metadata.Name] = true
-		chain = append(chain, parent)
-		current = parent
+		parentKey := manifestLinkKey(parentRes.Path)
+		if visited[parentKey] {
+			return nil, fmt.Errorf("%w: Manifest %q extends %q, which is already in the chain; remove the circular reference",
+				validator.ErrCyclicExtension(), current.Metadata.Name, parentRef)
+		}
+
+		visited[parentKey] = true
+		chain = append(chain, parentRes.Manifest)
+		current = parentRes.Manifest
 	}
 
 	return composeManifestChain(chain), nil
 }
+
+// manifestLinkKey is the chain-membership key for one resolved link: its file
+// path in a single normal form. Normalising here rather than trusting the
+// caller keeps the child's key and every parent's key comparable, since a
+// parent's path is always built by joining releaseDir to the reference while
+// the child's arrives from whichever surface requested the composition.
+func manifestLinkKey(path string) string { return filepath.Clean(path) }
 
 // composeManifestChain folds an extends chain (child first, root ancestor
 // last) into a single Manifest by shallow per-tier key replacement. It

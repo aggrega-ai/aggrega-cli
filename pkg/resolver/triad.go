@@ -177,9 +177,9 @@ func ResolveAggregate(releaseDir, ref string, catLookup AggregateLookup, registr
 }
 
 // ResolveManifest resolves a Release's spec.manifest reference to a Manifest. A
-// Manifest is deployment-side operator config: it is not catalog-indexed and not
-// publishable, so it has no catalog or registry tier — only an explicit `./` /
-// `../` file or the tolerant same-directory scan.
+// Manifest is operator configuration authored beside the Release: it is not
+// catalog-indexed and not publishable, so it has no catalog or registry tier —
+// only an explicit `./` / `../` file or the tolerant same-directory scan.
 func ResolveManifest(releaseDir, ref string) (ResolvedManifest, error) {
 	if isRelativePathRef(ref) {
 		path := filepath.Join(releaseDir, ref)

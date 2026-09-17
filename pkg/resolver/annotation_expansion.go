@@ -165,14 +165,17 @@ func versionedName(feature *types.Feature) string {
 // the deterministic-output invariant holds because the pass iterates
 // author-ordered OrderedMaps deterministically.
 //
-// Side-vs-pillar enforcement: Aggregate-side annotations may only route
+// Side-vs-pillar partition: Aggregate-side annotations may only route
 // through binding paths in Maps.Values; Release-side annotations may
-// only route through Maps.Infra. A mismatch halts with a clear error
-// citing the annotation key, the routed path, the routed pillar, the
-// authoring side, and the source location. An annotation whose binding
-// declares paths in both pillars and is authored from one side fires
-// only the side-compatible subset; the cross-pillar partition is the
-// normal cross-side-composition scenario, not a violation.
+// only route through Maps.Infra. A mismatch halts the build, but not
+// here — the rule is asked over the authored entry by a declared check
+// one step ahead of this pass, and by the time expansion runs a crossed
+// entry has already been refused. What expansion itself does with one is
+// route it nowhere and return no error, so this pass is not the place to
+// read for what refuses a crossed annotation. An annotation whose
+// binding declares paths in both pillars and is authored from one side
+// fires only the side-compatible subset; the cross-pillar partition is
+// the normal cross-side-composition scenario, not a violation.
 //
 // Pipeline placement: the orchestrator invokes ExpandAnnotations
 // between Resolve and RunGuards, so an expanded attachment is

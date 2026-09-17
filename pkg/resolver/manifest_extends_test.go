@@ -11,7 +11,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
 )
 
@@ -52,7 +51,7 @@ func TestResolveManifestExtends_NoExtends_Unchanged(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolve base: %v", err)
 	}
-	got, err := ResolveManifestExtends(dir, base.Manifest)
+	got, err := ResolveManifestExtends(dir, base)
 	if err != nil {
 		t.Fatalf("compose: %v", err)
 	}
@@ -94,7 +93,7 @@ spec:
 	if err != nil {
 		t.Fatalf("resolve child: %v", err)
 	}
-	got, err := ResolveManifestExtends(dir, child.Manifest)
+	got, err := ResolveManifestExtends(dir, child)
 	if err != nil {
 		t.Fatalf("compose: %v", err)
 	}
@@ -181,7 +180,7 @@ spec:
 	if err != nil {
 		t.Fatalf("resolve leaf: %v", err)
 	}
-	got, err := ResolveManifestExtends(dir, child.Manifest)
+	got, err := ResolveManifestExtends(dir, child)
 	if err != nil {
 		t.Fatalf("compose: %v", err)
 	}
@@ -230,7 +229,7 @@ spec:
 	if err != nil {
 		t.Fatalf("resolve a: %v", err)
 	}
-	_, err = ResolveManifestExtends(dir, child.Manifest)
+	_, err = ResolveManifestExtends(dir, child)
 	if err == nil {
 		t.Fatalf("cycle: expected error, got nil")
 	}
@@ -261,7 +260,7 @@ spec:
 	if err != nil {
 		t.Fatalf("resolve child: %v", err)
 	}
-	_, err = ResolveManifestExtends(dir, child.Manifest)
+	_, err = ResolveManifestExtends(dir, child)
 	if err == nil {
 		t.Fatalf("missing parent: expected error, got nil")
 	}
@@ -271,25 +270,34 @@ spec:
 }
 
 // The tests from here to the end of this file characterise the Manifest extends
-// walk as it behaves today, including three places where what it reports is
-// wrong. They are a before-picture taken so that a repair is verifiable — not an
-// endorsement of what they assert, and not a contract anything may rely on:
+// walk against three faults, so that a repair is verifiable rather than argued.
+// Two of the three are repaired and the rows holding them assert the repaired
+// behaviour; the third is still present, and the rows holding it assert the
+// defect rather than what the walk ought to do:
 //
-//   - a cyclic chain past a certain length is reported as an over-deep chain, so
-//     the author is told to shorten a loop, which cannot remove it;
-//   - which of those two conditions fires depends on which of the two legal ways
-//     of writing an extends reference the author happened to choose;
-//   - the cycle diagnostic can name an edge that is not the one closing the
-//     loop, sending the author to a file whose extends declaration is legal.
+//   - REPAIRED — which of the two conditions a cyclic chain is reported as no
+//     longer depends on which of the two legal ways of writing an extends
+//     reference the author chose. Chain membership is keyed on each link's
+//     resolved file path, so one file is one link however its reference is
+//     spelled, and both forms change over at the same length.
+//   - REPAIRED — the cycle diagnostic names the edge that closes the loop,
+//     whichever way the references are written, rather than an earlier edge
+//     whose extends declaration is legal.
+//   - STILL WRONG — a cyclic chain of ten or more links is reported as an
+//     over-deep chain, so the author is told to shorten a loop, which cannot
+//     remove it. The bound is tested as the first statement of every step,
+//     before that step can recognise it has returned to a file already in the
+//     chain. Testing it after the walk instead, as the shared entity-inheritance
+//     walk does, reports a loop as a loop at every length.
 //
 // Each test names again, at its own site, which part of what it asserts is the
-// defect. A reader repairing any of the three should expect those assertions to
-// change with the repair rather than to survive it.
+// remaining defect and which part is behaviour a further repair must preserve.
 
 // extendsRefStyle spells an extends reference in one of the two forms a
 // Manifest's extends accepts: an explicit relative path to the file, or the bare
 // metadata.name of a Manifest in the Release's directory. Which form an author
-// chooses is not meant to change what a fault is reported as, and today it does.
+// chooses is not meant to change what a fault is reported as, and it does not:
+// both forms name one file, and the walk keys a link on the file.
 type extendsRefStyle int
 
 const (
@@ -336,7 +344,7 @@ func manifestChainDoc(name, extends string) string {
 // given reference style. When cyclic the last extends the first; otherwise the
 // last extends nothing. It returns the head of the chain, resolved the way a
 // Release's own manifest reference resolves.
-func writeManifestChain(t *testing.T, dir string, n int, style extendsRefStyle, cyclic bool) *types.Manifest {
+func writeManifestChain(t *testing.T, dir string, n int, style extendsRefStyle, cyclic bool) ResolvedManifest {
 	t.Helper()
 	for i := range n {
 		extends := ""
@@ -352,7 +360,7 @@ func writeManifestChain(t *testing.T, dir string, n int, style extendsRefStyle, 
 	if err != nil {
 		t.Fatalf("test setup: resolve chain head: %v", err)
 	}
-	return head.Manifest
+	return head
 }
 
 // TestResolveManifestExtends_DepthBoundAdmitsTenAndRefusesEleven pins the depth
@@ -412,30 +420,33 @@ func TestResolveManifestExtends_DepthBoundAdmitsTenAndRefusesEleven(t *testing.T
 	}
 }
 
-// TestResolveManifestExtends_ReportedConditionDependsOnReferenceStyle pins the
-// misclassification at the centre of this walk, and the arithmetic producing it.
+// TestResolveManifestExtends_ReportedConditionDependsOnReferenceStyle pins which
+// of two conditions a cyclic Manifest chain is reported as, at the length where
+// the answer changes and on both ways of writing an extends reference.
 //
-// The walk seeds its visited set with the head Manifest's metadata.name, then
-// tests each next link's REFERENCE TEXT against that set. The two are written in
-// different vocabularies whenever the author writes a relative path, so the link
-// closing a path-style loop does not match the seed: the walk takes one extra
-// lap and can recognise the loop only on the step after that. The depth bound is
-// tested first inside that step, so a long enough loop trips the bound before
-// the loop is ever recognised.
+// The name states a fault the walk no longer has. Chain membership is keyed on
+// each link's resolved file path, so a file is one link whichever legal form
+// names it, and the two forms change over at the same length. Holding that
+// convergence is now the rows' job: a walk keying on anything spelled
+// differently in the two forms takes an extra lap on a path-style loop, which
+// moves the path-style rows while leaving the identity-style rows where they
+// are.
 //
-// Writing the same loop with bare identities removes the extra lap, because the
-// reference text and the name are then the same word. The two thresholds follow:
+// The changeover length follows from the depth bound being tested as the first
+// statement of every step:
 //
-//	path-style loop of L      the chain is L+1 long when the loop is
-//	                          recognisable, and the bound is tested first at a
-//	                          chain length of 10 — so L+1 >= 10, and a loop of
-//	                          nine or more reports depth
-//	identity-style loop of L  the chain is L long when the loop is recognisable
-//	                          — so L >= 10 reports depth
+//	loop of L links   the walk is back at the head on step L with the chain L
+//	                  long; the bound is tested first in that step and refuses
+//	                  from a chain length of 10 — so a loop of nine or fewer is
+//	                  reported as a loop, and one of ten or more as an over-deep
+//	                  chain
 //
-// 🔴 Every row expecting the depth condition pins a defect: shortening a loop
-// does not remove it, so the advice the author is handed cannot fix their files.
-// A repair makes those rows report the cycle condition instead, at every length.
+// 🔴 A row expecting depth pins what is STILL WRONG: a loop is a loop at every
+// length, and shortening one does not remove it, so the advice that author is
+// handed cannot fix their files. Testing the bound after the walk completes, as
+// the shared entity-inheritance walk does, makes every length report the loop,
+// and a row expecting depth is then the one to update. A row expecting the cycle
+// asserts behaviour that is correct now, and that repair must preserve it.
 func TestResolveManifestExtends_ReportedConditionDependsOnReferenceStyle(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
@@ -445,7 +456,7 @@ func TestResolveManifestExtends_ReportedConditionDependsOnReferenceStyle(t *test
 		wantDepth bool
 	}{
 		{"path-style loop of eight reports the cycle", pathStyleRef, 8, false},
-		{"path-style loop of nine reports depth", pathStyleRef, 9, true},
+		{"path-style loop of nine reports the cycle, as identity-style does", pathStyleRef, 9, false},
 		{"identity-style loop of nine reports the cycle", identityStyleRef, 9, false},
 		{"identity-style loop of ten reports depth", identityStyleRef, 10, true},
 	} {
@@ -491,12 +502,21 @@ func TestResolveManifestExtends_ReportedConditionDependsOnReferenceStyle(t *test
 // the diagnostic — the Manifest a resolution was requested for is rarely the one
 // carrying the link that closes the loop.
 //
-// 🔴 For a path-style loop the edge named is the FIRST one, met again on the
-// extra lap the vocabulary mismatch forces — not the one that closes the loop.
-// The author is told to remove an extends declaration that is legal, in a file
-// that is not where the loop closes. The identity-style row shows the diagnostic
-// the same loop earns when there is no extra lap, which is the one both should
-// produce.
+// 🔴 Both rows name the same edge, and that agreement is the property under test
+// rather than two expectations that happen to coincide. Chain membership is
+// keyed on each link's resolved file path, so the two legal ways of writing an
+// extends reference name one link and the walk meets the loop on the same step
+// whichever was used. A walk keying on anything spelled differently in the two
+// forms — a reference compared against a name, say — meets a path-style loop one
+// lap late and names an earlier edge, sending the author to a file whose extends
+// declaration is legal. That is the failure these rows refuse; the
+// identity-style row is the control the path-style row converged onto, and it is
+// unchanged.
+//
+// Nothing this test asserts is still wrong. What is still wrong sits at a length
+// this test does not reach: a loop of ten or more links trips the depth bound
+// and never reaches this diagnostic at all, which the reference-style test above
+// holds instead.
 func TestResolveManifestExtends_CycleNamesWhichEdge(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
@@ -507,7 +527,7 @@ func TestResolveManifestExtends_CycleNamesWhichEdge(t *testing.T) {
 		// given as indices into the generated chain.
 		from, link int
 	}{
-		{"path-style names the first edge, on the second lap", pathStyleRef, 0, 1},
+		{"path-style names the edge that closes the loop", pathStyleRef, 2, 0},
 		{"identity-style names the edge that closes the loop", identityStyleRef, 2, 0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -589,7 +609,7 @@ func TestResolveManifestExtends_MissingParentCarriesDirectoryAdviceAndResolveErr
 				t.Fatalf("test setup: %q must not resolve", tc.ref)
 			}
 
-			_, err = ResolveManifestExtends(dir, child.Manifest)
+			_, err = ResolveManifestExtends(dir, child)
 			if err == nil {
 				t.Fatal("a parent that cannot be resolved must halt")
 			}
@@ -673,7 +693,7 @@ spec:
 	if err != nil {
 		t.Fatalf("test setup: resolve first: %v", err)
 	}
-	got, err := ResolveManifestExtends(dir, head.Manifest)
+	got, err := ResolveManifestExtends(dir, head)
 	if err != nil {
 		t.Fatalf("two Manifest files sharing one metadata.name must compose; got: %v", err)
 	}

@@ -62,7 +62,7 @@ spec:
 	if err != nil {
 		t.Fatalf("resolve child: %v", err)
 	}
-	composed, err := resolver.ResolveManifestExtends(dir, child.Manifest)
+	composed, err := resolver.ResolveManifestExtends(dir, child)
 	if err != nil {
 		t.Fatalf("compose: %v", err)
 	}

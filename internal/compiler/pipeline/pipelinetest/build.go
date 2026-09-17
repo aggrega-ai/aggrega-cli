@@ -153,7 +153,7 @@ func loadInputs(in Input) (*loadedWorkspace, error) {
 	if err != nil {
 		return nil, fmt.Errorf("load manifest: %w", err)
 	}
-	manifest, err := resolver.ResolveManifestExtends(releaseDir, manRes.Manifest)
+	manifest, err := resolver.ResolveManifestExtends(releaseDir, manRes)
 	if err != nil {
 		return nil, fmt.Errorf("compose manifest extends chain: %w", err)
 	}
