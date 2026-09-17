@@ -192,6 +192,6 @@ func (v manifestChainDocumentView) refuseOtherDocument(document, accessor string
 // is what makes a Manifest fact added to the registry fail here, and on no
 // presentation of another kind.
 var (
-	_ constraint.DocumentView         = manifestChainDocumentView{}
+	_ constraint.DocumentView          = manifestChainDocumentView{}
 	_ constraint.ManifestDocumentFacts = manifestChainDocumentView{}
 )
