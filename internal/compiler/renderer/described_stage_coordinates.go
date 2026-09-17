@@ -197,6 +197,45 @@ func (c *describedStageCoordinates) ProvidesKeys(node string) []constraint.Autho
 	return out
 }
 
+// ArtifactsEntries returns the keys a node's Recipe writes in its artifacts
+// block, in the order that Recipe declares them.
+//
+// Declared order is the fact rather than an incidental property of it: the
+// entries are walked in that order and each contributes its outputs in turn, so a
+// rule invoked once per entry reports its findings in the order an author reads
+// the block and in the same order on every run.
+//
+// The axis is what the author WROTE and not what the block projected, which is
+// the whole reason it stands beside the artifact axis rather than being reached
+// through it. An entry importing a library bundle contributes one output per file
+// that bundle holds, so an entry whose import fails contributes none — and a rule
+// about the import itself would be invoked no times for exactly the entries it
+// exists to refuse, which reports what a rule that ran and approved reports.
+//
+// The Recipe is the one the render bound to the node, and it is the same map the
+// presentation reads each entry's authored reference out of — so an entry
+// enumerated here is an entry that presentation can answer.
+//
+// Each coordinate is positioned at the Recipe rather than at the Aggregate the
+// component was authored in, because the entry is written in the Recipe and that
+// is the document an author edits. The Recipe's name stands in for its path, for
+// the reason the provides axis states.
+func (c *describedStageCoordinates) ArtifactsEntries(node string) []constraint.AuthoredCoordinate {
+	recipe, held := c.recipes[node]
+	if !held || recipe == nil {
+		return nil
+	}
+	keys := recipe.Spec.Artifacts.Keys()
+	if len(keys) == 0 {
+		return nil
+	}
+	out := make([]constraint.AuthoredCoordinate, 0, len(keys))
+	for _, key := range keys {
+		out = append(out, constraint.AuthoredCoordinate{Value: key, SourceFile: recipe.Metadata.Name})
+	}
+	return out
+}
+
 // LocalsKeys returns the locals a node's Recipe declares, in the order that
 // Recipe declares them.
 //

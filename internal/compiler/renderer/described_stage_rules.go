@@ -495,6 +495,111 @@ func runRenderedNameRule(
 // axes and not the attachment ones does not compile here, so a caller cannot
 // supply coordinates for one carrier and leave another's rules invoked zero times
 // — which reports exactly what a rule that ran and approved reports.
+// artifactsEntryImportAxes is the axis pair the rules over a node's own authored
+// artifacts entries are invoked once per: the node set, and the entries each
+// node's Recipe writes in its artifacts block.
+//
+// Naming both together is what makes the inner one un-skippable: a value
+// supplying nodes but no entry enumeration does not compile here, so these rules
+// cannot be invoked over an empty subject set by a caller that merely forgot one
+// axis — and a rule invoked zero times reports exactly what a rule that ran and
+// approved reports.
+type artifactsEntryImportAxes interface {
+	constraint.NodeEnumerator
+	constraint.ArtifactsEntryEnumerator
+}
+
+// runArtifactsEntryImportRule invokes the rules declared over the library imports
+// a node's own artifacts block writes, and returns what they raised as the
+// render's halt.
+//
+// It runs before anything renders, which is where the question belongs: the
+// reference, the resolved library set and the bundle's own files are all complete
+// once the Recipe is bound, and everything after this point is work whose output
+// a failed import was always going to discard. Asking inside the artifacts walk
+// instead would refuse the same inputs after every earlier node had rendered, and
+// would refuse them one entry at a time.
+//
+// It carries no plugin-resolution guard, for the reason the authored-text
+// readings beside it carry none: nothing about a library reference depends on a
+// plugin, so a render that resolved none still owes these refusals.
+//
+// # The order the four are asked in is the order the resolution decides them
+//
+// The shape of the reference, then the library, then the bundle, then the
+// bundle's own file names. Each rule declines an entry whose earlier step already
+// failed, so the order is not what keeps one mistake reported once — but it is
+// what keeps a build reporting several independent faults in the order an author
+// works through them, and it is the order the resolver beneath reached them in.
+//
+// # What this does NOT reach, stated because an unstated bound reads as coverage
+//
+// The axis is a node's OWN Recipe. An artifacts block a FeatureRecipe carries
+// flows through the same artifacts walk under the host component's node identity,
+// and no key here enumerates it — so these rules are not invoked over it, and that
+// carrier keeps the refusal the resolver makes, which is retained for exactly this
+// reason. The shape arm refusing a reference that names no library at all is not
+// declared here either: no production path reaches it, and it is retained where it
+// is with its own reason recorded.
+//
+// So what the declaration adds on this carrier is a position, a breadth and a
+// classification — never a refusal the build did not already make.
+//
+// # Why each rule is named at its own call rather than walked in a loop
+//
+// A loop over the four would read as the tidier arrangement and is the wrong one,
+// because of what the framework's own coverage read can see: that read resolves a
+// call to a declaration and follows nothing through a value, so a check reached
+// through a slice element is attributable to no call site. The placement table
+// would then report four declared rules as invoked by nothing, with nothing
+// saying which four — an instrument whose subject is where a rule is enforced,
+// made blind to the rules this declares.
+//
+// The cancellation signal is the caller's own, so a long walk over a large graph
+// stops within one node of the caller asking it to.
+func runArtifactsEntryImportRule(
+	ctx context.Context,
+	view constraint.DescribedView,
+	coordinates artifactsEntryImportAxes,
+) error {
+	if view == nil || coordinates == nil {
+		return nil
+	}
+
+	raised, err := constraint.RunOnNodeArtifactsEntries(
+		ctx.Err, coordinates, coordinates, view, ArtifactsEntryImportIsWellShaped,
+	)
+	if err != nil {
+		return err
+	}
+
+	objections, err := constraint.RunOnNodeArtifactsEntries(
+		ctx.Err, coordinates, coordinates, view, ArtifactsEntryNamesADeclaredLibrary,
+	)
+	if err != nil {
+		return err
+	}
+	raised = append(raised, objections...)
+
+	objections, err = constraint.RunOnNodeArtifactsEntries(
+		ctx.Err, coordinates, coordinates, view, ArtifactsEntryNamesADeclaredBundle,
+	)
+	if err != nil {
+		return err
+	}
+	raised = append(raised, objections...)
+
+	objections, err = constraint.RunOnNodeArtifactsEntries(
+		ctx.Err, coordinates, coordinates, view, ArtifactsEntryBundleFilesStayUnderTheirKey,
+	)
+	if err != nil {
+		return err
+	}
+	raised = append(raised, objections...)
+
+	return objectionsAsHalt(raised, "artifacts entries whose library import the compiler cannot resolve")
+}
+
 type authoredLocalsAxes interface {
 	constraint.NodeEnumerator
 	constraint.LocalsKeyEnumerator

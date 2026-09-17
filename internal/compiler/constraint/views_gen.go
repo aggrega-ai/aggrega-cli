@@ -3923,6 +3923,129 @@ type DescribedView interface {
 	// Keyed by (boundary, attachment); read from
 	// wasm.ProviderContract.ArtifactDelimiters.
 	BoundaryAttachmentProviderArtifactTemplateDelimiters(boundary string, attachment string) ArtifactTemplateDelimiters
+
+	// ArtifactsEntryImportReference is the library reference one entry of a
+	// node's own artifacts block was authored with, as written and before
+	// anything resolves it.
+	//
+	// It is the bare-name `<Library>#/artifacts/<bundle>` form and only that
+	// form. An entry written inline answers empty, because it names no
+	// library; so does one supplied by a file of the workspace, which names a
+	// path rather than a library; and so does one whose reference carries a
+	// registry host, which is refused where it is consumed as a host-bearing
+	// reference rather than read as a library one. A rule reading this
+	// therefore asks about the one authoring form it governs and is handed
+	// nothing for the others, rather than having to tell them apart itself. A
+	// reference carrying no `#/artifacts/` fragment is not a library reference
+	// at all — the consumption site reads it as a path to open — so it
+	// answers empty here too.
+	//
+	// It is the text as the author wrote it and not a parsed form, because
+	// what a rule over it reports is the string the author has to correct, and
+	// because the library half and the bundle half are read back out of it by
+	// the same split the consumption site resolves it with.
+	//
+	// A node with no bound Recipe, and a key that Recipe does not declare,
+	// both answer empty — the keys are enumerated rather than guessed, so a
+	// key reaching here that the document does not write names nothing.
+	//
+	// Keyed by (node, artifacts-entry); read from types.RecipeSpec.Artifacts.
+	ArtifactsEntryImportReference(node string, entry string) string
+
+	// ArtifactsEntryLibraryDeclared reports whether the ArtifactsLibrary one
+	// entry of a node's own artifacts block names is in the set the catalog
+	// resolved — the local catalog plus any lockfile-pinned libraries
+	// bridged in at load.
+	//
+	// It is false for an entry naming no library at all, and false for one
+	// whose reference does not split into the bare-name shape: neither names a
+	// library the set could hold. A rule telling those cases apart from a
+	// library genuinely absent from the set reads the reference beside this,
+	// which is why the two are declared as separate facts rather than folded
+	// into one answer that would report three situations as one.
+	//
+	// It is answered from the same resolution the artifacts walk expands a
+	// bundle through, so a library this reports present is the library that
+	// walk will find. Two readings of one set would agree the day they were
+	// written and would be free to differ afterwards, with nothing comparing
+	// them.
+	//
+	// Keyed by (node, artifacts-entry); read from
+	// renderer.RenderInput.ArtifactsLibraries.
+	ArtifactsEntryLibraryDeclared(node string, entry string) bool
+
+	// ArtifactsEntryBundleDeclared reports whether the ArtifactsLibrary one
+	// entry of a node's own artifacts block names declares the bundle that
+	// entry's reference asks for.
+	//
+	// It is false wherever the library itself was not found, because a library
+	// the set does not hold declares nothing — so a rule refusing an absent
+	// bundle reads the library fact beside this one and reports the library
+	// instead when that is what is missing. Answering the bundle question
+	// emptily for an absent library is what keeps the two refusals from both
+	// firing for one authoring mistake, and reading them in that order is what
+	// puts the author in front of the outer fault first.
+	//
+	// It is declared apart from the library fact rather than folded into a
+	// single resolution verdict because the two are separate remedies: one is
+	// a library to publish or to pin, the other a bundle name to correct
+	// inside a library that is already there.
+	//
+	// Keyed by (node, artifacts-entry); read from
+	// renderer.RenderInput.ArtifactsLibraries.
+	ArtifactsEntryBundleDeclared(node string, entry string) bool
+
+	// ArtifactsEntryBundleFileNames are the names of the files the bundle one
+	// entry of a node's own artifacts block imports holds, in the order that
+	// bundle declares them.
+	//
+	// Declared order is the fact rather than an incidental property of it:
+	// each file becomes one output nested under the authored key, in this
+	// order, so a rule invoked over the names reports its findings in the
+	// order the outputs are produced and in the same order on every run.
+	//
+	// The names come from a document the consuming Recipe did not write, which
+	// is the whole reason a rule reads them. A name is composed with the
+	// authored key before it becomes an output, so a name climbing out of that
+	// key resolves somewhere the consuming Recipe never named — and once the
+	// two halves are joined a climbing segment reads as an ordinary interior
+	// one.
+	//
+	// It is empty for an entry that imports no bundle and for one whose
+	// library or bundle was not found: there is no bundle to hold files in
+	// either case, which is the same answer an empty bundle gives and is the
+	// ordinary outcome rather than an approval.
+	//
+	// Keyed by (node, artifacts-entry); read from
+	// types.ArtifactsLibraryEntry.Files.
+	ArtifactsEntryBundleFileNames(node string, entry string) []string
+
+	// ArtifactsEntryBundleNestedImportFiles are the names of the files whose
+	// own body is a field-root import, inside the bundle one entry of a node's
+	// own artifacts block imports, in the order that bundle declares its
+	// files.
+	//
+	// It is a separate fact from the bundle's file names rather than something
+	// a rule derives from them, because the two read different halves of the
+	// bundle: the names answer what each file will be called, and this answers
+	// what a file's body IS. A rule handed the names alone could not ask the
+	// second question at all, and one handed every body would be reading file
+	// content in order to ask a yes-or-no of each — which is the same
+	// reading the consumption site makes, and a second copy of it would be
+	// free to disagree about what a field-root import looks like.
+	//
+	// A bundle file body is terminal content: one file slot cannot expand into
+	// another bundle, so a body that is itself a field-root import is refused
+	// rather than mis-resolved, and composing across libraries is done at the
+	// consumption site instead.
+	//
+	// It is empty for an entry that imports no bundle, for one whose library
+	// or bundle was not found, and — the ordinary answer — for a bundle
+	// whose every file body is template content.
+	//
+	// Keyed by (node, artifacts-entry); read from
+	// types.ArtifactsLibraryEntry.Files.
+	ArtifactsEntryBundleNestedImportFiles(node string, entry string) []string
 }
 
 // HydratedView exposes the facts complete at the hydrated stage: per-node

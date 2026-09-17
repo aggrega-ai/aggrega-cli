@@ -100,6 +100,18 @@ type describedView struct {
 	// resolved it. A node with no bound Recipe is absent rather than nil-valued.
 	recipes map[string]*types.Recipe
 
+	// artifactsLibraries is the ArtifactsLibrary set the load resolved, keyed by
+	// bare name, read only for the facts about what an authored artifacts entry's
+	// library reference resolves to.
+	//
+	// It is held rather than reached for because there is nothing here to reach
+	// through: the set arrives on the render's input already resolved, and a
+	// presentation resolving one itself would be a second reading of the catalog.
+	// A render given none answers every fact over it as an entry naming a library
+	// nothing declares, which is the same answer the render's own walk would
+	// reach for such a build.
+	artifactsLibraries map[string]types.ArtifactsLibrary
+
 	// recipeLookup resolves the FeatureRecipe an attachment binds. It is the
 	// same lookup the render resolves attachments through, so a fact about an
 	// attachment names the document the render actually bound.
@@ -175,6 +187,11 @@ type describedView struct {
 // presentation and the retention key whole classes of fact; the deployment
 // document keys one, and a render given none enumerates no boundary at all — so a
 // rule over that fact is invoked zero times rather than being answered emptily.
+// The ArtifactsLibrary set is taken but is NOT among the products whose absence
+// returns nil, on the same reading the deployment document carries: a render
+// given none has no entry importing a library that could resolve, so the facts
+// over it answer as they would for a library nothing declares — which is an
+// answer rather than an absence.
 func newDescribedView(
 	ctx context.Context,
 	graph *types.IRGraph,
@@ -186,21 +203,23 @@ func newDescribedView(
 	lookup pluginpath.Lookup,
 	engineFactory EngineFactory,
 	renderedNames NodeRenderedNames,
+	artifactsLibraries map[string]types.ArtifactsLibrary,
 ) constraint.DescribedView {
 	if graph == nil || earlier == nil || descriptors == nil {
 		return nil
 	}
 	return &describedView{
-		GraphView:     earlier,
-		ctx:           ctx,
-		graph:         graph,
-		recipes:       recipes,
-		recipeLookup:  recipeLookup,
-		release:       release,
-		describe:      stepDescriberOver(descriptors, lookup),
-		lookup:        lookup,
-		engineFactory: engineFactory,
-		renderedNames: renderedNames,
+		GraphView:          earlier,
+		ctx:                ctx,
+		graph:              graph,
+		recipes:            recipes,
+		recipeLookup:       recipeLookup,
+		release:            release,
+		describe:           stepDescriberOver(descriptors, lookup),
+		lookup:             lookup,
+		engineFactory:      engineFactory,
+		renderedNames:      renderedNames,
+		artifactsLibraries: artifactsLibraries,
 	}
 }
 
@@ -611,6 +630,110 @@ func (v *describedView) BoundaryAuthoredPathTemplateText(boundary string, field 
 		}
 	}
 	return ""
+}
+
+// ArtifactsEntryImportReference returns the library reference one entry of a
+// node's own artifacts block was authored with, as written and before anything
+// resolves it.
+//
+// It answers for the bare-name library form alone. An entry written inline, one
+// supplied by a file of the workspace, and one whose reference carries a registry
+// host each answer empty: the first names no reference at all, the second names a
+// path rather than a library, and the third is refused where it is consumed as a
+// host-bearing reference rather than read as a library one. The three tests are
+// made here rather than in each rule, so a rule over this fact is handed the one
+// authoring form it governs.
+//
+// It reads the same field the artifacts walk resolves, through the same two
+// predicates the walk dispatches its authoring modes on, so a reference this
+// presents is the reference that walk will resolve.
+func (v *describedView) ArtifactsEntryImportReference(node string, entry string) string {
+	authored, held := v.artifactsEntry(node, entry)
+	if !held || authored.HasOCIPrefix() || !authored.IsLibraryImport() {
+		return ""
+	}
+	return authored.Import
+}
+
+// ArtifactsEntryLibraryDeclared reports whether the ArtifactsLibrary one entry of
+// a node's own artifacts block names is in the set the load resolved.
+//
+// An entry naming no library, and a reference that does not split into the
+// bare-name shape, both report false: neither names a library the set could hold.
+// A rule telling those apart from a library genuinely missing reads the reference
+// fact beside this one.
+func (v *describedView) ArtifactsEntryLibraryDeclared(node string, entry string) bool {
+	return v.artifactsEntryLookup(node, entry).LibraryFound
+}
+
+// ArtifactsEntryBundleDeclared reports whether the ArtifactsLibrary one entry of
+// a node's own artifacts block names declares the bundle that entry asks for.
+//
+// It reports false wherever the library itself was not found, because a library
+// the set does not hold declares nothing.
+func (v *describedView) ArtifactsEntryBundleDeclared(node string, entry string) bool {
+	return v.artifactsEntryLookup(node, entry).BundleFound
+}
+
+// ArtifactsEntryBundleFileNames returns the names of the files the bundle one
+// entry of a node's own artifacts block imports holds, in the order that bundle
+// declares them.
+//
+// An entry importing no bundle, and one whose library or bundle was not found,
+// each return nothing: there is no bundle to read files out of.
+func (v *describedView) ArtifactsEntryBundleFileNames(node string, entry string) []string {
+	found := v.artifactsEntryLookup(node, entry)
+	if !found.BundleFound {
+		return nil
+	}
+	return found.Bundle.Files.Keys()
+}
+
+// ArtifactsEntryBundleNestedImportFiles returns the names of the files whose own
+// body is a field-root import, inside the bundle one entry of a node's own
+// artifacts block imports, in the order that bundle declares its files.
+//
+// It reads the bodies through the same predicate the consumption site refuses
+// them by, so a file this names is a file that site would refuse and one it omits
+// is one that site admits.
+func (v *describedView) ArtifactsEntryBundleNestedImportFiles(node string, entry string) []string {
+	found := v.artifactsEntryLookup(node, entry)
+	if !found.BundleFound {
+		return nil
+	}
+	return bundleNestedImportFiles(found.Bundle)
+}
+
+// artifactsEntry returns one entry of a node's own Recipe artifacts block, and
+// whether the Recipe writes that key.
+//
+// A node with no bound Recipe and a key the Recipe does not declare report false,
+// which is the honest reading: the keys are enumerated rather than looked up, so
+// a key reaching here that the document does not write names nothing.
+func (v *describedView) artifactsEntry(node string, entry string) (types.ArtifactEntry, bool) {
+	recipe, ok := v.recipes[node]
+	if !ok || recipe == nil {
+		return types.ArtifactEntry{}, false
+	}
+	return recipe.Spec.Artifacts.Get(entry)
+}
+
+// artifactsEntryLookup resolves one entry's library reference against the
+// resolved ArtifactsLibrary set, through the single reading the artifacts walk
+// expands a bundle through.
+//
+// It is one helper under four accessors rather than four resolutions, and the
+// reason is not brevity: the four facts are four steps of one cascade, so four
+// resolutions would be four readings of one reference, each free to answer for a
+// different step of a different reading. The zero value is what an entry naming
+// no library resolves to, and every step of it reports the absence its own
+// accessor reports.
+func (v *describedView) artifactsEntryLookup(node string, entry string) artifactLibraryLookup {
+	authored, held := v.artifactsEntry(node, entry)
+	if !held || authored.HasOCIPrefix() || !authored.IsLibraryImport() {
+		return artifactLibraryLookup{}
+	}
+	return lookUpArtifactLibraryBundle(authored.Import, v.artifactsLibraries)
 }
 
 // ProviderArtifactTemplateDelimiters returns the delimiter pair the provider

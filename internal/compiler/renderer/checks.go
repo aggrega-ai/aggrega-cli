@@ -5,6 +5,7 @@ package renderer
 
 import (
 	"bytes"
+	"fmt"
 	"slices"
 	"strings"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/gotmpl"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
 )
@@ -2416,6 +2418,290 @@ var BoundaryAttachmentArtifactContentMatchesItsRecordedPin = constraint.Check[
 			),
 			[]constraint.DetailValue{constraint.Captioned("attachment", s.AttachmentName())},
 		)
+	},
+}
+
+// The four rules over a node's own authored artifacts entries, declared once per
+// condition over the stage that holds the bound Recipe.
+//
+// # They are keyed by the authored entry and never by the artifact
+//
+// Every one of them reports the failure of a resolution, and the artifact
+// coordinate the shipped artifact rules are keyed by is enumerated from that
+// resolution's SUCCESS: an entry importing a library bundle becomes one artifact
+// per file the bundle holds, so an entry whose import fails becomes none. A rule
+// keyed there would be invoked zero times for exactly the inputs it exists to
+// refuse, and a rule invoked zero times reports what a rule that ran and approved
+// reports. The authored key is there from the moment the Recipe is bound.
+//
+// # Each reads the step of the resolution cascade it is about, and no other
+//
+// The resolution is a cascade — the reference splits, the library is found, the
+// bundle is found, the bundle's own files are read — and each step presupposes
+// the one above. So each rule below declines an entry whose earlier step already
+// failed, and that is what keeps one authoring mistake reported once: an entry
+// naming a library nothing declares has no bundle either, and a reader told both
+// would be told the second thing as though it were a separate fault.
+//
+// # What they widen, stated because it is a real change and not a refinement
+//
+// The resolver they stand in front of returns ONE error, so an entry carrying
+// two faults at different steps reported whichever the cascade reached first.
+// These are invoked once per entry and each reports every occurrence it finds,
+// so a Recipe with three offending entries now reports three findings and a
+// bundle whose files carry two distinct faults reports both. Each finding carries
+// its own position, which is why they are not folded into one message.
+//
+// # What each of them owes its detail, and why
+//
+// An authored artifacts key is the output's filename, so it carries the locator
+// dialect's separator as one key that dialect cannot address: a finding is
+// positioned at the artifacts block in the Recipe's own file and stops there. So
+// every rule below names the entry in its detail, CAPTIONED — the block says
+// where to look and only the detail can say which entry inside it, and a filename
+// standing bare beside another quoted value is not something a reader can tell
+// apart from it.
+//
+// The node is a coordinate the subject carries and the locator does not, and it
+// is deliberately absent from every detail below: the fault is in the Recipe's
+// text rather than in any one node that binds it, so naming a node would point an
+// author at an instance when the edit is in the entry every instance shares.
+
+// artifactsEntryLibraryReference splits one entry's authored library reference
+// into the library and bundle it names, and reports whether the entry carries a
+// library reference at all.
+//
+// It is the split the consumption site resolves the reference with rather than a
+// second reading of the same grammar, so a library a rule names in a finding is
+// the library the resolution looked for.
+//
+// An entry the fact answers empty for carries no library reference — it is
+// written inline, supplied by a file of the workspace, or refused elsewhere as
+// host-bearing — and reports false, which is what leaves every rule below
+// declining it rather than judging it.
+func artifactsEntryLibraryReference(ref string) (library, bundle string, held bool) {
+	if ref == "" {
+		return "", "", false
+	}
+	library, bundle, ok := splitLibraryImportRef(ref, "/artifacts/")
+	if !ok {
+		return "", "", false
+	}
+	return library, bundle, true
+}
+
+// ArtifactsEntryImportIsWellShaped reports an artifacts entry whose library
+// import the compiler will not resolve for a reason in the reference or in the
+// bundle's own bodies.
+//
+// It carries the two production violation classes of one condition rather than
+// splitting them into two identities, because they are one rule: the reference an
+// author wrote does not name a bundle this compiler can expand. Their remedies
+// differ, which is why each occurrence carries its own advice rather than the
+// condition carrying one registered sentence for both.
+//
+// # The retired version separator
+//
+// A library reference pins a version with a colon. A reference writing the
+// separator the registry address form uses instead resolves to a library name
+// nothing declares, so without this arm the build would report a missing library
+// and send the author looking for a publication rather than at the character they
+// typed. The corrected reference is spelled out in the advice, because the remedy
+// is a single edit and stating it is cheaper for the reader than describing it.
+//
+// # A bundle file body that is itself a field-root import
+//
+// A bundle file body is terminal content: one file slot cannot expand into
+// another bundle, since a bundle holds many files and a slot names one output. So
+// a body that is itself a field-root import is refused rather than mis-resolved,
+// and composition across libraries is done at the consumption site, where one key
+// consumes one bundle.
+//
+// Every offending file is reported rather than the first, because an author
+// republishing a bundle is better told about all of them than about whichever the
+// walk reached first — and the fault is in the library's own document, which the
+// consuming Recipe's author may not be the one to edit. The bundle and the file
+// are both captioned for that reason: the finding spans two documents, and which
+// of them each quoted name belongs to is not something a reader can recover from
+// the strings.
+var ArtifactsEntryImportIsWellShaped = constraint.Check[
+	constraint.DescribedView,
+	constraint.NodeArtifactsEntrySubject,
+]{
+	Sentinel: ErrArtifactImportShape(),
+	Severity: constraint.SeverityFatal,
+	Run: func(
+		v constraint.DescribedView,
+		s constraint.NodeArtifactsEntrySubject,
+	) []constraint.Objection {
+		ref := v.ArtifactsEntryImportReference(s.NodeID(), s.ArtifactsEntryKey())
+		library, bundle, held := artifactsEntryLibraryReference(ref)
+		if !held {
+			return nil
+		}
+		if strings.ContainsRune(library, '@') {
+			return []constraint.Objection{s.RaiseWithAdvice(
+				ErrArtifactImportShape(),
+				fmt.Sprintf("pin the version with ':' rather than '@' — write %q",
+					strings.Replace(ref, "@", ":", 1)),
+				constraint.Uncaptioned(ref),
+				constraint.Captioned("artifacts entry", s.ArtifactsEntryKey()),
+			)}
+		}
+		var out []constraint.Objection
+		for _, file := range v.ArtifactsEntryBundleNestedImportFiles(
+			s.NodeID(), s.ArtifactsEntryKey(),
+		) {
+			out = append(out, s.RaiseWithAdvice(
+				ErrArtifactImportShape(),
+				"a bundle file body cannot import another bundle — compose the two at the "+
+					"artifacts entry that consumes them",
+				constraint.Uncaptioned(ref),
+				constraint.Captioned("bundle", bundle),
+				constraint.Captioned("bundle file", file),
+				constraint.Captioned("artifacts entry", s.ArtifactsEntryKey()),
+			))
+		}
+		return out
+	},
+}
+
+// ArtifactsEntryNamesADeclaredLibrary reports an artifacts entry whose library
+// import names an ArtifactsLibrary the load did not resolve — neither in the
+// local catalog nor among the libraries a lockfile pinned and the load bridged
+// in.
+//
+// It declines an entry whose reference carries the retired version separator,
+// because such a reference names a library nobody wrote: reporting it as a
+// missing library would send the author looking for a publication when the rule
+// beside this one already names the character to correct.
+//
+// The library the reference names is the value the registered sentence is about,
+// so it stands bare. The bundle is captioned beside it because an author reading
+// only the library has to go back to the document to see which of its entries
+// asked for it, and the entry is captioned for the reason every rule over this
+// kind captions it.
+var ArtifactsEntryNamesADeclaredLibrary = constraint.Check[
+	constraint.DescribedView,
+	constraint.NodeArtifactsEntrySubject,
+]{
+	Sentinel: ErrArtifactsLibraryNotFound(),
+	Severity: constraint.SeverityFatal,
+	Run: func(
+		v constraint.DescribedView,
+		s constraint.NodeArtifactsEntrySubject,
+	) []constraint.Objection {
+		ref := v.ArtifactsEntryImportReference(s.NodeID(), s.ArtifactsEntryKey())
+		library, bundle, held := artifactsEntryLibraryReference(ref)
+		if !held || strings.ContainsRune(library, '@') {
+			return nil
+		}
+		if v.ArtifactsEntryLibraryDeclared(s.NodeID(), s.ArtifactsEntryKey()) {
+			return nil
+		}
+		return []constraint.Objection{s.RaiseWith(
+			ErrArtifactsLibraryNotFound(),
+			constraint.Uncaptioned(library),
+			constraint.Captioned("bundle", bundle),
+			constraint.Captioned("artifacts entry", s.ArtifactsEntryKey()),
+		)}
+	},
+}
+
+// ArtifactsEntryNamesADeclaredBundle reports an artifacts entry whose library
+// import names a bundle the ArtifactsLibrary it resolved to does not declare.
+//
+// It declines an entry whose library was not found at all, because a library
+// nothing declares declares no bundle either — the rule above names the library,
+// which is the outer fault and the one to correct first.
+//
+// The bundle is the value the registered sentence is about, so it stands bare;
+// the library is captioned beside it because a bundle name means nothing without
+// the document it was looked for in, and the two are written by different authors
+// often enough that the reader may have to open a library they did not publish.
+var ArtifactsEntryNamesADeclaredBundle = constraint.Check[
+	constraint.DescribedView,
+	constraint.NodeArtifactsEntrySubject,
+]{
+	Sentinel: ErrArtifactsLibraryEntryNotFound(),
+	Severity: constraint.SeverityFatal,
+	Run: func(
+		v constraint.DescribedView,
+		s constraint.NodeArtifactsEntrySubject,
+	) []constraint.Objection {
+		ref := v.ArtifactsEntryImportReference(s.NodeID(), s.ArtifactsEntryKey())
+		library, bundle, held := artifactsEntryLibraryReference(ref)
+		if !held || !v.ArtifactsEntryLibraryDeclared(s.NodeID(), s.ArtifactsEntryKey()) {
+			return nil
+		}
+		if v.ArtifactsEntryBundleDeclared(s.NodeID(), s.ArtifactsEntryKey()) {
+			return nil
+		}
+		return []constraint.Objection{s.RaiseWith(
+			ErrArtifactsLibraryEntryNotFound(),
+			constraint.Uncaptioned(bundle),
+			constraint.Captioned("ArtifactsLibrary", library),
+			constraint.Captioned("artifacts entry", s.ArtifactsEntryKey()),
+		)}
+	},
+}
+
+// ArtifactsEntryBundleFilesStayUnderTheirKey reports a file of an imported bundle
+// whose own name leaves the artifacts key its output is nested under.
+//
+// Each file of a bundle becomes an output named by the consuming key with the
+// bundle's own filename beneath it, and the filename comes from a document the
+// consuming Recipe did not write. So the name is judged before it is composed
+// rather than after: once the two halves are joined, a climbing segment reads as
+// an ordinary interior one and the composed name resolves somewhere the consuming
+// Recipe never named. The question is asked of the shared containment predicate,
+// in slash arithmetic, because an output name is a logical name rather than a
+// path in the host's own spelling — a backslash is an ordinary character in it on
+// every platform.
+//
+// A file staying inside the key's directory is untouched, including one naming a
+// subdirectory of its own: a bundle is free to carry a nested layout, and nesting
+// that layout under the consumption key is exactly what the key is for.
+//
+// Every offending file is reported rather than the first, for the reason the
+// shape rule reports every offending body: the remedy is an edit to the library's
+// own document, and an author republishing it is better told about all of them at
+// once.
+//
+// The file name is the value the registered sentence is about and stands bare.
+// The entry is captioned, and so is the library: the finding spans two documents,
+// the consuming Recipe and the published library, and which of them each quoted
+// name belongs to is not recoverable from the strings.
+var ArtifactsEntryBundleFilesStayUnderTheirKey = constraint.Check[
+	constraint.DescribedView,
+	constraint.NodeArtifactsEntrySubject,
+]{
+	Sentinel: ErrArtifactsLibraryFileEscapesKey(),
+	Severity: constraint.SeverityFatal,
+	Run: func(
+		v constraint.DescribedView,
+		s constraint.NodeArtifactsEntrySubject,
+	) []constraint.Objection {
+		ref := v.ArtifactsEntryImportReference(s.NodeID(), s.ArtifactsEntryKey())
+		library, _, held := artifactsEntryLibraryReference(ref)
+		if !held || !v.ArtifactsEntryBundleDeclared(s.NodeID(), s.ArtifactsEntryKey()) {
+			return nil
+		}
+		var out []constraint.Objection
+		for _, file := range v.ArtifactsEntryBundleFileNames(s.NodeID(), s.ArtifactsEntryKey()) {
+			if pathscope.IsLocalSlash(file) {
+				continue
+			}
+			out = append(out, s.RaiseWithAdvice(
+				ErrArtifactsLibraryFileEscapesKey(),
+				"rename the file inside the ArtifactsLibrary bundle so its name stays under "+
+					"the artifacts key it is consumed at",
+				constraint.Uncaptioned(file),
+				constraint.Captioned("ArtifactsLibrary", library),
+				constraint.Captioned("artifacts entry", s.ArtifactsEntryKey()),
+			))
+		}
+		return out
 	},
 }
 

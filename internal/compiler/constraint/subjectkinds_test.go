@@ -359,8 +359,9 @@ func TestEveryCoordinateAccessorHasAConstructorParameterToFillIt(t *testing.T) {
 // The mapping is a judgement rather than a transform, and the shipped names are
 // what prove no transform exists: a node yields NodeID, a socket yields
 // SocketName, and an emitted path yields EmittedPath, which does not name its
-// coordinate at all. Four coordinates are written with a hyphen and could not be
-// Go identifiers however they were spelled mechanically.
+// coordinate at all. A coordinate written with a hyphen could not be a Go
+// identifier however it was spelled mechanically, and the rows are the statement
+// of which ones are.
 //
 // The suffix names what the value is, so a coordinate whose value is a path says
 // so: a subsystem yields SubsystemPath, a boundary yields BoundaryPath and a
@@ -519,6 +520,15 @@ var coordinateAccessors = map[string][]string{
 	"assembly-path":                {"AssemblyPath"},
 	"path":                         {"EmittedPath"},
 	"artifact":                     {"ArtifactName"},
+	// The suffix says the value is the key the author wrote in the artifacts
+	// block, which is what identifies one entry among that block's before
+	// anything resolves what the entry stands for. A Name suffix would be the row
+	// above's accessor and would assert the output the entry resolves to — which
+	// for an entry importing a library bundle is one name per file that bundle
+	// holds, and none at all where the import failed. The two rows are the same
+	// authored block read at two moments, so the accessor names are what keep a
+	// check from being written against the wrong one and still compiling.
+	"artifacts-entry": {"ArtifactsEntryKey"},
 }
 
 // subjectContractAccessors names the accessors [Subject] itself supplies, so a
@@ -1229,6 +1239,17 @@ var subjectKindBindings = map[SubjectKind]struct {
 		iface: reflect.TypeOf((*NodeArtifactSubject)(nil)).Elem(),
 		make: func(f string) Subject {
 			return newNodeArtifactSubject(f, "web", "values-yaml", "spec", "artifacts", "values-yaml")
+		},
+	},
+	SubjectNodeArtifactsEntry: {
+		iface: reflect.TypeOf((*NodeArtifactsEntrySubject)(nil)).Elem(),
+		// A separator-free key, though the ordinary authored key on this axis is an
+		// output filename and carries the dialect's separator. That shape is what
+		// the traversal transcript exercises; here it would stop the locator
+		// assembly at the block and leave the constructor's deepest argument
+		// unexercised, which is the one thing a binding is here to reach.
+		make: func(f string) Subject {
+			return newNodeArtifactsEntrySubject(f, "web", "values-yaml", "spec", "artifacts", "values-yaml")
 		},
 	},
 	SubjectNodeAttachmentArtifact: {

@@ -2176,6 +2176,74 @@ func newNodeArtifactSubject(sourceFile, node, artifact string, segments ...strin
 	}
 }
 
+// NodeArtifactsEntrySubject is the subject of a check invoked once per entry a
+// node's own Recipe writes in its artifacts block, named by the key the author
+// wrote rather than by anything that key resolves to.
+//
+// # Why it is a separate kind from the artifact it resolves to
+//
+// [NodeArtifactSubject] is keyed by the OUTPUT name, which for an entry importing
+// a library bundle is one name per file that bundle holds — so those coordinates
+// exist only once the import has succeeded, and a check keyed by them is invoked
+// no times at all for an entry whose import failed. That is precisely the input a
+// rule about the import itself exists to refuse, and a rule invoked zero times
+// reports exactly what a rule that ran and approved reports.
+//
+// This kind is keyed by what the author typed, which is there from the moment the
+// Recipe is bound and does not depend on the resolution the rules over it judge.
+// The two kinds therefore coincide for an inline entry and for one supplied by a
+// file of the workspace, where the authored key IS the output name, and diverge
+// for exactly the authoring form the rules over this kind govern. Keying one kind
+// both ways would leave every fact declared over it answering about whichever
+// reading was asked last.
+//
+// # What the locator names, and what the rule owes because of it
+//
+// A finding is positioned at .spec.artifacts.<key> in the Recipe's own file. An
+// authored artifacts key is the output's filename, so it ordinarily carries the
+// locator dialect's separator as ONE key the dialect cannot address, and the
+// locator then names the artifacts block and stops — the same bound
+// [RunOnNodeArtifacts] carries and for the same reason, since the truncation is a
+// property of what an artifacts key IS rather than of when the key is read. So a
+// rule over this kind owes what a rule over that one owes: it names the entry in
+// its detail, CAPTIONED, because the block says where to look and only the detail
+// can say which entry inside it.
+type NodeArtifactsEntrySubject interface {
+	Subject
+
+	// NodeID identifies the node whose Recipe writes the entry, as every keyed
+	// fact takes it.
+	NodeID() string
+
+	// ArtifactsEntryKey is the artifacts key the check was invoked for: the key
+	// the author wrote, before anything resolves what it stands for.
+	ArtifactsEntryKey() string
+
+	nodeArtifactsEntry()
+}
+
+type nodeArtifactsEntrySubject struct {
+	provenance
+	node  string
+	entry string
+}
+
+func (nodeArtifactsEntrySubject) nodeArtifactsEntry() {}
+
+func (s nodeArtifactsEntrySubject) NodeID() string { return s.node }
+
+func (s nodeArtifactsEntrySubject) ArtifactsEntryKey() string { return s.entry }
+
+func newNodeArtifactsEntrySubject(
+	sourceFile, node, entry string, segments ...string,
+) NodeArtifactsEntrySubject {
+	return nodeArtifactsEntrySubject{
+		provenance: newProvenance(sourceFile, segments...),
+		node:       node,
+		entry:      entry,
+	}
+}
+
 // NodeAttachmentArtifactSubject is the subject of a check invoked once per
 // artifact the FeatureRecipe one attachment binds on a node projects.
 //

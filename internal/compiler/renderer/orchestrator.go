@@ -812,6 +812,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 	result.DescribedView = newDescribedView(
 		ctx, graph, input.GraphView, nodeRecipes, recipeLookup, releaseOf(input.ResolveResult),
 		input.stepDescriptors, input.PluginPathLookup, engineFactory, renderedNames,
+		input.ArtifactsLibraries,
 	)
 
 	// The rules declared over that presentation are invoked here, against the
@@ -886,6 +887,20 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// pass below is where the block would otherwise resolve a reference these
 		// refuse into an empty string.
 		if err := runAuthoredLocalsRule(ctx, result.DescribedView, describedAxes); err != nil {
+			return nil, err
+		}
+
+		// The rules over the library imports a node's own artifacts block writes,
+		// asked against the same presentation and the same enumeration.
+		//
+		// They are asked here, ahead of the node walk, because that is where such
+		// an import is resolved: a reference naming a library nothing declares
+		// would otherwise reach the artifacts walk and halt from it, after every
+		// earlier node had rendered and reported one entry at a time. Every fact
+		// they read is complete once the Recipe is bound — the reference the author
+		// wrote, the library set the load resolved, and the files the bundle holds
+		// — so nothing is gained by waiting and a whole render is spent by it.
+		if err := runArtifactsEntryImportRule(ctx, result.DescribedView, describedAxes); err != nil {
 			return nil, err
 		}
 

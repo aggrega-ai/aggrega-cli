@@ -2039,6 +2039,41 @@ func (HydratedViewBase) BoundaryAttachmentProviderArtifactTemplateDelimiters(bou
 	panic("this presentation does not carry boundary-attachment-provider-artifact-template-delimiters, which is read from wasm.ProviderContract.ArtifactDelimiters")
 }
 
+// ArtifactsEntryImportReference panics. This presentation does not carry
+// artifacts-entry-import-reference, which is read from
+// types.RecipeSpec.Artifacts.
+func (HydratedViewBase) ArtifactsEntryImportReference(node string, entry string) string {
+	panic("this presentation does not carry artifacts-entry-import-reference, which is read from types.RecipeSpec.Artifacts")
+}
+
+// ArtifactsEntryLibraryDeclared panics. This presentation does not carry
+// artifacts-entry-library-declared, which is read from
+// renderer.RenderInput.ArtifactsLibraries.
+func (HydratedViewBase) ArtifactsEntryLibraryDeclared(node string, entry string) bool {
+	panic("this presentation does not carry artifacts-entry-library-declared, which is read from renderer.RenderInput.ArtifactsLibraries")
+}
+
+// ArtifactsEntryBundleDeclared panics. This presentation does not carry
+// artifacts-entry-bundle-declared, which is read from
+// renderer.RenderInput.ArtifactsLibraries.
+func (HydratedViewBase) ArtifactsEntryBundleDeclared(node string, entry string) bool {
+	panic("this presentation does not carry artifacts-entry-bundle-declared, which is read from renderer.RenderInput.ArtifactsLibraries")
+}
+
+// ArtifactsEntryBundleFileNames panics. This presentation does not carry
+// artifacts-entry-bundle-file-names, which is read from
+// types.ArtifactsLibraryEntry.Files.
+func (HydratedViewBase) ArtifactsEntryBundleFileNames(node string, entry string) []string {
+	panic("this presentation does not carry artifacts-entry-bundle-file-names, which is read from types.ArtifactsLibraryEntry.Files")
+}
+
+// ArtifactsEntryBundleNestedImportFiles panics. This presentation does not
+// carry artifacts-entry-bundle-nested-import-files, which is read from
+// types.ArtifactsLibraryEntry.Files.
+func (HydratedViewBase) ArtifactsEntryBundleNestedImportFiles(node string, entry string) []string {
+	panic("this presentation does not carry artifacts-entry-bundle-nested-import-files, which is read from types.ArtifactsLibraryEntry.Files")
+}
+
 // EmittedViewBase is a base for an implementation of EmittedView.
 //
 // It declares a refusing method for every fact complete before the emitted
@@ -2609,6 +2644,11 @@ type DescribedStageFacts interface {
 	ProviderArtifactTemplateDelimiters(node string) ArtifactTemplateDelimiters
 	AttachmentProviderArtifactTemplateDelimiters(node string, attachment string) ArtifactTemplateDelimiters
 	BoundaryAttachmentProviderArtifactTemplateDelimiters(boundary string, attachment string) ArtifactTemplateDelimiters
+	ArtifactsEntryImportReference(node string, entry string) string
+	ArtifactsEntryLibraryDeclared(node string, entry string) bool
+	ArtifactsEntryBundleDeclared(node string, entry string) bool
+	ArtifactsEntryBundleFileNames(node string, entry string) []string
+	ArtifactsEntryBundleNestedImportFiles(node string, entry string) []string
 }
 
 // HydratedStageFacts are the facts the hydrated stage declares itself, and

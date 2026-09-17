@@ -1430,6 +1430,55 @@ func RunOnBoundaryAttachmentPipelineSteps[V View](
 		})
 }
 
+// RunOnNodeArtifactsEntries invokes check once per entry each node's own Recipe
+// writes in its artifacts block, in node order and then the order that Recipe
+// declares its entries.
+//
+// The locator is .spec.artifacts.<key> in the Recipe's own file, where <key> is
+// the key the author typed — which is the coordinate the subject carries, before
+// anything resolves what the entry stands for.
+//
+// An authored artifacts key is the output's filename, so on this axis the key
+// ordinarily carries the locator dialect's separator, and it carries it as ONE
+// authored key the dialect cannot address. The locator then names the artifacts
+// block and stops. That bound is [RunOnNodeArtifacts]'s and is inherited here
+// unchanged, because it follows from what an artifacts key IS and not from when
+// the key is read: an inline entry's key is already the output filename, so the
+// authored key carries the separator exactly as the composed output name does.
+// A rule over this kind therefore owes exactly what a rule over that one owes —
+// it names the entry in its detail, CAPTIONED, because the block says where to
+// look and only the detail can say which entry inside it, and a filename standing
+// bare beside another quoted value is not something a reader can tell apart from
+// it. See [DetailValue] for which of a rule's values carries a caption.
+//
+// That is a requirement on the rule and not something the framework can supply.
+//
+// The axis is the authored block and not the projected outputs, and that is the
+// whole reason this entry stands beside [RunOnNodeArtifacts] rather than being
+// reached through it. The outputs of an entry importing a library bundle exist
+// only once the import has succeeded, so a rule about the import would be invoked
+// no times for an entry whose import failed — which is the one outcome
+// indistinguishable from a rule that ran and approved.
+func RunOnNodeArtifactsEntries[V View](
+	cancelled Cancellation,
+	nodes NodeEnumerator,
+	entries ArtifactsEntryEnumerator,
+	view V,
+	check Check[V, NodeArtifactsEntrySubject],
+) ([]Objection, error) {
+	return runOverNodes(cancelled, nodes, view, check.Run, func(node NodeInstance) []NodeArtifactsEntrySubject {
+		declared := entries.ArtifactsEntries(node.ID)
+		out := make([]NodeArtifactsEntrySubject, 0, len(declared))
+		for _, entry := range declared {
+			out = append(out, newNodeArtifactsEntrySubject(
+				entry.SourceFile, node.ID, entry.Value,
+				documentSpecSegments(authoredKeyArtifacts, entry.Value)...,
+			))
+		}
+		return out
+	})
+}
+
 // RunOnNodeArtifacts invokes check once per artifact each node projects, in node
 // order and then artifact order.
 //

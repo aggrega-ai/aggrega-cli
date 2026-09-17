@@ -74,6 +74,13 @@ type traversalFixture struct {
 	artifacts     map[string][]AuthoredCoordinate
 	attachPillars map[string][]AuthoredCoordinate
 
+	// artifactsEntries is the authored side of the artifacts axis, stored apart
+	// from the projected side above because the two are different sets over one
+	// block: these are the keys the author typed, and those are the output names
+	// the entries resolve to. One store serving both would present whichever was
+	// written last under a key that cannot tell them apart.
+	artifactsEntries map[string][]AuthoredCoordinate
+
 	attachPipeline         map[string][]AuthoredCoordinate
 	boundaryAttachPipeline map[string][]AuthoredCoordinate
 
@@ -217,6 +224,10 @@ func (f traversalFixture) PipelineSteps(node string) []AuthoredCoordinate {
 
 func (f traversalFixture) Artifacts(node string) []AuthoredCoordinate {
 	return f.artifacts[fixtureKey(node)]
+}
+
+func (f traversalFixture) ArtifactsEntries(node string) []AuthoredCoordinate {
+	return f.artifactsEntries[fixtureKey(node)]
 }
 
 func (f traversalFixture) AttachmentPipelineSteps(node, attachment string) []AuthoredCoordinate {
@@ -751,6 +762,31 @@ func newTraversalFixture() traversalFixture {
 		},
 		artifacts: map[string][]AuthoredCoordinate{
 			fixtureKey("web"): {{Value: "values-yaml", SourceFile: "recipes/web.yaml"}},
+		},
+		// The authored side of the same block, and the entries are chosen for what
+		// they separate rather than for coverage of the authoring forms.
+		//
+		// Two of the three keys on one node carry the locator dialect's own
+		// separator, so both locators stop at the artifacts block and the
+		// transcript cannot tell the two invocations apart at all — which is what
+		// makes the entry a coordinate and what the readback below is for. The
+		// third carries none, so the untruncated locator stays exercised; neither
+		// shape proves the other. The three are declared in a deliberately
+		// reverse-alphabetical order, so a traversal imposing one of its own is
+		// visible.
+		//
+		// The second node writes one entry, which is what shows the walk carrying
+		// on past a node and taking each entry's file from the entry rather than
+		// from the node it was reached through.
+		artifactsEntries: map[string][]AuthoredCoordinate{
+			fixtureKey("web"): {
+				{Value: "values-yaml", SourceFile: "recipes/web.yaml"},
+				{Value: "settings.yaml", SourceFile: "recipes/web.yaml"},
+				{Value: "config.yaml", SourceFile: "recipes/web.yaml"},
+			},
+			fixtureKey("billing.api"): {
+				{Value: "metrics.json", SourceFile: "recipes/api.yaml"},
+			},
 		},
 
 		// The SAME step identifier under two attachments on one node, which is the
@@ -1349,6 +1385,34 @@ func traversalCases() []traversalCase {
 			},
 			want: []string{
 				"recipes/web.yaml|.spec.artifacts.values-yaml",
+			},
+		},
+		{
+			// The authored side of the same block, walked over both nodes, and the
+			// transcript carries three properties the projected side's cannot.
+			//
+			// The first locator names the key in full and the next two stop at the
+			// block, from one file and one node: an authored artifacts key is
+			// ordinarily the output's filename, so it carries the dialect's separator
+			// as ONE key the dialect cannot address, and the truncation is what an
+			// entry-keyed rule owes a captioned detail for. The pair that truncates
+			// is indistinguishable here, which is the coordinate readback's subject
+			// rather than this transcript's.
+			//
+			// The last invocation is the second node's, and it carries that node's own
+			// Recipe: the file comes from the enumerated entry, not from the node, so
+			// a walk taking the file from the node it entered would spell the first
+			// Recipe four times.
+			kind: SubjectNodeArtifactsEntry,
+			run: func(cancelled Cancellation, f traversalFixture, v traversalView) ([]Objection, error) {
+				return RunOnNodeArtifactsEntries(cancelled, f, f, v,
+					raisingCheck[NodeArtifactsEntrySubject]())
+			},
+			want: []string{
+				"recipes/web.yaml|.spec.artifacts.values-yaml",
+				"recipes/web.yaml|.spec.artifacts",
+				"recipes/web.yaml|.spec.artifacts",
+				"recipes/api.yaml|.spec.artifacts",
 			},
 		},
 		{
@@ -2337,6 +2401,33 @@ func coordinateFlowCases() []coordinateFlowCase {
 				}, func(s NodeArtifactSubject) string { return s.NodeID() + "|" + s.ArtifactName() })
 			},
 			want: []string{"web|values-yaml"},
+		},
+
+		// The authored side of the artifacts block, whose readback is the only
+		// assertion that can see two of its four invocations apart. The second and
+		// third carry one node and one file, and both keys carry the dialect's own
+		// separator — so both locators stop at the block and the provenance
+		// transcript above records two identical entries. A traversal that dropped
+		// the key, or supplied it for whichever entry it reached last, would read as
+		// correct there and is what fails here. The values are also what the rules
+		// over this kind caption in their detail, so a coordinate arriving empty
+		// would leave a finding naming the block and no entry within it.
+		{
+			kind: SubjectNodeArtifactsEntry,
+			seam: seamTraversal,
+			read: func(f traversalFixture) []string {
+				return readback(func(c Check[traversalView, NodeArtifactsEntrySubject]) ([]Objection, error) {
+					return RunOnNodeArtifactsEntries(nil, f, f, traversalView{}, c)
+				}, func(s NodeArtifactsEntrySubject) string {
+					return s.NodeID() + "|" + s.ArtifactsEntryKey()
+				})
+			},
+			want: []string{
+				"web|values-yaml",
+				"web|settings.yaml",
+				"web|config.yaml",
+				"billing.api|metrics.json",
+			},
 		},
 
 		// The kind whose reason for existing is exactly what this readback shows: the

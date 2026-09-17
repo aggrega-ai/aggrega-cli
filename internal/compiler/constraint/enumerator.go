@@ -1184,6 +1184,26 @@ type BoundaryAttachmentPipelineStepEnumerator interface {
 // would hand the framework entries from several documents under one key, and a
 // fact keyed that way would answer with whichever block was asked last.
 
+// ArtifactsEntryEnumerator supplies the entries one node's own Recipe WRITES in
+// its artifacts block, named by the keys the author typed.
+//
+// It is a separate axis from [ArtifactEnumerator] beside it, and the pair is not
+// two readings of one set. That one enumerates the outputs a node projects, which
+// an entry importing a library bundle contributes one of per file the bundle
+// holds — so an entry whose import failed contributes none at all, and a rule
+// about the import itself would be invoked zero times for exactly the entries it
+// exists to refuse. This one enumerates what the author wrote, which is there
+// whether the reference resolves or not.
+//
+// The two coincide for an entry written inline and for one supplied by a file of
+// the workspace, and unifying them on the strength of that would narrow this axis
+// to whatever the render managed to produce.
+type ArtifactsEntryEnumerator interface {
+	// ArtifactsEntries returns the keys a node's own Recipe writes in its
+	// artifacts block, in the order that Recipe declares them.
+	ArtifactsEntries(node string) []AuthoredCoordinate
+}
+
 // ArtifactEnumerator supplies the artifacts one node's own Recipe projects, and
 // only those.
 //

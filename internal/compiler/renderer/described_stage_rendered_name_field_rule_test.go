@@ -84,7 +84,7 @@ func declaredRenderedNameHalt(t *testing.T, recipe *types.Recipe, names NodeRend
 	view := newDescribedView(
 		context.Background(), graph, stubGraphFacts{},
 		recipes, lookup, nil, newStepDescriptorMemo(), nil, nil,
-		names,
+		names, nil,
 	)
 	if view == nil {
 		t.Fatal("the presentation was not built; there is nothing for the rules to read")

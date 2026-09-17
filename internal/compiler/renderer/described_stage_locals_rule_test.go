@@ -168,7 +168,7 @@ func declaredLocalsHalt(t *testing.T, recipe *types.Recipe) error {
 	view := newDescribedView(
 		context.Background(), graph, stubGraphFacts{},
 		recipes, RecipeLookup{}, nil, newStepDescriptorMemo(), nil, nil,
-		nil,
+		nil, nil,
 	)
 	if view == nil {
 		t.Fatal("the presentation was not built; there is nothing for the rules to read")
@@ -648,7 +648,7 @@ func TestTheDescribedPresentationAnswersTheTwoAuthoredLocalsFacts(t *testing.T) 
 	view := newDescribedView(
 		context.Background(), &types.IRGraph{}, stubGraphFacts{},
 		recipes, RecipeLookup{}, nil, newStepDescriptorMemo(), nil, nil,
-		nil,
+		nil, nil,
 	)
 	if view == nil {
 		t.Fatal("the presentation was not built")

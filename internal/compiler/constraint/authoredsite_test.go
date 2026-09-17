@@ -310,6 +310,14 @@ spec:
 		// inline template a Recipe writes: a top-level field, a field inside a keyed
 		// block whose key travels in the label, and an artifacts entry whose key is an
 		// output filename and therefore carries the locator dialect's separator.
+		//
+		// Its artifacts block holds three entries in the order the fixture enumerates
+		// them rather than alphabetically, because author order is the contract on
+		// that axis. Two of the keys are output filenames and so carry the dialect's
+		// separator, which is the ordinary shape here: a locator over either names
+		// this block and stops, and the walk confirms the block itself is a site the
+		// document holds. The third carries none, so the untruncated locator is walked
+		// through the key as well — neither shape proves the other.
 		"recipes/web.yaml": `
 apiVersion: aggrega.ai/v1alpha1
 kind: Recipe
@@ -328,7 +336,14 @@ spec:
       with: "marker: web"
   artifacts:
     values-yaml: "replicas: 2"
+    settings.yaml: "level: info"
+    config.yaml: "debug: false"
 `,
+		// The second node's own Recipe. Its artifacts block is what the authored-entry
+		// axis walks on this node, and the pair it forms with the block above is the
+		// point: an entry's file comes from the entry the enumerator handed over, so a
+		// walk taking it from the node it entered would attribute every entry to the
+		// first Recipe and the locators would resolve there anyway.
 		"recipes/api.yaml": `
 apiVersion: aggrega.ai/v1alpha1
 kind: Recipe
@@ -337,6 +352,8 @@ metadata:
 spec:
   locals:
     prefix: "{{ .context.instance_id }}"
+  artifacts:
+    metrics.json: "{}"
 `,
 		// Its artifacts block carries an entry whose authored key holds the locator
 		// dialect's separator, which is the ordinary shape on this axis: an inline
