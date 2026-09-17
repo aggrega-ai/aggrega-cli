@@ -11,7 +11,7 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
-	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
+	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/yamlpos"
 )
 
@@ -60,7 +60,7 @@ func (s *Server) resolveDefinitionSite(reqCtx context.Context, uri string, pos y
 		if ctx.Value == "" {
 			return nil, nil
 		}
-		name, version, _ := catalog.SplitVersionedURI(ctx.Value)
+		name, version, _ := resolver.SplitVersionedURI(ctx.Value)
 		return s.findDefinitionByURI(reqCtx, name, version)
 	case yamlpos.ContextKindUsesTarget:
 		// Intra-document local-component reference. Walk the source
@@ -373,13 +373,13 @@ func (s *Server) findImplementationsAcrossWorkspace(reqCtx context.Context, uri 
 		extendsVal := scalarAtPath(root, []string{"spec", "extends"})
 		var hit bool
 		if implementsVal != nil {
-			implName, _, _ := catalog.SplitVersionedURI(implementsVal.Value)
+			implName, _, _ := resolver.SplitVersionedURI(implementsVal.Value)
 			if implName == target {
 				hit = true
 			}
 		}
 		if extendsVal != nil {
-			extName, _, _ := catalog.SplitVersionedURI(extendsVal.Value)
+			extName, _, _ := resolver.SplitVersionedURI(extendsVal.Value)
 			if extName == target {
 				hit = true
 			}
@@ -446,7 +446,7 @@ func collectReferences(n *yaml.Node, idx yamlpos.LineIndex, fileURI, target stri
 				// Scanned value may carry a "<name>:<version>" suffix
 				// while the target carries the bare name. Split before
 				// comparing.
-				scannedName, _, _ := catalog.SplitVersionedURI(valNode.Value)
+				scannedName, _, _ := resolver.SplitVersionedURI(valNode.Value)
 				if scannedName == target && isReferenceShape(childPath) {
 					*out = append(*out, nodeToLocation(fileURI, idx, valNode))
 				}

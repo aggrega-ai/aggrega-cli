@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 )
 
 // The artifact cache lives under the workspace root, and a catalog directory
@@ -89,7 +90,7 @@ spec:
 // vouches for.
 func writeCachedLibrary(t *testing.T, ws, cacheDir, slotURI, body string) string {
 	t.Helper()
-	_, version, _ := SplitVersionedURI(slotURI)
+	_, version, _ := resolver.SplitVersionedURI(slotURI)
 	slot := oci.CachePath(ws, cacheDir, slotURI, version)
 	if err := os.MkdirAll(slot, 0o755); err != nil {
 		t.Fatalf("mkdir cache slot %s: %v", slotURI, err)

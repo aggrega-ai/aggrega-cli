@@ -19,6 +19,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pullverify"
 	"github.com/aggrega-ai/aggrega-cli/pkg/registryhost"
+	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
@@ -189,7 +190,7 @@ func verifySubjectBinding(registry string, axis closure.VerifiableAxis, ref clos
 	if registry == "" {
 		return axis.Kind, "", false
 	}
-	identity, _, _ := catalog.SplitVersionedURI(ref.URI)
+	identity, _, _ := resolver.SplitVersionedURI(ref.URI)
 	return axis.Kind, registry + "/" + catalog.OCILocation(axis.Kind, "", identity), true
 }
 

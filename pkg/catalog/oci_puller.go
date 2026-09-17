@@ -12,6 +12,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/egress"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
@@ -361,7 +362,7 @@ func BindEntityLocation(registry, kindHint, uri string) (location string, ok boo
 	if kind == "" {
 		return "", false
 	}
-	identity, _, _ := SplitVersionedURI(uri)
+	identity, _, _ := resolver.SplitVersionedURI(uri)
 	ref, err := entityReference(registry, kind, identity)
 	if err != nil {
 		return "", false

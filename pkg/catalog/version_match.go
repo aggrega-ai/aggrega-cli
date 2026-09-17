@@ -9,6 +9,7 @@ import (
 
 	"github.com/Masterminds/semver/v3"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
+	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 )
 
 // ErrUnsatisfiableEntityVersion is a recoverable sentinel: a catalog reference
@@ -41,28 +42,6 @@ var errUnsatisfiableEntityVersion = cerrors.Register("unsatisfiable-entity-versi
 		"every caller that asks it to resolve a reference, and the extends resolution is the one that " +
 		"reports it: the rest either drop it for a not-found or translate it into a condition of their own."),
 })
-
-// SplitVersionedURI splits a URI like "core/api-server:1.0.0" into its base
-// (before the last colon) and version (after the last colon) segments. The
-// last colon is the separator because version segments do not contain colons
-// while base segments may carry registry-style separators ("hub.aggrega.ai/component/core/api-server:1.0.0").
-//
-// It is the single home for this split — the decomposing counterpart to
-// RecipeMappingURI's composition — so every caller applies the same separator
-// rule.
-//
-// Returns the bare URI as base, "" as version, and false as hasVersion when
-// the URI carries no colon. hasVersion is what separates that case from a
-// trailing colon with an empty version: "core/x" yields ("core/x", "", false)
-// while "core/x:" yields ("core/x", "", true). The two agree on base and on
-// version, so only hasVersion tells them apart.
-func SplitVersionedURI(uri string) (base, version string, hasVersion bool) {
-	idx := strings.LastIndex(uri, ":")
-	if idx < 0 {
-		return uri, "", false
-	}
-	return uri[:idx], uri[idx+1:], true
-}
 
 // selectEntityVersion resolves a caller's catalog-entity reference (callerURI,
 // optionally version-pinned) against an index of concrete-version entities,
@@ -98,7 +77,7 @@ func SplitVersionedURI(uri string) (base, version string, hasVersion bool) {
 // version-less fallback set) break on the lexically-smallest index key, never on
 // map-iteration order.
 func selectEntityVersion[V any](index map[string]V, callerURI string, meta func(V) (name, version string)) (string, bool, error) {
-	base, verSeg, hasVer := SplitVersionedURI(callerURI)
+	base, verSeg, hasVer := resolver.SplitVersionedURI(callerURI)
 	caret := hasVer && strings.HasPrefix(verSeg, "^")
 
 	var constraint *semver.Constraints

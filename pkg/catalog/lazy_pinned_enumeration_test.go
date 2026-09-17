@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 )
 
 // Cache-fixture entities for the lazy-enumeration tests. The library-referencing
@@ -142,7 +143,7 @@ func (p *pinCacheCountingPuller) Pull(context.Context, string, string) (*oci.Pul
 // returned ResolvedVersion to address it.
 func writePinnedSlot(t *testing.T, ws, cacheDir, slotURI, mediaType string, blob []byte) Pin {
 	t.Helper()
-	_, version, _ := SplitVersionedURI(slotURI)
+	_, version, _ := resolver.SplitVersionedURI(slotURI)
 	mb, md := manifestBytesFor(t, mediaType, blob)
 	if err := writeEntityToCacheSlot(ws, cacheDir, slotURI, version, &oci.PullResult{MediaType: mediaType, Bytes: blob, ManifestBytes: mb, Digest: md}); err != nil {
 		t.Fatalf("write cache slot %s: %v", slotURI, err)

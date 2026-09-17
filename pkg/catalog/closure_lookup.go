@@ -362,7 +362,7 @@ func (l *catalogLookup) ClosureRecipeLoader() closure.RecipeLoader {
 // keeps the bare-name case (a registry-published aggregate referenced by
 // identity) and the versioned-URI case from clashing on a double-appended tag.
 func versionedSlotURI(uri, version string) string {
-	if _, _, hasV := SplitVersionedURI(uri); hasV {
+	if _, _, hasV := resolver.SplitVersionedURI(uri); hasV {
 		return uri
 	}
 	if version == "" {
@@ -413,7 +413,7 @@ func (l *catalogLookup) pinnedFetchURI(uri string) string {
 	if l.priorPins == nil {
 		return uri
 	}
-	if _, _, hasVersion := SplitVersionedURI(uri); hasVersion {
+	if _, _, hasVersion := resolver.SplitVersionedURI(uri); hasVersion {
 		return uri
 	}
 	pin, ok := l.priorPins[uri]
@@ -486,7 +486,7 @@ func (l *catalogLookup) embeddedPluginEntity(uri, kindHint string) (closure.Reso
 	if kindHint != pluginEntityKindHint {
 		return closure.Resolution{}, false
 	}
-	identity, requested, hasVersion := SplitVersionedURI(uri)
+	identity, requested, hasVersion := resolver.SplitVersionedURI(uri)
 	embeds, _ := embeddedPluginEntities()
 	for _, p := range embeds {
 		if plugintype.Type(p.Metadata.PluginType) != plugintype.Provider {
@@ -573,7 +573,7 @@ func (l *catalogLookup) lookupExternal(uri string) (closure.Resolution, bool) {
 	if !ok {
 		return closure.Resolution{}, false
 	}
-	_, version, _ := SplitVersionedURI(uri)
+	_, version, _ := resolver.SplitVersionedURI(uri)
 	return closure.Resolution{
 		ResolvedVersion: version,
 		Digest:          contentDigest(bytes),
@@ -816,7 +816,7 @@ func embeddedPluginResolution(refDigest string) closure.Resolution {
 }
 
 func (l *catalogLookup) tier1CatalogEntity(uri string) (closure.Resolution, bool) {
-	_, version, _ := SplitVersionedURI(uri)
+	_, version, _ := resolver.SplitVersionedURI(uri)
 
 	if key, ok, _ := l.catalog.resolveComponentKey(uri); ok {
 		c := l.catalog.Components[key]
@@ -870,7 +870,7 @@ func (l *catalogLookup) tier1Library(axis closure.LibraryAxis, uri string) (clos
 		return closure.Resolution{}, nil, false
 	}
 	resolved := metaVersion
-	if _, v, hasV := SplitVersionedURI(uri); hasV && v != "" {
+	if _, v, hasV := resolver.SplitVersionedURI(uri); hasV && v != "" {
 		resolved = v
 	}
 	return l.tier1Resolution(axis.Kind, metaName, metaVersion, resolved), entries, true
@@ -1024,7 +1024,7 @@ func tier2ReadSlotUnverified(workspaceRoot, cacheDir, uri string) ([]byte, closu
 	if cacheDir == "" {
 		return nil, closure.Resolution{}, false
 	}
-	_, version, hasV := SplitVersionedURI(uri)
+	_, version, hasV := resolver.SplitVersionedURI(uri)
 	if !hasV || version == "" {
 		return nil, closure.Resolution{}, false
 	}
@@ -1130,7 +1130,7 @@ func tier3PullCatalogEntity(ctx context.Context, workspaceRoot, cacheDir string,
 	// that can fetch a bare identity; without the kind or the capability the entity
 	// tier falls to the legacy already-located, versioned reference path.
 	if ep, ok := puller.(EntityPuller); ok && kind != "" {
-		name, floor, hasFloor := SplitVersionedURI(uri)
+		name, floor, hasFloor := resolver.SplitVersionedURI(uri)
 		result, resolvedVersion, err := ep.PullEntity(ctx, name, kind, floor)
 		if err != nil {
 			if errors.Is(err, oci.ErrFetchNotFound()) {
@@ -1215,7 +1215,7 @@ func (l *catalogLookup) tier3Library(ctx context.Context, uri, kind string) (clo
 	// slot is keyed `<name>:<version>` — the symmetric key the lazy lookup's
 	// verified Tier-2 read addresses.
 	if lp, ok := l.ociPuller.(LibraryPuller); ok {
-		name, floor, hasFloor := SplitVersionedURI(uri)
+		name, floor, hasFloor := resolver.SplitVersionedURI(uri)
 		result, resolvedVersion, err := lp.PullLibrary(ctx, name, kind, floor)
 		if err != nil {
 			if errors.Is(err, oci.ErrFetchNotFound()) {
@@ -1322,7 +1322,7 @@ func PullAndCacheAggregate(ctx context.Context, workspaceRoot, cacheDir string, 
 	if !ok {
 		return nil, "", "", "", false, nil
 	}
-	name, floor, _ := SplitVersionedURI(ref)
+	name, floor, _ := resolver.SplitVersionedURI(ref)
 	result, fetchVersion, perr := ap.PullAggregate(ctx, name, floor)
 	if perr != nil {
 		if errors.Is(perr, oci.ErrFetchNotFound()) {
@@ -1440,7 +1440,7 @@ func entityBytesKey(kind, identifier string) string {
 // pins this symmetry at code-review time so any future divergence
 // surfaces before it becomes an end-to-end runtime mismatch.
 func SplitURIForOCI(uri string) (reference, tag string, ok bool) {
-	base, version, hasV := SplitVersionedURI(uri)
+	base, version, hasV := resolver.SplitVersionedURI(uri)
 	if !hasV || version == "" {
 		return "", "", false
 	}
@@ -1464,7 +1464,7 @@ func EntityNameFromURI(uri string) string {
 // Stripping path segments here would lose load-bearing prefix
 // content; we strip only the version-pin suffix.
 func lookupNameFromURI(uri string) string {
-	base, _, _ := SplitVersionedURI(uri)
+	base, _, _ := resolver.SplitVersionedURI(uri)
 	return base
 }
 
@@ -1476,7 +1476,7 @@ func lookupNameFromURI(uri string) string {
 // final "/"-separated segment of a canonical library URI like
 // "hub.aggrega.ai/schemalibrary/core/Probes".
 func schemaLibraryNameFromURI(uri string) string {
-	base, _, _ := SplitVersionedURI(uri)
+	base, _, _ := resolver.SplitVersionedURI(uri)
 	if idx := strings.LastIndex(base, "/"); idx >= 0 {
 		return base[idx+1:]
 	}

@@ -3,7 +3,11 @@
 
 package catalog
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
+)
 
 // SoleRefusalFor returns the refused catalog file whose own declared identity
 // the reference names, and reports whether exactly one file declared it.
@@ -48,7 +52,7 @@ func SoleRefusalFor(skipped []SkippedEntity, uri, kindHint string) (SkippedEntit
 	if kind == "" {
 		return SkippedEntity{}, false
 	}
-	base, version, hasVersion := SplitVersionedURI(uri)
+	base, version, hasVersion := resolver.SplitVersionedURI(uri)
 	provider, name := "", base
 	if kind == "Recipe" || kind == "FeatureRecipe" {
 		// A recipe reference may be provider-qualified. The provider is the

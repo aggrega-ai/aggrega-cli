@@ -16,6 +16,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
+	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 )
 
 // The two requests here answer questions the daemon's positional surfaces
@@ -228,7 +229,7 @@ func (s *Server) unresolvedEntityEnvelope(ctx context.Context, view *catalog.Laz
 	// A reference may carry a version suffix; a document's metadata.name never
 	// does. The comparison is against the identity, so the suffix is stripped
 	// the same way every other reference-shaped lookup here strips it.
-	identity, _, _ := catalog.SplitVersionedURI(name)
+	identity, _, _ := resolver.SplitVersionedURI(name)
 	if file, kind, ok := s.workspaceDeclarationOf(ctx, identity); ok {
 		return &jsonRPCError{
 			Code: errEntityNotResolvable,
