@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // This file declares the two rules over a Recipe's input-kind surface. They are
@@ -26,9 +27,18 @@ import (
 // the carve-out covers, and the disagreement would surface as a legitimate
 // document refused rather than as anything failing.
 //
-// The comparison against it is exact, which is the whole of what an author needs
-// to know about it: a capability declaration may carry a version pin, and a
-// pinned declaration is a different string from the bare name.
+// The comparison is against the BARE capability — the authored binding with any
+// version pin removed — which is what an author needs to know about it. A
+// capability declaration may carry a pin selecting which plugin version serves
+// it, and the pin is not part of the capability's name: "eval" and "eval:^1.0.0"
+// name one capability and the carve-out covers both. A longer name that merely
+// begins with these letters, "evaluate", is a different capability and is not
+// covered, because the projection removes a pin and never a prefix.
+//
+// The projection that removes the pin is types.BareCapability, the one every
+// reader of a capability binding takes — render dispatch included — so a
+// document's capability answers this question at load exactly as it answers it
+// at render.
 const evalCapability = "eval"
 
 // evalForbiddenFieldAdvice is what an author does about an eval Recipe or an eval
@@ -97,7 +107,7 @@ var recipeEvalDeclaresNoRenderingSurface = constraint.Check[
 		v constraint.DocumentView,
 		s constraint.DocumentSubject,
 	) []constraint.Objection {
-		if v.RecipeDeclaredCapability(s.SourceFile()) != evalCapability {
+		if types.BareCapability(v.RecipeDeclaredCapability(s.SourceFile())) != evalCapability {
 			return nil
 		}
 
@@ -161,7 +171,7 @@ var recipeDeclaresAnInputKind = constraint.Check[
 		v constraint.DocumentView,
 		s constraint.DocumentSubject,
 	) []constraint.Objection {
-		if v.RecipeDeclaredCapability(s.SourceFile()) == evalCapability {
+		if types.BareCapability(v.RecipeDeclaredCapability(s.SourceFile())) == evalCapability {
 			return nil
 		}
 		if v.RecipeSourceDeclared(s.SourceFile()) ||

@@ -4,9 +4,9 @@
 package renderer
 
 import (
-	"strings"
-
 	"github.com/Masterminds/semver/v3"
+
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // ProviderEngineKind returns the bare engine kind of a recipe.spec.capability
@@ -18,16 +18,16 @@ import (
 // pipeline compatibility check, and codec selection all operate on "helm", not
 // on the pinned version. Only engine resolution reads the version.
 //
-// The kind is the segment before the last colon; a binding with no colon is
-// already bare and returns unchanged. The version-carrying resolver
-// (selectEntityVersion in the catalog package) owns the inverse direction —
-// the catalog package cannot be imported here without an import cycle, so the
-// split is kept minimal and local to this dispatch-owning package.
+// It forwards to types.BareCapability, which is the one projection every
+// reader of a capability binding takes — this dispatch, and the load-time
+// rules that carve one capability out of a shape requirement. Those readers sit
+// in packages that cannot import one another, so a local split here would be a
+// second copy of a rule they all have to agree on, and the disagreement would
+// surface as a legitimate document refused rather than as anything failing.
+// The version-carrying resolver (selectEntityVersion in the catalog package)
+// owns the inverse direction.
 func ProviderEngineKind(providerRef string) string {
-	if i := strings.LastIndex(providerRef, ":"); i >= 0 {
-		return providerRef[:i]
-	}
-	return providerRef
+	return types.BareCapability(providerRef)
 }
 
 // providerVersionGreater orders resolved provider versions for boundary-assembler

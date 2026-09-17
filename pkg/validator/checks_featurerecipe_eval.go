@@ -5,6 +5,7 @@ package validator
 
 import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // featureRecipeEvalDeclaresNoRenderingSurface refuses a FeatureRecipe that binds
@@ -53,7 +54,7 @@ var featureRecipeEvalDeclaresNoRenderingSurface = constraint.Check[
 		v constraint.DocumentView,
 		s constraint.DocumentSubject,
 	) []constraint.Objection {
-		if v.FeatureRecipeDeclaredCapability(s.SourceFile()) != evalCapability {
+		if types.BareCapability(v.FeatureRecipeDeclaredCapability(s.SourceFile())) != evalCapability {
 			return nil
 		}
 

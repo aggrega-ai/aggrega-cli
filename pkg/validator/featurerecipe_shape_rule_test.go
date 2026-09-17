@@ -154,14 +154,16 @@ func TestValidateFeatureRecipe_ShapeSurface_Grid(t *testing.T) {
 			want: validator.ErrFeatureRecipeValuesMappingRequiresSource(),
 		},
 		{
-			// A pinned capability declaration is a different string from the
-			// bare name, so it falls outside the eval rule's exact comparison
-			// and the values-mapping rule reaches it. The row records the
-			// behaviour rather than endorsing it: it is what the shipped code
-			// does on either side of this rule's declaration.
-			name: "a FeatureRecipe pinning the eval capability is outside the eval rule's exact comparison",
+			// The eval rule reads the capability through the projection that
+			// removes a version pin, so a pinned declaration names the same
+			// capability as the bare one and the rule reaches it. This document
+			// also violates the values-mapping rule — an overlay with no source —
+			// so the row carries the pinned form of the precedence the bare row
+			// above pins: the pin moves neither the verdict nor which of the two
+			// rules reports it.
+			name: "a FeatureRecipe pinning the eval capability is refused under the eval condition, exactly as the bare form is",
 			doc:  func() *types.FeatureRecipe { return featureRecipeWithValuesMapping(newFeatureRecipe("eval:^1.0.0")) },
-			want: validator.ErrFeatureRecipeValuesMappingRequiresSource(),
+			want: validator.ErrFeatureRecipeEvalProviderConstraint(),
 		},
 		{
 			name: "a FeatureRecipe declaring no capability at all is refused under the values-mapping condition",
