@@ -1749,7 +1749,6 @@ func (c *Catalog) ResolveAllExtends() []*validator.ValidationError {
 			return validator.CatalogEntry{}, false
 		}
 		return validator.CatalogEntry{
-			Kind:       envelope.KindFeature,
 			URI:        feat.Metadata.Name,
 			Extends:    feat.Spec.Extends,
 			JSONSchema: validator.CompileSchemaForMerge(feat.Spec.Schema, c.SchemaLibraries),
@@ -1824,12 +1823,11 @@ func (c *Catalog) ResolveAllExtends() []*validator.ValidationError {
 		c.Features[name] = resolved
 
 		rootEntry := validator.CatalogEntry{
-			Kind:       envelope.KindFeature,
 			URI:        feat.Metadata.Name,
 			Extends:    feat.Spec.Extends,
 			JSONSchema: validator.CompileSchemaForMerge(feat.Spec.Schema, c.SchemaLibraries),
 		}
-		inh := validator.ResolveInheritance(rootEntry, featEntryLookup)
+		inh := validator.ResolveFeatureSchemaChain(rootEntry, featEntryLookup)
 		if len(inh.Errors) > 0 {
 			errs = append(errs, inh.Errors...)
 			continue

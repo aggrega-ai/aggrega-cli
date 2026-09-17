@@ -25,7 +25,6 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
-	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
 )
 
 // NewLazyLookup returns a *LazyLookup whose AsCatalogLookup method
@@ -48,8 +47,8 @@ import (
 // (or Feature) has a non-empty spec.extends, the lookup invokes
 // validator.ResolveComponentExtends (or ResolveFeatureExtends) with
 // itself as the closure, walking the chain through the same cascade.
-// Cycle detection comes free via validator.ResolveInheritance's
-// visited-set guard.
+// Cycle detection comes free via validator.ResolveExtendsChain's
+// visited-set guard, which is the walk both of those collect through.
 //
 // The lookup is layout-agnostic: entities are indexed by authored
 // metadata.name regardless of where the YAML lives under
@@ -401,8 +400,8 @@ type LazyLookup struct {
 	// effectiveSchemas holds the composed (parent+child) schema for each
 	// extends-ing closure FEATURE, keyed by metadata.name — the build-path
 	// counterpart to the eager catalog's effectiveSchemas. Populated by
-	// ResolveClosureExtends via the same ResolveInheritance merge the eager
-	// whole-catalog path uses; served through AsCatalogLookup so Feature-schema
+	// ResolveClosureExtends via the same ResolveFeatureSchemaChain merge the
+	// eager whole-catalog path uses; served through AsCatalogLookup so Feature-schema
 	// consumers read an extending Feature's composed schema, not the child-only
 	// structural one. Empty for a closure with no extends-ing Feature.
 	//
@@ -2099,8 +2098,8 @@ func (l *LazyLookup) ResolveClosureExtends(cl closure.Closure) []error {
 
 	// CatalogEntry chain lookup that compiles each chain entry's authored schema
 	// into the JSON-Schema-merge input — identical to the eager ResolveAllExtends,
-	// so both surfaces compose through the same ResolveInheritance merge phase (no
-	// second merge implementation). Features only: an extending Component inherits
+	// so both surfaces compose through the same ResolveFeatureSchemaChain merge
+	// phase (no second merge implementation). Features only: an extending Component inherits
 	// its base's pillar block verbatim, so its chain has nothing to compose.
 	featEntryLookup := func(uri string) (validator.CatalogEntry, bool) {
 		feat, ok := featLookup(uri)
@@ -2108,7 +2107,6 @@ func (l *LazyLookup) ResolveClosureExtends(cl closure.Closure) []error {
 			return validator.CatalogEntry{}, false
 		}
 		return validator.CatalogEntry{
-			Kind:       envelope.KindFeature,
 			URI:        feat.Metadata.Name,
 			Extends:    feat.Spec.Extends,
 			JSONSchema: validator.CompileSchemaForMerge(feat.Spec.Schema, l.schemaLibraries),
@@ -2177,12 +2175,11 @@ func (l *LazyLookup) ResolveClosureExtends(cl closure.Closure) []error {
 				continue
 			}
 			rootEntry := validator.CatalogEntry{
-				Kind:       envelope.KindFeature,
 				URI:        feat.Metadata.Name,
 				Extends:    feat.Spec.Extends,
 				JSONSchema: validator.CompileSchemaForMerge(feat.Spec.Schema, l.schemaLibraries),
 			}
-			inh := validator.ResolveInheritance(rootEntry, featEntryLookup)
+			inh := validator.ResolveFeatureSchemaChain(rootEntry, featEntryLookup)
 			if len(inh.Errors) > 0 {
 				for _, ie := range inh.Errors {
 					errs = append(errs, ie)

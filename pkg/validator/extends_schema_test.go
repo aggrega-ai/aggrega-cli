@@ -8,8 +8,6 @@ import (
 	"testing"
 
 	"go.yaml.in/yaml/v3"
-
-	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
 )
 
 func schemaNode(t *testing.T, y string) yaml.Node {
@@ -26,7 +24,7 @@ func schemaNode(t *testing.T, y string) yaml.Node {
 func chainEntry(t *testing.T, uri, extends, schema string) CatalogEntry {
 	t.Helper()
 	node := schemaNode(t, schema)
-	return CatalogEntry{Kind: envelope.KindFeature, URI: uri, Extends: extends, JSONSchema: CompileSchemaForMerge(node, nil)}
+	return CatalogEntry{URI: uri, Extends: extends, JSONSchema: CompileSchemaForMerge(node, nil)}
 }
 
 // TestComposeExtends_MergesPillars: the composed effective schema carries BOTH
@@ -45,7 +43,7 @@ func TestComposeExtends_MergesPillars(t *testing.T) {
 		return CatalogEntry{}, false
 	}
 
-	comp := CompositionFromResult("app/child:1.0.0", ResolveInheritance(child, lookup))
+	comp := CompositionFromResult("app/child:1.0.0", ResolveFeatureSchemaChain(child, lookup))
 	if comp == nil || comp.EffectiveSchema == nil {
 		t.Fatal("expected a composed effective schema")
 	}
@@ -64,15 +62,15 @@ func TestComposeExtends_MergesPillars(t *testing.T) {
 // schema composes nothing (CompileSchemaForMerge → nil; merge stays dormant).
 func TestComposeExtends_NoSchemaIsNoComposition(t *testing.T) {
 	t.Parallel()
-	child := CatalogEntry{Kind: envelope.KindFeature, URI: "c", Extends: "p"}
-	parent := CatalogEntry{Kind: envelope.KindFeature, URI: "p"}
+	child := CatalogEntry{URI: "c", Extends: "p"}
+	parent := CatalogEntry{URI: "p"}
 	lookup := func(uri string) (CatalogEntry, bool) {
 		if uri == "p" {
 			return parent, true
 		}
 		return CatalogEntry{}, false
 	}
-	if comp := CompositionFromResult("c", ResolveInheritance(child, lookup)); comp != nil {
+	if comp := CompositionFromResult("c", ResolveFeatureSchemaChain(child, lookup)); comp != nil {
 		t.Fatalf("no-schema chain must compose nothing; got %+v", comp)
 	}
 }
@@ -94,7 +92,7 @@ func TestComposeExtends_NarrowingIsSignalOnly(t *testing.T) {
 		}
 		return CatalogEntry{}, false
 	}
-	result := ResolveInheritance(child, lookup)
+	result := ResolveFeatureSchemaChain(child, lookup)
 	if len(result.Errors) != 0 {
 		t.Fatalf("narrowing must not halt; got errors %v", result.Errors)
 	}
@@ -113,7 +111,7 @@ func TestComposeExtends_MissingParentHalts(t *testing.T) {
 	child := chainEntry(t, "c", "does/not:exist",
 		"values:\n  port: { type: integer }\n")
 	lookup := func(string) (CatalogEntry, bool) { return CatalogEntry{}, false }
-	result := ResolveInheritance(child, lookup)
+	result := ResolveFeatureSchemaChain(child, lookup)
 	if len(result.Errors) == 0 {
 		t.Fatal("expected a structural halt for the missing parent")
 	}

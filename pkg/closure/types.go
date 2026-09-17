@@ -358,8 +358,8 @@ type LibraryConsumer struct {
 // Design note: this interface uses methods rather than the
 // callback-struct or bare-function patterns established elsewhere
 // in aggrega-cli (pkg/resolver/CatalogLookup is a struct of two
-// callback fields; pkg/validator/ResolveInheritance takes a bare
-// function-value parameter). The four-method surface here would be
+// callback fields; pkg/validator/ResolveFeatureSchemaChain takes a
+// bare function-value parameter). The four-method surface here would be
 // awkward as a callback struct: each test mock would need a
 // 4-field literal with at least 3 non-nil function values, and a
 // partial construction would panic at call site rather than fail

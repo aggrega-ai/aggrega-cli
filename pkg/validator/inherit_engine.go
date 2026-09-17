@@ -10,7 +10,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator/merger"
 )
 
-// CatalogEntry identifies an entity in an extends chain and carries the
+// CatalogEntry identifies a Feature in an extends chain and carries the
 // schema payload the chain composition reads. The caller populates it
 // from the loaded catalog.
 //
@@ -18,17 +18,14 @@ import (
 // labels and annotations are merged on the typed entity by
 // ResolveComponentExtends and ResolveFeatureExtends, which is the single
 // home for that mechanic.
+//
+// It carries no entity kind either. A failure resolving this chain is
+// reported against a kind ResolveFeatureSchemaChain names for itself, so the
+// authoring surface every diagnostic from this tier is attributed to is read
+// from one declaration rather than from whatever each entry was built with.
 type CatalogEntry struct {
 	URI     string // e.g. "core/api-server:1.0.0"
 	Extends string // parent URI, empty if no inheritance
-
-	// Kind is the entity kind the URI names. It is required: a failure
-	// resolving this chain is reported against the entity, and the kind is
-	// what tells the reader — and the compiler's error categorisation —
-	// which authoring surface the entity lives on. Leaving it unset is a
-	// caller mistake, and NewValidationError refuses such a failure outright
-	// rather than attributing it to a default surface.
-	Kind envelope.Kind
 
 	// JSONSchema is the entity's JSON Schema 2020-12 payload (the
 	// output of pkg/compactform's compile step). When populated, the
@@ -51,7 +48,7 @@ type InheritanceResult struct {
 	Errors           []*ValidationError
 }
 
-// ResolveInheritance walks the extends chain for an entity using the
+// ResolveFeatureSchemaChain walks a Feature's extends chain using the
 // provided catalog lookup, and does two things with the chain it walks.
 //
 // It gates the chain, through the shared walk in chain_walk.go: a chain that
@@ -66,10 +63,17 @@ type InheritanceResult struct {
 // pkg/validator/merger into MergedJSONSchema, carrying source-position
 // provenance. Entries supplying no payload make this a no-op.
 //
+// The Feature kind is named here rather than travelling on each entry,
+// because this tier composes Feature chains and no others: an extending
+// Component inherits its base's pillar block verbatim, so its chain has
+// nothing to compose and never reaches here. Fixing the kind at this one
+// declaration is what makes the authoring surface these three conditions are
+// reported against readable without following a value back to its caller.
+//
 // Inherited labels and annotations are not merged here — that happens on
 // the typed entity in ResolveComponentExtends and ResolveFeatureExtends.
-func ResolveInheritance(entry CatalogEntry, lookup func(uri string) (CatalogEntry, bool)) InheritanceResult {
-	chain, verr := ResolveExtendsChain(entry.Kind, entry, ExtendsChainSpec[CatalogEntry]{
+func ResolveFeatureSchemaChain(entry CatalogEntry, lookup func(uri string) (CatalogEntry, bool)) InheritanceResult {
+	chain, verr := ResolveExtendsChain(envelope.KindFeature, entry, ExtendsChainSpec[CatalogEntry]{
 		Key:        func(e CatalogEntry) string { return e.URI },
 		ParentLink: func(e CatalogEntry) string { return e.Extends },
 		Lookup:     lookup,
