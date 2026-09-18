@@ -13,14 +13,23 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// ErrNoIndexAnywhere reports that the configured host set is non-empty and not
+// errNoIndexAnywhere reports that the configured host set is non-empty and not
 // one of them has a local index, so there is nothing to search.
 //
 // It is distinguished from an empty result because the two mean different things:
 // an empty result is a completed search that matched nothing, and this is a search
 // that could not be performed. Presenting the second as the first is how a caller
 // concludes an entity does not exist when nobody has built the index.
-var ErrNoIndexAnywhere = errors.New("no local index found for any configured registry; run 'aggrega registry update'")
+//
+// It is a package-local error value and not a registered halting condition, which
+// is what every refusal this search reports is: none of them is built into a
+// diagnostic envelope, so none carries a short code a reader could quote, and the
+// named-registry refusal beside it — the nearer and more specific of the two —
+// carries no identity either. A value declared here under the condition naming
+// convention would promise a reader an identifier no surface prints. It stays a
+// declared value rather than an inline one so a caller separates this refusal
+// from an empty result by identity instead of by its message text.
+var errNoIndexAnywhere = errors.New("no local index found for any configured registry; run 'aggrega registry update'")
 
 // IndexNotBuiltError reports that a specifically named registry has no local
 // index. It names the host, because a caller that asked for one registry is owed

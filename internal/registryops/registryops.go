@@ -338,7 +338,7 @@ func Search(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, q Query,
 		// The hosts that could not be consulted travel with the failure rather than
 		// being discarded by it. A caller told only that nothing could be searched
 		// cannot tell which registries were the reason.
-		return res, ErrNoIndexAnywhere
+		return res, errNoIndexAnywhere
 	}
 
 	// Hosts ascending, so the sequence is fixed regardless of configuration order.

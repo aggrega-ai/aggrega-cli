@@ -13,9 +13,18 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/attribindex"
 )
 
-// ErrPruneNeedsWorkspace is returned when a prune runs with no resolvable
+// errPruneNeedsWorkspace is returned when a prune runs with no resolvable
 // workspace to draw a reference set from.
-var ErrPruneNeedsWorkspace = errors.New("cache prune needs a workspace, but none could be resolved")
+//
+// It is a package-local error value and not a registered halting condition, which
+// is what the two refusals beside it in Prune are as well — no lockfile under the
+// workspace, and no candidate that parsed as one. A prune reports its failures as
+// plain errors and builds no diagnostic envelope, so none of the three carries a
+// short code a reader could quote, and naming one of them under the condition
+// naming convention would promise an identifier no surface prints. It stays a
+// declared value rather than an inline one so a caller matches this refusal by
+// identity instead of by its message text.
+var errPruneNeedsWorkspace = errors.New("cache prune needs a workspace, but none could be resolved")
 
 // Removal is one element an operation removed, named by the class it belonged to
 // and carrying that class's reach.
@@ -78,7 +87,7 @@ type PruneResult struct {
 func Prune(ctx context.Context, loc Locations) (PruneResult, error) {
 	var res PruneResult
 	if loc.WorkspaceRoot == "" {
-		return res, ErrPruneNeedsWorkspace
+		return res, errPruneNeedsWorkspace
 	}
 
 	lockPaths := FindLockfiles(loc.WorkspaceRoot, loc.CacheDir)

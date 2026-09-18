@@ -334,13 +334,26 @@ type accessorTarget struct {
 //
 // The cost is stated rather than hidden: a handle produced by anything other
 // than an accessor over a registration, or an accessor re-exporting one from
-// another package, is invisible to it. Two such handles exist and neither is
-// tabulated. One is a variable wrapping another identity so that a caller may
-// match either, which registers no message for a table to carry; it is described
-// in the page's curated prose instead. The other is an accessor forwarding to a
-// second accessor in its own package, which names the same identity twice within
-// one import — a reader who can reach either name can already reach the other,
-// so the page loses no reachable match by carrying it once.
+// another package, is not tabulated. Two such handles exist. One is a variable
+// wrapping another identity so that a caller may match either, which registers no
+// message for a table to carry; it is described in the page's curated prose
+// instead. The other is an accessor forwarding to a second accessor in its own
+// package, which names the same identity twice within one import — a reader who
+// can reach either name can already reach the other, so the page loses no
+// reachable match by carrying it once.
+//
+// Untabulated is not unseen, and the difference is what keeps the cost bounded.
+// Every package-level name matching the condition convention is read and held
+// against the identities resolved here, whatever declaration kind bound it, by
+// [conventionalDecls]; each one is either an identity this carries, or a handle
+// whose own text reaches one, or it is refused by name. So the two handles above
+// are absent from the table because each resolves to a condition that is on it —
+// read from the declaration on every run rather than permitted by a recorded
+// name — and a handle resolving to nothing stops the scan instead of thinning
+// the table in silence. What remains outside is narrower than the shapes this
+// paragraph names: a handle built by a mechanism [reachedHandles] cannot follow,
+// because it reaches its condition through something other than a call to that
+// condition's accessor.
 func scan(root, modulePath string) ([]Identity, error) {
 	type accessorDecl struct {
 		pkg    string
@@ -354,6 +367,7 @@ func scan(root, modulePath string) ([]Identity, error) {
 	raised := map[string]bool{}              // handles production code invokes
 	named := map[string]bool{}               // pkgDir + "." + every package-local name production code mentions
 	advisory := map[string]bool{}            // handles a check declares at warning severity
+	conventional := []conventionalDecl{}     // every package-level name matching the condition convention
 
 	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -411,6 +425,13 @@ func scan(root, modulePath string) ([]Identity, error) {
 		}
 
 		errPkg, isErrorsPkg := errorsPackageAlias(imports, pkgDir)
+
+		// Read from the same files and inside the same guard as the declarations
+		// below, because the question this answers is about those declarations:
+		// which names a reader takes for a condition's handle did the walk not
+		// tabulate. Reading it from a wider file set would name a declaration the
+		// identity walk was never going to read.
+		conventional = append(conventional, conventionalDecls(file, path, pkgDir, imports)...)
 
 		for _, decl := range file.Decls {
 			switch d := decl.(type) {
@@ -587,6 +608,14 @@ func scan(root, modulePath string) ([]Identity, error) {
 			Advisory: origin.Advisory,
 		}
 	}
+	// Held here rather than during the walk, because placing a declaration means
+	// asking whether it reaches an identity, and no identity exists until every
+	// accessor and every re-export above has been resolved. Asking earlier would
+	// answer from whichever half of the tree the walk had reached.
+	if err := refuseUnplaceable(conventional, byHandle); err != nil {
+		return nil, err
+	}
+
 	for _, acc := range accessors {
 		id := byHandle[acc.pkg+"."+acc.name]
 		id.Importable = importable(id.Pkg)

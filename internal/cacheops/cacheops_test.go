@@ -5,6 +5,7 @@ package cacheops
 
 import (
 	"bytes"
+	"errors"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -240,15 +241,20 @@ func TestParseHumanSize(t *testing.T) {
 }
 
 // TestPruneWithoutWorkspaceRefuses pins that a prune with no workspace refuses on
-// the named condition rather than pruning against an empty reference set, which
-// would evict every entry.
+// the named value rather than pruning against an empty reference set, which would
+// evict every entry.
+//
+// It matches by identity rather than by message text, which is what the declared
+// value beside Prune exists for: the two refusals raised next to it say the same
+// thing to a reader and differ only in their prose, so a text comparison would
+// pass on whichever of the three ran.
 func TestPruneWithoutWorkspaceRefuses(t *testing.T) {
 	_, err := Prune(t.Context(), Locations{CompileDir: t.TempDir(), DescribeDir: t.TempDir()})
 	if err == nil {
 		t.Fatal("prune with no workspace returned no error")
 	}
-	if err != ErrPruneNeedsWorkspace {
-		t.Fatalf("prune refused with %v, want ErrPruneNeedsWorkspace", err)
+	if !errors.Is(err, errPruneNeedsWorkspace) {
+		t.Fatalf("prune refused with %v, want errPruneNeedsWorkspace", err)
 	}
 }
 
