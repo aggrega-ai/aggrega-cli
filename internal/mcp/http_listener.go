@@ -190,7 +190,7 @@ func listenAndServe(ctx context.Context, cfg Config, transport HTTPConfig, liste
 	if err := refuseTrustedProxyOnAnExposedAddress(target, transport.Authorization, listen.Address); err != nil {
 		return err
 	}
-	if _, err := resolveAuthenticator(transport, resource, nil); err != nil {
+	if _, err := resolveAuthenticator(ctx, transport, resource, nil); err != nil {
 		return err
 	}
 

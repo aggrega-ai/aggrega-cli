@@ -50,6 +50,17 @@ const mcpPerRequestRevision = "2026-07-28"
 // proof can see that a real subject was asserted.
 const mcpCallerSubject = "caller@example.test"
 
+// mcpCallerScope is what the token below says its bearer may ask for.
+//
+// It is the scope admitting the operations that reach nothing, which is what
+// every tool this proof looks for declares. Granting that one alone, rather than
+// every scope this deployment publishes, is what makes the assertions below
+// worth anything: a token carrying all of them would reach the tool list even if
+// the narrowest scope had stopped admitting a single operation, so the narrow
+// grant is the one that proves the credential carried reach rather than merely
+// being accepted.
+const mcpCallerScope = "aggrega:read"
+
 // mcpAuthorizationServer is an authorization server running in this test
 // process, for the binary running in another one.
 //
@@ -110,6 +121,13 @@ func (s *mcpAuthorizationServer) issuer() string { return s.ts.URL }
 // declaration and a token declaring nothing at all; which ones are exercised
 // against every other claim a token can carry belongs with the validator, and
 // what this proof needs is one token a real issuer would have minted.
+//
+// The grant travels as the space-separated claim rather than as the array one.
+// A deployment reads both, so the spelling is a choice rather than a
+// requirement, and this one is chosen because it is the form registered for a
+// token issued as an access token — the shape a real authorization server is
+// likeliest to publish. The array spelling is exercised where the validator's
+// own proofs are.
 func (s *mcpAuthorizationServer) mint(t *testing.T) string {
 	t.Helper()
 	signer, err := jose.NewSigner(
@@ -125,7 +143,7 @@ func (s *mcpAuthorizationServer) mint(t *testing.T) string {
 		Subject:  mcpCallerSubject,
 		Audience: jwt.Audience{mcpPublishedResource},
 		Expiry:   jwt.NewNumericDate(time.Now().Add(time.Hour)),
-	}).Serialize()
+	}).Claims(map[string]any{"scope": mcpCallerScope}).Serialize()
 	if err != nil {
 		t.Fatalf("mint a token: %v", err)
 	}
@@ -277,10 +295,25 @@ func TestATokenFromTheDeclaredIssuerReachesTheToolListAndACallerWithoutOneDoesNo
 		}
 		// The named tools are the ones the client setup guidance tells a reader
 		// to look for once a client is wired up, so a rename that made that
-		// guidance wrong is read here rather than by whoever follows it.
+		// guidance wrong is read here rather than by whoever follows it. Each
+		// name is asserted rather than the list merely being non-empty, so a
+		// narrowing that left some tools behind is read here too.
 		for _, want := range []string{"scaffold", "validate", "describe", "get-schema"} {
 			if !slices.Contains(offered, want) {
 				t.Errorf("the tool list does not offer %q; it offers %v", want, offered)
+			}
+		}
+		// And the other direction, which the names above cannot reach: the grant
+		// this token carries admits the operations that reach nothing and no
+		// others, so a tool whose operation writes inside the workspace is absent
+		// from what this caller is offered. Asserting the absence is what makes
+		// this the one proof that the grant BOUNDS a caller of the built binary
+		// rather than merely admitting one — every assertion above would still
+		// pass if the credential's reach had stopped being read at all.
+		for _, withheld := range []string{"pull", "gen-catalog"} {
+			if slices.Contains(offered, withheld) {
+				t.Errorf("the tool list offers %q, which this credential's grant does not reach; it offers %v",
+					withheld, offered)
 			}
 		}
 	})

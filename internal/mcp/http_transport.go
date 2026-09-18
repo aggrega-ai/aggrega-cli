@@ -280,7 +280,7 @@ func newHTTPHandler(runCtx context.Context, s *server, transport HTTPConfig) (*h
 	if err != nil {
 		return nil, err
 	}
-	auth, err := resolveAuthenticator(transport, resource, s.logf)
+	auth, err := resolveAuthenticator(runCtx, transport, resource, s.logf)
 	if err != nil {
 		return nil, err
 	}
@@ -307,12 +307,16 @@ func newHTTPHandler(runCtx context.Context, s *server, transport HTTPConfig) (*h
 // answer nothing would ever consult — and would refuse a workspace that permits
 // no outbound request over keys it was never going to read.
 //
+// ctx is whoever asked for this deployment, and it is carried through to where
+// the verification keys are settled, because reaching for a key set is the one
+// step here that reads from outside this process.
+//
 // logf is where the reason a credential was turned away is written. It is the
 // same route every other diagnostic takes, so that reason lands on the
 // process's error stream beside everything else an operator reads and never
 // anywhere a caller can see. A caller that only wants the refusals this makes,
 // and not the reader itself, passes nil.
-func resolveAuthenticator(transport HTTPConfig, resource protectedResource,
+func resolveAuthenticator(ctx context.Context, transport HTTPConfig, resource protectedResource,
 	logf func(format string, args ...any)) (httpAuthenticator, error) {
 	proxy, err := resolveProxyAssertion(transport.Authorization, resource)
 	if err != nil {
@@ -321,7 +325,7 @@ func resolveAuthenticator(transport HTTPConfig, resource protectedResource,
 	if proxy != nil {
 		return proxy, nil
 	}
-	keys, err := resolveVerificationKeys(transport.Authorization, transport.Egress)
+	keys, err := resolveVerificationKeys(ctx, transport.Authorization, transport.Egress)
 	if err != nil {
 		return nil, err
 	}

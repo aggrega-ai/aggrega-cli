@@ -180,13 +180,20 @@ func pickKeys(set *jose.JSONWebKeySet, keyID string) []jose.JSONWebKey {
 // client they are fetched with is taken from the caller's own gate, so the
 // refusal an offline workspace produces is that gate's refusal rather than a
 // second reading of the same posture here.
-func resolveVerificationKeys(cfg AuthorizationConfig, egress NetworkEgress) (*keySet, error) {
+//
+// ctx is whoever asked for the listener, and it belongs to exactly one of the
+// two branches: the file branch reads before the listener answers for anything,
+// and that read runs under this context rather than under a root of this
+// function's own making, so it ends where its caller does wherever the source it
+// reads from honours a stop. The issuer branch reads nothing here at all — its
+// first read happens when a token arrives, under that request's own context.
+func resolveVerificationKeys(ctx context.Context, cfg AuthorizationConfig, egress NetworkEgress) (*keySet, error) {
 	if cfg.JWKSFile != "" {
 		set := &keySet{
 			read:           func(context.Context) (*jose.JSONWebKeySet, error) { return readKeySetFile(cfg.JWKSFile) },
 			describeSource: "mcp.authorization.jwks_file",
 		}
-		held, err := set.read(context.Background())
+		held, err := set.read(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("read the keys named by mcp.authorization.jwks_file: %w", err)
 		}
