@@ -62,7 +62,7 @@ func newValidateCmd() *cobra.Command {
 			"Workload and Plugin. Each has its schema checked, then the checks its own\n" +
 			"kind carries: pillar structure for a Component or Feature; shape for a\n" +
 			"Workload, FeatureRecipe or Plugin; and for a Recipe, shape plus an end-to-end\n" +
-			"compile against a minimal generated deployment, so its resolution, its guards\n" +
+			"compile against a minimal generated harness, so its resolution, its guards\n" +
 			"and a render of its output are all exercised. Any other kind is refused here\n" +
 			"today and is checked in a wider scope instead: a whole-catalog run reaches an\n" +
 			"Aggregate and the library kinds, and --release reaches a Manifest and a\n" +

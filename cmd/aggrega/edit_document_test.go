@@ -180,7 +180,7 @@ func TestAnEditTheSchemaRefusesLeavesTheFileByteIdentical(t *testing.T) {
 		Out:        &out,
 	})
 	if err == nil {
-		t.Fatal("a deployment document asked to carry a developer value must be refused")
+		t.Fatal("a Release document asked to carry a developer value must be refused")
 	}
 	if !errorsIsEditRefused(err) {
 		t.Errorf("the refusal does not name the invalid-result condition: %v", err)
