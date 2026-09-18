@@ -66,6 +66,45 @@ func IdentityRefParts(value, fragmentPrefix string) (doc, entry string, ok bool)
 	return value[:hash], frag[len(fragmentPrefix):], true
 }
 
+// ImportFragmentAdvice is the advice a `$import:` file-mode load failure
+// carries, on every key whose grammar admits a library reference: a Recipe's or
+// FeatureRecipe's `valuesMapping:`, `workload:` and `artifacts.<name>:`.
+//
+// It sits beside [IdentityRefParts] because that function is the fact the
+// sentence states: the fragment is what distinguishes a library reference from a
+// path, so a reference that lost one is opened as a file and fails as a file. A
+// change to the grammar is a change to this sentence, and the two are kept where
+// one edit reaches both.
+//
+// It is one string because the keys lose a fragment in the same way and leave
+// the author the same thing to do about it. A copy per key, or per package that
+// reports the failure, would be copies of one sentence agreeing until one of
+// them was edited — which is how one of the three keys came to report the
+// failure while saying nothing about it.
+//
+// It is written conditionally, and the grammar carries a distinction the code
+// deliberately does not make: nothing reads the value that failed to open, so
+// nothing guesses that the author meant a library. The sentence is true for the
+// author who omitted the fragment, for the author whose trailing comment removed
+// it, and for the author whose file is simply absent — the last of whom stops
+// reading at the comma.
+//
+// It is attached by the surface rather than by the value, and the surface is
+// enough on its own: a reference still carrying its fragment resolves against
+// the loaded libraries and never reaches a file open, so every value reaching a
+// raise path that attaches this carries no fragment. It is either the path its
+// author meant, or a library reference that lost one, and nothing can tell those
+// apart.
+//
+// A key whose `$import:` admits no library reference does not carry it, because
+// there is no library its author could have meant. A schema surface's `$import:`
+// is that case: it takes a path beside the entity, and a library reference
+// written there names its own condition telling the author to use `$ref:`
+// instead — so the fragment is never what went missing.
+const ImportFragmentAdvice = "if you meant a library entry rather than a file, the reference needs its fragment — " +
+	"an $import: carrying none is read as a file path, and an unquoted value ends where a space before # " +
+	"starts a comment, so quote the whole reference"
+
 // IdentityRefCarriesWhitespace reports whether value addresses a library entry
 // and carries whitespace anywhere in it — the malformation
 // [ErrLibraryReferenceWhitespace] names.

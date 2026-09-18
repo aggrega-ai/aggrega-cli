@@ -269,6 +269,14 @@ func ArtifactPinsForRecipe(artifacts types.OrderedMap[types.ArtifactEntry], enti
 // Its clause names what the author wrote — the entity, the artifacts key, the
 // imported path — and nothing about the packages that read them, so a reader is
 // shown the vocabulary of the file they would open to fix it.
+//
+// Its advice is [types.ImportFragmentAdvice], the same sentence the render's own
+// raise path attaches, and it is carried here for the reason the freeze exists:
+// editing an artifacts `$import:` invalidates the entity digest the lockfile
+// pins, so the author who mistyped one reaches the freeze before the render and
+// would otherwise be the one reader of the three who is told nothing. The
+// sentence has one home rather than a copy here, so the two paths cannot come to
+// say different things about one mistake.
 func artifactImportLoadError(path string, cause error, entityKind, entityName, artifactName string) error {
 	condition := resolver.ErrYAMLLoad()
 	return cerrors.Wrap(
@@ -278,7 +286,7 @@ func artifactImportLoadError(path string, cause error, entityKind, entityName, a
 		cerrors.ComposeMessage(condition, []string{
 			fmt.Sprintf("%s %q artifact %q file import", entityKind, entityName, artifactName),
 			cause.Error(),
-		}, ""),
+		}, types.ImportFragmentAdvice),
 	)
 }
 

@@ -14,31 +14,6 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// importAdvice is the advice every `$import:` file-mode failure carries.
-//
-// It is one string because the three keys that can name a path — valuesMapping,
-// workload and an artifacts entry — lose a fragment in the same way and leave
-// the author the same thing to do about it. A copy per key would be three
-// copies of one sentence, agreeing until one of them was edited.
-//
-// It is written conditionally, and the grammar carries a distinction the code
-// deliberately does not make: nothing here reads the value that failed to open,
-// so nothing guesses that the author meant a library. The sentence is true for
-// the author who omitted the fragment, for the author whose trailing comment
-// removed it, and for the author whose file is simply absent — the last of whom
-// stops reading at the comma.
-//
-// It is scoped by the surface rather than by the value, and the surface is
-// enough on its own: the fragment is what tells a library reference from a path,
-// so a reference still carrying one resolves against the loaded libraries and
-// never reaches a file open. Every value reaching this helper has already been
-// dispatched past the inline, registry-host and library forms, which means it
-// carries no fragment — it is either the path its author meant, or a library
-// reference that lost one, and nothing here can tell those apart.
-const importAdvice = "if you meant a library entry rather than a file, the reference needs its fragment — " +
-	"an $import: carrying none is read as a file path, and an unquoted value ends where a space before # " +
-	"starts a comment, so quote the whole reference"
-
 // importLoadError reports a `$import:` whose file the build could not acquire,
 // as the load failure it is rather than as an untyped read error.
 //
@@ -66,14 +41,17 @@ const importAdvice = "if you meant a library entry rather than a file, the refer
 // third argument of the composition is for: the condition covers every file a
 // build has to read, and a sentence about library references would be wrong at
 // most of those sites. Here it is right at all of them, because every caller is
-// the file arm of an `$import:`.
+// the file arm of an `$import:`. It is [types.ImportFragmentAdvice] rather than
+// a sentence of this package's own, because the pin freeze reports the same
+// failure for an artifacts entry from its own raise path and the two have to say
+// the same thing.
 func importLoadError(path string, cause error, surface string) error {
 	condition := resolver.ErrYAMLLoad()
 	return cerrors.Wrap(
 		condition,
 		cerrors.CatalogError,
 		cerrors.SourceLocation{File: path},
-		cerrors.ComposeMessage(condition, []string{surface, cause.Error()}, importAdvice),
+		cerrors.ComposeMessage(condition, []string{surface, cause.Error()}, types.ImportFragmentAdvice),
 	)
 }
 

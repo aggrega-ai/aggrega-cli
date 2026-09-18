@@ -102,8 +102,10 @@ func TestImportLoadNamesTheDocumentLoadCondition(t *testing.T) {
 			// The advice reaches all three surfaces, which is the claim the
 			// single string makes: it is asserted per row rather than once,
 			// because a surface that stopped carrying it would otherwise be
-			// covered by whichever row still did.
-			if !strings.Contains(ce.Message(), importAdvice) {
+			// covered by whichever row still did. It is asserted against the
+			// shared constant rather than against a literal, so a second copy
+			// of the sentence cannot satisfy this.
+			if !strings.Contains(ce.Message(), types.ImportFragmentAdvice) {
 				t.Errorf("message carries no advice for a reference that arrived without its fragment:\n got: %s", ce.Message())
 			}
 			// The two things the advice has to do, asserted as the words a
@@ -148,7 +150,7 @@ func TestImportLoadIsNotReportedForAnInlineOrLibraryEntry(t *testing.T) {
 	if errors.Is(err, resolver.ErrYAMLLoad()) {
 		t.Errorf("a library import that resolved to nothing reports a file-load failure: %v", err)
 	}
-	if strings.Contains(err.Error(), importAdvice) {
+	if strings.Contains(err.Error(), types.ImportFragmentAdvice) {
 		t.Errorf("a reference that carries its fragment is advised the fragment may be missing: %v", err)
 	}
 }

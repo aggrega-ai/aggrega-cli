@@ -69,6 +69,23 @@ func TestArtifactPinNamesTheDocumentLoadCondition(t *testing.T) {
 	if strings.Contains(ce.Message(), "recipepin") {
 		t.Errorf("message names the Go package that raised it:\n got: %s", ce.Message())
 	}
+	// The freeze is the raise path an author who mistyped an artifacts
+	// `$import:` reaches first, because that edit invalidates the pin the
+	// lockfile carries, so the advice has to arrive here and not only at the
+	// render. It is asserted against the shared constant rather than against a
+	// literal, so a second copy of the sentence cannot satisfy it.
+	if !strings.Contains(ce.Message(), types.ImportFragmentAdvice) {
+		t.Errorf("message carries no advice for a reference that arrived without its fragment:\n got: %s", ce.Message())
+	}
+	// The two things the advice has to do, asserted as the words a reader acts
+	// on rather than as a second copy of the sentence: name what is absent, and
+	// name the spelling that keeps it. A rewrite is free to move every other
+	// word and fails here if it drops either.
+	for _, word := range []string{"fragment", "quote"} {
+		if !strings.Contains(ce.Message(), word) {
+			t.Errorf("advice does not mention %q, so it does not tell the author what to do:\n got: %s", word, ce.Message())
+		}
+	}
 }
 
 // TestArtifactPinReportsNothingForInlineOrLibraryEntries keeps the condition
