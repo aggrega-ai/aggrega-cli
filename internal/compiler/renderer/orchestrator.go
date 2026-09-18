@@ -890,6 +890,20 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			return nil, err
 		}
 
+		// The rule over the source entry a node's own Recipe writes, asked against
+		// the same view and the same enumeration.
+		//
+		// It is asked here, ahead of the node walk, because the walk reads that
+		// entry as its first act and reads it as the author wrote it — so a build
+		// meeting the ambiguity partway through would have rendered every earlier
+		// node first. It is asked ahead of the import readings below for the same
+		// reason they are ordered among themselves: a node's source is decided
+		// before its values mapping and its workload are, so an author meeting
+		// several faults meets them in the order the render decides them.
+		if err := runRecipeSourceRule(ctx, result.DescribedView, describedAxes); err != nil {
+			return nil, err
+		}
+
 		// The rules over the library imports a node's own artifacts block writes,
 		// asked against the same presentation and the same enumeration.
 		//

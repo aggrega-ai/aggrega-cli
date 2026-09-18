@@ -600,6 +600,71 @@ func runArtifactsEntryImportRule(
 	return objectionsAsHalt(raised, "artifacts entries whose library import the compiler cannot resolve")
 }
 
+// recipeSourceFieldAxes is the axis pair the rule over a node's own authored source
+// entry is invoked once per: the node set, and the position each node's Recipe
+// declares that entry at.
+//
+// Naming both together is what makes the inner one un-skippable: a value supplying
+// nodes but no position enumeration does not compile here, so the rule cannot be
+// invoked over an empty subject set by a caller that merely forgot one axis — and a
+// rule invoked zero times reports exactly what a rule that ran and approved reports.
+//
+// It is declared apart from the import-field pair beside it rather than folded into
+// one interface, because the two name different enumerations: that one presents the
+// fields an author supplied by `$import:`, and this one presents a position that is
+// there whether the author wrote anything at it or not. One interface spanning both
+// would let a caller satisfy the rule over the source entry by supplying the import
+// axis, which enumerates no source position at all.
+type recipeSourceFieldAxes interface {
+	constraint.NodeEnumerator
+	constraint.RecipeSourceFieldEnumerator
+}
+
+// runRecipeSourceRule invokes the rule declared over the source entry a node's own
+// Recipe writes, and returns what it raised as the render's halt.
+//
+// It runs before anything renders, which is where the question belongs: the entry is
+// read as the author wrote it, and everything downstream reads the source after its
+// own template has been evaluated — at which point a template evaluating to nothing
+// and an entry left empty are one value, and the reading the author never asked for
+// is the one that would be taken.
+//
+// It carries no plugin-resolution guard, for the reason the authored-text readings
+// beside it carry none: nothing about the entry depends on a plugin, so a render that
+// resolved none still owes this refusal.
+//
+// # What this does NOT reach, stated because an unstated bound reads as coverage
+//
+// The axis is a node's OWN Recipe. A FeatureRecipe declares no source entry of its
+// own, so there is no second carrier here — unlike the import rules beside it, whose
+// axis leaves two carriers to the refusals beneath them.
+//
+// A caller that assembles a render's input directly and supplies no graph coordinates
+// reaches none of these rules, which is stated where that input field is declared. The
+// refusal at the point the source is read is retained for exactly that reason, and it
+// is unreachable from a build that runs this rule.
+//
+// The cancellation signal is the caller's own, so a long walk over a large graph stops
+// within one node of the caller asking it to.
+func runRecipeSourceRule(
+	ctx context.Context,
+	view constraint.DescribedView,
+	coordinates recipeSourceFieldAxes,
+) error {
+	if view == nil || coordinates == nil {
+		return nil
+	}
+
+	raised, err := constraint.RunOnNodeRecipeSourceFields(
+		ctx.Err, coordinates, coordinates, view, RecipeSourceEntryNamesAValue,
+	)
+	if err != nil {
+		return err
+	}
+
+	return objectionsAsHalt(raised, "Recipe source entries that name neither authoring mode")
+}
+
 // recipeImportFieldAxes is the axis pair every rule over a node's own authored
 // spec-root import is invoked once per: the node set, and the spec-root fields each
 // node's Recipe supplies by `$import:`.

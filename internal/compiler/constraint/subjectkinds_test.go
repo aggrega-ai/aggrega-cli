@@ -535,6 +535,12 @@ var coordinateAccessors = map[string][]string{
 	// twice over: it names a field carrying text this document holds, and an
 	// imported field holds none.
 	"recipe-import-field": {"RecipeImportField"},
+	// The value is the Recipe's own spec-root key a source entry is written
+	// under, and the accessor says so rather than naming the source itself: the
+	// coordinate is a POSITION in the document, present whether the author wrote
+	// anything at it or not, and an accessor named for the source would tell a
+	// check reading it that a source is there.
+	"recipe-source-field": {"RecipeSourceField"},
 }
 
 // subjectContractAccessors names the accessors [Subject] itself supplies, so a
@@ -1265,6 +1271,15 @@ var subjectKindBindings = map[SubjectKind]struct {
 		// in full — which is what reaches the constructor's deepest argument.
 		make: func(f string) Subject {
 			return newNodeRecipeImportFieldSubject(f, "web", "valuesMapping", "spec", "valuesMapping")
+		},
+	},
+	SubjectNodeRecipeSourceField: {
+		iface: reflect.TypeOf((*NodeRecipeSourceFieldSubject)(nil)).Elem(),
+		// The coordinate is a position the authoring surface fixes, so it carries
+		// no dialect separator and the locator assembles in full — which is what
+		// reaches the constructor's deepest argument.
+		make: func(f string) Subject {
+			return newNodeRecipeSourceFieldSubject(f, "web", "source", "spec", "source")
 		},
 	},
 	SubjectNodeAttachmentArtifact: {

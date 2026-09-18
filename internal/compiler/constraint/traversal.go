@@ -1522,6 +1522,47 @@ func RunOnNodeRecipeImportFields[V View](
 	})
 }
 
+// RunOnNodeRecipeSourceFields invokes check once per source entry each node's own
+// Recipe declares a position for, in node order.
+//
+// The locator is .spec.source in the Recipe's own file, where the key is the
+// coordinate the subject carries. It is the authoring surface's own spec-root key
+// and free of the locator dialect's separator, so the locator is exact and a rule
+// over this kind owes no captioned stand-in for a position it could not reach.
+//
+// The node contributes no segment, on the reading every node-rooted kind whose
+// locator names a Recipe carries: the fault is in the Recipe's text rather than in
+// any one node that binds it, so a node key spliced onto a Recipe-rooted locator
+// would point an author at an instance when the edit is in the entry every instance
+// shares.
+//
+// The axis is the POSITION and not what the author wrote at it, which is the whole
+// reason it stands beside [RunOnNodeRecipeImportFields] and [RunOnNodeTemplateFields]
+// rather than being reached through either. Both of those present a field only once
+// it carries something — an import or template text — and a rule about an entry left
+// behind with nothing in it would be invoked no times for exactly the documents it
+// exists to refuse, which is the one outcome indistinguishable from a rule that ran
+// and approved.
+func RunOnNodeRecipeSourceFields[V View](
+	cancelled Cancellation,
+	nodes NodeEnumerator,
+	fields RecipeSourceFieldEnumerator,
+	view V,
+	check Check[V, NodeRecipeSourceFieldSubject],
+) ([]Objection, error) {
+	return runOverNodes(cancelled, nodes, view, check.Run, func(node NodeInstance) []NodeRecipeSourceFieldSubject {
+		declared := fields.RecipeSourceFields(node.ID)
+		out := make([]NodeRecipeSourceFieldSubject, 0, len(declared))
+		for _, field := range declared {
+			out = append(out, newNodeRecipeSourceFieldSubject(
+				field.SourceFile, node.ID, field.Value,
+				documentSpecSegments(field.Value)...,
+			))
+		}
+		return out
+	})
+}
+
 // RunOnNodeArtifacts invokes check once per artifact each node projects, in node
 // order and then artifact order.
 //

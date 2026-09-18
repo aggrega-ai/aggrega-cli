@@ -276,6 +276,36 @@ func (c *describedStageCoordinates) RecipeImportFields(node string) []constraint
 	return out
 }
 
+// RecipeSourceFields returns the position a node's own Recipe declares its source
+// entry at — one coordinate for a node with a bound Recipe, and none for a node
+// with no Recipe to declare one.
+//
+// The coordinate is presented whether or not the author wrote anything at the
+// position, and that is the axis rather than an oversight: a rule about an entry
+// left behind with nothing in it has to be invoked where the entry would be. An
+// enumeration yielding only the entries that carry something would be invoked no
+// times for exactly the documents such a rule exists to refuse, which reports what
+// a rule that ran and approved reports. Whether the entry was written is a declared
+// fact over this coordinate, where a reader of the rule can see it.
+//
+// The Recipe is the one the render bound to the node, and it is the same map the
+// view reads the entry's presence out of — so a position enumerated here is a
+// position that view can answer.
+//
+// Each coordinate is positioned at the Recipe rather than at the Aggregate the
+// component was authored in, because the entry is written in the Recipe and that is
+// the document an author edits. The Recipe's name stands in for its path, for the
+// reason the provides axis states.
+func (c *describedStageCoordinates) RecipeSourceFields(node string) []constraint.AuthoredCoordinate {
+	recipe, held := c.recipes[node]
+	if !held || recipe == nil {
+		return nil
+	}
+	return []constraint.AuthoredCoordinate{
+		{Value: recipeFieldSource, SourceFile: recipe.Metadata.Name},
+	}
+}
+
 // LocalsKeys returns the locals a node's Recipe declares, in the order that
 // Recipe declares them.
 //

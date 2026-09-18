@@ -88,6 +88,13 @@ type traversalFixture struct {
 	// key that cannot say which of the two it was.
 	recipeImportFields map[string][]AuthoredCoordinate
 
+	// recipeSourceFields is the axis over the position each node's own Recipe
+	// declares its source entry at. It is stored apart from the two above because
+	// it is not a set the document decides: the position is there whether the
+	// author wrote anything at it or not, so a store shared with either of them
+	// would make the position's presence depend on what was written there.
+	recipeSourceFields map[string][]AuthoredCoordinate
+
 	attachPipeline         map[string][]AuthoredCoordinate
 	boundaryAttachPipeline map[string][]AuthoredCoordinate
 
@@ -239,6 +246,10 @@ func (f traversalFixture) ArtifactsEntries(node string) []AuthoredCoordinate {
 
 func (f traversalFixture) RecipeImportFields(node string) []AuthoredCoordinate {
 	return f.recipeImportFields[fixtureKey(node)]
+}
+
+func (f traversalFixture) RecipeSourceFields(node string) []AuthoredCoordinate {
+	return f.recipeSourceFields[fixtureKey(node)]
 }
 
 func (f traversalFixture) AttachmentPipelineSteps(node, attachment string) []AuthoredCoordinate {
@@ -824,6 +835,27 @@ func newTraversalFixture() traversalFixture {
 			fixtureKey("billing.api"): {
 				{Value: "valuesMapping", SourceFile: "recipes/api.yaml"},
 				{Value: "workload", SourceFile: "recipes/api.yaml"},
+			},
+		},
+
+		// The position each node's own Recipe declares its source entry at. BOTH
+		// nodes contribute one, and the symmetry is the axis rather than these
+		// entries: a Recipe declares exactly one such position whether or not the
+		// author wrote anything at it, so the instance count is the bound-Recipe
+		// count. That is what makes this axis unlike the two above, where the
+		// document decides how many coordinates it contributes.
+		//
+		// Each coordinate carries its own node's Recipe, which is what shows the
+		// walk taking the file from the enumerated position rather than from the
+		// node it was reached through — the same property the axes above carry by
+		// one node contributing more entries than another, which this axis cannot
+		// express because every node contributes exactly one.
+		recipeSourceFields: map[string][]AuthoredCoordinate{
+			fixtureKey("web"): {
+				{Value: "source", SourceFile: "recipes/web.yaml"},
+			},
+			fixtureKey("billing.api"): {
+				{Value: "source", SourceFile: "recipes/api.yaml"},
 			},
 		},
 
@@ -1477,6 +1509,27 @@ func traversalCases() []traversalCase {
 				"recipes/web.yaml|.spec.workload",
 				"recipes/api.yaml|.spec.valuesMapping",
 				"recipes/api.yaml|.spec.workload",
+			},
+		},
+		{
+			// The position each node's own Recipe declares its source entry at,
+			// walked over both nodes. Two invocations from two nodes, each naming
+			// its own Recipe: the file comes from the enumerated position and not
+			// from the node, so a walk taking it from the node it entered would
+			// spell the first Recipe twice.
+			//
+			// Both locators name the key in full, which is the property the axis
+			// carries: the coordinate is the authoring surface's own spec-root key
+			// rather than anything an author chose, so there is no spelling here
+			// that could carry the dialect's separator and truncate one.
+			kind: SubjectNodeRecipeSourceField,
+			run: func(cancelled Cancellation, f traversalFixture, v traversalView) ([]Objection, error) {
+				return RunOnNodeRecipeSourceFields(cancelled, f, f, v,
+					raisingCheck[NodeRecipeSourceFieldSubject]())
+			},
+			want: []string{
+				"recipes/web.yaml|.spec.source",
+				"recipes/api.yaml|.spec.source",
 			},
 		},
 		{
@@ -2517,6 +2570,29 @@ func coordinateFlowCases() []coordinateFlowCase {
 				"web|workload",
 				"billing.api|valuesMapping",
 				"billing.api|workload",
+			},
+		},
+
+		// The position each Recipe declares its source entry at. The readback is
+		// load-bearing here in a way the transcript above cannot be: both
+		// invocations carry the SAME coordinate value, so the transcript tells them
+		// apart only by their files, and a traversal handing the subject an empty
+		// coordinate would read as correct there. The rule over this kind selects
+		// the position it governs by reading that coordinate, so a coordinate
+		// arriving empty would leave it declining every node.
+		{
+			kind: SubjectNodeRecipeSourceField,
+			seam: seamTraversal,
+			read: func(f traversalFixture) []string {
+				return readback(func(c Check[traversalView, NodeRecipeSourceFieldSubject]) ([]Objection, error) {
+					return RunOnNodeRecipeSourceFields(nil, f, f, traversalView{}, c)
+				}, func(s NodeRecipeSourceFieldSubject) string {
+					return s.NodeID() + "|" + s.RecipeSourceField()
+				})
+			},
+			want: []string{
+				"web|source",
+				"billing.api|source",
 			},
 		},
 

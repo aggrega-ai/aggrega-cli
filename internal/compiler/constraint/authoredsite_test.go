@@ -323,12 +323,19 @@ spec:
 		// inline, which is what the import-field axis walks here and what keeps both
 		// axes over this document expressible at once: a field is written inline or
 		// supplied by an import and never both, so the two axes name different keys.
+		//
+		// It also writes a source entry, which the source-position axis walks. That
+		// axis presents the position whether or not anything is written at it, so
+		// the entry is here for the walk to resolve rather than to model the axis:
+		// a document with no such key would fail the walk while the axis stayed
+		// correct, which is the one thing this corpus must not do.
 		"recipes/web.yaml": `
 apiVersion: aggrega.ai/v1alpha1
 kind: Recipe
 metadata:
   name: web
 spec:
+  source: oci://example.test/charts/web:1.0.0
   valuesMapping: "replicaCount: 2"
   workload:
     $import: BaseWorkloads#/workloads/StatelessService
@@ -356,12 +363,19 @@ spec:
 		// that way here, which is what shows one document contributing more than one
 		// coordinate on that axis. Neither is claimed by the inline template-field
 		// axis, so nothing about this document has to be read two ways.
+		//
+		// Its source entry is written in the other of the two authoring forms the
+		// entry admits — a workspace path, where the Recipe above writes a registry
+		// address. The source-position axis does not read either, so the contrast is
+		// for the walk rather than for the axis: the position is one key whatever
+		// the author wrote at it.
 		"recipes/api.yaml": `
 apiVersion: aggrega.ai/v1alpha1
 kind: Recipe
 metadata:
   name: api
 spec:
+  source: ./charts/api
   valuesMapping:
     $import: ChartWrapValues#/mappings/SingleWorkloadChart
   workload:

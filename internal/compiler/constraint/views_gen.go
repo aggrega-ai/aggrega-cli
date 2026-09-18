@@ -4545,6 +4545,34 @@ type DescribedView interface {
 	// Keyed by (node, recipe-import-field); read from
 	// renderer.RenderInput.WorkloadLibraries.
 	RecipeWorkloadEntryDeclared(node string, field string) bool
+
+	// RecipeSourceEntryWritten reports whether a node's own Recipe writes the
+	// source entry at all, taking the presence of the key the author typed and
+	// nothing about what that key holds.
+	//
+	// It is presence and never emptiness, and the two are declared apart
+	// because they are two different questions with two different answers for
+	// one document. Whether the entry NAMES anything is already declared, over
+	// the node, and it answers false for an absent entry and for an entry
+	// holding an empty string alike — which is the right reading for every
+	// rule asking what a node renders from, and the wrong one for the single
+	// rule asking whether the author left a key behind with nothing in it. A
+	// rule telling those two states apart reads both facts; one fact answering
+	// both would have to report two authoring situations as one.
+	//
+	// It is deliberately not the emptiness condition in a second spelling.
+	// That condition has one home, which every reader of it reaches, and a
+	// copy here would agree the day it was written and would be free to differ
+	// afterwards with nothing comparing them — so this reads the entry's
+	// presence and composes with the declared reading for the rest.
+	//
+	// A node with no bound Recipe answers false: there is no document to have
+	// written the entry in. A coordinate naming a field other than the source
+	// entry answers false for the same reason the other Recipe spec-root facts
+	// do, so a rule over this axis is handed the one position it governs.
+	//
+	// Keyed by (node, recipe-source-field); read from types.RecipeSpec.Source.
+	RecipeSourceEntryWritten(node string, field string) bool
 }
 
 // HydratedView exposes the facts complete at the hydrated stage: per-node
