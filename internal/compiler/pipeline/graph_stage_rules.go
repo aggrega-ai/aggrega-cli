@@ -147,7 +147,7 @@ func runGraphStageRules(
 		ctx.Err,
 		coordinates,
 		out.GraphView,
-		topology.DeploymentKeepsTheDeclaredConnectionTarget,
+		topology.ReleaseKeepsTheDeclaredConnectionTarget,
 	)
 	if err != nil {
 		return err

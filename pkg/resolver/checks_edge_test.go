@@ -140,7 +140,7 @@ func edgeSocketFindings(
 	return declaredSocketsOf(objections)
 }
 
-// TestTheDeploymentEdgeSocketRuleSeesAnEdgeWrittenAtTheRootSurface pins that a
+// TestTheReleaseEdgeSocketRuleSeesAnEdgeWrittenAtTheRootSurface pins that a
 // deployment authoring its edges at the top-level component surface — which the
 // loader folds into a synthesized boundary — is still read by the rule.
 //
@@ -148,7 +148,7 @@ func edgeSocketFindings(
 // the presentation, and a reading that only walked DECLARED boundaries would find
 // nothing at all for such a document while every test written against an explicit
 // boundary carried on passing.
-func TestTheDeploymentEdgeSocketRuleSeesAnEdgeWrittenAtTheRootSurface(t *testing.T) {
+func TestTheReleaseEdgeSocketRuleSeesAnEdgeWrittenAtTheRootSurface(t *testing.T) {
 	t.Parallel()
 
 	agg := aggWithEdge("databases", "main", types.OrderedMap[any]{})

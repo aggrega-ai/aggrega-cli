@@ -14,10 +14,10 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// testDeployment is the deployment identity both endpoints of the test edge
+// testRelease is the deployment identity both endpoints of the test edge
 // carry, so the published export and stack names lead with a release-bearing
 // scope segment rather than the empty-segment placeholder.
-const testDeployment = "prod-release"
+const testRelease = "prod-release"
 
 // testLinkEdge builds a cross-boundary link edge from consumer "api" to producer
 // "orders-db" on the "database" socket, injecting the target's "host" output. The
@@ -30,8 +30,8 @@ func testLinkEdge(targetAnn, sourceAnn map[string]string) rendercore.LinkEdge {
 	var inject types.OrderedMap[types.OrderedMap[string]]
 	inject.Set("env", env)
 	return rendercore.LinkEdge{
-		Source:            rendercore.LinkEndpoint{Node: "api", Boundary: "prod/app", Provider: "cloudformation", Deployment: testDeployment},
-		Target:            rendercore.LinkEndpoint{Node: "orders-db", Boundary: "prod/data", Provider: "cloudformation", Deployment: testDeployment},
+		Source:            rendercore.LinkEndpoint{Node: "api", Boundary: "prod/app", Provider: "cloudformation", Deployment: testRelease},
+		Target:            rendercore.LinkEndpoint{Node: "orders-db", Boundary: "prod/data", Provider: "cloudformation", Deployment: testRelease},
 		TargetAnnotations: targetAnn,
 		SourceAnnotations: sourceAnn,
 		Socket:            "database",
@@ -44,21 +44,21 @@ func TestLinkPublishAddsExport(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LinkPublish: %v", err)
 	}
-	wantExport := ExportName(testDeployment, "prod/data", "orders-db", "host")
+	wantExport := ExportName(testRelease, "prod/data", "orders-db", "host")
 
-	if got := out.Handle[handleStackNameKey]; got != StackName(testDeployment, "prod/data") {
-		t.Errorf("handle stackName = %q, want %q", got, StackName(testDeployment, "prod/data"))
+	if got := out.Handle[handleStackNameKey]; got != StackName(testRelease, "prod/data") {
+		t.Errorf("handle stackName = %q, want %q", got, StackName(testRelease, "prod/data"))
 	}
 	if got := out.Handle[handleExportNamePrefix+"host"]; got != wantExport {
 		t.Errorf("handle export name = %q, want %q", got, wantExport)
 	}
 	// The published names lead with the deployment identity from the payload, so
 	// distinct deployments produce distinct names within one account and region.
-	if !strings.Contains(wantExport, testDeployment) {
-		t.Errorf("export name %q does not carry the deployment segment %q", wantExport, testDeployment)
+	if !strings.Contains(wantExport, testRelease) {
+		t.Errorf("export name %q does not carry the deployment segment %q", wantExport, testRelease)
 	}
-	if got := out.Handle[handleStackNameKey]; !strings.Contains(got, testDeployment) {
-		t.Errorf("stack name %q does not carry the deployment segment %q", got, testDeployment)
+	if got := out.Handle[handleStackNameKey]; !strings.Contains(got, testRelease) {
+		t.Errorf("stack name %q does not carry the deployment segment %q", got, testRelease)
 	}
 
 	if len(out.Patches) != 1 || len(out.Patches[0].Ops) != 1 {
@@ -115,7 +115,7 @@ func TestLinkResolveSameAccountImportValue(t *testing.T) {
 	if !ok {
 		t.Fatalf("op value not a map: %+v", op.Value)
 	}
-	wantExport := ExportName(testDeployment, "prod/data", "orders-db", "host")
+	wantExport := ExportName(testRelease, "prod/data", "orders-db", "host")
 	if val["Fn::ImportValue"] != wantExport {
 		t.Errorf("Fn::ImportValue = %v, want %q", val["Fn::ImportValue"], wantExport)
 	}
@@ -153,8 +153,8 @@ func TestLinkResolveCrossAccountGetStackOutput(t *testing.T) {
 	if !ok {
 		t.Fatalf("value missing Fn::GetStackOutput: %+v", val)
 	}
-	if gso["StackName"] != StackName(testDeployment, "prod/data") {
-		t.Errorf("StackName = %v, want %q", gso["StackName"], StackName(testDeployment, "prod/data"))
+	if gso["StackName"] != StackName(testRelease, "prod/data") {
+		t.Errorf("StackName = %v, want %q", gso["StackName"], StackName(testRelease, "prod/data"))
 	}
 	// The cross-account read names the output as the producer stack named it —
 	// scoped by the producer node — rather than the bare injected key.
@@ -223,7 +223,7 @@ func TestLinkResolveSameAccountDeclaredImportValue(t *testing.T) {
 			if _, present := val["Fn::GetStackOutput"]; present {
 				t.Fatalf("same-placement consumer value carries an Fn::GetStackOutput read; want Fn::ImportValue. got %#v", val)
 			}
-			wantExport := ExportName(testDeployment, "prod/data", "orders-db", "host")
+			wantExport := ExportName(testRelease, "prod/data", "orders-db", "host")
 			if val["Fn::ImportValue"] != wantExport {
 				t.Errorf("Fn::ImportValue = %v, want %q", val["Fn::ImportValue"], wantExport)
 			}
@@ -285,7 +285,7 @@ func producerStack(t *testing.T, exports map[string]string) []rendercore.Rendere
 }
 
 func TestLinkPublishRefusesShadowedExportName(t *testing.T) {
-	derived := ExportName(testDeployment, "prod/data", "orders-db", "host")
+	derived := ExportName(testRelease, "prod/data", "orders-db", "host")
 	// The authored entry sits at its own Outputs name, so nothing overwrites
 	// anything: the stack would carry one export name declared from two places.
 	files := producerStack(t, map[string]string{
@@ -312,7 +312,7 @@ func TestLinkPublishRefusesShadowedExportName(t *testing.T) {
 		`provides key "host"`,
 		`component "orders-db"`,
 		`boundary "prod/data"`,
-		`deployment "` + testDeployment + `"`,
+		`deployment "` + testRelease + `"`,
 		`stack output "ordersXzhdbXXendpoint", a name this provider assembles rather than one a Recipe wrote`,
 		"searching your Recipes for that name reaches the entry",
 	} {
@@ -385,7 +385,7 @@ func TestLinkPublishUnaffectedByAbsentProducerFiles(t *testing.T) {
 			if err != nil {
 				t.Fatalf("LinkPublish: %v", err)
 			}
-			want := ExportName(testDeployment, "prod/data", "orders-db", "host")
+			want := ExportName(testRelease, "prod/data", "orders-db", "host")
 			if got := out.Handle[handleExportNamePrefix+"host"]; got != want {
 				t.Errorf("handle export name = %q, want %q", got, want)
 			}
@@ -414,7 +414,7 @@ func TestLinkPublishIgnoresItsOwnPriorWriteForASiblingEdge(t *testing.T) {
 	if want := "/Outputs/" + ownEntry + "/Export"; firstOut.Patches[0].Ops[0].Path != want {
 		t.Fatalf("the publish writes its Export at %q, want %q", firstOut.Patches[0].Ops[0].Path, want)
 	}
-	derived := ExportName(testDeployment, "prod/data", "orders-db", "host")
+	derived := ExportName(testRelease, "prod/data", "orders-db", "host")
 	files := producerStack(t, map[string]string{ownEntry: derived})
 
 	// A second consumer of the same endpoint and the same injected key, so its

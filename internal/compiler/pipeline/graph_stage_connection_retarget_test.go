@@ -47,10 +47,10 @@ func retargetSentinelsIn(t *testing.T, out *stepsOneToFourOutput) []string {
 	return found
 }
 
-// deploymentWith writes a deployment document carrying the given boundary tree
+// releaseWith writes a deployment document carrying the given boundary tree
 // and returns its path. The pointers to the application and the manifest are
 // absolute so the document resolves from anywhere.
-func deploymentWith(t *testing.T, boundaries string) string {
+func releaseWith(t *testing.T, boundaries string) string {
 	t.Helper()
 	aggregate, err := filepath.Abs(invocationAggregatePath)
 	if err != nil {
@@ -79,9 +79,9 @@ spec:
 	return path
 }
 
-// compileAgainstDeployment runs the real pre-render pipeline over the fullstack
+// compileAgainstRelease runs the real pre-render pipeline over the fullstack
 // application and a deployment document written for one proof.
-func compileAgainstDeployment(t *testing.T, aggregate []byte, releasePath string) *stepsOneToFourOutput {
+func compileAgainstRelease(t *testing.T, aggregate []byte, releasePath string) *stepsOneToFourOutput {
 	t.Helper()
 	out, _ := compileWorkspace(t, workspaceFixture{
 		aggregatePath: invocationAggregatePath,
@@ -166,7 +166,7 @@ const threeConsumersPlaced = `    frontend-ns:
 // the reading this rule replaced carried no authored position at all, only a
 // sentence naming the connection's coordinates.
 func TestEveryRedirectedConnectionIsReportedInOneRun(t *testing.T) {
-	deployment := deploymentWith(t, fmt.Sprintf(threeConsumersPlaced,
+	release := releaseWith(t, fmt.Sprintf(threeConsumersPlaced,
 		`          uses:
             apis:
               my-api:
@@ -178,7 +178,7 @@ func TestEveryRedirectedConnectionIsReportedInOneRun(t *testing.T) {
               main-api:
                 target: frontend`,
 	))
-	out := compileAgainstDeployment(t, withThreeDeclaredConnections(t, readAggregate(t)), deployment)
+	out := compileAgainstRelease(t, withThreeDeclaredConnections(t, readAggregate(t)), release)
 
 	got := retargetSentinelsIn(t, out)
 	want := []string{
@@ -219,14 +219,14 @@ func TestEveryRedirectedConnectionIsReportedInOneRun(t *testing.T) {
 // redirection without the composition ever applying it, which is what makes
 // carrying on past one conflict safe.
 func TestARedirectedConnectionKeepsTheDeclaredTarget(t *testing.T) {
-	deployment := deploymentWith(t, fmt.Sprintf(threeConsumersPlaced,
+	release := releaseWith(t, fmt.Sprintf(threeConsumersPlaced,
 		`          uses:
             apis:
               my-api:
                 target: frontend`,
 		"",
 	))
-	out := compileAgainstDeployment(t, withThreeDeclaredConnections(t, readAggregate(t)), deployment)
+	out := compileAgainstRelease(t, withThreeDeclaredConnections(t, readAggregate(t)), release)
 
 	if got := retargetSentinelsIn(t, out); len(got) != 1 {
 		t.Fatalf("the rule reported %d redirected connection(s), want 1: %v", len(got), got)
@@ -236,7 +236,7 @@ func TestARedirectedConnectionKeepsTheDeclaredTarget(t *testing.T) {
 	}
 }
 
-// TestADeploymentNamingTheDeclaredTargetRedirectsNothing is the control the
+// TestAReleaseNamingTheDeclaredTargetRedirectsNothing is the control the
 // accumulation proof needs, and it is written over a MODULE'S PUBLISHED ALIAS
 // deliberately.
 //
@@ -246,7 +246,7 @@ func TestARedirectedConnectionKeepsTheDeclaredTarget(t *testing.T) {
 // would report this document — which is legitimate authoring the build accepts —
 // as a redirection. Comparing what each document WROTE is what keeps it silent,
 // and only a fixture whose two forms differ can tell the two comparisons apart.
-func TestADeploymentNamingTheDeclaredTargetRedirectsNothing(t *testing.T) {
+func TestAReleaseNamingTheDeclaredTargetRedirectsNothing(t *testing.T) {
 	aggregate := readAggregate(t)
 	const anchor = "        databases:\n          - data.main-db\n"
 	// The connection is rewritten into the form that carries an alias of its
@@ -259,7 +259,7 @@ func TestADeploymentNamingTheDeclaredTargetRedirectsNothing(t *testing.T) {
 	}
 	aggregate = bytes.Replace(aggregate, []byte(anchor), []byte(viaAlias), 1)
 
-	deployment := deploymentWith(t, `    frontend-ns:
+	release := releaseWith(t, `    frontend-ns:
       directory: ./dist/frontend
       annotations:
         aggrega.ai/namespace: "frontend-zone"
@@ -295,7 +295,7 @@ func TestADeploymentNamingTheDeclaredTargetRedirectsNothing(t *testing.T) {
           infra:
             replicas: 1
 `)
-	out := compileAgainstDeployment(t, aggregate, deployment)
+	out := compileAgainstRelease(t, aggregate, release)
 
 	if got := retargetSentinelsIn(t, out); len(got) != 0 {
 		t.Fatalf("a deployment naming exactly what the application declared redirects nothing; got %v", got)
@@ -335,14 +335,14 @@ func TestACleanCompositionRedirectsNothing(t *testing.T) {
 // the forwarding is what this asserts against a finding a real compilation
 // produced rather than against the two values side by side.
 func TestARedirectionMatchesThePublishedAccessor(t *testing.T) {
-	deployment := deploymentWith(t, fmt.Sprintf(threeConsumersPlaced,
+	release := releaseWith(t, fmt.Sprintf(threeConsumersPlaced,
 		`          uses:
             apis:
               my-api:
                 target: frontend`,
 		"",
 	))
-	out := compileAgainstDeployment(t, withThreeDeclaredConnections(t, readAggregate(t)), deployment)
+	out := compileAgainstRelease(t, withThreeDeclaredConnections(t, readAggregate(t)), release)
 
 	var matched int
 	for _, o := range out.Violations {

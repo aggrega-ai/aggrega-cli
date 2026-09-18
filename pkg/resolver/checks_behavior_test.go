@@ -916,7 +916,7 @@ func TestTheComponentAttachmentSocketRuleReportsASocketTheFeatureDoesNotDeclare(
 // be presented with such a subject, and silence from a rule never asked is
 // indistinguishable from approval: no build goes red, and the enforcement is
 // simply gone.
-func TestTheDeploymentComponentAttachmentSocketRuleReadsBothDocumentsNames(t *testing.T) {
+func TestTheReleaseComponentAttachmentSocketRuleReadsBothDocumentsNames(t *testing.T) {
 	t.Parallel()
 
 	catalog := socketNameRuleCatalog()
@@ -1154,7 +1154,7 @@ func TestTheScopeAttachmentSocketRuleNamesEveryLevelOfANestedScope(t *testing.T)
 }
 
 // The rule over an attachment written at a scope of the deployment document.
-func TestTheDeploymentScopeAttachmentSocketRuleNamesEveryLevelOfANestedScope(t *testing.T) {
+func TestTheReleaseScopeAttachmentSocketRuleNamesEveryLevelOfANestedScope(t *testing.T) {
 	t.Parallel()
 
 	catalog := socketNameRuleCatalog()
@@ -1270,7 +1270,7 @@ func edgeAggregate(consumerType string) *types.Aggregate {
 // under it, so its locator sequence is degenerate — every objection names the same
 // component. The socket sequence is asserted beside it: without that, an ordering
 // change would be invisible.
-func TestTheDeploymentEdgeSocketRuleReportsOncePerOffendingSocket(t *testing.T) {
+func TestTheReleaseEdgeSocketRuleReportsOncePerOffendingSocket(t *testing.T) {
 	t.Parallel()
 
 	catalog := socketNameRuleCatalog()
@@ -1384,7 +1384,7 @@ func TestTheDeploymentEdgeSocketRuleReportsOncePerOffendingSocket(t *testing.T) 
 //
 // The control is the same document against a type the catalog holds, so the
 // silence is attributable to the catalog rather than to the walk finding nothing.
-func TestTheDeploymentEdgeSocketRuleEndsWhereTheCatalogHoldsNoEntryForTheConsumer(t *testing.T) {
+func TestTheReleaseEdgeSocketRuleEndsWhereTheCatalogHoldsNoEntryForTheConsumer(t *testing.T) {
 	t.Parallel()
 
 	catalog := socketNameRuleCatalog()
@@ -2906,7 +2906,7 @@ func TestTheComponentConfigurationConformanceRuleMeasuresTheAuthoredPillar(t *te
 //
 // One row authors the component at DEPTH in the boundary tree, so a derivation
 // that stopped at the outer scope would be visible rather than merely possible.
-func TestTheComponentSizingConformanceRuleMeasuresWhatTheDeploymentWrote(t *testing.T) {
+func TestTheComponentSizingConformanceRuleMeasuresWhatTheReleaseWrote(t *testing.T) {
 	t.Parallel()
 
 	catalog := conformanceRuleCatalog(t)
@@ -3083,7 +3083,7 @@ func TestTheComponentSizingConformanceRuleMeasuresWhatTheDeploymentWrote(t *test
 	}
 }
 
-// TestTheDeploymentSizingFactAndTheWiredBoundaryContextCarryOneAnswer measures
+// TestTheReleaseSizingFactAndTheWiredBoundaryContextCarryOneAnswer measures
 // the two derivations of one fact directly, rather than inferring their agreement
 // from the rows above passing.
 //
@@ -3093,7 +3093,7 @@ func TestTheComponentSizingConformanceRuleMeasuresWhatTheDeploymentWrote(t *test
 // the shape that agrees until the day one of them changes, and nothing compiles
 // wrongly when it does — so the agreement is asserted here, over a document
 // carrying a component at each depth the tree has.
-func TestTheDeploymentSizingFactAndTheWiredBoundaryContextCarryOneAnswer(t *testing.T) {
+func TestTheReleaseSizingFactAndTheWiredBoundaryContextCarryOneAnswer(t *testing.T) {
 	t.Parallel()
 
 	release := loadRelease(t, releaseDocument(`    prod:
@@ -3230,7 +3230,7 @@ func TestTheConnectionConfigurationConformanceRuleMeasuresTheAuthoredEntry(t *te
 	}
 }
 
-func TestTheConnectionSizingConformanceRuleMeasuresWhatTheDeploymentWrote(t *testing.T) {
+func TestTheConnectionSizingConformanceRuleMeasuresWhatTheReleaseWrote(t *testing.T) {
 	t.Parallel()
 
 	catalog := conformanceRuleCatalog(t)

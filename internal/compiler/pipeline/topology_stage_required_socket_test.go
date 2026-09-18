@@ -226,13 +226,13 @@ func TestTheRequiredSocketRuleIsInvokedByTheBuildAndHalts(t *testing.T) {
 	}
 }
 
-// TestTheRequiredSocketRuleAcceptsThePopulatedApplication is the control the
+// TestTheRequiredSocketRuleAcceptsThePopulatedAggregate is the control the
 // proof above is read against.
 //
 // Without it, a rule that refused every document would look like a success: the
 // only difference between the two is the one connection the application writes,
 // and the requirement is declared identically in both.
-func TestTheRequiredSocketRuleAcceptsThePopulatedApplication(t *testing.T) {
+func TestTheRequiredSocketRuleAcceptsThePopulatedAggregate(t *testing.T) {
 	t.Parallel()
 	if err := compileAgainst(t, splicedCatalog(t, webUIRequiresItsSocket), false); err != nil {
 		t.Fatalf("an application that populates the required socket must build; got %v", err)

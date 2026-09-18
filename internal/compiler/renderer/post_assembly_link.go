@@ -73,7 +73,7 @@ func wireCrossBoundaryLinks(
 	assembledByDispatch map[dispatchKey]*assembledGroup,
 	engineFactory EngineFactory,
 	yamlIndent int,
-	deploymentID string,
+	releaseID string,
 ) ([]Diagnostic, error) {
 	var warnings []Diagnostic
 	for _, edge := range graph.Spec.Edges {
@@ -109,7 +109,7 @@ func wireCrossBoundaryLinks(
 			continue
 		}
 
-		linkEdge := buildLinkEdge(edge, srcKey, tgtKey, allProvides, nodeAnnotations[edge.Target], nodeAnnotations[edge.Source], deploymentID)
+		linkEdge := buildLinkEdge(edge, srcKey, tgtKey, allProvides, nodeAnnotations[edge.Target], nodeAnnotations[edge.Source], releaseID)
 
 		// Producer-side: publish on the consumed (target) end's guest against the
 		// target group's assembled files, then apply its wiring to those same
@@ -230,11 +230,11 @@ func assembledFilesToRendered(grp *assembledGroup) []RenderedFile {
 // end's provides plus the consuming end's inject mapping. Edge enrichment is
 // single-sourced through [EnrichedEdgeViewFromIREdge]; the host reads the
 // projected view, it does not build a second edge-enrichment path.
-func buildLinkEdge(edge types.IREdge, srcKey, tgtKey dispatchKey, allProvides NodeProvides, targetAnnotations, sourceAnnotations map[string]string, deploymentID string) LinkEdge {
+func buildLinkEdge(edge types.IREdge, srcKey, tgtKey dispatchKey, allProvides NodeProvides, targetAnnotations, sourceAnnotations map[string]string, releaseID string) LinkEdge {
 	view := EnrichedEdgeViewFromIREdge(edge, allProvides)
 	return LinkEdge{
-		Source:            LinkEndpoint{Node: edge.Source, Boundary: srcKey.Path, Provider: srcKey.Provider, Deployment: deploymentID},
-		Target:            LinkEndpoint{Node: edge.Target, Boundary: tgtKey.Path, Provider: tgtKey.Provider, Deployment: deploymentID},
+		Source:            LinkEndpoint{Node: edge.Source, Boundary: srcKey.Path, Provider: srcKey.Provider, Deployment: releaseID},
+		Target:            LinkEndpoint{Node: edge.Target, Boundary: tgtKey.Path, Provider: tgtKey.Provider, Deployment: releaseID},
 		TargetAnnotations: targetAnnotations,
 		SourceAnnotations: sourceAnnotations,
 		Socket:            view.Socket,

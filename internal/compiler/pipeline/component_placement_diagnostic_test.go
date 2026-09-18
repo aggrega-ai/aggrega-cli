@@ -193,14 +193,14 @@ func TestAComponentPlacedNowhereIsReportedByThePlacementRule(t *testing.T) {
 	}
 }
 
-// TestARequiredSizingKeyIsMeasuredForAComponentTheDeploymentPlaced is the other
+// TestARequiredSizingKeyIsMeasuredForAComponentTheReleasePlaced is the other
 // half, and it is what keeps the proof above from being satisfied by a rule that
 // reports nothing.
 //
 // A deployment that places the component and writes no sizing block at all is the
 // input a required sizing key is declared for, and it must still halt on the
 // contract rather than build.
-func TestARequiredSizingKeyIsMeasuredForAComponentTheDeploymentPlaced(t *testing.T) {
+func TestARequiredSizingKeyIsMeasuredForAComponentTheReleasePlaced(t *testing.T) {
 	t.Parallel()
 
 	aggregate, err := os.ReadFile(invocationAggregatePath)
@@ -220,14 +220,14 @@ func TestARequiredSizingKeyIsMeasuredForAComponentTheDeploymentPlaced(t *testing
 	}
 }
 
-// TestADeploymentWritingTheRequiredSizingKeyBuilds is the control both proofs
+// TestAReleaseWritingTheRequiredSizingKeyBuilds is the control both proofs
 // above are read against.
 //
 // Without it, a pipeline that refused every one of these documents would look
 // like two successes: the only difference between this row and the one beside it
 // is the single key the deployment writes, and the contract is declared
 // identically in both.
-func TestADeploymentWritingTheRequiredSizingKeyBuilds(t *testing.T) {
+func TestAReleaseWritingTheRequiredSizingKeyBuilds(t *testing.T) {
 	t.Parallel()
 
 	aggregate, err := os.ReadFile(invocationAggregatePath)

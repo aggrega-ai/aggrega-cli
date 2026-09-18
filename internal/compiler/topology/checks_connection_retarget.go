@@ -32,7 +32,7 @@ import (
 // to walk it over, and narrowing the declaration to the suite that invokes it
 // would claim the rule needs a later presentation than its facts do.
 
-// DeploymentKeepsTheDeclaredConnectionTarget reports each dependency connection
+// ReleaseKeepsTheDeclaredConnectionTarget reports each dependency connection
 // whose deployment entry names a target differing from the one the document that
 // drew the connection wrote.
 //
@@ -52,7 +52,7 @@ import (
 // this rule objects: the pass that reads the deployment's edge surface leaves a
 // conflicting entry's target and its infrastructure alone, so a redirection that
 // is refused is never half-applied.
-var DeploymentKeepsTheDeclaredConnectionTarget = constraint.Check[
+var ReleaseKeepsTheDeclaredConnectionTarget = constraint.Check[
 	constraint.TopologyView,
 	constraint.EdgeSubject,
 ]{

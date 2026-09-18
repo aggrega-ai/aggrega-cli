@@ -35,12 +35,12 @@ var attachmentTypeAgreesAcrossDocuments = constraint.Check[
 		v constraint.NormalizedView,
 		s constraint.NodeAttachmentSubject,
 	) []constraint.Objection {
-		authored, inApplication := v.AuthoredAttachmentType(s.NodeID(), s.AttachmentName())
-		if !inApplication || authored == "" {
+		authored, inAggregate := v.AuthoredAttachmentType(s.NodeID(), s.AttachmentName())
+		if !inAggregate || authored == "" {
 			return nil
 		}
-		deployed, inDeployment := v.ReleaseAttachmentType(s.NodeID(), s.AttachmentName())
-		if !inDeployment || deployed == "" || deployed == authored {
+		deployed, inRelease := v.ReleaseAttachmentType(s.NodeID(), s.AttachmentName())
+		if !inRelease || deployed == "" || deployed == authored {
 			return nil
 		}
 		return []constraint.Objection{

@@ -187,7 +187,7 @@ func placedEdgeSockets(
 	return declaredSocketsOf(objections)
 }
 
-// TestTheDeploymentEdgeSocketRuleReachesEveryPlacement proves the socket rule
+// TestTheReleaseEdgeSocketRuleReachesEveryPlacement proves the socket rule
 // reaches a component wherever the application declares it, in BOTH directions:
 // a deployment naming a socket the consuming component does not declare is
 // reported, and one naming a socket it does declare is not.
@@ -195,7 +195,7 @@ func placedEdgeSockets(
 // The passing half is the load-bearing one — a rule that skipped the component
 // silently would also report nothing for the legitimate input, and the two
 // results together are what distinguishes inspection from omission.
-func TestTheDeploymentEdgeSocketRuleReachesEveryPlacement(t *testing.T) {
+func TestTheReleaseEdgeSocketRuleReachesEveryPlacement(t *testing.T) {
 	t.Parallel()
 	for _, pl := range nodePlacements {
 		t.Run(pl.name, func(t *testing.T) {

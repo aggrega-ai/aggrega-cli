@@ -493,10 +493,10 @@ func TestRunAdvisories_Deterministic(t *testing.T) {
 	}
 }
 
-// TestRunAdvisories_NoApplicationDocumentIsSilent pins the one input that ends
+// TestRunAdvisories_NoAggregateDocumentIsSilent pins the one input that ends
 // the suite before any traversal: with no application document there is nothing
 // to ask a reading about.
-func TestRunAdvisories_NoApplicationDocumentIsSilent(t *testing.T) {
+func TestRunAdvisories_NoAggregateDocumentIsSilent(t *testing.T) {
 	t.Parallel()
 
 	got, err := RunAdvisories(nil, types.NormalizedAggregate{}, nil, socketCatalog(), nil, nil)
