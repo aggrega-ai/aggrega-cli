@@ -160,7 +160,7 @@ func TestCloudFormationAuthoredExport_ShadowingDerivedNameHaltsTheBuild(t *testi
 		`provides key "host"`,
 		`component "db"`,
 		`boundary "dist/stack-a/cloudformation"`,
-		`deployment "cloudformation-two-boundary"`,
+		`Release "cloudformation-two-boundary"`,
 		// And the authored side: another Outputs entry of the same stack declares
 		// that same name, reached through the stack output it sits under. The
 		// halt says that output name is the provider's own rather than one a

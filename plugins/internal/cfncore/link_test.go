@@ -14,7 +14,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// testRelease is the deployment identity both endpoints of the test edge
+// testRelease is the Release identity both endpoints of the test edge
 // carry, so the published export and stack names lead with a release-bearing
 // scope segment rather than the empty-segment placeholder.
 const testRelease = "prod-release"
@@ -52,13 +52,13 @@ func TestLinkPublishAddsExport(t *testing.T) {
 	if got := out.Handle[handleExportNamePrefix+"host"]; got != wantExport {
 		t.Errorf("handle export name = %q, want %q", got, wantExport)
 	}
-	// The published names lead with the deployment identity from the payload, so
-	// distinct deployments produce distinct names within one account and region.
+	// The published names lead with the Release identity from the payload, so
+	// distinct Releases produce distinct names within one account and region.
 	if !strings.Contains(wantExport, testRelease) {
-		t.Errorf("export name %q does not carry the deployment segment %q", wantExport, testRelease)
+		t.Errorf("export name %q does not carry the Release segment %q", wantExport, testRelease)
 	}
 	if got := out.Handle[handleStackNameKey]; !strings.Contains(got, testRelease) {
-		t.Errorf("stack name %q does not carry the deployment segment %q", got, testRelease)
+		t.Errorf("stack name %q does not carry the Release segment %q", got, testRelease)
 	}
 
 	if len(out.Patches) != 1 || len(out.Patches[0].Ops) != 1 {
@@ -312,7 +312,7 @@ func TestLinkPublishRefusesShadowedExportName(t *testing.T) {
 		`provides key "host"`,
 		`component "orders-db"`,
 		`boundary "prod/data"`,
-		`deployment "` + testRelease + `"`,
+		`Release "` + testRelease + `"`,
 		`stack output "ordersXzhdbXXendpoint", a name this provider assembles rather than one a Recipe wrote`,
 		"searching your Recipes for that name reaches the entry",
 	} {
