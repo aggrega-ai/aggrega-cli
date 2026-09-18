@@ -4,6 +4,7 @@
 package mcp
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 
@@ -23,14 +24,23 @@ const bearerScheme = "Bearer"
 // exposed that way it should not go on being accepted.
 const queryTokenParameter = "access_token"
 
-// accessTokenType is the type an access token states for itself, in both the
-// short form and the media-type form the same registration allows.
+// acceptedTokenTypes are the values a token may state for itself in its type
+// header. A token stating nothing at all is accepted as well, which is why the
+// absent case is not a member here.
 //
-// A token stating a type is held to stating one of these. That is what stops a
-// token an authorization server minted for something else — an identity token
-// for a client to read about its own user, say — from being spent here as
-// though it had been issued for this deployment.
-var accessTokenTypes = []string{"at+jwt", "application/at+jwt"}
+// The first two are the spellings registered for an access token; the third is
+// what a token says when it says only that it is a JWT, and authorization
+// servers in wide use mint access tokens under either. The set is fixed rather
+// than configurable, because a security setting whose safe value is not obvious
+// is worse than a narrower product.
+//
+// 🔴 Accepting the bare form gives up telling an access token from an identity
+// token by what the token calls itself, and the audience check below is what
+// carries that distinction instead: an identity token's audience is the client
+// it was issued to, never this deployment's own published address, so a token
+// issued for something else is refused there. That makes the audience check
+// load-bearing rather than one check among several, and it is never optional.
+var acceptedTokenTypes = []string{"at+jwt", "application/at+jwt", "JWT"}
 
 // signatureAlgorithms are the algorithms a token may be signed with.
 //
@@ -86,6 +96,70 @@ type bearerValidator struct {
 
 	// keys are the keys a token may have been signed with.
 	keys verificationKeys
+
+	// logf writes one line to the process's own error stream, which is where
+	// the reason a credential was turned away goes and the only place it goes.
+	// It is a function rather than the server itself so that recording a reason
+	// is the whole of what this type can do with it.
+	logf func(format string, args ...any)
+}
+
+// refusalReason names, for whoever runs this deployment, which check turned a
+// credential away.
+//
+// It is a distinct type rather than a string on purpose. Every refusal a caller
+// receives is composed from fixed text, and the whole value of that is that a
+// caller learns whether to obtain another token and nothing about which check
+// refused the one it sent. Putting a reason into a refusal's message or its
+// challenge therefore does not compile without someone writing a conversion,
+// which is a thing nobody does by accident.
+type refusalReason string
+
+// The reasons, one per check that can turn a credential away.
+//
+// Each is a sentence an operator can act on: the setting to look at, or the
+// property of the token that was wrong. None of them carries any part of what
+// the caller presented — not a claim value, not a key identifier, not a
+// fragment of the token — because the stream these reach is collected, shipped
+// and read by people and machines a caller never chose.
+const (
+	reasonTokenInTheAddress refusalReason = "a token was sent in the address rather than on the authorization header"
+	reasonNotABearerHeader  refusalReason = "the authorization header does not carry a bearer credential"
+	reasonNotAToken         refusalReason = "the credential is not a signed token, or names a signature algorithm " +
+		"this server does not accept; only asymmetric algorithms are accepted"
+	reasonSeveralSignatures refusalReason = "the token carries more than one signature"
+	reasonTokenType         refusalReason = "the token declares a type this server does not accept; the accepted " +
+		"types are at+jwt, application/at+jwt, JWT, and no declared type at all"
+	reasonKeysOutOfReach refusalReason = "the verification keys could not be read, so no token could be checked; " +
+		"look at mcp.authorization.issuer and mcp.authorization.jwks_file"
+	reasonUnknownKey    refusalReason = "the token names a key identifier the verification keys do not carry"
+	reasonSignature     refusalReason = "the token's signature does not verify against any of the verification keys"
+	reasonNoExpiry      refusalReason = "the token carries no expiry, so it would never stop being usable"
+	reasonNoSubject     refusalReason = "the token says nothing about who presented it"
+	reasonWrongIssuer   refusalReason = "the token was issued by somebody other than mcp.authorization.issuer"
+	reasonWrongAudience refusalReason = "the token's audience does not name mcp.authorization.resource, so it was " +
+		"issued for something other than this deployment"
+	reasonExpired     refusalReason = "the token has expired"
+	reasonNotYetValid refusalReason = "the token is not valid yet, which a clock difference between this host and " +
+		"the authorization server will also produce"
+	reasonIssuedInTheFuture refusalReason = "the token states an issue time in the future, which a clock difference " +
+		"between this host and the authorization server will also produce"
+	reasonClaimsRefused refusalReason = "the token's claims were not accepted"
+)
+
+// note records for whoever runs this deployment which check turned a credential
+// away, on the process's own error stream and nowhere else.
+//
+// It exists because the answer a caller receives is deliberately the same
+// whichever check refused it, and an authorization path that refuses without
+// saying why anywhere is one nobody can fix. The two halves are opposite by
+// design and neither is loosened for the other: what the caller is told stays
+// undifferentiated, and what the operator is told names the check.
+func (v *bearerValidator) note(reason refusalReason) {
+	if v.logf == nil || reason == "" {
+		return
+	}
+	v.logf("mcp: a bearer token was not accepted: %s", reason)
 }
 
 // authenticate reads the credential a request carries and reports who it is on
@@ -97,8 +171,16 @@ type bearerValidator struct {
 // refuse it rather than to evaluate it. Everything after that is refused with
 // one of two reasons and no finer detail, so a caller learns whether to obtain
 // a new token and nothing about which check turned it away.
+//
+// Every refusal of a credential that was presented is noted on the process's
+// error stream, naming the check. A request presenting nothing is not: being
+// challenged is how a client discovers where to obtain a token, so it is the
+// first thing every well-behaved client does, and a line for each of those
+// would bury the refusals that mean something under the ones that mean a client
+// is starting up.
 func (v *bearerValidator) authenticate(r *http.Request) (*http.Request, *authRefusal) {
 	if r.URL.Query().Has(queryTokenParameter) {
+		v.note(reasonTokenInTheAddress)
 		return nil, &authRefusal{
 			status:    http.StatusBadRequest,
 			challenge: v.resource.challengeFor(authErrorInvalidRequest),
@@ -119,6 +201,7 @@ func (v *bearerValidator) authenticate(r *http.Request) (*http.Request, *authRef
 	}
 	scheme, raw, split := strings.Cut(presented, " ")
 	if !strings.EqualFold(scheme, bearerScheme) || strings.TrimSpace(raw) == "" || !split {
+		v.note(reasonNotABearerHeader)
 		return nil, &authRefusal{
 			status:    http.StatusBadRequest,
 			challenge: v.resource.challengeFor(authErrorInvalidRequest),
@@ -126,7 +209,10 @@ func (v *bearerValidator) authenticate(r *http.Request) (*http.Request, *authRef
 		}
 	}
 
-	p, outcome := v.principalFor(r, strings.TrimSpace(raw))
+	p, outcome, reason := v.principalFor(r, strings.TrimSpace(raw))
+	if outcome != credentialAccepted {
+		v.note(reason)
+	}
 	switch outcome {
 	case credentialAccepted:
 		return withPrincipal(r, p), nil
@@ -164,31 +250,37 @@ const (
 
 // principalFor verifies one token and reads who it says presented it.
 //
-// Nothing about why a token failed leaves this function. Every way of failing
-// comes back as the same refusal, and the caller turns it into one answer, so
-// the checks below can be as specific as they need to be without any of that
-// specificity reaching a caller. The token itself is never returned, logged, or
-// placed in anything the caller receives.
-func (v *bearerValidator) principalFor(r *http.Request, raw string) (*principal, credentialOutcome) {
+// Nothing about why a token failed reaches the caller that presented it. Every
+// way of failing comes back as the same outcome, and authenticate turns each of
+// them into the same answer, so the checks below can be as specific as they
+// need to be without any of that specificity being visible from outside.
+//
+// The reason returned beside the outcome is for the process's own error stream
+// and for nothing else. It is captured here rather than composed afterwards
+// because this is the only place that knows which check refused: by the time
+// the outcome has been turned into an answer, every way of failing has become
+// one. The token itself is never returned, logged, or placed in anything the
+// caller receives, and no reason carries any part of one.
+func (v *bearerValidator) principalFor(r *http.Request, raw string) (*principal, credentialOutcome, refusalReason) {
 	parsed, err := jwt.ParseSigned(raw, signatureAlgorithms)
 	if err != nil {
-		return nil, credentialRefused
+		return nil, credentialRefused, reasonNotAToken
 	}
 	if len(parsed.Headers) != 1 {
-		return nil, credentialRefused
+		return nil, credentialRefused, reasonSeveralSignatures
 	}
 	header := parsed.Headers[0]
 	if declared, stated := header.ExtraHeaders[jose.HeaderType].(string); stated &&
-		!statesAccessTokenType(declared) {
-		return nil, credentialRefused
+		!statesAcceptedTokenType(declared) {
+		return nil, credentialRefused, reasonTokenType
 	}
 
 	candidates, err := v.keys.keysFor(r.Context(), header.KeyID)
 	if err != nil {
-		return nil, credentialUnverifiable
+		return nil, credentialUnverifiable, reasonKeysOutOfReach
 	}
 	if len(candidates) == 0 {
-		return nil, credentialRefused
+		return nil, credentialRefused, reasonUnknownKey
 	}
 
 	var registered jwt.Claims
@@ -201,20 +293,23 @@ func (v *bearerValidator) principalFor(r *http.Request, raw string) (*principal,
 		}
 	}
 	if !verified {
-		return nil, credentialRefused
+		return nil, credentialRefused, reasonSignature
 	}
 
 	// A token with no expiry never stops being usable, and one with no subject
 	// asserts nothing about who presented it. The claim validation below skips
 	// a claim that is absent, so both are required here rather than left to it.
-	if registered.Expiry == nil || registered.Subject == "" {
-		return nil, credentialRefused
+	if registered.Expiry == nil {
+		return nil, credentialRefused, reasonNoExpiry
+	}
+	if registered.Subject == "" {
+		return nil, credentialRefused, reasonNoSubject
 	}
 	if err := registered.Validate(jwt.Expected{
 		Issuer:      v.issuer,
 		AnyAudience: jwt.Audience{v.audience},
 	}); err != nil {
-		return nil, credentialRefused
+		return nil, credentialRefused, claimRefusalReason(err)
 	}
 
 	return &principal{
@@ -222,14 +317,40 @@ func (v *bearerValidator) principalFor(r *http.Request, raw string) (*principal,
 		Issuer:   registered.Issuer,
 		ClientID: firstNonEmpty(extra.ClientID, extra.AuthorizedParty),
 		Scopes:   extra.scopes(),
-	}, credentialAccepted
+	}, credentialAccepted, ""
 }
 
-// statesAccessTokenType reports whether a token declaring a type declares one
-// of the forms an access token is registered under. The comparison is
-// case-insensitive, as the registration is.
-func statesAccessTokenType(declared string) bool {
-	for _, accepted := range accessTokenTypes {
+// claimRefusalReason names which claim the validation found wanting, for the
+// operator-facing line alone.
+//
+// It reads the condition through the sentinels the validation returns rather
+// than through the sentence each of them carries, so a reworded message cannot
+// quietly turn every claim refusal into the unnamed one. A condition this does
+// not recognise falls through to the general reason rather than to nothing: a
+// line saying only that the claims were refused is still a line an operator can
+// act on, while a missing one is the opacity this exists to remove.
+func claimRefusalReason(err error) refusalReason {
+	switch {
+	case errors.Is(err, jwt.ErrInvalidIssuer):
+		return reasonWrongIssuer
+	case errors.Is(err, jwt.ErrInvalidAudience):
+		return reasonWrongAudience
+	case errors.Is(err, jwt.ErrExpired):
+		return reasonExpired
+	case errors.Is(err, jwt.ErrNotValidYet):
+		return reasonNotYetValid
+	case errors.Is(err, jwt.ErrIssuedInTheFuture):
+		return reasonIssuedInTheFuture
+	default:
+		return reasonClaimsRefused
+	}
+}
+
+// statesAcceptedTokenType reports whether a token declaring a type declares one
+// this deployment accepts. The comparison is case-insensitive, as the
+// registrations these values come from are.
+func statesAcceptedTokenType(declared string) bool {
+	for _, accepted := range acceptedTokenTypes {
 		if strings.EqualFold(declared, accepted) {
 			return true
 		}

@@ -261,6 +261,11 @@ func newHTTPHandler(runCtx context.Context, s *server, transport HTTPConfig) (*h
 			issuer:   transport.Authorization.Issuer,
 			audience: transport.Authorization.Resource,
 			keys:     keys,
+			// The same route every other diagnostic takes, so the reason a
+			// credential was turned away lands on the process's error stream
+			// beside everything else an operator reads and never anywhere a
+			// caller can see.
+			logf: s.logf,
 		},
 		resource: resource,
 	}, nil

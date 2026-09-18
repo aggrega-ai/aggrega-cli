@@ -61,6 +61,27 @@ func (b *lockedBuffer) String() string {
 	return b.buf.String()
 }
 
+// mark is how much has been written so far, and since is everything written
+// after a mark. Together they let one row of a table read only the lines its own
+// request produced: a proof that searched the whole stream would pass on a line
+// an earlier row wrote, which is the way a per-row assertion quietly stops being
+// one.
+func (b *lockedBuffer) mark() int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Len()
+}
+
+func (b *lockedBuffer) since(from int) string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	written := b.buf.String()
+	if from > len(written) {
+		return ""
+	}
+	return written[from:]
+}
+
 // newTokenFixture starts a listener for the given deployment, with whatever the
 // handler installs left in place.
 func newTokenFixture(t *testing.T, transport HTTPConfig) *tokenFixture {
@@ -112,6 +133,17 @@ func TestATokenIssuedForThisDeploymentReachesTheProtocolSurface(t *testing.T) {
 	f := newTokenFixture(t, transportFor(issuer.authorizationConfig(), issuer.egress()))
 
 	got := f.call(t, bearer(issuer.mint(t, tokenClaimSet{scope: scopeRead + " " + scopeWorkspaceWrite})))
+	wantReachedTheToolSurface(t, got)
+}
+
+// wantReachedTheToolSurface asserts that a call was answered by the tool
+// surface rather than only with a status.
+//
+// The tool list is read back because a 200 carrying an error envelope, and a
+// 200 carrying an empty list, would both satisfy a status check while nothing
+// had been served — which is exactly what an admitted token has to disprove.
+func wantReachedTheToolSurface(t *testing.T, got answer) {
+	t.Helper()
 	if got.status != http.StatusOK {
 		t.Fatalf("status = %d, want 200 (body %q)", got.status, got.raw)
 	}
@@ -269,9 +301,9 @@ func TestEveryOtherCredentialIsRefusedWithTheSameAnswer(t *testing.T) {
 			},
 		},
 		{
-			"a token declaring itself to be something other than an access token",
+			"a token declaring a type this server does not accept",
 			func(t *testing.T) string {
-				return issuer.mint(t, tokenClaimSet{tokenType: "JWT"})
+				return issuer.mint(t, tokenClaimSet{tokenType: aTypeThisServerDoesNotAccept})
 			},
 		},
 		{
@@ -396,6 +428,254 @@ func tokenParts(token string) []string {
 		}
 	}
 	return out
+}
+
+// aTypeThisServerDoesNotAccept is a token type shaped the way a vendor-specific
+// one is shaped and belonging to nobody.
+//
+// It is invented rather than copied from any real authorization server. A real
+// vendor's private spelling written down here would read as a value this server
+// holds an opinion about, and it holds none: what it accepts is the four forms
+// the proof below pins and nothing else, whoever minted the token.
+const aTypeThisServerDoesNotAccept = "application/example-private+jwt"
+
+// The accepted token types are exactly four, and a fifth form is refused like
+// every other token this deployment will not take.
+//
+// Each accepted form is its own row and each reads the tool list back, because a
+// status alone would be satisfied by a deployment that answered 200 and served
+// nothing. The set is fixed in the source and there is no setting that widens
+// it, which is why no row here configures anything.
+//
+// Planted defect, demonstrated: drop JWT from acceptedTokenTypes and the JWT row
+// reads back 401.
+func TestTheAcceptedTokenTypesAreExactlyFourAndNothingElse(t *testing.T) {
+	issuer := newAuthorizationServerDouble(t)
+	f := newTokenFixture(t, transportFor(issuer.authorizationConfig(), issuer.egress()))
+
+	for _, tc := range []struct {
+		name      string
+		tokenType string
+	}{
+		{"the short form an access token is registered under", "at+jwt"},
+		{"the media-type form of that same registration", "application/at+jwt"},
+		{"the bare form, which says only that the token is a JWT", "JWT"},
+		{"no declared type at all", ""},
+	} {
+		t.Run("admitted: "+tc.name, func(t *testing.T) {
+			wantReachedTheToolSurface(t, f.call(t, bearer(issuer.mint(t, tokenClaimSet{tokenType: tc.tokenType}))))
+		})
+	}
+
+	t.Run("refused: a type outside the accepted four", func(t *testing.T) {
+		token := issuer.mint(t, tokenClaimSet{tokenType: aTypeThisServerDoesNotAccept})
+		got := f.call(t, bearer(token))
+		wantRefusedCredential(t, got, token, authErrorInvalidToken, http.StatusUnauthorized)
+	})
+
+	// The audience check is what accepting the bare form leans on: that form is
+	// what an identity token also declares, so what separates one from an access
+	// token here is who the token was issued for. It carries a row of its own in
+	// this proof rather than only in the refusal table, because a change that
+	// widened the accepted types and weakened this check at the same time would
+	// leave that table green while an identity token minted for somebody else
+	// reached the tool surface.
+	t.Run("refused: an accepted type, issued for another deployment", func(t *testing.T) {
+		token := issuer.mint(t, tokenClaimSet{
+			tokenType: "JWT",
+			audience:  []string{"https://elsewhere.example.test/mcp"},
+		})
+		got := f.call(t, bearer(token))
+		wantRefusedCredential(t, got, token, authErrorInvalidToken, http.StatusUnauthorized)
+	})
+
+	wantNoTokenInTheLog(t, f)
+}
+
+// A refused token leaves the operator the name of the check that refused it, and
+// leaves the caller exactly what every other refusal leaves it.
+//
+// The two halves are asserted together, per row, and that pairing is the whole
+// design of this proof. Apart they drift into agreeing: a reason threaded out of
+// the validator and into the caller's answer would satisfy an
+// operator-stream assertion perfectly, and a refusal that told the caller
+// nothing would satisfy an answer assertion perfectly while the operator stream
+// stayed empty. Read together, each half is the other's control.
+//
+// Planted defect, demonstrated for the answer half: put a reason into the
+// refusal's message and every row after the first reddens on the body
+// comparison.
+func TestARefusedTokenNamesTheCheckForTheOperatorAndNothingForTheCaller(t *testing.T) {
+	issuer := newAuthorizationServerDouble(t)
+	f := newTokenFixture(t, transportFor(issuer.authorizationConfig(), issuer.egress()))
+	strangerKey := newSigningKey(t)
+
+	// The reference answer every row below is compared against, byte for byte.
+	// It is taken from the first row rather than written out here, so what is
+	// asserted is that the rows agree with each other rather than that they each
+	// agree with a sentence this proof could have kept in step by hand.
+	var reference *answer
+
+	for _, tc := range []struct {
+		name   string
+		token  func(t *testing.T) string
+		reason refusalReason
+	}{
+		{
+			"an audience that is not this deployment",
+			func(t *testing.T) string {
+				return issuer.mint(t, tokenClaimSet{audience: []string{"https://elsewhere.example.test/mcp"}})
+			},
+			reasonWrongAudience,
+		},
+		{
+			"an issuer that is not the one this deployment was configured with",
+			func(t *testing.T) string { return issuer.mint(t, tokenClaimSet{issuer: "https://other.example.test"}) },
+			reasonWrongIssuer,
+		},
+		{
+			"an expiry in the past",
+			func(t *testing.T) string {
+				return issuer.mint(t, tokenClaimSet{expiry: time.Now().Add(-time.Hour)})
+			},
+			reasonExpired,
+		},
+		{
+			"a validity that has not begun",
+			func(t *testing.T) string {
+				return issuer.mint(t, tokenClaimSet{
+					notBefore: time.Now().Add(time.Hour),
+					expiry:    time.Now().Add(2 * time.Hour),
+				})
+			},
+			reasonNotYetValid,
+		},
+		{
+			"no expiry at all",
+			func(t *testing.T) string { return mintWithoutExpiry(t, issuer) },
+			reasonNoExpiry,
+		},
+		{
+			"nothing about who presented it",
+			func(t *testing.T) string { return issuer.mint(t, tokenClaimSet{noSubject: true}) },
+			reasonNoSubject,
+		},
+		{
+			"a type outside the accepted four",
+			func(t *testing.T) string {
+				return issuer.mint(t, tokenClaimSet{tokenType: aTypeThisServerDoesNotAccept})
+			},
+			reasonTokenType,
+		},
+		{
+			"a signature from a key the published set does not carry",
+			func(t *testing.T) string { return issuer.mintSignedBy(t, tokenClaimSet{}, strangerKey, issuer.keyID) },
+			reasonSignature,
+		},
+		{
+			"a key identifier the authorization server has never published",
+			func(t *testing.T) string {
+				return issuer.mintSignedBy(t, tokenClaimSet{}, strangerKey, "a-key-nobody-published")
+			},
+			reasonUnknownKey,
+		},
+		{
+			"no signature, the algorithm declared as none",
+			func(t *testing.T) string { return unsignedToken(t, issuer.issuer()) },
+			reasonNotAToken,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			from := f.log.mark()
+			token := tc.token(t)
+			got := f.call(t, bearer(token))
+
+			wantRefusedCredential(t, got, token, authErrorInvalidToken, http.StatusUnauthorized)
+			wantOperatorToldWhichCheck(t, f.log.since(from), tc.reason)
+
+			if reference == nil {
+				reference = &got
+				return
+			}
+			wantSameAnswerAs(t, got, *reference)
+		})
+	}
+
+	// The two refusals of how a credential was presented rather than of what it
+	// said. They earn a different answer on purpose — the request was malformed,
+	// not the token — so they are read here against their own expectations and
+	// are deliberately not in the byte-identical set above.
+	t.Run("a token carried in the address rather than in the header", func(t *testing.T) {
+		from := f.log.mark()
+		token := issuer.mint(t, tokenClaimSet{})
+		got := f.callAt(t, endpointPath+"?"+queryTokenParameter+"="+token, "")
+		wantRefusedCredential(t, got, token, authErrorInvalidRequest, http.StatusBadRequest)
+		wantOperatorToldWhichCheck(t, f.log.since(from), reasonTokenInTheAddress)
+	})
+
+	t.Run("an authorization header that is not a bearer credential", func(t *testing.T) {
+		from := f.log.mark()
+		got := f.call(t, "Basic c29tZXRoaW5nOmVsc2U=")
+		wantRefusedCredential(t, got, "c29tZXRoaW5nOmVsc2U=", authErrorInvalidRequest, http.StatusBadRequest)
+		wantOperatorToldWhichCheck(t, f.log.since(from), reasonNotABearerHeader)
+	})
+
+	// A caller that presented nothing is not a refusal worth a line, and the
+	// silence is asserted rather than left to chance. Being challenged is how a
+	// client discovers where to obtain a token, so it is the first thing every
+	// well-behaved client does: a line for each of those would bury the refusals
+	// that mean something under the ones that mean a client is starting up, and
+	// would hand anything that can reach the endpoint an unbounded write to
+	// whatever collects this stream.
+	t.Run("no credential at all writes nothing", func(t *testing.T) {
+		from := f.log.mark()
+		if got := f.call(t, ""); got.status != http.StatusUnauthorized {
+			t.Fatalf("status = %d, want 401 (body %q)", got.status, got.raw)
+		}
+		if written := f.log.since(from); written != "" {
+			t.Errorf("a request presenting no credential wrote %q to the error stream", written)
+		}
+	})
+
+	// Clause by clause the same absence the refusal table asserts, re-read here
+	// because this proof deliberately writes to the stream that absence is about.
+	wantNoTokenInTheLog(t, f)
+}
+
+// wantOperatorToldWhichCheck asserts that what the serving process wrote while
+// one row ran names the check that refused it, and that it is one line.
+func wantOperatorToldWhichCheck(t *testing.T, written string, reason refusalReason) {
+	t.Helper()
+	if !strings.Contains(written, string(reason)) {
+		t.Errorf("the error stream does not name the check that refused this token.\n got: %q\nwant it to carry: %q",
+			written, string(reason))
+	}
+	if lines := strings.Count(strings.TrimSuffix(written, "\n"), "\n"); lines != 0 {
+		t.Errorf("one refused request wrote %d lines, want 1: %q", lines+1, written)
+	}
+}
+
+// wantSameAnswerAs asserts that two refusals are indistinguishable to whoever
+// received them: the same status, the same challenge, and the same body byte for
+// byte.
+//
+// This is the half that stops the operator-facing reason leaking. A reason that
+// reached the caller would have to differ between rows, because the rows differ
+// in which check refused them — so rows that stay identical are rows where
+// nothing specific to the check got out.
+func wantSameAnswerAs(t *testing.T, got, reference answer) {
+	t.Helper()
+	if got.status != reference.status {
+		t.Errorf("status = %d, want %d: this refusal is distinguishable from the others", got.status, reference.status)
+	}
+	if got.header.Get(headerAuthenticate) != reference.header.Get(headerAuthenticate) {
+		t.Errorf("challenge = %q, want %q: this refusal names something the others do not",
+			got.header.Get(headerAuthenticate), reference.header.Get(headerAuthenticate))
+	}
+	if got.raw != reference.raw {
+		t.Errorf("body = %q, want %q: this refusal tells the caller which check turned it away",
+			got.raw, reference.raw)
+	}
 }
 
 // mintWithoutExpiry produces a token carrying no expiry claim at all, which the

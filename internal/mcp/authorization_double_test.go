@@ -130,6 +130,12 @@ type tokenClaimSet struct {
 	// tokenType is what the token declares itself to be. Empty declares
 	// nothing, which is a token type this deployment accepts.
 	tokenType string
+
+	// noSubject leaves the subject claim off entirely. It is a flag rather than
+	// an empty subject because an empty one is what the zero value means, and
+	// the zero value is filled in with a subject: a token asserting nothing
+	// about who presented it has to be asked for.
+	noSubject bool
 }
 
 // mint signs one token, filling every claim the proof left alone with what a
@@ -152,7 +158,7 @@ func (d *authorizationServerDouble) mintSignedBy(t *testing.T, claims tokenClaim
 	if claims.issuer == "" {
 		claims.issuer = d.issuer()
 	}
-	if claims.subject == "" {
+	if claims.subject == "" && !claims.noSubject {
 		claims.subject = testSubject
 	}
 	if claims.audience == nil {
