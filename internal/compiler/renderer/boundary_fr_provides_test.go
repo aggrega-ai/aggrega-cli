@@ -170,7 +170,7 @@ func TestBoundaryScopeFRProvides_PrepassIdempotentWithDispatch(t *testing.T) {
 	factory := func(string) (Provider, error) { return sourceCaptureEngine{captured: &captured}, nil }
 	if err := dispatchBoundaryScopeFR(
 		context.Background(), fr, "db", key, &PhaseBState{}, state,
-		NodeRenderContext{}, factory, graph, release, nil, nil, RendererInput{},
+		NodeRenderContext{}, factory, RecipeLookup{}, graph, release, nil, nil, RendererInput{},
 	); err != nil {
 		t.Fatalf("dispatchBoundaryScopeFR: %v", err)
 	}

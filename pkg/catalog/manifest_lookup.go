@@ -327,9 +327,10 @@ func nameThenType(tier *types.MappingTier, instanceName, lookupType string) (str
 // miss.
 func (c *Catalog) RecipeLookupWithManifest(manifest *types.Manifest) renderer.RecipeLookup {
 	return renderer.RecipeLookup{
-		Recipe:         c.componentTypeToRecipeWithManifest(manifest),
-		FeatureRecipe:  c.featureTypeToFeatureRecipeWithManifest(manifest),
-		RecipeDocument: c.recipeDocument,
+		Recipe:                c.componentTypeToRecipeWithManifest(manifest),
+		FeatureRecipe:         c.featureTypeToFeatureRecipeWithManifest(manifest),
+		RecipeDocument:        c.recipeDocument,
+		FeatureRecipeDocument: c.featureRecipeDocument,
 	}
 }
 
@@ -339,25 +340,46 @@ func (c *Catalog) RecipeLookupWithManifest(manifest *types.Manifest) renderer.Re
 // It takes the entity the caller already holds rather than an identity, so the
 // key formula stays here beside the walk that recorded the path. Spelled at the
 // call site it would be a second statement of that formula, free to disagree the
-// moment the identity shape moves. The key is composed through entityBytesKey for
-// the same reason: that is the declared spelling of a kind-namespaced identity,
-// and the lazy backing already records this fact under it.
+// moment the identity shape moves.
+func (c *Catalog) recipeDocument(r *types.Recipe) (string, bool) {
+	if r == nil {
+		return "", false
+	}
+	return c.entityDocument("Recipe", r.Spec.Capability, r.Metadata.Name, r.Metadata.Version)
+}
+
+// featureRecipeDocument is the FeatureRecipe counterpart of recipeDocument, and
+// answers for a FeatureRecipe exactly what that one answers for a Recipe.
+//
+// The two kinds share an identity formula and an index but not an entity type, so
+// what is shared is the lookup below and what is written twice is the projection
+// of an entity onto its identity — which is the half that is genuinely per-kind
+// and would be a guess if either accessor derived it from the other.
+func (c *Catalog) featureRecipeDocument(fr *types.FeatureRecipe) (string, bool) {
+	if fr == nil {
+		return "", false
+	}
+	return c.entityDocument("FeatureRecipe", fr.Spec.Capability, fr.Metadata.Name, fr.Metadata.Version)
+}
+
+// entityDocument reports the file the entity of the given kind and identity was
+// indexed from, and whether one is recorded.
+//
+// The key is composed through entityBytesKey because that is the declared
+// spelling of a kind-namespaced identity, and both backings already record this
+// fact under it.
 //
 // It reads the one index each backing populates as it walks — the eager load
 // claims each identity as it indexes a file, and the lazy backing hands its own
 // record of the same fact to the shell it builds — so the two backings cannot
 // answer differently.
 //
-// A Recipe resolved from a registry has no answer here. It lives in a
+// An entity resolved from a registry has no answer here. It lives in a
 // content-addressed cache slot, which is not a document anybody authored, so it
 // is reported as having none rather than as the slot's location — the same
 // reading every other path-reporting accessor on this catalog takes.
-func (c *Catalog) recipeDocument(r *types.Recipe) (string, bool) {
-	if r == nil {
-		return "", false
-	}
-	key := entityBytesKey("Recipe", recipeIdentityKey(r.Spec.Capability, r.Metadata.Name, r.Metadata.Version))
-	path, ok := c.pathByIdentity[key]
+func (c *Catalog) entityDocument(kind, provider, name, version string) (string, bool) {
+	path, ok := c.pathByIdentity[entityBytesKey(kind, recipeIdentityKey(provider, name, version))]
 	if !ok || path == "" {
 		return "", false
 	}

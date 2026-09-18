@@ -760,11 +760,21 @@ type RecipeLookup struct {
 	// it renders a templated relative source as the template produced it and
 	// positions such a diagnostic at no file — the same answer as for a Recipe that
 	// genuinely has none.
-	//
-	// There is no FeatureRecipe counterpart because nothing would read one: a
-	// FeatureRecipe's source is never template-evaluated, so no produced value
-	// exists for a document to anchor.
 	RecipeDocument func(r *types.Recipe) (string, bool)
+
+	// FeatureRecipeDocument is the FeatureRecipe counterpart of RecipeDocument, and
+	// it answers the same two questions for the same two readers: what a relative
+	// source is resolved against once the attachment's source template has produced
+	// a value, and what a diagnostic raised inside that attachment's render names as
+	// its location.
+	//
+	// It is a second field rather than one closure over both kinds because the
+	// identity formula is per-kind and lives in the catalog beside the walk that
+	// recorded the path — a single closure would have to take an identity, and an
+	// identity composed at this call site is a second statement of that formula.
+	//
+	// It may be nil, with the same reading as a nil RecipeDocument.
+	FeatureRecipeDocument func(fr *types.FeatureRecipe) (string, bool)
 }
 
 // recipeDocument reports the file a resolved Recipe was declared in, tolerating
@@ -775,6 +785,17 @@ func (l RecipeLookup) recipeDocument(r *types.Recipe) string {
 		return ""
 	}
 	path, _ := l.RecipeDocument(r)
+	return path
+}
+
+// featureRecipeDocument is the FeatureRecipe counterpart of recipeDocument, and
+// exists for the same reason: both attachment scopes read the answer, and each
+// repeating the two guards would be two expressions of one tolerance.
+func (l RecipeLookup) featureRecipeDocument(fr *types.FeatureRecipe) string {
+	if l.FeatureRecipeDocument == nil || fr == nil {
+		return ""
+	}
+	path, _ := l.FeatureRecipeDocument(fr)
 	return path
 }
 

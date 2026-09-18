@@ -23,7 +23,6 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/trace"
 	"github.com/aggrega-ai/aggrega-cli/internal/redact"
-	"github.com/aggrega-ai/aggrega-cli/internal/sourceref"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/labels"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -86,11 +85,10 @@ func phaseB0(ctx *types.TemplateContext, state *PhaseBState, localsForNode types
 	sourceDeclared := recipeSourceDeclared(state.Recipe)
 
 	if sourceDeclared {
-		// Read the authored text before the evaluation below replaces it. Whether the
-		// load deferred this source's anchoring is a property of what the AUTHOR
-		// wrote, not of what it produced, and the two are the same value read either
-		// side of one step that rewrites it.
-		authored, authoredScalar := state.Recipe.Spec.Source.(string)
+		// Read the authored value before the evaluation below replaces it: the
+		// anchoring beneath asks what the AUTHOR wrote, and the two are the same
+		// value read either side of one step that rewrites it.
+		authored := state.Recipe.Spec.Source
 
 		// The locals were published onto the context immediately above, so the source
 		// template reads the same resolved values every other reader of this node's
@@ -102,22 +100,13 @@ func phaseB0(ctx *types.TemplateContext, state *PhaseBState, localsForNode types
 			return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: state.RecipePath}, fmt.Sprintf("node %q source", state.NodeID))
 		}
 
-		// A source written as a template names nothing until here, so the directory it
-		// is relative to belongs to the value it has just produced. The load anchors
-		// every other source and deliberately leaves this one alone, and both run the
-		// same resolution — so what a relative source is resolved against is one
-		// answer given at two moments, rather than two answers.
-		//
-		// The produced value decides its own treatment: an absolute path, a transport
-		// reference and an empty result each pass through, which is precisely what
-		// anchoring the template's text could not do, because all three are settled by
-		// text a join has already prefixed by the time they exist.
-		if produced, ok := resolvedSource.(string); ok && authoredScalar && sourceref.IsTemplated(authored) {
-			anchored, aerr := sourceref.AnchorToDocument(state.RecipePath, produced)
-			if aerr != nil {
-				return cerrors.Wrap(aerr, cerrors.CatalogError, cerrors.SourceLocation{File: state.RecipePath}, fmt.Sprintf("node %q source", state.NodeID))
-			}
-			resolvedSource = anchored
+		// What a relative source produced by a template is resolved against is
+		// anchorSourceToDocument's answer, which every template-evaluated source
+		// surface shares — see there for why the produced value decides its own
+		// treatment.
+		resolvedSource, err = anchorSourceToDocument(authored, resolvedSource, state.RecipePath)
+		if err != nil {
+			return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: state.RecipePath}, fmt.Sprintf("node %q source", state.NodeID))
 		}
 		// Replace state.Recipe with a local copy carrying the resolved
 		// source; engines later read state.Recipe.Spec.Source for the
@@ -527,7 +516,7 @@ func phaseB6(
 			boundaryFRState.Dedup[key] = true
 			if err := dispatchBoundaryScopeFR(
 				ctx, fr, item.Instance, key, state, boundaryFRState,
-				nodeCtx, engineFactory, graph, release, boundaryAnnotations, allProvides, input,
+				nodeCtx, engineFactory, recipeLookup, graph, release, boundaryAnnotations, allProvides, input,
 			); err != nil {
 				return nil, nil, nil, nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("node %q boundary-scope attachment %q", nodeID, item.Instance))
 			}
@@ -628,8 +617,33 @@ func phaseB6(
 		frNodeCtx.DerivedKeySink = func(declared types.OrderedMap[[]string]) {
 			state.DerivedKeys.declare(attachmentContributor, declared)
 		}
-		frNodeCtx.OriginalSource = fr.Spec.Source
-		resolvedSrc, err := resolveEntitySource(input, fr.Spec.Source, fr.Spec.Locals, frSourceURI(fr), item.OwnValues, item.OwnInfra, fr.Spec.SourceDigests)
+		// The document this attachment's FeatureRecipe was declared in: what a
+		// relative source its template produces is resolved against, and what a
+		// diagnostic raised inside its render names as its location. An entity
+		// carrying no document on disk reports none, and both readers treat that as
+		// the absence it is.
+		frDocument := recipeLookup.featureRecipeDocument(fr)
+		// The attachment's source template is evaluated before it is resolved, and
+		// the order is the component path's own: what the render resolves is the
+		// value the template produced, anchored to the document that declared it.
+		// The locals were merged onto frCtx immediately above, so the template reads
+		// the same resolved values every other template of this attachment reads.
+		//
+		// The identity and the instance name are the ones this attachment's locals
+		// were evaluated with, passed through so the two surfaces publish one
+		// denotation of .context.instance_id and .attachment_name.
+		evaluatedSource, err := EvaluateFeatureRecipeSource(
+			fr.Spec.Source, item.Instance, nodeID, frCtx.Values, frCtx.Infra, frCtx.Locals,
+		)
+		if err != nil {
+			return nil, nil, nil, nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: frDocument}, fmt.Sprintf("node %q attachment %q source", nodeID, item.Instance))
+		}
+		evaluatedSource, err = anchorSourceToDocument(fr.Spec.Source, evaluatedSource, frDocument)
+		if err != nil {
+			return nil, nil, nil, nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: frDocument}, fmt.Sprintf("node %q attachment %q source", nodeID, item.Instance))
+		}
+		frNodeCtx.OriginalSource = evaluatedSource
+		resolvedSrc, err := resolveEntitySource(input, evaluatedSource, fr.Spec.Locals, frSourceURI(fr), item.OwnValues, item.OwnInfra, fr.Spec.SourceDigests)
 		if err != nil {
 			return nil, nil, nil, nil, wrapSourceResolutionError(err, nodeID, fmt.Sprintf("node %q attachment %q source resolution", nodeID, item.Instance))
 		}
@@ -644,7 +658,7 @@ func phaseB6(
 		// nothing makes one's output names distinct from the other's or from the
 		// node's own. It carries this render's presentation too, so the rule declared
 		// over the carrier's facts can be asked inside the walk that records them.
-		frFiles, frComponentID, err := renderFeatureRecipeFiles(ctx, frEngine, fr, &frCtx, frNodeCtx, frValues.Resolved, resolvedSrc, item.Identity,
+		frFiles, frComponentID, err := renderFeatureRecipeFiles(ctx, frEngine, fr, &frCtx, frNodeCtx, frValues.Resolved, resolvedSrc, frDocument, item.Identity,
 			carrierProductsOf(state).attachmentOnNode(nodeID, item.Instance),
 			featureAttachmentSlots(fr, input), input.WorkloadLibraries, input.ArtifactsLibraries,
 			nodeAnnotations, input.CatalogLookup.ProviderPlugin)
@@ -1076,6 +1090,14 @@ func featureAttachmentSlots(fr *types.FeatureRecipe, input RendererInput) types.
 // providerPlugin resolves this FeatureRecipe's provider binding to the entity
 // carrying the support claim that advisory reads. Either one absent leaves nothing
 // to compare and the advisory emits nothing.
+//
+// documentPath is the file this FeatureRecipe was declared in, and it is what every
+// diagnostic the sub-passes below raise names as its location. It is supplied by
+// the caller rather than looked up here for the reason the carrier above is: this
+// function is reached from both attachment scopes, and the lookup that answers it
+// is the caller's own. An entity resolved from a registry has no such document and
+// passes the empty string, which positions those diagnostics at no file — the same
+// answer the component render path gives for a Recipe in the same position.
 func renderFeatureRecipeFiles(
 	ctx context.Context,
 	frEngine Provider,
@@ -1084,6 +1106,7 @@ func renderFeatureRecipeFiles(
 	frNodeCtx NodeRenderContext,
 	frValues map[string]any,
 	resolvedSrc any,
+	documentPath string,
 	identity attachmentIdentity,
 	hydrated attachmentCarrier,
 	slots types.OrderedMap[types.AttachmentSlot],
@@ -1222,7 +1245,7 @@ func renderFeatureRecipeFiles(
 			ArtifactDigests: fr.Spec.ArtifactDigests,
 		},
 	}
-	state := NewPhaseBState(synth, frNodeCtx.NodeID, frNodeCtx.BoundaryPath, "")
+	state := NewPhaseBState(synth, frNodeCtx.NodeID, frNodeCtx.BoundaryPath, documentPath)
 	// The carrier this render records against and is checked under. It is set
 	// instead of the per-node retention a component render carries, never beside it:
 	// the passes below walk the same producers under the node identity above, so

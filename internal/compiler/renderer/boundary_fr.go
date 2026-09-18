@@ -407,6 +407,12 @@ func classifyBoundaryScopeFRTemplate(text string) boundaryScopeFRTemplateRef {
 //
 // What the recipe's own inline templates may reference is decided before any of
 // this, by the rules declared over those fields — so nothing here re-decides it.
+//
+// recipeLookup supplies the file this FeatureRecipe was declared in, which is what
+// a relative source its template produced is resolved against and what a diagnostic
+// raised inside this render names as its location. It is the same carrier the
+// component-scope attachment loop reads that fact from; a resolved path passed in
+// its place would be a second shape for one fact.
 func dispatchBoundaryScopeFR(
 	ctx context.Context,
 	fr *types.FeatureRecipe,
@@ -416,6 +422,7 @@ func dispatchBoundaryScopeFR(
 	boundaryFRState *BoundaryFRState,
 	nodeCtx NodeRenderContext,
 	engineFactory EngineFactory,
+	recipeLookup RecipeLookup,
 	graph *types.IRGraph,
 	release *types.Release,
 	boundaryAnnotations map[string]types.OrderedMap[string],
@@ -514,7 +521,25 @@ func dispatchBoundaryScopeFR(
 			declareDerivedKey(&frLabelKeys, componentIDKeySpace, frNodeCtx.LabelComponentID)...)
 		boundaryFRState.DerivedKeys[key] = frLabelKeys
 	}
-	frNodeCtx.OriginalSource = fr.Spec.Source
+	// The document this FeatureRecipe was declared in, read through the same lookup
+	// the component scope reads it through: what a relative source its template
+	// produces is resolved against, and what a diagnostic raised inside this render
+	// names as its location.
+	frDocument := recipeLookup.featureRecipeDocument(fr)
+	// The source template is evaluated before it is resolved, on the same terms and
+	// in the same order as a component Recipe's: what the resolution below receives
+	// is the value the template produced, anchored to the document that declared it.
+	// The locals were resolved onto frCtx by evaluateBoundaryFRTemplates above, so
+	// the template reads the same values this FeatureRecipe's other templates read.
+	evaluatedSource, err := EvaluateBoundaryScopeFeatureRecipeSource(fr.Spec.Source, frCtx)
+	if err != nil {
+		return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: frDocument}, fmt.Sprintf("boundary-scope FR %q source", frInstance))
+	}
+	evaluatedSource, err = anchorSourceToDocument(fr.Spec.Source, evaluatedSource, frDocument)
+	if err != nil {
+		return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: frDocument}, fmt.Sprintf("boundary-scope FR %q source", frInstance))
+	}
+	frNodeCtx.OriginalSource = evaluatedSource
 	// Route this boundary-scope FR's guest advisories into the render state's
 	// warnings, which reach result.Warnings. The context was copied from a
 	// consumer node whose sink (if any) targets a different accumulator, so wire
@@ -536,7 +561,7 @@ func dispatchBoundaryScopeFR(
 	// infra (graph.Spec.BoundaryFeatures) the lock-time descent pins from —
 	// so a remote source is cache-extracted at build and the build-time
 	// identity matches the lockfile pin. A local source forwards verbatim.
-	resolvedSrc, err := resolveEntitySource(input, fr.Spec.Source, fr.Spec.Locals, frSourceURI(fr), nil, feat.Infra.TemplateAlphabeticalMapDeep(), fr.Spec.SourceDigests)
+	resolvedSrc, err := resolveEntitySource(input, evaluatedSource, fr.Spec.Locals, frSourceURI(fr), nil, feat.Infra.TemplateAlphabeticalMapDeep(), fr.Spec.SourceDigests)
 	if err != nil {
 		return wrapSourceResolutionError(err, frNodeCtx.NodeID, fmt.Sprintf("boundary-scope FR %q source resolution", frInstance))
 	}
@@ -618,7 +643,7 @@ func dispatchBoundaryScopeFR(
 	// reaches it. Read from the ordered per-boundary map for the same reason the
 	// per-component caller reads the ordered IR node — the advisory stream stays
 	// byte-stable across runs of identical input.
-	emitted, _, err := renderFeatureRecipeFiles(ctx, frEngine, fr, frCtx, frNodeCtx, frValues.Resolved, resolvedSrc, attachmentIdentity{},
+	emitted, _, err := renderFeatureRecipeFiles(ctx, frEngine, fr, frCtx, frNodeCtx, frValues.Resolved, resolvedSrc, frDocument, attachmentIdentity{},
 		carrierProductsOf(state).attachmentOnBoundary(key.BoundaryPath, frInstance),
 		featureAttachmentSlots(fr, input), input.WorkloadLibraries, input.ArtifactsLibraries,
 		boundaryAnnotations[key.BoundaryPath], input.CatalogLookup.ProviderPlugin)
