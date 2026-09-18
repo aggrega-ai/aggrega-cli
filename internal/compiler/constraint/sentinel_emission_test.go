@@ -317,15 +317,15 @@ const offFrameworkEmissionBlocks = false
 // all. [partitionOffFrameworkByDeclaredPlace] performs
 // that subtraction and guards those declarations in both directions.
 //
-// Measured 2026-09-17, on the tree the revision carrying this edit records: 90,
-// of 281 declared. Re-derive it by running this package verbosely — the census
+// Measured 2026-09-18, on the tree the revision carrying this edit records: 88,
+// of 282 declared. Re-derive it by running this package verbosely — the census
 // prints every term below, so the figure is checkable rather than remembered.
 //
 // Its composition, quoted from that run rather than recomputed, because a bare
-// number cannot carry how the figure is read: 228 of the 281 declared conditions
-// are emitted outside the dispatch, and 138 of those declare that their rule is
-// not one of the framework's own — 32 owned by another evaluator, 33 reached by
-// no declared stage, 73 naming no rule at all — leaving the 90 this ceiling
+// number cannot carry how the figure is read: 229 of the 282 declared conditions
+// are emitted outside the dispatch, and 141 of those declare that their rule is
+// not one of the framework's own — 32 owned by another evaluator, 36 reached by
+// no declared stage, 73 naming no rule at all — leaving the 88 this ceiling
 // bounds. What remains is the candidates, each of which could be expressed as a
 // check, plus the conditions carrying nothing to declare a place ON: the 6
 // forwarding declarations and the 5 conditions no registration binds, which
@@ -386,7 +386,7 @@ const offFrameworkEmissionBlocks = false
 // here would be derived rather than quoted and would be wrong in a way no run
 // contradicts. So zero is a state this number can arrive at, and
 // [offFrameworkEmissionBlocks] flips in the edit that takes it there.
-const offFrameworkEmissionCeiling = 90
+const offFrameworkEmissionCeiling = 88
 
 // unemittedSentinelsBlock decides whether a sentinel with no emission site at
 // all fails this test or is only reported. It is true.

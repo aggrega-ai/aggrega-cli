@@ -106,7 +106,15 @@ func ErrAmbiguousProviderPlugin() error { return errAmbiguousProviderPlugin }
 var errAmbiguousProviderPlugin = cerrors.Register("ambiguous-provider-plugin", cerrors.Meta{
 	ShortCode: "E0092",
 	Message:   "capability is served by more than one provider plugin; add a plugins.providers entry to select one",
-	RulePlace: cerrors.RuleOverAuthoredInput(),
+	RulePlace: cerrors.RuleNoStageReaches("A pull's recipe-plugin descent evaluates the rule, as each in-closure Recipe's declared " +
+		"capability is matched against the provider-rendering plugins serving it and against the bindings " +
+		"the workspace configuration composes — and the same descent records the binding it settles on for " +
+		"a later build to read. What decides the rule is the ABSENCE of a binding, which is written in the " +
+		"workspace configuration rather than in any document a compilation reads. The descent walks a " +
+		"closure to decide what to pin rather than compiling anything, and the build-time re-resolution " +
+		"runs while a stage's plugin self-reports are being produced rather than at a point any view is " +
+		"complete, so no declared stage of a compilation holds the candidate set and the binding the rule " +
+		"weighs against one another."),
 })
 
 // ErrProviderBindingUnsatisfied fires at resolution when a plugins.providers
@@ -120,7 +128,14 @@ func ErrProviderBindingUnsatisfied() error { return errProviderBindingUnsatisfie
 var errProviderBindingUnsatisfied = cerrors.Register("provider-binding-unsatisfied", cerrors.Meta{
 	ShortCode: "E0100",
 	Message:   "plugins.providers entry names a plugin no provider-rendering plugin serving the capability matches",
-	RulePlace: cerrors.RuleOverAuthoredInput(),
+	RulePlace: cerrors.RuleNoStageReaches("A pull's recipe-plugin descent evaluates the rule, as the plugin identity the workspace " +
+		"configuration binds to a capability is matched against the provider-rendering plugins the catalog " +
+		"holds for it; a later build re-runs the same match against the identity that descent recorded. The " +
+		"binding is the whole of what this condition reports — without one the same empty candidate set is " +
+		"a bare miss the caller resolves — and a binding is written in the workspace configuration rather " +
+		"than in any document a compilation reads. The descent walks a closure to decide what to pin, and " +
+		"the build-time re-run reads a recorded identity while a stage's plugin self-reports are being " +
+		"produced, so no declared stage of a compilation holds the binding on either arm."),
 })
 
 // ErrNoRecipeResolved fires when a component/feature instance has no explicit
