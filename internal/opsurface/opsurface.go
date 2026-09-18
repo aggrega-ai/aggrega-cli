@@ -63,10 +63,19 @@ import (
 // ID is a stable identifier in the descriptive register — lowercase words
 // joined by dashes — chosen for what the capability does rather than for any
 // surface's spelling of it, so a renamed command or a renamed method does not
-// rename the operation. Summary states in one line what the capability does,
-// for a reader deciding whether a surface's availability of it is right.
+// rename the operation. Reach states how far the capability's own effects
+// travel, which a surface reads before running anything; see [Reach] for what
+// the class covers and for why the empty value is not one. Summary states in one
+// line what the capability does, for a reader deciding whether a surface's
+// availability of it is right.
+//
+// Reach sits beside the identifier rather than after the summary because the two
+// are what a reader checks together: the summary says what the capability does
+// and the class says how far it goes, and a class at the end of a sentence-long
+// line is one nobody scans.
 type Operation struct {
 	ID      string
+	Reach   Reach
 	Summary string
 }
 
@@ -110,65 +119,89 @@ func Lookup(id string) (Operation, bool) {
 // about which surfaces may expose it.
 var operations = []Operation{
 	// Capabilities the command line originated.
-	{"auth-token", "Acquire an identity token interactively and print it."},
-	{"build", "Compile an Aggregate and Release into provider-native artifacts."},
-	{"cache-clear", "Wipe every on-disk cache, compiled modules included."},
-	{"cache-evict", "Trim the compiled-module cache to a size cap, oldest first."},
-	{"cache-prune", "Remove artifact-cache entries no lockfile references."},
-	{"cache-status", "Report the on-disk caches' contents and total size."},
-	{"config-capture", "Freeze the effective build-critical configuration into a workspace."},
-	{"config-init", "Seed a working configuration with a registry and its trust policy."},
-	{"config-show", "Report the effective configuration and where each setting came from."},
-	{"deprecate", "Attach a signed deprecation marker to an already-published artifact."},
-	{"get-schema", "Report the JSON Schema for an entity or contract kind."},
-	{"import", "Turn a foreign source description into draft authoring files."},
-	{"inspect", "Report an entity's resolved definition, or a Release's dependency closure, without rendering."},
-	{"lint", "Check catalog publishing conventions across a catalog, a Release, or one entity."},
-	{"login", "Authenticate to an OCI registry and store the credential."},
-	{"logout", "Remove a stored registry credential."},
-	{"mcp", "Serve the tool protocol over a stream for assistant integration."},
-	{"plugin-add", "Search a registry and add a plugin of a named type."},
-	{"plugin-gen-catalog", "Generate Plugin catalog entities from guest metadata plus an authored overlay."},
-	{"plugin-list", "Report the plugins resolvable here, with their declared metadata."},
-	{"plugin-remove", "Remove a configured plugin of a named type."},
-	{"plugin-run-local", "Load a local guest module and call one of its exports."},
-	{"plugin-sync", "Sync a plugin's machine-owned records in its entity file with its module."},
-	{"pull", "Resolve catalog and source dependencies into the cache and write the per-Release lockfile."},
-	{"push", "Bundle and publish a catalog entity to an OCI registry."},
-	{"push-artifact", "Publish a standalone data artifact to an OCI registry."},
-	{"registry-add", "Register a registry and its signature trust policy."},
-	{"registry-list", "Report the configured registries and their trust posture."},
-	{"registry-remove", "Remove a registry and its trust policy from a configuration file."},
-	{"registry-update", "Build the local searchable index of configured registries."},
-	{"search", "Search the local index of configured registries."},
-	{"serve", "Serve the compiler over JSON-RPC on a stream."},
-	{"sign", "Sign already-published artifacts and attach their signatures."},
-	{"validate", "Check correctness across a catalog, a Release, or one entity."},
-	{"version", "Report the binary's own version."},
+	{"auth-token", ReachNone, "Acquire an identity token interactively and print it."},
+	// A build renders in memory and the artifacts are its answer, which is why
+	// the class is none rather than the class of whichever surface saves them.
+	// The one thing a build does leave behind is a dependency fill, and whether
+	// it fills is decided by the composition of the call's own request and the
+	// workspace's setting — so that widening is read from the same composition
+	// the build reads, at the point a caller is admitted, and is not a second
+	// class here.
+	{"build", ReachNone, "Compile an Aggregate and Release into provider-native artifacts."},
+	{"cache-clear", ReachMachine, "Wipe every on-disk cache, compiled modules included."},
+	{"cache-evict", ReachMachine, "Trim the compiled-module cache to a size cap, oldest first."},
+	// The prune walks every class that maps to a lockfile reference, and the
+	// compiled-module and plugin-describe caches are two of them, so a prune
+	// reaches past the workspace it was pointed at.
+	{"cache-prune", ReachMachine, "Remove artifact-cache entries no lockfile references."},
+	{"cache-status", ReachNone, "Report the on-disk caches' contents and total size."},
+	{"config-capture", ReachWorkspace, "Freeze the effective build-critical configuration into a workspace."},
+	// Seeding resolves its write target through the same policy a registration
+	// does, which lands in the machine-wide file unless an operator points it at
+	// the workspace's own.
+	{"config-init", ReachMachine, "Seed a working configuration with a registry and its trust policy."},
+	{"config-show", ReachNone, "Report the effective configuration and where each setting came from."},
+	{"deprecate", ReachRegistry, "Attach a signed deprecation marker to an already-published artifact."},
+	{"get-schema", ReachNone, "Report the JSON Schema for an entity or contract kind."},
+	{"import", ReachWorkspace, "Turn a foreign source description into draft authoring files."},
+	{"inspect", ReachNone, "Report an entity's resolved definition, or a Release's dependency closure, without rendering."},
+	{"lint", ReachNone, "Check catalog publishing conventions across a catalog, a Release, or one entity."},
+	{"login", ReachMachine, "Authenticate to an OCI registry and store the credential."},
+	{"logout", ReachMachine, "Remove a stored registry credential."},
+	// Serving takes a listening address or a stream of the machine itself, which
+	// no workspace owns and which outlives the request that asked for it.
+	{"mcp", ReachMachine, "Serve the tool protocol over a stream for assistant integration."},
+	// A plugin attachment resolves its write target by the socket it attaches to:
+	// a command extension is tool-scoped and lands in the machine-wide file,
+	// and an operator may point any of them there, so the class is what the
+	// widest resolution reaches rather than what the commonest one does.
+	{"plugin-add", ReachMachine, "Search a registry and add a plugin of a named type."},
+	{"plugin-gen-catalog", ReachWorkspace, "Generate Plugin catalog entities from guest metadata plus an authored overlay."},
+	{"plugin-list", ReachNone, "Report the plugins resolvable here, with their declared metadata."},
+	{"plugin-remove", ReachMachine, "Remove a configured plugin of a named type."},
+	{"plugin-run-local", ReachNone, "Load a local guest module and call one of its exports."},
+	{"plugin-sync", ReachWorkspace, "Sync a plugin's machine-owned records in its entity file with its module."},
+	{"pull", ReachWorkspace, "Resolve catalog and source dependencies into the cache and write the per-Release lockfile."},
+	{"push", ReachRegistry, "Bundle and publish a catalog entity to an OCI registry."},
+	{"push-artifact", ReachRegistry, "Publish a standalone data artifact to an OCI registry."},
+	{"registry-add", ReachMachine, "Register a registry and its signature trust policy."},
+	{"registry-list", ReachNone, "Report the configured registries and their trust posture."},
+	{"registry-remove", ReachMachine, "Remove a registry and its trust policy from a configuration file."},
+	// The index it builds is written under the workspace's own configured cache
+	// directory, so the refresh reaches no further than the workspace does.
+	{"registry-update", ReachWorkspace, "Build the local searchable index of configured registries."},
+	{"search", ReachNone, "Search the local index of configured registries."},
+	{"serve", ReachMachine, "Serve the compiler over JSON-RPC on a stream."},
+	{"sign", ReachRegistry, "Sign already-published artifacts and attach their signatures."},
+	{"validate", ReachNone, "Check correctness across a catalog, a Release, or one entity."},
+	{"version", ReachNone, "Report the binary's own version."},
 
 	// Capabilities the JSON-RPC daemon originated.
-	{"session-initialize", "Establish a session over a workspace and negotiate its position encoding."},
-	{"session-invalidate", "Discard the session's cached parse and findings for a document."},
-	{"cached-diagnostics", "Return the findings already recorded for a document, without re-checking it."},
-	{"ir-graph", "Return the serialized IR graph a Release resolves to."},
-	{"definition-at-position", "Locate the definition site the reference under a cursor names."},
-	{"references-at-position", "Locate every reference to the entity name under a cursor."},
-	{"implementations-at-position", "Locate every implementation of the entity under a cursor."},
-	{"hover-at-position", "Render a readable summary of the entity under a cursor."},
-	{"completion-at-position", "Propose the values admissible at a cursor."},
-	{"workspace-entity-index", "Report every workspace-local entity's kind, name, description and source file."},
-	{"feature-attach-candidates", "Report the Features whose declared applicability an entity's labels satisfy."},
-	{"connection-candidates", "Report an entity's dependency sockets and the components whose declared labels satisfy each one."},
-	{"document-insertion-point", "Report where in an authored document a new entry under a named container belongs."},
-	{"attachment-container", "Report which document and which container a graph node's Feature attachment belongs in."},
-	{"document-edit", "Apply one bounded structured edit to an authored document, preserving every byte it does not touch."},
-	{"release-candidates", "Report every Release-kind document under the workspace root, by content."},
-	{"active-release", "Report the Release the workspace's disambiguation cascade selected."},
+	{"session-initialize", ReachNone, "Establish a session over a workspace and negotiate its position encoding."},
+	{"session-invalidate", ReachNone, "Discard the session's cached parse and findings for a document."},
+	{"cached-diagnostics", ReachNone, "Return the findings already recorded for a document, without re-checking it."},
+	{"ir-graph", ReachNone, "Return the serialized IR graph a Release resolves to."},
+	{"definition-at-position", ReachNone, "Locate the definition site the reference under a cursor names."},
+	{"references-at-position", ReachNone, "Locate every reference to the entity name under a cursor."},
+	{"implementations-at-position", ReachNone, "Locate every implementation of the entity under a cursor."},
+	{"hover-at-position", ReachNone, "Render a readable summary of the entity under a cursor."},
+	{"completion-at-position", ReachNone, "Propose the values admissible at a cursor."},
+	{"workspace-entity-index", ReachNone, "Report every workspace-local entity's kind, name, description and source file."},
+	{"feature-attach-candidates", ReachNone, "Report the Features whose declared applicability an entity's labels satisfy."},
+	{"connection-candidates", ReachNone, "Report an entity's dependency sockets and the components whose declared labels satisfy each one."},
+	{"document-insertion-point", ReachNone, "Report where in an authored document a new entry under a named container belongs."},
+	{"attachment-container", ReachNone, "Report which document and which container a graph node's Feature attachment belongs in."},
+	{"document-edit", ReachWorkspace, "Apply one bounded structured edit to an authored document, preserving every byte it does not touch."},
+	{"release-candidates", ReachNone, "Report every Release-kind document under the workspace root, by content."},
+	{"active-release", ReachNone, "Report the Release the workspace's disambiguation cascade selected."},
 
 	// Capabilities the tool protocol originated.
-	{"explain-error", "Explain a diagnostic a build emitted, and what to change."},
-	{"scaffold-entity", "Generate a minimal starter skeleton for an entity kind from its schema."},
-	{"describe-capabilities", "Reveal the tool definitions the default listing withholds."},
+	{"explain-error", ReachNone, "Explain a diagnostic a build emitted, and what to change."},
+	// The drafting layer touches no filesystem: what it returns is a document to
+	// write, and where that goes is the caller's decision rather than this
+	// operation's effect.
+	{"scaffold-entity", ReachNone, "Generate a minimal starter skeleton for an entity kind from its schema."},
+	{"describe-capabilities", ReachNone, "Reveal the tool definitions the default listing withholds."},
 }
 
 // Surface names one caller-facing surface, for the findings a check reports.
