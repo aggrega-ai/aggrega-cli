@@ -524,6 +524,8 @@ func originFields() []originField {
 		sc("mcp.limits.max_concurrent_requests", func(c Config) string {
 			return strconv.Itoa(c.MCP.Limits.MaxConcurrentRequests)
 		}),
+		sc("mcp.authorization.issuer", func(c Config) string { return c.MCP.Authorization.Issuer }),
+		sc("mcp.authorization.resource", func(c Config) string { return c.MCP.Authorization.Resource }),
 		sc("signing.fulcio_url", func(c Config) string { return c.Signing.FulcioURL }),
 		sc("signing.rekor_url", func(c Config) string { return c.Signing.RekorURL }),
 		sc("signing.timestamp_url", func(c Config) string { return c.Signing.TimestampURL }),

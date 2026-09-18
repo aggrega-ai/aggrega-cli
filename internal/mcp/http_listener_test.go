@@ -271,7 +271,7 @@ func TestListenerRefusesPlaintextOnANetworkAddress(t *testing.T) {
 // serving; that it returns the refusal at all is the observable.
 func TestListenAndServeRefusesBeforeItBuildsOrBinds(t *testing.T) {
 	err := ListenAndServe(context.Background(), Config{Stderr: io.Discard},
-		HTTPConfig{MaxBodyBytes: 1 << 20, MaxConcurrentRequests: 8},
+		defaultTransportConfig(),
 		ListenConfig{Address: "0.0.0.0:0"})
 	if err == nil {
 		t.Fatal("ListenAndServe accepted a plaintext network address")

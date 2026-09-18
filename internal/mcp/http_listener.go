@@ -116,13 +116,24 @@ type ListenConfig struct {
 // Every refusal a deployment can meet at startup is made first, with nothing yet
 // built and nothing yet bound, so a misconfigured deployment fails at startup
 // rather than after an address is already accepting: what the listener itself is
-// asked to do, and then whether there is a workspace for it to serve. The
-// handler is built second, because acquiring the documentation bundle is the
-// expensive step and there is no reason to pay it for a deployment that is about
-// to be refused. Only then is anything bound.
+// asked to do, then what the deployment declares itself to be, and then whether
+// there is a workspace for it to serve. The handler is built second, because
+// acquiring the documentation bundle is the expensive step and there is no
+// reason to pay it for a deployment that is about to be refused. Only then is
+// anything bound.
 func ListenAndServe(ctx context.Context, cfg Config, transport HTTPConfig, listen ListenConfig) error {
 	target, cert, err := resolveListenTarget(listen)
 	if err != nil {
+		return err
+	}
+	// Resolved here and the result dropped, then resolved again inside the
+	// handler below. The refusal has to be made before the handler is built,
+	// because building one acquires the documentation bundle; and the handler
+	// cannot lean on its caller having made it, because it is reachable without
+	// coming through here. One resolver called from both points is what keeps
+	// those two from drifting into disagreeing about what a deployment must
+	// declare.
+	if _, err := resolveProtectedResource(transport.Authorization); err != nil {
 		return err
 	}
 	if err := requireServableWorkspace(cfg.WorkspaceRoot); err != nil {

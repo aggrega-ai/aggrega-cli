@@ -49,10 +49,14 @@ type httpFixture struct {
 }
 
 // defaultTransportConfig is the shape every proof that is not about the caps
-// runs under: a body cap far above any fixture here, and room for more requests
-// at once than any of them issues.
+// runs under: a body cap far above any fixture here, room for more requests at
+// once than any of them issues, and the deployment every proof here runs as.
 func defaultTransportConfig() HTTPConfig {
-	return HTTPConfig{MaxBodyBytes: 1 << 20, MaxConcurrentRequests: 8}
+	return HTTPConfig{
+		MaxBodyBytes:          1 << 20,
+		MaxConcurrentRequests: 8,
+		Authorization:         defaultAuthorizationConfig(),
+	}
 }
 
 // newHTTPFixture starts a listener over the fixture command surface, with the
@@ -589,29 +593,32 @@ func TestHTTPRoutingRefusesEverythingButPostOnTheEndpoint(t *testing.T) {
 		}
 	}
 
-	// The two well-known metadata paths serve no document on this server, so they
-	// are not this endpoint and are answered as every other path is.
-	for _, path := range []string{
-		"/",
-		"/mcpx",
-		"/mcp/",
-		"/.well-known/oauth-protected-resource",
-		"/.well-known/oauth-protected-resource/mcp",
-	} {
+	// A path that is not the endpoint is not the endpoint however close it looks,
+	// and the two metadata paths are not it either: those are read, and a request
+	// to one that is not a read is refused as a method rather than answered.
+	for _, path := range []string{"/", "/mcpx", "/mcp/"} {
 		got := f.send(t, http.MethodPost, path, nil, `{"jsonrpc":"2.0","id":1,"method":"ping"}`)
 		if got.status != http.StatusNotFound {
 			t.Errorf("POST %s: status = %d, want 404 (body %q)", path, got.status, got.raw)
+		}
+	}
+	for _, path := range []string{testMetadataPath, wellKnownProtectedResource} {
+		got := f.send(t, http.MethodPost, path, nil, `{"jsonrpc":"2.0","id":1,"method":"ping"}`)
+		if got.status != http.StatusMethodNotAllowed {
+			t.Errorf("POST %s: status = %d, want 405 (body %q)", path, got.status, got.raw)
 		}
 	}
 }
 
 // The path is settled before the credential is looked at.
 //
-// This one runs against the authenticator the handler SHIPS with, so the pair of
-// answers is what a deployment gives: an unknown path is not-found whether or not
-// a credential would have been accepted, while the endpoint itself challenges.
-// The second half is the control — without it, a listener refusing everything
-// with not-found would pass the first half.
+// This one runs against the authenticator the handler SHIPS with, so the three
+// answers below are what a deployment gives, and together they are the whole
+// ordering: a path that does not exist is not-found whether or not a credential
+// would have been accepted, the document is answered with no credential asked
+// for, and the endpoint itself challenges. Each is the others' control — without
+// the third, a listener refusing everything with not-found would pass the first;
+// without the first, one challenging everywhere would pass the third.
 func TestHTTPUnknownPathIsAnsweredBeforeAuthentication(t *testing.T) {
 	f := newUnauthenticatedHTTPFixture(t, context.Background(), defaultTransportConfig(), nil)
 
@@ -624,13 +631,22 @@ func TestHTTPUnknownPathIsAnsweredBeforeAuthentication(t *testing.T) {
 			"from a path that does not exist", challenge)
 	}
 
+	document := f.send(t, http.MethodGet, testMetadataPath, nil, "")
+	if document.status != http.StatusOK {
+		t.Errorf("the document: status = %d, want 200 (body %q)", document.status, document.raw)
+	}
+
 	endpoint := f.post(t, nil, `{"jsonrpc":"2.0","id":1,"method":"ping"}`)
 	if endpoint.status != http.StatusUnauthorized {
-		t.Fatalf("endpoint: status = %d, want 401; the control that makes the assertion above "+
+		t.Fatalf("endpoint: status = %d, want 401; the control that makes the assertions above "+
 			"mean something is that this listener DOES challenge somewhere", endpoint.status)
 	}
-	if challenge := endpoint.header.Get(headerAuthenticate); challenge != "Bearer" {
-		t.Errorf("endpoint: %s = %q, want %q", headerAuthenticate, challenge, "Bearer")
+	scheme, params := parseChallenge(t, endpoint.header.Get(headerAuthenticate))
+	if scheme != "Bearer" {
+		t.Errorf("endpoint: the challenge scheme is %q, want %q", scheme, "Bearer")
+	}
+	if params["resource_metadata"] != testMetadataAddress {
+		t.Errorf("endpoint: resource_metadata = %q, want %q", params["resource_metadata"], testMetadataAddress)
 	}
 	if endpoint.raw != "" {
 		t.Errorf("the refusal carried a body: %q", endpoint.raw)
@@ -1163,15 +1179,23 @@ func newRecordingHTTPListener(t *testing.T, run commandRunner) (*writeRecorder, 
 // A cap the configuration surface cannot produce is refused at construction
 // rather than clamped, because a listener that silently served one request at a
 // time — or refused every request — would look like a working deployment.
+//
+// Every row declares the deployment, so the one thing wrong with it is its cap.
+// A row that left that out would still be refused, and would stop covering the
+// cap the moment it started being refused for the other reason.
 func TestHTTPHandlerRefusesANonPositiveCap(t *testing.T) {
+	declared := defaultAuthorizationConfig()
 	for _, row := range []struct {
 		name      string
 		transport HTTPConfig
 	}{
-		{"no body cap", HTTPConfig{MaxBodyBytes: 0, MaxConcurrentRequests: 4}},
-		{"negative body cap", HTTPConfig{MaxBodyBytes: -1, MaxConcurrentRequests: 4}},
-		{"no concurrency cap", HTTPConfig{MaxBodyBytes: 1024, MaxConcurrentRequests: 0}},
-		{"negative concurrency cap", HTTPConfig{MaxBodyBytes: 1024, MaxConcurrentRequests: -1}},
+		{"no body cap", HTTPConfig{MaxBodyBytes: 0, MaxConcurrentRequests: 4, Authorization: declared}},
+		{"negative body cap", HTTPConfig{MaxBodyBytes: -1, MaxConcurrentRequests: 4, Authorization: declared}},
+		{"no concurrency cap", HTTPConfig{MaxBodyBytes: 1024, MaxConcurrentRequests: 0, Authorization: declared}},
+		{
+			"negative concurrency cap",
+			HTTPConfig{MaxBodyBytes: 1024, MaxConcurrentRequests: -1, Authorization: declared},
+		},
 	} {
 		t.Run(row.name, func(t *testing.T) {
 			s := newCommandToolServer(t, nil)

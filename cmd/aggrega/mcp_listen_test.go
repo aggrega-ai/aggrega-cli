@@ -44,6 +44,27 @@ func mcpSocketDir(t *testing.T) string {
 	return dir
 }
 
+// mcpDeclaredDeployment is what a listener has to be told before it will bind:
+// which authorization server issues the tokens it accepts, and the address it
+// publishes for itself as the resource they are issued for. It is written
+// beneath an `mcp:` key, so a row that also names a listen address writes both
+// under one.
+//
+// A row that starts no listener does not need it, and the stdio row below
+// deliberately leaves it out: nothing about speaking over the process's own
+// streams reads any of it.
+const mcpDeclaredDeployment = "  authorization:\n" +
+	"    issuer: https://login.example.test\n" +
+	"    resource: https://mcp.example.test/mcp\n"
+
+// mcpPublishedChallenge is the whole challenge a caller with no token receives
+// from a deployment declared as above: the scheme, the address of the document
+// that says where to obtain a token, and the scope needed before anything else.
+// It is written out rather than composed, so what is compared is an independent
+// statement of what a client will read.
+const mcpPublishedChallenge = `Bearer resource_metadata=` +
+	`"https://mcp.example.test/.well-known/oauth-protected-resource/mcp", scope="aggrega:read"`
+
 // makeMCPWorkspace writes a workspace whose configuration carries whatever the
 // caller adds beneath the workspace marker. It declares the offline posture so a
 // server started over it reaches no registry: what these proofs are about is the
@@ -131,7 +152,7 @@ func mcpUnixClient(socketPath string) *http.Client {
 	}}
 }
 
-// TestTheHTTPTransportServesNothingWithoutACredential drives the production
+// TestTheProtocolEndpointServesNothingWithoutACredential drives the production
 // wiring, with no seam of any kind, and asserts that every shape of request is
 // refused with the challenge a bearer-token deployment answers.
 //
@@ -144,10 +165,14 @@ func mcpUnixClient(socketPath string) *http.Client {
 //
 // A planted defect is visible: replace the refusing value with one that admits,
 // and every row reads back a status and a body that are not this one.
-func TestTheHTTPTransportServesNothingWithoutACredential(t *testing.T) {
+//
+// Every row is a request to the protocol endpoint. The one thing a deployment
+// does answer without a credential is the document it publishes about itself,
+// which is not on this path and is read on its own path instead.
+func TestTheProtocolEndpointServesNothingWithoutACredential(t *testing.T) {
 	// Not parallel: spawns a server subprocess.
 	socket := filepath.Join(mcpSocketDir(t), "s")
-	startMCPServer(t, makeMCPWorkspace(t, ""), "--listen", "unix:"+socket)
+	startMCPServer(t, makeMCPWorkspace(t, "mcp:\n"+mcpDeclaredDeployment), "--listen", "unix:"+socket)
 	awaitSocket(t, socket)
 	client := mcpUnixClient(socket)
 
@@ -182,8 +207,8 @@ func TestTheHTTPTransportServesNothingWithoutACredential(t *testing.T) {
 			if resp.StatusCode != http.StatusUnauthorized {
 				t.Errorf("status = %d, want %d (body %q)", resp.StatusCode, http.StatusUnauthorized, raw)
 			}
-			if got := resp.Header.Get("WWW-Authenticate"); got != "Bearer" {
-				t.Errorf("WWW-Authenticate = %q, want %q", got, "Bearer")
+			if got := resp.Header.Get("WWW-Authenticate"); got != mcpPublishedChallenge {
+				t.Errorf("WWW-Authenticate = %q, want %q", got, mcpPublishedChallenge)
 			}
 			if len(raw) != 0 {
 				t.Errorf("the refusal carried a body, so something behind the challenge answered: %q", raw)
@@ -204,7 +229,7 @@ func TestTheListenAddressIsTheFlagThenTheConfigKey(t *testing.T) {
 	// Not parallel: spawns a server subprocess.
 	t.Run("the config key is honoured when the flag is unset", func(t *testing.T) {
 		socket := filepath.Join(mcpSocketDir(t), "s")
-		ws := makeMCPWorkspace(t, "mcp:\n  listen: unix:"+socket+"\n")
+		ws := makeMCPWorkspace(t, "mcp:\n  listen: unix:"+socket+"\n"+mcpDeclaredDeployment)
 		startMCPServer(t, ws)
 		awaitSocket(t, socket)
 	})
@@ -213,7 +238,7 @@ func TestTheListenAddressIsTheFlagThenTheConfigKey(t *testing.T) {
 		dir := mcpSocketDir(t)
 		configured := filepath.Join(dir, "config")
 		requested := filepath.Join(dir, "flag")
-		ws := makeMCPWorkspace(t, "mcp:\n  listen: unix:"+configured+"\n")
+		ws := makeMCPWorkspace(t, "mcp:\n  listen: unix:"+configured+"\n"+mcpDeclaredDeployment)
 		startMCPServer(t, ws, "--listen", "unix:"+requested)
 
 		awaitSocket(t, requested)

@@ -36,6 +36,7 @@ const (
 	headerName            = "Mcp-Name"
 	headerAuthenticate    = "WWW-Authenticate"
 	headerContentType     = "Content-Type"
+	headerCacheControl    = "Cache-Control"
 	headerOrigin          = "Origin"
 	headerAllow           = "Allow"
 )
@@ -81,17 +82,24 @@ type httpAuthenticator interface {
 }
 
 // bearerChallenge refuses every request with the challenge a bearer-token
-// deployment answers.
+// deployment answers, naming the document a caller reads to find out where to
+// obtain a token and the scope it needs before anything else.
 //
 // It is the value this transport ships with, and the refusal is unconditional:
-// nothing is served to anyone until a validator that can tell one token from
-// another replaces it. A transport that shipped serving requests while its
-// credential check was still being built would be reachable without a token for
-// as long as that took, which is the window this value closes.
-type bearerChallenge struct{}
+// nothing behind it is served to anyone until a validator that can tell one
+// token from another replaces it. A transport that shipped serving requests
+// while its credential check was still being built would be reachable without a
+// token for as long as that took, which is the window this value closes. The
+// challenge names somewhere for a refused caller to go; it admits no one.
+type bearerChallenge struct {
+	// challenge is the whole header value, composed once from what the
+	// deployment declared about itself, so every refusal points at the same
+	// document a client would have found at the well-known path.
+	challenge string
+}
 
-func (bearerChallenge) authenticate(w http.ResponseWriter, _ *http.Request) bool {
-	w.Header().Set(headerAuthenticate, "Bearer")
+func (c bearerChallenge) authenticate(w http.ResponseWriter, _ *http.Request) bool {
+	w.Header().Set(headerAuthenticate, c.challenge)
 	w.WriteHeader(http.StatusUnauthorized)
 	return false
 }
@@ -119,6 +127,12 @@ type HTTPConfig struct {
 	// MaxConcurrentRequests is how many requests are answered at once. One
 	// arriving while that many are in flight is refused rather than queued.
 	MaxConcurrentRequests int
+
+	// Authorization is what this deployment declares about the bearer tokens its
+	// callers present. Unlike the caps above it is not a bound on traffic: it is
+	// what every answer given to a caller carrying no credential is composed
+	// from, which is why a handler is not built without it.
+	Authorization AuthorizationConfig
 }
 
 // httpHandler answers the protocol over HTTP: one endpoint, one JSON-RPC
@@ -150,6 +164,12 @@ type httpHandler struct {
 	// nil — newHTTPHandler installs the refusing value — and a test in this
 	// package replaces it to reach the transport behaviour behind it.
 	auth httpAuthenticator
+
+	// resource is what this deployment publishes about itself: the document, the
+	// paths it is answered at, and the challenge that points a refused caller at
+	// it. Composed once at construction, because a caller that fetches the
+	// document and a caller that is challenged must be told the same thing.
+	resource protectedResource
 }
 
 // NewHTTPHandler builds the handler that serves the protocol over HTTP, and
@@ -162,11 +182,13 @@ type httpHandler struct {
 // here — no message is framed on a stream in this mode — while Stderr carries
 // the log lines it carries on stdio.
 //
-// The handler it returns refuses every request with a bearer challenge. An
-// authenticator that can tell one token from another replaces that value inside
-// this package; there is no exported route by which a caller could install one
-// that admits anything, which is what makes this transport unreachable without
-// a credential until such a validator exists.
+// The handler it returns refuses every request to the protocol endpoint with a
+// bearer challenge naming what this deployment publishes about itself, and
+// answers a request for that published document with no credential asked for.
+// An authenticator that can tell one token from another replaces the refusing
+// value inside this package; there is no exported route by which a caller could
+// install one that admits anything, which is what keeps the protocol surface
+// unreachable without a credential until such a validator exists.
 func NewHTTPHandler(ctx context.Context, cfg Config, transport HTTPConfig) (http.Handler, error) {
 	logw := cfg.Stderr
 	if logw == nil {
@@ -214,6 +236,10 @@ func newHTTPHandler(runCtx context.Context, s *server, transport HTTPConfig) (*h
 	if s.cancels == nil {
 		s.cancels = requestcancel.New()
 	}
+	resource, err := resolveProtectedResource(transport.Authorization)
+	if err != nil {
+		return nil, err
+	}
 	s.transport = transportHTTP
 	return &httpHandler{
 		srv:            s,
@@ -221,21 +247,27 @@ func newHTTPHandler(runCtx context.Context, s *server, transport HTTPConfig) (*h
 		allowedOrigins: slices.Clone(transport.AllowedOrigins),
 		maxBodyBytes:   transport.MaxBodyBytes,
 		slots:          make(chan struct{}, transport.MaxConcurrentRequests),
-		auth:           bearerChallenge{},
+		auth:           bearerChallenge{challenge: resource.challenge},
+		resource:       resource,
 	}, nil
 }
 
-// ServeHTTP answers one JSON-RPC message.
+// ServeHTTP answers one JSON-RPC message, or hands out what this deployment
+// publishes about itself.
 //
 // The order the gates run in is the contract, not an implementation detail:
 //
-//   - The path and the method are settled first, so a caller probing for paths
+//   - A request for the document this deployment publishes about itself is
+//     answered first, and it is the one answer given with no credential asked
+//     for: a client reads it to find out where to obtain a token, so a
+//     challenge there would close the only door into the deployment.
+//   - The path and the method are settled next, so a caller probing for paths
 //     is told a path does not exist rather than being challenged for a
 //     credential it would then discover is useless there.
-//   - Authentication runs next, ahead of everything a request can influence.
-//     Every refusal after this point therefore reaches an authenticated caller
-//     only, which is what makes the unauthenticated answer to this endpoint a
-//     single one however the request was shaped.
+//   - Authentication runs after that, ahead of everything a request can
+//     influence. Every refusal after this point therefore reaches an
+//     authenticated caller only, which is what makes the unauthenticated answer
+//     to this endpoint a single one however the request was shaped.
 //   - The origin, the concurrency slot and the body cap follow, in that order:
 //     an unlisted origin costs a header read, a slot is held only for work that
 //     is going to be done, and the body is the first thing a caller can make
@@ -243,6 +275,10 @@ func newHTTPHandler(runCtx context.Context, s *server, transport HTTPConfig) (*h
 //   - The body is then read and parsed, its era established, and its headers
 //     checked against it, before anything is routed.
 func (h *httpHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if h.resource.servesMetadataAt(r.URL.Path) {
+		h.serveMetadata(w, r)
+		return
+	}
 	if r.URL.Path != endpointPath {
 		// No body: an answer here would only describe a path that does not exist.
 		w.WriteHeader(http.StatusNotFound)

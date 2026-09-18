@@ -818,7 +818,8 @@ type ServeConfig struct {
 // MCPConfig carries the Model Context Protocol server's settings for the
 // HTTP transport — the listen address that selects it, the certificate
 // and key that let the process terminate TLS itself, the origins it
-// accepts, and the caps it applies to the traffic it takes.
+// accepts, the caps it applies to the traffic it takes, and what it
+// declares about the tokens its callers present.
 //
 // Listen is the only field that decides anything on its own: with it
 // empty the server speaks the protocol over standard input and output
@@ -855,6 +856,40 @@ type MCPConfig struct {
 	// Limits carries the caps the listener applies to the traffic it
 	// accepts.
 	Limits MCPLimitsConfig `yaml:"limits"`
+
+	// Authorization carries what this deployment declares about the
+	// bearer tokens its callers present. Both of its fields are
+	// required whenever Listen is set, and a listener is refused
+	// before it binds without them; neither is read while the server
+	// speaks over standard input and output.
+	Authorization MCPAuthorizationConfig `yaml:"authorization"`
+}
+
+// MCPAuthorizationConfig carries what a deployment declares about the
+// bearer tokens its callers present: which authorization server issues
+// them, and the address this deployment publishes for itself as the
+// resource they are issued for.
+//
+// Both are addresses and both are published, with no credential asked
+// for, in the protected-resource metadata document the listener serves —
+// a client reads that document before it can hold a token, so what is
+// here is meant to be known. Neither holds secret material, which is the
+// same split SigningConfig draws: a token is presented by a caller on
+// the request it makes and is never a configuration field.
+type MCPAuthorizationConfig struct {
+	// Issuer is the authorization server that issues the tokens this
+	// deployment accepts, written as that server states its own issuer
+	// identifier. Empty (the default) is not a usable value: a
+	// listener is refused before it binds without it.
+	Issuer string `yaml:"issuer"`
+
+	// Resource is the address this deployment publishes for itself, as
+	// a caller reaches it. It is what a client hands the authorization
+	// server when it asks for a token for this deployment, and the
+	// path the metadata document is served at is derived from it.
+	// Empty (the default) is not a usable value: a listener is refused
+	// before it binds without it.
+	Resource string `yaml:"resource"`
 }
 
 // MCPTLSConfig carries the paths to the certificate chain and private key
