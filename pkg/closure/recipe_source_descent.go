@@ -13,6 +13,7 @@ import (
 	"text/template/parse"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/gotmpl"
+	"github.com/aggrega-ai/aggrega-cli/internal/sourceref"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
@@ -105,7 +106,11 @@ func DescendRecipeSources(
 		if source == nil {
 			continue
 		}
-		if isLocalSource(source) {
+		// A reference the workspace already holds is never pinned, so the descent
+		// has nothing to acquire for it. The reading is the one every pass that
+		// asks this question shares, which is what keeps the set of references a
+		// lockfile pins and the set a render fetches from drifting apart.
+		if sourceref.IsLocal(source) {
 			continue
 		}
 
@@ -726,48 +731,6 @@ func isKnownKind(kind string) bool {
 		return true
 	default:
 		return false
-	}
-}
-
-// isLocalSource returns true when source is a scalar URI that
-// names a Tier-1 (filesystem-relative) or Tier-2 (workspace-
-// catalog-relative) reference. Local sources are never lockfile-
-// pinned per amendment §3.12; the closure walker skips them.
-//
-// In the current implementation heuristic is: scalar string sources
-// that don't carry a recognised remote-scheme prefix
-// (oci://, https://, git+ssh://, etc.) are treated as local.
-// Structured-form sources always carry an explicit `url:` field
-// whose scheme determines remote-vs-local; structured-form with a
-// local-shaped url (file://, ./, ../, leading /) is also classified
-// local here.
-func isLocalSource(source any) bool {
-	switch s := source.(type) {
-	case string:
-		return isLocalURL(s)
-	case map[string]any:
-		urlVal, _ := s["url"].(string)
-		return isLocalURL(urlVal)
-	default:
-		return false
-	}
-}
-
-func isLocalURL(s string) bool {
-	if s == "" {
-		return false
-	}
-	switch {
-	case strings.HasPrefix(s, "oci://"),
-		strings.HasPrefix(s, "https://"),
-		strings.HasPrefix(s, "http://"),
-		strings.HasPrefix(s, "git+ssh://"),
-		strings.HasPrefix(s, "git://"),
-		strings.HasPrefix(s, "ssh://"),
-		strings.HasSuffix(s, ".git"):
-		return false
-	default:
-		return true
 	}
 }
 

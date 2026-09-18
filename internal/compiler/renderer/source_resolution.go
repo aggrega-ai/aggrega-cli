@@ -42,41 +42,6 @@ func wrapSourceResolutionError(err error, nodeID, label string) error {
 	return cerrors.Wrap(err, category, cerrors.SourceLocation{File: nodeID}, message)
 }
 
-// isLocalSource returns true when source is a scalar URI naming a
-// Tier-1 (filesystem) or Tier-2 (workspace-relative) reference, or
-// when the structured form's url field is local-shaped. Mirrors the
-// classifier in closure.recipe_source_descent so lock-time and
-// build-time treat the same paths as local.
-func isLocalSource(source any) bool {
-	switch s := source.(type) {
-	case string:
-		return isLocalURL(s)
-	case map[string]any:
-		urlVal, _ := s["url"].(string)
-		return isLocalURL(urlVal)
-	default:
-		return false
-	}
-}
-
-func isLocalURL(s string) bool {
-	if s == "" {
-		return false
-	}
-	switch {
-	case strings.HasPrefix(s, "oci://"),
-		strings.HasPrefix(s, "https://"),
-		strings.HasPrefix(s, "http://"),
-		strings.HasPrefix(s, "git+ssh://"),
-		strings.HasPrefix(s, "git://"),
-		strings.HasPrefix(s, "ssh://"),
-		strings.HasSuffix(s, ".git"):
-		return false
-	default:
-		return true
-	}
-}
-
 // matchFetchSentinel walks the error chain via errors.Is against each
 // fetch-family sentinel: the four remote-acquisition faults declared at
 // pkg/oci/errors.go plus the offline-egress refusal from pkg/egress. Returns

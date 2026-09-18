@@ -9,6 +9,7 @@ import (
 	"fmt"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/parse"
+	"github.com/aggrega-ai/aggrega-cli/internal/sourceref"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
@@ -106,7 +107,7 @@ func resolveEntitySource(input RendererInput, source any, locals types.OrderedMa
 	if source == nil {
 		return nil, nil
 	}
-	if isLocalSource(source) {
+	if sourceref.IsLocal(source) {
 		return source, nil
 	}
 	if input.Lockfile == nil || input.WorkspaceRoot == "" || input.CacheDir == "" {
