@@ -526,6 +526,7 @@ func originFields() []originField {
 		}),
 		sc("mcp.authorization.issuer", func(c Config) string { return c.MCP.Authorization.Issuer }),
 		sc("mcp.authorization.resource", func(c Config) string { return c.MCP.Authorization.Resource }),
+		sc("mcp.authorization.jwks_file", func(c Config) string { return c.MCP.Authorization.JWKSFile }),
 		sc("signing.fulcio_url", func(c Config) string { return c.Signing.FulcioURL }),
 		sc("signing.rekor_url", func(c Config) string { return c.Signing.RekorURL }),
 		sc("signing.timestamp_url", func(c Config) string { return c.Signing.TimestampURL }),

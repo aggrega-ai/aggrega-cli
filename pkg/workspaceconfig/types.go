@@ -858,24 +858,27 @@ type MCPConfig struct {
 	Limits MCPLimitsConfig `yaml:"limits"`
 
 	// Authorization carries what this deployment declares about the
-	// bearer tokens its callers present. Both of its fields are
+	// bearer tokens its callers present. Issuer and Resource are
 	// required whenever Listen is set, and a listener is refused
-	// before it binds without them; neither is read while the server
-	// speaks over standard input and output.
+	// before it binds without them; none of it is read while the
+	// server speaks over standard input and output.
 	Authorization MCPAuthorizationConfig `yaml:"authorization"`
 }
 
 // MCPAuthorizationConfig carries what a deployment declares about the
 // bearer tokens its callers present: which authorization server issues
-// them, and the address this deployment publishes for itself as the
-// resource they are issued for.
+// them, the address this deployment publishes for itself as the
+// resource they are issued for, and optionally the file its
+// verification keys are read from.
 //
-// Both are addresses and both are published, with no credential asked
-// for, in the protected-resource metadata document the listener serves —
-// a client reads that document before it can hold a token, so what is
-// here is meant to be known. Neither holds secret material, which is the
+// The two addresses are published, with no credential asked for, in the
+// protected-resource metadata document the listener serves — a client
+// reads that document before it can hold a token, so what is there is
+// meant to be known. None of it holds secret material, which is the
 // same split SigningConfig draws: a token is presented by a caller on
-// the request it makes and is never a configuration field.
+// the request it makes and is never a configuration field, and the key
+// set below holds public verification keys rather than anything that
+// signs.
 type MCPAuthorizationConfig struct {
 	// Issuer is the authorization server that issues the tokens this
 	// deployment accepts, written as that server states its own issuer
@@ -890,6 +893,19 @@ type MCPAuthorizationConfig struct {
 	// Empty (the default) is not a usable value: a listener is refused
 	// before it binds without it.
 	Resource string `yaml:"resource"`
+
+	// JWKSFile is the path to a file holding the JSON Web Key Set the
+	// tokens this deployment accepts are verified against. Empty (the
+	// default) reads those keys from the authorization server itself.
+	// An offline workspace makes no network request and so has no other
+	// way to obtain them: a listener there is refused before it binds
+	// without this.
+	//
+	// A relative path is resolved against the directory of the config
+	// file that declared it, on the same terms as MCPTLSConfig's two
+	// paths and every other declaring-file-relative path the cascade
+	// carries.
+	JWKSFile string `yaml:"jwks_file"`
 }
 
 // MCPTLSConfig carries the paths to the certificate chain and private key

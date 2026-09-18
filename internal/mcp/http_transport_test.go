@@ -40,7 +40,9 @@ import (
 // proof, which shows what an untouched handler does.
 type acceptAllAuthenticator struct{}
 
-func (acceptAllAuthenticator) authenticate(http.ResponseWriter, *http.Request) bool { return true }
+func (acceptAllAuthenticator) authenticate(r *http.Request) (*http.Request, *authRefusal) {
+	return r, nil
+}
 
 // httpFixture is one running listener with the handler behind it.
 type httpFixture struct {
@@ -51,11 +53,18 @@ type httpFixture struct {
 // defaultTransportConfig is the shape every proof that is not about the caps
 // runs under: a body cap far above any fixture here, room for more requests at
 // once than any of them issues, and the deployment every proof here runs as.
+//
+// The egress gate it carries opens and is never used. A handler consults the
+// gate once, while it is built, and reads nothing from the network until a
+// token actually arrives naming a key — which no proof outside the token file
+// sends — so a fixture here reaches the authorization server this deployment
+// declares exactly never.
 func defaultTransportConfig() HTTPConfig {
 	return HTTPConfig{
 		MaxBodyBytes:          1 << 20,
 		MaxConcurrentRequests: 8,
 		Authorization:         defaultAuthorizationConfig(),
+		Egress:                func() (*http.Client, error) { return http.DefaultClient, nil },
 	}
 }
 
@@ -648,8 +657,16 @@ func TestHTTPUnknownPathIsAnsweredBeforeAuthentication(t *testing.T) {
 	if params["resource_metadata"] != testMetadataAddress {
 		t.Errorf("endpoint: resource_metadata = %q, want %q", params["resource_metadata"], testMetadataAddress)
 	}
-	if endpoint.raw != "" {
-		t.Errorf("the refusal carried a body: %q", endpoint.raw)
+	// The refusal says it is one and nothing more: no result, and no id, which
+	// is read out of a body this server never parsed.
+	if endpoint.frame.Error == nil {
+		t.Errorf("the refusal carries no error envelope: %q", endpoint.raw)
+	}
+	if endpoint.frame.Result != nil {
+		t.Errorf("the refusal carries a result, so something behind the challenge answered: %q", endpoint.raw)
+	}
+	if endpoint.frame.ID != nil {
+		t.Errorf("the refusal names an id, so the body was read before the credential was: %q", endpoint.raw)
 	}
 }
 

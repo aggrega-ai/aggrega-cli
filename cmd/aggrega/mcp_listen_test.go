@@ -6,6 +6,9 @@ package main
 import (
 	"bufio"
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -17,6 +20,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	jose "github.com/go-jose/go-jose/v4"
 )
 
 // Every proof in this file drives the compiled binary, spawned as a client would
@@ -45,17 +50,28 @@ func mcpSocketDir(t *testing.T) string {
 }
 
 // mcpDeclaredDeployment is what a listener has to be told before it will bind:
-// which authorization server issues the tokens it accepts, and the address it
-// publishes for itself as the resource they are issued for. It is written
-// beneath an `mcp:` key, so a row that also names a listen address writes both
-// under one.
+// which authorization server issues the tokens it accepts, the address it
+// publishes for itself as the resource they are issued for, and where its
+// verification keys are. It is written beneath an `mcp:` key, so a row that
+// also names a listen address writes both under one.
+//
+// The key set is named as a file because the workspace these proofs run in is
+// offline, and an offline workspace makes no request to its authorization
+// server — so a listener there is refused before it binds unless the keys come
+// from disk. The path is relative, and resolves against the configuration file
+// that declared it, which is what makeMCPWorkspace writes it beside.
 //
 // A row that starts no listener does not need it, and the stdio row below
 // deliberately leaves it out: nothing about speaking over the process's own
 // streams reads any of it.
 const mcpDeclaredDeployment = "  authorization:\n" +
 	"    issuer: https://login.example.test\n" +
-	"    resource: https://mcp.example.test/mcp\n"
+	"    resource: https://mcp.example.test/mcp\n" +
+	"    jwks_file: " + mcpKeySetFileName + "\n"
+
+// mcpKeySetFileName is where makeMCPWorkspace writes the key set, beside the
+// configuration that names it.
+const mcpKeySetFileName = "verification-keys.json"
 
 // mcpPublishedChallenge is the whole challenge a caller with no token receives
 // from a deployment declared as above: the scheme, the address of the document
@@ -70,6 +86,10 @@ const mcpPublishedChallenge = `Bearer resource_metadata=` +
 // server started over it reaches no registry: what these proofs are about is the
 // transport, and a network round trip on the way to it would be measuring
 // something else.
+//
+// A key set is written beside that configuration, because the offline posture
+// is exactly what makes a listener need one: with no network there is nowhere
+// else for the keys a token would be verified against to come from.
 func makeMCPWorkspace(t *testing.T, extra string) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -77,7 +97,35 @@ func makeMCPWorkspace(t *testing.T, extra string) string {
 	if err := os.WriteFile(filepath.Join(dir, ".aggrega-config.yaml"), []byte(content), 0o644); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
+	writeMCPKeySet(t, filepath.Join(dir, mcpKeySetFileName))
 	return dir
+}
+
+// writeMCPKeySet writes a key set holding one public verification key.
+//
+// The key is generated rather than committed for the same reason the test
+// certificate elsewhere in this package is: a committed one is a blob nobody
+// can read, and nothing here depends on which key it is. No private half is
+// ever written down — the file holds only what an authorization server
+// publishes.
+func writeMCPKeySet(t *testing.T, path string) {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("generate a verification key: %v", err)
+	}
+	raw, err := json.Marshal(jose.JSONWebKeySet{Keys: []jose.JSONWebKey{{
+		Key:       key.Public(),
+		KeyID:     "the-verification-key",
+		Algorithm: string(jose.ES256),
+		Use:       "sig",
+	}}})
+	if err != nil {
+		t.Fatalf("marshal a key set: %v", err)
+	}
+	if err := os.WriteFile(path, raw, 0o600); err != nil {
+		t.Fatalf("write a key set: %v", err)
+	}
 }
 
 // startMCPServer spawns the built binary as `aggrega mcp` with the given
@@ -159,11 +207,11 @@ func mcpUnixClient(socketPath string) *http.Client {
 // The rows are chosen so that a handler serving ANYTHING would show it: a
 // well-formed request in the current revision, one in the handshake revision, a
 // body that is not a message at all, and a method the server does not serve. All
-// four are refused identically, which is the property — an unauthenticated
-// caller learns nothing about the surface behind the challenge, and nothing
-// behind it runs.
+// four are refused identically, which is the property — a caller carrying no
+// credential learns nothing about the surface behind the challenge, and nothing
+// behind it runs, whatever it sent.
 //
-// A planted defect is visible: replace the refusing value with one that admits,
+// A planted defect is visible: admit a request carrying no authorization header
 // and every row reads back a status and a body that are not this one.
 //
 // Every row is a request to the protocol endpoint. The one thing a deployment
@@ -210,8 +258,30 @@ func TestTheProtocolEndpointServesNothingWithoutACredential(t *testing.T) {
 			if got := resp.Header.Get("WWW-Authenticate"); got != mcpPublishedChallenge {
 				t.Errorf("WWW-Authenticate = %q, want %q", got, mcpPublishedChallenge)
 			}
-			if len(raw) != 0 {
-				t.Errorf("the refusal carried a body, so something behind the challenge answered: %q", raw)
+			// The refusal says it is one, and says nothing else. A body
+			// carrying a result, or anything the row sent, would mean
+			// something behind the challenge had answered.
+			var frame struct {
+				ID     any             `json:"id"`
+				Result json.RawMessage `json:"result"`
+				Error  *struct {
+					Message string `json:"message"`
+				} `json:"error"`
+			}
+			if err := json.Unmarshal(raw, &frame); err != nil {
+				t.Fatalf("the refusal is not a protocol frame: %v (body %q)", err, raw)
+			}
+			if frame.Error == nil {
+				t.Errorf("the refusal carries no error envelope: %q", raw)
+			}
+			if frame.Result != nil {
+				t.Errorf("the refusal carries a result, so something behind the challenge answered: %q", raw)
+			}
+			if frame.ID != nil {
+				t.Errorf("the refusal names an id, which is read out of a body this server never parsed: %q", raw)
+			}
+			if strings.Contains(string(raw), "tools/list") || strings.Contains(string(raw), "initialize") {
+				t.Errorf("the refusal echoes what was sent: %q", raw)
 			}
 		})
 	}

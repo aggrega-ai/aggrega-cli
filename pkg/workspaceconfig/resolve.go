@@ -592,6 +592,7 @@ func resolveConfigPaths(cfg *Config, dir string) {
 	// launched from.
 	cfg.MCP.TLS.CertFile = resolveFilesystemPath(dir, cfg.MCP.TLS.CertFile)
 	cfg.MCP.TLS.KeyFile = resolveFilesystemPath(dir, cfg.MCP.TLS.KeyFile)
+	cfg.MCP.Authorization.JWKSFile = resolveFilesystemPath(dir, cfg.MCP.Authorization.JWKSFile)
 }
 
 // resolveAppendPaths resolves a captured layer's relative `_append` path fields

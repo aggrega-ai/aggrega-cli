@@ -4,6 +4,7 @@
 package mcp
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -57,11 +58,12 @@ const metadataCacheControl = "public, max-age=3600"
 // AuthorizationConfig carries what a deployment declares about the bearer
 // tokens its callers present.
 //
-// Both fields are required for a listener and neither holds secret material: a
-// token is presented by a caller on the request it makes, never configured
-// here. They are the whole of what an HTTP caller is told before it presents
-// anything — where to obtain a token, and what this deployment is called as the
-// resource one is obtained for.
+// Issuer and Resource are required for a listener, and none of it holds secret
+// material: a token is presented by a caller on the request it makes, never
+// configured here, and the key set names public verification keys rather than
+// anything that signs. The two addresses are the whole of what an HTTP caller
+// is told before it presents anything — where to obtain a token, and what this
+// deployment is called as the resource one is obtained for.
 type AuthorizationConfig struct {
 	// Issuer is the authorization server that issues the tokens this
 	// deployment accepts, as that server states its own issuer identifier.
@@ -72,6 +74,65 @@ type AuthorizationConfig struct {
 	// asks for a token for this deployment, and the path the document below is
 	// served at is derived from it.
 	Resource string
+
+	// JWKSFile is a file holding the key set tokens are verified against.
+	// Empty reads that set from the authorization server instead, which is
+	// what a deployment whose workspace reaches the network does.
+	JWKSFile string
+}
+
+// NetworkEgress yields the client an outbound request is made with, or the
+// refusal a workspace that permits no outbound request answers with.
+//
+// It is supplied by the command layer rather than read here, so the decision
+// about whether this workspace reaches the network is taken in the one place
+// that owns it and is not read a second time from inside the server.
+type NetworkEgress func() (*http.Client, error)
+
+// principal is who a request is on behalf of, as the credential it carried
+// asserted.
+//
+// Nothing here is interpreted. The subject is recorded and compared to
+// nothing: what a principal is called is the authorization server's business
+// and this server has no notion of one caller being another. The scopes are
+// carried for the same reason a request's method is — something downstream
+// reads them — and no answer on this transport turns on them yet.
+type principal struct {
+	// Subject is the token's subject claim, which is required: a credential
+	// asserting nothing about who presented it identifies nobody.
+	Subject string
+
+	// Issuer is the authorization server that issued the token, as the token
+	// states it. It equals the configured issuer, because a token stating any
+	// other is refused.
+	Issuer string
+
+	// ClientID is the client the token was issued to, where the token names
+	// one. Empty where it names none.
+	ClientID string
+
+	// Scopes are what the token says its bearer may ask for, in the order the
+	// token listed them.
+	Scopes []string
+}
+
+// principalKey is the request-context key the principal travels under. It is
+// an unexported type so nothing outside this package can read or write the
+// value, and so it cannot collide with another package's key.
+type principalKey struct{}
+
+// withPrincipal returns r carrying who it is on behalf of, so everything
+// answered after the credential check can read what that credential asserted.
+func withPrincipal(r *http.Request, p *principal) *http.Request {
+	return r.WithContext(context.WithValue(r.Context(), principalKey{}, p))
+}
+
+// principalFrom reads who a request is on behalf of, or nil where the request
+// reached here without passing a credential check — which on this transport is
+// only a request for what the deployment publishes about itself.
+func principalFrom(ctx context.Context) *principal {
+	p, _ := ctx.Value(principalKey{}).(*principal)
+	return p
 }
 
 // protectedResource is what this deployment publishes about itself, composed
@@ -203,10 +264,34 @@ func parseDeclaredAddress(raw, key, example string) (*url.URL, error) {
 	return parsed, nil
 }
 
+// The two reasons this deployment gives a caller for not accepting what it
+// presented, spelled as the bearer scheme spells them.
+//
+// They are the whole vocabulary a refused caller receives: one says the
+// credential was not a usable one, the other that it was not accepted. Neither
+// says why in any finer detail, deliberately — a caller learns whether to
+// obtain a new token, and an attacker learns nothing about which check refused
+// it.
+const (
+	authErrorInvalidRequest = "invalid_request"
+	authErrorInvalidToken   = "invalid_token"
+)
+
 // servesMetadataAt reports whether a request for this path is a request for the
 // document rather than for the protocol endpoint.
 func (pr protectedResource) servesMetadataAt(path string) bool {
 	return slices.Contains(pr.paths, path)
+}
+
+// challengeFor is the challenge a caller receives when what it presented was
+// not accepted, naming the reason beside the address and scope every challenge
+// carries.
+//
+// The reason is added to the same composed challenge a caller with nothing
+// receives rather than to one built beside it, so every refusal on this
+// endpoint points at the same document.
+func (pr protectedResource) challengeFor(reason string) string {
+	return pr.challenge + `, error="` + reason + `"`
 }
 
 // serveMetadata answers a request for what this deployment publishes about

@@ -5,10 +5,12 @@ package main
 
 import (
 	"bytes"
+	"net/http"
 	"sync"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/clisurface"
 	"github.com/aggrega-ai/aggrega-cli/internal/mcp"
+	"github.com/aggrega-ai/aggrega-cli/pkg/egress"
 
 	"github.com/spf13/cobra"
 )
@@ -81,10 +83,15 @@ connection ends the call it carried. A request carrying an Origin header
 is checked against mcp.allowed_origins, and mcp.limits bounds how large
 one request body may be and how many requests are answered at once.
 
-Every request to /mcp is answered with a bearer-token challenge. The
-server requires a token on every such request and carries no validation
-that can accept one, so a listener answers 401 whatever a caller sends,
-and serves nothing there until token validation is in place.
+Every request to /mcp carries a bearer token, and one that does not is
+answered 401 with a challenge. The token is a JWT the server verifies
+itself, against the keys mcp.authorization.issuer publishes: it must come
+from that issuer, name mcp.authorization.resource among its audiences,
+be inside its validity window, and be signed with an asymmetric algorithm.
+A token that is not is answered 401 as well. A token is never accepted
+from the address, never forwarded anywhere, never exchanged, and never
+written to any log; the subject it names is recorded and compared to
+nothing.
 
 The challenge names where to obtain a token. A listener publishes an
 OAuth protected-resource metadata document, with no credential asked for,
@@ -95,6 +102,13 @@ a client looks. A client reads it before it can hold a token, which is
 why it is the one answer given without one. What that document publishes
 comes from mcp.authorization.issuer and mcp.authorization.resource, and a
 listener is refused before it binds unless both are set.
+
+The verification keys are read from the issuer itself, by asking it where
+it publishes them and fetching them from the address it names, and read
+again once when a token arrives signed by a key identifier the held set
+does not carry. A workspace that is offline makes no such request, so
+there mcp.authorization.jwks_file names a file holding those keys and a
+listener is refused before it binds without it.
 
 The workspace this process serves is fixed when it starts, on either
 transport: --workspace-root names it, and AGGREGA_WORKSPACE_ROOT supplies
@@ -190,7 +204,13 @@ func runMCP(cmd *cobra.Command, args []string) error {
 			Authorization: mcp.AuthorizationConfig{
 				Issuer:   settings.Authorization.Issuer,
 				Resource: settings.Authorization.Resource,
+				JWKSFile: settings.Authorization.JWKSFile,
 			},
+			// The gate is handed over rather than the posture: whether this
+			// workspace makes an outbound request at all is the egress gate's
+			// decision, and reading the offline field a second time inside the
+			// server would be a second copy of it.
+			Egress: func() (*http.Client, error) { return egress.HTTPClient(ws.Config()) },
 		},
 		mcp.ListenConfig{
 			Address:  listen,
