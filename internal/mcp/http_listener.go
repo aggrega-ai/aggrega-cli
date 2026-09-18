@@ -101,6 +101,18 @@ type ListenConfig struct {
 	// above, and one without the other is refused.
 	CertFile string
 	KeyFile  string
+
+	// HealthAddress is where liveness and readiness are answered, in the same
+	// two forms Address takes. Empty is a deployment that asked for neither
+	// check, and no second listener exists for it.
+	//
+	// It is a second address rather than two paths on the first because the
+	// endpoint refuses every request carrying no credential, and a probe that
+	// could be answered there would be an unauthenticated reading of the process
+	// on whatever network reaches it. The confinement Address carries does not
+	// apply here and is not enforced: where this address sits is the operator's
+	// decision, and the reference page states what it is for.
+	HealthAddress string
 }
 
 // ListenAndServe answers the protocol over HTTP until ctx ends.
@@ -113,16 +125,42 @@ type ListenConfig struct {
 // the end of the listener's life.
 //
 // The order of the steps below is the contract rather than an arrangement.
-// Every refusal a deployment can meet at startup is made first, with nothing yet
-// built and nothing yet bound, so a misconfigured deployment fails at startup
-// rather than after an address is already accepting: what the listener itself is
-// asked to do, then what the deployment declares itself to be, then where the
-// keys it verifies tokens against come from, and then whether there is a
-// workspace for it to serve. The handler is built second, because
-// acquiring the documentation bundle is the expensive step and there is no
-// reason to pay it for a deployment that is about to be refused. Only then is
-// anything bound.
+// Every refusal a deployment can meet at startup is made before the endpoint is
+// built or bound, so a misconfigured deployment fails at startup rather than
+// after an address is already accepting: what the listener itself is asked to
+// do, then what the deployment declares itself to be, then where the keys it
+// verifies tokens against come from, and then whether there is a workspace for
+// it to serve. The handler is built after all of them, because acquiring the
+// documentation bundle is the expensive step and there is no reason to pay it
+// for a deployment that is about to be refused. Only then is the endpoint bound.
+//
+// The health address is the one exception, and it is an exception to when
+// something binds rather than to the order of the refusals. Where a deployment
+// configured one, it opens once the questions about the configuration itself are
+// settled and before the workspace question is asked. A supervisor has to be
+// able to see the process alive while it is still deciding whether it can serve
+// at all — that gap is the whole distinction between liveness and readiness, and
+// an address that opened only after the decision could never report the state it
+// exists to report. A refusal made after it is open closes it and still returns,
+// so a refused launch leaves no socket behind.
 func ListenAndServe(ctx context.Context, cfg Config, transport HTTPConfig, listen ListenConfig) error {
+	return listenAndServe(ctx, cfg, transport, listen, nil)
+}
+
+// listenAndServe is ListenAndServe with one seam in it, which is why the
+// exported entry point above is a wrapper rather than the whole of it.
+//
+// beforeWorkspace, where a caller supplies one, is called immediately before the
+// workspace question is asked. Nothing in this binary supplies one: it exists so
+// an assertion in this package can hold a launch inside the window readiness
+// reports on — the health address answering, the endpoint not yet bound — and
+// read what a probe receives on each side of that one step. A real launch passes
+// through the window in microseconds, so holding it open is the only way to
+// observe the transition at all. It is a seam on the ORDER and not on any
+// duration: what it makes observable is which answer a probe gets before a step
+// and which it gets after, and nothing measures how long the step takes.
+func listenAndServe(ctx context.Context, cfg Config, transport HTTPConfig, listen ListenConfig,
+	beforeWorkspace func()) error {
 	target, cert, err := resolveListenTarget(listen)
 	if err != nil {
 		return err
@@ -140,6 +178,21 @@ func ListenAndServe(ctx context.Context, cfg Config, transport HTTPConfig, liste
 	if _, err := resolveVerificationKeys(transport.Authorization, transport.Egress); err != nil {
 		return err
 	}
+
+	ready := &readinessState{}
+	health, err := startHealthListener(ctx, listen.HealthAddress, ready, cfg.Stderr)
+	if err != nil {
+		return err
+	}
+	// Deferred so that every return below releases the address, whether the
+	// launch was refused or the run ended. Placing it here rather than at each
+	// return is what makes "a refusal closes it" a property of the function
+	// rather than of whoever adds the next refusal.
+	defer health.close()
+
+	if beforeWorkspace != nil {
+		beforeWorkspace()
+	}
 	if err := requireServableWorkspace(cfg.WorkspaceRoot); err != nil {
 		return err
 	}
@@ -151,6 +204,7 @@ func ListenAndServe(ctx context.Context, cfg Config, transport HTTPConfig, liste
 	if err != nil {
 		return err
 	}
+	ready.markReady()
 	return l.serve(ctx)
 }
 
@@ -247,16 +301,13 @@ func bindHTTPListener(target listenTarget, cert *tls.Certificate,
 	if err != nil {
 		return nil, fmt.Errorf("listen on %s: %w", target.address, err)
 	}
-	if logw == nil {
-		logw = os.Stderr
-	}
 	srv := &http.Server{
 		Handler: handler,
 		// net/http reports a connection-level failure on its own logger, which
 		// writes to the process's standard error by default. It is pointed at the
 		// stream every other diagnostic here goes to instead, carrying the prefix
 		// every one of them carries, so one reader of one stream sees all of them.
-		ErrorLog:          log.New(logw, "mcp: ", 0),
+		ErrorLog:          log.New(listenerLogWriter(logw), "mcp: ", 0),
 		ReadHeaderTimeout: listenerHeaderBudget,
 		IdleTimeout:       listenerIdleBudget,
 		// ReadTimeout and WriteTimeout are left at zero, which means no deadline,
@@ -275,6 +326,19 @@ func bindHTTPListener(target listenTarget, cert *tls.Certificate,
 		srv.TLSConfig = &tls.Config{Certificates: []tls.Certificate{*cert}, MinVersion: tls.VersionTLS12}
 	}
 	return &httpListener{ln: ln, srv: srv, cert: cert}, nil
+}
+
+// listenerLogWriter settles where a listener's own diagnostics go.
+//
+// A nil writer is the process's own error stream, matching every other stream
+// default in this package. It is a function rather than a check at each site
+// because both listeners a run may hold answer the question, and two sites
+// deciding it separately would be two defaults that agree until one moves.
+func listenerLogWriter(w io.Writer) io.Writer {
+	if w == nil {
+		return os.Stderr
+	}
+	return w
 }
 
 // serve answers on the bound listener until ctx ends, then drains it within the

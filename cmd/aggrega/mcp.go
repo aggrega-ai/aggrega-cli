@@ -110,6 +110,17 @@ does not carry. A workspace that is offline makes no such request, so
 there mcp.authorization.jwks_file names a file holding those keys and a
 listener is refused before it binds without it.
 
+Liveness and readiness are answered on a second address, and only there.
+Set mcp.health.listen and a GET of /healthz reports that the process is
+running while a GET of /readyz reports whether it can answer a call yet,
+each a status code with an empty body and no credential asked for. The
+address opens before the workspace is resolved, so a supervisor sees the
+process alive while it is still deciding whether it can serve at all.
+Leave the key unset and no second listener exists. The endpoint itself
+answers both paths the same not-found it gives every path it does not
+serve, with a token and without one, so reaching this process over the
+network is never a way to probe it.
+
 The workspace this process serves is fixed when it starts, on either
 transport: --workspace-root names it, and AGGREGA_WORKSPACE_ROOT supplies
 it when the flag is absent. With neither, a server on standard input and
@@ -213,9 +224,10 @@ func runMCP(cmd *cobra.Command, args []string) error {
 			Egress: func() (*http.Client, error) { return egress.HTTPClient(ws.Config()) },
 		},
 		mcp.ListenConfig{
-			Address:  listen,
-			CertFile: settings.TLS.CertFile,
-			KeyFile:  settings.TLS.KeyFile,
+			Address:       listen,
+			CertFile:      settings.TLS.CertFile,
+			KeyFile:       settings.TLS.KeyFile,
+			HealthAddress: settings.Health.Listen,
 		})
 }
 

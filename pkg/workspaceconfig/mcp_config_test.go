@@ -18,8 +18,8 @@ import (
 //
 // Each accepting row is also the schema-and-type lockstep in both directions at
 // once, and that is why the fields are read back rather than merely loaded. The
-// `mcp` object and its two nested objects forbid additional properties, so a Go
-// field whose key the schema does not declare would make the document a load
+// `mcp` object and every object nested in it forbid additional properties, so a
+// Go field whose key the schema does not declare would make the document a load
 // failure — the schema-to-type direction. A key the schema declares that no Go
 // field binds would load cleanly and leave the field at its zero value, which
 // is the silent-drop direction, and only reading the value back catches it.
@@ -39,6 +39,8 @@ mcp:
   limits:
     max_body_bytes: 1048576
     max_concurrent_requests: 4
+  health:
+    listen: unix:/run/aggrega/health.sock
 `
 
 // TestLoadMCPEveryDeclaredKey confirms a config setting every key the `mcp`
@@ -74,6 +76,10 @@ func TestLoadMCPEveryDeclaredKey(t *testing.T) {
 	if cfg.MCP.Limits.MaxConcurrentRequests != 4 {
 		t.Errorf("MCP.Limits.MaxConcurrentRequests: got %d, want 4", cfg.MCP.Limits.MaxConcurrentRequests)
 	}
+	if cfg.MCP.Health.Listen != "unix:/run/aggrega/health.sock" {
+		t.Errorf("MCP.Health.Listen: got %q, want %q",
+			cfg.MCP.Health.Listen, "unix:/run/aggrega/health.sock")
+	}
 }
 
 // TestLoadMCPAbsentBlockLeavesDocumentedDefaults pins what a workspace that
@@ -104,6 +110,10 @@ func TestLoadMCPAbsentBlockLeavesDocumentedDefaults(t *testing.T) {
 	}
 	if cfg.MCP.Limits.MaxConcurrentRequests != 16 {
 		t.Errorf("MCP.Limits.MaxConcurrentRequests: got %d, want 16 (the documented default)", cfg.MCP.Limits.MaxConcurrentRequests)
+	}
+	if cfg.MCP.Health.Listen != "" {
+		t.Errorf("MCP.Health.Listen: got %q, want empty (no second listener, neither check answered)",
+			cfg.MCP.Health.Listen)
 	}
 }
 
@@ -158,6 +168,10 @@ func TestLoadMCPUnknownKeyIsRefused(t *testing.T) {
 		{
 			name:    "unknown key under limits",
 			content: "mcp:\n  limits:\n    max_body_bytes: 1048576\n    no_such_key: 1\n",
+		},
+		{
+			name:    "unknown key under health",
+			content: "mcp:\n  health:\n    listen: 127.0.0.1:7788\n    no_such_key: 1\n",
 		},
 	} {
 		tc := tc

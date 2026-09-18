@@ -863,6 +863,34 @@ type MCPConfig struct {
 	// before it binds without them; none of it is read while the
 	// server speaks over standard input and output.
 	Authorization MCPAuthorizationConfig `yaml:"authorization"`
+
+	// Health carries where the liveness and readiness checks are
+	// answered. Empty (the default) answers them nowhere.
+	Health MCPHealthConfig `yaml:"health"`
+}
+
+// MCPHealthConfig carries where a supervisor asks whether this process is
+// alive and whether it is ready to answer a call.
+//
+// The checks are answered on an address of their own and never on the
+// address Listen names: the endpoint refuses every request carrying no
+// credential, so answering a probe there would give any caller that
+// reaches it an unauthenticated reading of the process and a free way to
+// make it work. The endpoint answers both paths with the same not-found
+// it gives every path it does not serve.
+type MCPHealthConfig struct {
+	// Listen is the address the two checks are answered on, in the
+	// same two forms MCPConfig's own Listen takes. Empty (the
+	// default) starts no second listener and answers neither check
+	// anywhere.
+	//
+	// Unlike MCPConfig.Listen this address carries no confinement:
+	// it is refused for no address, and a deployment that puts it
+	// somewhere other than loopback or a Unix socket has chosen
+	// that. The checks carry no body and ask for nothing, and where
+	// the operator's own interface to their process sits is theirs
+	// to decide.
+	Listen string `yaml:"listen"`
 }
 
 // MCPAuthorizationConfig carries what a deployment declares about the

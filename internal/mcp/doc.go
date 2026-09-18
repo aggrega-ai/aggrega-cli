@@ -11,7 +11,10 @@
 // request against a handler NewHTTPHandler builds, reached either on a
 // listener ListenAndServe binds and owns — the address it parses, the TLS it
 // terminates, the plaintext confinement it refuses on, and the drain it
-// performs when the run ends — or on a handler a caller mounts itself. It
+// performs when the run ends — or on a handler a caller mounts itself. A
+// deployment that names a health address gets a second listener beside that
+// one, answering liveness and readiness and nothing else; the endpoint answers
+// those two paths with the same not-found every unknown path receives. It
 // shares the routing and the per-request revision with stdio, and differs in
 // how a message is framed on the way in and out and in what ends a call
 // already running. Over HTTP the
