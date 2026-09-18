@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
+	"github.com/aggrega-ai/aggrega-cli/internal/opsurface"
 )
 
 // toolSpec is one tool the server can run: its name, the rich natural-language
@@ -39,9 +40,26 @@ import (
 // tools by a spelling would tie the pairing to names that are chosen
 // independently on each side and exist precisely so they can differ.
 //
+// reach is how far that operation's own effects travel, read from the operation
+// set where the operation is, so a spec carries the class rather than sending
+// every listing back to the set for it. It is set from the same lookup the
+// operation is and never authored on a definition below: a class written beside
+// a tool would be a second declaration of a fact the operation set owns, and the
+// two would agree until one of them was edited.
+//
 // commandPath is the invocation path of the command a generated tool runs,
 // empty for a tool that runs its operation inside this server.
 //
+// reachEscalation reports how far a call would actually reach, where this tool's
+// own arguments can widen it past the class its operation declares. Nil is a
+// tool that reaches exactly what it declares whatever it is sent, which is every
+// tool here but one. It is consulted before the tool runs and reads the same
+// composition the tool itself reads, so the class a caller is admitted against
+// is the class the call would have had: a second derivation of the same decision
+// would agree on the day it was written and stop agreeing the first time one of
+// the two learned about an input the other did not.
+//
+
 // description holds what is true of a tool however a caller reached it.
 // workspaceSelectionNote holds the part that is true only where a caller may
 // name a workspace of its own, and is left empty by a tool that says nothing
@@ -54,11 +72,13 @@ import (
 type toolSpec struct {
 	name                   string
 	operation              string
+	reach                  opsurface.Reach
 	commandPath            string
 	description            string
 	workspaceSelectionNote string
 	inputSchema            string
 	kinds                  []string
+	reachEscalation        func(s *server, args json.RawMessage) opsurface.Reach
 	invoke                 func(s *server, ctx context.Context, args json.RawMessage) (*callToolResult, *rpcError)
 }
 
@@ -321,8 +341,15 @@ func articled(jsonType string) string {
 // a property of that session. The schemas are this session's for the same
 // reason: which arguments a caller may send depends on how it reached the
 // server, and the listing is where it reads them.
-func (s *server) handleToolsList() (any, *rpcError) {
-	curatedTools := s.curatedTools()
+//
+// ctx is the request's own, and it is what the listing is narrowed by: a tool
+// the credential this request carried does not admit is absent from the answer,
+// so a client learns the bound from the list rather than from a failed call.
+// That is why the listing is composed per request rather than once per session —
+// this server holds nothing between requests, and two requests on one connection
+// may present different credentials.
+func (s *server) handleToolsList(ctx context.Context) (any, *rpcError) {
+	curatedTools := s.curatedTools(ctx)
 	tools := make([]tool, 0, len(curatedTools))
 	for i := range curatedTools {
 		tools = append(tools, tool{
@@ -343,12 +370,20 @@ func (s *server) handleToolsList() (any, *rpcError) {
 // guidance-carrying failure — is returned as the result, including a refusal of
 // the arguments it was given.
 //
-// One refusal is composed here rather than by the tool, and it is composed after
-// the tool is resolved so that it travels as that tool's own failing result: a
-// call that names a workspace this session does not let it name. Every tool
-// crosses this line, so the rule holds for the ones that resolve a workspace,
-// the ones that answer without resolving one, and the generated command tools
-// alike, and its wording has one home rather than one per tool.
+// Two refusals are composed here rather than by the tool, both after the tool is
+// resolved and before it runs, and every tool crosses this line — so each holds
+// for the tools that resolve a workspace, the ones that answer without resolving
+// one, and the generated command tools alike, with one home for its wording
+// rather than one per tool.
+//
+// The first is a call that names a workspace this session does not let it name,
+// which travels as that tool's own failing result. The second is a call reaching
+// further than the credential it presented admits, which does not: it is a
+// refusal of the request rather than an outcome of the tool, the tool never ran,
+// and the transport carries it under its own status with the challenge naming
+// the scope that would admit it. A tool the credential does not admit is also
+// absent from that request's tool list, so this answer is what a caller reaches
+// by naming a tool directly rather than by reading what it was offered.
 //
 // ctx is the run's own, handed to the resolved tool. Every tool that publishes,
 // pulls, builds, lints or searches carries it into the work it drives, so ending
@@ -370,6 +405,13 @@ func (s *server) handleToolsCall(ctx context.Context, params json.RawMessage) (a
 		// there without a word.
 		if refusal := s.workspaceSelectionRefusal(p.Arguments); refusal != "" {
 			return errorResult(refusal)
+		}
+		// Read before the tool runs and after the refusal above, so nothing a
+		// call the credential does not admit asked for has happened by the time
+		// it is refused, and so a call naming a workspace this session does not
+		// let it name is answered about that rather than about a scope.
+		if refusal := s.scopeRefusal(ctx, spec, p.Arguments); refusal != nil {
+			return nil, refusal
 		}
 		return spec.invoke(s, ctx, p.Arguments)
 	}

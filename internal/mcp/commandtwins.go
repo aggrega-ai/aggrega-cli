@@ -4,6 +4,7 @@
 package mcp
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -196,9 +197,10 @@ func (s *server) withTwinNotes(specs []toolSpec) []toolSpec {
 }
 
 // curatedTools returns the curated, always-advertised set as this session serves
-// it, in registry order.
-func (s *server) curatedTools() []toolSpec {
-	return s.withTwinNotes(toolRegistry)
+// it to this request, in registry order: each tool carrying the disclosure of its
+// generated twin, and only the tools this request's credential admits.
+func (s *server) curatedTools(ctx context.Context) []toolSpec {
+	return s.admittedReach(ctx).admitted(s.withTwinNotes(toolRegistry))
 }
 
 // firstSentence returns the leading sentence of a tool description, for the

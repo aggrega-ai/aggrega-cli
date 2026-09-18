@@ -5,6 +5,7 @@ package mcp
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"os"
@@ -107,7 +108,7 @@ func callPull(t *testing.T, s *server, args pullArgs) *callToolResult {
 // the capability tool, and only the listing says whether it can.
 func TestPullToolIsAdvertisedInTheDefaultToolListing(t *testing.T) {
 	s := newTestServer(t)
-	res, rpcErr := s.handleToolsList()
+	res, rpcErr := s.handleToolsList(context.Background())
 	if rpcErr != nil {
 		t.Fatalf("tools/list returned a protocol error: %+v", rpcErr)
 	}
@@ -550,7 +551,7 @@ func TestPullToolAndItsGeneratedTwinDiscloseEachOther(t *testing.T) {
 	s := &server{out: io.Discard, logw: io.Discard, commandTools: deriveCommandTools(commandBackedSurface())}
 
 	var curatedPull, generatedPull *toolSpec
-	for _, spec := range s.curatedTools() {
+	for _, spec := range s.curatedTools(context.Background()) {
 		if spec.name == "pull" {
 			s := spec
 			curatedPull = &s

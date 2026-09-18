@@ -77,7 +77,7 @@ func (s *server) route(ctx context.Context, era protocolEra, req *rpcRequest) (a
 	case "ping":
 		return struct{}{}, nil
 	case "tools/list":
-		return s.handleToolsList()
+		return s.handleToolsList(ctx)
 	case "resources/list":
 		return s.handleResourcesList()
 	case "resources/templates/list":
@@ -266,7 +266,7 @@ func (s *server) handleResourcesRead(_ context.Context, era protocolEra, params 
 		// The only family read out of the caller's workspace, where their own
 		// editor can change the answer between one request and the next.
 		res, rerr = s.readCatalogResource(p.URI)
-		hint = workspaceCacheHint()
+		hint = privateCacheHint()
 	case schemeCli:
 		// Rendered from the command tree this process holds, which is the tree
 		// compiled into the binary.

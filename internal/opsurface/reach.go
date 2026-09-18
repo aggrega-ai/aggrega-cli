@@ -89,6 +89,20 @@ const (
 // so a reader meets them as a scale rather than as an alphabet.
 var reachClasses = []Reach{ReachNone, ReachWorkspace, ReachRegistry, ReachMachine}
 
+// Classes returns the closed set of reach classes, widening.
+//
+// It exists so a surface deciding what a caller may run enumerates the classes
+// rather than restating them. A surface with its own list would be a second copy
+// of the closed set, and the copy is what is missing a class the day one is
+// added — at which point the new class would silently be admitted or refused by
+// nothing having considered it.
+//
+// It returns a copy, so a caller walking the set cannot alter what the check
+// above reads.
+func Classes() []Reach {
+	return append([]Reach(nil), reachClasses...)
+}
+
 // isReachClass reports whether r is one of the four.
 func isReachClass(r Reach) bool {
 	for _, c := range reachClasses {

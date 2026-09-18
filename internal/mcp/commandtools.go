@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/clisurface"
+	"github.com/aggrega-ai/aggrega-cli/internal/opsurface"
 )
 
 // CommandSurface is one command the server may expose as a generated tool: the
@@ -269,9 +270,24 @@ func deriveCommandTool(d clisurface.Descriptor) toolSpec {
 		positional: commandPositionalSummary(d.Use),
 	}
 	operation := commandOperation(d.Path)
+	// The class the operation declares, read here for the same reason a curated
+	// tool reads it where it is registered: a spec carries the class rather than
+	// sending every listing back to the operation set for it. A command the
+	// availability records account for no operation at leaves it unset, which is
+	// not a class — and the one reader of it says what an unset class is taken to
+	// reach, rather than letting the empty value mean whatever happens to sort
+	// first.
+	//
+	// projection-omits internal/opsurface.Operation.Summary: the command the tool
+	// is generated from carries its own one-line help, which is what the tool's
+	// description is composed from, and that help is the command's own words for
+	// what it does. Restating the operation's summary beside it would put two
+	// descriptions of one capability in a single advertised definition.
+	op, _ := opsurface.Lookup(operation)
 	return toolSpec{
 		name:        ct.name,
 		operation:   operation,
+		reach:       op.Reach,
 		commandPath: d.Path,
 		description: commandToolDescription(d, ct, operation),
 		inputSchema: commandInputSchema(ct),

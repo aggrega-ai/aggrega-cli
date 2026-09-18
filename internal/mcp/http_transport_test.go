@@ -40,8 +40,25 @@ import (
 // proof, which shows what an untouched handler does.
 type acceptAllAuthenticator struct{}
 
+// authenticate admits every request and attaches a caller whose credential
+// carried every scope this deployment publishes.
+//
+// Attaching one is not incidental to admitting the request: what a caller may
+// reach is read off the scopes its credential asserted, and a request admitted
+// with nothing attached reaches nothing at all. So a stub that returned the
+// request untouched would leave every proof in this package that is not about
+// scopes measuring an empty surface — which is a different thing from what each
+// of them is about, and would read as those proofs failing rather than as the
+// stub being wrong.
+//
+// Every scope is the honest value for a stub that admits everything. A proof
+// about what a narrower credential reaches mints its own token instead, so
+// nothing here decides that question by default.
 func (acceptAllAuthenticator) authenticate(r *http.Request) (*http.Request, *authRefusal) {
-	return r, nil
+	return withPrincipal(r, &principal{
+		Subject: "accept-all@example.test",
+		Scopes:  []string{scopeRead, scopeWorkspaceWrite, scopeRegistryWrite},
+	}), nil
 }
 
 // httpFixture is one running listener with the handler behind it.

@@ -40,6 +40,10 @@ func Attach(parent, cmd *cobra.Command, id string) error {
 		return fmt.Errorf("clisurface: attaching the %q operation needs both a parent and a command", id)
 	}
 
+	// projection-omits internal/opsurface.Operation.Reach: the class bounds a
+	// caller who does not own the host an operation runs on, and the caller here
+	// is the person at this machine's keyboard. There is nothing for it to decide
+	// on this surface, so it is dropped rather than carried unread.
 	op, known := opsurface.Lookup(id)
 	if !known {
 		return fmt.Errorf("clisurface: %q is not an operation, so no command can be attached for it: "+

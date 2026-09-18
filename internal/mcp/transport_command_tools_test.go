@@ -12,6 +12,8 @@ import (
 	"testing"
 
 	"github.com/spf13/cobra"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/opsurface"
 )
 
 // What a caller reaching a listener may name on this machine is decided by
@@ -171,6 +173,37 @@ func plantedCommandSurface() []CommandSurface {
 	return projectCommandSurface(root)
 }
 
+// plantedOperation is the operation each plant below declares, and
+// plantedReach is the class it declares with it.
+//
+// A plant has to declare both to reach the surface the walk is about. A session
+// reached over HTTP advertises only the reach classes the request's credential
+// admits, and a spec carrying no class is taken to reach the machine — which no
+// credential admits — so a plant declaring nothing would be advertised nowhere
+// and the walk would have nothing to look at. Declaring the narrowest class is
+// what puts the plant in front of the walk, and says nothing about what the plant
+// does, which is the row's whole subject: the walk reads where a tool came from
+// rather than what it says about itself, so a plant claiming to reach nothing is
+// exactly the plant that should still be named.
+//
+// The operation is one no curated or deferred tool answers, so the plant is the
+// twin of nothing and no other tool's advertised description changes because it
+// was installed.
+const plantedOperation = "version"
+
+var plantedReach = opsurface.ReachNone
+
+// plantedCommandTools derives a generated tool from the command above and gives
+// it the operation and class every plant here declares.
+func plantedCommandTools() []toolSpec {
+	specs := deriveCommandTools(plantedCommandSurface())
+	for i := range specs {
+		specs[i].operation = plantedOperation
+		specs[i].reach = plantedReach
+	}
+	return specs
+}
+
 // TestAToolPlantedOnAListenerIsNamedByTheWalk is the failure demonstration the
 // assertion above needs in order to mean anything.
 //
@@ -192,7 +225,7 @@ func TestAToolPlantedOnAListenerIsNamedByTheWalk(t *testing.T) {
 	}{
 		{
 			scenario: "a tool generated from a command this repository does not have",
-			planted:  deriveCommandTools(plantedCommandSurface()),
+			planted:  plantedCommandTools(),
 			want:     "cli-reindex",
 		},
 		{
@@ -201,6 +234,8 @@ func TestAToolPlantedOnAListenerIsNamedByTheWalk(t *testing.T) {
 			scenario: "a tool carrying a directory under a name no rule here mentions",
 			planted: []toolSpec{{
 				name:        "workspace-reindex",
+				operation:   plantedOperation,
+				reach:       plantedReach,
 				description: "Rebuild an index.",
 				inputSchema: `{"type":"object","properties":{"scratch_dir":{"type":"string",` +
 					`"description":"Directory the rebuild writes its intermediate files into"}}}`,

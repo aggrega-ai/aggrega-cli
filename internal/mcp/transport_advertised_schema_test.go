@@ -4,6 +4,7 @@
 package mcp
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"slices"
@@ -78,7 +79,7 @@ func advertisedOverStdio(t *testing.T, s *server) []advertisement {
 
 	var out []advertisement
 
-	res, rpcErr := s.handleToolsList()
+	res, rpcErr := s.handleToolsList(context.Background())
 	if rpcErr != nil {
 		t.Fatalf("tools/list returned a protocol error: %s", rpcErr.Message)
 	}

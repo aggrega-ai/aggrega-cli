@@ -759,10 +759,10 @@ func TestTheFourPublicationToolsAndTheirCommandTwinsNameEachOther(t *testing.T) 
 	s := twinnedServer()
 
 	served := map[string]string{}
-	for _, spec := range s.curatedTools() {
+	for _, spec := range s.curatedTools(context.Background()) {
 		served[spec.name] = spec.description
 	}
-	for _, spec := range s.deferredTools() {
+	for _, spec := range s.deferredTools(context.Background()) {
 		served[spec.name] = spec.description
 	}
 

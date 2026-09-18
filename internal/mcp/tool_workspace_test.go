@@ -143,7 +143,7 @@ func decodeStructured(t *testing.T, res *callToolResult, into any) {
 // leave that caller exactly where it started.
 func TestBothDiscoveryToolsAreInTheDefaultListing(t *testing.T) {
 	s := &server{out: io.Discard, logw: io.Discard, startDir: t.TempDir()}
-	listed, rpcErr := s.handleToolsList()
+	listed, rpcErr := s.handleToolsList(context.Background())
 	if rpcErr != nil {
 		t.Fatalf("tools/list: %s", rpcErr.Message)
 	}

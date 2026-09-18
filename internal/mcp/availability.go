@@ -147,6 +147,13 @@ var curatedToolNames = map[string][]string{
 // for the goal it serves, one for the command path it runs — and exist precisely
 // so they can differ, so a name is the one thing that cannot pair them.
 //
+// It records the reach class from that same lookup, so the class a request is
+// measured against is read once, where the tool enters the registry, rather than
+// looked up again on every listing. A class is a property of the operation and
+// the operation set is where it is declared, so reading it here is reading it
+// from its one home; what would be a second home is a class authored beside a
+// tool, which is why no definition below carries one.
+//
 // It carries the handler the spec already holds and constructs nothing the
 // handler needs. A registry that assembled a handler's inputs would have to
 // describe every tool's inputs in one shape, and the only shape that fits every
@@ -157,12 +164,17 @@ var curatedToolNames = map[string][]string{
 // a programming error a reader fixes by editing the table or the registry, and a
 // server that started anyway would advertise a tool nobody declared.
 //
-// projection-omits Operation: the lookup is an existence test. What this reads is
-// whether the identifier names an operation at all, which is the yes-or-no the
-// refusal above turns on; the operation itself is not an answer being reported to
-// anyone, and there is no reader here for one to be owed to.
+// projection-omits internal/opsurface.Operation.Summary: the lookup here is an
+// existence test. What this reads is whether the identifier names an operation at
+// all, which is the yes-or-no the refusal above turns on, and the summary is a
+// line written for a reader deciding whether a surface's availability of a
+// capability is right — a question answered where the availability record is
+// composed, not where a tool is registered. The class the operation declares is a
+// different matter and this protocol does carry it: it is read where a request's
+// credential is measured against what a call reaches.
 func curated(id string, spec toolSpec) toolSpec {
-	if _, known := opsurface.Lookup(id); !known {
+	op, known := opsurface.Lookup(id)
+	if !known {
 		panic(fmt.Sprintf("mcp: %q is not an operation, so no tool can be registered for it: either the "+
 			"operation was renamed or removed, or the identifier is misspelled", id))
 	}
@@ -179,6 +191,7 @@ func curated(id string, spec toolSpec) toolSpec {
 	}
 	spec.name = names[0]
 	spec.operation = id
+	spec.reach = op.Reach
 	return spec
 }
 

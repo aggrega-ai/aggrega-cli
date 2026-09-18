@@ -4,6 +4,7 @@
 package mcp
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"os"
@@ -524,7 +525,7 @@ func TestBothCandidacyToolsAreDiscoverableAndInvocable(t *testing.T) {
 	s := newTestServer(t)
 
 	surfaced := map[string]bool{}
-	for _, spec := range s.deferredTools() {
+	for _, spec := range s.deferredTools(context.Background()) {
 		surfaced[spec.name] = true
 	}
 	for _, want := range []string{"attach-candidates", "connection-candidates"} {
@@ -539,7 +540,7 @@ func TestBothCandidacyToolsAreDiscoverableAndInvocable(t *testing.T) {
 
 	for _, kind := range []string{"component", "feature", "aggregate"} {
 		named := map[string]bool{}
-		for _, c := range s.capabilitiesForKind(kind) {
+		for _, c := range s.capabilitiesForKind(context.Background(), kind) {
 			named[c.Name] = true
 		}
 		for _, want := range []string{"attach-candidates", "connection-candidates"} {

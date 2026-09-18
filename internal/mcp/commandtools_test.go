@@ -536,7 +536,7 @@ func TestCommandToolsAreDiscoverableThroughTheCapabilityTool(t *testing.T) {
 
 	// The default list stays the curated set: the command surface never inflates
 	// the up-front definition budget.
-	res, rpcErr := s.handleToolsList()
+	res, rpcErr := s.handleToolsList(context.Background())
 	if rpcErr != nil {
 		t.Fatalf("tools/list: %+v", rpcErr)
 	}
@@ -609,7 +609,7 @@ func TestCommandToolDiscoveryIsByteStable(t *testing.T) {
 	// tools/list is stable for the same reason and must stay the curated set.
 	renderList := func() []byte {
 		s := newCommandToolServer(t, nil)
-		res, _ := s.handleToolsList()
+		res, _ := s.handleToolsList(context.Background())
 		b, err := json.Marshal(res)
 		if err != nil {
 			t.Fatalf("marshal tools/list: %v", err)

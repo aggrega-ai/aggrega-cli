@@ -108,10 +108,33 @@ type cancelledParams struct {
 // rpcError carries the JSON-RPC 2.0 error envelope. Data is reserved for
 // structured detail a future method may attach; omitempty drops it from
 // the wire while it is nil.
+//
+// The two unexported fields are what a refusal asks the HTTP transport to carry
+// beyond the envelope, for the refusals whose status and challenge are a
+// property of the refusal rather than of its code. They travel no further than
+// this process: encoding ignores an unexported field, so neither reaches a
+// caller as anything but the status line and the header the transport writes
+// from them. The stdio transport reads neither, which is correct rather than an
+// omission — it has no status line and no headers, and no refusal it composes
+// sets one.
+//
+// They are unexported for the same reason the authenticator seam is: there is no
+// route by which a caller outside this package could compose a refusal that
+// claims a status the transport did not decide on.
 type rpcError struct {
 	Code    int             `json:"code"`
 	Message string          `json:"message"`
 	Data    json.RawMessage `json:"data,omitempty"`
+
+	// httpStatus is the status this refusal is carried under, where that is not
+	// the one the code maps to. Zero leaves the mapping to decide.
+	httpStatus int
+
+	// insufficientScope is the one scope that would have admitted a call this
+	// server refused for want of one, and is what the challenge accompanying
+	// that refusal names. Empty on every other refusal, including one for a
+	// class no scope admits.
+	insufficientScope string
 }
 
 // initializeParams is the client's half of the initialize handshake: the

@@ -4,6 +4,7 @@
 package mcp
 
 import (
+	"context"
 	"io"
 	"strings"
 	"testing"
@@ -59,10 +60,10 @@ func TestTwiceExposedOperationsDiscloseEachOther(t *testing.T) {
 	}
 
 	served := map[string]string{}
-	for _, spec := range s.curatedTools() {
+	for _, spec := range s.curatedTools(context.Background()) {
 		served[spec.name] = spec.description
 	}
-	for _, spec := range s.deferredTools() {
+	for _, spec := range s.deferredTools(context.Background()) {
 		served[spec.name] = spec.description
 	}
 
@@ -191,7 +192,7 @@ func TestAToolWithNoCommandTwinDisclosesNothing(t *testing.T) {
 	twins := commandTwins(s.commandTools)
 
 	var checked int
-	for _, spec := range s.curatedTools() {
+	for _, spec := range s.curatedTools(context.Background()) {
 		if _, paired := twins[spec.operation]; paired {
 			continue
 		}
@@ -215,7 +216,7 @@ func TestAToolWithNoCommandTwinDisclosesNothing(t *testing.T) {
 // claim true rather than usually true.
 func TestASessionWithNoCommandSurfaceClaimsNoTwin(t *testing.T) {
 	bare := &server{out: io.Discard, logw: io.Discard}
-	for _, spec := range bare.curatedTools() {
+	for _, spec := range bare.curatedTools(context.Background()) {
 		if strings.Contains(spec.description, commandToolPrefix) {
 			t.Errorf("a session holding no command surface advertises %q as naming a generated tool:\n%s",
 				spec.name, spec.description)
@@ -226,7 +227,7 @@ func TestASessionWithNoCommandSurfaceClaimsNoTwin(t *testing.T) {
 	// says so, which is what makes the silence above a session property rather
 	// than a disclosure that never fires.
 	var disclosed int
-	for _, spec := range twinnedServer().curatedTools() {
+	for _, spec := range twinnedServer().curatedTools(context.Background()) {
 		if strings.Contains(spec.description, commandToolPrefix) {
 			disclosed++
 		}

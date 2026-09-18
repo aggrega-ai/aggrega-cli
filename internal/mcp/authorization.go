@@ -29,10 +29,12 @@ const wellKnownProtectedResource = "/.well-known/oauth-protected-resource"
 // The scopes this deployment publishes as the ones an authorization server may
 // issue for it.
 //
-// Publishing a scope says it exists and says nothing about what it admits: the
-// document below is how a client discovers what it may ask for, and no request
-// is admitted or refused on a scope. The one on the challenge is the scope a
-// caller needs before anything else, which is why it is the one named there.
+// The document below is how a client discovers what it may ask for; what each
+// one admits is declared where the classes they admit are, beside the mapping
+// that reads them, so a reader meets the scope names here and their meaning
+// exactly once. The one on the challenge a caller with no credential receives is
+// the scope it needs before anything else, which is why it is the one named
+// there.
 const (
 	scopeRead           = "aggrega:read"
 	scopeWorkspaceWrite = "aggrega:workspace-write"
@@ -100,9 +102,15 @@ type NetworkEgress func() (*http.Client, error)
 //
 // Nothing here is interpreted. The subject is recorded and compared to
 // nothing: what a principal is called is the authorization server's business
-// and this server has no notion of one caller being another. The scopes are
-// carried for the same reason a request's method is — something downstream
-// reads them — and no answer on this transport turns on them yet.
+// and this server has no notion of one caller being another.
+//
+// The scopes are the one field an answer turns on, and what they decide is not
+// who the caller is but how far a call may reach: each maps to a fixed set of
+// reach classes, and a tool whose operation declares a class outside that set is
+// absent from this request's tool list and refused when the request names it
+// directly. The mapping is fixed rather than interpreted, which is the same rule
+// the subject is held to — this server evaluates nothing about a principal as
+// meaning.
 type principal struct {
 	// Subject is the token's subject claim, which is required: a credential
 	// asserting nothing about who presented it identifies nobody.
@@ -159,6 +167,11 @@ type protectedResource struct {
 	// and the bare well-known path where the deployment's own address has a path
 	// to insert before. A deployment published at the root of a host has one.
 	paths []string
+
+	// documentAddress is the address the document is published at, as a caller
+	// reaches it. Every challenge this deployment composes names it, so a
+	// challenge and the document a client then fetches cannot disagree.
+	documentAddress string
 
 	// challenge is the whole header value an unauthenticated caller receives,
 	// naming the document's address and the scope a caller needs first.
@@ -242,12 +255,13 @@ func resolveProtectedResource(cfg AuthorizationConfig) (protectedResource, error
 		return protectedResource{}, fmt.Errorf("compose what this deployment publishes about itself: %w", err)
 	}
 
-	return protectedResource{
-		document: document,
-		paths:    paths,
-		challenge: `Bearer resource_metadata="` + documentAddress.String() +
-			`", scope="` + scopeRead + `"`,
-	}, nil
+	pr := protectedResource{
+		document:        document,
+		paths:           paths,
+		documentAddress: documentAddress.String(),
+	}
+	pr.challenge = pr.challengeWith(scopeRead, "")
+	return pr, nil
 }
 
 // parseDeclaredAddress reads one address a deployment declared, and refuses one
@@ -280,9 +294,25 @@ func parseDeclaredAddress(raw, key, example string) (*url.URL, error) {
 // says why in any finer detail, deliberately — a caller learns whether to
 // obtain a new token, and an attacker learns nothing about which check refused
 // it.
+// The three reasons this deployment gives a caller for not accepting what it
+// presented, spelled as the bearer scheme spells them.
+//
+// The first two are the whole vocabulary a caller whose CREDENTIAL was turned
+// away receives: one says the credential was not a usable one, the other that it
+// was not accepted. Neither says why in any finer detail, deliberately — a caller
+// learns whether to obtain a new token, and an attacker learns nothing about
+// which check refused it.
+//
+// The third is a different statement and belongs to a caller whose credential was
+// accepted: what it asked for is outside what that credential carries. It is safe
+// to be specific there in a way the first two are not, because the caller is
+// already authenticated and the thing it is told — which scope admits what it
+// asked for — is published in the document this deployment serves unauthenticated
+// anyway.
 const (
-	authErrorInvalidRequest = "invalid_request"
-	authErrorInvalidToken   = "invalid_token"
+	authErrorInvalidRequest    = "invalid_request"
+	authErrorInvalidToken      = "invalid_token"
+	authErrorInsufficientScope = "insufficient_scope"
 )
 
 // servesMetadataAt reports whether a request for this path is a request for the
@@ -291,15 +321,38 @@ func (pr protectedResource) servesMetadataAt(path string) bool {
 	return slices.Contains(pr.paths, path)
 }
 
-// challengeFor is the challenge a caller receives when what it presented was
-// not accepted, naming the reason beside the address and scope every challenge
-// carries.
+// challengeWith is the one composer of every challenge this deployment sends:
+// the address of the document it publishes about itself, the scope this
+// particular refusal asks the caller to hold, and the reason where there is one.
 //
-// The reason is added to the same composed challenge a caller with nothing
-// receives rather than to one built beside it, so every refusal on this
-// endpoint points at the same document.
+// The scope is a parameter because the two refusals that carry a challenge ask
+// for different things. A caller with no usable credential is asked for the
+// scope it needs before anything else; a caller whose credential did not admit
+// what it asked for is asked for the one scope that would have. Composing both
+// here is what keeps them pointing at the same document: the address is the one
+// derived from what the deployment declared, and nothing else may build one.
+//
+// An empty reason composes the challenge a caller that presented nothing
+// receives, which states no error because none has occurred beyond the credential
+// being absent.
+func (pr protectedResource) challengeWith(scope, reason string) string {
+	challenge := `Bearer resource_metadata="` + pr.documentAddress + `", scope="` + scope + `"`
+	if reason == "" {
+		return challenge
+	}
+	return challenge + `, error="` + reason + `"`
+}
+
+// challengeFor is the challenge a caller receives when the CREDENTIAL it
+// presented was not accepted, naming the reason beside the address and the scope
+// a caller needs before anything else.
+//
+// The scope it names is the read scope rather than whatever the call would have
+// needed, and that is right for this refusal: nothing here has read a credential
+// successfully, so there is no admitted caller whose grant could be compared
+// against anything, and the scope to obtain first is the one that admits reading.
 func (pr protectedResource) challengeFor(reason string) string {
-	return pr.challenge + `, error="` + reason + `"`
+	return pr.challengeWith(scopeRead, reason)
 }
 
 // serveMetadata answers a request for what this deployment publishes about

@@ -136,13 +136,14 @@ func TestATokenIssuedForThisDeploymentReachesTheProtocolSurface(t *testing.T) {
 	wantReachedTheToolSurface(t, got)
 }
 
-// wantReachedTheToolSurface asserts that a call was answered by the tool
-// surface rather than only with a status.
+// wantReachedTheProtocolSurface asserts that a call was answered by the tool
+// surface rather than only with a status, and reports the tools it was offered.
 //
-// The tool list is read back because a 200 carrying an error envelope, and a
-// 200 carrying an empty list, would both satisfy a status check while nothing
-// had been served — which is exactly what an admitted token has to disprove.
-func wantReachedTheToolSurface(t *testing.T, got answer) {
+// The list is read back because a 200 carrying an error envelope would satisfy a
+// status check while nothing had been served — which is exactly what an admitted
+// credential has to disprove. How many tools came back is left to the caller,
+// because that is the separate question of what the credential's grant admits.
+func wantReachedTheProtocolSurface(t *testing.T, got answer) []string {
 	t.Helper()
 	if got.status != http.StatusOK {
 		t.Fatalf("status = %d, want 200 (body %q)", got.status, got.raw)
@@ -158,8 +159,27 @@ func wantReachedTheToolSurface(t *testing.T, got answer) {
 	if err := json.Unmarshal(got.frame.Result, &listed); err != nil {
 		t.Fatalf("the result is not a tool list: %v (body %q)", err, got.raw)
 	}
-	if len(listed.Tools) == 0 {
-		t.Errorf("the tool list is empty, so the call was answered without reaching the tool surface: %q", got.raw)
+	names := make([]string, 0, len(listed.Tools))
+	for _, entry := range listed.Tools {
+		names = append(names, entry.Name)
+	}
+	return names
+}
+
+// wantReachedTheToolSurface is that plus the list being non-empty, which is what
+// a credential carrying at least the read scope is owed.
+//
+// The two are separate because the empty list is a real answer rather than a
+// failure: a credential this deployment admitted and granted nothing reaches the
+// protocol surface and is offered no tool, and a caller asserting that is
+// asserting something different from a caller asserting the surface answered at
+// all. Folding them would make one helper mean two things and leave whichever
+// proof used it unable to say which.
+func wantReachedTheToolSurface(t *testing.T, got answer) {
+	t.Helper()
+	if len(wantReachedTheProtocolSurface(t, got)) == 0 {
+		t.Errorf("the tool list is empty, so the credential reached the surface and was offered nothing: %q",
+			got.raw)
 	}
 }
 
@@ -447,6 +467,12 @@ const aTypeThisServerDoesNotAccept = "application/example-private+jwt"
 // nothing. The set is fixed in the source and there is no setting that widens
 // it, which is why no row here configures anything.
 //
+// Every row's token carries the read scope, which is what makes reading the list
+// back the signal it is meant to be: what a caller is offered is narrowed to what
+// its credential admits, so a token carrying no scope would be admitted and then
+// offered nothing — and this file is about whether a token is admitted, not about
+// what a grant reaches.
+//
 // Planted defect, demonstrated: drop JWT from acceptedTokenTypes and the JWT row
 // reads back 401.
 func TestTheAcceptedTokenTypesAreExactlyFourAndNothingElse(t *testing.T) {
@@ -463,7 +489,8 @@ func TestTheAcceptedTokenTypesAreExactlyFourAndNothingElse(t *testing.T) {
 		{"no declared type at all", ""},
 	} {
 		t.Run("admitted: "+tc.name, func(t *testing.T) {
-			wantReachedTheToolSurface(t, f.call(t, bearer(issuer.mint(t, tokenClaimSet{tokenType: tc.tokenType}))))
+			wantReachedTheToolSurface(t, f.call(t,
+				bearer(issuer.mint(t, tokenClaimSet{tokenType: tc.tokenType, scope: scopeRead}))))
 		})
 	}
 

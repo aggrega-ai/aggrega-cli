@@ -435,11 +435,11 @@ func (h *httpHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	era, revision, protocolErr := readRequestProtocol(req.Params)
 	if protocolErr != nil {
-		h.respondRefusal(w, statusForRefusal(protocolErr.Code), req.ID, protocolErr)
+		h.respondRefusal(w, statusForRefusal(protocolErr), req.ID, protocolErr)
 		return
 	}
 	if headerErr := mirrorHeadersRefusal(r.Header, era, revision, &req); headerErr != nil {
-		h.respondRefusal(w, statusForRefusal(headerErr.Code), req.ID, headerErr)
+		h.respondRefusal(w, statusForRefusal(headerErr), req.ID, headerErr)
 		return
 	}
 
@@ -485,7 +485,7 @@ func (h *httpHandler) answer(w http.ResponseWriter, r *http.Request, era protoco
 		return
 	}
 	if rpcErr != nil {
-		h.respondRefusal(w, statusForRefusal(rpcErr.Code), req.ID, rpcErr)
+		h.respondRefusal(w, statusForRefusal(rpcErr), req.ID, rpcErr)
 		return
 	}
 	h.respondResult(w, req.ID, result)
@@ -515,6 +515,14 @@ func (h *httpHandler) takeSlot() (release func(), taken bool) {
 	}
 }
 
+// statusInsufficientScope is what a caller whose credential did not admit what
+// it asked for receives. It is the status the protocol's authorization design
+// names for that case, and it is distinct from the one an absent or unusable
+// credential earns: the caller is known and its credential is good, and what it
+// asked for is outside what that credential carries, so obtaining a new token
+// with a wider grant is the correction rather than authenticating again.
+const statusInsufficientScope = http.StatusForbidden
+
 // statusForRefusal is the status that carries a protocol refusal.
 //
 // It maps the protocol's own answer to the transport's, so a caller that reads
@@ -523,12 +531,21 @@ func (h *httpHandler) takeSlot() (release func(), taken bool) {
 // is a server error, and everything else is something about the request the
 // caller can correct.
 //
+// A refusal that named its own status is carried under that instead. The mapping
+// reads a code, and one code covers every request fault a caller can correct;
+// where the status is a property of the refusal rather than of its code — a
+// credential that does not admit what was asked for is the one such refusal
+// today — the site that composed it is the only one that knows, and says so.
+//
 // The refusals this transport composes for itself do not come through here.
 // Those are conditions of the transport rather than of the protocol — an
 // unlisted origin, a body past the cap, no free slot — and each names its own
 // status where it is raised.
-func statusForRefusal(code int) int {
-	switch code {
+func statusForRefusal(env *rpcError) int {
+	if env.httpStatus != 0 {
+		return env.httpStatus
+	}
+	switch env.Code {
 	case codeMethodNotFound:
 		return http.StatusNotFound
 	case codeInternalError:
@@ -680,7 +697,18 @@ func (h *httpHandler) refuse(w http.ResponseWriter, status, code int, message st
 
 // respondRefusal answers with a pre-built error envelope under the given status,
 // preserving whatever structured data the envelope carries.
+//
+// A refusal naming the scope that would have admitted the call carries the
+// challenge that invites the caller to obtain one. It is composed here, from
+// what this deployment publishes about itself, rather than by the handler that
+// composed the refusal: that handler knows which scope is missing and nothing
+// about where a token is obtained, and a challenge built anywhere but from the
+// published document could point at an address this deployment never serves.
 func (h *httpHandler) respondRefusal(w http.ResponseWriter, status int, id json.RawMessage, env *rpcError) {
+	if env.insufficientScope != "" {
+		w.Header().Set(headerAuthenticate,
+			h.resource.challengeWith(env.insufficientScope, authErrorInsufficientScope))
+	}
 	h.respond(w, status, &rpcResponse{JSONRPC: "2.0", ID: id, Error: env})
 }
 

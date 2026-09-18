@@ -37,7 +37,7 @@ func containsStr(hay []string, needle string) bool {
 // NOT advertised up front.
 func TestDefaultToolsListStaysSmall(t *testing.T) {
 	s := newTestServer(t)
-	res, rpcErr := s.handleToolsList()
+	res, rpcErr := s.handleToolsList(context.Background())
 	if rpcErr != nil {
 		t.Fatalf("tools/list returned protocol error: %+v", rpcErr)
 	}
@@ -273,7 +273,7 @@ func commandBackedSurface() []CommandSurface {
 // nobody pays.
 func TestDefaultDefinitionTokenBudget(t *testing.T) {
 	s := &server{out: io.Discard, logw: io.Discard, commandTools: deriveCommandTools(commandBackedSurface())}
-	served := s.curatedTools()
+	served := s.curatedTools(context.Background())
 
 	bytesTotal := 0
 	var disclosed int

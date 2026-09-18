@@ -14,6 +14,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
+	"github.com/aggrega-ai/aggrega-cli/internal/opsurface"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 )
 
@@ -227,7 +228,41 @@ var buildToolSpec = toolSpec{
   },
   "required": ["release"]
 }`,
-	invoke: buildInvoke,
+	reachEscalation: buildReach,
+	invoke:          buildInvoke,
+}
+
+// buildReach reports how far a build would reach: nothing, which is what the
+// operation declares, or the workspace where this call would fill the lockfile
+// first.
+//
+// It reads the fill decision from the one composition every surface carrying a
+// build reads — the call's own argument and the workspace's own auto_pull
+// setting, which are additive — rather than branching on the argument. Branching
+// would be a second derivation of the same decision, and it would agree with the
+// build right up until one of the two learned about an input the other did not:
+// a workspace configured to fill would then let a caller admitted to read alone
+// drive a fill, which is precisely the case the class exists to bound.
+//
+// It resolves the workspace the way the build resolves it, in the same order and
+// from the same arguments, so the two answer about one workspace. Where either
+// step is unavailable the declared class is what the call reaches, and that is
+// structural rather than a guess: a payload this cannot read is one the build
+// refuses before running anything, and a workspace this cannot resolve is one the
+// build stops at before the fill. Neither case leaves a fill to be admitted.
+func buildReach(s *server, args json.RawMessage) opsurface.Reach {
+	var a buildArgs
+	if err := json.Unmarshal(args, &a); err != nil {
+		return opsurface.ReachNone
+	}
+	tw, err := s.resolveToolWorkspace(a.WorkspaceRoot, a.CatalogDirs)
+	if err != nil {
+		return opsurface.ReachNone
+	}
+	if tw.cfg.FillsLockfile(a.AutoPull) {
+		return opsurface.ReachWorkspace
+	}
+	return opsurface.ReachNone
 }
 
 func buildInvoke(s *server, ctx context.Context, args json.RawMessage) (*callToolResult, *rpcError) {

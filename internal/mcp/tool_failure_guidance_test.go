@@ -534,7 +534,7 @@ func TestTheToolPopulationIsDerivedFromWhatTheServerServes(t *testing.T) {
 	}
 	enumerated := toolSpecNames(registeredToolSpecs(s))
 
-	listRes, rpcErr := s.handleToolsList()
+	listRes, rpcErr := s.handleToolsList(context.Background())
 	if rpcErr != nil {
 		t.Fatalf("tools/list: %+v", rpcErr)
 	}

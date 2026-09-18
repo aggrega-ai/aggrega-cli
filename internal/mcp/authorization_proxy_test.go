@@ -285,6 +285,13 @@ func TestAProxyDeploymentRefusesARequestCarryingNoPrincipalHeader(t *testing.T) 
 
 // Only the two configured headers are read. A deployment naming no scopes
 // header asserts no scopes, whatever else the request carries.
+//
+// What the caller is then offered is the second half of the same assertion, and
+// it is the half a reader can check from outside: the header this deployment did
+// not name asked for the registry-write scope, so had it been read the four
+// publication tools would be on the list that came back. An empty list is what
+// says it was not — a stronger statement than the recorded principal alone,
+// because it reads the consequence rather than the reader's own output.
 func TestAProxyDeploymentReadsOnlyTheHeadersItNamed(t *testing.T) {
 	f := newProxyFixture(t, proxyTransport(
 		TrustedProxyConfig{PrincipalHeader: testPrincipalHeader}, nil))
@@ -297,7 +304,10 @@ func TestAProxyDeploymentReadsOnlyTheHeadersItNamed(t *testing.T) {
 		testScopesHeader:  scopeRegistryWrite,
 		"X-Forwarded-For": "203.0.113.7",
 	})
-	wantReachedTheToolSurface(t, got)
+	if offered := wantReachedTheProtocolSurface(t, got); len(offered) != 0 {
+		t.Errorf("the caller was offered %v; this deployment named no scopes header, so it asserted no "+
+			"scope and a caller holding none is offered nothing", offered)
+	}
 
 	arrived := f.seen.last()
 	if arrived == nil {
@@ -343,6 +353,11 @@ func TestNoTokenIsProcessedWhereAProxyAssertsTheCaller(t *testing.T) {
 	served := f.callWith(t, map[string]string{
 		headerAuthorization: bearer(issuedForSomebodyElse),
 		testPrincipalHeader: testAssertedPrincipal,
+		// The proxy asserts the read scope alongside the caller, so the list
+		// read back is non-empty and the row's signal is that the surface was
+		// served rather than that a grant was narrow. What this row is about is
+		// the token in the authorization header being ignored.
+		testScopesHeader: scopeRead,
 	})
 	wantReachedTheToolSurface(t, served)
 
@@ -373,7 +388,13 @@ func TestAProxyDeploymentNeverReachesForVerificationKeys(t *testing.T) {
 
 	gate := &countingEgress{}
 	f := newProxyFixture(t, proxyTransport(testTrustedProxy(), gate.gate()))
-	got := f.callWith(t, map[string]string{testPrincipalHeader: testAssertedPrincipal})
+	got := f.callWith(t, map[string]string{
+		testPrincipalHeader: testAssertedPrincipal,
+		// The read scope, so the list read back is non-empty and this row's
+		// signal is that the deployment served at all rather than that a grant
+		// was narrow.
+		testScopesHeader: scopeRead,
+	})
 	wantReachedTheToolSurface(t, got)
 
 	if asked := gate.asked.Load(); asked != 0 {

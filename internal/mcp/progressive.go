@@ -150,14 +150,26 @@ var describeCapabilitiesToolSpec = toolSpec{
 // generated tool that reaches it. The generated half needs no such pass: each of
 // those tools already carries its curated sibling's name, derived when the tool
 // was.
-func (s *server) deferredTools() []toolSpec {
+//
+// Both halves are then narrowed to what this request's credential admits, in one
+// pass over the concatenation rather than one per half: the generated half is
+// empty on the transport where a credential bounds anything, so filtering it
+// separately would be a second call to the same predicate that could only ever
+// agree with the first.
+func (s *server) deferredTools(ctx context.Context) []toolSpec {
 	out := make([]toolSpec, 0, len(deferredToolRegistry)+len(s.commandTools))
 	out = append(out, s.withTwinNotes(deferredToolRegistry)...)
 	out = append(out, s.commandTools...)
-	return out
+	return s.admittedReach(ctx).admitted(out)
 }
 
-func describeCapabilitiesInvoke(s *server, _ context.Context, args json.RawMessage) (*callToolResult, *rpcError) {
+// describeCapabilitiesInvoke answers the capability tool.
+//
+// ctx is the request's own and is consulted for one thing: which tools this
+// request's credential admits. The answer is therefore composed per request, on
+// the same predicate the default listing is composed on, so the two surfaces
+// agree about one request rather than agreeing because nothing narrowed either.
+func describeCapabilitiesInvoke(s *server, ctx context.Context, args json.RawMessage) (*callToolResult, *rpcError) {
 	var a describeCapabilitiesArgs
 	if len(args) > 0 {
 		if err := json.Unmarshal(args, &a); err != nil {
@@ -170,7 +182,7 @@ func describeCapabilitiesInvoke(s *server, _ context.Context, args json.RawMessa
 	if kind == "" {
 		// No kind in play: return the long tail — every deferred tool's
 		// definition — so a client discovers what the default list omits.
-		deferred := s.deferredTools()
+		deferred := s.deferredTools(ctx)
 		for i := range deferred {
 			caps = append(caps, s.descriptorFor(deferred[i], true))
 		}
@@ -179,7 +191,7 @@ func describeCapabilitiesInvoke(s *server, _ context.Context, args json.RawMessa
 			return errorResult(fmt.Sprintf("unknown entity kind %q. Valid kinds: %s",
 				kind, strings.Join(knownEntityKinds(), ", ")))
 		}
-		caps = s.capabilitiesForKind(kind)
+		caps = s.capabilitiesForKind(ctx, kind)
 	}
 
 	payload := describeCapabilitiesResult{Kind: kind, Capabilities: caps}
@@ -190,10 +202,12 @@ func describeCapabilitiesInvoke(s *server, _ context.Context, args json.RawMessa
 // then the deferred set so the surfaced order is deterministic. The capability
 // tool itself is skipped — it never lists itself as a capability for a kind.
 //
-// Both sets are taken as this session advertises them, which is the same
-// definition tools/list and the unscoped long tail carry: a narrowed listing
-// that dropped a tool's disclosure of its generated twin would hand an assistant
-// asking about one entity kind a different definition of the same tool.
+// Both sets are taken as this session advertises them to this request, which is
+// the same definition tools/list and the unscoped long tail carry: a narrowed
+// listing that dropped a tool's disclosure of its generated twin, or that
+// surfaced a tool the request's credential does not admit, would hand an
+// assistant asking about one entity kind a different answer from the one it
+// would have read on either other surface.
 //
 // The generated command tools are deliberately absent from a kind-scoped
 // result, and reachable through the unscoped long tail instead. A command's
@@ -202,7 +216,8 @@ func describeCapabilitiesInvoke(s *server, _ context.Context, args json.RawMessa
 // here would answer a request to narrow with the entire command surface, which
 // is the opposite of narrowing. Claiming a subset serves a kind would mean this
 // package deciding something about the commands rather than reading it.
-func (s *server) capabilitiesForKind(kind string) []capabilityDescriptor {
+func (s *server) capabilitiesForKind(ctx context.Context, kind string) []capabilityDescriptor {
+	admission := s.admittedReach(ctx)
 	var out []capabilityDescriptor
 	collect := func(specs []toolSpec, deferred bool) {
 		for i := range specs {
@@ -214,8 +229,8 @@ func (s *server) capabilitiesForKind(kind string) []capabilityDescriptor {
 			}
 		}
 	}
-	collect(s.curatedTools(), false)
-	collect(s.withTwinNotes(deferredToolRegistry), true)
+	collect(s.curatedTools(ctx), false)
+	collect(admission.admitted(s.withTwinNotes(deferredToolRegistry)), true)
 	return out
 }
 

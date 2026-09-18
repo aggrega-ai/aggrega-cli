@@ -228,18 +228,23 @@ type cacheHint struct {
 	CacheScope string `json:"cacheScope,omitempty"`
 }
 
-// The freshness a result advertises is chosen by WHERE ITS CONTENT CAME FROM,
-// never by which method asked for it. That is why these two are the whole
-// table, and why a method picks one of them rather than declaring a window of
-// its own: two methods reading the same content would otherwise be free to
-// tell a client different things about how long it keeps.
+// The freshness a result advertises is chosen by WHAT SHAPED ITS CONTENT, never
+// by which method asked for it. That is why these two are the whole table, and
+// why a method picks one of them rather than declaring a window of its own: two
+// methods answering from the same content would otherwise be free to tell a
+// client different things about how long it keeps.
 //
 // Content compiled into the binary, and content read from the documentation
 // bundle pinned at the start of the run, cannot change while the process lives
 // and is shaped by nothing about the caller: public, fresh for a long window.
-// Content read out of the caller's own workspace changes under their editor
-// between one request and the next, and belongs to them alone: private, and
-// stale the moment it arrives.
+//
+// Two different things earn the other hint, and they earn it for reasons that
+// are separate all the way down: content read out of the caller's own workspace
+// changes under their editor between one request and the next, and content the
+// request's own credential shaped belongs to the caller that presented it. Both
+// are private and both are stale on arrival — the second because this server
+// holds nothing between requests, so the very next request on the same
+// connection may present a different credential and be owed a different answer.
 //
 // compiledInCacheHint is the first of the two.
 func compiledInCacheHint() cacheHint {
@@ -247,12 +252,29 @@ func compiledInCacheHint() cacheHint {
 	return cacheHint{TTLMs: &window, CacheScope: cacheScopePublic}
 }
 
-// workspaceCacheHint is the second: a window of zero, stated rather than left
+// privateCacheHint is the second: a window of zero, stated rather than left
 // out, so a client is told to read again rather than left to guess how long
 // the answer is good for.
-func workspaceCacheHint() cacheHint {
+func privateCacheHint() cacheHint {
 	var window int64
 	return cacheHint{TTLMs: &window, CacheScope: cacheScopePrivate}
+}
+
+// toolListCacheHint is the freshness the tool list advertises, and it is the one
+// answer here whose hint depends on HOW THE CALLER REACHED THIS SERVER rather
+// than on what it asked for.
+//
+// A client that launched this process is served a list narrowed by nothing, so
+// the list is the same for every caller of that process and keeps as long as the
+// process does: public. A caller reaching a listener is served the tools its own
+// credential admits, so the answer is that caller's alone and is owed again the
+// moment the credential changes — which, on a transport that holds nothing
+// between requests, is any request at all.
+func (s *server) toolListCacheHint() cacheHint {
+	if s.transport == transportHTTP {
+		return privateCacheHint()
+	}
+	return compiledInCacheHint()
 }
 
 // cacheHintFor is the freshness hint a result carries back to a request in
@@ -274,11 +296,13 @@ func cacheHintFor(era protocolEra, hint cacheHint) cacheHint {
 // whether its answer is decorated. A handler composes what it was asked for;
 // the revision the request spoke decides what travels with it.
 //
-// Every result reached here except one is composed entirely from content the
+// Every result reached here except two is composed entirely from content the
 // binary carries or from the bundle pinned for the run, so each takes the
-// compiled-in hint. resources/read is that one: its content comes from
-// whichever family the URI named, so its hint is chosen where the family is
-// resolved and this site leaves it as it found it.
+// compiled-in hint. resources/read is the first exception: its content comes
+// from whichever family the URI named, so its hint is chosen where the family is
+// resolved and this site leaves it as it found it. The tool list is the second:
+// it is narrowed by what the request's own credential admits, so its hint is
+// chosen by the transport the session speaks rather than fixed here.
 //
 // Two answers deliberately reach the end untouched. The per-request revision
 // defines neither ping nor initialize — its client-request set names ten
@@ -295,7 +319,7 @@ func (s *server) stampResult(era protocolEra, result any) any {
 		r.perRequestEnvelope, r.cacheHint = envelope, compiledInCacheHint()
 		return r
 	case listToolsResult:
-		r.perRequestEnvelope, r.cacheHint = envelope, compiledInCacheHint()
+		r.perRequestEnvelope, r.cacheHint = envelope, s.toolListCacheHint()
 		return r
 	case listResourcesResult:
 		r.perRequestEnvelope, r.cacheHint = envelope, compiledInCacheHint()
