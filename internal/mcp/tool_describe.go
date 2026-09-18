@@ -133,9 +133,9 @@ var describeToolSpec = toolSpec{
 	description: "Describe an Aggrega subject in structured form, rendering nothing and writing nothing. Two modes: pass `name` to resolve a " +
 		"catalog entity of any kind by its type URI and get its fully-resolved definition (schema, uses-schema, provides, " +
 		"labels) with inheritance applied; or pass `release` (a Release path) to get its dependency closure — what a " +
-		"deployment is built FROM, not its shape — the resolved Aggregate and Manifest identities plus every catalog " +
+		"Release is built FROM, not its shape — the resolved Aggregate and Manifest identities plus every catalog " +
 		"entity and shared library it reaches, with resolved versions. Use `name` to understand a building block " +
-		"before wiring it into an Aggregate, and `release` to see what a deployment depends on before building it. " +
+		"before wiring it into an Aggregate, and `release` to see what a Release depends on before building it. " +
 		"`response_format` chooses detailed (full definition / every reference) or concise (identity and counts).",
 	workspaceSelectionNote: "Optional `workspace_root` and `catalog_dirs` override discovery.",
 	inputSchema: `{

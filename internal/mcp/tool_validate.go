@@ -77,7 +77,8 @@ var validateToolSpec = toolSpec{
 		"closure-scoped extends and schema-pillar gates, the resolve/topology/IR pipeline, and the resolution-" +
 		"completeness checks. `entity` <path> checks one catalog entity file: all kinds are schema- and shape-checked, " +
 		"a Component or Feature additionally has its pillar structure checked, and a Recipe is driven through the real " +
-		"compilation pipeline around a synthesized minimal deployment so you see the isolated render summary; a Plugin " +
+		"compilation pipeline around a synthesized Aggregate, Manifest and Release so you see the isolated render " +
+		"summary; a Plugin " +
 		"entity is schema-checked only. `plugin` <path> validates a raw .wasm against its describe() self-report — pass " +
 		"`type` for a binary-only check, or `entity` (a Plugin entity path) to cross-check the binary against the " +
 		"entity's declared surface. `catalog` true checks the whole catalog: schema-pillar structure, library " +

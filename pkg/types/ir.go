@@ -462,10 +462,10 @@ type IRFeatureEntry struct {
 	CatalogAnnotations OrderedMap[string] `json:"catalog_annotations,omitempty,omitzero"`
 	// Binding names the host Component attachment slot this attachment fills,
 	// or AttachmentBindingFree when it fills none. The slot pairs with the
-	// attachment by NAME — a deployment fills a slot by attaching a Feature
-	// under the slot's name — so the value is an exact key from the resolved
-	// Component's declared slot set, never anything read out of the name
-	// itself.
+	// attachment by NAME — an attachment fills a slot when the Feature is
+	// attached under the slot's name — so the value is an exact key from the
+	// resolved Component's declared slot set, never anything read out of the
+	// name itself.
 	//
 	// The slot name is carried rather than a bare boolean because which slot
 	// was filled is the more useful half of the answer: a consumer that wants
