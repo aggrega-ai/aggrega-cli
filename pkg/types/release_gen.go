@@ -47,6 +47,6 @@ type ReleaseSpec struct {
 	Parameters ParametersBlock `json:"parameters,omitempty,omitzero" yaml:"parameters,omitempty"`
 	// Boundaries The root logical boxes into which the Aggregate's components are routed.
 	Boundaries OrderedMap[Boundary] `json:"boundaries,omitempty,omitzero" yaml:"boundaries,omitempty"`
-	// Components Top-level component instances carrying per-component operator infra, for a single-scope deployment with no named boundaries. Mutually exclusive with `boundaries`: declare `components` for a flat deployment or `boundaries` for multi-target routing, never both. When `components` is used, the compiler synthesizes a `default` boundary holding them and emits their artifacts to `dist/` flat.
+	// Components Top-level component instances carrying per-component operator infra, for a single-scope Release with no named boundaries. Mutually exclusive with `boundaries`: declare `components` for a flat Release or `boundaries` for multi-target routing, never both. When `components` is used, the compiler synthesizes a `default` boundary holding them and emits their artifacts to `dist/` flat.
 	Components OrderedMap[BoundaryComponent] `json:"components,omitempty,omitzero" yaml:"components,omitempty"`
 }
