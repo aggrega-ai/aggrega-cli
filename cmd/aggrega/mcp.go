@@ -81,17 +81,29 @@ its own request and no session of any kind is kept, so nothing a client
 sends first decides how a later request is answered. Closing the
 connection ends the call it carried. A request carrying an Origin header
 is checked against mcp.allowed_origins, and mcp.limits bounds how large
-one request body may be and how many requests are answered at once.
+one request body may be, how many requests are answered at once, and how
+many one caller may send in a minute. A caller sending faster than
+mcp.limits.requests_per_minute is answered 429, counted against that
+caller alone.
 
-Every request to /mcp carries a bearer token, and one that does not is
-answered 401 with a challenge. The token is a JWT the server verifies
-itself, against the keys mcp.authorization.issuer publishes: it must come
-from that issuer, name mcp.authorization.resource among its audiences,
-be inside its validity window, and be signed with an asymmetric algorithm.
-A token that is not is answered 401 as well. A token is never accepted
-from the address, never forwarded anywhere, never exchanged, and never
-written to any log; the subject it names is recorded and compared to
-nothing.
+Every request to /mcp carries a credential, and which one depends on
+whether a proxy in front has already checked it. By default it is a
+bearer token the server verifies itself, against the keys
+mcp.authorization.issuer publishes: it must come from that issuer, name
+mcp.authorization.resource among its audiences, be inside its validity
+window, and be signed with an asymmetric algorithm. A request carrying no
+token is answered 401 with a challenge, and so is one whose token fails
+any of those. A token is never accepted from the address, never forwarded
+anywhere, never exchanged, and never written to any log; the subject it
+names is recorded and compared to nothing.
+
+Set mcp.authorization.trusted_proxy instead and the caller is read from a
+header the proxy sets rather than from a token, with its scopes from a
+second header; no token is read at all in that mode, and a request
+without the principal header is answered 401. Because that header is then
+the whole credential, it is trustworthy only where nothing else can set
+it: the process is refused before it binds unless mcp.listen is loopback
+or a Unix socket.
 
 The challenge names where to obtain a token. A listener publishes an
 OAuth protected-resource metadata document, with no credential asked for,
@@ -212,10 +224,15 @@ func runMCP(cmd *cobra.Command, args []string) error {
 			AllowedOrigins:        settings.AllowedOrigins,
 			MaxBodyBytes:          settings.Limits.MaxBodyBytes,
 			MaxConcurrentRequests: settings.Limits.MaxConcurrentRequests,
+			RequestsPerMinute:     settings.Limits.RequestsPerMinute,
 			Authorization: mcp.AuthorizationConfig{
 				Issuer:   settings.Authorization.Issuer,
 				Resource: settings.Authorization.Resource,
 				JWKSFile: settings.Authorization.JWKSFile,
+				TrustedProxy: mcp.TrustedProxyConfig{
+					PrincipalHeader: settings.Authorization.TrustedProxy.PrincipalHeader,
+					ScopesHeader:    settings.Authorization.TrustedProxy.ScopesHeader,
+				},
 			},
 			// The gate is handed over rather than the posture: whether this
 			// workspace makes an outbound request at all is the egress gate's

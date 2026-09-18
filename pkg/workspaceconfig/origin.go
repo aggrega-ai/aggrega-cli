@@ -524,9 +524,18 @@ func originFields() []originField {
 		sc("mcp.limits.max_concurrent_requests", func(c Config) string {
 			return strconv.Itoa(c.MCP.Limits.MaxConcurrentRequests)
 		}),
+		sc("mcp.limits.requests_per_minute", func(c Config) string {
+			return strconv.Itoa(c.MCP.Limits.RequestsPerMinute)
+		}),
 		sc("mcp.authorization.issuer", func(c Config) string { return c.MCP.Authorization.Issuer }),
 		sc("mcp.authorization.resource", func(c Config) string { return c.MCP.Authorization.Resource }),
 		sc("mcp.authorization.jwks_file", func(c Config) string { return c.MCP.Authorization.JWKSFile }),
+		sc("mcp.authorization.trusted_proxy.principal_header", func(c Config) string {
+			return c.MCP.Authorization.TrustedProxy.PrincipalHeader
+		}),
+		sc("mcp.authorization.trusted_proxy.scopes_header", func(c Config) string {
+			return c.MCP.Authorization.TrustedProxy.ScopesHeader
+		}),
 		sc("mcp.health.listen", func(c Config) string { return c.MCP.Health.Listen }),
 		sc("signing.fulcio_url", func(c Config) string { return c.Signing.FulcioURL }),
 		sc("signing.rekor_url", func(c Config) string { return c.Signing.RekorURL }),

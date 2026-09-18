@@ -126,6 +126,12 @@ type HTTPConfig struct {
 	// arriving while that many are in flight is refused rather than queued.
 	MaxConcurrentRequests int
 
+	// RequestsPerMinute is how many requests one caller may send in a minute.
+	// It is counted against the caller the credential named rather than
+	// against the deployment, so one caller cannot spend another's allowance,
+	// and a request arriving with none left is refused rather than delayed.
+	RequestsPerMinute int
+
 	// Authorization is what this deployment declares about the bearer tokens its
 	// callers present. Unlike the caps above it is not a bound on traffic: it is
 	// what every answer given to a caller carrying no credential is composed
@@ -134,11 +140,13 @@ type HTTPConfig struct {
 	Authorization AuthorizationConfig
 
 	// Egress yields the client the authorization server's keys are read with.
-	// It is consulted once, while the handler is built, and only where
-	// Authorization names no file to read those keys from: a deployment that
-	// names one never reaches the network at all. A nil gate, or one that
-	// refuses, is therefore a deployment with nowhere to read its keys from,
-	// and the handler is refused rather than built.
+	// It is consulted once, while the handler is built, and only where this
+	// deployment reads a token at all and Authorization names no file to read
+	// those keys from: a deployment that names a file, and one that reads its
+	// caller from a proxy in front, never reach the network. A nil gate, or
+	// one that refuses, is therefore a token-validating deployment with
+	// nowhere to read its keys from, and the handler is refused rather than
+	// built.
 	Egress NetworkEgress
 }
 
@@ -168,9 +176,15 @@ type httpHandler struct {
 	slots chan struct{}
 
 	// auth decides whether a request reaches the protocol surface. It is never
-	// nil — newHTTPHandler installs the token validator — and a test in this
-	// package replaces it to reach the transport behaviour behind it.
+	// nil — newHTTPHandler installs the token validator, or the reader of a
+	// trusted proxy's assertion where the deployment declared one — and a test
+	// in this package replaces it to reach the transport behaviour behind it.
 	auth httpAuthenticator
+
+	// limiter bounds how fast one caller may send. It is claimed after the
+	// credential check, because there is nobody to count against until a
+	// credential has said who is asking.
+	limiter *principalRateLimiter
 
 	// resource is what this deployment publishes about itself: the document, the
 	// paths it is answered at, and the challenge that points a refused caller at
@@ -234,6 +248,10 @@ func newHTTPHandler(runCtx context.Context, s *server, transport HTTPConfig) (*h
 		return nil, fmt.Errorf("mcp.limits.max_concurrent_requests must be positive, got %d",
 			transport.MaxConcurrentRequests)
 	}
+	if transport.RequestsPerMinute <= 0 {
+		return nil, fmt.Errorf("mcp.limits.requests_per_minute must be positive, got %d",
+			transport.RequestsPerMinute)
+	}
 	// Nothing on this transport records an entry in the registry — the connection
 	// is what cancels here — but a cancellation notification may still arrive over
 	// it, and the notification path routes the id it names to the registry's
@@ -245,7 +263,7 @@ func newHTTPHandler(runCtx context.Context, s *server, transport HTTPConfig) (*h
 	if err != nil {
 		return nil, err
 	}
-	keys, err := resolveVerificationKeys(transport.Authorization, transport.Egress)
+	auth, err := resolveAuthenticator(transport, resource, s.logf)
 	if err != nil {
 		return nil, err
 	}
@@ -256,18 +274,45 @@ func newHTTPHandler(runCtx context.Context, s *server, transport HTTPConfig) (*h
 		allowedOrigins: slices.Clone(transport.AllowedOrigins),
 		maxBodyBytes:   transport.MaxBodyBytes,
 		slots:          make(chan struct{}, transport.MaxConcurrentRequests),
-		auth: &bearerValidator{
-			resource: resource,
-			issuer:   transport.Authorization.Issuer,
-			audience: transport.Authorization.Resource,
-			keys:     keys,
-			// The same route every other diagnostic takes, so the reason a
-			// credential was turned away lands on the process's error stream
-			// beside everything else an operator reads and never anywhere a
-			// caller can see.
-			logf: s.logf,
-		},
+		auth:           auth,
+		limiter:        newPrincipalRateLimiter(transport.RequestsPerMinute),
+		resource:       resource,
+	}, nil
+}
+
+// resolveAuthenticator settles which credential this deployment reads, and
+// reaches for the verification keys only where it reads a token.
+//
+// The two are one decision rather than two, which is why they are settled here
+// together: a deployment reading its caller from a proxy in front validates no
+// token, so fetching a key set for it would reach an authorization server whose
+// answer nothing would ever consult — and would refuse a workspace that permits
+// no outbound request over keys it was never going to read.
+//
+// logf is where the reason a credential was turned away is written. It is the
+// same route every other diagnostic takes, so that reason lands on the
+// process's error stream beside everything else an operator reads and never
+// anywhere a caller can see. A caller that only wants the refusals this makes,
+// and not the reader itself, passes nil.
+func resolveAuthenticator(transport HTTPConfig, resource protectedResource,
+	logf func(format string, args ...any)) (httpAuthenticator, error) {
+	proxy, err := resolveProxyAssertion(transport.Authorization, resource)
+	if err != nil {
+		return nil, err
+	}
+	if proxy != nil {
+		return proxy, nil
+	}
+	keys, err := resolveVerificationKeys(transport.Authorization, transport.Egress)
+	if err != nil {
+		return nil, err
+	}
+	return &bearerValidator{
 		resource: resource,
+		issuer:   transport.Authorization.Issuer,
+		audience: transport.Authorization.Resource,
+		keys:     keys,
+		logf:     logf,
 	}, nil
 }
 
@@ -289,10 +334,16 @@ func newHTTPHandler(runCtx context.Context, s *server, transport HTTPConfig) (*h
 //     to this endpoint a single one however the request was shaped. What the
 //     credential asserted travels on the request from here, so everything
 //     answered afterwards is answered on behalf of someone.
-//   - The origin, the concurrency slot and the body cap follow, in that order:
-//     an unlisted origin costs a header read, a slot is held only for work that
-//     is going to be done, and the body is the first thing a caller can make
-//     large.
+//   - The origin, the per-caller rate cap, the concurrency slot and the body cap
+//     follow, in that order: an unlisted origin costs a header read, a slot is
+//     held only for work that is going to be done, and the body is the first
+//     thing a caller can make large. The rate cap sits where it does for two
+//     reasons of its own. It cannot run before authentication, because it counts
+//     against a caller and there is nobody to count against until a credential
+//     has said who is asking. And it runs before the slot rather than after,
+//     because a request that is going to be refused for sending too fast is not
+//     work that is going to be done, so taking a slot for it first would let one
+//     capped caller displace a caller whose request was going to be answered.
 //   - The body is then read and parsed, its era established, and its headers
 //     checked against it, before anything is routed.
 func (h *httpHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -321,6 +372,12 @@ func (h *httpHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	r = authenticated
 	if origin := r.Header.Get(headerOrigin); !h.originAllowed(origin) {
 		h.refuse(w, http.StatusForbidden, codeInvalidRequest, "origin not allowed: "+origin)
+		return
+	}
+	if !h.limiter.allow(principalFrom(r.Context())) {
+		h.refuse(w, http.StatusTooManyRequests, codeInternalError,
+			"this caller has sent more requests than this server accepts from one caller in a minute; "+
+				"the allowance refills steadily, so the next request will be answered shortly")
 		return
 	}
 	release, taken := h.takeSlot()

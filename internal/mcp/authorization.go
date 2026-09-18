@@ -79,6 +79,12 @@ type AuthorizationConfig struct {
 	// Empty reads that set from the authorization server instead, which is
 	// what a deployment whose workspace reaches the network does.
 	JWKSFile string
+
+	// TrustedProxy carries the headers this deployment reads its caller's
+	// identity from where a proxy in front has already validated the token.
+	// Its zero value is a deployment that validates tokens itself, and with
+	// it set no token is read at all and no key set is fetched.
+	TrustedProxy TrustedProxyConfig
 }
 
 // NetworkEgress yields the client an outbound request is made with, or the
@@ -104,7 +110,9 @@ type principal struct {
 
 	// Issuer is the authorization server that issued the token, as the token
 	// states it. It equals the configured issuer, because a token stating any
-	// other is refused.
+	// other is refused. It is empty where a proxy in front asserted this
+	// principal instead: this server read no token there and so knows of no
+	// issuer beyond what the deployment declared.
 	Issuer string
 
 	// ClientID is the client the token was issued to, where the token names

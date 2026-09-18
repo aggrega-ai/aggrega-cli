@@ -52,7 +52,13 @@ type httpFixture struct {
 
 // defaultTransportConfig is the shape every proof that is not about the caps
 // runs under: a body cap far above any fixture here, room for more requests at
-// once than any of them issues, and the deployment every proof here runs as.
+// once than any of them issues, an allowance far above what any of them spends,
+// and the deployment every proof here runs as.
+//
+// The rate allowance is deliberately enormous rather than merely generous.
+// Every proof in this package that is not about the rate cap shares one caller,
+// and several of them issue a burst; an allowance sized to the busiest of them
+// would make an unrelated proof start failing the day it grew one more request.
 //
 // The egress gate it carries opens and is never used. A handler consults the
 // gate once, while it is built, and reads nothing from the network until a
@@ -63,6 +69,7 @@ func defaultTransportConfig() HTTPConfig {
 	return HTTPConfig{
 		MaxBodyBytes:          1 << 20,
 		MaxConcurrentRequests: 8,
+		RequestsPerMinute:     100_000,
 		Authorization:         defaultAuthorizationConfig(),
 		Egress:                func() (*http.Client, error) { return http.DefaultClient, nil },
 	}
@@ -1206,12 +1213,29 @@ func TestHTTPHandlerRefusesANonPositiveCap(t *testing.T) {
 		name      string
 		transport HTTPConfig
 	}{
-		{"no body cap", HTTPConfig{MaxBodyBytes: 0, MaxConcurrentRequests: 4, Authorization: declared}},
-		{"negative body cap", HTTPConfig{MaxBodyBytes: -1, MaxConcurrentRequests: 4, Authorization: declared}},
-		{"no concurrency cap", HTTPConfig{MaxBodyBytes: 1024, MaxConcurrentRequests: 0, Authorization: declared}},
+		{
+			"no body cap",
+			HTTPConfig{MaxBodyBytes: 0, MaxConcurrentRequests: 4, RequestsPerMinute: 60, Authorization: declared},
+		},
+		{
+			"negative body cap",
+			HTTPConfig{MaxBodyBytes: -1, MaxConcurrentRequests: 4, RequestsPerMinute: 60, Authorization: declared},
+		},
+		{
+			"no concurrency cap",
+			HTTPConfig{MaxBodyBytes: 1024, MaxConcurrentRequests: 0, RequestsPerMinute: 60, Authorization: declared},
+		},
 		{
 			"negative concurrency cap",
-			HTTPConfig{MaxBodyBytes: 1024, MaxConcurrentRequests: -1, Authorization: declared},
+			HTTPConfig{MaxBodyBytes: 1024, MaxConcurrentRequests: -1, RequestsPerMinute: 60, Authorization: declared},
+		},
+		{
+			"no rate cap",
+			HTTPConfig{MaxBodyBytes: 1024, MaxConcurrentRequests: 4, RequestsPerMinute: 0, Authorization: declared},
+		},
+		{
+			"negative rate cap",
+			HTTPConfig{MaxBodyBytes: 1024, MaxConcurrentRequests: 4, RequestsPerMinute: -1, Authorization: declared},
 		},
 	} {
 		t.Run(row.name, func(t *testing.T) {

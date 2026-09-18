@@ -39,6 +39,14 @@ mcp:
   limits:
     max_body_bytes: 1048576
     max_concurrent_requests: 4
+    requests_per_minute: 30
+  authorization:
+    issuer: https://login.example.com
+    resource: https://mcp.example.com/mcp
+    jwks_file: /etc/aggrega/keys.json
+    trusted_proxy:
+      principal_header: X-Forwarded-User
+      scopes_header: X-Forwarded-Scopes
   health:
     listen: unix:/run/aggrega/health.sock
 `
@@ -76,6 +84,29 @@ func TestLoadMCPEveryDeclaredKey(t *testing.T) {
 	if cfg.MCP.Limits.MaxConcurrentRequests != 4 {
 		t.Errorf("MCP.Limits.MaxConcurrentRequests: got %d, want 4", cfg.MCP.Limits.MaxConcurrentRequests)
 	}
+	if cfg.MCP.Limits.RequestsPerMinute != 30 {
+		t.Errorf("MCP.Limits.RequestsPerMinute: got %d, want 30", cfg.MCP.Limits.RequestsPerMinute)
+	}
+	if cfg.MCP.Authorization.Issuer != "https://login.example.com" {
+		t.Errorf("MCP.Authorization.Issuer: got %q, want %q",
+			cfg.MCP.Authorization.Issuer, "https://login.example.com")
+	}
+	if cfg.MCP.Authorization.Resource != "https://mcp.example.com/mcp" {
+		t.Errorf("MCP.Authorization.Resource: got %q, want %q",
+			cfg.MCP.Authorization.Resource, "https://mcp.example.com/mcp")
+	}
+	if cfg.MCP.Authorization.JWKSFile != "/etc/aggrega/keys.json" {
+		t.Errorf("MCP.Authorization.JWKSFile: got %q, want %q",
+			cfg.MCP.Authorization.JWKSFile, "/etc/aggrega/keys.json")
+	}
+	if cfg.MCP.Authorization.TrustedProxy.PrincipalHeader != "X-Forwarded-User" {
+		t.Errorf("MCP.Authorization.TrustedProxy.PrincipalHeader: got %q, want %q",
+			cfg.MCP.Authorization.TrustedProxy.PrincipalHeader, "X-Forwarded-User")
+	}
+	if cfg.MCP.Authorization.TrustedProxy.ScopesHeader != "X-Forwarded-Scopes" {
+		t.Errorf("MCP.Authorization.TrustedProxy.ScopesHeader: got %q, want %q",
+			cfg.MCP.Authorization.TrustedProxy.ScopesHeader, "X-Forwarded-Scopes")
+	}
 	if cfg.MCP.Health.Listen != "unix:/run/aggrega/health.sock" {
 		t.Errorf("MCP.Health.Listen: got %q, want %q",
 			cfg.MCP.Health.Listen, "unix:/run/aggrega/health.sock")
@@ -111,6 +142,15 @@ func TestLoadMCPAbsentBlockLeavesDocumentedDefaults(t *testing.T) {
 	if cfg.MCP.Limits.MaxConcurrentRequests != 16 {
 		t.Errorf("MCP.Limits.MaxConcurrentRequests: got %d, want 16 (the documented default)", cfg.MCP.Limits.MaxConcurrentRequests)
 	}
+	if cfg.MCP.Limits.RequestsPerMinute != 120 {
+		t.Errorf("MCP.Limits.RequestsPerMinute: got %d, want 120 (the documented default)",
+			cfg.MCP.Limits.RequestsPerMinute)
+	}
+	if cfg.MCP.Authorization.TrustedProxy.PrincipalHeader != "" {
+		t.Errorf("MCP.Authorization.TrustedProxy.PrincipalHeader: got %q, want empty — a workspace that "+
+			"never asked for it validates the tokens its callers present",
+			cfg.MCP.Authorization.TrustedProxy.PrincipalHeader)
+	}
 	if cfg.MCP.Health.Listen != "" {
 		t.Errorf("MCP.Health.Listen: got %q, want empty (no second listener, neither check answered)",
 			cfg.MCP.Health.Listen)
@@ -138,6 +178,10 @@ func TestLoadMCPPresentBlockPreservesUnsetDefaults(t *testing.T) {
 	}
 	if cfg.MCP.Limits.MaxConcurrentRequests != 16 {
 		t.Errorf("MCP.Limits.MaxConcurrentRequests: got %d, want 16 (the documented default)", cfg.MCP.Limits.MaxConcurrentRequests)
+	}
+	if cfg.MCP.Limits.RequestsPerMinute != 120 {
+		t.Errorf("MCP.Limits.RequestsPerMinute: got %d, want 120 (the documented default)",
+			cfg.MCP.Limits.RequestsPerMinute)
 	}
 }
 
@@ -173,6 +217,15 @@ func TestLoadMCPUnknownKeyIsRefused(t *testing.T) {
 			name:    "unknown key under health",
 			content: "mcp:\n  health:\n    listen: 127.0.0.1:7788\n    no_such_key: 1\n",
 		},
+		{
+			name:    "unknown key under authorization",
+			content: "mcp:\n  authorization:\n    issuer: https://login.example.com\n    no_such_key: 1\n",
+		},
+		{
+			name: "unknown key under trusted_proxy",
+			content: "mcp:\n  authorization:\n    trusted_proxy:\n" +
+				"      principal_header: X-Forwarded-User\n      no_such_key: 1\n",
+		},
 	} {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
@@ -186,7 +239,31 @@ func TestLoadMCPUnknownKeyIsRefused(t *testing.T) {
 	}
 }
 
-// TestLoadMCPCapBelowMinimumIsRefused pins that neither cap has an off value.
+// TestLoadMCPTrustedProxyWithoutItsPrincipalHeaderIsRefused pins the one key
+// the schema requires inside a nested `mcp` object.
+//
+// The header is the whole credential in that mode, so a block declaring only
+// where the scopes come from names a deployment with no way to tell who is
+// calling. The refusal is the schema's, made at load, rather than a check the
+// serving process makes later.
+func TestLoadMCPTrustedProxyWithoutItsPrincipalHeaderIsRefused(t *testing.T) {
+	t.Parallel()
+	// Control: the same block WITH the required key loads, so the refusal below
+	// is about the absent key rather than about the block existing at all.
+	accepted := "mcp:\n  authorization:\n    trusted_proxy:\n      principal_header: X-Forwarded-User\n"
+	if _, err := load(writeFixture(t, accepted)); err != nil {
+		t.Fatalf("a trusted_proxy block naming its principal header was refused: %v", err)
+	}
+
+	refused := "mcp:\n  authorization:\n    trusted_proxy:\n      scopes_header: X-Forwarded-Scopes\n"
+	if _, err := load(writeFixture(t, refused)); err == nil {
+		t.Fatal("expected the loader to refuse a trusted_proxy block naming no principal header; got nil")
+	} else if !errors.Is(err, ErrConfigInvalid()) {
+		t.Errorf("the refusal must wrap ErrConfigInvalid; got %v", err)
+	}
+}
+
+// TestLoadMCPCapBelowMinimumIsRefused pins that no cap has an off value.
 //
 // Zero is the value a reader reaches for when they want a cap lifted, because
 // two of this file's sibling cache settings give it exactly that meaning. These
@@ -201,6 +278,7 @@ func TestLoadMCPCapBelowMinimumIsRefused(t *testing.T) {
 	}{
 		{"max_body_bytes zero", "mcp:\n  limits:\n    max_body_bytes: 0\n"},
 		{"max_concurrent_requests zero", "mcp:\n  limits:\n    max_concurrent_requests: 0\n"},
+		{"requests_per_minute zero", "mcp:\n  limits:\n    requests_per_minute: 0\n"},
 	} {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {

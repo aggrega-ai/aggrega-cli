@@ -839,6 +839,11 @@ type MCPConfig struct {
 	// address is refused before anything binds. The refusal is a
 	// startup-time decision rather than a schema one: the schema decides
 	// the value's shape and cannot tell one address from another.
+	//
+	// The same two forms are the only ones accepted, certificate or not,
+	// where Authorization.TrustedProxy is set, and for a different
+	// reason: there the credential is a header, which is trustworthy
+	// only where nothing but the proxy can set it.
 	Listen string `yaml:"listen"`
 
 	// TLS carries the certificate and key for terminating TLS inside the
@@ -934,6 +939,36 @@ type MCPAuthorizationConfig struct {
 	// paths and every other declaring-file-relative path the cascade
 	// carries.
 	JWKSFile string `yaml:"jwks_file"`
+
+	// TrustedProxy carries the headers a proxy in front sets when that
+	// proxy validates the tokens instead of this server. Its zero value
+	// is a deployment that validates tokens itself, which is the
+	// default.
+	TrustedProxy MCPTrustedProxyConfig `yaml:"trusted_proxy"`
+}
+
+// MCPTrustedProxyConfig carries the two headers a deployment reads its
+// caller's identity from where a proxy in front has already validated the
+// token.
+//
+// It is an opt-in and it is confined: with PrincipalHeader set, the
+// listen address must be loopback or a Unix socket or the listener is
+// refused before anything binds. A header is trustworthy exactly as far
+// as the set of callers that can set it, so a listener in this mode on an
+// address the network reaches would let every caller claim to be anyone.
+//
+// The schema requires principal_header wherever the object is present, so
+// a non-empty PrincipalHeader is what "this deployment reads its caller
+// from a proxy" means, and there is no separate flag saying so.
+type MCPTrustedProxyConfig struct {
+	// PrincipalHeader is the header the proxy puts the caller's identity
+	// in. Its value is taken exactly as written and compared to nothing.
+	// Empty (the default) is a deployment that validates tokens itself.
+	PrincipalHeader string `yaml:"principal_header"`
+	// ScopesHeader is the header the proxy puts the caller's granted
+	// scopes in, separated by spaces. Empty (the default) asserts no
+	// scopes for any caller.
+	ScopesHeader string `yaml:"scopes_header"`
 }
 
 // MCPTLSConfig carries the paths to the certificate chain and private key
@@ -975,6 +1010,12 @@ type MCPLimitsConfig struct {
 	// once. A request arriving while that many are in flight is refused
 	// rather than queued. Default 16; the schema's minimum is 1.
 	MaxConcurrentRequests int `yaml:"max_concurrent_requests"`
+	// RequestsPerMinute is how many requests one caller may send in a
+	// minute, counted against that caller rather than against the
+	// deployment, so one caller cannot spend another's allowance. A
+	// request arriving with none left is refused. Default 120; the
+	// schema's minimum is 1.
+	RequestsPerMinute int `yaml:"requests_per_minute"`
 }
 
 // Default returns a Config populated with the documented defaults.
@@ -1012,6 +1053,7 @@ func Default() Config {
 			Limits: MCPLimitsConfig{
 				MaxBodyBytes:          4_194_304,
 				MaxConcurrentRequests: 16,
+				RequestsPerMinute:     120,
 			},
 		},
 	}

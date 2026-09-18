@@ -92,6 +92,11 @@ type ListenConfig struct {
 	// plaintext listener is permitted only on loopback or on a Unix socket — the
 	// shape a deployment behind a terminating proxy takes. Any other address is
 	// refused before anything binds.
+	//
+	// Those same two forms are the only ones accepted, certificate or not,
+	// where the deployment reads its caller's identity from a proxy in front,
+	// and for a different reason: there the credential is a request header,
+	// which is trustworthy only where nothing but the proxy can set it.
 	Address string
 
 	// CertFile is the path to the PEM certificate chain the listener presents,
@@ -128,9 +133,10 @@ type ListenConfig struct {
 // Every refusal a deployment can meet at startup is made before the endpoint is
 // built or bound, so a misconfigured deployment fails at startup rather than
 // after an address is already accepting: what the listener itself is asked to
-// do, then what the deployment declares itself to be, then where the keys it
-// verifies tokens against come from, and then whether there is a workspace for
-// it to serve. The handler is built after all of them, because acquiring the
+// do, then what the deployment declares itself to be, then whether the
+// credential it reads may be read at the address it asked for, then where the
+// keys it verifies tokens against come from, and then whether there is a
+// workspace for it to serve. The handler is built after all of them, because acquiring the
 // documentation bundle is the expensive step and there is no reason to pay it
 // for a deployment that is about to be refused. Only then is the endpoint bound.
 //
@@ -172,10 +178,19 @@ func listenAndServe(ctx context.Context, cfg Config, transport HTTPConfig, liste
 	// without coming through here. One resolver each, called from both points,
 	// is what keeps the two from drifting into disagreeing about what a
 	// deployment must declare and where its keys come from.
-	if _, err := resolveProtectedResource(transport.Authorization); err != nil {
+	resource, err := resolveProtectedResource(transport.Authorization)
+	if err != nil {
 		return err
 	}
-	if _, err := resolveVerificationKeys(transport.Authorization, transport.Egress); err != nil {
+	// The one refusal that is this function's alone, because it is the only
+	// place both halves of it are known: what a deployment declared about its
+	// callers, and where the listener it declared will be reachable from. The
+	// handler is never told the second, so it could not make this refusal
+	// however carefully it was written.
+	if err := refuseTrustedProxyOnAnExposedAddress(target, transport.Authorization, listen.Address); err != nil {
+		return err
+	}
+	if _, err := resolveAuthenticator(transport, resource, nil); err != nil {
 		return err
 	}
 
