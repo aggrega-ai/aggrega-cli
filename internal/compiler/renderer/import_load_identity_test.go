@@ -99,6 +99,23 @@ func TestImportLoadNamesTheDocumentLoadCondition(t *testing.T) {
 			if !strings.Contains(ce.Message(), missing) {
 				t.Errorf("message does not name the path that could not be read:\n got: %s", ce.Message())
 			}
+			// The advice reaches all three surfaces, which is the claim the
+			// single string makes: it is asserted per row rather than once,
+			// because a surface that stopped carrying it would otherwise be
+			// covered by whichever row still did.
+			if !strings.Contains(ce.Message(), importAdvice) {
+				t.Errorf("message carries no advice for a reference that arrived without its fragment:\n got: %s", ce.Message())
+			}
+			// The two things the advice has to do, asserted as the words a
+			// reader acts on rather than as a second copy of the sentence:
+			// name what is absent, and name the spelling that keeps it. A
+			// rewrite is free to move every other word and fails here if it
+			// drops either.
+			for _, word := range []string{"fragment", "quote"} {
+				if !strings.Contains(ce.Message(), word) {
+					t.Errorf("advice does not mention %q, so it does not tell the author what to do:\n got: %s", word, ce.Message())
+				}
+			}
 		})
 	}
 }
@@ -108,6 +125,11 @@ func TestImportLoadNamesTheDocumentLoadCondition(t *testing.T) {
 // resolved from the loaded closure rather than from disk, so neither can report a
 // file that could not be read — and a row that reported it anyway would widen the
 // condition past the subject its sentence states.
+//
+// It is also where the advice's scope is held. The advice is attached by the
+// file arm and nowhere else, so an import whose reference kept its fragment must
+// not be told the fragment might be missing: that reference resolved as a
+// library reference and failed for an unrelated reason.
 func TestImportLoadIsNotReportedForAnInlineOrLibraryEntry(t *testing.T) {
 	text, err := resolveValuesMappingText(
 		types.ValuesMapping{Inline: "a: b"}, "some-recipe", "Recipe", nil)
@@ -125,5 +147,8 @@ func TestImportLoadIsNotReportedForAnInlineOrLibraryEntry(t *testing.T) {
 	}
 	if errors.Is(err, resolver.ErrYAMLLoad()) {
 		t.Errorf("a library import that resolved to nothing reports a file-load failure: %v", err)
+	}
+	if strings.Contains(err.Error(), importAdvice) {
+		t.Errorf("a reference that carries its fragment is advised the fragment may be missing: %v", err)
 	}
 }
