@@ -12,7 +12,9 @@ import (
 	abi "github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/analyzer"
+	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
+	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
@@ -669,8 +671,15 @@ func TestFormatCompilerError_FrameAboveAJoin_KeepsThatFramesOwnRendering(t *test
 			// author wrote wrong, which is why it is a named type at all. Its
 			// lead renders at the left margin, so the findings are separated by
 			// the unindented rule.
-			name:        "decoration",
-			err:         &skipContextError{err: joinOfThreeFindings(), note: "\nthe note the reader acts on"},
+			// Built through the annotator rather than hand-assembled, because the
+			// decoration's fields are the annotator's to fill. The refusal's own
+			// reason is what the note ends up quoting, so it is what this row
+			// asserts the decoration owns.
+			name: "decoration",
+			err: compilerops.AnnotateSkipContext(joinOfThreeFindings(), []catalog.SkippedEntity{{
+				Path: "/cat/recipes/helm/server.yaml",
+				Err:  stderrors.New("the note the reader acts on"),
+			}}),
 			wantOwned:   "the note the reader acts on",
 			wantPresent: append([]string{"\n---\n"}, findings...),
 		},

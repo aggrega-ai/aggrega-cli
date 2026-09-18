@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/buildops"
+	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
@@ -44,7 +45,7 @@ func refusedRecipeSkip() catalog.SkippedEntity {
 // chain rendered into text loses both while still reading correctly.
 func TestWithSkipContext_SentinelSurvivesToTheReader(t *testing.T) {
 	failure := fmt.Errorf("resolve: resolve entity %q: %w", "server-recipe:1.0.0", catalog.ErrUnscopedRecipeReference())
-	got := withSkipContext(failure, []catalog.SkippedEntity{refusedRecipeSkip()})
+	got := compilerops.AnnotateSkipContext(failure, []catalog.SkippedEntity{refusedRecipeSkip()})
 
 	if !stderrors.Is(got, catalog.ErrUnscopedRecipeReference()) {
 		t.Errorf("errors.Is must still match the decorated failure's condition; got %v", got)
@@ -58,7 +59,7 @@ func TestWithSkipContext_SentinelSurvivesToTheReader(t *testing.T) {
 }
 
 // TestWithSkipContext_NoteReachesTheTerminalWhateverTheChainShape plants the two
-// chain shapes that reach withSkipContext and asserts the note survives the
+// chain shapes that reach the annotator and asserts the note survives the
 // formatter in both.
 //
 // The second shape is the one that matters and the one a naive implementation
@@ -85,7 +86,7 @@ func TestWithSkipContext_NoteReachesTheTerminalWhateverTheChainShape(t *testing.
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			rendered := formatCompilerError(withSkipContext(tc.failure, skips))
+			rendered := formatCompilerError(compilerops.AnnotateSkipContext(tc.failure, skips))
 			if !strings.Contains(rendered, "catalog files skipped at load") {
 				t.Errorf("the skip note must reach the terminal; rendered:\n%s", rendered)
 			}
@@ -113,7 +114,7 @@ func TestWithSkipContext_NoteReachesTheTerminalWhateverTheChainShape(t *testing.
 // refused file's code stays where the refused file is reported.
 func TestWithSkipContext_RefusedFileCarriesItsShortCode(t *testing.T) {
 	failure := fmt.Errorf("resolve: resolve entity %q: %w", "server-recipe:1.0.0", catalog.ErrUnscopedRecipeReference())
-	rendered := formatCompilerError(withSkipContext(failure, []catalog.SkippedEntity{refusedRecipeSkip()}))
+	rendered := formatCompilerError(compilerops.AnnotateSkipContext(failure, []catalog.SkippedEntity{refusedRecipeSkip()}))
 
 	wantCode, ok := cerrors.ShortCodeOf(envelope.ErrEntityEnvelope())
 	if !ok {
@@ -149,7 +150,7 @@ func TestWithSkipContext_RefusedFileCarriesItsShortCode(t *testing.T) {
 // bystander.
 func TestWithSkipContext_NoteAssertsTheClosureMembershipDistinction(t *testing.T) {
 	failure := fmt.Errorf("resolve: resolve entity %q: %w", "server-recipe:1.0.0", catalog.ErrUnscopedRecipeReference())
-	rendered := formatCompilerError(withSkipContext(failure, []catalog.SkippedEntity{refusedRecipeSkip()}))
+	rendered := formatCompilerError(compilerops.AnnotateSkipContext(failure, []catalog.SkippedEntity{refusedRecipeSkip()}))
 
 	for _, want := range []string{
 		"outside this Release's closure is tolerated and never fails a build",
@@ -178,7 +179,7 @@ func TestWithSkipContext_NoteAssertsTheClosureMembershipDistinction(t *testing.T
 func TestWithSkipContext_FormatterCarriesAFrameAboveTheDecoration(t *testing.T) {
 	failure := cerrors.Wrap(fmt.Errorf("boom"), cerrors.CatalogError,
 		cerrors.SourceLocation{File: "/cat/base/components/server.yaml"}, "unmarshal Component")
-	decorated := withSkipContext(failure, []catalog.SkippedEntity{refusedRecipeSkip()})
+	decorated := compilerops.AnnotateSkipContext(failure, []catalog.SkippedEntity{refusedRecipeSkip()})
 	rendered := formatCompilerError(fmt.Errorf("auto-pull: %w", decorated))
 
 	if !strings.HasPrefix(rendered, "auto-pull: ") {
@@ -236,19 +237,5 @@ func TestBuildAutoPull_StepLabelReachesTheReader(t *testing.T) {
 	}
 	if !strings.Contains(rendered, "skipped at load") {
 		t.Errorf("the failure must reach the reader through the decoration, which is the branch that carries the label; rendered:\n%s", rendered)
-	}
-}
-
-// TestShortCodeInHead_IsIdempotentAndDeclines covers the two shapes the head
-// injection must refuse rather than mangle.
-func TestShortCodeInHead_IsIdempotentAndDeclines(t *testing.T) {
-	if got := shortCodeInHead("[CATALOG_ERROR] x: y", "E0215"); got != "[CATALOG_ERROR E0215] x: y" {
-		t.Errorf("injection into a one-token head = %q", got)
-	}
-	if got := shortCodeInHead("[CATALOG_ERROR E0215] x: y", "E0001"); got != "[CATALOG_ERROR E0215] x: y" {
-		t.Errorf("a head already carrying a code must be left alone; got %q", got)
-	}
-	if got := shortCodeInHead("plain reason", "E0215"); got != "plain reason" {
-		t.Errorf("a reason with no bracketed head must be left alone; got %q", got)
 	}
 }

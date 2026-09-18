@@ -155,7 +155,7 @@ func validateRelease(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace,
 		// view recorded turns that into the constraint the author has to fix.
 		// This is the same annotation the build applies, over the same record,
 		// through the same renderer.
-		return withSkipContext(cerr, lazyView.SkippedEntities())
+		return compilerops.AnnotateSkipContext(cerr, lazyView.SkippedEntities())
 	}
 
 	// The record loaded above is threaded into the validation, not just into the

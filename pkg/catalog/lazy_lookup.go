@@ -1909,9 +1909,24 @@ func (l *LazyLookup) Skips() map[string]error {
 // SkippedEntities returns the same record Skips reports, in the shape the
 // eager tolerant load reports it — so one annotator can render the skips from
 // either catalog backing rather than each backing growing its own. Ordered by
-// path, so a rendered note is deterministic. Kind and Name are left empty: this
-// backing records a refusal by the path it read, without re-reading the file to
-// recover a header it already refused to trust.
+// path, so a rendered note is deterministic.
+//
+// The identity each refused document declares for itself is recovered by
+// re-reading its header, through the same helper the eager tolerant load
+// recovers it with. Re-reading a file this backing has already refused to trust
+// is deliberate, and it is the whole reason the record is worth producing: a
+// consumer matches a failing reference against the identity a refused document
+// declares, so a record carrying only a path matches nothing on any input, and a
+// refusal nothing can match can never be reported ahead of the failure it
+// explains. The cost is one header parse per already-refused file — a path no
+// successful load reaches.
+//
+// A skip keyed by something that is not a readable file leaves the identity
+// empty, and that is the answer rather than a gap. A lockfile-pinned cache slot
+// is recorded under its pinned reference rather than under a path, and a
+// document too malformed for its header to be read declares no identity to
+// recover. Such a refusal stays reported by whatever it was keyed under, which
+// is still enough to find it.
 func (l *LazyLookup) SkippedEntities() []SkippedEntity {
 	skips := l.Skips()
 	if len(skips) == 0 {
@@ -1924,7 +1939,12 @@ func (l *LazyLookup) SkippedEntities() []SkippedEntity {
 	sort.Strings(paths)
 	out := make([]SkippedEntity, 0, len(paths))
 	for _, p := range paths {
-		out = append(out, SkippedEntity{Path: p, Err: skips[p]})
+		data, rerr := os.ReadFile(p)
+		if rerr != nil {
+			out = append(out, SkippedEntity{Path: p, Err: skips[p]})
+			continue
+		}
+		out = append(out, newSkippedEntity(p, data, skips[p]))
 	}
 	return out
 }

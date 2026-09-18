@@ -19,6 +19,16 @@ import (
 // and kindHint are the reference the resolution failed on and the kind hint it
 // was collected with.
 //
+// A kind hint and a record's kind are two vocabularies, and the difference is
+// deliberate rather than an inconsistency to reconcile. A hint is the lowercase
+// note a closure walk keeps for itself about where a reference was collected; a
+// record's kind is the capitalised kind the refused document declares at its own
+// head, which is what its author typed. EntityKindForHint is the single home
+// that translates the first into the second, so a caller passes the hint it
+// holds and lets the translation happen here. Passing a declared kind instead
+// leaves the reference's kind unmapped, and the answer is then a no-match on
+// every input rather than an error.
+//
 // The match is an identity match, not a guess. A catalog indexes an entity under
 // the identity the document declares for itself — its kind, its name, its
 // version, and for a recipe the capability that scopes it — so a refused file

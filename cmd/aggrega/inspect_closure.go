@@ -91,7 +91,7 @@ func renderReleaseClosure(ctx context.Context, rw *workspaceconfig.ResolvedWorks
 		// failure on its own can only name the reference, never the file behind it.
 		// Replaying the refusals the view recorded turns that into the constraint
 		// the author has to fix.
-		return withSkipContext(cerr, view.SkippedEntities())
+		return compilerops.AnnotateSkipContext(cerr, view.SkippedEntities())
 	}
 
 	renderClosureListing(opts, lf, resolved)

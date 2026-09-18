@@ -88,6 +88,62 @@ func TestLazyLookup_RefusedComponentRecordedNotDiscarded(t *testing.T) {
 	if entities[0].Err == nil {
 		t.Error("SkippedEntities() dropped the reason")
 	}
+
+	// The identity the refused document declares for itself, recovered from its
+	// header. Without it the record carries a path and nothing else, and a
+	// consumer that matches a failing reference against a declared identity
+	// matches nothing on any input.
+	if got := entities[0].Kind; got != "Component" {
+		t.Errorf("SkippedEntities()[0].Kind = %q; want the kind the refused document declares", got)
+	}
+	if got := entities[0].Name; got != "acc/refused" {
+		t.Errorf("SkippedEntities()[0].Name = %q; want the name the refused document declares", got)
+	}
+	if got := entities[0].Version; got != "1.0.0" {
+		t.Errorf("SkippedEntities()[0].Version = %q; want the version the refused document declares", got)
+	}
+}
+
+// TestLazyLookup_RefusedRecordIsMatchableByAReference is the consumer half, and
+// it is the assertion that makes the identity above worth recovering.
+//
+// The matcher this drives is what lets a surface report a refusal AHEAD of the
+// failure it explains rather than beneath it, and it matches on the identity a
+// refused document declares. A record carrying only a path is not a near miss
+// for it — it matches nothing, on every input — so a producer-side omission
+// leaves the promotion structurally incapable of firing while every gate stays
+// green. The negative leg is what makes the positive one discriminating: a
+// reference to something else must still single nothing out.
+func TestLazyLookup_RefusedRecordIsMatchableByAReference(t *testing.T) {
+	ws := t.TempDir()
+	dir := filepath.Join(ws, "catalog")
+	path := filepath.Join(dir, "components", "refused.yaml")
+	writeRefusedFixture(t, path, refusedComponentDoc)
+
+	ll := catalog.NewLazyLookup(ws, filepath.Join(ws, "cache"), []string{dir}, nil)
+	if _, ok := ll.Component("acc/refused:1.0.0"); ok {
+		t.Fatal("fixture no longer exercises the class: the refused Component resolved")
+	}
+
+	// The kind hint is the collection-site vocabulary a closure walk records —
+	// lowercase, and a different vocabulary from the capitalised kind a document
+	// declares at its head. Passing the declared form here would leave the
+	// reference's kind unmapped, and both legs below would then pass without ever
+	// reaching the record: the positive one would fail, and the negative one would
+	// succeed for a reason that has nothing to do with what it asserts.
+	skipped := ll.SkippedEntities()
+	match, ok := catalog.SoleRefusalFor(skipped, "acc/refused:1.0.0", "component")
+	if !ok {
+		t.Fatalf("the reference the refusal made unresolvable must single that refusal out; record = %#v", skipped)
+	}
+	if match.Path != path {
+		t.Errorf("SoleRefusalFor matched %s; want the refused file %s", match.Path, path)
+	}
+
+	if _, ok := catalog.SoleRefusalFor(skipped, "acc/other:1.0.0", "component"); ok {
+		t.Error("a reference no refusal declares must single nothing out; naming the wrong file as the cause " +
+			"is worse than naming none, because a reader acts on it")
+	}
 }
 
 // TestLazyLookup_RefusedFeatureRecordedNotDiscarded is the Feature half; the two

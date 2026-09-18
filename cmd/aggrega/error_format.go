@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/analyzer"
+	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
@@ -211,7 +212,7 @@ func formatCompilerErrorAt(err error, pos diagnosticPosition) string {
 	// step of the command was running, say — is carried across explicitly.
 	// Recursing on the leading failure alone would drop it, and that label is
 	// what tells the reader which step failed.
-	var sce *skipContextError
+	var sce *compilerops.SkipContextError
 	if stderrors.As(err, &sce) && sce != nil {
 		// The decoration renders whichever of the two failures the reader is
 		// meant to meet first. Where it singled out the refusal that explains
@@ -220,15 +221,11 @@ func formatCompilerErrorAt(err error, pos diagnosticPosition) string {
 		// author can act on; the failure it explains is inside the note. Where
 		// it could not, the decorated failure leads exactly as it would with no
 		// record at all.
-		lead := sce.err
-		if sce.promoted != nil {
-			lead = sce.promoted
-		}
-		rendered := formatCompilerErrorAt(lead, pos)
+		rendered := formatCompilerErrorAt(sce.Leading(), pos)
 		if prefix := strings.TrimSuffix(err.Error(), sce.Error()); prefix != err.Error() {
 			rendered = prefix + rendered
 		}
-		return rendered + sce.note
+		return rendered + sce.Note()
 	}
 	// The envelope THIRD, and every structured-type branch below it. The
 	// ordering rule and why breaking it does not terminate are documented
@@ -532,7 +529,7 @@ func classifyFrame(err error) frameKind {
 		return frameEnvelope
 	}
 	switch err.(type) {
-	case *skipContextError,
+	case *compilerops.SkipContextError,
 		*resolver.ResolverError,
 		*validator.WorkloadValidationError,
 		*validator.ValidationError,

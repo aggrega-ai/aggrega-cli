@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
+	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 	"github.com/aggrega-ai/aggrega-cli/internal/pullops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
@@ -307,7 +308,7 @@ func pullRunWithResult(ctx context.Context, cfg pullConfig) (pullops.Result, err
 		CompilerVersion:           provenanceCompilerVersion(),
 		Toolchain:                 toolchainStamp(),
 		DiagOut:                   diagOut,
-		AnnotateResolutionFailure: withSkipContext,
+		AnnotateResolutionFailure: compilerops.AnnotateSkipContext,
 		Puller:                    cfg.puller,
 		SourceResolver:            cfg.sourceResolver,
 		RenderOptions:             cfg.renderOptions,

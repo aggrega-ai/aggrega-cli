@@ -235,9 +235,16 @@ func validateReleaseScope(s *server, ctx context.Context, a validateArgs, releas
 		Lockfile:        lf,
 	})
 	if cerr != nil {
+		// The failure here is a closure resolution by construction, so the
+		// refusals the view recorded are replayed with no guard: where one of them
+		// declares the identity the failing reference names, it leads the answer
+		// and the resolution failure moves beneath it. Without this the answer
+		// names a reference in a document that is correct, and points the caller
+		// at that document's authoring contract.
+		annotated := annotateWithRefusals(cerr, view)
 		return errorResult(explainToolError(
 			"Validation could not resolve the Release closure; fix the resolution failure before semantic validation runs.",
-			cerr, closureStageKind(cerr.Stage)))
+			annotated, refusalKindOr(annotated, closureStageKind(cerr.Stage))))
 	}
 
 	// The record loaded at this tool's front door is threaded into the validation
@@ -307,7 +314,7 @@ func validateEntityScope(ctx context.Context, s *server, a validateArgs, entity 
 		Artifacts:   artifactKeys,
 		Notices:     res.Notes,
 	}
-	return textResult(renderEntityText(res, artifactKeys), payload)
+	return textResult(renderEntityText(res, verr, artifactKeys), payload)
 }
 
 // validatePluginScope runs the plugin-binary scope core: a raw .wasm checked
@@ -566,13 +573,25 @@ func renderValidateText(p validateResultPayload, format string) string {
 
 // renderEntityText renders the human-readable single-entity result: the core's
 // ordered report lines (identity header, per-tier status, and the render-failure
-// block when the isolated render did not complete), followed by a render-artifact
-// key summary when the render emitted artifacts. Artifact bytes are never printed
-// here — the summary names the keys only.
-func renderEntityText(res validateops.EntityResult, artifactKeys []string) string {
+// block when the isolated render did not complete), then the blocking error when
+// the entity did not validate, then a render-artifact key summary when the render
+// emitted artifacts. Artifact bytes are never printed here — the summary names the
+// keys only.
+//
+// The blocking error is written for the same reason the plugin scope writes its
+// own: it is the whole of what the caller has to act on. Left out, the text half
+// reports only which file was read and what kind it is while the structured half
+// carries the condition, its short code and the constraint — one capability
+// answering at two fidelities depending on which half the caller reads, and the
+// half a person reads is the one that said nothing.
+func renderEntityText(res validateops.EntityResult, verr error, artifactKeys []string) string {
 	var b strings.Builder
 	for _, line := range res.Diagnostics {
 		b.WriteString(line)
+		b.WriteByte('\n')
+	}
+	if verr != nil {
+		b.WriteString(verr.Error())
 		b.WriteByte('\n')
 	}
 	if len(artifactKeys) > 0 {

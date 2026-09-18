@@ -209,35 +209,32 @@ func (s *Server) closureErrorData(releasePath string, stage compilerops.ClosureS
 // skipContext annotates a closure-level message with the catalog files the lazy
 // enumeration skipped (tolerantly) — so an in-closure entity that went missing
 // because it was skipped is explained, not silently absent. Deterministic
-// (sorted by path); no-op when nothing was skipped. Mirrors the CLI build's
-// withSkipContext, sourced from the supplied request view's skip record — the
-// same view whose enumeration produced the unresolved-URI failure, so the skips
-// reported are exactly the ones that could explain it (not a session catalog's
-// possibly-stale skip set).
+// (sorted by path); no-op when nothing was skipped. Mirrors the shared
+// resolution-failure decoration, sourced from the supplied request view's skip
+// record — the same view whose enumeration produced the unresolved-URI failure,
+// so the skips reported are exactly the ones that could explain it (not a
+// session catalog's possibly-stale skip set).
 //
 // Each reason is rendered as its whole cause chain: the outermost frame names
 // only which step refused the file, and the frame beneath it is the one naming
 // the constraint the file violated.
 //
-// It stays a separate implementation from the CLI's withSkipContext rather than
-// sharing one, and the reason is that the two do different jobs on different
-// data. The CLI decorates an ERROR, so its whole point is that the failure
-// stays in the chain and its condition remains matchable at the command
-// boundary; this one composes a message STRING for a diagnostic envelope, where
-// there is no chain to preserve. The CLI's refusals also carry the kind and
-// name a header re-parse recovered, while this backing records a refusal by the
-// path it read and deliberately does not re-read a header it already refused to
-// trust — so the two have different fields to render. And the media differ: an
-// indented multi-line terminal block against a single-line envelope message.
-// What IS shared is the sentence they teach: both state the same
-// closure-membership distinction in the same words.
+// It stays a separate implementation from the shared error decoration rather
+// than sharing one, and the reason is that the two do different jobs in
+// different media. The decoration annotates an ERROR, so its whole point is that
+// the failure stays in the chain and its condition remains matchable at the
+// boundary it crosses; this one composes a message STRING for a diagnostic
+// envelope, where there is no chain to preserve. And the shapes differ: an
+// indented multi-line block against a single-line envelope message. What IS
+// shared is the sentence they teach: both state the same closure-membership
+// distinction in the same words.
 //
-// That shared sentence is also where the missing identity shows: with it, the
-// CLI can name the one refusal that declares the identity a failing reference
-// asks for and report that refusal ahead of the failure it explains, leaving
-// this sentence for the case where it cannot. A refusal recorded by path alone
-// declares nothing to match a reference against, so this surface always asks
-// the reader to apply the distinction themselves.
+// This one reads the raw path-keyed record rather than the identity-bearing one
+// the decoration matches against, so it names every refusal and leaves the
+// reader to apply the distinction. That is a property of what a single-line
+// envelope can carry, not of what the backing knows: the same backing does
+// recover each refused document's declared identity for a caller that needs to
+// single one out.
 func (s *Server) skipContext(view *catalog.LazyLookup, msg string) string {
 	skips := view.Skips()
 	if len(skips) == 0 {

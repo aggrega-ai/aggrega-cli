@@ -14,6 +14,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
+	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 )
 
 // buildArgs is the build tool's argument shape.
@@ -317,9 +318,15 @@ func buildInvoke(s *server, ctx context.Context, args json.RawMessage) (*callToo
 	// failure branch below reads one variable whichever path produced it.
 	preview := filled
 	var declined []string
+	// The view this call rendered through, held so the failure branch below can
+	// read the catalog files its load refused. It stays nil on the presenting
+	// path, where the render happened inside the fill and this call's own failure
+	// branch is unreachable.
+	var rendered *catalog.LazyLookup
 	if preview == nil {
 		lf := loadReleaseLockfile(releasePath)
 		view := tw.newView(lf)
+		rendered = view
 
 		// The render-time external-input seam — the same posture and the same builder
 		// the editor's inspection and the command-line build render through. It is the
@@ -423,8 +430,15 @@ func buildInvoke(s *server, ctx context.Context, args json.RawMessage) (*callToo
 	payload.Advisories = buildAdvisories(preview.PipelineOutcome().Advisories())
 
 	if err != nil {
+		// A catalog file the load refused never enters the catalog, so a Release
+		// reaching it fails on the REFERENCE — a true statement about a document
+		// that is correct. Replaying the refusals the view recorded is what turns
+		// that into the constraint the author has to fix, and it is the annotation
+		// the command line has always applied, through the one home both read.
+		annotated := annotateResolutionWithRefusals(err, rendered)
 		return structuredErrorResult(
-			explainToolError(previewFailureSummary(preview, deprecationNotices), err, previewFailureKind(preview, err)),
+			explainToolError(previewFailureSummary(preview, deprecationNotices), annotated,
+				refusalKindOr(annotated, previewFailureKind(preview, err))),
 			payload)
 	}
 
