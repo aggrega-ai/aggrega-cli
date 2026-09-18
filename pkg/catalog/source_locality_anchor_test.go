@@ -4,13 +4,15 @@
 // Tests which scalar `source:` values a catalog load anchors against the
 // declaring entity's own directory, for both kinds that carry a source.
 //
-// The property under test is that anchoring is gated on locality: a value
-// naming something the workspace already holds is joined to the entity's
-// directory, and a value naming something fetched over a transport is carried
-// through untouched. Joining a transport reference to a directory would both
-// destroy the reference and leave a value every later pass reads as local — the
-// pass that pins a Release's dependencies would pin nothing, and the render
-// would then stat a directory nobody authored.
+// The property under test is that anchoring is gated twice, on two independent
+// readings of the value's own text. It runs only where the value names something
+// the workspace already holds — joining a transport reference to a directory
+// would both destroy the reference and leave a value every later pass reads as
+// local, so the pass that pins a Release's dependencies would pin nothing and the
+// render would then stat a directory nobody authored. And it runs only where the
+// value is a value rather than a template, because a template names nothing until
+// it has been evaluated and the directory it is relative to belongs to what it
+// produces; the render performs that half, against the produced value.
 //
 // The load runs through LoadAll over a real directory tree rather than through
 // the per-entity parse, and the assertions read the loaded entity back: a value
@@ -150,9 +152,11 @@ func TestScalarSourceCarriesTransportReferencesThrough(t *testing.T) {
 		{name: "git repository reference", authored: "git://example.com/org/repo"},
 		{name: "ssh repository reference", authored: "ssh://git@example.com/org/repo"},
 		{name: "dot-git suffix reference", authored: "https://example.com/org/repo.git"},
-		// A template whose text already carries the scheme is readable as a
-		// transport reference before it is evaluated, so it is gated on the same
-		// reading as a plain one.
+		// A template whose text already carries the scheme is held back by BOTH
+		// gates — it reads as a transport reference before it is evaluated, and it
+		// is still text — so it is the row proving the two compose rather than
+		// competing. The render evaluates it and the locality reading answers the
+		// same way about what it produced.
 		{name: "scheme-bearing template", authored: `"oci://{{ .locals.repo }}/chart:1.0.0"`},
 	}
 
@@ -221,30 +225,41 @@ func TestScalarSourceAbsoluteLocalPathIsHandedBackUnchanged(t *testing.T) {
 	}
 }
 
-// TestScalarSourceTemplateYieldingAPathIsAnchoredOnItsText records the reading a
-// source written as a template gets today, so the behaviour is pinned rather
-// than merely true.
+// TestScalarSourceTemplateIsLeftForTheValueItProduces pins the half of the
+// resolution the load deliberately does not perform.
 //
-// A template carrying no transport scheme reads as naming something the
-// workspace already holds, so it is anchored — and it is anchored against the
-// template's own text, because the value is read as the document is loaded and
-// nothing has evaluated it yet. The resolution of a template against the path
-// its text evaluates to is a separate property, and this test asserts only what
-// the load does.
-func TestScalarSourceTemplateYieldingAPathIsAnchoredOnItsText(t *testing.T) {
-	const authored = `"{{ .locals.chart_dir }}"`
-	catalogDir := sourceAnchorCatalog(t, authored)
-	for kind, got := range loadedScalarSources(t, catalogDir) {
-		if !filepath.IsAbs(got) {
-			t.Errorf("%s: templated source was not anchored: %q", kind, got)
-			continue
-		}
-		if !strings.Contains(got, "{{ .locals.chart_dir }}") {
-			t.Errorf("%s: templated source no longer carries its own text: %q", kind, got)
-		}
-		if want := filepath.Join(catalogDir, "{{ .locals.chart_dir }}"); got != want {
-			t.Errorf("%s: templated source anchored against an unexpected base: got %q, want %q",
-				kind, got, want)
-		}
+// A source written as a template names nothing while it is still text, so the
+// directory it is relative to belongs to the value it produces and the load hands
+// it on exactly as authored. Anchoring it here instead reads as harmless whenever
+// that value turns out to be relative — a directory joined to a relative path is
+// the same directory either way — while settling every value that is not before
+// it exists: an absolute path would be prefixed, a transport reference destroyed,
+// and an empty result turned into the directory itself.
+//
+// Both kinds are asserted together because the two loads carry one gate, and a
+// change reaching one of them would satisfy every assertion made against the
+// other alone.
+func TestScalarSourceTemplateIsLeftForTheValueItProduces(t *testing.T) {
+	for _, authored := range []string{
+		`"{{ .locals.chart_dir }}"`,
+		`"charts/{{ .locals.flavor }}/app"`,
+		`"oci://{{ .locals.repo }}/chart:1.0.0"`,
+	} {
+		t.Run(authored, func(t *testing.T) {
+			want := strings.Trim(authored, `"`)
+			catalogDir := sourceAnchorCatalog(t, authored)
+			for kind, got := range loadedScalarSources(t, catalogDir) {
+				if got != want {
+					t.Errorf("%s: a templated source must reach the render as authored: %q became %q",
+						kind, want, got)
+				}
+				if filepath.IsAbs(got) {
+					t.Errorf("%s: a templated source was anchored at load: %q", kind, got)
+				}
+				if strings.Contains(got, catalogDir) {
+					t.Errorf("%s: a templated source carries the catalog location: %q", kind, got)
+				}
+			}
+		})
 	}
 }

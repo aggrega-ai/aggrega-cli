@@ -1538,7 +1538,14 @@ func (l *LazyLookup) recipeCatalog() *Catalog {
 		Plugins:            l.plugins,
 		aggregateSources:   l.aggregateSources,
 		entityBytes:        l.entityBytes,
-		workspaceRoot:      l.workspaceRoot,
+		// The documents the Tier-1 walk recorded, under the same kind-namespaced
+		// identity the eager load claims each entity under — so the shell answers
+		// "which file declared this entity" from the walk that read it, rather than
+		// from a second record free to disagree. A Tier-2 entity is absent by
+		// construction: its slot is a label naming a pin, not a document, and the
+		// walk deliberately retains no path for one.
+		pathByIdentity: l.localEntityPaths,
+		workspaceRoot:  l.workspaceRoot,
 		// The lazy backing is the production build/pull resolution path, so it
 		// resolves core providers from the binary's embedded set (embedded-wins).
 		resolveEmbeddedProviders: true,

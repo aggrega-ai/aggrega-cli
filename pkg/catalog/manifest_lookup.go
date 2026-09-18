@@ -327,9 +327,41 @@ func nameThenType(tier *types.MappingTier, instanceName, lookupType string) (str
 // miss.
 func (c *Catalog) RecipeLookupWithManifest(manifest *types.Manifest) renderer.RecipeLookup {
 	return renderer.RecipeLookup{
-		Recipe:        c.componentTypeToRecipeWithManifest(manifest),
-		FeatureRecipe: c.featureTypeToFeatureRecipeWithManifest(manifest),
+		Recipe:         c.componentTypeToRecipeWithManifest(manifest),
+		FeatureRecipe:  c.featureTypeToFeatureRecipeWithManifest(manifest),
+		RecipeDocument: c.recipeDocument,
 	}
+}
+
+// recipeDocument reports the file a resolved Recipe was indexed from, and
+// whether one is recorded.
+//
+// It takes the entity the caller already holds rather than an identity, so the
+// key formula stays here beside the walk that recorded the path. Spelled at the
+// call site it would be a second statement of that formula, free to disagree the
+// moment the identity shape moves. The key is composed through entityBytesKey for
+// the same reason: that is the declared spelling of a kind-namespaced identity,
+// and the lazy backing already records this fact under it.
+//
+// It reads the one index each backing populates as it walks — the eager load
+// claims each identity as it indexes a file, and the lazy backing hands its own
+// record of the same fact to the shell it builds — so the two backings cannot
+// answer differently.
+//
+// A Recipe resolved from a registry has no answer here. It lives in a
+// content-addressed cache slot, which is not a document anybody authored, so it
+// is reported as having none rather than as the slot's location — the same
+// reading every other path-reporting accessor on this catalog takes.
+func (c *Catalog) recipeDocument(r *types.Recipe) (string, bool) {
+	if r == nil {
+		return "", false
+	}
+	key := entityBytesKey("Recipe", recipeIdentityKey(r.Spec.Capability, r.Metadata.Name, r.Metadata.Version))
+	path, ok := c.pathByIdentity[key]
+	if !ok || path == "" {
+		return "", false
+	}
+	return path, true
 }
 
 func (c *Catalog) componentTypeToRecipeWithManifest(manifest *types.Manifest) func(string, string) (*types.Recipe, bool) {

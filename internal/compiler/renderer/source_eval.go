@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/redact"
+	"github.com/aggrega-ai/aggrega-cli/internal/sourceref"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
@@ -158,7 +159,11 @@ func renderSourceString(tmplText string, ctx LocalsContext, label string) (strin
 	if tmplText == "" {
 		return "", nil
 	}
-	if !strings.Contains(tmplText, "{{") {
+	// The same reading that decides, at load, whether this field's anchoring is
+	// owed to the value rather than to the text. Sharing it is what keeps the two
+	// from disagreeing about which references are still text: a field this skips
+	// is exactly a field the load already resolved.
+	if !sourceref.IsTemplated(tmplText) {
 		return tmplText, nil
 	}
 	site := localsRefSite{Where: fmt.Sprintf("Recipe source %q", label), File: label}

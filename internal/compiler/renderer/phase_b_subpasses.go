@@ -23,6 +23,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/trace"
 	"github.com/aggrega-ai/aggrega-cli/internal/redact"
+	"github.com/aggrega-ai/aggrega-cli/internal/sourceref"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/labels"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -85,6 +86,12 @@ func phaseB0(ctx *types.TemplateContext, state *PhaseBState, localsForNode types
 	sourceDeclared := recipeSourceDeclared(state.Recipe)
 
 	if sourceDeclared {
+		// Read the authored text before the evaluation below replaces it. Whether the
+		// load deferred this source's anchoring is a property of what the AUTHOR
+		// wrote, not of what it produced, and the two are the same value read either
+		// side of one step that rewrites it.
+		authored, authoredScalar := state.Recipe.Spec.Source.(string)
+
 		// The locals were published onto the context immediately above, so the source
 		// template reads the same resolved values every other reader of this node's
 		// locals reads.
@@ -93,6 +100,24 @@ func phaseB0(ctx *types.TemplateContext, state *PhaseBState, localsForNode types
 		)
 		if err != nil {
 			return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: state.RecipePath}, fmt.Sprintf("node %q source", state.NodeID))
+		}
+
+		// A source written as a template names nothing until here, so the directory it
+		// is relative to belongs to the value it has just produced. The load anchors
+		// every other source and deliberately leaves this one alone, and both run the
+		// same resolution — so what a relative source is resolved against is one
+		// answer given at two moments, rather than two answers.
+		//
+		// The produced value decides its own treatment: an absolute path, a transport
+		// reference and an empty result each pass through, which is precisely what
+		// anchoring the template's text could not do, because all three are settled by
+		// text a join has already prefixed by the time they exist.
+		if produced, ok := resolvedSource.(string); ok && authoredScalar && sourceref.IsTemplated(authored) {
+			anchored, aerr := sourceref.AnchorToDocument(state.RecipePath, produced)
+			if aerr != nil {
+				return cerrors.Wrap(aerr, cerrors.CatalogError, cerrors.SourceLocation{File: state.RecipePath}, fmt.Sprintf("node %q source", state.NodeID))
+			}
+			resolvedSource = anchored
 		}
 		// Replace state.Recipe with a local copy carrying the resolved
 		// source; engines later read state.Recipe.Spec.Source for the

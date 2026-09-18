@@ -743,6 +743,39 @@ func joinWithAnd(items []string) string {
 type RecipeLookup struct {
 	Recipe        func(instanceName, componentType string) (*types.Recipe, bool)
 	FeatureRecipe func(instanceName, featureType string) (*types.FeatureRecipe, bool)
+
+	// RecipeDocument reports the file an already-resolved Recipe was declared in,
+	// and whether one is recorded. It takes the entity rather than an identity so
+	// the answer cannot describe a different Recipe from the one the render is
+	// holding, and so the per-kind identity formula stays in the catalog beside the
+	// walk that recorded the path.
+	//
+	// The document is what a relative source is resolved against once its template
+	// has produced a value, and what a diagnostic raised inside the render names as
+	// its location. A Recipe resolved from a registry lives in a content-addressed
+	// slot rather than in a file anybody authored and is reported as no document,
+	// which is the honest answer rather than a miss.
+	//
+	// It may be nil. A nil field reports no document, so a caller that does not wire
+	// it renders a templated relative source as the template produced it and
+	// positions such a diagnostic at no file — the same answer as for a Recipe that
+	// genuinely has none.
+	//
+	// There is no FeatureRecipe counterpart because nothing would read one: a
+	// FeatureRecipe's source is never template-evaluated, so no produced value
+	// exists for a document to anchor.
+	RecipeDocument func(r *types.Recipe) (string, bool)
+}
+
+// recipeDocument reports the file a resolved Recipe was declared in, tolerating
+// an unwired lookup and a nil Recipe alike. It exists so the render's call site
+// reads one expression rather than repeating the two guards.
+func (l RecipeLookup) recipeDocument(r *types.Recipe) string {
+	if l.RecipeDocument == nil || r == nil {
+		return ""
+	}
+	path, _ := l.RecipeDocument(r)
+	return path
 }
 
 // RenderAll executes the full Step 5 pipeline:
@@ -1383,16 +1416,17 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 
 		// Phase B sub-pass pipeline per chapter 16 §5. State carries cross-
 		// sub-pass accumulators (resolved values, parsed workload, emitted
-		// files). Recipe path is empty here today — the catalog loader does
-		// not retain the on-disk path on the parsed Recipe; validator errors
-		// surfacing through the sub-passes show "" for the path. Future
-		// improvement: thread the path through the catalog resolver.
+		// files) and the document this node's Recipe was declared in, which is
+		// both what a relative source produced by a template is resolved against
+		// and what a diagnostic raised inside the sub-passes names as its
+		// location. An entity carrying no document on disk reports none, and the
+		// sub-passes treat that as the absence it is.
 		//
 		// It is constructed ahead of this node's FIRST capture, not at Phase B, so
 		// that every capture for this node routes through the one projection call
 		// the state owns. A capture taking its own route would be free to show the
 		// emitted workload document where the display promised a re-render of it.
-		state := NewPhaseBState(recipe, nodeID, node.BoundaryPath, "")
+		state := NewPhaseBState(recipe, nodeID, node.BoundaryPath, recipeLookup.recipeDocument(recipe))
 		state.Trace = traceWriter
 		// The retentions travel onto this node's own state so the artifacts walk can
 		// record each entry's template text where that text is resolved, and each
