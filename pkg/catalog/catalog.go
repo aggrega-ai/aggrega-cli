@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
+	"github.com/aggrega-ai/aggrega-cli/internal/sourceref"
 	"github.com/aggrega-ai/aggrega-cli/pkg/compactform"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
@@ -1232,6 +1233,19 @@ func parseFeatureEntity(data []byte, path string) (types.Feature, error) {
 // cannot drift. The cross-entity dup-identity check is a catalog-level concern
 // and stays with the indexing caller, not here.
 //
+// A scalar source is anchored only where sourceref reads it as naming something
+// the workspace already holds. A reference carrying a transport scheme names
+// something fetched instead, and joining one to a directory destroys the
+// reference and leaves a value every later pass reads as local: the pass that
+// pins a Release's dependencies pins nothing, and the render then stats a
+// directory nobody authored. That single reading also answers the empty case —
+// an empty reference names nothing and is not local — which is why no separate
+// emptiness test sits beside it.
+//
+// The reading is of the authored text, so a source written as a template is
+// anchored against the declaring document's directory using the template's own
+// text rather than the path that text evaluates to.
+//
 // Unlike parseComponentEntity, this self-wraps every failure into its final
 // CATALOG_ERROR shape (unmarshal, source rewrite, artifact rewrite each carry a
 // distinct message; ValidateRecipe already returns a shaped error) so a single
@@ -1250,7 +1264,7 @@ func parseRecipeEntity(data []byte, path string) (types.Recipe, error) {
 	if err := validator.ValidateRecipe(&e, path); err != nil {
 		return types.Recipe{}, err
 	}
-	if s, ok := e.Spec.Source.(string); ok && s != "" {
+	if s, ok := e.Spec.Source.(string); ok && sourceref.IsLocalURL(s) {
 		abs, err := resolveAgainstEntityDir(path, s)
 		if err != nil {
 			return types.Recipe{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, fmt.Sprintf("resolve Recipe source %q", s))
@@ -1359,8 +1373,10 @@ func resolveArtifactImports(entityPath, kind string, artifacts *types.OrderedMap
 // envelope gate, unmarshal, kind-check, the load-time shape rules
 // (validator.ValidateFeatureRecipe), and the same relative-source and
 // relative-`$import` rewrites against the entity file's own directory. Both
-// kinds route their artifacts rewrite through resolveArtifactImports, so the
-// two cannot drift. Self-wraps its failures like parseRecipeEntity.
+// kinds route their artifacts rewrite through resolveArtifactImports and both
+// gate their scalar source on the same sourceref reading, so the two cannot
+// drift; parseRecipeEntity documents what that reading decides and why.
+// Self-wraps its failures like parseRecipeEntity.
 func parseFeatureRecipeEntity(data []byte, path string) (types.FeatureRecipe, error) {
 	if _, eerr := envelope.ValidateBytes(envelope.KindFeatureRecipe, data, path); eerr != nil {
 		return types.FeatureRecipe{}, cerrors.Wrap(eerr, cerrors.CatalogError, cerrors.SourceLocation{File: path}, eerr.Error())
@@ -1375,7 +1391,7 @@ func parseFeatureRecipeEntity(data []byte, path string) (types.FeatureRecipe, er
 	if err := validator.ValidateFeatureRecipe(&e, path); err != nil {
 		return types.FeatureRecipe{}, err
 	}
-	if s, ok := e.Spec.Source.(string); ok && s != "" {
+	if s, ok := e.Spec.Source.(string); ok && sourceref.IsLocalURL(s) {
 		abs, err := resolveAgainstEntityDir(path, s)
 		if err != nil {
 			return types.FeatureRecipe{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, fmt.Sprintf("resolve FeatureRecipe source %q", s))
