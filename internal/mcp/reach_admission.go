@@ -6,7 +6,10 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"slices"
+	"strconv"
+	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/opsurface"
 )
@@ -72,6 +75,52 @@ var scopeImplications = map[string][]opsurface.Reach{
 // exactly the path nobody is looking at.
 type reachAdmission struct {
 	classes map[opsurface.Reach]bool
+
+	// denied is what this deployment does not carry, whatever the request's
+	// credential asserted. It is kept beside the scope answer rather than
+	// subtracted from it, because the two produce different refusals: a class
+	// a scope would admit and the deployment withdrew is not reachable with a
+	// better token, and telling its caller to obtain one would send it round a
+	// loop it cannot finish.
+	denied map[opsurface.Reach]bool
+}
+
+// deniedClasses reads the reach kinds a deployment declared it does not carry.
+//
+// Every value is held to the operation set's own vocabulary, and one outside it
+// is refused rather than ignored. Ignoring it is the direction that fails
+// quietly in the wrong way: an operator who misspells a kind has asked for a
+// bound and would be served without one, and nothing about the running server
+// would say so.
+//
+// A nil or empty declaration yields nil, so a deployment that named nothing
+// carries no withdrawal and the predicate that reads this does no lookup at all.
+func deniedClasses(declared []string) (map[opsurface.Reach]bool, error) {
+	if len(declared) == 0 {
+		return nil, nil
+	}
+	out := make(map[opsurface.Reach]bool, len(declared))
+	for _, value := range declared {
+		class := opsurface.Reach(value)
+		if !slices.Contains(opsurface.Classes(), class) {
+			return nil, fmt.Errorf("mcp.deny_reach names %q, which is not a kind of reach; the kinds are %s",
+				value, strings.Join(reachClassNames(), ", "))
+		}
+		out[class] = true
+	}
+	return out, nil
+}
+
+// reachClassNames renders the closed set for a refusal, read from the operation
+// set rather than written here, so a kind added there reaches this sentence with
+// no edit.
+func reachClassNames() []string {
+	classes := opsurface.Classes()
+	out := make([]string, 0, len(classes))
+	for _, class := range classes {
+		out = append(out, strconv.Quote(string(class)))
+	}
+	return out
 }
 
 // admitEveryClass is the admission a caller at this machine's keyboard holds.
@@ -111,20 +160,44 @@ func admissionFromScopes(scopes []string) reachAdmission {
 
 // admittedReach is what this request may run, on the transport that composed
 // this session.
+//
+// The deployment's own withdrawal is applied here rather than beside any reader,
+// because this is the one predicate every listing and the call check already
+// pass through: a second filter wrapping one of them would be a second place a
+// tool can be hidden, and two places that hide tools are two answers that can
+// come to disagree about one request.
+//
+// A session speaking over the process's own streams carries no withdrawal at
+// all. The set is installed where an HTTP handler is built and nowhere else, so
+// the absence is structural rather than a branch here: the block it is written
+// in configures a listener, and a caller at this machine's keyboard is bounded
+// by owning the machine rather than by what this deployment chose to serve.
 func (s *server) admittedReach(ctx context.Context) reachAdmission {
 	if s.transport != transportHTTP {
 		return admitEveryClass()
 	}
 	p := principalFrom(ctx)
 	if p == nil {
-		return reachAdmission{}
+		return reachAdmission{denied: s.deniedReach}
 	}
-	return admissionFromScopes(p.Scopes)
+	a := admissionFromScopes(p.Scopes)
+	a.denied = s.deniedReach
+	return a
 }
 
 // admits reports whether a call reaching this far may run.
 func (a reachAdmission) admits(class opsurface.Reach) bool {
-	return a.classes[class]
+	return !a.denied[class] && a.classes[class]
+}
+
+// deniedByDeployment reports whether this deployment withdrew the class,
+// separately from whether a scope would have admitted it.
+//
+// The two are asked apart because a caller can act on one of them and not the
+// other, and a refusal that conflated them would tell a caller to obtain a
+// credential that would change nothing.
+func (a reachAdmission) deniedByDeployment(class opsurface.Reach) bool {
+	return a.denied[class]
 }
 
 // boundsAnything reports whether this admission refuses any class at all.
@@ -135,7 +208,7 @@ func (a reachAdmission) admits(class opsurface.Reach) bool {
 // bounds is admitted whatever the widening produces.
 func (a reachAdmission) boundsAnything() bool {
 	for _, class := range opsurface.Classes() {
-		if !a.classes[class] {
+		if !a.admits(class) {
 			return true
 		}
 	}
@@ -201,15 +274,47 @@ func declaredReach(spec toolSpec) opsurface.Reach {
 func (s *server) scopeRefusal(ctx context.Context, spec *toolSpec, args json.RawMessage) *rpcError {
 	admission := s.admittedReach(ctx)
 	if declared := declaredReach(*spec); !admission.admits(declared) {
-		return insufficientScope(spec.name, declared)
+		return admission.refuse(spec.name, declared)
 	}
 	if spec.reachEscalation == nil || !admission.boundsAnything() {
 		return nil
 	}
 	if widened := spec.reachEscalation(s, args); !admission.admits(widened) {
-		return insufficientScope(spec.name, widened)
+		return admission.refuse(spec.name, widened)
 	}
 	return nil
+}
+
+// refuse composes what a caller is told when a call reaches a class this
+// request may not run, reading which of the two bounds turned it away.
+//
+// A deployment's withdrawal is reported before a scope, because it is the one a
+// caller cannot lift: where the deployment does not carry a class, no token
+// admits it and no challenge would help, so naming a scope there would be an
+// instruction that cannot be followed.
+func (a reachAdmission) refuse(tool string, class opsurface.Reach) *rpcError {
+	if a.deniedByDeployment(class) {
+		return reachWithdrawnByDeployment(tool, class)
+	}
+	return insufficientScope(tool, class)
+}
+
+// reachWithdrawnByDeployment is what a caller is told when the class a call
+// reaches is one this deployment chose not to carry.
+//
+// It names the configuration setting, because the operator reading a refused
+// call is the one who can lift it and the setting is the only thing they can
+// act on. It carries no challenge: a challenge invites a caller to obtain a
+// scope, and no scope reaches a class the deployment withdrew.
+func reachWithdrawnByDeployment(tool string, class opsurface.Reach) *rpcError {
+	return &rpcError{
+		Code:       codeInvalidRequest,
+		httpStatus: statusInsufficientScope,
+		Message: tool + " " + reachInCallerWords(class) + ", and this deployment does not carry that: " +
+			"its mcp.deny_reach setting names " + string(class) + ". No credential lifts it, because the bound " +
+			"is the deployment's rather than yours. Whoever runs this server can change that setting; until " +
+			"they do, the tool list this server answers you with is what you can reach from here.",
+	}
 }
 
 // What each class reaches, in the words a caller reads. They are the classes'

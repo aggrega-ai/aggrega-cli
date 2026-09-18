@@ -139,6 +139,16 @@ type HTTPConfig struct {
 	// not built without it.
 	Authorization AuthorizationConfig
 
+	// DenyReach names the kinds of reach this deployment does not carry,
+	// whatever a caller's credential asserts. A tool whose operation reaches
+	// one of them is absent from every listing this handler answers and
+	// refused at every call, naming the setting. Empty carries whatever the
+	// callers' own scopes admit; a value outside the operation set's reach
+	// vocabulary is refused rather than ignored, because an operator who
+	// misspells a kind has asked for a bound and would otherwise be served
+	// without one.
+	DenyReach []string
+
 	// Egress yields the client the authorization server's keys are read with.
 	// It is consulted once, while the handler is built, and only where this
 	// deployment reads a token at all and Authorization names no file to read
@@ -257,6 +267,11 @@ func NewHTTPHandler(ctx context.Context, cfg Config, transport HTTPConfig) (http
 // none to advertise, none to call, and no argument of one to police. A rule
 // written as a list of refused argument names would instead have to grow an
 // entry for every flag a command ever gains that reaches the filesystem.
+//
+// The deployment's own withdrawal is read here for the third time on the same
+// ground: it is a setting on the block that configures a listener, so installing
+// it at this point is what makes a session speaking the process's own streams
+// carry none of it without anything having to ask which transport it is on.
 func newHTTPHandler(runCtx context.Context, s *server, transport HTTPConfig) (*httpHandler, error) {
 	if transport.MaxBodyBytes <= 0 {
 		return nil, fmt.Errorf("mcp.limits.max_body_bytes must be positive, got %d", transport.MaxBodyBytes)
@@ -276,6 +291,10 @@ func newHTTPHandler(runCtx context.Context, s *server, transport HTTPConfig) (*h
 	if s.cancels == nil {
 		s.cancels = requestcancel.New()
 	}
+	denied, err := deniedClasses(transport.DenyReach)
+	if err != nil {
+		return nil, err
+	}
 	resource, err := resolveProtectedResource(transport.Authorization)
 	if err != nil {
 		return nil, err
@@ -286,6 +305,7 @@ func newHTTPHandler(runCtx context.Context, s *server, transport HTTPConfig) (*h
 	}
 	s.transport = transportHTTP
 	s.commandTools = nil
+	s.deniedReach = denied
 	return &httpHandler{
 		srv:            s,
 		runCtx:         runCtx,

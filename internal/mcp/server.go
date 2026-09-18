@@ -14,6 +14,7 @@ import (
 	"os"
 	"sync"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/opsurface"
 	"github.com/aggrega-ai/aggrega-cli/internal/requestcancel"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 )
@@ -184,6 +185,18 @@ type server struct {
 	// the caller supplied, built once per session in Run and never mutated, so
 	// every listing over it is byte-stable for the life of the session.
 	commandTools []toolSpec
+
+	// deniedReach is the kinds of reach this deployment declared it does not
+	// carry. A tool whose operation reaches one of them is absent from every
+	// listing and refused at every call, whatever a caller's credential says,
+	// because the bound is the deployment's rather than the caller's.
+	//
+	// It is installed where an HTTP handler is built and nowhere else, so a
+	// session speaking the process's own streams carries none: the setting
+	// configures a listener, and a caller at this machine's keyboard is
+	// bounded by owning the machine. Nil is the ordinary case and means
+	// nothing is withdrawn.
+	deniedReach map[opsurface.Reach]bool
 
 	// cancels maps an in-flight request's id to the cancel handle of that
 	// request's own context, so the client can end one call and leave every other

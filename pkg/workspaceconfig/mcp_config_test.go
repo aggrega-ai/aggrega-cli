@@ -47,6 +47,9 @@ mcp:
     trusted_proxy:
       principal_header: X-Forwarded-User
       scopes_header: X-Forwarded-Scopes
+  deny_reach:
+    - registry
+    - machine
   health:
     listen: unix:/run/aggrega/health.sock
 `
@@ -107,6 +110,11 @@ func TestLoadMCPEveryDeclaredKey(t *testing.T) {
 		t.Errorf("MCP.Authorization.TrustedProxy.ScopesHeader: got %q, want %q",
 			cfg.MCP.Authorization.TrustedProxy.ScopesHeader, "X-Forwarded-Scopes")
 	}
+	if len(cfg.MCP.DenyReach) != 2 ||
+		cfg.MCP.DenyReach[0] != "registry" ||
+		cfg.MCP.DenyReach[1] != "machine" {
+		t.Errorf("MCP.DenyReach: got %+v, want the two kinds in author order", cfg.MCP.DenyReach)
+	}
 	if cfg.MCP.Health.Listen != "unix:/run/aggrega/health.sock" {
 		t.Errorf("MCP.Health.Listen: got %q, want %q",
 			cfg.MCP.Health.Listen, "unix:/run/aggrega/health.sock")
@@ -150,6 +158,10 @@ func TestLoadMCPAbsentBlockLeavesDocumentedDefaults(t *testing.T) {
 		t.Errorf("MCP.Authorization.TrustedProxy.PrincipalHeader: got %q, want empty — a workspace that "+
 			"never asked for it validates the tokens its callers present",
 			cfg.MCP.Authorization.TrustedProxy.PrincipalHeader)
+	}
+	if len(cfg.MCP.DenyReach) != 0 {
+		t.Errorf("MCP.DenyReach: got %+v, want empty — a workspace that never asked to withdraw a kind "+
+			"of reach carries whatever its callers' scopes admit", cfg.MCP.DenyReach)
 	}
 	if cfg.MCP.Health.Listen != "" {
 		t.Errorf("MCP.Health.Listen: got %q, want empty (no second listener, neither check answered)",
@@ -260,6 +272,59 @@ func TestLoadMCPTrustedProxyWithoutItsPrincipalHeaderIsRefused(t *testing.T) {
 		t.Fatal("expected the loader to refuse a trusted_proxy block naming no principal header; got nil")
 	} else if !errors.Is(err, ErrConfigInvalid()) {
 		t.Errorf("the refusal must wrap ErrConfigInvalid; got %v", err)
+	}
+}
+
+// TestLoadMCPDenyReachOutsideTheClosedSetIsRefused drives the refusal a
+// misspelled kind of reach earns, at the moment the configuration loads.
+//
+// The direction is what matters. An operator writing this setting has asked for
+// a bound, and a value that is silently ignored leaves them served without one
+// while nothing about the running server says so — so the value is held to the
+// closed set here, before anything binds, rather than being read for whatever it
+// happens to match later.
+//
+// Each accepting row is the control, and there are two of them for two different
+// reasons: the empty list is what every workspace that never mentions the setting
+// carries, and a list naming real kinds is what proves the refusal below is about
+// the value rather than about the key existing at all.
+func TestLoadMCPDenyReachOutsideTheClosedSetIsRefused(t *testing.T) {
+	t.Parallel()
+
+	for _, accepted := range []struct {
+		name    string
+		content string
+	}{
+		{"an empty list", "mcp:\n  deny_reach: []\n"},
+		{"every kind the vocabulary holds", "mcp:\n  deny_reach: [none, workspace, registry, machine]\n"},
+	} {
+		accepted := accepted
+		t.Run(accepted.name, func(t *testing.T) {
+			t.Parallel()
+			if _, err := load(writeFixture(t, accepted.content)); err != nil {
+				t.Fatalf("the loader refused %s: %v", accepted.name, err)
+			}
+		})
+	}
+
+	for _, tc := range []struct {
+		name    string
+		content string
+	}{
+		{"a kind that does not exist", "mcp:\n  deny_reach: [everything]\n"},
+		{"a near miss on a real kind", "mcp:\n  deny_reach: [registries]\n"},
+		{"a real kind beside one that is not", "mcp:\n  deny_reach: [registry, everything]\n"},
+		{"the empty string", "mcp:\n  deny_reach: ['']\n"},
+	} {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if _, err := load(writeFixture(t, tc.content)); err == nil {
+				t.Fatalf("expected the loader to refuse %s; got nil", tc.name)
+			} else if !errors.Is(err, ErrConfigInvalid()) {
+				t.Errorf("the refusal must wrap ErrConfigInvalid; got %v", err)
+			}
+		})
 	}
 }
 

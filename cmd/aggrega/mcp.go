@@ -234,6 +234,7 @@ func runMCP(cmd *cobra.Command, args []string) error {
 					ScopesHeader:    settings.Authorization.TrustedProxy.ScopesHeader,
 				},
 			},
+			DenyReach: settings.DenyReach,
 			// The gate is handed over rather than the posture: whether this
 			// workspace makes an outbound request at all is the egress gate's
 			// decision, and reading the offline field a second time inside the

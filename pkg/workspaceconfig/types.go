@@ -869,6 +869,25 @@ type MCPConfig struct {
 	// server speaks over standard input and output.
 	Authorization MCPAuthorizationConfig `yaml:"authorization"`
 
+	// DenyReach names the kinds of reach this deployment does not
+	// carry, whatever a caller's token says. Every operation declares
+	// how far its own effects travel, and a kind named here withdraws
+	// every tool of that kind: it is absent from every listing and a
+	// call to it is refused naming this setting, because no scope
+	// could admit it. Empty (the default) carries whatever the
+	// callers' own scopes admit.
+	//
+	// It is the deployment's bound on itself, sitting above the
+	// per-caller bound the scopes set, which is why it holds against a
+	// token carrying every scope. The values are the reach vocabulary
+	// the operation set declares, held to that vocabulary by the
+	// schema's enum at load and again where the listener reads them.
+	//
+	// Read only while an HTTP listener starts. A server speaking over
+	// standard input and output reads none of this block, and there
+	// the caller is the person who launched the process.
+	DenyReach []string `yaml:"deny_reach"`
+
 	// Health carries where the liveness and readiness checks are
 	// answered. Empty (the default) answers them nowhere.
 	Health MCPHealthConfig `yaml:"health"`

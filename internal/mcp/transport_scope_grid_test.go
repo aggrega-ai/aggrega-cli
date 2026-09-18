@@ -53,6 +53,13 @@ type scopeGridFixture struct {
 // read back below rather than assumed from the bytes written.
 func newScopeGridFixture(t *testing.T, fills bool) *scopeGridFixture {
 	t.Helper()
+	return newScopeGridFixtureDenying(t, fills, nil)
+}
+
+// newScopeGridFixtureDenying starts one whose deployment has withdrawn the named
+// kinds of reach, which is the bound that sits above what a credential admits.
+func newScopeGridFixtureDenying(t *testing.T, fills bool, deny []string) *scopeGridFixture {
+	t.Helper()
 
 	root := t.TempDir()
 	cfg := "workspace: {}\noffline: true\n"
@@ -74,7 +81,9 @@ func newScopeGridFixture(t *testing.T, fills bool) *scopeGridFixture {
 	issuer := newAuthorizationServerDouble(t)
 	s := newCommandToolServer(t, nil)
 	s.startDir = root
-	h, err := newHTTPHandler(context.Background(), s, transportFor(issuer.authorizationConfig(), issuer.egress()))
+	transport := transportFor(issuer.authorizationConfig(), issuer.egress())
+	transport.DenyReach = deny
+	h, err := newHTTPHandler(context.Background(), s, transport)
 	if err != nil {
 		t.Fatalf("newHTTPHandler: %v", err)
 	}
