@@ -3,18 +3,18 @@
 
 //! What a decided annotation must name before the build can apply it.
 //!
-//! A plugin attached to inject annotations reports which annotations the
-//! deployment's components should carry. A decided annotation names the component
-//! it applies to — by the boundary it sits under and its own name, the coordinate
-//! each target already carries — plus the annotation key and its value. The rules
-//! below are the same whichever language expressed the decision, so they live
-//! here rather than in each plugin that reaches them.
+//! A plugin attached to inject annotations reports which annotations the build's
+//! components should carry. A decided annotation names the component it applies
+//! to — by the boundary it sits under and its own name, the coordinate each target
+//! already carries — plus the annotation key and its value. The rules below are the
+//! same whichever language expressed the decision, so they live here rather than in
+//! each plugin that reaches them.
 //!
 //! # A decision may only add an annotation to a component that exists
 //!
 //! A decided annotation carries a coordinate, a key and a string value, and there
 //! is no other field it could carry — so a decision has no way to express any
-//! other change. A decision naming a component the deployment does not have is
+//! other change. A decision naming a component the payload does not carry is
 //! refused by the build, loudly, naming the coordinate and the annotation. An
 //! operator attaching a plugin to inject annotations has declared that injection
 //! and nothing further.

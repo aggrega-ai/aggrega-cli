@@ -33,7 +33,7 @@
 //!
 //! Attached to shape labels, the `mutate` export reports which labels the
 //! build's nodes should carry; attached to inject annotations, the
-//! `transform_annotations` export reports which annotations the deployment's
+//! `transform_annotations` export reports which annotations the build's
 //! components should carry. Each has its own decision key and its own input
 //! shape, both documented on the module that reads them.
 //!
@@ -288,7 +288,7 @@ pub fn mutate(input: Vec<u8>) -> FnResult<Vec<u8>> {
 /// decisions.
 ///
 /// The whole payload is the policy's input document, so a policy reads the nodes
-/// and the deployment context under the names the wire gives them. The engine
+/// and the compilation context under the names the wire gives them. The engine
 /// reads a JSON document, so the decoded payload is written back out as one: the
 /// names a policy addresses are the names the payload declares, whichever encoding
 /// carried it.
@@ -308,7 +308,7 @@ fn label_changes(raw: &[u8]) -> anyhow::Result<MutatorOutput> {
     })
 }
 
-/// Reports which annotations the deployment's components should carry. A failure
+/// Reports which annotations the build's components should carry. A failure
 /// to evaluate propagates, and is surfaced as a build fault rather than as a
 /// change.
 #[plugin_fn]

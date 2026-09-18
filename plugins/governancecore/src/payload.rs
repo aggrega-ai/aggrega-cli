@@ -20,7 +20,7 @@
 //!
 //! This module accepts the absent value for those fields anyway, and the reason is
 //! that refusing it would fail an ordinary build over a field the policy never
-//! reads — a build with no routing paths to enumerate, or a deployment that
+//! reads — a build with no routing paths to enumerate, or a Manifest that
 //! registers no annotation keys, are both perfectly normal, and neither is the
 //! author's mistake to fix.
 //!

@@ -39,7 +39,7 @@
 //! `input.graph.nodes` is the build's nodes keyed by name, each carrying the
 //! component it instantiates as `.component`, the version resolved for it as
 //! `.resolved_version`, and its current labels as `.labels`.
-//! `input.compilation_context` carries the deployment's name and its environment,
+//! `input.compilation_context` carries the Release's name and its environment,
 //! so a policy can decide differently per environment. The attachment's own files
 //! are at `input.sources` and its settings at `input.settings`.
 //!

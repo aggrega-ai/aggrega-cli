@@ -37,7 +37,7 @@
 //!
 //! Attached to shape labels, the `mutate` export reports which labels the build's
 //! nodes should carry; attached to inject annotations, the `transform_annotations`
-//! export reports which annotations the deployment's components should carry. Each
+//! export reports which annotations the build's components should carry. Each
 //! has its own decision key and its own input shape, both documented on the module
 //! that reads them — [`labels`] and [`annotations`].
 //!
@@ -343,7 +343,7 @@ fn label_changes(raw: &[u8]) -> anyhow::Result<MutatorOutput> {
     })
 }
 
-/// Reports which annotations the deployment's components should carry. A failure
+/// Reports which annotations the build's components should carry. A failure
 /// to evaluate propagates, and is surfaced as a build fault rather than as a
 /// change.
 #[plugin_fn]
@@ -714,9 +714,9 @@ mod tests {
         input.encode_cbor().expect("the payload encodes")
     }
 
-    /// The annotation-transform payload, as the host writes it: a deployment of the
-    /// named components under one boundary, with one registered annotation key and
-    /// one policy file.
+    /// The annotation-transform payload, as the host writes it: the named
+    /// components under one boundary, with one registered annotation key and one
+    /// policy file.
     fn annotation_payload(components: &[&str], path: &str, policy: &str) -> String {
         let mut input = AnnotationTransformInput {
             binding_keys: vec!["gate.example.com/tier".to_string()],

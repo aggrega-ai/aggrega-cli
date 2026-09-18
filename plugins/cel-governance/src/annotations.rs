@@ -3,10 +3,10 @@
 
 //! Reading a policy's annotation decisions, and the order they are reported in.
 //!
-//! Attached to inject annotations, a policy decides which annotations the
-//! deployment's components should carry. It reports them the same way it reports a
-//! verdict — as the value one decision key collects — except that what this key
-//! collects is a decision rather than a message:
+//! Attached to inject annotations, a policy decides which annotations the build's
+//! components should carry. It reports them the same way it reports a verdict — as
+//! the value one decision key collects — except that what this key collects is a
+//! decision rather than a message:
 //!
 //! ```cel
 //! {
@@ -35,7 +35,7 @@
 //! `input.targets` is every component the policy may annotate, each carrying its
 //! `.boundary_path`, its `.component_name` and the `.annotations` it already has —
 //! so a policy can decide what to add without displacing a value someone authored.
-//! `input.binding_keys` is the annotation keys the deployment has registered a
+//! `input.binding_keys` is the annotation keys the Manifest has registered a
 //! meaning for: an annotation under one of those keys goes on to expand into an
 //! attached feature, so a policy reads the list to inject keys that will take
 //! effect. The attachment's own files are at `input.sources` and its settings at
@@ -135,8 +135,8 @@ mod tests {
     use crate::engine::decisions;
     use governancecore::sources::Source;
 
-    /// Evaluates one expression against a deployment of the named components and
-    /// returns the injections it decided.
+    /// Evaluates one expression against a payload carrying the named components
+    /// and returns the injections it decided.
     fn injected(policy: &str, components: &[&str]) -> anyhow::Result<Vec<AnnotationInjection>> {
         let collected = decisions(
             &[Source {
@@ -149,9 +149,9 @@ mod tests {
         injections(&collected)
     }
 
-    /// The annotation-transform payload for a deployment of the named components,
-    /// built from the payload's own type so a field added to the wire shape does
-    /// not leave this fixture describing a deployment the guest would reject.
+    /// The annotation-transform payload for the named components, built from the
+    /// payload's own type so a field added to the wire shape does not leave this
+    /// fixture describing a payload the guest would reject.
     fn targets(components: &[&str]) -> serde_json::Value {
         let mut input = aggrega_abi::AnnotationTransformInput {
             binding_keys: vec!["gate.example.com/tier".to_string()],

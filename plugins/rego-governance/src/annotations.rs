@@ -3,9 +3,9 @@
 
 //! Turning a policy's annotation decisions into the annotations the build adds.
 //!
-//! Attached to inject annotations, a policy decides which annotations the
-//! deployment's components should carry. It collects one decision per annotation
-//! under `annotations`:
+//! Attached to inject annotations, a policy decides which annotations the build's
+//! components should carry. It collects one decision per annotation under
+//! `annotations`:
 //!
 //! ```rego
 //! package tagging
@@ -33,7 +33,7 @@
 //! `input.targets` is every component the policy may annotate, each carrying its
 //! `.boundary_path`, its `.component_name` and the `.annotations` it already
 //! has — so a policy can decide what to add without displacing a value someone
-//! authored. `input.binding_keys` is the annotation keys the deployment has
+//! authored. `input.binding_keys` is the annotation keys the Manifest has
 //! registered a meaning for: an annotation under one of those keys goes on to
 //! expand into an attached feature, so a policy reads the list to inject keys
 //! that will take effect. The attachment's own files are at `input.sources` and
