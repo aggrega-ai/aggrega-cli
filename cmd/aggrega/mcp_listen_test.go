@@ -66,8 +66,21 @@ func mcpSocketDir(t *testing.T) string {
 // streams reads any of it.
 const mcpDeclaredDeployment = "  authorization:\n" +
 	"    issuer: https://login.example.test\n" +
-	"    resource: https://mcp.example.test/mcp\n" +
+	"    resource: " + mcpPublishedResource + "\n" +
 	"    jwks_file: " + mcpKeySetFileName + "\n"
+
+// mcpPublishedResource is the address every deployment in these proofs
+// publishes for itself, and what a token has to name among its audiences to be
+// issued for it. It is never dialled — a resource identifier is what a client
+// hands its authorization server, not a place this test connects to — so it
+// names a host that does not exist and that is deliberate.
+//
+// It has one home because two deployments declare it: the one that reads its
+// keys from a file, and the one that reads them from an authorization server. A
+// token minted for one address and presented to a deployment declaring another
+// is refused, so the two agreeing by eye would be a proof that passes for the
+// wrong reason the day one of them is edited.
+const mcpPublishedResource = "https://mcp.example.test/mcp"
 
 // mcpKeySetFileName is where makeMCPWorkspace writes the key set, beside the
 // configuration that names it.
@@ -110,21 +123,43 @@ func makeMCPWorkspace(t *testing.T, extra string) string {
 // publishes.
 func writeMCPKeySet(t *testing.T, path string) {
 	t.Helper()
-	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	if err != nil {
-		t.Fatalf("generate a verification key: %v", err)
-	}
-	raw, err := json.Marshal(jose.JSONWebKeySet{Keys: []jose.JSONWebKey{{
-		Key:       key.Public(),
-		KeyID:     "the-verification-key",
-		Algorithm: string(jose.ES256),
-		Use:       "sig",
-	}}})
+	_, published := newMCPVerificationKey(t)
+	raw, err := json.Marshal(jose.JSONWebKeySet{Keys: []jose.JSONWebKey{published}})
 	if err != nil {
 		t.Fatalf("marshal a key set: %v", err)
 	}
 	if err := os.WriteFile(path, raw, 0o600); err != nil {
 		t.Fatalf("write a key set: %v", err)
+	}
+}
+
+// mcpVerificationKeyID is what a key these proofs publish is named by, and what
+// a token signed with it names in its header so a deployment knows which key to
+// verify it against.
+const mcpVerificationKeyID = "the-verification-key"
+
+// newMCPVerificationKey produces one signing key and the half of it that gets
+// published, which is the only half that is ever written down.
+//
+// Both ways a deployment reads its keys are served from here — a key set
+// written to a file, and one an authorization server publishes — so the shape
+// of what is published has one home rather than two that agree until one is
+// edited.
+//
+// ES256 rather than RSA because it is asymmetric, which is what a deployment
+// requires, and small enough to generate per proof without the generation
+// showing up as wall clock.
+func newMCPVerificationKey(t *testing.T) (*ecdsa.PrivateKey, jose.JSONWebKey) {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("generate a verification key: %v", err)
+	}
+	return key, jose.JSONWebKey{
+		Key:       key.Public(),
+		KeyID:     mcpVerificationKeyID,
+		Algorithm: string(jose.ES256),
+		Use:       "sig",
 	}
 }
 
