@@ -137,29 +137,43 @@ func TestATransportThatAcceptsAWorkspaceArgumentStillSaysSo(t *testing.T) {
 	}
 }
 
-// TestTheTwoTransportsDifferOnlyByTheWorkspaceSentence pins what the scoping
-// does not touch.
+// TestTheTwoTransportsDifferOnlyByWhatTheListenerWithholds pins what the
+// scoping does not touch.
 //
 // A description is withheld from, never rewritten for, a transport. Comparing
-// the two answers with the sentence taken off the stdio side catches a scoping
-// that composed a second description rather than declining to add one — which
-// would satisfy every assertion above while quietly serving two different texts.
-func TestTheTwoTransportsDifferOnlyByTheWorkspaceSentence(t *testing.T) {
+// the two answers with the withheld parts taken off the stdio side catches a
+// scoping that composed a second description rather than declining to add one —
+// which would satisfy every assertion above while quietly serving two different
+// texts.
+//
+// Two parts are withheld, and both are withheld for the same reason: each offers
+// the caller something the listener does not have. The workspace sentence offers
+// arguments a call over HTTP is refused for sending. The pairing sentence names
+// the tool that reaches the same capability by running a command, and a session
+// reached over HTTP has none — so a curated tool still carrying it would send a
+// caller after a tool that is not there.
+func TestTheTwoTransportsDifferOnlyByWhatTheListenerWithholds(t *testing.T) {
 	s := newCommandToolServer(t, nil)
 	overHTTP := advertisedOverHTTP(t, newHTTPFixture(t, defaultTransportConfig(), nil))
 	overStdio := advertisedOverStdio(t, s)
 
 	notes := map[string]string{}
+	operations := map[string]string{}
 	for _, spec := range registeredToolSpecs(s) {
 		notes[spec.name] = spec.workspaceSelectionNote
+		operations[spec.name] = spec.operation
 	}
+	// The pairing sentence is recomposed from the session's own twins rather than
+	// matched by shape, so what is trimmed here is the exact text the composition
+	// added and a reworded sentence fails rather than being trimmed anyway.
+	twins := commandTwins(s.commandTools)
 
 	remote := map[string]string{}
 	for _, a := range overHTTP {
 		remote[a.surface+"/"+a.tool] = a.description
 	}
 
-	compared, withheld := 0, 0
+	compared, withheldWorkspace, withheldPairing := 0, 0, 0
 	for _, a := range overStdio {
 		got, ok := remote[a.surface+"/"+a.tool]
 		if !ok {
@@ -169,22 +183,30 @@ func TestTheTwoTransportsDifferOnlyByTheWorkspaceSentence(t *testing.T) {
 		want := a.description
 		if note := notes[a.tool]; note != "" {
 			want = strings.TrimSuffix(want, " "+note)
-			withheld++
+			withheldWorkspace++
+		}
+		if twin, paired := twins[operations[a.tool]]; paired {
+			want = strings.TrimSuffix(want, commandTwinNote(twin))
+			withheldPairing++
 		}
 		if got != want {
-			t.Errorf("%s advertises %s with a description that differs by more than the workspace "+
-				"sentence:\n  over a listener: %s\n  expected:        %s", a.surface, a.tool, got, want)
+			t.Errorf("%s advertises %s with a description that differs by more than what the listener "+
+				"withholds:\n  over a listener: %s\n  expected:        %s", a.surface, a.tool, got, want)
 		}
 	}
 	if compared == 0 {
 		t.Fatal("no description was compared across the two transports; the assertion measured nothing")
 	}
-	if withheld == 0 {
+	if withheldWorkspace == 0 {
 		t.Fatal("no compared description carried a workspace sentence to withhold, " +
 			"so the comparison would pass against a scoping that does nothing")
 	}
-	t.Logf("compared %d description(s) across the two transports, %d of them carrying a withheld sentence",
-		compared, withheld)
+	if withheldPairing == 0 {
+		t.Fatal("no compared description carried a pairing sentence to withhold, " +
+			"so the comparison would pass against a session that composes none")
+	}
+	t.Logf("compared %d description(s) across the two transports, %d carrying a withheld workspace "+
+		"sentence and %d a withheld pairing sentence", compared, withheldWorkspace, withheldPairing)
 }
 
 // TestAdvertisedDescriptionWithholdsOnlyOnTheListener measures the composition

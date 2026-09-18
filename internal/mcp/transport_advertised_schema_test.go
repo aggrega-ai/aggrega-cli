@@ -263,9 +263,23 @@ func TestAdvertisedSchemasCarryTheArgumentsTheTransportAccepts(t *testing.T) {
 		})
 	}
 
-	// A transport withholds arguments, never tools. A projection that dropped a
-	// tool would satisfy every assertion above by advertising less.
-	missing := missingFrom(advertisedToolNames(overStdio), advertisedToolNames(overHTTP))
+	// A transport withholds arguments from the tools it offers, and withholds
+	// exactly one whole class of tool: the ones this server does not resolve the
+	// arguments of, which are composed away over HTTP rather than filtered. Every
+	// tool outside that class must still be offered, because a projection that
+	// dropped one would satisfy every assertion above by advertising less.
+	onlyAtTheKeyboard := toolsReachingTheHostUnconfined(overStdio)
+	if len(onlyAtTheKeyboard) == 0 {
+		t.Fatal("no tool is offered only to a caller at this machine's keyboard, so the exclusion below " +
+			"excludes nothing and would hide a tool dropped for any other reason")
+	}
+	var offeredToBoth []string
+	for _, name := range advertisedToolNames(overStdio) {
+		if !containsStr(onlyAtTheKeyboard, name) {
+			offeredToBoth = append(offeredToBoth, name)
+		}
+	}
+	missing := missingFrom(offeredToBoth, advertisedToolNames(overHTTP))
 	if len(missing) > 0 {
 		t.Errorf("a caller reaching the listener is not offered %v at all", missing)
 	}

@@ -77,9 +77,16 @@ func defaultTransportConfig() HTTPConfig {
 
 // newHTTPFixture starts a listener over the fixture command surface, with the
 // test-only authenticator installed, under a run that never ends.
-func newHTTPFixture(t *testing.T, transport HTTPConfig, run commandRunner) *httpFixture {
+//
+// hold is the seam a proof that needs a call to sit inside the handler installs.
+// It is the lint seam rather than the command runner because a session reached
+// over HTTP is composed with no command surface at all, so a call naming a
+// generated tool is refused before anything runs and would hold nothing. The
+// server is still built over the fixture command surface, because what the
+// composition does with one is the thing several proofs here are about.
+func newHTTPFixture(t *testing.T, transport HTTPConfig, hold lintRunner) *httpFixture {
 	t.Helper()
-	return newHTTPFixtureUnderRun(t, context.Background(), transport, run)
+	return newHTTPFixtureUnderRun(t, context.Background(), transport, hold)
 }
 
 // newHTTPFixtureUnderRun is newHTTPFixture with the run's own context supplied by
@@ -87,9 +94,9 @@ func newHTTPFixture(t *testing.T, transport HTTPConfig, run commandRunner) *http
 // proof here runs under a context that never ends, which is the shape a serving
 // process holds for as long as it serves.
 func newHTTPFixtureUnderRun(t *testing.T, runCtx context.Context,
-	transport HTTPConfig, run commandRunner) *httpFixture {
+	transport HTTPConfig, hold lintRunner) *httpFixture {
 	t.Helper()
-	f := newUnauthenticatedHTTPFixture(t, runCtx, transport, run)
+	f := newUnauthenticatedHTTPFixture(t, runCtx, transport, hold)
 	f.h.auth = acceptAllAuthenticator{}
 	return f
 }
@@ -97,9 +104,10 @@ func newHTTPFixtureUnderRun(t *testing.T, runCtx context.Context,
 // newUnauthenticatedHTTPFixture starts a listener with the authenticator the
 // handler ships with, so what it serves is what a deployment serves.
 func newUnauthenticatedHTTPFixture(t *testing.T, runCtx context.Context,
-	transport HTTPConfig, run commandRunner) *httpFixture {
+	transport HTTPConfig, hold lintRunner) *httpFixture {
 	t.Helper()
-	s := newCommandToolServer(t, run)
+	s := newCommandToolServer(t, nil)
+	s.runLint = hold
 	h, err := newHTTPHandler(runCtx, s, transport)
 	if err != nil {
 		t.Fatalf("newHTTPHandler: %v", err)
@@ -757,11 +765,11 @@ func TestHTTPBodyCapRefusesWhatItCannotAccept(t *testing.T) {
 	}
 }
 
-// heldCommand is a command runner that reports when it has been entered and
-// then waits to be released, so a proof can hold a request inside the handler
-// for as long as it needs the slot occupied.
-func heldCommand(entered chan<- struct{}, release <-chan struct{}) commandRunner {
-	return func(ctx context.Context, _ []string, _, _ io.Writer) error {
+// heldCall is a seam that reports when it has been entered and then waits to be
+// released, so a proof can hold a request inside the handler for as long as it
+// needs the slot occupied.
+func heldCall(entered chan<- struct{}, release <-chan struct{}) lintRunner {
+	return func(ctx context.Context, _ lintRequest, _, _ io.Writer) error {
 		entered <- struct{}{}
 		select {
 		case <-release:
@@ -771,14 +779,32 @@ func heldCommand(entered chan<- struct{}, release <-chan struct{}) commandRunner
 	}
 }
 
-// callFixtureToolBody is a tools/call on the fixture command surface, in the
-// handshake revision so it carries no mirror headers. The tool name is derived
-// rather than spelled, so a change to the naming rule moves this fixture with it
-// instead of leaving a request no tool answers.
-func callFixtureToolBody(id int) string {
-	return fmt.Sprintf(`{"jsonrpc":"2.0","id":%d,"method":"tools/call","params":{"name":%q,"arguments":{}}}`,
-		id, commandToolName("aggrega work"))
+// callHeldToolBody is a tools/call on the tool whose seam the fixtures hold, in
+// the handshake revision so it carries no mirror headers.
+//
+// The tool is one this server runs itself, and that is what makes it the right
+// vehicle here rather than an incidental choice: a session reached over HTTP
+// offers no tool that runs a command in a separate process, so a call naming one
+// is refused before any seam is entered and would hold nothing at all. The name
+// is a package constant, so a rename moves this with it instead of leaving a
+// request no tool answers.
+func callHeldToolBody(id int) string {
+	return fmt.Sprintf(
+		`{"jsonrpc":"2.0","id":%d,"method":"tools/call","params":{"name":%q,"arguments":{"entity":"held.yaml"}}}`,
+		id, heldToolName)
 }
+
+// heldToolName is the tool the held-call proofs drive, found by the operation it
+// answers rather than by a name spelled here. A tool's advertised name is set
+// from the operation table, so spelling one would be a second place it lives and
+// a rename would leave these proofs calling a tool that no longer exists.
+var heldToolName = func() string {
+	spec, registered := curatedSibling("lint")
+	if !registered {
+		panic("no tool answers the lint operation; the held-call proofs have no vehicle")
+	}
+	return spec.name
+}()
 
 // The concurrency cap, driven with a blocking seam.
 //
@@ -805,12 +831,12 @@ func TestHTTPConcurrencyCapRefusesTheExcess(t *testing.T) {
 
 	transport := defaultTransportConfig()
 	transport.MaxConcurrentRequests = 1
-	f := newHTTPFixture(t, transport, heldCommand(entered, release))
+	f := newHTTPFixture(t, transport, heldCall(entered, release))
 
-	held := f.issue(callFixtureToolBody(1))
+	held := f.issue(callHeldToolBody(1))
 	awaitEntered(t, entered, "the held request")
 
-	excess := awaitExchange(t, f.issue(callFixtureToolBody(2)), "the excess request")
+	excess := awaitExchange(t, f.issue(callHeldToolBody(2)), "the excess request")
 	if excess.status != http.StatusServiceUnavailable {
 		t.Errorf("status = %d, want 503 (body %q)", excess.status, excess.raw)
 	}
@@ -852,7 +878,7 @@ func TestHTTPDisconnectEndsTheCallAndWritesNothing(t *testing.T) {
 	t.Run("connection closed during the call", func(t *testing.T) {
 		entered := make(chan struct{}, 1)
 		ended := make(chan error, 1)
-		run := func(ctx context.Context, _ []string, _, _ io.Writer) error {
+		run := func(ctx context.Context, _ lintRequest, _, _ io.Writer) error {
 			entered <- struct{}{}
 			<-ctx.Done()
 			ended <- ctx.Err()
@@ -865,7 +891,7 @@ func TestHTTPDisconnectEndsTheCallAndWritesNothing(t *testing.T) {
 		go func() {
 			defer close(requestDone)
 			req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-				ts.URL+endpointPath, strings.NewReader(callFixtureToolBody(1)))
+				ts.URL+endpointPath, strings.NewReader(callHeldToolBody(1)))
 			if err != nil {
 				return
 			}
@@ -904,12 +930,12 @@ func TestHTTPDisconnectEndsTheCallAndWritesNothing(t *testing.T) {
 		release := make(chan struct{})
 		releaseHeld := sync.OnceFunc(func() { close(release) })
 		defer releaseHeld()
-		rec, ts := newRecordingHTTPListener(t, heldCommand(entered, release))
+		rec, ts := newRecordingHTTPListener(t, heldCall(entered, release))
 
 		answered := make(chan int, 1)
 		go func() {
 			resp, err := ts.Client().Post(ts.URL+endpointPath, contentTypeJSON,
-				strings.NewReader(callFixtureToolBody(1)))
+				strings.NewReader(callHeldToolBody(1)))
 			if err != nil {
 				answered <- 0
 				return
@@ -971,7 +997,7 @@ func TestHTTPRunEndReachesACallAlreadyInFlight(t *testing.T) {
 	// and stays in the seam until something ends its context, which is the state
 	// the run's end has to reach into.
 	release := make(chan struct{}, 1)
-	run := func(ctx context.Context, _ []string, _, _ io.Writer) error {
+	run := func(ctx context.Context, _ lintRequest, _, _ io.Writer) error {
 		entered <- struct{}{}
 		select {
 		case <-release:
@@ -983,7 +1009,7 @@ func TestHTTPRunEndReachesACallAlreadyInFlight(t *testing.T) {
 	}
 	f := newHTTPFixtureUnderRun(t, runCtx, defaultTransportConfig(), run)
 
-	control := f.issue(callFixtureToolBody(1))
+	control := f.issue(callHeldToolBody(1))
 	awaitEntered(t, entered, "the control request")
 	release <- struct{}{}
 	if got := awaitExchange(t, control, "the control request"); got.status != http.StatusOK {
@@ -994,7 +1020,7 @@ func TestHTTPRunEndReachesACallAlreadyInFlight(t *testing.T) {
 		t.Fatalf("the control's context ended with %v; it was released, not interrupted", cause)
 	}
 
-	held := f.issue(callFixtureToolBody(2))
+	held := f.issue(callHeldToolBody(2))
 	awaitEntered(t, entered, "the held request")
 	endRun()
 
@@ -1028,8 +1054,8 @@ func TestHTTPRequestsAreNotRecordedInTheCancelRegistry(t *testing.T) {
 	releaseHeld := sync.OnceFunc(func() { close(release) })
 	defer releaseHeld()
 
-	f := newHTTPFixture(t, defaultTransportConfig(), heldCommand(entered, release))
-	held := f.issue(callFixtureToolBody(1))
+	f := newHTTPFixture(t, defaultTransportConfig(), heldCall(entered, release))
+	held := f.issue(callHeldToolBody(1))
 	awaitEntered(t, entered, "the held request")
 
 	if n := f.h.srv.cancels.Len(); n != 0 {
@@ -1078,7 +1104,7 @@ func TestHTTPCancellationNotificationEndsNothing(t *testing.T) {
 	releaseHeld := sync.OnceFunc(func() { close(release) })
 	defer releaseHeld()
 
-	run := func(ctx context.Context, _ []string, _, _ io.Writer) error {
+	run := func(ctx context.Context, _ lintRequest, _, _ io.Writer) error {
 		entered <- struct{}{}
 		select {
 		case <-release:
@@ -1090,7 +1116,7 @@ func TestHTTPCancellationNotificationEndsNothing(t *testing.T) {
 	}
 	f := newHTTPFixture(t, defaultTransportConfig(), run)
 
-	held := f.issue(callFixtureToolBody(1))
+	held := f.issue(callHeldToolBody(1))
 	awaitEntered(t, entered, "the held request")
 
 	cancelled := f.post(t, nil,
@@ -1179,9 +1205,10 @@ func (w *recordingWriter) Write(b []byte) (int, error) {
 
 // newRecordingHTTPListener starts a listener whose handler writes through a
 // recorder, for the proofs that turn on whether anything was written at all.
-func newRecordingHTTPListener(t *testing.T, run commandRunner) (*writeRecorder, *httptest.Server) {
+func newRecordingHTTPListener(t *testing.T, hold lintRunner) (*writeRecorder, *httptest.Server) {
 	t.Helper()
-	s := newCommandToolServer(t, run)
+	s := newCommandToolServer(t, nil)
+	s.runLint = hold
 	h, err := newHTTPHandler(context.Background(), s, defaultTransportConfig())
 	if err != nil {
 		t.Fatalf("newHTTPHandler: %v", err)

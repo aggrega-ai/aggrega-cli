@@ -57,6 +57,13 @@ type Config struct {
 	// tool surface by existing in the tree rather than by being restated here.
 	// An empty value yields no command tools, which is the shape every test
 	// that is not about them runs in.
+	//
+	// A session reached over HTTP derives none of them, whatever this carries:
+	// a generated tool runs its command in a separate process, where a location
+	// the call named is reached on the host as that command reads it, and a
+	// caller reaching a listener is not the one whose host that is. Supplying
+	// the same surface to both transports is therefore correct rather than
+	// careless — where it is honoured is settled where the session is composed.
 	Commands []CommandSurface
 
 	// RenderHelp renders a command's help text for the cli:// resource family,

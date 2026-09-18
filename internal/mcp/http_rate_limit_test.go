@@ -134,12 +134,12 @@ func TestTheRateCapIsClaimedBeforeTheConcurrencySlot(t *testing.T) {
 	transport := defaultTransportConfig()
 	transport.MaxConcurrentRequests = 1
 	transport.RequestsPerMinute = 1
-	f := newHTTPFixture(t, transport, heldCommand(entered, release))
+	f := newHTTPFixture(t, transport, heldCall(entered, release))
 
-	held := f.issue(callFixtureToolBody(1))
+	held := f.issue(callHeldToolBody(1))
 	awaitEntered(t, entered, "the held request")
 
-	excess := awaitExchange(t, f.issue(callFixtureToolBody(2)), "the excess request")
+	excess := awaitExchange(t, f.issue(callHeldToolBody(2)), "the excess request")
 	if excess.status == http.StatusServiceUnavailable {
 		t.Fatalf("the excess request was answered 503, so it took the concurrency gate before the rate "+
 			"cap: a request about to be refused for sending too fast first displaced a caller whose "+

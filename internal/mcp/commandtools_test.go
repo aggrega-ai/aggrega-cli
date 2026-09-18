@@ -68,10 +68,20 @@ func fixtureCommandTree() *cobra.Command {
 }
 
 // fixtureCommandSurface projects the fixture tree exactly as the command layer
+// projects the real one.
+func fixtureCommandSurface() []CommandSurface {
+	return projectCommandSurface(fixtureCommandTree())
+}
+
+// projectCommandSurface projects a command tree the way the command layer
 // projects the real one: the shared catalog, plus each command's own answer to
 // whether it runs.
-func fixtureCommandSurface() []CommandSurface {
-	root := fixtureCommandTree()
+//
+// It takes the tree rather than building one so that a proof needing a command
+// the fixture tree does not carry projects its own through this same walk. A
+// second walk written beside it would agree today and diverge the first time
+// the projection learned something this one did not.
+func projectCommandSurface(root *cobra.Command) []CommandSurface {
 	runnable := map[string]bool{}
 	var walk func(c *cobra.Command)
 	walk = func(c *cobra.Command) {

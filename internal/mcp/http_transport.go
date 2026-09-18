@@ -221,9 +221,13 @@ func NewHTTPHandler(ctx context.Context, cfg Config, transport HTTPConfig) (http
 		logw:          logw,
 		serverVersion: cfg.ServerVersion,
 		toolchain:     cfg.Toolchain,
-		commandTools:  deriveCommandTools(cfg.Commands),
-		renderHelp:    cfg.RenderHelp,
-		startDir:      cfg.WorkspaceRoot,
+		// cfg.Commands is deliberately not derived from here. A session reached
+		// over HTTP is composed with no command surface, and the composition is
+		// applied at newHTTPHandler below rather than here, so that it covers
+		// every server this handler is mounted on rather than only the ones this
+		// constructor built.
+		renderHelp: cfg.RenderHelp,
+		startDir:   cfg.WorkspaceRoot,
 	}
 	s.ensureDocsBundle(ctx)
 	return newHTTPHandler(ctx, s, transport)
@@ -240,6 +244,19 @@ func NewHTTPHandler(ctx context.Context, cfg Config, transport HTTPConfig) (http
 // as much as one that went through the constructor, and a session that answered
 // requests while still claiming to speak the process's own streams would grant
 // those callers what only a caller at this machine's keyboard may have.
+//
+// The command surface is dropped here for exactly that reason, and it is dropped
+// rather than filtered. A generated tool builds a command line out of the values
+// a call sent and runs it in a separate process, so every value it carries
+// reaches the host as the command reads it — a directory to search, a file to
+// write — and nothing between this server and that process can hold one inside
+// the workspace this process serves. A caller at this machine's keyboard names
+// such a location freely, because it is naming its own machine; a caller
+// reaching a listener is naming somebody else's. Dropping the surface is what
+// makes that structural: the session derives no generated tool, so there is
+// none to advertise, none to call, and no argument of one to police. A rule
+// written as a list of refused argument names would instead have to grow an
+// entry for every flag a command ever gains that reaches the filesystem.
 func newHTTPHandler(runCtx context.Context, s *server, transport HTTPConfig) (*httpHandler, error) {
 	if transport.MaxBodyBytes <= 0 {
 		return nil, fmt.Errorf("mcp.limits.max_body_bytes must be positive, got %d", transport.MaxBodyBytes)
@@ -268,6 +285,7 @@ func newHTTPHandler(runCtx context.Context, s *server, transport HTTPConfig) (*h
 		return nil, err
 	}
 	s.transport = transportHTTP
+	s.commandTools = nil
 	return &httpHandler{
 		srv:            s,
 		runCtx:         runCtx,

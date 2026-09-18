@@ -155,6 +155,33 @@ func CommandExempted(path string) (CommandExemption, bool) {
 // cli:// resource family serves help for.
 const commandToolPrefix = "cli-"
 
+// commandToolTransportRefusal reports what a call naming a generated command
+// tool is told on a session reached over HTTP, and the empty string for a name
+// that is not one of theirs.
+//
+// It reads the name rather than asking the session what it holds, because over
+// HTTP the session never held one: the question a caller has is why the tool it
+// read about elsewhere is missing here, and the unknown-name answer — which
+// names the tools that do exist and stops — sends it hunting for a spelling
+// mistake it did not make.
+//
+// It names where such a command is run and deliberately not which command this
+// one was. A tool's name is its command's path with the separators flattened,
+// and flattening is lossy, since a path segment may carry a separator of its
+// own; recovering a command line from the name would produce a plausible wrong
+// one at exactly the moment a caller would act on it.
+func commandToolTransportRefusal(name string) string {
+	if !strings.HasPrefix(name, commandToolPrefix) {
+		return ""
+	}
+	return name + " is not offered when this server is reached over HTTP. The tools that run an aggrega " +
+		"command in a separate process are offered only to a client that launched this server over its " +
+		"standard input and output, on that client's own machine; a caller reaching this server over HTTP " +
+		"does not own the host it runs on, so such a command is run at a terminal on that host instead. " +
+		"Available tools: " + toolNames() + "; call " + describeCapabilitiesName +
+		" to discover additional capabilities."
+}
+
 // commandPositionalProperty carries a command's positional arguments, in the
 // order the command reads them.
 const commandPositionalProperty = "args"

@@ -56,9 +56,9 @@ import (
 // what the workspace already holds; the enumeration tools that answer THAT are
 // what a caller arriving cold cannot proceed without, and they remain in the
 // default set for exactly that reason. Each of these three is reachable by name
-// once the capability tool has surfaced it, and each is also reachable as the tool
-// generated from its own command, so deferring costs a discovery call rather than
-// access.
+// once the capability tool has surfaced it, and each is also reachable, for a
+// caller at this machine's keyboard, as the tool generated from its own command,
+// so deferring costs a discovery call rather than access.
 // The four publication verbs sit here on the same criterion, tested against it
 // rather than filed here for room. Each answers at one moment — when a caller has
 // finished authoring and is ready to put something where other people will resolve

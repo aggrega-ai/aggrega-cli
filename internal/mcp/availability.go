@@ -104,8 +104,9 @@ var curatedToolNames = map[string][]string{
 	"document-insertion-point":  {"insertion-point"},
 	"attachment-container":      {"attachment-container"},
 
-	// The two inventories. Each is also reachable as the tool generated from its
-	// command, which returns that command's rendered output; these carry the
+	// The two inventories. Each is also reachable, for a caller at this machine's
+	// keyboard, as the tool generated from its command, which returns that
+	// command's rendered output; these carry the
 	// values, so a caller totals sizes or picks a version without parsing a table
 	// back into the numbers it was rendered from. The name is the operation's own,
 	// which is the name the command line and the daemon use for the same concept.
@@ -113,8 +114,9 @@ var curatedToolNames = map[string][]string{
 	"registry-list": {"registry-list"},
 	"search":        {"search"},
 
-	// The four publication verbs. Each is also reachable as the tool generated
-	// from its command, which re-runs that command in a separate process and
+	// The four publication verbs. Each is also reachable, for a caller at this
+	// machine's keyboard, as the tool generated from its command, which re-runs
+	// that command in a separate process and
 	// answers with the text it printed; these run the operation inside this server
 	// and answer with the facts — the reference, the tag, the published digest,
 	// what was signed, and how far the call reached. The names are the ones the

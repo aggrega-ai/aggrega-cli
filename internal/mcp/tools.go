@@ -373,6 +373,16 @@ func (s *server) handleToolsCall(ctx context.Context, params json.RawMessage) (a
 		}
 		return spec.invoke(s, ctx, p.Arguments)
 	}
+	// One class of name is answered with more than "no such tool", and it is the
+	// class a caller is most likely to have read about somewhere else: a tool
+	// that runs a command in a separate process exists on the transport whose
+	// caller is at this machine's keyboard and on no other. Saying only that it
+	// is unknown would leave a caller correcting a name that was never wrong.
+	if s.transport == transportHTTP {
+		if refusal := commandToolTransportRefusal(p.Name); refusal != "" {
+			return nil, &rpcError{Code: codeInvalidParams, Message: refusal}
+		}
+	}
 	return nil, &rpcError{Code: codeInvalidParams, Message: "unknown tool: " + p.Name +
 		"; available tools: " + toolNames() +
 		"; call " + describeCapabilitiesName + " to discover additional capabilities"}
