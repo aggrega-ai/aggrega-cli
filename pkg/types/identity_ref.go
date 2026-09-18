@@ -28,7 +28,14 @@ func ErrLibraryReferenceWhitespace() error { return errLibraryReferenceWhitespac
 var errLibraryReferenceWhitespace = cerrors.Register("library-reference-whitespace", cerrors.Meta{
 	ShortCode: "E0295",
 	Message:   "library reference: a reference to a library entry carries no whitespace or line break",
-	RulePlace: cerrors.RuleOverAuthoredInput(),
+	RulePlace: cerrors.RuleNoStageReaches("Two moments evaluate the rule. A catalog entity's read evaluates it as each authored " +
+		"$import: target is decoded, where the line the author wrote is still known; and the closure walk " +
+		"evaluates it over a $ref: or $import: value met while pinning what a Release reaches, which is " +
+		"the arm that reaches a reference lifted out of a library entry's own body during transitive " +
+		"descent. What decides it is whitespace anywhere in the reference text, which no part of a " +
+		"reference admits. The read decodes a document before anything compiles it, and the walk reads a " +
+		"reference to decide what to fetch rather than to compile it, so no declared stage of a " +
+		"compilation holds the value either moment judges."),
 })
 
 // IdentityRefParts reports whether value is a host-less identity library
