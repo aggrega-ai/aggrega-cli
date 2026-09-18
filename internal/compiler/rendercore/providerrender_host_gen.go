@@ -409,8 +409,8 @@ type LinkEndpoint struct {
 	Boundary string `json:"boundary" yaml:"boundary" cbor:"boundary"`
 	// Provider The provider that rendered the endpoint (the bare provider name). Both endpoints of a wired link name the same provider; the host does not route a link whose endpoints name different providers.
 	Provider string `json:"provider" yaml:"provider" cbor:"provider"`
-	// Deployment The deployment identity the endpoint's rendered output belongs to — the scope its assembled artifacts are named within. The host assembles it from the build's deployment identity and passes it verbatim; it infers no meaning from the value. A provider reads it to scope a cross-reference name to the deployment. An absent value is the empty string, which a provider treats as an unscoped name.
-	Deployment string `json:"deployment,omitempty" yaml:"deployment,omitempty" cbor:"deployment,omitempty"`
+	// Release The Release the endpoint's rendered output belongs to — the scope its assembled artifacts are named within. The host assembles it from the Release the build resolved and passes it verbatim; it infers no meaning from the value. A provider reads it to scope a cross-reference name to the Release. An absent value is the empty string, which a provider treats as an unscoped name.
+	Release string `json:"release,omitempty" yaml:"release,omitempty" cbor:"release,omitempty"`
 }
 
 // LinkEdge The generalized, domain-blind per-edge payload the host assembles for a uses edge whose consuming and consumed ends assemble into different dispatch groups. It carries both endpoints, both endpoints' placement annotations as opaque scalar maps the host does not interpret, the consumed endpoint's provides output, and the socket and inject mapping the edge wires. A provider reads it to produce the provider-native cross-reference wiring the two ends need; the host assembles it and passes the annotation map as opaque scalars, inferring no meaning from any value.
@@ -4622,13 +4622,13 @@ func (t LinkEndpoint) MarshalJSON() ([]byte, error) {
 	first = false
 	buf.WriteString("\"provider\":")
 	writeJSONString(&buf, t.Provider)
-	if t.Deployment != "" {
+	if t.Release != "" {
 		if !first {
 			buf.WriteByte(',')
 		}
 		first = false
-		buf.WriteString("\"deployment\":")
-		writeJSONString(&buf, t.Deployment)
+		buf.WriteString("\"release\":")
+		writeJSONString(&buf, t.Release)
 	}
 	buf.WriteByte('}')
 	return buf.Bytes(), nil
@@ -4666,11 +4666,11 @@ func (t *LinkEndpoint) UnmarshalJSON(data []byte) error {
 			} else {
 				t.Provider = s
 			}
-		case "deployment":
+		case "release":
 			if s, err := readString(dec); err != nil {
 				return err
 			} else {
-				t.Deployment = s
+				t.Release = s
 			}
 		default:
 			if _, err := readRaw(dec, data); err != nil {
@@ -4691,7 +4691,7 @@ func (t *LinkEndpoint) UnmarshalJSON(data []byte) error {
 // key would yield an empty value indistinguishable from a real one. The
 // check reads the object's own keys and does not descend.
 func (t *LinkEndpoint) UnmarshalJSONStrict(data []byte) error {
-	if err := refuseUndeclaredJSONKeys(data, "node", "boundary", "provider", "deployment"); err != nil {
+	if err := refuseUndeclaredJSONKeys(data, "node", "boundary", "provider", "release"); err != nil {
 		return err
 	}
 	return t.UnmarshalJSON(data)
@@ -9719,20 +9719,20 @@ func (t LinkEndpoint) EncodeCBOR() ([]byte, error) {
 // non-required fields so the map head's pair count matches.
 func (t LinkEndpoint) appendCBOR(dst []byte) ([]byte, error) {
 	n := 3
-	if t.Deployment != "" {
+	if t.Release != "" {
 		n++
 	}
 	dst = appendCBORHead(dst, 5, uint64(n))
 	dst = appendCBORTextString(dst, "node")
 	dst = appendCBORTextString(dst, t.Node)
+	if t.Release != "" {
+		dst = appendCBORTextString(dst, "release")
+		dst = appendCBORTextString(dst, t.Release)
+	}
 	dst = appendCBORTextString(dst, "boundary")
 	dst = appendCBORTextString(dst, t.Boundary)
 	dst = appendCBORTextString(dst, "provider")
 	dst = appendCBORTextString(dst, t.Provider)
-	if t.Deployment != "" {
-		dst = appendCBORTextString(dst, "deployment")
-		dst = appendCBORTextString(dst, t.Deployment)
-	}
 	return dst, nil
 }
 
@@ -9772,11 +9772,11 @@ func (t *LinkEndpoint) decodeCBOR(dec *cborDec) error {
 			} else {
 				t.Provider = s
 			}
-		case "deployment":
+		case "release":
 			if s, err := dec.readTextString(); err != nil {
 				return err
 			} else {
-				t.Deployment = s
+				t.Release = s
 			}
 		default:
 			if err := dec.skip(); err != nil {
@@ -9794,7 +9794,7 @@ func (t *LinkEndpoint) decodeCBOR(dec *cborDec) error {
 // key would yield an empty value indistinguishable from a real one. The
 // check reads the map's own keys and does not descend.
 func (t *LinkEndpoint) DecodeCBORStrict(data []byte) error {
-	if err := refuseUndeclaredCBORKeys(data, "node", "boundary", "provider", "deployment"); err != nil {
+	if err := refuseUndeclaredCBORKeys(data, "node", "boundary", "provider", "release"); err != nil {
 		return err
 	}
 	return t.DecodeCBOR(data)

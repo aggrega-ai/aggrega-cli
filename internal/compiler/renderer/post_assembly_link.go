@@ -233,8 +233,8 @@ func assembledFilesToRendered(grp *assembledGroup) []RenderedFile {
 func buildLinkEdge(edge types.IREdge, srcKey, tgtKey dispatchKey, allProvides NodeProvides, targetAnnotations, sourceAnnotations map[string]string, releaseID string) LinkEdge {
 	view := EnrichedEdgeViewFromIREdge(edge, allProvides)
 	return LinkEdge{
-		Source:            LinkEndpoint{Node: edge.Source, Boundary: srcKey.Path, Provider: srcKey.Provider, Deployment: releaseID},
-		Target:            LinkEndpoint{Node: edge.Target, Boundary: tgtKey.Path, Provider: tgtKey.Provider, Deployment: releaseID},
+		Source:            LinkEndpoint{Node: edge.Source, Boundary: srcKey.Path, Provider: srcKey.Provider, Release: releaseID},
+		Target:            LinkEndpoint{Node: edge.Target, Boundary: tgtKey.Path, Provider: tgtKey.Provider, Release: releaseID},
 		TargetAnnotations: targetAnnotations,
 		SourceAnnotations: sourceAnnotations,
 		Socket:            view.Socket,

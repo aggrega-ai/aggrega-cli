@@ -22,16 +22,16 @@ const testRelease = "prod-release"
 // testLinkEdge builds a cross-boundary link edge from consumer "api" to producer
 // "orders-db" on the "database" socket, injecting the target's "host" output. The
 // target and source annotation maps carry the consumed and consuming endpoints'
-// placement respectively, and both endpoints carry the deployment identity the
-// published names are scoped within.
+// placement respectively, and both endpoints carry the Release the published
+// names are scoped within.
 func testLinkEdge(targetAnn, sourceAnn map[string]string) rendercore.LinkEdge {
 	var env types.OrderedMap[string]
 	env.Set("DB_HOST", "host")
 	var inject types.OrderedMap[types.OrderedMap[string]]
 	inject.Set("env", env)
 	return rendercore.LinkEdge{
-		Source:            rendercore.LinkEndpoint{Node: "api", Boundary: "prod/app", Provider: "cloudformation", Deployment: testRelease},
-		Target:            rendercore.LinkEndpoint{Node: "orders-db", Boundary: "prod/data", Provider: "cloudformation", Deployment: testRelease},
+		Source:            rendercore.LinkEndpoint{Node: "api", Boundary: "prod/app", Provider: "cloudformation", Release: testRelease},
+		Target:            rendercore.LinkEndpoint{Node: "orders-db", Boundary: "prod/data", Provider: "cloudformation", Release: testRelease},
 		TargetAnnotations: targetAnn,
 		SourceAnnotations: sourceAnn,
 		Socket:            "database",

@@ -38,11 +38,11 @@ const (
 // producer's output even where another node in the same stack exports the same
 // key.
 //
-// The export and stack names carry the consumed endpoint's deployment identity
-// as their leading scope segment, so two distinct deployments sharing an account
-// and region — each with the same boundary path and component — produce distinct
-// export and stack names. Every name is a deterministic pointer string the
-// compiler pipes and never resolves against AWS state.
+// The export and stack names carry the consumed endpoint's Release as their
+// leading scope segment, so two distinct Releases sharing an account and region —
+// each with the same boundary path and component — produce distinct export and
+// stack names. Every name is a deterministic pointer string the compiler pipes
+// and never resolves against AWS state.
 //
 // The consumed endpoint's assembled files are read to check each derived export
 // name against the export names the stack's other Outputs entries already
@@ -59,12 +59,12 @@ func LinkPublish(edge rendercore.LinkEdge, producerFiles []rendercore.RenderedFi
 		authored = authoredExportNames(stack)
 	}
 	handle := map[string]string{
-		handleStackNameKey: StackName(edge.Target.Deployment, edge.Target.Boundary),
+		handleStackNameKey: StackName(edge.Target.Release, edge.Target.Boundary),
 	}
 	ops := make([]frp.JSONPatchOp, 0, len(keys))
 	var shadowed []string
 	for _, outputKey := range keys {
-		exportName := ExportName(edge.Target.Deployment, edge.Target.Boundary, edge.Target.Node, outputKey)
+		exportName := ExportName(edge.Target.Release, edge.Target.Boundary, edge.Target.Node, outputKey)
 		ownOutputName := OutputLogicalID(edge.Target.Node, outputKey)
 		for _, a := range authored {
 			// The entry this publish writes to is skipped rather than compared:
@@ -79,8 +79,8 @@ func LinkPublish(edge rendercore.LinkEdge, producerFiles []rendercore.RenderedFi
 				continue
 			}
 			shadowed = append(shadowed, fmt.Sprintf(
-				"the link derives the export name %q for provides key %q of component %q in boundary %q of deployment %q, and another Outputs entry of the same stack already declares that same export name — that declaration sits under the stack output %q, a name this provider assembles rather than one a Recipe wrote",
-				exportName, outputKey, edge.Target.Node, edge.Target.Boundary, edge.Target.Deployment, a.outputName))
+				"the link derives the export name %q for provides key %q of component %q in boundary %q of Release %q, and another Outputs entry of the same stack already declares that same export name — that declaration sits under the stack output %q, a name this provider assembles rather than one a Recipe wrote",
+				exportName, outputKey, edge.Target.Node, edge.Target.Boundary, edge.Target.Release, a.outputName))
 		}
 		handle[handleExportNamePrefix+outputKey] = exportName
 		ops = append(ops, frp.JSONPatchOp{
