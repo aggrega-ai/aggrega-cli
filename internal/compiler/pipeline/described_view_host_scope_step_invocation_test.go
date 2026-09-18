@@ -265,7 +265,7 @@ func TestTheAttachmentPipelineStepRuleAdmitsAHostAddressedStepOnACompiledBuild(t
 		t.Fatalf("the render refused a build this proof needs completed: %+v", build.renderErr)
 	}
 	if build.result == nil || build.result.DescribedView == nil {
-		t.Fatal("the render published no presentation of what its plugins report; nothing can be invoked through it")
+		t.Fatal("the render published no view of what its plugins report; nothing can be invoked through it")
 	}
 	view := build.result.DescribedView
 
@@ -333,7 +333,7 @@ func TestTheAttachmentPipelineStepRuleAdmitsAHostAddressedStepOnACompiledBuild(t
 			"and the attachment through %q (not declared)", want[0], hostProvider, ownProvider)
 	})
 
-	t.Run("the rule admits it over the presentation the render published", func(t *testing.T) {
+	t.Run("the rule admits it over the view the render published", func(t *testing.T) {
 		objections, err := constraint.RunOnNodeAttachmentPipelineSteps(
 			nil, build.coordinates, build.coordinates, build.axes, view,
 			renderer.AttachmentPipelineStepProviderCompatible,

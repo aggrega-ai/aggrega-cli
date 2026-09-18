@@ -87,7 +87,7 @@ func declaredPathTemplateHalt(t *testing.T, directory, subDirectory string) erro
 		nil, nil, nil, nil,
 	)
 	if view == nil {
-		t.Fatal("the presentation was not built; there is nothing for the rules to read")
+		t.Fatal("the view was not built; there is nothing for the rules to read")
 	}
 	axes := newDescribedStageCoordinates(graph, localsAxis{}, recipes, lookup, resolved)
 	if axes == nil {
@@ -103,7 +103,7 @@ func declaredPathTemplateHalt(t *testing.T, directory, subDirectory string) erro
 		for _, field := range axes.BoundaryPathTemplateFields(scope.Value) {
 			total++
 			if text := view.BoundaryAuthoredPathTemplateText(scope.Value, field); text == "" {
-				t.Fatalf("the axis presents %q on %q and the presentation answers it empty; "+
+				t.Fatalf("the axis presents %q on %q and the view answers it empty; "+
 					"the verdict below would decide about text nobody wrote", field, scope.Value)
 			}
 		}

@@ -174,11 +174,11 @@ func anyNodeWithArtifacts(
 // stage, or answered emptily, would fail the assertions below before any rule was
 // asked anything.
 func TestHydratedPresentationAnswersFromTheCompiledBuild(t *testing.T) {
-	t.Run("the presentation is built on the production path", func(t *testing.T) {
+	t.Run("the view is built on the production path", func(t *testing.T) {
 		out, catalogLookup, recipeLookup := hydratedFixture(t)
 		res := renderCompiledFixtureHydrated(t, out, catalogLookup, recipeLookup)
 		if res.HydratedView == nil {
-			t.Fatal("the render published no presentation of the state its nodes reached; nothing can be invoked through it")
+			t.Fatal("the render published no view of the state its nodes reached; nothing can be invoked through it")
 		}
 		view := res.HydratedView
 		node, recipe := anyNodeWithArtifacts(t, out.IRGraph, recipeLookup)
@@ -235,10 +235,10 @@ func TestHydratedPresentationAnswersFromTheCompiledBuild(t *testing.T) {
 		// provides text belongs to the stage below, the node's labels to the one
 		// below that.
 		if got := view.AuthoredNodeProvides(node, key); got != authored {
-			t.Errorf("AuthoredNodeProvides(%q, %q) = %q, want the earlier stage's authored text %q; the embedded presentation is not being delegated to", node, key, got, authored)
+			t.Errorf("AuthoredNodeProvides(%q, %q) = %q, want the earlier stage's authored text %q; the embedded view is not being delegated to", node, key, got, authored)
 		}
 		if labels := view.NodeLabels(node); labels.Len() == 0 {
-			t.Errorf("NodeLabels(%q) is empty; the graph presentation is not being delegated to", node)
+			t.Errorf("NodeLabels(%q) is empty; the graph view is not being delegated to", node)
 		}
 
 		// A node the render never reached answers with each fact's zero value
@@ -262,7 +262,7 @@ func TestHydratedPresentationAnswersFromTheCompiledBuild(t *testing.T) {
 		enriched := enrichedRecipeLookup(base)
 		res := renderCompiledFixtureHydrated(t, out, catalogLookup, enriched)
 		if res.HydratedView == nil {
-			t.Fatal("the render published no presentation")
+			t.Fatal("the render published no view")
 		}
 		view := res.HydratedView
 		node, recipe := anyNodeWithArtifacts(t, out.IRGraph, enriched)
@@ -309,7 +309,7 @@ func TestHydratedPresentationAnswersFromTheCompiledBuild(t *testing.T) {
 		node, _ := anyNodeWithArtifacts(t, out.IRGraph, recipeLookup)
 		first := artifacts.Artifacts(node)[0].Value
 		if text := res.HydratedView.ArtifactTemplateText(node, first); !strings.Contains(text, "{{") {
-			t.Fatalf("the presentation answers artifact %q with %q, which carries no template reference; the admission below would be vacuous", first, text)
+			t.Fatalf("the view answers artifact %q with %q, which carries no template reference; the admission below would be vacuous", first, text)
 		}
 
 		objections, err := constraint.RunOnNodeArtifacts(

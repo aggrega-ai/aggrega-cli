@@ -325,7 +325,7 @@ func carrierRender(t *testing.T) *RenderResult {
 		t.Fatalf("the fixture build did not complete, so nothing below is attributable: %+v", err)
 	}
 	if res.HydratedView == nil {
-		t.Fatal("the render published no mid-render presentation; every accessor assertion below would be unreachable")
+		t.Fatal("the render published no mid-render view; every accessor assertion below would be unreachable")
 	}
 	return res
 }

@@ -329,7 +329,7 @@ func TestTheNegativeControlBuildCompletes(t *testing.T) {
 		t.Fatalf("the control build did not complete, so no halt below is attributable to the rule: %+v", err)
 	}
 	if res.EmittedView == nil {
-		t.Fatal("the control build published no emitted presentation, so the rule could not have been asked")
+		t.Fatal("the control build published no emitted view, so the rule could not have been asked")
 	}
 	// The control must actually emit under the name the colliding cases collide on.
 	// A control that emitted nothing there would pass while proving that the rule

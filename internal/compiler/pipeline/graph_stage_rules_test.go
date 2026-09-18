@@ -160,7 +160,7 @@ func TestGraphStageEnumerationIsKeyedByTheCompositionsOwnIdentifiers(t *testing.
 	// The identifier is what every fact at this stage takes, and the presentation
 	// answering for it is the evidence that the two axes agree.
 	if _, present := out.GraphView.FlattenedNodeComponentType(node.ID); !present {
-		t.Errorf("the presentation answers nothing for the enumerated identifier %q; the enumeration and the facts are keyed differently", node.ID)
+		t.Errorf("the view answers nothing for the enumerated identifier %q; the enumeration and the facts are keyed differently", node.ID)
 	}
 	// The authored name is the other half and is deliberately not the identifier:
 	// it is what the locator names, and it is the name in the module's own file.
@@ -210,7 +210,7 @@ func TestGraphStageEnumerationAnswersTheAxesTheDeclaredRulesWalk(t *testing.T) {
 			// the same rules read: an attachment the enumeration names but the
 			// presentation does not know would be a rule invoked about nothing.
 			if !slices.Contains(out.GraphView.MergedAttachmentNames(node.ID), attachment) {
-				t.Errorf("node %q: attachment %q is enumerated but the presentation does not hold it", node.ID, attachment)
+				t.Errorf("node %q: attachment %q is enumerated but the view does not hold it", node.ID, attachment)
 			}
 		}
 	}

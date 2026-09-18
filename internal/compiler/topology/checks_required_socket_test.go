@@ -41,7 +41,7 @@ func askRequiredSocket(t *testing.T, aggYAML, relYAML, modYAML string) []*resolv
 		t.Fatalf("the fixture must compose; the build halted with %v", err)
 	}
 	if result.StageView == nil || result.StageCoordinates == nil {
-		t.Fatal("the build published no presentation or no enumeration; the rule could not be asked")
+		t.Fatal("the build published no view or no enumeration; the rule could not be asked")
 	}
 	objections, err := constraint.RunOnNodeSockets(
 		nil, result.StageCoordinates, result.StageCoordinates,

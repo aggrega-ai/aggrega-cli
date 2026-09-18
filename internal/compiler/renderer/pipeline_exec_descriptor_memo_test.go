@@ -211,7 +211,7 @@ func TestStepDescriptorRetentionSpansTheWholeRender(t *testing.T) {
 				nil, nil, nil, nil,
 			)
 			if view == nil {
-				t.Fatal("the presentation was not built; there is nothing to read")
+				t.Fatal("the view was not built; there is nothing to read")
 			}
 			declared = append(declared, view.StepPluginCompatibleCapabilities(nodeID, "patch"))
 		}
@@ -231,10 +231,10 @@ func TestStepDescriptorRetentionSpansTheWholeRender(t *testing.T) {
 		t.Fatalf("the two arrangements reported different declared targets: %v vs %v", perOut, sharedOut)
 	}
 	if sharedCrossings >= perPresentation {
-		t.Fatalf("sharing the retained set across the render did not reduce crossings: shared %d, per presentation %d",
+		t.Fatalf("sharing the retained set across the render did not reduce crossings: shared %d, per view %d",
 			sharedCrossings, perPresentation)
 	}
-	t.Logf("crossings for one plugin read at two nodes: %d retaining per presentation, %d sharing one set",
+	t.Logf("crossings for one plugin read at two nodes: %d retaining per view, %d sharing one set",
 		perPresentation, sharedCrossings)
 }
 

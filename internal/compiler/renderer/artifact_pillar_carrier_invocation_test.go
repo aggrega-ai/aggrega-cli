@@ -249,7 +249,7 @@ func TestTheArtifactPillarRuleIsInvokedOncePerArtifactEachCarrierProjects(t *tes
 			"invocation: %+v", err)
 	}
 	if res.HydratedView == nil {
-		t.Fatal("the render published no mid-render presentation; every assertion below would be " +
+		t.Fatal("the render published no mid-render view; every assertion below would be " +
 			"unreachable for a reason unrelated to the invocation")
 	}
 

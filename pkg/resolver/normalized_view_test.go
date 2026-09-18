@@ -134,7 +134,7 @@ func TestTheRuleReadsTheResolvedContractRatherThanResolvingItAgain(t *testing.T)
 	if len(got) == 0 {
 		t.Fatalf("the rule raised nothing after the catalog was made to answer with a different " +
 			"contract.\n" +
-			"INVARIANT: the rule reads the contract resolved when the presentation was built.\n" +
+			"INVARIANT: the rule reads the contract resolved when the view was built.\n" +
 			"CONSEQUENCE: raising nothing here means the contract is resolved per reader rather " +
 			"than once per build, and each reader gets its own chance to read a resolution " +
 			"failure as a type that declares nothing.")

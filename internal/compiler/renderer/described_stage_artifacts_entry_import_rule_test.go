@@ -105,7 +105,7 @@ func declaredArtifactsEntryHalt(
 		nil, libs, nil, nil,
 	)
 	if view == nil {
-		t.Fatal("the presentation was not built; there is nothing for the rules to read")
+		t.Fatal("the view was not built; there is nothing for the rules to read")
 	}
 	axes := newDescribedStageCoordinates(graph, localsAxis{nodes: []string{node}}, recipes, RecipeLookup{}, nil)
 	if axes == nil {
@@ -507,7 +507,7 @@ func TestArtifactsEntryImportRules_ReadTheFactsTheirDeclarationNames(t *testing.
 		nil, artifactsEntryLibraries(), nil, nil,
 	)
 	if view == nil {
-		t.Fatal("the presentation was not built")
+		t.Fatal("the view was not built")
 	}
 
 	if got := view.ArtifactsEntryImportReference(node, "settings"); got != "Shared#/artifacts/Settings" {

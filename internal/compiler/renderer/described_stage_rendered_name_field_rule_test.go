@@ -87,7 +87,7 @@ func declaredRenderedNameHalt(t *testing.T, recipe *types.Recipe, names NodeRend
 		names, nil, nil, nil,
 	)
 	if view == nil {
-		t.Fatal("the presentation was not built; there is nothing for the rules to read")
+		t.Fatal("the view was not built; there is nothing for the rules to read")
 	}
 	axes := newDescribedStageCoordinates(
 		graph, localsAxis{nodes: []string{renderedNameFieldNode}}, recipes, lookup, nil,

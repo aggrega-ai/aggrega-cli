@@ -3134,14 +3134,14 @@ func TestTheDeploymentSizingFactAndTheWiredBoundaryContextCarryOneAnswer(t *test
 	for node, bi := range wired {
 		fromPresentation := view.ReleaseComponentInfra(node)
 		if !equalStrings(fromPresentation.Keys(), bi.Infra.Keys()) {
-			t.Errorf("component %q: the presentation names sizing keys %v; the wired context "+
+			t.Errorf("component %q: the view names sizing keys %v; the wired context "+
 				"names %v", node, fromPresentation.Keys(), bi.Infra.Keys())
 			continue
 		}
 		for key, want := range bi.Infra.All() {
 			got, ok := fromPresentation.Get(key)
 			if !ok || got != want {
-				t.Errorf("component %q sizing key %q: the presentation reads %v (present %t); "+
+				t.Errorf("component %q sizing key %q: the view reads %v (present %t); "+
 					"the wired context reads %v", node, key, got, ok, want)
 			}
 		}

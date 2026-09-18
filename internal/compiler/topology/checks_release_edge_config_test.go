@@ -212,7 +212,7 @@ spec:
 
 	axis, ok := result.StageCoordinates.(constraint.ReleaseEdgeConfigurationEnumerator)
 	if !ok {
-		t.Fatalf("the presentation the build produced does not supply this axis (%T), so the rule "+
+		t.Fatalf("the view the build produced does not supply this axis (%T), so the rule "+
 			"declared over it could never be invoked", result.StageCoordinates)
 	}
 

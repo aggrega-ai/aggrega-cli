@@ -83,7 +83,7 @@ func projectedArtifactAxisOver(
 		return recipe.Metadata.Name
 	})
 	if axis == nil {
-		t.Fatal("the render published no presentation, so no projected-artifact axis can be built over it")
+		t.Fatal("the render published no view, so no projected-artifact axis can be built over it")
 	}
 	return axis
 }
@@ -133,11 +133,11 @@ func aNodeThatProjectedArtifacts(
 // pair, or answered emptily, would fail the assertions below before any rule was
 // asked anything.
 func TestRenderedPresentationAnswersFromTheCompiledBuild(t *testing.T) {
-	t.Run("the presentation is built on the production path", func(t *testing.T) {
+	t.Run("the view is built on the production path", func(t *testing.T) {
 		out, catalogLookup, recipeLookup := hydratedFixture(t)
 		res := renderCompiledFixtureHydrated(t, out, catalogLookup, recipeLookup)
 		if res.RenderedView == nil {
-			t.Fatal("the render published no presentation of what it produced; nothing can be invoked through it")
+			t.Fatal("the render published no view of what it produced; nothing can be invoked through it")
 		}
 		view := res.RenderedView
 
@@ -200,7 +200,7 @@ func TestRenderedPresentationAnswersFromTheCompiledBuild(t *testing.T) {
 		// stage view rather than a bag of this stage's own facts: the artifact text
 		// belongs to an earlier stage, the node's labels to the graph's own.
 		if labels := view.NodeLabels(node); labels.Len() == 0 {
-			t.Errorf("NodeLabels(%q) is empty; the graph presentation is not being delegated to", node)
+			t.Errorf("NodeLabels(%q) is empty; the graph view is not being delegated to", node)
 		}
 
 		// A coordinate the render did not reach answers with each fact's zero value
@@ -218,7 +218,7 @@ func TestRenderedPresentationAnswersFromTheCompiledBuild(t *testing.T) {
 			t.Errorf("ArtifactProjectionContent(%q, \"no-such-artifact\") = %q, want no bytes", node, got)
 		}
 
-		t.Logf("presentation answers %d path(s) for %q/%q and %d artifact(s) for %q",
+		t.Logf("view answers %d path(s) for %q/%q and %d artifact(s) for %q",
 			len(paths), group, provider, len(names), node)
 	})
 
@@ -226,7 +226,7 @@ func TestRenderedPresentationAnswersFromTheCompiledBuild(t *testing.T) {
 		out, catalogLookup, recipeLookup := hydratedFixture(t)
 		res := renderCompiledFixtureHydrated(t, out, catalogLookup, recipeLookup)
 		if res.RenderedView == nil {
-			t.Fatal("the render published no presentation")
+			t.Fatal("the render published no view")
 		}
 		coordinates := newRenderedCoordinates(res, invocationReleasePath)
 
@@ -310,7 +310,7 @@ func TestRenderedPresentationAnswersFromTheCompiledBuild(t *testing.T) {
 		out, catalogLookup, recipeLookup := hydratedFixture(t)
 		res := renderCompiledFixtureHydrated(t, out, catalogLookup, recipeLookup)
 		if res.RenderedView == nil {
-			t.Fatal("the render published no presentation")
+			t.Fatal("the render published no view")
 		}
 		coordinates := coordinatesOf(t, out, catalogLookup)
 		artifacts := projectedArtifactAxisOver(t, res, out.IRGraph, recipeLookup)
@@ -340,7 +340,7 @@ func TestRenderedPresentationAnswersFromTheCompiledBuild(t *testing.T) {
 		if len(objections) != 0 {
 			t.Fatalf("rule raised %d objection(s) over a build the render admitted: %v", len(objections), objections)
 		}
-		t.Logf("the name-set fact enumerated %d artifact(s) across %d node(s), each read through the published presentation",
+		t.Logf("the name-set fact enumerated %d artifact(s) across %d node(s), each read through the published view",
 			visited, len(coordinates.Nodes()))
 	})
 
@@ -354,7 +354,7 @@ func TestRenderedPresentationAnswersFromTheCompiledBuild(t *testing.T) {
 		out, catalogLookup, recipeLookup := hydratedFixture(t)
 		res := renderCompiledFixtureHydrated(t, out, catalogLookup, recipeLookup)
 		if res.RenderedView == nil {
-			t.Fatal("the render published no presentation")
+			t.Fatal("the render published no view")
 		}
 		coordinates := coordinatesOf(t, out, catalogLookup)
 		artifacts := projectedArtifactAxisOver(t, res, out.IRGraph, recipeLookup)
@@ -374,7 +374,7 @@ func TestRenderedPresentationAnswersFromTheCompiledBuild(t *testing.T) {
 		if visited == 0 {
 			t.Fatal("the axis presented no artifact; a finding from this assertion would certify nothing")
 		}
-		t.Logf("the content fact answered for %d artifact(s) across %d node(s), each read through the published presentation",
+		t.Logf("the content fact answered for %d artifact(s) across %d node(s), each read through the published view",
 			visited, len(coordinates.Nodes()))
 	})
 }

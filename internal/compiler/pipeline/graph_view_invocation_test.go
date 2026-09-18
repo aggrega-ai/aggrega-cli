@@ -127,20 +127,20 @@ func misdirectTheDatabaseSocket(t *testing.T, aggregate []byte) []byte {
 func TestGraphPresentationAnswersARuleFromTheCompiledGraph(t *testing.T) {
 	clean := readAggregate(t)
 
-	t.Run("the presentation is built on the production path", func(t *testing.T) {
+	t.Run("the view is built on the production path", func(t *testing.T) {
 		out := compileFixture(t, clean)
 		if out.GraphView == nil {
-			t.Fatal("the pipeline carried no graph presentation; nothing downstream can be invoked through it")
+			t.Fatal("the pipeline carried no graph view; nothing downstream can be invoked through it")
 		}
 		// The module-contributed node is the one an earlier stage's fact cannot
 		// see. Reading it through the presentation proves the embedding delegates
 		// to the producer that can.
 		if _, present := out.GraphView.FlattenedNodeComponentType("data.main-db"); !present {
-			t.Error("the presentation does not see the component the module contributed; the earlier stage is not being delegated to")
+			t.Error("the view does not see the component the module contributed; the earlier stage is not being delegated to")
 		}
 		labels := out.GraphView.NodeLabels("data.main-db")
 		if labels.Len() == 0 {
-			t.Error("the presentation answered an empty label set for a node the graph carries; it is not reading the compiled graph")
+			t.Error("the view answered an empty label set for a node the graph carries; it is not reading the compiled graph")
 		}
 	})
 
@@ -295,7 +295,7 @@ func TestGraphPresentationAnswersTheAuthoredComponentOfAnAttachmentLeaf(t *testi
 				}
 				named++
 				if !authored[component] {
-					t.Errorf("the presentation answers component %q for the leaf at %s, and the deployment "+
+					t.Errorf("the view answers component %q for the leaf at %s, and the deployment "+
 						"holds no component under that key.\n"+
 						"INVARIANT: this fact names the key an author can edit, so it is a key the document contains.\n"+
 						"CONSEQUENCE: a reader sent to a component nobody wrote is worse served than one sent nowhere, "+
@@ -316,7 +316,7 @@ func TestGraphPresentationAnswersTheAuthoredComponentOfAnAttachmentLeaf(t *testi
 	// something, which is the shape that invents a component on a boundary-wide
 	// entry.
 	if named == 0 {
-		t.Errorf("the presentation named a component for none of the leaves it was asked about; the " +
+		t.Errorf("the view named a component for none of the leaves it was asked about; the " +
 			"membership assertion never ran, so its silence means nothing")
 	}
 	if unnamed == 0 {

@@ -121,7 +121,7 @@ func declaredAttachmentLocalsHalt(
 		nil, nil, nil, nil,
 	)
 	if view == nil {
-		t.Fatal("the presentation was not built; there is nothing for the rules to read")
+		t.Fatal("the view was not built; there is nothing for the rules to read")
 	}
 	axes := newDescribedStageCoordinates(
 		graph,
@@ -474,7 +474,7 @@ func TestTheAttachmentLocalsRulesReadTheFactsTheRenderSupplies(t *testing.T) {
 		nil, nil, nil, nil,
 	)
 	if view == nil {
-		t.Fatal("the presentation was not built")
+		t.Fatal("the view was not built")
 	}
 
 	keys := view.AttachmentDeclaredLocalsKeys(attachmentLocalsNode, attachmentLocalsInstance)

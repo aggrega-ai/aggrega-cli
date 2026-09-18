@@ -175,7 +175,7 @@ func TestTheProjectedArtifactAxisEnumeratesEveryExpandedOutput(t *testing.T) {
 
 	axis := res.RenderedArtifactAxis(nil)
 	if axis == nil {
-		t.Fatal("the axis refused to build over a completed render carrying a presentation")
+		t.Fatal("the axis refused to build over a completed render carrying a view")
 	}
 
 	got := make([]string, 0, len(axisOutputNames))

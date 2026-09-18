@@ -147,7 +147,7 @@ func TestDescribedPresentationAnswersARuleFromTheCompiledBuild(t *testing.T) {
 	clean := readAggregate(t)
 	recipeLookup := fixtureRecipeLookup(t)
 
-	t.Run("the presentation is built on the production path", func(t *testing.T) {
+	t.Run("the view is built on the production path", func(t *testing.T) {
 		out, catalogLookup := compileWorkspace(t, workspaceFixture{
 			aggregatePath: invocationAggregatePath,
 			releasePath:   invocationReleasePath,
@@ -156,7 +156,7 @@ func TestDescribedPresentationAnswersARuleFromTheCompiledBuild(t *testing.T) {
 		}, clean)
 		res := renderCompiledFixture(t, out, catalogLookup, recipeLookup)
 		if res.DescribedView == nil {
-			t.Fatal("the render published no presentation of what its plugins report; nothing can be invoked through it")
+			t.Fatal("the render published no view of what its plugins report; nothing can be invoked through it")
 		}
 
 		// This stage's own fact, read against the Recipe the build bound. An
@@ -184,7 +184,7 @@ func TestDescribedPresentationAnswersARuleFromTheCompiledBuild(t *testing.T) {
 		// The embedded earlier presentation answers here too, which is what
 		// makes this a stage view rather than a bag of this stage's own facts.
 		if labels := res.DescribedView.NodeLabels(node); labels.Len() == 0 {
-			t.Errorf("NodeLabels(%q) is empty; the earlier presentation is not being delegated to", node)
+			t.Errorf("NodeLabels(%q) is empty; the earlier view is not being delegated to", node)
 		}
 	})
 
@@ -372,7 +372,7 @@ func renderEnumeratedFixture(
 ) (*renderer.RenderResult, error) {
 	t.Helper()
 	if out.GraphCoordinates == nil {
-		t.Fatal("the compilation produced no enumeration of the finalised graph; no rule over the presentation can be invoked")
+		t.Fatal("the compilation produced no enumeration of the finalised graph; no rule over the view can be invoked")
 	}
 	return renderer.RenderAll(context.Background(), renderer.RendererInput{
 		Graph:            out.IRGraph,
@@ -488,7 +488,7 @@ func TestTheRenderPresentsTheAssembledStageOnTheProductionPath(t *testing.T) {
 
 	// The compilation's own products, which the render is handed.
 	if out.GraphView == nil {
-		t.Fatal("the compilation published no presentation of the finalised graph; every stage above it presents nothing")
+		t.Fatal("the compilation published no view of the finalised graph; every stage above it presents nothing")
 	}
 	if out.GraphCoordinates == nil {
 		t.Fatal("the compilation published no enumeration of the finalised graph; no rule over a later stage is invoked")
@@ -499,10 +499,10 @@ func TestTheRenderPresentsTheAssembledStageOnTheProductionPath(t *testing.T) {
 		t.Fatalf("render: %+v", err)
 	}
 	if res.DescribedView == nil {
-		t.Fatal("the render published no presentation of what its plugins report")
+		t.Fatal("the render published no view of what its plugins report")
 	}
 	if res.RenderedView == nil {
-		t.Fatal("the render published no presentation of what it assembled; the rule over assembled output would not be invoked")
+		t.Fatal("the render published no view of what it assembled; the rule over assembled output would not be invoked")
 	}
 	// And the attribution the enumeration is derived from, without which the rule
 	// is invoked over no subject at all.

@@ -101,7 +101,7 @@ func TestTheDelegationSeamCoversEveryDeclaredDispatchedFact(t *testing.T) {
 	// A comparison of empty sets would pass while proving nothing, so every set's
 	// non-emptiness is asserted before the comparison rather than assumed.
 	if len(declared) == 0 {
-		t.Fatalf("no accessor is declared at this stage; the derivation from the generated views is broken, not the presentation")
+		t.Fatalf("no accessor is declared at this stage; the derivation from the generated views is broken, not the view")
 	}
 	if len(delegated) == 0 {
 		t.Fatalf("the delegation seam declares no method, so this stage's answering source is not derivable")
@@ -148,19 +148,19 @@ func TestTheDispatchedPresentationRefusesAPartialConstruction(t *testing.T) {
 		earlier constraint.EmittedView
 		groups  assemblyGroupFacts
 	}{
-		{"no earlier presentation", nil, assemblyGroups{result: &RenderResult{}}},
+		{"no earlier view", nil, assemblyGroups{result: &RenderResult{}}},
 		{"no group seam", stubEmittedView{}, nil},
 		{"neither source", nil, nil},
 	} {
 		if got := newDispatchedView(tc.earlier, tc.groups); got != nil {
-			t.Errorf("%s: a presentation was built anyway", tc.name)
+			t.Errorf("%s: a view was built anyway", tc.name)
 		}
 	}
 
 	// The positive control. Without it a constructor that refused everything
 	// would satisfy every row above while presenting nothing at all.
 	if got := newDispatchedView(stubEmittedView{}, assemblyGroups{result: &RenderResult{}}); got == nil {
-		t.Error("the presentation refused both sources present, so the refusals above prove nothing")
+		t.Error("the view refused both sources present, so the refusals above prove nothing")
 	}
 }
 

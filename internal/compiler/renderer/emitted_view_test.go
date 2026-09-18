@@ -130,19 +130,19 @@ func TestTheEmittedPresentationRefusesAPartialConstruction(t *testing.T) {
 		earlier   constraint.HydratedView
 		emissions *emittedProjections
 	}{
-		{"no earlier presentation", nil, newEmittedProjections()},
+		{"no earlier view", nil, newEmittedProjections()},
 		{"no retention", stubHydratedForEmitted{}, nil},
 		{"neither source", nil, nil},
 	} {
 		if got := newEmittedView(tc.earlier, tc.emissions); got != nil {
-			t.Errorf("%s: a presentation was built anyway", tc.name)
+			t.Errorf("%s: a view was built anyway", tc.name)
 		}
 	}
 
 	// The positive control. Without it a constructor that refused everything would
 	// satisfy every row above while presenting nothing at all.
 	if got := newEmittedView(stubHydratedForEmitted{}, newEmittedProjections()); got == nil {
-		t.Error("the presentation refused both sources present, so the refusals above prove nothing")
+		t.Error("the view refused both sources present, so the refusals above prove nothing")
 	}
 }
 
@@ -220,7 +220,7 @@ func TestTheEmittedPresentationAnswersFromTheCompiledBuild(t *testing.T) {
 		t.Fatalf("RenderAll: %v", err)
 	}
 	if res.EmittedView == nil {
-		t.Fatal("the render published no presentation of what its nodes emitted; nothing can be read through it")
+		t.Fatal("the render published no view of what its nodes emitted; nothing can be read through it")
 	}
 	view := res.EmittedView
 
@@ -267,14 +267,14 @@ func TestTheEmittedPresentationAnswersFromTheCompiledBuild(t *testing.T) {
 	inline := view.EmittedFileOriginSet("inline-emitter", "alpha.yaml")
 	imported := view.EmittedFileOriginSet("import-emitter", "imported-one.yaml")
 	if slices.Equal(inline, imported) {
-		t.Errorf("both nodes answer %v; the presentation is not discriminating by node", inline)
+		t.Errorf("both nodes answer %v; the view is not discriminating by node", inline)
 	}
 
 	// The embedded presentation answers here too, which is what makes this a stage
 	// view rather than a bag of this stage's own facts: the locals belong to the
 	// stage below.
 	if keys := view.DeclaredLocalsKeys("inline-emitter"); len(keys) == 0 {
-		t.Error("DeclaredLocalsKeys is empty; the earlier presentation is not being delegated to")
+		t.Error("DeclaredLocalsKeys is empty; the earlier view is not being delegated to")
 	}
 
 	// A coordinate the render did not reach answers with the fact's zero value
@@ -359,7 +359,7 @@ func TestAPredicateIsReachedOverTheEmittedNamesOfACompiledBuild(t *testing.T) {
 		t.Fatalf("RenderAll: %v", err)
 	}
 	if res.EmittedView == nil {
-		t.Fatal("the render published no presentation")
+		t.Fatal("the render published no view")
 	}
 	nodes := newEmittedNodeAxis(input.Graph, "aggregate.yaml")
 	names := newEmittedStageCoordinates(res.emitted)
@@ -488,9 +488,9 @@ func TestTheRetainedEmissionDeduplicatesAndOrdersBlocks(t *testing.T) {
 	// are not two readings of one recording.
 	view := newEmittedView(stubHydratedForEmitted{}, retention)
 	if view == nil {
-		t.Fatal("no presentation was built over a populated retention")
+		t.Fatal("no view was built over a populated retention")
 	}
 	if got, want := view.EmittedFileOriginSet("web", "shared.yaml"), []string{"source", "pipeline"}; !slices.Equal(got, want) {
-		t.Errorf("the presentation answers %v for a name two blocks produced, want %v", got, want)
+		t.Errorf("the view answers %v for a name two blocks produced, want %v", got, want)
 	}
 }

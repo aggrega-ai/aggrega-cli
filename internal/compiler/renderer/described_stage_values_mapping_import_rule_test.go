@@ -88,7 +88,7 @@ func declaredValuesMappingHalt(
 		nil, nil, libs, nil,
 	)
 	if view == nil {
-		t.Fatal("the presentation was not built; there is nothing for the rules to read")
+		t.Fatal("the view was not built; there is nothing for the rules to read")
 	}
 	axes := newDescribedStageCoordinates(graph, localsAxis{nodes: []string{node}}, recipes, RecipeLookup{}, nil)
 	if axes == nil {
@@ -489,7 +489,7 @@ func TestValuesMappingImportRules_ReportEveryOffendingNode(t *testing.T) {
 		nil, nil, valuesMappingImportLibraries(), nil,
 	)
 	if view == nil {
-		t.Fatal("the presentation was not built")
+		t.Fatal("the view was not built")
 	}
 	axes := newDescribedStageCoordinates(
 		graph, localsAxis{nodes: []string{"api", "web"}}, recipes, RecipeLookup{}, nil)

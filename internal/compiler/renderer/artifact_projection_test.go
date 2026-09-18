@@ -321,16 +321,16 @@ func TestRenderedPresentationRefusesAPartialConstruction(t *testing.T) {
 		assembled   assembledOutputFacts
 		projections *artifactProjections
 	}{
-		{"no earlier presentation", nil, assembledOutput{result: result}, live},
+		{"no earlier view", nil, assembledOutput{result: result}, live},
 		{"no assembled-output seam", stubDispatchedView{}, nil, live},
 		{"no artifact retention", stubDispatchedView{}, assembledOutput{result: result}, nil},
 	} {
 		if got := newRenderedView(tc.earlier, tc.assembled, tc.projections); got != nil {
-			t.Errorf("%s: a presentation was built anyway", tc.name)
+			t.Errorf("%s: a view was built anyway", tc.name)
 		}
 	}
 	if earlier != nil {
-		t.Fatal("the earlier presentation refuses its own partial construction; this fixture assumes it does")
+		t.Fatal("the earlier view refuses its own partial construction; this fixture assumes it does")
 	}
 }
 
@@ -387,7 +387,7 @@ func presentationOverTheRender(t *testing.T, res *RenderResult) constraint.Rende
 		assembledOutput{result: res}, res.artifacts,
 	)
 	if view == nil {
-		t.Fatal("the presentation refused to build over a completed render")
+		t.Fatal("the view refused to build over a completed render")
 	}
 	return view
 }

@@ -348,7 +348,7 @@ func nodeEmissionVerdict(t *testing.T, files []EmittedFile) error {
 	retention.recordNode(state)
 	view := newEmittedView(stubHydratedForEmitted{}, retention)
 	if view == nil {
-		t.Fatal("no presentation was built over the retention, so a verdict from it would certify nothing")
+		t.Fatal("no view was built over the retention, so a verdict from it would certify nothing")
 	}
 	axis := retention.coordinates()
 	if axis == nil {

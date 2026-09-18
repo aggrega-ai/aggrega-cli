@@ -171,7 +171,7 @@ func declaredLocalsHalt(t *testing.T, recipe *types.Recipe) error {
 		nil, nil, nil, nil,
 	)
 	if view == nil {
-		t.Fatal("the presentation was not built; there is nothing for the rules to read")
+		t.Fatal("the view was not built; there is nothing for the rules to read")
 	}
 	axes := newDescribedStageCoordinates(graph, localsAxis{nodes: []string{node}}, recipes, RecipeLookup{}, nil)
 	if axes == nil {
@@ -651,7 +651,7 @@ func TestTheDescribedPresentationAnswersTheTwoAuthoredLocalsFacts(t *testing.T) 
 		nil, nil, nil, nil,
 	)
 	if view == nil {
-		t.Fatal("the presentation was not built")
+		t.Fatal("the view was not built")
 	}
 
 	if got, want := view.DeclaredLocalsKeys("db"), locals.Keys(); strings.Join(got, ",") != strings.Join(want, ",") {

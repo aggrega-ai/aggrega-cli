@@ -591,17 +591,17 @@ func TestNoPillarReadingRunsInABuildThatPublishesNoPresentation(t *testing.T) {
 	for _, r := range recordedOwn() {
 		if r.artifact == invocationOffendingEntry {
 			t.Errorf("the node's own value was invoked over %q in a build that published no "+
-				"presentation", r.artifact)
+				"view", r.artifact)
 		}
 	}
 	for _, r := range recordedAttachment() {
 		if r.artifact == invocationOffendingEntry {
 			t.Errorf("the attachment carrier's value was invoked over %q in a build that published "+
-				"no presentation", r.artifact)
+				"no view", r.artifact)
 		}
 	}
 
-	t.Logf("DIAGNOSTIC WALK — FeatureRecipe-carried, no presentation published, pillar arms deleted: "+
+	t.Logf("DIAGNOSTIC WALK — FeatureRecipe-carried, no view published, pillar arms deleted: "+
 		"halt = %s", msg)
 }
 

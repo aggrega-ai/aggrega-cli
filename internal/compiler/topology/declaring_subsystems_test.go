@@ -62,7 +62,7 @@ func buildComposition(
 		t.Fatalf("build: %v", err)
 	}
 	if result.StageView == nil {
-		t.Fatal("the build produced no presentation of the composition")
+		t.Fatal("the build produced no view of the composition")
 	}
 	return result
 }

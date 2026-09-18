@@ -134,7 +134,7 @@ func deriveCarriers(fs []factDecl, ss []stageDecl) ([]carrierGroup, error) {
 			if f.Carrier != "" {
 				return nil, fmt.Errorf(
 					"fact %q declares carrier %q at stage %q, and the carrier axis applies at the %q "+
-						"stage alone, because that is the only stage whose presentation varies by "+
+						"stage alone, because that is the only stage whose view varies by "+
 						"authored document kind; every other stage has a single carrier and so "+
 						"nothing for a declaration to distinguish",
 					f.Name, f.Carrier, f.Stage, documentStage)

@@ -235,7 +235,7 @@ func TestTheRequirementShapeRuleIsInvokedOncePerNodeTheCompositionHolds(t *testi
 	// value either way.
 	clean, catalogLookup := compileMandateWorkspace(t, unsatisfiedMandate, readAggregate(t))
 	if clean.Topology == nil || clean.Topology.StageCoordinates == nil || clean.Topology.StageView == nil {
-		t.Fatal("the flattening produced no presentation of the composition; no rule over it can be invoked")
+		t.Fatal("the flattening produced no view of the composition; no rule over it can be invoked")
 	}
 
 	held := clean.Topology.Nodes.Keys()

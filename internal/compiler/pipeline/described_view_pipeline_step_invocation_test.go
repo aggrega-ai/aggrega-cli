@@ -563,20 +563,20 @@ func TestThePipelineStepAxesComeFromTheCompiledBuild(t *testing.T) {
 		}
 	})
 
-	t.Run("the presentation answers for every coordinate the axes present", func(t *testing.T) {
+	t.Run("the view answers for every coordinate the axes present", func(t *testing.T) {
 		// The property that makes these axes usable rather than merely populated: a
 		// rule invoked for a coordinate the presentation cannot answer about reads a
 		// zero value and approves. Each enumerated step is therefore checked against
 		// the plugin self-report the presentation holds for it.
 		view := build.result.DescribedView
 		if view == nil {
-			t.Fatal("the render published no presentation of what its plugins report")
+			t.Fatal("the render published no view of what its plugins report")
 		}
 		checked := 0
 		for _, node := range build.coordinates.Nodes() {
 			for _, step := range build.axes.PipelineSteps(node.ID) {
 				if caps := view.StepPluginCompatibleCapabilities(node.ID, step.Value); len(caps) == 0 {
-					t.Errorf("the presentation reports no declared provider for step %q of %q", step.Value, node.ID)
+					t.Errorf("the view reports no declared provider for step %q of %q", step.Value, node.ID)
 				}
 				checked++
 			}
@@ -585,7 +585,7 @@ func TestThePipelineStepAxesComeFromTheCompiledBuild(t *testing.T) {
 					if caps := view.AttachmentStepPluginCompatibleCapabilities(
 						node.ID, attachment, step.Value,
 					); len(caps) == 0 {
-						t.Errorf("the presentation reports no declared provider for step %q of attachment %q on %q",
+						t.Errorf("the view reports no declared provider for step %q of attachment %q on %q",
 							step.Value, attachment, node.ID)
 					}
 					checked++
@@ -598,7 +598,7 @@ func TestThePipelineStepAxesComeFromTheCompiledBuild(t *testing.T) {
 					if caps := view.BoundaryAttachmentStepPluginCompatibleCapabilities(
 						boundary.Value, attachment, step.Value,
 					); len(caps) == 0 {
-						t.Errorf("the presentation reports no declared provider for step %q of boundary attachment %q at %q",
+						t.Errorf("the view reports no declared provider for step %q of boundary attachment %q at %q",
 							step.Value, attachment, boundary.Value)
 					}
 					checked++
@@ -608,7 +608,7 @@ func TestThePipelineStepAxesComeFromTheCompiledBuild(t *testing.T) {
 		if checked == 0 {
 			t.Fatal("the axes presented no coordinate at all; every assertion above passed on an empty set")
 		}
-		t.Logf("the presentation answered a declared provider set for all %d enumerated step(s)", checked)
+		t.Logf("the view answered a declared provider set for all %d enumerated step(s)", checked)
 	})
 }
 
@@ -627,7 +627,7 @@ func TestTheProviderCompatibilityRulesAreInvokedOverTheCompiledBuild(t *testing.
 		t.Fatalf("the render refused a build this proof needs completed: %+v", build.renderErr)
 	}
 	if build.result == nil || build.result.DescribedView == nil {
-		t.Fatal("the render published no presentation of what its plugins report; nothing can be invoked through it")
+		t.Fatal("the render published no view of what its plugins report; nothing can be invoked through it")
 	}
 	view := build.result.DescribedView
 
@@ -911,7 +911,7 @@ func TestTheOwnScopeMergedTargetRuleRefusesAStepWithNoTarget(t *testing.T) {
 			t.Fatalf("the render refused a build this proof needs completed: %+v", build.renderErr)
 		}
 		if build.result == nil || build.result.DescribedView == nil {
-			t.Fatal("the render published no presentation of what its plugins report")
+			t.Fatal("the render published no view of what its plugins report")
 		}
 		view := build.result.DescribedView
 

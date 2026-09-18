@@ -379,12 +379,12 @@ func TestProvidesContractRuleWithoutACallerPresentation(t *testing.T) {
 	}
 
 	if err := runProvidesContractRule(nil, false, nil, axes); err != nil {
-		t.Fatalf("a caller supplying no graph presentation leaves the reading uninvoked; got %v", err)
+		t.Fatalf("a caller supplying no graph view leaves the reading uninvoked; got %v", err)
 	}
 
 	err := runProvidesContractRule(nil, true, nil, axes)
 	if err == nil {
-		t.Fatal("a caller presentation standing over a broken chain must be refused, not passed")
+		t.Fatal("a caller view standing over a broken chain must be refused, not passed")
 	}
 	if stderrors.Is(err, ErrProvidesContractUnfulfilled()) {
 		t.Errorf("the broken-arrangement refusal must not masquerade as the author's condition; got %v", err)

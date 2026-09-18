@@ -119,7 +119,7 @@ func boundaryScopeAttachmentHalt(
 		nil, nil, nil, nil,
 	)
 	if view == nil {
-		t.Fatal("the presentation was not built; there is nothing for the rule to read")
+		t.Fatal("the view was not built; there is nothing for the rule to read")
 	}
 
 	axes := localsAxis{nodes: []string{boundaryScopeNode}, attachments: []string{boundaryScopeInstance}}

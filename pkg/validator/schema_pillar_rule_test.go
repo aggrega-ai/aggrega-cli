@@ -144,11 +144,11 @@ func TestSchemaBlockViewsAnswerTheKeysTheAuthorWrote(t *testing.T) {
 
 	component := newComponentSchemaBlockView("fixtures/c.yaml", node)
 	if got := component.ComponentSchemaPillarKeys("fixtures/c.yaml"); !equalStrings(got, want) {
-		t.Errorf("the Component presentation should answer %v in author order; got %v", want, got)
+		t.Errorf("the Component view should answer %v in author order; got %v", want, got)
 	}
 	feature := newFeatureSchemaBlockView("fixtures/f.yaml", node)
 	if got := feature.FeatureSchemaPillarKeys("fixtures/f.yaml"); !equalStrings(got, want) {
-		t.Errorf("the Feature presentation should answer %v in author order; got %v", want, got)
+		t.Errorf("the Feature view should answer %v in author order; got %v", want, got)
 	}
 }
 
@@ -160,21 +160,21 @@ func TestSchemaBlockViewsAnswerTheKeysTheAuthorWrote(t *testing.T) {
 // empty answer is one a rule cannot tell from an entity that declared nothing.
 func TestComponentDocumentViewRefusesAFactItsPresentationDoesNotCarry(t *testing.T) {
 	t.Parallel()
-	t.Run("the schema presentation refuses an assertion fact", func(t *testing.T) {
+	t.Run("the schema view refuses an assertion fact", func(t *testing.T) {
 		t.Parallel()
 		defer func() {
 			if recover() == nil {
-				t.Fatal("a schema-block presentation must refuse the assertion facts")
+				t.Fatal("a schema-block view must refuse the assertion facts")
 			}
 		}()
 		v := newComponentSchemaBlockView("fixtures/c.yaml", parseSchemaBody(t, "values: {}\n"))
 		_ = v.EntityAssertionNameSet("fixtures/c.yaml")
 	})
-	t.Run("the chain presentation refuses the schema fact", func(t *testing.T) {
+	t.Run("the chain view refuses the schema fact", func(t *testing.T) {
 		t.Parallel()
 		defer func() {
 			if recover() == nil {
-				t.Fatal("an extends-chain presentation must refuse the schema-block fact")
+				t.Fatal("an extends-chain view must refuse the schema-block fact")
 			}
 		}()
 		v := newComponentDocumentView("", nil)
@@ -189,7 +189,7 @@ func TestFeatureDocumentViewRefusesAnotherDocument(t *testing.T) {
 	t.Parallel()
 	defer func() {
 		if recover() == nil {
-			t.Fatal("a Feature presentation must refuse a document it was not built for")
+			t.Fatal("a Feature view must refuse a document it was not built for")
 		}
 	}()
 	v := newFeatureSchemaBlockView("fixtures/f.yaml", parseSchemaBody(t, "values: {}\n"))

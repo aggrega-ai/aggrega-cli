@@ -107,7 +107,7 @@ func TestArtifactRetentionRecordsEveryProjectedArtifact(t *testing.T) {
 		}
 	}
 	if want := nodeCount * artifactsPerNode; total != want {
-		t.Fatalf("read %d artifacts through the presentation, want %d", total, want)
+		t.Fatalf("read %d artifacts through the view, want %d", total, want)
 	}
 	t.Logf("retention covers %d artifact(s) across %d node(s)", total, nodeCount)
 }
