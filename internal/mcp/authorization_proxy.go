@@ -70,6 +70,11 @@ type proxyAssertion struct {
 // is the whole credential in this mode: its value is not checked against
 // anything, since what a caller is called is the proxy's business and this
 // server has no notion of one caller being another.
+//
+// That refusal names no check, and so leaves no line, for the same reason the
+// absent-token refusal does not: a caller that asserted nothing has presented
+// nothing to find fault with, and it is being told where to obtain what it
+// needs rather than being turned away for something it did.
 func (p *proxyAssertion) authenticate(r *http.Request) (*http.Request, *authRefusal) {
 	asserted := r.Header.Get(p.principalHeader)
 	if asserted == "" {

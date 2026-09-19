@@ -271,15 +271,29 @@ func declaredReach(spec toolSpec) opsurface.Reach {
 // so a call naming a workspace this session does not let it name is answered
 // about that rather than about a scope, and nothing a refused call asked for has
 // run by the time it is refused.
+//
+// Each class it settles is recorded on the request as it is settled, rather than
+// being returned for somebody to record. This is the only point at which both
+// are known — the declared class needs the resolved tool, and the escalation
+// needs the arguments that tool was sent — so a record written anywhere else
+// would have to derive them a second time, and a second derivation agrees on the
+// day it is written and stops agreeing the first time one of the two learns about
+// an input the other did not. A request nothing is recording takes no branch
+// here: the recording is a no-op where there is no recorder.
 func (s *server) scopeRefusal(ctx context.Context, spec *toolSpec, args json.RawMessage) *rpcError {
 	admission := s.admittedReach(ctx)
-	if declared := declaredReach(*spec); !admission.admits(declared) {
+	declared := declaredReach(*spec)
+	if !admission.admits(declared) {
+		noteReach(ctx, declared, declared)
 		return admission.refuse(spec.name, declared)
 	}
 	if spec.reachEscalation == nil || !admission.boundsAnything() {
+		noteReach(ctx, declared, declared)
 		return nil
 	}
-	if widened := spec.reachEscalation(s, args); !admission.admits(widened) {
+	widened := spec.reachEscalation(s, args)
+	noteReach(ctx, declared, widened)
+	if !admission.admits(widened) {
 		return admission.refuse(spec.name, widened)
 	}
 	return nil

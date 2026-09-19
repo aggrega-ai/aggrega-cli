@@ -14,6 +14,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/requestcancel"
 )
@@ -96,10 +97,25 @@ type httpAuthenticator interface {
 // composed from fixed text and the challenge from what the deployment declared
 // about itself, so a token cannot travel back to the caller that sent it, into
 // a log, or into anything an intermediary records.
+//
+// reason names, for whoever runs this deployment, which check turned the
+// credential away. It travels here rather than being written where it is decided
+// so that a refused request leaves ONE line rather than two: the record of the
+// request carries the reason as a field of itself, and the check that found it
+// writes nothing of its own. It is deliberately a distinct type from the message
+// beside it, so putting one into the other does not compile.
+//
+// An empty reason is the refusal of a caller that presented NOTHING, and it is
+// what keeps that case silent. Being challenged is how a client discovers where
+// to obtain a token, so it is the first thing every well-behaved client does: a
+// line for each of those would bury the refusals that mean something under the
+// ones that mean a client is starting up, and would hand anything that can reach
+// the endpoint an unbounded write to whatever collects this stream.
 type authRefusal struct {
 	status    int
 	challenge string
 	message   string
+	reason    refusalReason
 }
 
 // HTTPConfig carries what the HTTP transport applies to the traffic it accepts,
@@ -201,6 +217,18 @@ type httpHandler struct {
 	// it. Composed once at construction, because a caller that fetches the
 	// document and a caller that is challenged must be told the same thing.
 	resource protectedResource
+
+	// workspaceRoot is the workspace this process serves, recorded on every
+	// request answered here.
+	//
+	// It is resolved once, at construction, rather than read from the start
+	// directory: a listener may have been started inside the workspace it serves
+	// instead of being pointed at it, and the directory it was launched in is not
+	// the root a reader of the record needs. Resolving it per request would
+	// answer the same question repeatedly about a workspace fixed when the
+	// process started, and would let two requests to one process report two
+	// different roots.
+	workspaceRoot string
 }
 
 // NewHTTPHandler builds the handler that serves the protocol over HTTP, and
@@ -238,6 +266,14 @@ func NewHTTPHandler(ctx context.Context, cfg Config, transport HTTPConfig) (http
 		// constructor built.
 		renderHelp: cfg.RenderHelp,
 		startDir:   cfg.WorkspaceRoot,
+		// Marked here as well as at the single construction point below, and the
+		// reason is the acquisition on the next line: it reports its outcome in
+		// the form this session's transport fixes, and it runs before that point
+		// is reached, so a server still carrying the zero value would report the
+		// one thing it does before serving in the form of the other transport.
+		// The mark below is unchanged and is still what covers every server this
+		// handler is mounted on, however it was built.
+		transport: transportHTTP,
 	}
 	s.ensureDocsBundle(ctx)
 	return newHTTPHandler(ctx, s, transport)
@@ -299,7 +335,7 @@ func newHTTPHandler(runCtx context.Context, s *server, transport HTTPConfig) (*h
 	if err != nil {
 		return nil, err
 	}
-	auth, err := resolveAuthenticator(runCtx, transport, resource, s.logf)
+	auth, err := resolveAuthenticator(runCtx, transport, resource)
 	if err != nil {
 		return nil, err
 	}
@@ -315,7 +351,24 @@ func newHTTPHandler(runCtx context.Context, s *server, transport HTTPConfig) (*h
 		auth:           auth,
 		limiter:        newPrincipalRateLimiter(transport.RequestsPerMinute),
 		resource:       resource,
+		workspaceRoot:  servedWorkspaceRoot(s),
 	}, nil
+}
+
+// servedWorkspaceRoot is the workspace this process serves, for the record it
+// writes about each request.
+//
+// A resolution that fails falls back to where resolution would have begun, which
+// is the honest answer rather than an empty one: the launch already refuses a
+// listener with no workspace to serve, so a failure here is a workspace that has
+// stopped resolving since, and the directory it was pointed at is what a reader
+// can act on.
+func servedWorkspaceRoot(s *server) string {
+	tw, err := s.resolveToolWorkspace("", nil)
+	if err != nil {
+		return s.startDir
+	}
+	return tw.root
 }
 
 // resolveAuthenticator settles which credential this deployment reads, and
@@ -331,13 +384,11 @@ func newHTTPHandler(runCtx context.Context, s *server, transport HTTPConfig) (*h
 // the verification keys are settled, because reaching for a key set is the one
 // step here that reads from outside this process.
 //
-// logf is where the reason a credential was turned away is written. It is the
-// same route every other diagnostic takes, so that reason lands on the
-// process's error stream beside everything else an operator reads and never
-// anywhere a caller can see. A caller that only wants the refusals this makes,
-// and not the reader itself, passes nil.
-func resolveAuthenticator(ctx context.Context, transport HTTPConfig, resource protectedResource,
-	logf func(format string, args ...any)) (httpAuthenticator, error) {
+// Nothing built here writes to the log stream. The reason a credential was
+// turned away travels back on the refusal itself and is recorded as a field of
+// that request's own record, which is what keeps a refused request to one line.
+func resolveAuthenticator(ctx context.Context, transport HTTPConfig,
+	resource protectedResource) (httpAuthenticator, error) {
 	proxy, err := resolveProxyAssertion(transport.Authorization, resource)
 	if err != nil {
 		return nil, err
@@ -354,7 +405,6 @@ func resolveAuthenticator(ctx context.Context, transport HTTPConfig, resource pr
 		issuer:   transport.Authorization.Issuer,
 		audience: transport.Authorization.Resource,
 		keys:     keys,
-		logf:     logf,
 	}, nil
 }
 
@@ -403,8 +453,54 @@ func (h *httpHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
+	h.serveEndpoint(w, r)
+}
+
+// serveEndpoint answers one message on the protocol endpoint and records what
+// became of it.
+//
+// It is split from the routing above so that the record covers exactly the
+// requests it is a record OF. The two answers above it are settled before
+// anything about a caller is read — a path this deployment does not serve, and a
+// method this endpoint does not take — so neither is a request to this server's
+// protocol surface, and recording them would turn a port scan into an unbounded
+// write to whatever collects the stream.
+//
+// Every gate below writes into the same record, and the record is written once,
+// when this returns, whatever gate the request ended at. That is what makes
+// "one line per request" a property of the function rather than of whoever adds
+// the next gate: a gate that returns without writing a line would have to remove
+// the deferred write to do it.
+func (h *httpHandler) serveEndpoint(w http.ResponseWriter, r *http.Request) {
+	rec := requestAudit{
+		Time:          auditNow(),
+		RequestID:     mintRequestID(),
+		Transport:     transportName(transportHTTP),
+		WorkspaceRoot: h.workspaceRoot,
+		Outcome:       outcomeError,
+	}
+	started := time.Now()
+	// written is read at the deferred write and set by the one gate that has a
+	// reason to suppress the line. It starts true so a gate added later is
+	// recorded rather than silently absent.
+	written := true
+	defer func() {
+		if !written {
+			return
+		}
+		rec.DurationMs = time.Since(started).Milliseconds()
+		h.srv.logRecord(rec)
+	}()
+
 	authenticated, refusal := h.auth.authenticate(r)
 	if refusal != nil {
+		// A caller that presented nothing named no check and leaves no line. It
+		// is being told where to obtain a credential rather than being turned
+		// away for something it did, and that answer is every well-behaved
+		// client's first exchange with this deployment.
+		written = refusal.reason != ""
+		rec.Refusal = string(refusal.reason)
+		rec.Outcome = outcomeForStatus(refusal.status, false)
 		if refusal.challenge != "" {
 			w.Header().Set(headerAuthenticate, refusal.challenge)
 		}
@@ -412,11 +508,15 @@ func (h *httpHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	r = authenticated
+	rec.recordPrincipal(principalFrom(r.Context()))
+
 	if origin := r.Header.Get(headerOrigin); !h.originAllowed(origin) {
+		rec.Outcome = outcomeForStatus(http.StatusForbidden, false)
 		h.refuse(w, http.StatusForbidden, codeInvalidRequest, "origin not allowed: "+origin)
 		return
 	}
 	if !h.limiter.allow(principalFrom(r.Context())) {
+		rec.Outcome = outcomeForStatus(http.StatusTooManyRequests, false)
 		h.refuse(w, http.StatusTooManyRequests, codeInternalError,
 			"this caller has sent more requests than this server accepts from one caller in a minute; "+
 				"the allowance refills steadily, so the next request will be answered shortly")
@@ -424,6 +524,7 @@ func (h *httpHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	release, taken := h.takeSlot()
 	if !taken {
+		rec.Outcome = outcomeForStatus(http.StatusServiceUnavailable, false)
 		h.refuse(w, http.StatusServiceUnavailable, codeInternalError,
 			"the server is already answering as many requests as it accepts at once")
 		return
@@ -434,16 +535,19 @@ func (h *httpHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if readErr != nil {
 		var tooLarge *http.MaxBytesError
 		if errors.As(readErr, &tooLarge) {
+			rec.Outcome = outcomeForStatus(http.StatusRequestEntityTooLarge, false)
 			h.refuse(w, http.StatusRequestEntityTooLarge, codeInvalidRequest,
 				fmt.Sprintf("request body exceeds the %d bytes this server accepts", h.maxBodyBytes))
 			return
 		}
+		rec.Outcome = outcomeForStatus(http.StatusBadRequest, false)
 		h.refuse(w, http.StatusBadRequest, codeParseError, "read request body: "+readErr.Error())
 		return
 	}
 
 	var req rpcRequest
 	if err := json.Unmarshal(body, &req); err != nil {
+		rec.Outcome = outcomeForStatus(http.StatusBadRequest, false)
 		h.refuse(w, http.StatusBadRequest, codeParseError, "parse error: "+err.Error())
 		return
 	}
@@ -452,27 +556,34 @@ func (h *httpHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// protocol asks a client never to send one. Anything else carrying no
 		// method is not a message this server can act on either, so one answer
 		// covers both rather than two that a caller could not tell apart.
+		rec.Outcome = outcomeForStatus(http.StatusBadRequest, false)
 		h.refuse(w, http.StatusBadRequest, codeInvalidRequest,
 			"this server answers requests and notifications; the body names no method")
 		return
 	}
+	rec.recordRequest(&req)
 
 	era, revision, protocolErr := readRequestProtocol(req.Params)
 	if protocolErr != nil {
-		h.respondRefusal(w, statusForRefusal(protocolErr), req.ID, protocolErr)
+		status := statusForRefusal(protocolErr)
+		rec.Outcome = outcomeForStatus(status, false)
+		h.respondRefusal(w, status, req.ID, protocolErr)
 		return
 	}
 	if headerErr := mirrorHeadersRefusal(r.Header, era, revision, &req); headerErr != nil {
-		h.respondRefusal(w, statusForRefusal(headerErr), req.ID, headerErr)
+		status := statusForRefusal(headerErr)
+		rec.Outcome = outcomeForStatus(status, false)
+		h.respondRefusal(w, status, req.ID, headerErr)
 		return
 	}
 
 	if len(req.ID) == 0 {
 		h.srv.handleNotification(&req)
+		rec.Outcome = outcomeForStatus(http.StatusAccepted, false)
 		w.WriteHeader(http.StatusAccepted)
 		return
 	}
-	h.answer(w, r, era, &req)
+	h.answer(w, r, era, &req, &rec)
 }
 
 // answer routes one id-bearing request and writes what it produced, unless the
@@ -497,22 +608,51 @@ func (h *httpHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // that has gone is written nothing at all, which leaves the exchange to be
 // terminated with no protocol message — this transport's form of the rule the
 // stdio transport keeps by dropping the line it would have framed.
-func (h *httpHandler) answer(w http.ResponseWriter, r *http.Request, era protocolEra, req *rpcRequest) {
+//
+// rec is this request's own record, and this is where the three facts only the
+// routing knows reach it: how far the call was admitted to reach, whether the
+// caller was still there to be answered, and what the answer turned out to be.
+// The reach classes are carried on the context rather than returned, because
+// they are decided several layers down and nothing between here and there has
+// any use for them; the recorder is written by the dispatch this call makes and
+// read after it returns, so the call itself orders the two.
+func (h *httpHandler) answer(w http.ResponseWriter, r *http.Request, era protocolEra,
+	req *rpcRequest, rec *requestAudit) {
 	ctx, cancel := context.WithCancelCause(r.Context())
 	defer cancel(nil)
 	stopWatchingRun := context.AfterFunc(h.runCtx, func() { cancel(errRunEnded) })
 	defer stopWatchingRun()
 
+	var reached reachRecorder
+	ctx = withReachRecorder(ctx, &reached)
+
 	result, rpcErr := h.srv.dispatchInEra(ctx, era, req)
+	rec.recordReach(&reached)
 
 	if r.Context().Err() != nil {
+		rec.Outcome = outcomeCancelled
 		return
 	}
 	if rpcErr != nil {
-		h.respondRefusal(w, statusForRefusal(rpcErr), req.ID, rpcErr)
+		status := statusForRefusal(rpcErr)
+		rec.Outcome = outcomeForStatus(status, false)
+		h.respondRefusal(w, status, req.ID, rpcErr)
 		return
 	}
+	rec.Outcome = outcomeForStatus(http.StatusOK, toolReportedFailure(result))
 	h.respondResult(w, req.ID, result)
+}
+
+// toolReportedFailure reports whether an answered call came back as a tool
+// result the caller can correct.
+//
+// It is the one thing the record reads out of a result, and it reads it off the
+// result's own flag rather than out of its content: the flag is what the
+// protocol defines for it and what the client renders from, so a record deciding
+// it any other way would report something the caller was never told.
+func toolReportedFailure(result any) bool {
+	res, isToolResult := result.(*callToolResult)
+	return isToolResult && res.IsError
 }
 
 // originAllowed reports whether a request naming this origin is served. A

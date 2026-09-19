@@ -418,22 +418,38 @@ func wantTokenAbsent(t *testing.T, got answer, token string) {
 }
 
 // wantNoTokenInTheLog asserts that nothing the serving process wrote to its
-// error stream carries any part of any token.
+// error stream carries any part of any token, and that the one thing about a
+// caller it does write is written only where it belongs.
 //
 // It reads the stream itself rather than trusting that nothing was logged: a
 // deployment that logged a refused credential would look identical from outside
 // and would put every caller's token into whatever collects that stream.
+//
+// The subject is held differently from the token, and the difference is what
+// each one is. A token is the credential, and nothing anywhere may carry it. A
+// subject is WHO the request was on behalf of, which the record of a request has
+// to say and which the server compares to nothing — so it is held to appearing
+// only as that field's value rather than being forbidden outright. A subject
+// reaching any other part of a line, a refusal sentence above all, is still
+// something written down that nothing decided to write, and that is what the
+// count below catches.
 func wantNoTokenInTheLog(t *testing.T, f *tokenFixture) {
 	t.Helper()
 	written := f.log.String()
 	if written == "" {
 		return
 	}
-	for _, suspicious := range []string{"eyJ", bearerScheme + " ", testSubject} {
+	for _, suspicious := range []string{"eyJ", bearerScheme + " "} {
 		if strings.Contains(written, suspicious) {
 			t.Errorf("the error stream carries %q, so something of a credential was written down: %q",
 				suspicious, written)
 		}
+	}
+	asTheSubject := strings.Count(written, `"subject":"`+testSubject+`"`)
+	if anywhere := strings.Count(written, testSubject); anywhere != asTheSubject {
+		t.Errorf("the error stream names %q %d times and records it as the subject %d times, so it "+
+			"reached somewhere other than the one field that carries it: %q",
+			testSubject, anywhere, asTheSubject, written)
 	}
 }
 

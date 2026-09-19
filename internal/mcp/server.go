@@ -220,6 +220,13 @@ type server struct {
 	writeMu     sync.Mutex
 	writeErr    error
 	writeFailed chan struct{}
+
+	// logMu serialises every write this server makes to the log stream. Requests
+	// are answered on their own goroutines and each may write a line, so without
+	// it two lines emitted at once would interleave their bytes — which costs a
+	// prose reader a garbled line and costs a machine-readable one the whole
+	// line, since neither half of a split object parses.
+	logMu sync.Mutex
 }
 
 // errCancelledByClient is the cause recorded on a request's context when the
@@ -588,6 +595,59 @@ func (s *server) writeFailure() error {
 
 // logf writes a diagnostic line to stderr. Every log surface routes here
 // so no diagnostic ever reaches stdout, keeping the protocol stream pure.
+//
+// The line is composed in memory and handed to the stream in one write, under
+// the lock every write to that stream is taken under. Requests are answered on
+// their own goroutines, so a line assembled across several writes could be split
+// by another goroutine's line and neither would be readable.
 func (s *server) logf(format string, args ...any) {
-	fmt.Fprintf(s.logw, format+"\n", args...)
+	line := fmt.Sprintf(format+"\n", args...)
+	s.logMu.Lock()
+	defer s.logMu.Unlock()
+	_, _ = io.WriteString(s.logw, line)
+}
+
+// logRecord writes one structured line to the same stream logf writes prose to.
+//
+// It is the second form of the one log route rather than a route of its own,
+// which is what keeps the stream single: every line an operator collects comes
+// from here or from logf, and both go to the stream this server was built with.
+// Which form a line takes is decided where the session is composed, never at a
+// call site — see structuredLog.
+func (s *server) logRecord(line any) {
+	s.logMu.Lock()
+	defer s.logMu.Unlock()
+	writeAuditLine(s.logw, line)
+}
+
+// structuredLog reports whether this session's own lines are machine-readable.
+//
+// It is read from the transport the session was composed for, and from nothing
+// else, so the question is settled once — when the server is built — rather than
+// at each site that writes a line. A client that launched this process reads its
+// error stream itself and is served the prose it has always been served; a
+// deployment an operator supervises has its stream collected by something that
+// parses it.
+func (s *server) structuredLog() bool {
+	return s.transport == transportHTTP
+}
+
+// logLifecycle reports one thing the serving process did on its own account, in
+// the form this session's transport fixes.
+//
+// prose is what a client-launched process writes, byte for byte as it has always
+// written it. The structured form carries the same facts as fields. Both are
+// composed here so the two cannot drift into reporting different things, and so
+// no caller has to know which form its session takes.
+func (s *server) logLifecycle(line lifecycleAudit, prose string, args ...any) {
+	if !s.structuredLog() {
+		s.logf(prose, args...)
+		return
+	}
+	line.Time = auditNow()
+	line.Transport = transportName(s.transport)
+	if line.WorkspaceRoot == "" {
+		line.WorkspaceRoot = s.startDir
+	}
+	s.logRecord(line)
 }

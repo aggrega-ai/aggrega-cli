@@ -167,9 +167,24 @@ func ListenAndServe(ctx context.Context, cfg Config, transport HTTPConfig, liste
 // and which it gets after, and nothing measures how long the step takes.
 func listenAndServe(ctx context.Context, cfg Config, transport HTTPConfig, listen ListenConfig,
 	beforeWorkspace func()) error {
+	lifecycle := lifecycleLog{w: listenerLogWriter(cfg.Stderr), root: cfg.WorkspaceRoot}
+	lifecycle.note(lifecycleAudit{Event: eventStartup, Address: listen.Address})
+	// Wrapped so that every refusal below reports itself without each of them
+	// having to remember to: a refusal is reported where it is returned FROM
+	// rather than where it is raised, so a refusal added later is reported by
+	// having been returned.
+	refused := func(err error) error {
+		lifecycle.note(lifecycleAudit{
+			Event:   eventStartupRefused,
+			Address: listen.Address,
+			Detail:  err.Error(),
+		})
+		return err
+	}
+
 	target, cert, err := resolveListenTarget(listen)
 	if err != nil {
-		return err
+		return refused(err)
 	}
 	// Resolved here and the results dropped, then resolved again inside the
 	// handler below. The refusals have to be made before the handler is built,
@@ -180,7 +195,7 @@ func listenAndServe(ctx context.Context, cfg Config, transport HTTPConfig, liste
 	// deployment must declare and where its keys come from.
 	resource, err := resolveProtectedResource(transport.Authorization)
 	if err != nil {
-		return err
+		return refused(err)
 	}
 	// The one refusal that is this function's alone, because it is the only
 	// place both halves of it are known: what a deployment declared about its
@@ -188,16 +203,16 @@ func listenAndServe(ctx context.Context, cfg Config, transport HTTPConfig, liste
 	// handler is never told the second, so it could not make this refusal
 	// however carefully it was written.
 	if err := refuseTrustedProxyOnAnExposedAddress(target, transport.Authorization, listen.Address); err != nil {
-		return err
+		return refused(err)
 	}
-	if _, err := resolveAuthenticator(ctx, transport, resource, nil); err != nil {
-		return err
+	if _, err := resolveAuthenticator(ctx, transport, resource); err != nil {
+		return refused(err)
 	}
 
 	ready := &readinessState{}
 	health, err := startHealthListener(ctx, listen.HealthAddress, ready, cfg.Stderr)
 	if err != nil {
-		return err
+		return refused(err)
 	}
 	// Deferred so that every return below releases the address, whether the
 	// launch was refused or the run ended. Placing it here rather than at each
@@ -209,18 +224,54 @@ func listenAndServe(ctx context.Context, cfg Config, transport HTTPConfig, liste
 		beforeWorkspace()
 	}
 	if err := requireServableWorkspace(cfg.WorkspaceRoot); err != nil {
-		return err
+		return refused(err)
 	}
 	handler, err := NewHTTPHandler(ctx, cfg, transport)
 	if err != nil {
-		return err
+		return refused(err)
 	}
 	l, err := bindHTTPListener(target, cert, handler, cfg.Stderr)
 	if err != nil {
-		return err
+		return refused(err)
 	}
 	ready.markReady()
-	return l.serve(ctx)
+	// The address that was actually bound rather than the one that was asked
+	// for, which is the difference a deployment that asked for port zero needs
+	// to read, and the only line here that can report it.
+	lifecycle.note(lifecycleAudit{Event: eventListening, Address: l.ln.Addr().String()})
+
+	// The end of the run is reported whichever way it ended, and a serving
+	// failure carries its own reason: the ordinary end is the run's context
+	// ending, and a listener that stopped for its own reason would otherwise
+	// leave a process that exited with nothing on the stream saying why.
+	err = l.serve(ctx)
+	shutdown := lifecycleAudit{Event: eventShutdown, Address: l.ln.Addr().String()}
+	if err != nil {
+		shutdown.Detail = err.Error()
+	}
+	lifecycle.note(shutdown)
+	return err
+}
+
+// lifecycleLog reports what the serving process did on its own account, on the
+// stream every other diagnostic goes to.
+//
+// It writes where the server does not yet exist, which is why it holds the
+// stream rather than a server: every refusal a launch can meet is made before a
+// handler is built, and a refusal nobody could report would leave an operator
+// with a process that exited and no line saying why. It exists only on this
+// path, so a process speaking its own streams writes none of these.
+type lifecycleLog struct {
+	w    io.Writer
+	root string
+}
+
+// note writes one lifecycle line, filling in what every one of them carries.
+func (l lifecycleLog) note(line lifecycleAudit) {
+	line.Time = auditNow()
+	line.Transport = transportName(transportHTTP)
+	line.WorkspaceRoot = l.root
+	writeAuditLine(l.w, line)
 }
 
 // requireServableWorkspace refuses a listener that has no workspace to serve.

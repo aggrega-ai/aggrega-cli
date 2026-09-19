@@ -48,6 +48,24 @@
 // bodies are answered by the shared compiler operations, so no operation
 // is reimplemented here.
 //
+// # What the serving process records, and what it never sends
+//
+// A process reached on a listener writes one machine-readable line per request
+// to its error stream: who asked, what they asked for, how far it was admitted
+// to reach, what became of it, and how long it took, plus the trace context the
+// caller sent where it sent one that parses. Its own life — starting, binding,
+// being refused, acquiring its documentation, stopping — is recorded in the same
+// shape, each line naming the event instead of a caller. No credential, and no
+// part of one, is ever written to any of them. A process speaking its own
+// streams writes the prose diagnostics it has always written, because the client
+// reading them launched it.
+//
+// Nothing is sent to the client about any of this. The server emits no message
+// notifications on either transport, and it reads the per-request log-level
+// metadata for nothing: a request carrying that field is answered exactly as one
+// without it. The protocol deprecated that surface in favour of a server's own
+// error stream, which is where all of the above goes.
+//
 // # Where a failure travels
 //
 // A failing call takes one of two channels, and the choice is decided by a

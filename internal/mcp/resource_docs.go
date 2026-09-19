@@ -6,6 +6,7 @@ package mcp
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 
 	"oras.land/oras-go/v2"
@@ -95,7 +96,13 @@ func (s *server) ensureDocsBundle(ctx context.Context) {
 	s.docsBundleOnce.Do(func() {
 		tw, err := s.resolveToolWorkspace("", nil)
 		if err != nil {
-			s.logf("mcp: documentation bundle not acquired: resolve workspace: %v", err)
+			s.logLifecycle(
+				lifecycleAudit{
+					Event:   eventDocsBundle,
+					Outcome: bundleNotAcquired,
+					Detail:  fmt.Sprintf("resolve workspace: %v", err),
+				},
+				"mcp: documentation bundle not acquired: resolve workspace: %v", err)
 			return
 		}
 		ref, version := s.docsBundleCoords(tw)
@@ -103,17 +110,39 @@ func (s *server) ensureDocsBundle(ctx context.Context) {
 		if targetFor == nil {
 			targetFor = docsRegistryTarget
 		}
-		warn := func(notice string) { s.logf("mcp: %s", notice) }
+		warn := func(notice string) {
+			s.logLifecycle(
+				lifecycleAudit{
+					Event:     eventDocsBundle,
+					Reference: ref + "@" + version,
+					Outcome:   bundleNotice,
+					Detail:    notice,
+				},
+				"mcp: %s", notice)
+		}
 		acquired, err := docsbundle.EnsureCached(ctx, tw.cfg, tw.root, tw.cacheDir, ref, version,
 			func(_ workspaceconfig.Config, ref, version string, warn func(string)) (oras.ReadOnlyTarget, docscache.VerifyAtPull, error) {
 				return targetFor(tw, ref, version, warn)
 			}, warn)
 		if err != nil {
-			s.logf("mcp: documentation bundle %s@%s not acquired: %v", ref, version, err)
+			s.logLifecycle(
+				lifecycleAudit{
+					Event:     eventDocsBundle,
+					Reference: ref + "@" + version,
+					Outcome:   bundleNotAcquired,
+					Detail:    err.Error(),
+				},
+				"mcp: documentation bundle %s@%s not acquired: %v", ref, version, err)
 			return
 		}
 		if acquired {
-			s.logf("mcp: documentation bundle %s@%s acquired", ref, version)
+			s.logLifecycle(
+				lifecycleAudit{
+					Event:     eventDocsBundle,
+					Reference: ref + "@" + version,
+					Outcome:   bundleAcquired,
+				},
+				"mcp: documentation bundle %s@%s acquired", ref, version)
 		}
 	})
 }

@@ -96,12 +96,6 @@ type bearerValidator struct {
 
 	// keys are the keys a token may have been signed with.
 	keys verificationKeys
-
-	// logf writes one line to the process's own error stream, which is where
-	// the reason a credential was turned away goes and the only place it goes.
-	// It is a function rather than the server itself so that recording a reason
-	// is the whole of what this type can do with it.
-	logf func(format string, args ...any)
 }
 
 // refusalReason names, for whoever runs this deployment, which check turned a
@@ -147,21 +141,6 @@ const (
 	reasonClaimsRefused refusalReason = "the token's claims were not accepted"
 )
 
-// note records for whoever runs this deployment which check turned a credential
-// away, on the process's own error stream and nowhere else.
-//
-// It exists because the answer a caller receives is deliberately the same
-// whichever check refused it, and an authorization path that refuses without
-// saying why anywhere is one nobody can fix. The two halves are opposite by
-// design and neither is loosened for the other: what the caller is told stays
-// undifferentiated, and what the operator is told names the check.
-func (v *bearerValidator) note(reason refusalReason) {
-	if v.logf == nil || reason == "" {
-		return
-	}
-	v.logf("mcp: a bearer token was not accepted: %s", reason)
-}
-
 // authenticate reads the credential a request carries and reports who it is on
 // behalf of.
 //
@@ -172,21 +151,23 @@ func (v *bearerValidator) note(reason refusalReason) {
 // one of two reasons and no finer detail, so a caller learns whether to obtain
 // a new token and nothing about which check turned it away.
 //
-// Every refusal of a credential that was presented is noted on the process's
-// error stream, naming the check. A request presenting nothing is not: being
-// challenged is how a client discovers where to obtain a token, so it is the
-// first thing every well-behaved client does, and a line for each of those
-// would bury the refusals that mean something under the ones that mean a client
-// is starting up.
+// Every refusal of a credential that was presented carries, for whoever runs
+// this deployment, the check that turned it away — recorded as a field of the
+// request's own record rather than written here, so a refused request leaves one
+// line rather than two. A request presenting nothing carries no reason and so
+// leaves no line at all: being challenged is how a client discovers where to
+// obtain a token, so it is the first thing every well-behaved client does, and a
+// line for each of those would bury the refusals that mean something under the
+// ones that mean a client is starting up.
 func (v *bearerValidator) authenticate(r *http.Request) (*http.Request, *authRefusal) {
 	if r.URL.Query().Has(queryTokenParameter) {
-		v.note(reasonTokenInTheAddress)
 		return nil, &authRefusal{
 			status:    http.StatusBadRequest,
 			challenge: v.resource.challengeFor(authErrorInvalidRequest),
 			message: "this server takes a bearer token on the authorization header and nowhere else; a " +
 				"token in the address is recorded by everything the request passes through, so one sent " +
 				"that way is refused rather than used",
+			reason: reasonTokenInTheAddress,
 		}
 	}
 
@@ -201,18 +182,15 @@ func (v *bearerValidator) authenticate(r *http.Request) (*http.Request, *authRef
 	}
 	scheme, raw, split := strings.Cut(presented, " ")
 	if !strings.EqualFold(scheme, bearerScheme) || strings.TrimSpace(raw) == "" || !split {
-		v.note(reasonNotABearerHeader)
 		return nil, &authRefusal{
 			status:    http.StatusBadRequest,
 			challenge: v.resource.challengeFor(authErrorInvalidRequest),
 			message:   "the authorization header is not a bearer credential; it reads " + bearerScheme + " followed by a token",
+			reason:    reasonNotABearerHeader,
 		}
 	}
 
 	p, outcome, reason := v.principalFor(r, strings.TrimSpace(raw))
-	if outcome != credentialAccepted {
-		v.note(reason)
-	}
 	switch outcome {
 	case credentialAccepted:
 		return withPrincipal(r, p), nil
@@ -225,6 +203,7 @@ func (v *bearerValidator) authenticate(r *http.Request) (*http.Request, *authRef
 			status: http.StatusServiceUnavailable,
 			message: "this server could not read the keys the authorization server it was configured " +
 				"with publishes, so no token can be verified at the moment",
+			reason: reason,
 		}
 	default:
 		return nil, &authRefusal{
@@ -232,6 +211,7 @@ func (v *bearerValidator) authenticate(r *http.Request) (*http.Request, *authRef
 			challenge: v.resource.challengeFor(authErrorInvalidToken),
 			message: "the bearer token presented was not accepted; obtain one from the authorization " +
 				"server the challenge names, for the resource it names",
+			reason: reason,
 		}
 	}
 }
