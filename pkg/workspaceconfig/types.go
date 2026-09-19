@@ -1012,10 +1012,10 @@ type MCPTLSConfig struct {
 }
 
 // MCPLimitsConfig carries the caps the HTTP listener applies to the
-// traffic it accepts, bounding one request's size and how many run at
-// once so a single caller cannot exhaust the serving process.
+// traffic it accepts, bounding what one caller may ask of the serving
+// process so that no caller can exhaust it.
 //
-// Neither cap has an off value, which is the deliberate difference from
+// No cap here has an off value, which is the deliberate difference from
 // ParseCacheConfig and CompiledModuleCacheConfig: those bound a cache,
 // where an unbounded setting costs memory the operator chose to spend,
 // while these bound what an unauthenticated network peer can ask for
