@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"sync"
 
@@ -32,9 +33,31 @@ type lazyWorkspace struct {
 	// below. It is empty on an invocation that set none, which is the ordinary
 	// case, and an empty layer changes nothing.
 	flags workspaceconfig.FlagOverlay
-	once  sync.Once
-	ws    *workspaceconfig.ResolvedWorkspace
-	err   error
+	// errOut receives the advisories resolution produces — the CI-overlay
+	// warnings and the first-run configuration notice. Nil selects the process's
+	// own error stream, which is every production path; a test supplies a buffer
+	// so it can read what an invocation would have shown the person at the
+	// keyboard.
+	errOut io.Writer
+	// withholdFirstRun suppresses the first-run configuration notice for this
+	// invocation. The root command sets it on the command the notice names,
+	// which would otherwise be told to run what it is already running.
+	withholdFirstRun bool
+
+	once sync.Once
+	ws   *workspaceconfig.ResolvedWorkspace
+	err  error
+}
+
+// advisoryWriter is where this resolution's advisories go: the writer the
+// resolver was built with, or the process's error stream when it was built with
+// none. Advisories never reach standard output, which is the stream a caller
+// parses.
+func (l *lazyWorkspace) advisoryWriter() io.Writer {
+	if l.errOut != nil {
+		return l.errOut
+	}
+	return os.Stderr
 }
 
 func (l *lazyWorkspace) get() (*workspaceconfig.ResolvedWorkspace, error) {
@@ -45,8 +68,17 @@ func (l *lazyWorkspace) get() (*workspaceconfig.ResolvedWorkspace, error) {
 			// command reads, which is what makes it the ladder's top layer
 			// rather than a knob each command would have to remember to honour.
 			l.ws = l.ws.WithFlags(l.flags)
+			out := l.advisoryWriter()
 			for _, w := range l.ws.Warnings() {
-				fmt.Fprintf(os.Stderr, "warning: %s\n", w)
+				fmt.Fprintf(out, "warning: %s\n", w)
+			}
+			// Inside the once, so a command body that reads its configuration
+			// through several code paths shows the notice at most once. The
+			// notice is written from here and nowhere else, which is what keeps
+			// a process that resolves configuration again for its own reasons
+			// from producing a second one.
+			if !l.withholdFirstRun {
+				firstRunConfigNotice(out, l.ws)
 			}
 		}
 	})
@@ -71,6 +103,21 @@ func withWorkspaceResolver(ctx context.Context, flagRoot string, lookup func(str
 		l.flags = flags[0]
 	}
 	return context.WithValue(ctx, workspaceCtxKey{}, l)
+}
+
+// withholdFirstRunNotice marks the resolver attached to ctx so this invocation
+// shows no first-run configuration notice. It is called for the command the
+// notice routes a reader to: telling someone running that command to run it is
+// advice they are already taking.
+//
+// It marks the resolver rather than reading the command later because the
+// resolver is what writes the notice and it has no command to consult; the mark
+// is set before any command body runs, on the value that same wiring just
+// created.
+func withholdFirstRunNotice(ctx context.Context) {
+	if l, ok := ctx.Value(workspaceCtxKey{}).(*lazyWorkspace); ok {
+		l.withholdFirstRun = true
+	}
 }
 
 // configLookupFromContext returns the flag-aware environment lookup carried by

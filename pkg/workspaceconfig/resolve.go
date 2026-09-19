@@ -117,6 +117,13 @@ type ResolvedWorkspace struct {
 	files    []string
 	warnings []string
 
+	// configFiles is how many leading entries of files are config file paths.
+	// The remainder are the environment overlay's pseudo-entries, which are
+	// appended after them. Recording the boundary where it is created keeps the
+	// "did a file contribute?" question off the rendering convention that marks
+	// an environment entry, so a reader of that question never has to parse one.
+	configFiles int
+
 	// start, flagRoot, and lookup capture the exact inputs of the resolution
 	// that produced this value, so a second pass can re-run the single merge
 	// path with only the global file layer suppressed (the reproducibility
@@ -146,15 +153,27 @@ func (r *ResolvedWorkspace) Source() Source { return r.source }
 // Marker returns what anchored the root (for the daemon wire token).
 func (r *ResolvedWorkspace) Marker() Marker { return r.marker }
 
-// ContributingFiles returns the absolute paths of the config files that
-// contributed to the merge, lowest precedence first (global, then tree files
-// farthest-from-root last). Empty when only Default() applied. This ordered
-// list is the resolution-provenance data surface a command may present so an
-// operator can see which files' settings applied.
+// ContributingFiles returns the layers that contributed to the merge, lowest
+// precedence first: the absolute paths of the config files (global, then tree
+// files farthest-from-root last), then one entry per environment variable the
+// overlay applied, each rendered as its name behind a "$". Empty when only
+// Default() applied. This ordered list is the resolution-provenance data surface
+// a command may present so an operator can see what applied, and it is a display
+// surface — a caller asking whether a config FILE contributed reads
+// ConfigFileContributed rather than re-reading the "$" convention.
 func (r *ResolvedWorkspace) ContributingFiles() []string {
 	out := make([]string, len(r.files))
 	copy(out, r.files)
 	return out
+}
+
+// ConfigFileContributed reports whether any configuration file contributed to
+// the merge — the global file or any file in the workspace-tree cascade,
+// including a CI-owned overlay. It is false when nothing but Default() and the
+// environment overlay applied, which is what a freshly installed binary meets:
+// an exported variable is not a configuration file and does not make one exist.
+func (r *ResolvedWorkspace) ConfigFileContributed() bool {
+	return r != nil && r.configFiles > 0
 }
 
 // Warnings returns non-fatal advisories accumulated during resolution, in a
@@ -385,6 +404,10 @@ func resolve(start, flagRoot string, lookup func(string) string, skipGlobal bool
 	if err != nil {
 		return nil, err
 	}
+	// Everything collected so far is a config file path. The environment
+	// pseudo-entries start here, so this is the boundary between the two and the
+	// one place it can be recorded without re-deriving it from how an entry reads.
+	configFiles := len(contributing)
 	for _, name := range envContributing {
 		contributing = append(contributing, "$"+name)
 	}
@@ -397,12 +420,13 @@ func resolve(start, flagRoot string, lookup func(string) string, skipGlobal bool
 	signingPolicy.composeInto(&merged)
 
 	return &ResolvedWorkspace{
-		root:     root,
-		config:   merged,
-		source:   source,
-		marker:   marker,
-		files:    contributing,
-		warnings: warnings,
+		root:        root,
+		config:      merged,
+		source:      source,
+		marker:      marker,
+		files:       contributing,
+		warnings:    warnings,
+		configFiles: configFiles,
 	}, nil
 }
 
