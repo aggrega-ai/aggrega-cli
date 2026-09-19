@@ -80,6 +80,104 @@ func sibling() { siblingOnly() }
 	}
 }
 
+// TestACallThroughABoundNameNamesTheFunctionTheBodyNames asserts the reading a
+// surface's attribution rests on when the body holds its operation in a variable:
+// the call is attributed to the function the same body binds that name to.
+//
+// The negative rows are what keep the reading from becoming "find a call
+// everywhere". A name the body also binds to something this read cannot name
+// carries an unresolved edge beside the function it names, so the reach stays a
+// lower bound instead of resting on the one binding that was legible; a name the
+// caller supplied is followed nowhere at all; and a name holding no function is
+// not a binding, so the call through it resolves exactly as any bare call does.
+func TestACallThroughABoundNameNamesTheFunctionTheBodyNames(t *testing.T) {
+	t.Parallel()
+
+	type edge struct {
+		target   string
+		viaValue bool
+	}
+
+	const src = `package p
+
+import "x/other"
+
+func heldInOneName() error {
+	run := other.Entry
+	return run()
+}
+
+func heldBesideASeam(s *server) error {
+	run := s.installed
+	if run == nil {
+		run = other.Entry
+	}
+	return run()
+}
+
+func heldBesideALiteral() error {
+	run := other.Entry
+	run = func() error { return nil }
+	return run()
+}
+
+func declaredThenBound() error {
+	var run func() error
+	run = other.Entry
+	return run()
+}
+
+func suppliedByTheCaller(run func() error) error {
+	return run()
+}
+
+func holdingNoFunction() error {
+	count := 2
+	_ = count
+	return sibling()
+}
+`
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "d/f.go", src, 0)
+	if err != nil {
+		t.Fatalf("parse the fixture: %v", err)
+	}
+	scope := map[string]string{"other": "vendorpkg"}
+
+	got := map[string][]edge{}
+	for _, decl := range file.Decls {
+		fn, ok := decl.(*ast.FuncDecl)
+		if !ok || fn.Body == nil {
+			continue
+		}
+		node := &funcNode{Dir: "d", Name: fn.Name.Name}
+		collectCalls(fn.Body, "d", scope, parameterNames(fn), map[string]bool{}, node)
+		for _, e := range node.Calls {
+			got[fn.Name.Name] = append(got[fn.Name.Name], edge{target: e.Target, viaValue: e.ViaValue})
+		}
+	}
+
+	want := map[string][]edge{
+		"heldInOneName": {{target: "vendorpkg::Entry", viaValue: true}},
+		// The seam the body installs is a field this read cannot name, so the call
+		// carries it as unresolved rather than claiming the named function is the
+		// only thing that can run.
+		"heldBesideASeam":    {{target: "vendorpkg::Entry", viaValue: true}, {}},
+		"heldBesideALiteral": {{target: "vendorpkg::Entry", viaValue: true}, {}},
+		"declaredThenBound":  {{target: "vendorpkg::Entry", viaValue: true}},
+		// A parameter holds whatever the caller passed. Reading it as a call into a
+		// same-package declaration of that name would attribute the reach of a
+		// function the parameter merely shadows.
+		"suppliedByTheCaller": {{}},
+		// A name holding no function is no binding at all, so the bare call beside
+		// it resolves into the calling file's own package as any other does.
+		"holdingNoFunction": {{target: "d::sibling"}},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("attributed calls:\n got %+v\nwant %+v", got, want)
+	}
+}
+
 // TestACutIsDistinguishedFromEveryOtherBranch asserts the two halves that make an
 // `if` a cut a caller controls: the condition reads a field of a value the caller
 // supplied, and the body returns.

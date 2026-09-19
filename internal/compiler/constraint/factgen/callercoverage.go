@@ -65,10 +65,14 @@ import (
 //
 // # The bound on the reach itself
 //
-// The reach follows resolved calls only. A call through a value — a method on a
-// receiver, a function held in a field, one reached through an interface — is
-// followed nowhere, so a reported reach is a lower bound: a surface may touch a
-// stage this read does not attribute to it, and never fewer.
+// The reach follows resolved calls only. A call through a name the same body binds
+// to a function is resolved to the functions that body names, which keeps a call
+// attributed to the operation the source names where a body holds that operation
+// in a variable. A call through any other value — a method on a receiver, a
+// function held in a field, one supplied as a parameter, one reached through an
+// interface, one through a name bound to a closure — is followed nowhere, so a
+// reported reach is a lower bound: a surface may touch a stage this read does not
+// attribute to it, and never fewer.
 
 // stageSite is one production function invoking rules, and what it invokes.
 type stageSite struct {
@@ -721,14 +725,20 @@ func writeCallerCoverageSection(b *strings.Builder, c chain) error {
 
 	b.WriteString("Three bounds, stated rather than left for a reader to discover. **A reach is a\n")
 	b.WriteString("lower bound.** It follows calls this read can resolve — a bare call into the\n")
-	b.WriteString("calling file's own package, and a package-qualified call resolved through that\n")
-	b.WriteString("file's imports — and follows no call through a value, so a method on a\n")
-	b.WriteString("receiver, a function held in a field and one reached through an interface are\n")
-	b.WriteString("each followed nowhere. So a surface may touch a stage no row here attributes\n")
-	b.WriteString("to it, and never fewer. How many calls the read left unresolved is printed by\n")
-	b.WriteString("the generator when it runs and is deliberately absent here: it moves with every\n")
-	b.WriteString("file added anywhere in the module, and a drift-gated page that churns on\n")
-	b.WriteString("unrelated edits trains its readers to regenerate without reading.\n\n")
+	b.WriteString("calling file's own package, a package-qualified call resolved through that\n")
+	b.WriteString("file's imports, and a call through a name the same body binds to one of those,\n")
+	b.WriteString("which is what keeps a surface attributed to the operation its own source names\n")
+	b.WriteString("when it holds that operation in a variable. It follows no call through any\n")
+	b.WriteString("other value, so a method on a receiver, a function held in a field, one\n")
+	b.WriteString("supplied as a parameter and one reached through an interface are each followed\n")
+	b.WriteString("nowhere; and a name a body binds to such a value as well as to a function\n")
+	b.WriteString("carries that call as unresolved beside the function it names, rather than\n")
+	b.WriteString("resting on the binding this read could see. So a surface may touch a stage no\n")
+	b.WriteString("row here attributes to it, and never fewer. How many calls the read left\n")
+	b.WriteString("unresolved is printed by the generator when it runs and is deliberately absent\n")
+	b.WriteString("here: it moves with every file added anywhere in the module, and a drift-gated\n")
+	b.WriteString("page that churns on unrelated edits trains its readers to regenerate without\n")
+	b.WriteString("reading.\n\n")
 	b.WriteString("**A stage a value decides is reported as such, naming the value**, because a row\n")
 	b.WriteString("claiming it plainly would assert a depth the code does not fix. **And a surface\n")
 	b.WriteString("that reaches no stage is a row reading so, never an omission** — an omitted\n")
