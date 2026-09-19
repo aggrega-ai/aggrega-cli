@@ -459,8 +459,8 @@ func maximalWorkloadReference() types.Workload {
 // left at its zero value is a field the schema is never asked about, and it
 // passes for want of a constraint rather than for being right. Its values are
 // one coherent deployment — a listener terminating TLS from the certificate
-// and key it names, an origin in the full form a browser sends, and both caps
-// at their documented defaults.
+// and key it names, an origin in the full form a browser sends, and every cap
+// at its documented default.
 func maximalAggregaConfig() workspaceconfig.Config {
 	signing := workspaceconfig.SigningConfig{
 		FulcioURL:    "https://fulcio.example.com",
@@ -546,6 +546,7 @@ func maximalAggregaConfig() workspaceconfig.Config {
 			Limits: workspaceconfig.MCPLimitsConfig{
 				MaxBodyBytes:          4_194_304,
 				MaxConcurrentRequests: 16,
+				RequestsPerMinute:     120,
 			},
 		},
 		Signing: signing,
