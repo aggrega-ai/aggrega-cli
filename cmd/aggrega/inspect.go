@@ -483,9 +483,16 @@ func inspectCatalogEntity(ctx context.Context, rw *workspaceconfig.ResolvedWorks
 	// A name that matches nothing is refused rather than rendered as an entity
 	// with nothing in it, which is what an empty view of a mistyped name would
 	// read as.
+	//
+	// The refusal carries the workspace's account of where it reads local
+	// entities, because "matched nothing" has two causes a reader cannot tell
+	// apart from the sentence alone: the name is wrong, or the document holding
+	// it sits somewhere this workspace does not read. Only the second is fixed by
+	// moving a file or naming a directory, and only the workspace can say which
+	// directories were read.
 	match, found := compilerops.ResolveEntity(catalogEntityView{cat: cat, lookup: cat.CatalogLookup()}, identifier)
 	if !found {
-		return fmt.Errorf("%q matched no catalog entity of any kind", identifier)
+		return fmt.Errorf("%q matched no catalog entity of any kind%s", identifier, rw.LocalCatalogAdviceNote())
 	}
 	// The identity the withdrawal advisory is looked up by is read from the
 	// resolved entity, never from the typed identifier, which may carry a version

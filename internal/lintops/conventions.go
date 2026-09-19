@@ -61,8 +61,8 @@ func RunCatalogWide(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, 
 	dirs := rw.ResolveCatalogDirs(catalogFlagDirs)
 	if len(dirs) == 0 {
 		return cerrors.Unidentified(cerrors.OpsError, cerrors.SourceLocation{},
-			fmt.Sprintf("whole-catalog conventions check needs catalog directories to scan; put the entities under `%s/` at the workspace root, pass --catalog, or set `workspace.catalog_dirs` in %s (or check a specific Release with --release)",
-				workspaceconfig.ConventionalCatalogDir, workspaceconfig.ConfigFilename),
+			fmt.Sprintf("whole-catalog conventions check needs catalog directories to scan; put the entities under `%s/` at the workspace root, pass --catalog, or set `%s` in %s (or check a specific Release with --release)",
+				workspaceconfig.ConventionalCatalogDir, workspaceconfig.CatalogDirsSetting, workspaceconfig.ConfigFilename),
 			nil, nil)
 	}
 	files, passedOver, err := walkCatalogEntityFiles(ctx, rw.Root(), dirs, wsCfg.ResolvedArtifactCacheDir())

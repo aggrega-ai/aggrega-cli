@@ -241,7 +241,7 @@ func validateReleaseScope(s *server, ctx context.Context, a validateArgs, releas
 		// and the resolution failure moves beneath it. Without this the answer
 		// names a reference in a document that is correct, and points the caller
 		// at that document's authoring contract.
-		annotated := annotateWithRefusals(cerr, view)
+		annotated := annotateWithRefusals(cerr, view, tw)
 		return errorResult(explainToolError(
 			"Validation could not resolve the Release closure; fix the resolution failure before semantic validation runs.",
 			annotated, refusalKindOr(annotated, closureStageKind(cerr.Stage))))

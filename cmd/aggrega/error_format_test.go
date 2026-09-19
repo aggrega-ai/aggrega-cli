@@ -676,10 +676,13 @@ func TestFormatCompilerError_FrameAboveAJoin_KeepsThatFramesOwnRendering(t *test
 			// reason is what the note ends up quoting, so it is what this row
 			// asserts the decoration owns.
 			name: "decoration",
+			// No local-catalog note: the subject here is which frame the formatter
+			// renders from, and a second note would add text that frame did not
+			// contribute.
 			err: compilerops.AnnotateSkipContext(joinOfThreeFindings(), []catalog.SkippedEntity{{
 				Path: "/cat/recipes/helm/server.yaml",
 				Err:  stderrors.New("the note the reader acts on"),
-			}}),
+			}}, ""),
 			wantOwned:   "the note the reader acts on",
 			wantPresent: append([]string{"\n---\n"}, findings...),
 		},

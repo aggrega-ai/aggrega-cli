@@ -286,9 +286,17 @@ func buildDispatchConfig(rw *workspaceconfig.ResolvedWorkspace, releasePath stri
 			}
 			return res.DiscoveryRender, nil
 		},
-		AnnotateResolutionFailure: compilerops.AnnotateSkipContext,
-		DiagOut:                   diagOut,
-		Out:                       out,
+		// The workspace's account of where it reads local entities travels with the
+		// refusals, because the two explain different halves of "nothing resolved":
+		// a refused file says a document was read and rejected, and the account says
+		// which directories were read at all. The hook is handed a closure rather
+		// than the shared function itself so the account comes from the workspace
+		// this command resolved, which is the one the reader is standing in.
+		AnnotateResolutionFailure: func(err error, skipped []catalog.SkippedEntity) error {
+			return compilerops.AnnotateSkipContext(err, skipped, rw.LocalCatalogAdviceNote())
+		},
+		DiagOut: diagOut,
+		Out:     out,
 	}
 }
 

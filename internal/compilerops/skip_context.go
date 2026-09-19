@@ -105,7 +105,27 @@ func (e *SkipContextError) PromotedRefusal() (catalog.SkippedEntity, bool) {
 // with the catalog files the load refused, so a tolerated skip never hides WHY
 // an entity the Release reaches went missing. A skipped file whose header named
 // the kind+name is reported with that identity; a file too malformed to peek is
-// reported by path. No-op when nothing was skipped or err is nil.
+// reported by path. No-op when err is nil, or when there is neither a refusal
+// nor a local-catalog note to report.
+//
+// localCatalogNote is the workspace's account of where local entities are read
+// from, which the resolved workspace composes and a caller passes in already
+// rendered. It answers the other half of "nothing resolved": a reference may
+// name an entity no file declares anywhere, or one declared in a directory this
+// workspace does not read, and only the second is something the reader fixes by
+// moving a file or naming a directory. It is reported whether or not a file was
+// refused, because the two explain different things and a workspace can be in
+// both states at once. An empty string reports nothing — which is what a reader
+// who declared that this workspace has no local catalog gets, since advice about
+// where local entities are read from would contradict that declaration.
+//
+// 🔴 It is reported ONLY on a failure that names an entity nothing resolved, and
+// the guard is here rather than at the callers for the reason the whole file is
+// here: a caller's own failure is not always one of those. A Release that does
+// not match its kind's schema fails the same step, and telling THAT reader where
+// entities are read from sends them looking for a file when what is wrong is the
+// document in front of them. The reference-carrying failure is the only one this
+// account explains.
 //
 // CAUSE BEFORE CONSEQUENCE, where the cause can be named exactly. A refused
 // file never enters the catalog, so what fails is the attempt to resolve a
@@ -142,8 +162,14 @@ func (e *SkipContextError) PromotedRefusal() (catalog.SkippedEntity, bool) {
 // explain, and what the reader is told once it does. Every surface that reports
 // a resolution failure — a terminal, a tool response — reaches this one home, so
 // an author meets the same account of what went wrong wherever they are reading.
-func AnnotateSkipContext(err error, skipped []catalog.SkippedEntity) error {
-	if err == nil || len(skipped) == 0 {
+func AnnotateSkipContext(err error, skipped []catalog.SkippedEntity, localCatalogNote string) error {
+	if err == nil {
+		return err
+	}
+	if !namesAnUnresolvedEntity(err) {
+		localCatalogNote = ""
+	}
+	if len(skipped) == 0 && localCatalogNote == "" {
 		return err
 	}
 	var b strings.Builder
@@ -157,12 +183,41 @@ func AnnotateSkipContext(err error, skipped []catalog.SkippedEntity) error {
 			b.WriteString("\n  tolerated and never fails a build:")
 			writeRefusals(&b, rest)
 		}
+		b.WriteString(localCatalogNote)
 		return &SkipContextError{err: err, promoted: &cause, note: b.String()}
 	}
-	b.WriteString("\n  note: catalog files skipped at load. A refusal outside this Release's closure is tolerated and never fails a build,")
-	b.WriteString("\n  so this failure is explained only by a refusal naming something this Release reaches:")
-	writeRefusals(&b, skipped)
+	if len(skipped) > 0 {
+		b.WriteString("\n  note: catalog files skipped at load. A refusal outside this Release's closure is tolerated and never fails a build,")
+		b.WriteString("\n  so this failure is explained only by a refusal naming something this Release reaches:")
+		writeRefusals(&b, skipped)
+	}
+	b.WriteString(localCatalogNote)
 	return &SkipContextError{err: err, note: b.String()}
+}
+
+// namesAnUnresolvedEntity reports whether err failed because a reference named
+// an entity nothing resolved — the one failure the workspace's account of where
+// it reads local entities explains.
+//
+// It is the narrow question, not the broad one. A failure raised while resolving
+// what a Release reaches can be about the shape of a document rather than about
+// finding one: a Release that does not match its kind's schema stops the same
+// step, and a reader told where entities are read from would go looking through
+// directories for a file that is already open in front of them. So the test is
+// the failure's own subject, and the subject is carried in the chain rather than
+// inferred from which step raised it.
+//
+// Both forms are matched. A walk that could record the reference it could not
+// resolve decorates the failure with it; one reached by a path that recorded
+// none raises the bare condition. The condition is matched through its exported
+// accessor rather than by its registered identifier, which keeps the match
+// working if that identifier is ever re-registered.
+func namesAnUnresolvedEntity(err error) bool {
+	var unresolved *closure.UnresolvedEntityError
+	if stderrors.As(err, &unresolved) && unresolved != nil {
+		return true
+	}
+	return stderrors.Is(err, closure.ErrUnresolvableURI())
 }
 
 // refusalExplaining reports the one refused catalog file that explains err, and

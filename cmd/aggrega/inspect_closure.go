@@ -90,8 +90,10 @@ func renderReleaseClosure(ctx context.Context, rw *workspaceconfig.ResolvedWorks
 		// A file the catalog read refused makes its entity unresolvable, and the
 		// failure on its own can only name the reference, never the file behind it.
 		// Replaying the refusals the view recorded turns that into the constraint
-		// the author has to fix.
-		return compilerops.AnnotateSkipContext(cerr, view.SkippedEntities())
+		// the author has to fix. Where no refusal explains it, the reference may
+		// name an entity that is sitting in a directory this workspace does not
+		// read, so the workspace's own account of where it reads travels too.
+		return compilerops.AnnotateSkipContext(cerr, view.SkippedEntities(), rw.LocalCatalogAdviceNote())
 	}
 
 	renderClosureListing(opts, lf, resolved)

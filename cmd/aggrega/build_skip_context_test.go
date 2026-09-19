@@ -45,7 +45,11 @@ func refusedRecipeSkip() catalog.SkippedEntity {
 // chain rendered into text loses both while still reading correctly.
 func TestWithSkipContext_SentinelSurvivesToTheReader(t *testing.T) {
 	failure := fmt.Errorf("resolve: resolve entity %q: %w", "server-recipe:1.0.0", catalog.ErrUnscopedRecipeReference())
-	got := compilerops.AnnotateSkipContext(failure, []catalog.SkippedEntity{refusedRecipeSkip()})
+	// The subject of every case in this file is the refusal record, so none of
+	// them passes a local-catalog note: it is a second, independent note, and
+	// adding it here would put text in the assertions that these cases are not
+	// about. Its own coverage is in the local-catalog advice tests.
+	got := compilerops.AnnotateSkipContext(failure, []catalog.SkippedEntity{refusedRecipeSkip()}, "")
 
 	if !stderrors.Is(got, catalog.ErrUnscopedRecipeReference()) {
 		t.Errorf("errors.Is must still match the decorated failure's condition; got %v", got)
@@ -86,7 +90,7 @@ func TestWithSkipContext_NoteReachesTheTerminalWhateverTheChainShape(t *testing.
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			rendered := formatCompilerError(compilerops.AnnotateSkipContext(tc.failure, skips))
+			rendered := formatCompilerError(compilerops.AnnotateSkipContext(tc.failure, skips, ""))
 			if !strings.Contains(rendered, "catalog files skipped at load") {
 				t.Errorf("the skip note must reach the terminal; rendered:\n%s", rendered)
 			}
@@ -114,7 +118,7 @@ func TestWithSkipContext_NoteReachesTheTerminalWhateverTheChainShape(t *testing.
 // refused file's code stays where the refused file is reported.
 func TestWithSkipContext_RefusedFileCarriesItsShortCode(t *testing.T) {
 	failure := fmt.Errorf("resolve: resolve entity %q: %w", "server-recipe:1.0.0", catalog.ErrUnscopedRecipeReference())
-	rendered := formatCompilerError(compilerops.AnnotateSkipContext(failure, []catalog.SkippedEntity{refusedRecipeSkip()}))
+	rendered := formatCompilerError(compilerops.AnnotateSkipContext(failure, []catalog.SkippedEntity{refusedRecipeSkip()}, ""))
 
 	wantCode, ok := cerrors.ShortCodeOf(envelope.ErrEntityEnvelope())
 	if !ok {
@@ -150,7 +154,7 @@ func TestWithSkipContext_RefusedFileCarriesItsShortCode(t *testing.T) {
 // bystander.
 func TestWithSkipContext_NoteAssertsTheClosureMembershipDistinction(t *testing.T) {
 	failure := fmt.Errorf("resolve: resolve entity %q: %w", "server-recipe:1.0.0", catalog.ErrUnscopedRecipeReference())
-	rendered := formatCompilerError(compilerops.AnnotateSkipContext(failure, []catalog.SkippedEntity{refusedRecipeSkip()}))
+	rendered := formatCompilerError(compilerops.AnnotateSkipContext(failure, []catalog.SkippedEntity{refusedRecipeSkip()}, ""))
 
 	for _, want := range []string{
 		"outside this Release's closure is tolerated and never fails a build",
@@ -179,7 +183,7 @@ func TestWithSkipContext_NoteAssertsTheClosureMembershipDistinction(t *testing.T
 func TestWithSkipContext_FormatterCarriesAFrameAboveTheDecoration(t *testing.T) {
 	failure := cerrors.Wrap(fmt.Errorf("boom"), cerrors.CatalogError,
 		cerrors.SourceLocation{File: "/cat/base/components/server.yaml"}, "unmarshal Component")
-	decorated := compilerops.AnnotateSkipContext(failure, []catalog.SkippedEntity{refusedRecipeSkip()})
+	decorated := compilerops.AnnotateSkipContext(failure, []catalog.SkippedEntity{refusedRecipeSkip()}, "")
 	rendered := formatCompilerError(fmt.Errorf("auto-pull: %w", decorated))
 
 	if !strings.HasPrefix(rendered, "auto-pull: ") {

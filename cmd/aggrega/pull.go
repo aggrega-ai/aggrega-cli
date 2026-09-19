@@ -298,20 +298,26 @@ func pullRunWithResult(ctx context.Context, cfg pullConfig) (pullops.Result, err
 	defer progress.finish()
 
 	opts := pullops.Config{
-		Workspace:                 cfg.ws,
-		ReleasePath:               cfg.ReleasePath,
-		CatalogDirs:               cfg.CatalogDirs,
-		Upgrade:                   cfg.Upgrade,
-		UpgradeTargets:            cfg.UpgradeTargets,
-		Verify:                    cfg.Verify,
-		IncludePrerelease:         cfg.IncludePrerelease,
-		CompilerVersion:           provenanceCompilerVersion(),
-		Toolchain:                 toolchainStamp(),
-		DiagOut:                   diagOut,
-		AnnotateResolutionFailure: compilerops.AnnotateSkipContext,
-		Puller:                    cfg.puller,
-		SourceResolver:            cfg.sourceResolver,
-		RenderOptions:             cfg.renderOptions,
+		Workspace:         cfg.ws,
+		ReleasePath:       cfg.ReleasePath,
+		CatalogDirs:       cfg.CatalogDirs,
+		Upgrade:           cfg.Upgrade,
+		UpgradeTargets:    cfg.UpgradeTargets,
+		Verify:            cfg.Verify,
+		IncludePrerelease: cfg.IncludePrerelease,
+		CompilerVersion:   provenanceCompilerVersion(),
+		Toolchain:         toolchainStamp(),
+		DiagOut:           diagOut,
+		// The workspace's account of where it reads local entities travels with the
+		// refusals: a refused file says a document was read and rejected, while the
+		// account says which directories were read at all, and a reference that
+		// resolved to nothing may be explained by either.
+		AnnotateResolutionFailure: func(err error, skipped []catalog.SkippedEntity) error {
+			return compilerops.AnnotateSkipContext(err, skipped, cfg.ws.LocalCatalogAdviceNote())
+		},
+		Puller:         cfg.puller,
+		SourceResolver: cfg.sourceResolver,
+		RenderOptions:  cfg.renderOptions,
 		Report: pullops.Reporter{
 			Phase: func(p pullops.Phase) { progress.phase(pullPhaseStep(p)) },
 		},

@@ -47,8 +47,8 @@ func validateCatalogWideFromWorkspace(rw *workspaceconfig.ResolvedWorkspace, cat
 	dirs := rw.ResolveCatalogDirs(catalogFlagDirs)
 	if len(dirs) == 0 {
 		return cerrors.Unidentified(cerrors.OpsError, cerrors.SourceLocation{},
-			fmt.Sprintf("whole-catalog validation needs catalog directories to scan; put the entities under `%s/` at the workspace root, pass --catalog, or set `workspace.catalog_dirs` in %s (or validate a specific Release with --release)",
-				workspaceconfig.ConventionalCatalogDir, workspaceconfig.ConfigFilename),
+			fmt.Sprintf("whole-catalog validation needs catalog directories to scan; put the entities under `%s/` at the workspace root, pass --catalog, or set `%s` in %s (or validate a specific Release with --release)",
+				workspaceconfig.ConventionalCatalogDir, workspaceconfig.CatalogDirsSetting, workspaceconfig.ConfigFilename),
 			nil, nil)
 	}
 	return validateCatalogWide(wsRoot, cacheDir, dirs, os.Stderr, os.Stdout)
@@ -162,8 +162,10 @@ func validateRelease(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace,
 		// the reference, never the file behind it. Replaying the refusals the
 		// view recorded turns that into the constraint the author has to fix.
 		// This is the same annotation the build applies, over the same record,
-		// through the same renderer.
-		return compilerops.AnnotateSkipContext(cerr, lazyView.SkippedEntities())
+		// through the same renderer. Where no refusal explains it, the reference
+		// may name an entity sitting in a directory this workspace does not read,
+		// so the workspace's own account of where it reads travels too.
+		return compilerops.AnnotateSkipContext(cerr, lazyView.SkippedEntities(), rw.LocalCatalogAdviceNote())
 	}
 
 	// The record loaded above is threaded into the validation, not just into the

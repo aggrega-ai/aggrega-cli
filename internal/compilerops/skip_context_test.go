@@ -53,7 +53,9 @@ func TestAnnotateSkipContext_LeadingPlusNoteIsTheWholeText(t *testing.T) {
 	}
 	failure := fmt.Errorf("resolve: resolve entity %q: %w", "server-recipe:1.0.0", catalog.ErrUnscopedRecipeReference())
 
-	sce, ok := AnnotateSkipContext(failure, []catalog.SkippedEntity{refused}).(*SkipContextError)
+	// No local-catalog note: this pins the relationship between the leading
+	// failure and the refusal note, and a second note would widen the subject.
+	sce, ok := AnnotateSkipContext(failure, []catalog.SkippedEntity{refused}, "").(*SkipContextError)
 	if !ok {
 		t.Fatal("AnnotateSkipContext must return the decoration when the record carries a refusal")
 	}

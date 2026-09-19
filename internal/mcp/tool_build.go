@@ -470,7 +470,7 @@ func buildInvoke(s *server, ctx context.Context, args json.RawMessage) (*callToo
 		// that is correct. Replaying the refusals the view recorded is what turns
 		// that into the constraint the author has to fix, and it is the annotation
 		// the command line has always applied, through the one home both read.
-		annotated := annotateResolutionWithRefusals(err, rendered)
+		annotated := annotateResolutionWithRefusals(err, rendered, tw)
 		return structuredErrorResult(
 			explainToolError(previewFailureSummary(preview, deprecationNotices), annotated,
 				refusalKindOr(annotated, previewFailureKind(preview, err))),

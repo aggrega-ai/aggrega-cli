@@ -20,6 +20,13 @@ import (
 // the constraint the author has to fix, and where exactly one of them declares
 // the identity the failing reference names, it leads the answer.
 //
+// The workspace's own account of where it reads local entities travels with the
+// refusals, and answers the other half of "nothing resolved": a refused file
+// says a document was read and rejected, while the account says which
+// directories were read at all. A caller driving the compiler through this
+// protocol is usually not at the keyboard the workspace sits at, so the
+// directories that were searched are the fact it has least access to.
+//
 // It is the annotation the command line applies, from the same home, so a caller
 // driving the compiler through this protocol reads the same account of what went
 // wrong as a reader at a terminal. This surface composes it into the guidance
@@ -28,12 +35,17 @@ import (
 //
 // A nil view annotates nothing. The one path that produces one is a call whose
 // render happened somewhere else, and such a call has no failure of its own to
-// annotate.
-func annotateWithRefusals(err error, view *catalog.LazyLookup) error {
+// annotate. The workspace is taken rather than a rendered note so a call site
+// names what it holds and cannot hand over the wrong text.
+func annotateWithRefusals(err error, view *catalog.LazyLookup, tw *toolWorkspace) error {
 	if err == nil || view == nil {
 		return err
 	}
-	return compilerops.AnnotateSkipContext(err, view.SkippedEntities())
+	note := ""
+	if tw != nil {
+		note = tw.rw.LocalCatalogAdviceNote()
+	}
+	return compilerops.AnnotateSkipContext(err, view.SkippedEntities(), note)
 }
 
 // annotateResolutionWithRefusals is annotateWithRefusals held to the failures a
@@ -45,11 +57,11 @@ func annotateWithRefusals(err error, view *catalog.LazyLookup) error {
 // of those would invite a caller to go and fix a file that did not cause it. A
 // call whose failure is a closure resolution BY CONSTRUCTION needs no guard and
 // uses annotateWithRefusals directly.
-func annotateResolutionWithRefusals(err error, view *catalog.LazyLookup) error {
+func annotateResolutionWithRefusals(err error, view *catalog.LazyLookup, tw *toolWorkspace) error {
 	if !compilerops.IsResolutionFailure(err) {
 		return err
 	}
-	return annotateWithRefusals(err, view)
+	return annotateWithRefusals(err, view, tw)
 }
 
 // refusalKindOr names the entity kind whose authoring contract a reader must

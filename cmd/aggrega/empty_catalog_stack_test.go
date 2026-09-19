@@ -17,8 +17,9 @@ import (
 
 // catalogDirsKey is the authored key every refusal on this surface has to name,
 // because a reader told only that something is missing is told half of what
-// they need.
-const catalogDirsKey = "workspace.catalog_dirs"
+// they need. It reads the exported spelling rather than restating it, so a test
+// cannot go on asserting a key the messages have stopped using.
+const catalogDirsKey = workspaceconfig.CatalogDirsSetting
 
 // workspaceWithCatalogShape authors a workspace root whose config body is
 // exactly config, optionally creating the conventional catalog directory, and
