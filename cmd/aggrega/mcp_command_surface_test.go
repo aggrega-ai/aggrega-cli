@@ -212,22 +212,24 @@ func TestMCPServerExposesTheRealCommandSurface(t *testing.T) {
 		}
 	}
 
-	// The capability listing carries one tool per non-exempt runnable command.
+	// The capability index carries one entry per non-exempt runnable command.
+	//
+	// What every assertion below reads is a name, and the index carries every
+	// name the long tail has — so no second call naming them back is made here.
+	// The definitions it would return are exactly what this test never looks at.
 	var callResult struct {
 		StructuredContent struct {
-			Capabilities []struct {
-				Name        string `json:"name"`
-				Description string `json:"description"`
-				Deferred    bool   `json:"deferred"`
-			} `json:"capabilities"`
+			Index []struct {
+				Name string `json:"name"`
+			} `json:"index"`
 		} `json:"structuredContent"`
 	}
 	if err := json.Unmarshal(answers[3].Result, &callResult); err != nil {
 		t.Fatalf("unmarshal describe-capabilities: %v", err)
 	}
 	surfaced := map[string]bool{}
-	for _, c := range callResult.StructuredContent.Capabilities {
-		surfaced[c.Name] = true
+	for _, e := range callResult.StructuredContent.Index {
+		surfaced[e.Name] = true
 	}
 
 	// Exemption is decided by the server's own exported matcher, never by a
@@ -319,14 +321,20 @@ func TestMCPServerExposesTheRealCommandSurface(t *testing.T) {
 	}
 }
 
-// servedToolDescriptions drives the server over its real transport with the
-// supplied command surface and returns every tool a client can reach, by name,
-// with the description that client is shown.
+// servedListings drives the server over its real transport with the supplied
+// command surface and reads the two answers a client reads on arriving: the
+// default tool list, with the description each entry carries, and the capability
+// tool's index of the long tail that list omits.
 //
-// Both listings are read, because the two halves of a twice-exposed pair sit on
-// different ones: the curated tool is advertised up front and the tool generated
-// from its command is surfaced only on demand.
-func servedToolDescriptions(t *testing.T, surface []mcp.CommandSurface) map[string]string {
+// Both are read, because the two halves of a twice-exposed pair sit on different
+// ones: the curated tool is advertised up front and the tool generated from its
+// command is surfaced only on demand.
+//
+// The index carries a name, a one-line purpose and no argument schema, so what it
+// yields here is names. A caller that needs a deferred tool's full description
+// names it back in a second call, which is what servedToolDescriptions does and
+// what servedToolNames deliberately does not.
+func servedListings(t *testing.T, surface []mcp.CommandSurface) (map[string]string, []string) {
 	t.Helper()
 
 	var stdin bytes.Buffer
@@ -347,8 +355,7 @@ func servedToolDescriptions(t *testing.T, surface []mcp.CommandSurface) map[stri
 
 	answers := answersByID(t, stdout.String(), 1, 2, 3)
 
-	out := map[string]string{}
-
+	listed := map[string]string{}
 	var listResult struct {
 		Tools []struct {
 			Name        string `json:"name"`
@@ -359,8 +366,85 @@ func servedToolDescriptions(t *testing.T, surface []mcp.CommandSurface) map[stri
 		t.Fatalf("unmarshal tools/list: %v", err)
 	}
 	for _, tl := range listResult.Tools {
-		out[tl.Name] = tl.Description
+		listed[tl.Name] = tl.Description
 	}
+
+	var indexResult struct {
+		StructuredContent struct {
+			Index []struct {
+				Name string `json:"name"`
+			} `json:"index"`
+		} `json:"structuredContent"`
+	}
+	if err := json.Unmarshal(answers[3].Result, &indexResult); err != nil {
+		t.Fatalf("unmarshal describe-capabilities: %v", err)
+	}
+	indexed := make([]string, 0, len(indexResult.StructuredContent.Index))
+	for _, e := range indexResult.StructuredContent.Index {
+		indexed = append(indexed, e.Name)
+	}
+	if len(indexed) == 0 {
+		t.Fatal("the capability index named no tool, so the long tail was never reached")
+	}
+	return listed, indexed
+}
+
+// servedToolNames returns every tool a client can reach, by name, over both
+// listings.
+//
+// A name is all it is asked for and the index reports every name, so the second
+// call that would return the definitions behind them is deliberately not made.
+func servedToolNames(t *testing.T, surface []mcp.CommandSurface) map[string]bool {
+	t.Helper()
+	listed, indexed := servedListings(t, surface)
+	out := make(map[string]bool, len(listed)+len(indexed))
+	for name := range listed {
+		out[name] = true
+	}
+	for _, name := range indexed {
+		out[name] = true
+	}
+	return out
+}
+
+// servedToolDescriptions returns every tool a client can reach, by name, with the
+// description that client is shown.
+//
+// The description is the one thing the index does not carry — it carries a
+// one-line purpose instead — so the long tail's half is read the way a client
+// reads it: name back every tool the index reported and take the definitions. The
+// default listing's half already travels with its description and needs no second
+// call. The naming call is a second session rather than a second request in the
+// first one, because its arguments are read out of that session's answer and this
+// transport is handed its whole input up front.
+func servedToolDescriptions(t *testing.T, surface []mcp.CommandSurface) map[string]string {
+	t.Helper()
+	out, indexed := servedListings(t, surface)
+
+	args, err := json.Marshal(map[string]any{
+		"name":      "describe-capabilities",
+		"arguments": map[string]any{"tools": indexed},
+	})
+	if err != nil {
+		t.Fatalf("frame the capability request: %v", err)
+	}
+
+	var stdin bytes.Buffer
+	stdin.WriteString(rpcLine(1, "initialize", `{"protocolVersion":"2025-06-18"}`))
+	stdin.WriteString(rpcLine(2, "tools/call", string(args)))
+
+	var stdout, stderr bytes.Buffer
+	if err := mcp.Run(context.Background(), mcp.Config{
+		Stdin:         &stdin,
+		Stdout:        &stdout,
+		Stderr:        &stderr,
+		ServerVersion: "test",
+		Commands:      surface,
+	}); err != nil {
+		t.Fatalf("mcp.Run: %v (stderr: %s)", err, stderr.String())
+	}
+
+	answers := answersByID(t, stdout.String(), 1, 2)
 
 	var callResult struct {
 		StructuredContent struct {
@@ -370,11 +454,30 @@ func servedToolDescriptions(t *testing.T, surface []mcp.CommandSurface) map[stri
 			} `json:"capabilities"`
 		} `json:"structuredContent"`
 	}
-	if err := json.Unmarshal(answers[3].Result, &callResult); err != nil {
-		t.Fatalf("unmarshal describe-capabilities: %v", err)
+	if err := json.Unmarshal(answers[2].Result, &callResult); err != nil {
+		t.Fatalf("unmarshal describe-capabilities definitions: %v", err)
 	}
+	defined := make(map[string]string, len(callResult.StructuredContent.Capabilities))
 	for _, c := range callResult.StructuredContent.Capabilities {
-		out[c.Name] = c.Description
+		defined[c.Name] = c.Description
+	}
+
+	// The set difference rather than the two lengths: both sides short by one
+	// still agree on length, and a description read from a set quietly shorter
+	// than what the index reported is what this whole helper exists to prevent.
+	var undefined []string
+	for _, name := range indexed {
+		if _, ok := defined[name]; !ok {
+			undefined = append(undefined, name)
+		}
+	}
+	sort.Strings(undefined)
+	if len(undefined) > 0 {
+		t.Fatalf("the index reported %v, and naming them back returned no definition for them", undefined)
+	}
+
+	for name, description := range defined {
+		out[name] = description
 	}
 	return out
 }
@@ -486,11 +589,8 @@ func TestNoToolRunsAGuestFromACallerSuppliedPath(t *testing.T) {
 	const withheld = "cli-plugin-run-local"
 
 	// Every name a client can reach: the default listing plus the long tail the
-	// capability tool surfaces on demand.
-	reachable := map[string]bool{}
-	for name := range servedToolDescriptions(t, surface) {
-		reachable[name] = true
-	}
+	// capability tool's index reports on demand.
+	reachable := servedToolNames(t, surface)
 
 	for _, sibling := range []string{"cli-plugin-list", "cli-plugin-sync", "cli-plugin-add"} {
 		if !reachable[sibling] {

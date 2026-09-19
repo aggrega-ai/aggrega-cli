@@ -73,8 +73,36 @@ func serveOneToolProtocolRequest(t *testing.T, method string, params any) json.R
 // here, so a renamed command moves this with it. The property name is derived
 // from the flag for the same reason.
 func TestToolProtocolCarriesTheGraphOnEveryToolThatOffersIt(t *testing.T) {
-	result := serveOneToolProtocolRequest(t, "tools/call", map[string]any{
+	// The two steps a client takes, because the argument schema this asserts over
+	// is the one thing discovery deliberately withholds: an argumentless call
+	// answers with an index of names and purposes, and naming those back returns
+	// the definitions. Two sessions rather than two requests in one, because the
+	// second request's arguments are read out of the first one's answer and this
+	// transport is handed its whole input up front.
+	indexed := serveOneToolProtocolRequest(t, "tools/call", map[string]any{
 		"name": "describe-capabilities", "arguments": map[string]any{},
+	})
+
+	var index struct {
+		StructuredContent struct {
+			Index []struct {
+				Name string `json:"name"`
+			} `json:"index"`
+		} `json:"structuredContent"`
+	}
+	if err := json.Unmarshal(indexed, &index); err != nil {
+		t.Fatalf("decode the capability index: %v\n%s", err, indexed)
+	}
+	named := make([]string, 0, len(index.StructuredContent.Index))
+	for _, e := range index.StructuredContent.Index {
+		named = append(named, e.Name)
+	}
+	if len(named) == 0 {
+		t.Fatal("the capability index named no tool, so the definitions behind it were never reached")
+	}
+
+	result := serveOneToolProtocolRequest(t, "tools/call", map[string]any{
+		"name": "describe-capabilities", "arguments": map[string]any{"tools": named},
 	})
 
 	var call struct {
