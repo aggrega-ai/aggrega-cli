@@ -18,7 +18,6 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/registryindex"
 	"github.com/aggrega-ai/aggrega-cli/pkg/deprecation"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
-	"github.com/aggrega-ai/aggrega-cli/pkg/registryhost"
 	"github.com/aggrega-ai/aggrega-cli/pkg/signing"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
@@ -69,6 +68,12 @@ type DeprecateConfig struct {
 	// resolution. Nil means the live process environment.
 	EnvLookup func(string) string
 
+	// ConfiguredKeyNotConsulted withholds the signing key this workspace's own
+	// configuration names, so only a KeyPath this caller supplied can select the
+	// keyed branch. See SignerRequest.ConfiguredKeyNotConsulted for what it
+	// declares; false is every caller that owns the machine the key sits on.
+	ConfiguredKeyNotConsulted bool
+
 	// TokenGetter acquires a keyless OIDC identity token interactively when no
 	// explicit token is supplied. Nil is the unattended shape and is the
 	// default: no acquisition is attempted and the shared identity ladder
@@ -105,17 +110,18 @@ type DeprecateConfig struct {
 // credential boundary's input contract.
 func (cfg DeprecateConfig) signerRequest() SignerRequest {
 	return SignerRequest{
-		Workspace:            cfg.Workspace,
-		Registry:             cfg.Reference,
-		Signer:               cfg.Signer,
-		KeyPath:              cfg.KeyPath,
-		FulcioURL:            cfg.FulcioURL,
-		RekorURL:             cfg.RekorURL,
-		TimestampURL:         cfg.TimestampURL,
-		IDToken:              cfg.IDToken,
-		EnvLookup:            cfg.EnvLookup,
-		AcquireIdentityToken: interactiveAcquirer(cfg.TokenGetter, cfg.IsTTY),
-		IdentitySupply:       cfg.IdentitySupply,
+		Workspace:                 cfg.Workspace,
+		Registry:                  cfg.Reference,
+		Signer:                    cfg.Signer,
+		KeyPath:                   cfg.KeyPath,
+		FulcioURL:                 cfg.FulcioURL,
+		RekorURL:                  cfg.RekorURL,
+		TimestampURL:              cfg.TimestampURL,
+		IDToken:                   cfg.IDToken,
+		EnvLookup:                 cfg.EnvLookup,
+		ConfiguredKeyNotConsulted: cfg.ConfiguredKeyNotConsulted,
+		AcquireIdentityToken:      interactiveAcquirer(cfg.TokenGetter, cfg.IsTTY),
+		IdentitySupply:            cfg.IdentitySupply,
 	}
 }
 
@@ -386,7 +392,7 @@ func deprecateSigner(cfg DeprecateConfig) (signing.Signer, error) {
 	if err != nil {
 		return nil, err
 	}
-	resolved := rw.Config().ResolveSigning(registryhost.Of(cfg.Reference))
+	resolved := resolveSigning(rw.Config(), cfg.Reference, cfg.ConfiguredKeyNotConsulted)
 	keyPath := firstNonEmpty(cfg.KeyPath, resolved.KeyPath)
 
 	var idToken string

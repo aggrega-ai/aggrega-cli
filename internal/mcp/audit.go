@@ -77,6 +77,9 @@ const (
 	// eventStartupRefused is a launch that was refused before it served, carrying
 	// the reason it was refused.
 	eventStartupRefused = "startup-refused"
+	// eventSigningKeyIgnored is a deployment whose workspace names a signing key
+	// this listener will not use, carrying which setting names it.
+	eventSigningKeyIgnored = "signing-key-ignored"
 	// eventDocsBundle is the documentation bundle acquisition, carrying its
 	// outcome.
 	eventDocsBundle = "docs-bundle"

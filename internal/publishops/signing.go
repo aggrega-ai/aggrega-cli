@@ -64,6 +64,19 @@ type SignerRequest struct {
 	// Nil means the live process environment.
 	EnvLookup func(string) string
 
+	// ConfiguredKeyNotConsulted withholds the signing key the workspace's own
+	// configuration names, so only a key path this caller supplied can select the
+	// keyed branch. False is every caller that owns the machine the key sits on,
+	// and is the default.
+	//
+	// It is a declaration about the CALLER rather than about the key. A key path
+	// supplied on the call is a file the caller named; a key path the served
+	// workspace's configuration names is a secret the server holds, and a caller
+	// who merely reached the server proves nothing by causing it to be spent. A
+	// caller for whom that distinction matters sets this, and the signature is
+	// then either attributable to an identity the caller supplied or refused.
+	ConfiguredKeyNotConsulted bool
+
 	// AcquireIdentityToken is the one rung of the identity ladder that needs a
 	// person: it acquires a token interactively when every supplied and ambient
 	// input has declined. Nil is the unattended shape and is the default — the
@@ -154,6 +167,29 @@ func envLookup(look func(string) string) func(string) string {
 		return look
 	}
 	return os.Getenv
+}
+
+// resolveSigning resolves the signing configuration that applies to the registry
+// host reference names, as this layer is allowed to see it.
+//
+// It is the ONE route from a workspace's configuration to a signing input in this
+// package, and every verb resolves through it. Two things are single-sourced here
+// rather than at each verb: which host the per-registry overlay is keyed on, and
+// whether the key path that configuration names is reachable at all.
+//
+// A caller that withheld the configured key gets a view that names none. The key
+// is removed from the VALUE rather than left in it for each reader to remember
+// not to use: a later reader of this configuration has no key to reach for, so
+// the withholding does not depend on anyone downstream knowing about it. Nothing
+// else is withheld — the endpoint URLs name services rather than secrets, and a
+// caller that cannot select a key still signs against the endpoints the
+// deployment configured.
+func resolveSigning(cfg workspaceconfig.Config, reference string, configuredKeyNotConsulted bool) workspaceconfig.SigningConfig {
+	resolved := cfg.ResolveSigning(registryhost.Of(reference))
+	if configuredKeyNotConsulted {
+		resolved.KeyPath = ""
+	}
+	return resolved
 }
 
 // resolveIdentity resolves the keyless identity for one signing posture through
@@ -341,7 +377,7 @@ func resolvePublishSigner(req SignerRequest) (signing.Signer, error) {
 	if werr != nil {
 		return nil, werr
 	}
-	resolved := rw.Config().ResolveSigning(registryhost.Of(req.Registry))
+	resolved := resolveSigning(rw.Config(), req.Registry, req.ConfiguredKeyNotConsulted)
 	keyPath := firstNonEmpty(req.KeyPath, resolved.KeyPath)
 	// Only the keyless branch resolves an identity; the keyed path never
 	// reaches acquisition. Resolve the identity as a SOURCE before constructing

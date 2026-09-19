@@ -130,13 +130,20 @@ func callToolOn(t *testing.T, s *server, ctx context.Context, name string, args 
 }
 
 // credentialInputs is the slice of a publication's input contract that decides
-// which identity signs: the token the call carried, the environment the identity
-// ladder reads, and the vocabulary the refusal at the end of that ladder is
-// written in.
+// what may sign: the token the call carried, the environment the identity ladder
+// reads, the vocabulary the refusal at the end of that ladder is written in, and
+// whether the key the served workspace's own configuration names is reachable.
 type credentialInputs struct {
 	idToken string
 	look    func(string) string
 	supply  signing.IdentityTokenSupply
+
+	// configuredKeyWithheld is the tool's own projection of whether the key the
+	// workspace configuration names may be spent for this caller. It is lifted
+	// alongside the three above because it is the same question about a different
+	// credential, and a surface that answered the two differently would refuse the
+	// argument naming a key while the configuration supplied the same key.
+	configuredKeyWithheld bool
 }
 
 // resolveAsTheLayerWould drives the shared identity ladder with the inputs a tool
@@ -185,7 +192,12 @@ func theThreeSigningTools() []signingToolInputs {
 				if refusal != "" {
 					t.Fatalf("publishEntityConfig refused legal arguments: %s", refusal)
 				}
-				return credentialInputs{idToken: cfg.IDToken, look: cfg.EnvLookup, supply: cfg.IdentitySupply}
+				return credentialInputs{
+					idToken:               cfg.IDToken,
+					look:                  cfg.EnvLookup,
+					supply:                cfg.IdentitySupply,
+					configuredKeyWithheld: cfg.ConfiguredKeyNotConsulted,
+				}
 			},
 		},
 		{
@@ -198,7 +210,12 @@ func theThreeSigningTools() []signingToolInputs {
 				if refusal != "" {
 					t.Fatalf("signArtifactsConfig refused legal arguments: %s", refusal)
 				}
-				return credentialInputs{idToken: cfg.IDToken, look: cfg.EnvLookup, supply: cfg.IdentitySupply}
+				return credentialInputs{
+					idToken:               cfg.IDToken,
+					look:                  cfg.EnvLookup,
+					supply:                cfg.IdentitySupply,
+					configuredKeyWithheld: cfg.ConfiguredKeyNotConsulted,
+				}
 			},
 		},
 		{
@@ -212,7 +229,12 @@ func theThreeSigningTools() []signingToolInputs {
 				if refusal != "" {
 					t.Fatalf("deprecateArtifactConfig refused legal arguments: %s", refusal)
 				}
-				return credentialInputs{idToken: cfg.IDToken, look: cfg.EnvLookup, supply: cfg.IdentitySupply}
+				return credentialInputs{
+					idToken:               cfg.IDToken,
+					look:                  cfg.EnvLookup,
+					supply:                cfg.IdentitySupply,
+					configuredKeyWithheld: cfg.ConfiguredKeyNotConsulted,
+				}
 			},
 		},
 	}

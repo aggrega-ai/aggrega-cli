@@ -66,7 +66,9 @@
 // to reach, what became of it, and how long it took, plus the trace context the
 // caller sent where it sent one that parses. Its own life — starting, binding,
 // being refused, acquiring its documentation, stopping — is recorded in the same
-// shape, each line naming the event instead of a caller. No credential, and no
+// shape, each line naming the event instead of a caller, and a deployment whose
+// workspace names a signing key no caller on a listener can spend is told so once
+// among them. No credential, and no
 // part of one, is ever written to any of them. A process speaking its own
 // streams writes readable prose diagnostics instead, because the client reading
 // them launched it and sits at the same machine.

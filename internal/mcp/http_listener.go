@@ -226,6 +226,7 @@ func listenAndServe(ctx context.Context, cfg Config, transport HTTPConfig, liste
 	if err := requireServableWorkspace(cfg.WorkspaceRoot); err != nil {
 		return refused(err)
 	}
+	noteAnUnusedSigningKey(lifecycle, cfg.WorkspaceRoot, listen.Address)
 	handler, err := NewHTTPHandler(ctx, cfg, transport)
 	if err != nil {
 		return refused(err)
@@ -272,6 +273,72 @@ func (l lifecycleLog) note(line lifecycleAudit) {
 	line.Transport = transportName(transportHTTP)
 	line.WorkspaceRoot = l.root
 	writeAuditLine(l.w, line)
+}
+
+// unusedSigningKeyDetail is what the line below says, in the operator's own
+// words.
+//
+// It names the SETTING and stops there. The setting is something the operator
+// wrote and can go and find; where the file it points at sits is information about
+// the machine this process runs on, which belongs on this stream no more than a
+// credential does. The sentence is written for a reader supervising a process
+// rather than for one composing a call, because the caller side of this is already
+// answered where a call selects a key and is refused.
+const unusedSigningKeyDetail = "signing.key_path names a key this server holds, and a caller reaching this " +
+	"listener cannot spend it: a call answered here signs only with an identity token the call itself " +
+	"carries, or is refused. Sign with the held key at a terminal on this machine instead."
+
+// noteAnUnusedSigningKey reports, once as this listener starts, that the workspace
+// it serves names a signing key the listener will not use.
+//
+// It exists because the alternative is a silent change of behaviour. A workspace
+// that signs with a held key at a terminal signs with a resolved identity when the
+// same workspace is served over a listener, and without this line an operator would
+// learn that from a signature they did not expect rather than from the process
+// they started. A deployment that names no key is told nothing, because there is
+// nothing about it to say.
+//
+// A workspace it cannot resolve is passed over rather than refused. Whether the
+// served directory is furnished yet is a question for the calls answered in it, not
+// for whether the address may open — the refusal above has already settled the only
+// workspace question that decides that — so a configuration this cannot read costs
+// the operator a line rather than the launch.
+func noteAnUnusedSigningKey(lifecycle lifecycleLog, root, address string) {
+	// The same resolution a call answered over this listener makes: it begins
+	// where the process was pointed, and names no root of its own, because a caller
+	// reaching a listener cannot name one. So the configuration read here is the
+	// configuration those calls will read.
+	rw, err := workspaceconfig.Resolve(root, "")
+	if err != nil || !namesASigningKey(rw.Config()) {
+		return
+	}
+	lifecycle.note(lifecycleAudit{
+		Event:   eventSigningKeyIgnored,
+		Address: address,
+		Detail:  unusedSigningKeyDetail,
+	})
+}
+
+// namesASigningKey reports whether cfg names a signing key at any scope a
+// publication could resolve one from.
+//
+// It asks a different question from the per-host resolution the publication layer
+// makes, and the difference is that no host is known yet: a listener starts before
+// any call names one. Reading the global block and every registry's own is exactly
+// the set of hosts for which that per-host resolution could come back with a key,
+// because a resolved key is the global one overlaid by that host's — so a
+// deployment is told once, at startup, rather than left to discover it when a call
+// for the one host that names a key arrives.
+func namesASigningKey(cfg workspaceconfig.Config) bool {
+	if cfg.Signing.KeyPath != "" {
+		return true
+	}
+	for _, registry := range cfg.Registries {
+		if registry.Signing.KeyPath != "" {
+			return true
+		}
+	}
+	return false
 }
 
 // requireServableWorkspace refuses a listener that has no workspace to serve.

@@ -164,35 +164,69 @@ const signingKeySelectionNote = "Leaving `identity_token` out falls through to t
 // rungs that read the environment have nothing to find.
 func readsNoEnvironment(string) string { return "" }
 
-// identityInputs reports the two credential inputs a publication runs with on the
-// transport this session serves: the environment its identity resolution reads,
-// and the vocabulary the refusal at the end of that resolution is written in.
+// signingCredentials is what a publication may spend on the transport this
+// session serves: the environment its identity resolution reads, the vocabulary
+// the refusal at the end of that resolution is written in, and whether the signing
+// key the served workspace's own configuration names is one of its inputs.
+//
+// The three travel together because they are one fact said three ways — which
+// credentials belong to the caller and which belong to whoever started this
+// process. A resolution that cannot read the environment must not refuse by naming
+// it; and a surface that refuses the argument naming a key while the configuration
+// supplies the same key one layer down has closed one door onto a room the other
+// still opens.
+type signingCredentials struct {
+	// envLookup is the environment the identity ladder reads. Nil is the
+	// publication layer's documented default, which is the live process
+	// environment.
+	envLookup func(string) string
+
+	// supply is the caller's own vocabulary, which the ladder's refusal is
+	// composed from.
+	supply signing.IdentityTokenSupply
+
+	// configuredKeyNotConsulted withholds the key the served workspace's
+	// configuration names from every signer this call builds.
+	configuredKeyNotConsulted bool
+}
+
+// signingCredentials reports what a publication may spend on the transport this
+// session serves.
 //
 // A caller reaching this server over the process's own streams launched it and is
-// at this machine's keyboard, so the environment this process carries is that
-// caller's own: the reader is left nil, which the publication layer takes as the
-// live process environment, and the refusal names the shared inputs because that
-// caller has them.
+// at this machine's keyboard, so everything this process can reach is that
+// caller's own: the environment reader is left nil, which the publication layer
+// takes as the live process environment; the refusal names the shared inputs
+// because that caller has them; and the workspace's configured key is a file that
+// caller owns and may spend.
 //
-// A caller reaching a listener is somewhere else. The identity this process
-// carries belongs to whoever started it, and handing it to every connected caller
-// would let any of them sign as that identity. So the ladder is given a reader that
-// answers nothing: the variable rungs and the ambient endpoint — which is
-// discovered through that same reader — have nothing to find, which is what makes
-// them absent rather than merely declined. Only a token the call itself carried can
-// resolve.
+// A caller reaching a listener is somewhere else, and the difference is possession
+// rather than reference. A token sent in the call is a credential that caller
+// HOLDS: it had to obtain it, it is bound to it, and the signature is attributable
+// to it. The identity this process's environment carries, and the key its
+// workspace's configuration names, are the operator's — a caller proves nothing by
+// causing either to be spent, anyone who reaches this address could cause the
+// same, and the signature would be attributable to the operator rather than to
+// whoever asked for it. So the ladder is given a reader that answers nothing, and
+// the configured key is withheld: the variable rungs and the ambient endpoint have
+// nothing to find, no key is reachable at all, and only a token the call itself
+// carried can sign.
 //
-// The two travel together because they are one fact said twice. A resolution that
-// cannot read the environment must not refuse by naming it, and a caller told to
-// export a variable this server would never read has been sent to do something
-// that cannot help it.
-func (s *server) identityInputs() (func(string) string, signing.IdentityTokenSupply) {
+// The key is withheld wherever it was named. A key path named in the call is
+// refused before anything is resolved; a key path named by the configuration is
+// withheld here. Both are the same key with the same blast radius, and a rule that
+// closed only the first would be one no reader could derive from the other.
+func (s *server) signingCredentials() signingCredentials {
 	if s.transport != transportHTTP {
-		return nil, toolIdentitySupply
+		return signingCredentials{supply: toolIdentitySupply}
 	}
 	supply := toolIdentitySupply
 	supply.SharedInputsNotConsulted = true
-	return readsNoEnvironment, supply
+	return signingCredentials{
+		envLookup:                 readsNoEnvironment,
+		supply:                    supply,
+		configuredKeyNotConsulted: true,
+	}
 }
 
 // missingDestination refuses a publication that has nowhere to go, in this
@@ -378,23 +412,24 @@ func (s *server) publishEntityConfig(a publishEntityArgs) (publishops.PushConfig
 	if refusal != "" {
 		return publishops.PushConfig{}, refusal
 	}
-	envLookup, identitySupply := s.identityInputs()
+	credentials := s.signingCredentials()
 	return publishops.PushConfig{
-		EntityPath:        entityPath,
-		Registry:          a.Registry,
-		DryRun:            a.DryRun,
-		Sign:              a.Sign,
-		PluginPath:        pluginPath,
-		KeyPath:           a.KeyPath,
-		FulcioURL:         a.FulcioURL,
-		RekorURL:          a.RekorURL,
-		TimestampURL:      a.TimestampURL,
-		IDToken:           a.IdentityToken,
-		EnvLookup:         envLookup,
-		Workspace:         tw.rw,
-		IdentitySupply:    identitySupply,
-		DestinationSupply: toolDestinationSupply,
-		Out:               io.Discard,
+		EntityPath:                entityPath,
+		Registry:                  a.Registry,
+		DryRun:                    a.DryRun,
+		Sign:                      a.Sign,
+		PluginPath:                pluginPath,
+		KeyPath:                   a.KeyPath,
+		FulcioURL:                 a.FulcioURL,
+		RekorURL:                  a.RekorURL,
+		TimestampURL:              a.TimestampURL,
+		IDToken:                   a.IdentityToken,
+		EnvLookup:                 credentials.envLookup,
+		ConfiguredKeyNotConsulted: credentials.configuredKeyNotConsulted,
+		Workspace:                 tw.rw,
+		IdentitySupply:            credentials.supply,
+		DestinationSupply:         toolDestinationSupply,
+		Out:                       io.Discard,
 	}, ""
 }
 
@@ -734,18 +769,19 @@ func (s *server) signArtifactsConfig(a signArtifactsArgs) (publishops.SignConfig
 	if err != nil {
 		return publishops.SignConfig{}, explainToolError("Could not resolve the workspace to sign against.", err, "")
 	}
-	envLookup, identitySupply := s.identityInputs()
+	credentials := s.signingCredentials()
 	return publishops.SignConfig{
-		References:     a.References,
-		KeyPath:        a.KeyPath,
-		FulcioURL:      a.FulcioURL,
-		RekorURL:       a.RekorURL,
-		TimestampURL:   a.TimestampURL,
-		IDToken:        a.IdentityToken,
-		EnvLookup:      envLookup,
-		Workspace:      tw.rw,
-		IdentitySupply: identitySupply,
-		Out:            io.Discard,
+		References:                a.References,
+		KeyPath:                   a.KeyPath,
+		FulcioURL:                 a.FulcioURL,
+		RekorURL:                  a.RekorURL,
+		TimestampURL:              a.TimestampURL,
+		IDToken:                   a.IdentityToken,
+		EnvLookup:                 credentials.envLookup,
+		ConfiguredKeyNotConsulted: credentials.configuredKeyNotConsulted,
+		Workspace:                 tw.rw,
+		IdentitySupply:            credentials.supply,
+		Out:                       io.Discard,
 	}, ""
 }
 
@@ -988,23 +1024,24 @@ func (s *server) deprecateArtifactConfig(a deprecateArtifactArgs) (publishops.De
 		}
 		batchPath = resolved
 	}
-	envLookup, identitySupply := s.identityInputs()
+	credentials := s.signingCredentials()
 	return publishops.DeprecateConfig{
-		Reference:      reference,
-		Severity:       strings.TrimSpace(a.Severity),
-		Reason:         strings.TrimSpace(a.Reason),
-		Replacement:    a.Replacement,
-		Message:        a.Message,
-		From:           batchPath,
-		KeyPath:        a.KeyPath,
-		FulcioURL:      a.FulcioURL,
-		RekorURL:       a.RekorURL,
-		TimestampURL:   a.TimestampURL,
-		IDToken:        a.IdentityToken,
-		EnvLookup:      envLookup,
-		Workspace:      tw.rw,
-		IdentitySupply: identitySupply,
-		Out:            io.Discard,
+		Reference:                 reference,
+		Severity:                  strings.TrimSpace(a.Severity),
+		Reason:                    strings.TrimSpace(a.Reason),
+		Replacement:               a.Replacement,
+		Message:                   a.Message,
+		From:                      batchPath,
+		KeyPath:                   a.KeyPath,
+		FulcioURL:                 a.FulcioURL,
+		RekorURL:                  a.RekorURL,
+		TimestampURL:              a.TimestampURL,
+		IDToken:                   a.IdentityToken,
+		EnvLookup:                 credentials.envLookup,
+		ConfiguredKeyNotConsulted: credentials.configuredKeyNotConsulted,
+		Workspace:                 tw.rw,
+		IdentitySupply:            credentials.supply,
+		Out:                       io.Discard,
 	}, ""
 }
 

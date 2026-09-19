@@ -66,6 +66,12 @@ type PushConfig struct {
 	// Nil means the live process environment.
 	EnvLookup func(string) string
 
+	// ConfiguredKeyNotConsulted withholds the signing key this workspace's own
+	// configuration names, so only a KeyPath this caller supplied can select the
+	// keyed branch. See SignerRequest.ConfiguredKeyNotConsulted for what it
+	// declares; false is every caller that owns the machine the key sits on.
+	ConfiguredKeyNotConsulted bool
+
 	// TokenGetter acquires a keyless OIDC identity token interactively when no
 	// explicit token is supplied. Nil is the unattended shape and is the default:
 	// no acquisition is attempted at all and the shared identity ladder refuses,
@@ -110,17 +116,18 @@ type PushConfig struct {
 // ladder are consulted through one path rather than re-spelled per verb.
 func (cfg PushConfig) signerRequest(registry string) SignerRequest {
 	return SignerRequest{
-		Workspace:            cfg.Workspace,
-		Registry:             registry,
-		Signer:               cfg.Signer,
-		KeyPath:              cfg.KeyPath,
-		FulcioURL:            cfg.FulcioURL,
-		RekorURL:             cfg.RekorURL,
-		TimestampURL:         cfg.TimestampURL,
-		IDToken:              cfg.IDToken,
-		EnvLookup:            cfg.EnvLookup,
-		AcquireIdentityToken: interactiveAcquirer(cfg.TokenGetter, cfg.IsTTY),
-		IdentitySupply:       cfg.IdentitySupply,
+		Workspace:                 cfg.Workspace,
+		Registry:                  registry,
+		Signer:                    cfg.Signer,
+		KeyPath:                   cfg.KeyPath,
+		FulcioURL:                 cfg.FulcioURL,
+		RekorURL:                  cfg.RekorURL,
+		TimestampURL:              cfg.TimestampURL,
+		IDToken:                   cfg.IDToken,
+		EnvLookup:                 cfg.EnvLookup,
+		ConfiguredKeyNotConsulted: cfg.ConfiguredKeyNotConsulted,
+		AcquireIdentityToken:      interactiveAcquirer(cfg.TokenGetter, cfg.IsTTY),
+		IdentitySupply:            cfg.IdentitySupply,
 	}
 }
 

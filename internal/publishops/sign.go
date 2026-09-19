@@ -14,7 +14,6 @@ import (
 	"oras.land/oras-go/v2"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
-	"github.com/aggrega-ai/aggrega-cli/pkg/registryhost"
 	"github.com/aggrega-ai/aggrega-cli/pkg/signing"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
@@ -55,6 +54,12 @@ type SignConfig struct {
 	// Nil means the live process environment.
 	EnvLookup func(string) string
 
+	// ConfiguredKeyNotConsulted withholds the signing key this workspace's own
+	// configuration names, so only a KeyPath this caller supplied can select the
+	// keyed branch. See SignerRequest.ConfiguredKeyNotConsulted for what it
+	// declares; false is every caller that owns the machine the key sits on.
+	ConfiguredKeyNotConsulted bool
+
 	// TokenGetter acquires a keyless OIDC identity token interactively when no
 	// explicit token is supplied. Nil is the unattended shape and is the
 	// default: no acquisition is attempted and the shared identity ladder
@@ -80,17 +85,18 @@ type SignConfig struct {
 // credential boundary's input contract for one registry host.
 func (cfg SignConfig) signerRequest(registry string) SignerRequest {
 	return SignerRequest{
-		Workspace:            cfg.Workspace,
-		Registry:             registry,
-		Signer:               cfg.Signer,
-		KeyPath:              cfg.KeyPath,
-		FulcioURL:            cfg.FulcioURL,
-		RekorURL:             cfg.RekorURL,
-		TimestampURL:         cfg.TimestampURL,
-		IDToken:              cfg.IDToken,
-		EnvLookup:            cfg.EnvLookup,
-		AcquireIdentityToken: interactiveAcquirer(cfg.TokenGetter, cfg.IsTTY),
-		IdentitySupply:       cfg.IdentitySupply,
+		Workspace:                 cfg.Workspace,
+		Registry:                  registry,
+		Signer:                    cfg.Signer,
+		KeyPath:                   cfg.KeyPath,
+		FulcioURL:                 cfg.FulcioURL,
+		RekorURL:                  cfg.RekorURL,
+		TimestampURL:              cfg.TimestampURL,
+		IDToken:                   cfg.IDToken,
+		EnvLookup:                 cfg.EnvLookup,
+		ConfiguredKeyNotConsulted: cfg.ConfiguredKeyNotConsulted,
+		AcquireIdentityToken:      interactiveAcquirer(cfg.TokenGetter, cfg.IsTTY),
+		IdentitySupply:            cfg.IdentitySupply,
 	}
 }
 
@@ -232,7 +238,7 @@ func (b *batchSigner) prepare() error {
 		// supplied path or global config entry). Resolve it once from the first
 		// reference's host to decide keyless vs keyed for the whole batch; a
 		// per-registry key path is still applied per reference in signRef.
-		resolved := rw.Config().ResolveSigning(registryhost.Of(b.cfg.References[0]))
+		resolved := resolveSigning(rw.Config(), b.cfg.References[0], b.cfg.ConfiguredKeyNotConsulted)
 		b.keyPath = firstNonEmpty(b.cfg.KeyPath, resolved.KeyPath)
 		b.keyless = b.keyPath == ""
 		// Carry the resolved workspace forward so signRef sources the egress
@@ -340,7 +346,7 @@ func (b *batchSigner) buildRefSigner(ref string) (signing.Signer, error) {
 	if err != nil {
 		return nil, err
 	}
-	resolved := rw.Config().ResolveSigning(registryhost.Of(ref))
+	resolved := resolveSigning(rw.Config(), ref, b.cfg.ConfiguredKeyNotConsulted)
 	return buildSigner(signerParams{
 		KeyPath:      firstNonEmpty(b.cfg.KeyPath, resolved.KeyPath),
 		TokenSource:  b.tokenSource,
