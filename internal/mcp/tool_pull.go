@@ -185,16 +185,21 @@ var pullToolSpec = toolSpec{
 // So what governs is when the operation runs, not which surface runs it — it runs
 // on explicit invocation and never as a side effect of validating or inspecting.
 //
-// # It never prompts, and a withdrawal reaches the work
+// # It never prompts, it reports when asked, and a withdrawal reaches the work
 //
 // Nobody is watching a protocol stream, so the shared resolution is given no way to
 // ask a person anything: a fork that would have been put to a person halts loudly
 // naming what to supply, rather than blocking on an answer that will never come. A
 // hang would otherwise be the observable failure, and a caller here has no way to
-// answer. For the same reason no progress surface is attached — there is no terminal
-// to draw one on — and the diagnostics are captured into the answer instead of
-// being written to a process stream, which on this server carries framed protocol
+// answer. The diagnostics are captured into the answer for a related reason, rather
+// than written to a process stream, which on this server carries framed protocol
 // messages and nothing else.
+//
+// Progress is the one thing the resolution reports outward, and only to a caller
+// that asked for it. This is the slowest tool on this surface and it grows with the
+// dependency set, so a caller that minted a token on the call is told each time the
+// resolution enters a stage. There is no terminal to draw a surface on, so what
+// travels is the bare fact that the work moved on, on the token the caller minted.
 //
 // The invocation's context travels into the resolution, so a caller that withdraws
 // stops the work rather than only the reply: no lockfile is written, and whatever
@@ -295,6 +300,11 @@ func pullInvoke(s *server, ctx context.Context, args json.RawMessage) (*callTool
 // for a run that never reached a discovery at all, which needs no clause of its
 // own. Nil is therefore the absence of a render rather than an error signal, and
 // a caller that receives it renders for itself against the pins the run did land.
+// dependencyResolver performs one dependency resolution. It is the shared
+// operation's own signature, so the seam a test installs and the operation it
+// stands in for cannot come to take different inputs.
+type dependencyResolver func(ctx context.Context, cfg pullops.Config) (pullops.Result, error)
+
 func runDependencyResolution(ctx context.Context, s *server, tw *toolWorkspace, releasePath string,
 	a pullArgs, targets []string) (pullResultPayload, *compilerops.PreviewResult, error) {
 	payload := pullResultPayload{
@@ -313,8 +323,18 @@ func runDependencyResolution(ctx context.Context, s *server, tw *toolWorkspace, 
 	// that reach a return, so reading it here loses nothing and gains every refusal
 	// past that point.
 	var resolved closure.Closure
-	res, runErr := pullops.Run(ctx, pullResolutionConfig(s, tw, releasePath, a, targets, &diagnostics,
+	// A caller that asked to be reported to is told each time the resolution
+	// enters a stage. The callback is supplied unconditionally: a request that
+	// asked for nothing reaches a reporter that writes nothing, so there is no
+	// question to answer here about whether anybody is watching.
+	reporter := progressReporterFrom(ctx)
+	run := s.resolveDependencies
+	if run == nil {
+		run = pullops.Run
+	}
+	res, runErr := run(ctx, pullResolutionConfig(s, tw, releasePath, a, targets, &diagnostics,
 		pullops.Reporter{
+			Phase:    func(pullops.Phase) { reporter.step() },
 			Resolved: func(cl closure.Closure) { resolved = cl },
 		}))
 	payload.Resolved = closureRefsAcrossAxes(resolved)
@@ -385,8 +405,8 @@ func pullResolutionConfig(s *server, tw *toolWorkspace, releasePath string, a pu
 		Toolchain:       s.toolchain,
 		DiagOut:         diagOut,
 		Report:          report,
-		// No prompt and no progress surface are supplied, and neither is an omission:
-		// see the notes on pullInvoke.
+		// No prompt is supplied, and that is not an omission: see the notes on
+		// pullInvoke. The report above carries whatever this call asked to be told.
 	}
 }
 

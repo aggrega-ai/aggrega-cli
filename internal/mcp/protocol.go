@@ -82,6 +82,20 @@ type rpcResponse struct {
 	Error   *rpcError       `json:"error,omitempty"`
 }
 
+// rpcNotification is the wire shape for an outgoing JSON-RPC 2.0 notification:
+// a method and its params, and no id at all.
+//
+// The absent id is what separates it from a request: it tells the peer there is
+// nothing here to answer, which is what a progress report is. Params is a
+// concrete value rather than raw bytes because every notification this server
+// sends is composed here rather than relayed, so there is nothing to preserve
+// verbatim.
+type rpcNotification struct {
+	JSONRPC string `json:"jsonrpc"`
+	Method  string `json:"method"`
+	Params  any    `json:"params,omitempty"`
+}
+
 // cancelledParams is the params shape for the notifications/cancelled
 // notification: the id of the request the client is cancelling. The protocol
 // also allows an optional free-text reason, which is not declared here because

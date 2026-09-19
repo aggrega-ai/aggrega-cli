@@ -42,6 +42,17 @@
 // then returns cleanly. Requests are answered concurrently and a client
 // may cancel one by id, leaving every other one running.
 //
+// A long call reports its progress when the caller asks to be told. A request
+// that mints a progress token in its metadata is told each time the work it
+// started moves on, and a request that mints none is answered exactly as it was
+// before. Over HTTP the response becomes an event stream carrying those reports
+// and then the result as its last event, with a comment line at intervals while
+// the work is quiet so whatever sits in between sees a live connection; the
+// stream opens only once something actually reports, so a call whose work
+// reports nothing is still answered with one JSON object. On stdio the reports
+// are framed lines ahead of the response line. Nothing is reported once the
+// request is over, on either transport.
+//
 // The package's contract is the wire protocol, not the Go API — no public
 // types outside this package consume Run or ListenAndServe beyond the
 // command layer that starts the server. The tool, resource, and prompt

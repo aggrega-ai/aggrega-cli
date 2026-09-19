@@ -175,6 +175,13 @@ type server struct {
 	// the arguments and returns canned output.
 	runCommand commandRunner
 
+	// resolveDependencies performs the dependency resolution the resolution tool
+	// and a build asked to fill its lockfile both run. Nil runs the shared
+	// operation. A test injects one that reports stages of its own choosing and
+	// stalls where it likes, which is the only way to drive the reporting a long
+	// call does without a workspace whose real resolution takes seconds.
+	resolveDependencies dependencyResolver
+
 	// renderHelp renders a command's help text for the cli:// resource family,
 	// read from the command tree the command layer handed this server. Nil
 	// answers every read in that family as a resource that is not there: there is
@@ -485,6 +492,11 @@ func (s *server) accept(ctx context.Context, inFlight *sync.WaitGroup, body []by
 		return nil
 	}
 	reqCtx, cancel := context.WithCancelCause(ctx)
+	// The sink is installed before the request is routed, so a report written
+	// while the work runs travels ahead of the response it belongs to rather than
+	// after it. A request that minted no token reaches the same sink and puts
+	// nothing on it.
+	reqCtx = withProgressSink(reqCtx, s.progressSink())
 	s.cancels.Track(req.ID, func() { cancel(errCancelledByClient) })
 	inFlight.Add(1)
 	go func() {
@@ -547,28 +559,61 @@ func (s *server) writeErrorEnvelope(id json.RawMessage, env *rpcError) error {
 	return s.write(&rpcResponse{JSONRPC: "2.0", ID: id, Error: env})
 }
 
-// write marshals resp and emits it as one newline-terminated line on
-// stdout. It is the single route from every response surface to the
-// output stream, so stdout carries nothing but framed protocol messages.
+// write marshals resp and emits it as one newline-terminated line on stdout.
+func (s *server) write(resp *rpcResponse) error {
+	return s.writeFrame(resp, "response")
+}
+
+// writeNotification emits one notification carrying method and params, on the
+// same stream and under the same lock every response is framed on.
+//
+// A failure is returned rather than swallowed, for the same reason a response's
+// is: a stream that will not take a notification will not take the response
+// following it either, and the run has one place to report that from.
+func (s *server) writeNotification(method string, params any) error {
+	return s.writeFrame(&rpcNotification{JSONRPC: "2.0", Method: method, Params: params}, "notification")
+}
+
+// progressSink is how this transport reports a request's progress: one framed
+// notification through the writer the response itself is framed on, so a report
+// and the answer that follows it cannot interleave their bytes.
+//
+// A write failure is dropped here rather than raised. Progress is an account of
+// work whose outcome the response reports, so failing an operation because its
+// narration could not be written would turn a cosmetic loss into a functional
+// one — and the failure is recorded by the write itself, which is what the run
+// reports from.
+func (s *server) progressSink() progressSink {
+	return func(note progressNotification) {
+		_ = s.writeNotification(progressMethod, note)
+	}
+}
+
+// writeFrame marshals v and emits it as one newline-terminated line on stdout.
+// It is the single route from every outbound surface to the output stream, so
+// stdout carries nothing but framed protocol messages.
 //
 // Requests are answered on their own goroutines, so the marshal-and-write runs
-// under a mutex: two responses emitted at once would otherwise interleave their
+// under a mutex: two frames emitted at once would otherwise interleave their
 // bytes and neither line would parse. Nothing else acquires it.
 //
 // It also records the first failure any write meets, because a write from a
 // dispatched request returns to a goroutine nobody is reading, and serve still
 // owes its caller that error — a broken transport leaves no channel to report the
 // failure on.
-func (s *server) write(resp *rpcResponse) error {
+//
+// what names the frame in the failure, so a reader of the error is told which
+// kind of message could not be written rather than only that one could not.
+func (s *server) writeFrame(v any, what string) error {
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
-	b, err := json.Marshal(resp)
+	b, err := json.Marshal(v)
 	if err != nil {
-		return s.recordWriteFailureLocked(fmt.Errorf("marshal response: %w", err))
+		return s.recordWriteFailureLocked(fmt.Errorf("marshal %s: %w", what, err))
 	}
 	b = append(b, '\n')
 	if _, err := s.out.Write(b); err != nil {
-		return s.recordWriteFailureLocked(fmt.Errorf("write response: %w", err))
+		return s.recordWriteFailureLocked(fmt.Errorf("write %s: %w", what, err))
 	}
 	return nil
 }

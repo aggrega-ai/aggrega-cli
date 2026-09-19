@@ -55,7 +55,19 @@ func (s *server) dispatch(ctx context.Context, req *rpcRequest) (any, *rpcError)
 // Without this entry point it would either read the same metadata a second time,
 // leaving two reads to drift apart, or grow a method table of its own, which is
 // the one thing the table above exists to prevent.
+// The progress token a request minted is read here, on the route both
+// transports arrive at, so the reading has one home and the two cannot come to
+// admit different tokens. What each transport supplies for itself is the sink
+// the reports travel on, which it installs on the context before it routes
+// anything — an event on the response stream over HTTP, a framed line on stdio.
+// A token this server cannot report on refuses the request here, before a
+// handler runs, because a caller waiting to be reported to has nothing to act
+// on if the call simply goes quiet.
 func (s *server) dispatchInEra(ctx context.Context, era protocolEra, req *rpcRequest) (any, *rpcError) {
+	ctx, rpcErr := withProgressReporter(ctx, req)
+	if rpcErr != nil {
+		return nil, rpcErr
+	}
 	result, rpcErr := s.route(ctx, era, req)
 	if rpcErr != nil {
 		return nil, rpcErr

@@ -43,10 +43,10 @@ const (
 	headerAllow           = "Allow"
 )
 
-// contentTypeJSON is the media type every answer this transport composes
-// carries. An event stream is a different transport shape and this one never
-// negotiates into it: a request is answered with one JSON object or with
-// nothing at all.
+// contentTypeJSON is the media type an answer composed as one object carries,
+// which is every answer bar the ones that reported progress on their way to it.
+// A request is answered with one JSON object, with a stream of events ending in
+// that object, or with nothing at all.
 const contentTypeJSON = "application/json"
 
 // The wrapper the per-request revision defines for a mirrored name whose bytes
@@ -218,6 +218,12 @@ type httpHandler struct {
 	// document and a caller that is challenged must be told the same thing.
 	resource protectedResource
 
+	// progressKeepAlive is how long a stream carrying progress may sit idle
+	// before a comment line is written on it. A test shortens it so a stall is a
+	// property of the proof rather than of the clock; the production value, and
+	// what it is chosen against, is stated where the constant is declared.
+	progressKeepAlive time.Duration
+
 	// workspaceRoot is the workspace this process serves, recorded on every
 	// request answered here.
 	//
@@ -343,15 +349,16 @@ func newHTTPHandler(runCtx context.Context, s *server, transport HTTPConfig) (*h
 	s.commandTools = nil
 	s.deniedReach = denied
 	return &httpHandler{
-		srv:            s,
-		runCtx:         runCtx,
-		allowedOrigins: slices.Clone(transport.AllowedOrigins),
-		maxBodyBytes:   transport.MaxBodyBytes,
-		slots:          make(chan struct{}, transport.MaxConcurrentRequests),
-		auth:           auth,
-		limiter:        newPrincipalRateLimiter(transport.RequestsPerMinute),
-		resource:       resource,
-		workspaceRoot:  servedWorkspaceRoot(s),
+		srv:               s,
+		runCtx:            runCtx,
+		allowedOrigins:    slices.Clone(transport.AllowedOrigins),
+		maxBodyBytes:      transport.MaxBodyBytes,
+		slots:             make(chan struct{}, transport.MaxConcurrentRequests),
+		auth:              auth,
+		limiter:           newPrincipalRateLimiter(transport.RequestsPerMinute),
+		resource:          resource,
+		progressKeepAlive: progressKeepAlive,
+		workspaceRoot:     servedWorkspaceRoot(s),
 	}, nil
 }
 
@@ -616,12 +623,42 @@ func (h *httpHandler) serveEndpoint(w http.ResponseWriter, r *http.Request) {
 // they are decided several layers down and nothing between here and there has
 // any use for them; the recorder is written by the dispatch this call makes and
 // read after it returns, so the call itself orders the two.
+//
+// # What the record spans when the answer is a stream
+//
+// This returns once the answer is written, which for a call that reported
+// progress is once the stream's last event is written rather than once the
+// first one is. The record of the request is written by the caller above, after
+// this returns, so the duration it reports spans the whole exchange either way
+// and the outcome it reports is the one the exchange ended at. That is the
+// property to hold on to: an outcome decided when the stream OPENED would
+// report a call as answered while the work it narrates is still running, and
+// the two would be indistinguishable in the record.
+//
+// The outcome for a streamed refusal is still read from the status the refusal
+// earned, even though the bytes left here under a status of two hundred: the
+// outcomes name what became of a call rather than the number that carried it,
+// and a refusal that had to travel as an event is the same refusal.
+//
+// # The stream, and what closes it
+//
+// The stream is watched against the CONNECTION rather than against the composed
+// context above. A caller that disconnects has ended the exchange, so the
+// stream closes and nothing more is written on it. A run that ends has not: the
+// caller is still connected and still reading, so the answer it was waiting for
+// is still written — which is the same rule the paragraphs above keep for the
+// single-object answer.
 func (h *httpHandler) answer(w http.ResponseWriter, r *http.Request, era protocolEra,
 	req *rpcRequest, rec *requestAudit) {
 	ctx, cancel := context.WithCancelCause(r.Context())
 	defer cancel(nil)
 	stopWatchingRun := context.AfterFunc(h.runCtx, func() { cancel(errRunEnded) })
 	defer stopWatchingRun()
+
+	stream := newProgressStream(w, h.progressKeepAlive)
+	defer stream.close()
+	defer stream.stopOnContext(r.Context())()
+	ctx = withProgressSink(ctx, stream.emit)
 
 	var reached reachRecorder
 	ctx = withReachRecorder(ctx, &reached)
@@ -636,11 +673,23 @@ func (h *httpHandler) answer(w http.ResponseWriter, r *http.Request, era protoco
 	if rpcErr != nil {
 		status := statusForRefusal(rpcErr)
 		rec.Outcome = outcomeForStatus(status, false)
-		h.respondRefusal(w, status, req.ID, rpcErr)
+		if !stream.finish(&rpcResponse{JSONRPC: "2.0", ID: req.ID, Error: rpcErr}) {
+			h.respondRefusal(w, status, req.ID, rpcErr)
+		}
 		return
 	}
 	rec.Outcome = outcomeForStatus(http.StatusOK, toolReportedFailure(result))
-	h.respondResult(w, req.ID, result)
+	if !stream.opened() {
+		h.respondResult(w, req.ID, result)
+		return
+	}
+	resultBytes, err := json.Marshal(result)
+	if err != nil {
+		stream.finish(&rpcResponse{JSONRPC: "2.0", ID: req.ID, Error: &rpcError{
+			Code: codeInternalError, Message: "marshal result: " + err.Error()}})
+		return
+	}
+	stream.finish(&rpcResponse{JSONRPC: "2.0", ID: req.ID, Result: resultBytes})
 }
 
 // toolReportedFailure reports whether an answered call came back as a tool
