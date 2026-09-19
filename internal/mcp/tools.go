@@ -69,6 +69,13 @@ import (
 // so a caller reading the sentence and then being refused by the schema was told
 // two different things at once. Keeping the sentence in its own field gives it
 // one home rather than a second copy to be removed by pattern.
+//
+// signingKeyArguments names the arguments through which a call selects an offline
+// held signing key, and is empty for a tool that signs nothing. Such a key lives
+// on the machine this server runs on, so a caller that did not launch this process
+// cannot be the one it belongs to: the transport that refuses these arguments also
+// withholds them from what it advertises, and both read this one list rather than
+// two kept in step by eye.
 type toolSpec struct {
 	name                   string
 	operation              string
@@ -77,6 +84,7 @@ type toolSpec struct {
 	description            string
 	workspaceSelectionNote string
 	inputSchema            string
+	signingKeyArguments    []string
 	kinds                  []string
 	reachEscalation        func(s *server, args json.RawMessage) opsurface.Reach
 	invoke                 func(s *server, ctx context.Context, args json.RawMessage) (*callToolResult, *rpcError)
@@ -370,20 +378,26 @@ func (s *server) handleToolsList(ctx context.Context) (any, *rpcError) {
 // guidance-carrying failure — is returned as the result, including a refusal of
 // the arguments it was given.
 //
-// Two refusals are composed here rather than by the tool, both after the tool is
+// Three refusals are composed here rather than by the tool, all after the tool is
 // resolved and before it runs, and every tool crosses this line — so each holds
 // for the tools that resolve a workspace, the ones that answer without resolving
 // one, and the generated command tools alike, with one home for its wording
 // rather than one per tool.
 //
-// The first is a call that names a workspace this session does not let it name,
-// which travels as that tool's own failing result. The second is a call reaching
-// further than the credential it presented admits, which does not: it is a
-// refusal of the request rather than an outcome of the tool, the tool never ran,
-// and the transport carries it under its own status with the challenge naming
-// the scope that would admit it. A tool the credential does not admit is also
-// absent from that request's tool list, so this answer is what a caller reaches
-// by naming a tool directly rather than by reading what it was offered.
+// The first is a call that names a workspace this session does not let it name.
+// The second is a call that selects a signing key held on this machine where the
+// caller is not the one this machine belongs to; it is read from the tool's own
+// spec, so a tool that signs nothing declares none and is never asked. Both travel
+// as that tool's own failing result, and both are decided from the arguments alone
+// with nothing resolved and nothing run.
+//
+// The third is a call reaching further than the credential it presented admits,
+// which does not: it is a refusal of the request rather than an outcome of the
+// tool, the tool never ran, and the transport carries it under its own status with
+// the challenge naming the scope that would admit it. A tool the credential does
+// not admit is also absent from that request's tool list, so this answer is what a
+// caller reaches by naming a tool directly rather than by reading what it was
+// offered.
 //
 // ctx is the run's own, handed to the resolved tool. Every tool that publishes,
 // pulls, builds, lints or searches carries it into the work it drives, so ending
@@ -404,6 +418,12 @@ func (s *server) handleToolsCall(ctx context.Context, params json.RawMessage) (a
 		// workspace resolves, so a refusal placed at resolution would be dropped
 		// there without a word.
 		if refusal := s.workspaceSelectionRefusal(p.Arguments); refusal != "" {
+			return errorResult(refusal)
+		}
+		// Read beside the refusal above, and for the same reason: both are about an
+		// argument this transport does not let a call send, so a caller that sent one
+		// is answered about the argument rather than about anything downstream of it.
+		if refusal := s.signingKeyRefusal(*spec, p.Arguments); refusal != "" {
 			return errorResult(refusal)
 		}
 		// Read before the tool runs and after the refusal above, so nothing a

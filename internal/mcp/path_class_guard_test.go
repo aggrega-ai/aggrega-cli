@@ -94,10 +94,12 @@ var resolversReachedOnlyByTheHelper = map[string][]string{
 //
 //   - An argument this package hands to another package WITHOUT resolving it,
 //     which that package then resolves for itself. 'key_path' is exactly that, on
-//     the three publication tools and on sign-artifacts: it is passed through to
-//     the publication layer as it arrived. That is a decision taken elsewhere
-//     about credentials rather than an omission here, and no walk of this
-//     package's source can distinguish the two.
+//     the three tools that sign: where a call may carry it at all — which is a
+//     caller at this machine's keyboard, since a caller reaching a listener is
+//     refused for sending it before anything is resolved — it is passed to the
+//     publication layer as it arrived. That is a decision taken elsewhere about
+//     credentials rather than an omission here, and no walk of this package's
+//     source can distinguish the two.
 //   - A call site in another package. The walk covers this package's own
 //     production source, which is where the wire boundary is.
 func TestEveryPathArgumentIsResolvedByTheOneHelper(t *testing.T) {

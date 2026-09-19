@@ -174,6 +174,20 @@ type IdentityTokenSupply struct {
 	// Remedy is the imperative naming what the caller can do about it, in that
 	// caller's words: "pass --identity-token".
 	Remedy string
+
+	// SharedInputsNotConsulted reports that this caller's resolution was handed an
+	// environment it cannot read, so the two shared inputs — the variables and the
+	// ambient endpoint, which is discovered through that same reader — were not
+	// consulted at all. The refusal then names neither: a caller told to export a
+	// variable nothing read has been told to do something that cannot help it, and
+	// a caller with no host of its own could not export one anyway.
+	//
+	// It says nothing about which rung resolves, and it must not: what makes those
+	// rungs unreachable is the reader answering nothing, and this only keeps the
+	// sentence at the end of the ladder true about it. Setting it while handing the
+	// ladder a reader that does read the environment composes a false refusal
+	// rather than changing a resolution.
+	SharedInputsNotConsulted bool
 }
 
 // ResolveIdentityToken resolves the keyless identity as a token SOURCE — the
@@ -249,7 +263,9 @@ func ResolveIdentityTokenNonInteractive(flagToken string, look func(string) stri
 // that resolution failed.
 //
 // The two shared inputs — the environment variables and the ambient endpoint —
-// are named for every caller, because every caller has them. The caller's own
+// are named for every caller that has them, and a caller whose supply says they
+// were not consulted has not: naming an input no resolution read would send that
+// caller to arrange something that cannot change the answer. The caller's own
 // input and its remedy come from supply, and an unstated one is omitted rather
 // than guessed: an omitted clause leaves a shorter true sentence, while a guessed
 // one leaves a caller reaching for something it does not have.
@@ -258,11 +274,28 @@ func noIdentityTokenRefusal(supply IdentityTokenSupply) error {
 	if supply.AbsentInput != "" {
 		absent = append(absent, supply.AbsentInput)
 	}
-	absent = append(absent,
-		fmt.Sprintf("no %s or %s is exported", EnvIdentityToken, EnvSigstoreIDToken),
-		"no ambient GitHub Actions OIDC endpoint is available")
+	if !supply.SharedInputsNotConsulted {
+		absent = append(absent,
+			fmt.Sprintf("no %s or %s is exported", EnvIdentityToken, EnvSigstoreIDToken),
+			"no ambient GitHub Actions OIDC endpoint is available")
+	}
 	if supply.AbsentPrompt != "" {
 		absent = append(absent, supply.AbsentPrompt)
+	}
+
+	if supply.SharedInputsNotConsulted {
+		// Nothing shared was read, so nothing shared is named — neither in what was
+		// absent nor in what to do about it. What is left is the caller's own input,
+		// and a caller that declared none is told plainly that nothing carried one
+		// rather than being handed an empty clause.
+		stated := joinWithFinalAnd(absent)
+		if stated == "" {
+			stated = "nothing supplied one"
+		}
+		if supply.Remedy == "" {
+			return fmt.Errorf("keyless signing needs an identity token: %s", stated)
+		}
+		return fmt.Errorf("keyless signing needs an identity token: %s; %s", stated, supply.Remedy)
 	}
 
 	remedy := "export one of those variables (for example a CI workflow OIDC token)"

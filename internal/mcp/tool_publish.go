@@ -55,20 +55,35 @@ import (
 // Nobody is watching a protocol stream, so the shared layer is given no way to ask
 // a person anything: neither the interactive identity rung nor the deprecation
 // content prompt is supplied, which is what makes them absent rather than merely
-// unused. Identity resolves from a credential the arguments supplied or one the
-// environment already carries, and when neither yields anything the operation
-// REFUSES, naming what to supply. A hang would be the observable failure
-// otherwise, and a caller here has no way to answer a prompt.
+// unused. Identity resolves from a credential the call supplied, and — for a caller
+// at this machine's keyboard — from one the environment already carries; when
+// nothing yields anything the operation REFUSES, naming what to supply. A hang
+// would be the observable failure otherwise, and a caller here has no way to
+// answer a prompt.
 //
 // # Paths and keys are addressed the way this surface addresses everything
 //
 // Every path argument is absolute or relative to the workspace root, resolved
 // through the one helper every other tool here uses, and a call names the
 // workspace it means on the call itself. A signing key is named the same way, by
-// `key_path`, for the same reason: this surface's callers run on the machine that
-// holds the key, and withholding the argument would leave offline keyed signing —
-// the one signing path that completes with nobody watching — reachable only
-// through configuration while the generated twin accepts it as a flag.
+// `key_path`, for the same reason: a caller that launched this process runs on the
+// machine that holds the key, and withholding the argument would leave offline
+// keyed signing — the one signing path that completes with nobody watching —
+// reachable only through configuration while the generated twin accepts it as a
+// flag.
+//
+// # A caller reaching a listener signs with what it sent, and with nothing else
+//
+// The reasoning above turns on whose machine this is, so it ends where that stops
+// being the caller's. A caller reaching a listener is somewhere else: the identity
+// this process's environment carries is the operator's rather than theirs, and a
+// key on this disk is the operator's to spend. So the identity ladder is handed an
+// environment that answers nothing — which makes the variable and ambient rungs
+// unreachable rather than merely discouraged, since there is no branch to get
+// wrong when there is nothing to read — and `key_path` is refused, and withheld
+// from what those tools advertise, before anything is resolved. Only a token the
+// call itself carried can sign. The endpoint overrides stay on both transports:
+// they name services rather than anything this machine holds.
 
 // publicationReach states how far one publication reached: the registry host it
 // addressed, and whether anything landed somewhere other people resolve from.
@@ -109,6 +124,53 @@ var (
 		Remedy:      "send 'identity_token'",
 	}
 )
+
+// argumentKeyPath is the argument a call selects an offline held signing key by,
+// spelled once so the tools that take it, the transport that refuses it and the
+// listing that withholds it all name the same thing.
+const argumentKeyPath = "key_path"
+
+// signingKeyArguments is the set of arguments that select a key held on the
+// machine this server runs on, as one list. The three tools that sign declare it;
+// the one that signs nothing does not. The transport that refuses these arguments
+// also withholds them from what it advertises, and the two read the same names.
+var signingKeyArguments = []string{argumentKeyPath}
+
+// readsNoEnvironment answers every name with the empty string. It is what the
+// identity ladder is handed for a caller that did not launch this process, so the
+// rungs that read the environment have nothing to find.
+func readsNoEnvironment(string) string { return "" }
+
+// identityInputs reports the two credential inputs a publication runs with on the
+// transport this session serves: the environment its identity resolution reads,
+// and the vocabulary the refusal at the end of that resolution is written in.
+//
+// A caller reaching this server over the process's own streams launched it and is
+// at this machine's keyboard, so the environment this process carries is that
+// caller's own: the reader is left nil, which the publication layer takes as the
+// live process environment, and the refusal names the shared inputs because that
+// caller has them.
+//
+// A caller reaching a listener is somewhere else. The identity this process
+// carries belongs to whoever started it, and handing it to every connected caller
+// would let any of them sign as that identity. So the ladder is given a reader that
+// answers nothing: the variable rungs and the ambient endpoint — which is
+// discovered through that same reader — have nothing to find, which is what makes
+// them absent rather than merely declined. Only a token the call itself carried can
+// resolve.
+//
+// The two travel together because they are one fact said twice. A resolution that
+// cannot read the environment must not refuse by naming it, and a caller told to
+// export a variable this server would never read has been sent to do something
+// that cannot help it.
+func (s *server) identityInputs() (func(string) string, signing.IdentityTokenSupply) {
+	if s.transport != transportHTTP {
+		return nil, toolIdentitySupply
+	}
+	supply := toolIdentitySupply
+	supply.SharedInputsNotConsulted = true
+	return readsNoEnvironment, supply
+}
 
 // missingDestination refuses a publication that has nowhere to go, in this
 // surface's own vocabulary, and returns the empty string when it has somewhere.
@@ -238,7 +300,8 @@ var publishEntityToolSpec = toolSpec{
   },
   "required": ["entity"]
 }`,
-	invoke: publishEntityInvoke,
+	signingKeyArguments: signingKeyArguments,
+	invoke:              publishEntityInvoke,
 }
 
 func publishEntityInvoke(s *server, ctx context.Context, args json.RawMessage) (*callToolResult, *rpcError) {
@@ -289,6 +352,7 @@ func (s *server) publishEntityConfig(a publishEntityArgs) (publishops.PushConfig
 	if refusal != "" {
 		return publishops.PushConfig{}, refusal
 	}
+	envLookup, identitySupply := s.identityInputs()
 	return publishops.PushConfig{
 		EntityPath:        entityPath,
 		Registry:          a.Registry,
@@ -300,8 +364,9 @@ func (s *server) publishEntityConfig(a publishEntityArgs) (publishops.PushConfig
 		RekorURL:          a.RekorURL,
 		TimestampURL:      a.TimestampURL,
 		IDToken:           a.IdentityToken,
+		EnvLookup:         envLookup,
 		Workspace:         tw.rw,
-		IdentitySupply:    toolIdentitySupply,
+		IdentitySupply:    identitySupply,
 		DestinationSupply: toolDestinationSupply,
 		Out:               io.Discard,
 	}, ""
@@ -603,7 +668,8 @@ var signArtifactsToolSpec = toolSpec{
   },
   "required": ["references"]
 }`,
-	invoke: signArtifactsInvoke,
+	signingKeyArguments: signingKeyArguments,
+	invoke:              signArtifactsInvoke,
 }
 
 func signArtifactsInvoke(s *server, ctx context.Context, args json.RawMessage) (*callToolResult, *rpcError) {
@@ -642,6 +708,7 @@ func (s *server) signArtifactsConfig(a signArtifactsArgs) (publishops.SignConfig
 	if err != nil {
 		return publishops.SignConfig{}, explainToolError("Could not resolve the workspace to sign against.", err, "")
 	}
+	envLookup, identitySupply := s.identityInputs()
 	return publishops.SignConfig{
 		References:     a.References,
 		KeyPath:        a.KeyPath,
@@ -649,8 +716,9 @@ func (s *server) signArtifactsConfig(a signArtifactsArgs) (publishops.SignConfig
 		RekorURL:       a.RekorURL,
 		TimestampURL:   a.TimestampURL,
 		IDToken:        a.IdentityToken,
+		EnvLookup:      envLookup,
 		Workspace:      tw.rw,
-		IdentitySupply: toolIdentitySupply,
+		IdentitySupply: identitySupply,
 		Out:            io.Discard,
 	}, ""
 }
@@ -809,7 +877,8 @@ var deprecateArtifactToolSpec = toolSpec{
     }
   ]
 }`,
-	invoke: deprecateArtifactInvoke,
+	signingKeyArguments: signingKeyArguments,
+	invoke:              deprecateArtifactInvoke,
 }
 
 func deprecateArtifactInvoke(s *server, ctx context.Context, args json.RawMessage) (*callToolResult, *rpcError) {
@@ -893,6 +962,7 @@ func (s *server) deprecateArtifactConfig(a deprecateArtifactArgs) (publishops.De
 		}
 		batchPath = resolved
 	}
+	envLookup, identitySupply := s.identityInputs()
 	return publishops.DeprecateConfig{
 		Reference:      reference,
 		Severity:       strings.TrimSpace(a.Severity),
@@ -905,8 +975,9 @@ func (s *server) deprecateArtifactConfig(a deprecateArtifactArgs) (publishops.De
 		RekorURL:       a.RekorURL,
 		TimestampURL:   a.TimestampURL,
 		IDToken:        a.IdentityToken,
+		EnvLookup:      envLookup,
 		Workspace:      tw.rw,
-		IdentitySupply: toolIdentitySupply,
+		IdentitySupply: identitySupply,
 		Out:            io.Discard,
 	}, ""
 }

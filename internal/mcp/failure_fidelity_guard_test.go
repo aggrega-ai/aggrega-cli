@@ -133,14 +133,15 @@ var proseOnlyFailureReturns = map[string]int{
 	// lookup carries one more, refusing a document path this session may not name
 	// before the lookup reads anything.
 	//
-	// The second entry against the dispatch surface is the refusal of a call that
-	// names a workspace the session does not let it name. It is decided from the
-	// arguments alone, before the named tool is entered, so no operation has run
-	// and there are no findings to carry.
+	// The second and third entries against the dispatch surface are the refusals of
+	// a call that names a workspace the session does not let it name, and of a call
+	// that selects a signing key held on this machine where the caller is not the
+	// one it belongs to. Both are decided from the arguments alone, before the named
+	// tool is entered, so no operation has run and there are no findings to carry.
 	"tool_insertion_point.go": 7,
 	"tool_workspace.go":       2,
 	"progressive.go":          1,
-	"tools.go":                2,
+	"tools.go":                3,
 }
 
 // TestFailureReturnsWithoutStructuredContentMatchTheLedger is the guard.

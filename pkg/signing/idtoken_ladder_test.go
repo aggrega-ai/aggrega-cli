@@ -120,11 +120,104 @@ func TestNoIdentityTokenRefusalReadsAsOneSentenceForEveryCaller(t *testing.T) {
 				"automatically, otherwise export one of those variables (for example a CI workflow " +
 				"OIDC token) or pass --identity-token",
 		},
+		{
+			// A caller whose resolution read no environment at all: the shared inputs
+			// are named nowhere, neither as what was absent nor as what to do, because
+			// nothing consulted them and nothing the caller did to them would help.
+			name: "a caller whose resolution reads no environment",
+			supply: IdentityTokenSupply{
+				AbsentInput:              "no identityToken was sent",
+				Remedy:                   "send identityToken",
+				SharedInputsNotConsulted: true,
+			},
+			want: "keyless signing needs an identity token: no identityToken was sent; send identityToken",
+		},
+		{
+			// The degenerate shape, kept because it is the one that could read as a
+			// dangling clause: no vocabulary of its own AND nothing shared to name.
+			name:   "a caller that reads no environment and declared no vocabulary either",
+			supply: IdentityTokenSupply{SharedInputsNotConsulted: true},
+			want:   "keyless signing needs an identity token: nothing supplied one",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			if got := noIdentityTokenRefusal(tc.supply).Error(); got != tc.want {
 				t.Errorf("refusal text moved:\n got: %s\nwant: %s", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestSupplyCannotChangeWhichRungResolves holds the standing contract on the
+// supply parameter: it carries the caller's vocabulary into the refusal and is
+// read nowhere else, so nothing declared on it moves a resolution.
+//
+// The clause that says the shared inputs were not consulted is the one that could
+// break it, because it reads like an instruction to stop consulting them. It is
+// not: what makes those rungs unreachable is the environment reader answering
+// nothing, and this asserts the two are genuinely independent — a resolution whose
+// reader DOES carry a token still resolves from it whatever the supply says, and a
+// resolution whose reader carries none refuses whatever the supply says.
+//
+// Both directions are asserted because either alone passes on a broken ladder: the
+// first row alone passes against a ladder that ignores the clause AND against one
+// that never reads the environment, and the second alone passes against a ladder
+// that reads nothing at all.
+func TestSupplyCannotChangeWhichRungResolves(t *testing.T) {
+	t.Parallel()
+
+	notConsulted := wireCallerSupply
+	notConsulted.SharedInputsNotConsulted = true
+
+	for _, tc := range []struct {
+		// scenario says what the row is about, so a failure reads as a rule.
+		scenario  string
+		env       map[string]string
+		supply    IdentityTokenSupply
+		wantToken string
+	}{
+		{
+			scenario:  "the environment carries a token and the supply says the shared inputs are not consulted",
+			env:       map[string]string{EnvIdentityToken: "exported-token"},
+			supply:    notConsulted,
+			wantToken: "exported-token",
+		},
+		{
+			scenario:  "the environment carries a token and the supply says nothing",
+			env:       map[string]string{EnvIdentityToken: "exported-token"},
+			supply:    wireCallerSupply,
+			wantToken: "exported-token",
+		},
+		{
+			scenario: "the environment carries nothing and the supply says the shared inputs are not consulted",
+			env:      map[string]string{},
+			supply:   notConsulted,
+		},
+		{
+			scenario: "the environment carries nothing and the supply says nothing",
+			env:      map[string]string{},
+			supply:   wireCallerSupply,
+		},
+	} {
+		t.Run(tc.scenario, func(t *testing.T) {
+			t.Parallel()
+			idToken, source, err := ResolveIdentityTokenNonInteractive(
+				"", lookFrom(tc.env), nil, nil, tc.supply)
+			if tc.wantToken == "" {
+				if err == nil {
+					t.Fatalf("want a refusal with nothing to resolve, got idToken=%q", idToken)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected refusal: %v", err)
+			}
+			if source != nil {
+				t.Fatal("want a static resolution (nil source), got a live source")
+			}
+			if idToken != tc.wantToken {
+				t.Fatalf("idToken = %q, want %q — the supply moved the resolution", idToken, tc.wantToken)
 			}
 		})
 	}

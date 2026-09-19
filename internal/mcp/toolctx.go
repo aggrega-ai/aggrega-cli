@@ -90,6 +90,71 @@ func (s *server) workspaceSelectionRefusal(args json.RawMessage) string {
 // advertises, and the two read the same names.
 var workspaceSelectionArguments = []string{argumentWorkspaceRoot, argumentCatalogDirs}
 
+// signingKeyRefusal reports the corrective text for a call that selects a signing
+// key held on the machine this server runs on, or the empty string when the call
+// selects none and the tool may run.
+//
+// A caller reaching this server over its own streams launched it and is at this
+// machine's keyboard, so a key on this disk is that caller's own key and naming it
+// is naming their own file. A caller reaching a listener is somewhere else: the
+// key would be the operator's, spendable by whoever connected, and a signature
+// made with it cannot be recalled from anyone who has already fetched it. So the
+// argument is refused for that caller rather than honoured for the one caller who
+// cannot be its owner.
+//
+// It is decided from the arguments alone, before anything is resolved and before
+// the tool runs, and it reads the names off the tool's own spec — the same list
+// the listing withholds — so what a call is refused for sending and what a caller
+// is offered cannot come to disagree.
+//
+// The refusal is loud rather than silent for the same reason the workspace one is:
+// an argument quietly dropped reads to its sender exactly like one that was
+// honoured, and here the sender would believe it had signed with a key it named.
+func (s *server) signingKeyRefusal(spec toolSpec, args json.RawMessage) string {
+	if s.transport != transportHTTP || len(spec.signingKeyArguments) == 0 || len(args) == 0 {
+		return ""
+	}
+	var sent map[string]json.RawMessage
+	if err := json.Unmarshal(args, &sent); err != nil {
+		// The tool refuses a payload it cannot read, naming the field and the type
+		// it wanted. That is the correction the caller needs, and a refusal composed
+		// here would reach them first and say less.
+		return ""
+	}
+
+	named := make([]string, 0, len(spec.signingKeyArguments))
+	for _, name := range spec.signingKeyArguments {
+		if argumentCarriesAValue(sent[name]) {
+			named = append(named, "'"+name+"'")
+		}
+	}
+	if len(named) == 0 {
+		return ""
+	}
+
+	selected := strings.Join(named, " and ")
+	return fmt.Sprintf("%s's %s selects a signing key held on the machine this server runs on, and a call "+
+		"reaching this server over a listener cannot select one: the key would be this machine's rather "+
+		"than yours, and a signature it made could not be recalled from anyone who fetched it. Remove %s "+
+		"and send 'identity_token' instead, which signs as the identity the call itself carries.",
+		spec.name, selected, selected)
+}
+
+// argumentCarriesAValue reports whether an argument a call sent selects anything.
+// An absent argument, a null and a blank string select nothing, so a call that
+// sent one of those has nothing to be refused for; any other value the caller
+// wrote is a selection.
+func argumentCarriesAValue(raw json.RawMessage) bool {
+	if len(raw) == 0 || string(raw) == "null" {
+		return false
+	}
+	var text string
+	if err := json.Unmarshal(raw, &text); err == nil {
+		return strings.TrimSpace(text) != ""
+	}
+	return true
+}
+
 // advertisedDescription reports the description a tool is advertised under on
 // the transport this session serves.
 //
@@ -119,7 +184,25 @@ func (s *server) advertisedSchema(spec toolSpec) json.RawMessage {
 	if s.transport != transportHTTP {
 		return json.RawMessage(spec.inputSchema)
 	}
-	return json.RawMessage(schemaWithoutProperties(spec.inputSchema, workspaceSelectionArguments))
+	return json.RawMessage(schemaWithoutProperties(spec.inputSchema, s.withheldArguments(spec)))
+}
+
+// withheldArguments names every argument this transport keeps out of what a tool
+// advertises: the ones that name a workspace, which any tool here may be sent, and
+// the ones that select a key this machine holds, which only a tool that signs
+// declares.
+//
+// It composes the list the call surface refuses rather than a second one written
+// beside it, so a schema cannot come to offer an argument the call surface would
+// refuse. The two names it draws from are each declared once — one on this file,
+// one on the tool's own spec — and neither is copied here.
+func (s *server) withheldArguments(spec toolSpec) []string {
+	if len(spec.signingKeyArguments) == 0 {
+		return workspaceSelectionArguments
+	}
+	withheld := make([]string, 0, len(workspaceSelectionArguments)+len(spec.signingKeyArguments))
+	withheld = append(withheld, workspaceSelectionArguments...)
+	return append(withheld, spec.signingKeyArguments...)
 }
 
 // schemaWithoutProperties reports schema with the named properties removed from
