@@ -726,6 +726,53 @@ type DocumentView interface {
 	// Keyed by document; read from types.ReleaseSpec.Extends.
 	ReleaseExtendsChainLength(document string) (int, bool)
 
+	// ReleaseExtendsChainBoundariesDeclaredBy is the Release along the chain
+	// that declares named boundaries, and whether any Release along it
+	// declares them at all.
+	//
+	// It names a Release the way its author named it, because the answer is
+	// read back into a diagnostic an author acts on and the file they have to
+	// open is the one they wrote.
+	//
+	// It is a fact about the chain rather than about a document, and the
+	// distinction is the point: named boundaries and top-level components are
+	// mutually exclusive in one Release, and every authored document is
+	// already held to that. What no document-level reading can see is a chain
+	// whose links are each well-formed and whose composition carries both.
+	// Answering which Release contributes which key is what lets the rule name
+	// both files instead of blaming whichever one was presented.
+	//
+	// Keyed by document; read from types.ReleaseSpec.Boundaries.
+	ReleaseExtendsChainBoundariesDeclaredBy(document string) (string, bool)
+
+	// ReleaseExtendsChainComponentsDeclaredBy is the Release along the chain
+	// that declares top-level components, and whether any Release along it
+	// declares them at all.
+	//
+	// It is the counterpart of the chain's boundaries fact, and the reason
+	// both exist rather than one answering both sides is stated there.
+	//
+	// Keyed by document; read from types.ReleaseSpec.Components.
+	ReleaseExtendsChainComponentsDeclaredBy(document string) (string, bool)
+
+	// ReleaseExtendsChainInheritedLiteralDirectories are the boundaries whose
+	// output directory the presented Release inherited from the Release it
+	// extends and which carry no template variable, named by the boundary path
+	// the composition placed them at, in composition order.
+	//
+	// Order is the composition's and is carried rather than sorted, because a
+	// rule invoked once per entry raises in invocation order and that order is
+	// the order the findings reach the reader.
+	//
+	// It answers about the composition rather than about either document, and
+	// it has to: whether a directory was inherited is not readable from the
+	// Release that declared it, and whether the value carries a variable is
+	// not readable from the Release that did not. Only the fold holds both
+	// halves.
+	//
+	// Keyed by document; read from types.Boundary.Directory.
+	ReleaseExtendsChainInheritedLiteralDirectories(document string) []string
+
 	// ManifestAnnotationBindingKeys are the annotation keys the presented
 	// Manifest's binding registry declares, in author order.
 	//

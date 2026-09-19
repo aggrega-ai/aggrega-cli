@@ -103,6 +103,22 @@ type ResolvedClosure struct {
 	// Every caller owes a verdict. An empty read is a legitimate one only where the
 	// caller genuinely produces no report and no artifact.
 	ManifestConsistencyFindings []error
+
+	// ReleaseCompositionAdvisories carries one finding per reading the fold of the
+	// Release's extends chain advised about — today, a boundary whose output
+	// directory the Release inherited and which carries no template variable, so
+	// it resolves to the path the extended Release writes to.
+	//
+	// They are carried rather than returned as a failure because none of them is
+	// one: each is a shape an author may legitimately mean, and the rule that
+	// produced it declares warning severity for that reason. It is empty for a
+	// Release that heads no chain, and for a chain the readings cleared.
+	//
+	// Every caller owes a verdict, on the same terms the Manifest findings above
+	// state: a caller that emits an artifact reports them beside the build, a
+	// caller reporting on a document lists them with its other findings. Neither
+	// may halt on them.
+	ReleaseCompositionAdvisories []error
 }
 
 // ClosureStage names the point in ResolveClosure at which resolution failed, so
@@ -201,19 +217,27 @@ func ResolveClosure(ctx context.Context, in ClosureInputs) (*ResolvedClosure, *C
 	// reference the parent was going to supply — a diagnostic naming a pointer
 	// that is empty rather than the chain that failed to fill it.
 	//
-	// The chain is followed and not folded: what a parent contributes to a child
-	// is a separate contract, and nothing downstream of this line reads the chain
-	// yet. What this call produces today is the verdict on the chain's shape.
-	if _, cerr := resolver.ReleaseExtendsChain(releaseDir, resolver.ResolvedRelease{
+	// The chain is followed AND folded here, and the result replaces the Release
+	// every line below reads. That placement is what makes the fold reach every
+	// front end: the Manifest and Aggregate pointers, the external-entity seed,
+	// the closure walk and the Release this returns are all read from the value
+	// this assignment produces, so a child that declares only a parent pointer
+	// resolves its parent's siblings and topology rather than its own empty ones.
+	//
+	// A Release declaring no extends reference folds to itself, so the assignment
+	// is a no-op for every Release that heads no chain.
+	folded, releaseAdvisories, cerr := resolver.ResolveReleaseExtends(releaseDir, resolver.ResolvedRelease{
 		Release: rel,
 		Path:    in.ReleasePath,
-	}); cerr != nil {
+	})
+	if cerr != nil {
 		return nil, &ClosureError{
 			Stage: ClosureStageResolveReleaseExtends,
 			msg:   fmt.Sprintf("resolve release %q extends chain: %v", in.ReleasePath, cerr),
 			err:   cerr,
 		}
 	}
+	rel = folded
 	manRes, err := resolver.ResolveManifest(releaseDir, rel.Spec.Manifest)
 	if err != nil {
 		return nil, &ClosureError{
@@ -307,14 +331,15 @@ func ResolveClosure(ctx context.Context, in ClosureInputs) (*ResolvedClosure, *C
 		}
 	}
 	return &ResolvedClosure{
-		Release:                     rel,
-		Manifest:                    manifest,
-		Aggregate:                   aggregate,
-		AggBytes:                    aggBytes,
-		AggregatePath:               aggRes.Path,
-		Closure:                     cl,
-		Lookup:                      lookup,
-		ManifestConsistencyFindings: consistencyFindings,
+		Release:                      rel,
+		Manifest:                     manifest,
+		Aggregate:                    aggregate,
+		AggBytes:                     aggBytes,
+		AggregatePath:                aggRes.Path,
+		Closure:                      cl,
+		Lookup:                       lookup,
+		ManifestConsistencyFindings:  consistencyFindings,
+		ReleaseCompositionAdvisories: releaseAdvisories,
 	}, nil
 }
 

@@ -43,6 +43,12 @@ const (
 	noticeClassCatalogLint = "catalog-lint"
 	noticeClassExtends     = "extends"
 
+	// noticeClassReleaseComposition covers the readings over what folding the
+	// Release's own extends chain produced. It is its own surface rather than a
+	// second use of the extends one, which names a closure-scoped resolution
+	// failure accompanying a halt: these accompany a build that succeeded.
+	noticeClassReleaseComposition = "release-composition"
+
 	// noticeClassDependencyResolution covers the lines a build's own dependency
 	// fill raised. It names a surface this daemon does have a name for, which is
 	// why the lines travel under it rather than under the empty class the
@@ -279,6 +285,8 @@ func noticeClass(class compilerops.WarningClass) string {
 		return noticeClassCatalogLint
 	case compilerops.WarningExtends:
 		return noticeClassExtends
+	case compilerops.WarningReleaseComposition:
+		return noticeClassReleaseComposition
 	default:
 		return ""
 	}

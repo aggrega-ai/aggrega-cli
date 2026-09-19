@@ -128,11 +128,23 @@ spec:
 			wantLine: 9, wantColumn: 3, wantEndLine: 9, wantEndColumn: 12,
 		},
 		{
-			// A child Release inherits its manifest reference from the base
-			// it extends and declares none of its own, so the walk cannot
-			// reach `.spec.manifest` and lands on the nearest key that does
-			// exist. That is the documented degradation of the shared walk:
-			// a coarser position, never a wrong one.
+			// A child Release inherits its manifest reference from the base it
+			// extends and declares none of its own, and what it inherits names a
+			// file that is not there. The fault belongs to `.spec.manifest`, a
+			// key the Release the request named does not carry, so the walk
+			// cannot reach it and lands on the nearest key that does exist. That
+			// is the documented degradation of the shared walk: a coarser
+			// position, never a wrong one.
+			//
+			// Breaking the INHERITED reference is what makes this row reach that
+			// degradation, and it is the only thing that does. A chain declaring
+			// no manifest anywhere cannot be written: a Release that extends
+			// nothing is held to declaring both siblings, so every chain's root
+			// supplies a reference and the fold always has one to pass down. The
+			// reference resolving is therefore not the interesting half — which
+			// document authored it is, and that is what this row pins against
+			// the row where the walked Release wrote the key itself. One
+			// refusal, two spans, told apart by who wrote the reference.
 			name: "manifest reference is inherited, so the walk degrades to the enclosing key",
 			files: map[string]string{
 				"release.yaml": `apiVersion: aggrega.ai/v1alpha1
@@ -152,15 +164,14 @@ metadata:
   version: "1.0.0"
 spec:
   aggregate: ./aggregate.yaml
-  manifest: ./manifest.yaml
+  manifest: ./absent-inherited-manifest.yaml
 `,
 				"aggregate.yaml": corpusAggregate,
-				"manifest.yaml":  corpusManifest,
 				"release.lock":   "",
 			},
 			release:     "release.yaml",
-			wantPrefix:  `load manifest "": aggregate/manifest reference unresolvable:`,
-			wantMessage: `no Manifest named "" in the Release directory, catalog, or registry`,
+			wantPrefix:  `load manifest "./absent-inherited-manifest.yaml": file load failed:`,
+			wantMessage: "the file could not be read, or its bytes did not parse",
 			// `spec:` sits on line 7 at column 1; the key token is 4 runes,
 			// so the end column is 5.
 			wantLine: 7, wantColumn: 1, wantEndLine: 7, wantEndColumn: 5,

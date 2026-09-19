@@ -332,6 +332,8 @@ func writePreviewWarnings(preview *compilerops.PreviewResult, diagOut io.Writer)
 			fmt.Fprintf(diagOut, "  extends: %s\n", w.Text)
 		case compilerops.WarningCatalogLint:
 			fmt.Fprintf(diagOut, "  notice: %s\n", w.Text)
+		case compilerops.WarningReleaseComposition:
+			fmt.Fprintf(diagOut, "  release composition: %s\n", w.Text)
 		default:
 			fmt.Fprintf(diagOut, "  deprecation: %s\n", w.Text)
 		}

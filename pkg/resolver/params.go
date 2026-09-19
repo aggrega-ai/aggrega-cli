@@ -209,28 +209,39 @@ func orderedMapToPlain(m types.OrderedMap[any]) map[string]any {
 	return m.TemplateAlphabeticalMapDeep()
 }
 
-// deepMerge recursively merges child into base. Maps recurse; scalars/arrays replace.
+// deepMerge recursively merges child into base. Maps recurse; scalars/arrays
+// replace; a child key written as null removes what the key held.
+//
+// Removal is the same concept the annotation cascade publishes, and it is spelled
+// the same way here on purpose: a key an author writes as null is absent from the
+// result rather than present holding nothing. It is applied whether or not the
+// key was inherited, because "written null" means the same thing in both cases
+// and a reader cannot be asked to know which one they are in.
 //
 // Both parameters are plain map[string]any by contract, and the recursion depends
 // on it: the assertions below recognise only map[string]any, so a nested
 // *types.OrderedMap[any] would fall to the replace branch and discard the base
-// subtree rather than merging it — silently, with no error. MergeParameters, the
-// sole caller, upholds that contract from both sides: inline parameters are
-// flattened through orderedMapToPlain, and imported ones decode into a bare map.
-// Widening this signature to any, or dropping that flattening, needs an explicit
+// subtree rather than merging it — silently, with no error. Its callers uphold
+// that contract from both sides: inline parameters are flattened through
+// orderedMapToPlain, and imported ones decode into a bare map. Widening this
+// signature to any, or dropping that flattening, needs an explicit
 // *types.OrderedMap[any] arm here first.
 func deepMerge(base, child map[string]any) map[string]any {
 	if base == nil && child == nil {
 		return map[string]any{}
 	}
 	if base == nil {
-		return copyMap(child)
+		return copyMapWithoutRemovals(child)
 	}
 	if child == nil {
 		return copyMap(base)
 	}
 	result := copyMap(base)
 	for k, cv := range child {
+		if cv == nil {
+			delete(result, k)
+			continue
+		}
 		bv, exists := result[k]
 		if !exists {
 			result[k] = cv
@@ -245,6 +256,23 @@ func deepMerge(base, child map[string]any) map[string]any {
 		}
 	}
 	return result
+}
+
+// copyMapWithoutRemovals copies a map that is being used as the child side with
+// nothing to merge onto, dropping the keys written as null.
+//
+// It exists so that a removal reaches the same outcome whether or not the key
+// was inherited from anywhere: a lone link writing a key as null contributes no
+// key, rather than contributing one that holds nothing for a later link to find.
+func copyMapWithoutRemovals(m map[string]any) map[string]any {
+	out := make(map[string]any, len(m))
+	for k, v := range m {
+		if v == nil {
+			continue
+		}
+		out[k] = v
+	}
+	return out
 }
 
 func copyMap(m map[string]any) map[string]any {

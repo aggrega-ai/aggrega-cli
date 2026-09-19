@@ -36,6 +36,10 @@ const (
 	// accompanies a halt: the entries name each broken parent, and the run
 	// returns the summary failure alongside them.
 	WarningExtends
+	// WarningReleaseComposition is a reading over what folding the Release's own
+	// extends chain produced. Unlike WarningExtends it accompanies no halt: each
+	// entry names a shape an author may legitimately mean, and the run succeeds.
+	WarningReleaseComposition
 )
 
 // Warning is one advisory raised during a preview, carrying the class that
@@ -593,6 +597,14 @@ func runPreview(ctx context.Context, in PreviewInputs, pol previewPolicy, opts p
 	}
 	out.Resolved = resolved
 	out.ManifestConsistencyFindings = resolved.ManifestConsistencyFindings
+
+	// The readings the Release's own extends-chain fold advised about. They are
+	// emitted here, before any gate below can halt, so the advice reaches a reader
+	// whether or not the run goes on to fail for some other reason — and they halt
+	// nothing themselves, which is the verdict this caller owes them.
+	for _, advisory := range resolved.ReleaseCompositionAdvisories {
+		warn(WarningReleaseComposition, advisory.Error())
+	}
 
 	// The mapping-table verdict. Joined so every inconsistent mapping is
 	// reported at once rather than one per re-run.

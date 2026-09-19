@@ -819,6 +819,60 @@ var facts = []factDecl{
 			"for the reason the Release's own cycle fact gives.",
 	},
 	{
+		Name:        "release-extends-chain-boundaries-declared-by",
+		Stage:       "document",
+		SourceField: "types.ReleaseSpec.Boundaries",
+		Subject:     []string{"document"},
+		Params:      []paramDecl{{Name: "document", Type: "string"}},
+		Returns:     "(string, bool)",
+		Doc: "ReleaseExtendsChainBoundariesDeclaredBy is the Release along the " +
+			"chain that declares named boundaries, and whether any Release along " +
+			"it declares them at all.\n\nIt names a Release the way its author " +
+			"named it, because the answer is read back into a diagnostic an author " +
+			"acts on and the file they have to open is the one they wrote.\n\nIt " +
+			"is a fact about the chain rather than about a document, and the " +
+			"distinction is the point: named boundaries and top-level components " +
+			"are mutually exclusive in one Release, and every authored document is " +
+			"already held to that. What no document-level reading can see is a " +
+			"chain whose links are each well-formed and whose composition carries " +
+			"both. Answering which Release contributes which key is what lets the " +
+			"rule name both files instead of blaming whichever one was presented.",
+	},
+	{
+		Name:        "release-extends-chain-components-declared-by",
+		Stage:       "document",
+		SourceField: "types.ReleaseSpec.Components",
+		Subject:     []string{"document"},
+		Params:      []paramDecl{{Name: "document", Type: "string"}},
+		Returns:     "(string, bool)",
+		Doc: "ReleaseExtendsChainComponentsDeclaredBy is the Release along the " +
+			"chain that declares top-level components, and whether any Release " +
+			"along it declares them at all.\n\nIt is the counterpart of the " +
+			"chain's boundaries fact, and the reason both exist rather than one " +
+			"answering both sides is stated there.",
+	},
+	{
+		Name:        "release-extends-chain-inherited-literal-directories",
+		Stage:       "document",
+		SourceField: "types.Boundary.Directory",
+		Carrier:     "Release",
+		Subject:     []string{"document"},
+		Params:      []paramDecl{{Name: "document", Type: "string"}},
+		Returns:     "[]string",
+		Doc: "ReleaseExtendsChainInheritedLiteralDirectories are the boundaries " +
+			"whose output directory the presented Release inherited from the " +
+			"Release it extends and which carry no template variable, named by " +
+			"the boundary path the composition placed them at, in composition " +
+			"order.\n\nOrder is the composition's and is carried rather than " +
+			"sorted, because a rule invoked once per entry raises in invocation " +
+			"order and that order is the order the findings reach the " +
+			"reader.\n\nIt answers about the composition rather than about either " +
+			"document, and it has to: whether a directory was inherited is not " +
+			"readable from the Release that declared it, and whether the value " +
+			"carries a variable is not readable from the Release that did not. " +
+			"Only the fold holds both halves.",
+	},
+	{
 		Name:        "manifest-annotation-binding-keys",
 		Stage:       "document",
 		SourceField: "types.MappingTier.Annotations",

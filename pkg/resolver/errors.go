@@ -521,6 +521,67 @@ var errUnnormalizedRelease = cerrors.Register("release-not-in-canonical-form", c
 		"envelope."),
 })
 
+// ErrReleaseChainComposesBothRoutingKeys fires when folding a Release extends
+// chain would produce a Release carrying both named boundaries and top-level
+// components — the two routing keys that are mutually exclusive in any one
+// Release.
+//
+// Every document along such a chain is well-formed on its own, which is what
+// makes this a condition of its own rather than the envelope rule reported
+// later. The envelope holds each authored document to the exclusivity as it is
+// read; neither the Release declaring boundaries nor the Release declaring
+// components breaks it, and the shape that no author may write appears only once
+// the two are composed. So the subject here is a combination rather than a
+// document, and the diagnostic names both files and both keys: neither is at
+// fault alone, and wording that named only the Release the build was pointed at
+// would send its author to the file with nothing wrong in it.
+//
+// It is not folded into the chain-structure conditions — a cycle, a chain past
+// the depth bound, a parent that does not resolve. Those describe the shape of
+// the chain itself, this describes the shape of what the chain composes to, and
+// a consumer handed one identity for both could not tell which it had caught.
+func ErrReleaseChainComposesBothRoutingKeys() error {
+	return errReleaseChainComposesBothRoutingKeys
+}
+
+var errReleaseChainComposesBothRoutingKeys = cerrors.Register(
+	"release-chain-composes-both-routing-keys", cerrors.Meta{
+		ShortCode: "E0296",
+		Message: "release extends chain composes both named boundaries and top-level components: " +
+			"declare one routing shape across the chain, never both",
+		RulePlace: cerrors.RuleOverAuthoredInput(),
+	})
+
+// ErrInheritedBoundaryDirectoryIsLiteral marks an ADVISORY finding, not a halt:
+// a boundary whose output directory a Release inherited from the Release it
+// extends, where that directory carries no template variable and so resolves to
+// the same path for both.
+//
+// Inheriting the directory is the supported shape rather than a mistake. A
+// directory is a template, so a parent writes it once and a child that fulfils a
+// parameter resolves it somewhere else with nothing duplicated — which is the
+// whole reason a child need not restate its parent's boundary topology. The
+// residual risk is narrow and real: a directory carrying no variable resolves
+// identically for parent and child, so a build of the child writes where a build
+// of the parent writes, and no command-line option redirects it.
+//
+// It cannot halt, and that is a property of the rule rather than caution about
+// it: writing to the same resolved path is something an author may legitimately
+// mean — a child that swaps only the rendering Recipes to compare their output,
+// or that changes only sizing — and a rule that halted on the inference would
+// refuse that author's legal input on a guess.
+func ErrInheritedBoundaryDirectoryIsLiteral() error {
+	return errInheritedBoundaryDirectoryIsLiteral
+}
+
+var errInheritedBoundaryDirectoryIsLiteral = cerrors.Register(
+	"inherited-boundary-directory-is-literal", cerrors.Meta{
+		ShortCode: "E0297",
+		Message: "inherited boundary directory carries no template variable, so it resolves to the " +
+			"path the extended Release writes to",
+		RulePlace: cerrors.RuleOverAuthoredInput(),
+	})
+
 // ErrVerdictPluginTrustMismatch reports that the digest recorded as trusted for a
 // plugin returning an accept-or-reject verdict disagrees with the digest that
 // plugin's cached manifest reports for the same identity. The two are compared

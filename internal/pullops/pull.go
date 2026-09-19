@@ -452,6 +452,23 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	if err != nil {
 		return Result{}, fmt.Errorf("load release: %w", err)
 	}
+	// Compose the Release's own extends chain before either sibling is looked
+	// for, because both pointers are things a child may inherit rather than
+	// declare: the canonical child names a parent and a Manifest and nothing
+	// else, so its Aggregate reference is the parent's and reading it unfolded
+	// would resolve an empty one.
+	//
+	// The composition rules' advisories are dropped here rather than reported.
+	// This operation pins what a build will resolve, and the build composes the
+	// same chain and reports the same readings; emitting them at both would show
+	// an author one finding twice for one cause.
+	rel, _, err = resolver.ResolveReleaseExtends(releaseDir, resolver.ResolvedRelease{
+		Release: rel,
+		Path:    cfg.ReleasePath,
+	})
+	if err != nil {
+		return Result{}, fmt.Errorf("compose release extends: %w", err)
+	}
 	manRes, err := resolver.ResolveManifest(releaseDir, rel.Spec.Manifest)
 	if err != nil {
 		return Result{}, fmt.Errorf("load manifest: %w", err)

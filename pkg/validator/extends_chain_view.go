@@ -256,6 +256,36 @@ func (v releaseChainDocumentView) ReleaseBoundaryPlacements() []constraint.Bound
 	panic(v.refusal("ReleaseBoundaryPlacements"))
 }
 
+// ReleaseExtendsChainBoundariesDeclaredBy refuses: this view carries what the
+// walk found about a chain's shape, and which link declares which routing key is
+// a property of the links' content.
+//
+// The walk reads references and never the blocks a link authors, so the answer
+// is not something this presentation declined to carry — it is something the
+// walk never saw. The presentation built where the chain is folded carries it,
+// because folding is the point at which every link's content is in hand.
+func (v releaseChainDocumentView) ReleaseExtendsChainBoundariesDeclaredBy(
+	document string,
+) (string, bool) {
+	panic(v.refusal("ReleaseExtendsChainBoundariesDeclaredBy"))
+}
+
+// ReleaseExtendsChainComponentsDeclaredBy refuses, for the reason
+// [releaseChainDocumentView.ReleaseExtendsChainBoundariesDeclaredBy] states.
+func (v releaseChainDocumentView) ReleaseExtendsChainComponentsDeclaredBy(
+	document string,
+) (string, bool) {
+	panic(v.refusal("ReleaseExtendsChainComponentsDeclaredBy"))
+}
+
+// ReleaseExtendsChainInheritedLiteralDirectories refuses, for the reason
+// [releaseChainDocumentView.ReleaseExtendsChainBoundariesDeclaredBy] states.
+func (v releaseChainDocumentView) ReleaseExtendsChainInheritedLiteralDirectories(
+	document string,
+) []string {
+	panic(v.refusal("ReleaseExtendsChainInheritedLiteralDirectories"))
+}
+
 // refusal is what this view says about a fact it was not built to answer.
 //
 // Answering such a fact would report an absence the document does not have, and a

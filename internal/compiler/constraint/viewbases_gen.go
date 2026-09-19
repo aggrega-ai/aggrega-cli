@@ -98,6 +98,27 @@ func (AggregateDocumentBase) ReleaseExtendsChainLength(document string) (int, bo
 	panic("this view does not carry release-extends-chain-length, which a Release document carries")
 }
 
+// ReleaseExtendsChainBoundariesDeclaredBy panics. This view does not carry
+// release-extends-chain-boundaries-declared-by, which a Release document
+// carries.
+func (AggregateDocumentBase) ReleaseExtendsChainBoundariesDeclaredBy(document string) (string, bool) {
+	panic("this view does not carry release-extends-chain-boundaries-declared-by, which a Release document carries")
+}
+
+// ReleaseExtendsChainComponentsDeclaredBy panics. This view does not carry
+// release-extends-chain-components-declared-by, which a Release document
+// carries.
+func (AggregateDocumentBase) ReleaseExtendsChainComponentsDeclaredBy(document string) (string, bool) {
+	panic("this view does not carry release-extends-chain-components-declared-by, which a Release document carries")
+}
+
+// ReleaseExtendsChainInheritedLiteralDirectories panics. This view does
+// not carry release-extends-chain-inherited-literal-directories, which a
+// Release document carries.
+func (AggregateDocumentBase) ReleaseExtendsChainInheritedLiteralDirectories(document string) []string {
+	panic("this view does not carry release-extends-chain-inherited-literal-directories, which a Release document carries")
+}
+
 // ManifestAnnotationBindingKeys panics. This view does not carry
 // manifest-annotation-binding-keys, which a Manifest document carries.
 func (AggregateDocumentBase) ManifestAnnotationBindingKeys(document string) []string {
@@ -284,6 +305,27 @@ func (ComponentDocumentBase) ReleaseExtendsChainCycleEdge(document string) (Exte
 // release-extends-chain-length, which a Release document carries.
 func (ComponentDocumentBase) ReleaseExtendsChainLength(document string) (int, bool) {
 	panic("this view does not carry release-extends-chain-length, which a Release document carries")
+}
+
+// ReleaseExtendsChainBoundariesDeclaredBy panics. This view does not carry
+// release-extends-chain-boundaries-declared-by, which a Release document
+// carries.
+func (ComponentDocumentBase) ReleaseExtendsChainBoundariesDeclaredBy(document string) (string, bool) {
+	panic("this view does not carry release-extends-chain-boundaries-declared-by, which a Release document carries")
+}
+
+// ReleaseExtendsChainComponentsDeclaredBy panics. This view does not carry
+// release-extends-chain-components-declared-by, which a Release document
+// carries.
+func (ComponentDocumentBase) ReleaseExtendsChainComponentsDeclaredBy(document string) (string, bool) {
+	panic("this view does not carry release-extends-chain-components-declared-by, which a Release document carries")
+}
+
+// ReleaseExtendsChainInheritedLiteralDirectories panics. This view does
+// not carry release-extends-chain-inherited-literal-directories, which a
+// Release document carries.
+func (ComponentDocumentBase) ReleaseExtendsChainInheritedLiteralDirectories(document string) []string {
+	panic("this view does not carry release-extends-chain-inherited-literal-directories, which a Release document carries")
 }
 
 // ManifestAnnotationBindingKeys panics. This view does not carry
@@ -484,6 +526,27 @@ func (FeatureDocumentBase) ReleaseExtendsChainCycleEdge(document string) (Extend
 // release-extends-chain-length, which a Release document carries.
 func (FeatureDocumentBase) ReleaseExtendsChainLength(document string) (int, bool) {
 	panic("this view does not carry release-extends-chain-length, which a Release document carries")
+}
+
+// ReleaseExtendsChainBoundariesDeclaredBy panics. This view does not carry
+// release-extends-chain-boundaries-declared-by, which a Release document
+// carries.
+func (FeatureDocumentBase) ReleaseExtendsChainBoundariesDeclaredBy(document string) (string, bool) {
+	panic("this view does not carry release-extends-chain-boundaries-declared-by, which a Release document carries")
+}
+
+// ReleaseExtendsChainComponentsDeclaredBy panics. This view does not carry
+// release-extends-chain-components-declared-by, which a Release document
+// carries.
+func (FeatureDocumentBase) ReleaseExtendsChainComponentsDeclaredBy(document string) (string, bool) {
+	panic("this view does not carry release-extends-chain-components-declared-by, which a Release document carries")
+}
+
+// ReleaseExtendsChainInheritedLiteralDirectories panics. This view does
+// not carry release-extends-chain-inherited-literal-directories, which a
+// Release document carries.
+func (FeatureDocumentBase) ReleaseExtendsChainInheritedLiteralDirectories(document string) []string {
+	panic("this view does not carry release-extends-chain-inherited-literal-directories, which a Release document carries")
 }
 
 // ManifestAnnotationBindingKeys panics. This view does not carry
@@ -690,6 +753,27 @@ func (ManifestDocumentBase) ReleaseExtendsChainCycleEdge(document string) (Exten
 // release-extends-chain-length, which a Release document carries.
 func (ManifestDocumentBase) ReleaseExtendsChainLength(document string) (int, bool) {
 	panic("this view does not carry release-extends-chain-length, which a Release document carries")
+}
+
+// ReleaseExtendsChainBoundariesDeclaredBy panics. This view does not carry
+// release-extends-chain-boundaries-declared-by, which a Release document
+// carries.
+func (ManifestDocumentBase) ReleaseExtendsChainBoundariesDeclaredBy(document string) (string, bool) {
+	panic("this view does not carry release-extends-chain-boundaries-declared-by, which a Release document carries")
+}
+
+// ReleaseExtendsChainComponentsDeclaredBy panics. This view does not carry
+// release-extends-chain-components-declared-by, which a Release document
+// carries.
+func (ManifestDocumentBase) ReleaseExtendsChainComponentsDeclaredBy(document string) (string, bool) {
+	panic("this view does not carry release-extends-chain-components-declared-by, which a Release document carries")
+}
+
+// ReleaseExtendsChainInheritedLiteralDirectories panics. This view does
+// not carry release-extends-chain-inherited-literal-directories, which a
+// Release document carries.
+func (ManifestDocumentBase) ReleaseExtendsChainInheritedLiteralDirectories(document string) []string {
+	panic("this view does not carry release-extends-chain-inherited-literal-directories, which a Release document carries")
 }
 
 // RecipeValuesMappingDeclared panics. This view does not carry
@@ -1074,6 +1158,27 @@ func (RecipeDocumentBase) ReleaseExtendsChainLength(document string) (int, bool)
 	panic("this view does not carry release-extends-chain-length, which a Release document carries")
 }
 
+// ReleaseExtendsChainBoundariesDeclaredBy panics. This view does not carry
+// release-extends-chain-boundaries-declared-by, which a Release document
+// carries.
+func (RecipeDocumentBase) ReleaseExtendsChainBoundariesDeclaredBy(document string) (string, bool) {
+	panic("this view does not carry release-extends-chain-boundaries-declared-by, which a Release document carries")
+}
+
+// ReleaseExtendsChainComponentsDeclaredBy panics. This view does not carry
+// release-extends-chain-components-declared-by, which a Release document
+// carries.
+func (RecipeDocumentBase) ReleaseExtendsChainComponentsDeclaredBy(document string) (string, bool) {
+	panic("this view does not carry release-extends-chain-components-declared-by, which a Release document carries")
+}
+
+// ReleaseExtendsChainInheritedLiteralDirectories panics. This view does
+// not carry release-extends-chain-inherited-literal-directories, which a
+// Release document carries.
+func (RecipeDocumentBase) ReleaseExtendsChainInheritedLiteralDirectories(document string) []string {
+	panic("this view does not carry release-extends-chain-inherited-literal-directories, which a Release document carries")
+}
+
 // ManifestAnnotationBindingKeys panics. This view does not carry
 // manifest-annotation-binding-keys, which a Manifest document carries.
 func (RecipeDocumentBase) ManifestAnnotationBindingKeys(document string) []string {
@@ -1249,6 +1354,27 @@ func (FeatureRecipeDocumentBase) ReleaseExtendsChainCycleEdge(document string) (
 // release-extends-chain-length, which a Release document carries.
 func (FeatureRecipeDocumentBase) ReleaseExtendsChainLength(document string) (int, bool) {
 	panic("this view does not carry release-extends-chain-length, which a Release document carries")
+}
+
+// ReleaseExtendsChainBoundariesDeclaredBy panics. This view does not carry
+// release-extends-chain-boundaries-declared-by, which a Release document
+// carries.
+func (FeatureRecipeDocumentBase) ReleaseExtendsChainBoundariesDeclaredBy(document string) (string, bool) {
+	panic("this view does not carry release-extends-chain-boundaries-declared-by, which a Release document carries")
+}
+
+// ReleaseExtendsChainComponentsDeclaredBy panics. This view does not carry
+// release-extends-chain-components-declared-by, which a Release document
+// carries.
+func (FeatureRecipeDocumentBase) ReleaseExtendsChainComponentsDeclaredBy(document string) (string, bool) {
+	panic("this view does not carry release-extends-chain-components-declared-by, which a Release document carries")
+}
+
+// ReleaseExtendsChainInheritedLiteralDirectories panics. This view does
+// not carry release-extends-chain-inherited-literal-directories, which a
+// Release document carries.
+func (FeatureRecipeDocumentBase) ReleaseExtendsChainInheritedLiteralDirectories(document string) []string {
+	panic("this view does not carry release-extends-chain-inherited-literal-directories, which a Release document carries")
 }
 
 // ManifestAnnotationBindingKeys panics. This view does not carry
@@ -1436,6 +1562,27 @@ func (CatalogViewBase) ReleaseExtendsChainCycleEdge(document string) (ExtendsCha
 // release-extends-chain-length, which a Release document carries.
 func (CatalogViewBase) ReleaseExtendsChainLength(document string) (int, bool) {
 	panic("this view does not carry release-extends-chain-length, which a Release document carries")
+}
+
+// ReleaseExtendsChainBoundariesDeclaredBy panics. This view does not carry
+// release-extends-chain-boundaries-declared-by, which a Release document
+// carries.
+func (CatalogViewBase) ReleaseExtendsChainBoundariesDeclaredBy(document string) (string, bool) {
+	panic("this view does not carry release-extends-chain-boundaries-declared-by, which a Release document carries")
+}
+
+// ReleaseExtendsChainComponentsDeclaredBy panics. This view does not carry
+// release-extends-chain-components-declared-by, which a Release document
+// carries.
+func (CatalogViewBase) ReleaseExtendsChainComponentsDeclaredBy(document string) (string, bool) {
+	panic("this view does not carry release-extends-chain-components-declared-by, which a Release document carries")
+}
+
+// ReleaseExtendsChainInheritedLiteralDirectories panics. This view does
+// not carry release-extends-chain-inherited-literal-directories, which a
+// Release document carries.
+func (CatalogViewBase) ReleaseExtendsChainInheritedLiteralDirectories(document string) []string {
+	panic("this view does not carry release-extends-chain-inherited-literal-directories, which a Release document carries")
 }
 
 // ManifestAnnotationBindingKeys panics. This view does not carry
@@ -2878,6 +3025,9 @@ type ManifestDocumentFacts interface {
 type ReleaseDocumentFacts interface {
 	ReleaseExtendsChainCycleEdge(document string) (ExtendsChainCycleEdge, bool)
 	ReleaseExtendsChainLength(document string) (int, bool)
+	ReleaseExtendsChainBoundariesDeclaredBy(document string) (string, bool)
+	ReleaseExtendsChainComponentsDeclaredBy(document string) (string, bool)
+	ReleaseExtendsChainInheritedLiteralDirectories(document string) []string
 	ReleaseBoundaryPlacements() []BoundaryPlacement
 }
 

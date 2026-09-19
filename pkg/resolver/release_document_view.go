@@ -111,6 +111,40 @@ func (v releaseDocumentView) ReleaseExtendsChainLength(document string) (int, bo
 	panic(v.refuseChainFact("ReleaseExtendsChainLength"))
 }
 
+// ReleaseExtendsChainBoundariesDeclaredBy refuses, for the reason
+// [releaseDocumentView.ReleaseExtendsChainCycleEdge] states.
+//
+// This one would be the easiest of the four to answer wrongly, because the
+// document in hand does carry a boundaries block and reading it would produce an
+// answer. That answer would be about one Release while the fact is about a
+// chain, so a rule reading it would clear a composition it never saw.
+func (v releaseDocumentView) ReleaseExtendsChainBoundariesDeclaredBy(
+	document string,
+) (string, bool) {
+	panic(v.refuseChainFact("ReleaseExtendsChainBoundariesDeclaredBy"))
+}
+
+// ReleaseExtendsChainComponentsDeclaredBy refuses, for the reason
+// [releaseDocumentView.ReleaseExtendsChainBoundariesDeclaredBy] states.
+func (v releaseDocumentView) ReleaseExtendsChainComponentsDeclaredBy(
+	document string,
+) (string, bool) {
+	panic(v.refuseChainFact("ReleaseExtendsChainComponentsDeclaredBy"))
+}
+
+// ReleaseExtendsChainInheritedLiteralDirectories refuses, for the reason
+// [releaseDocumentView.ReleaseExtendsChainCycleEdge] states.
+//
+// Whether a directory was inherited is not a property of the document that ends
+// up carrying it. One Release's boundaries block reads the same whether its
+// directories were written there or composed in from the Release it extends, so
+// an answer from this presentation would report every directory as authored.
+func (v releaseDocumentView) ReleaseExtendsChainInheritedLiteralDirectories(
+	document string,
+) []string {
+	panic(v.refuseChainFact("ReleaseExtendsChainInheritedLiteralDirectories"))
+}
+
 // refuseChainFact is what this view says about a chain fact, which it was not
 // built to answer.
 func (v releaseDocumentView) refuseChainFact(accessor string) string {
