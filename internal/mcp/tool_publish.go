@@ -81,8 +81,12 @@ import (
 // environment that answers nothing — which makes the variable and ambient rungs
 // unreachable rather than merely discouraged, since there is no branch to get
 // wrong when there is nothing to read — and `key_path` is refused, and withheld
-// from what those tools advertise, before anything is resolved. Only a token the
-// call itself carried can sign. The endpoint overrides stay on both transports:
+// from what those tools advertise, before anything is resolved. What is withheld
+// is the argument schema and the sentence beside it alike: a description still
+// offering the argument would send that caller to compose a call that cannot
+// succeed, which is the defect the withholding exists to prevent arriving in the
+// prose instead. Only a token the call itself carried can sign. The endpoint
+// overrides stay on both transports:
 // they name services rather than anything this machine holds.
 
 // publicationReach states how far one publication reached: the registry host it
@@ -135,6 +139,25 @@ const argumentKeyPath = "key_path"
 // the one that signs nothing does not. The transport that refuses these arguments
 // also withholds them from what it advertises, and the two read the same names.
 var signingKeyArguments = []string{argumentKeyPath}
+
+// signingKeySelectionNote is what a signing tool says about the two credentials
+// only a caller that launched this process can reach: the identity that process's
+// environment already carries, and a key on the disk that caller is sitting at.
+//
+// It is one sentence declared once and carried by all three, rather than three
+// spellings of one fact — what it describes is a property of the transport rather
+// than of any one tool, so a tool has nothing of its own to say about it.
+//
+// The three tools' descriptions say what is true of a call however it arrived;
+// this says what is additionally true of a call from the keyboard, and the
+// listener is advertised the first without the second. A caller reaching a
+// listener is offered neither credential — the identity ladder there is handed an
+// environment that answers nothing, and `key_path` is refused before anything is
+// resolved — so a sentence naming them would send that caller to compose a call
+// that cannot succeed.
+const signingKeySelectionNote = "Leaving `identity_token` out falls through to the identity this " +
+	"server's own environment carries, and `key_path` selects offline keyed signing with a key on " +
+	"this machine instead."
 
 // readsNoEnvironment answers every name with the empty string. It is what the
 // identity ladder is handed for a caller that did not launch this process, so the
@@ -196,9 +219,11 @@ func missingDestination(tool, requested string, tw *toolWorkspace) string {
 // registry or workspace policy that requires a signature refuses an unsigned
 // publication whatever this carries, and there is no argument that bypasses it.
 //
-// identity_token is a supplied credential VALUE rather than a path. Leaving it out
-// falls through to whatever the environment already carries, and when nothing does
-// the publication refuses rather than asking anybody.
+// identity_token is a supplied credential VALUE rather than a path. For a caller
+// that launched this process, leaving it out falls through to whatever the
+// environment already carries; for one reaching a listener there is nothing to fall
+// through to. Either way the publication refuses rather than asking anybody when
+// nothing carries a token.
 type publishEntityArgs struct {
 	Entity        string `json:"entity"`
 	Registry      string `json:"registry"`
@@ -243,9 +268,9 @@ var publishEntityToolSpec = toolSpec{
 		"bundle and contact nothing. Signing follows the destination registry's policy unless `sign` says " +
 		"otherwise, and a registry that requires signatures refuses an unsigned publication whatever you send — " +
 		"there is no argument that bypasses that refusal. Keyless signing resolves an identity from " +
-		"`identity_token` or from the environment and refuses loudly when neither carries one, because nothing " +
-		"here can prompt; `key_path` selects offline keyed signing instead. The result carries where the entity " +
-		"landed, the tag, the published digest, whether it was signed, and how far the call reached.",
+		"`identity_token`, and refuses loudly when nothing carries one, because nothing here can prompt. The " +
+		"result carries where the entity landed, the tag, the published digest, whether it was signed, and how " +
+		"far the call reached.",
 	inputSchema: `{
   "type": "object",
   "properties": {
@@ -279,7 +304,7 @@ var publishEntityToolSpec = toolSpec{
     "identity_token": {
       "type": "string",
       "minLength": 1,
-      "description": "Identity token value for keyless signing. Absent falls through to the environment; when nothing carries one the publication refuses rather than prompting."
+      "description": "Identity token value for keyless signing. When nothing carries one the publication refuses rather than prompting."
     },
     "fulcio_url": {
       "type": "string",
@@ -300,6 +325,7 @@ var publishEntityToolSpec = toolSpec{
   },
   "required": ["entity"]
 }`,
+	signingKeyNote:      signingKeySelectionNote,
 	signingKeyArguments: signingKeyArguments,
 	invoke:              publishEntityInvoke,
 }
@@ -626,10 +652,9 @@ var signArtifactsToolSpec = toolSpec{
 		"already-published references as `references`; each is a registry address rather than a path. One " +
 		"authentication serves the whole batch, resolved before any reference is signed, so a batch with no usable " +
 		"credential refuses at the start rather than partway through. Keyless signing takes its identity from " +
-		"`identity_token` or from the environment and refuses loudly when neither carries one, because nothing " +
-		"here can prompt; `key_path` selects offline keyed signing instead. Signing a reference nothing published " +
-		"is refused rather than attached to nothing. The result names every reference signed with the digest its " +
-		"signature commits to.",
+		"`identity_token`, and refuses loudly when nothing carries one, because nothing here can prompt. Signing " +
+		"a reference nothing published is refused rather than attached to nothing. The result names every " +
+		"reference signed with the digest its signature commits to.",
 	inputSchema: `{
   "type": "object",
   "properties": {
@@ -647,7 +672,7 @@ var signArtifactsToolSpec = toolSpec{
     "identity_token": {
       "type": "string",
       "minLength": 1,
-      "description": "Identity token value for keyless signing. Absent falls through to the environment; when nothing carries one the batch refuses rather than prompting."
+      "description": "Identity token value for keyless signing. When nothing carries one the batch refuses rather than prompting."
     },
     "fulcio_url": {
       "type": "string",
@@ -668,6 +693,7 @@ var signArtifactsToolSpec = toolSpec{
   },
   "required": ["references"]
 }`,
+	signingKeyNote:      signingKeySelectionNote,
 	signingKeyArguments: signingKeyArguments,
 	invoke:              signArtifactsInvoke,
 }
@@ -801,10 +827,9 @@ var deprecateArtifactToolSpec = toolSpec{
 		"and `reason`, or `from` naming " +
 		"a batch file, absolute or relative to the workspace root — not both. The content is required rather than " +
 		"prompted for, because nothing here can ask. The marker is signed by its own digest, so it carries the " +
-		"same irrevocability a signature does: keyless signing takes its identity from `identity_token` or from " +
-		"the environment and refuses loudly when neither carries one, and `key_path` selects offline keyed signing " +
-		"instead. A marker against a reference nothing published is refused rather than attached. The result names " +
-		"every marker attached with its own digest.",
+		"same irrevocability a signature does: keyless signing takes its identity from `identity_token`, and " +
+		"refuses loudly when nothing carries one. A marker against a reference nothing published is refused " +
+		"rather than attached. The result names every marker attached with its own digest.",
 	inputSchema: `{
   "type": "object",
   "properties": {
@@ -844,7 +869,7 @@ var deprecateArtifactToolSpec = toolSpec{
     "identity_token": {
       "type": "string",
       "minLength": 1,
-      "description": "Identity token value for keyless signing. Absent falls through to the environment; when nothing carries one the marking refuses rather than prompting."
+      "description": "Identity token value for keyless signing. When nothing carries one the marking refuses rather than prompting."
     },
     "fulcio_url": {
       "type": "string",
@@ -877,6 +902,7 @@ var deprecateArtifactToolSpec = toolSpec{
     }
   ]
 }`,
+	signingKeyNote:      signingKeySelectionNote,
 	signingKeyArguments: signingKeyArguments,
 	invoke:              deprecateArtifactInvoke,
 }

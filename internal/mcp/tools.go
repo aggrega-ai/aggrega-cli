@@ -70,6 +70,13 @@ import (
 // two different things at once. Keeping the sentence in its own field gives it
 // one home rather than a second copy to be removed by pattern.
 //
+// signingKeyNote holds the part that is true only where a caller may select a
+// signing key this machine holds and let the environment carry an identity, and
+// is left empty by a tool that signs nothing. It is a second field rather than
+// more text in the first because the two say different things about different
+// arguments; what they share is the rule above, and that rule has one home in
+// [toolSpec.notesWithheldFromAListener].
+//
 // signingKeyArguments names the arguments through which a call selects an offline
 // held signing key, and is empty for a tool that signs nothing. Such a key lives
 // on the machine this server runs on, so a caller that did not launch this process
@@ -83,6 +90,7 @@ type toolSpec struct {
 	commandPath            string
 	description            string
 	workspaceSelectionNote string
+	signingKeyNote         string
 	inputSchema            string
 	signingKeyArguments    []string
 	kinds                  []string

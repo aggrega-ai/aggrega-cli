@@ -155,21 +155,48 @@ func argumentCarriesAValue(raw json.RawMessage) bool {
 	return true
 }
 
+// notesWithheldFromAListener reports, in the order they are advertised, the
+// parts of a tool's description that are true only for a caller that launched
+// this process: the sentence offering the arguments that name a workspace of its
+// own, and the sentence offering a signing key this machine holds.
+//
+// It is the ONE place those sentences are enumerated. The composition below reads
+// it, and so does every assertion that holds one transport's answer against the
+// other's, so a sentence is advertised and measured by being declared on the spec
+// rather than by being remembered at each of those sites.
+func (spec toolSpec) notesWithheldFromAListener() []string {
+	notes := make([]string, 0, 2)
+	for _, note := range []string{spec.workspaceSelectionNote, spec.signingKeyNote} {
+		if note != "" {
+			notes = append(notes, note)
+		}
+	}
+	return notes
+}
+
 // advertisedDescription reports the description a tool is advertised under on
 // the transport this session serves.
 //
-// A tool that says something about naming a workspace says it only where a
-// caller may name one. The description and the argument schema travel in the
-// same answer, so a sentence offering an argument the schema beside it withholds
-// would send a caller to compose a call that cannot succeed — the same defect
-// the withholding exists to prevent, arriving in the prose instead of in the
-// schema. It is composed here, beside the schema it has to agree with, so the
-// two cannot be scoped in different places and come to disagree.
+// A tool that says something about an argument a listener withholds says it only
+// where a caller may send that argument. The description and the argument schema
+// travel in the same answer, so a sentence offering an argument the schema beside
+// it withholds would send a caller to compose a call that cannot succeed — the
+// same defect the withholding exists to prevent, arriving in the prose instead of
+// in the schema. It is composed here, beside the schema it has to agree with, so
+// the two cannot be scoped in different places and come to disagree.
+//
+// A sentence is withheld rather than rewritten. What a caller reaching a listener
+// reads is what every caller reads, minus the parts that are not true of it, so
+// there is no second text to keep in step with the first.
 func (s *server) advertisedDescription(spec toolSpec) string {
-	if spec.workspaceSelectionNote == "" || s.transport == transportHTTP {
+	if s.transport == transportHTTP {
 		return spec.description
 	}
-	return spec.description + " " + spec.workspaceSelectionNote
+	description := spec.description
+	for _, note := range spec.notesWithheldFromAListener() {
+		description += " " + note
+	}
+	return description
 }
 
 // advertisedSchema reports the argument schema a tool is advertised under on the

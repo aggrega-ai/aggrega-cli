@@ -31,6 +31,21 @@ func mentionsArgument(description, argument string) bool {
 	return strings.Contains(description, argument)
 }
 
+// argumentsAListenerWithholds is every argument name a listener may keep out of
+// what a tool advertises: the ones that name a workspace, which any tool may be
+// sent, and the ones that select a key this machine holds, which only a signing
+// tool declares.
+//
+// It is read from the two declarations rather than written out again, so an
+// argument added to either is covered here by being declared. A name no tool
+// declares costs nothing: a description that never mentions it is never measured
+// against a schema.
+func argumentsAListenerWithholds() []string {
+	out := make([]string, 0, len(workspaceSelectionArguments)+len(signingKeyArguments))
+	out = append(out, workspaceSelectionArguments...)
+	return append(out, signingKeyArguments...)
+}
+
 // TestAnAdvertisedDescriptionOffersOnlyArgumentsItsSchemaDeclares walks every
 // definition both surfaces advertise, on both transports, and holds each
 // description against the schema shipped beside it.
@@ -48,9 +63,9 @@ func TestAnAdvertisedDescriptionOffersOnlyArgumentsItsSchemaDeclares(t *testing.
 		name string
 		// advertised is every definition that transport offered.
 		advertised []advertisement
-		// offersWorkspaceArguments is whether a caller on that transport may name a
-		// workspace, and so whether the descriptions may say it can.
-		offersWorkspaceArguments bool
+		// acceptsTheWithheldArguments is whether a caller on that transport may
+		// send them, and so whether the descriptions may say it can.
+		acceptsTheWithheldArguments bool
 	}{
 		{"reached over a listener", overHTTP, false},
 		{"reached over the process's own streams", overStdio, true},
@@ -61,16 +76,18 @@ func TestAnAdvertisedDescriptionOffersOnlyArgumentsItsSchemaDeclares(t *testing.
 			}
 
 			var offering []string
+			named := map[string]bool{}
 			for _, a := range tc.advertised {
 				if a.description == "" {
 					t.Errorf("%s advertises %s with no description at all", a.surface, a.tool)
 					continue
 				}
-				for _, argument := range workspaceSelectionArguments {
+				for _, argument := range argumentsAListenerWithholds() {
 					if !mentionsArgument(a.description, argument) {
 						continue
 					}
 					offering = append(offering, a.surface+"/"+a.tool+" names "+argument)
+					named[argument] = true
 					if declared := workspaceArgumentSites(t, a.schema, []string{argument}); len(declared) == 0 {
 						t.Errorf("%s advertises %s with a description naming %s, which its own schema "+
 							"beside it does not declare — a caller reading the two is told the argument "+
@@ -81,36 +98,71 @@ func TestAnAdvertisedDescriptionOffersOnlyArgumentsItsSchemaDeclares(t *testing.
 			}
 
 			sort.Strings(offering)
-			if !tc.offersWorkspaceArguments {
+			if !tc.acceptsTheWithheldArguments {
 				return
 			}
 			if len(offering) == 0 {
-				t.Fatal("no advertised description names an argument that selects a workspace, " +
+				t.Fatal("no advertised description names an argument a listener withholds, " +
 					"so the walk proves nothing about the transport that withholds them")
 			}
-			t.Logf("%d advertised description(s) name an argument that selects a workspace: %v",
+			// Both lists have to be represented rather than one of them. A set that
+			// had stopped naming either still satisfies a single non-empty check, and
+			// the control would then be silent about the half that went quiet — which
+			// is the half the listener row would then be passing vacuously over.
+			for _, list := range []struct {
+				what      string
+				arguments []string
+			}{
+				{"names a workspace", workspaceSelectionArguments},
+				{"selects a signing key", signingKeyArguments},
+			} {
+				represented := false
+				for _, argument := range list.arguments {
+					represented = represented || named[argument]
+				}
+				if !represented {
+					t.Errorf("no advertised description names an argument that %s, so the listener row "+
+						"proves nothing about the arguments withheld for that reason", list.what)
+				}
+			}
+			t.Logf("%d advertised description(s) name an argument a listener withholds: %v",
 				len(offering), offering)
 		})
 	}
 }
 
-// TestATransportThatAcceptsAWorkspaceArgumentStillSaysSo is the other half of
+// TestATransportThatAcceptsAWithheldArgumentStillSaysSo is the other half of
 // the control: not merely that some description still offers one, but that every
-// tool declaring the sentence still ships it where the argument works.
+// sentence a tool declares for the caller that may send its arguments still
+// ships where those arguments work.
 //
 // It names the difference rather than counting the two sides, because two sets
-// both short by one still agree on length.
-func TestATransportThatAcceptsAWorkspaceArgumentStillSaysSo(t *testing.T) {
+// both short by one still agree on length. It reads the sentences off the spec's
+// own list, so a kind of sentence added there is measured here by being declared
+// rather than by this assertion being remembered — and the two presence checks
+// below keep either kind from going quiet without being noticed.
+func TestATransportThatAcceptsAWithheldArgumentStillSaysSo(t *testing.T) {
 	s := newCommandToolServer(t, nil)
 
-	declaring := map[string]string{}
+	declaring := map[string][]string{}
+	workspaceSentences, signingSentences := 0, 0
 	for _, spec := range registeredToolSpecs(s) {
+		if notes := spec.notesWithheldFromAListener(); len(notes) > 0 {
+			declaring[spec.name] = notes
+		}
 		if spec.workspaceSelectionNote != "" {
-			declaring[spec.name] = spec.workspaceSelectionNote
+			workspaceSentences++
+		}
+		if spec.signingKeyNote != "" {
+			signingSentences++
 		}
 	}
-	if len(declaring) == 0 {
+	if workspaceSentences == 0 {
 		t.Fatal("no registered tool declares a sentence about naming a workspace; the assertion measured nothing")
+	}
+	if signingSentences == 0 {
+		t.Fatal("no registered tool declares a sentence about selecting a signing key; the assertion " +
+			"would pass over a surface that had stopped telling a caller at this machine it may send one")
 	}
 
 	advertised := advertisedOverStdio(t, s)
@@ -120,20 +172,22 @@ func TestATransportThatAcceptsAWorkspaceArgumentStillSaysSo(t *testing.T) {
 	}
 
 	var dropped []string
-	for name, note := range declaring {
+	for name, notes := range declaring {
 		// A tool these surfaces never offer cannot be measured here.
 		description, offered := carrying[name]
 		if !offered {
 			continue
 		}
-		if !strings.Contains(description, note) {
-			dropped = append(dropped, name)
+		for _, note := range notes {
+			if !strings.Contains(description, note) {
+				dropped = append(dropped, name+": "+note)
+			}
 		}
 	}
 	sort.Strings(dropped)
 	if len(dropped) > 0 {
-		t.Errorf("%v declare a sentence about naming a workspace and no longer advertise it on the "+
-			"transport that accepts one, so a caller that may send it is not told so", dropped)
+		t.Errorf("%v declare a sentence about an argument a listener withholds and no longer advertise "+
+			"it on the transport that accepts one, so a caller that may send it is not told so", dropped)
 	}
 }
 
@@ -146,22 +200,22 @@ func TestATransportThatAcceptsAWorkspaceArgumentStillSaysSo(t *testing.T) {
 // which would satisfy every assertion above while quietly serving two different
 // texts.
 //
-// Two parts are withheld, and both are withheld for the same reason: each offers
-// the caller something the listener does not have. The workspace sentence offers
-// arguments a call over HTTP is refused for sending. The pairing sentence names
-// the tool that reaches the same capability by running a command, and a session
-// reached over HTTP has none — so a curated tool still carrying it would send a
-// caller after a tool that is not there.
+// Three parts are withheld, and all three are withheld for the same reason: each
+// offers the caller something the listener does not have. The workspace sentence
+// offers arguments a call over HTTP is refused for sending. The signing-key
+// sentence offers a key on this machine and an identity this process's own
+// environment carries, neither of which a call over HTTP can reach. The pairing
+// sentence names the tool that reaches the same capability by running a command,
+// and a session reached over HTTP has none — so a curated tool still carrying it
+// would send a caller after a tool that is not there.
 func TestTheTwoTransportsDifferOnlyByWhatTheListenerWithholds(t *testing.T) {
 	s := newCommandToolServer(t, nil)
 	overHTTP := advertisedOverHTTP(t, newHTTPFixture(t, defaultTransportConfig(), nil))
 	overStdio := advertisedOverStdio(t, s)
 
-	notes := map[string]string{}
-	operations := map[string]string{}
+	specs := map[string]toolSpec{}
 	for _, spec := range registeredToolSpecs(s) {
-		notes[spec.name] = spec.workspaceSelectionNote
-		operations[spec.name] = spec.operation
+		specs[spec.name] = spec
 	}
 	// The pairing sentence is recomposed from the session's own twins rather than
 	// matched by shape, so what is trimmed here is the exact text the composition
@@ -173,19 +227,29 @@ func TestTheTwoTransportsDifferOnlyByWhatTheListenerWithholds(t *testing.T) {
 		remote[a.surface+"/"+a.tool] = a.description
 	}
 
-	compared, withheldWorkspace, withheldPairing := 0, 0, 0
+	compared, withheldWorkspace, withheldSigningKey, withheldPairing := 0, 0, 0, 0
 	for _, a := range overStdio {
 		got, ok := remote[a.surface+"/"+a.tool]
 		if !ok {
 			continue
 		}
 		compared++
+		spec := specs[a.tool]
 		want := a.description
-		if note := notes[a.tool]; note != "" {
-			want = strings.TrimSuffix(want, " "+note)
+		// Trimmed in the reverse of the order they were appended: each note is a
+		// suffix only once the notes after it are off, so a fixed order here would
+		// leave one in place and report the difference as the defect.
+		notes := spec.notesWithheldFromAListener()
+		for i := len(notes) - 1; i >= 0; i-- {
+			want = strings.TrimSuffix(want, " "+notes[i])
+		}
+		if spec.workspaceSelectionNote != "" {
 			withheldWorkspace++
 		}
-		if twin, paired := twins[operations[a.tool]]; paired {
+		if spec.signingKeyNote != "" {
+			withheldSigningKey++
+		}
+		if twin, paired := twins[spec.operation]; paired {
 			want = strings.TrimSuffix(want, commandTwinNote(twin))
 			withheldPairing++
 		}
@@ -201,12 +265,17 @@ func TestTheTwoTransportsDifferOnlyByWhatTheListenerWithholds(t *testing.T) {
 		t.Fatal("no compared description carried a workspace sentence to withhold, " +
 			"so the comparison would pass against a scoping that does nothing")
 	}
+	if withheldSigningKey == 0 {
+		t.Fatal("no compared description carried a signing-key sentence to withhold, " +
+			"so the comparison would pass against a surface that had stopped scoping it")
+	}
 	if withheldPairing == 0 {
 		t.Fatal("no compared description carried a pairing sentence to withhold, " +
 			"so the comparison would pass against a session that composes none")
 	}
 	t.Logf("compared %d description(s) across the two transports, %d carrying a withheld workspace "+
-		"sentence and %d a withheld pairing sentence", compared, withheldWorkspace, withheldPairing)
+		"sentence, %d a withheld signing-key sentence and %d a withheld pairing sentence",
+		compared, withheldWorkspace, withheldSigningKey, withheldPairing)
 }
 
 // TestAdvertisedDescriptionWithholdsOnlyOnTheListener measures the composition
@@ -236,7 +305,39 @@ func TestAdvertisedDescriptionWithholdsOnlyOnTheListener(t *testing.T) {
 			want:      "Does a thing.",
 		},
 		{
-			scenario:  "a tool saying nothing about a workspace is advertised as authored",
+			scenario:  "the signing sentence is offered where the key works",
+			transport: transportStdio,
+			spec:      toolSpec{description: "Does a thing.", signingKeyNote: "Optional `key_path` selects a key here."},
+			want:      "Does a thing. Optional `key_path` selects a key here.",
+		},
+		{
+			scenario:  "the signing sentence is withheld where the key is refused",
+			transport: transportHTTP,
+			spec:      toolSpec{description: "Does a thing.", signingKeyNote: "Optional `key_path` selects a key here."},
+			want:      "Does a thing.",
+		},
+		{
+			scenario:  "a tool declaring both carries them in the order they are declared",
+			transport: transportStdio,
+			spec: toolSpec{
+				description:            "Does a thing.",
+				workspaceSelectionNote: "Optional `workspace_root` overrides discovery.",
+				signingKeyNote:         "Optional `key_path` selects a key here.",
+			},
+			want: "Does a thing. Optional `workspace_root` overrides discovery. Optional `key_path` selects a key here.",
+		},
+		{
+			scenario:  "and is advertised with neither on the other transport",
+			transport: transportHTTP,
+			spec: toolSpec{
+				description:            "Does a thing.",
+				workspaceSelectionNote: "Optional `workspace_root` overrides discovery.",
+				signingKeyNote:         "Optional `key_path` selects a key here.",
+			},
+			want: "Does a thing.",
+		},
+		{
+			scenario:  "a tool saying nothing about either is advertised as authored",
 			transport: transportStdio,
 			spec:      toolSpec{description: "Does a thing."},
 			want:      "Does a thing.",
