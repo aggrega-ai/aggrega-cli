@@ -496,7 +496,7 @@ func buildInvoke(s *server, ctx context.Context, args json.RawMessage) (*callToo
 				"then build again.",
 			payload)
 	}
-	detail := parseResponseFormat(a.ResponseFormat) == responseFormatDetailed
+	detail := parseResponseFormat(a.ResponseFormat, deliveryResponseFormatDefault) == responseFormatDetailed
 	payload.Files = renderedFiles(completed, detail)
 	text := renderBuildText(payload)
 	return textResult(text, payload)

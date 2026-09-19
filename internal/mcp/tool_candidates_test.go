@@ -321,8 +321,15 @@ func TestCandidacyToolsRefuseAnUnknownSubjectRatherThanAnsweringEmpty(t *testing
 			if !strings.Contains(text, "example/compute/no-such-thing") {
 				t.Errorf("the refusal does not name what could not be resolved: %q", text)
 			}
-			if !strings.Contains(text, "list-entities") {
-				t.Errorf("the refusal does not say how to obtain a name that would resolve: %q", text)
+			// The tool's name on its own is no longer directions. A call to it
+			// that names no shape answers with counts per kind and no names at
+			// all, so a refusal saying only "call list-entities" would send a
+			// caller to an answer holding none of what it was sent for.
+			for _, fragment := range []string{"list-entities", "response_format", "detailed"} {
+				if !strings.Contains(text, fragment) {
+					t.Errorf("the refusal is missing %q, so it does not say how to obtain a name that would "+
+						"resolve: %q", fragment, text)
+				}
 			}
 		})
 	}

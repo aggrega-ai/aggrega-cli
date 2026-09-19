@@ -261,7 +261,7 @@ func (s *server) describeRelease(ctx context.Context, a describeArgs, release st
 			"Could not resolve the Release closure to describe it.", cerr, closureStageKind(cerr.Stage)))
 	}
 
-	detail := parseResponseFormat(a.ResponseFormat) == responseFormatDetailed
+	detail := parseResponseFormat(a.ResponseFormat, deliveryResponseFormatDefault) == responseFormatDetailed
 	// Collected whatever the format, and reported only at the detailed one. The
 	// count is the length of the listing rather than a second traversal, so the two
 	// cannot come to disagree about how many references were reached.

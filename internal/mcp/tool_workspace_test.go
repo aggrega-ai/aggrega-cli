@@ -6,6 +6,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -178,7 +179,9 @@ func TestTheEntityIndexReportsWhatTheDocumentDeclaresNotWhatItIsCalled(t *testin
 	s := &server{out: io.Discard, logw: io.Discard, startDir: root}
 
 	var got listEntitiesResult
-	decodeStructured(t, callDiscoveryTool(t, s, "list-entities", map[string]any{"workspace_root": root}), &got)
+	decodeStructured(t, callDiscoveryTool(t, s, "list-entities", map[string]any{
+		"workspace_root": root, "response_format": "detailed",
+	}), &got)
 
 	byFile := map[string]string{}
 	for _, e := range got.Entities {
@@ -227,7 +230,9 @@ func TestTheReleaseListingIsDecidedByContentNotFilename(t *testing.T) {
 	s := &server{out: io.Discard, logw: io.Discard, startDir: root}
 
 	var got listReleasesResult
-	decodeStructured(t, callDiscoveryTool(t, s, "list-releases", map[string]any{"workspace_root": root}), &got)
+	decodeStructured(t, callDiscoveryTool(t, s, "list-releases", map[string]any{
+		"workspace_root": root, "response_format": "detailed",
+	}), &got)
 
 	listed := map[string]bool{}
 	for _, r := range got.Releases {
@@ -247,8 +252,15 @@ func TestTheReleaseListingIsDecidedByContentNotFilename(t *testing.T) {
 		}
 	})
 
-	if got.Count != len(got.Releases) {
-		t.Errorf("the reported count %d does not match the %d paths returned", got.Count, len(got.Releases))
+	if got.Returned != len(got.Releases) {
+		t.Errorf("the answer reports %d paths returned and carries %d", got.Returned, len(got.Releases))
+	}
+	// The fixture holds fewer Releases than one page, so this answer is the whole
+	// listing — which is what makes the count and the page the same number here and
+	// what makes a remainder reported over it wrong.
+	if got.Count != len(got.Releases) || got.MoreRemaining {
+		t.Errorf("the workspace holds %d Releases and one page carried %d with more_remaining=%v; the fixture "+
+			"is smaller than a page, so the page is the whole listing", got.Count, len(got.Releases), got.MoreRemaining)
 	}
 }
 
@@ -265,7 +277,9 @@ func TestEnumerationProducesANameTheAddressingToolsAccept(t *testing.T) {
 	s := &server{out: io.Discard, logw: io.Discard, startDir: root}
 
 	var index listEntitiesResult
-	decodeStructured(t, callDiscoveryTool(t, s, "list-entities", map[string]any{"workspace_root": root}), &index)
+	decodeStructured(t, callDiscoveryTool(t, s, "list-entities", map[string]any{
+		"workspace_root": root, "response_format": "detailed",
+	}), &index)
 
 	var name string
 	for _, e := range index.Entities {
@@ -308,6 +322,263 @@ func TestEnumerationProducesANameTheAddressingToolsAccept(t *testing.T) {
 	})
 }
 
+// TestTheDiscoveryToolsAnswerWithTheSummaryWhenNoShapeIsNamed pins the default
+// both tools take, which is the one thing about them a caller arriving cold
+// cannot choose: its first call is made before it knows what the workspace holds,
+// so the shape that call returns is decided here rather than by the caller.
+//
+// The assertion is not merely that the records are absent. An answer that carried
+// nothing would satisfy that and tell the caller nothing, so each leg checks that
+// the summary IS there — the total, and a breakdown that adds up to it — and that
+// the answer says records remain to be asked for.
+func TestTheDiscoveryToolsAnswerWithTheSummaryWhenNoShapeIsNamed(t *testing.T) {
+	root := newDiscoveryWorkspace(t)
+	s := &server{out: io.Discard, logw: io.Discard, startDir: root}
+
+	t.Run("entities", func(t *testing.T) {
+		var got listEntitiesResult
+		decodeStructured(t, callDiscoveryTool(t, s, "list-entities", map[string]any{"workspace_root": root}), &got)
+
+		if got.ResponseFormat != responseFormatConcise {
+			t.Errorf("a call naming no response format was answered in the %q shape; a caller that has not "+
+				"seen the workspace cannot have asked for its records", got.ResponseFormat)
+		}
+		if len(got.Entities) != 0 || got.Returned != 0 {
+			t.Errorf("the summary shape carried %d record(s) and reported %d returned; a first page of records "+
+				"answers a different question from the one this call asks", len(got.Entities), got.Returned)
+		}
+		if got.Count == 0 {
+			t.Fatal("the summary reported no entities at all, so the fixture is not being read and the rest of " +
+				"this measures nothing")
+		}
+		summed := 0
+		for _, k := range got.Kinds {
+			summed += k.Count
+		}
+		if summed != got.Count {
+			t.Errorf("the per-kind breakdown totals %d and the workspace holds %d, so the summary does not "+
+				"describe the population it reports: %+v", summed, got.Count, got.Kinds)
+		}
+		if !got.MoreRemaining {
+			t.Error("the summary carries no records and the workspace holds some, so records remain to be " +
+				"asked for and more_remaining says they do not")
+		}
+	})
+
+	t.Run("releases", func(t *testing.T) {
+		var got listReleasesResult
+		decodeStructured(t, callDiscoveryTool(t, s, "list-releases", map[string]any{"workspace_root": root}), &got)
+
+		if got.ResponseFormat != responseFormatConcise {
+			t.Errorf("a call naming no response format was answered in the %q shape", got.ResponseFormat)
+		}
+		if len(got.Releases) != 0 || got.Returned != 0 {
+			t.Errorf("the summary shape carried %d path(s) and reported %d returned", len(got.Releases), got.Returned)
+		}
+		if got.Count == 0 {
+			t.Fatal("the summary reported no Releases, so the fixture is not being read")
+		}
+		summed := 0
+		for _, d := range got.Directories {
+			summed += d.Count
+		}
+		if summed != got.Count {
+			t.Errorf("the per-directory breakdown totals %d and the workspace holds %d Releases: %+v",
+				summed, got.Count, got.Directories)
+		}
+		if !got.MoreRemaining {
+			t.Error("the summary carries no paths and the workspace holds Releases, so more_remaining is wrong")
+		}
+	})
+}
+
+// discoveryPlantedKind is a kind the rest of the fixture does not declare, so a
+// breakdown that reports it can only have read it out of the document.
+const discoveryPlantedKind = `apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: example/planted-manifest
+  version: "1.0.0"
+spec:
+  mappings: []
+`
+
+// TestTheSummaryGrowsWithTheWorkspaceRatherThanBeingDeclared is the assertion a
+// shrinking bug passes and a derived breakdown does not.
+//
+// Every other check here is satisfied by an answer that reports LESS than the
+// workspace holds — a projection that dropped entries would still be small, still
+// internally consistent, and still under any size bound. So this one adds a
+// document of a kind nothing else in the fixture declares and requires the answer
+// to GROW: the total up by exactly one, and a row for the new kind that no list
+// written beside the code could have supplied.
+func TestTheSummaryGrowsWithTheWorkspaceRatherThanBeingDeclared(t *testing.T) {
+	root := newDiscoveryWorkspace(t)
+	s := &server{out: io.Discard, logw: io.Discard, startDir: root}
+
+	read := func() listEntitiesResult {
+		t.Helper()
+		var got listEntitiesResult
+		decodeStructured(t, callDiscoveryTool(t, s, "list-entities", map[string]any{"workspace_root": root}), &got)
+		return got
+	}
+	countFor := func(r listEntitiesResult, kind string) (int, bool) {
+		for _, k := range r.Kinds {
+			if k.Kind == kind {
+				return k.Count, true
+			}
+		}
+		return 0, false
+	}
+
+	before := read()
+	if _, present := countFor(before, "Manifest"); present {
+		t.Fatal("the fixture already declares a Manifest, so planting one proves nothing about derivation")
+	}
+
+	planted := filepath.Join(root, "planted.yaml")
+	if err := os.WriteFile(planted, []byte(discoveryPlantedKind), 0o644); err != nil {
+		t.Fatalf("plant the document: %v", err)
+	}
+
+	after := read()
+	if after.Count != before.Count+1 {
+		t.Errorf("one document was added and the total went from %d to %d; a listing that does not grow with "+
+			"the workspace is reporting something other than the workspace", before.Count, after.Count)
+	}
+	n, present := countFor(after, "Manifest")
+	if !present {
+		t.Fatalf("a Manifest was added and the breakdown reports no Manifest row, so the kinds are coming from "+
+			"somewhere other than the documents: %+v", after.Kinds)
+	}
+	if n != 1 {
+		t.Errorf("one Manifest was added and the breakdown reports %d", n)
+	}
+
+	if err := os.Remove(planted); err != nil {
+		t.Fatalf("remove the planted document: %v", err)
+	}
+	restored := read()
+	if restored.Count != before.Count {
+		t.Errorf("the planted document was removed and the total is %d, not the %d it started at",
+			restored.Count, before.Count)
+	}
+	if _, present := countFor(restored, "Manifest"); present {
+		t.Errorf("the planted document was removed and the breakdown still reports a Manifest: %+v", restored.Kinds)
+	}
+}
+
+// TestADetailedListingIsBoundedAndContinues walks a listing one record at a time
+// and holds the walk to the contract the answer states: every record appears once,
+// in order, and the remainder signal is what says whether to ask again.
+//
+// A page size of one is deliberate. It makes every boundary a boundary this walk
+// actually crosses, where a page larger than the fixture would exercise the bound
+// only in the case where it does nothing.
+func TestADetailedListingIsBoundedAndContinues(t *testing.T) {
+	root := newDiscoveryWorkspace(t)
+	s := &server{out: io.Discard, logw: io.Discard, startDir: root}
+
+	var whole listEntitiesResult
+	decodeStructured(t, callDiscoveryTool(t, s, "list-entities", map[string]any{
+		"workspace_root": root, "response_format": "detailed",
+	}), &whole)
+	if whole.Count < 2 {
+		t.Fatalf("the fixture holds %d entities; a paging walk over fewer than two crosses no boundary", whole.Count)
+	}
+
+	var walked []string
+	offset, pages := 0, 0
+	for {
+		var page listEntitiesResult
+		decodeStructured(t, callDiscoveryTool(t, s, "list-entities", map[string]any{
+			"workspace_root": root, "response_format": "detailed", "limit": 1, "offset": offset,
+		}), &page)
+		pages++
+		if page.Offset != offset {
+			t.Fatalf("page %d was asked for at offset %d and reports offset %d", pages, offset, page.Offset)
+		}
+		if page.Returned != len(page.Entities) {
+			t.Fatalf("page %d reports %d returned and carries %d", pages, page.Returned, len(page.Entities))
+		}
+		if page.Returned > 1 {
+			t.Fatalf("page %d was bounded to one record and carries %d", pages, page.Returned)
+		}
+		for _, e := range page.Entities {
+			walked = append(walked, e.Kind+" "+e.Name+" "+e.File)
+		}
+		if !page.MoreRemaining {
+			break
+		}
+		offset += page.Returned
+		if pages > whole.Count+1 {
+			t.Fatal("the walk did not terminate; more_remaining stayed true past the end of the listing")
+		}
+	}
+
+	if pages != whole.Count {
+		t.Errorf("a listing of %d records walked one at a time took %d pages", whole.Count, pages)
+	}
+	if len(walked) != whole.Count {
+		t.Fatalf("the walk collected %d records out of %d, so a bounded listing loses or repeats records",
+			len(walked), whole.Count)
+	}
+	for i, e := range whole.Entities {
+		want := e.Kind + " " + e.Name + " " + e.File
+		if walked[i] != want {
+			t.Errorf("record %d walked as %q and the unpaged listing reports %q, so the pages do not reassemble "+
+				"into the listing", i, walked[i], want)
+		}
+	}
+
+	t.Run("an offset past the end is an empty answer rather than a refusal", func(t *testing.T) {
+		var page listEntitiesResult
+		decodeStructured(t, callDiscoveryTool(t, s, "list-entities", map[string]any{
+			"workspace_root": root, "response_format": "detailed", "offset": whole.Count + 10,
+		}), &page)
+		if page.Returned != 0 || page.MoreRemaining {
+			t.Errorf("an offset past the end reported %d record(s) with more_remaining=%v",
+				page.Returned, page.MoreRemaining)
+		}
+		if page.Count != whole.Count {
+			t.Errorf("an offset past the end reports the workspace holding %d, not %d", page.Count, whole.Count)
+		}
+	})
+}
+
+// TestADetailedListingWithNoLimitIsStillBounded pins the property the bound
+// exists for: a caller that asks for records and names no page size cannot be
+// handed however many the workspace happens to hold.
+//
+// It reads the bound off the tool rather than restating it, so the assertion
+// follows the default rather than pinning a number beside it.
+func TestADetailedListingWithNoLimitIsStillBounded(t *testing.T) {
+	root := t.TempDir()
+	for i := 0; i < listingPageDefault+7; i++ {
+		doc := fmt.Sprintf("apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: example/compute/c%03d\n  version: \"1.0.0\"\nspec:\n  schema: {}\n", i)
+		if err := os.WriteFile(filepath.Join(root, fmt.Sprintf("c%03d.yaml", i)), []byte(doc), 0o644); err != nil {
+			t.Fatalf("write fixture %d: %v", i, err)
+		}
+	}
+	s := &server{out: io.Discard, logw: io.Discard, startDir: root}
+
+	var got listEntitiesResult
+	decodeStructured(t, callDiscoveryTool(t, s, "list-entities", map[string]any{
+		"workspace_root": root, "response_format": "detailed",
+	}), &got)
+
+	if got.Count != listingPageDefault+7 {
+		t.Fatalf("the workspace holds %d entities and the answer reports %d", listingPageDefault+7, got.Count)
+	}
+	if got.Returned != listingPageDefault {
+		t.Errorf("a detailed call naming no limit returned %d records; the page it is bounded to is %d",
+			got.Returned, listingPageDefault)
+	}
+	if !got.MoreRemaining {
+		t.Error("the answer carries fewer records than the workspace holds and says none remain")
+	}
+}
+
 // discoveryCatalogFeature lives in a catalog directory OUTSIDE the workspace, so
 // the only path it has is one on the machine the server runs on.
 const discoveryCatalogFeature = `apiVersion: aggrega.ai/v1alpha1
@@ -342,8 +613,9 @@ func TestACatalogResolvedEntityReportsNoFileAndSaysWhy(t *testing.T) {
 	s := &server{out: io.Discard, logw: io.Discard, startDir: root}
 	var got listEntitiesResult
 	decodeStructured(t, callDiscoveryTool(t, s, "list-entities", map[string]any{
-		"workspace_root": root,
-		"catalog_dirs":   []string{catalogDir},
+		"workspace_root":  root,
+		"catalog_dirs":    []string{catalogDir},
+		"response_format": "detailed",
 	}), &got)
 
 	var found bool
@@ -379,9 +651,13 @@ func TestTheTwoListingsAgreeOnTheCoordinateAClientJoinsOn(t *testing.T) {
 	s := &server{out: io.Discard, logw: io.Discard, startDir: root}
 
 	var index listEntitiesResult
-	decodeStructured(t, callDiscoveryTool(t, s, "list-entities", map[string]any{"workspace_root": root}), &index)
+	decodeStructured(t, callDiscoveryTool(t, s, "list-entities", map[string]any{
+		"workspace_root": root, "response_format": "detailed",
+	}), &index)
 	var releases listReleasesResult
-	decodeStructured(t, callDiscoveryTool(t, s, "list-releases", map[string]any{"workspace_root": root}), &releases)
+	decodeStructured(t, callDiscoveryTool(t, s, "list-releases", map[string]any{
+		"workspace_root": root, "response_format": "detailed",
+	}), &releases)
 
 	indexed := map[string]string{}
 	for _, e := range index.Entities {

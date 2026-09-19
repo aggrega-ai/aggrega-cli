@@ -277,7 +277,7 @@ func validateReleaseScope(s *server, ctx context.Context, a validateArgs, releas
 		Diagnostics: diags,
 		Notices:     releaseAdvisories(vr, lf),
 	}
-	text := renderValidateText(payload, parseResponseFormat(a.ResponseFormat))
+	text := renderValidateText(payload, parseResponseFormat(a.ResponseFormat, deliveryResponseFormatDefault))
 	return textResult(text, payload)
 }
 

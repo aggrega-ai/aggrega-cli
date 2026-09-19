@@ -65,16 +65,30 @@ const theLaunchedWorkspacesRelease = "parts/green.yaml"
 // listReleasesRequest is one tools/call naming no workspace of its own, which is
 // the whole point: what answers it is the workspace the process was launched
 // over.
+//
+// It does name the shape, and that is not the same concession. The evidence
+// these rows rest on is a path only the fixture holds, and the paths are what
+// the detailed shape carries — the shape a call names decides how much of the
+// answer comes back, never which directory it was taken in. Leaving the shape
+// out would leave the rows asserting the workspace root the answer echoes, which
+// a server that resolved the right directory and read a different one would
+// satisfy.
 func listReleasesRequest(t *testing.T) string {
 	t.Helper()
 	return modernRequest(t, 1, "tools/call", map[string]any{
 		"name":      "list-releases",
-		"arguments": map[string]any{},
+		"arguments": map[string]any{"response_format": "detailed"},
 	})
 }
 
 // releasesFromAnswer reads a list-releases answer down to the workspace root it
 // was taken in and the paths it reported.
+//
+// It checks the shape before it hands the paths back, because an answer carrying
+// no paths is what every one of these rows reads as "the wrong directory was
+// listed". The two are indistinguishable from the caller's side, so the shape is
+// asserted where it can still be named rather than inferred later from an empty
+// slice.
 func releasesFromAnswer(t *testing.T, raw string) (root string, releases []string) {
 	t.Helper()
 	var frame rpcResponse
@@ -94,6 +108,10 @@ func releasesFromAnswer(t *testing.T, raw string) (root string, releases []strin
 	var listed listReleasesResult
 	if err := json.Unmarshal(call.StructuredContent, &listed); err != nil {
 		t.Fatalf("the structured content is not a release listing: %v", err)
+	}
+	if listed.ResponseFormat != responseFormatDetailed {
+		t.Fatalf("the answer came back in the %q shape, which carries no paths at all; the rows below read the "+
+			"paths as their evidence, so the call has to ask for them", listed.ResponseFormat)
 	}
 	return listed.WorkspaceRoot, listed.Releases
 }

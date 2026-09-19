@@ -200,22 +200,54 @@ type callToolResult struct {
 }
 
 // response format tokens select a verbose or terse rendering where a tool has a
-// meaningful choice between the two. The detailed form is the default: an
-// assistant new to the workspace benefits from the fuller result, and a terse
-// form is an explicit opt-in.
+// meaningful choice between the two.
 const (
 	responseFormatDetailed = compilerops.VerbosityDetailed
 	responseFormatConcise  = compilerops.VerbosityConcise
 )
 
+// The response format a call falls back to when it names none, one per class of
+// tool. Each is declared once, so which shape a tool defaults to is a property of
+// the class it belongs to rather than a token spelled again at every handler.
+//
+// The two classes differ on this and on nothing else. A DELIVERY tool is asked
+// about a subject the caller already named — build this Release, describe this
+// entity, validate this document — so the fuller answer is the one that was asked
+// for, and the terse form is the opt-in. A DISCOVERY tool is asked what a
+// workspace holds, by a caller that has nothing to name yet and no way to know
+// what the answer will cost before it arrives; the summary is what that question
+// wants, and the records themselves are the opt-in, because a caller that has read
+// the summary knows the size of what it is asking for and a caller making its
+// first call does not.
+const (
+	deliveryResponseFormatDefault  = responseFormatDetailed
+	discoveryResponseFormatDefault = responseFormatConcise
+)
+
 // parseResponseFormat maps a client-supplied response_format value to one of the
-// two supported tokens, defaulting to the detailed form for any absent or
+// two supported tokens, falling back to the supplied default for an absent or
 // unrecognized value.
-func parseResponseFormat(v string) string {
-	if strings.EqualFold(strings.TrimSpace(v), responseFormatConcise) {
+//
+// The fallback is a parameter rather than a constant in the body because the two
+// classes of tool above disagree about it. A second parser would be a second place
+// the recognized tokens are spelled, and the two would agree until one of them
+// learned about a spelling the other did not; passing the fallback in keeps one
+// reading of what a caller wrote and leaves each caller to name the default its own
+// class declares.
+//
+// Both recognized tokens are matched explicitly. Falling through to the fallback
+// for everything that is not the terse token would quietly answer a caller that
+// asked for the fuller form with the terse one, wherever the terse form is the
+// fallback.
+func parseResponseFormat(v, fallback string) string {
+	switch trimmed := strings.TrimSpace(v); {
+	case strings.EqualFold(trimmed, responseFormatConcise):
 		return responseFormatConcise
+	case strings.EqualFold(trimmed, responseFormatDetailed):
+		return responseFormatDetailed
+	default:
+		return fallback
 	}
-	return responseFormatDetailed
 }
 
 // textResult builds a successful tool result carrying a human-readable text

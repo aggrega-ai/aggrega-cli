@@ -595,7 +595,34 @@ func TestDefaultDefinitionTokenBudget(t *testing.T) {
 	// The ceiling moved by the measured delta and by nothing else, so the headroom
 	// is the figure it was before rather than a rounder one, and the run logs it
 	// so the next raise argues from a measurement rather than from this comment.
-	const ceiling = 23175
+	//
+	// It was raised a fifth time, and this raise is the third one's case again for
+	// the two tools that enumerate what a workspace holds. No tool joins the default
+	// list. Each of the two gained the argument that chooses between a summary of the
+	// workspace and the records themselves, and the two that bound the records to a
+	// page, and each says in its description which shape it answers in when a call
+	// names none. The bytes are two schema entries apiece and the sentences that
+	// disclose them.
+	//
+	// What they buy is the reason the raise is worth making at all: before it, the
+	// call the guidance tells an assistant to make first returned every record the
+	// workspace held, which on a large one is megabytes into a context window for a
+	// question that was only ever "what is in here". Paying a kilobyte in every
+	// session's definitions to stop paying a megabyte in the first call of a session
+	// on a large workspace is the trade, and it is the same one the deferral of the
+	// long tail makes.
+	//
+	// The clause could have been left in the schemas and kept out of the
+	// DESCRIPTIONS, which would have cost a third of these bytes, and that was
+	// rejected for the reason the third raise rejected it: the description is what a
+	// client reads when it chooses a tool, and a tool whose description promises
+	// every entity while the tool answers with a summary would misreport its own
+	// answer in the one place a caller reads before calling.
+	//
+	// The bound is held exactly as before rather than rounded up: the same headroom
+	// every raise above left, so the gate trips on the next addition as sharply as it
+	// tripped on this one.
+	const ceiling = 25841
 	if bytesTotal > ceiling {
 		t.Errorf("default definition budget %d bytes exceeds %d; move long-tail tools to the deferred set", bytesTotal, ceiling)
 	}

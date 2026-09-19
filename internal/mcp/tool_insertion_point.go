@@ -98,7 +98,8 @@ func insertionPointInvoke(s *server, ctx context.Context, args json.RawMessage) 
 	}
 	if strings.TrimSpace(a.File) == "" {
 		return errorResult("insertion-point requires a 'file': the document to locate a position in, relative " +
-			"to the workspace root or absolute. Call list-entities to see the documents this workspace declares.")
+			"to the workspace root or absolute. Call list-entities with response_format detailed to see the " +
+			"documents this workspace declares.")
 	}
 	if len(a.Container) == 0 {
 		return errorResult("insertion-point requires a 'container': the structural path from the document root " +

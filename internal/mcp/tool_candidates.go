@@ -190,7 +190,8 @@ func attachCandidatesInvoke(s *server, ctx context.Context, args json.RawMessage
 		if !found {
 			return errorResult(explainDiagnostic(fmt.Sprintf(
 				"No workspace entity is named %q, so there is nothing to report attach candidates for. Call "+
-					"list-entities to see the names this workspace declares.", a.Node), "component"))
+					"list-entities with response_format detailed to see the names this workspace declares.",
+				a.Node), "component"))
 		}
 		return attachCandidatesResultFor(tw.root, result)
 	}
@@ -388,7 +389,7 @@ func connectionCandidatesInvoke(s *server, ctx context.Context, args json.RawMes
 	}
 	if strings.TrimSpace(a.Node) == "" {
 		return errorResult("connection-candidates requires a 'node': the metadata.name of the entity whose sockets " +
-			"to report. Call list-entities to see the names this workspace declares.")
+			"to report. Call list-entities with response_format detailed to see the names this workspace declares.")
 	}
 
 	tw, err := s.resolveToolWorkspace(a.WorkspaceRoot, nil)
@@ -400,7 +401,8 @@ func connectionCandidatesInvoke(s *server, ctx context.Context, args json.RawMes
 	if !found {
 		return errorResult(explainDiagnostic(fmt.Sprintf(
 			"No workspace entity is named %q, so there is nothing to report connection candidates for. Call "+
-				"list-entities to see the names this workspace declares.", a.Node), "component"))
+				"list-entities with response_format detailed to see the names this workspace declares.",
+			a.Node), "component"))
 	}
 	payload := connectionCandidatesPayload{WorkspaceRoot: tw.root, ConnectionCandidatesResult: result}
 	return textResult(renderConnectionCandidatesText(payload), payload)

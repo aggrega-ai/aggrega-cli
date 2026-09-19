@@ -95,8 +95,8 @@ func attachmentContainerInvoke(s *server, ctx context.Context, args json.RawMess
 	}
 	if strings.TrimSpace(a.Release) == "" {
 		return errorResult("attachment-container requires a 'release': a node id names a node on a Release's " +
-			"compiled graph, so there is no graph to look in without one. Call list-releases to see the Releases " +
-			"this workspace declares.")
+			"compiled graph, so there is no graph to look in without one. Call list-releases with response_format " +
+			"detailed to see the Releases this workspace declares.")
 	}
 	if err := ctx.Err(); err != nil {
 		return errorResult(explainToolError("Could not report where an attachment belongs.", err, ""))

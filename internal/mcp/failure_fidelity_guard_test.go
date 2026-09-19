@@ -153,8 +153,13 @@ var proseOnlyFailureReturns = map[string]int{
 	// refusal's own words, every one of them. So nothing the walk produced is
 	// dropped there. Carrying the resolved half would not be fidelity; it would be
 	// the loss under another name.
+	//
+	// The workspace description's last two are the two listings refusing a window
+	// they do not serve — a page size outside the range, or a negative start. Both
+	// are read from the arguments alone and ahead of the workspace being resolved,
+	// so at each of them nothing has been walked and no listing exists to carry.
 	"tool_insertion_point.go": 7,
-	"tool_workspace.go":       2,
+	"tool_workspace.go":       4,
 	"progressive.go":          3,
 	"tools.go":                3,
 }

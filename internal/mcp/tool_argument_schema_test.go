@@ -112,6 +112,31 @@ func TestDeclaredSchemasStateTheArgumentRulesTheToolsEnforce(t *testing.T) {
 		{"validate", "a blank scope selector", `{"release":""}`, false},
 		{"validate", "a scope selector of the wrong type", `{"release":5}`, false},
 
+		// list-entities and list-releases: no subject at all, and a window over the
+		// records they return. The window is the only rule either of them carries,
+		// and it is a range rather than a combination — both bounds are declared, so
+		// a caller reading the schema never composes a page this surface refuses.
+		{"list-entities", "no arguments at all, which is the summary", `{}`, true},
+		{"list-entities", "the records, bounded by default", `{"response_format":"detailed"}`, true},
+		{"list-entities", "a page named outright", `{"response_format":"detailed","limit":10,"offset":20}`, true},
+		{"list-entities", "the smallest page", `{"response_format":"detailed","limit":1}`, true},
+		{"list-entities", "the largest page", `{"response_format":"detailed","limit":500}`, true},
+		{"list-entities", "an offset at the start", `{"offset":0}`, true},
+		{"list-entities", "every optional argument at once", `{"workspace_root":"/w","catalog_dirs":["c"],"response_format":"concise","limit":25,"offset":0}`, true},
+		{"list-entities", "a page of no records", `{"response_format":"detailed","limit":0}`, false},
+		{"list-entities", "a negative page", `{"response_format":"detailed","limit":-5}`, false},
+		{"list-entities", "a page past the bound", `{"response_format":"detailed","limit":501}`, false},
+		{"list-entities", "an offset before the start", `{"offset":-1}`, false},
+		{"list-entities", "a page size that is not a whole number", `{"limit":"10"}`, false},
+
+		{"list-releases", "no arguments at all, which is the summary", `{}`, true},
+		{"list-releases", "the paths, bounded by default", `{"response_format":"detailed"}`, true},
+		{"list-releases", "a page named outright", `{"response_format":"detailed","limit":10,"offset":20}`, true},
+		{"list-releases", "every optional argument at once", `{"workspace_root":"/w","response_format":"detailed","limit":500,"offset":0}`, true},
+		{"list-releases", "a page of no paths", `{"response_format":"detailed","limit":0}`, false},
+		{"list-releases", "a page past the bound", `{"response_format":"detailed","limit":501}`, false},
+		{"list-releases", "an offset before the start", `{"offset":-1}`, false},
+
 		// describe: exactly one subject.
 		{"describe", "catalog-entity mode", `{"name":"core/compute/api-server"}`, true},
 		{"describe", "Release-closure mode", `{"release":"r.yaml"}`, true},
