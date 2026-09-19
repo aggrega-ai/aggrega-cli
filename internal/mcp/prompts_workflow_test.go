@@ -380,7 +380,7 @@ func TestWorkflowGoalsAreNotTools(t *testing.T) {
 // guidance describing workflow prompts that are not registered points a client at
 // nothing.
 func TestInstructionsPointAtTheWorkflowPromptSurface(t *testing.T) {
-	if !strings.Contains(serverInstructions, "workflow prompts") {
+	if !strings.Contains(instructionsBody, "workflow prompts") {
 		t.Error("the connect-time guidance does not mention the workflow prompts, so a client is told a narrower prompt surface than it has")
 	}
 	if len(workflowPromptSpecs) == 0 {

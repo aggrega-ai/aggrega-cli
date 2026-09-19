@@ -212,7 +212,7 @@ func (s *server) handleInitialize(params json.RawMessage) (any, *rpcError) {
 		ProtocolVersion: negotiateProtocolVersion(p.ProtocolVersion),
 		Capabilities:    serverCapabilitySet(),
 		ServerInfo:      s.identity(),
-		Instructions:    serverInstructions,
+		Instructions:    s.instructions(),
 	}, nil
 }
 

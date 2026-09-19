@@ -33,6 +33,6 @@ func (s *server) handleDiscover() (any, *rpcError) {
 	return discoverResult{
 		SupportedVersions: supportedRevisions(),
 		Capabilities:      serverCapabilitySet(),
-		Instructions:      serverInstructions,
+		Instructions:      s.instructions(),
 	}, nil
 }
