@@ -24,6 +24,33 @@ import (
 // against. It is a package seam so tests pin freshness deterministically.
 var searchNow = time.Now
 
+// errNoRegistriesConfigured reports that the workspace configures no registry at
+// all, so a search has nowhere to look.
+//
+// It is distinguished from an empty result because the two mean different things:
+// an empty result is a completed search that matched nothing, and this is a
+// search that could not be performed. The reader the distinction is for is a
+// caller branching on the exit status — presenting the second as the first is how
+// a script concludes an entity is not published when the machine it runs on has
+// no registry to ask.
+//
+// It is a declared value rather than an inline error so a caller separates this
+// refusal from the other reasons a search fails by identity instead of by its
+// message text. It is deliberately NOT a registered halting condition, for the
+// reason every refusal this search reports is not one: none of them is built into
+// a diagnostic envelope, so none carries a short code a reader could quote, and a
+// value declared under the condition naming convention would promise a reader an
+// identifier no surface prints.
+//
+// The same sentence reaching a reader from the registry listing and from the
+// index build is not this refusal under another name, and giving all three one
+// stream and one status would turn two correct outcomes into failures. Listing no
+// registries is a complete listing of an empty set, and an index build with
+// nothing to walk has nothing to do: both are finished operations and belong on
+// standard output with a zero status. Only the search is reporting that it could
+// not do what it was asked.
+var errNoRegistriesConfigured = errors.New("no registries configured; run 'aggrega config init' to register one")
+
 // newSearchCmd builds `search [query]`, which searches the local index of the
 // configured registries — built offline by `aggrega registry update` — for
 // entities matching a free-text query and the given facet filters.
@@ -58,6 +85,13 @@ category is the label component.aggrega.ai/category, so
 With no --registry, every configured registry's index is searched and the
 results are merged. With --registry (a host or a friendly alias), only that
 registry's index is searched.
+
+A search needs at least one configured registry. With none configured there is
+nowhere to look, so the command refuses: the reason goes to standard error,
+standard output carries nothing, and the exit status is non-zero. That is what
+lets a caller tell a search that ran and matched nothing from a search that
+could not be performed. Run 'aggrega config init' to register a registry with
+its signature trust policy, then 'aggrega registry update' to build the index.
 
 The version reported for an entity is the one a resolution would take: a
 version a publisher has retracted, where the retraction carries a signature
@@ -130,6 +164,12 @@ type searchOptions struct {
 // to the next host. If the effective host set is non-empty but not one index
 // loaded, the run fails loudly rather than presenting an empty result as a
 // successful search.
+//
+// A workspace configuring no registry at all is the same refusal one step
+// earlier: there is no host set to consult, so the run returns
+// errNoRegistriesConfigured and writes nothing to out. Every one of these is a
+// search that could not be performed, and reporting any of them as a completed
+// empty search would tell a caller that what it asked for is not published.
 func searchRun(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, out, errOut io.Writer, opts searchOptions) error {
 	if _, err := parseFormat("search", opts.Output, "table", "json", "names"); err != nil {
 		return err
@@ -165,8 +205,12 @@ func searchRun(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, out, 
 		return fmt.Errorf("aggrega search: %w", err)
 	}
 	if res.NoRegistriesConfigured {
-		fmt.Fprintln(out, "No registries configured.")
-		return nil
+		// A search with nothing to read is a refusal rather than a result, so it
+		// leaves standard output empty and carries a non-zero status. Reporting it
+		// on standard output with a zero status is byte-indistinguishable from a
+		// search that ran and matched nothing, which is the one distinction a
+		// caller branching on the status has no other way to make.
+		return fmt.Errorf("aggrega search: %w", errNoRegistriesConfigured)
 	}
 
 	// Freshness lines to errOut, hosts ascending, so the order is deterministic
