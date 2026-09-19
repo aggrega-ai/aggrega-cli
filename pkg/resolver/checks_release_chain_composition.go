@@ -17,8 +17,8 @@ import (
 // Both read facts no single document carries. Every Release along a chain is
 // well-formed on its own — the envelope holds each one to that as it is read —
 // and what these two are about appears only once the links are composed. That is
-// why the presentation below is built at the fold rather than at the load, and
-// why neither rule could be asked one document at a time.
+// why the view below is built at the fold rather than at the load, and why
+// neither rule could be asked one document at a time.
 //
 // One halts and one advises, and the difference is in the declarations rather
 // than in which collection a caller appends the output to. A composition
@@ -31,12 +31,12 @@ import (
 // releaseChainCompositionView presents to a check what folding a Release extends
 // chain found about the document the chain composes to.
 //
-// It is a third Release presentation, beside the one built from a Release
-// document and the one built from a walk of its chain, and the split is forced
-// rather than chosen. The document presentation holds one file, so it cannot see
-// a composition. The walk presentation holds references and never the blocks a
-// link authors, so it cannot see content. Folding is the one point at which
-// every link's content is in hand, and these facts are readable nowhere else.
+// It is a third Release view, beside the one built from a Release document and
+// the one built from a walk of its chain, and the split is forced rather than
+// chosen. The document view holds one file, so it cannot see a composition. The
+// walk view holds references and never the blocks a link authors, so it cannot
+// see content. Folding is the one point at which every link's content is in
+// hand, and these facts are readable nowhere else.
 //
 // It answers about the one document it was built for, which is the framework's
 // contract rather than a simplification of it. A composition has no file of its
@@ -44,9 +44,9 @@ import (
 // answers about is the empty one, and a finding is attributed to the Release the
 // resolution was requested for.
 //
-// It satisfies the whole document-stage view, which declares facts this
-// presentation cannot carry. The embedded base supplies those; the Release's own
-// facts it does not carry are refused here, in the same terms.
+// It satisfies the whole document-stage view, which declares facts this one
+// cannot carry. The embedded base supplies those; the Release's own facts it
+// does not carry are refused here, in the same terms.
 type releaseChainCompositionView struct {
 	// ReleaseDocumentBase supplies the document-stage facts a Release does not
 	// carry, and declares nothing for the ones it does — so this type writes
