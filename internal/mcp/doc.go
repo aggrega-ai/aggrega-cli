@@ -57,8 +57,8 @@
 // being refused, acquiring its documentation, stopping — is recorded in the same
 // shape, each line naming the event instead of a caller. No credential, and no
 // part of one, is ever written to any of them. A process speaking its own
-// streams writes the prose diagnostics it has always written, because the client
-// reading them launched it.
+// streams writes readable prose diagnostics instead, because the client reading
+// them launched it and sits at the same machine.
 //
 // Nothing is sent to the client about any of this. The server emits no message
 // notifications on either transport, and it reads the per-request log-level
