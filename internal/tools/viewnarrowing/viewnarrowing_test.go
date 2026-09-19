@@ -40,6 +40,7 @@ var factPlacements = []struct {
 	stage string
 }{
 	{"DeclaredParameterKeys", "DocumentView"},
+	{"CatalogFeaturePresent", "CatalogView"},
 	{"SocketRequired", "NormalizedView"},
 	{"ResolvedParameter", "TopologyView"},
 	{"PerLeafAttachmentProvenance", "GraphView"},
@@ -73,6 +74,7 @@ func TestReadChainDerivesItFromTheDeclaredViews(t *testing.T) {
 
 	wantStages := []string{
 		"DocumentView",
+		"CatalogView",
 		"NormalizedView",
 		"TopologyView",
 		"GraphView",
