@@ -6,13 +6,13 @@ package wasm
 import (
 	"context"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"sync/atomic"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/attribindex"
+	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/tetratelabs/wazero"
 )
@@ -46,8 +46,8 @@ func TestColdCompileAttributionObservation(t *testing.T) {
 
 	const guest1 = "mutator-go.wasm"
 	const guest2 = "mutator-rust.wasm"
-	bytes1 := mustReadFixture(t, guest1)
-	bytes2 := mustReadFixture(t, guest2)
+	path1, bytes1 := builtFixture(t, guest1)
+	path2, bytes2 := builtFixture(t, guest2)
 	dg1 := normHex(digest.ContentDigest(bytes1))
 	dg2 := normHex(digest.ContentDigest(bytes2))
 	if dg1 == dg2 {
@@ -70,10 +70,9 @@ func TestColdCompileAttributionObservation(t *testing.T) {
 		}
 		_ = p.Close(context.Background())
 	}
-	fixturePath := func(name string) string { return filepath.Join("testdata", name) }
 
 	// --- first cold compile: two leaves, kernel + guest1 ---
-	load(guest1, fixturePath(guest1))
+	load(guest1, path1)
 	if got := atomic.LoadInt64(&attribSnapshotCount); got != 1 {
 		t.Fatalf("after first cold compile, snapshot count = %d, want 1", got)
 	}
@@ -99,7 +98,7 @@ func TestColdCompileAttributionObservation(t *testing.T) {
 	assertReferrers(t, "guest1 leaf", guest1Leaf.Referrers, dg1)
 
 	// --- second distinct guest: one new leaf, joins the kernel referrer set ---
-	load(guest2, fixturePath(guest2))
+	load(guest2, path2)
 	if got := atomic.LoadInt64(&attribSnapshotCount); got != 2 {
 		t.Fatalf("after second cold compile, snapshot count = %d, want 2", got)
 	}
@@ -122,7 +121,7 @@ func TestColdCompileAttributionObservation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read index before warm reload: %v", err)
 	}
-	load(guest1, fixturePath(guest1))
+	load(guest1, path1)
 	if got := atomic.LoadInt64(&attribSnapshotCount); got != 2 {
 		t.Fatalf("a warm reload must NOT re-observe; snapshot count = %d, want 2", got)
 	}
@@ -135,15 +134,23 @@ func TestColdCompileAttributionObservation(t *testing.T) {
 	}
 }
 
-// mustReadFixture reads a prebuilt guest fixture, failing loudly (never skipping)
-// when it is absent, so an attribution assertion never silently degrades.
-func mustReadFixture(t *testing.T, name string) []byte {
+// builtFixture builds the named guest on demand and returns its path and its
+// bytes. The guest artifacts are build outputs rather than committed content, so
+// a checkout that has never been built carries none of them: reading one
+// straight out of testdata reports an unbuilt workspace as a failure of the
+// attribution contract, which is a statement about the environment dressed as a
+// statement about the product. wasmtest.EnsureFixtureBuilt is this module's one
+// home for that build, and it skips with its own diagnostic naming the workspace
+// setup script when the guest's source or its toolchain is unavailable — so an
+// attribution assertion still never degrades silently into a pass.
+func builtFixture(t *testing.T, name string) (string, []byte) {
 	t.Helper()
-	b, err := os.ReadFile(filepath.Join("testdata", name))
+	path := wasmtest.EnsureFixtureBuilt(t, name)
+	b, err := os.ReadFile(path)
 	if err != nil {
-		t.Fatalf("fixture %s must be present for this test: %v", name, err)
+		t.Fatalf("read built fixture %s: %v", path, err)
 	}
-	return b
+	return path, b
 }
 
 // splitKernelGuest returns the single kernel entry and the single non-kernel
