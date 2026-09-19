@@ -302,7 +302,7 @@ func sharedClosureFacts(t *testing.T, root, releasePath string) (libraries, mapp
 	t.Helper()
 	rw := resolveTempWorkspace(t, tempWorkspaceOptions{Root: root})
 	wsCfg := rw.Config()
-	dirs := workspaceconfig.ResolveCatalogDirs(nil, wsCfg, rw.Root())
+	dirs := rw.ResolveCatalogDirs(nil)
 	view := catalog.NewLazyLookup(rw.Root(), wsCfg.ResolvedArtifactCacheDir(), dirs, nil)
 	lf, _, lfErr := lockfile.LoadLockfile(lockfile.PathFor(releasePath))
 	if lfErr != nil {

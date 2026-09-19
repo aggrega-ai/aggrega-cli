@@ -340,9 +340,11 @@ type toolWorkspace struct {
 // explicit rootArg pins the workspace root; otherwise resolution starts from
 // the server's configured start directory, which is the process working
 // directory in production. catalogDirs are the call's catalog search
-// directories, prepended (absolute) to the workspace's configured stack; an
-// empty result falls back to the workspace root so a catalog beside the release
-// still resolves.
+// directories, prepended (absolute) to the workspace's configured stack, which
+// in turn is followed by the conventional `catalog` directory at the workspace
+// root when that directory exists. A workspace that declares an empty
+// `catalog_dirs` resolves no local catalog at all, and a call against it reads
+// only what the cache and the lockfile already carry.
 func (s *server) resolveToolWorkspace(rootArg string, catalogDirs []string) (*toolWorkspace, error) {
 	start := rootArg
 	flagRoot := rootArg
@@ -360,7 +362,7 @@ func (s *server) resolveToolWorkspace(rootArg string, catalogDirs []string) (*to
 		root:      root,
 		cfg:       cfg,
 		cacheDir:  cfg.ResolvedArtifactCacheDir(),
-		dirs:      workspaceconfig.ResolveCatalogDirs(catalogDirs, cfg, root),
+		dirs:      rw.ResolveCatalogDirs(catalogDirs),
 		transport: s.transport,
 	}
 	return tw, nil

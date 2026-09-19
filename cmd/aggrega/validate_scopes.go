@@ -21,14 +21,16 @@ import (
 )
 
 // validateCatalogWideFromWorkspace resolves the workspace's catalog directories
-// and cache, then runs the whole-catalog correctness pass. Catalog directories
-// come from the repeatable --catalog flag prepended to the workspace config's
-// catalog_dirs; at least one source must be set — a whole-tree enumeration with
-// no configured directory is refused rather than silently scanning the working
-// directory, which would pull in unrelated trees (a subrepo's testdata fixtures)
-// and surface as a misleading duplicate-identity dump. Release-scoped correctness
-// resolves a specific closure rather than a whole-tree enumeration, so it keeps a
-// working-directory default; the footgun is specific to whole-catalog scanning.
+// and cache, then runs the whole-catalog correctness pass. The search stack is
+// the shared one — the repeatable --catalog flag prepended to the workspace
+// config's catalog_dirs, with the conventional catalog directory at the
+// workspace root last — and a run with nothing in it is refused rather than
+// reported as a clean catalog, because a pass over no entity at all passes
+// vacuously and reads exactly like a pass over a healthy one.
+//
+// The refusal names what a reader can do about it. Release-scoped correctness
+// resolves a specific closure rather than a whole-tree enumeration, so it has
+// its own way to reach entities and does not refuse here.
 func validateCatalogWideFromWorkspace(rw *workspaceconfig.ResolvedWorkspace, catalogFlagDirs []string) error {
 	rw, err := workspaceOrResolve(rw)
 	if err != nil {
@@ -37,12 +39,18 @@ func validateCatalogWideFromWorkspace(rw *workspaceconfig.ResolvedWorkspace, cat
 	wsRoot := rw.Root()
 	wsCfg := rw.Config()
 	cacheDir := wsCfg.ResolvedArtifactCacheDir()
-	if len(catalogFlagDirs) == 0 && len(wsCfg.Workspace.CatalogDirs) == 0 {
+	// The refusal keys on the RESOLVED stack rather than on the flag and the
+	// configured list, so a workspace whose entities sit in the conventional
+	// directory is scanned rather than refused, and a workspace that switched the
+	// local catalog off with an empty `catalog_dirs` is refused rather than
+	// silently scanning nothing.
+	dirs := rw.ResolveCatalogDirs(catalogFlagDirs)
+	if len(dirs) == 0 {
 		return cerrors.Unidentified(cerrors.OpsError, cerrors.SourceLocation{},
-			"whole-catalog validation needs catalog directories to scan; pass --catalog or set `workspace.catalog_dirs` in .aggrega-config.yaml (or validate a specific Release with --release)",
+			fmt.Sprintf("whole-catalog validation needs catalog directories to scan; put the entities under `%s/` at the workspace root, pass --catalog, or set `workspace.catalog_dirs` in %s (or validate a specific Release with --release)",
+				workspaceconfig.ConventionalCatalogDir, workspaceconfig.ConfigFilename),
 			nil, nil)
 	}
-	dirs := workspaceconfig.ResolveCatalogDirs(catalogFlagDirs, wsCfg, wsRoot)
 	return validateCatalogWide(wsRoot, cacheDir, dirs, os.Stderr, os.Stdout)
 }
 
@@ -122,7 +130,7 @@ func validateRelease(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace,
 	wsRoot := rw.Root()
 	wsCfg := rw.Config()
 	cacheDir := wsCfg.ResolvedArtifactCacheDir()
-	dirs := workspaceconfig.ResolveCatalogDirs(catalogFlagDirs, wsCfg, wsRoot)
+	dirs := rw.ResolveCatalogDirs(catalogFlagDirs)
 
 	lazyView := catalog.NewLazyLookup(wsRoot, cacheDir, dirs, nil)
 	lf, _, lfErr := lockfile.LoadLockfile(lockfile.PathFor(releasePath))

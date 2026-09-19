@@ -212,7 +212,7 @@ func loadCatalogLookup(rw *workspaceconfig.ResolvedWorkspace, catalogDirs []stri
 	wsRoot := rw.Root()
 	wsCfg := rw.Config()
 	cacheDir := wsCfg.ResolvedArtifactCacheDir()
-	dirs := workspaceconfig.ResolveCatalogDirs(catalogDirs, wsCfg, ".")
+	dirs := rw.ResolveCatalogDirs(catalogDirs)
 	cat, err := catalog.LoadAllWithCacheDir(wsRoot, cacheDir, dirs...)
 	if err != nil {
 		return resolver.CatalogLookup{}, fmt.Errorf("catalog load: %w", err)

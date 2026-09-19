@@ -25,6 +25,16 @@ func workspaceRootFromFlagOrEnv(cmd *cobra.Command, flagValue string, look func(
 	return envLookupOrGetenv(look)(envWorkspaceRoot)
 }
 
+// helpCatalogDir is the --catalog flag's help text, held once because four
+// commands carry the same flag and a reader comparing two of them must not be
+// told two different things about where entities are looked for. It states the
+// whole stack, since the part a reader most often needs is the part they did not
+// have to type.
+const helpCatalogDir = "Catalog directory; repeatable. Each --catalog is prepended to the " +
+	"workspace catalog_dirs search stack (first match wins), which ends with the `catalog` " +
+	"directory at the workspace root when there is one. A workspace whose catalog_dirs is " +
+	"written as an empty list reads no local catalog at all."
+
 // helpOffline is the offline flag's help text, held beside the composition that
 // reads the flag so the promise a reader is given and the layer that keeps it
 // sit in one place.

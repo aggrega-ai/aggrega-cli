@@ -174,7 +174,7 @@ they are from the readable layouts. Pass --unredacted to print them instead.`,
 			return dispatchInspect(cmd.Context(), rw, args[0], catalogDirs, opts)
 		},
 	}
-	c.Flags().StringArrayVar(&catalogDirs, "catalog", nil, "Catalog directory; repeatable. Each --catalog is prepended to the workspace catalog_dirs search stack (first match wins). Defaults to the current directory.")
+	c.Flags().StringArrayVar(&catalogDirs, "catalog", nil, helpCatalogDir)
 	c.Flags().BoolVar(&listFlag, "list", false, "Render identifiers only.")
 	c.Flags().BoolVar(&detailFlag, "detail", false, "Render full field bodies.")
 	c.Flags().BoolVar(&rawFlag, "raw", false, "Render the entity as authored, without resolution.")
@@ -472,7 +472,7 @@ func inspectCatalogEntity(ctx context.Context, rw *workspaceconfig.ResolvedWorks
 	cacheDir := wsCfg.ResolvedArtifactCacheDir()
 	// Strict load (inspect must fail on a broken catalog, unlike build's tolerant
 	// Pass-1) over the first-win stack: --catalog dirs prepended to catalog_dirs.
-	dirs := workspaceconfig.ResolveCatalogDirs(catalogDirs, wsCfg, ".")
+	dirs := rw.ResolveCatalogDirs(catalogDirs)
 	cat, err := catalog.LoadAllWithCacheDir(wsRoot, cacheDir, dirs...)
 	if err != nil {
 		return fmt.Errorf("catalog load: %w", err)
@@ -771,7 +771,7 @@ func renderReleaseFile(ctx context.Context, rw *workspaceconfig.ResolvedWorkspac
 	wsCfg := rw.Config()
 	cacheDir := wsCfg.ResolvedArtifactCacheDir()
 	// Strict load over the first-win stack (--catalog dirs prepended to catalog_dirs).
-	dirs := workspaceconfig.ResolveCatalogDirs(catalogDirs, wsCfg, ".")
+	dirs := rw.ResolveCatalogDirs(catalogDirs)
 	cat, err := catalog.LoadAllWithCacheDir(wsRoot, cacheDir, dirs...)
 	if err != nil {
 		return fmt.Errorf("catalog load: %w", err)

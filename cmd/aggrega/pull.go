@@ -99,7 +99,7 @@ A URI given without --upgrade is a usage error.`,
 		},
 	}
 	c.Flags().StringVar(&opts.releasePath, "release", "", "Path to Release YAML file (required)")
-	c.Flags().StringArrayVar(&opts.catalogDirs, "catalog", nil, "Catalog directory; repeatable. Each --catalog is prepended to the workspace catalog_dirs search stack (first match wins). Defaults to the current directory.")
+	c.Flags().StringArrayVar(&opts.catalogDirs, "catalog", nil, helpCatalogDir)
 	c.Flags().BoolVar(&opts.upgrade, "upgrade", false, "Re-resolve dependencies from current registry state, floating each to the highest available version. Bare (no positional URIs) discards the lockfile and re-resolves every entity, and asks for confirmation first because it drops every recorded pin; with one or more entity URIs, re-resolves only those, holding all other pins and the recorded external inputs unchanged, and asks nothing (mutually exclusive with --verify)")
 	c.Flags().BoolVar(&opts.verify, "verify", false, "Verify the existing lockfile against the current dependency resolution without writing; exits non-zero on drift or missing lockfile. Also reports the compiler and core-plugin versions the lockfile records — reported for audit and never compared against this binary, so a toolchain difference is never drift (mutually exclusive with --upgrade)")
 	c.Flags().BoolVar(&opts.includePrerelease, "include-prerelease", false, "Not yet implemented: accepted and ignored, so a script that passes it keeps working when it starts having an effect")
@@ -126,9 +126,9 @@ A URI given without --upgrade is a usage error.`,
 type pullConfig struct {
 	ReleasePath string
 	// CatalogDirs holds the repeatable --catalog flag directories (UNresolved):
-	// the resolution prepends them to the workspace catalog_dirs via
-	// ResolveCatalogDirs. build's automatic-fill integration forwards its own flag
-	// dirs so the resolution re-derives the identical stack under the same config.
+	// the resolution prepends them to the rest of the workspace's search stack.
+	// build's automatic-fill integration forwards its own flag dirs so the
+	// resolution re-derives the identical stack under the same config.
 	CatalogDirs []string
 	Upgrade     bool
 	// UpgradeTargets names the entity URIs to upgrade when Upgrade is set. Empty

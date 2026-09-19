@@ -98,7 +98,7 @@ the rendered tree reviewable as a diff.`,
 		},
 	}
 	c.Flags().StringVar(&opts.releasePath, "release", "", "Path to Release YAML file (required)")
-	c.Flags().StringArrayVar(&opts.catalogDirs, "catalog", nil, "Catalog directory; repeatable. Each --catalog is prepended to the workspace catalog_dirs search stack (first match wins). Defaults to the current directory.")
+	c.Flags().StringArrayVar(&opts.catalogDirs, "catalog", nil, helpCatalogDir)
 	c.Flags().BoolVar(&opts.traceEnabled, "trace", false, "write per-node intermediate files to .trace/ (sibling to dist/) for post-mortem inspection")
 	c.Flags().BoolVar(&opts.traceUnredacted, "trace-unredacted", false, helpTraceUnredacted)
 	c.Flags().BoolVar(&opts.detail, "detail", false, "Build is read-only by default and prints no resolution detail. When the pull step runs — because --auto-pull was passed or the workspace enables auto_pull — build fills the lockfile in-process whether or not one is already present, and this flag prints per resolved entity what that fill did: fetched fresh from a registry, reused a cache slot, found in a local catalog, served from inside the compiler binary, or external. When no pull step runs, it prints one line saying so instead of the per-entity rows. Stdout only; not persisted")

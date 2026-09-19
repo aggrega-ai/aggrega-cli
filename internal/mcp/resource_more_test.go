@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 	schemas "github.com/aggrega-ai/aggrega-schemas"
 )
 
@@ -62,7 +63,15 @@ func TestServeCatalogEntity(t *testing.T) {
 		"      port: { type: integer, default: 8080 }\n" +
 		"    provides:\n" +
 		"      host: { type: string, required: true }\n"
-	if err := os.WriteFile(filepath.Join(ws, "component.yaml"), []byte(body), 0o644); err != nil {
+	// The entity sits in the conventional catalog directory rather than loose at
+	// the workspace root, which is the shape a reader is told to author: the
+	// search stack reads that directory without being told to, and a root holding
+	// entities directly is read only when the reader lists it themselves.
+	catalogDir := filepath.Join(ws, workspaceconfig.ConventionalCatalogDir)
+	if err := os.MkdirAll(catalogDir, 0o755); err != nil {
+		t.Fatalf("mkdir the conventional catalog directory: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(catalogDir, "component.yaml"), []byte(body), 0o644); err != nil {
 		t.Fatalf("write component: %v", err)
 	}
 	s := &server{out: io.Discard, logw: io.Discard, startDir: ws}

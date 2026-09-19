@@ -612,19 +612,26 @@ func TestWriteDestinationChokepointGuard(t *testing.T) {
 }
 
 // TestResolveCatalogDirsChokepointGuard enforces the single home for the
-// catalog-dir precedence stack structurally. The flag-dirs-prepend-config
-// first-win assembly lives once, exported from pkg/workspaceconfig as
-// ResolveCatalogDirs; a command or the daemon re-rolling a local
-// resolveCatalogDirs would reintroduce the byte-identical copy this
-// consolidation removed, where the two drift silently the moment one is
-// touched. The guard fails if a func resolveCatalogDirs declaration reappears
-// in the CLI or MCP packages.
+// catalog-dir precedence stack structurally. The whole assembly — flag dirs
+// prepended to the configured list, the workspace's conventional catalog
+// directory appended last, the authored empty list read as the off-switch —
+// lives once, as (*workspaceconfig.ResolvedWorkspace).ResolveCatalogDirs; a
+// command or the daemon re-rolling a local resolveCatalogDirs would reintroduce
+// the copy this consolidation removed, where the two drift silently the moment
+// one is touched. The guard fails if a func resolveCatalogDirs declaration
+// reappears in the CLI or MCP packages.
+//
+// The compiler cannot catch this and never will: a package-level function
+// nobody calls compiles cleanly, so a re-rolled copy type-checks and a build
+// stays green. This guard is the only thing standing between the re-roll and
+// the tree, which is why its own reach is asserted below rather than assumed.
 //
 // Test files are exempt: this guard file names the symbol in prose, and the
 // unit test for the mechanic lives with its home in pkg/workspaceconfig.
 func TestResolveCatalogDirsChokepointGuard(t *testing.T) {
 	dirs := []string{".", filepath.Join("..", "..", "internal", "mcp")}
 
+	inspected := 0
 	for _, dir := range dirs {
 		matches, err := filepath.Glob(filepath.Join(dir, "*.go"))
 		if err != nil {
@@ -634,6 +641,7 @@ func TestResolveCatalogDirsChokepointGuard(t *testing.T) {
 			if strings.HasSuffix(file, "_test.go") {
 				continue
 			}
+			inspected++
 			fset := token.NewFileSet()
 			node, err := parser.ParseFile(fset, file, nil, 0)
 			if err != nil {
@@ -645,11 +653,18 @@ func TestResolveCatalogDirsChokepointGuard(t *testing.T) {
 					return true
 				}
 				if fn.Recv == nil && fn.Name.Name == "resolveCatalogDirs" {
-					t.Errorf("%s: func resolveCatalogDirs re-rolled outside its home — route catalog-dir assembly through workspaceconfig.ResolveCatalogDirs", fset.Position(fn.Pos()))
+					t.Errorf("%s: func resolveCatalogDirs re-rolled outside its home — route catalog-dir assembly through the resolved workspace's ResolveCatalogDirs method", fset.Position(fn.Pos()))
 				}
 				return true
 			})
 		}
+	}
+	// A negative-by-default guard whose walk visited nothing passes exactly as a
+	// clean tree does, so a relocated package or a mistaken skip would retire this
+	// check in silence. Both directories hold production files, so a zero here is
+	// the guard reporting on itself.
+	if inspected == 0 {
+		t.Fatalf("the walk over %v inspected no production Go file — the guard is inert, not the tree clean", dirs)
 	}
 }
 

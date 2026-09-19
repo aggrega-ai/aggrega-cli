@@ -122,7 +122,7 @@ func newValidateCmd() *cobra.Command {
 		},
 	}
 	c.Flags().StringArrayVar(&catalogDirs, "catalog", nil,
-		"Catalog directory; repeatable. Each --catalog is prepended to the workspace catalog_dirs search stack (first match wins). Defaults to the current directory.")
+		helpCatalogDir)
 	c.Flags().StringVar(&releasePath, "release", "", "Path to a Release YAML to validate over its resolved dependency closure (mutually exclusive with an entity argument)")
 	c.Flags().StringVar(&pluginPath, "plugin", "", "Path to a raw .wasm to validate against its describe() self-report — the pre-publish authoring check. Alone it needs --type; with a Plugin entity argument it cross-checks the binary against the entity's declared type, capability claim, command mirror, and host-function record.")
 	c.Flags().StringVar(&pluginType, "type", "", "Plugin type for a binary-only --plugin check, verified against the binary's self-reported type. Only meaningful with --plugin; when a Plugin entity supplies the type, omit it (a disagreeing value halts).")
@@ -169,7 +169,7 @@ func dispatchValidate(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace
 	}
 	wsCfg := rw.Config()
 	cacheDir := wsCfg.ResolvedArtifactCacheDir()
-	dirs := workspaceconfig.ResolveCatalogDirs(catalogFlagDirs, wsCfg, ".")
+	dirs := rw.ResolveCatalogDirs(catalogFlagDirs)
 
 	res, verr := validateops.ValidateEntity(ctx, rw.Root(), cacheDir, dirs, path, suppressUnsupportedFieldWarnings)
 	for _, line := range res.Diagnostics {

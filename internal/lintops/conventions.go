@@ -28,10 +28,12 @@ import (
 
 // RunCatalogWide resolves the workspace's catalog directories and runs the
 // structural publishing-linter rules over every catalog entity found under them.
-// Catalog directories come from the repeatable catalogFlagDirs prepended to the
-// workspace config's catalog_dirs; at least one source must be set — a whole-tree
-// enumeration with no configured directory is refused rather than silently
-// scanning the working directory. This is the conventions counterpart to
+// The search stack is the shared one — catalogFlagDirs prepended to the
+// workspace config's catalog_dirs, with the conventional catalog directory at
+// the workspace root last — and a run with nothing in it is refused rather than
+// reported as a clean catalog, because a pass over no entity at all passes
+// vacuously and reads exactly like a pass over a healthy one. This is the
+// conventions counterpart to
 // whole-catalog correctness (`aggrega validate`): correctness halts on a broken
 // entity, conventions report publishing-discipline advisories and never halt on a
 // convention finding alone.
@@ -51,12 +53,18 @@ func RunCatalogWide(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, 
 		return fmt.Errorf("load workspace config: %w", err)
 	}
 	wsCfg := rw.Config()
-	if len(catalogFlagDirs) == 0 && len(wsCfg.Workspace.CatalogDirs) == 0 {
+	// The refusal keys on the RESOLVED stack rather than on the flag and the
+	// configured list, so a workspace whose entities sit in the conventional
+	// directory is scanned rather than refused, and a workspace that switched the
+	// local catalog off with an empty `catalog_dirs` is refused rather than
+	// silently scanning nothing.
+	dirs := rw.ResolveCatalogDirs(catalogFlagDirs)
+	if len(dirs) == 0 {
 		return cerrors.Unidentified(cerrors.OpsError, cerrors.SourceLocation{},
-			"whole-catalog conventions check needs catalog directories to scan; pass --catalog or set `workspace.catalog_dirs` in .aggrega-config.yaml (or check a specific Release with --release)",
+			fmt.Sprintf("whole-catalog conventions check needs catalog directories to scan; put the entities under `%s/` at the workspace root, pass --catalog, or set `workspace.catalog_dirs` in %s (or check a specific Release with --release)",
+				workspaceconfig.ConventionalCatalogDir, workspaceconfig.ConfigFilename),
 			nil, nil)
 	}
-	dirs := workspaceconfig.ResolveCatalogDirs(catalogFlagDirs, wsCfg, rw.Root())
 	files, passedOver, err := walkCatalogEntityFiles(ctx, rw.Root(), dirs, wsCfg.ResolvedArtifactCacheDir())
 	if err != nil {
 		return err
@@ -137,7 +145,7 @@ func RunRelease(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, rele
 	wsRoot := rw.Root()
 	wsCfg := rw.Config()
 	cacheDir := wsCfg.ResolvedArtifactCacheDir()
-	dirs := workspaceconfig.ResolveCatalogDirs(catalogFlagDirs, wsCfg, wsRoot)
+	dirs := rw.ResolveCatalogDirs(catalogFlagDirs)
 
 	lazyView := catalog.NewLazyLookup(wsRoot, cacheDir, dirs, nil)
 	lf, _, lfErr := lockfile.LoadLockfile(lockfile.PathFor(releasePath))
@@ -282,7 +290,7 @@ func RunRelease(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, rele
 // one, which is the one thing a reader cannot recover from the output.
 func lintConventionsFiles(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, catalogFlagDirs []string, paths []string, trusted pluginpath.PinMaps, out, diagOut io.Writer, collect *FindingCollector) error {
 	wsCfg := rw.Config()
-	dirs := workspaceconfig.ResolveCatalogDirs(catalogFlagDirs, wsCfg, rw.Root())
+	dirs := rw.ResolveCatalogDirs(catalogFlagDirs)
 	lazyView := catalog.NewLazyLookup(rw.Root(), wsCfg.ResolvedArtifactCacheDir(), dirs, nil)
 	attachments, err := ResolveLinterPlugins("", wsCfg, trusted, lazyView.PluginByURI,
 		linterCacheResolve(rw.Root(), wsCfg, trusted, lazyView.PluginFromCacheByURI))

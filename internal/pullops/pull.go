@@ -497,7 +497,7 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	// workspace catalog_dirs. Resolved here (not by the caller) so a direct
 	// invocation and a build's automatic fill derive the identical stack under the
 	// same config.
-	dirs := workspaceconfig.ResolveCatalogDirs(cfg.CatalogDirs, wsCfg, ".")
+	dirs := rw.ResolveCatalogDirs(cfg.CatalogDirs)
 	// Tolerant Pass-1: a file that fails to parse/index is skipped (recorded), not
 	// fatal — a broken catalog entity OUTSIDE this Release's closure never fails the
 	// run. A cross-document $ref to a remote library cannot expand at load (Pass-2)

@@ -11,7 +11,6 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
-	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
 // TestPinGateSuppressesExternalShadow proves the registry-pin gate in the shared
@@ -58,7 +57,7 @@ func TestPinGateSuppressesExternalShadow(t *testing.T) {
 	rw := resolveTempWorkspace(t, tempWorkspaceOptions{Root: root})
 	wsCfg := rw.Config()
 	cacheDir := wsCfg.ResolvedArtifactCacheDir()
-	dirs := workspaceconfig.ResolveCatalogDirs([]string{catalogDir}, wsCfg, root)
+	dirs := rw.ResolveCatalogDirs([]string{catalogDir})
 
 	resolve := func(withLockfile *lockfile.Lockfile) (compilerops.ResolvedClosure, error) {
 		view := catalog.NewLazyLookup(root, cacheDir, dirs, nil)

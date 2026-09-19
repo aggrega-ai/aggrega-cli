@@ -170,7 +170,7 @@ under either format.`,
 		},
 	}
 	c.Flags().StringArrayVar(&opts.catalogDirs, "catalog", nil,
-		"Catalog directory; repeatable. Each --catalog is prepended to the workspace catalog_dirs search stack (first match wins). Used by the whole-catalog and --release conventions passes.")
+		helpCatalogDir+" Used by the whole-catalog and --release conventions passes.")
 	c.Flags().StringVar(&opts.releasePath, "release", "", "Path to a Release YAML to check conventions over its resolved dependency closure (mutually exclusive with an entity argument)")
 	c.Flags().StringVar(&opts.entityPath, "entity", "", "Path to the entity YAML to lint (alternatively pass as the positional arg)")
 	c.Flags().BoolVar(&opts.prePublish, "pre-publish", false, "Fetch the previous registry version and verify the proposed bump against the schema-evolution classification")

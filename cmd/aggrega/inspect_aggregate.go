@@ -97,7 +97,7 @@ func aggregateTopologyInputs(rw *workspaceconfig.ResolvedWorkspace, catalogDirs 
 	wsRoot := rw.Root()
 	wsCfg := rw.Config()
 	cacheDir := wsCfg.ResolvedArtifactCacheDir()
-	dirs := workspaceconfig.ResolveCatalogDirs(catalogDirs, wsCfg, ".")
+	dirs := rw.ResolveCatalogDirs(catalogDirs)
 	cat, err := catalog.LoadAllWithCacheDir(wsRoot, cacheDir, dirs...)
 	if err != nil {
 		return resolver.CatalogLookup{}, nil, "", fmt.Errorf("catalog load: %w", err)

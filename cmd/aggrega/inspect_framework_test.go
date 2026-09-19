@@ -169,9 +169,8 @@ func TestInspectPath_UnknownKind(t *testing.T) {
 // TestInspectCatalogPrecedence_FlagBeatsConfig pins the layered catalog
 // resolution: the --catalog flag dir is searched before the configured
 // catalog_dirs, so a Component present only in the flag dir resolves, and on a
-// name collision the flag dir wins. With neither flag nor config, the fallback
-// is the current directory. This rides the already-shipped ResolveCatalogDirs;
-// the test is a regression pin, not a reimplementation.
+// name collision the flag dir wins. This rides the shared search-stack
+// resolution; the test is a regression pin, not a reimplementation.
 func TestInspectCatalogPrecedence_FlagBeatsConfig(t *testing.T) {
 	t.Parallel()
 

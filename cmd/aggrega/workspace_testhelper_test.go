@@ -18,11 +18,11 @@ import (
 // site rather than in shared setup a reader has to go and find.
 //
 // The zero value is the minimal-but-real default: a workspace root at a fresh
-// temporary directory with an explicitly empty catalog-directory list. Both
-// halves are config the loader actually consumes — the presence of the
-// `workspace:` block is what anchors the root, and the empty `catalog_dirs`
-// list says this workspace contributes no catalog directories of its own, so
-// each command's own fallback applies unchanged.
+// temporary directory declaring no catalog directories of its own. The
+// `workspace:` block is written because its presence is what anchors the root;
+// the catalog-directory key is written only when the caller declares one, which
+// is the ordinary shape of a workspace and the one a command meets in
+// production.
 type tempWorkspaceOptions struct {
 	// Root is the directory to declare as the workspace root. Empty means a
 	// fresh t.TempDir(). A test that has already built its own temporary tree —
@@ -35,9 +35,16 @@ type tempWorkspaceOptions struct {
 	Root string
 	// CatalogDirs are declared as the workspace's catalog_dirs, in order. A
 	// relative entry resolves against Root, as it would for any config file.
-	// Empty declares an empty list. It cannot be combined with a Root that
-	// already holds a config file, because that would leave two declarations of
-	// the same thing and no way to tell which one took effect.
+	// It cannot be combined with a Root that already holds a config file,
+	// because that would leave two declarations of the same thing and no way to
+	// tell which one took effect.
+	//
+	// Empty declares NOTHING rather than an empty list, and the difference is a
+	// behaviour a reader can see: a workspace that declares no catalog
+	// directories still reads the conventional `catalog` directory at its root
+	// when one exists, while a workspace that declares `catalog_dirs: []` has
+	// switched the local catalog off entirely. A test that wants the off-switch
+	// authors its own config file at Root and says so.
 	CatalogDirs []string
 }
 
@@ -84,9 +91,11 @@ func resolveTempWorkspace(t *testing.T, opts tempWorkspaceOptions) *workspacecon
 		// Encode through the YAML marshaller rather than by concatenating
 		// strings, so a directory holding a character that has to be quoted is
 		// written as a value the loader reads back unchanged.
-		doc, merr := yaml.Marshal(map[string]any{
-			"workspace": map[string]any{"catalog_dirs": declaredDirs(opts.CatalogDirs)},
-		})
+		block := map[string]any{}
+		if len(opts.CatalogDirs) > 0 {
+			block["catalog_dirs"] = opts.CatalogDirs
+		}
+		doc, merr := yaml.Marshal(map[string]any{"workspace": block})
 		if merr != nil {
 			t.Fatalf("encode workspace config: %v", merr)
 		}
@@ -152,14 +161,4 @@ func resolveTempWorkspaceAgainst(t *testing.T, opts tempWorkspaceOptions, look f
 		t.Fatalf("resolve workspace without the global layer: %v", err)
 	}
 	return rw
-}
-
-// declaredDirs returns dirs as a non-nil slice, so the encoded config carries an
-// explicit empty `catalog_dirs` list rather than an empty `workspace:` mapping
-// that asserts nothing about the catalog.
-func declaredDirs(dirs []string) []string {
-	if dirs == nil {
-		return []string{}
-	}
-	return dirs
 }

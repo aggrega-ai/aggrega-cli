@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
 // Every request in this file is spelled out in the protocol's own literal wire
@@ -210,7 +212,15 @@ func readFixtureServer(t *testing.T) *server {
 		"      port: { type: integer, default: 8080 }\n" +
 		"    provides:\n" +
 		"      host: { type: string, required: true }\n"
-	if err := os.WriteFile(filepath.Join(ws, "component.yaml"), []byte(body), 0o644); err != nil {
+	// The entity sits in the conventional catalog directory rather than loose at
+	// the workspace root, which is the shape a reader is told to author: the
+	// search stack reads that directory without being told to, and a root holding
+	// entities directly is read only when the reader lists it themselves.
+	catalogDir := filepath.Join(ws, workspaceconfig.ConventionalCatalogDir)
+	if err := os.MkdirAll(catalogDir, 0o755); err != nil {
+		t.Fatalf("mkdir the conventional catalog directory: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(catalogDir, "component.yaml"), []byte(body), 0o644); err != nil {
 		t.Fatalf("write component: %v", err)
 	}
 	s.renderHelp = func(path []string) (string, bool) {

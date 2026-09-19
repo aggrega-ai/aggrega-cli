@@ -677,7 +677,11 @@ func CaptureBuildCritical(path string, cfg Config, allPlugins bool) error {
 			}
 		}
 
-		if len(cfg.Workspace.CatalogDirs) > 0 {
+		// The predicate is nil-ness rather than emptiness because an empty
+		// `catalog_dirs` the reader authored is a statement — this workspace has no
+		// local catalog — and one a capture dropped would be silently re-read as
+		// the absent key, which means something else.
+		if cfg.Workspace.CatalogDirs != nil {
 			wsNode := getOrCreateMapping(mapping, "workspace")
 			if err := setEncodedKey(wsNode, "catalog_dirs", cfg.Workspace.CatalogDirs); err != nil {
 				return err

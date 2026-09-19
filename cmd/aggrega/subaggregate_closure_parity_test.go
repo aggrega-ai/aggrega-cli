@@ -14,7 +14,6 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
-	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
 // transitiveSubAggregateFixture authors a workspace whose Aggregate chain is two
@@ -207,7 +206,7 @@ func TestSubAggregateAxisAgreesAcrossLockAndBuild(t *testing.T) {
 	rw := resolveTempWorkspace(t, tempWorkspaceOptions{Root: root})
 	wsCfg := rw.Config()
 	cacheDir := wsCfg.ResolvedArtifactCacheDir()
-	dirs := workspaceconfig.ResolveCatalogDirs([]string{catalogDir}, wsCfg, root)
+	dirs := rw.ResolveCatalogDirs([]string{catalogDir})
 
 	view := catalog.NewLazyLookup(root, cacheDir, dirs, nil)
 	view.SetPins(catalog.PinsFromLockfile(lf))

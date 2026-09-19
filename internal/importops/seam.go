@@ -66,7 +66,7 @@ var BuildSeam = buildSeam
 // exactly like any other.
 func buildSeam(rw *workspaceconfig.ResolvedWorkspace, resolvePlugin PluginBytesResolver) (Seam, error) {
 	wsCfg := rw.Config()
-	dirs := workspaceconfig.ResolveCatalogDirs(nil, wsCfg, rw.Root())
+	dirs := rw.ResolveCatalogDirs(nil)
 	cat, err := catalog.LoadAllWithCacheDir(rw.Root(), wsCfg.ResolvedArtifactCacheDir(), dirs...)
 	if err != nil {
 		return Seam{}, fmt.Errorf("load catalog for import resolution: %w", err)
