@@ -109,14 +109,34 @@
 //
 // # What it refuses to conclude
 //
-// The reading is syntactic and local. It follows the value a producer returns
-// within the function that received it, and one hop into a same-package helper
-// the value is handed to whole. Any other escape — assignment to a second
-// variable, capture by a closure, a return, a hand-off this reading cannot
-// follow — is reported as an unreadable site, and **no parity verdict is drawn
-// for that surface and that result type at all**. A verdict over a value only
-// partly followed would be the one failure this package must not have: a clean
-// result certifying nothing.
+// The reading is syntactic. It follows the value a producer returns within the
+// function that received it, and a bounded number of hops onward into any helper
+// of this module the value is handed to whole — in the receiving package or in
+// another, which is the same thing to this read because the source of both is in
+// the tree. Any other escape — assignment to a second variable, capture by a
+// closure, a return, a hand-off this reading cannot follow — is reported as an
+// unreadable site, and **no parity verdict is drawn for that surface and that
+// result type at all**. A verdict over a value only partly followed would be the
+// one failure this package must not have: a clean result certifying nothing.
+//
+// 🔴 The follow stops at the MODULE, and where it stops is a claim about this
+// read rather than about the code. A value handed to the standard library or to a
+// dependency reaches a body with no source here, so the site is unreadable and
+// stays unreadable; that is correct, and no widening of this read reclaims it.
+// What the module bound buys is a different thing entirely: a surface handing a
+// shared result to a writer one import away is followed into it, so where a helper
+// sits — in this package or a neighbouring one — costs the certification of no site
+// that calls it. The boundary this read ends at is the boundary where the source
+// ends, which is the only one that says something about the tree rather than about
+// how the tree happens to be split into packages.
+//
+// What the follow does NOT do is certify a value it has not traced. Every refusal
+// above still refuses: a callee this read cannot resolve to a function, a
+// qualifier that names no package of this module, a name resolving to a type
+// conversion or a function value rather than to a body, a position it cannot bind
+// to a parameter, and a hop beyond the bound. Each leaves the site unreadable, so
+// the follow can add certified projections only by opening bodies and reading
+// them.
 //
 // Two blind spots are structural, and stating them is the point of this section
 // rather than a caveat on it.

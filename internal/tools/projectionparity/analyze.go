@@ -218,11 +218,33 @@ type Result struct {
 // a caller bounds the cores to a subtree.
 var exemptionRE = regexp.MustCompile(`projection-omits\s+([A-Za-z_][A-Za-z0-9_/]*)(?:\.([A-Za-z_][A-Za-z0-9_]*))?(?:\.([A-Za-z_][A-Za-z0-9_]*))?\s*:\s*(.*)$`)
 
-// maxFollowDepth bounds how far a value handed on to a same-package helper is
-// followed. Beyond it the site is reported as unreadable rather than followed
-// further: an unbounded follow would have to resolve names across packages, and
-// a resolution that quietly gave up would return a clean result over a body it
-// never saw.
+// maxFollowDepth bounds how far a value handed on to a helper is followed.
+// Beyond it the site is reported as unreadable rather than followed further: an
+// unbounded follow would keep opening bodies until it ran out of tree, and a
+// follow that quietly gave up would return a clean result over a body it never
+// saw.
+//
+// It is a budget over HOPS rather than over package boundaries, and the same
+// budget covers a hop inside the caller's own package and a hop across a package
+// boundary. What it bounds is how far a value has travelled from the binding a
+// finding names, which is what a reader has to hold in their head to check the
+// finding — and that distance is the same whether the intervening helper was
+// declared next door or one import away.
+//
+// The cycle bound is separate and is not a depth at all: [analysis.readFields]
+// carries a set of the function-and-value pairs it has already opened, keyed by
+// the package directory as well as the function, so a value passed around a ring
+// of helpers is met a second time and answered rather than followed again. Depth
+// alone would terminate such a ring only by exhausting the budget, and would
+// report the exhaustion as a site it could not read rather than as the complete
+// answer it is.
+//
+// A ring of direct calls cannot span two packages in valid Go — the two would
+// have to import each other — so the shape that reaches this read is a hop
+// across a package boundary INTO a ring, never a ring made of such hops. The set
+// is keyed by directory all the same, because the alternative is a key that
+// happens to be unique and stops being so the day two packages declare a helper
+// of one name.
 const maxFollowDepth = 3
 
 // Analyze reads every surface's projection of every shared computation's result
@@ -593,13 +615,103 @@ type argRef struct {
 	index int
 }
 
+// followedCallee is a function a value was handed to whose body this read can
+// open: the declaration, the package directory declaring it, and the name a
+// finding calls it by.
+type followedCallee struct {
+	dir  string
+	name string
+	decl *ast.FuncDecl
+}
+
+// resolveCallee is the function a call names — in the calling package, or in
+// another package of this module — together with the directory that declares it.
+//
+// why is non-empty where no such body was reached. It is a phrase the caller
+// completes rather than a sentence of its own, because the site's report names
+// the value first and the reason reads as the continuation of that sentence.
+//
+// 🔴 The bound is the MODULE, and it is a real bound rather than a convenience. A
+// call into the standard library or into a dependency names a body this read has
+// no source for, so the value stays unfollowed and the site stays unreadable —
+// which is the honest answer, because a field set assembled without that body
+// would be short, and a short field set cannot support a claim that some other
+// surface dropped something. Inside the module the body IS there to be read, so
+// declining to read it would report this read's own reach as though it were a
+// fact about the tree: that is what a qualified call cost before, and two
+// surfaces handing one shared result to one shared writer were both abandoned at
+// the call while the writer sat in the same module, one import away.
+//
+// Deliberately NOT bounded to the directories already parsed. Which directories
+// those are depends on the order the sites happened to be walked in, so a bound
+// drawn there would make one site's verdict depend on another site's position and
+// the same tree would report different findings on a different walk. The parse is
+// lazy and cached, and reaching a new directory is the same read of the same
+// tree.
+//
+// Three shapes are refused, and each is refused by name rather than as one
+// undifferentiated failure, because they call for different repairs. A bare name
+// the calling package does not declare is a call this read could not resolve at
+// all. A qualified name whose qualifier is no package of this module is a body
+// outside the tree — and a method call on a value reads identically here, since
+// telling the two apart needs type resolution this read does not carry. A
+// qualified name that does resolve to a package of this module but to no
+// top-level function in it is a type conversion, a package-level function value
+// or a method: each is a call syntactically and none is a body to open.
+func (a *analysis) resolveCallee(dir string, fn *ast.FuncDecl, call *ast.CallExpr, decls map[string]*ast.FuncDecl) (followedCallee, string) {
+	if name := identName(call.Fun); name != "" {
+		decl, known := decls[name]
+		if !known {
+			return followedCallee{}, fmt.Sprintf("to a call this read cannot resolve to a function in %s", dir)
+		}
+		return followedCallee{dir: dir, name: name, decl: decl}, ""
+	}
+
+	qualifier, funcName, qualified := selectorCall(call)
+	if !qualified {
+		return followedCallee{}, fmt.Sprintf("to a call this read cannot resolve to a function in %s", dir)
+	}
+
+	targetDir, inModule := a.source.scopeAt(fn.Pos())[qualifier]
+	if !inModule {
+		return followedCallee{}, fmt.Sprintf("to %s.%s, which names no package of this module — a call into another module and "+
+			"a method on a value read alike here, and neither is a body this read can open", qualifier, funcName)
+	}
+
+	parsed, err := a.source.read(targetDir)
+	if err != nil {
+		return followedCallee{}, fmt.Sprintf("to %s.%s in %s, which could not be parsed: %v", qualifier, funcName, targetDir, err)
+	}
+	decl, known := funcDeclsByName(parsed.Files)[funcName]
+	if !known {
+		return followedCallee{}, fmt.Sprintf("to %s.%s, which %s declares as no top-level function — a type conversion, a "+
+			"package-level function value and a method each read alike here", qualifier, funcName, targetDir)
+	}
+	return followedCallee{dir: targetDir, name: targetDir + "." + funcName, decl: decl}, ""
+}
+
 // readFields collects the fields a function reads from ident, following the
-// value one hop at a time into a same-package helper it is handed to whole.
+// value one hop at a time into any helper of this module it is handed to whole —
+// in the calling package or in another, resolved by [analysis.resolveCallee].
+//
+// So "this surface carries the field" means the surface's own body names it, or a
+// body in this module that the surface hands the value to names it. The boundary
+// that ends the follow is the MODULE rather than the package, and it is drawn
+// there because it is the boundary where the source stops: inside it the body is
+// readable, so declining to read it would report this read's reach as a fact
+// about the tree.
 //
 // escape is non-empty for the first use the reading cannot follow, in which case
 // the field set is incomplete and no verdict may be drawn from it. visited are
 // the function extents the reading passed through, so an exemption stated in a
 // helper counts as stated at the site.
+//
+// Following across a package boundary widens `visited` across packages too, and
+// that widens nothing an exemption can excuse. A marker is collected only from
+// the directories a surface declares, and it is read back against the extents
+// recorded for the surface whose directory holds it — so extents added to one
+// surface's reading cannot place another surface's marker, and a marker in a
+// package no surface declares is never collected at all.
 func (a *analysis) readFields(dir, ident string, fn *ast.FuncDecl, depth int, seen map[string]bool) (fields []string, escape string, visited []posRange) {
 	if fn.Body == nil {
 		return nil, "is read in a function with no body", nil
@@ -703,24 +815,23 @@ func (a *analysis) readFields(dir, ident string, fn *ast.FuncDecl, depth int, se
 			}
 			continue
 		}
-		callee := identName(ref.call.Fun)
-		decl, known := decls[callee]
-		if callee == "" || !known {
+		callee, why := a.resolveCallee(dir, fn, ref.call, decls)
+		if why != "" {
 			if escape == "" {
-				escape = fmt.Sprintf("hands %s to a call this read cannot resolve to a function in %s", ident, dir)
+				escape = "hands " + ident + " " + why
 			}
 			continue
 		}
 		if depth+1 >= maxFollowDepth {
 			if escape == "" {
-				escape = fmt.Sprintf("hands %s on to %s beyond the depth this read follows", ident, callee)
+				escape = fmt.Sprintf("hands %s on to %s beyond the depth this read follows", ident, callee.name)
 			}
 			continue
 		}
-		params, variadic := flatParamNames(decl)
+		params, variadic := flatParamNames(callee.decl)
 		if ref.index >= len(params) || (variadic && ref.index >= len(params)-1) {
 			if escape == "" {
-				escape = fmt.Sprintf("hands %s to %s at a position this read cannot bind to a parameter", ident, callee)
+				escape = fmt.Sprintf("hands %s to %s at a position this read cannot bind to a parameter", ident, callee.name)
 			}
 			continue
 		}
@@ -730,11 +841,11 @@ func (a *analysis) readFields(dir, ident string, fn *ast.FuncDecl, depth int, se
 			// That is a complete answer rather than an escape.
 			continue
 		}
-		deeper, deeperEscape, deeperVisited := a.readFields(dir, param, decl, depth+1, seen)
+		deeper, deeperEscape, deeperVisited := a.readFields(callee.dir, param, callee.decl, depth+1, seen)
 		visited = append(visited, deeperVisited...)
 		if deeperEscape != "" {
 			if escape == "" {
-				escape = fmt.Sprintf("hands %s to %s, which %s", ident, callee, deeperEscape)
+				escape = fmt.Sprintf("hands %s to %s, which %s", ident, callee.name, deeperEscape)
 			}
 			continue
 		}

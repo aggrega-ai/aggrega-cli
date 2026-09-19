@@ -138,6 +138,11 @@ type source struct {
 	// so an unaliased import resolves to the directory it names rather than to
 	// that path's last segment, which the two need not share.
 	packageNameOfDir map[string]string
+
+	// filesByPath maps the file name a position resolves to back to the parsed
+	// file, so the import scope a call is read under can be the scope of the file
+	// the call actually sits in.
+	filesByPath map[string]*ast.File
 }
 
 func newSource(root, modulePath string) *source {
@@ -147,6 +152,7 @@ func newSource(root, modulePath string) *source {
 		fset:             token.NewFileSet(),
 		dirs:             map[string]*parsedDir{},
 		packageNameOfDir: map[string]string{},
+		filesByPath:      map[string]*ast.File{},
 	}
 }
 
@@ -187,6 +193,7 @@ func (s *source) read(dir string) (*parsedDir, error) {
 	for _, path := range paths {
 		file := byPath[path]
 		held.Files = append(held.Files, file)
+		s.filesByPath[path] = file
 		rel, rerr := filepath.Rel(s.root, path)
 		if rerr != nil {
 			rel = path
@@ -245,6 +252,23 @@ func (s *source) packageDirsInScope(f *ast.File) map[string]string {
 		}
 	}
 	return scope
+}
+
+// scopeAt is the import scope of the file a position sits in, mapping each local
+// name an import introduces to the module-internal directory it names.
+//
+// It is taken per position rather than per directory because an import alias is a
+// property of the file that writes it: two files of one package may bind the same
+// local name to different packages, and a scope merged across the directory would
+// resolve a call against an import its own file never made. An empty scope is the
+// answer for a position in a file this read has not parsed, which resolves no
+// qualifier and so follows nothing.
+func (s *source) scopeAt(pos token.Pos) map[string]string {
+	file, parsed := s.filesByPath[s.fset.Position(pos).Filename]
+	if !parsed {
+		return nil
+	}
+	return s.packageDirsInScope(file)
 }
 
 // path is a slash-separated directory's last segment.

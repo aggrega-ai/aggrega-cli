@@ -762,6 +762,239 @@ func project() {
 			},
 			want: []string{"dropped-field Answer.Hint on the second surface"},
 		},
+		{
+			// The follow does not stop at the package boundary, because the
+			// boundary where this read's source stops is the module. A helper
+			// living one import away is the same body it would be next door, so
+			// abandoning the value at the call would report this read's reach as
+			// though it were a fact about the surface.
+			name: "a value handed to a helper in another package of this module is followed into it",
+			files: map[string]string{
+				"internal/core/core.go": twoFieldCore,
+				"internal/one/one.go": `package one
+
+import "planted/internal/core"
+
+func project() {
+	answer, _ := core.Compute()
+	_ = answer.Verdict
+	_ = answer.Hint
+}
+`,
+				"internal/two/two.go": `package two
+
+import (
+	"planted/internal/core"
+	"planted/internal/render"
+)
+
+func project() {
+	answer, _ := core.Compute()
+	render.Show(answer)
+}
+`,
+				"internal/render/render.go": `package render
+
+import "planted/internal/core"
+
+func Show(a core.Answer) {
+	_ = a.Verdict
+	_ = a.Hint
+}
+`,
+			},
+			want: nil,
+		},
+		{
+			// 🔴 The calibration the row above cannot give. Following a call
+			// makes findings disappear, and a follow that only ever made them
+			// disappear would be indistinguishable from switching the read off.
+			// Here BOTH surfaces are readable only through a cross-package hop,
+			// and the divergence between the two bodies is still named — so the
+			// reach was gained by reading those bodies rather than by excusing
+			// the sites that reach them.
+			name: "a drop inside a helper in another package is still named",
+			files: map[string]string{
+				"internal/core/core.go": twoFieldCore,
+				"internal/one/one.go": `package one
+
+import (
+	"planted/internal/core"
+	"planted/internal/render"
+)
+
+func project() {
+	answer, _ := core.Compute()
+	render.Full(answer)
+}
+`,
+				"internal/two/two.go": `package two
+
+import (
+	"planted/internal/core"
+	"planted/internal/render"
+)
+
+func project() {
+	answer, _ := core.Compute()
+	render.Brief(answer)
+}
+`,
+				"internal/render/render.go": `package render
+
+import "planted/internal/core"
+
+func Full(a core.Answer) {
+	_ = a.Verdict
+	_ = a.Hint
+}
+
+func Brief(a core.Answer) {
+	_ = a.Verdict
+}
+`,
+			},
+			want: []string{"dropped-field Answer.Hint on the second surface"},
+		},
+		{
+			// The bound, held from the other side. A call into another module
+			// names a body this read has no source for, so the field set it would
+			// assemble would be short — and a set that may be short cannot
+			// support a claim that some other surface dropped something.
+			name: "a value handed to a call outside this module stays unreadable",
+			files: map[string]string{
+				"internal/core/core.go": twoFieldCore,
+				"internal/one/one.go": `package one
+
+import "planted/internal/core"
+
+func project() {
+	answer, _ := core.Compute()
+	_ = answer.Verdict
+	_ = answer.Hint
+}
+`,
+				"internal/two/two.go": `package two
+
+import (
+	"fmt"
+
+	"planted/internal/core"
+)
+
+func project() {
+	answer, _ := core.Compute()
+	fmt.Println(answer)
+}
+`,
+			},
+			want: []string{"unreadable-site Answer on the second surface"},
+		},
+		{
+			// A qualified name that resolves to a package of this module and to
+			// no top-level function in it. A type conversion is a call
+			// syntactically and no body at all, and treating the resolution as
+			// enough would follow a name into nothing and report the silence as
+			// a complete read.
+			name: "a qualified name naming no function in the package it resolves to stays unreadable",
+			files: map[string]string{
+				"internal/core/core.go": twoFieldCore,
+				"internal/one/one.go": `package one
+
+import "planted/internal/core"
+
+func project() {
+	answer, _ := core.Compute()
+	_ = answer.Verdict
+	_ = answer.Hint
+}
+`,
+				"internal/two/two.go": `package two
+
+import (
+	"planted/internal/core"
+	"planted/internal/render"
+)
+
+func project() {
+	answer, _ := core.Compute()
+	_ = render.Wrapped(answer)
+}
+`,
+				"internal/render/render.go": `package render
+
+import "planted/internal/core"
+
+type Wrapped core.Answer
+`,
+			},
+			want: []string{"unreadable-site Answer on the second surface"},
+		},
+		{
+			// The hop budget is shared between a same-package hop and a
+			// cross-package one, because what it bounds is how far the value has
+			// travelled from the binding a finding names rather than how many
+			// package boundaries it crossed. Beyond it the site is declined, not
+			// cleared.
+			name: "a value handed on beyond the hop budget stays unreadable",
+			files: map[string]string{
+				"internal/core/core.go": twoFieldCore,
+				"internal/one/one.go": `package one
+
+import "planted/internal/core"
+
+func project() {
+	answer, _ := core.Compute()
+	_ = answer.Verdict
+	_ = answer.Hint
+}
+`,
+				"internal/two/two.go": `package two
+
+import (
+	"planted/internal/core"
+	"planted/internal/render"
+)
+
+func project() {
+	answer, _ := core.Compute()
+	render.First(answer)
+}
+`,
+				"internal/render/render.go": `package render
+
+import (
+	"planted/internal/core"
+	"planted/internal/deeper"
+)
+
+func First(a core.Answer) {
+	deeper.Second(a)
+}
+`,
+				"internal/deeper/deeper.go": `package deeper
+
+import (
+	"planted/internal/core"
+	"planted/internal/deepest"
+)
+
+func Second(a core.Answer) {
+	deepest.Third(a)
+}
+`,
+				"internal/deepest/deepest.go": `package deepest
+
+import "planted/internal/core"
+
+func Third(a core.Answer) {
+	_ = a.Verdict
+	_ = a.Hint
+}
+`,
+			},
+			want: []string{"unreadable-site Answer on the second surface"},
+		},
 	} {
 		t.Run(row.name, func(t *testing.T) {
 			t.Parallel()
@@ -776,6 +1009,128 @@ func project() {
 			if row.detail != "" && !strings.Contains(projectionparity.Report(result.Findings), row.detail) {
 				t.Fatalf("the read reports the right finding shape for the wrong reason: no refusal says %q\n%s",
 					row.detail, projectionparity.Report(result.Findings))
+			}
+		})
+	}
+}
+
+// TestTheReadTerminatesOnAValueHandedRoundACycle holds the two bounds that keep
+// the follow from running forever, and holds them apart, because they answer
+// different shapes and only one of them is a depth.
+//
+// The hop budget alone would terminate a ring by exhausting itself, and would
+// then report the exhaustion as a site it could not read — a loss of coverage
+// dressed as a limit. The set of function-and-value pairs already opened is what
+// answers a ring properly: meeting the same value in the same function a second
+// time adds nothing, so the second visit returns the complete answer it already
+// has rather than an escape. The rows below pin one case to each, so a change
+// that removed either would fail here rather than passing on the other's cover.
+//
+// Both rows would hang rather than fail if neither bound held, which is the
+// assertion that cannot be written as a comparison: the test completing is it.
+func TestTheReadTerminatesOnAValueHandedRoundACycle(t *testing.T) {
+	t.Parallel()
+
+	carrier := `package one
+
+import "planted/internal/core"
+
+func project() {
+	answer, _ := core.Compute()
+	_ = answer.Verdict
+	_ = answer.Hint
+}
+`
+
+	for _, row := range []struct {
+		name  string
+		files map[string]string
+		want  []string
+	}{
+		{
+			// Answered by the visited set. The recursion adds nothing the first
+			// visit did not already read, so the field set is complete and the
+			// surface's reads stand: the second surface reads Verdict through
+			// the helper and drops Hint, and that is what is reported.
+			name: "a helper that hands the value to itself is answered rather than followed again",
+			files: map[string]string{
+				"internal/core/core.go": twoFieldCore,
+				"internal/one/one.go":   carrier,
+				"internal/two/two.go": `package two
+
+import (
+	"planted/internal/core"
+	"planted/internal/render"
+)
+
+func project() {
+	answer, _ := core.Compute()
+	render.Show(answer)
+}
+`,
+				"internal/render/render.go": `package render
+
+import "planted/internal/core"
+
+func Show(a core.Answer) {
+	_ = a.Verdict
+	Show(a)
+}
+`,
+			},
+			want: []string{"dropped-field Answer.Hint on the second surface"},
+		},
+		{
+			// Answered by the hop budget. Two helpers handing the value back and
+			// forth reach the budget before the visited set meets a repeat, so
+			// the site is declined — which is the honest answer, since the read
+			// stopped partway and a field set it stopped assembling cannot clear
+			// anything.
+			//
+			// The ring is inside one package and the hop that reaches it crosses
+			// a package boundary, which is the only arrangement valid Go can
+			// have: a ring of direct calls spanning two packages needs those two
+			// packages to import each other, so the shape this read has to
+			// terminate on is a cross-package hop INTO a ring rather than a ring
+			// made of cross-package hops.
+			name: "a value handed back and forth inside a helper package is declined at the budget",
+			files: map[string]string{
+				"internal/core/core.go": twoFieldCore,
+				"internal/one/one.go":   carrier,
+				"internal/two/two.go": `package two
+
+import (
+	"planted/internal/core"
+	"planted/internal/render"
+)
+
+func project() {
+	answer, _ := core.Compute()
+	render.Show(answer)
+}
+`,
+				"internal/render/render.go": `package render
+
+import "planted/internal/core"
+
+func Show(a core.Answer) {
+	back(a)
+}
+
+func back(a core.Answer) {
+	Show(a)
+}
+`,
+			},
+			want: []string{"unreadable-site Answer on the second surface"},
+		},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := kinds(analyze(t, row.files))
+			if !slices.Equal(got, row.want) {
+				t.Fatalf("the read reports\n  %s\nwant\n  %s", strings.Join(got, "\n  "), strings.Join(row.want, "\n  "))
 			}
 		})
 	}

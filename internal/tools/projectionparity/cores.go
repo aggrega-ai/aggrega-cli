@@ -108,22 +108,18 @@ func collectCallSites(s *source, surfaces []Surface, surfaceDirs map[string]bool
 						if !ok {
 							return true
 						}
-						selector, ok := call.Fun.(*ast.SelectorExpr)
-						if !ok {
+						qualifier, funcName, qualified := selectorCall(call)
+						if !qualified {
 							return true
 						}
-						qualifier, ok := selector.X.(*ast.Ident)
-						if !ok {
-							return true
-						}
-						coreDir, inModule := scope[qualifier.Name]
+						coreDir, inModule := scope[qualifier]
 						if !inModule || surfaceDirs[coreDir] {
 							return true
 						}
 						if coreScope != "" && !strings.HasPrefix(coreDir+"/", coreScope) {
 							return true
 						}
-						if !ast.IsExported(selector.Sel.Name) {
+						if !ast.IsExported(funcName) {
 							return true
 						}
 						sites = append(sites, callSite{
@@ -133,7 +129,7 @@ func collectCallSites(s *source, surfaces []Surface, surfaceDirs map[string]bool
 							fn:       fn,
 							call:     call,
 							coreDir:  coreDir,
-							funcName: selector.Sel.Name,
+							funcName: funcName,
 						})
 						return true
 					})
@@ -142,6 +138,31 @@ func collectCallSites(s *source, surfaces []Surface, surfaceDirs map[string]bool
 		}
 	}
 	return sites, nil
+}
+
+// selectorCall is the qualifier and the selected name of a call written as
+// `qualifier.Name(...)`, which is the only shape a package-qualified call takes.
+//
+// It reports the syntax and nothing about what the qualifier means: a package
+// name, a receiver variable and a package-level value all produce the same shape,
+// and separating them needs the import scope of the file the call sits in, which
+// each caller holds and applies for itself.
+//
+// It is one function because two readings ask the same question of the same
+// syntax — which calls from a surface reach a shared computation, and which call
+// a value is handed on to can be followed into. A second copy would agree on the
+// day it was written and diverge the first time either reading was taught about a
+// call shape the other had not met.
+func selectorCall(call *ast.CallExpr) (qualifier, name string, ok bool) {
+	selector, isSelector := call.Fun.(*ast.SelectorExpr)
+	if !isSelector {
+		return "", "", false
+	}
+	base, isIdent := selector.X.(*ast.Ident)
+	if !isIdent {
+		return "", "", false
+	}
+	return base.Name, selector.Sel.Name, true
 }
 
 // sharedProducers are the producers called from two or more surfaces, keyed by

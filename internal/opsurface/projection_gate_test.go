@@ -193,10 +193,20 @@ func projectionFindingBlocks(kind projectionparity.Kind) bool {
 // hold from both ends. And NOT the total finding count, which mixes two
 // populations whose movements mean opposite things: a bound on that sum can be
 // held while an exclusion replaces a divergence, so it would constrain neither.
-// Measured 2026-09-10 at aggrega-cli adfcc2eb: 7 findings, all of one kind
-// (unreadable-site), which is the whole of the 7 the read reports, since no
+// Measured 2026-09-19 at aggrega-cli eb31c58a: 6 findings, all of one kind
+// (unreadable-site), which is the whole of the 6 the read reports, since no
 // finding currently accuses a surface. That coincidence is why the criterion
 // spells out which of the two is meant.
+//
+// The fall to this figure came from the read's reach growing rather than from
+// any surface changing, which is the one way this constant may be lowered. The
+// read follows a value handed to a function in another package of this module
+// into that function's body rather than stopping at the call, so two surfaces
+// handing one shared explanation to the writer that renders it — each one import
+// away from the body that reads the fields — are followed to a full field set.
+// Two findings went and the census of projections followed to a verdict rose by
+// exactly two, which is the arithmetic that says the coverage was gained by
+// reading bodies rather than by excusing sites.
 //
 // The bound this leaves, recorded so the ceiling is never read as the
 // population: a FALL is deliberately not refused, so once the count drops this
@@ -204,7 +214,7 @@ func projectionFindingBlocks(kind projectionparity.Kind) bool {
 // inside that slack is invisible. Reclaiming it is a one-line edit here,
 // belonging to whatever change lowers the count rather than to a later
 // tidy-up.
-const projectionExclusionCeiling = 7
+const projectionExclusionCeiling = 6
 
 // assertProjectionExclusionCeiling is the increase-only ratchet over the
 // findings the gate below passes over.
