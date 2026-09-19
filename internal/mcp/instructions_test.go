@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+
+	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
 // instructionsOnTheWire reads the guidance out of an encoded result under the
@@ -172,6 +174,45 @@ func TestTheGuidanceDiffersByTransport(t *testing.T) {
 	if !strings.HasPrefix(overStdio, instructionsBody) || !strings.HasPrefix(overHTTP, instructionsBody) {
 		t.Error("a transport's guidance does not open with the body both share, so the two " +
 			"differ in more than the paragraph that is meant to differ")
+	}
+}
+
+// TestTheGuidanceSaysWhereLocalEntitiesAreRead pins the half of the empty-workspace
+// paragraph that tells an assistant what an empty listing means it must DO, rather
+// than only that the listing was empty: the directory an entity is read from with
+// no configuration at all, and the settings key that names any other one.
+//
+// The oracle is the resolver's own exported spellings, never a second copy of the
+// words held here. That is what makes the check able to disagree with this
+// package: a rename at the resolver moves this assertion with it and fails any
+// guidance still naming the old one, which is exactly the drift a literal here
+// could not see.
+//
+// 🔴 THE DIRECTORY IS ASSERTED INSIDE A PHRASE, AND A BARE SUBSTRING CHECK FOR IT
+// WOULD BE VACUOUS. Its spelling is an ordinary word the shared body already uses
+// several times over, so `Contains(guidance, ConventionalCatalogDir)` passes on
+// every build whether or not the closing paragraph names a directory at all. The
+// settings key needs no such treatment: it appears nowhere else in the guidance.
+//
+// Both transports are asserted, because the two are composed separately and a
+// caller reaching a listener needs the directory named as much as one at the
+// keyboard does — it is what makes the report it is told to file actionable.
+func TestTheGuidanceSaysWhereLocalEntitiesAreRead(t *testing.T) {
+	wanted := []string{
+		workspaceconfig.ConventionalCatalogDir + " directory at the workspace root",
+		workspaceconfig.CatalogDirsSetting,
+	}
+	for _, transport := range []transportMode{transportStdio, transportHTTP} {
+		guidance := instructionsFor(transport)
+		for _, want := range wanted {
+			t.Run(transportName(transport)+"/"+want, func(t *testing.T) {
+				if !strings.Contains(guidance, want) {
+					t.Errorf("the guidance served over %s does not say %q, so an assistant is told "+
+						"the workspace is empty without being told where an entity has to sit to be "+
+						"read", transportName(transport), want)
+				}
+			})
+		}
 	}
 }
 

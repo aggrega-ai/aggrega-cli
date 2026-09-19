@@ -3,6 +3,12 @@
 
 package mcp
 
+import (
+	"fmt"
+
+	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
+)
+
 // instructionsBody is the part of the connect-time guidance that is the same
 // whichever transport composed the session. It is a body rather than the whole
 // answer: what a client receives is instructionsFor, which closes it with the
@@ -33,11 +39,27 @@ Choosing between a prompt and a tool. Reach for a tool to act — to check somet
 Finding what is not in front of you. The default tool list is kept deliberately small, so it is not the whole surface. Call describe-capabilities to load the definitions it omits, or pass a kind to see the working set for the entity you are authoring; every tool it surfaces is invocable immediately by name. Not every server offers every capability — which ones a particular one offers can depend on how it was set up and on the credential the connection presented — so read what you can do here from the tool list and from describe-capabilities rather than assuming a tool is there because it exists elsewhere. For reading rather than acting, resources/list and resources/templates/list enumerate the material available: each kind's schema (schema://), the language reference (langref://), the authoring guide (authoring://), a catalog entity's authored YAML (catalog://), and command help (cli://).`
 
 // emptyWorkspaceLead opens the closing paragraph and is the half of it that does
-// not depend on the transport: what an empty listing means. What an assistant may
-// then DO about it is the half that does, so the two are composed rather than
-// written twice — a second copy of the meaning would agree on the day it was
-// written and drift the first time either paragraph was edited alone.
-const emptyWorkspaceLead = `What an empty workspace means, and what to do about it. An empty listing is an answer rather than a failure: when list-entities reports nothing, the workspace this server resolved holds no Aggrega documents it can read, and the catalog directories configured beside it declare nothing either. What you may do about that is not the same on both transports, so this server tells you which one you reached it on rather than leaving you to infer it.`
+// not depend on the transport: what an empty listing means, and where the
+// entities that would have filled it are read from. What an assistant may then DO
+// about it is the half that does, so the two are composed rather than written
+// twice — a second copy of the meaning would agree on the day it was written and
+// drift the first time either paragraph was edited alone.
+//
+// Where entities are read from belongs in this half and not in either closing
+// paragraph: it is the same on both transports, and a caller that may only report
+// needs it as much as one that may repair — it is what turns "the listing was
+// empty" into a report the person running the server can act on.
+//
+// The directory and the settings key are taken from the resolver's own exported
+// spellings rather than written out here. They are the two things this paragraph
+// asks an assistant to act on, so a second spelling would go on reading as
+// correct after the resolver's had moved, and this surface would then send a
+// caller to a directory nothing searches. It stops there deliberately: the
+// precedence between the two, the command-line flag and the file cascade above
+// them are the reference's to teach, and an assistant facing an empty workspace
+// has none of those decisions in front of it.
+var emptyWorkspaceLead = fmt.Sprintf(`What an empty workspace means, and what to do about it. An empty listing is an answer rather than a failure: when list-entities reports nothing, the workspace this server resolved holds no Aggrega documents it can read, and the catalog directories it searches declare nothing either. Those directories are the %[1]s directory at the workspace root, which is searched without being listed anywhere, and every directory listed under %[2]s in the workspace configuration — so an entity written under %[1]s is read with no configuration at all, while a workspace whose %[2]s is written as an empty list has declared that it holds no local catalog, which is a decision to respect rather than a gap to fill. What you may do about that is not the same on both transports, so this server tells you which one you reached it on rather than leaving you to infer it.`,
+	workspaceconfig.ConventionalCatalogDir, workspaceconfig.CatalogDirsSetting)
 
 // emptyWorkspaceStdio closes the guidance for a client that launched this
 // process. That client runs where the caller does, so the workspace and the
