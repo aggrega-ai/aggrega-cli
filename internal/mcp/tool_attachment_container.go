@@ -40,7 +40,8 @@ type attachmentContainerPayload struct {
 }
 
 var attachmentContainerToolSpec = toolSpec{
-	kinds: []string{"aggregate", "component", "feature"},
+	kinds:   []string{"aggregate", "component", "feature"},
+	summary: "Reports which document and which container a Feature attachment belongs in.",
 	description: "Report where a Feature attachment for a node belongs: which document it is written in, and the container " +
 		"inside that document the attachment goes in. Pass `graph_node` — a node id on a compiled graph, as the graph keys " +
 		"it — and the `release` whose graph it is. DO NOT ASSEMBLE THIS PATH YOURSELF: a node's id and the scope it sits in " +

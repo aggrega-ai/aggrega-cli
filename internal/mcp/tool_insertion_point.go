@@ -45,6 +45,7 @@ type insertionPointPayload struct {
 }
 
 var insertionPointToolSpec = toolSpec{
+	summary: "Locates where a new entry belongs in an authored document.",
 	description: "Locate where a new entry under a named container belongs in an authored document, so you can apply an " +
 		"edit without parsing the file yourself. Pass `file` and `container` — the structural path from the document root " +
 		"to the container the entry goes inside, such as the components map, a component's features map, or a dependency " +

@@ -33,6 +33,7 @@ type getSchemaResult struct {
 }
 
 var getSchemaToolSpec = toolSpec{
+	summary: "Returns the JSON Schema for an entity or contract kind.",
 	description: "Return the canonical JSON Schema for an Aggrega entity or contract kind, read from the copy built " +
 		"into this binary, byte-identical to the distributed schema file, and writing nothing. Use it to learn the " +
 		"exact structure, required fields, and value constraints of a " +
@@ -95,6 +96,7 @@ type scaffoldResult struct {
 }
 
 var scaffoldToolSpec = toolSpec{
+	summary: "Drafts a starter document for an entity kind from its schema.",
 	description: "Generate a minimal starter skeleton for an Aggrega entity kind and return it as YAML, writing " +
 		"nothing. The skeleton is derived directly from that kind's JSON Schema so it always tracks the real " +
 		"contract: it carries exactly the required fields, with the fixed apiVersion and kind filled in and a " +

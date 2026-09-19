@@ -540,7 +540,7 @@ func TestBothCandidacyToolsAreDiscoverableAndInvocable(t *testing.T) {
 
 	for _, kind := range []string{"component", "feature", "aggregate"} {
 		named := map[string]bool{}
-		for _, c := range s.capabilitiesForKind(context.Background(), kind) {
+		for _, c := range s.indexForKind(context.Background(), kind) {
 			named[c.Name] = true
 		}
 		for _, want := range []string{"attach-candidates", "connection-candidates"} {

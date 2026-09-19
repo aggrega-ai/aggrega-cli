@@ -367,30 +367,28 @@ func TestTheInsertionPointToolRefusesWhatItCannotLocate(t *testing.T) {
 func TestTheInsertionPointToolIsReachableFromTheCapabilityListing(t *testing.T) {
 	s := newTestServer(t)
 
-	res := callTool(t, s, describeCapabilitiesName, describeCapabilitiesArgs{})
-	var listing describeCapabilitiesResult
-	if err := json.Unmarshal(res.StructuredContent, &listing); err != nil {
-		t.Fatalf("decode the capability listing: %v", err)
-	}
-	var found *capabilityDescriptor
-	for i := range listing.Capabilities {
-		if listing.Capabilities[i].Name == "insertion-point" {
-			found = &listing.Capabilities[i]
+	listing := indexOf(t, s)
+	var found *capabilityProjection
+	for i := range listing.Index {
+		if listing.Index[i].Name == "insertion-point" {
+			found = &listing.Index[i]
 			break
 		}
 	}
 	if found == nil {
-		var names []string
-		for _, c := range listing.Capabilities {
-			names = append(names, c.Name)
-		}
-		t.Fatalf("the capability listing does not surface insertion-point; it surfaced %v", names)
+		t.Fatalf("the capability index does not surface insertion-point; it surfaced %v",
+			capabilityNames(listing))
 	}
 	if !found.Deferred {
 		t.Errorf("insertion-point is surfaced as though the default listing carried it")
 	}
-	if len(found.InputSchema) == 0 {
-		t.Errorf("insertion-point is surfaced with no argument schema, so a caller cannot compose a call")
+
+	// Discovery is only useful if the definition is one call away, so the
+	// argument schema is asked for by name and has to arrive.
+	defined := definitionsOf(t, s, "insertion-point")
+	if len(defined.Capabilities) != 1 || len(defined.Capabilities[0].InputSchema) == 0 {
+		t.Errorf("naming insertion-point returned %+v, not the argument schema a caller composes a call from",
+			defined.Capabilities)
 	}
 
 	// Kind-agnostic: an author working on any entity kind is offered it.
@@ -401,7 +399,7 @@ func TestTheInsertionPointToolIsReachableFromTheCapabilityListing(t *testing.T) 
 			t.Fatalf("decode the %s listing: %v", kind, err)
 		}
 		var present bool
-		for _, c := range narrowed.Capabilities {
+		for _, c := range narrowed.Index {
 			if c.Name == "insertion-point" {
 				present = true
 				break

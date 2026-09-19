@@ -289,10 +289,37 @@ func deriveCommandTool(d clisurface.Descriptor) toolSpec {
 		operation:   operation,
 		reach:       op.Reach,
 		commandPath: d.Path,
+		summary:     commandToolSummary(d),
 		description: commandToolDescription(d, ct, operation),
 		inputSchema: commandInputSchema(ct),
 		invoke:      ct.invoke,
 	}
+}
+
+// commandToolSummary returns the one-line purpose a generated tool carries in
+// the tool index: the command's own one-line help.
+//
+// It reads that help whole rather than cutting the description this package
+// composes at its first full stop. The command already declares a one-liner —
+// the line its own help lists it under — so the short form exists upstream and
+// taking it is reading the declaration rather than inferring one. Cutting the
+// composed description would produce a different line for exactly the commands
+// whose help mentions a file suffix or a version, where the full stop inside the
+// token ends the sentence early and the result reads complete while stopping
+// mid-clause.
+//
+// A command that declares no one-line help falls back to what the tool does
+// rather than to nothing, so the index has no blank row whatever the command
+// tree carries.
+func commandToolSummary(d clisurface.Descriptor) string {
+	short := strings.TrimSpace(d.Short)
+	if short == "" {
+		return fmt.Sprintf("Runs the `%s` command and returns its output.", d.Path)
+	}
+	if !strings.HasSuffix(short, ".") {
+		short += "."
+	}
+	return short
 }
 
 // commandToolName renders a command's invocation path as its tool name: the

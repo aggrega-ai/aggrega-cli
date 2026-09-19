@@ -138,9 +138,24 @@ var proseOnlyFailureReturns = map[string]int{
 	// that selects a signing key held on this machine where the caller is not the
 	// one it belongs to. Both are decided from the arguments alone, before the named
 	// tool is entered, so no operation has run and there are no findings to carry.
+	//
+	// The progressive surface's three divide two ways, and only the first way is
+	// argument refusal. Two of them are: an entity kind outside the vocabulary, and
+	// the narrowing argument passed together with the naming one. Each is decided
+	// from the arguments alone, ahead of any walk of the tool registries, so nothing
+	// has run.
+	//
+	// The third is raised after that walk, and it withholds by the operation's own
+	// design rather than by omission. A call naming tools that do not resolve is
+	// refused whole: the descriptors that did resolve are a partial answer that
+	// reads exactly like a complete one, which is the reading the whole-call refusal
+	// exists to prevent, and the names that did not resolve are carried in the
+	// refusal's own words, every one of them. So nothing the walk produced is
+	// dropped there. Carrying the resolved half would not be fidelity; it would be
+	// the loss under another name.
 	"tool_insertion_point.go": 7,
 	"tool_workspace.go":       2,
-	"progressive.go":          1,
+	"progressive.go":          3,
 	"tools.go":                3,
 }
 

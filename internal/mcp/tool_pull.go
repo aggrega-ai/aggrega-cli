@@ -125,7 +125,8 @@ type pullResultPayload struct {
 }
 
 var pullToolSpec = toolSpec{
-	kinds: []string{"release"},
+	kinds:   []string{"release"},
+	summary: "Resolves a Release's dependencies into the cache and writes its lockfile.",
 	description: "Resolve a Release's catalog and source dependencies into the local cache and write its lockfile — it " +
 		"changes your workspace and reaches the network. Pass the Release path as `release`. By default " +
 		"it reconciles: a recorded pin is honoured and fetched at that version, an unpinned reference is resolved fresh, a " +

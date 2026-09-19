@@ -82,7 +82,8 @@ type attachCandidatesPayload struct {
 }
 
 var attachCandidatesToolSpec = toolSpec{
-	kinds: []string{"aggregate", "component", "feature"},
+	kinds:   []string{"aggregate", "component", "feature"},
+	summary: "Reports which Features may attach to a node.",
 	description: "Report which Features may attach to a node: the Features whose declared applicability the node's labels " +
 		"satisfy, evaluated through the same label match a build performs — so what you offer is what the compiler would " +
 		"match. Address the node in exactly one of three ways. `node` names a workspace entity by its `metadata.name`. " +
@@ -338,7 +339,8 @@ type connectionCandidatesPayload struct {
 }
 
 var connectionCandidatesToolSpec = toolSpec{
-	kinds: []string{"aggregate", "component", "feature"},
+	kinds:   []string{"aggregate", "component", "feature"},
+	summary: "Reports what an entity may connect to, socket by socket.",
 	description: "Report what an entity may connect to: the dependency sockets it declares, and per socket the workspace " +
 		"Components whose declared labels satisfy the constraint that socket declares over its targets — evaluated through " +
 		"the same match a build performs. Pass `node`, the entity's `metadata.name`. THE TWO HALVES ARE NOT EQUALLY " +

@@ -45,7 +45,8 @@ type genCatalogResultPayload struct {
 }
 
 var genCatalogToolSpec = toolSpec{
-	kinds: []string{"plugin"},
+	kinds:   []string{"plugin"},
+	summary: "Generates Plugin catalog entities from WebAssembly guests.",
 	description: "Generate Plugin catalog entities from Wasm guests, driving the compiler's own catalog-generation " +
 		"operation and writing the entities to disk under the directory you name. Each entity's contract fields are " +
 		"derived from the guest's self-report, and its identity and runtime " +

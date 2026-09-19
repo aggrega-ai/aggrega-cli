@@ -93,6 +93,7 @@ type cacheStatusResult struct {
 }
 
 var cacheStatusToolSpec = toolSpec{
+	summary: "Reports what the on-disk caches hold.",
 	description: "Report what the on-disk caches hold, reading them and writing nothing. Returns one entry per cached " +
 		"element with its size and, where it has one, its content digest — so you can total, compare or select without " +
 		"parsing a table. Every size is reported twice: `size` as the byte count to calculate with, and `size_text` as " +
@@ -270,6 +271,7 @@ type registryListResult struct {
 }
 
 var registryListToolSpec = toolSpec{
+	summary: "Reports the registries this workspace reaches and how each one is trusted.",
 	description: "Report the registries this workspace is configured to reach and the signature trust posture of each, " +
 		"reading configuration, writing nothing and contacting no registry. Returns each entry's host, optional alias, whether it is the " +
 		"default, its trust posture as discrete fields, and whether a credential for that host is present. The " +
@@ -405,6 +407,7 @@ type searchResult struct {
 }
 
 var searchToolSpec = toolSpec{
+	summary: "Searches the local index of the configured registries.",
 	description: "Search the local index of the configured registries for publishable entities, reading an offline " +
 		"snapshot, writing nothing and contacting no network. Use it to find what exists to depend on before naming a reference. " +
 		"Returns each match's URI, kind, version, description, category, labels and — for plugins — socket type and " +

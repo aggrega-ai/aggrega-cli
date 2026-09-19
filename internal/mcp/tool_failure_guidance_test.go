@@ -555,12 +555,10 @@ func TestTheToolPopulationIsDerivedFromWhatTheServerServes(t *testing.T) {
 	if err := json.Unmarshal(capRes.StructuredContent, &caps); err != nil {
 		t.Fatalf("%s payload does not parse: %v", describeCapabilitiesName, err)
 	}
-	for _, c := range caps.Capabilities {
-		advertised = append(advertised, c.Name)
-	}
+	advertised = append(advertised, capabilityNames(caps)...)
 
 	t.Logf("enumeration spans %d tool(s); the server advertises %d (%d in tools/list, %d through %s)",
-		len(enumerated), len(advertised), len(listed.Tools), len(caps.Capabilities), describeCapabilitiesName)
+		len(enumerated), len(advertised), len(listed.Tools), len(caps.Index), describeCapabilitiesName)
 
 	if missing := missingFrom(advertised, enumerated); len(missing) > 0 {
 		t.Errorf("the server advertises %d tool(s) this file's enumeration does not span, so every assertion here is green over a set it no longer covers: %s",

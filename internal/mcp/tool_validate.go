@@ -70,7 +70,8 @@ type validateResultPayload struct {
 }
 
 var validateToolSpec = toolSpec{
-	kinds: []string{"component", "feature", "featurerecipe", "plugin", "recipe", "release", "workload"},
+	kinds:   []string{"component", "feature", "featurerecipe", "plugin", "recipe", "release", "workload"},
+	summary: "Checks correctness across a workspace, a Release, or one entity.",
 	description: "Check correctness without rendering or writing anything, across four scopes that mirror the CLI. " +
 		"Pass exactly one scope selector. `release` <path> runs the closure-scoped semantic-validation pipeline over " +
 		"a Release: it resolves the Release's Manifest and Aggregate, computes the catalog closure, and runs the " +

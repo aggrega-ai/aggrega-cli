@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"slices"
 	"strings"
 	"testing"
 
@@ -14,13 +15,52 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/opsurface"
 )
 
-// capabilityNames returns the surfaced capability names in order.
+// capabilityNames returns the tool names a capability result surfaced, in order,
+// whichever of the two payloads it carries.
+//
+// It spans both because the two are answers to the same question asked at
+// different depths — which tools are there — and a caller of this helper is
+// asking that question rather than asking which shape came back. The shape
+// itself is asserted where it is the property under test.
 func capabilityNames(p describeCapabilitiesResult) []string {
-	names := make([]string, 0, len(p.Capabilities))
+	names := make([]string, 0, len(p.Index)+len(p.Capabilities))
+	for _, e := range p.Index {
+		names = append(names, e.Name)
+	}
 	for _, c := range p.Capabilities {
 		names = append(names, c.Name)
 	}
 	return names
+}
+
+// definitionsOf drives the capability tool for the named tools and returns the
+// definitions it answered with.
+func definitionsOf(t *testing.T, s *server, names ...string) describeCapabilitiesResult {
+	t.Helper()
+	res := callTool(t, s, describeCapabilitiesName, describeCapabilitiesArgs{Tools: names})
+	if res.IsError {
+		t.Fatalf("describe-capabilities(tools=%v) reported error: %s", names, res.Content[0].Text)
+	}
+	var payload describeCapabilitiesResult
+	if err := json.Unmarshal(res.StructuredContent, &payload); err != nil {
+		t.Fatalf("unmarshal describe-capabilities definitions: %v", err)
+	}
+	return payload
+}
+
+// indexOf drives the capability tool with no arguments and returns the index it
+// answered with.
+func indexOf(t *testing.T, s *server) describeCapabilitiesResult {
+	t.Helper()
+	res := callTool(t, s, describeCapabilitiesName, describeCapabilitiesArgs{})
+	if res.IsError {
+		t.Fatalf("describe-capabilities reported error: %s", res.Content[0].Text)
+	}
+	var payload describeCapabilitiesResult
+	if err := json.Unmarshal(res.StructuredContent, &payload); err != nil {
+		t.Fatalf("unmarshal describe-capabilities index: %v", err)
+	}
+	return payload
 }
 
 func containsStr(hay []string, needle string) bool {
@@ -62,35 +102,195 @@ func TestDefaultToolsListStaysSmall(t *testing.T) {
 	}
 }
 
-// TestDescribeCapabilitiesLongTail asserts the capability tool with no kind
-// returns the deferred long tail — the tools the default list omits — with each
-// marked deferred.
+// TestDescribeCapabilitiesLongTail asserts the capability tool with no argument
+// returns an INDEX of the deferred long tail — the tools the default list omits
+// — with every entry carrying a purpose, the kinds it serves and whether it
+// writes, and none of them carrying an argument schema.
+//
+// The absence of the schemas is the property, not a detail of it: the schemas
+// are what made the recovery call larger than a client would accept, so an index
+// that carried them would be the shape this surface exists to replace.
 func TestDescribeCapabilitiesLongTail(t *testing.T) {
 	s := newTestServer(t)
-	res := callTool(t, s, describeCapabilitiesName, describeCapabilitiesArgs{})
-	if res.IsError {
-		t.Fatalf("describe-capabilities reported error: %s", res.Content[0].Text)
-	}
-	var payload describeCapabilitiesResult
-	if err := json.Unmarshal(res.StructuredContent, &payload); err != nil {
-		t.Fatalf("unmarshal describe-capabilities payload: %v", err)
-	}
+	payload := indexOf(t, s)
+
 	names := capabilityNames(payload)
 	if !containsStr(names, "lint") {
-		t.Errorf("long-tail result omits the deferred lint tool: %v", names)
+		t.Errorf("the index omits the deferred lint tool: %v", names)
 	}
-	// Every long-tail entry is a deferred tool and carries its full definition.
-	for _, c := range payload.Capabilities {
-		if !c.Deferred {
-			t.Errorf("long-tail capability %q not marked deferred", c.Name)
+	if len(payload.Capabilities) > 0 {
+		t.Errorf("an argumentless call returned %d full definition(s); discovery answers with the index alone",
+			len(payload.Capabilities))
+	}
+	for _, e := range payload.Index {
+		if !e.Deferred {
+			t.Errorf("index entry %q not marked as absent from the default list", e.Name)
 		}
-		if len(c.InputSchema) == 0 || c.Description == "" {
-			t.Errorf("long-tail capability %q missing its definition (schema/description)", c.Name)
+		if strings.TrimSpace(e.Summary) == "" {
+			t.Errorf("index entry %q carries no purpose, so the index has a blank row where a caller reads "+
+				"what the tool is for", e.Name)
 		}
 	}
 	// The long tail is exactly the deferred registry.
-	if len(payload.Capabilities) != len(deferredToolRegistry) {
-		t.Errorf("long tail has %d capabilities, want the deferred %d", len(payload.Capabilities), len(deferredToolRegistry))
+	if len(payload.Index) != len(deferredToolRegistry) {
+		t.Errorf("the index has %d entries, want the deferred %d", len(payload.Index), len(deferredToolRegistry))
+	}
+
+	// The whole answer fits in what a client will accept, measured on the bytes a
+	// client receives rather than on the count of entries.
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal the index: %v", err)
+	}
+	const clientPayloadCeiling = 16384
+	if len(encoded) > clientPayloadCeiling {
+		t.Errorf("the index is %d bytes over this server's tool set, past the %d a client accepts",
+			len(encoded), clientPayloadCeiling)
+	}
+	t.Logf("the index is %d bytes over %d tool(s)", len(encoded), len(payload.Index))
+}
+
+// TestNamingToolsReturnsTheirDefinitionsAndNothingElse asserts the delivery half:
+// a call naming tools answers with exactly those tools, argument schemas
+// included, and an index for none of them.
+func TestNamingToolsReturnsTheirDefinitionsAndNothingElse(t *testing.T) {
+	s := newTestServer(t)
+
+	for _, want := range [][]string{{"lint"}, {"lint", "cache-status", "publish-entity"}} {
+		t.Run(strings.Join(want, "+"), func(t *testing.T) {
+			payload := definitionsOf(t, s, want...)
+			if got := capabilityNames(payload); !slices.Equal(got, want) {
+				t.Fatalf("naming %v returned %v; the result carries exactly the tools named", want, got)
+			}
+			if len(payload.Index) > 0 {
+				t.Errorf("a call naming tools also returned a %d-entry index", len(payload.Index))
+			}
+			for _, c := range payload.Capabilities {
+				if c.Description == "" || len(c.InputSchema) == 0 {
+					t.Errorf("%q came back without the definition that was asked for", c.Name)
+				}
+			}
+		})
+	}
+
+	// A name nothing answers to fails the whole call rather than being dropped: a
+	// result silently short of what was asked for reads as an answer.
+	res := callTool(t, s, describeCapabilitiesName, describeCapabilitiesArgs{Tools: []string{"lint", "no-such-tool"}})
+	if !res.IsError || !strings.Contains(res.Content[0].Text, "no-such-tool") {
+		t.Errorf("naming an unknown tool alongside a real one = %+v, want a failure naming it", res)
+	}
+
+	// The two selectors answer different questions and are refused together
+	// rather than one being silently ignored.
+	both := callTool(t, s, describeCapabilitiesName,
+		describeCapabilitiesArgs{Kind: "release", Tools: []string{"lint"}})
+	if !both.IsError || !strings.Contains(both.Content[0].Text, "not both") {
+		t.Errorf("kind and tools together = %+v, want a failure naming the exclusion", both)
+	}
+}
+
+// TestTheIndexIsProjectedFromTheRegistry is the derivation assertion: the line a
+// caller reads is computed from the tool's own registered text, so a hand
+// -maintained list beside the registry would fail here.
+//
+// It moves the source and reads the projection, in both places the projection is
+// rendered — the tool's answer and the connect-time guidance — because a second
+// composition would follow the registry in one of them and not the other.
+//
+// 🔴 It swaps a package-level registry, so it must NOT be made parallel and no
+// test that reads that registry may be made parallel either. The swap is safe as
+// written because the runner resumes a parallel test only once every sequential
+// one has finished, and this one restores the registry before it returns — which
+// is a property of the runner rather than of this test, and is why the
+// requirement is written down instead of left to be rediscovered.
+func TestTheIndexIsProjectedFromTheRegistry(t *testing.T) {
+	const planted = "A planted purpose no registry declares."
+	restore := deferredToolRegistry
+	moved := append([]toolSpec(nil), deferredToolRegistry...)
+	for i := range moved {
+		if moved[i].name == "lint" {
+			moved[i].summary = planted
+		}
+	}
+	deferredToolRegistry = moved
+	t.Cleanup(func() { deferredToolRegistry = restore })
+
+	s := newTestServer(t)
+	payload := indexOf(t, s)
+	var found bool
+	for _, e := range payload.Index {
+		if e.Name == "lint" {
+			found = e.Summary == planted
+		}
+	}
+	if !found {
+		t.Errorf("the index did not follow the registered text, so it is authored somewhere else")
+	}
+	if !strings.Contains(deferredToolIndexParagraph(), planted) {
+		t.Errorf("the guidance's index did not follow the registered text, so it is a second copy")
+	}
+}
+
+// TestEveryProjectedToolCarriesAPurpose is the anti-blank-row assertion over the
+// whole served surface, generated command tools included.
+//
+// The registry entry point refuses a statically declared tool without a purpose,
+// which is what makes a blank row impossible for those; the generated half never
+// passes through it, so its guarantee is asserted here against a real derivation.
+func TestEveryProjectedToolCarriesAPurpose(t *testing.T) {
+	s := newCommandToolServer(t, nil)
+	generated := 0
+	for _, e := range projectTools(s.deferredTools(context.Background()), true) {
+		if strings.HasPrefix(e.Name, commandToolPrefix) {
+			generated++
+		}
+		if strings.TrimSpace(e.Summary) == "" {
+			t.Errorf("%q is projected with no purpose", e.Name)
+		}
+	}
+	if generated == 0 {
+		t.Fatal("no generated command tool was projected, so the half this assertion exists for was not measured")
+	}
+	for _, e := range projectTools(toolRegistry, false) {
+		if strings.TrimSpace(e.Summary) == "" {
+			t.Errorf("%q is projected with no purpose", e.Name)
+		}
+	}
+}
+
+// TestWhetherAToolWritesIsReadFromItsReachClass pins the derivation rather than
+// the values: a tool that answers an operation the operation set declares a reach
+// beyond none for is projected as writing, and one that answers an operation
+// declaring none is not.
+//
+// The class is read back from the operation set rather than from the spec's own
+// copy of it, so the assertion can disagree with this package: a spec carrying a
+// class the operation set no longer declares fails here rather than being
+// compared against itself.
+func TestWhetherAToolWritesIsReadFromItsReachClass(t *testing.T) {
+	var reading, writing int
+	for _, spec := range append(append([]toolSpec(nil), toolRegistry...), deferredToolRegistry...) {
+		op, known := opsurface.Lookup(spec.operation)
+		if !known {
+			t.Errorf("%q answers %q, which the operation set does not declare", spec.name, spec.operation)
+			continue
+		}
+		declaredWrite := op.Reach != opsurface.ReachNone || spec.reachEscalation != nil
+		if spec.writes() != declaredWrite {
+			t.Errorf("%q is projected as writes=%t against the %q reach the operation set declares for %q",
+				spec.name, spec.writes(), op.Reach, spec.operation)
+		}
+		if declaredWrite {
+			writing++
+		} else {
+			reading++
+		}
+	}
+	// Both sides have to be populated, or the agreement above holds over one
+	// answer given to every tool.
+	if reading == 0 || writing == 0 {
+		t.Fatalf("the registries project %d reading and %d writing tool(s); an all-one-way surface would "+
+			"satisfy the comparison above whatever it computed", reading, writing)
 	}
 }
 
@@ -122,10 +322,17 @@ func TestDescribeCapabilitiesKindFilter(t *testing.T) {
 		t.Errorf("kind=release surfaced the capability tool itself: %v", relNames)
 	}
 	// The deferred lint tool is surfaced as deferred, not curated.
-	for _, c := range relPayload.Capabilities {
+	for _, c := range relPayload.Index {
 		if c.Name == "lint" && !c.Deferred {
 			t.Errorf("lint surfaced under kind=release not marked deferred")
 		}
+	}
+	// A kind narrows discovery, so it answers with the index rather than with
+	// every matching tool's argument schema — the same undeliverable shape one
+	// step smaller.
+	if len(relPayload.Capabilities) > 0 {
+		t.Errorf("kind=release returned %d full definition(s); narrowing is discovery and answers with the index",
+			len(relPayload.Capabilities))
 	}
 
 	plug := callTool(t, s, describeCapabilitiesName, describeCapabilitiesArgs{Kind: "plugin"})
@@ -367,13 +574,32 @@ func TestDefaultDefinitionTokenBudget(t *testing.T) {
 	// the one place a caller reads after it has already chosen. The bytes buy the
 	// disclosure, not the capability.
 	//
-	// The bound is held exactly as before rather than rounded up: twelve bytes of
-	// headroom, which is the same figure the two raises above left, so the gate
-	// trips on the next addition as sharply as it tripped on this one.
-	const ceiling = 22983
+	// The bound is held exactly as before rather than rounded up: the same
+	// headroom the two raises above left, so the gate trips on the next addition
+	// as sharply as it tripped on this one.
+	//
+	// It was raised a fourth time, and this raise is the third one's case again
+	// with a sharper argument: the capability tool gained an argument that names
+	// the tools whose definitions a caller wants. No tool joins the default list,
+	// and the bytes bought are one array property's schema entry and a reworded
+	// description — the description shrank, so the raise is the schema alone.
+	//
+	// What it buys is what makes the deferral work at all. The call that recovers
+	// the deferred definitions used to return every one of them in full, which is
+	// larger than a client accepts, so the tools held out of the default list were
+	// not merely loaded late — they were unreachable. Splitting that call into an
+	// index and a by-name fetch is what makes the bytes this gate protects an
+	// actual saving rather than a payload moved somewhere a client refuses to read
+	// it.
+	//
+	// The ceiling moved by the measured delta and by nothing else, so the headroom
+	// is the figure it was before rather than a rounder one, and the run logs it
+	// so the next raise argues from a measurement rather than from this comment.
+	const ceiling = 23175
 	if bytesTotal > ceiling {
 		t.Errorf("default definition budget %d bytes exceeds %d; move long-tail tools to the deferred set", bytesTotal, ceiling)
 	}
+	t.Logf("definition budget headroom: %d bytes below the %d ceiling", ceiling-bytesTotal, ceiling)
 }
 
 // errDummyExit stands in for a subprocess non-zero exit in the lint runner fake.

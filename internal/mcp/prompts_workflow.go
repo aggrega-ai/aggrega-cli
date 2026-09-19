@@ -149,6 +149,6 @@ What the compiler reports, and what it leaves to you.
 - Given identical input it emits byte-identical output. So if the artifacts changed and you believe no input did, the useful question is which input changed.
 - Provider-specific rendering and policy checks live in WebAssembly plugins rather than in the compiler, so a diagnostic about the shape of a rendered artifact points at the plugin that rendered it.
 
-For the publishing rules over a single catalog entity — naming shape, category-matches-directory, annotation-prefix discipline — the lint tool reports over local content at warn severity. It is not in the default tool list: call describe-capabilities to load its definition, then call it by name.
+For the publishing rules over a single catalog entity — naming shape, category-matches-directory, annotation-prefix discipline — the lint tool reports over local content at warn severity. It is not in the default tool list: call describe-capabilities naming lint to load its definition, then call it by name.
 
 ` + workflowPointers

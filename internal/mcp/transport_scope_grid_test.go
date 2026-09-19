@@ -124,11 +124,7 @@ func (f *scopeGridFixture) surfaced(t *testing.T, credential string) []string {
 	if err := json.Unmarshal(got.frame.Result, &result); err != nil {
 		t.Fatalf("the capability tool's result does not carry a capability listing: %v (body %q)", err, got.raw)
 	}
-	names := make([]string, 0, len(result.StructuredContent.Capabilities))
-	for _, c := range result.StructuredContent.Capabilities {
-		names = append(names, c.Name)
-	}
-	return names
+	return capabilityNames(result.StructuredContent)
 }
 
 // callTool posts one tools/call carrying this credential.

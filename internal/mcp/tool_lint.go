@@ -80,7 +80,8 @@ func lintStructuredResult(collect *lintops.FindingCollector) any {
 }
 
 var lintToolSpec = toolSpec{
-	kinds: []string{"aggregate", "component", "feature", "featurerecipe", "manifest", "mappinglibrary", "plugin", "recipe", "release", "schemalibrary"},
+	kinds:   []string{"aggregate", "component", "feature", "featurerecipe", "manifest", "mappinglibrary", "plugin", "recipe", "release", "schemalibrary"},
+	summary: "Checks catalog publishing conventions over one entity or a whole Release.",
 	description: "Run the publishing-discipline linter over a catalog entity, or validate a Release's resolved " +
 		"dependency closure, driving the compiler's own lint operation and writing nothing. Two modes: pass `entity` (a catalog entity YAML " +
 		"path) to run the publishing rules — naming shape, category-matches-directory, " +

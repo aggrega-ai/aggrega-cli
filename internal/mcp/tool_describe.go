@@ -129,7 +129,8 @@ type describeReleasePayload struct {
 }
 
 var describeToolSpec = toolSpec{
-	kinds: []string{"component", "feature", "release"},
+	kinds:   []string{"component", "feature", "release"},
+	summary: "Describes a catalog entity, an entity file, or everything a Release reaches.",
 	description: "Describe an Aggrega subject in structured form, rendering nothing and writing nothing. Two modes: pass `name` to resolve a " +
 		"catalog entity of any kind by its type URI and get its fully-resolved definition (schema, uses-schema, provides, " +
 		"labels) with inheritance applied; or pass `release` (a Release path) to get its dependency closure — what a " +

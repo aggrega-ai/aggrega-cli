@@ -262,7 +262,10 @@ func TestCuratedRefusesWhatTheTableDoesNotAccountFor(t *testing.T) {
 						refusal, _ = r.(string)
 					}
 				}()
-				got = curated(tc.id, toolSpec{description: "probe"})
+				got = curated(tc.id, toolSpec{
+					summary:     "Probes what the registry does with a spec.",
+					description: "probe",
+				})
 			}()
 
 			switch {
@@ -285,7 +288,11 @@ func TestCuratedRefusesWhatTheTableDoesNotAccountFor(t *testing.T) {
 // Removing the name from every definition is what makes the table the only place
 // a name is written today; this is what keeps it so once somebody adds one back.
 func TestCuratedOverwritesANameASpecCarries(t *testing.T) {
-	got := curated("lint", toolSpec{name: "not-from-the-table", description: "probe"})
+	got := curated("lint", toolSpec{
+		name:        "not-from-the-table",
+		summary:     "Probes the name a registered spec ends up carrying.",
+		description: "probe",
+	})
 	if got.name != "lint" {
 		t.Fatalf("a spec's own name survived registration: the tool is named %q, and the table gives %q",
 			got.name, "lint")

@@ -61,15 +61,47 @@ func advertisedOverHTTP(t *testing.T, f *httpFixture) []advertisement {
 		})
 	}
 
-	called := f.post(t, modernHeaders("tools/call", describeCapabilitiesName),
+	// The capability tool answers discovery with an index carrying no schemas, so
+	// the schemas are read where a caller reads them: by naming every tool the
+	// index reported and taking back the definitions.
+	indexed := f.post(t, modernHeaders("tools/call", describeCapabilitiesName),
 		modernRequest(t, 2, "tools/call", map[string]any{
 			"name": describeCapabilitiesName, "arguments": map[string]any{},
 		}))
-	if called.frame.Error != nil {
-		t.Fatalf("the capability tool was answered with an error envelope: %s", called.frame.Error.Message)
+	if indexed.frame.Error != nil {
+		t.Fatalf("the capability tool was answered with an error envelope: %s", indexed.frame.Error.Message)
 	}
-	out = append(out, capabilitiesFrom(t, called.frame.Result)...)
+	named := indexedNamesFrom(t, indexed.frame.Result)
+	if len(named) == 0 {
+		t.Fatal("the capability index was empty, so the schemas behind it were never reached")
+	}
+	defined := f.post(t, modernHeaders("tools/call", describeCapabilitiesName),
+		modernRequest(t, 3, "tools/call", map[string]any{
+			"name": describeCapabilitiesName, "arguments": map[string]any{"tools": named},
+		}))
+	if defined.frame.Error != nil {
+		t.Fatalf("the capability tool was answered with an error envelope: %s", defined.frame.Error.Message)
+	}
+	out = append(out, capabilitiesFrom(t, defined.frame.Result)...)
 	return out
+}
+
+// indexedNamesFrom reads the tool names out of a capability index carried in a
+// tools/call result frame.
+func indexedNamesFrom(t *testing.T, result json.RawMessage) []string {
+	t.Helper()
+	var call callToolResult
+	if err := json.Unmarshal(result, &call); err != nil {
+		t.Fatalf("the capability result is not a tool result: %v", err)
+	}
+	if call.IsError {
+		t.Fatalf("the capability tool reported a failure: %s", call.Content[0].Text)
+	}
+	var payload describeCapabilitiesResult
+	if err := json.Unmarshal(call.StructuredContent, &payload); err != nil {
+		t.Fatalf("the capability payload does not decode: %v", err)
+	}
+	return capabilityNames(payload)
 }
 
 // advertisedOverStdio reads the same two surfaces on the transport whose caller
@@ -94,11 +126,25 @@ func advertisedOverStdio(t *testing.T, s *server) []advertisement {
 		})
 	}
 
-	call := callDiscoveryTool(t, s, describeCapabilitiesName, map[string]any{})
-	if call.IsError {
-		t.Fatalf("the capability tool reported a failure: %s", call.Content[0].Text)
+	// The same two steps a caller takes: read the index, then name what it
+	// reported to get the definitions the index deliberately omits.
+	indexed := callDiscoveryTool(t, s, describeCapabilitiesName, map[string]any{})
+	if indexed.IsError {
+		t.Fatalf("the capability tool reported a failure: %s", indexed.Content[0].Text)
 	}
-	out = append(out, capabilitiesFromStructured(t, call.StructuredContent)...)
+	var index describeCapabilitiesResult
+	if err := json.Unmarshal(indexed.StructuredContent, &index); err != nil {
+		t.Fatalf("the capability payload does not decode: %v", err)
+	}
+	named := capabilityNames(index)
+	if len(named) == 0 {
+		t.Fatal("the capability index was empty, so the schemas behind it were never reached")
+	}
+	defined := callDiscoveryTool(t, s, describeCapabilitiesName, map[string]any{"tools": named})
+	if defined.IsError {
+		t.Fatalf("the capability tool reported a failure: %s", defined.Content[0].Text)
+	}
+	out = append(out, capabilitiesFromStructured(t, defined.StructuredContent)...)
 	return out
 }
 

@@ -550,23 +550,32 @@ func TestCommandToolsAreDiscoverableThroughTheCapabilityTool(t *testing.T) {
 		}
 	}
 
-	// The capability tool surfaces every one of them, with a full definition.
-	cap := callTool(t, s, describeCapabilitiesName, describeCapabilitiesArgs{})
-	var payload describeCapabilitiesResult
-	if err := json.Unmarshal(cap.StructuredContent, &payload); err != nil {
-		t.Fatalf("unmarshal capabilities: %v", err)
-	}
+	// The capability tool indexes every one of them, and hands back the full
+	// definition of any that is named.
+	payload := indexOf(t, s)
 	surfaced := capabilityNames(payload)
 	want := toolSpecNames(deriveCommandTools(fixtureCommandSurface()))
 	if missing := missingFrom(want, surfaced); len(missing) > 0 {
 		t.Errorf("capability listing omits generated tools: %v", missing)
 	}
-	for _, c := range payload.Capabilities {
-		if !strings.HasPrefix(c.Name, commandToolPrefix) {
+	for _, e := range payload.Index {
+		if !strings.HasPrefix(e.Name, commandToolPrefix) {
 			continue
 		}
+		if strings.TrimSpace(e.Summary) == "" {
+			t.Errorf("generated tool %q is indexed with no purpose", e.Name)
+		}
+		if !e.Deferred {
+			t.Errorf("generated tool %q not marked deferred", e.Name)
+		}
+	}
+	defined := definitionsOf(t, s, want...)
+	if len(defined.Capabilities) != len(want) {
+		t.Fatalf("naming %d generated tool(s) returned %d definition(s)", len(want), len(defined.Capabilities))
+	}
+	for _, c := range defined.Capabilities {
 		if c.Description == "" || len(c.InputSchema) == 0 {
-			t.Errorf("generated tool %q surfaced without a full definition", c.Name)
+			t.Errorf("generated tool %q came back without a full definition", c.Name)
 		}
 		if !c.Deferred {
 			t.Errorf("generated tool %q not marked deferred", c.Name)

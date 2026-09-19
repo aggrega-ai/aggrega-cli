@@ -5,6 +5,7 @@ package mcp
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/clisurface"
 	"github.com/aggrega-ai/aggrega-cli/internal/opsurface"
@@ -140,6 +141,12 @@ var curatedToolNames = map[string][]string{
 // it should take is a question the caller has to answer rather than one this
 // function may pick.
 //
+// It refuses a spec that declares no one-line summary, which is the field the
+// tool index is projected from. The refusal sits here because this is the one
+// door every statically declared tool enters a registry through, so a tool
+// without a purpose written for it cannot be registered rather than being
+// surfaced as an index entry with nothing beside its name.
+//
 // It records the operation alongside the name, from the same lookup, so a tool
 // carries what it answers as well as what it is called. That is what lets a
 // curated tool and the tool generated from the command carrying the same
@@ -188,6 +195,12 @@ func curated(id string, spec toolSpec) toolSpec {
 		panic(fmt.Sprintf("mcp: the tool protocol gives the %q operation %d curated names (%v), and a tool "+
 			"spec takes one: name the tool at the registry, or reduce the table to the name this spec "+
 			"should carry", id, len(names), names))
+	}
+	if strings.TrimSpace(spec.summary) == "" {
+		panic(fmt.Sprintf("mcp: the tool for the %q operation declares no summary, so the tool index would "+
+			"carry it as a blank line: declare a one-line purpose beside its description. The index is "+
+			"what a client reads to decide which definition to load, and a tool with nothing written "+
+			"against it is one a caller has no reason to ask about", id))
 	}
 	spec.name = names[0]
 	spec.operation = id

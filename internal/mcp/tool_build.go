@@ -189,7 +189,8 @@ func buildAdvisories(advisories []renderer.Diagnostic) []buildAdvisory {
 }
 
 var buildToolSpec = toolSpec{
-	kinds: []string{"release"},
+	kinds:   []string{"release"},
+	summary: "Renders a Release into its deployment artifacts, in memory.",
 	description: "Compile a Release into its rendered deployment artifacts entirely in memory and return them — the " +
 		"render writes no artifact to disk. Pass the Release path as `release` (absolute, or relative to the " +
 		"workspace). The tool runs the full compiler pipeline through the provider render step and returns the produced " +

@@ -60,6 +60,22 @@ import (
 // the two learned about an input the other did not.
 //
 
+// summary is the one-line purpose the tool index carries, declared beside the
+// description rather than extracted from it. Extraction was the alternative and
+// is refused: a description is a paragraph written to be read once a caller has
+// already chosen a tool, and cutting it at its first full stop produces a line
+// that is merely usually right — a sentence opening with an abbreviation, a file
+// suffix or a version number is cut mid-clause, and the result reads as a
+// complete thought while saying something else. The index is the map every later
+// call is routed by, so a line that is wrong there misroutes rather than merely
+// reading badly, and the cost of declaring one line per tool is paid once.
+//
+// It is required of every tool a registry carries, and the registry entry point
+// refuses a spec without one. A projection is only as good as its least
+// complete row: one blank purpose is invisible in a result that is otherwise
+// full, and an index with a hole in it is worse than no index, because a caller
+// reads the hole as "this tool does nothing worth saying".
+//
 // description holds what is true of a tool however a caller reached it.
 // workspaceSelectionNote holds the part that is true only where a caller may
 // name a workspace of its own, and is left empty by a tool that says nothing
@@ -88,6 +104,7 @@ type toolSpec struct {
 	operation              string
 	reach                  opsurface.Reach
 	commandPath            string
+	summary                string
 	description            string
 	workspaceSelectionNote string
 	signingKeyNote         string
@@ -96,6 +113,24 @@ type toolSpec struct {
 	kinds                  []string
 	reachEscalation        func(s *server, args json.RawMessage) opsurface.Reach
 	invoke                 func(s *server, ctx context.Context, args json.RawMessage) (*callToolResult, *rpcError)
+}
+
+// writes reports whether a call to this tool can leave something behind, for
+// the index a caller reads before it chooses a tool.
+//
+// It is derived from the reach class the operation set declares and from the
+// widening a tool's own arguments can perform, and it is deliberately not a
+// second field beside them. A boolean authored on a spec would agree with the
+// class on the day it was written and would then be free to disagree with it,
+// with nothing failing while the two happened to match.
+//
+// A tool whose arguments can widen its reach past the class its operation
+// declares is reported as writing, because the index is read before a call is
+// composed and the question it answers is whether this tool can write at all —
+// not whether the cheapest way of calling it happens to avoid doing so. The
+// tool's own description is where the condition is stated.
+func (spec toolSpec) writes() bool {
+	return spec.reach != opsurface.ReachNone || spec.reachEscalation != nil
 }
 
 // toolRegistry is the curated, always-loaded tool set the authoring loop lives

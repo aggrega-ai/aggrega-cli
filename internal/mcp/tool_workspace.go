@@ -40,6 +40,7 @@ type listEntitiesResult struct {
 }
 
 var listEntitiesToolSpec = toolSpec{
+	summary: "Lists every Aggrega entity a workspace holds.",
 	description: "List every Aggrega entity a workspace holds, reading the files and writing nothing. Returns each entity's " +
 		"kind, name, apiVersion, description, labels and source file, read verbatim from the document that declares it. " +
 		"Call this first in an unfamiliar workspace: it takes no subject, so it is how you obtain the names the other " +
@@ -123,7 +124,8 @@ type listReleasesResult struct {
 }
 
 var listReleasesToolSpec = toolSpec{
-	kinds: []string{"release"},
+	kinds:   []string{"release"},
+	summary: "Lists every Release a workspace holds, and what each one binds together.",
 	description: "List every Release a workspace holds, reading the files and writing nothing. Returns each Release's path " +
 		"relative to the workspace root — the coordinate list-entities reports a file under, so the two answers line up. " +
 		"Membership is decided by the file's own kind header, never by its name: a Release named without a conventional " +

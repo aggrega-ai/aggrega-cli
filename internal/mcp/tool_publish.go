@@ -294,6 +294,7 @@ type publishEntityPayload struct {
 }
 
 var publishEntityToolSpec = toolSpec{
+	summary: "Publishes a catalog entity to a registry, where other people resolve it.",
 	description: "Publish a catalog entity to an OCI registry: it writes, and what it writes reaches beyond this " +
 		"machine — the bytes every consumer of that registry resolves, and a signature that cannot be recalled from " +
 		"anyone who has already fetched it. Pass the entity document as `entity`, absolute or relative to the " +
@@ -505,6 +506,7 @@ type publishArtifactPayload struct {
 }
 
 var publishArtifactToolSpec = toolSpec{
+	summary: "Publishes a standalone data artifact to a registry.",
 	description: "Publish a standalone data artifact — a documentation bundle, or any opaque file — to an OCI " +
 		"registry: it writes, and what it writes reaches beyond this machine exactly as a catalog-entity " +
 		"publication does, because where the bytes land and what resolving that tag returns are just as public. " +
@@ -680,6 +682,7 @@ type signArtifactsPayload struct {
 }
 
 var signArtifactsToolSpec = toolSpec{
+	summary: "Signs already-published artifacts and attaches each signature.",
 	description: "Sign already-published artifacts and attach each signature to the registry: it writes beyond " +
 		"this machine, and a signature is the one thing here that cannot be taken back at all — the artifact it " +
 		"vouches for is untouched, but anyone who fetches that artifact afterwards fetches the signature with it. " +
@@ -856,6 +859,7 @@ type deprecateArtifactPayload struct {
 }
 
 var deprecateArtifactToolSpec = toolSpec{
+	summary: "Withdraws an already-published artifact with a signed marker.",
 	description: "Attach a signed deprecation marker to an already-published artifact: it writes beyond this " +
 		"machine, and it is the sharpest of these to read wrongly — the artifact it withdraws is untouched, but " +
 		"every consumer resolving that reference afterwards sees the withdrawal, and a retraction a workspace " +

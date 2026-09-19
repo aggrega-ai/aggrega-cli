@@ -299,6 +299,7 @@ var explainErrorToolSpec = toolSpec{
 	// copy in prose is one that drifts the day a kind is added. The definition
 	// bytes it frees are what pays for the sentence about the condition, which a
 	// caller cannot get from a schema.
+	summary: "Expands a diagnostic into the authoring fix it calls for.",
 	description: "Expand a compiler diagnostic or error message into actionable guidance, writing nothing. " +
 		"Pass the exact diagnostic text a validate or build call returned as `message`, and optionally the " +
 		"entity kind it concerns as `kind`. The answer carries the diagnostic verbatim and a pointer to the " +
