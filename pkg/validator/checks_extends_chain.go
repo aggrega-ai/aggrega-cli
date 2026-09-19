@@ -106,13 +106,14 @@ func extendsChainDepthObjections(
 // componentExtendsChainReachesNoEntityTwice refuses a Component whose extends
 // chain returns to an entity already in it.
 //
-// It is one of three declarations of one rule, and the plurality is forced by the
-// check type rather than chosen: a check reads one presentation, and a fact is
-// filed under exactly one authored document kind — so a single declaration would
-// govern one kind and read as though it governed the rule, which is worse than an
-// absent check because nothing would ever prompt a second look at the kinds it
-// silently passed. All three raise the same condition, so the diagnostic an
-// author reads does not turn on which kind they wrote.
+// It is one of several declarations of one rule — one per authored kind that
+// declares extends — and the plurality is forced by the check type rather than
+// chosen: a check reads one presentation, and a fact is filed under exactly one
+// authored document kind, so a single declaration would govern one kind and read
+// as though it governed the rule, which is worse than an absent check because
+// nothing would ever prompt a second look at the kinds it silently passed. Every
+// one of them raises the same condition, so the diagnostic an author reads does
+// not turn on which kind they wrote.
 //
 // It is invoked once per document rather than once per link, because the loop is
 // a property of the chain: an author handed one finding has one edit to make, and
@@ -135,7 +136,7 @@ var componentExtendsChainReachesNoEntityTwice = constraint.Check[
 // componentExtendsChainStaysWithinTheDepthBound refuses a Component whose extends
 // chain ends cleanly and reaches more entities than the bound admits.
 //
-// It is one of three declarations of one rule, for the reason
+// It is one of several declarations of one rule, for the reason
 // componentExtendsChainReachesNoEntityTwice states.
 var componentExtendsChainStaysWithinTheDepthBound = constraint.Check[
 	constraint.DocumentView,
@@ -154,8 +155,8 @@ var componentExtendsChainStaysWithinTheDepthBound = constraint.Check[
 
 // featureExtendsChainReachesNoEntityTwice is the Feature carrier's declaration of
 // the rule componentExtendsChainReachesNoEntityTwice declares for a Component.
-// Why there are three, and why all three raise one condition, is stated there; it
-// is not repeated here, because a rule's reasoning has one home.
+// Why there are several, and why every one of them raises one condition, is
+// stated there; it is not repeated here, because a rule's reasoning has one home.
 var featureExtendsChainReachesNoEntityTwice = constraint.Check[
 	constraint.DocumentView,
 	constraint.DocumentSubject,
@@ -226,6 +227,47 @@ var manifestExtendsChainStaysWithinTheDepthBound = constraint.Check[
 		s constraint.DocumentSubject,
 	) []constraint.Objection {
 		length, endsCleanly := v.ManifestExtendsChainLength(s.SourceFile())
+		return extendsChainDepthObjections(s, length, endsCleanly)
+	},
+}
+
+// releaseExtendsChainReachesNoEntityTwice is the Release carrier's declaration of
+// the rule componentExtendsChainReachesNoEntityTwice declares for a Component.
+//
+// What a Release contributes of its own is what the Manifest's declaration
+// contributes of its: a link is a file, so two Release files declaring one name
+// are two links and a chain passing through both has not met itself. That is a
+// property of the fact this reads rather than of the predicate, which is why the
+// rule below is the shared one and not a Release-shaped variant of it.
+var releaseExtendsChainReachesNoEntityTwice = constraint.Check[
+	constraint.DocumentView,
+	constraint.DocumentSubject,
+]{
+	Sentinel: ErrCyclicExtension(),
+	Severity: constraint.SeverityFatal,
+	Run: func(
+		v constraint.DocumentView,
+		s constraint.DocumentSubject,
+	) []constraint.Objection {
+		edge, closes := v.ReleaseExtendsChainCycleEdge(s.SourceFile())
+		return extendsChainCycleObjections(s, edge, closes)
+	},
+}
+
+// releaseExtendsChainStaysWithinTheDepthBound is the Release carrier's
+// declaration of the rule componentExtendsChainStaysWithinTheDepthBound declares
+// for a Component.
+var releaseExtendsChainStaysWithinTheDepthBound = constraint.Check[
+	constraint.DocumentView,
+	constraint.DocumentSubject,
+]{
+	Sentinel: ErrExtendsChainTooDeep(),
+	Severity: constraint.SeverityFatal,
+	Run: func(
+		v constraint.DocumentView,
+		s constraint.DocumentSubject,
+	) []constraint.Objection {
+		length, endsCleanly := v.ReleaseExtendsChainLength(s.SourceFile())
 		return extendsChainDepthObjections(s, length, endsCleanly)
 	},
 }

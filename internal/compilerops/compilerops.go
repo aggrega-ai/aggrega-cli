@@ -115,6 +115,13 @@ const (
 	ClosureStageLoadRelease ClosureStage = iota
 	// ClosureStageResolveManifest marks a failure resolving the Manifest sibling.
 	ClosureStageResolveManifest
+	// ClosureStageResolveReleaseExtends marks a failure following the Release's
+	// own extends chain. It is its own stage because the fault belongs to the
+	// Release and is decided before any sibling is looked for, so a caller
+	// attributing it to the Manifest or the Aggregate would name the wrong
+	// document — and a chain that cannot be followed is exactly the case in which
+	// those two pointers are the ones still missing.
+	ClosureStageResolveReleaseExtends
 	// ClosureStageComposeManifest marks a failure composing the Manifest extends chain.
 	ClosureStageComposeManifest
 	// ClosureStageLoadAggregate marks a failure loading the top-level Aggregate.
@@ -146,6 +153,11 @@ func (e *ClosureError) Unwrap() error { return e.err }
 
 // ResolveClosure loads the Manifest and Aggregate siblings to the Release at
 // in.ReleasePath and computes the catalog closure over the request-scoped view.
+//
+// The Release's own extends chain is followed first, ahead of either sibling, so
+// a chain that loops, runs past the depth bound or names a parent that cannot be
+// resolved is reported against the Release rather than as a sibling pointer that
+// arrived empty.
 //
 // The top-level Aggregate is resolved through the request-scoped view's
 // aggregate lookup — a same-directory scan, a `./`/`../` file, or the catalog
@@ -182,6 +194,26 @@ func ResolveClosure(ctx context.Context, in ClosureInputs) (*ResolvedClosure, *C
 		}
 	}
 	releaseDir := filepath.Dir(in.ReleasePath)
+	// The Release's own extends chain is followed before either sibling is looked
+	// for. A chain that loops, runs past the depth bound, or names a parent that
+	// cannot be resolved is a fault in the Release the caller named, and reporting
+	// it here is what keeps it from surfacing one stage later as a sibling
+	// reference the parent was going to supply — a diagnostic naming a pointer
+	// that is empty rather than the chain that failed to fill it.
+	//
+	// The chain is followed and not folded: what a parent contributes to a child
+	// is a separate contract, and nothing downstream of this line reads the chain
+	// yet. What this call produces today is the verdict on the chain's shape.
+	if _, cerr := resolver.ReleaseExtendsChain(releaseDir, resolver.ResolvedRelease{
+		Release: rel,
+		Path:    in.ReleasePath,
+	}); cerr != nil {
+		return nil, &ClosureError{
+			Stage: ClosureStageResolveReleaseExtends,
+			msg:   fmt.Sprintf("resolve release %q extends chain: %v", in.ReleasePath, cerr),
+			err:   cerr,
+		}
+	}
 	manRes, err := resolver.ResolveManifest(releaseDir, rel.Spec.Manifest)
 	if err != nil {
 		return nil, &ClosureError{

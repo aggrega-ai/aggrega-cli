@@ -115,8 +115,9 @@ func (s ExtendsChainSpec[T]) name(v T) string {
 // A chain that returns to an entity already in it, and one that ends cleanly
 // past the depth bound, are each a declared rule over a declared fact — see
 // componentExtendsChainReachesNoEntityTwice and
-// componentExtendsChainStaysWithinTheDepthBound, together with their Feature and
-// Manifest carriers. What this function does for those two is present the shape
+// componentExtendsChainStaysWithinTheDepthBound, together with the carriers each
+// other authored kind that declares extends supplies. What this function does for
+// those two is present the shape
 // its own walk produced and render whatever came back, exactly as every other
 // path in this package that invokes a rule does.
 //
@@ -236,6 +237,13 @@ func extendsChainShapeFailure(
 			constraint.RunOnDocument("", view, manifestExtendsChainReachesNoEntityTwice)...)
 		objections = append(objections,
 			constraint.RunOnDocument("", view, manifestExtendsChainStaysWithinTheDepthBound)...)
+	case envelope.KindRelease:
+		presented := newReleaseChainDocumentView(shape)
+		var view constraint.DocumentView = presented
+		objections = append(objections,
+			constraint.RunOnDocument("", view, releaseExtendsChainReachesNoEntityTwice)...)
+		objections = append(objections,
+			constraint.RunOnDocument("", view, releaseExtendsChainStaysWithinTheDepthBound)...)
 	default:
 		panic(fmt.Sprintf(
 			"validator: entity kind %q declares no extends-chain facts, so a chain walked for it "+

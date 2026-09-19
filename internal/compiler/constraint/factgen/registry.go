@@ -724,11 +724,11 @@ var facts = []factDecl{
 		Returns:     "(ExtendsChainCycleEdge, bool)",
 		Doc: "FeatureExtendsChainCycleEdge is the edge at which the chain the " +
 			"presented Feature extends returns to an entity already in it, and " +
-			"whether the chain closes on itself at all.\n\nIt is a second fact " +
-			"rather than one fact over both authored kinds that declare extends " +
+			"whether the chain closes on itself at all.\n\nIt is a fact of its own " +
+			"rather than one fact over every authored kind that declares extends " +
 			"this way, and the plurality is forced rather than chosen: a fact is " +
 			"filed under exactly one authored document kind, so a single fact would " +
-			"be readable from one kind's view and would refuse the other at the " +
+			"be readable from one kind's view and would refuse the rest at the " +
 			"point a rule read it. What the edge is, how the chain is followed and " +
 			"why membership is decided on the resolved entity are what the " +
 			"Component's own fact states; they are not restated here, because a " +
@@ -759,7 +759,7 @@ var facts = []factDecl{
 			"presented Manifest extends returns to a Manifest already in it, and " +
 			"whether the chain closes on itself at all.\n\nIt is the Manifest " +
 			"carrier's declaration of what the Component's own cycle fact declares " +
-			"for a Component, and the reason there are three is stated on the " +
+			"for a Component, and the reason there are several is stated on the " +
 			"Feature's.\n\nOne thing about it is the Manifest's own and is stated " +
 			"here because no other carrier's declaration could: a link is a FILE. " +
 			"Two Manifest files may legally declare one name, so they are two links " +
@@ -778,9 +778,45 @@ var facts = []factDecl{
 			"presented Manifest extends reaches, and whether that chain ends " +
 			"cleanly.\n\nIt is the Manifest carrier's declaration of what the " +
 			"Component's own length fact declares for a Component. Why there are " +
-			"three, and why a chain that closes on itself has no length to report, " +
-			"is stated there. The count is of files rather than of names, for the " +
+			"several, and why a chain that closes on itself has no length to " +
+			"report, is stated there. The count is of files rather than of names, for the " +
 			"reason the Manifest's own cycle fact gives.",
+	},
+	{
+		Name:        "release-extends-chain-cycle-edge",
+		Stage:       "document",
+		SourceField: "types.ReleaseSpec.Extends",
+		Subject:     []string{"document"},
+		Params:      []paramDecl{{Name: "document", Type: "string"}},
+		Returns:     "(ExtendsChainCycleEdge, bool)",
+		Doc: "ReleaseExtendsChainCycleEdge is the edge at which the chain the " +
+			"presented Release extends returns to a Release already in it, and " +
+			"whether the chain closes on itself at all.\n\nIt is the Release " +
+			"carrier's declaration of what the Component's own cycle fact declares " +
+			"for a Component, and the reason there are several is stated on the " +
+			"Feature's.\n\nWhat the Release contributes of its own is what the " +
+			"Manifest's declaration contributes of its: a link is a FILE. Two " +
+			"Release files may legally declare one name — an environment pair " +
+			"naming the deployed system rather than the environment is the ordinary " +
+			"shape — so they are two links and a chain passing through both has not " +
+			"met itself. The edge this answers names each link the way its author " +
+			"named it, which is the text an author reads rather than the path a " +
+			"machine composed.",
+	},
+	{
+		Name:        "release-extends-chain-length",
+		Stage:       "document",
+		SourceField: "types.ReleaseSpec.Extends",
+		Subject:     []string{"document"},
+		Params:      []paramDecl{{Name: "document", Type: "string"}},
+		Returns:     "(int, bool)",
+		Doc: "ReleaseExtendsChainLength is how many Releases the chain the " +
+			"presented Release extends reaches, and whether that chain ends " +
+			"cleanly.\n\nIt is the Release carrier's declaration of what the " +
+			"Component's own length fact declares for a Component. Why there are " +
+			"several, and why a chain that closes on itself has no length to " +
+			"report, is stated there. The count is of files rather than of names, " +
+			"for the reason the Release's own cycle fact gives.",
 	},
 	{
 		Name:        "manifest-annotation-binding-keys",

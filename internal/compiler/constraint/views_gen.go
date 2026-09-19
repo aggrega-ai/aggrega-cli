@@ -642,11 +642,11 @@ type DocumentView interface {
 	// presented Feature extends returns to an entity already in it, and
 	// whether the chain closes on itself at all.
 	//
-	// It is a second fact rather than one fact over both authored kinds that
-	// declare extends this way, and the plurality is forced rather than
+	// It is a fact of its own rather than one fact over every authored kind
+	// that declares extends this way, and the plurality is forced rather than
 	// chosen: a fact is filed under exactly one authored document kind, so a
 	// single fact would be readable from one kind's view and would refuse the
-	// other at the point a rule read it. What the edge is, how the chain is
+	// rest at the point a rule read it. What the edge is, how the chain is
 	// followed and why membership is decided on the resolved entity are what
 	// the Component's own fact states; they are not restated here, because a
 	// fact's documentation has one home and a second copy would be the one
@@ -670,7 +670,7 @@ type DocumentView interface {
 	// whether the chain closes on itself at all.
 	//
 	// It is the Manifest carrier's declaration of what the Component's own
-	// cycle fact declares for a Component, and the reason there are three is
+	// cycle fact declares for a Component, and the reason there are several is
 	// stated on the Feature's.
 	//
 	// One thing about it is the Manifest's own and is stated here because no
@@ -687,13 +687,44 @@ type DocumentView interface {
 	// Manifest extends reaches, and whether that chain ends cleanly.
 	//
 	// It is the Manifest carrier's declaration of what the Component's own
-	// length fact declares for a Component. Why there are three, and why a
+	// length fact declares for a Component. Why there are several, and why a
 	// chain that closes on itself has no length to report, is stated there.
 	// The count is of files rather than of names, for the reason the
 	// Manifest's own cycle fact gives.
 	//
 	// Keyed by document; read from types.ManifestSpec.Extends.
 	ManifestExtendsChainLength(document string) (int, bool)
+
+	// ReleaseExtendsChainCycleEdge is the edge at which the chain the
+	// presented Release extends returns to a Release already in it, and
+	// whether the chain closes on itself at all.
+	//
+	// It is the Release carrier's declaration of what the Component's own
+	// cycle fact declares for a Component, and the reason there are several is
+	// stated on the Feature's.
+	//
+	// What the Release contributes of its own is what the Manifest's
+	// declaration contributes of its: a link is a FILE. Two Release files may
+	// legally declare one name — an environment pair naming the deployed
+	// system rather than the environment is the ordinary shape — so they are
+	// two links and a chain passing through both has not met itself. The edge
+	// this answers names each link the way its author named it, which is the
+	// text an author reads rather than the path a machine composed.
+	//
+	// Keyed by document; read from types.ReleaseSpec.Extends.
+	ReleaseExtendsChainCycleEdge(document string) (ExtendsChainCycleEdge, bool)
+
+	// ReleaseExtendsChainLength is how many Releases the chain the presented
+	// Release extends reaches, and whether that chain ends cleanly.
+	//
+	// It is the Release carrier's declaration of what the Component's own
+	// length fact declares for a Component. Why there are several, and why a
+	// chain that closes on itself has no length to report, is stated there.
+	// The count is of files rather than of names, for the reason the Release's
+	// own cycle fact gives.
+	//
+	// Keyed by document; read from types.ReleaseSpec.Extends.
+	ReleaseExtendsChainLength(document string) (int, bool)
 
 	// ManifestAnnotationBindingKeys are the annotation keys the presented
 	// Manifest's binding registry declares, in author order.

@@ -4,6 +4,7 @@
 package resolver
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
@@ -29,11 +30,13 @@ import (
 // reconciliation of the two axes a boundary names components on, free to disagree
 // with the one the other side took.
 //
-// Unlike its two neighbours it presents its fact with no document key, so it has
-// no counterpart to their refusal of an accessor naming another document. The
-// fact is the axis itself rather than a lookup within it — the same shape the
-// Release's declared-reference fact takes — so there is no key to check a
-// caller's argument against.
+// Unlike its two neighbours it presents its placement fact with no document key,
+// so it has no counterpart to their refusal of an accessor naming another
+// document. That fact is the axis itself rather than a lookup within it — the
+// same shape the Release's declared-reference fact takes — so there is no key to
+// check a caller's argument against. The chain facts a Release also carries do
+// take a document key and are refused outright below, so no key reaches a
+// comparison there either.
 type releaseDocumentView struct {
 	// ReleaseDocumentBase supplies the document-stage facts a Release does not
 	// carry, and declares nothing for the ones it does — so this type writes
@@ -80,6 +83,41 @@ func (v releaseDocumentView) ReleaseBoundaryPlacements() []constraint.BoundaryPl
 // document declares them.
 func (v releaseDocumentView) BoundaryPlacements() []constraint.BoundaryPlacementInstance {
 	return v.placements
+}
+
+// ReleaseExtendsChainCycleEdge refuses: this view presents one Release document,
+// and the fact is read off a walk of the chain that document heads.
+//
+// Both chain facts refuse here rather than being answered from the document, and
+// the ground is that the answer is not in the document. The reference a Release
+// declares is one string; whether following it returns to a file already in the
+// chain, and how many files the chain reaches, are properties of the walk that
+// follows it — and the walk resolves each reference against the Release's own
+// directory, which this presentation neither holds nor may reach. Answering from
+// the document would report an absence the chain does not have, and a rule cannot
+// tell that from a Release that heads no chain at all.
+//
+// Which presentation does answer them is named rather than left to a reader: the
+// walk builds its own, beside the rules it invokes.
+func (v releaseDocumentView) ReleaseExtendsChainCycleEdge(
+	document string,
+) (constraint.ExtendsChainCycleEdge, bool) {
+	panic(v.refuseChainFact("ReleaseExtendsChainCycleEdge"))
+}
+
+// ReleaseExtendsChainLength refuses, for the reason
+// [releaseDocumentView.ReleaseExtendsChainCycleEdge] states.
+func (v releaseDocumentView) ReleaseExtendsChainLength(document string) (int, bool) {
+	panic(v.refuseChainFact("ReleaseExtendsChainLength"))
+}
+
+// refuseChainFact is what this view says about a chain fact, which it was not
+// built to answer.
+func (v releaseDocumentView) refuseChainFact(accessor string) string {
+	return fmt.Sprintf(
+		"releaseDocumentView.%s asked of a view built from one Release document: the fact is "+
+			"read from a walk of the chain that document heads, so present that walk",
+		accessor)
 }
 
 // releaseRoutingKey is the authoring key a Release writes a routing entry under.

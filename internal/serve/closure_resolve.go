@@ -142,10 +142,12 @@ func (s *Server) previewFailureEnvelope(view *catalog.LazyLookup, releasePath st
 // failure is attributable to, or "" when the failing stage names none.
 //
 // A stage earns a key only when the fault belongs to a value the Release
-// itself authored: the manifest reference the resolution could not follow, or
-// the aggregate reference it could not load. Composing the manifest's extends
-// chain shares the manifest reference's key, because that reference is what
-// selected the chain that turned out to be broken.
+// itself authored: the manifest reference the resolution could not follow, the
+// aggregate reference it could not load, or the extends reference whose chain it
+// could not follow. Composing the manifest's extends chain shares the manifest
+// reference's key, because that reference is what selected the chain that turned
+// out to be broken; the Release's own extends chain is selected by the Release's
+// own key, so it takes that one.
 //
 // The remaining stages name nothing, and each for its own reason. A failure
 // loading the Release has no loaded document to walk and no single key to
@@ -158,6 +160,8 @@ func releaseFieldForClosureStage(stage compilerops.ClosureStage) string {
 	switch stage {
 	case compilerops.ClosureStageResolveManifest, compilerops.ClosureStageComposeManifest:
 		return ".spec.manifest"
+	case compilerops.ClosureStageResolveReleaseExtends:
+		return ".spec.extends"
 	case compilerops.ClosureStageLoadAggregate:
 		return ".spec.aggregate"
 	default:

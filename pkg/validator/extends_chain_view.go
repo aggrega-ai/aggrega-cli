@@ -195,3 +195,99 @@ var (
 	_ constraint.DocumentView          = manifestChainDocumentView{}
 	_ constraint.ManifestDocumentFacts = manifestChainDocumentView{}
 )
+
+// releaseChainDocumentView presents to a check what a walk found about the shape
+// of the chain a Release extends.
+//
+// It is a second Release presentation rather than a field on the one the load
+// already builds, and the split is forced rather than chosen, exactly as it is
+// for the Manifest above: that one is built from a Release document and lives in
+// the package that reads Releases, while this one is built from a walk and lives
+// here, where the walk is. The package that reads Releases depends on this one,
+// so a single type could not sit in both.
+//
+// It answers about the one document it was built for, which is the framework's
+// contract rather than a simplification of it. The chain has no file of its own,
+// because it is assembled from links reached by reference rather than from one
+// file a caller read, so the document it answers about is the empty one and a
+// finding is attributed to the Release the resolution was requested for.
+//
+// It satisfies the whole document-stage view, which declares facts this
+// presentation cannot carry. The embedded base supplies those and refuses each at
+// the point a check reads it, naming the document kind that does carry it. What
+// the base cannot supply is the Release's OWN facts, which this type therefore
+// writes — and the one this presentation was not built for refuses here, in the
+// same terms and for the same reason.
+type releaseChainDocumentView struct {
+	// ReleaseDocumentBase supplies the document-stage facts a Release does not
+	// carry, and declares nothing for the ones it does — so this type writes
+	// bodies for exactly the Release's own facts.
+	constraint.ReleaseDocumentBase
+
+	// shape is what the walk found about the chain's structure.
+	shape extendsChainShape
+}
+
+// newReleaseChainDocumentView presents what a walk found about the shape of the
+// chain a Release extends.
+func newReleaseChainDocumentView(shape extendsChainShape) releaseChainDocumentView {
+	return releaseChainDocumentView{shape: shape}
+}
+
+// ReleaseExtendsChainCycleEdge returns the edge at which the chain the presented
+// Release extends returns to a Release already in it, and whether the chain
+// closes on itself at all.
+func (v releaseChainDocumentView) ReleaseExtendsChainCycleEdge(
+	document string,
+) (constraint.ExtendsChainCycleEdge, bool) {
+	v.refuseOtherDocument(document, "ReleaseExtendsChainCycleEdge")
+	return v.shape.cycleEdge()
+}
+
+// ReleaseExtendsChainLength returns how many Releases the chain the presented
+// Release extends reaches, and whether that chain ends cleanly.
+func (v releaseChainDocumentView) ReleaseExtendsChainLength(document string) (int, bool) {
+	v.refuseOtherDocument(document, "ReleaseExtendsChainLength")
+	return v.shape.length()
+}
+
+// ReleaseBoundaryPlacements refuses: this view carries a chain's shape.
+func (v releaseChainDocumentView) ReleaseBoundaryPlacements() []constraint.BoundaryPlacement {
+	panic(v.refusal("ReleaseBoundaryPlacements"))
+}
+
+// refusal is what this view says about a fact it was not built to answer.
+//
+// Answering such a fact would report an absence the document does not have, and a
+// rule cannot tell an empty answer from a Release that declared nothing. The
+// message names where the fact IS read from, because the caller's mistake is
+// which presentation it built rather than which accessor it called.
+func (v releaseChainDocumentView) refusal(accessor string) string {
+	return fmt.Sprintf(
+		"releaseChainDocumentView.%s asked of a view built from the shape of the chain the "+
+			"Release extends: the fact is read from the Release's own document, so present that",
+		accessor)
+}
+
+// refuseOtherDocument refuses an accessor call naming a document this value was
+// not built for, because answering would hand back this document's fact under
+// another document's name.
+//
+// The chain has no file of its own, so the document this view answers about is
+// the empty one and every accessor is called with it.
+func (v releaseChainDocumentView) refuseOtherDocument(document, accessor string) {
+	if document == "" {
+		return
+	}
+	panic(fmt.Sprintf(
+		"releaseChainDocumentView.%s asked about document %q while presenting a chain assembled "+
+			"from links reached by reference, which has no file of its own: ask about that chain",
+		accessor, document))
+}
+
+// The compiler holds the type to the contract rather than a comment claiming it,
+// for the reason the Manifest chain presentation's own assertions state.
+var (
+	_ constraint.DocumentView         = releaseChainDocumentView{}
+	_ constraint.ReleaseDocumentFacts = releaseChainDocumentView{}
+)
