@@ -257,6 +257,17 @@ func NewHTTPHandler(ctx context.Context, cfg Config, transport HTTPConfig) (http
 	if logw == nil {
 		logw = os.Stderr
 	}
+	// The command surface is derived here and thrown away, which is the one
+	// place this constructor reads it at all. What it yields is the vocabulary a
+	// declared tool name is held to, never a tool this session serves: one
+	// configuration file serves both transports, so a name that would have named
+	// a generated tool has to be accepted here — it announces nothing on a
+	// transport that carries none, exactly as a withdrawn kind no credential
+	// reaches withdraws an already-empty set.
+	announced, err := announcedToolNames(cfg.AnnounceTools, deriveCommandTools(cfg.Commands))
+	if err != nil {
+		return nil, err
+	}
 	s := &server{
 		// Nothing frames a message on a stream in this mode. The field is set
 		// rather than left nil so a write that reached it would be discarded
@@ -270,8 +281,9 @@ func NewHTTPHandler(ctx context.Context, cfg Config, transport HTTPConfig) (http
 		// applied at newHTTPHandler below rather than here, so that it covers
 		// every server this handler is mounted on rather than only the ones this
 		// constructor built.
-		renderHelp: cfg.RenderHelp,
-		startDir:   cfg.WorkspaceRoot,
+		announcedTools: announced,
+		renderHelp:     cfg.RenderHelp,
+		startDir:       cfg.WorkspaceRoot,
 		// Marked here as well as at the single construction point below, and the
 		// reason is the acquisition on the next line: it reports its outcome in
 		// the form this session's transport fixes, and it runs before that point

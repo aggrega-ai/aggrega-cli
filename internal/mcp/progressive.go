@@ -13,63 +13,34 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/entitykind"
 )
 
-// deferredToolRegistry is the long-tail tool set the default tools/list does
-// NOT advertise. Keeping the default list to the curated set plus one capability
-// tool holds the up-front definition budget a client loads small; a client
-// discovers a deferred tool through the capability tool and then invokes it by
-// name through the same tools/call path as any curated tool. The order is fixed
-// so the surfaced list and its wire bytes are deterministic.
+// deferredToolRegistry is the tail of the tool surface: the statically declared
+// tools a caller arriving cold can reach the rest of the surface without. Every
+// one of them is advertised in tools/list beside the set above, and the split
+// decides two things only — the order the listing is composed in, and which
+// tools the capability tool's index covers.
 //
-// Deferred or not, an entry names the operation it answers and takes its
-// advertised name from that operation's row: withholding a tool from the default
-// listing changes when a client learns of it, never whether the operation table
-// accounts for it.
+// Membership is by ONE criterion, and it is the criterion each entry below was
+// tested against rather than a place to file a tool for room: a tool belongs
+// here when it answers at one moment in authoring and needs a subject some other
+// tool already had to supply. The enumeration tools are the counter-case and sit
+// in the set above, because until a caller has named a subject it can call none
+// of these — a caller arriving cold could otherwise name nothing and have no way
+// to find out what to name.
 //
-// The two candidacy tools sit here rather than in the default set, and the
-// budget ceiling's own criterion is what puts them there. What that ceiling
-// exists to catch is a tool serving a narrow case creeping into the list every
-// client loads up front; the raise it once took was argued on the opposite
-// ground — the enumeration tools are the entry point to the whole surface,
-// because until they landed a caller arriving cold could name no subject at all.
-// Candidacy is not that. It answers at one moment in authoring — when a caller
-// is about to propose an attachment or an edge — and it needs a name the
-// enumeration already had to supply, so a caller can reach every other tool here
-// without it. Deferring them costs one discovery call at the moment they become
-// relevant, and the kind filter surfaces both for the kinds an author is working
-// in.
-// The insertion-point tool sits here on that same criterion, one step further
-// along the same moment: it answers when a caller has settled what to attach and
-// is about to write it, and it needs a document the enumeration already had to
-// supply. It is kind-agnostic rather than filed under the kinds candidacy serves,
-// because what it reads is a document's own structure — so the kind filter
-// surfaces it wherever an author is working rather than for a chosen few.
-// The attachment-container tool sits between those two on the same criterion. It
-// answers once a caller has settled what to attach and before it can ask where
-// the text goes, and it needs a node the enumeration already had to supply. It
-// carries the kinds candidacy carries rather than none, because it answers about
-// a node of a compiled graph rather than about any document's structure.
-// The two inventories sit here on the same criterion, and each was tested against
-// it rather than filed here for room. The cache inventory answers at one moment —
-// when a caller is deciding whether to reclaim space — and nothing else needs it
-// first. The configured-registry listing and the index search answer about what
-// lies outside the workspace, which is a question a caller asks after it knows
-// what the workspace already holds; the enumeration tools that answer THAT are
-// what a caller arriving cold cannot proceed without, and they remain in the
-// default set for exactly that reason. Each of these three is reachable by name
-// once the capability tool has surfaced it, and each is also reachable, for a
-// caller at this machine's keyboard, as the tool generated from its own command,
-// so deferring costs a discovery call rather than access.
-// The four publication verbs sit here on the same criterion, tested against it
-// rather than filed here for room. Each answers at one moment — when a caller has
-// finished authoring and is ready to put something where other people will resolve
-// it — and none of them is reachable-from-cold in the way the enumeration tools
-// are: a publication needs an entity or a reference the caller already has to have
-// found, so every one of them is downstream of a tool the default set already
-// carries. Deferring them costs one discovery call at the moment they become
-// relevant. It is also the conservative side of the only asymmetry here that is not
-// about budget: these are the tools that write beyond this machine, and a set a
-// client loads up front is a set an assistant reaches for without having asked
-// what it does.
+// So candidacy answers when a caller is about to propose an attachment or an
+// edge; the attachment container answers once it has settled what to attach; the
+// insertion point answers when it is about to write the text; the cache
+// inventory answers when a caller is deciding whether to reclaim space; the
+// configured-registry listing and the index search answer about what lies
+// outside the workspace, which is a question asked after what is inside it is
+// known; and the four publication verbs answer when a caller has finished
+// authoring and is ready to put something where other people will resolve it.
+//
+// Here or above, an entry names the operation it answers and takes its
+// advertised name from that operation's row, so which registry a tool sits in
+// changes where it appears in a listing and never whether the operation table
+// accounts for it. The order is fixed so the listing and its wire bytes are
+// deterministic.
 var deferredToolRegistry = []toolSpec{
 	curated("lint", lintToolSpec),
 	curated("feature-attach-candidates", attachCandidatesToolSpec),

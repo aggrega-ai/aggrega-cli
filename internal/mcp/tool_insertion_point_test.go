@@ -361,9 +361,9 @@ func TestTheInsertionPointToolRefusesWhatItCannotLocate(t *testing.T) {
 // tool is discoverable and invocable under the name the operation table gives,
 // rather than merely present in a registry.
 //
-// A tool a client cannot learn of is a tool nothing calls, and the deferred set
-// is exactly the set the default listing withholds — so the capability tool is
-// the surface that has to disclose it.
+// A tool a client cannot learn of is a tool nothing calls, and this one sits in
+// the tail rather than in the set a caller meets first — so the capability tool
+// has to index it under the name the wire uses.
 func TestTheInsertionPointToolIsReachableFromTheCapabilityListing(t *testing.T) {
 	s := newTestServer(t)
 
@@ -380,7 +380,7 @@ func TestTheInsertionPointToolIsReachableFromTheCapabilityListing(t *testing.T) 
 			capabilityNames(listing))
 	}
 	if !found.Deferred {
-		t.Errorf("insertion-point is surfaced as though the default listing carried it")
+		t.Errorf("insertion-point is surfaced as though it sat in the set a caller meets first")
 	}
 
 	// Discovery is only useful if the definition is one call away, so the

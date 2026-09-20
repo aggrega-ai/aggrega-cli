@@ -815,17 +815,21 @@ type ServeConfig struct {
 	LintOnValidate bool `yaml:"lint_on_validate"`
 }
 
-// MCPConfig carries the Model Context Protocol server's settings for the
-// HTTP transport — the listen address that selects it, the certificate
-// and key that let the process terminate TLS itself, the origins it
-// accepts, the caps it applies to the traffic it takes, and what it
-// declares about the tokens its callers present.
+// MCPConfig carries the Model Context Protocol server's settings: the
+// listen address that selects the HTTP transport, the certificate and
+// key that let the process terminate TLS itself, the origins it
+// accepts, the caps it applies to the traffic it takes, what it
+// declares about the tokens its callers present, and which tools it
+// announces.
 //
-// Listen is the only field that decides anything on its own: with it
-// empty the server speaks the protocol over standard input and output
-// and no listener exists for the rest of the block to configure.
-// Distinct from ServeConfig, which carries the editor-backend daemon's
-// settings.
+// Listen decides which transport the rest configures: with it empty the
+// server speaks the protocol over standard input and output and no
+// listener exists for the listener fields to configure. AnnounceTools is
+// the exception, and the only one — which tools a client is offered is a
+// property of the server rather than of how a client reached it, so it
+// is read on both transports. Each field below says which of the two it
+// is. Distinct from ServeConfig, which carries the editor-backend
+// daemon's settings.
 type MCPConfig struct {
 	// Listen is the address the server listens on, in one of two forms:
 	// "host:port", or "unix:" followed by a filesystem path. Empty (the
@@ -887,6 +891,32 @@ type MCPConfig struct {
 	// standard input and output reads none of this block, and there
 	// the caller is the person who launched the process.
 	DenyReach []string `yaml:"deny_reach"`
+
+	// AnnounceTools names the tools this server announces, spelled as
+	// the tool list reports them. Absent announces every tool the
+	// server carries; a list announces exactly those; an empty list
+	// announces none.
+	//
+	// Absent and empty are therefore different statements, which is
+	// why this field carries no seeded default: nil is "whoever runs
+	// this server asked for no narrowing" and an empty slice is "they
+	// asked for nothing to be announced", and a default value would
+	// have to be one of the two.
+	//
+	// It narrows the announcement alone. A tool it omits is absent from
+	// every listing and refused at the call, but naming a tool lifts
+	// neither DenyReach nor the scopes a caller's token carries: this
+	// is a bound on the surface, not a grant of reach. A name no tool
+	// answers to is refused when the server starts, because whoever
+	// asked for a narrower surface would otherwise be served a
+	// different one with nothing saying so.
+	//
+	// Read on BOTH transports, unlike every other field here. The
+	// client a narrowing exists for is usually one that launched this
+	// process over its own streams and caps how many tools it will
+	// register, so a setting read only by a listener would not reach
+	// the case it is for.
+	AnnounceTools []string `yaml:"announce_tools"`
 
 	// Health carries where the liveness and readiness checks are
 	// answered. Empty (the default) answers them nowhere.

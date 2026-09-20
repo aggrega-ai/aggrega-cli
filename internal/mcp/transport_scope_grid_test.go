@@ -60,6 +60,20 @@ func newScopeGridFixture(t *testing.T, fills bool) *scopeGridFixture {
 // kinds of reach, which is the bound that sits above what a credential admits.
 func newScopeGridFixtureDenying(t *testing.T, fills bool, deny []string) *scopeGridFixture {
 	t.Helper()
+	return newScopeGridFixtureWith(t, fills, deny, nil)
+}
+
+// newScopeGridFixtureWith is the one construction body the entry points above
+// share, carrying both bounds that sit above a credential: the kinds of reach
+// withdrawn, and the tools announced.
+//
+// The announcement is installed on the server before the handler is built,
+// which is where the real composition installs it — it is a property of the
+// server on either transport rather than of the listener, so a fixture that set
+// it beside the listener settings would be exercising a wiring the product does
+// not have.
+func newScopeGridFixtureWith(t *testing.T, fills bool, deny []string, announce map[string]bool) *scopeGridFixture {
+	t.Helper()
 
 	root := t.TempDir()
 	cfg := "workspace: {}\noffline: true\n"
@@ -81,6 +95,7 @@ func newScopeGridFixtureDenying(t *testing.T, fills bool, deny []string) *scopeG
 	issuer := newAuthorizationServerDouble(t)
 	s := newCommandToolServer(t, nil)
 	s.startDir = root
+	s.announcedTools = announce
 	transport := transportFor(issuer.authorizationConfig(), issuer.egress())
 	transport.DenyReach = deny
 	h, err := newHTTPHandler(context.Background(), s, transport)
@@ -108,7 +123,7 @@ func (f *scopeGridFixture) listed(t *testing.T, credential string) []string {
 }
 
 // surfaced is the tool names the capability tool answers this credential with,
-// unscoped, which is the long tail the default listing withholds.
+// unscoped, which is the tail behind the set a caller meets first.
 func (f *scopeGridFixture) surfaced(t *testing.T, credential string) []string {
 	t.Helper()
 	got := f.callTool(t, credential, describeCapabilitiesName, map[string]any{})

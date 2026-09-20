@@ -88,6 +88,19 @@ type Config struct {
 	// binds on every transport, because which workspace a process serves is a
 	// property of the process rather than of how a client reached it.
 	WorkspaceRoot string
+
+	// AnnounceTools names the tools the server announces, spelled as the tool
+	// list reports them. Nil announces every tool the session serves, a list
+	// announces exactly those, and an empty non-nil list announces none — so
+	// the two empty spellings are different statements and are carried as
+	// such.
+	//
+	// It is honoured on both transports, unlike the listener settings, because
+	// which tools a client is offered is a property of the server rather than
+	// of how a client reached it. A name no tool answers to is refused where
+	// the server is built rather than dropped, so a caller that asked for a
+	// particular surface is never quietly served a different one.
+	AnnounceTools []string
 }
 
 // transportMode is the transport a session speaks.
@@ -205,6 +218,19 @@ type server struct {
 	// nothing is withdrawn.
 	deniedReach map[opsurface.Reach]bool
 
+	// announcedTools names the tools this server announces, read from the
+	// configuration when the process starts. Nil is the ordinary case and
+	// announces every tool this session serves; a set announces exactly those
+	// names, and an empty set announces none.
+	//
+	// It is installed where a server is built, on both transports, because
+	// which tools a client is offered is a property of the server rather than
+	// of how a client reached it — and the client a narrowing exists for is
+	// usually the one that launched this process. Nothing changes it after a
+	// client has connected, which is what keeps the declaration that the tool
+	// list does not change true.
+	announcedTools map[string]bool
+
 	// cancels maps an in-flight request's id to the cancel handle of that
 	// request's own context, so the client can end one call and leave every other
 	// one running. It is the registry both request-serving frontends share rather
@@ -252,10 +278,13 @@ var errCancelledByClient = errors.New("request cancelled by the client")
 // Stream discipline is strict: stdout carries only framed protocol
 // messages — one compact JSON object per line — while every log and
 // diagnostic is written to stderr, so a connected client can parse the
-// stdout stream without heuristics. Run returns nil on a clean stdin EOF;
-// it returns a non-nil error only when a stdout write fails or the input
-// stream faults, since a broken transport leaves no channel to report the
-// failure on.
+// stdout stream without heuristics. Run returns nil on a clean stdin EOF.
+// Once it is serving, it returns a non-nil error only when a stdout write
+// fails or the input stream faults, since a broken transport leaves no
+// channel to report the failure on. Before it serves anything it returns the
+// refusal a configuration naming a tool this server does not have earns,
+// which reaches the person who started the process rather than a client that
+// is not connected yet.
 //
 // # The caller's context
 //
@@ -297,15 +326,21 @@ func Run(ctx context.Context, cfg Config) error {
 	if stdin == nil {
 		stdin = os.Stdin
 	}
+	commandTools := deriveCommandTools(cfg.Commands)
+	announced, err := announcedToolNames(cfg.AnnounceTools, commandTools)
+	if err != nil {
+		return err
+	}
 	s := &server{
-		out:           stdout,
-		logw:          logw,
-		serverVersion: cfg.ServerVersion,
-		toolchain:     cfg.Toolchain,
-		commandTools:  deriveCommandTools(cfg.Commands),
-		renderHelp:    cfg.RenderHelp,
-		startDir:      cfg.WorkspaceRoot,
-		transport:     transportStdio,
+		out:            stdout,
+		logw:           logw,
+		serverVersion:  cfg.ServerVersion,
+		toolchain:      cfg.Toolchain,
+		commandTools:   commandTools,
+		announcedTools: announced,
+		renderHelp:     cfg.RenderHelp,
+		startDir:       cfg.WorkspaceRoot,
+		transport:      transportStdio,
 	}
 	return s.run(ctx, stdin)
 }

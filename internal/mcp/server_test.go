@@ -144,18 +144,22 @@ func TestListMethodsReturnWellFormedResults(t *testing.T) {
 	templatesList := responseFor(t, resps, 3)
 	promptsList := responseFor(t, resps, 4)
 
-	// tools/list carries the curated set: every registered tool, with a name,
-	// a non-empty description, and a well-formed JSON Schema for its arguments.
+	// tools/list carries both statically declared registries in order — this
+	// process was driven with no command surface, so it derives no generated tool
+	// — each with a name, a non-empty description, and a well-formed JSON Schema
+	// for its arguments.
 	var tl listToolsResult
 	if err := json.Unmarshal(toolsList.Result, &tl); err != nil {
 		t.Fatalf("unmarshal tools/list: %v", err)
 	}
-	if len(tl.Tools) != len(toolRegistry) {
-		t.Fatalf("tools/list returned %d tools, want the curated %d", len(tl.Tools), len(toolRegistry))
+	declared := append(append([]toolSpec(nil), toolRegistry...), deferredToolRegistry...)
+	if len(tl.Tools) != len(declared) {
+		t.Fatalf("tools/list returned %d tools, want the %d this binary declares statically",
+			len(tl.Tools), len(declared))
 	}
 	for i, tool := range tl.Tools {
-		if tool.Name != toolRegistry[i].name {
-			t.Errorf("tool[%d] name = %q, want %q (registry order)", i, tool.Name, toolRegistry[i].name)
+		if tool.Name != declared[i].name {
+			t.Errorf("tool[%d] name = %q, want %q (registry order)", i, tool.Name, declared[i].name)
 		}
 		if tool.Description == "" {
 			t.Errorf("tool %q has an empty description", tool.Name)

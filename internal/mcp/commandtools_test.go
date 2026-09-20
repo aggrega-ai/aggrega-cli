@@ -525,29 +525,40 @@ func TestGeneratedCommandToolRefusesAnUnknownProperty(t *testing.T) {
 }
 
 // TestCommandToolsAreDiscoverableThroughTheCapabilityTool asserts the generated
-// tools reach a client the way the long tail is meant to: absent from the
-// default list, surfaced in full by the capability tool, and invocable by the
-// name that listing gives.
+// tools reach a client both ways they can: announced in tools/list, indexed in
+// full by the capability tool, and invocable by the name either surface gives.
+//
+// The listing half is the one that decides whether a client can call them at
+// all. A client registers the definitions tools/list handed it, so a generated
+// tool reachable only through the capability tool would be a name on the wire
+// that no model is holding a definition for — discoverable by a reader of this
+// package and by nobody else.
 func TestCommandToolsAreDiscoverableThroughTheCapabilityTool(t *testing.T) {
 	s := newCommandToolServer(t, func(_ context.Context, _ []string, stdout, _ io.Writer) error {
 		_, _ = io.WriteString(stdout, "ok")
 		return nil
 	})
 
-	// The default list stays the curated set: the command surface never inflates
-	// the up-front definition budget.
 	res, rpcErr := s.handleToolsList(context.Background())
 	if rpcErr != nil {
 		t.Fatalf("tools/list: %+v", rpcErr)
 	}
 	list := res.(listToolsResult)
-	if len(list.Tools) != len(toolRegistry) {
-		t.Errorf("default tools/list has %d tools, want the curated %d", len(list.Tools), len(toolRegistry))
-	}
+	listed := make(map[string]bool, len(list.Tools))
+	generated := 0
 	for _, tl := range list.Tools {
+		listed[tl.Name] = true
 		if strings.HasPrefix(tl.Name, commandToolPrefix) {
-			t.Errorf("a generated command tool leaked into the default list: %q", tl.Name)
+			generated++
 		}
+	}
+	for _, name := range toolSpecNames(deriveCommandTools(fixtureCommandSurface())) {
+		if !listed[name] {
+			t.Errorf("tools/list omits the generated tool %q, so a client holds no definition for it", name)
+		}
+	}
+	if generated == 0 {
+		t.Fatal("tools/list named no generated tool at all, so the assertion above ran over nothing")
 	}
 
 	// The capability tool indexes every one of them, and hands back the full

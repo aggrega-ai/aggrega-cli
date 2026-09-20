@@ -18,10 +18,10 @@ import (
 // toolSpec is one tool the server can run: its name, the rich natural-language
 // description the client shows an assistant, the JSON Schema for its arguments,
 // and the handler that runs it. A spec lives in one of two registries — the
-// curated set advertised in every tools/list, or the deferred set surfaced only
-// on demand through the capability tool — but both are invocable by name through
-// the same dispatch. The registry order is the advertised order, so tools/list
-// is byte-stable across runs.
+// set a client meets first, or the tail behind it. Both are advertised in every
+// tools/list and both are invocable by name through the same dispatch. The
+// registry order is the advertised order, so tools/list is byte-stable across
+// runs.
 //
 // name is set where the spec enters a registry, from the operation table, and is
 // left unset on the definitions below. A definition that named itself would be a
@@ -136,10 +136,9 @@ func (spec toolSpec) writes() bool {
 // toolRegistry is the curated, always-loaded tool set the authoring loop lives
 // in. Every tool wraps an existing single-sourced surface — the shared
 // compiler-operations layer, the embedded schema set, or the catalog resolver —
-// and none reimplements it. The capability tool is the one
-// meta entry: it surfaces the deferred long tail on demand so the default set
-// stays small. The order is fixed so the advertised list and its wire bytes are
-// deterministic.
+// and none reimplements it. The capability tool is the one meta entry: it
+// indexes the long tail and returns any tool's full definition by name. The
+// order is fixed so the advertised list and its wire bytes are deterministic.
 //
 // Every entry names the operation it answers, and takes its advertised name from
 // that operation's row in the availability table. A tool for an operation the
@@ -438,16 +437,51 @@ func articled(jsonType string) string {
 	}
 }
 
-// handleToolsList answers tools/list with the curated set: each tool's name,
-// its rich description, and the JSON Schema for its arguments, in registry
-// order.
+// servedTools returns every tool this session serves this request, in the order
+// they are announced: the curated set, then the statically declared long tail,
+// then the tools generated from this machine's commands.
+//
+// It is a concatenation of the two readers that already compose those halves
+// rather than a third walk over the registries. Each of them applies this
+// session's own composition — the disclosure a tool carries about its generated
+// twin — and each narrows what it composed by what this request admits, so a
+// walk written here would be a second derivation of both and would agree with
+// them only until one of the three was edited.
+//
+// The order is fixed twice over: each registry is in its own declared order and
+// the halves are joined in one, so the answer and its wire bytes are stable
+// across runs.
+func (s *server) servedTools(ctx context.Context) []toolSpec {
+	curated := s.curatedTools(ctx)
+	deferred := s.deferredTools(ctx)
+	out := make([]toolSpec, 0, len(curated)+len(deferred))
+	out = append(out, curated...)
+	out = append(out, deferred...)
+	return out
+}
+
+// handleToolsList answers tools/list with every tool this session serves: each
+// tool's name, its rich description, and the JSON Schema for its arguments.
+//
+// It is the whole surface rather than a chosen part of it, because the protocol
+// puts the decision about how much of a tool list to put in front of a model
+// with the client — it fetches the definitions and defers injecting them — and a
+// definition a client never received is an operation a model can never call,
+// however reachable the name is on the wire. A server that answered with less
+// would be making that decision on the client's behalf and taking away the only
+// half of it the client can perform.
+//
+// A caller that cannot carry the whole list says so in configuration, and the
+// narrowing is read through the same admission every listing here passes
+// through, so a tool it leaves out is absent from this answer and refused at the
+// call rather than absent from one and live on the other.
 //
 // The descriptions are this session's rather than the registry's bare ones,
-// because a curated tool discloses the generated tool that reaches the same
-// capability by running its command, and which commands a session was handed is
-// a property of that session. The schemas are this session's for the same
-// reason: which arguments a caller may send depends on how it reached the
-// server, and the listing is where it reads them.
+// because a tool discloses the generated tool that reaches the same capability
+// by running its command, and which commands a session was handed is a property
+// of that session. The schemas are this session's for the same reason: which
+// arguments a caller may send depends on how it reached the server, and the
+// listing is where it reads them.
 //
 // ctx is the request's own, and it is what the listing is narrowed by: a tool
 // the credential this request carried does not admit is absent from the answer,
@@ -456,13 +490,13 @@ func articled(jsonType string) string {
 // this server holds nothing between requests, and two requests on one connection
 // may present different credentials.
 func (s *server) handleToolsList(ctx context.Context) (any, *rpcError) {
-	curatedTools := s.curatedTools(ctx)
-	tools := make([]tool, 0, len(curatedTools))
-	for i := range curatedTools {
+	served := s.servedTools(ctx)
+	tools := make([]tool, 0, len(served))
+	for i := range served {
 		tools = append(tools, tool{
-			Name:        curatedTools[i].name,
-			Description: s.advertisedDescription(curatedTools[i]),
-			InputSchema: s.advertisedSchema(curatedTools[i]),
+			Name:        served[i].name,
+			Description: s.advertisedDescription(served[i]),
+			InputSchema: s.advertisedSchema(served[i]),
 		})
 	}
 	return listToolsResult{Tools: tools}, nil
@@ -529,7 +563,7 @@ func (s *server) handleToolsCall(ctx context.Context, params json.RawMessage) (a
 		// call the credential does not admit asked for has happened by the time
 		// it is refused, and so a call naming a workspace this session does not
 		// let it name is answered about that rather than about a scope.
-		if refusal := s.scopeRefusal(ctx, spec, p.Arguments); refusal != nil {
+		if refusal := s.admissionRefusal(ctx, spec, p.Arguments); refusal != nil {
 			return nil, refusal
 		}
 		return spec.invoke(s, ctx, p.Arguments)

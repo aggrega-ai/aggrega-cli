@@ -437,8 +437,10 @@ func TestToolsCallOverWire(t *testing.T) {
 	if err := json.Unmarshal(toolsList.Result, &tl); err != nil {
 		t.Fatalf("unmarshal tools/list: %v", err)
 	}
-	if len(tl.Tools) != len(toolRegistry) {
-		t.Fatalf("tools/list over wire returned %d tools, want %d", len(tl.Tools), len(toolRegistry))
+	// The wire carries both statically declared registries: this process was
+	// driven with no command surface, so it derives no generated tool.
+	if want := len(toolRegistry) + len(deferredToolRegistry); len(tl.Tools) != want {
+		t.Fatalf("tools/list over wire returned %d tools, want %d", len(tl.Tools), want)
 	}
 	if toolsCall.Error != nil {
 		t.Fatalf("tools/call get-schema over wire errored: %+v", toolsCall.Error)

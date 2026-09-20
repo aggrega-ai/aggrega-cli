@@ -83,6 +83,21 @@ type reachAdmission struct {
 	// better token, and telling its caller to obtain one would send it round a
 	// loop it cannot finish.
 	denied map[opsurface.Reach]bool
+
+	// announced names the tools this server announces, and nil announces every
+	// tool it has. It is a property of the server rather than of the request —
+	// no credential widens or narrows it — and it is carried here anyway, on
+	// the ground the withdrawal above is carried here: this is the one
+	// predicate every listing and the call check already pass through, and a
+	// second place a tool can be hidden is a second answer that can come to
+	// disagree with the first about one request.
+	//
+	// It is asked apart from the two bounds above because a caller can act on
+	// none of the three in the same way: a scope is obtained, a withdrawn class
+	// is not reachable at all, and a tool this server does not announce is one
+	// the person running it chose not to offer. A refusal that conflated them
+	// would tell a caller to do something that would change nothing.
+	announced map[string]bool
 }
 
 // deniedClasses reads the reach kinds a deployment declared it does not carry.
@@ -172,7 +187,25 @@ func admissionFromScopes(scopes []string) reachAdmission {
 // the absence is structural rather than a branch here: the block it is written
 // in configures a listener, and a caller at this machine's keyboard is bounded
 // by owning the machine rather than by what this deployment chose to serve.
+//
+// What this server announces is attached last and on every path, which is what
+// makes it independent of the transport without anything here asking which
+// transport it is on. The client a narrowing exists for is usually the one that
+// launched this process, so a bound reached only through the branch above would
+// miss the case it was written for.
 func (s *server) admittedReach(ctx context.Context) reachAdmission {
+	a := s.classAdmission(ctx)
+	a.announced = s.announcedTools
+	return a
+}
+
+// classAdmission is which reach classes this request may run, before what this
+// server announces is read.
+//
+// It is separated from the composition above so that the announcement is
+// attached at one point rather than at each of the three the class answer takes.
+// Three attachments would be three places to forget one.
+func (s *server) classAdmission(ctx context.Context) reachAdmission {
 	if s.transport != transportHTTP {
 		return admitEveryClass()
 	}
@@ -188,6 +221,22 @@ func (s *server) admittedReach(ctx context.Context) reachAdmission {
 // admits reports whether a call reaching this far may run.
 func (a reachAdmission) admits(class opsurface.Reach) bool {
 	return !a.denied[class] && a.classes[class]
+}
+
+// announces reports whether this server announces the named tool. A server told
+// to announce nothing in particular announces every tool it has.
+func (a reachAdmission) announces(tool string) bool {
+	return a.announced == nil || a.announced[tool]
+}
+
+// admitsTool reports whether a tool is offered to this request at all: one this
+// server announces, of a class this request may run.
+//
+// It is the conjunction the listings read, written once rather than at each of
+// them, so the two bounds are applied in one order everywhere and a tool cannot
+// be offered by one surface and withheld by another.
+func (a reachAdmission) admitsTool(spec toolSpec) bool {
+	return a.announces(spec.name) && a.admits(declaredReach(spec))
 }
 
 // deniedByDeployment reports whether this deployment withdrew the class,
@@ -232,7 +281,7 @@ func (a reachAdmission) boundsAnything() bool {
 func (a reachAdmission) admitted(specs []toolSpec) []toolSpec {
 	out := make([]toolSpec, 0, len(specs))
 	for i := range specs {
-		if a.admits(declaredReach(specs[i])) {
+		if a.admitsTool(specs[i]) {
 			out = append(out, specs[i])
 		}
 	}
@@ -258,8 +307,15 @@ func declaredReach(spec toolSpec) opsurface.Reach {
 	return spec.reach
 }
 
-// scopeRefusal reports what a call is answered with when the credential it
-// presented does not admit what the call reaches, and nil when it does.
+// admissionRefusal reports what a call is answered with when this request may
+// not run it, and nil when it may.
+//
+// It reads the same admission every listing is composed from, and in the order
+// the listings apply it: what this server announces, then what the credential
+// admits. Reading the announcement first is what keeps the two answers agreeing
+// about one request — a tool this server does not announce is absent from that
+// request's listing whatever its class, so a refusal naming a scope would send a
+// caller after a credential that would not put the tool back.
 //
 // The class is read twice and in one order: the class the operation declares,
 // then the widening the tool's own arguments produce where that tool has one.
@@ -280,8 +336,11 @@ func declaredReach(spec toolSpec) opsurface.Reach {
 // day it is written and stops agreeing the first time one of the two learns about
 // an input the other did not. A request nothing is recording takes no branch
 // here: the recording is a no-op where there is no recorder.
-func (s *server) scopeRefusal(ctx context.Context, spec *toolSpec, args json.RawMessage) *rpcError {
+func (s *server) admissionRefusal(ctx context.Context, spec *toolSpec, args json.RawMessage) *rpcError {
 	admission := s.admittedReach(ctx)
+	if !admission.announces(spec.name) {
+		return toolNotAnnounced(spec.name)
+	}
 	declared := declaredReach(*spec)
 	if !admission.admits(declared) {
 		noteReach(ctx, declared, declared)

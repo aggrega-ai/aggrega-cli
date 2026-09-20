@@ -208,6 +208,11 @@ func runMCP(cmd *cobra.Command, args []string) error {
 		// plugin versions a lockfile written at a terminal records for this binary.
 		Toolchain: toolchainStamp(),
 		Commands:  commandSurface(cmd.Root()),
+		// Read from the same resolved block the listener settings below are, and
+		// handed to both transports rather than to the listener alone: which tools
+		// a client is offered is a property of the server, and the client a
+		// narrowing exists for is usually the one that launched this process.
+		AnnounceTools: settings.AnnounceTools,
 		// Supplied from here for the same reason, and over the same tree: the
 		// help a cli:// read serves is the help this tree prints.
 		RenderHelp: commandHelp(cmd.Root()),

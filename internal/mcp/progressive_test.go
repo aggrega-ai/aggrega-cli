@@ -72,11 +72,9 @@ func containsStr(hay []string, needle string) bool {
 	return false
 }
 
-// TestDefaultToolsListStaysSmall asserts the default tools/list carries the
-// curated set plus the one capability tool, and that the deferred lint tool is
-// NOT advertised up front.
-func TestDefaultToolsListStaysSmall(t *testing.T) {
-	s := newTestServer(t)
+// listedNames drives tools/list and returns the names it advertised, in order.
+func listedNames(t *testing.T, s *server) []string {
+	t.Helper()
 	res, rpcErr := s.handleToolsList(context.Background())
 	if rpcErr != nil {
 		t.Fatalf("tools/list returned protocol error: %+v", rpcErr)
@@ -89,16 +87,44 @@ func TestDefaultToolsListStaysSmall(t *testing.T) {
 	for _, tl := range list.Tools {
 		names = append(names, tl.Name)
 	}
+	return names
+}
+
+// TestAToolBehindTheFirstSetIsListedAndCallable asserts both halves of what a
+// client actually needs, over a tool that sits in the tail rather than in the
+// set a caller meets first.
+//
+// The two halves are asserted together because either alone is satisfiable by a
+// build that serves nobody. A name in a listing that the call path refuses is
+// the worse of the two failures and reads as the better one — a client registers
+// what tools/list gave it, so the model reaches for the tool and meets a refusal
+// it cannot act on — and a callable tool absent from the listing is a capability
+// no client can find, which is the condition this listing exists to end.
+func TestAToolBehindTheFirstSetIsListedAndCallable(t *testing.T) {
+	s := newTestServer(t)
+	var ran bool
+	s.runLint = func(_ context.Context, _ lintRequest, stdout, _ io.Writer) error {
+		ran = true
+		_, _ = io.WriteString(stdout, "lint passed\n")
+		return nil
+	}
+
+	names := listedNames(t, s)
 	if !containsStr(names, describeCapabilitiesName) {
-		t.Errorf("default tools/list omits the capability tool %q: %v", describeCapabilitiesName, names)
+		t.Errorf("tools/list omits the capability tool %q: %v", describeCapabilitiesName, names)
 	}
-	if containsStr(names, "lint") {
-		t.Errorf("default tools/list advertises the deferred lint tool; it must be surfaced only on demand: %v", names)
+	if !containsStr(names, "lint") {
+		t.Fatalf("tools/list omits lint, which sits in the tail rather than in the set a caller meets "+
+			"first; a client registers what this answer gave it, so a tool missing here is one no model "+
+			"can call. It was offered %v", names)
 	}
-	// The default list is exactly the curated registry — deferred tools never
-	// leak into it.
-	if len(list.Tools) != len(toolRegistry) {
-		t.Errorf("default tools/list has %d tools, want the curated %d", len(list.Tools), len(toolRegistry))
+
+	res := callTool(t, s, "lint", lintArgs{Entity: "catalog/component/api.yaml"})
+	if res.IsError {
+		t.Fatalf("lint was listed and then refused the call: %s", res.Content[0].Text)
+	}
+	if !ran {
+		t.Error("the call was answered without reaching the tool, so the listing's promise was not kept")
 	}
 }
 
@@ -193,9 +219,9 @@ func TestNamingToolsReturnsTheirDefinitionsAndNothingElse(t *testing.T) {
 // caller reads is computed from the tool's own registered text, so a hand
 // -maintained list beside the registry would fail here.
 //
-// It moves the source and reads the projection, in both places the projection is
-// rendered — the tool's answer and the connect-time guidance — because a second
-// composition would follow the registry in one of them and not the other.
+// It moves the source and reads the projection the capability tool answers with,
+// because a projection composed a second time would follow the registry on the
+// day it was written and stop following it afterwards.
 //
 // 🔴 It swaps a package-level registry, so it must NOT be made parallel and no
 // test that reads that registry may be made parallel either. The swap is safe as
@@ -225,9 +251,6 @@ func TestTheIndexIsProjectedFromTheRegistry(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("the index did not follow the registered text, so it is authored somewhere else")
-	}
-	if !strings.Contains(deferredToolIndexParagraph(), planted) {
-		t.Errorf("the guidance's index did not follow the registered text, so it is a second copy")
 	}
 }
 
@@ -435,11 +458,13 @@ func TestDeferredLintInvocableViaToolsCall(t *testing.T) {
 // from the command line's own availability records rather than listed here, so a
 // command added, renamed or newly exempted moves this with it.
 //
-// Every other descriptor field is deliberately left empty. None of them reaches
-// a curated tool's definition — the disclosure it carries is built from the
-// generated tool's name and the command path alone — so filling them with
-// invented help text would put bytes into a measurement that production never
-// has.
+// Every other descriptor field is deliberately left empty, and invented help
+// text is worse than none: it would read as a measurement of the real surface
+// while being a measurement of whatever a test author happened to type. The cost
+// is that a generated tool built from one of these descriptors carries an empty
+// definition, so any byte figure taken over a session holding them is a FLOOR
+// rather than the figure a client loads — which is why the one check that
+// measures says so in the line it logs.
 // One entry per PATH rather than per record. A path can be named by more than
 // one record — a capability several commands offer under a flag is exposed at
 // each of their paths — and a command tree carries each command once, so a
@@ -467,20 +492,73 @@ func commandBackedSurface() []CommandSurface {
 	return out
 }
 
-// TestDefaultDefinitionTokenBudget measures the up-front definition budget a
-// client loads from the default tools/list — the bytes of every advertised
-// tool's name, description, and argument schema — and records it. Keeping the
-// long tail deferred is what holds this figure modest.
+// TestEveryToolServedIsAnnounced is the completeness gate over what a client is
+// offered, and it carries the measurement of what that costs.
 //
-// It measures what a session serves rather than what the registry declares, and
-// the two are no longer the same figure: a curated tool answering a capability a
-// command also carries discloses the tool generated from that command, so those
-// bytes reach the client and a walk over the bare registry would stop counting
-// them. A budget test that measures less than a client loads reports a figure
-// nobody pays.
-func TestDefaultDefinitionTokenBudget(t *testing.T) {
+// Its subject is the one a client cannot recover from: a tool this server has,
+// that this request may run, and that no listing named. A client registers the
+// definitions tools/list gave it and nothing else, so a tool quietly absent from
+// that answer is an operation no model can reach — however invocable its name
+// remains on the wire. The check is therefore a set difference that NAMES what
+// went missing, rather than a count: both sides short by one agree perfectly.
+//
+// The expected set is read from the registries and from this session's derived
+// command tools directly, never through the composition under test, which is
+// what lets the two disagree. A session with no credential to narrow it and no
+// narrowing setting in force announces every one of them.
+//
+// THERE IS NO CEILING ON THE BYTES, and its absence is the decision rather than
+// an oversight. How much of a tool list to put in front of a model is the
+// client's decision — the protocol has it fetch the definitions and defer
+// injecting them — so a bound asserted here would be this server making that
+// decision on the client's behalf, which is the posture the announced surface
+// was widened to end. A client that genuinely cannot carry the list says so in
+// configuration, and mcp.announce_tools narrows what it is offered; that is a
+// statement someone makes about one client, not a constant compiled in here.
+//
+// The figure is still measured and still logged, because the size being known
+// is worth having and is a different thing from the size being bounded: a later
+// reader arguing about the surface argues from a measurement rather than from
+// an impression. The measurement is of what a client LOADS rather than of what
+// the registries declare — a tool answering a capability a command also carries
+// discloses the generated tool that reaches it, and those bytes are composed at
+// the surface that answers — so the walk reads the advertised description.
+func TestEveryToolServedIsAnnounced(t *testing.T) {
 	s := &server{out: io.Discard, logw: io.Discard, commandTools: deriveCommandTools(commandBackedSurface())}
-	served := s.curatedTools(context.Background())
+
+	// The oracle, read from the registries rather than from the composition under
+	// test. A session speaking the process's own streams admits every reach class
+	// and this one carries no narrowing, so every name here must be announced.
+	want := make([]string, 0, len(toolRegistry)+len(deferredToolRegistry)+len(s.commandTools))
+	declared := make(map[string]string, cap(want))
+	for _, registry := range [][]toolSpec{toolRegistry, deferredToolRegistry, s.commandTools} {
+		for i := range registry {
+			want = append(want, registry[i].name)
+			declared[registry[i].name] = registry[i].description
+		}
+	}
+	if len(s.commandTools) == 0 {
+		t.Fatal("this session derived no command tool, so the half of the surface that exists only for a " +
+			"caller at this machine's keyboard is not in the comparison below")
+	}
+
+	served := s.servedTools(context.Background())
+	announced := make(map[string]bool, len(served))
+	for i := range served {
+		announced[served[i].name] = true
+	}
+	for _, name := range want {
+		if !announced[name] {
+			t.Errorf("%s is a tool this session serves and this request may run, and no listing named it. "+
+				"A client registers what tools/list gave it, so a tool missing from that answer is one no "+
+				"model can call", name)
+		}
+	}
+	for i := range served {
+		if _, known := declared[served[i].name]; !known {
+			t.Errorf("tools/list announced %q, which no registry this session holds declares", served[i].name)
+		}
+	}
 
 	bytesTotal := 0
 	var disclosed int
@@ -491,142 +569,34 @@ func TestDefaultDefinitionTokenBudget(t *testing.T) {
 		bytesTotal += len(served[i].name)
 		bytesTotal += len(s.advertisedDescription(served[i]))
 		bytesTotal += len(served[i].inputSchema)
-		if len(served[i].description) > len(toolRegistry[i].description) {
+		// Compared by NAME against what the registry declares, never by position:
+		// the served order spans three registries and is narrowed per request, so a
+		// positional comparison would read one tool's text against another's the
+		// moment anything moved.
+		if base, known := declared[served[i].name]; known && len(served[i].description) > len(base) {
 			disclosed++
 		}
 	}
 	approxTokens := bytesTotal / 4
-	t.Logf("default tools/list definition budget: %d tools (%d disclosing a generated twin), %d bytes, "+
-		"~%d tokens (approx bytes/4)", len(served), disclosed, bytesTotal, approxTokens)
+	// 🔴 The figure is a FLOOR and is labelled as one, because the session under
+	// test is handed a stand-in command surface whose descriptors carry no help
+	// text and no flags. That stand-in gets the one thing this check needs right —
+	// which commands back an operation — and it deliberately invents nothing else,
+	// so every generated tool here contributes a name and an empty definition where
+	// a real one contributes its command's help and its whole flag schema. A reader
+	// quoting this number as what a client loads would understate it substantially;
+	// what a client loads is measured by driving a built binary.
+	t.Logf("announced definition set, FLOOR against a stand-in command surface: %d tools "+
+		"(%d disclosing a generated twin), %d bytes, ~%d tokens (approx bytes/4)",
+		len(served), disclosed, bytesTotal, approxTokens)
 
-	// The measurement is only worth its ceiling if the disclosures are in it. A
-	// surface that derived none would measure the bare registry and pass a
-	// ceiling set for a figure that includes them.
+	// The guard that keeps the measurement honest, and it is the one thing kept
+	// from the ceiling this check replaced. A surface that derived no disclosure
+	// would be measuring the bare registries rather than a session, and would
+	// report a smaller figure than any client ever loads.
 	if disclosed == 0 {
-		t.Fatal("no curated tool disclosed a generated twin, so this measures the bare registry rather than a session")
+		t.Fatal("no tool disclosed a generated twin, so this measures the bare registry rather than a session")
 	}
-
-	// A ceiling that fails loudly if the default set balloons — a full long-tail
-	// tool's definition runs ~2000 bytes, so this trips if one creeps back into
-	// the default list rather than staying deferred. The headroom is deliberately
-	// less than one such definition, which is what makes the ceiling discriminate
-	// a creeping tool from ordinary drift.
-	//
-	// It sits where it does for two reasons, and both are a deliberate trade
-	// rather than drift. The curated tools declare their argument-combination
-	// rules in their own input schemas rather than only in prose, so a caller
-	// reading a schema structurally cannot compose a call the server would refuse;
-	// and each tool sharing a capability with a command names that command's tool
-	// and says how the two differ, so a caller choosing between two
-	// similarly-named tools is not choosing blind. Both cost definition bytes once
-	// and save a wrong call every time.
-	//
-	// It was raised once, for the two tools that enumerate what a workspace holds,
-	// and the argument the raise owes is this. What the ceiling exists to catch is
-	// a LONG-TAIL tool creeping into the default list — a tool serving a narrow
-	// case, which a client should load only when it turns out to need it. These two
-	// are the opposite of that: every other tool in the default set takes a subject,
-	// and until these landed there was no tool here that could tell a caller what
-	// subjects the workspace has. A caller arriving cold could name nothing and had
-	// no way to find out. Deferring them would have left that intact — the entry
-	// point to the surface reachable only by a caller who already knew to go looking
-	// for it.
-	//
-	// The raise is bounded by what it admits, not by what was needed: both are the
-	// cheapest definitions in the set bar one, each roughly half a long-tail tool's,
-	// and the new ceiling leaves LESS headroom than the old one did. So the gate
-	// discriminates more sharply after the raise than before it, which is the
-	// property that matters — a ceiling raised to a round number with room to spare
-	// would have bought the two tools by retiring the check.
-	//
-	// It was raised a second time, for the tool that resolves a Release's
-	// dependencies, and that raise owes the same argument. The tool is the opposite
-	// of a narrow case: it is the PRECONDITION of a tool the default set already
-	// carries. A build renders only from the pins a workspace already holds, and it
-	// answers an unpinned external reference, and a drifted lockfile, by saying so
-	// and stopping — so a caller that meets either has to resolve the dependencies
-	// before its build can produce anything. Deferring it would leave the remedy for
-	// a refusal the default set can produce reachable only by a caller who already
-	// knew to go looking for it, which is the same ground the enumeration tools were
-	// admitted on.
-	//
-	// The bound is held the same way rather than relaxed: the headroom after this
-	// raise is the twelve bytes it was before, so the gate still trips on a
-	// long-tail definition creeping in and still discriminates that from ordinary
-	// drift. What the raise admits is one definition's worth of bytes, argued above;
-	// it buys no room for a second.
-	//
-	// It was raised a third time, and this raise differs in kind from the three
-	// above it: it admits no tool at all. The build tool gained an argument that
-	// resolves the Release's dependencies before it renders, so the bytes bought are
-	// one boolean's schema entry and one clause in a description — not a definition.
-	// What the ceiling exists to catch is a long-tail TOOL creeping into the default
-	// list, and an argument on a tool already in that list is categorically not
-	// that; the figure moved because an existing definition says more, which is the
-	// ordinary drift the headroom was sized to tolerate until a capability this
-	// specific came along.
-	//
-	// The clause could have been kept out of the DESCRIPTION and left in the schema
-	// alone, which would have cost a third of these bytes, and that was rejected.
-	// The argument reaches a registry and writes the lockfile, and the description
-	// is what a client reads when it chooses a tool, so a build that can write while
-	// its description says only that it renders in memory would disclose a write in
-	// the one place a caller reads after it has already chosen. The bytes buy the
-	// disclosure, not the capability.
-	//
-	// The bound is held exactly as before rather than rounded up: the same
-	// headroom the two raises above left, so the gate trips on the next addition
-	// as sharply as it tripped on this one.
-	//
-	// It was raised a fourth time, and this raise is the third one's case again
-	// with a sharper argument: the capability tool gained an argument that names
-	// the tools whose definitions a caller wants. No tool joins the default list,
-	// and the bytes bought are one array property's schema entry and a reworded
-	// description — the description shrank, so the raise is the schema alone.
-	//
-	// What it buys is what makes the deferral work at all. The call that recovers
-	// the deferred definitions used to return every one of them in full, which is
-	// larger than a client accepts, so the tools held out of the default list were
-	// not merely loaded late — they were unreachable. Splitting that call into an
-	// index and a by-name fetch is what makes the bytes this gate protects an
-	// actual saving rather than a payload moved somewhere a client refuses to read
-	// it.
-	//
-	// The ceiling moved by the measured delta and by nothing else, so the headroom
-	// is the figure it was before rather than a rounder one, and the run logs it
-	// so the next raise argues from a measurement rather than from this comment.
-	//
-	// It was raised a fifth time, and this raise is the third one's case again for
-	// the two tools that enumerate what a workspace holds. No tool joins the default
-	// list. Each of the two gained the argument that chooses between a summary of the
-	// workspace and the records themselves, and the two that bound the records to a
-	// page, and each says in its description which shape it answers in when a call
-	// names none. The bytes are two schema entries apiece and the sentences that
-	// disclose them.
-	//
-	// What they buy is the reason the raise is worth making at all: before it, the
-	// call the guidance tells an assistant to make first returned every record the
-	// workspace held, which on a large one is megabytes into a context window for a
-	// question that was only ever "what is in here". Paying a kilobyte in every
-	// session's definitions to stop paying a megabyte in the first call of a session
-	// on a large workspace is the trade, and it is the same one the deferral of the
-	// long tail makes.
-	//
-	// The clause could have been left in the schemas and kept out of the
-	// DESCRIPTIONS, which would have cost a third of these bytes, and that was
-	// rejected for the reason the third raise rejected it: the description is what a
-	// client reads when it chooses a tool, and a tool whose description promises
-	// every entity while the tool answers with a summary would misreport its own
-	// answer in the one place a caller reads before calling.
-	//
-	// The bound is held exactly as before rather than rounded up: the same headroom
-	// every raise above left, so the gate trips on the next addition as sharply as it
-	// tripped on this one.
-	const ceiling = 25841
-	if bytesTotal > ceiling {
-		t.Errorf("default definition budget %d bytes exceeds %d; move long-tail tools to the deferred set", bytesTotal, ceiling)
-	}
-	t.Logf("definition budget headroom: %d bytes below the %d ceiling", ceiling-bytesTotal, ceiling)
 }
 
 // errDummyExit stands in for a subprocess non-zero exit in the lint runner fake.

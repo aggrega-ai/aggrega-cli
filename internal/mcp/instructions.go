@@ -5,7 +5,6 @@ package mcp
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
@@ -20,15 +19,14 @@ import (
 // kinds relate, the order the authoring loop runs in, and which surface answers
 // which kind of question.
 //
-// It is composed rather than written out, because it closes with the index of
-// the tools the default list omits and that index is PROJECTED from the tool
-// registry — the same projection the capability tool returns, rendered by the
-// same function. Writing the index out here would be a second copy of every
-// tool's purpose, agreeing with the registry on the day it was typed and free to
-// disagree afterwards with nothing failing in between.
-var instructionsBody = instructionsPrologue + "\n\n" + deferredToolIndexParagraph()
+// It carries no index of the tools themselves, and that is the point rather than
+// an omission: a client holds every tool's definition from tools/list before it
+// reads a word of this, so a line per tool here would be a second copy of the
+// purposes it already has — paid for in every session, by every client, and free
+// to disagree with the registry the moment either was edited.
+const instructionsBody = instructionsPrologue
 
-// instructionsPrologue is everything the body says before that index.
+// instructionsPrologue is the body's own text.
 //
 // It points at the tool, prompt, and resource surfaces rather than restating
 // them. Each tool already carries a rich description in its own spec and each
@@ -37,11 +35,6 @@ var instructionsBody = instructionsPrologue + "\n\n" + deferredToolIndexParagrap
 // keeps one home per statement. The same reasoning excludes a list of render
 // targets and a list of library kinds: both are properties of the installed
 // plugins and the schema set, which the resource surfaces enumerate directly.
-//
-// The index that follows it is the deliberate exception, and it is not a
-// restatement: what it carries is one line per tool that the default listing
-// does not carry at all, so without it a connecting assistant holds definitions
-// for the curated set and nothing whatever for the rest.
 const instructionsPrologue = `Aggrega is a deterministic ahead-of-time compiler. It reads declarative YAML describing an application and the infrastructure it needs, and emits rendered deployment artifacts — the concrete configuration files a target environment consumes. Given identical input it emits byte-identical output, so a change in the artifacts is always a change someone authored.
 
 What the compiler does, and what it deliberately does not do. It parses YAML, walks the graph the documents describe, evaluates label matches, and pipes values from the entity that declares them into the entity that consumes them, stringified at the injection boundary regardless of what a value means. It is unopinionated about content: it does not police what you put in values, parameters, infra, or provides, and it does not guess a component's purpose from its name — a component named database-production is a component named database-production, nothing more. It is blind to the live cloud: while compiling it never authenticates with a provider, never reads a cluster's state, and never turns a secret into plaintext. A value that exists only once infrastructure is running is carried through as a deterministic pointer string — a stable DNS name, a template interpolation — which the target environment fills in later. Provider-specific rendering and policy checks live in WebAssembly plugins, not in the compiler itself.
@@ -52,29 +45,7 @@ The authoring loop. Read the contract before writing YAML: get-schema returns a 
 
 Choosing between a prompt and a tool. Reach for a tool to act — to check something, render something, or read a definition. Reach for a prompt to frame a task: prompts/list and prompts/get offer authoring prompts, which set up the perspective of the role whose entities you are writing and point at the resources for a kind, and workflow prompts, which lay out the ordered sequence of tool calls that reaches a larger goal — constructing a deployment from scratch, bringing an existing one into Aggrega, diagnosing one that fails or renders the wrong artifacts — with the decision points between the calls. A workflow prompt names the calls and you make them, one at a time; there is no single call that performs a whole goal, because each tool wraps one operation you can check.
 
-Finding what is not in front of you. The default tool list is kept deliberately small, so it is not the whole surface. The index below names the rest. Calling describe-capabilities with no arguments returns that index for this server — every tool it offers you that the default list omits, which on a server you launched yourself also includes one tool per aggrega command — and naming tools in that call returns their full definitions and the argument schemas you need in order to call them. Pass a kind instead for the index narrowed to the tools that serve the entity you are authoring. Every tool the index names is invocable immediately by name. Not every server offers every capability — which ones a particular one offers can depend on how it was set up and on the credential the connection presented — so read what you can do here from the tool list and from describe-capabilities rather than assuming a tool is there because it exists elsewhere. For reading rather than acting, resources/list and resources/templates/list enumerate the material available: each kind's schema (schema://), the language reference (langref://), the authoring guide (authoring://), a catalog entity's authored YAML (catalog://), and command help (cli://).`
-
-// deferredToolIndexParagraph renders the index the body closes with: a line per
-// tool the default listing omits, projected from the registry that declares
-// them and rendered by the function the capability tool's own answer is rendered
-// by.
-//
-// It covers the statically declared long tail and deliberately not the tools
-// generated from this machine's commands. Those exist only for a session that
-// was handed a command surface, and a session reached over HTTP is composed
-// without them — so naming one here would point a caller at a tool absent from
-// its listing and refused at the call. The paragraph above says where the rest
-// is read from instead, which is the same call this index is projected from.
-func deferredToolIndexParagraph() string {
-	var b strings.Builder
-	b.WriteString("The tools the default list omits, one line each — what it is called, whether calling " +
-		"it can leave anything behind, which entity kinds it serves, and what it does:\n")
-	for _, line := range capabilityIndexLines(projectTools(deferredToolRegistry, true)) {
-		b.WriteString(line)
-		b.WriteString("\n")
-	}
-	return strings.TrimRight(b.String(), "\n")
-}
+Finding what is not in front of you. The tool list is the whole surface: every tool this server has that your connection may reach is in it, which on a server you launched yourself includes one tool per aggrega command. Calling describe-capabilities with no arguments returns an index of tools — each one's name, a one-line purpose, the entity kinds it serves and whether it writes — and naming tools in that call returns their full definitions and the argument schemas you need in order to call them. Pass a kind instead for the index narrowed to the tools that serve the entity you are authoring. Every tool the index names is invocable immediately by name. Not every server offers every capability — which ones a particular one offers can depend on how it was set up and on the credential the connection presented — so read what you can do here from the tool list and from describe-capabilities rather than assuming a tool is there because it exists elsewhere. For reading rather than acting, resources/list and resources/templates/list enumerate the material available: each kind's schema (schema://), the language reference (langref://), the authoring guide (authoring://), a catalog entity's authored YAML (catalog://), and command help (cli://).`
 
 // emptyWorkspaceLead opens the closing paragraph and is the half of it that does
 // not depend on the transport: what an empty listing means, and where the
@@ -103,7 +74,7 @@ var emptyWorkspaceLead = fmt.Sprintf(`What an empty workspace means, and what to
 // process. That client runs where the caller does, so the workspace and the
 // configuration behind it are the caller's own to inspect and change, and the
 // tools that do both are reachable here.
-const emptyWorkspaceStdio = ` You reached it over standard input and output, which means the client running it is on the same machine you are: this workspace is yours to inspect and to repair. cli-config-show reports the configuration in force and where it came from, which is how you tell an unconfigured workspace from a merely empty one, and cli-config-init seeds a working configuration by registering a registry and its signature trust policy. Both are loaded through describe-capabilities rather than offered in the default list. Read the configuration before you change it, and tell the person you are working with what you changed.`
+const emptyWorkspaceStdio = ` You reached it over standard input and output, which means the client running it is on the same machine you are: this workspace is yours to inspect and to repair. cli-config-show reports the configuration in force and where it came from, which is how you tell an unconfigured workspace from a merely empty one, and cli-config-init seeds a working configuration by registering a registry and its signature trust policy. Read the configuration before you change it, and tell the person you are working with what you changed.`
 
 // emptyWorkspaceHTTP closes the guidance for a caller that reached a listener.
 // Such a caller is somewhere else, the workspace was chosen by whoever started
