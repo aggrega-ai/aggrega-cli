@@ -199,17 +199,32 @@ func TestMCPServerExposesTheRealCommandSurface(t *testing.T) {
 
 	answers := answersByID(t, stdout.String(), 1, 2, 3)
 
-	// The default tool list must not carry the long tail.
+	// The tool list carries the generated command tools, and this is the
+	// end-to-end proof of it: the real entry point, the real transport, the live
+	// command tree. A client registers what this answer gave it, so a command tool
+	// missing here is one no model can call however reachable its name is on the
+	// wire.
+	//
+	// The assertion reads the list rather than the capability index because the
+	// list is what the client registers; the index is checked below and the two
+	// agreeing is a separate property from either being complete.
 	var listResult struct {
 		Tools []struct{ Name string } `json:"tools"`
 	}
 	if err := json.Unmarshal(answers[2].Result, &listResult); err != nil {
 		t.Fatalf("unmarshal tools/list: %v", err)
 	}
+	listed := map[string]bool{}
+	var listedCommandTools int
 	for _, tl := range listResult.Tools {
+		listed[tl.Name] = true
 		if strings.HasPrefix(tl.Name, "cli-") {
-			t.Errorf("the default tool list carries a generated command tool %q", tl.Name)
+			listedCommandTools++
 		}
+	}
+	if listedCommandTools == 0 {
+		t.Error("the tool list carries no generated command tool at all, so the per-command check below " +
+			"would report every one of them missing and say nothing about which half is broken")
 	}
 
 	// The capability index carries one entry per non-exempt runnable command.
@@ -257,13 +272,24 @@ func TestMCPServerExposesTheRealCommandSurface(t *testing.T) {
 		if _, exempt := mcp.CommandExempted(cs.Descriptor.Path); exempt {
 			continue
 		}
-		if name := mcpCommandToolName(cs.Descriptor.Path); !surfaced[name] {
-			missing = append(missing, cs.Descriptor.Path+" ("+name+")")
+		name := mcpCommandToolName(cs.Descriptor.Path)
+		// Both answers are checked, and they are different claims. Absence from the
+		// index is a discovery hole; absence from the LIST is the one that decides
+		// whether a model can call the tool at all, because a client registers the
+		// list. Reporting which of the two is short is what makes a failure here
+		// actionable rather than a bare name.
+		switch {
+		case !surfaced[name] && !listed[name]:
+			missing = append(missing, cs.Descriptor.Path+" ("+name+"): absent from both the list and the index")
+		case !listed[name]:
+			missing = append(missing, cs.Descriptor.Path+" ("+name+"): indexed but absent from the tool list")
+		case !surfaced[name]:
+			missing = append(missing, cs.Descriptor.Path+" ("+name+"): listed but absent from the index")
 		}
 	}
 	sort.Strings(missing)
 	if len(missing) > 0 {
-		t.Errorf("commands not discoverable over MCP: %v", missing)
+		t.Errorf("commands not reachable over MCP: %v", missing)
 	}
 
 	// Every exempt command is absent, and every exempt path still names a
