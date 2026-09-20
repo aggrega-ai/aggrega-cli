@@ -780,10 +780,43 @@ type publishDiagnosticsParams struct {
 }
 
 // publishDiagnostics fires the aggrega/publishDiagnostics notification carrying
-// the current composed state for file. Missing entries publish an empty
-// diagnostics array (the standard "clear" signal). Callers invoke this after
-// every state mutation to a diagnostic layer so the extension's
-// DiagnosticCollection stays in sync with what the daemon holds.
+// the current composed state for file, when that state is not already what this
+// client was last told about it. Missing entries publish an empty diagnostics
+// array (the standard "clear" signal). Callers invoke this after every state
+// mutation to a diagnostic layer so the extension's DiagnosticCollection stays in
+// sync with what the daemon holds.
+//
+// # A frame carries news, and one that would not is not sent
+//
+// A push says something has changed. A client acts on that: it replaces the
+// file's entries, and — since a recompile is what usually moved them — a client
+// showing anything else derived from the same build asks for that to be rebuilt.
+// So a frame restating what the client already holds is not merely redundant, it
+// is an instruction to re-ask, and the re-ask recomputes the same state and
+// restates it again. The result is a workspace that compiles continuously with
+// nobody typing, for as long as whatever is listening stays open.
+//
+// The comparison is against the WHOLE COMPOSED STATE, taken here, at the one
+// site that writes the frame. That is what makes it correct rather than merely
+// effective. Each diagnostic layer is written by a different request and
+// published from a different caller, so a comparison made inside any one layer
+// would be a claim that none of the others moved between the two moments — and
+// one of those callers publishes a file's state on every graph request whatever
+// it found, so a layer-local comparison would leave that one restating itself
+// forever. Comparing what is about to be marshalled has no layer it can be blind
+// to, and no publication site can be added that escapes it.
+//
+// What survives, and it is the case a careless comparison breaks: a file whose
+// last advisory has gone still gets its frame, because an empty composed state is
+// not equal to the state the client was told, and the client needs that frame to
+// clear the entry. A file this client has never been told about is likewise news
+// whatever it holds, which is what keeps the handshake's startup flush a flush.
+//
+// The lock is held across the write rather than only across the comparison, so
+// what is recorded is what was actually sent. Releasing it earlier would let two
+// concurrent publications about one file record in one order and write in the
+// other, after which the record describes a frame the client never received and
+// the next recomputation of that state is suppressed against a view nobody holds.
 //
 // # A push is confined to the workspace the client declared at connect
 //
@@ -813,12 +846,25 @@ func (s *Server) publishDiagnostics(ctx context.Context, file string) error {
 	if !s.pushesAllowed() {
 		return nil
 	}
+	s.publishMu.Lock()
+	defer s.publishMu.Unlock()
 	diags := s.snapshotDiagnostics(file)
 	if diags == nil {
 		diags = []Diagnostic{}
 	}
-	return s.writeNotification(ctx, "aggrega/publishDiagnostics", publishDiagnosticsParams{
+	// Keyed the way every per-file store here is keyed, so a file named in two
+	// spellings across two requests is one entry in the record rather than two
+	// that never agree — the same reason the layers themselves canonicalise.
+	key := s.canonicalFile(file)
+	if !s.publicationIsNews(key, diags) {
+		return nil
+	}
+	if err := s.writeNotification(ctx, "aggrega/publishDiagnostics", publishDiagnosticsParams{
 		File:        file,
 		Diagnostics: diags,
-	})
+	}); err != nil {
+		return err
+	}
+	s.recordPublished(key, diags)
+	return nil
 }

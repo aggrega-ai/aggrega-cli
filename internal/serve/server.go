@@ -273,6 +273,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -1079,6 +1080,38 @@ type Server struct {
 	// conventions finding appended to it would be published as a finding about
 	// correctness and a client could no longer tell the two questions apart.
 	conventionDiags map[string][]Diagnostic
+
+	// publishMu serializes this workspace's publications and guards published.
+	// It is a second lock rather than diagMu because it is held across the frame
+	// write, which diagMu deliberately never is: a publication composes the
+	// layers under diagMu, releases it, and marshals outside it.
+	//
+	// Holding it across the write is what keeps published in step with the wire.
+	// Two concurrent publications about one file would otherwise be free to
+	// compose, record, and then write in the opposite order, leaving the record
+	// describing a frame the client never received and the client holding one the
+	// record says was superseded — after which a later recomputation of the
+	// recorded state is suppressed and the client keeps the stale entry forever.
+	//
+	// The lock order is publishMu then diagMu, and it is the only order taken
+	// anywhere: nothing that holds diagMu publishes.
+	publishMu sync.Mutex
+
+	// published is what this workspace has told the client about each file: the
+	// composed diagnostic state the last frame for that file carried, keyed the
+	// way every per-file store here is keyed. A file no frame has been sent for
+	// is absent, which is distinct from one whose last frame carried nothing —
+	// the first has never been reported, the second is reported clean.
+	//
+	// It is what lets a publication that would restate the client's current view
+	// be dropped rather than sent. That is not an optimisation: a client that
+	// re-asks on being told something has changed turns a restatement into a
+	// request, and the request produces the same restatement, so a publication
+	// carrying no news is the whole engine of a loop that compiles forever
+	// without an edit.
+	//
+	// It is forgotten at the handshake, where forgetPublished says why.
+	published map[string][]Diagnostic
 }
 
 // workspaceRegistry holds the state the daemon keeps for each workspace it has
@@ -1297,6 +1330,7 @@ func (s *session) newWorkspace(resolved *workspaceconfig.ResolvedWorkspace) *Ser
 		diagnostics:       map[string][]Diagnostic{},
 		renderDiags:       map[string][]Diagnostic{},
 		conventionDiags:   map[string][]Diagnostic{},
+		published:         map[string][]Diagnostic{},
 	}
 }
 
@@ -1439,11 +1473,20 @@ func (s *Server) snapshotDiagnostics(file string) []Diagnostic {
 
 // setRenderDiagnostics replaces the whole build-advisory layer with byFile and
 // returns the sorted set of files whose entry the replacement touched — the union
-// of the files that had an advisory on this layer and the files that now do — so
-// the caller republishes exactly the files whose composed state changed, clearing
-// a stale advisory as reliably as it publishes a new one. Whole-layer replacement
-// is what a whole-closure build calls for: a per-file merge would strand an
-// advisory on a file that stopped raising one.
+// of the files that had an advisory on this layer and the files that now do.
+// Whole-layer replacement is what a whole-closure build calls for: a per-file
+// merge would strand an advisory on a file that stopped raising one, and the
+// union is what makes a cleared advisory reach the caller as reliably as a new
+// one does.
+//
+// 🔴 THE UNION IS THE SET OF FILES WORTH LOOKING AT, NOT THE SET WHOSE STATE
+// CHANGED, and the two are the same set only while the advisories are in motion.
+// Nothing here compares what the old entry held against what the new one holds:
+// a layer that raises the same advisory twice names its file both times. Whether
+// a file is actually reported to the client is decided at the publication, which
+// compares the whole composed state against what that client was last told —
+// see publishDiagnostics. Reading this function as though it performed that
+// comparison is the mistake its result is shaped to invite.
 //
 // The layer carries every advisory a build raised, not the render's alone, which
 // is what the source it publishes under names. Read the layer's contents from the
@@ -1503,6 +1546,60 @@ func (s *Server) diagnosticsFiles() []string {
 	}
 	sort.Strings(files)
 	return files
+}
+
+// publicationIsNews reports whether a frame carrying diags for key would tell the
+// client something it has not already been told. It reads and records nothing;
+// recordPublished is what moves the record, and it is called after the frame is
+// written rather than before, so a write that failed leaves the state unrecorded
+// and the next publication carries it again.
+//
+// The comparison is a deep one over the whole composed slice, which is what the
+// frame carries. It is deliberately not a comparison of lengths, of messages, or
+// of any summary: a summary agrees on the day it is written and then reports two
+// genuinely different states as one, which suppresses a finding the author needs
+// to see. A change anywhere in any entry — a position moved by an edit above it,
+// a remedy reworded, a reference added — is news.
+//
+// An absent record is news whatever diags holds, including nothing. A client that
+// has been told nothing about a file is not the same as one that has been told
+// the file is clean, and the startup flush depends on the difference: it publishes
+// the current state of every file a layer holds, and a file it never reported
+// would otherwise be silently skipped.
+func (s *Server) publicationIsNews(key string, diags []Diagnostic) bool {
+	prev, seen := s.published[key]
+	return !seen || !reflect.DeepEqual(prev, diags)
+}
+
+// recordPublished records diags as what this client has been told about key.
+// Called with publishMu held, immediately after the frame carrying diags reached
+// the wire.
+//
+// The map is built on demand because a workspace entry assembled as a struct
+// literal — which is what the in-memory harness does — carries none, and a
+// publication is the first thing that needs one.
+func (s *Server) recordPublished(key string, diags []Diagnostic) {
+	if s.published == nil {
+		s.published = map[string][]Diagnostic{}
+	}
+	s.published[key] = diags
+}
+
+// forgetPublished drops everything recorded about what a client has been told,
+// so the next publication for each file is news again.
+//
+// It is called at the handshake, and the reason is that the record describes a
+// CLIENT's view rather than this workspace's state. A workspace entry outlives
+// the connection that populated it — the registry keeps it so a reconnecting
+// editor is answered from a warm catalog rather than a cold start — and the
+// client that reconnects holds an empty problem list. Keeping the record across
+// that boundary would let the startup flush conclude it had already reported
+// every file and send nothing, leaving the editor showing no problems on a
+// workspace full of them.
+func (s *Server) forgetPublished() {
+	s.publishMu.Lock()
+	defer s.publishMu.Unlock()
+	s.published = map[string][]Diagnostic{}
 }
 
 // Run resolves the workspace the process was launched over, constructs the

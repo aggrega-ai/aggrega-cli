@@ -313,6 +313,13 @@ func (s *Server) dispatchInitialize(ctx context.Context, req *jsonRPCRequest) er
 	//
 	// diagnosticsFiles returns the keys sorted for deterministic ordering across
 	// daemon runs (Go map iteration is randomized).
+	//
+	// What that workspace has already reported is forgotten first, because a
+	// publication carrying nothing new is dropped and the client in front of us
+	// has an empty problem list whatever an earlier one was told. A workspace
+	// entry outlives the connection that filled it, so without this the flush
+	// would conclude it had already reported every file and send nothing at all.
+	declared.forgetPublished()
 	for _, file := range declared.diagnosticsFiles() {
 		if err := declared.publishDiagnostics(ctx, file); err != nil {
 			fmt.Fprintf(s.stderr, "  publishDiagnostics %s: %v\n", file, err)
