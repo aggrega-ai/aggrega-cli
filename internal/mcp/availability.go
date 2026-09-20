@@ -267,8 +267,8 @@ var unbackedAvailability = map[string]opsurface.OperationAvailability{
 }
 
 // StaticToolNames returns the tool names this package declares statically: the
-// curated set advertised in every listing, followed by the long tail surfaced on
-// demand.
+// curated set, followed by the tail declared behind it. Both are advertised in
+// every listing.
 //
 // It excludes the generated command tools, which exist only for a session that
 // was handed a command surface. A caller checking the whole tool surface builds

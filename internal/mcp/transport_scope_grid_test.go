@@ -279,10 +279,9 @@ func TestWhatEachCredentialIsOfferedAndMayCall(t *testing.T) {
 					// What a caller is offered is per tool rather than per cell:
 					// the two build columns are one tool, listed under the class
 					// its operation declares, and refused at the call that widens
-					// past what the credential admits. Which of the two surfaces
-					// a tool sits on is a separate decision about how big the
-					// default list should be, so the union is what the credential
-					// decides.
+					// past what the credential admits. Which registry a tool sits
+					// in decides the order it is listed in and nothing else, so
+					// the union is what the credential decides.
 					listedFor := admittedByGrant(row.grant, declaredReachOfTool(t, column.tool))
 					if got := slices.Contains(offered, column.tool); got != listedFor {
 						t.Errorf("%s is offered = %v, want %v: this credential %s what its operation "+

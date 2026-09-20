@@ -39,8 +39,8 @@ type advertisement struct {
 }
 
 // advertisedOverHTTP reads every argument schema a caller reaching the listener
-// is offered: the default listing, and the unscoped long tail behind the
-// capability tool. Both are driven as a client drives them.
+// is offered: the tool listing, and the definitions the capability tool hands
+// back by name. Both are driven as a client drives them.
 func advertisedOverHTTP(t *testing.T, f *httpFixture) []advertisement {
 	t.Helper()
 

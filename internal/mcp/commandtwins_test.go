@@ -187,23 +187,49 @@ func TestACommandCarriesTheOperationItIsRatherThanOneItOffers(t *testing.T) {
 // TestAToolWithNoCommandTwinDisclosesNothing is the negative control. Every
 // assertion above is a "contains", and a note appended unconditionally would
 // satisfy all of them while telling a caller about a tool that does not exist.
+//
+// One sentence is subtracted before the check rather than admitted through it,
+// and the distinction is the whole reason this stays a broad "contains". A tool
+// may legitimately describe the generated FAMILY — what a kind-scoped answer
+// leaves out, and why — which is a different claim from naming a generated tool
+// as its own pair. That sentence has one home on the spec and is composed on its
+// own predicate, so it can be removed exactly; what is left is every OTHER
+// mention, and any of those still fails. Admitting the tool that carries it
+// instead would have exempted a whole tool from the control, which is how a
+// negative control quietly stops covering its subject.
 func TestAToolWithNoCommandTwinDisclosesNothing(t *testing.T) {
 	s := twinnedServer()
 	twins := commandTwins(s.commandTools)
 
-	var checked int
+	var checked, subtracted int
 	for _, spec := range s.curatedTools(context.Background()) {
 		if _, paired := twins[spec.operation]; paired {
 			continue
 		}
 		checked++
-		if strings.Contains(spec.description, commandToolPrefix) {
+		declared, _ := lookupToolIn(spec.name, toolRegistry, deferredToolRegistry)
+		residue := spec.description
+		if declared != nil && declared.commandSurfaceNote != "" {
+			before := residue
+			residue = strings.ReplaceAll(residue, declared.commandSurfaceNote, "")
+			if residue != before {
+				subtracted++
+			}
+		}
+		if strings.Contains(residue, commandToolPrefix) {
 			t.Errorf("the %q tool answers a capability no command carries, yet its description names a generated "+
-				"tool:\n%s", spec.name, spec.description)
+				"tool outside the one sentence that describes the family:\n%s", spec.name, spec.description)
 		}
 	}
 	if checked == 0 {
 		t.Fatal("every curated tool has a command twin, so this control asserts nothing")
+	}
+	// The vacuity control for the subtraction itself. A session that composed no
+	// family sentence would make the removal above a no-op, and the check would
+	// then be passing over text nobody had to think about.
+	if subtracted == 0 {
+		t.Fatal("no unpaired tool carried the family sentence, so the subtraction above removed nothing and " +
+			"this control no longer covers the case it was widened for")
 	}
 }
 

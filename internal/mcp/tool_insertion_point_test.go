@@ -379,8 +379,9 @@ func TestTheInsertionPointToolIsReachableFromTheCapabilityListing(t *testing.T) 
 		t.Fatalf("the capability index does not surface insertion-point; it surfaced %v",
 			capabilityNames(listing))
 	}
-	if !found.Deferred {
-		t.Errorf("insertion-point is surfaced as though it sat in the set a caller meets first")
+	if strings.TrimSpace(found.Summary) == "" {
+		t.Errorf("insertion-point is indexed with no purpose, so a caller reads a blank row where it "+
+			"chooses from: %+v", *found)
 	}
 
 	// Discovery is only useful if the definition is one call away, so the

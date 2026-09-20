@@ -17,7 +17,7 @@ import (
 // tools a caller arriving cold can reach the rest of the surface without. Every
 // one of them is advertised in tools/list beside the set above, and the split
 // decides two things only — the order the listing is composed in, and which
-// tools the capability tool's index covers.
+// tools a kind-scoped walk reads after the curated set.
 //
 // Membership is by ONE criterion, and it is the criterion each entry below was
 // tested against rather than a place to file a tool for room: a tool belongs
@@ -64,12 +64,12 @@ const describeCapabilitiesName = "describe-capabilities"
 // Discovery and delivery are two questions, and this tool answers them in two
 // shapes.
 //
-// "Is what I am about to attempt possible here?" needs a name, a purpose, the
-// kinds a tool serves and whether it writes — for the whole surface, a few
+// "Which tools serve the kind I am authoring?" needs a name, a purpose, the
+// kinds a tool serves and whether it writes — for a whole set of them, a few
 // kilobytes. "How exactly do I call this one?" needs one argument schema.
 // Answering the first by paying the second once per tool produces a result
-// larger than a client will accept, at which point the deferral saves nothing
-// because the call that recovers it cannot be delivered.
+// larger than a client will accept, so an index carries no argument schema at
+// all and there is nowhere for one to grow back.
 //
 // So an argumentless call, and a call narrowed to an entity kind, return an
 // INDEX; a call naming tools returns those tools' full definitions and nothing
@@ -77,24 +77,32 @@ const describeCapabilitiesName = "describe-capabilities"
 // and would leave a caller unable to see the whole space at once — which is the
 // one thing the first question needs.
 //
+// The kind-scoped answer is what this tool is FOR. Every tool declares the
+// entity kinds it serves, so narrowing to a kind reports what those declarations
+// say rather than what a description happens to be worded like — which is the
+// one thing a retrieval pass over tool text cannot reproduce, because authoring
+// a Recipe implying a particular working set is a fact about the entity model
+// and not about the words beside each tool. The unscoped index is the same
+// projection with nothing narrowed, so a caller that has not settled on a kind
+// can still read the whole space in one answer.
+//
 // 🔴 The index is PROJECTED from the registries, never authored beside them. A
 // hand-maintained list would be a second copy of every tool's purpose, agreeing
 // on the day it was written and drifting at the first edit of either copy — and
 // it would satisfy every size measurement perfectly while doing so.
 
 // describeCapabilitiesArgs is the capability tool's argument shape. No argument
-// returns the index of the deferred long tail; a kind returns the index narrowed
-// to the tools that serve that entity kind; naming tools returns those tools'
-// full definitions.
+// returns the index of every tool this server announces to the caller; a kind
+// returns that index narrowed to the tools that serve that entity kind; naming
+// tools returns those tools' full definitions.
 type describeCapabilitiesArgs struct {
 	Kind  string   `json:"kind"`
 	Tools []string `json:"tools"`
 }
 
 // capabilityProjection is one tool as the index carries it: its name, the
-// one-line purpose declared on its spec, the entity kinds it serves, whether a
-// call to it can leave something behind, and whether it is absent from the
-// default list.
+// one-line purpose declared on its spec, the entity kinds it serves, and whether
+// a call to it can leave something behind.
 //
 // It carries no argument schema, and that is the point of it being its own type
 // rather than a descriptor with fields left empty. The index exists because the
@@ -102,22 +110,19 @@ type describeCapabilitiesArgs struct {
 // nowhere to put one cannot regrow them by a later edit adding a field "while
 // we are here".
 type capabilityProjection struct {
-	Name     string   `json:"name"`
-	Summary  string   `json:"summary"`
-	Kinds    []string `json:"kinds,omitempty"`
-	Writes   bool     `json:"writes"`
-	Deferred bool     `json:"deferred"`
+	Name    string   `json:"name"`
+	Summary string   `json:"summary"`
+	Kinds   []string `json:"kinds,omitempty"`
+	Writes  bool     `json:"writes"`
 }
 
 // capabilityDescriptor is one tool's full definition: its name, its description,
 // the JSON Schema for its arguments — the same definition a tools/list entry
-// carries — plus whether the tool is deferred (absent from the default list) and
-// the entity kinds it serves.
+// carries — and the entity kinds it serves.
 type capabilityDescriptor struct {
 	Name        string          `json:"name"`
 	Description string          `json:"description"`
 	InputSchema json.RawMessage `json:"inputSchema"`
-	Deferred    bool            `json:"deferred"`
 	Kinds       []string        `json:"kinds,omitempty"`
 }
 
@@ -136,15 +141,36 @@ type describeCapabilitiesResult struct {
 	Capabilities []capabilityDescriptor `json:"capabilities,omitempty"`
 }
 
+// kindScopeCommandToolNote is the one bound on a kind-scoped answer, written
+// once because the tool's own description and the heading over a narrowed answer
+// both carry it. A caller that does not know the bound reads a narrowed answer
+// as a complete one, and the moment it matters is the moment the narrowed answer
+// arrives — so the sentence has to reach both surfaces, and a second wording of
+// it would agree only until one of the two was edited.
+//
+// Both surfaces carry it only where this session derived those tools, on the one
+// predicate [server.offersCommandTools]. A session that derived none has no such
+// family for a narrowed answer to leave out, so the sentence would be a bound on
+// tools that caller cannot reach — which is also why it states the bound plainly
+// rather than hedging about whether the tools are there: where it is read, they
+// are.
+const kindScopeCommandToolNote = "The `cli-` tools, which run an `aggrega` command in a separate process, " +
+	"are never narrowed by kind: nothing records which entity kind a command serves. A kind-scoped answer " +
+	"leaves them out, and the argumentless index is where you read them."
+
 var describeCapabilitiesToolSpec = toolSpec{
-	summary: "Indexes the tools the default list omits, and returns any of them in full by name.",
-	description: "Discover the tools the default list omits, and load definitions only for the ones you decide to " +
-		"call. With no arguments it returns an index: each deferred tool's name, a one-line purpose, the entity " +
-		"kinds it serves, and whether it writes — and no argument schemas, so the whole surface arrives in one " +
-		"readable answer. Pass `tools` naming one or more of them for those tools' full definitions, argument " +
-		"schemas included, and nothing else. Pass `kind` (an entity kind such as release, component, feature, " +
-		"recipe, plugin) for the index narrowed to the tools that serve that kind. Every tool the index names is " +
-		"invocable immediately by name; this tool reveals definitions, it does not run them.",
+	summary: "Narrows this server's tools to the ones that serve one entity kind, and returns any tool's full definition by name.",
+	description: "Find the tools that serve the entity kind you are authoring, then load full definitions only " +
+		"for the ones you decide to call. Pass `kind` (an entity kind such as release, component, feature, " +
+		"recipe, plugin) for the working set for authoring that kind: every tool here declares the entity kinds " +
+		"it serves, so a narrowed answer is what those declarations say rather than a match on the words a " +
+		"description happens to use. With no arguments you get that same index over every tool this server " +
+		"announces to you — each one's name, a one-line purpose, the entity kinds it serves, and whether it " +
+		"writes, and no argument schemas, so the whole surface arrives in one readable " +
+		"answer. Pass `tools` naming one or more of them for those tools' full definitions, argument schemas " +
+		"included, and nothing else. It answers about this server's own tools and no others. Every tool the " +
+		"index names is one this server will answer a call to; this tool reads definitions, it does not run them.",
+	commandSurfaceNote: kindScopeCommandToolNote,
 	inputSchema: `{
   "type": "object",
   "properties": {
@@ -184,7 +210,7 @@ var describeCapabilitiesToolSpec = toolSpec{
 // agree with the first.
 func (s *server) deferredTools(ctx context.Context) []toolSpec {
 	out := make([]toolSpec, 0, len(deferredToolRegistry)+len(s.commandTools))
-	out = append(out, s.withTwinNotes(deferredToolRegistry)...)
+	out = append(out, s.withSessionNotes(deferredToolRegistry)...)
 	out = append(out, s.commandTools...)
 	return s.admittedReach(ctx).admitted(out)
 }
@@ -193,8 +219,8 @@ func (s *server) deferredTools(ctx context.Context) []toolSpec {
 //
 // ctx is the request's own and is consulted for one thing: which tools this
 // request's credential admits. The answer is therefore composed per request, on
-// the same predicate the default listing is composed on, so the two surfaces
-// agree about one request rather than agreeing because nothing narrowed either.
+// the same predicate the tool listing is composed on, so the two surfaces agree
+// about one request rather than agreeing because nothing narrowed either.
 func describeCapabilitiesInvoke(s *server, ctx context.Context, args json.RawMessage) (*callToolResult, *rpcError) {
 	var a describeCapabilitiesArgs
 	if len(args) > 0 {
@@ -222,13 +248,19 @@ func describeCapabilitiesInvoke(s *server, ctx context.Context, args json.RawMes
 				kind, strings.Join(knownEntityKinds(), ", ")))
 		}
 		payload := describeCapabilitiesResult{Kind: kind, Index: s.indexForKind(ctx, kind)}
-		return textResult(renderCapabilityIndex(payload), payload)
+		return textResult(s.renderCapabilityIndex(payload), payload)
 	}
 
-	// No argument: the index of the long tail — what the default list omits —
-	// so a client sees the whole space before it loads any of it.
-	payload := describeCapabilitiesResult{Index: projectTools(s.deferredTools(ctx), true)}
-	return textResult(renderCapabilityIndex(payload), payload)
+	// No argument: the index of every tool this request is offered, so a client
+	// sees the whole space before it loads any of it.
+	//
+	// It reads the composition tools/list answers from rather than walking the
+	// registries again. That is what fixes the order — each registry in its own
+	// declared order, the three joined in one, nothing iterated from a map — and
+	// it is also what keeps the index and the listing describing one surface: a
+	// second walk would agree with the first until either was edited.
+	payload := describeCapabilitiesResult{Index: projectTools(s.servedTools(ctx))}
+	return textResult(s.renderCapabilityIndex(payload), payload)
 }
 
 // namedTools reads the tool names a call asked for, dropping blanks and
@@ -260,25 +292,21 @@ func namedTools(raw []string) []string {
 // request reads does not carry it either, and a definition handed back for a
 // tool the same credential would be refused at the call is worse than no answer.
 //
+// The set it resolves against is the one the index was projected from, so a name
+// read out of an index resolves here by construction rather than by the two
+// happening to be composed from the same registries.
+//
 // An unresolved name fails the whole call rather than being skipped. A result
 // quietly short of what was asked for is read as an answer, and the caller then
 // believes it holds a definition it never received.
 func (s *server) definitionsFor(ctx context.Context, names []string) (*callToolResult, *rpcError) {
-	curated := s.curatedTools(ctx)
-	deferred := s.deferredTools(ctx)
+	served := s.servedTools(ctx)
 
 	caps := make([]capabilityDescriptor, 0, len(names))
 	var unresolved []string
 	for _, name := range names {
-		// The two sets are scanned separately rather than as one, because which of
-		// them answered is what says whether the tool is absent from the default
-		// list — the same fact the index reported for it.
-		if spec, ok := lookupToolIn(name, curated); ok {
-			caps = append(caps, s.descriptorFor(*spec, false))
-			continue
-		}
-		if spec, ok := lookupToolIn(name, deferred); ok {
-			caps = append(caps, s.descriptorFor(*spec, true))
+		if spec, ok := lookupToolIn(name, served); ok {
+			caps = append(caps, s.descriptorFor(*spec))
 			continue
 		}
 		unresolved = append(unresolved, name)
@@ -299,24 +327,27 @@ func (s *server) definitionsFor(ctx context.Context, names []string) (*callToolR
 // connect-time guidance alike — so the line a client reads on connecting and the
 // line it reads from a call are the same derivation of the same registry. An
 // index composed twice would agree until one of the two was edited.
-func projectTools(specs []toolSpec, deferred bool) []capabilityProjection {
+func projectTools(specs []toolSpec) []capabilityProjection {
 	out := make([]capabilityProjection, 0, len(specs))
 	for i := range specs {
 		out = append(out, capabilityProjection{
-			Name:     specs[i].name,
-			Summary:  specs[i].summary,
-			Kinds:    specs[i].kinds,
-			Writes:   specs[i].writes(),
-			Deferred: deferred,
+			Name:    specs[i].name,
+			Summary: specs[i].summary,
+			Kinds:   specs[i].kinds,
+			Writes:  specs[i].writes(),
 		})
 	}
 	return out
 }
 
 // indexForKind returns the index of the tools that serve kind, walking the
-// curated set then the deferred set so the order is deterministic. The
-// capability tool itself is skipped — it never lists itself as a capability for
-// a kind.
+// curated set then the deferred set so the order is deterministic.
+//
+// The capability tool itself is skipped here and only here. It declares no kinds,
+// so it serves every one of them, and a tool that appeared under each kind an
+// author asked about would be noise in the one answer that exists to narrow. The
+// unscoped index does carry it, because that index is what this server announces
+// and a caller can check it against tools/list entry for entry.
 //
 // It answers with an index rather than with definitions for the same reason the
 // argumentless call does: narrowing to a kind is still discovery, and a narrowed
@@ -325,23 +356,27 @@ func projectTools(specs []toolSpec, deferred bool) []capabilityProjection {
 // kind names those tools and receives their definitions.
 //
 // Both sets are taken as this session advertises them to this request, which is
-// the same definition tools/list and the unscoped long tail carry: a narrowed
+// the same definition tools/list and the unscoped index carry: a narrowed
 // listing that dropped a tool's disclosure of its generated twin, or that
 // surfaced a tool the request's credential does not admit, would hand an
 // assistant asking about one entity kind a different answer from the one it
 // would have read on either other surface.
 //
 // The generated command tools are deliberately absent from a kind-scoped
-// result, and reachable through the unscoped long tail instead. A command's
+// result, and reachable through the unscoped index instead. A command's
 // relevance to an entity kind is recorded nowhere the derivation could read it,
 // so every command tool is kind-agnostic — and surfacing the kind-agnostic set
 // here would answer a request to narrow with the entire command surface, which
 // is the opposite of narrowing. Claiming a subset serves a kind would mean this
-// package deciding something about the commands rather than reading it.
+// package deciding something about the commands rather than reading it. That
+// bound is stated to the caller in kindScopeCommandToolNote wherever this session
+// derived any of those tools, because a narrowed answer that silently omits a
+// family reads as a complete one — and where it derived none there is no family
+// here to omit, so the bound is withheld rather than asserted over nothing.
 func (s *server) indexForKind(ctx context.Context, kind string) []capabilityProjection {
 	admission := s.admittedReach(ctx)
 	var out []capabilityProjection
-	collect := func(specs []toolSpec, deferred bool) {
+	collect := func(specs []toolSpec) {
 		serving := make([]toolSpec, 0, len(specs))
 		for i := range specs {
 			if specs[i].name == describeCapabilitiesName {
@@ -351,10 +386,10 @@ func (s *server) indexForKind(ctx context.Context, kind string) []capabilityProj
 				serving = append(serving, specs[i])
 			}
 		}
-		out = append(out, projectTools(serving, deferred)...)
+		out = append(out, projectTools(serving)...)
 	}
-	collect(s.curatedTools(ctx), false)
-	collect(admission.admitted(s.withTwinNotes(deferredToolRegistry)), true)
+	collect(s.curatedTools(ctx))
+	collect(admission.admitted(s.withSessionNotes(deferredToolRegistry)))
 	return out
 }
 
@@ -376,16 +411,15 @@ func toolServesKind(spec toolSpec, kind string) bool {
 // capability tool surfaces.
 //
 // It is the one route every capability listing takes, scoped to a kind or not,
-// so the definition surfaced here is the definition the default listing carries
+// so the definition surfaced here is the definition the tool listing carries
 // — the arguments this session lets a caller send included. A listing that
 // composed its own descriptor would be free to surface a tool under arguments
 // the call surface refuses.
-func (s *server) descriptorFor(spec toolSpec, deferred bool) capabilityDescriptor {
+func (s *server) descriptorFor(spec toolSpec) capabilityDescriptor {
 	return capabilityDescriptor{
 		Name:        spec.name,
 		Description: s.advertisedDescription(spec),
 		InputSchema: s.advertisedSchema(spec),
-		Deferred:    deferred,
 		Kinds:       spec.kinds,
 	}
 }
@@ -414,16 +448,27 @@ func isKnownEntityKind(kind string) bool {
 
 // renderCapabilityIndex renders the human-readable index: a heading naming the
 // scope and what to do next, then one line per tool.
-func renderCapabilityIndex(p describeCapabilitiesResult) string {
+//
+// The heading over a narrowed answer states the bound that answer carries, and
+// states it only where this session derived the tools it is a bound about — the
+// same predicate and the same sentence the tool's own description is scoped on,
+// so a caller reading the two is told one thing. Over a session that derived none
+// the heading is written without it rather than with an emptied gap, because a
+// bound on a family that session cannot reach is a claim about tools the caller
+// was never offered.
+func (s *server) renderCapabilityIndex(p describeCapabilitiesResult) string {
 	var b strings.Builder
 	if p.Kind == "" {
-		fmt.Fprintf(&b, "The tools this server offers you that the default list omits (%d). "+
+		fmt.Fprintf(&b, "Every tool this server offers you (%d). "+
 			"Names and purposes only — call %s again with `tools` naming the ones you want, "+
 			"for their full definitions and argument schemas.\n", len(p.Index), describeCapabilitiesName)
 	} else {
-		fmt.Fprintf(&b, "The tools that serve the %s kind (%d), the default list included. "+
-			"Names and purposes only — call %s again with `tools` naming the ones you want, "+
-			"for their full definitions and argument schemas.\n", p.Kind, len(p.Index), describeCapabilitiesName)
+		fmt.Fprintf(&b, "The tools that serve the %s kind (%d).", p.Kind, len(p.Index))
+		if s.offersCommandTools() {
+			fmt.Fprintf(&b, " %s", kindScopeCommandToolNote)
+		}
+		fmt.Fprintf(&b, " Names and purposes only — call %s again with `tools` naming the ones you want, "+
+			"for their full definitions and argument schemas.\n", describeCapabilitiesName)
 	}
 	for _, line := range capabilityIndexLines(p.Index) {
 		b.WriteString(line)
@@ -439,24 +484,14 @@ func renderCapabilityIndex(p describeCapabilitiesResult) string {
 // both show these lines, and a caller that read the guidance and then called the
 // tool would otherwise be comparing two renderings of one fact.
 //
-// Whether a tool is absent from the default list is written per line only where
-// the index holds both sorts. An index that is entirely one or the other says so
-// once, in the heading above it, and repeating it on every line would spend the
-// width that carries what each tool actually does.
+// A line carries what a caller chooses on — whether the tool writes, and which
+// entity kinds it serves. Which registry a tool was declared in is not one of
+// those: it decides the order this listing is composed in and nothing a caller
+// can act on, so it is not written here.
 func capabilityIndexLines(index []capabilityProjection) []string {
-	mixed := false
-	for _, e := range index {
-		if e.Deferred != index[0].Deferred {
-			mixed = true
-			break
-		}
-	}
 	out := make([]string, 0, len(index))
 	for _, e := range index {
-		traits := make([]string, 0, 3)
-		if mixed && e.Deferred {
-			traits = append(traits, "not in the default list")
-		}
+		traits := make([]string, 0, 2)
 		if e.Writes {
 			traits = append(traits, "writes")
 		} else {
@@ -485,11 +520,7 @@ func renderCapabilityDefinitions(p describeCapabilitiesResult) string {
 	fmt.Fprintf(&b, "Full definitions for %d tool(s).\n", len(p.Capabilities))
 	for _, c := range p.Capabilities {
 		b.WriteString("\n")
-		if c.Deferred {
-			fmt.Fprintf(&b, "%s (not in the default tool list)\n", c.Name)
-		} else {
-			fmt.Fprintf(&b, "%s\n", c.Name)
-		}
+		fmt.Fprintf(&b, "%s\n", c.Name)
 		fmt.Fprintf(&b, "%s\n", c.Description)
 		fmt.Fprintf(&b, "Arguments (JSON Schema): %s\n", string(c.InputSchema))
 	}

@@ -253,8 +253,8 @@ func TestDeclaredSchemasStateTheArgumentRulesTheToolsEnforce(t *testing.T) {
 		{"connection-candidates", "a blank subject", `{"node":""}`, false},
 		{"connection-candidates", "a blank socket", `{"node":"n","socket":""}`, false},
 
-		// describe-capabilities: the whole long tail, or one entity kind.
-		{describeCapabilitiesName, "the whole long tail", `{}`, true},
+		// describe-capabilities: the whole announced surface, or one entity kind.
+		{describeCapabilitiesName, "the whole announced surface", `{}`, true},
 		{describeCapabilitiesName, "narrowed to one kind", `{"kind":"component"}`, true},
 		{describeCapabilitiesName, "a kind that is not an entity kind at all", `{"kind":"nonesuch"}`, false},
 

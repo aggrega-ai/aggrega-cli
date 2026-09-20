@@ -576,9 +576,6 @@ func TestCommandToolsAreDiscoverableThroughTheCapabilityTool(t *testing.T) {
 		if strings.TrimSpace(e.Summary) == "" {
 			t.Errorf("generated tool %q is indexed with no purpose", e.Name)
 		}
-		if !e.Deferred {
-			t.Errorf("generated tool %q not marked deferred", e.Name)
-		}
 	}
 	defined := definitionsOf(t, s, want...)
 	if len(defined.Capabilities) != len(want) {
@@ -587,9 +584,6 @@ func TestCommandToolsAreDiscoverableThroughTheCapabilityTool(t *testing.T) {
 	for _, c := range defined.Capabilities {
 		if c.Description == "" || len(c.InputSchema) == 0 {
 			t.Errorf("generated tool %q came back without a full definition", c.Name)
-		}
-		if !c.Deferred {
-			t.Errorf("generated tool %q not marked deferred", c.Name)
 		}
 		var schema map[string]any
 		if err := json.Unmarshal(c.InputSchema, &schema); err != nil {
@@ -652,12 +646,11 @@ func TestCommandToolDiscoveryIsByteStable(t *testing.T) {
 	}
 }
 
-// TestCommandToolDefinitionsStayModest records the deferred long tail's
-// definition budget and fails if it balloons. The long tail is loaded on demand,
-// so it is allowed to be larger than the curated set — but a client that asks
-// for the whole tail receives all of it in one payload, so carrying each
-// command's full long-form help here rather than serving it from cli:// would
-// make that payload the largest thing the server emits.
+// TestCommandToolDefinitionsStayModest records the generated tools' definition
+// budget and fails if it balloons. Every one of them is announced in the tool
+// list a client receives on connecting, so carrying each command's full
+// long-form help here rather than serving it from cli:// would make that
+// listing the largest thing the server emits.
 func TestCommandToolDefinitionsStayModest(t *testing.T) {
 	specs := deriveCommandTools(fixtureCommandSurface())
 	perTool := 0

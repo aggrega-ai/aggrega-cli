@@ -29,7 +29,7 @@ import (
 // then be able to drift from the one the operation table claims.
 //
 // kinds records the entity kinds a tool serves, so the capability tool can
-// narrow the long tail to the kind an author is working on. An empty kinds is
+// narrow its index to the kind an author is working on. An empty kinds is
 // kind-agnostic: the tool serves every entity kind (schema, scaffold, and
 // diagnostic helpers are the natural agnostic tools). The field is exposure
 // metadata only; it never changes what a tool does or returns.
@@ -93,6 +93,21 @@ import (
 // arguments; what they share is the rule above, and that rule has one home in
 // [toolSpec.notesWithheldFromAListener].
 //
+// commandSurfaceNote holds the part that is true only where this session derived
+// the generated tools that reach a capability by running a command in a separate
+// process, and is left empty by a tool that says nothing about that family.
+//
+// It is scoped on a different question from the two above — what this session
+// holds, rather than how its caller reached it — and the two do not coincide. A
+// session reached over a listener derives none of those tools, and so does a
+// session over the process's own streams that was handed no command surface. A
+// sentence scoped on the transport would be right about the first and wrong about
+// the second, and the caller it would be wrong about is the one sent after a tool
+// that is not there. The predicate has one home in [server.offersCommandTools],
+// and the composition is [server.withSessionNotes] rather than
+// [toolSpec.notesWithheldFromAListener], which enumerates the transport-scoped
+// pair and only those.
+//
 // signingKeyArguments names the arguments through which a call selects an offline
 // held signing key, and is empty for a tool that signs nothing. Such a key lives
 // on the machine this server runs on, so a caller that did not launch this process
@@ -108,6 +123,7 @@ type toolSpec struct {
 	description            string
 	workspaceSelectionNote string
 	signingKeyNote         string
+	commandSurfaceNote     string
 	inputSchema            string
 	signingKeyArguments    []string
 	kinds                  []string
@@ -137,8 +153,9 @@ func (spec toolSpec) writes() bool {
 // in. Every tool wraps an existing single-sourced surface — the shared
 // compiler-operations layer, the embedded schema set, or the catalog resolver —
 // and none reimplements it. The capability tool is the one meta entry: it
-// indexes the long tail and returns any tool's full definition by name. The
-// order is fixed so the advertised list and its wire bytes are deterministic.
+// narrows the tools this server announces to the ones serving one entity kind,
+// and returns any of them in full by name. The order is fixed so the advertised
+// list and its wire bytes are deterministic.
 //
 // Every entry names the operation it answers, and takes its advertised name from
 // that operation's row in the availability table. A tool for an operation the

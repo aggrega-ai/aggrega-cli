@@ -437,8 +437,9 @@ func TestTheAttachmentContainerToolIsReachableFromTheCapabilityListing(t *testin
 		t.Fatalf("the capability index does not surface attachment-container; it surfaced %v",
 			capabilityNames(listing))
 	}
-	if !found.Deferred {
-		t.Errorf("attachment-container is surfaced as though it sat in the set a caller meets first")
+	if strings.TrimSpace(found.Summary) == "" {
+		t.Errorf("attachment-container is indexed with no purpose, so a caller reads a blank row where it "+
+			"chooses from: %+v", *found)
 	}
 
 	// Discovery is only useful if the definition is one call away, so the

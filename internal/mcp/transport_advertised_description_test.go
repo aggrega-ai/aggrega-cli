@@ -200,14 +200,21 @@ func TestATransportThatAcceptsAWithheldArgumentStillSaysSo(t *testing.T) {
 // which would satisfy every assertion above while quietly serving two different
 // texts.
 //
-// Three parts are withheld, and all three are withheld for the same reason: each
+// Four parts are withheld, and all four are withheld for the same reason: each
 // offers the caller something the listener does not have. The workspace sentence
 // offers arguments a call over HTTP is refused for sending. The signing-key
 // sentence offers a key on this machine and an identity this process's own
 // environment carries, neither of which a call over HTTP can reach. The pairing
 // sentence names the tool that reaches the same capability by running a command,
 // and a session reached over HTTP has none — so a curated tool still carrying it
-// would send a caller after a tool that is not there.
+// would send a caller after a tool that is not there. The command-surface
+// sentence states a bound on that same family as a whole, and a session that
+// derived none of it has no family for the bound to be about.
+//
+// The last two are withheld on what the session derived rather than on the
+// transport, and the comparison still reads them off the session it was handed:
+// the two coincide for the pair of sessions compared here, and writing the
+// predicate out would make this assertion a second derivation of it.
 func TestTheTwoTransportsDifferOnlyByWhatTheListenerWithholds(t *testing.T) {
 	s := newCommandToolServer(t, nil)
 	overHTTP := advertisedOverHTTP(t, newHTTPFixture(t, defaultTransportConfig(), nil))
@@ -227,7 +234,7 @@ func TestTheTwoTransportsDifferOnlyByWhatTheListenerWithholds(t *testing.T) {
 		remote[a.surface+"/"+a.tool] = a.description
 	}
 
-	compared, withheldWorkspace, withheldSigningKey, withheldPairing := 0, 0, 0, 0
+	compared, withheldWorkspace, withheldSigningKey, withheldPairing, withheldCommandSurface := 0, 0, 0, 0, 0
 	for _, a := range overStdio {
 		got, ok := remote[a.surface+"/"+a.tool]
 		if !ok {
@@ -248,6 +255,10 @@ func TestTheTwoTransportsDifferOnlyByWhatTheListenerWithholds(t *testing.T) {
 		}
 		if spec.signingKeyNote != "" {
 			withheldSigningKey++
+		}
+		if spec.commandSurfaceNote != "" && s.offersCommandTools() {
+			want = strings.TrimSuffix(want, " "+spec.commandSurfaceNote)
+			withheldCommandSurface++
 		}
 		if twin, paired := twins[spec.operation]; paired {
 			want = strings.TrimSuffix(want, commandTwinNote(twin))
@@ -273,9 +284,15 @@ func TestTheTwoTransportsDifferOnlyByWhatTheListenerWithholds(t *testing.T) {
 		t.Fatal("no compared description carried a pairing sentence to withhold, " +
 			"so the comparison would pass against a session that composes none")
 	}
+	if withheldCommandSurface == 0 {
+		t.Fatal("no compared description carried a sentence about the generated command family to " +
+			"withhold, so the comparison would pass against a surface that states that bound to a " +
+			"caller holding none of it")
+	}
 	t.Logf("compared %d description(s) across the two transports, %d carrying a withheld workspace "+
-		"sentence, %d a withheld signing-key sentence and %d a withheld pairing sentence",
-		compared, withheldWorkspace, withheldSigningKey, withheldPairing)
+		"sentence, %d a withheld signing-key sentence, %d a withheld pairing sentence and %d a "+
+		"withheld command-surface sentence",
+		compared, withheldWorkspace, withheldSigningKey, withheldPairing, withheldCommandSurface)
 }
 
 // TestAdvertisedDescriptionWithholdsOnlyOnTheListener measures the composition

@@ -36,6 +36,12 @@ import (
 // answers one — so a command renamed, exempted, hidden or added moves the
 // disclosure with it. A list of pairs beside those records would be a third copy
 // of what they already say, and the copy is what goes stale.
+//
+// The same file carries the one predicate for whether this session derived any of
+// those generated tools at all, and the per-session pass that composes every
+// sentence scoped on it. A pairing disclosure and a sentence about the family as a
+// whole are the same claim at two widths, so they are withheld together or not at
+// all, and putting them behind two predicates is how they would come to disagree.
 
 // commandTwin is the generated tool that reaches one operation by running its
 // command in a separate process: the tool's advertised name, and the command
@@ -174,22 +180,54 @@ func withCommandTwinNote(spec toolSpec, twin commandTwin) toolSpec {
 	return spec
 }
 
-// withTwinNotes returns specs as this session advertises them: each tool
-// carrying the disclosure of the generated tool that reaches its capability,
-// where this session derived one, and otherwise exactly as declared.
+// withCommandSurfaceNote returns spec with what it says about the generated
+// command tools disclosed in the description a client shows an assistant.
 //
-// The index is rebuilt per call from the tools the session holds rather than
-// stored beside them, so the disclosure and the tools it describes cannot come
-// to disagree. A session handed no command surface derives no generated tools
-// and therefore makes no claim about one — which is what keeps the note honest
-// rather than merely usually true.
-func (s *server) withTwinNotes(specs []toolSpec) []toolSpec {
+// It returns a copy for the reason the pairing disclosure does, and the joining
+// space is written here rather than into the sentence: the same sentence is
+// rendered into a heading where nothing precedes it, so a leading space carried
+// on the declaration would reach that surface too.
+func withCommandSurfaceNote(spec toolSpec) toolSpec {
+	spec.description += " " + spec.commandSurfaceNote
+	return spec
+}
+
+// offersCommandTools reports whether this session derived any tool that reaches
+// a capability by running a command in a separate process.
+//
+// It is the ONE predicate every sentence about that family is scoped on, and it
+// asks what this session holds rather than how its caller reached it. Those are
+// different questions: a session reached over a listener derives none of those
+// tools, and so does a session over the process's own streams that was handed no
+// command surface. A second derivation from the transport would answer the first
+// correctly and the second wrongly, and nothing would fail while no such session
+// was being served.
+func (s *server) offersCommandTools() bool {
+	return len(s.commandTools) > 0
+}
+
+// withSessionNotes returns specs as this session advertises them: each tool
+// carrying the disclosure of the generated tool that reaches its capability
+// where this session derived one, each tool carrying what it says about the
+// generated family where this session derived any, and otherwise exactly as
+// declared.
+//
+// Both are read per call from the tools the session holds rather than stored
+// beside them, so a sentence and the tools it describes cannot come to disagree.
+// A session handed no command surface derives no generated tools and therefore
+// makes no claim about one — which is what keeps either sentence honest rather
+// than merely usually true.
+func (s *server) withSessionNotes(specs []toolSpec) []toolSpec {
 	twins := commandTwins(s.commandTools)
+	offersCommands := s.offersCommandTools()
 	out := make([]toolSpec, 0, len(specs))
 	for i := range specs {
 		spec := specs[i]
 		if twin, ok := twins[spec.operation]; ok {
 			spec = withCommandTwinNote(spec, twin)
+		}
+		if offersCommands && spec.commandSurfaceNote != "" {
+			spec = withCommandSurfaceNote(spec)
 		}
 		out = append(out, spec)
 	}
@@ -197,10 +235,10 @@ func (s *server) withTwinNotes(specs []toolSpec) []toolSpec {
 }
 
 // curatedTools returns the curated, always-advertised set as this session serves
-// it to this request, in registry order: each tool carrying the disclosure of its
-// generated twin, and only the tools this request's credential admits.
+// it to this request, in registry order: each tool carrying whatever this session
+// makes true of it, and only the tools this request's credential admits.
 func (s *server) curatedTools(ctx context.Context) []toolSpec {
-	return s.admittedReach(ctx).admitted(s.withTwinNotes(toolRegistry))
+	return s.admittedReach(ctx).admitted(s.withSessionNotes(toolRegistry))
 }
 
 // firstSentence returns the leading sentence of a tool description, for the
