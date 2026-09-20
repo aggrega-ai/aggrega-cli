@@ -16,19 +16,19 @@ entities:
         - manifest.spec.mappings.components.type.core/datastore/postgres
     - uri: core/compose-bridge:1.0.0
       resolved_version: 1.0.0
-      digest: sha256:b189c9cc6ef792aebddb2309b784defea7d34d0930b0a96642b5181089251075
+      digest: sha256:dd97f806b3425bdc0a8399634a95423af998d5cdee9a9ba127e2d9ce68ad541e
       referenced_from:
         - manifest.spec.mappings.features.type.core/compose-bridge:1.0.0
         - release.spec.boundaries.bridge.features.gateway.type
     - uri: core/datastore/postgres
       resolved_version: 1.0.0
-      digest: sha256:99c5303a11613e5c5d909785795b70758f61ce1e607992dbbcdcf8d11bc86aee
+      digest: sha256:1e6fb50273ed1d962065d81244dbb45caaeee41255b048d39d7c55e3f394d153
       referenced_from:
         - aggregate.spec.subsystems.default.components.db.type
         - manifest.spec.mappings.components.type.core/datastore/postgres
     - uri: core/devtool/adminer
       resolved_version: 1.0.0
-      digest: sha256:38e508a0b5f6d3b0b16c0bfd44ce7d30ea932428563f8b1904d0ffffb9ed6e53
+      digest: sha256:eb7b8901576da1e8273501e763198bfab76f29d6407f34565e8a894c3a63062c
       referenced_from:
         - aggregate.spec.subsystems.default.components.adminer.type
         - manifest.spec.mappings.components.type.core/devtool/adminer
@@ -53,7 +53,7 @@ release: release-compose.yaml
 schema_libraries:
     - uri: BaseComponents
       resolved_version: 1.0.0
-      digest: sha256:829ada3b81942a289fd007891c272bf65377a49a08f2b4d338af37fa39048cca
+      digest: sha256:76fafe9f7c5e97309862a5b81348fee43a198312b565a15eaeb7a7894b023635
       consumers:
         - consumer_uri: BaseComponents
           fragments:

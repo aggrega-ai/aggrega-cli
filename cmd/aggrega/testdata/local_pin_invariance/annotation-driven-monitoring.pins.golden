@@ -6,7 +6,7 @@ entities:
         - manifest.spec.mappings.features.type.core/prometheus-exporter
     - uri: example/compute/service
       resolved_version: 1.0.0
-      digest: sha256:802974845ec075695d20b3d86bbcd48515e7d472751435cde7a29ddf225248e9
+      digest: sha256:0985e12ab739cfe5b23fad380c71d50b6cb02e298eda907a3076753f13c85397
       referenced_from:
         - aggregate.spec.subsystems.default.components.api.type
         - aggregate.spec.subsystems.default.components.etl.type
@@ -16,7 +16,7 @@ entities:
         - aggregate.spec.subsystems.default.components.worker.type
     - uri: example/compute/service:1.0.0
       resolved_version: 1.0.0
-      digest: sha256:802974845ec075695d20b3d86bbcd48515e7d472751435cde7a29ddf225248e9
+      digest: sha256:0985e12ab739cfe5b23fad380c71d50b6cb02e298eda907a3076753f13c85397
       referenced_from:
         - manifest.spec.mappings.components.type.example/compute/service:1.0.0
     - uri: monitoring-demo
@@ -36,7 +36,7 @@ entities:
         - manifest.spec.mappings.features.type.core/prometheus-exporter
     - uri: service:1.0.0
       resolved_version: 1.0.0
-      digest: sha256:9605d55585b52a36649c619e64bdfc2002dc82ed2c6b534fd973020c4c0b5a99
+      digest: sha256:38addb71fe1f6b2378954a117ba16252485f8df2340426c34c2e0563d4369574
       referenced_from:
         - manifest.spec.mappings.components.type.example/compute/service:1.0.0
 external_inputs: []
@@ -50,7 +50,7 @@ release: release.yaml
 schema_libraries:
     - uri: BaseComponents
       resolved_version: 1.0.0
-      digest: sha256:829ada3b81942a289fd007891c272bf65377a49a08f2b4d338af37fa39048cca
+      digest: sha256:76fafe9f7c5e97309862a5b81348fee43a198312b565a15eaeb7a7894b023635
       consumers:
         - consumer_uri: BaseComponents
           fragments:

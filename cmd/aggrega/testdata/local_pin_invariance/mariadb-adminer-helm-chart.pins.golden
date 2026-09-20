@@ -21,12 +21,12 @@ entities:
         - manifest.spec.mappings.components.type.core/datastore/mariadb:1.0.0
     - uri: core/devtool/adminer
       resolved_version: 1.0.0
-      digest: sha256:38e508a0b5f6d3b0b16c0bfd44ce7d30ea932428563f8b1904d0ffffb9ed6e53
+      digest: sha256:eb7b8901576da1e8273501e763198bfab76f29d6407f34565e8a894c3a63062c
       referenced_from:
         - aggregate.spec.subsystems.default.components.web.type
     - uri: core/devtool/adminer:1.0.0
       resolved_version: 1.0.0
-      digest: sha256:38e508a0b5f6d3b0b16c0bfd44ce7d30ea932428563f8b1904d0ffffb9ed6e53
+      digest: sha256:eb7b8901576da1e8273501e763198bfab76f29d6407f34565e8a894c3a63062c
       referenced_from:
         - manifest.spec.mappings.components.type.core/devtool/adminer:1.0.0
     - uri: core/secret-provided
