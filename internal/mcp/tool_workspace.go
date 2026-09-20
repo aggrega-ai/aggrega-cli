@@ -156,14 +156,16 @@ func entityKindCounts(entities []serve.CatalogEntity) []entityKindCount {
 // between the two shapes of the answer and, where the answer carries records, which
 // of them.
 //
-// Limit and Offset are pointers so that a value a caller sent is distinguishable
-// from one it left out. Zero is a limit this surface refuses and an offset it
-// accepts, so a plain int would make a refused value and an absent one the same
-// bytes at exactly the point the two have to be told apart.
+// ResponseFormat, Limit and Offset are pointers so that a value a caller sent is
+// distinguishable from one it left out. Zero is a limit this surface refuses and
+// an offset it accepts, and every response format outside the declared set is
+// refused, the blank string among them — so a plain value would make a refused one
+// and an absent one the same bytes at exactly the point the two have to be told
+// apart.
 type listEntitiesArgs struct {
 	WorkspaceRoot  string   `json:"workspace_root"`
 	CatalogDirs    []string `json:"catalog_dirs"`
-	ResponseFormat string   `json:"response_format"`
+	ResponseFormat *string  `json:"response_format"`
 	Limit          *int     `json:"limit"`
 	Offset         *int     `json:"offset"`
 }
@@ -259,9 +261,15 @@ func listEntitiesInvoke(s *server, ctx context.Context, args json.RawMessage) (*
 			return invalidToolArguments("list-entities", err)
 		}
 	}
-	// Read before the workspace is resolved, so a call naming a window this
-	// surface does not serve is answered about that window rather than about a
-	// workspace it never reached.
+	// Both read before the workspace is resolved, so a call naming a shape or a
+	// window this surface does not serve is answered about what it named rather
+	// than about a workspace it never reached. The shape comes first because it
+	// decides whether the answer carries records at all, and the window bounds
+	// records.
+	format, refusal := parseResponseFormat("list-entities", a.ResponseFormat, discoveryResponseFormatDefault)
+	if refusal != "" {
+		return errorResult(refusal)
+	}
 	asked, refusal := resolveListingWindow("list-entities", a.Limit, a.Offset)
 	if refusal != "" {
 		return errorResult(refusal)
@@ -271,7 +279,6 @@ func listEntitiesInvoke(s *server, ctx context.Context, args json.RawMessage) (*
 		return errorResult(explainToolError("Could not resolve the workspace to list its entities.", err, "component"))
 	}
 
-	format := parseResponseFormat(a.ResponseFormat, discoveryResponseFormatDefault)
 	entities := serve.WorkspaceEntityIndex(ctx, tw.root, tw.newView(nil))
 	from, to, more := windowFor(format == responseFormatDetailed, asked).bounds(len(entities))
 	payload := listEntitiesResult{
@@ -385,10 +392,10 @@ func releaseDirectoryCounts(releases []string) []releaseDirectoryCount {
 // answer and, where it carries paths, which of them — and they carry pointers for
 // the reason the entity listing's do.
 type listReleasesArgs struct {
-	WorkspaceRoot  string `json:"workspace_root"`
-	ResponseFormat string `json:"response_format"`
-	Limit          *int   `json:"limit"`
-	Offset         *int   `json:"offset"`
+	WorkspaceRoot  string  `json:"workspace_root"`
+	ResponseFormat *string `json:"response_format"`
+	Limit          *int    `json:"limit"`
+	Offset         *int    `json:"offset"`
 }
 
 // listReleasesResult is the list-releases tool's structured payload: the
@@ -463,6 +470,10 @@ func listReleasesInvoke(s *server, _ context.Context, args json.RawMessage) (*ca
 			return invalidToolArguments("list-releases", err)
 		}
 	}
+	format, refusal := parseResponseFormat("list-releases", a.ResponseFormat, discoveryResponseFormatDefault)
+	if refusal != "" {
+		return errorResult(refusal)
+	}
 	asked, refusal := resolveListingWindow("list-releases", a.Limit, a.Offset)
 	if refusal != "" {
 		return errorResult(refusal)
@@ -472,7 +483,6 @@ func listReleasesInvoke(s *server, _ context.Context, args json.RawMessage) (*ca
 		return errorResult(explainToolError("Could not resolve the workspace to list its Releases.", err, "release"))
 	}
 
-	format := parseResponseFormat(a.ResponseFormat, discoveryResponseFormatDefault)
 	releases := serve.ReleaseCandidates(tw.root)
 	from, to, more := windowFor(format == responseFormatDetailed, asked).bounds(len(releases))
 	payload := listReleasesResult{

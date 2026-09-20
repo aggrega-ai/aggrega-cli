@@ -20,10 +20,16 @@ import (
 
 // buildArgs is the build tool's argument shape.
 type buildArgs struct {
-	Release        string   `json:"release"`
-	WorkspaceRoot  string   `json:"workspace_root"`
-	CatalogDirs    []string `json:"catalog_dirs"`
-	ResponseFormat string   `json:"response_format"`
+	Release       string   `json:"release"`
+	WorkspaceRoot string   `json:"workspace_root"`
+	CatalogDirs   []string `json:"catalog_dirs"`
+
+	// ResponseFormat is a pointer so that a value a caller sent is
+	// distinguishable from one it left out. Every value outside the declared set
+	// is refused, the blank string among them, and only an absent argument takes
+	// the default — so a plain string would make a refused value and an absent one
+	// the same bytes at exactly the point the two have to be told apart.
+	ResponseFormat *string `json:"response_format"`
 
 	// AutoPull resolves the Release's dependencies into the lockfile before the
 	// render, as this build's first step: the same resolution the pull tool
@@ -273,6 +279,15 @@ func buildInvoke(s *server, ctx context.Context, args json.RawMessage) (*callToo
 			return invalidToolArguments("build", err)
 		}
 	}
+	// The answer's shape is read from the arguments alone, before the Release is
+	// resolved and before the fill below reaches a registry and writes a lockfile.
+	// A call this surface is going to refuse for its response format should not pay
+	// for a network round trip and a write first, and it should be answered about
+	// the argument it got wrong rather than about a workspace it never reached.
+	format, formatRefusal := parseResponseFormat("build", a.ResponseFormat, deliveryResponseFormatDefault)
+	if formatRefusal != "" {
+		return errorResult(formatRefusal)
+	}
 	if strings.TrimSpace(a.Release) == "" {
 		return errorResult("build requires a 'release' path")
 	}
@@ -496,8 +511,7 @@ func buildInvoke(s *server, ctx context.Context, args json.RawMessage) (*callToo
 				"then build again.",
 			payload)
 	}
-	detail := parseResponseFormat(a.ResponseFormat, deliveryResponseFormatDefault) == responseFormatDetailed
-	payload.Files = renderedFiles(completed, detail)
+	payload.Files = renderedFiles(completed, format == responseFormatDetailed)
 	text := renderBuildText(payload)
 	return textResult(text, payload)
 }

@@ -111,6 +111,7 @@ func TestDeclaredSchemasStateTheArgumentRulesTheToolsEnforce(t *testing.T) {
 		{"validate", "type without plugin", `{"type":"renderer"}`, false},
 		{"validate", "a blank scope selector", `{"release":""}`, false},
 		{"validate", "a scope selector of the wrong type", `{"release":5}`, false},
+		{"validate", "a response format outside the published set", `{"release":"r.yaml","response_format":"verbose"}`, false},
 
 		// list-entities and list-releases: no subject at all, and a window over the
 		// records they return. The window is the only rule either of them carries,
@@ -128,6 +129,13 @@ func TestDeclaredSchemasStateTheArgumentRulesTheToolsEnforce(t *testing.T) {
 		{"list-entities", "a page past the bound", `{"response_format":"detailed","limit":501}`, false},
 		{"list-entities", "an offset before the start", `{"offset":-1}`, false},
 		{"list-entities", "a page size that is not a whole number", `{"limit":"10"}`, false},
+		// A published enumeration is an exact-match constraint, so a declared value
+		// in another case is a value the schema rejects exactly as an invented one
+		// is — which is why both shapes are measured rather than only the first.
+		{"list-entities", "a response format outside the published set", `{"response_format":"verbose"}`, false},
+		{"list-entities", "a published response format in the wrong case", `{"response_format":"Detailed"}`, false},
+		{"list-entities", "a published response format with whitespace around it", `{"response_format":" detailed "}`, false},
+		{"list-entities", "a blank response format", `{"response_format":""}`, false},
 
 		{"list-releases", "no arguments at all, which is the summary", `{}`, true},
 		{"list-releases", "the paths, bounded by default", `{"response_format":"detailed"}`, true},
@@ -136,6 +144,7 @@ func TestDeclaredSchemasStateTheArgumentRulesTheToolsEnforce(t *testing.T) {
 		{"list-releases", "a page of no paths", `{"response_format":"detailed","limit":0}`, false},
 		{"list-releases", "a page past the bound", `{"response_format":"detailed","limit":501}`, false},
 		{"list-releases", "an offset before the start", `{"offset":-1}`, false},
+		{"list-releases", "a response format outside the published set", `{"response_format":"verbose"}`, false},
 
 		// describe: exactly one subject.
 		{"describe", "catalog-entity mode", `{"name":"core/compute/api-server"}`, true},
@@ -143,6 +152,7 @@ func TestDeclaredSchemasStateTheArgumentRulesTheToolsEnforce(t *testing.T) {
 		{"describe", "no subject", `{}`, false},
 		{"describe", "both subjects", `{"name":"n","release":"r.yaml"}`, false},
 		{"describe", "a blank subject", `{"name":""}`, false},
+		{"describe", "a response format outside the published set", `{"name":"n","response_format":"verbose"}`, false},
 
 		// lint: exactly one subject, with the mode flags alongside.
 		{"lint", "entity mode", `{"entity":"e.yaml"}`, true},
@@ -170,6 +180,7 @@ func TestDeclaredSchemasStateTheArgumentRulesTheToolsEnforce(t *testing.T) {
 		{"build", "a Release", `{"release":"r.yaml"}`, true},
 		{"build", "no Release", `{}`, false},
 		{"build", "a blank Release", `{"release":""}`, false},
+		{"build", "a response format outside the published set", `{"release":"r.yaml","response_format":"verbose"}`, false},
 		{"explain-error", "a diagnostic", `{"message":"parameter contract violated"}`, true},
 		{"explain-error", "no diagnostic", `{}`, false},
 		{"explain-error", "a blank diagnostic", `{"message":""}`, false},

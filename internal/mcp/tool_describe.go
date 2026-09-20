@@ -17,11 +17,17 @@ import (
 // describeArgs is the describe tool's argument shape. Exactly one of name or
 // release selects the subject.
 type describeArgs struct {
-	Name           string   `json:"name"`
-	Release        string   `json:"release"`
-	WorkspaceRoot  string   `json:"workspace_root"`
-	CatalogDirs    []string `json:"catalog_dirs"`
-	ResponseFormat string   `json:"response_format"`
+	Name          string   `json:"name"`
+	Release       string   `json:"release"`
+	WorkspaceRoot string   `json:"workspace_root"`
+	CatalogDirs   []string `json:"catalog_dirs"`
+
+	// ResponseFormat is a pointer so that a value a caller sent is
+	// distinguishable from one it left out. Every value outside the declared set
+	// is refused, the blank string among them, and only an absent argument takes
+	// the default — so a plain string would make a refused value and an absent one
+	// the same bytes at exactly the point the two have to be told apart.
+	ResponseFormat *string `json:"response_format"`
 }
 
 // describeEntityPayload is the structured payload for a catalog entity subject:
@@ -137,7 +143,7 @@ var describeToolSpec = toolSpec{
 		"Release is built FROM, not its shape — the resolved Aggregate and Manifest identities plus every catalog " +
 		"entity and shared library it reaches, with resolved versions. Use `name` to understand a building block " +
 		"before wiring it into an Aggregate, and `release` to see what a Release depends on before building it. " +
-		"`response_format` chooses detailed (full definition / every reference) or concise (identity and counts).",
+		"`response_format` shapes the `release` mode: detailed (every reference) or concise (identity and counts).",
 	workspaceSelectionNote: "Optional `workspace_root` and `catalog_dirs` override discovery.",
 	inputSchema: `{
   "type": "object",
@@ -164,7 +170,7 @@ var describeToolSpec = toolSpec{
     "response_format": {
       "type": "string",
       "enum": ["detailed", "concise"],
-      "description": "detailed returns the full definition or every closure reference; concise returns identity and counts. Defaults to detailed."
+      "description": "detailed returns every closure reference; concise returns identity and counts. Release mode only; defaults to detailed."
     }
   },
   "anyOf": [
@@ -182,6 +188,13 @@ func describeInvoke(s *server, ctx context.Context, args json.RawMessage) (*call
 			return invalidToolArguments("describe", err)
 		}
 	}
+	// Read ahead of the subject, and for both subjects alike: the declared set the
+	// argument carries is the tool's, not one scope's, so a value outside it is a
+	// value this tool does not accept whichever subject the call went on to name.
+	format, refusal := parseResponseFormat("describe", a.ResponseFormat, deliveryResponseFormatDefault)
+	if refusal != "" {
+		return errorResult(refusal)
+	}
 	name := strings.TrimSpace(a.Name)
 	release := strings.TrimSpace(a.Release)
 	switch {
@@ -192,7 +205,7 @@ func describeInvoke(s *server, ctx context.Context, args json.RawMessage) (*call
 	case name != "":
 		return s.describeCatalogEntity(a, name)
 	default:
-		return s.describeRelease(ctx, a, release)
+		return s.describeRelease(ctx, a, release, format)
 	}
 }
 
@@ -236,7 +249,13 @@ func (s *server) describeCatalogEntity(a describeArgs, name string) (*callToolRe
 
 // describeRelease resolves a Release's catalog closure and returns a summary of
 // the entities it reaches.
-func (s *server) describeRelease(ctx context.Context, a describeArgs, release string) (*callToolResult, *rpcError) {
+//
+// It takes the resolved response format rather than reading the argument again:
+// the value was read once, where a value outside the declared set is refused, and
+// a second read here would be a second reading of one argument.
+func (s *server) describeRelease(
+	ctx context.Context, a describeArgs, release, format string,
+) (*callToolResult, *rpcError) {
 	tw, err := s.resolveToolWorkspace(a.WorkspaceRoot, a.CatalogDirs)
 	if err != nil {
 		return errorResult(explainToolError("Could not resolve the workspace for the Release.", err, "release"))
@@ -261,7 +280,7 @@ func (s *server) describeRelease(ctx context.Context, a describeArgs, release st
 			"Could not resolve the Release closure to describe it.", cerr, closureStageKind(cerr.Stage)))
 	}
 
-	detail := parseResponseFormat(a.ResponseFormat, deliveryResponseFormatDefault) == responseFormatDetailed
+	detail := format == responseFormatDetailed
 	// Collected whatever the format, and reported only at the detailed one. The
 	// count is the length of the listing rather than a second traversal, so the two
 	// cannot come to disagree about how many references were reached.

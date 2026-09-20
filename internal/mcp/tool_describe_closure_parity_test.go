@@ -403,9 +403,10 @@ func TestDescribeReleaseCountsSurviveTheConciseFormat(t *testing.T) {
 	}
 
 	s := newTestServer(t)
+	askedFormat := responseFormatConcise
 	res := callTool(t, s, "describe", describeArgs{
 		Release: releasePath, WorkspaceRoot: root, CatalogDirs: []string{catalogDir},
-		ResponseFormat: "concise",
+		ResponseFormat: &askedFormat,
 	})
 	if res.IsError {
 		t.Fatalf("describe (concise) refused: %s", res.Content[0].Text)

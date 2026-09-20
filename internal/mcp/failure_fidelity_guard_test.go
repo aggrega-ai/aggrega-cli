@@ -72,7 +72,11 @@ var proseOnlyFailureReturns = map[string]int{
 	// The third refuses a Release path this session may not name, decided before
 	// the dependency fill and the render. The render failure in this file carries
 	// its payload.
-	"tool_build.go": 3,
+	//
+	// The fourth refuses a response format the tool does not declare. It is read
+	// from the arguments alone, ahead of the dependency fill, so at that return
+	// nothing has resolved and there is no render in hand to carry.
+	"tool_build.go": 4,
 	// The lint tool's argument refusals, and the refusal of a path this session
 	// may not name — raised where the path is resolved and carried back out as an
 	// error so it can be answered in the refusal's own words, since the label on
@@ -104,8 +108,12 @@ var proseOnlyFailureReturns = map[string]int{
 	// Release, the entity, and the plugin binary together with the entity it is
 	// cross-checked against — and description refuses one. Each is decided before
 	// the core behind it runs.
-	"tool_validate.go": 17,
-	"tool_describe.go": 7,
+	//
+	// One entry each is the refusal of a response format the tool does not
+	// declare, read from the arguments alone and ahead of the scope the call goes
+	// on to select, so neither has run anything whose findings it could carry.
+	"tool_validate.go": 18,
+	"tool_describe.go": 8,
 	// Publishing. Whether the push returns a partially-populated result
 	// alongside its error is not established, so whether these lose anything is
 	// unmeasured rather than known.
@@ -154,12 +162,14 @@ var proseOnlyFailureReturns = map[string]int{
 	// dropped there. Carrying the resolved half would not be fidelity; it would be
 	// the loss under another name.
 	//
-	// The workspace description's last two are the two listings refusing a window
-	// they do not serve — a page size outside the range, or a negative start. Both
-	// are read from the arguments alone and ahead of the workspace being resolved,
-	// so at each of them nothing has been walked and no listing exists to carry.
+	// The workspace description's last four are the two listings refusing a window
+	// they do not serve — a page size outside the range, or a negative start — and
+	// the same two listings refusing a response format they do not declare. All
+	// four are read from the arguments alone and ahead of the workspace being
+	// resolved, so at each of them nothing has been walked and no listing exists to
+	// carry.
 	"tool_insertion_point.go": 7,
-	"tool_workspace.go":       4,
+	"tool_workspace.go":       6,
 	"progressive.go":          3,
 	"tools.go":                3,
 }

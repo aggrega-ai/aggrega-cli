@@ -22,14 +22,20 @@ import (
 // only alongside plugin (binary-only declared type); entity alongside plugin is
 // the cross-check Plugin entity, not a single-entity target.
 type validateArgs struct {
-	Release        string   `json:"release"`
-	Entity         string   `json:"entity"`
-	Plugin         string   `json:"plugin"`
-	Type           string   `json:"type"`
-	Catalog        bool     `json:"catalog"`
-	WorkspaceRoot  string   `json:"workspace_root"`
-	CatalogDirs    []string `json:"catalog_dirs"`
-	ResponseFormat string   `json:"response_format"`
+	Release       string   `json:"release"`
+	Entity        string   `json:"entity"`
+	Plugin        string   `json:"plugin"`
+	Type          string   `json:"type"`
+	Catalog       bool     `json:"catalog"`
+	WorkspaceRoot string   `json:"workspace_root"`
+	CatalogDirs   []string `json:"catalog_dirs"`
+
+	// ResponseFormat is a pointer so that a value a caller sent is
+	// distinguishable from one it left out. Every value outside the declared set
+	// is refused, the blank string among them, and only an absent argument takes
+	// the default — so a plain string would make a refused value and an absent one
+	// the same bytes at exactly the point the two have to be told apart.
+	ResponseFormat *string `json:"response_format"`
 }
 
 // validate scope discriminators. Exactly one is reported per call in the
@@ -161,6 +167,15 @@ func validateInvoke(s *server, ctx context.Context, args json.RawMessage) (*call
 			return invalidToolArguments("validate", err)
 		}
 	}
+	// Read ahead of the scope, and for every scope alike. The declared set this
+	// argument carries is the tool's rather than one scope's — the schema
+	// qualifies which scope the value CHANGES anything on, never which scope it
+	// may be sent to — so a value outside that set is one this tool does not
+	// accept whichever scope the call went on to select.
+	format, refusal := parseResponseFormat("validate", a.ResponseFormat, deliveryResponseFormatDefault)
+	if refusal != "" {
+		return errorResult(refusal)
+	}
 	release := strings.TrimSpace(a.Release)
 	entity := strings.TrimSpace(a.Entity)
 	plugin := strings.TrimSpace(a.Plugin)
@@ -194,7 +209,7 @@ func validateInvoke(s *server, ctx context.Context, args json.RawMessage) (*call
 		if a.Catalog {
 			return errorResult("validate takes exactly one scope: 'release' and 'catalog' are mutually exclusive")
 		}
-		return validateReleaseScope(s, ctx, a, release)
+		return validateReleaseScope(s, ctx, a, release, format)
 	}
 
 	// Whole-catalog scope.
@@ -216,7 +231,13 @@ func validateInvoke(s *server, ctx context.Context, args json.RawMessage) (*call
 // validateReleaseScope runs the release-scoped semantic-validation pipeline
 // through the shared compiler-operations layer — the same core the CLI validates
 // a Release with — and reports each diagnostic in gate order.
-func validateReleaseScope(s *server, ctx context.Context, a validateArgs, release string) (*callToolResult, *rpcError) {
+//
+// It takes the resolved response format rather than reading the argument again:
+// the value was read once, where a value outside the declared set is refused, and
+// a second read here would be a second reading of one argument.
+func validateReleaseScope(
+	s *server, ctx context.Context, a validateArgs, release, format string,
+) (*callToolResult, *rpcError) {
 	tw, err := s.resolveToolWorkspace(a.WorkspaceRoot, a.CatalogDirs)
 	if err != nil {
 		return errorResult(explainToolError("Could not resolve the workspace for validation.", err, "release"))
@@ -277,7 +298,7 @@ func validateReleaseScope(s *server, ctx context.Context, a validateArgs, releas
 		Diagnostics: diags,
 		Notices:     releaseAdvisories(vr, lf),
 	}
-	text := renderValidateText(payload, parseResponseFormat(a.ResponseFormat, deliveryResponseFormatDefault))
+	text := renderValidateText(payload, format)
 	return textResult(text, payload)
 }
 

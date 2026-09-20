@@ -224,9 +224,24 @@ const (
 	discoveryResponseFormatDefault = responseFormatConcise
 )
 
-// parseResponseFormat maps a client-supplied response_format value to one of the
-// two supported tokens, falling back to the supplied default for an absent or
-// unrecognized value.
+// parseResponseFormat maps the response_format a call sent to one of the two
+// declared tokens, and reports the correction to hand back when the call named a
+// value the tool does not declare.
+//
+// The match is EXACT. Every tool carrying this argument declares its values as an
+// enumerated set, and an enumerated set is an exact-match constraint: a value the
+// declared schema rejects is refused rather than answered in a shape the caller did
+// not ask for. Matching loosely would leave the declared set false for every
+// spelling the loosening admitted, and silently — an argument quietly substituted
+// reads to its sender exactly like one that was honoured, and here the two outcomes
+// are different answers to different questions. A caller that mistyped is told what
+// it sent and what the argument accepts, which is the correction it needs.
+//
+// The value is a pointer so that a value a caller sent is distinguishable from one
+// it left out. Absent is the tool's own default and is not a failure; every value a
+// caller wrote and the declared set does not carry is refused, the blank string
+// among them. A plain string would make a refused value and an absent one the same
+// bytes at exactly the point the two have to be told apart.
 //
 // The fallback is a parameter rather than a constant in the body because the two
 // classes of tool above disagree about it. A second parser would be a second place
@@ -234,20 +249,29 @@ const (
 // learned about a spelling the other did not; passing the fallback in keeps one
 // reading of what a caller wrote and leaves each caller to name the default its own
 // class declares.
-//
-// Both recognized tokens are matched explicitly. Falling through to the fallback
-// for everything that is not the terse token would quietly answer a caller that
-// asked for the fuller form with the terse one, wherever the terse form is the
-// fallback.
-func parseResponseFormat(v, fallback string) string {
-	switch trimmed := strings.TrimSpace(v); {
-	case strings.EqualFold(trimmed, responseFormatConcise):
-		return responseFormatConcise
-	case strings.EqualFold(trimmed, responseFormatDetailed):
-		return responseFormatDetailed
-	default:
-		return fallback
+func parseResponseFormat(tool string, v *string, fallback string) (format, refusal string) {
+	if v == nil {
+		return fallback, ""
 	}
+	switch *v {
+	case responseFormatConcise:
+		return responseFormatConcise, ""
+	case responseFormatDetailed:
+		return responseFormatDetailed, ""
+	}
+	return fallback, fmt.Sprintf("%s: `response_format` selects the shape of the answer and accepts %s, "+
+		"spelled exactly; %q was sent. Send one of those, or leave `response_format` out for %s.",
+		tool, declaredResponseFormats(), *v, fallback)
+}
+
+// declaredResponseFormats renders the values response_format accepts, for the
+// refusal above to name them in.
+//
+// It reads the same constants the parser matches against, so what a caller is told
+// it may send and what the parser admits are one statement rather than two that
+// agree today.
+func declaredResponseFormats() string {
+	return fmt.Sprintf("%q and %q", responseFormatDetailed, responseFormatConcise)
 }
 
 // textResult builds a successful tool result carrying a human-readable text
