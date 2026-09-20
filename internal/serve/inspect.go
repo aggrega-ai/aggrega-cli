@@ -233,9 +233,9 @@ func (s *Server) unresolvedEntityEnvelope(ctx context.Context, view *catalog.Laz
 	if file, kind, ok := s.workspaceDeclarationOf(ctx, identity); ok {
 		return &jsonRPCError{
 			Code: errEntityNotResolvable,
-			Message: s.skipContext(view, fmt.Sprintf(
-				"%q is declared as a %s by %s, but the catalog resolved no entity for it",
-				name, kind, file)),
+			Message: s.localCatalogContext(s.skipContext(view, fmt.Sprintf(
+				"%q is declared as %s %s by %s, but the catalog resolved no entity for it",
+				name, indefiniteArticle(kind), kind, file))),
 			Data: newErrorData(file, 0, 0),
 		}
 	}
@@ -245,6 +245,55 @@ func (s *Server) unresolvedEntityEnvelope(ctx context.Context, view *catalog.Laz
 			"%q matched no entity of any kind; no document in the workspace declares that name and no "+
 				"catalog tier resolves it", name),
 	}
+}
+
+// localCatalogContext appends the workspace's own account of where it reads
+// local entities from, and what to change so the one that was named is read.
+//
+// It answers the half of "the catalog resolved nothing" that naming the
+// document cannot: a reader looking at the very file the refusal names still
+// has no statement of why it was not read, and the directories a catalog search
+// covers are the fact a reader driving this daemon over a connection has least
+// access to.
+//
+// The sentences are the workspace's rather than this surface's. The one place
+// that composes them is asked for them, so a reader here is told what a reader
+// at a terminal is told, and the empty answer a workspace gives when its reader
+// declared it has no local catalog arrives as an empty string and appends
+// nothing — a diagnostic that argued with that declaration would be worse than
+// one that said nothing. Asking is safe for a request whose subject is not a
+// workspace: the composition answers empty for an absent one.
+//
+// Only the framing is this surface's. The composed account opens with a line
+// break and an indent, which is the shape an error printed to a terminal wants;
+// an envelope message is one line, so it is folded on the way the skips already
+// are.
+func (s *Server) localCatalogContext(msg string) string {
+	note := strings.TrimSpace(s.resolvedWorkspace.LocalCatalogAdviceNote())
+	if note == "" {
+		return msg
+	}
+	return msg + "; " + note
+}
+
+// indefiniteArticle is the article an entity kind takes, so a refusal naming a
+// kind reads as a sentence rather than as a slot with a value dropped into it.
+//
+// Two unexported helpers elsewhere in this module answer the same question for
+// their own callers, and neither is reachable from here: one belongs to the
+// constraint-fact generator, the other to the assistant-facing protocol, where
+// it answers for the decoder's type names rather than for entity kinds. So one
+// rule has three implementations, and that is recorded here rather than left to
+// be rediscovered — the duplication is a reachability fact, not an accident.
+func indefiniteArticle(kind string) string {
+	if kind == "" {
+		return "a"
+	}
+	switch kind[0] {
+	case 'A', 'E', 'I', 'O', 'U', 'a', 'e', 'i', 'o', 'u':
+		return "an"
+	}
+	return "a"
 }
 
 // workspaceDeclarationOf reports the workspace document declaring identity as
