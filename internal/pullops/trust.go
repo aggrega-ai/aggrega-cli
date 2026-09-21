@@ -6,6 +6,7 @@ package pullops
 import (
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/dryrunreport"
@@ -280,28 +281,97 @@ func holdVerdictPluginsToTheirRecord(releasePath string, resolutions []verdictPl
 	return nil
 }
 
+// verdictTrustChangeKind names what a pull did to ONE entry of the record beside
+// the lockfile.
+//
+// The kinds are mutually exclusive and between them cover every way an entry can
+// move, which is what lets a reader be told which change happened rather than
+// only that the file was touched. That distinction is the whole reason the
+// classification exists: this record is the only place a swapped gate is written
+// down, so a reader who is merely told the file moved has nowhere else to find
+// out what moved in it.
+type verdictTrustChangeKind int
+
+const (
+	// verdictTrustRecorded is a plugin the record did not hold: its identity is
+	// written for the first time.
+	verdictTrustRecorded verdictTrustChangeKind = iota
+	// verdictTrustIdentityAdopted is a held entry whose version, digest or both
+	// moved. ONE kind covers both axes because the record is addressed by the
+	// coordinate, which carries neither: whichever field says so, the identity is
+	// no longer the one that was reviewed, and the refusal that guards the same
+	// record treats the two as one event for the same reason.
+	verdictTrustIdentityAdopted
+	// verdictTrustDeprecationRecorded is a held entry whose identity did not move
+	// and which gained, or changed, the deprecation recorded against the artifact
+	// it already names.
+	verdictTrustDeprecationRecorded
+	// verdictTrustDeprecationCleared is a held entry whose identity did not move
+	// and whose recorded deprecation is gone, because a run that asked for the
+	// plugin to be re-resolved found no marker on the bytes the entry records.
+	//
+	// It is reachable only from such a run, and that bound is the record's own
+	// rule rather than a property of this classification: an ordinary pull adds a
+	// marker to an entry it already holds and never clears one, so a deprecation
+	// leaves only with the entry that carried it — either pruned, or replaced by
+	// the re-resolution that asked for it.
+	verdictTrustDeprecationCleared
+	// verdictTrustEntryDropped is an entry nothing accounts for any more, on a run
+	// that asked for it to go.
+	verdictTrustEntryDropped
+)
+
+// verdictTrustChange is one entry's movement: which change it was, the plugin it
+// happened to, and the identity the entry carries after it — plus the identity it
+// carried before, on the one kind where something was replaced.
+//
+// Prior fields are populated only by verdictTrustIdentityAdopted, because they
+// are the only kind where a reader needs both sides to see what was swapped. For
+// every other kind the entry's identity did not move, so naming it once is
+// naming all there is.
+type verdictTrustChange struct {
+	Kind         verdictTrustChangeKind
+	Plugin       string
+	Version      string
+	Digest       string
+	PriorVersion string
+	PriorDigest  string
+}
+
 // verdictTrustOutcome is what a pull works out about the record beside the
 // lockfile, before anything is put on disk: the record as this run would leave
-// it, how many identities it covers, whether its content moved at all, and
-// whether there was no record before this run.
+// it, how many identities it covers, what moved in it, and whether there was no
+// record before this run.
 //
 // Working it out and putting it there are separate steps, for the reason the
 // recipe freeze and the lockfile write are split the same way: a run asked to
 // report what it would write has to reach the same answer the writing run
 // reaches, and a second derivation of that answer would agree today and diverge
-// the first time either moved.
+// the first time either moved. Carrying the per-entry classification here rather
+// than at the write is the same rule one level down — the site that decides what
+// the record becomes is the site that knows what changed, and a writer working it
+// out again from the file would be a second answer to the same question.
 type verdictTrustOutcome struct {
 	Trust      *pluginstrust.Trust
 	Recordable int
-	Changed    bool
+	Changes    []verdictTrustChange
 	Created    bool
 }
+
+// Changed reports whether this pull moves the record's content at all, which is
+// what decides whether anything is written.
+//
+// It is derived from the changes rather than tracked beside them. A flag kept in
+// step by hand would be free to disagree with the list, and the disagreement a
+// reader would meet is exactly the defect the list exists to remove: a write with
+// nothing said about it, or a line about a write that did not happen.
+func (o verdictTrustOutcome) Changed() bool { return len(o.Changes) > 0 }
 
 // recordVerdictPluginTrust writes the plugin identities resolved for a Release's
 // verdict-returning attachments into `plugins-trust.yaml` beside that Release's
 // lockfile, and returns how many identities the record covers.
 //
-// It is [verdictTrustAfterPull] plus the write and the creation notice, which is
+// It is [verdictTrustAfterPull] plus the write and the announcement, which is
 // what [reportVerdictPluginTrust] is without them.
 //
 // Nothing to record and no record yet means no file. A workspace that attaches no
@@ -384,18 +454,75 @@ func recordVerdictPluginTrust(releasePath string, attachments []workspaceconfig.
 	if err != nil {
 		return 0, err
 	}
-	if !outcome.Changed {
+	if !outcome.Changed() {
 		return outcome.Recordable, nil
 	}
 	path := pluginstrust.PathFor(releasePath)
 	if err := pluginstrust.Write(path, outcome.Trust); err != nil {
 		return 0, err
 	}
+	announceVerdictTrustChanges(diagOut, path, outcome)
+	return outcome.Recordable, nil
+}
+
+// announceVerdictTrustChanges says what this pull did to the record beside the
+// lockfile: the file itself, where this run created it, and then one line per
+// entry that moved, naming the plugin and which change it was.
+//
+// # Why every change is said out loud and not only the first
+//
+// Everything a build reproduces byte-for-byte is pinned in the lockfile, so a
+// reader always has a second place to notice one of those moving. A plugin that
+// only returns an accept-or-reject verdict shapes none of those bytes, which is
+// why its identity is recorded here instead — and that leaves this file as the
+// ONLY place any of it is written down. A digest moving under the plugin that
+// decides whether a build is allowed is the most consequential thing this command
+// writes, and there is no second record for a reader to catch it in.
+//
+// # Why it says nothing when nothing moved
+//
+// It is reached only past the write, so a pull that leaves the record exactly as
+// it was arrives here never. That silence is what keeps the line worth reading: a
+// line that fired on every pull would train a reader to skip the one that
+// mattered, which is the same silence this function exists to remove, arrived at
+// from the other side.
+//
+// A run that REPORTS what it would write announces nothing, and that is not an
+// omission either. Each line below states a change the record has undergone, and
+// on a reporting run it has undergone none — the record's own path appears in the
+// report instead, which is where a reader of a preview looks for it.
+//
+// # Why the creation line is not one of the entry kinds
+//
+// It is about the FILE and every other line is about an ENTRY, so a first
+// resolution legitimately says both: this file is new and must be committed, and
+// these are the identities it now holds. They are two events rather than two
+// statements of one, which is why the creation line carries the commit
+// instruction and no entry line repeats it.
+func announceVerdictTrustChanges(diagOut io.Writer, path string, outcome verdictTrustOutcome) {
 	if outcome.Created {
-		fmt.Fprintf(diagOut, "  notice: created %s, recording the plugin identity resolved for each attachment that returns an accept-or-reject verdict; "+
+		fmt.Fprintf(diagOut, "  plugin trust: created %s, recording the plugin identity resolved for each attachment that returns an accept-or-reject verdict; "+
 			"commit it alongside the lockfile, because one shared record is what lets every build hold those attachments to the same plugin identities\n", path)
 	}
-	return outcome.Recordable, nil
+	for _, c := range outcome.Changes {
+		switch c.Kind {
+		case verdictTrustRecorded:
+			fmt.Fprintf(diagOut, "  plugin trust: %s: recorded for the first time, at version %s with digest %s\n",
+				c.Plugin, c.Version, c.Digest)
+		case verdictTrustIdentityAdopted:
+			fmt.Fprintf(diagOut, "  plugin trust: %s: identity adopted, version %s with digest %s replaced by version %s with digest %s\n",
+				c.Plugin, c.PriorVersion, c.PriorDigest, c.Version, c.Digest)
+		case verdictTrustDeprecationRecorded:
+			fmt.Fprintf(diagOut, "  plugin trust: %s: deprecation recorded, against the artifact this entry already names at version %s with digest %s\n",
+				c.Plugin, c.Version, c.Digest)
+		case verdictTrustDeprecationCleared:
+			fmt.Fprintf(diagOut, "  plugin trust: %s: deprecation cleared, from the entry at version %s with digest %s, because re-resolving it found no marker on those bytes\n",
+				c.Plugin, c.Version, c.Digest)
+		case verdictTrustEntryDropped:
+			fmt.Fprintf(diagOut, "  plugin trust: %s: entry dropped, at version %s with digest %s, because nothing attaches it any more\n",
+				c.Plugin, c.Version, c.Digest)
+		}
+	}
 }
 
 // reportVerdictPluginTrust is [recordVerdictPluginTrust] for a run that reports
@@ -403,16 +530,18 @@ func recordVerdictPluginTrust(releasePath string, attachments []workspaceconfig.
 // lockfile, and nil where that write would not have happened at all — the same
 // question the write asks itself, answered from the same outcome.
 //
-// The creation notice is not emitted here, and that is not an omission: it
-// announces a file that now exists, and on a reporting run none was created. The
-// record's own path appears in the report instead, which is where a reader of a
-// preview looks for it.
+// Nothing is announced here, and that is not an omission: every line the write
+// prints states a change the record has undergone — a file that now exists, an
+// identity now recorded, an entry now gone — and on a reporting run it has
+// undergone none. The record's own path appears in the report instead, which is
+// where a reader of a preview looks for it. That this half holds no writer at all
+// is what keeps the distinction from resting on anyone remembering it.
 func reportVerdictPluginTrust(releasePath string, attachments []workspaceconfig.VerdictAttachment, resolutions []verdictPluginResolution, mode catalog.PinReuseMode) (int, *dryrunreport.File, error) {
 	outcome, err := verdictTrustAfterPull(releasePath, attachments, resolutions, mode)
 	if err != nil {
 		return 0, nil, err
 	}
-	if !outcome.Changed {
+	if !outcome.Changed() {
 		return outcome.Recordable, nil, nil
 	}
 	out, merr := pluginstrust.CanonicalBytes(outcome.Trust)
@@ -439,7 +568,7 @@ func verdictTrustAfterPull(releasePath string, attachments []workspaceconfig.Ver
 	// record and nothing to record must end with no file, while a workspace whose
 	// record still holds an entry nothing accounts for must be reached so the entry
 	// can go.
-	changed := false
+	var changes []verdictTrustChange
 	for _, r := range recordable {
 		fresh := pluginstrust.TrustedPlugin{
 			Plugin:          r.Coordinate,
@@ -456,8 +585,18 @@ func verdictTrustAfterPull(releasePath string, attachments []workspaceconfig.Ver
 			// arm the field would be reachable only on a first sighting, and the
 			// ordinary case — a publisher withdrawing an artifact a workspace
 			// already trusts — would never reach it at all.
+			//
+			// The entry's own recorded identity is what the announcement names, not
+			// the resolution's: the record accepts a marker only where the two
+			// digests already agree, so naming the entry's own states what the
+			// reader will find in the file rather than what was resolved.
 			if trust.RecordDeprecation(r.Coordinate, r.Digest, r.Deprecation) {
-				changed = true
+				changes = append(changes, verdictTrustChange{
+					Kind:    verdictTrustDeprecationRecorded,
+					Plugin:  r.Coordinate,
+					Version: held.ResolvedVersion,
+					Digest:  held.Digest,
+				})
 			}
 			continue
 		}
@@ -468,18 +607,68 @@ func verdictTrustAfterPull(releasePath string, attachments []workspaceconfig.Ver
 			continue
 		}
 		trust.Upsert(fresh)
-		changed = true
+		changes = append(changes, classifyVerdictTrustUpsert(held, isHeld, fresh))
 	}
 	accounted, complete := verdictAttachmentCoordinates(attachments, resolutions)
 	for _, coordinate := range trust.Unaccounted(accounted, complete) {
 		if !prunedByThisPull(mode, coordinate) {
 			continue
 		}
+		// Read before the removal, because the identity the entry carried is what
+		// the announcement names and Remove is the last moment it exists.
+		dropped, _ := trust.Find(coordinate)
 		if trust.Remove(coordinate) {
-			changed = true
+			changes = append(changes, verdictTrustChange{
+				Kind:    verdictTrustEntryDropped,
+				Plugin:  coordinate,
+				Version: dropped.ResolvedVersion,
+				Digest:  dropped.Digest,
+			})
 		}
 	}
-	return verdictTrustOutcome{Trust: trust, Recordable: len(recordable), Changed: changed, Created: created}, nil
+	// Ordered by coordinate, which is the order the record itself is written in, so
+	// the lines a reader sees line up with the diff they read next. The two loops
+	// above reach entries in two different orders — the configuration's attachment
+	// order and the record's own — and neither is the written file's, so leaving
+	// them interleaved would put the announcement and the diff in different orders
+	// for no reason a reader could see.
+	sort.SliceStable(changes, func(i, j int) bool { return changes[i].Plugin < changes[j].Plugin })
+	return verdictTrustOutcome{Trust: trust, Recordable: len(recordable), Changes: changes, Created: created}, nil
+}
+
+// classifyVerdictTrustUpsert names which change the replacement of the entry at
+// fresh.Plugin is, given what the record held for that coordinate.
+//
+// It sits beside the decision that performs the replacement rather than beside
+// the write that persists it, because the two sides of the comparison exist only
+// here: once the entry is replaced the record holds one identity, and a writer
+// asking "what moved" would have nothing left to compare against. Re-deriving the
+// answer at the write would also be a second implementation of a question this
+// file answers once.
+//
+// The caller has already ruled out an entry that did not move at all, so the
+// four arms below are exhaustive rather than a default standing in for the cases
+// nobody enumerated.
+func classifyVerdictTrustUpsert(held pluginstrust.TrustedPlugin, isHeld bool, fresh pluginstrust.TrustedPlugin) verdictTrustChange {
+	change := verdictTrustChange{Plugin: fresh.Plugin, Version: fresh.ResolvedVersion, Digest: fresh.Digest}
+	switch {
+	case !isHeld:
+		change.Kind = verdictTrustRecorded
+	case held.ResolvedVersion != fresh.ResolvedVersion || held.Digest != fresh.Digest:
+		change.Kind = verdictTrustIdentityAdopted
+		change.PriorVersion, change.PriorDigest = held.ResolvedVersion, held.Digest
+	case fresh.Deprecation != nil:
+		// The identity is the one already recorded, so what moved is the fact
+		// recorded about the artifact those fields already name.
+		change.Kind = verdictTrustDeprecationRecorded
+	default:
+		// The identity did not move and the fresh resolution carries no marker, so
+		// what the entry loses is the deprecation it held. Reachable only from a
+		// run that asked for this plugin to be re-resolved: every other pull takes
+		// the arm above, which adds a marker and clears none.
+		change.Kind = verdictTrustDeprecationCleared
+	}
+	return change
 }
 
 // reresolvedByThisPull reports whether this pull re-resolves the attachment

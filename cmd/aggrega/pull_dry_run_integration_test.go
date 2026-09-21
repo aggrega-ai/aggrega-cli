@@ -115,9 +115,14 @@ func TestIntegration_PullDryRunCoversEveryFileAPullWrites(t *testing.T) {
 	if !strings.Contains(stdout, "Dry run: 3 files would be written; nothing was written") {
 		t.Errorf("the summary must count all three files; got:\n%s", stdout)
 	}
-	// The creation notice belongs to a file that now exists, and none does.
-	if strings.Contains(diag.String(), "notice: created") {
-		t.Errorf("a reported run created no file, so it must announce no creation:\n%s", diag.String())
+	// Every line a pull says about the identity record states a change the file
+	// has undergone — created, recorded, adopted, dropped — and a reported run
+	// leaves it exactly as it was, so it says none of them. The record's own label
+	// is asserted rather than any one line, because a report that announced a
+	// change it did not make would contradict this flag's whole promise whichever
+	// line it chose.
+	if strings.Contains(diag.String(), "plugin trust:") {
+		t.Errorf("a reported run moved no identity record, so it must announce nothing about one:\n%s", diag.String())
 	}
 
 	if got := readOrAbsent(t, recipePath); !bytes.Equal(got, recipeBefore) {
@@ -157,6 +162,20 @@ func TestIntegration_PullDryRunCoversEveryFileAPullWrites(t *testing.T) {
 	}
 	if _, held := verdicttest.TrustRecordAt(t, releasePath).Find(published.Coordinate); !held {
 		t.Fatalf("the writing run must record the acquired plugin %s", published.Coordinate)
+	}
+	// The other side of the silence above, driven through the same command: the
+	// run that WROTE the record says so, naming the file it created and the
+	// identity it now holds. Asserted here rather than only in a unit test because
+	// this is the one place both runs are driven from the real entry point over
+	// the same workspace — which is what makes the reported run's silence
+	// attributable to the flag rather than to an announcement nothing ever emits.
+	for _, want := range []string{
+		"plugin trust: created",
+		"plugin trust: " + published.Coordinate + ": recorded for the first time",
+	} {
+		if !strings.Contains(writeDiag.String(), want) {
+			t.Errorf("the writing run must announce %q; it said:\n%s", want, writeDiag.String())
+		}
 	}
 
 	// Each reported file is held to the bytes the writing run produced. The

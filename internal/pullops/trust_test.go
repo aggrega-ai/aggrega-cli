@@ -276,8 +276,19 @@ func TestVerdictTrustFillsAMissingEntryAndHoldsAPresentOne(t *testing.T) {
 	if addedRec.Digest != added {
 		t.Errorf("filled entry digest = %s; want %s", addedRec.Digest, added)
 	}
-	if diag.Len() != 0 {
-		t.Errorf("the record already existed, so nothing should announce a creation; diagnostic = %q", diag.String())
+	// What the run says has to match what it did, on both halves at once: the
+	// record already existed, so no creation is announced; the missing entry was
+	// filled, so it is; and the present entry was HELD rather than rewritten, so
+	// naming it would tell a reader its identity had moved when it had not.
+	said := diag.String()
+	if strings.Contains(said, "created") {
+		t.Errorf("the record already existed, so nothing should announce a creation; diagnostic = %q", said)
+	}
+	if !strings.Contains(said, "linter/added-probe: recorded for the first time") {
+		t.Errorf("the entry this pull filled must be announced; diagnostic = %q", said)
+	}
+	if strings.Contains(said, "linter/held-probe") {
+		t.Errorf("the held entry did not move, so announcing it would report a change that did not happen; diagnostic = %q", said)
 	}
 }
 
@@ -1027,6 +1038,264 @@ func TestVerdictTrustPruneEmptiesTheRecordAndLeavesNoNewOne(t *testing.T) {
 			t.Errorf("nothing happened, so nothing should be said; diagnostic = %q", diag.String())
 		}
 	})
+}
+
+// TestVerdictTrustAnnouncesEveryChangeAndOnlyAChange is the invocation half of the
+// reporting rule, and it is a table because the rule is per-change rather than
+// per-file: a pull that says "the record moved" tells a reader nothing they can
+// act on, so each way an entry can move is driven through the real writing path
+// and the line it prints is asserted.
+//
+// Three things make it discriminating rather than merely green:
+//
+//   - Every row asserts what must NOT be said as well as what must. A row that
+//     only checked for its own substring would pass on an announcement that also
+//     named every unchanged plugin, which is the failure mode that turns the line
+//     into a banner.
+//   - The no-change row is the positive control in reverse: it fixes the same
+//     record and the same resolution and requires silence, so no other row can
+//     pass because the announcement fires unconditionally. It also asserts the
+//     file was left byte-identical, so "said nothing" cannot mean "wrote and said
+//     nothing".
+//   - Each row's seeded record is asserted to hold what it claims before the pull
+//     runs, so a row expecting a change to an existing entry cannot pass over a
+//     record that was never there.
+func TestVerdictTrustAnnouncesEveryChangeAndOnlyAChange(t *testing.T) {
+	const subject = "linter/announce-probe"
+	const second = "linter/second-probe"
+	digestA := "sha256:" + strings.Repeat("a", 64)
+	digestB := "sha256:" + strings.Repeat("b", 64)
+	marker := &pluginstrust.Deprecation{Message: "superseded", Severity: "warning"}
+
+	cases := []struct {
+		name        string
+		seed        []pluginstrust.TrustedPlugin
+		attachments []string
+		resolutions []verdictPluginResolution
+		mode        catalog.PinReuseMode
+		wantSilent  bool
+		wantSaid    []string
+		wantNotSaid []string
+	}{
+		{
+			// A first resolution says both things: the file is new and must be
+			// committed, and this is the identity it now holds. Two events, two
+			// lines — the creation line carries the commit instruction and the
+			// entry line carries the identity, and neither repeats the other.
+			name:        "a_first_resolution_names_the_file_and_the_identity",
+			attachments: []string{subject},
+			resolutions: []verdictPluginResolution{{BareURI: subject, Coordinate: subject, Version: "1.0.0", Digest: digestA}},
+			wantSaid: []string{
+				"plugin trust: created", pluginstrust.FileName, "commit",
+				subject + ": recorded for the first time, at version 1.0.0 with digest " + digestA,
+			},
+		},
+		{
+			name:        "a_new_plugin_in_an_existing_record_is_recorded_without_a_creation_line",
+			seed:        []pluginstrust.TrustedPlugin{{Plugin: subject, ResolvedVersion: "1.0.0", Digest: digestA}},
+			attachments: []string{subject, second},
+			resolutions: []verdictPluginResolution{
+				{BareURI: subject, Coordinate: subject, Version: "1.0.0", Digest: digestA},
+				{BareURI: second, Coordinate: second, Version: "2.0.0", Digest: digestB},
+			},
+			wantSaid: []string{second + ": recorded for the first time, at version 2.0.0 with digest " + digestB},
+			// The unchanged entry must not be named, and no file was created.
+			wantNotSaid: []string{"created", subject},
+		},
+		{
+			name:        "a_moved_identity_names_both_sides",
+			seed:        []pluginstrust.TrustedPlugin{{Plugin: subject, ResolvedVersion: "1.0.0", Digest: digestA}},
+			attachments: []string{subject},
+			resolutions: []verdictPluginResolution{{BareURI: subject, Coordinate: subject, Version: "2.0.0", Digest: digestB}},
+			mode:        catalog.PinReuseMode{Upgrade: true, UpgradeTargets: []string{subject}},
+			wantSaid: []string{
+				subject + ": identity adopted, version 1.0.0 with digest " + digestA +
+					" replaced by version 2.0.0 with digest " + digestB,
+			},
+			wantNotSaid: []string{"recorded for the first time", "created"},
+		},
+		{
+			// The ordinary pull that adds a marker to an entry it already holds:
+			// the identity is untouched, so the line says what was added and names
+			// the identity the marker is recorded against.
+			name:        "a_deprecation_recorded_on_a_held_entry_is_said",
+			seed:        []pluginstrust.TrustedPlugin{{Plugin: subject, ResolvedVersion: "1.0.0", Digest: digestA}},
+			attachments: []string{subject},
+			resolutions: []verdictPluginResolution{{BareURI: subject, Coordinate: subject, Version: "1.0.0", Digest: digestA, Deprecation: marker}},
+			wantSaid: []string{
+				subject + ": deprecation recorded, against the artifact this entry already names at version 1.0.0 with digest " + digestA,
+			},
+			wantNotSaid: []string{"identity adopted", "cleared"},
+		},
+		{
+			// The fifth way the record moves, and the one no other row reaches: a
+			// run that asked for this plugin to be re-resolved found the same bytes
+			// and no marker on them, so the entry loses the deprecation it carried
+			// while its identity stays exactly as it was.
+			name:        "a_deprecation_cleared_by_a_re_resolution_is_said",
+			seed:        []pluginstrust.TrustedPlugin{{Plugin: subject, ResolvedVersion: "1.0.0", Digest: digestA, Deprecation: marker}},
+			attachments: []string{subject},
+			resolutions: []verdictPluginResolution{{BareURI: subject, Coordinate: subject, Version: "1.0.0", Digest: digestA}},
+			mode:        catalog.PinReuseMode{Upgrade: true, UpgradeTargets: []string{subject}},
+			wantSaid: []string{
+				subject + ": deprecation cleared, from the entry at version 1.0.0 with digest " + digestA +
+					", because re-resolving it found no marker on those bytes",
+			},
+			wantNotSaid: []string{"identity adopted", "recorded for the first time"},
+		},
+		{
+			name: "a_dropped_entry_names_the_identity_that_went",
+			seed: []pluginstrust.TrustedPlugin{{Plugin: subject, ResolvedVersion: "1.0.0", Digest: digestA}},
+			mode: catalog.PinReuseMode{Upgrade: true, UpgradeTargets: []string{subject}},
+			wantSaid: []string{
+				subject + ": entry dropped, at version 1.0.0 with digest " + digestA + ", because nothing attaches it any more",
+			},
+			wantNotSaid: []string{"created", "identity adopted"},
+		},
+		{
+			// The control. Same record, same resolution, nothing moved — so nothing
+			// is said AND nothing is written. An announcement that fired here would
+			// teach a reader to skip the line that matters.
+			name:        "an_ordinary_pull_that_moves_nothing_says_nothing",
+			seed:        []pluginstrust.TrustedPlugin{{Plugin: subject, ResolvedVersion: "1.0.0", Digest: digestA}},
+			attachments: []string{subject},
+			resolutions: []verdictPluginResolution{{BareURI: subject, Coordinate: subject, Version: "1.0.0", Digest: digestA}},
+			wantSilent:  true,
+		},
+		{
+			// The SECOND silence, and it is a different code path rather than a
+			// restatement of the row above: an ordinary pull holds a recorded entry
+			// without comparing it, while a run that asked for re-resolution compares
+			// what it resolved against what is held and finds them equal. Only this
+			// row reaches that comparison, so without it a defect there would leave
+			// every upgrade announcing a change to a record it left untouched.
+			name:        "a_re_resolution_finding_the_same_identity_says_nothing",
+			seed:        []pluginstrust.TrustedPlugin{{Plugin: subject, ResolvedVersion: "1.0.0", Digest: digestA}},
+			attachments: []string{subject},
+			resolutions: []verdictPluginResolution{{BareURI: subject, Coordinate: subject, Version: "1.0.0", Digest: digestA}},
+			mode:        catalog.PinReuseMode{Upgrade: true, UpgradeTargets: []string{subject}},
+			wantSilent:  true,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			releasePath := filepath.Join(root, "release.yaml")
+			recordPath := pluginstrust.PathFor(releasePath)
+
+			var before []byte
+			if len(tc.seed) > 0 {
+				seed := &pluginstrust.Trust{Version: pluginstrust.CurrentVersion}
+				for _, entry := range tc.seed {
+					seed.Upsert(entry)
+				}
+				if err := pluginstrust.Write(recordPath, seed); err != nil {
+					t.Fatalf("seed record: %v", err)
+				}
+				written := verdicttest.TrustRecordAt(t, releasePath)
+				for _, entry := range tc.seed {
+					held, ok := written.Find(entry.Plugin)
+					if !ok || !held.Equal(entry) {
+						t.Fatalf("the seeded record does not hold %s as written, so this row would be unattributable; it holds %v",
+							entry.Plugin, verdicttest.RecordedCoordinates(written))
+					}
+				}
+				read, rerr := os.ReadFile(recordPath)
+				if rerr != nil {
+					t.Fatalf("read seeded record: %v", rerr)
+				}
+				before = read
+			}
+
+			var diag bytes.Buffer
+			if _, err := recordVerdictPluginTrust(releasePath,
+				attachingVerdictPlugins(tc.attachments...), tc.resolutions, tc.mode, &diag); err != nil {
+				t.Fatalf("recordVerdictPluginTrust: %v", err)
+			}
+			said := diag.String()
+			// The whole announcement, so a failure below reads as "this is what it
+			// said" rather than only "the substring was missing" — the two are
+			// different findings and only the first is actionable.
+			t.Logf("announced:\n%s", said)
+
+			if tc.wantSilent {
+				if said != "" {
+					t.Errorf("nothing moved, so nothing should be said; got %q", said)
+				}
+				after, rerr := os.ReadFile(recordPath)
+				if rerr != nil {
+					t.Fatalf("read record back: %v", rerr)
+				}
+				if !bytes.Equal(before, after) {
+					t.Errorf("nothing was said and yet the record moved; silence must mean the file was left alone")
+				}
+				return
+			}
+
+			if said == "" {
+				t.Fatalf("the record moved and nothing was said about it")
+			}
+			for _, want := range tc.wantSaid {
+				if !strings.Contains(said, want) {
+					t.Errorf("the announcement must say %q; got %q", want, said)
+				}
+			}
+			for _, unwanted := range tc.wantNotSaid {
+				if strings.Contains(said, unwanted) {
+					t.Errorf("the announcement must not say %q; got %q", unwanted, said)
+				}
+			}
+			// Every line is one change, and every line carries the label a reader
+			// scans for. A stray line with another prefix would be a second reporting
+			// home growing beside this one.
+			for _, line := range strings.Split(strings.TrimSuffix(said, "\n"), "\n") {
+				if !strings.HasPrefix(line, "  plugin trust: ") {
+					t.Errorf("every announced line carries the record's own label; got %q", line)
+				}
+			}
+		})
+	}
+}
+
+// TestVerdictTrustAnnouncementHasOneHomeAndNeverFiresOnAReport is the structural
+// half of the rule the table above drives.
+//
+// The announcement is emitted from exactly one place, and that place is the half
+// that WRITES. A line emitted from the reporting half would claim a change to a
+// file a preview leaves untouched — which is the opposite of what a preview
+// promises — and the promise is one a user-visible page now makes, so nothing
+// about it may rest on a reader of this package remembering it.
+//
+// The reporting half additionally holds no writer at all, which is the stronger
+// guarantee: wiring the announcement into it does not compile. This guard catches
+// the step before that — a second announcement growing somewhere else in the
+// package.
+func TestVerdictTrustAnnouncementHasOneHomeAndNeverFiresOnAReport(t *testing.T) {
+	callers := enclosingCallers(t)
+
+	announcers := make([]string, 0, len(callers["pullops.announceVerdictTrustChanges"]))
+	for name := range callers["pullops.announceVerdictTrustChanges"] {
+		announcers = append(announcers, name)
+	}
+	sort.Strings(announcers)
+	if strings.Join(announcers, ",") != "pullops.recordVerdictPluginTrust" {
+		t.Errorf("callers of announceVerdictTrustChanges = %v; want exactly [pullops.recordVerdictPluginTrust]\n"+
+			"the announcement states a change the record has undergone, so it belongs to the half that writes; "+
+			"an empty set names a moved anchor rather than a dropped call, so confirm the function's name before "+
+			"reading this as a regression", announcers)
+	}
+
+	classifiers := make([]string, 0, len(callers["pullops.classifyVerdictTrustUpsert"]))
+	for name := range callers["pullops.classifyVerdictTrustUpsert"] {
+		classifiers = append(classifiers, name)
+	}
+	sort.Strings(classifiers)
+	if strings.Join(classifiers, ",") != "pullops.verdictTrustAfterPull" {
+		t.Errorf("callers of classifyVerdictTrustUpsert = %v; want exactly [pullops.verdictTrustAfterPull]\n"+
+			"what changed is decided where the change is made, because once the entry is replaced the record "+
+			"holds one identity and there is nothing left to compare against", classifiers)
+	}
 }
 
 // TestVerdictAttachmentCoordinatesReportsCompleteness pins the derivation the prune
