@@ -129,8 +129,14 @@ type ResolvedSource struct {
 	// Chart names the chart within a repo-root helm source (spec.Chart), part of
 	// the resolved-source identity so two charts served from one repo root at the
 	// same version resolve distinctly. Empty for a direct .tgz, OCI, compose, or
-	// git source, where the URL alone identifies the artifact.
-	Chart         string `yaml:"chart,omitempty"`
+	// git source, none of which selects a chart within the URL.
+	Chart string `yaml:"chart,omitempty"`
+	// ModuleSubdir names the directory within a git-sourced repository that is the
+	// artifact (spec.ModuleSubdir), part of the resolved-source identity so two
+	// directories of one repository at one commit resolve distinctly. Empty when
+	// the whole repository is the artifact, and for every kind that reaches its
+	// artifact by URL rather than by descending into a clone.
+	ModuleSubdir  string `yaml:"module_subdir,omitempty"`
 	PinnedVersion string `yaml:"pinned_version"`
 	Digest        string `yaml:"digest"`
 	// ResolvedURL is provenance only: the concrete artifact location the authored

@@ -255,10 +255,13 @@ type LibraryConsumer struct {
 }
 
 // SourceArtifact carries a source-artifact pin produced from a Recipe
-// or FeatureRecipe `spec.source` resolution. Identity is the quad
-// {Kind, URL, Chart, PinnedVersion} — URL is the authored identity URL
-// and Chart names the chart within a repo root, so two charts served
-// from one repo root at the same version pin to distinct entries; the
+// or FeatureRecipe `spec.source` resolution. Identity is
+// {Kind, URL, Chart, ModuleSubdir, PinnedVersion} — URL is the authored
+// identity URL, and the two selector terms name whatever the URL alone
+// does not: Chart names the chart within a repo root, so two charts served
+// from one repo root at the same version pin to distinct entries, and
+// ModuleSubdir names the directory within a git-sourced repository, so two
+// directories of one repository at one commit pin to distinct entries. The
 // lockfile dedupes multiple Recipes pinning the same artifact into one
 // entry with multiple ReferencedBy records. Digest verifies the cached
 // archive; Mediatype carries the canonical type the registry advertised.
@@ -285,8 +288,15 @@ type SourceArtifact struct {
 	URL string `yaml:"url"`
 	// Chart names the chart within a repo-root helm source, part of the identity
 	// so two charts served from one repo root at the same version pin distinctly.
-	// Empty (and omitted) for a direct .tgz, OCI, compose, or git source.
-	Chart         string `yaml:"chart,omitempty"`
+	// Empty (and omitted) for a direct .tgz, OCI, compose, or git source, none of
+	// which selects a chart within the URL.
+	Chart string `yaml:"chart,omitempty"`
+	// ModuleSubdir names the directory within a git-sourced repository that is the
+	// artifact, part of the identity so two directories of one repository at one
+	// commit pin distinctly. Empty (and omitted) when the whole repository is the
+	// artifact, and for every kind that reaches its artifact by URL rather than by
+	// descending into a clone.
+	ModuleSubdir  string `yaml:"module_subdir,omitempty"`
 	PinnedVersion string `yaml:"pinned_version"`
 	Digest        string `yaml:"digest"`
 	// ResolvedURL is provenance only: the concrete artifact location the authored

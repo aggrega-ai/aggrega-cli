@@ -114,7 +114,7 @@ func (a *adapter) Resolve(ctx context.Context, spec sourceresolver.SourceSpec) (
 	}
 	archiveBytes := buf.Bytes()
 	digest := archive.Digest(archiveBytes)
-	slot, err := cacheslot.Slot(spec.WorkspaceRoot, spec.CacheDir, Kind, spec.URL, "", spec.Version, digest)
+	slot, err := cacheslot.Slot(spec.WorkspaceRoot, spec.CacheDir, Kind, spec.URL, "", "", spec.Version, digest)
 	if err != nil {
 		return nil, fmt.Errorf("compose-https-fragment: %w", err)
 	}

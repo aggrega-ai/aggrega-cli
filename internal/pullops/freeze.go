@@ -43,6 +43,7 @@ func freezeRecipePins(lazyView *catalog.LazyLookup, entities []closure.ResolvedR
 			Kind:           sa.Kind,
 			URL:            sa.URL,
 			Chart:          sa.Chart,
+			ModuleSubdir:   sa.ModuleSubdir,
 			Version:        sa.PinnedVersion,
 			Digest:         sa.Digest,
 			ManifestDigest: sa.ManifestDigest,

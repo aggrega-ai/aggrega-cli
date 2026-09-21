@@ -21,6 +21,7 @@ func TestSlotShape(t *testing.T) {
 		"helm-oci-chart",
 		"oci://hub.aggrega.ai/charts/mariadb",
 		"",
+		"",
 		"25.0.8",
 		"sha256:abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
 	)
@@ -37,15 +38,66 @@ func TestSlotShape(t *testing.T) {
 	}
 }
 
+// TestSlotSeparatesGitModuleSubdirectories pins the property that two
+// directories of one repository, at one commit, occupy distinct cache slots.
+// The digest differs between them in practice, so the assertion holds the
+// digest CONSTANT: that isolates the subdirectory as the only varying term and
+// fails if the subdirectory stops reaching the slot path, which a differing
+// digest would otherwise mask.
+func TestSlotSeparatesGitModuleSubdirectories(t *testing.T) {
+	t.Parallel()
+	const (
+		url    = "git://git.example.com/infra/modules.git"
+		commit = "b149cd9719865f0afdb19df745c5458c2cd45cc8"
+		dg     = "sha256:abcdef0123456789"
+	)
+	alpha, err := cacheslot.Slot("/ws", ".aggrega/cache", "terraform-module-git",
+		url, "", "modules/alpha", commit, dg)
+	if err != nil {
+		t.Fatalf("Slot alpha: %v", err)
+	}
+	beta, err := cacheslot.Slot("/ws", ".aggrega/cache", "terraform-module-git",
+		url, "", "modules/beta", commit, dg)
+	if err != nil {
+		t.Fatalf("Slot beta: %v", err)
+	}
+	if alpha == beta {
+		t.Errorf("two module subdirectories collapsed onto one slot: %s", alpha)
+	}
+
+	// An empty subdirectory must leave every other kind's layout untouched.
+	whole, err := cacheslot.Slot("/ws", ".aggrega/cache", "terraform-module-git",
+		url, "", "", commit, dg)
+	if err != nil {
+		t.Fatalf("Slot whole: %v", err)
+	}
+	if want := filepath.Join("/ws", ".aggrega/cache", "source-artifacts",
+		"terraform-module-git", "git.example.com", "infra/modules.git",
+		commit, "abcdef012345"); whole != want {
+		t.Errorf("empty module subdirectory changed the slot layout:\n  got  %s\n  want %s", whole, want)
+	}
+
+	// A relative component must not steer the slot out of the cache root.
+	escaped, err := cacheslot.Slot("/ws", ".aggrega/cache", "terraform-module-git",
+		url, "", "../../../etc", commit, dg)
+	if err != nil {
+		t.Fatalf("Slot escaped: %v", err)
+	}
+	root := cacheslot.SourceArtifactsRoot("/ws", ".aggrega/cache")
+	if !strings.HasPrefix(escaped, root+string(filepath.Separator)) {
+		t.Errorf("module subdirectory steered the slot outside %s: %s", root, escaped)
+	}
+}
+
 func TestSlotDeterministic(t *testing.T) {
 	t.Parallel()
 	a, err := cacheslot.Slot("/ws", ".aggrega/cache", "helm-https-chart",
-		"https://charts.example.com/mariadb-25.0.8.tgz", "", "25.0.8", "sha256:abcdef0123456789")
+		"https://charts.example.com/mariadb-25.0.8.tgz", "", "", "25.0.8", "sha256:abcdef0123456789")
 	if err != nil {
 		t.Fatalf("Slot a: %v", err)
 	}
 	b, err := cacheslot.Slot("/ws", ".aggrega/cache", "helm-https-chart",
-		"https://charts.example.com/mariadb-25.0.8.tgz", "", "25.0.8", "sha256:abcdef0123456789")
+		"https://charts.example.com/mariadb-25.0.8.tgz", "", "", "25.0.8", "sha256:abcdef0123456789")
 	if err != nil {
 		t.Fatalf("Slot b: %v", err)
 	}
@@ -57,7 +109,7 @@ func TestSlotDeterministic(t *testing.T) {
 func TestSlotURLPathPercentEncoded(t *testing.T) {
 	t.Parallel()
 	got, err := cacheslot.Slot("/ws", ".aggrega/cache", "compose-https-fragment",
-		"https://example.com/some path/with spaces.yaml", "", "1.0.0", "sha256:deadbeef")
+		"https://example.com/some path/with spaces.yaml", "", "", "1.0.0", "sha256:deadbeef")
 	if err != nil {
 		t.Fatalf("Slot: %v", err)
 	}
@@ -75,12 +127,12 @@ func TestSlotURLPathPercentEncoded(t *testing.T) {
 func TestSlotStripsUserinfoFromHost(t *testing.T) {
 	t.Parallel()
 	clean, err := cacheslot.Slot("/ws", ".aggrega/cache", "helm-oci-chart",
-		"oci://hub.aggrega.ai/charts/mariadb", "", "25.0.8", "sha256:abcdef0123456789")
+		"oci://hub.aggrega.ai/charts/mariadb", "", "", "25.0.8", "sha256:abcdef0123456789")
 	if err != nil {
 		t.Fatalf("Slot clean: %v", err)
 	}
 	withCreds, err := cacheslot.Slot("/ws", ".aggrega/cache", "helm-oci-chart",
-		"oci://user:pw@hub.aggrega.ai/charts/mariadb", "", "25.0.8", "sha256:abcdef0123456789")
+		"oci://user:pw@hub.aggrega.ai/charts/mariadb", "", "", "25.0.8", "sha256:abcdef0123456789")
 	if err != nil {
 		t.Fatalf("Slot withCreds: %v", err)
 	}
@@ -95,7 +147,7 @@ func TestSlotStripsUserinfoFromHost(t *testing.T) {
 func TestSlotEmptyWorkspaceRootRejected(t *testing.T) {
 	t.Parallel()
 	_, err := cacheslot.Slot("", ".aggrega/cache", "helm-oci-chart",
-		"oci://hub.aggrega.ai/charts/mariadb", "", "25.0.8", "sha256:abcd")
+		"oci://hub.aggrega.ai/charts/mariadb", "", "", "25.0.8", "sha256:abcd")
 	if err == nil {
 		t.Fatal("expected error for empty workspaceRoot; got nil")
 	}
@@ -108,7 +160,7 @@ func TestWriteBlobAndMetadataPopulatesSlot(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	slot, err := cacheslot.Slot(root, ".aggrega/cache", "compose-https-fragment",
-		"https://example.com/fragment.yaml", "", "1.0.0", "sha256:deadbeefcafedeadbeefcafedeadbeefcafedeadbeefcafedeadbeefcafedead")
+		"https://example.com/fragment.yaml", "", "", "1.0.0", "sha256:deadbeefcafedeadbeefcafedeadbeefcafedeadbeefcafedeadbeefcafedead")
 	if err != nil {
 		t.Fatalf("Slot: %v", err)
 	}

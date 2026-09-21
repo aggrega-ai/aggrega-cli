@@ -160,13 +160,14 @@ func DescendRecipeSources(
 				ref.RequestedRef = spec.Ref
 			}
 
-			key := identityKey(resolved.Kind, resolved.URL, resolved.Chart, resolved.PinnedVersion)
+			key := identityKey(resolved.Kind, resolved.URL, resolved.Chart, resolved.ModuleSubdir, resolved.PinnedVersion)
 			sa, exists := dedupe[key]
 			if !exists {
 				sa = &SourceArtifact{
 					Kind:           resolved.Kind,
 					URL:            resolved.URL,
 					Chart:          resolved.Chart,
+					ModuleSubdir:   resolved.ModuleSubdir,
 					PinnedVersion:  resolved.PinnedVersion,
 					Digest:         resolved.Digest,
 					ManifestDigest: resolved.ManifestDigest,
@@ -205,6 +206,9 @@ func DescendRecipeSources(
 		}
 		if a.Chart != b.Chart {
 			return a.Chart < b.Chart
+		}
+		if a.ModuleSubdir != b.ModuleSubdir {
+			return a.ModuleSubdir < b.ModuleSubdir
 		}
 		return a.PinnedVersion < b.PinnedVersion
 	})
@@ -734,12 +738,17 @@ func isKnownKind(kind string) bool {
 	}
 }
 
-// identityKey returns the dedupe key for a SourceArtifact: the
-// quad {Kind, URL, Chart, PinnedVersion}. URL is the authored identity
-// URL and Chart names the chart within a repo root, so two charts served
-// from one repo root at the same version key distinctly. Two artifacts
-// sharing the quad merge into a single lockfile entry with multiple
-// ReferencedBy records.
-func identityKey(kind, url, chart, version string) string {
-	return kind + "\x00" + url + "\x00" + chart + "\x00" + version
+// identityKey returns the dedupe key for a SourceArtifact:
+// {Kind, URL, Chart, ModuleSubdir, PinnedVersion}. URL is the authored
+// identity URL; the two selector terms name whatever the URL alone does not.
+// Chart names the chart within a repo root, so two charts served from one repo
+// root at the same version key distinctly; moduleSubdir names the directory
+// within a git-sourced repository, so two directories of one repository at one
+// commit key distinctly. Two artifacts sharing every term merge into a single
+// lockfile entry with multiple ReferencedBy records.
+//
+// The terms are joined on a separator no term can contain, so no combination of
+// values can spell another combination's key.
+func identityKey(kind, url, chart, moduleSubdir, version string) string {
+	return kind + "\x00" + url + "\x00" + chart + "\x00" + moduleSubdir + "\x00" + version
 }

@@ -64,9 +64,10 @@ type Closure struct {
 
 // SourceArtifact mirrors lockfile.SourceArtifact field-for-field;
 // the lockfile writer copies the closure value into the lockfile
-// type at orchestrator integration time. Identity is the quad
-// {Kind, URL, Chart, PinnedVersion} — URL is the authored identity URL
-// and Chart names the chart within a repo root; multiple Recipes
+// type at orchestrator integration time. Identity is
+// {Kind, URL, Chart, ModuleSubdir, PinnedVersion} — URL is the authored
+// identity URL, Chart names the chart within a repo root, and ModuleSubdir
+// names the directory within a git-sourced repository; multiple Recipes
 // pinning the same artifact dedupe to one SourceArtifact with multiple
 // ReferencedBy records. ResolvedURL is provenance only (the concrete
 // .tgz a repo-root helm source resolved to), never part of identity.
@@ -74,6 +75,7 @@ type SourceArtifact struct {
 	Kind           string
 	URL            string
 	Chart          string
+	ModuleSubdir   string
 	PinnedVersion  string
 	Digest         string
 	ManifestDigest string
@@ -235,6 +237,7 @@ type ResolvedSource struct {
 	Kind           string
 	URL            string
 	Chart          string
+	ModuleSubdir   string
 	PinnedVersion  string
 	Digest         string
 	ManifestDigest string

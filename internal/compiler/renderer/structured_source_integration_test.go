@@ -168,7 +168,7 @@ func integrationDigest(b []byte) string {
 
 func seedIntegrationCacheSlot(t *testing.T, workspaceRoot, kind, url, version string, blob []byte, digest string) {
 	t.Helper()
-	slot := sourcecache.SlotPath(workspaceRoot, ".aggrega/cache", kind, url, "", version, digest)
+	slot := sourcecache.SlotPath(workspaceRoot, ".aggrega/cache", kind, url, "", "", version, digest)
 	if err := os.MkdirAll(slot, 0o755); err != nil {
 		t.Fatalf("mkdir slot: %v", err)
 	}

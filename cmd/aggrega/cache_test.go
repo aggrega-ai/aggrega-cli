@@ -57,7 +57,7 @@ func writeEntitySlot(t *testing.T, wsRoot, uri, version string, blob []byte) (st
 // and returns the slot dir. The recorded digest is dg.
 func writeSourceSlot(t *testing.T, wsRoot, kind, srcURL, version, dg string, blob []byte) string {
 	t.Helper()
-	slot, err := cacheslot.Slot(wsRoot, cacheTestCacheDir, kind, srcURL, "", version, dg)
+	slot, err := cacheslot.Slot(wsRoot, cacheTestCacheDir, kind, srcURL, "", "", version, dg)
 	if err != nil {
 		t.Fatalf("Slot: %v", err)
 	}

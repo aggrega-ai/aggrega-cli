@@ -198,6 +198,9 @@ func canonicalise(lf *Lockfile) *Lockfile {
 		if a.Chart != b.Chart {
 			return a.Chart < b.Chart
 		}
+		if a.ModuleSubdir != b.ModuleSubdir {
+			return a.ModuleSubdir < b.ModuleSubdir
+		}
 		return a.PinnedVersion < b.PinnedVersion
 	})
 

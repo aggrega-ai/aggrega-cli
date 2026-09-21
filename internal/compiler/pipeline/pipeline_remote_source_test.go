@@ -71,7 +71,7 @@ func remoteSrcDigest(b []byte) string {
 
 func seedChartCache(t *testing.T, root string, blob []byte, digest string) {
 	t.Helper()
-	slot := sourcecache.SlotPath(root, ".aggrega/cache", remoteSrcKind, remoteSrcURL, "", remoteSrcVersion, digest)
+	slot := sourcecache.SlotPath(root, ".aggrega/cache", remoteSrcKind, remoteSrcURL, "", "", remoteSrcVersion, digest)
 	if err := os.MkdirAll(slot, 0o755); err != nil {
 		t.Fatalf("mkdir slot: %v", err)
 	}

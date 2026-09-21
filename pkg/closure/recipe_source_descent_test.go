@@ -57,13 +57,27 @@ func (f *fakeSourceResolver) Resolve(spec closure.SourceSpec) (*closure.Resolved
 	if remap, ok := f.pinTo[spec.URL+"@"+spec.Version]; ok {
 		pinned = remap
 	}
+	// Carry the selector knobs through the way every production adapter does, and
+	// let them move the digest: two directories of one repository at one commit
+	// hold different bytes, so a double that returned one digest for both would
+	// model a shape production cannot produce. The suffix is appended only when a
+	// knob is set, so every fixture that sets neither keeps its existing digest.
+	selector := ""
+	if spec.Chart != "" {
+		selector += "-" + spec.Chart
+	}
+	if spec.ModuleSubdir != "" {
+		selector += "-" + spec.ModuleSubdir
+	}
 	return &closure.ResolvedSource{
 		Kind:           spec.Kind,
 		URL:            spec.URL,
+		Chart:          spec.Chart,
+		ModuleSubdir:   spec.ModuleSubdir,
 		PinnedVersion:  pinned,
-		Digest:         "sha256:fake-" + pinned,
+		Digest:         "sha256:fake-" + pinned + selector,
 		Mediatype:      mediatypeFor(spec.Kind),
-		CachePath:      "/tmp/fake-cache/" + pinned + "/blob.tgz",
+		CachePath:      "/tmp/fake-cache/" + pinned + selector + "/blob.tgz",
 		OriginalSource: spec.OriginalSource,
 	}, nil
 }
@@ -533,6 +547,81 @@ func TestDescendDedupesIdenticalSources(t *testing.T) {
 	}
 	if len(got[0].ReferencedBy) != 2 {
 		t.Errorf("ReferencedBy: %d; want 2", len(got[0].ReferencedBy))
+	}
+}
+
+// TestDescendKeepsGitModuleSubdirectoriesDistinct is the regression guard for a
+// silent wrong-output defect: two recipes naming two directories of one
+// repository at one commit produced a single artifact, so whichever resolved
+// first supplied the content for both — with a clean build and no warning.
+// The assertion is on the artifact COUNT and on the per-artifact digest,
+// because the collapse discarded the second resolution's digest while keeping
+// its back-pointer, which is what made the build look correct.
+func TestDescendKeepsGitModuleSubdirectoriesDistinct(t *testing.T) {
+	t.Parallel()
+	const (
+		repo   = "https://example.com/infra.git"
+		commit = "abc123def456abc123def456abc123def456abc1"
+	)
+	alphaURI := "hub.aggrega.ai/recipe/terraform/alpha:1.0.0"
+	betaURI := "hub.aggrega.ai/recipe/terraform/beta:1.0.0"
+	mk := func(subdir string) map[string]any {
+		return map[string]any{
+			"kind":          "terraform-module-git",
+			"url":           repo,
+			"version":       commit,
+			"ref":           commit,
+			"module_subdir": subdir,
+		}
+	}
+	loader := &fakeRecipeLoader{recipes: map[string]*types.Recipe{
+		alphaURI: makeRecipe(alphaURI, mk("modules/alpha")),
+		betaURI:  makeRecipe(betaURI, mk("modules/beta")),
+	}}
+	cl := closure.Closure{Entities: []closure.ResolvedRef{{URI: alphaURI}, {URI: betaURI}}}
+	got, err := closure.DescendRecipeSources(usedFromClosure(cl), cl, loader, &fakeSourceResolver{}, "/ws", ".aggrega/cache")
+	if err != nil {
+		t.Fatalf("DescendRecipeSources: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("artifacts: %d; want 2 — two module subdirectories are two artifacts", len(got))
+	}
+	bySubdir := map[string]closure.SourceArtifact{}
+	for _, sa := range got {
+		if sa.ModuleSubdir == "" {
+			t.Errorf("artifact for %s lost its module subdirectory", sa.URL)
+		}
+		bySubdir[sa.ModuleSubdir] = sa
+	}
+	for _, want := range []string{"modules/alpha", "modules/beta"} {
+		sa, ok := bySubdir[want]
+		if !ok {
+			t.Fatalf("no artifact pinned for %s; got %v", want, bySubdir)
+		}
+		if len(sa.ReferencedBy) != 1 {
+			t.Errorf("%s ReferencedBy: %d; want 1", want, len(sa.ReferencedBy))
+		}
+	}
+	if a, b := bySubdir["modules/alpha"], bySubdir["modules/beta"]; a.Digest == b.Digest {
+		t.Errorf("both subdirectories pinned the same digest %q — one is serving the other's bytes", a.Digest)
+	}
+
+	// The positive control: identical sources must still dedupe, so the guard
+	// above is proving the subdirectory is read rather than that dedupe broke.
+	same := mk("modules/alpha")
+	loaderSame := &fakeRecipeLoader{recipes: map[string]*types.Recipe{
+		alphaURI: makeRecipe(alphaURI, same),
+		betaURI:  makeRecipe(betaURI, same),
+	}}
+	gotSame, err := closure.DescendRecipeSources(usedFromClosure(cl), cl, loaderSame, &fakeSourceResolver{}, "/ws", ".aggrega/cache")
+	if err != nil {
+		t.Fatalf("DescendRecipeSources (control): %v", err)
+	}
+	if len(gotSame) != 1 {
+		t.Fatalf("control artifacts: %d; want 1 — one subdirectory named twice is one artifact", len(gotSame))
+	}
+	if len(gotSame[0].ReferencedBy) != 2 {
+		t.Errorf("control ReferencedBy: %d; want 2", len(gotSame[0].ReferencedBy))
 	}
 }
 

@@ -104,6 +104,12 @@ func (a *adapter) Kind() string { return Kind }
 // commit SHA, not the original ref. The original ref is preserved
 // in OriginalSource for lockfile-side `requested_ref:` recording.
 //
+// spec.ModuleSubdir selects which directory of the repository is the artifact,
+// so it is carried into the returned ResolvedSource and into the cache slot
+// alongside the URL and the commit: two directories of one repository at one
+// commit are two artifacts, and keying them on the URL and commit alone would
+// resolve both to whichever was fetched first.
+//
 // ctx reaches the clone itself, which is the long operation here: go-git
 // abandons an in-flight transfer when it ends, so a caller that stops
 // waiting also stops the download. The temp directory is removed on the
@@ -159,7 +165,7 @@ func (a *adapter) Resolve(ctx context.Context, spec sourceresolver.SourceSpec) (
 	}
 	digest := archive.Digest(archiveBytes)
 	commitSHA := hash.String()
-	slot, err := cacheslot.Slot(spec.WorkspaceRoot, spec.CacheDir, Kind, spec.URL, "", commitSHA, digest)
+	slot, err := cacheslot.Slot(spec.WorkspaceRoot, spec.CacheDir, Kind, spec.URL, "", spec.ModuleSubdir, commitSHA, digest)
 	if err != nil {
 		return nil, fmt.Errorf("terraform-module-git: %w", err)
 	}
@@ -173,6 +179,7 @@ func (a *adapter) Resolve(ctx context.Context, spec sourceresolver.SourceSpec) (
 	return &sourceresolver.ResolvedSource{
 		Kind:           Kind,
 		URL:            spec.URL,
+		ModuleSubdir:   spec.ModuleSubdir,
 		PinnedVersion:  commitSHA,
 		Digest:         digest,
 		Mediatype:      MediatypeTarGz,

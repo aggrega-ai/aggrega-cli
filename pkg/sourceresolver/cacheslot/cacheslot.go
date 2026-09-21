@@ -9,12 +9,16 @@
 //
 // Slot layout (under the workspace's configured cache directory):
 //
-//	<workspaceRoot>/<cacheDir>/source-artifacts/<kind>/<host>/<path>/<chart>/<version>/<digest-prefix>/
+//	<workspaceRoot>/<cacheDir>/source-artifacts/<kind>/<host>/<path>/<chart>/<module-subdir>/<version>/<digest-prefix>/
 //
 // The <chart> segment is present only for a repo-root helm source (where the
 // URL path is the repository root and the chart name distinguishes artifacts
-// served from it); it is dropped for kinds that pass an empty chart, keeping
-// their slot layout unchanged. The blob lives at <slot>/blob.tgz and the metadata at
+// served from it); the <module-subdir> segment only for a git source that names
+// a directory within the cloned repository. Both are dropped for kinds that pass
+// them empty, keeping those kinds' slot layout unchanged. The two are separate
+// segments rather than one shared one because they answer the same question for
+// different kinds and a single segment would make one kind's slot path readable
+// as the other's. The blob lives at <slot>/blob.tgz and the metadata at
 // <slot>/metadata.yaml. The extracted/ subdirectory is regenerated
 // on every build read by a downstream cache layer (the rebuild
 // discipline lives outside this package).
@@ -71,23 +75,53 @@ var errEmptyWorkspaceRoot = cerrors.Register("empty-workspace-root", cerrors.Met
 // chart is the chart name for a repo-root helm source; it becomes an
 // intermediate path segment so two charts served from one repo root at the same
 // version occupy distinct slots. An empty chart is dropped by filepath.Join, so
-// kinds that identify by URL alone (a direct .tgz, OCI, compose, git) keep the
+// kinds that identify by URL alone (a direct .tgz, OCI, compose) keep the
 // slot layout they had before chart entered the identity.
+//
+// moduleSubdir is the directory within a git-sourced repository that is the
+// artifact; it becomes its own intermediate segment so two directories of one
+// repository at one commit occupy distinct slots. Its segments are
+// percent-escaped the way URL-path segments are, which also keeps a relative
+// component in an authored subdirectory from steering the slot outside the
+// cache root. An empty moduleSubdir is dropped, so every other kind's layout is
+// unchanged.
 //
 // Returns a wrapped ErrEmptyWorkspaceRoot when workspaceRoot is
 // empty; callers that legitimately want a CWD-relative slot must
 // pass "." explicitly.
-func Slot(workspaceRoot, cacheDir, kind, sourceURL, chart, version, digest string) (string, error) {
+func Slot(workspaceRoot, cacheDir, kind, sourceURL, chart, moduleSubdir, version, digest string) (string, error) {
 	if workspaceRoot == "" {
-		return "", fmt.Errorf("%w (kind=%s url=%s chart=%s version=%s)",
-			ErrEmptyWorkspaceRoot(), kind, sourceURL, chart, version)
+		return "", fmt.Errorf("%w (kind=%s url=%s chart=%s module_subdir=%s version=%s)",
+			ErrEmptyWorkspaceRoot(), kind, sourceURL, chart, moduleSubdir, version)
 	}
 	host, urlPath := splitURL(sourceURL)
 	prefix := digestPrefix(digest)
 	return filepath.Join(
 		SourceArtifactsRoot(workspaceRoot, cacheDir),
-		kind, host, urlPath, chart, version, prefix,
+		kind, host, urlPath, chart, escapeRelPath(moduleSubdir), version, prefix,
 	), nil
+}
+
+// escapeRelPath percent-escapes each segment of a slash-separated relative path
+// so it contributes exactly as many directory levels as it has segments and no
+// segment can be a traversal step. Empty input returns empty, which
+// filepath.Join drops.
+func escapeRelPath(rel string) string {
+	if rel == "" {
+		return ""
+	}
+	segments := strings.Split(strings.Trim(rel, "/"), "/")
+	encoded := make([]string, 0, len(segments))
+	for _, seg := range segments {
+		if seg == "" {
+			continue
+		}
+		encoded = append(encoded, url.PathEscape(seg))
+	}
+	if len(encoded) == 0 {
+		return ""
+	}
+	return path.Join(encoded...)
 }
 
 // SourceArtifactsRoot returns the root of the source-artifact subtree of

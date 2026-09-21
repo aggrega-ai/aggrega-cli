@@ -1302,6 +1302,7 @@ func buildLockfile(releasePath string, cl closure.Closure, toolchain *lockfile.T
 			Kind:           s.Kind,
 			URL:            s.URL,
 			Chart:          s.Chart,
+			ModuleSubdir:   s.ModuleSubdir,
 			PinnedVersion:  s.PinnedVersion,
 			Digest:         s.Digest,
 			ManifestDigest: s.ManifestDigest,

@@ -39,7 +39,8 @@ import (
 // only the spec.sourceDigests and spec.artifactDigests blocks and carrying every
 // other byte of the file through verbatim. Both pin lists are sorted to a
 // canonical order before comparison and emission (sourceDigests by
-// {kind, url, chart, version}, artifactDigests by name) so the write is deterministic.
+// {kind, url, chart, moduleSubdir, version}, artifactDigests by name) so the write
+// is deterministic.
 //
 // The edit is a line-range splice, not a document re-marshal: the original bytes
 // are parsed only to locate the spec mapping and the pin blocks' extents, then
@@ -291,10 +292,11 @@ func artifactImportLoadError(path string, cause error, entityKind, entityName, a
 }
 
 // MatchSourcePin returns the recipe-carried source pin for the identity
-// {kind, url, chart, version}, and whether one is present.
-func MatchSourcePin(pins []types.SourceDigest, kind, url, chart, version string) (types.SourceDigest, bool) {
+// {kind, url, chart, moduleSubdir, version}, and whether one is present.
+func MatchSourcePin(pins []types.SourceDigest, kind, url, chart, moduleSubdir, version string) (types.SourceDigest, bool) {
 	for _, p := range pins {
-		if p.Kind == kind && p.URL == url && p.Chart == chart && p.Version == version {
+		if p.Kind == kind && p.URL == url && p.Chart == chart &&
+			p.ModuleSubdir == moduleSubdir && p.Version == version {
 			return p, true
 		}
 	}
@@ -322,6 +324,9 @@ func sortSourcePins(p []types.SourceDigest) {
 		}
 		if p[i].Chart != p[j].Chart {
 			return p[i].Chart < p[j].Chart
+		}
+		if p[i].ModuleSubdir != p[j].ModuleSubdir {
+			return p[i].ModuleSubdir < p[j].ModuleSubdir
 		}
 		return p[i].Version < p[j].Version
 	})

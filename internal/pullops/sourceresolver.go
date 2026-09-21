@@ -71,6 +71,7 @@ func (s sourceResolverShim) Resolve(spec closure.SourceSpec) (*closure.ResolvedS
 		Kind:           rs.Kind,
 		URL:            rs.URL,
 		Chart:          rs.Chart,
+		ModuleSubdir:   rs.ModuleSubdir,
 		PinnedVersion:  rs.PinnedVersion,
 		Digest:         rs.Digest,
 		ManifestDigest: rs.ManifestDigest,

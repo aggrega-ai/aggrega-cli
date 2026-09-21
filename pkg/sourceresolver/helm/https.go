@@ -154,7 +154,7 @@ func (a *httpsAdapter) Resolve(ctx context.Context, spec sourceresolver.SourceSp
 	}
 	body := buf.Bytes()
 	digest := archive.Digest(body)
-	slot, err := cacheslot.Slot(spec.WorkspaceRoot, spec.CacheDir, KindHTTPS, spec.URL, spec.Chart, spec.Version, digest)
+	slot, err := cacheslot.Slot(spec.WorkspaceRoot, spec.CacheDir, KindHTTPS, spec.URL, spec.Chart, "", spec.Version, digest)
 	if err != nil {
 		return nil, fmt.Errorf("helm-https-chart: %w", err)
 	}

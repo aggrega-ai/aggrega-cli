@@ -219,11 +219,18 @@ func TestArtifactPinsForRecipeHashesImportsSkipsInline(t *testing.T) {
 
 func TestMatchHelpers(t *testing.T) {
 	src := []types.SourceDigest{{Kind: "helm-https-chart", URL: "u", Version: "1.0.0", Digest: "d"}}
-	if _, ok := recipepin.MatchSourcePin(src, "helm-https-chart", "u", "", "1.0.0"); !ok {
+	if _, ok := recipepin.MatchSourcePin(src, "helm-https-chart", "u", "", "", "1.0.0"); !ok {
 		t.Errorf("MatchSourcePin should find the pin")
 	}
-	if _, ok := recipepin.MatchSourcePin(src, "helm-https-chart", "u", "", "2.0.0"); ok {
+	if _, ok := recipepin.MatchSourcePin(src, "helm-https-chart", "u", "", "", "2.0.0"); ok {
 		t.Errorf("MatchSourcePin should not match a different version")
+	}
+	gitSrc := []types.SourceDigest{
+		{Kind: "terraform-module-git", URL: "g", ModuleSubdir: "modules/alpha", Version: "sha", Digest: "da"},
+		{Kind: "terraform-module-git", URL: "g", ModuleSubdir: "modules/beta", Version: "sha", Digest: "db"},
+	}
+	if p, ok := recipepin.MatchSourcePin(gitSrc, "terraform-module-git", "g", "", "modules/beta", "sha"); !ok || p.Digest != "db" {
+		t.Errorf("MatchSourcePin should select the pin for the named module subdirectory; got %+v ok=%v", p, ok)
 	}
 	art := []types.ArtifactDigest{{Name: "x.yaml", Digest: "d"}}
 	if _, ok := recipepin.MatchArtifactPin(art, "x.yaml"); !ok {

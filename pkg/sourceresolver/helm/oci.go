@@ -109,7 +109,7 @@ func (a *ociAdapter) Resolve(ctx context.Context, spec sourceresolver.SourceSpec
 	}
 
 	digest := archive.Digest(result.Bytes)
-	slot, err := cacheslot.Slot(spec.WorkspaceRoot, spec.CacheDir, KindOCI, spec.URL, "", spec.Version, digest)
+	slot, err := cacheslot.Slot(spec.WorkspaceRoot, spec.CacheDir, KindOCI, spec.URL, "", "", spec.Version, digest)
 	if err != nil {
 		return nil, fmt.Errorf("helm-oci-chart: %w", err)
 	}
