@@ -1470,7 +1470,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		state.hydratedFacts = result.HydratedView
 		// The emitted retention and its presentation travel the same way, and for a
 		// narrower reason: a node's own emission is recorded by this orchestrator
-		// directly, so what these reach is the carrier an attachment's render is
+		// directly, so what these reach is the owner an attachment's render is
 		// given, which is built from this state and must carry both stages' products.
 		state.emitted = input.emitted
 		state.emittedFacts = result.EmittedView
@@ -1987,7 +1987,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// are adjacent because the rule reads that retention: recording anywhere
 		// else would leave the rule asked about a set that is not this node's.
 		//
-		// This is the one place the question is asked for this carrier. The two
+		// This is the one place the question is asked for this owner. The two
 		// hand-written detections it replaces ran earlier in this walk — one after
 		// workload synthesis, one after the own-scope pipeline — and the inputs that
 		// halt are unchanged, because the pipeline rebuilds every file it was given

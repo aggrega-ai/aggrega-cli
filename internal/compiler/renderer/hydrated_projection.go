@@ -54,7 +54,7 @@ type valuesMappingRefs struct {
 // entry's template text before anything evaluates it.
 //
 // Every field is a value already read out of the state. None of them is a
-// carrier the state can be walked back out of, which is the property that keeps
+// handle the state can be walked back out of, which is the property that keeps
 // this a projection: a reader holding one of these can answer the declared
 // questions and can reach nothing else.
 type hydratedProjection struct {
@@ -129,8 +129,8 @@ type hydratedProjection struct {
 // entities carry one: a component's Recipe, the FeatureRecipe an attachment binds
 // on a node, and the FeatureRecipe an operator attaches at a boundary. The same
 // holds for the source and the workload a render reads its pillars from. So the
-// state one render reaches is retained under the CARRIER it was authored
-// against, and the three carriers are three key spaces rather than one.
+// state one render reaches is retained under the OWNER it was authored
+// against, and the three owners are three key spaces rather than one.
 //
 // The separation is not filing. An attachment's render runs under the host
 // component's node identity over documents the FeatureRecipe declares, so a
@@ -139,8 +139,8 @@ type hydratedProjection struct {
 // wherever the host carries it, and refusing a legitimate one wherever the host
 // does not. Both directions are wrong and neither is visible from the outcome.
 //
-// The two attachment carriers are held in separate maps under separate key types
-// rather than in one map under a carrier discriminator. A boundary-rooted
+// The two attachment owners are held in separate maps under separate key types
+// rather than in one map under an owner discriminator. A boundary-rooted
 // identity is then unable to be written into a node-rooted key at all, which is a
 // property of the types rather than of a discriminator being set correctly at
 // every write.
@@ -252,7 +252,7 @@ type boundaryAttachmentProjection struct {
 
 // hydratedProjections is one render's retained set of those projections, keyed
 // by node and, for what an attachment's render reaches, by that attachment's
-// carrier.
+// owner.
 //
 // It is installed once per render and lives for the whole of it. The per-node
 // projections are written as each node's state completes, the per-attachment ones
@@ -331,7 +331,7 @@ func (h *hydratedProjections) recordNode(state *PhaseBState) {
 // It is called from the node walk, once per attachment whose mapping produced an
 // overlay, rather than where the attachment's own render completes: the mapping
 // is evaluated in the host node's Phase A and the attachment's render is a
-// separate walk that never sees it. The carrier is still the attachment's,
+// separate walk that never sees it. The owner is still the attachment's,
 // because the mapping is that attachment's FeatureRecipe's and two attachments on
 // one node answer independently.
 //
@@ -359,7 +359,7 @@ func (h *hydratedProjections) recordAttachmentInjectMappingMechanisms(
 // A nil set records nothing, and that is what keeps the attachment-carried
 // artifacts flowing through the same walk out of a fact declared over a node's
 // own Recipe: an attachment's render is given no node retention, so this is not
-// reached for it. Those entries are recorded against their own carrier instead,
+// reached for it. Those entries are recorded against their own owner instead,
 // through the seam below.
 func (h *hydratedProjections) recordArtifactTemplate(nodeID, outputName, text string) {
 	if h == nil {
@@ -493,16 +493,16 @@ func (h *hydratedProjections) recordedNodes() int {
 	return len(h.byNode)
 }
 
-// attachmentCarrier is everything one attachment's render does under the carrier
+// attachmentOwner is everything one attachment's render does under the owner
 // that attachment was declared against: what it records, and what the rule
-// declared over that carrier's facts is asked about.
+// declared over that owner's facts is asked about.
 //
 // It exists because the render path that produces those values is one path
-// reached from two carriers: the same function renders an attachment declared on
+// reached from two owners: the same function renders an attachment declared on
 // a node and one declared at a boundary, and it cannot tell which from anything
 // it holds. The node identity it carries is the HOST component's for the first
 // and a composite marker built for dispatch uniqueness for the second, so neither
-// is the carrier. Handing that path a carrier its caller built is what supplies
+// is the owner. Handing that path an owner its caller built is what supplies
 // the identity without the path having to decide it — and it makes writing a
 // boundary-rooted identity into a node-rooted key impossible rather than merely
 // unintended.
@@ -516,19 +516,19 @@ func (h *hydratedProjections) recordedNodes() int {
 //
 // # It spans two stages, because the identity problem it solves is one problem
 //
-// The carrier answers which attachment a render belongs to, and that question has
+// The owner answers which attachment a render belongs to, and that question has
 // the same two answers whichever stage's facts are being recorded. So the mid-render
 // state this render reached and the file set it went on to emit are recorded through
-// ONE carrier rather than through two built at the same site from the same knowledge.
-// A second carrier for the emitted stage would be a second answer to "which
+// ONE owner rather than through two built at the same site from the same knowledge.
+// A second owner for the emitted stage would be a second answer to "which
 // attachment is this", free to disagree with the first — and disagreement here files
 // one document's emission under another document's key, which is exactly the
-// mis-keying the carrier exists to prevent.
+// mis-keying the owner exists to prevent.
 //
-// The key reports are therefore named for the carrier rather than for either stage's
+// The key reports are therefore named for the owner rather than for either stage's
 // content: one method answering "which attachment" serves every stage that keys a
 // fact there.
-type attachmentCarrier interface {
+type attachmentOwner interface {
 	// recordPillars reduces one attachment render's completed mid-render state to
 	// the projection that outlives it.
 	recordPillars(state *PhaseBState)
@@ -543,7 +543,7 @@ type attachmentCarrier interface {
 	// resolves to.
 	//
 	// It is called only where the walk resolved a form that carries a pin, so a
-	// carrier reaching this at all is a carrier for which a comparison is owed.
+	// owner reaching this at all is an owner for which a comparison is owed.
 	recordArtifactContentPin(outputName, pin string)
 
 	// recordArtifactImportedPath retains the file one artifact of this
@@ -551,11 +551,11 @@ type attachmentCarrier interface {
 	// entry resolves to.
 	//
 	// It is called only where the walk resolved the entry from an imported file,
-	// so a carrier reaching this at all is one whose entry names a file to open.
+	// so an owner reaching this at all is one whose entry names a file to open.
 	recordArtifactImportedPath(outputName, path string)
 
 	// recordEmission reduces this attachment render's completed emitted file set to
-	// the projection that outlives it, under this carrier's own key.
+	// the projection that outlives it, under this owner's own key.
 	//
 	// It is a separate act from recordPillars rather than folded into it, because
 	// the two are complete at different points of one render: the pillars once the
@@ -563,60 +563,60 @@ type attachmentCarrier interface {
 	// only after every pass that can contribute a file has run.
 	recordEmission(state *PhaseBState)
 
-	// readableFacts reports the presentation a rule over this carrier reads, and
-	// refuses a presentation standing over no retention. Every carrier gets it
+	// readableFacts reports the presentation a rule over this owner reads, and
+	// refuses a presentation standing over no retention. Every owner gets it
 	// from the inputs it embeds.
 	readableFacts(findingFile, outputName string) (constraint.HydratedView, error)
 
 	// readableEmittedFacts reports the emitted-stage presentation a rule over this
-	// carrier reads, and refuses a presentation standing over no retention, on the
+	// owner reads, and refuses a presentation standing over no retention, on the
 	// same reading readableFacts follows for the stage before it.
 	readableEmittedFacts(findingFile string) (constraint.EmittedView, error)
 
-	// emittedAxes reports the coordinate axes a rule over this carrier is invoked
+	// emittedAxes reports the coordinate axes a rule over this owner is invoked
 	// over, read from the same retention the presentation answers from.
 	//
-	// It comes from the carrier rather than from the render's own state because an
+	// It comes from the owner rather than from the render's own state because an
 	// attachment's render builds a FRESH state around a synthesized Recipe and
-	// carries none of the render-wide products on it: the carrier is the one thing
+	// carries none of the render-wide products on it: the owner is the one thing
 	// that travels into that render holding them. Reading the axis anywhere else
 	// would leave a rule with a presentation and nothing to invoke it over, which is
 	// a rule invoked zero times.
 	emittedAxes() *emittedStageCoordinates
 
-	// nodeAttachmentCarrierKey reports the node-rooted key this carrier is, and
-	// false for a carrier rooted elsewhere.
-	nodeAttachmentCarrierKey() (nodeAttachmentKey, bool)
+	// nodeAttachmentOwnerKey reports the node-rooted key this owner is, and
+	// false for an owner rooted elsewhere.
+	nodeAttachmentOwnerKey() (nodeAttachmentKey, bool)
 
-	// boundaryAttachmentCarrierKey reports the boundary-rooted key this carrier is,
-	// and false for a carrier rooted elsewhere.
-	boundaryAttachmentCarrierKey() (boundaryAttachmentKey, bool)
+	// boundaryAttachmentOwnerKey reports the boundary-rooted key this owner is,
+	// and false for an owner rooted elsewhere.
+	boundaryAttachmentOwnerKey() (boundaryAttachmentKey, bool)
 }
 
 // The two key reports above are a pair of narrow questions rather than one method
-// that invokes the carrier's rule, and the reason is what the framework's own
+// that invokes the owner's rule, and the reason is what the framework's own
 // coverage read can see.
 //
 // That read resolves a call to a declaration and follows nothing through a value —
 // not a method on a receiver, and not an interface. A rule invoked behind either is
 // therefore attributed to no calling surface, so the placement table would report
 // it as invoked and reachable from nowhere, with no row saying which rule was
-// missing. Asking the carrier which key it is, and naming both traversals in one
+// missing. Asking the owner which key it is, and naming both traversals in one
 // function the walk calls directly, keeps the invocation legible to the instrument
 // whose whole subject is where a rule is enforced.
 //
-// Each carrier answers exactly one of the two, and a carrier answering neither is
+// Each owner answers exactly one of the two, and an owner answering neither is
 // refused loudly where the pair is read rather than passing as nothing to check.
 
-// attachmentCarrierInputs are the two products every carrier works through: the
+// attachmentOwnerInputs are the two products every owner works through: the
 // retention it records into, and the presentation over that retention a rule
 // reads.
 //
 // They are held together because they are one arrangement: the walk that records
-// a carrier's facts is exactly the walk that may read them, and a carrier holding
+// an owner's facts is exactly the walk that may read them, and an owner holding
 // one without the other is what the guard below refuses.
-type attachmentCarrierInputs struct {
-	// into is the render's own retention, shared by every carrier of that render.
+type attachmentOwnerInputs struct {
+	// into is the render's own retention, shared by every owner of that render.
 	into *hydratedProjections
 
 	// facts presents that retention as named facts. nil for a render that
@@ -625,7 +625,7 @@ type attachmentCarrierInputs struct {
 	facts constraint.HydratedView
 
 	// emittedInto is the render's own emitted-file retention, shared by every
-	// carrier of that render exactly as into is.
+	// owner of that render exactly as into is.
 	//
 	// It is a second retention rather than a second field on the first, because the
 	// two are declared at two stages: what a stage retains is derived from what it
@@ -651,12 +651,12 @@ type attachmentCarrierInputs struct {
 	callerPresentationSupplied bool
 }
 
-// readableFacts reports the presentation a carrier's rule reads, and refuses the
+// readableFacts reports the presentation an owner's rule reads, and refuses the
 // one arrangement that would let such a rule admit every entry it was asked about.
 //
 // The two absences are different questions, on the same reading the node's own
 // value states about its own pair. An absent presentation says this render
-// published none, and nothing then reads this carrier's pillar facts — a state
+// published none, and nothing then reads this owner's pillar facts — a state
 // only a caller assembling a render's input directly reaches, and one no pillar
 // reading covers, since the hand-written arms that once stood in for it are gone.
 // An absent retention beneath a
@@ -667,12 +667,12 @@ type attachmentCarrierInputs struct {
 // indistinguishable from approval to any reader downstream.
 //
 // The condition is unreachable while the retention and the presentation are
-// installed together at the one site that builds a carrier; the halt is what makes
+// installed together at the one site that builds an owner; the halt is what makes
 // that an enforced guarantee rather than an arrangement a later change could
 // quietly undo. Its wording says the fault is the compiler's rather than the
 // author's, because the halt carries a catalog category and no category attributes
 // a fault to the compiler reaching a check without its inputs.
-func (i attachmentCarrierInputs) readableFacts(
+func (i attachmentOwnerInputs) readableFacts(
 	findingFile, outputName string,
 ) (constraint.HydratedView, error) {
 	if i.facts == nil {
@@ -688,7 +688,7 @@ func (i attachmentCarrierInputs) readableFacts(
 	return i.facts, nil
 }
 
-// readableEmittedFacts reports the emitted-stage presentation a carrier's rule reads,
+// readableEmittedFacts reports the emitted-stage presentation an owner's rule reads,
 // and refuses the one arrangement that would let such a rule admit every emission it
 // was asked about.
 //
@@ -704,7 +704,7 @@ func (i attachmentCarrierInputs) readableFacts(
 // It takes no output name because the emitted rule is invoked per name from an
 // enumeration rather than at a walk that holds one, so the wording names the
 // FeatureRecipe rather than a single entry.
-func (i attachmentCarrierInputs) readableEmittedFacts(
+func (i attachmentOwnerInputs) readableEmittedFacts(
 	findingFile string,
 ) (constraint.EmittedView, error) {
 	if i.emittedFacts == nil {
@@ -727,37 +727,37 @@ func (i attachmentCarrierInputs) readableEmittedFacts(
 	return i.emittedFacts, nil
 }
 
-// emittedAxes presents this carrier's retention as the coordinate axes a rule over it
+// emittedAxes presents this owner's retention as the coordinate axes a rule over it
 // is invoked across.
 //
 // It reads the retention the presentation answers from, so the names a rule is
 // invoked over and the names its facts are keyed by come from one reader. A nil
 // retention yields nil, which the caller separates from an ordinary skip.
-func (i attachmentCarrierInputs) emittedAxes() *emittedStageCoordinates {
+func (i attachmentOwnerInputs) emittedAxes() *emittedStageCoordinates {
 	return i.emittedInto.coordinates()
 }
 
-// nodeAttachmentCarrier is the carrier of an attachment declared on a node.
-type nodeAttachmentCarrier struct {
-	attachmentCarrierInputs
+// nodeAttachmentOwner is the owner of an attachment declared on a node.
+type nodeAttachmentOwner struct {
+	attachmentOwnerInputs
 	key nodeAttachmentKey
 }
 
-// boundaryAttachmentCarrier is the carrier of an attachment declared at a
+// boundaryAttachmentOwner is the owner of an attachment declared at a
 // boundary.
-type boundaryAttachmentCarrier struct {
-	attachmentCarrierInputs
+type boundaryAttachmentOwner struct {
+	attachmentOwnerInputs
 	key boundaryAttachmentKey
 }
 
-// carrierProducts are the two stages' products every carrier works through, taken
-// off the state that builds the carrier.
+// ownerProducts are the two stages' products every owner works through, taken
+// off the state that builds the owner.
 //
 // They are ONE parameter rather than four, and that is what makes a half-supplied
-// carrier hard to write rather than merely discouraged: a call site cannot pass the
+// owner hard to write rather than merely discouraged: a call site cannot pass the
 // mid-render pair and forget the emitted pair, because there is one value to pass and
 // one site that assembles it.
-type carrierProducts struct {
+type ownerProducts struct {
 	// hydrated is the render's mid-render retention and hydratedFacts the
 	// presentation over it.
 	hydrated      *hydratedProjections
@@ -774,16 +774,16 @@ type carrierProducts struct {
 	callerPresentationSupplied bool
 }
 
-// carrierProductsOf reads both stages' products off a node's own state.
+// ownerProductsOf reads both stages' products off a node's own state.
 //
-// It is the one place the four are gathered, so a carrier built for an attachment on
+// It is the one place the four are gathered, so an owner built for an attachment on
 // a node and one built for a boundary-scope attachment cannot be given different
 // subsets of them.
-func carrierProductsOf(state *PhaseBState) carrierProducts {
+func ownerProductsOf(state *PhaseBState) ownerProducts {
 	if state == nil {
-		return carrierProducts{}
+		return ownerProducts{}
 	}
-	return carrierProducts{
+	return ownerProducts{
 		hydrated:                   state.hydrated,
 		hydratedFacts:              state.hydratedFacts,
 		emitted:                    state.emitted,
@@ -792,9 +792,9 @@ func carrierProductsOf(state *PhaseBState) carrierProducts {
 	}
 }
 
-// inputs reduces the products to what a carrier embeds.
-func (p carrierProducts) inputs() attachmentCarrierInputs {
-	return attachmentCarrierInputs{
+// inputs reduces the products to what an owner embeds.
+func (p ownerProducts) inputs() attachmentOwnerInputs {
+	return attachmentOwnerInputs{
 		into:                       p.hydrated,
 		facts:                      p.hydratedFacts,
 		emittedInto:                p.emitted,
@@ -803,30 +803,30 @@ func (p carrierProducts) inputs() attachmentCarrierInputs {
 	}
 }
 
-// attachmentOnNode returns the carrier of one attachment's render on a node,
+// attachmentOnNode returns the owner of one attachment's render on a node,
 // reading and recording through this render's retentions and the presentations over
 // them.
 //
-// A nil retention yields a carrier that records nothing, which is the state of a
+// A nil retention yields an owner that records nothing, which is the state of a
 // render whose caller assembled its own input; so does a nil presentation, and the
-// two are separate conditions the carrier keeps apart.
-func (p carrierProducts) attachmentOnNode(node, attachment string) attachmentCarrier {
-	return nodeAttachmentCarrier{
-		attachmentCarrierInputs: p.inputs(),
-		key:                     nodeAttachmentKey{node: node, attachment: attachment},
+// two are separate conditions the owner keeps apart.
+func (p ownerProducts) attachmentOnNode(node, attachment string) attachmentOwner {
+	return nodeAttachmentOwner{
+		attachmentOwnerInputs: p.inputs(),
+		key:                   nodeAttachmentKey{node: node, attachment: attachment},
 	}
 }
 
-// attachmentOnBoundary returns the carrier of one boundary-scope attachment's
+// attachmentOnBoundary returns the owner of one boundary-scope attachment's
 // render.
-func (p carrierProducts) attachmentOnBoundary(boundary, attachment string) attachmentCarrier {
-	return boundaryAttachmentCarrier{
-		attachmentCarrierInputs: p.inputs(),
-		key:                     boundaryAttachmentKey{boundary: boundary, attachment: attachment},
+func (p ownerProducts) attachmentOnBoundary(boundary, attachment string) attachmentOwner {
+	return boundaryAttachmentOwner{
+		attachmentOwnerInputs: p.inputs(),
+		key:                   boundaryAttachmentKey{boundary: boundary, attachment: attachment},
 	}
 }
 
-func (r nodeAttachmentCarrier) recordPillars(state *PhaseBState) {
+func (r nodeAttachmentOwner) recordPillars(state *PhaseBState) {
 	h := r.into
 	if h == nil || state == nil {
 		return
@@ -840,7 +840,7 @@ func (r nodeAttachmentCarrier) recordPillars(state *PhaseBState) {
 	p.AttachmentParsedWorkloadPresent = workloadPresent
 }
 
-func (r nodeAttachmentCarrier) recordArtifactTemplate(outputName, text string) {
+func (r nodeAttachmentOwner) recordArtifactTemplate(outputName, text string) {
 	h := r.into
 	if h == nil {
 		return
@@ -850,7 +850,7 @@ func (r nodeAttachmentCarrier) recordArtifactTemplate(outputName, text string) {
 	h.nodeAttachmentEntry(r.key).AttachmentArtifactTemplateText.Set(outputName, text)
 }
 
-func (r nodeAttachmentCarrier) recordArtifactContentPin(outputName, pin string) {
+func (r nodeAttachmentOwner) recordArtifactContentPin(outputName, pin string) {
 	h := r.into
 	if h == nil {
 		return
@@ -860,7 +860,7 @@ func (r nodeAttachmentCarrier) recordArtifactContentPin(outputName, pin string) 
 	h.nodeAttachmentEntry(r.key).AttachmentArtifactRecordedContentPin.Set(outputName, pin)
 }
 
-func (r nodeAttachmentCarrier) recordArtifactImportedPath(outputName, path string) {
+func (r nodeAttachmentOwner) recordArtifactImportedPath(outputName, path string) {
 	h := r.into
 	if h == nil {
 		return
@@ -870,11 +870,11 @@ func (r nodeAttachmentCarrier) recordArtifactImportedPath(outputName, path strin
 	h.nodeAttachmentEntry(r.key).AttachmentArtifactImportedPath.Set(outputName, path)
 }
 
-func (r nodeAttachmentCarrier) recordEmission(state *PhaseBState) {
+func (r nodeAttachmentOwner) recordEmission(state *PhaseBState) {
 	r.emittedInto.recordNodeAttachment(r.key, state)
 }
 
-func (r boundaryAttachmentCarrier) recordPillars(state *PhaseBState) {
+func (r boundaryAttachmentOwner) recordPillars(state *PhaseBState) {
 	h := r.into
 	if h == nil || state == nil {
 		return
@@ -888,7 +888,7 @@ func (r boundaryAttachmentCarrier) recordPillars(state *PhaseBState) {
 	p.BoundaryAttachmentParsedWorkloadPresent = workloadPresent
 }
 
-func (r boundaryAttachmentCarrier) recordArtifactTemplate(outputName, text string) {
+func (r boundaryAttachmentOwner) recordArtifactTemplate(outputName, text string) {
 	h := r.into
 	if h == nil {
 		return
@@ -898,7 +898,7 @@ func (r boundaryAttachmentCarrier) recordArtifactTemplate(outputName, text strin
 	h.boundaryAttachmentEntry(r.key).BoundaryAttachmentArtifactTemplateText.Set(outputName, text)
 }
 
-func (r boundaryAttachmentCarrier) recordArtifactContentPin(outputName, pin string) {
+func (r boundaryAttachmentOwner) recordArtifactContentPin(outputName, pin string) {
 	h := r.into
 	if h == nil {
 		return
@@ -908,7 +908,7 @@ func (r boundaryAttachmentCarrier) recordArtifactContentPin(outputName, pin stri
 	h.boundaryAttachmentEntry(r.key).BoundaryAttachmentArtifactRecordedContentPin.Set(outputName, pin)
 }
 
-func (r boundaryAttachmentCarrier) recordArtifactImportedPath(outputName, path string) {
+func (r boundaryAttachmentOwner) recordArtifactImportedPath(outputName, path string) {
 	h := r.into
 	if h == nil {
 		return
@@ -918,31 +918,31 @@ func (r boundaryAttachmentCarrier) recordArtifactImportedPath(outputName, path s
 	h.boundaryAttachmentEntry(r.key).BoundaryAttachmentArtifactImportedPath.Set(outputName, path)
 }
 
-func (r boundaryAttachmentCarrier) recordEmission(state *PhaseBState) {
+func (r boundaryAttachmentOwner) recordEmission(state *PhaseBState) {
 	r.emittedInto.recordBoundaryAttachment(r.key, state)
 }
 
-// nodeAttachmentCarrierKey reports this carrier's own key.
-func (r nodeAttachmentCarrier) nodeAttachmentCarrierKey() (nodeAttachmentKey, bool) {
+// nodeAttachmentOwnerKey reports this owner's own key.
+func (r nodeAttachmentOwner) nodeAttachmentOwnerKey() (nodeAttachmentKey, bool) {
 	return r.key, true
 }
 
-// boundaryAttachmentCarrierKey reports that this carrier is not boundary-rooted.
-func (r nodeAttachmentCarrier) boundaryAttachmentCarrierKey() (boundaryAttachmentKey, bool) {
+// boundaryAttachmentOwnerKey reports that this owner is not boundary-rooted.
+func (r nodeAttachmentOwner) boundaryAttachmentOwnerKey() (boundaryAttachmentKey, bool) {
 	return boundaryAttachmentKey{}, false
 }
 
-// nodeAttachmentCarrierKey reports that this carrier is not node-rooted.
-func (r boundaryAttachmentCarrier) nodeAttachmentCarrierKey() (nodeAttachmentKey, bool) {
+// nodeAttachmentOwnerKey reports that this owner is not node-rooted.
+func (r boundaryAttachmentOwner) nodeAttachmentOwnerKey() (nodeAttachmentKey, bool) {
 	return nodeAttachmentKey{}, false
 }
 
-// boundaryAttachmentCarrierKey reports this carrier's own key.
-func (r boundaryAttachmentCarrier) boundaryAttachmentCarrierKey() (boundaryAttachmentKey, bool) {
+// boundaryAttachmentOwnerKey reports this owner's own key.
+func (r boundaryAttachmentOwner) boundaryAttachmentOwnerKey() (boundaryAttachmentKey, bool) {
 	return r.key, true
 }
 
-// nodeAttachmentEntry returns the entry one carrier's values are recorded into,
+// nodeAttachmentEntry returns the entry one owner's values are recorded into,
 // creating it on first write.
 //
 // The pillars and the artifact texts are recorded at two different points of one
@@ -958,7 +958,7 @@ func (h *hydratedProjections) nodeAttachmentEntry(key nodeAttachmentKey) *nodeAt
 	return p
 }
 
-// boundaryAttachmentEntry returns the entry one boundary-scope carrier's values
+// boundaryAttachmentEntry returns the entry one boundary-scope owner's values
 // are recorded into, creating it on first write. The caller holds the lock.
 func (h *hydratedProjections) boundaryAttachmentEntry(
 	key boundaryAttachmentKey,
@@ -972,7 +972,7 @@ func (h *hydratedProjections) boundaryAttachmentEntry(
 }
 
 // nodeAttachmentProjectionOf returns one node-carried attachment's retained
-// projection, and reports whether that carrier was recorded.
+// projection, and reports whether that owner was recorded.
 func (h *hydratedProjections) nodeAttachmentProjectionOf(
 	key nodeAttachmentKey,
 ) (nodeAttachmentProjection, bool) {
@@ -989,7 +989,7 @@ func (h *hydratedProjections) nodeAttachmentProjectionOf(
 }
 
 // boundaryAttachmentProjectionOf returns one boundary-scope attachment's retained
-// projection, and reports whether that carrier was recorded.
+// projection, and reports whether that owner was recorded.
 func (h *hydratedProjections) boundaryAttachmentProjectionOf(
 	key boundaryAttachmentKey,
 ) (boundaryAttachmentProjection, bool) {

@@ -131,7 +131,7 @@ func TestSpliceArtifactProvenance_DefaultDelimsParseError(t *testing.T) {
 // value.
 //
 // It replaces the branch grid the artifacts pre-check's two pillar arms used to
-// carry. Those arms are gone — the rule declared over each carrier of the
+// carry. Those arms are gone — the rule declared over each owner of the
 // artifacts walk owns the pillar verdict now, and its own grid drives each pillar
 // referenced against each pillar declared, both arms and a near-miss control. What
 // that grid does NOT reach is this decision's shape handling, because the declared

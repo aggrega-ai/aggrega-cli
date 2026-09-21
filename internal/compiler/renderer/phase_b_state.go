@@ -189,19 +189,19 @@ type PhaseBState struct {
 	hydrated *hydratedProjections
 
 	// attachmentHydrated is the seam through which an attachment's render records
-	// the state it reaches, under the carrier that attachment was declared
+	// the state it reaches, under the owner that attachment was declared
 	// against.
 	//
 	// It is set INSTEAD of the retention above and never beside it. The two are the
-	// same mechanism reached from carriers that cannot share a key space: an
+	// same mechanism reached from owners that cannot share a key space: an
 	// attachment's render walks the same producers under the host component's node
 	// identity, so a state carrying the node retention would file the attachment's
 	// entries under the host — where nothing tells them from the host Recipe's own,
 	// and where they would answer a fact declared over it.
 	//
-	// The carrier travels on the state rather than being derived at the recording
+	// The owner travels on the state rather than being derived at the recording
 	// site because it is not derivable there: the node identity an attachment's
-	// render carries is the host's on one carrier and a composite marker built for
+	// render carries is the host's on one owner and a composite marker built for
 	// dispatch uniqueness on the other, and neither names the attachment.
 	//
 	// It carries the presentation over that retention as well as the retention
@@ -213,7 +213,7 @@ type PhaseBState struct {
 	//
 	// nil records nothing, which is the state of a node's own render and of a
 	// render whose caller assembled its own input.
-	attachmentHydrated attachmentCarrier
+	attachmentHydrated attachmentOwner
 
 	// hydratedFacts presents, as named facts, the state a node reaches before its
 	// artifact bytes exist. It is carried here so the rule declared over those
@@ -229,21 +229,21 @@ type PhaseBState struct {
 	// It is unexported and, like the retention, is set only for a node's own
 	// base-Recipe state. An attachment's render builds its own state and receives
 	// neither, so the value declared over node-keyed facts contributes no finding
-	// there — the values declared over that render's own carrier do, reading the
-	// presentation the carrier holds. The two absences are one arrangement and are
+	// there — the values declared over that render's own owner do, reading the
+	// presentation the owner holds. The two absences are one arrangement and are
 	// set together for that reason: a walk that records the facts must also be
 	// able to read them.
 	hydratedFacts constraint.HydratedView
 
-	// emitted is the render's retained set of per-carrier emitted-file projections,
+	// emitted is the render's retained set of per-owner emitted-file projections,
 	// and emittedFacts presents it as named facts.
 	//
-	// They travel on a node's own state for one reason: the carrier an attachment's
-	// render is given is built HERE, from the host node's state, and a carrier must
+	// They travel on a node's own state for one reason: the owner an attachment's
+	// render is given is built HERE, from the host node's state, and an owner must
 	// carry both stages' products or it would record an emission nothing is then
 	// asked about. A node's own emission is recorded by the orchestrator from the
 	// render input rather than through these, so what these two exist for is to
-	// reach the carrier construction sites.
+	// reach the owner construction sites.
 	//
 	// They are set together, on the reading the hydrated pair above states: a walk
 	// that records facts must also be able to read them, and a state given one
@@ -310,11 +310,11 @@ func (s *PhaseBState) capture(pass trace.Pass, fileSuffix string, ctx *types.Tem
 }
 
 // recordArtifactTemplateText retains the template text standing at one artifact
-// this render's artifacts walk resolved, against whichever carrier the state
+// this render's artifacts walk resolved, against whichever owner the state
 // holds.
 //
 // It is the one routing seam for that recording, so the walk records without
-// knowing which carrier it is on. The two arms are exclusive by construction
+// knowing which owner it is on. The two arms are exclusive by construction
 // rather than by a test here: a node's own state is given the per-node retention
 // and an attachment's render the attachment seam, each at its own construction
 // site. A state carrying neither records nothing.
@@ -329,11 +329,11 @@ func (s *PhaseBState) recordArtifactTemplateText(outputName, text string) {
 }
 
 // recordArtifactContentPin retains the content digest the document this render's
-// artifacts belong to recorded for one artifact, against whichever carrier the
+// artifacts belong to recorded for one artifact, against whichever owner the
 // state holds.
 //
 // It routes exactly as the text recording above does, and for the same reason: the
-// walk records without knowing which carrier it is on, and the two arms are
+// walk records without knowing which owner it is on, and the two arms are
 // exclusive by construction rather than by a test here.
 //
 // It is called only for an entry whose resolved form carries a pin, so what the
@@ -353,11 +353,11 @@ func (s *PhaseBState) recordArtifactContentPin(outputName, pin string) {
 }
 
 // recordArtifactImportedPath retains the file one artifact of the document this
-// render's artifacts belong to was supplied from, against whichever carrier the
+// render's artifacts belong to was supplied from, against whichever owner the
 // state holds.
 //
 // It routes exactly as the two recordings above do, and for the same reason: the
-// walk records without knowing which carrier it is on, and the two arms are
+// walk records without knowing which owner it is on, and the two arms are
 // exclusive by construction rather than by a test here.
 //
 // It is called only for an entry the walk resolved from an imported file, which
@@ -391,10 +391,10 @@ func (s *PhaseBState) recordAttachmentPillars() {
 
 // recordAttachmentEmission reduces the completed emitted file set of one
 // attachment's render to the projection that outlives it, under that render's own
-// carrier.
+// owner.
 //
 // It is the routing seam for that recording, so the render records without knowing
-// which carrier it is on — the same shape the artifact-template recording above
+// which owner it is on — the same shape the artifact-template recording above
 // uses. A state that is not an attachment's render records nothing, which is the
 // case for a node's own render: its emission is recorded by the orchestrator, at the
 // point the node's own set is complete and before the node joins its dispatch group.

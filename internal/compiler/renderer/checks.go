@@ -1606,10 +1606,10 @@ var BoundaryAttachmentLocalsEntryReadsOnlyDeclaredSiblings = constraint.Check[
 // the field identity in structure, and a field whose declaration somebody forgot
 // is then silently ungated with nothing able to report the omission.
 //
-// One rule serves them all because one reference set does: within this carrier
+// One rule serves them all because one reference set does: within this owner
 // the render context is one type, so what a template on any of these fields may
 // name is one question with one answer. That is the condition to check before
-// this shape is reached for again, not a property every carrier has.
+// this shape is reached for again, not a property every owner has.
 //
 // # Why the execution scope is read and not assumed
 //
@@ -1728,13 +1728,13 @@ var BoundaryAttachmentTemplateReadsOnlyDefinedReferences = constraint.Check[
 //
 // # One rule serves both fields even though their reference sets differ
 //
-// This carrier is the family's degenerate case: the two fields are checked
+// This owner is the family's degenerate case: the two fields are checked
 // against two different admitted sets, because a whole-boundary template is
 // evaluated once for the scope while a per-component segment is evaluated once
 // for each component placed in it. That does not fork the rule, because the rule
 // does not hold a set — it hands the authored text and the field to the shared
 // classification, which selects the set the render itself would apply. What the
-// family buys on this carrier is therefore enumerable coverage rather than a
+// family buys on this owner is therefore enumerable coverage rather than a
 // reference set shared across fields, and saying so is what keeps the shape from
 // being reached for where it pays less than it looks.
 //
@@ -1897,7 +1897,7 @@ var RecipePublishesEveryDeclaredProvidesKey = constraint.Check[
 
 // The two pillar roots an artifact template may only read when the document
 // carrying it supplies them. They are declared once and read by every form of the
-// rule — the three declared values below, one per carrier the artifacts walk is
+// rule — the three declared values below, one per owner the artifacts walk is
 // reached by — because the roots ARE the rule's subject: a copy in each site would agree
 // today and would be the thing that silently diverges if a pillar were ever
 // renamed, since a stale spelling matches nothing and the check goes quiet rather
@@ -2011,7 +2011,7 @@ type artifactPillarSubject interface {
 // declared over this predicate: each keys its facts by its own coordinates, and a
 // predicate reaching for a view would have to know which.
 //
-// carrierDetail is what the calling value adds to the objection after the
+// ownerDetail is what the calling value adds to the objection after the
 // artifact — the attachment, where the entry belongs to one. It is a positional
 // argument rather than a variadic so a value cannot omit it silently; a node's
 // own artifacts block supplies none.
@@ -2024,7 +2024,7 @@ func artifactPillarObjections[S artifactPillarSubject](
 	delims constraint.ArtifactTemplateDelimiters,
 	templateText string,
 	workloadDeclared, sourceDeclared bool,
-	carrierDetail []constraint.DetailValue,
+	ownerDetail []constraint.DetailValue,
 ) []constraint.Objection {
 	refs, err := gotmpl.CollectTemplateFieldAccessesWithDelims(
 		templateText, delims.Left, delims.Right,
@@ -2045,7 +2045,7 @@ func artifactPillarObjections[S artifactPillarSubject](
 			constraint.Captioned("artifact", s.ArtifactName()),
 		}
 		out = append(out, s.RaiseWith(
-			ErrArtifactPillarNotDeclared(), append(detail, carrierDetail...)...,
+			ErrArtifactPillarNotDeclared(), append(detail, ownerDetail...)...,
 		))
 	}
 	return out
@@ -2229,7 +2229,7 @@ var BoundaryAttachmentArtifactPillarDeclared = constraint.Check[
 // The predicate has ONE body, [artifactContentPinObjections], so the digest
 // function, the comparison and the reporting exist once. A second copy would agree
 // on the day it was written and be free to drift the moment either the digest or
-// the wording moved — and a drift here means one carrier refusing content another
+// the wording moved — and a drift here means one owner refusing content another
 // admits.
 
 // artifactContentPinObjections is the one body of the artifact-content-pin
@@ -2252,13 +2252,13 @@ var BoundaryAttachmentArtifactPillarDeclared = constraint.Check[
 // implementation.
 //
 // importedPath is the file the entry was supplied from, which the calling value
-// reads from its own carrier because the path and the pin are recorded in
+// reads from its own owner because the path and the pin are recorded in
 // different documents and one fact may name only one of them. It is a bare string
 // with no presence flag: an entry carrying a recorded pin was resolved from an
 // imported file by the same branch that recorded the path, so a pinned entry
 // always has one.
 //
-// carrierDetail is what the calling value adds after the digests — the attachment,
+// ownerDetail is what the calling value adds after the digests — the attachment,
 // where the entry belongs to one — and is positional rather than variadic so a
 // value cannot omit it silently.
 //
@@ -2287,7 +2287,7 @@ func artifactContentPinObjections[S artifactPillarSubject](
 	pin string,
 	pinned bool,
 	importedPath string,
-	carrierDetail []constraint.DetailValue,
+	ownerDetail []constraint.DetailValue,
 ) []constraint.Objection {
 	if !pinned {
 		return nil
@@ -2303,7 +2303,7 @@ func artifactContentPinObjections[S artifactPillarSubject](
 		constraint.Captioned("the recorded pin is", pin),
 	}
 	return []constraint.Objection{s.RaiseWith(
-		ErrArtifactContentMismatch(), append(detail, carrierDetail...)...,
+		ErrArtifactContentMismatch(), append(detail, ownerDetail...)...,
 	)}
 }
 
@@ -3019,9 +3019,9 @@ var ArtifactsEntryBundleFilesStayUnderTheirKey = constraint.Check[
 // refused, and a name one block produced is not.
 //
 // It is one function because it is one rule. The three values differ only in which
-// carrier's fact they read and which document they name, so a second copy of the
+// owner's fact they read and which document they name, so a second copy of the
 // predicate would agree on the day it was written and be free to drift the moment
-// the condition gains a term — and a drift here would let one carrier refuse an
+// the condition gains a term — and a drift here would let one owner refuse an
 // input the others admit, which is a difference no reader could tell from a
 // deliberate one.
 //

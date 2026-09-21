@@ -30,7 +30,7 @@ import "sync"
 // artifactProjection is what one node's artifacts walk is reduced to: the
 // artifact names that walk projected, and the bytes standing at each of them.
 //
-// Both fields are values read out of the walk. Neither is a carrier the walk can
+// Both fields are values read out of the walk. Neither is a handle the walk can
 // be reached back through, which is the property that keeps this a projection: a
 // reader holding one of these can answer the declared questions and can reach
 // nothing else.

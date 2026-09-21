@@ -58,7 +58,7 @@ func monitoringSourceFR(source any) *types.FeatureRecipe {
 	}
 }
 
-// monitoringSourceLookup is hostWorkloadRecipeLookup with the document carrier
+// monitoringSourceLookup is hostWorkloadRecipeLookup with the document lookup
 // wired, which is what a build gets from the catalog and what an attachment's
 // render needs in order to anchor what its source template produced.
 func monitoringSourceLookup(fr *types.FeatureRecipe, document string) renderer.RecipeLookup {

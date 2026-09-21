@@ -410,7 +410,7 @@ func classifyBoundaryScopeFRTemplate(text string) boundaryScopeFRTemplateRef {
 //
 // recipeLookup supplies the file this FeatureRecipe was declared in, which is what
 // a relative source its template produced is resolved against and what a diagnostic
-// raised inside this render names as its location. It is the same carrier the
+// raised inside this render names as its location. It is the same owner the
 // component-scope attachment loop reads that fact from; a resolved path passed in
 // its place would be a second shape for one fact.
 func dispatchBoundaryScopeFR(
@@ -622,7 +622,7 @@ func dispatchBoundaryScopeFR(
 	// against, and an identity built from the instance alone would meet itself
 	// across two boundaries sharing one attachment name.
 	//
-	// The carrier is (this boundary, this attachment), passed as the two identities
+	// The owner is (this boundary, this attachment), passed as the two identities
 	// rather than derived from the synthetic node ID above: that string joins the
 	// same two values with separators neither of them is constrained to exclude, so
 	// splitting it back is not a recoverable operation. The retention it records
@@ -644,7 +644,7 @@ func dispatchBoundaryScopeFR(
 	// per-component caller reads the ordered IR node — the advisory stream stays
 	// byte-stable across runs of identical input.
 	emitted, _, err := renderFeatureRecipeFiles(ctx, frEngine, fr, frCtx, frNodeCtx, frValues.Resolved, resolvedSrc, frDocument, attachmentIdentity{},
-		carrierProductsOf(state).attachmentOnBoundary(key.BoundaryPath, frInstance),
+		ownerProductsOf(state).attachmentOnBoundary(key.BoundaryPath, frInstance),
 		featureAttachmentSlots(fr, input), input.WorkloadLibraries, input.ArtifactsLibraries,
 		boundaryAnnotations[key.BoundaryPath], input.CatalogLookup.ProviderPlugin)
 	if err != nil {

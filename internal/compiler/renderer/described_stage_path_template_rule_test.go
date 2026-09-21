@@ -24,7 +24,7 @@ import (
 // verdict is read, and the admitted control beside each refusal shows the halt is
 // a consequence of the planted fault rather than of the fixture.
 //
-// The per-field rows are not decoration, and they are what makes this carrier
+// The per-field rows are not decoration, and they are what makes this owner
 // different from the one beside it. The two fields are checked against two
 // DIFFERENT admitted sets over one context type, so a rule reading one set for
 // both would refuse legal authoring on one field or admit an offending reference
@@ -258,7 +258,7 @@ func TestThePathTemplateRulesAreReachedAndTheirObjectionsHalt(t *testing.T) {
 // proof, and it is the row the axis alone cannot supply.
 //
 // The component's own id is defined by the one context type both fields are
-// evaluated against, so a rule holding a single admitted set for the carrier
+// evaluated against, so a rule holding a single admitted set for the owner
 // either refuses it on both fields or admits it on both. It is genuinely refused
 // on one and genuinely admitted on the other, so this pair separates a rule that
 // selects per field from one that does not — which every row of the table above

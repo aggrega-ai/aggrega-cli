@@ -14,7 +14,7 @@ import (
 )
 
 // frDocumentLookup returns a RecipeLookup that reports documentPath as the file
-// every FeatureRecipe was declared in. It is the half of the carrier a render
+// every FeatureRecipe was declared in. It is the half of the lookup a render
 // needs in order to anchor what a source template produced and to position the
 // diagnostics its sub-passes raise.
 func frDocumentLookup(documentPath string) RecipeLookup {

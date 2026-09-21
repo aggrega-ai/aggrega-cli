@@ -63,10 +63,10 @@ func TestRetainedEmissionCoversEveryDeclaredEmittedFact(t *testing.T) {
 
 	declared := declaredAtEmittedStage(t)
 
-	// Every carrier's projection is swept, not just the node's own. The stage
-	// declares one fact per carrier, so a sweep over one type would report the other
-	// two carriers' facts as retained by nothing — and a sweep that named only the
-	// type it happened to find first would pass while a whole carrier went
+	// Every owner's projection is swept, not just the node's own. The stage
+	// declares one fact per owner, so a sweep over one type would report the other
+	// two owners' facts as retained by nothing — and a sweep that named only the
+	// type it happened to find first would pass while a whole owner went
 	// unretained.
 	var retained []string
 	for _, typ := range []reflect.Type{

@@ -45,7 +45,7 @@ const (
 
 	// The files the fixture's entries were supplied from. They are absolute
 	// because that is what the catalog resolves an import reference to, and each
-	// carrier gets its OWN so that a value reading another carrier's fact names a
+	// owner gets its OWN so that a value reading another owner's fact names a
 	// file the assertion can tell apart — the same discriminator the crossed pins
 	// give for the digests.
 	nodeImportedPath               = "/ws/catalog/recipe/extras/node-policy.yaml"
@@ -245,18 +245,18 @@ func TestArtifactContentPinRuleReadsBothFactsAtTheSameEntry(t *testing.T) {
 	}
 }
 
-// artifactContentPinCarrierStub answers the three facts the carrier-rooted values
-// read, for both carriers, so one fixture drives both.
+// artifactContentPinOwnerStub answers the three facts the owner-rooted values
+// read, for both owners, so one fixture drives both.
 //
 // It answers the NODE-rooted accessors too, and deliberately answers them with a
-// pin that would disagree and with a DIFFERENT imported path: a carrier-rooted
+// pin that would disagree and with a DIFFERENT imported path: an owner-rooted
 // value reading the node's accessors instead of its own raises here, and one
 // reading the node's path names the host's file on a finding about the
-// attachment's content. Both are what make the carrier keying provable rather
+// attachment's content. Both are what make the owner keying provable rather
 // than asserted — the second matters on its own, because a value that read the
 // right pin and the wrong path would raise correctly and point the author at a
 // file that never drifted.
-type artifactContentPinCarrierStub struct {
+type artifactContentPinOwnerStub struct {
 	constraint.HydratedView
 
 	attachmentText map[string]string
@@ -267,59 +267,59 @@ type artifactContentPinCarrierStub struct {
 	boundaryPath   map[string]string
 }
 
-func (s artifactContentPinCarrierStub) ArtifactTemplateText(_, _ string) string {
+func (s artifactContentPinOwnerStub) ArtifactTemplateText(_, _ string) string {
 	return pinBodyDrifted
 }
 
-func (s artifactContentPinCarrierStub) ArtifactRecordedContentPin(_, _ string) (string, bool) {
+func (s artifactContentPinOwnerStub) ArtifactRecordedContentPin(_, _ string) (string, bool) {
 	return digest.ContentDigest([]byte(pinBodyIntact)), true
 }
 
-func (s artifactContentPinCarrierStub) ArtifactImportedPath(_, _ string) string {
+func (s artifactContentPinOwnerStub) ArtifactImportedPath(_, _ string) string {
 	return nodeImportedPath
 }
 
-func (s artifactContentPinCarrierStub) AttachmentArtifactTemplateText(
+func (s artifactContentPinOwnerStub) AttachmentArtifactTemplateText(
 	node, attachment, artifact string,
 ) string {
 	return s.attachmentText[factKey(node, attachment, artifact)]
 }
 
-func (s artifactContentPinCarrierStub) AttachmentArtifactRecordedContentPin(
+func (s artifactContentPinOwnerStub) AttachmentArtifactRecordedContentPin(
 	node, attachment, artifact string,
 ) (string, bool) {
 	got, ok := s.attachmentPin[factKey(node, attachment, artifact)]
 	return got, ok
 }
 
-func (s artifactContentPinCarrierStub) AttachmentArtifactImportedPath(
+func (s artifactContentPinOwnerStub) AttachmentArtifactImportedPath(
 	node, attachment, artifact string,
 ) string {
 	return s.attachmentPath[factKey(node, attachment, artifact)]
 }
 
-func (s artifactContentPinCarrierStub) BoundaryAttachmentArtifactTemplateText(
+func (s artifactContentPinOwnerStub) BoundaryAttachmentArtifactTemplateText(
 	boundary, attachment, artifact string,
 ) string {
 	return s.boundaryText[factKey(boundary, attachment, artifact)]
 }
 
-func (s artifactContentPinCarrierStub) BoundaryAttachmentArtifactRecordedContentPin(
+func (s artifactContentPinOwnerStub) BoundaryAttachmentArtifactRecordedContentPin(
 	boundary, attachment, artifact string,
 ) (string, bool) {
 	got, ok := s.boundaryPin[factKey(boundary, attachment, artifact)]
 	return got, ok
 }
 
-func (s artifactContentPinCarrierStub) BoundaryAttachmentArtifactImportedPath(
+func (s artifactContentPinOwnerStub) BoundaryAttachmentArtifactImportedPath(
 	boundary, attachment, artifact string,
 ) string {
 	return s.boundaryPath[factKey(boundary, attachment, artifact)]
 }
 
-// artifactContentPinCarrierSites implements the enumerators both carrier-rooted
-// traversals need, narrowed to one carrier and one entry.
-type artifactContentPinCarrierSites struct {
+// artifactContentPinOwnerSites implements the enumerators both owner-rooted
+// traversals need, narrowed to one owner and one entry.
+type artifactContentPinOwnerSites struct {
 	node       string
 	boundary   string
 	attachment string
@@ -327,18 +327,18 @@ type artifactContentPinCarrierSites struct {
 	sourceFile string
 }
 
-func (f artifactContentPinCarrierSites) Nodes() []constraint.NodeInstance {
+func (f artifactContentPinOwnerSites) Nodes() []constraint.NodeInstance {
 	return []constraint.NodeInstance{{ID: f.node}}
 }
 
-func (f artifactContentPinCarrierSites) Attachments(node string) []string {
+func (f artifactContentPinOwnerSites) Attachments(node string) []string {
 	if node != f.node {
 		return nil
 	}
 	return []string{f.attachment}
 }
 
-func (f artifactContentPinCarrierSites) AttachmentArtifacts(
+func (f artifactContentPinOwnerSites) AttachmentArtifacts(
 	node, attachment string,
 ) []constraint.AuthoredCoordinate {
 	if node != f.node || attachment != f.attachment {
@@ -347,18 +347,18 @@ func (f artifactContentPinCarrierSites) AttachmentArtifacts(
 	return []constraint.AuthoredCoordinate{{Value: f.artifact, SourceFile: f.sourceFile}}
 }
 
-func (f artifactContentPinCarrierSites) Boundaries() []constraint.AuthoredCoordinate {
+func (f artifactContentPinOwnerSites) Boundaries() []constraint.AuthoredCoordinate {
 	return []constraint.AuthoredCoordinate{{Value: f.boundary}}
 }
 
-func (f artifactContentPinCarrierSites) BoundaryAttachments(boundary string) []string {
+func (f artifactContentPinOwnerSites) BoundaryAttachments(boundary string) []string {
 	if boundary != f.boundary {
 		return nil
 	}
 	return []string{f.attachment}
 }
 
-func (f artifactContentPinCarrierSites) BoundaryAttachmentArtifacts(
+func (f artifactContentPinOwnerSites) BoundaryAttachmentArtifacts(
 	boundary, attachment string,
 ) []constraint.AuthoredCoordinate {
 	if boundary != f.boundary || attachment != f.attachment {
@@ -367,14 +367,14 @@ func (f artifactContentPinCarrierSites) BoundaryAttachmentArtifacts(
 	return []constraint.AuthoredCoordinate{{Value: f.artifact, SourceFile: f.sourceFile}}
 }
 
-// TestArtifactContentPinRuleOverEachAttachmentCarrier drives the two
-// carrier-rooted values and holds the keying that makes them separate rules.
+// TestArtifactContentPinRuleOverEachAttachmentOwner drives the two
+// owner-rooted values and holds the keying that makes them separate rules.
 //
 // The stub answers the NODE-rooted accessors with a pair that disagrees, so a value
 // reading those instead of its own raises where the fixture says it must be silent
 // — and its own facts are intact, so the silence is attributable to reading the
 // right coordinates rather than to a rule that reads nothing.
-func TestArtifactContentPinRuleOverEachAttachmentCarrier(t *testing.T) {
+func TestArtifactContentPinRuleOverEachAttachmentOwner(t *testing.T) {
 	t.Parallel()
 
 	const (
@@ -386,7 +386,7 @@ func TestArtifactContentPinRuleOverEachAttachmentCarrier(t *testing.T) {
 	intactPin := digest.ContentDigest([]byte(pinBodyIntact))
 	driftedPin := digest.ContentDigest([]byte(pinBodyDrifted))
 
-	sites := artifactContentPinCarrierSites{
+	sites := artifactContentPinOwnerSites{
 		node:       node,
 		boundary:   boundary,
 		attachment: attachment,
@@ -398,7 +398,7 @@ func TestArtifactContentPinRuleOverEachAttachmentCarrier(t *testing.T) {
 		t.Parallel()
 		key := factKey(node, attachment, artifact)
 
-		var intact constraint.HydratedView = artifactContentPinCarrierStub{
+		var intact constraint.HydratedView = artifactContentPinOwnerStub{
 			attachmentText: map[string]string{key: pinBodyIntact},
 			attachmentPin:  map[string]string{key: intactPin},
 			attachmentPath: map[string]string{key: attachmentImportedPath},
@@ -416,7 +416,7 @@ func TestArtifactContentPinRuleOverEachAttachmentCarrier(t *testing.T) {
 				"instead of its own is what produces this.", len(raised))
 		}
 
-		var drifted constraint.HydratedView = artifactContentPinCarrierStub{
+		var drifted constraint.HydratedView = artifactContentPinOwnerStub{
 			attachmentText: map[string]string{key: pinBodyDrifted},
 			attachmentPin:  map[string]string{key: intactPin},
 			attachmentPath: map[string]string{key: attachmentImportedPath},
@@ -436,7 +436,7 @@ func TestArtifactContentPinRuleOverEachAttachmentCarrier(t *testing.T) {
 				"FeatureRecipe.\nfull message: %s", msg)
 		}
 		if !strings.Contains(msg, `imported file "`+attachmentImportedPath+`"`) {
-			t.Errorf("the message does not name the file THIS carrier's entry was supplied "+
+			t.Errorf("the message does not name the file THIS owner's entry was supplied "+
 				"from.\nfull message: %s", msg)
 		}
 		if strings.Contains(msg, nodeImportedPath) {
@@ -453,7 +453,7 @@ func TestArtifactContentPinRuleOverEachAttachmentCarrier(t *testing.T) {
 		t.Parallel()
 		key := factKey(boundary, attachment, artifact)
 
-		var intact constraint.HydratedView = artifactContentPinCarrierStub{
+		var intact constraint.HydratedView = artifactContentPinOwnerStub{
 			boundaryText: map[string]string{key: pinBodyDrifted},
 			boundaryPin:  map[string]string{key: driftedPin},
 			boundaryPath: map[string]string{key: boundaryAttachmentImportedPath},
@@ -470,7 +470,7 @@ func TestArtifactContentPinRuleOverEachAttachmentCarrier(t *testing.T) {
 				"own recorded pin", len(raised))
 		}
 
-		var drifted constraint.HydratedView = artifactContentPinCarrierStub{
+		var drifted constraint.HydratedView = artifactContentPinOwnerStub{
 			boundaryText: map[string]string{key: pinBodyDrifted},
 			boundaryPin:  map[string]string{key: intactPin},
 			boundaryPath: map[string]string{key: boundaryAttachmentImportedPath},
@@ -487,7 +487,7 @@ func TestArtifactContentPinRuleOverEachAttachmentCarrier(t *testing.T) {
 		}
 		msg := constraint.ObjectionMessage(raised[0])
 		if !strings.Contains(msg, `imported file "`+boundaryAttachmentImportedPath+`"`) {
-			t.Errorf("the message does not name the file THIS carrier's entry was supplied "+
+			t.Errorf("the message does not name the file THIS owner's entry was supplied "+
 				"from.\nfull message: %s", msg)
 		}
 		if strings.Contains(msg, nodeImportedPath) {

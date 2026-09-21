@@ -20,10 +20,10 @@ import (
 // The artifact-content-pin rule expressed as declared values is only as good as the
 // build's invocation of it, and a check-level proof cannot see that: a value that is
 // never invoked raises nothing, which reads exactly like a value that ran and
-// approved. So the halt is driven at the entry point, once per carrier the condition
+// approved. So the halt is driven at the entry point, once per owner the condition
 // reaches.
 //
-// The two directions are both driven over each carrier. An admitting build is what
+// The two directions are both driven over each owner. An admitting build is what
 // makes the raising build attributable: without it a rule refusing everything would
 // satisfy the raising assertion on its own, and a rule invoked zero times would
 // satisfy the admitting one.
@@ -59,7 +59,7 @@ containers:
 // pinHostLookup binds the host component to a Recipe whose artifacts block carries
 // one imported entry with the given recorded pin, and the monitoring feature to a
 // FeatureRecipe carrying no artifacts at all — so any halt is attributable to the
-// host's own carrier.
+// host's own owner.
 //
 // An empty pin builds a Recipe carrying NO artifactDigests block, which is the
 // state of a Recipe that was never frozen. It is spelled as an absent block rather
@@ -107,7 +107,7 @@ func pinHostLookup(importPath, pin string) renderer.RecipeLookup {
 
 // pinFeatureLookup is the mirror: the host Recipe declares no artifacts and the
 // FeatureRecipe carries the imported entry and the recorded pin, so any halt is
-// attributable to the attachment's own carrier.
+// attributable to the attachment's own owner.
 func pinFeatureLookup(importPath, pin string) renderer.RecipeLookup {
 	artifacts := types.OrderedMap[types.ArtifactEntry]{}
 	artifacts.Set("pin-feature-policy.yaml", types.ArtifactEntry{Import: importPath})
@@ -254,7 +254,7 @@ func TestTheArtifactContentPinRuleAdmitsAndRefusesOnAnAttachmentsFeatureRecipe(t
 		`attachment "mon"`,
 	} {
 		if !strings.Contains(msg, want) {
-			t.Errorf("the halt does not carry %q, so it is not the attachment carrier's finding.\nfull halt: %s", want, msg)
+			t.Errorf("the halt does not carry %q, so it is not the attachment owner's finding.\nfull halt: %s", want, msg)
 		}
 	}
 }

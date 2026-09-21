@@ -63,7 +63,7 @@ type ArtifactsEmitter interface {
 
 // buildArtifactsProjection performs the generic, invariant-forced host work for a
 // node's artifacts: it walks Recipe.Spec.Artifacts in author order, resolves each
-// entry's content, asks the rule declared over the carrier it is rendering for,
+// entry's content, asks the rule declared over the owner it is rendering for,
 // checks that the template parses, and evaluates it as a Go template
 // against tmplCtx using the supplied delimiter pair. It attaches the host-computed
 // build-provenance label and annotation key sets — the same key computation every
@@ -136,9 +136,9 @@ func buildArtifactsProjection(
 		// has been resolved to the text that stands at the artifact — and it is
 		// taken before evaluation, which is the state the retained value names.
 		//
-		// It is recorded against the carrier the render's state holds, which is
+		// It is recorded against the owner the render's state holds, which is
 		// what tells a node's own entries from those of an attachment reaching this
-		// same walk under the node's identity. A render carrying no carrier records
+		// same walk under the node's identity. A render carrying no owner records
 		// nothing.
 		state.recordArtifactTemplateText(outputName, tmplText)
 		// The pin rules, asked ahead of the pillar rules below because content that
@@ -154,9 +154,9 @@ func buildArtifactsProjection(
 		// that was never frozen.
 		//
 		// Two lines for the same reason the pillar readings below are two: the facts
-		// are keyed by the carrier the render was reached from, so an attachment's
+		// are keyed by the owner the render was reached from, so an attachment's
 		// entries — which flow through this walk under the HOST component's node
-		// identity — are asked about through their own carrier's values.
+		// identity — are asked about through their own owner's values.
 		if err := runArtifactContentPinRule(cancelled, state, outputName); err != nil {
 			return err
 		}
@@ -170,18 +170,18 @@ func buildArtifactsProjection(
 		// become either a placeholder in the output or a halt naming the first hop
 		// of the expression rather than the expression the author wrote.
 		//
-		// It is the only pillar reading on this carrier: the pre-check beside it once
+		// It is the only pillar reading on this owner: the pre-check beside it once
 		// held the same two conditions and no longer does, so a reference to an
 		// undeclared pillar is refused here or not at all.
 		if err := runArtifactPillarRule(cancelled, state, outputName); err != nil {
 			return err
 		}
-		// The same question over the carrier this render was reached from. This walk
+		// The same question over the owner this render was reached from. This walk
 		// is reached by two renders — a node's own Recipe, and the render an
 		// attachment's or a boundary-scope FeatureRecipe carries — and the entry
 		// belongs to exactly one of them, so the two lines are exclusive rather than
-		// cumulative: a node's own state holds the node presentation and no carrier,
-		// an attachment's render the carrier and no node presentation.
+		// cumulative: a node's own state holds the node presentation and no owner,
+		// an attachment's render the owner and no node presentation.
 		//
 		// It is a separate line rather than a wider node axis because the facts are
 		// keyed differently: an attachment's entries flow through here under the HOST
@@ -412,7 +412,7 @@ func (ix ArtifactOriginIndex) For(path string) EmitOrigin {
 // It is the whole of what this pre-check still owns. The pillar conditions that
 // used to sit beside it — a `.workload` or `.source` reference the document
 // carrying the template does not declare — belong to the rule declared over each
-// carrier the artifacts walk is reached by, which reports every offending
+// owner the artifacts walk is reached by, which reports every offending
 // reference in a template rather than the first and positions its finding at the
 // document the reference was written in.
 func preCheckArtifactTemplateParses(filename, tmplText, leftDelim, rightDelim string) error {

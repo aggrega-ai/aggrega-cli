@@ -131,8 +131,8 @@ func lookUpArtifactLibraryBundle(
 // by construction rather than by chance. They stay for two reasons, and neither
 // is convenience. The artifacts block a FeatureRecipe carries flows through the
 // same walk under a synthesized Recipe, and the declared rules read the node's
-// OWN Recipe, so no rule covers that carrier and these arms are the whole of its
-// refusal. And a caller assembling a render's input directly runs no
+// OWN Recipe, so no rule covers that FeatureRecipe and these arms are the whole
+// of its refusal. And a caller assembling a render's input directly runs no
 // authored-stage rule at all, which is a documented shape of this package's entry
 // rather than a defect to close here. Removing an arm would leave both silently
 // admitting a reference the compiler refuses everywhere else; a resolver must

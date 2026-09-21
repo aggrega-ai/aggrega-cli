@@ -13,7 +13,7 @@ import (
 
 // contributorCaptureEngine renders a fixed file per node and records the
 // BoundaryInfo its dispatch group hands its assembler, so a test can read what
-// an assembler is actually given rather than what the carrier is named. mode is
+// an assembler is actually given rather than what the map is named. mode is
 // the boundary-assembly claim the engine reports, which is what decides whether
 // per-node output travels as fragments to the assembler or is placed by the
 // orchestrator.
@@ -38,8 +38,8 @@ func (e *contributorCaptureEngine) AssembleBoundary(_ context.Context, info rend
 }
 
 // filesFor returns the recorded per-node file names for one node, drawn from
-// whichever carrier the group's mode routed them through, so a test asserts on
-// the contributor list an assembler sees rather than on one carrier.
+// whichever map the group's mode routed them through, so a test asserts on
+// the contributor list an assembler sees rather than on one map.
 func contributorFiles(info renderer.BoundaryInfo, node string) []string {
 	var out []string
 	for _, f := range info.IntermediatesByNode[node] {
@@ -58,7 +58,7 @@ func contributorFiles(info renderer.BoundaryInfo, node string) []string {
 // than merged, so it never travels as a fragment — and an assembler handed only
 // the fragments is handed nothing at all, which is exactly the state that makes a
 // root-composes-children layout impossible to author. Both modes are asserted
-// because the two carriers are complements and a fix to one must not empty the
+// because the two maps are complements and a fix to one must not empty the
 // other.
 func TestBoundaryInfoNamesEveryContributor(t *testing.T) {
 	t.Parallel()
@@ -101,12 +101,12 @@ func TestBoundaryInfoNamesEveryContributor(t *testing.T) {
 	}
 }
 
-// TestPlacedAndIntermediateCarriersAreComplements pins the split the two carriers
+// TestPlacedAndIntermediateMapsAreComplements pins the split the two maps
 // mean, so neither grows into the other. A fragment-merging provider's per-node
 // output is intermediate and reaches the assembler for merging; a nesting
 // provider's is not intermediate and is placed by the orchestrator. A node
-// appearing in both carriers would mean one file was routed twice.
-func TestPlacedAndIntermediateCarriersAreComplements(t *testing.T) {
+// appearing in both maps would mean one file was routed twice.
+func TestPlacedAndIntermediateMapsAreComplements(t *testing.T) {
 	t.Parallel()
 
 	cases := map[string]struct{ intermediates, placed bool }{

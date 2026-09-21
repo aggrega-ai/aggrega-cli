@@ -118,7 +118,7 @@ func RecipeTemplateFields(recipe *types.Recipe) []RecipeTemplateField {
 // # Why an attachment has its own enumeration rather than sharing the node's
 //
 // The set of BLOCKS is the same, and the body below is therefore shared — but the
-// carrier is a different document and the surface is a different reference set, so
+// declaring document differs and the surface is a different reference set, so
 // the two are separate readings of one body rather than one reading used twice. A
 // caller asking about a node gets the Recipe's fields and a caller asking about an
 // attachment gets that attachment's FeatureRecipe's, and neither can be handed the
@@ -155,7 +155,7 @@ func AttachmentTemplateFields(fr *types.FeatureRecipe) []RecipeTemplateField {
 	)
 }
 
-// inlineTemplateFieldsOf builds the enumeration for one carrier's four
+// inlineTemplateFieldsOf builds the enumeration for one document's four
 // template-bearing blocks, in the fixed order every caller presents them in.
 //
 // It is one body because a Recipe and a FeatureRecipe declare these four blocks
@@ -167,7 +167,7 @@ func AttachmentTemplateFields(fr *types.FeatureRecipe) []RecipeTemplateField {
 // enumerating would be a surface no rule was invoked over, which reports exactly
 // what a rule that ran and approved reports.
 //
-// It takes the four blocks rather than a carrier so that neither carrier type
+// It takes the four blocks rather than a document so that neither document type
 // appears here. A signature naming one of them would make the other's call an
 // adaptation of somebody else's reading; naming both through an interface would put
 // a declaration in the way of a set whose whole point is that it is enumerated.

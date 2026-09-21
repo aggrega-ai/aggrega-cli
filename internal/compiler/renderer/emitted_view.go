@@ -25,7 +25,7 @@ import (
 // grows with the number of files a build emits rather than with their size, and a
 // build emitting large artifacts retains no more than one emitting small ones.
 //
-// # Three carriers, because one rule runs over three renders
+// # Three owners, because one rule runs over three renders
 //
 // The emission this stage describes happens in three separately authored documents.
 // A component node's own Recipe emits under that node's identity. The FeatureRecipe
@@ -38,13 +38,13 @@ import (
 // were the attachment's — admitting a collision the attachment never wrote wherever
 // the host has one, and refusing none of the attachment's own. Both directions are
 // wrong and neither is visible from the outcome. And no widening of a node-and-name
-// enumeration produces the attachment coordinate, so the answer is a fact per carrier
+// enumeration produces the attachment coordinate, so the answer is a fact per owner
 // rather than a wider axis over one fact.
 //
 // So this file holds three retentions under three key types, three accessors, and
-// three coordinate axes — one per carrier — sharing the one projection helper that
+// three coordinate axes — one per owner — sharing the one projection helper that
 // reduces an accumulation to its per-name origin sets. The shape is the one the stage
-// before this already carries for the same three carriers.
+// before this already carries for the same three owners.
 
 // emittedProjection is what one node's completed emission is reduced to: the
 // output names its own render placed files under, and the blocks that produced
@@ -71,7 +71,7 @@ type emittedProjection struct {
 // attachmentEmittedProjection is what the completed emission of the render one
 // attachment carries on a node is reduced to.
 //
-// It is the carrier-keyed form of [emittedProjection] and holds the same shape for
+// It is the owner-keyed form of [emittedProjection] and holds the same shape for
 // the same reasons. It is a separate type rather than the same one under a second
 // key because the accessor that reads it is a separate declared fact: the field name
 // is the correspondence with that accessor, and one type carrying both names would
@@ -122,13 +122,13 @@ type boundaryAttachmentEmittedProjection struct {
 }
 
 // emittedProjections is one render's retained set of those projections, keyed by
-// node and, for what an attachment's render emitted, by that attachment's carrier.
+// node and, for what an attachment's render emitted, by that attachment's owner.
 //
 // It is installed once per render and lives for the whole of it, each entry written
 // as its own render's emission completes.
 //
-// The three carriers are held in three maps under three key types rather than in one
-// map under a carrier discriminator, on the reading the sibling retention at the
+// The three owners are held in three maps under three key types rather than in one
+// map under an owner discriminator, on the reading the sibling retention at the
 // stage before this states: a boundary-rooted identity is then unable to be written
 // into a node-rooted key at all, which is a property of the types rather than of a
 // discriminator being set correctly at every write.
@@ -156,10 +156,10 @@ func newEmittedProjections() *emittedProjections {
 // each output name carries: the blocks that produced a file under that name,
 // deduplicated, in production order, with the names themselves in name order.
 //
-// It is one function because it is one mechanic, and all three carriers' recorders
-// call it. A second copy per carrier would agree today and would be free to diverge
+// It is one function because it is one mechanic, and all three owners' recorders
+// call it. A second copy per owner would agree today and would be free to diverge
 // on the deduplication rule or the ordering — and the divergence would be invisible,
-// because each carrier's own reading would look correct in isolation.
+// because each owner's own reading would look correct in isolation.
 //
 // The names are collected and sorted before the map is filled, so the key order is a
 // function of the input rather than of the order the render's passes happened to
@@ -241,7 +241,7 @@ func (e *emittedProjections) recordNode(state *PhaseBState) {
 // That is the span in which the set is this attachment's own: one statement later the
 // names are prefixed and the files join what other renders produced.
 //
-// The carrier is supplied rather than derived, because it is not derivable at that
+// The owner is supplied rather than derived, because it is not derivable at that
 // render: the node identity such a render carries is the HOST component's, so a set
 // filed under it would answer about the host while the blocks being read are the
 // attachment's.
@@ -298,13 +298,13 @@ func (e *emittedProjections) coordinates() *emittedStageCoordinates {
 	return newEmittedStageCoordinates(e)
 }
 
-// nodeAttachmentProjection returns one attachment carrier's retained emission, and
-// reports whether the render reached that carrier at all.
+// nodeAttachmentProjection returns one attachment owner's retained emission, and
+// reports whether the render reached that owner at all.
 //
 // The report separates a render that emitted nothing from one the walk never
 // reached, on the division the node's own reader draws: the presentation collapses
 // the two because a fact accessor returns a value and never a report, while the
-// enumeration does not, because an axis over a carrier nothing rendered would present
+// enumeration does not, because an axis over an owner nothing rendered would present
 // rules coordinates nothing produced.
 func (e *emittedProjections) nodeAttachmentProjection(
 	key nodeAttachmentKey,
@@ -318,8 +318,8 @@ func (e *emittedProjections) nodeAttachmentProjection(
 	return p, ok
 }
 
-// boundaryAttachmentProjection returns one boundary-scope attachment carrier's
-// retained emission, and reports whether the render reached that carrier at all.
+// boundaryAttachmentProjection returns one boundary-scope attachment owner's
+// retained emission, and reports whether the render reached that owner at all.
 func (e *emittedProjections) boundaryAttachmentProjection(
 	key boundaryAttachmentKey,
 ) (*boundaryAttachmentEmittedProjection, bool) {
@@ -468,12 +468,12 @@ func (v *emittedView) EmittedFileOriginSet(node string, path string) []string {
 // file standing at one output name within the render one attachment carries on a
 // node.
 //
-// It answers from the carrier-keyed retention rather than from the node's own, which
+// It answers from the owner-keyed retention rather than from the node's own, which
 // is what keeps this render's emission and the host component's separate: the two
 // renders emit under the same node identity, and only the attachment coordinate tells
 // them apart.
 //
-// A carrier the retention does not hold, and a name that render emitted nothing
+// An owner the retention does not hold, and a name that render emitted nothing
 // under, both answer with no blocks — the same answer for the same reason the
 // presentation's own contract gives: an accessor returns a value and never a report.
 func (v *emittedView) AttachmentEmittedFileOriginSet(
@@ -563,11 +563,11 @@ func (c *emittedStageCoordinates) NodeEmittedPaths(node string) []string {
 // NodeAttachmentEmittedPaths returns the output names the render one attachment
 // carries on a node emitted, deduplicated, in name order.
 //
-// It reads the same carrier-keyed retention the fact is answered from, for the reason
+// It reads the same owner-keyed retention the fact is answered from, for the reason
 // the node's own axis reads its own: one reader means the names a rule is invoked
 // over and the names its facts are keyed by cannot disagree.
 //
-// A carrier the retention does not hold answers with nothing, which is what a render
+// An owner the retention does not hold answers with nothing, which is what a render
 // that emitted nothing gives: neither has a name for a rule to be asked about.
 // Each name carries the FeatureRecipe the render's blocks were authored in, which
 // the retention holds because nothing downstream of that render names it.

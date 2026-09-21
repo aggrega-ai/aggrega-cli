@@ -17,7 +17,7 @@ import (
 )
 
 // The rule declared over an artifact's pillars is invoked once per entry EACH
-// carrier projects, and this file drives a real build over all three carriers and
+// owner projects, and this file drives a real build over all three owners and
 // reads what each was invoked over.
 //
 // # Why an outcome proof would certify nothing here
@@ -27,7 +27,7 @@ import (
 // invoked no times raises nothing, and raising nothing is what a rule that ran and
 // approved also does. So the invocation itself is what is asserted — by identity
 // and not only by count, because a count cannot separate "invoked once per entry"
-// from "invoked the right number of times over the wrong entries", and a carrier
+// from "invoked the right number of times over the wrong entries", and an owner
 // key assembled from the wrong pair of the strings this build holds produces a set
 // of exactly the right size.
 //
@@ -43,7 +43,7 @@ import (
 //     So a rule reading the host's pair would collect no reference from an
 //     attachment's template and would again admit it.
 //   - Every site declares an entry under one shared output name, so a collapsed
-//     key space answers one carrier's text where another's belongs with the count
+//     key space answers one owner's text where another's belongs with the count
 //     unchanged.
 //
 // # Why this instrument is not the one beside the external test file
@@ -57,9 +57,9 @@ import (
 // The three declared values this file records, named so a record says which was
 // invoked rather than only how often.
 const (
-	carrierRuleNodesOwn         = "node's own Recipe"
-	carrierRuleNodeAttachment   = "attachment on a node"
-	carrierRuleBoundaryAttached = "boundary-scope attachment"
+	ownerRuleNodesOwn         = "node's own Recipe"
+	ownerRuleNodeAttachment   = "attachment on a node"
+	ownerRuleBoundaryAttached = "boundary-scope attachment"
 )
 
 // The artifact names the refusal proofs add to the fixture's own. Every name this
@@ -68,48 +68,48 @@ const (
 // values, so a render running in another test would be recorded too. Filtering by
 // that prefix makes a foreign render unable to change any assertion here.
 const (
-	carrierNamePrefix        = "carrier-"
-	carrierOffendingArtifact = carrierNamePrefix + "offender.yaml"
+	ownerNamePrefix        = "owner-"
+	ownerOffendingArtifact = ownerNamePrefix + "offender.yaml"
 )
 
-// carrierOffendingBody descends through the source pillar, written with the pair
+// ownerOffendingBody descends through the source pillar, written with the pair
 // the site's OWN provider declares.
 //
 // The depth matters: a one-segment read is admitted by evaluation and writes the
 // literal placeholder into the output, while this one fails evaluation with wording
 // naming only the first hop. The rule stands in front of both.
-func carrierOffendingBody(capability string) string {
-	pair := carrierDelimiters[capability]
+func ownerOffendingBody(capability string) string {
+	pair := ownerDelimiters[capability]
 	return "kind: Offender\nchart: " + pair[0] + " .source.chart " + pair[1] + "\n"
 }
 
-// carrierTwoOffencesBody names TWO pillars the site does not declare, in one
+// ownerTwoOffencesBody names TWO pillars the site does not declare, in one
 // template. It is what pins the rule to reporting EVERY offending reference a
 // template makes rather than the first: over a body carrying one offence, a rule
 // that stopped at the first would be indistinguishable from this one.
-func carrierTwoOffencesBody(capability string) string {
-	pair := carrierDelimiters[capability]
+func ownerTwoOffencesBody(capability string) string {
+	pair := ownerDelimiters[capability]
 	return "kind: Offender\nchart: " + pair[0] + " .source.chart " + pair[1] +
 		"\nrepo: " + pair[0] + " .source.repository " + pair[1] + "\n"
 }
 
-// carrierOffendingBlock is an artifacts block holding one offending entry and
+// ownerOffendingBlock is an artifacts block holding one offending entry and
 // nothing else.
-func carrierOffendingBlock(body string) types.OrderedMap[types.ArtifactEntry] {
+func ownerOffendingBlock(body string) types.OrderedMap[types.ArtifactEntry] {
 	out := types.OrderedMap[types.ArtifactEntry]{}
-	out.Set(carrierOffendingArtifact, types.ArtifactEntry{Inline: body})
+	out.Set(ownerOffendingArtifact, types.ArtifactEntry{Inline: body})
 	return out
 }
 
-// carrierInvocation is one invocation of one of the three values, in invocation
+// ownerInvocation is one invocation of one of the three values, in invocation
 // order.
-type carrierInvocation struct {
+type ownerInvocation struct {
 	// rule names which of the three values was invoked.
 	rule string
 
-	// carrier is the node id for the two node-rooted values and the boundary's
+	// owner is the node id for the two node-rooted values and the boundary's
 	// scope path for the boundary-rooted one.
-	carrier string
+	owner string
 
 	// attachment is empty for the value declared over a node's own Recipe.
 	attachment string
@@ -118,25 +118,25 @@ type carrierInvocation struct {
 	artifact string
 }
 
-// recordCarrierPillarInvocations replaces all three declared values with wrappers
+// recordOwnerPillarInvocations replaces all three declared values with wrappers
 // that record every subject the production path invokes them over, and restores
 // the declarations when the test ends.
 //
 // Each wrapper DELEGATES rather than substituting a verdict, so the build under
 // observation behaves exactly as it does unobserved: what is measured is the
 // invocation, not a stand-in for it. All three are wrapped by one call because the
-// proofs are about which carrier reached which entry, and a recorder covering one
+// proofs are about which owner reached which entry, and a recorder covering one
 // value could not show an entry reaching the wrong one.
 //
 // The caller must not run in parallel: it replaces package-level declarations.
-func recordCarrierPillarInvocations(t *testing.T) func() []carrierInvocation {
+func recordOwnerPillarInvocations(t *testing.T) func() []ownerInvocation {
 	t.Helper()
 
 	var (
 		mu   sync.Mutex
-		seen []carrierInvocation
+		seen []ownerInvocation
 	)
-	add := func(r carrierInvocation) {
+	add := func(r ownerInvocation) {
 		mu.Lock()
 		seen = append(seen, r)
 		mu.Unlock()
@@ -150,8 +150,8 @@ func recordCarrierPillarInvocations(t *testing.T) func() []carrierInvocation {
 		Sentinel: own.Sentinel,
 		Severity: own.Severity,
 		Run: func(v constraint.HydratedView, s constraint.NodeArtifactSubject) []constraint.Objection {
-			add(carrierInvocation{
-				rule: carrierRuleNodesOwn, carrier: s.NodeID(), artifact: s.ArtifactName(),
+			add(ownerInvocation{
+				rule: ownerRuleNodesOwn, owner: s.NodeID(), artifact: s.ArtifactName(),
 			})
 			return own.Run(v, s)
 		},
@@ -164,9 +164,9 @@ func recordCarrierPillarInvocations(t *testing.T) func() []carrierInvocation {
 		Run: func(
 			v constraint.HydratedView, s constraint.NodeAttachmentArtifactSubject,
 		) []constraint.Objection {
-			add(carrierInvocation{
-				rule:       carrierRuleNodeAttachment,
-				carrier:    s.NodeID(),
+			add(ownerInvocation{
+				rule:       ownerRuleNodeAttachment,
+				owner:      s.NodeID(),
 				attachment: s.AttachmentName(),
 				artifact:   s.ArtifactName(),
 			})
@@ -181,9 +181,9 @@ func recordCarrierPillarInvocations(t *testing.T) func() []carrierInvocation {
 		Run: func(
 			v constraint.HydratedView, s constraint.BoundaryAttachmentArtifactSubject,
 		) []constraint.Objection {
-			add(carrierInvocation{
-				rule:       carrierRuleBoundaryAttached,
-				carrier:    s.BoundaryPath(),
+			add(ownerInvocation{
+				rule:       ownerRuleBoundaryAttached,
+				owner:      s.BoundaryPath(),
 				attachment: s.AttachmentName(),
 				artifact:   s.ArtifactName(),
 			})
@@ -196,12 +196,12 @@ func recordCarrierPillarInvocations(t *testing.T) func() []carrierInvocation {
 		BoundaryAttachmentArtifactPillarDeclared = onBoundary
 	})
 
-	return func() []carrierInvocation {
+	return func() []ownerInvocation {
 		mu.Lock()
 		defer mu.Unlock()
-		out := make([]carrierInvocation, 0, len(seen))
+		out := make([]ownerInvocation, 0, len(seen))
 		for _, r := range seen {
-			if strings.HasPrefix(r.artifact, carrierNamePrefix) {
+			if strings.HasPrefix(r.artifact, ownerNamePrefix) {
 				out = append(out, r)
 			}
 		}
@@ -209,10 +209,10 @@ func recordCarrierPillarInvocations(t *testing.T) func() []carrierInvocation {
 	}
 }
 
-// carrierInvocationsOf narrows a record to one of the three values, keeping
+// ownerInvocationsOf narrows a record to one of the three values, keeping
 // invocation order.
-func carrierInvocationsOf(got []carrierInvocation, rule string) []carrierInvocation {
-	out := make([]carrierInvocation, 0, len(got))
+func ownerInvocationsOf(got []ownerInvocation, rule string) []ownerInvocation {
+	out := make([]ownerInvocation, 0, len(got))
 	for _, r := range got {
 		if r.rule == rule {
 			out = append(out, r)
@@ -221,8 +221,8 @@ func carrierInvocationsOf(got []carrierInvocation, rule string) []carrierInvocat
 	return out
 }
 
-// TestTheArtifactPillarRuleIsInvokedOncePerArtifactEachCarrierProjects is the
-// enumeration assertion for the production invocation on all three carriers,
+// TestTheArtifactPillarRuleIsInvokedOncePerArtifactEachOwnerProjects is the
+// enumeration assertion for the production invocation on all three owners,
 // stated over one build that reaches all of them.
 //
 // It asserts what each value was invoked over, by identity and in walk order,
@@ -231,18 +231,18 @@ func carrierInvocationsOf(got []carrierInvocation, rule string) []carrierInvocat
 // fewer things, they agree, and nothing is raised — which is exactly what a rule
 // that ran and approved looks like.
 //
-// It is also the proof that the three carriers do not reach into each other. Every
+// It is also the proof that the three owners do not reach into each other. Every
 // key here is built from strings the render holds under other names — the host's
 // node id, each attachment's instance name, the boundary's scope path — so a
-// carrier assembled from the wrong pair of them yields a set of the right size,
+// owner assembled from the wrong pair of them yields a set of the right size,
 // and only the named identities can tell the two apart.
 //
 // It does not run in parallel: it replaces package-level declarations.
-func TestTheArtifactPillarRuleIsInvokedOncePerArtifactEachCarrierProjects(t *testing.T) {
-	recorded := recordCarrierPillarInvocations(t)
+func TestTheArtifactPillarRuleIsInvokedOncePerArtifactEachOwnerProjects(t *testing.T) {
+	recorded := recordOwnerPillarInvocations(t)
 
 	res, err := RenderAll(
-		context.Background(), carrierInput(), carrierLookup(), carrierFactory(),
+		context.Background(), ownerInput(), ownerLookup(), ownerFactory(),
 	)
 	if err != nil {
 		t.Fatalf("the admitting build did not complete, so nothing below is attributable to the "+
@@ -255,14 +255,14 @@ func TestTheArtifactPillarRuleIsInvokedOncePerArtifactEachCarrierProjects(t *tes
 
 	got := recorded()
 
-	// ANTI-NEEDLE, per carrier. A build carrying artifacts on all three must
+	// ANTI-NEEDLE, per owner. A build carrying artifacts on all three must
 	// produce invocations on all three; a zero on any of them is the whole failure
 	// this file exists to catch, and it passes every byte-identity, determinism and
 	// equivalence proof over the same build.
 	for _, rule := range []string{
-		carrierRuleNodesOwn, carrierRuleNodeAttachment, carrierRuleBoundaryAttached,
+		ownerRuleNodesOwn, ownerRuleNodeAttachment, ownerRuleBoundaryAttached,
 	} {
-		if len(carrierInvocationsOf(got, rule)) == 0 {
+		if len(ownerInvocationsOf(got, rule)) == 0 {
 			t.Fatalf("the value declared over the %s was invoked ZERO times over a build that "+
 				"projects artifacts there.\n"+
 				"CONSEQUENCE: a rule invoked zero times raises nothing, which is indistinguishable "+
@@ -274,38 +274,38 @@ func TestTheArtifactPillarRuleIsInvokedOncePerArtifactEachCarrierProjects(t *tes
 	// entry any attachment declares. An attachment's entries flow through the same
 	// walk under this node's identity, so an invocation over one of them here would
 	// mean the node-keyed facts had been widened to cover them.
-	wantOwn := []carrierInvocation{
-		{rule: carrierRuleNodesOwn, carrier: carrierNode, artifact: carrierSharedArtifactName},
-		{rule: carrierRuleNodesOwn, carrier: carrierNode, artifact: carrierHostArtifactName},
+	wantOwn := []ownerInvocation{
+		{rule: ownerRuleNodesOwn, owner: ownerNode, artifact: ownerSharedArtifactName},
+		{rule: ownerRuleNodesOwn, owner: ownerNode, artifact: ownerHostArtifactName},
 	}
-	if diff := carrierInvocationsOf(got, carrierRuleNodesOwn); !slices.Equal(diff, wantOwn) {
+	if diff := ownerInvocationsOf(got, ownerRuleNodesOwn); !slices.Equal(diff, wantOwn) {
 		t.Errorf("the node's own value was invoked over %v; want exactly %v — one per entry the "+
 			"node's OWN Recipe declares, in walk order", diff, wantOwn)
 	}
 
 	// The node-carried attachments: one invocation per entry per attachment, in
 	// attachment order then entry order. Both attachments declare an entry under
-	// the shared name, so a carrier missing the attachment coordinate would collapse
+	// the shared name, so an owner missing the attachment coordinate would collapse
 	// the four into two.
-	wantOnNode := []carrierInvocation{
+	wantOnNode := []ownerInvocation{
 		{
-			rule: carrierRuleNodeAttachment, carrier: carrierNode,
-			attachment: carrierMonInstance, artifact: carrierSharedArtifactName,
+			rule: ownerRuleNodeAttachment, owner: ownerNode,
+			attachment: ownerMonInstance, artifact: ownerSharedArtifactName,
 		},
 		{
-			rule: carrierRuleNodeAttachment, carrier: carrierNode,
-			attachment: carrierMonInstance, artifact: carrierMonArtifactName,
+			rule: ownerRuleNodeAttachment, owner: ownerNode,
+			attachment: ownerMonInstance, artifact: ownerMonArtifactName,
 		},
 		{
-			rule: carrierRuleNodeAttachment, carrier: carrierNode,
-			attachment: carrierLogsInstance, artifact: carrierSharedArtifactName,
+			rule: ownerRuleNodeAttachment, owner: ownerNode,
+			attachment: ownerLogsInstance, artifact: ownerSharedArtifactName,
 		},
 		{
-			rule: carrierRuleNodeAttachment, carrier: carrierNode,
-			attachment: carrierLogsInstance, artifact: carrierLogsArtifactName,
+			rule: ownerRuleNodeAttachment, owner: ownerNode,
+			attachment: ownerLogsInstance, artifact: ownerLogsArtifactName,
 		},
 	}
-	if diff := carrierInvocationsOf(got, carrierRuleNodeAttachment); !slices.Equal(diff, wantOnNode) {
+	if diff := ownerInvocationsOf(got, ownerRuleNodeAttachment); !slices.Equal(diff, wantOnNode) {
 		t.Errorf("the node-carried attachment value was invoked over %v; want exactly %v",
 			diff, wantOnNode)
 	}
@@ -313,50 +313,50 @@ func TestTheArtifactPillarRuleIsInvokedOncePerArtifactEachCarrierProjects(t *tes
 	// The boundary-scope attachment: rooted at the boundary, once per entry. It is
 	// declared once and reaches every component the boundary holds, so a node-rooted
 	// invocation would ask about one authored entry once per member.
-	wantOnBoundary := []carrierInvocation{
+	wantOnBoundary := []ownerInvocation{
 		{
-			rule: carrierRuleBoundaryAttached, carrier: carrierBoundaryPath,
-			attachment: carrierBoundaryInstance, artifact: carrierSharedArtifactName,
+			rule: ownerRuleBoundaryAttached, owner: ownerBoundaryPath,
+			attachment: ownerBoundaryInstance, artifact: ownerSharedArtifactName,
 		},
 		{
-			rule: carrierRuleBoundaryAttached, carrier: carrierBoundaryPath,
-			attachment: carrierBoundaryInstance, artifact: carrierBoundaryArtifact,
+			rule: ownerRuleBoundaryAttached, owner: ownerBoundaryPath,
+			attachment: ownerBoundaryInstance, artifact: ownerBoundaryArtifact,
 		},
 	}
-	if diff := carrierInvocationsOf(got, carrierRuleBoundaryAttached); !slices.Equal(diff, wantOnBoundary) {
+	if diff := ownerInvocationsOf(got, ownerRuleBoundaryAttached); !slices.Equal(diff, wantOnBoundary) {
 		t.Errorf("the boundary-scope attachment value was invoked over %v; want exactly %v",
 			diff, wantOnBoundary)
 	}
 
 	// The boundary-scope attachment appears in the node's merged attachment set, so
 	// it must not ALSO be reached through the node-rooted value.
-	for _, r := range carrierInvocationsOf(got, carrierRuleNodeAttachment) {
-		if r.attachment == carrierBoundaryInstance {
+	for _, r := range ownerInvocationsOf(got, ownerRuleNodeAttachment) {
+		if r.attachment == ownerBoundaryInstance {
 			t.Errorf("the node-rooted value was invoked over the boundary-scope attachment %q; "+
 				"one authored entry would then be asked about once per component the boundary holds",
 				r.attachment)
 		}
 	}
 
-	t.Logf("DIAGNOSTIC WALK — invocations per carrier: node's own %d %v; attachment-on-node %d %v; "+
+	t.Logf("DIAGNOSTIC WALK — invocations per owner: node's own %d %v; attachment-on-node %d %v; "+
 		"boundary-scope %d %v; objections raised: 0",
-		len(carrierInvocationsOf(got, carrierRuleNodesOwn)),
-		carrierInvocationsOf(got, carrierRuleNodesOwn),
-		len(carrierInvocationsOf(got, carrierRuleNodeAttachment)),
-		carrierInvocationsOf(got, carrierRuleNodeAttachment),
-		len(carrierInvocationsOf(got, carrierRuleBoundaryAttached)),
-		carrierInvocationsOf(got, carrierRuleBoundaryAttached))
+		len(ownerInvocationsOf(got, ownerRuleNodesOwn)),
+		ownerInvocationsOf(got, ownerRuleNodesOwn),
+		len(ownerInvocationsOf(got, ownerRuleNodeAttachment)),
+		ownerInvocationsOf(got, ownerRuleNodeAttachment),
+		len(ownerInvocationsOf(got, ownerRuleBoundaryAttached)),
+		ownerInvocationsOf(got, ownerRuleBoundaryAttached))
 }
 
-// carrierRefusalProof drives one build in which exactly one site's artifacts block
+// ownerRefusalProof drives one build in which exactly one site's artifacts block
 // offends, and returns the halt and the record.
-func carrierRefusalProof(
-	t *testing.T, blocks carrierArtifactBlocks,
-) (error, []carrierInvocation) {
+func ownerRefusalProof(
+	t *testing.T, blocks ownerArtifactBlocks,
+) (error, []ownerInvocation) {
 	t.Helper()
-	recorded := recordCarrierPillarInvocations(t)
+	recorded := recordOwnerPillarInvocations(t)
 	_, err := RenderAll(
-		context.Background(), carrierInput(), carrierLookupWithArtifacts(blocks), carrierFactory(),
+		context.Background(), ownerInput(), ownerLookupWithArtifacts(blocks), ownerFactory(),
 	)
 	if err == nil {
 		t.Fatal("an artifact naming a pillar its FeatureRecipe does not declare was admitted; want a halt")
@@ -367,7 +367,7 @@ func carrierRefusalProof(
 	return err, recorded()
 }
 
-// carrierAssertDeclaredRuleRefused reads the halt an author is handed and requires
+// ownerAssertDeclaredRuleRefused reads the halt an author is handed and requires
 // it to be the DECLARED rule's finding.
 //
 // The wording is what makes the message able to say which mechanism ran, and three
@@ -377,13 +377,13 @@ func carrierRefusalProof(
 // a second, hand-written reading of this condition would produce. That third one
 // keeps a second implementation from appearing beside the rule unnoticed, which is
 // what turns "a halt happened" into "this halt came from here".
-func carrierAssertDeclaredRuleRefused(t *testing.T, err error, attachment string) string {
+func ownerAssertDeclaredRuleRefused(t *testing.T, err error, attachment string) string {
 	t.Helper()
 	msg := cerrors.CauseChain(err)
 	for _, want := range []string{
 		"artifact template references a pillar the Recipe does not declare",
 		`".source.chart"`,
-		`artifact "` + carrierOffendingArtifact + `"`,
+		`artifact "` + ownerOffendingArtifact + `"`,
 		`attachment "` + attachment + `"`,
 	} {
 		if !strings.Contains(msg, want) {
@@ -399,7 +399,7 @@ func carrierAssertDeclaredRuleRefused(t *testing.T, err error, attachment string
 }
 
 // TestTheDeclaredRuleRefusesAnArtifactAnAttachmentOnANodeCarries is the refusal
-// proof for the node-carried carrier.
+// proof for the node-carried owner.
 //
 // It is the direction the enumeration proof above cannot give: a value that
 // objected about nothing would satisfy that one on its own. The fixture differs
@@ -415,28 +415,28 @@ func carrierAssertDeclaredRuleRefused(t *testing.T, err error, attachment string
 //
 // It does not run in parallel: it replaces package-level declarations.
 func TestTheDeclaredRuleRefusesAnArtifactAnAttachmentOnANodeCarries(t *testing.T) {
-	blocks := carrierAdmittingArtifacts()
-	blocks.mon = carrierOffendingBlock(carrierOffendingBody(carrierMonCapability))
+	blocks := ownerAdmittingArtifacts()
+	blocks.mon = ownerOffendingBlock(ownerOffendingBody(ownerMonCapability))
 
-	err, got := carrierRefusalProof(t, blocks)
-	msg := carrierAssertDeclaredRuleRefused(t, err, carrierMonInstance)
+	err, got := ownerRefusalProof(t, blocks)
+	msg := ownerAssertDeclaredRuleRefused(t, err, ownerMonInstance)
 
 	// ANTI-NEEDLE, the other half: the halt must have come from an INVOKED value
 	// rather than from anything else refusing the same input.
-	want := carrierInvocation{
-		rule: carrierRuleNodeAttachment, carrier: carrierNode,
-		attachment: carrierMonInstance, artifact: carrierOffendingArtifact,
+	want := ownerInvocation{
+		rule: ownerRuleNodeAttachment, owner: ownerNode,
+		attachment: ownerMonInstance, artifact: ownerOffendingArtifact,
 	}
 	if !slices.Contains(got, want) {
 		t.Errorf("the record holds %v, which does not include %v — so the halt above did not come "+
-			"from the value declared over that carrier", got, want)
+			"from the value declared over that owner", got, want)
 	}
 
 	// And the node's own value was not invoked over it: the entry belongs to the
 	// attachment's FeatureRecipe, and the facts keyed by the node alone do not cover
 	// it.
-	for _, r := range carrierInvocationsOf(got, carrierRuleNodesOwn) {
-		if r.artifact == carrierOffendingArtifact {
+	for _, r := range ownerInvocationsOf(got, ownerRuleNodesOwn) {
+		if r.artifact == ownerOffendingArtifact {
 			t.Errorf("the node's own value was invoked over %q, which an attachment's FeatureRecipe "+
 				"carries", r.artifact)
 		}
@@ -446,7 +446,7 @@ func TestTheDeclaredRuleRefusesAnArtifactAnAttachmentOnANodeCarries(t *testing.T
 }
 
 // TestTheDeclaredRuleRefusesAnArtifactABoundaryScopeAttachmentCarries is the
-// refusal proof for the boundary-rooted carrier, and it is the example the widening
+// refusal proof for the boundary-rooted owner, and it is the example the widening
 // was opened for: a boundary-scope FeatureRecipe writing a source reference in an
 // artifact with no source declared.
 //
@@ -457,27 +457,27 @@ func TestTheDeclaredRuleRefusesAnArtifactAnAttachmentOnANodeCarries(t *testing.T
 //
 // It does not run in parallel: it replaces package-level declarations.
 func TestTheDeclaredRuleRefusesAnArtifactABoundaryScopeAttachmentCarries(t *testing.T) {
-	blocks := carrierAdmittingArtifacts()
-	blocks.bridge = carrierOffendingBlock(carrierOffendingBody(carrierBoundaryCapability))
+	blocks := ownerAdmittingArtifacts()
+	blocks.bridge = ownerOffendingBlock(ownerOffendingBody(ownerBoundaryCapability))
 
-	err, got := carrierRefusalProof(t, blocks)
-	msg := carrierAssertDeclaredRuleRefused(t, err, carrierBoundaryInstance)
+	err, got := ownerRefusalProof(t, blocks)
+	msg := ownerAssertDeclaredRuleRefused(t, err, ownerBoundaryInstance)
 
-	want := carrierInvocation{
-		rule: carrierRuleBoundaryAttached, carrier: carrierBoundaryPath,
-		attachment: carrierBoundaryInstance, artifact: carrierOffendingArtifact,
+	want := ownerInvocation{
+		rule: ownerRuleBoundaryAttached, owner: ownerBoundaryPath,
+		attachment: ownerBoundaryInstance, artifact: ownerOffendingArtifact,
 	}
 	if !slices.Contains(got, want) {
 		t.Errorf("the record holds %v, which does not include %v — so the halt above did not come "+
-			"from the value declared over the boundary-rooted carrier", got, want)
+			"from the value declared over the boundary-rooted owner", got, want)
 	}
 
-	// The offending entry must be reached ONCE, through the boundary-rooted carrier
+	// The offending entry must be reached ONCE, through the boundary-rooted owner
 	// and not also through the node-rooted one. The attachment appears in the node's
 	// merged attachment set, so the wrong rooting is reachable rather than
 	// hypothetical.
-	for _, r := range carrierInvocationsOf(got, carrierRuleNodeAttachment) {
-		if r.artifact == carrierOffendingArtifact {
+	for _, r := range ownerInvocationsOf(got, ownerRuleNodeAttachment) {
+		if r.artifact == ownerOffendingArtifact {
 			t.Errorf("the node-rooted value was invoked over %q, which a boundary-scope attachment "+
 				"carries", r.artifact)
 		}
@@ -486,7 +486,7 @@ func TestTheDeclaredRuleRefusesAnArtifactABoundaryScopeAttachmentCarries(t *test
 	t.Logf("DIAGNOSTIC WALK — boundary-scope attachment, refused: invoked over %v; halt = %s", got, msg)
 }
 
-// TestTheCarrierRuleReportsEveryOffendingReferenceInOneTemplate measures what an
+// TestTheOwnerRuleReportsEveryOffendingReferenceInOneTemplate measures what an
 // author is handed when one attachment-carried template names two pillars its
 // FeatureRecipe does not declare.
 //
@@ -497,11 +497,11 @@ func TestTheDeclaredRuleRefusesAnArtifactABoundaryScopeAttachmentCarries(t *test
 // carries it.
 //
 // It does not run in parallel: it replaces package-level declarations.
-func TestTheCarrierRuleReportsEveryOffendingReferenceInOneTemplate(t *testing.T) {
-	blocks := carrierAdmittingArtifacts()
-	blocks.mon = carrierOffendingBlock(carrierTwoOffencesBody(carrierMonCapability))
+func TestTheOwnerRuleReportsEveryOffendingReferenceInOneTemplate(t *testing.T) {
+	blocks := ownerAdmittingArtifacts()
+	blocks.mon = ownerOffendingBlock(ownerTwoOffencesBody(ownerMonCapability))
 
-	err, got := carrierRefusalProof(t, blocks)
+	err, got := ownerRefusalProof(t, blocks)
 
 	msg := cerrors.CauseChain(err)
 	for _, want := range []string{`".source.chart"`, `".source.repository"`} {
@@ -514,8 +514,8 @@ func TestTheCarrierRuleReportsEveryOffendingReferenceInOneTemplate(t *testing.T)
 
 	// The envelope, which names the document to edit rather than the Recipe: the
 	// entry is in the artifacts block of the FeatureRecipe the attachment binds.
-	envelope := `artifact "` + carrierOffendingArtifact +
-		`" references pillars the FeatureRecipe attachment "` + carrierMonInstance +
+	envelope := `artifact "` + ownerOffendingArtifact +
+		`" references pillars the FeatureRecipe attachment "` + ownerMonInstance +
 		`" binds does not declare`
 	if !strings.Contains(msg, envelope) {
 		t.Errorf("the halt does not carry %q, which is what says which document the finding is "+
@@ -526,13 +526,13 @@ func TestTheCarrierRuleReportsEveryOffendingReferenceInOneTemplate(t *testing.T)
 	// in the invocations.
 	invocations := 0
 	for _, r := range got {
-		if r.artifact == carrierOffendingArtifact {
+		if r.artifact == ownerOffendingArtifact {
 			invocations++
 		}
 	}
 	if invocations != 1 {
 		t.Errorf("the value was invoked %d time(s) over %q; want exactly 1 — the several findings "+
-			"come from one invocation reading the whole template", invocations, carrierOffendingArtifact)
+			"come from one invocation reading the whole template", invocations, ownerOffendingArtifact)
 	}
 
 	t.Logf("DIAGNOSTIC WALK — one attachment-carried entry naming two undeclared pillars: "+

@@ -653,13 +653,13 @@ func phaseB6(
 		// gate's uniform capability diagnostic, engine.Render failures, and the
 		// Phase B sub-pass CATALOG_ERRORs) already carry their own context, and
 		// re-wrapping would bury the gate diagnostic the user needs to see.
-		// The carrier is (this node, this attachment). Both coordinates are needed:
+		// The owner is (this node, this attachment). Both coordinates are needed:
 		// two attachments on one node carry independently authored documents, and
 		// nothing makes one's output names distinct from the other's or from the
 		// node's own. It carries this render's presentation too, so the rule declared
-		// over the carrier's facts can be asked inside the walk that records them.
+		// over the owner's facts can be asked inside the walk that records them.
 		frFiles, frComponentID, err := renderFeatureRecipeFiles(ctx, frEngine, fr, &frCtx, frNodeCtx, frValues.Resolved, resolvedSrc, frDocument, item.Identity,
-			carrierProductsOf(state).attachmentOnNode(nodeID, item.Instance),
+			ownerProductsOf(state).attachmentOnNode(nodeID, item.Instance),
 			featureAttachmentSlots(fr, input), input.WorkloadLibraries, input.ArtifactsLibraries,
 			nodeAnnotations, input.CatalogLookup.ProviderPlugin)
 		if err != nil {
@@ -1041,7 +1041,7 @@ func featureAttachmentSlots(fr *types.FeatureRecipe, input RendererInput) types.
 // input-kind gate, then sourced engine.Render / synthesized workload synthesis
 // / artifacts emission via the same Phase B leaf passes (phaseB2/B3/B4). Its
 // emission is then recorded and checked for two of its blocks meeting on one
-// output name, under the carrier this render belongs to rather than under the
+// output name, under the owner this render belongs to rather than under the
 // host component's node identity the passes run beneath. A render-only
 // synthetic Recipe carries the FR's input-kind fields so those passes — which
 // read state.Recipe.Spec.* — operate unchanged; this is reuse of the component
@@ -1072,17 +1072,17 @@ func featureAttachmentSlots(fr *types.FeatureRecipe, input RendererInput) types.
 // derived none, which is a caller supplying no instance label. Every input kind
 // stamps the composed value on what it emits, so every one of them reports it.
 //
-// hydrated is the carrier this render records its mid-render state through, and
-// the carrier whose declared rule is asked about each artifact entry it projects.
-// It is supplied by the caller because the carrier is the caller's own knowledge
+// hydrated is the owner this render records its mid-render state through, and
+// the owner whose declared rule is asked about each artifact entry it projects.
+// It is supplied by the caller because the owner is the caller's own knowledge
 // and cannot be recovered here: this function is reached from a per-component site
 // and from a boundary-scope one, and the node identity it is handed is the host
 // component's on the first and a composite dispatch marker on the second. A nil
-// carrier records nothing and asks nothing.
+// owner records nothing and asks nothing.
 //
 // annotations are the platform annotations authored for the scope this render's
 // output lands in, in the order the deployment authored them. They are supplied by
-// the caller for the same reason the carrier is — the set is the caller's own
+// the caller for the same reason the owner is — the set is the caller's own
 // knowledge and differs by scope: the per-component caller passes the host node's
 // merged annotations, the boundary-scope caller its boundary's. They arrive as the
 // ordered source rather than as the render context's flattened copy, which is what
@@ -1093,7 +1093,7 @@ func featureAttachmentSlots(fr *types.FeatureRecipe, input RendererInput) types.
 //
 // documentPath is the file this FeatureRecipe was declared in, and it is what every
 // diagnostic the sub-passes below raise names as its location. It is supplied by
-// the caller rather than looked up here for the reason the carrier above is: this
+// the caller rather than looked up here for the reason the owner above is: this
 // function is reached from both attachment scopes, and the lookup that answers it
 // is the caller's own. An entity resolved from a registry has no such document and
 // passes the empty string, which positions those diagnostics at no file — the same
@@ -1108,7 +1108,7 @@ func renderFeatureRecipeFiles(
 	resolvedSrc any,
 	documentPath string,
 	identity attachmentIdentity,
-	hydrated attachmentCarrier,
+	hydrated attachmentOwner,
 	slots types.OrderedMap[types.AttachmentSlot],
 	workloadLibs map[string]types.WorkloadLibrary,
 	artifactsLibs map[string]types.ArtifactsLibrary,
@@ -1246,7 +1246,7 @@ func renderFeatureRecipeFiles(
 		},
 	}
 	state := NewPhaseBState(synth, frNodeCtx.NodeID, frNodeCtx.BoundaryPath, documentPath)
-	// The carrier this render records against and is checked under. It is set
+	// The owner this render records against and is checked under. It is set
 	// instead of the per-node retention a component render carries, never beside it:
 	// the passes below walk the same producers under the node identity above, so
 	// recording through the node retention would file this attachment's values under
@@ -1320,7 +1320,7 @@ func renderFeatureRecipeFiles(
 		return nil, "", err
 	}
 	// Reduce this render's completed emission to the projection that outlives it,
-	// then ask the value declared over this carrier's emission whether two of the
+	// then ask the value declared over this owner's emission whether two of the
 	// FeatureRecipe's blocks met on one output name.
 	//
 	// This is the position: every pass of this render that can contribute a file has

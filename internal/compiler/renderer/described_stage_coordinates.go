@@ -488,7 +488,7 @@ func (c *describedStageCoordinates) NodeTemplateFields(node string) []constraint
 // there would leave a finding positioned at a path the file does not contain.
 //
 // The boundary-rooted axis beside them keeps its own loop, and that is a property
-// of its carrier rather than an inconsistency: it enumerates a different struct
+// of what it enumerates rather than an inconsistency: it walks a different struct
 // type, over a set that includes two blocks these two deliberately leave to their
 // own axes.
 func templateFieldCoordinatesOf(

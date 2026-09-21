@@ -229,7 +229,7 @@ type BoundaryAssembler interface {
 // format survives the merge boundary and reaches the render-policy parser seam
 // alongside the bytes. Format is empty when the producer declared none, in which
 // case a downstream consumer selects the format from the file extension. Format
-// is additive metadata: it never affects the emitted bytes. The single-carrier
+// is additive metadata: it never affects the emitted bytes. The single-record
 // shape keeps the assembled bytes and their format from drifting into parallel
 // maps keyed by the same path.
 type AssembledFile struct {
@@ -242,7 +242,7 @@ type AssembledFile struct {
 // rather than flat at the dispatch path; Segment names the directory those
 // per-node sub-directories sit under, and is empty when the provider names none.
 //
-// The two travel as one carrier because they answer one question — where a
+// The two travel as one value because they answer one question — where a
 // contributor's files go — and a caller reading the flag has to read the segment
 // with it. Keeping them apart would let a segment reach a caller that never
 // asked whether nesting was on, which is how the two would drift.

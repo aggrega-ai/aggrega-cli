@@ -96,7 +96,7 @@ type invocationRecord struct {
 	node string
 
 	// attachment is empty for the value declared over a node's own Recipe, and
-	// carries the attachment for the value declared over the carrier an
+	// carries the attachment for the value declared over the owner an
 	// attachment's FeatureRecipe is reached through.
 	attachment string
 
@@ -154,7 +154,7 @@ func recordArtifactPillarInvocations(t *testing.T) func() []invocationRecord {
 }
 
 // recordAttachmentArtifactPillarInvocations is the same instrument for the value
-// declared over the carrier an attachment's FeatureRecipe is reached through on a
+// declared over the owner an attachment's FeatureRecipe is reached through on a
 // node.
 //
 // It is a second function rather than a widening of the one above because the two
@@ -273,11 +273,11 @@ func artifactSet(pairs ...[2]string) types.OrderedMap[types.ArtifactEntry] {
 //
 // It is also the proof that the FeatureRecipe path contributes no subject to THIS
 // value. The feature's entry flows through the same walk, under the same node
-// identity, and differs only in which carrier its render records against and reads
+// identity, and differs only in which owner its render records against and reads
 // through — so an invocation over it here would be indistinguishable from the
 // host's in every coordinate this subject carries, and the only thing that can show
 // its absence is the recorded set. What that entry does reach is the value declared
-// over the attachment's own carrier, which carries the attachment as a coordinate
+// over the attachment's own owner, which carries the attachment as a coordinate
 // and is asserted separately.
 //
 // It does not run in parallel: it replaces a package-level declaration.
@@ -441,13 +441,13 @@ func TestTheArtifactPillarRuleHaltsTheBuildOnANodesOwnRecipe(t *testing.T) {
 // A FeatureRecipe's entries flow through the same artifacts walk as the host's own,
 // under the host component's node identity, so the value declared over node-keyed
 // facts contributes no subject for one of them — and must not, because those facts
-// would answer about the host. The value declared over the attachment's own carrier
+// would answer about the host. The value declared over the attachment's own owner
 // is what reaches them, and this reads the halt an author is handed to say that the
 // declared rule is what produced it.
 //
 // The wording is the whole discriminator, and there are three of them here: the
 // registered sentence with the offending expression and the artifact, which only a
-// declared value produces; the attachment, which names the carrier the finding is
+// declared value produces; the attachment, which names the owner the finding is
 // about; and the absence of the sentence a second, hand-written reading of this
 // condition would produce, which is what turns "the build still fails" into "this
 // mechanism refused it".
@@ -491,7 +491,7 @@ func TestTheFeatureCarriedArtifactIsRefusedByTheDeclaredRule(t *testing.T) {
 	// ANTI-NEEDLE: the halt must have come from an invoked value.
 	attachmentInvocations := recordedAttachment()
 	if len(attachmentInvocations) == 0 {
-		t.Fatal("the value declared over the attachment's carrier was invoked zero times, so the " +
+		t.Fatal("the value declared over the attachment's owner was invoked zero times, so the " +
 			"halt above came from somewhere else")
 	}
 	var sawOffender bool
@@ -525,9 +525,9 @@ func TestTheFeatureCarriedArtifactIsRefusedByTheDeclaredRule(t *testing.T) {
 // the pre-check's pillar arms in place.
 //
 // The arms once refused this input. They are gone: the pillar verdict belongs to
-// the rule declared over each carrier the artifacts walk is reached by, and those
+// the rule declared over each owner the artifacts walk is reached by, and those
 // three values read one presentation. A build assembled without it reaches none of
-// them — the node's own has no presentation, and each attachment carrier is handed
+// them — the node's own has no presentation, and each attachment owner is handed
 // none — so nothing reads the pillar facts and the reference travels on to
 // evaluation.
 //
@@ -596,7 +596,7 @@ func TestNoPillarReadingRunsInABuildThatPublishesNoPresentation(t *testing.T) {
 	}
 	for _, r := range recordedAttachment() {
 		if r.artifact == invocationOffendingEntry {
-			t.Errorf("the attachment carrier's value was invoked over %q in a build that published "+
+			t.Errorf("the attachment owner's value was invoked over %q in a build that published "+
 				"no view", r.artifact)
 		}
 	}

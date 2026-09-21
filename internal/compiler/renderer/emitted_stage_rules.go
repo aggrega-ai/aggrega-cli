@@ -11,15 +11,15 @@ import (
 )
 
 // This file invokes the rules declared over what each render emitted, one entry per
-// emission carrier.
+// emission owner.
 //
 // # Why three entries and not one
 //
 // One rule runs over three separately authored documents: a component's own Recipe,
 // the FeatureRecipe an attachment binds on a component, and the FeatureRecipe a
 // boundary-scope attachment binds. Each emits under its own set of names, and the
-// coordinate that identifies one of those names differs per carrier — so the rule is
-// three declared values over one shared predicate, each keyed by its own carrier,
+// coordinate that identifies one of those names differs per owner — so the rule is
+// three declared values over one shared predicate, each keyed by its own owner,
 // and each invoked where its own render's emission completes.
 //
 // Folding all three under the node would not merely mis-file two of them. An
@@ -28,9 +28,9 @@ import (
 // question are the attachment's — refusing none of the attachment's collisions and
 // refusing the host's more than once. Both directions are wrong and both are silent.
 //
-// # Why the two attachment carriers are named in one function
+// # Why the two attachment owners are named in one function
 //
-// Each could have invoked its own value through the carrier interface, and that
+// Each could have invoked its own value through the owner interface, and that
 // would read as the tidier arrangement. It is the wrong one, for the reason the
 // stage before this states at its own pair: the framework's coverage read resolves a
 // call to a declaration and follows nothing through a value, so a traversal reached
@@ -194,23 +194,23 @@ func runNodeEmissionCollisionRule(
 
 // oneEmittingNodeAttachment is the node, attachment and emitted-name axes for the
 // rule asked about the emission of the render one attachment carries on a node,
-// narrowed to that carrier.
+// narrowed to that owner.
 //
 // It narrows for the reasons [oneEmittingNode] gives, and it narrows the attachment
-// axis as well because the carrier is the subject: two attachments on one node are
+// axis as well because the owner is the subject: two attachments on one node are
 // independently authored, and a traversal handed the node's whole attachment set
 // would ask this render's names of every attachment the node carries.
 //
-// The attachment coordinate is taken from the carrier rather than from anything the
+// The attachment coordinate is taken from the owner rather than from anything the
 // render can see, because the render cannot see it: the node identity an
 // attachment's render carries is the host component's.
 type oneEmittingNodeAttachment struct {
-	// key is the carrier whose emission has just been recorded: this node, this
+	// key is the owner whose emission has just been recorded: this node, this
 	// attachment.
 	key nodeAttachmentKey
 
-	// paths is the build's own per-carrier emitted-name axis, delegated to for the
-	// narrowed carrier and never consulted for any other.
+	// paths is the build's own per-owner emitted-name axis, delegated to for the
+	// narrowed owner and never consulted for any other.
 	paths constraint.NodeAttachmentEmittedPathEnumerator
 }
 
@@ -234,8 +234,8 @@ func (o oneEmittingNodeAttachment) Attachments(node string) []string {
 	return []string{o.key.attachment}
 }
 
-// NodeAttachmentEmittedPaths yields the narrowed carrier's emitted names and nothing
-// for any other carrier.
+// NodeAttachmentEmittedPaths yields the narrowed owner's emitted names and nothing
+// for any other owner.
 func (o oneEmittingNodeAttachment) NodeAttachmentEmittedPaths(
 	node string, attachment string,
 ) []constraint.AuthoredCoordinate {
@@ -253,17 +253,17 @@ var (
 
 // oneEmittingBoundaryAttachment is the boundary, attachment and emitted-name axes for
 // the rule asked about the emission of the render one boundary-scope attachment
-// carries, narrowed to that carrier.
+// carries, narrowed to that owner.
 //
 // It is rooted at the boundary because that is where such an attachment is declared,
 // which is also why its fact is keyed there. The narrowing is the reason
 // [oneEmittingNodeAttachment] gives.
 type oneEmittingBoundaryAttachment struct {
-	// key is the carrier whose emission has just been recorded: this boundary, this
+	// key is the owner whose emission has just been recorded: this boundary, this
 	// attachment.
 	key boundaryAttachmentKey
 
-	// paths is the build's own per-carrier emitted-name axis.
+	// paths is the build's own per-owner emitted-name axis.
 	paths constraint.BoundaryAttachmentEmittedPathEnumerator
 }
 
@@ -286,8 +286,8 @@ func (o oneEmittingBoundaryAttachment) BoundaryAttachments(boundary string) []st
 	return []string{o.key.attachment}
 }
 
-// BoundaryAttachmentEmittedPaths yields the narrowed carrier's emitted names and
-// nothing for any other carrier.
+// BoundaryAttachmentEmittedPaths yields the narrowed owner's emitted names and
+// nothing for any other owner.
 func (o oneEmittingBoundaryAttachment) BoundaryAttachmentEmittedPaths(
 	boundary string, attachment string,
 ) []constraint.AuthoredCoordinate {
@@ -303,7 +303,7 @@ var (
 	_ constraint.BoundaryAttachmentEmittedPathEnumerator = oneEmittingBoundaryAttachment{}
 )
 
-// runAttachmentEmissionCollisionRule asks the value declared over whichever carrier
+// runAttachmentEmissionCollisionRule asks the value declared over whichever owner
 // this render was reached from about each output name that render emitted, and
 // returns what it raised as the render's halt.
 //
@@ -313,20 +313,20 @@ var (
 // intermediate flag. Either would put the set beyond the point at which it is this
 // attachment's own emission under the names its own blocks chose.
 //
-// The carrier is supplied on the state rather than derived here, because it is not
+// The owner is supplied on the state rather than derived here, because it is not
 // derivable here — the node identity an attachment's render carries is the host
-// component's on one carrier and a composite dispatch marker on the other, and
+// component's on one owner and a composite dispatch marker on the other, and
 // neither names the attachment.
 //
 // # The input guard, and the arm that cannot be reached today
 //
-// The presentation is the carrier's own and so is the retention beneath it; the
-// carrier refuses a presentation standing over no retention, because such a
+// The presentation is the owner's own and so is the retention beneath it; the
+// owner refuses a presentation standing over no retention, because such a
 // presentation would answer every name with no blocks and the rule would admit every
-// emission it was asked about. A carrier reporting neither key is refused here rather
-// than passing as an emission with nothing to check: today the two carriers exhaust
+// emission it was asked about. An owner reporting neither key is refused here rather
+// than passing as an emission with nothing to check: today the two owners exhaust
 // the interface, and the halt is what keeps that an enforced guarantee rather than an
-// arrangement a third carrier could quietly undo.
+// arrangement a third owner could quietly undo.
 //
 // Its wording says the fault is the compiler's rather than the author's, and that
 // there is nothing to correct in the catalog. That is deliberate: the halt carries a
@@ -341,13 +341,13 @@ func runAttachmentEmissionCollisionRule(
 	if state == nil || state.attachmentHydrated == nil {
 		return nil
 	}
-	carrier := state.attachmentHydrated
+	owner := state.attachmentHydrated
 	findingFile := artifactFindingFile(state)
-	facts, err := carrier.readableEmittedFacts(findingFile)
+	facts, err := owner.readableEmittedFacts(findingFile)
 	if err != nil || facts == nil {
 		return err
 	}
-	axes := carrier.emittedAxes()
+	axes := owner.emittedAxes()
 	if axes == nil {
 		return cerrors.Unidentified(cerrors.CatalogError, cerrors.SourceLocation{File: findingFile},
 			"the files this FeatureRecipe emitted could not be checked for two of its blocks "+
@@ -356,7 +356,7 @@ func runAttachmentEmissionCollisionRule(
 				"is nothing to correct in the catalog", nil, nil)
 	}
 
-	if key, rooted := carrier.nodeAttachmentCarrierKey(); rooted {
+	if key, rooted := owner.nodeAttachmentOwnerKey(); rooted {
 		subject := oneEmittingNodeAttachment{key: key, paths: axes}
 		raised, err := constraint.RunOnNodeAttachmentEmittedPaths(
 			cancelled, subject, subject, subject, facts,
@@ -368,7 +368,7 @@ func runAttachmentEmissionCollisionRule(
 		return attachmentEmissionCollisionHalt(raised, key.attachment)
 	}
 
-	if key, rooted := carrier.boundaryAttachmentCarrierKey(); rooted {
+	if key, rooted := owner.boundaryAttachmentOwnerKey(); rooted {
 		subject := oneEmittingBoundaryAttachment{key: key, paths: axes}
 		raised, err := constraint.RunOnBoundaryAttachmentEmittedPaths(
 			cancelled, subject, subject, subject, facts,
@@ -387,12 +387,12 @@ func runAttachmentEmissionCollisionRule(
 			"to correct in the catalog", nil, nil)
 }
 
-// attachmentEmissionCollisionHalt is the halt both carriers' findings are returned as,
+// attachmentEmissionCollisionHalt is the halt both owners' findings are returned as,
 // and it names the FeatureRecipe rather than the Recipe.
 //
-// One home for the wording because the two carriers give an author the same thing to
+// One home for the wording because the two owners give an author the same thing to
 // do — two blocks of one FeatureRecipe met on an output name either way, and which
-// carrier reached it is not a difference the author acts on. The attachment is named
+// owner reached it is not a difference the author acts on. The attachment is named
 // because it is what says which FeatureRecipe, and a node or a boundary may carry
 // several.
 //

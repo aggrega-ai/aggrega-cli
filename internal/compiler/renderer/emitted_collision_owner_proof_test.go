@@ -22,18 +22,18 @@ import (
 // and it runs over THREE separately authored documents. This file drives a real
 // build once per document and asserts the halt each time.
 //
-// # Why the proof is per carrier and not once
+// # Why the proof is per owner and not once
 //
 // The three documents emit through one render path, and two of them emit under the
 // HOST component's node identity. So a reading keyed by the node alone would answer
 // about the host's own emission while the blocks in question are an attachment's:
 // it would refuse none of the attachment's collisions and would refuse the host's
-// more than once. Neither direction shows up in an outcome over one carrier — a
+// more than once. Neither direction shows up in an outcome over one owner — a
 // build that halts for the wrong reason halts, and a build that admits an
 // attachment's collision looks exactly like a build with no collision in it.
 //
-// So each carrier gets its own build, its own collision, and its own assertion that
-// the halt names the document the colliding blocks are in. A proof over one carrier
+// So each owner gets its own build, its own collision, and its own assertion that
+// the halt names the document the colliding blocks are in. A proof over one owner
 // would leave the other two indistinguishable from unenforced.
 //
 // # Why a source and a workload
@@ -169,7 +169,7 @@ var _ GraphCoordinates = collisionCoordinates{}
 // Every other site gets ONE block, so a halt can only come from the named one. That
 // is what makes each build's halt attributable: a fixture giving two sites both
 // blocks would halt on whichever the walk reached first, and the proof could not say
-// which carrier refused.
+// which owner refused.
 func collisionLookup(site collisionSite) RecipeLookup {
 	hostWorkload := types.WorkloadTemplate{}
 	if site == collideNodesOwn {
@@ -230,7 +230,7 @@ func collisionLookup(site collisionSite) RecipeLookup {
 	}
 }
 
-// collisionInput assembles the one build shape all three carriers are reached from:
+// collisionInput assembles the one build shape all three owners are reached from:
 // a single node carrying one attachment, inside a boundary carrying one
 // boundary-scope attachment.
 func collisionInput() RendererInput {
@@ -360,7 +360,7 @@ func assertCollisionHalt(t *testing.T, err error, wantDocument string) string {
 	// The whole cause chain, not the outermost message. The boundary-scope dispatch
 	// wraps whatever its render returned in a message naming the node and the
 	// attachment, so the outermost text carries none of the rule's own finding —
-	// pre-existing behaviour of that path, and the reason the sibling carrier proof
+	// pre-existing behaviour of that path, and the reason the sibling owner proof
 	// beside this file reads the chain too.
 	msg := cerrors.CauseChain(err)
 	if !strings.Contains(msg, collidingName) {
@@ -375,15 +375,15 @@ func assertCollisionHalt(t *testing.T, err error, wantDocument string) string {
 		t.Errorf("the halt does not name the workload block: %s", msg)
 	}
 	// The document the colliding blocks are in, which is what separates the three
-	// carriers' findings from one another.
+	// owners' findings from one another.
 	if wantDocument != "" && !strings.Contains(msg, wantDocument) {
 		t.Errorf("the halt does not position the finding in %q: %s", wantDocument, msg)
 	}
 	return msg
 }
 
-// TestANodesOwnTwoBlocksMeetingOnOneNameHalts drives the carrier a node's own Recipe
-// is, and is the one carrier the reading this replaced already covered.
+// TestANodesOwnTwoBlocksMeetingOnOneNameHalts drives the owner a node's own Recipe
+// is, and is the one owner the reading this replaced already covered.
 func TestANodesOwnTwoBlocksMeetingOnOneNameHalts(t *testing.T) {
 	t.Parallel()
 
@@ -391,13 +391,13 @@ func TestANodesOwnTwoBlocksMeetingOnOneNameHalts(t *testing.T) {
 		context.Background(), collisionInput(), collisionLookup(collideNodesOwn), collisionFactory(true),
 	)
 	msg := assertCollisionHalt(t, err, "")
-	t.Logf("node's own carrier halted: %s", msg)
+	t.Logf("node's own owner halted: %s", msg)
 }
 
-// TestAnAttachmentsTwoBlocksMeetingOnOneNameHalts drives the carrier the
+// TestAnAttachmentsTwoBlocksMeetingOnOneNameHalts drives the owner the
 // FeatureRecipe one attachment binds on a node is.
 //
-// 🔴 This is one of the two carriers the reading this replaced covered and the fact
+// 🔴 This is one of the two owners the reading this replaced covered and the fact
 // clause 2 originally scoped did NOT: an attachment's rendered files never joined the
 // per-node emission the earlier fact was keyed by, so a rule declared over that fact
 // alone would have left this build to succeed. The halt asserted here is what makes
@@ -414,13 +414,13 @@ func TestAnAttachmentsTwoBlocksMeetingOnOneNameHalts(t *testing.T) {
 	if !strings.Contains(msg, collisionAttachInstance) {
 		t.Errorf("the halt does not name the attachment %q: %s", collisionAttachInstance, msg)
 	}
-	t.Logf("attachment-on-a-node carrier halted: %s", msg)
+	t.Logf("attachment-on-a-node owner halted: %s", msg)
 }
 
-// TestABoundaryScopeAttachmentsTwoBlocksMeetingOnOneNameHalts drives the carrier the
+// TestABoundaryScopeAttachmentsTwoBlocksMeetingOnOneNameHalts drives the owner the
 // FeatureRecipe a boundary-scope attachment binds is.
 //
-// 🔴 This is the second carrier the earlier fact did not reach. Its render carries a
+// 🔴 This is the second owner the earlier fact did not reach. Its render carries a
 // composite dispatch marker rather than any component's node identity, so no
 // node-rooted key could have named it at all.
 func TestABoundaryScopeAttachmentsTwoBlocksMeetingOnOneNameHalts(t *testing.T) {
@@ -434,5 +434,5 @@ func TestABoundaryScopeAttachmentsTwoBlocksMeetingOnOneNameHalts(t *testing.T) {
 	if !strings.Contains(msg, collisionBoundaryInstance) {
 		t.Errorf("the halt does not name the attachment %q: %s", collisionBoundaryInstance, msg)
 	}
-	t.Logf("boundary-scope attachment carrier halted: %s", msg)
+	t.Logf("boundary-scope attachment owner halted: %s", msg)
 }

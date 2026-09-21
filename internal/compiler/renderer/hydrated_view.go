@@ -14,7 +14,7 @@ import (
 // injection pipe carries, and the template text standing at each artifact before
 // anything evaluates it.
 //
-// The last three are presented per carrier rather than per node alone, because
+// The last three are presented per owner rather than per node alone, because
 // three documents author them: a node's own Recipe, the FeatureRecipe an
 // attachment binds on a node, and the FeatureRecipe an operator attaches at a
 // boundary. An attachment's render runs under the host component's node identity
@@ -233,7 +233,7 @@ func (v *hydratedView) ArtifactTemplateText(node string, artifact string) string
 // answer covers three cases that need the same treatment: a Recipe that was never
 // frozen, an entry whose form carries no pin, and a node or an artifact this
 // retention does not hold — including an artifact of an attachment rather than of
-// the node's own Recipe, which is answered through that attachment's own carrier.
+// the node's own Recipe, which is answered through that attachment's own owner.
 func (v *hydratedView) ArtifactRecordedContentPin(node string, artifact string) (string, bool) {
 	p, ok := v.projections.projection(node)
 	if !ok {
@@ -249,7 +249,7 @@ func (v *hydratedView) ArtifactRecordedContentPin(node string, artifact string) 
 // covers every case in which the entry names no file to open: an entry written
 // inline, an entry supplied by a library bundle, a node the render did not reach,
 // and an artifact of an attachment rather than of the node's own Recipe, which is
-// answered through that attachment's own carrier.
+// answered through that attachment's own owner.
 //
 // There is no second result, because the value already carries the answer a
 // second one would give: the retention holds an entry only where the walk
@@ -267,7 +267,7 @@ func (v *hydratedView) ArtifactImportedPath(node string, artifact string) string
 // AttachmentResolvedSourceDeclared reports whether the FeatureRecipe one
 // attachment binds on a node carries a source once source resolution has run.
 //
-// It is answered from the attachment's own carrier and never from the node's,
+// It is answered from the attachment's own owner and never from the node's,
 // and that is where this fact earns its coordinate rather than merely filing
 // tidily. The attachment's render runs under the host component's node identity
 // over a source the FeatureRecipe declares, so asked of the node the answer would
@@ -277,7 +277,7 @@ func (v *hydratedView) ArtifactImportedPath(node string, artifact string) string
 //
 // An attachment the render did not reach answers false, which is what an
 // attachment whose FeatureRecipe declares no source also gives — the same reading
-// every fact of this stage carries for a carrier absent from the retention.
+// every fact of this stage carries for an owner absent from the retention.
 func (v *hydratedView) AttachmentResolvedSourceDeclared(node string, attachment string) bool {
 	p, _ := v.projections.nodeAttachmentProjectionOf(
 		nodeAttachmentKey{node: node, attachment: attachment},
@@ -293,7 +293,7 @@ func (v *hydratedView) AttachmentResolvedSourceDeclared(node string, attachment 
 // separates an attachment whose artifact templates may read the workload pillar
 // from one whose reference to it has nothing to resolve against.
 //
-// It is answered from the attachment's own carrier for the reason its resolved
+// It is answered from the attachment's own owner for the reason its resolved
 // source is, and two attachments on one node answer independently: one declaring
 // a workload says nothing about the other.
 func (v *hydratedView) AttachmentParsedWorkloadPresent(node string, attachment string) bool {
@@ -313,7 +313,7 @@ func (v *hydratedView) AttachmentParsedWorkloadPresent(node string, attachment s
 // retention records it where that content is resolved rather than where the entry
 // is authored.
 //
-// An artifact this carrier does not hold answers empty, which is what an
+// An artifact this owner does not hold answers empty, which is what an
 // attachment the render did not reach and an artifact of the node's own Recipe
 // both give: the node's entries are recorded against the node and are not
 // reachable through this key.
@@ -334,7 +334,7 @@ func (v *hydratedView) AttachmentArtifactTemplateText(
 // FeatureRecipe one attachment binds on a node recorded for one of its artifacts,
 // and whether the entry carries a recorded pin at all.
 //
-// It is answered from the attachment's own carrier and never from the node's, on
+// It is answered from the attachment's own owner and never from the node's, on
 // the reading the text accessor beside it states: the attachment's render walks the
 // same producer under the host component's node identity, so a node-keyed answer
 // would measure this FeatureRecipe's content against whatever the host's Recipe
@@ -355,7 +355,7 @@ func (v *hydratedView) AttachmentArtifactRecordedContentPin(
 // FeatureRecipe one attachment binds on a node was supplied from, as the catalog
 // resolved it.
 //
-// It is answered from the attachment's own carrier and never from the node's, on
+// It is answered from the attachment's own owner and never from the node's, on
 // the reading the two accessors beside it state: the attachment's render walks
 // the same producer under the host component's node identity, so a node-keyed
 // answer would name whatever file the HOST's Recipe imported under the same
@@ -378,7 +378,7 @@ func (v *hydratedView) AttachmentArtifactImportedPath(
 // injectMapping output named each of them, and with the FeatureRecipe that output
 // was read from.
 //
-// It is answered from the attachment's own carrier rather than from the node's,
+// It is answered from the attachment's own owner rather than from the node's,
 // because each attachment carries its own mapping: two attachments on one node
 // are evaluated against the same declarations and may name different mechanisms,
 // so a node-keyed answer would report one attachment's mapping for the other's.
@@ -404,7 +404,7 @@ func (v *hydratedView) AttachmentInjectMappingMechanisms(
 // boundary-scope attachment binds carries a source once source resolution has
 // run.
 //
-// It is answered from a carrier rooted at the boundary, because that is where
+// It is answered from an owner rooted at the boundary, because that is where
 // such an attachment is declared and it reaches every component the boundary
 // holds. It stands against no single component, so no component's resolved source
 // is its own and no node-rooted key can name it.
@@ -421,7 +421,7 @@ func (v *hydratedView) BoundaryAttachmentResolvedSourceDeclared(
 // boundary-scope attachment carries a workload.
 //
 // A FeatureRecipe declaring no workload body reaches artifact evaluation with
-// none, because workload synthesis had nothing to parse. The carrier is rooted at
+// none, because workload synthesis had nothing to parse. The owner is rooted at
 // the boundary for the reason the boundary-scope resolved source is.
 func (v *hydratedView) BoundaryAttachmentParsedWorkloadPresent(
 	boundary string, attachment string,

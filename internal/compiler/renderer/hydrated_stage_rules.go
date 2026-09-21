@@ -97,7 +97,7 @@ var (
 // written into the output or a halt naming the first hop of the expression rather
 // than the expression itself.
 //
-// # It is the only pillar reading on this carrier
+// # It is the only pillar reading on this owner
 //
 // The pre-check standing beside it in the walk once held the same two conditions
 // and no longer does, so a reference to a pillar the document does not declare is
@@ -112,7 +112,7 @@ var (
 // by the node alone — a FeatureRecipe's entries flow through the same walk under
 // the host component's node identity, so a fact keyed that way would answer about
 // the host while reading the attachment's template. Those entries are reached
-// instead by the two sibling values keyed by their own carrier, invoked beside
+// instead by the two sibling values keyed by their own owner, invoked beside
 // this one at the same seam.
 //
 // So the three values between them cover every entry the walk projects, and they
@@ -125,7 +125,7 @@ var (
 //
 // An absent presentation says this render is not the one THIS value's facts are
 // declared over, which is the FeatureRecipe render and is an ordinary outcome:
-// the caller skips this value, and the value declared over the carrier that
+// the caller skips this value, and the value declared over the owner that
 // render does hold is asked instead.
 //
 // An absent retention beneath a present presentation is not an outcome, it is a
@@ -180,7 +180,7 @@ func runArtifactPillarRule(
 // node projects, narrowed to exactly the entry whose text the walk has just
 // recorded.
 //
-// It is the carrier-keyed form of [oneRecordedArtifact] and narrows for the same
+// It is the owner-keyed form of [oneRecordedArtifact] and narrows for the same
 // reasons, which apply unchanged: the retention fills as the walk proceeds, so a
 // presentation asked with the build's own axes would re-present at the k-th entry
 // the k-1 already recorded and would report one authoring fault once per later
@@ -189,12 +189,12 @@ func runArtifactPillarRule(
 // that reads exactly like a rule that ran and approved.
 //
 // The attachment coordinate is what tells this block from the node's own and from
-// another attachment's on the same node. It is taken from the carrier the render's
+// another attachment's on the same node. It is taken from the owner the render's
 // state holds rather than from anything the walk can see, because the walk cannot
 // see it: the node identity an attachment's render carries is the host
 // component's.
 type oneRecordedAttachmentArtifact struct {
-	// key is the carrier the entry belongs to: this node, this attachment.
+	// key is the owner the entry belongs to: this node, this attachment.
 	key nodeAttachmentKey
 
 	// outputName is the name the entry resolved to, which is the coordinate every
@@ -231,7 +231,7 @@ func (o oneRecordedAttachmentArtifact) Attachments(node string) []string {
 }
 
 // AttachmentArtifacts yields the one recorded entry, and nothing for any other
-// carrier.
+// owner.
 func (o oneRecordedAttachmentArtifact) AttachmentArtifacts(
 	node string, attachment string,
 ) []constraint.AuthoredCoordinate {
@@ -256,7 +256,7 @@ var (
 // declared, which is also why its facts are keyed there. The narrowing is the
 // reason [oneRecordedAttachmentArtifact] gives.
 type oneRecordedBoundaryAttachmentArtifact struct {
-	// key is the carrier the entry belongs to: this boundary, this attachment.
+	// key is the owner the entry belongs to: this boundary, this attachment.
 	key boundaryAttachmentKey
 
 	// outputName is the name the entry resolved to.
@@ -287,7 +287,7 @@ func (o oneRecordedBoundaryAttachmentArtifact) BoundaryAttachments(boundary stri
 }
 
 // BoundaryAttachmentArtifacts yields the one recorded entry, and nothing for any
-// other carrier.
+// other owner.
 func (o oneRecordedBoundaryAttachmentArtifact) BoundaryAttachmentArtifacts(
 	boundary string, attachment string,
 ) []constraint.AuthoredCoordinate {
@@ -303,20 +303,20 @@ var (
 	_ constraint.BoundaryAttachmentArtifactEnumerator = oneRecordedBoundaryAttachmentArtifact{}
 )
 
-// runAttachmentArtifactPillarRule asks the value declared over whichever carrier
+// runAttachmentArtifactPillarRule asks the value declared over whichever owner
 // this render was reached from about one artifact entry, and returns what it raised
 // as the render's halt.
 //
 // It is called from the same seam inside the artifacts walk the node's own value is
 // called from, and for the same reason: that is the only span where the entry's text
-// exists and nothing has evaluated it yet. The carrier is supplied on the state
+// exists and nothing has evaluated it yet. The owner is supplied on the state
 // rather than derived here, because it is not derivable here — the node identity an
-// attachment's render carries is the host component's on one carrier and a composite
+// attachment's render carries is the host component's on one owner and a composite
 // dispatch marker on the other, and neither names the attachment.
 //
 // # Why both traversals are named in one function
 //
-// Each carrier could have invoked its own value through the carrier interface, and
+// Each owner could have invoked its own value through the owner interface, and
 // that would read as the tidier arrangement. It is the wrong one, because of what
 // the framework's own coverage read can see: that read resolves a call to a
 // declaration and follows nothing through a value, so a traversal reached through an
@@ -330,12 +330,12 @@ var (
 //
 // # The input guard, and the arm that cannot be reached today
 //
-// The presentation is the carrier's own and so is the retention beneath it; the
-// carrier refuses a presentation standing over no retention, on the reading the
-// node's own value states about its own pair. A carrier reporting neither key is
+// The presentation is the owner's own and so is the retention beneath it; the
+// owner refuses a presentation standing over no retention, on the reading the
+// node's own value states about its own pair. An owner reporting neither key is
 // refused here rather than passing as an entry with nothing to check: today the two
-// carriers exhaust the interface, and the halt is what keeps that an enforced
-// guarantee rather than an arrangement a third carrier could quietly undo.
+// owners exhaust the interface, and the halt is what keeps that an enforced
+// guarantee rather than an arrangement a third owner could quietly undo.
 func runAttachmentArtifactPillarRule(
 	cancelled constraint.Cancellation,
 	state *PhaseBState,
@@ -344,14 +344,14 @@ func runAttachmentArtifactPillarRule(
 	if state == nil || state.attachmentHydrated == nil {
 		return nil
 	}
-	carrier := state.attachmentHydrated
+	owner := state.attachmentHydrated
 	findingFile := artifactFindingFile(state)
-	facts, err := carrier.readableFacts(findingFile, outputName)
+	facts, err := owner.readableFacts(findingFile, outputName)
 	if err != nil || facts == nil {
 		return err
 	}
 
-	if key, rooted := carrier.nodeAttachmentCarrierKey(); rooted {
+	if key, rooted := owner.nodeAttachmentOwnerKey(); rooted {
 		subject := oneRecordedAttachmentArtifact{
 			key:        key,
 			outputName: outputName,
@@ -366,7 +366,7 @@ func runAttachmentArtifactPillarRule(
 		return attachmentArtifactPillarHalt(raised, key.attachment, outputName)
 	}
 
-	if key, rooted := carrier.boundaryAttachmentCarrierKey(); rooted {
+	if key, rooted := owner.boundaryAttachmentOwnerKey(); rooted {
 		subject := oneRecordedBoundaryAttachmentArtifact{
 			key:        key,
 			outputName: outputName,
@@ -388,12 +388,12 @@ func runAttachmentArtifactPillarRule(
 			"in the catalog", outputName), nil, nil)
 }
 
-// attachmentArtifactPillarHalt is the halt both carriers' findings are returned
+// attachmentArtifactPillarHalt is the halt both owners' findings are returned
 // as, and it names the FeatureRecipe rather than the Recipe.
 //
-// One home for the wording because the two carriers give an author the same thing
+// One home for the wording because the two owners give an author the same thing
 // to do — the entry is in a FeatureRecipe's artifacts block either way, and which
-// carrier reached it is not a difference the author acts on. The attachment is
+// owner reached it is not a difference the author acts on. The attachment is
 // named because it is what says which FeatureRecipe, and a node or a boundary may
 // carry several.
 //
@@ -461,10 +461,10 @@ func runArtifactContentPinRule(
 }
 
 // runAttachmentArtifactContentPinRule asks the pin rule declared over whichever
-// carrier this render was reached from about one artifact entry, and returns what it
+// owner this render was reached from about one artifact entry, and returns what it
 // raised as the render's halt.
 //
-// Both traversals are named here for the reason the pillar rule's carrier entry
+// Both traversals are named here for the reason the pillar rule's owner entry
 // gives: the framework's coverage read resolves a call to a declaration and follows
 // nothing through a value, so a traversal reached through an interface method would
 // belong to no calling surface and the placement table would report the rule as
@@ -477,14 +477,14 @@ func runAttachmentArtifactContentPinRule(
 	if state == nil || state.attachmentHydrated == nil {
 		return nil
 	}
-	carrier := state.attachmentHydrated
+	owner := state.attachmentHydrated
 	findingFile := artifactFindingFile(state)
-	facts, err := carrier.readableFacts(findingFile, outputName)
+	facts, err := owner.readableFacts(findingFile, outputName)
 	if err != nil || facts == nil {
 		return err
 	}
 
-	if key, rooted := carrier.nodeAttachmentCarrierKey(); rooted {
+	if key, rooted := owner.nodeAttachmentOwnerKey(); rooted {
 		subject := oneRecordedAttachmentArtifact{
 			key:        key,
 			outputName: outputName,
@@ -500,7 +500,7 @@ func runAttachmentArtifactContentPinRule(
 		return attachmentArtifactContentPinHalt(raised, key.attachment, outputName)
 	}
 
-	if key, rooted := carrier.boundaryAttachmentCarrierKey(); rooted {
+	if key, rooted := owner.boundaryAttachmentOwnerKey(); rooted {
 		subject := oneRecordedBoundaryAttachmentArtifact{
 			key:        key,
 			outputName: outputName,
@@ -523,12 +523,12 @@ func runAttachmentArtifactContentPinRule(
 			"in the catalog", outputName), nil, nil)
 }
 
-// attachmentArtifactContentPinHalt is the halt both carriers' findings are returned
+// attachmentArtifactContentPinHalt is the halt both owners' findings are returned
 // as, and it names the FeatureRecipe rather than the Recipe.
 //
-// One home for the wording because the two carriers give an author the same thing to
+// One home for the wording because the two owners give an author the same thing to
 // do — re-freeze the entry's pin if the change was intended, or restore the file —
-// and which carrier reached it is not a difference the author acts on. The
+// and which owner reached it is not a difference the author acts on. The
 // attachment is named because it is what says which FeatureRecipe.
 func attachmentArtifactContentPinHalt(
 	raised []constraint.Objection, attachment, outputName string,

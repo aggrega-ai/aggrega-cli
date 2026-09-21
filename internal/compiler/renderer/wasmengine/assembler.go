@@ -94,12 +94,12 @@ func NewAssembler(lookup pluginpath.Lookup, pluginURI string, loader *wasm.Loade
 // from the guest is a loud error rather than a silent last-writer-wins overwrite.
 //
 // When the provider projects sub-charts (an umbrella assembler), the adapter
-// populates the wire's sub-chart carriers and umbrella scalars from the holder's
+// populates the wire's sub-chart fields and umbrella scalars from the holder's
 // host-side projection — including the pristine bytes of each vendored
 // Chart.yaml the engine reads at compile time — so the guest assembles the
 // umbrella from pure data alone. Each sub-chart's values are inserted in sorted
 // key order for the determinism contract. A provider that does not project
-// sub-charts contributes none of these carriers.
+// sub-charts contributes none of these fields.
 func (e *AssemblerEngine) AssembleBoundary(ctx context.Context, info renderer.BoundaryInfo) (map[string]renderer.AssembledFile, error) {
 	seen := map[string]struct{}{}
 	nodeIDs := make([]string, 0, len(info.IntermediatesByNode)+len(info.PlacedByNode)+len(info.NodeOutputDirectory))
@@ -174,7 +174,7 @@ func (e *AssemblerEngine) AssembleBoundary(ctx context.Context, info renderer.Bo
 	// umbrella (boundary-assembly "nest"). Asking the guest's own self-report
 	// "do you nest per node?" — not "are you helm-chart?" — keeps the adapter
 	// provider-agnostic and keeps a flat-assembling provider's wire free of these
-	// carriers. The host performs the pristine Chart.yaml read here (the guest
+	// fields. The host performs the pristine Chart.yaml read here (the guest
 	// has no filesystem) via the generic projectSubCharts core step so the guest
 	// assembles from pure data alone; the adapter never touches the filesystem.
 	if e.BoundaryAssembly() == wasm.BoundaryAssemblyNest {

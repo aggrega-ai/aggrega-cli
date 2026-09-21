@@ -136,7 +136,7 @@ func derivedKeyContributorFor(producer derivedKeyProducer, placedStandalone bool
 // It exists so there is one accumulation mechanic rather than two. The
 // declarations a provider guest makes arrive over the node context's sink and
 // are folded in by mergeDerivedKeys; a name the compiler derives has no
-// boundary to cross and needs no carrier, but it must accumulate identically or
+// boundary to cross and needs no sink, but it must accumulate identically or
 // the two kinds of declaration would answer to different rules inside one space.
 //
 // The repeat report travels back to the caller rather than being dropped here,

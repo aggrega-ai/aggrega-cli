@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-// TestSingleFormatCarrier locks the single per-file format carrier in place. A
+// TestSingleFormatField locks the single per-file format field in place. A
 // file's producer-declared render format lives ON its content record
 // (AssembledFile.Format), never in a parallel path→format sidecar map keyed the
 // same way its bytes are. Parallel maps re-create the drift this shape removed:
@@ -17,13 +17,13 @@ import (
 // edge case. The reflection assertions fail the moment a sidecar format map is
 // reintroduced on either the pipeline-facing RenderResult or the internal
 // assembledGroup, so the collapse cannot silently regrow a fourth copy.
-func TestSingleFormatCarrier(t *testing.T) {
+func TestSingleFormatField(t *testing.T) {
 	t.Parallel()
 
 	// RenderResult: {Files, Warnings, Diagnostics, Contributions, DescribedView,
 	// HydratedView, EmittedView, DispatchedView, RenderedView}, with Files valued by
 	// AssembledFile. Warnings and Diagnostics are advisory streams, not per-file
-	// carriers; Contributions carries per-group coordinates and is held to that
+	// records; Contributions carries per-group coordinates and is held to that
 	// below; the rest are stage presentations. That last set is described rather
 	// than counted, because a count sitting beside the list it counts is the field
 	// that goes stale first while everything around it still reads as current. A
@@ -31,8 +31,8 @@ func TestSingleFormatCarrier(t *testing.T) {
 	// as an unexpected exported field and trips the set check.
 	//
 	// DescribedView and HydratedView are keyed by node, boundary, pipeline step,
-	// provides key and artifact name rather than by output path, so neither is a
-	// carrier of anything a file is keyed by. HydratedView's artifact axis is a
+	// provides key and artifact name rather than by output path, so neither holds
+	// anything a file is keyed by. HydratedView's artifact axis is a
 	// close call and passes: an artifact is a Recipe's authored entry, which is a
 	// coordinate of the node that declares it and not of the assembled output path
 	// the bytes end up under.
@@ -51,7 +51,7 @@ func TestSingleFormatCarrier(t *testing.T) {
 	// own. So the two key spaces are related by composition in one direction and by
 	// replacement in the other, and neither makes them the same key.
 	//
-	// On the CARRIER axis it passes decisively, and that is the half worth stating
+	// On the CONTENT axis it passes decisively, and that is the half worth stating
 	// because it is the half this guard exists for. The retention holds names and
 	// the authored input block each name came from, which is a closed vocabulary of
 	// block names — no bytes, no format, and nothing derived from either. The
@@ -113,7 +113,7 @@ func TestSingleFormatCarrier(t *testing.T) {
 	// place a sidecar would most plausibly reappear — as a format string, or as a
 	// second copy of the content living beside the coordinates. Neither belongs:
 	// it names output paths and lets Files hold what stands at them. The check is
-	// structural rather than a name list, so a differently-named carrier of
+	// structural rather than a name list, so a differently-named field of
 	// either shape trips it too.
 	ac := reflect.TypeOf(AssemblyContribution{})
 	for i := 0; i < ac.NumField(); i++ {
@@ -127,7 +127,7 @@ func TestSingleFormatCarrier(t *testing.T) {
 				"coordinates; it must name output paths and leave the bytes in RenderResult.Files", f.Name, f.Type)
 		}
 		if strings.Contains(strings.ToLower(f.Name), "format") {
-			t.Errorf("AssemblyContribution field %q reintroduces a format carrier; format belongs on the "+
+			t.Errorf("AssemblyContribution field %q reintroduces a format field; format belongs on the "+
 				"AssembledFile record", f.Name)
 		}
 	}

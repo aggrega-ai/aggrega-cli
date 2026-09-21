@@ -52,7 +52,7 @@ func attachmentLocalsFR(name string, locals ...string) *types.FeatureRecipe {
 // axis is derived from, and the binding that resolves each attachment to the
 // FeatureRecipe under test.
 //
-// Both carriers are present in one world rather than one each, so a rule reaching
+// Both owners are present in one world rather than one each, so a rule reaching
 // the wrong axis produces a visible cross-contamination — a boundary rule firing
 // over the node-carried block, or the reverse — instead of silently finding
 // nothing.
@@ -182,7 +182,7 @@ func legalAttachmentLocals() []string {
 }
 
 // TestTheAttachmentLocalsRulesAreReachedAndTheirObjectionsHalt is the invocation
-// proof for the node-carried carrier: one planted fault per fixture, driven
+// proof for the node-carried owner: one planted fault per fixture, driven
 // through the production site, asserted against the halt's own condition.
 //
 // # One fault per fixture, and the identity is the assertion
@@ -228,7 +228,7 @@ func TestTheAttachmentLocalsRulesAreReachedAndTheirObjectionsHalt(t *testing.T) 
 			detail: "bass",
 		},
 		{
-			// The class this carrier reaches that the node's own block cannot: a
+			// The class this owner reaches that the node's own block cannot: a
 			// base Recipe's locals are merged over an attachment's AFTER that block
 			// resolves, so a name belonging to the node's block does not exist at
 			// the point an attachment local runs, and the finding says so rather
@@ -275,7 +275,7 @@ func TestTheAttachmentLocalsRulesAreReachedAndTheirObjectionsHalt(t *testing.T) 
 }
 
 // TestTheBoundaryAttachmentLocalsRulesAreReachedAndTheirObjectionsHalt is the same
-// invocation proof for the boundary-rooted carrier.
+// invocation proof for the boundary-rooted owner.
 //
 // The world it is driven with holds a node and a node-carried attachment as well,
 // and the boundary FeatureRecipe is the only one carrying a fault — so a rule
@@ -337,7 +337,7 @@ func TestTheBoundaryAttachmentLocalsRulesAreReachedAndTheirObjectionsHalt(t *tes
 }
 
 // TestTheAttachmentLocalsRulesDecideWhatTheEvaluationDecides is the agreement
-// measurement for the node-carried carrier, and it is what licenses declaring the
+// measurement for the node-carried owner, and it is what licenses declaring the
 // rule ahead of the evaluation rather than replacing it.
 //
 // The evaluation side is [EvaluateFeatureRecipeLocals], the surface that resolves
@@ -392,14 +392,14 @@ func TestTheAttachmentLocalsRulesDecideWhatTheEvaluationDecides(t *testing.T) {
 	}
 }
 
-// TestTheAttachmentLocalsCarriersAreSeparateAxes proves the two new carriers are
+// TestTheAttachmentLocalsOwnersAreSeparateAxes proves the two new owners are
 // reached independently rather than one standing in for the other.
 //
-// It is the assertion the coordinate exists for: a fault authored on one carrier's
-// FeatureRecipe must be reported when that carrier is walked and must be invisible
+// It is the assertion the coordinate exists for: a fault authored on one owner's
+// FeatureRecipe must be reported when that owner is walked and must be invisible
 // when only the other one is. A single widened axis would report both from either
 // side, and every declaration assertion would stay green.
-func TestTheAttachmentLocalsCarriersAreSeparateAxes(t *testing.T) {
+func TestTheAttachmentLocalsOwnersAreSeparateAxes(t *testing.T) {
 	t.Parallel()
 
 	offending := []string{"derived", "{{ .locals.base }}.internal", "base", "svc"}
@@ -441,7 +441,7 @@ func TestTheAttachmentLocalsCarriersAreSeparateAxes(t *testing.T) {
 	}
 	leaves := haltLeafMessages(both)
 	if len(leaves) != 2 {
-		t.Fatalf("two planted faults on two carriers produced %d diagnostic(s); want one per carrier:\n%v",
+		t.Fatalf("two planted faults on two owners produced %d diagnostic(s); want one per owner:\n%v",
 			len(leaves), leaves)
 	}
 	joined := strings.Join(leaves, "\n")
@@ -450,11 +450,11 @@ func TestTheAttachmentLocalsCarriersAreSeparateAxes(t *testing.T) {
 			t.Errorf("the pair of diagnostics does not name %q:\n%s", want, joined)
 		}
 	}
-	t.Logf("both carriers reported:\n%s", joined)
+	t.Logf("both owners reported:\n%s", joined)
 }
 
 // TestTheAttachmentLocalsRulesReadTheFactsTheRenderSupplies proves the two facts
-// each carrier's rules read are answered by the presentation the render builds,
+// each owner's rules read are answered by the presentation the render builds,
 // over the FeatureRecipe the render bound — so a rule invoked over the axis cannot
 // be asked about an entry whose text nothing would supply.
 //
@@ -512,7 +512,7 @@ func TestTheAttachmentLocalsRulesReadTheFactsTheRenderSupplies(t *testing.T) {
 		t.Errorf("an unknown boundary answers %v; want no keys", got)
 	}
 
-	// The two carriers do not answer for each other: the boundary attachment's
+	// The two owners do not answer for each other: the boundary attachment's
 	// block is not reachable through the node-carried fact, and the reverse.
 	if got := view.AttachmentDeclaredLocalsKeys(attachmentLocalsNode, boundaryLocalsInstance); len(got) != 0 {
 		t.Errorf("the node-carried fact answers for the boundary attachment: %v", got)

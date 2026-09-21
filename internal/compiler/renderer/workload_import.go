@@ -37,8 +37,8 @@ import (
 //
 // The workload a FeatureRecipe carries reaches this same resolver through a
 // synthesized Recipe on the node's own consumption site, and the declared rules read
-// the node's OWN Recipe, so no rule covers that carrier and these arms are the whole
-// of its refusal.
+// the node's OWN Recipe, so no rule covers that FeatureRecipe and these arms are the
+// whole of its refusal.
 //
 // This resolver RECURSES: an entry whose body is itself a field-root `$import:`
 // re-enters it with a target lifted out of the library's own document. That target

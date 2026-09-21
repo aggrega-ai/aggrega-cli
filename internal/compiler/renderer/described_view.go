@@ -1022,7 +1022,7 @@ func (v *describedView) BoundaryAttachmentProviderArtifactTemplateDelimiters(
 // It takes the outcome of an engine resolution rather than resolving one itself,
 // because the three forms of the fact resolve their engine from three different
 // bindings — a node's own Recipe, and the FeatureRecipe an attachment binds at
-// either of its two carriers — while the reading of the resolved engine and the
+// either of its two owners — while the reading of the resolved engine and the
 // fallback are the same for all three. A copy of that reading per accessor would
 // be free to answer a differently-shaped absence.
 //

@@ -248,7 +248,7 @@ rds_endpoint: "{{ .values.upstream_endpoint }}"
 	t.Logf("emitted aggrega.modules.tf:\n%s", gotRoot)
 
 	// (b1) and nothing writes the values a second time beside the module's own
-	// files. Two carriers for one value would give two answers for a pointer,
+	// files. Two files holding one value would give two answers for a pointer,
 	// because a file loaded from the module's own directory is read as data
 	// rather than evaluated as an expression.
 	for k := range result.Files {

@@ -490,10 +490,10 @@ func runRenderedNameRule(
 // reports. It is separate from the provides pair because the axes are separate:
 // one enumerates what a Recipe publishes, the other what it declares locally, and
 // a value satisfying one does not satisfy the other.
-// It names all five axes together rather than one per carrier, and that grouping
-// is what makes a carrier structurally un-skippable: a value satisfying the node
+// It names all five axes together rather than one per owner, and that grouping
+// is what makes an owner structurally un-skippable: a value satisfying the node
 // axes and not the attachment ones does not compile here, so a caller cannot
-// supply coordinates for one carrier and leave another's rules invoked zero times
+// supply coordinates for one owner and leave another's rules invoked zero times
 // — which reports exactly what a rule that ran and approved reports.
 // artifactsEntryImportAxes is the axis pair the rules over a node's own authored
 // artifacts entries are invoked once per: the node set, and the entries each
@@ -537,12 +537,12 @@ type artifactsEntryImportAxes interface {
 // The axis is a node's OWN Recipe. An artifacts block a FeatureRecipe carries
 // flows through the same artifacts walk under the host component's node identity,
 // and no key here enumerates it — so these rules are not invoked over it, and that
-// carrier keeps the refusal the resolver makes, which is retained for exactly this
+// owner keeps the refusal the resolver makes, which is retained for exactly this
 // reason. The shape arm refusing a reference that names no library at all is not
 // declared here either: no production path reaches it, and it is retained where it
 // is with its own reason recorded.
 //
-// So what the declaration adds on this carrier is a position, a breadth and a
+// So what the declaration adds on this owner is a position, a breadth and a
 // classification — never a refusal the build did not already make.
 //
 // # Why each rule is named at its own call rather than walked in a loop
@@ -636,8 +636,8 @@ type recipeSourceFieldAxes interface {
 // # What this does NOT reach, stated because an unstated bound reads as coverage
 //
 // The axis is a node's OWN Recipe. A FeatureRecipe declares no source entry of its
-// own, so there is no second carrier here — unlike the import rules beside it, whose
-// axis leaves two carriers to the refusals beneath them.
+// own, so there is no second owner here — unlike the import rules beside it, whose
+// axis leaves two owners to the refusals beneath them.
 //
 // A caller that assembles a render's input directly and supplies no graph coordinates
 // reaches none of these rules, which is stated where that input field is declared. The
@@ -712,7 +712,7 @@ type recipeImportFieldAxes interface {
 //
 // The axis is a node's OWN Recipe. A values mapping a FeatureRecipe carries reaches
 // the same resolution through its own consumption site, and no key here enumerates
-// it — so these rules are not invoked over it, and that carrier keeps the refusal
+// it — so these rules are not invoked over it, and that owner keeps the refusal
 // the resolution makes, which is retained for exactly this reason.
 //
 // Nor does the axis reach a reference lifted out of a library entry's own body. An
@@ -727,7 +727,7 @@ type recipeImportFieldAxes interface {
 // resolved, before any render begins, so a rule over it at this stage could not be
 // invoked from a build at all.
 //
-// So what the declaration adds on this carrier is a position and a classification —
+// So what the declaration adds on this owner is a position and a classification —
 // never a refusal the build did not already make.
 //
 // # Why each rule is named at its own call rather than walked in a loop
@@ -796,7 +796,7 @@ func runValuesMappingImportRule(
 // The axis is a node's OWN Recipe. A workload a FeatureRecipe carries reaches the
 // same resolution through a synthesized Recipe on the node's own consumption site,
 // and no key here enumerates it — so these rules are not invoked over it, and that
-// carrier keeps the refusal the resolution makes, which is retained for exactly this
+// owner keeps the refusal the resolution makes, which is retained for exactly this
 // reason.
 //
 // Nor does the axis reach a reference lifted out of a library entry's own body. An
@@ -811,7 +811,7 @@ func runValuesMappingImportRule(
 // resolved, before any render begins, so a rule over it at this stage could not be
 // invoked from a build at all.
 //
-// So what the declaration adds on this carrier is a position and a classification —
+// So what the declaration adds on this owner is a position and a classification —
 // never a refusal the build did not already make.
 //
 // # Why each rule is named at its own call rather than walked in a loop
@@ -890,7 +890,7 @@ type authoredLocalsAxes interface {
 // position, the Recipe and the authored key inside it, which is why they are not
 // folded into one message.
 //
-// # Three carriers, because the rule has three and not one
+// # Three owners, because the rule has three and not one
 //
 // A locals block is authored on three documents — a node's own Recipe, the
 // FeatureRecipe an attachment binds on a node, and the FeatureRecipe a
@@ -1052,13 +1052,13 @@ type authoredTemplateFieldAxes interface {
 // The axis is the attachments a BOUNDARY declares. A FeatureRecipe declaring the
 // boundary scope is dispatched to the same surface when its attachment was
 // declared on a COMPONENT instead, and no boundary key enumerates that
-// attachment — so the rules are not invoked over it. That carrier keeps the
+// attachment — so the rules are not invoked over it. That owner keeps the
 // refusal the render makes at dispatch, which is retained for exactly this reason
 // and shares this rule's decision rather than re-implementing it. The set of
 // fields is the inline ones: content imported from a file or a library is read
 // when the render reaches it and is not authored in this document.
 //
-// So what the declaration adds is a position and a breadth on one carrier, never
+// So what the declaration adds is a position and a breadth on one owner, never
 // a refusal the build did not already make.
 //
 // The cancellation signal is the caller's own, so a long walk over a large
@@ -1148,11 +1148,11 @@ type authoredPathTemplateAxes interface {
 // authored beneath a component inside a scope, at a coordinate no boundary key
 // enumerates, so the rules are not invoked over it; and the default this package
 // supplies where a scope writes nothing is not authored text at all, so it is not
-// enumerated. Both carriers keep the refusal the render makes when it evaluates
+// enumerated. Both owners keep the refusal the render makes when it evaluates
 // the template, which is retained for exactly this reason and shares these rules'
 // decision rather than re-implementing it.
 //
-// So what the declaration adds is a position and a breadth on one carrier, never
+// So what the declaration adds is a position and a breadth on one owner, never
 // a refusal the build did not already make.
 //
 // The cancellation signal is the caller's own, so a long walk over a large
