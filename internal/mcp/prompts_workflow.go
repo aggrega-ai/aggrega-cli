@@ -48,19 +48,19 @@ const workflowPointers = "For each kind you author, read schema://{kind} for its
 
 var constructAggregatePromptSpec = promptSpec{
 	name: constructAggregatePromptName,
-	description: "Calling sequence for building a new Aggrega deployment from scratch, from reading a kind's contract " +
+	description: "Calling sequence for building a new Aggrega composition from scratch, from reading a kind's contract " +
 		"to reading the artifacts it renders. Names the tools to call in order and the decision points between them.",
 	render: func(_ map[string]string) (getPromptResult, *rpcError) {
 		return userPrompt(
-			"Calling sequence for constructing a new deployment.",
+			"Calling sequence for constructing a new Aggrega composition.",
 			constructAggregateBody,
 		), nil
 	},
 }
 
-const constructAggregateBody = `You are constructing a new Aggrega deployment from scratch. ` + sequenceFraming + `
+const constructAggregateBody = `You are constructing a new Aggrega composition from scratch. ` + sequenceFraming + `
 
-` + fourDomainFraming + ` Building a deployment from scratch usually means writing in more than one of them.
+` + fourDomainFraming + ` Building a composition from scratch usually means writing in more than one of them.
 
 1. Learn what already exists. Call describe with a candidate component's type URI to read its full contract — the values a consumer supplies, the outputs it provides, and its labels — with inheritance applied. Once you have an entity's name, catalog://{kind}/{name} reads its authored YAML. Reuse a catalog Component wherever one fits and author a new one only where nothing does.
 2. Read the contract before writing YAML. Call get-schema for each kind you are about to write, then scaffold to turn that schema into a starter skeleton carrying the required fields. Filling a skeleton beats writing from memory, because the skeleton is derived from the schema and so tracks the real contract.
@@ -69,7 +69,7 @@ const constructAggregateBody = `You are constructing a new Aggrega deployment fr
 5. Author the Manifest. It binds each Component contract to the Recipe chosen for a target, which is how one Aggregate deploys to several environments unchanged.
 6. Author the Release. It binds the Aggregate to a Manifest and fills in the parameters the Aggregate declared. A Release carries no values block of its own — the schema does not admit one — and it declares no components. Where a value has to differ per environment, the fix belongs in the Aggregate: expose it as a parameter there and fill it in from the Release.
 7. Check each file as you finish it. Call validate with entity set to that file's path. Every kind is schema- and shape-checked, a Component or Feature has its pillar structure checked too, and a Recipe is driven through the real compilation pipeline around a synthesized minimal harness so you see its isolated render summary.
-8. Check the whole deployment. Call validate with release set to the Release path. It reads the Manifest and Aggregate the Release names, walks the Release's dependency closure, and runs the closure-scoped gates — without rendering or writing anything.
+8. Check the whole composition. Call validate with release set to the Release path. It reads the Manifest and Aggregate the Release names, walks the Release's dependency closure, and runs the closure-scoped gates — without rendering or writing anything.
 9. Read what it would emit. Call build with the Release path. It renders in memory and returns the artifacts by output-relative path, writing nothing to disk, so you can read the output before committing to it.
 
 Decision points along the way.
@@ -121,7 +121,7 @@ Decision points along the way.
 
 var diagnoseBuildPromptSpec = promptSpec{
 	name: diagnoseBuildPromptName,
-	description: "Calling sequence for diagnosing a deployment that does not compile, or that compiles into the wrong " +
+	description: "Calling sequence for diagnosing a build that does not compile, or that compiles into the wrong " +
 		"artifacts. Narrows the surface from the whole Release down to a single file, and says what the compiler does " +
 		"and does not report.",
 	render: func(_ map[string]string) (getPromptResult, *rpcError) {
@@ -132,7 +132,7 @@ var diagnoseBuildPromptSpec = promptSpec{
 	},
 }
 
-const diagnoseBuildBody = `You are diagnosing an Aggrega deployment that does not compile, or that compiles into artifacts that are not what was wanted. ` + sequenceFraming + ` Each call below narrows the surface the problem can be on, which converges faster than guessing at it.
+const diagnoseBuildBody = `You are diagnosing an Aggrega build that does not compile, or that compiles into artifacts that are not what was wanted. ` + sequenceFraming + ` Each call below narrows the surface the problem can be on, which converges faster than guessing at it.
 
 1. Reproduce it in one call. Call validate with release set to the Release path. It checks correctness over the Release's dependency closure without rendering or writing anything, and returns each blocking diagnostic verbatim.
 2. Start at the first diagnostic. The diagnostics come back in the order the checks produced them, so the first one is the one to read. Pass its exact text to explain-error, with the kind it concerns, for a pointer to the authoring contract behind it — and, where the diagnostic opens with a halting condition's short code, for that condition and the published walk-through of what to change.

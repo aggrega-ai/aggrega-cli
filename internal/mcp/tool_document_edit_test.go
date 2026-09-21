@@ -72,7 +72,7 @@ spec:
         size: '{{ .parameters.db_size }}'
 `
 
-// authoredReleaseForToolEdit is the deployment-side fixture. The authoring
+// authoredReleaseForToolEdit is the Release-side fixture. The authoring
 // schema gives a Release's component surface operator concerns only — no
 // developer values — so it is the document the invariant refusal is driven
 // against.

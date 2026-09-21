@@ -94,7 +94,7 @@ type describeEntityPayload struct {
 // reaches, and what is wrong with it.
 //
 // The two listings are separate because they are different populations answering
-// different questions — what the deployment is built from, and which shared
+// different questions — what the Release is built from, and which shared
 // documents it draws on — and a caller that wants one of them should not have to
 // filter a merged list to find it.
 //
