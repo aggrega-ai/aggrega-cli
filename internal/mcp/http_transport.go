@@ -290,6 +290,12 @@ func NewHTTPHandler(ctx context.Context, cfg Config, transport HTTPConfig) (http
 		// client at this machine's keyboard runs for a caller reaching a listener
 		// too, over the one workspace this process serves.
 		resolveImportPlugin: cfg.ResolveImportPlugin,
+		// Handed over on the same terms, and the withholding this reading applies
+		// is the answer to the difference rather than a reason to withhold the
+		// enumeration itself: which plugins a workspace resolves is a property of
+		// the workspace, and what a caller reaching a listener is not told about
+		// them is decided where the answer is composed.
+		listPlugins: cfg.ListPlugins,
 		// Marked here as well as at the single construction point below, and the
 		// reason is the acquisition on the next line: it reports its outcome in
 		// the form this session's transport fixes, and it runs before that point

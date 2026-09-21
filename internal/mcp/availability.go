@@ -150,6 +150,17 @@ var curatedToolNames = map[string][]string{
 	// merely not configured here look alike until this is read.
 	"config-show": {"config-show"},
 
+	// The plugin reading, which is the other half of that answer. The
+	// configuration says which plugins are attached; this says whether an
+	// attachment reaches a guest that resolves and describes, and what that
+	// guest claims to serve — so a caller told a capability is configured can
+	// tell an unusable attachment from a working one. It is also reachable, for
+	// a caller at this machine's keyboard, as the tool generated from its
+	// command, which returns that command's rendered table; this carries the
+	// per-plugin values, so a caller picks a version or checks a served
+	// capability without parsing a column layout back into them.
+	"plugin-list": {"plugin-list"},
+
 	// The four publication verbs. Each is also reachable, for a caller at this
 	// machine's keyboard, as the tool generated from its command, which re-runs
 	// that command in a separate process and

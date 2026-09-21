@@ -221,6 +221,12 @@ func runMCP(cmd *cobra.Command, args []string) error {
 		// runtime plugin runner, so a plugin reference a tool call resolves is
 		// resolved by the identical cascade the command line resolves it by.
 		ResolveImportPlugin: importPluginBytes,
+		// Supplied from here for the same reason and off the same cascade: the
+		// enumeration walks the workspace's sockets and resolves each binding
+		// through the resolver this package assembles, so the plugins a tool call
+		// reports are the plugins `aggrega plugin list` reports — one walk, not two
+		// that agree.
+		ListPlugins: pluginListing,
 	}
 
 	if listen == "" {

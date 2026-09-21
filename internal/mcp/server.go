@@ -16,6 +16,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/importops"
 	"github.com/aggrega-ai/aggrega-cli/internal/opsurface"
+	"github.com/aggrega-ai/aggrega-cli/internal/pluginops"
 	"github.com/aggrega-ai/aggrega-cli/internal/requestcancel"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 )
@@ -82,6 +83,23 @@ type Config struct {
 	// that did not happen. That is the shape every test that is not about it
 	// runs in.
 	ResolveImportPlugin importops.PluginBytesResolver
+
+	// ListPlugins enumerates the plugins resolvable for a workspace — the
+	// embedded built-ins and the workspace's own bindings, each with the
+	// descriptor its guest reports. The command layer supplies it for the reason
+	// it supplies the resolution above, and the two are halves of one fact: the
+	// enumeration is built on that same cascade, whose inputs are derived there
+	// from the workspace and the command tree together. An enumeration written
+	// inside this package would be a second walk over the same sockets, agreeing
+	// with the command line's until one of the two learned about a socket the
+	// other did not.
+	//
+	// A nil lister reaches no plugin at all: the tool that reports them refuses,
+	// saying so, rather than answering with an empty listing a caller would read
+	// as a workspace that configures none. That is the shape a test runs in
+	// unless it drives every tool at once, where leaving the seam unset would
+	// present that refusal as the tool's ordinary answer to a call.
+	ListPlugins pluginops.PluginLister
 
 	// RenderHelp renders a command's help text for the cli:// resource family,
 	// from the command tree this process already holds. The command layer
@@ -200,6 +218,13 @@ type server struct {
 	// refuses saying so rather than reporting a conversion that did not happen —
 	// there is no fallback, because a cascade built here would be a second one.
 	resolveImportPlugin importops.PluginBytesResolver
+
+	// listPlugins enumerates the plugins resolvable for a workspace, handed in
+	// from the command layer beside the resolution above and for the same reason.
+	// Nil reports no plugins, and the reading refuses saying so rather than
+	// answering with an empty listing — there is no fallback, because an
+	// enumeration built here would be a second one.
+	listPlugins pluginops.PluginLister
 
 	// runLint runs the lint helper for the deferred lint tool. Nil runs the
 	// shared lint core in-process on the server's resolved workspace. A test
@@ -367,6 +392,7 @@ func Run(ctx context.Context, cfg Config) error {
 		transport:      transportStdio,
 
 		resolveImportPlugin: cfg.ResolveImportPlugin,
+		listPlugins:         cfg.ListPlugins,
 	}
 	return s.run(ctx, stdin)
 }

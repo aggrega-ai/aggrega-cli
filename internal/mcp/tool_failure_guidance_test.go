@@ -84,9 +84,26 @@ func registeredToolSpecs(s *server) []toolSpec {
 //
 // The command runner is injected, so a case that reaches an operation records
 // the invocation instead of spawning a subprocess.
+//
+// 🔴 It also carries the seams the command layer composes a session with, and
+// this is the one fixture in the package that has to. Every other one drives a
+// single subject and is entitled to leave a seam it is not about unset: a tool
+// reaching for an absent seam refuses, saying so, which is that tool's right
+// answer and is nothing to do with how it reads its arguments. The assertions
+// here drive EVERY tool, so an unset seam presents such a refusal as the tool's
+// ordinary answer to an empty call — and this file would then be holding the
+// product to a shape the command layer never composes.
+//
+// The plugin enumeration is the seam that reaches these assertions today,
+// because the property exposing one is narrow: a tool has to need a seam AND
+// declare no required argument, so that an empty call reaches the seam at all
+// instead of being refused for the missing argument first. A tool meeting both
+// has its seam supplied here.
 func newGuidanceServer(t *testing.T) *server {
 	t.Helper()
-	return newCommandToolServer(t, func(_ context.Context, _ []string, _, _ io.Writer) error { return nil })
+	s := newCommandToolServer(t, func(_ context.Context, _ []string, _, _ io.Writer) error { return nil })
+	s.listPlugins = anEnumerationFindingNoPlugins()
+	return s
 }
 
 // declaredArgumentKeys returns the argument names a tool's own input schema

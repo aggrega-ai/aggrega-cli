@@ -15,6 +15,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/pluginops"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/embedded"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
@@ -137,66 +138,57 @@ consumption and documentation generation.`,
 	return c
 }
 
-// pluginListEntry is one plugin's enumeration result: its source group and URI,
-// where a configured plugin was bound, and either its validated describe()
-// descriptor or the error that describing it produced.
-type pluginListEntry struct {
-	source string
-	uri    string
-	origin string
-	desc   wasm.PluginDescriptor
-	err    error
-
-	// resolvedDigest is the content digest of the bytes the URI resolved to,
-	// captured once resolution succeeds and empty when it did not. It lets an
-	// installed-plugin entry compare the freshly resolved bytes against the
-	// digest pinned at first run.
-	resolvedDigest string
-
-	// readiness is the installed CLI plugin's one-word readiness label; empty for
-	// the embedded and configured groups, which carry no readiness signal.
-	readiness string
-}
-
-// pluginListRun enumerates the embedded built-ins and the workspace-configured
-// plugins, describing each, and writes the deterministic listing to w. It never
-// mutates state. A missing or minimal workspace config is not an error: the
-// configured group is simply empty and the embedded built-ins still list. When
-// asJSON is true it writes the full-detail structured form; otherwise it writes
-// the human-readable table.
+// pluginListing enumerates the embedded built-ins and the workspace-configured
+// plugins, describing each, and returns the two groups. It never mutates state.
+// A missing or minimal workspace config is not an error: the configured group is
+// simply empty and the embedded built-ins still list.
 //
 // The configured group carries both the socket bindings (provider and linter,
 // gathered and sorted by URI) and the CLI-extension commands (plugins.cli, in
-// author order), rendered as one section: the socket bindings first, then the
-// CLI commands. Each subsequence is deterministic, so the concatenation is too.
-// A CLI command is a configured plugin — its type shows as cli in the table —
-// and it keeps the digest-pin readiness label its installed pin defines.
-func pluginListRun(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, w io.Writer, asJSON bool) error {
+// author order), in that order: the socket bindings first, then the CLI
+// commands. Each subsequence is deterministic, so the concatenation is too. A
+// CLI command is a configured plugin — its type shows as cli — and it keeps the
+// digest-pin readiness label its installed pin defines.
+//
+// It is the one enumeration, and the surfaces that report plugins all call it.
+// It lives here because the plugin resolution cascade's inputs are derived in
+// this package, from the workspace and the command tree together, so a surface
+// that cannot assemble that cascade takes this enumeration as a seam rather than
+// rebuilding it — the same shape the import path's plugin resolution takes.
+func pluginListing(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace) pluginops.PluginListing {
 	var wsCfg workspaceconfig.Config
 	if rw != nil {
 		wsCfg = rw.Config()
 	}
 	in := workspacePluginResolutionInputs(rw)
 
-	var embeddedEntries []pluginListEntry
+	var listing pluginops.PluginListing
 	for _, uri := range embedded.URIs() {
 		// An embedded built-in resolves at the embed tier with no entity view, so
 		// the listing matches its runtime resolution with an empty input set.
-		embeddedEntries = append(embeddedEntries, describePluginURI(ctx, "embedded", uri, "", pluginResolutionInputs{}))
+		listing.Embedded = append(listing.Embedded,
+			describePluginURI(ctx, "embedded", uri, "", pluginResolutionInputs{}))
 	}
 
-	var configuredEntries []pluginListEntry
 	for _, ref := range collectConfiguredRefs(wsCfg) {
-		configuredEntries = append(configuredEntries, describePluginURI(ctx, "configured", ref.uri, ref.origin, in))
+		listing.Configured = append(listing.Configured,
+			describePluginURI(ctx, "configured", ref.uri, ref.origin, in))
 	}
 	for _, ref := range wsCfg.Plugins.CLI {
-		configuredEntries = append(configuredEntries, describeInstalledPlugin(ctx, ref, in))
+		listing.Configured = append(listing.Configured, describeInstalledPlugin(ctx, ref, in))
 	}
+	return listing
+}
 
+// pluginListRun writes the deterministic listing to w. When asJSON is true it
+// writes the full-detail structured form; otherwise it writes the
+// human-readable table.
+func pluginListRun(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, w io.Writer, asJSON bool) error {
+	listing := pluginListing(ctx, rw)
 	if asJSON {
-		return writePluginListJSON(w, embeddedEntries, configuredEntries)
+		return writePluginListJSON(w, listing.Embedded, listing.Configured)
 	}
-	formatPluginList(w, embeddedEntries, configuredEntries)
+	formatPluginList(w, listing.Embedded, listing.Configured)
 	return nil
 }
 
@@ -251,14 +243,16 @@ func collectConfiguredRefs(cfg workspaceconfig.Config) []configuredRef {
 // built before the descriptor assets were generated. Any resolve or describe
 // failure is captured on the entry rather than propagated, so one unresolvable
 // plugin does not halt the listing.
-func describePluginURI(ctx context.Context, source, uri, origin string, in pluginResolutionInputs) pluginListEntry {
-	entry := pluginListEntry{source: source, uri: uri, origin: origin}
+func describePluginURI(ctx context.Context, source, uri, origin string,
+	in pluginResolutionInputs) pluginops.ListedPlugin {
+
+	entry := pluginops.ListedPlugin{Source: source, URI: uri, Origin: origin}
 
 	if source == "embedded" {
 		if raw, ok := embedded.LookupDescriptor(uri); ok {
 			var desc wasm.PluginDescriptor
 			if err := json.Unmarshal(raw, &desc); err == nil {
-				entry.desc = desc
+				entry.Descriptor = desc
 				return entry
 			}
 			// A malformed embedded descriptor falls through to load-and-describe
@@ -268,14 +262,14 @@ func describePluginURI(ctx context.Context, source, uri, origin string, in plugi
 
 	resolved, err := resolvePluginURI(uri, in)
 	if err != nil {
-		entry.err = err
+		entry.Err = err
 		return entry
 	}
 
 	pin := digest.ContentDigest(resolved.Bytes)
-	entry.resolvedDigest = pin
+	entry.ResolvedDigest = pin
 	if desc, ok := readDescribeCache(pin); ok {
-		entry.desc = desc
+		entry.Descriptor = desc
 		return entry
 	}
 
@@ -286,12 +280,12 @@ func describePluginURI(ctx context.Context, source, uri, origin string, in plugi
 	loader := wasm.NewCachingLoaderFromContext(ctx, nil)
 	plugin, desc, err := loader.LoadForDescribe(ctx, spec)
 	if err != nil {
-		entry.err = err
+		entry.Err = err
 		return entry
 	}
 	_ = plugin.Close(ctx)
 	writeDescribeCache(pin, desc)
-	entry.desc = desc
+	entry.Descriptor = desc
 	return entry
 }
 
@@ -302,10 +296,12 @@ func describePluginURI(ctx context.Context, source, uri, origin string, in plugi
 // describePluginURI keeps the resolve-describe-digest path single-sourced; only
 // the readiness label is layered on top. The resulting entry joins the configured
 // group — a CLI command is a configured plugin, distinguished by its cli type.
-func describeInstalledPlugin(ctx context.Context, ref workspaceconfig.CLIPluginRef, in pluginResolutionInputs) pluginListEntry {
+func describeInstalledPlugin(ctx context.Context, ref workspaceconfig.CLIPluginRef,
+	in pluginResolutionInputs) pluginops.ListedPlugin {
+
 	entry := describePluginURI(ctx, "installed", ref.URI, "", in)
-	entry.origin = fmt.Sprintf("pinned %s", shortDigest(ref.Digest))
-	entry.readiness = installedReadiness(ref.Digest, entry.resolvedDigest, entry.err)
+	entry.Origin = fmt.Sprintf("pinned %s", shortDigest(ref.Digest))
+	entry.Readiness = installedReadiness(ref.Digest, entry.ResolvedDigest, entry.Err)
 	return entry
 }
 
@@ -447,14 +443,14 @@ func pluginDiagName(uri string) string {
 // is scannable at a glance; the full per-plugin detail is available through the
 // -o json form. The CLI-extension commands are part of the configured group,
 // legible there by their cli type.
-func formatPluginList(w io.Writer, embeddedEntries, configuredEntries []pluginListEntry) {
+func formatPluginList(w io.Writer, embeddedEntries, configuredEntries []pluginops.ListedPlugin) {
 	renderPluginGroup(w, "Embedded built-ins:", embeddedEntries)
 	renderPluginGroup(w, "Configured plugins:", configuredEntries)
 }
 
 // renderPluginGroup writes one titled group as a four-column table, or an
 // empty-group placeholder when it has no entries.
-func renderPluginGroup(w io.Writer, header string, entries []pluginListEntry) {
+func renderPluginGroup(w io.Writer, header string, entries []pluginops.ListedPlugin) {
 	fmt.Fprintln(w, header)
 	fmt.Fprintln(w)
 	if len(entries) == 0 {
@@ -466,7 +462,7 @@ func renderPluginGroup(w io.Writer, header string, entries []pluginListEntry) {
 	fmt.Fprintln(tw, "  TYPE\tNAME\tCAPABILITIES\tVERSION")
 	for _, e := range entries {
 		fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\n",
-			pluginRowType(e), e.uri, pluginRowCapabilities(e), pluginRowVersion(e))
+			pluginRowType(e), e.URI, pluginRowCapabilities(e), pluginRowVersion(e))
 	}
 	_ = tw.Flush()
 	fmt.Fprintln(w)
@@ -474,21 +470,21 @@ func renderPluginGroup(w io.Writer, header string, entries []pluginListEntry) {
 
 // pluginRowType is the table's type cell — the plugin's self-reported type, or
 // empty when the plugin failed to describe.
-func pluginRowType(e pluginListEntry) string {
-	if e.err != nil {
+func pluginRowType(e pluginops.ListedPlugin) string {
+	if e.Err != nil {
 		return ""
 	}
-	return string(e.desc.PluginType)
+	return string(e.Descriptor.PluginType)
 }
 
 // pluginRowCapabilities is the table's capabilities cell — the served-capability
 // list, empty for a cross-cutting plugin (a linter) and for a plugin that failed
 // to describe.
-func pluginRowCapabilities(e pluginListEntry) string {
-	if e.err != nil {
+func pluginRowCapabilities(e pluginops.ListedPlugin) string {
+	if e.Err != nil {
 		return ""
 	}
-	return strings.Join(e.desc.Capabilities, ", ")
+	return strings.Join(e.Descriptor.Capabilities, ", ")
 }
 
 // pluginRowVersion is the table's version cell. An abnormal state takes
@@ -498,19 +494,19 @@ func pluginRowCapabilities(e pluginListEntry) string {
 // full error text and the drifted digests are available through the -o json form.
 // A healthy plugin shows its version and commit, or nothing when the guest
 // carries no provenance.
-func pluginRowVersion(e pluginListEntry) string {
+func pluginRowVersion(e pluginops.ListedPlugin) string {
 	switch {
-	case e.err != nil && e.readiness != "":
-		return e.readiness
-	case e.err != nil:
+	case e.Err != nil && e.Readiness != "":
+		return e.Readiness
+	case e.Err != nil:
 		return "describe failed"
-	case e.readiness != "" && e.readiness != "ready":
-		return e.readiness
+	case e.Readiness != "" && e.Readiness != "ready":
+		return e.Readiness
 	default:
-		if e.desc.Metadata == nil {
+		if e.Descriptor.Metadata == nil {
 			return ""
 		}
-		return formatProvenance(*e.desc.Metadata)
+		return formatProvenance(*e.Descriptor.Metadata)
 	}
 }
 
@@ -545,7 +541,7 @@ type pluginEntryDoc struct {
 
 // writePluginListJSON writes the two groups as an indented JSON object carrying
 // the full per-plugin detail.
-func writePluginListJSON(w io.Writer, embeddedEntries, configuredEntries []pluginListEntry) error {
+func writePluginListJSON(w io.Writer, embeddedEntries, configuredEntries []pluginops.ListedPlugin) error {
 	doc := pluginListDoc{
 		Embedded:   pluginEntriesToDocs(embeddedEntries),
 		Configured: pluginEntriesToDocs(configuredEntries),
@@ -556,7 +552,7 @@ func writePluginListJSON(w io.Writer, embeddedEntries, configuredEntries []plugi
 // pluginEntriesToDocs maps a group's entries to their JSON detail form,
 // preserving order. It returns a non-nil empty slice for an empty group so the
 // JSON carries an empty array rather than null.
-func pluginEntriesToDocs(entries []pluginListEntry) []pluginEntryDoc {
+func pluginEntriesToDocs(entries []pluginops.ListedPlugin) []pluginEntryDoc {
 	docs := make([]pluginEntryDoc, 0, len(entries))
 	for _, e := range entries {
 		docs = append(docs, pluginEntryToDoc(e))
@@ -566,27 +562,27 @@ func pluginEntriesToDocs(entries []pluginListEntry) []pluginEntryDoc {
 
 // pluginEntryToDoc maps one listing entry to its JSON detail form. A describe
 // failure carries the error and omits the descriptor-derived fields.
-func pluginEntryToDoc(e pluginListEntry) pluginEntryDoc {
+func pluginEntryToDoc(e pluginops.ListedPlugin) pluginEntryDoc {
 	d := pluginEntryDoc{
-		URI:       e.uri,
-		Origin:    e.origin,
-		Readiness: e.readiness,
+		URI:       e.URI,
+		Origin:    e.Origin,
+		Readiness: e.Readiness,
 	}
-	if e.err != nil {
-		d.Error = e.err.Error()
+	if e.Err != nil {
+		d.Error = e.Err.Error()
 		return d
 	}
-	d.Type = e.desc.PluginType
-	if e.desc.Metadata != nil {
-		d.Version = e.desc.Metadata.Version
-		d.Commit = e.desc.Metadata.Commit
+	d.Type = e.Descriptor.PluginType
+	if e.Descriptor.Metadata != nil {
+		d.Version = e.Descriptor.Metadata.Version
+		d.Commit = e.Descriptor.Metadata.Commit
 	}
-	d.Capabilities = e.desc.Capabilities
-	if e.desc.Contract != nil {
-		d.InputKinds = inputKindsList(e.desc.Contract.InputKinds)
-		d.Boundary = e.desc.Contract.BoundaryAssembly
+	d.Capabilities = e.Descriptor.Capabilities
+	if e.Descriptor.Contract != nil {
+		d.InputKinds = inputKindsList(e.Descriptor.Contract.InputKinds)
+		d.Boundary = e.Descriptor.Contract.BoundaryAssembly
 	}
-	d.Exports = exportNames(e.desc.Exports)
+	d.Exports = exportNames(e.Descriptor.Exports)
 	return d
 }
 

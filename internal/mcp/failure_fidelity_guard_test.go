@@ -142,6 +142,22 @@ var proseOnlyFailureReturns = map[string]int{
 	// one. So the whole reading is withheld by that layer's own design, and there
 	// is no partially-populated result for this return to carry.
 	"tool_configuration.go": 2,
+	// The plugin reading. All four are pre-flight, and the reading has NO
+	// post-run failure return at all — which is the fact worth recording here,
+	// because it is the class this guard exists for. A plugin that will not
+	// resolve or will not describe is carried on its own record with its failure
+	// beside it and the listing goes on, so there is no point at which findings
+	// exist and a prose-only return could discard them.
+	//
+	// Two of the four refuse an argument — a response format this tool does not
+	// declare, and a window it does not serve — both read from the arguments
+	// alone, ahead of any workspace. The third refuses a server started without
+	// the enumeration this reading is composed from: nothing can be walked, and
+	// answering with an empty listing would state that the workspace binds no
+	// plugins, which is a different claim. The fourth is a workspace that could
+	// not be resolved, at which point there is no configuration, no socket and no
+	// binding in hand.
+	"tool_plugins.go": 4,
 	// Catalog generation. Its failure return drops the output accumulated before
 	// the failure, which the generated command-tool surface beside it keeps.
 	//
