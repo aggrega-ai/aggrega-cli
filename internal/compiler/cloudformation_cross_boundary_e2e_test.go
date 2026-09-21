@@ -250,12 +250,12 @@ func TestCloudFormationTwoBoundary_CrossStackWiring(t *testing.T) {
 	if !strings.HasPrefix(exportName, "aggrega-") {
 		t.Fatalf("producer export name %q does not start with the aggrega- prefix", exportName)
 	}
-	// The export name carries the deployment identity from the link payload — the
+	// The export name carries the Release identity from the link payload — the
 	// Release's metadata.name — as its scope segment, so it is no longer the
 	// empty-segment placeholder. Distinct Releases sharing an account and region
 	// therefore produce distinct export names.
 	if !strings.Contains(exportName, "cloudformation-two-boundary") {
-		t.Fatalf("producer export name %q is missing the deployment segment %q", exportName, "cloudformation-two-boundary")
+		t.Fatalf("producer export name %q is missing the Release identity segment %q", exportName, "cloudformation-two-boundary")
 	}
 	t.Logf("producer export name: %s", exportName)
 
@@ -379,7 +379,7 @@ func TestCloudFormationTwoBoundary_CrossAccountGetStackOutput(t *testing.T) {
 	// StackName round-trip identity: the export name the producer publishes and
 	// the stack name the consumer reads share the producer stack's scope — the
 	// export name is the stack name plus the component and provides-key segments.
-	// The stack name is a well-formed aggrega- name carrying the deployment
+	// The stack name is a well-formed aggrega- name carrying the Release
 	// identity and the producer boundary segment.
 	if !strings.HasPrefix(exportName, stackName+"-") {
 		t.Fatalf("producer export name %q is not the consumer stack name %q plus the component and key segments", exportName, stackName)

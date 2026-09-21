@@ -14,7 +14,7 @@ import (
 // entry may carry an export name spelling it too, and a name carrying it is not
 // on that account one this core assembled. It is also constant across every name
 // assembled here, so it is no part of what tells two of those names apart — that
-// is the deployment identity segment following it. What an assembled name is
+// is the Release identity segment following it. What an assembled name is
 // unique against, and where that stops, is set out on [ExportName].
 const exportNamePrefix = "aggrega"
 
@@ -37,7 +37,7 @@ func isExportNameRune(r rune) bool {
 // ExportName builds the deterministic CloudFormation export name for one
 // cross-stack value, as the fixed prefix and four caller-supplied segments
 // assembled by [namesegment.Encoding.Name]. The four segments carry, in order,
-// the deployment/environment identity, the boundary path (a boundary is one
+// the Release identity, the boundary path (a boundary is one
 // stack), the component identity, and the provides key whose value the export
 // publishes.
 //
@@ -54,7 +54,7 @@ func isExportNameRune(r rune) bool {
 // # What the name is unique against, and where that stops
 //
 // Because the derivation is injective, one export name within a build belongs to
-// exactly one deployment identity, boundary, component, and provides key. That
+// exactly one Release identity, boundary, component, and provides key. That
 // is the whole of what a build can establish, and it is established here rather
 // than assumed.
 //
@@ -64,7 +64,7 @@ func isExportNameRune(r rune) bool {
 // than beyond this one's: the compiler does not authenticate, does not query,
 // and cannot read the output of another build, so nothing it computes can
 // observe what is already deployed. What carries the name across that boundary
-// is the deployment identity segment leading it — two deployments sharing an
+// is the Release identity segment leading it — two Releases sharing an
 // account and region keep their exports apart by being named apart.
 func ExportName(release, boundary, component, providesKey string) string {
 	return exportNameEncoding.Name(exportNamePrefix, release, boundary, component, providesKey)
@@ -73,7 +73,7 @@ func ExportName(release, boundary, component, providesKey string) string {
 // StackName builds the deterministic CloudFormation stack name for one boundary,
 // as the fixed prefix and two caller-supplied segments assembled by
 // [namesegment.Encoding.Name]. A boundary assembles into one stack, so the
-// boundary path scopes the name; the deployment/environment identity leads it.
+// boundary path scopes the name; the Release identity leads it.
 //
 // It is built the same way an export name is, and is injective for the same
 // reason: two calls produce one stack name only where both segments match. The

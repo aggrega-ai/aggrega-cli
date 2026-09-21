@@ -90,7 +90,7 @@ func TestAPluginValidationWhoseContextHasAlreadyEndedLoadsNoGuest(t *testing.T) 
 // function that held the minted context; the hop above it is a single parameter
 // the compiler enforces, and `go vet` over every test file is what checks it.
 //
-// The control is what discriminates. Both arms fail — the synthesized deployment
+// The control is what discriminates. Both arms fail — the synthesized build
 // has no provider behind it — so the question is WHICH failure each reports: the
 // withdrawn arm must name the withdrawal, and the live arm must not.
 //

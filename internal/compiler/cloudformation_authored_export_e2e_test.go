@@ -5,7 +5,7 @@
 // own CloudFormation Outputs entry carrying an Export name.
 //
 // A cross-boundary uses edge makes the consumed endpoint publish an export, and
-// the export name is assembled from the deployment identity, the boundary, the
+// the export name is assembled from the Release identity, the boundary, the
 // component and the injected provides key. An Outputs entry a Recipe writes is
 // carried through as authored, Export block included, so an author can spell a
 // name the assembly also produces for the same build — leaving one stack
@@ -39,7 +39,7 @@ import (
 
 // cfnDerivedDbHostExportName is the export name the two-boundary build derives
 // for the database host: the app-b -> db edge injects `host` across the boundary,
-// so the publish on the db end assembles a name from this deployment's identity,
+// so the publish on the db end assembles a name from this Release's identity,
 // the stack-a boundary path, the db component, and the `host` provides key.
 //
 // It is pinned here because the shadowing fixture has to spell it — a collision

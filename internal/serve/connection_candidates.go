@@ -82,7 +82,7 @@ type connectionCandidatesParams struct {
 //
 // It is not a constant, and the two answers come from two different rules.
 // A Component's own dependency surface accepts an ad-hoc socket: the
-// author of an application owns its topology and may name a socket the
+// author of an Aggregate owns its topology and may name a socket the
 // catalog did not anticipate, so the name is accepted and a near-miss on
 // it is reported as an advisory rather than refused. A Feature's
 // attachment surface does not: an attachment participates in the topology
@@ -347,7 +347,7 @@ func connectionCandidatesIn(ctx context.Context, root string, overlay []workspac
 // a dependency socket its own usesSchema does not declare.
 //
 // The two answers are properties of two different rules rather than a
-// preference. An application's own topology is the author's to write, so a
+// preference. An Aggregate's own topology is the author's to write, so a
 // Component's dependency surface accepts a socket the catalog entity never
 // declared. An attachment participates in the topology the attached
 // Feature declares rather than authoring one, so a Feature's usesSchema is

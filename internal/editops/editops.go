@@ -28,7 +28,7 @@
 //     composed, spliced and then VALIDATED against the document kind's own
 //     schema, and the bytes reach disk only if that validation passes. So a
 //     surface cannot use this to write something the authoring schema refuses —
-//     a deployment document declaring configuration values it may not, say —
+//     a Release document declaring configuration values it may not, say —
 //     because the refusal comes from the same schema that would refuse the
 //     hand-typed document. The rule is not restated here; it is enforced where it
 //     already lives.

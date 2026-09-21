@@ -121,7 +121,7 @@ func TestClosureLibraryProjectionCoversEveryDeclaredAxis(t *testing.T) {
 // resolution raises both finding classes at once.
 //
 // The Manifest maps the component the Aggregate instantiates onto a Recipe that
-// implements it — so the deployment resolves — and carries a SECOND mapping onto a
+// implements it — so the Release resolves — and carries a SECOND mapping onto a
 // Recipe implementing an unrelated type, which is the mapping fault. Splitting the
 // two is what keeps the fault from also breaking the resolution: a fixture whose
 // only mapping was inconsistent would refuse before there was a listing to report a
@@ -416,7 +416,7 @@ func TestReleaseClosureCarriesEveryFindingTheResolutionDecided(t *testing.T) {
 	}
 
 	// The listing is still delivered. A finding that displaced it would leave a
-	// caller asking what a deployment depends on with one complaint in place of the
+	// caller asking what a Release depends on with one complaint in place of the
 	// answer, which is exactly what carrying findings instead of failing exists to
 	// avoid.
 	if len(got.Entities) == 0 {

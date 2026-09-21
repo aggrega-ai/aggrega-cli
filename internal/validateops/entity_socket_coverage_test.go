@@ -150,7 +150,7 @@ func TestLookupWithSocketsOptional_NoSocketsIsIdentity(t *testing.T) {
 // differently from a build. Reading the entity's own map here would be the second
 // notion of a required socket the test below exists to refuse.
 //
-// The presentation is built over an empty application because neither fact is
+// The presentation is built over an empty Aggregate because neither fact is
 // keyed by a component: they answer about what a type declares, which is the
 // whole of what the narrowing changes.
 func requiredSocketsThroughTheCompilersOwnReading(lookup resolver.CatalogLookup, typeURI string) []string {

@@ -672,7 +672,7 @@ func newAssembledSpace(name string) *assembledSpace {
 // one resource, an output name one output, a parameter name one parameter — so the
 // space holds one value per name. Writing a second, different value under a name
 // already taken is not a merge: it displaces what was there, and the displaced
-// resource leaves the stack with nothing said about it, so a deployment that
+// resource leaves the stack with nothing said about it, so a build that
 // declared it gets a template that does not carry it. Refusing is what turns that
 // into something the author can see and fix.
 //

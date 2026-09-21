@@ -57,11 +57,11 @@ type assembledGroup struct {
 //   - Neither end's provider advertises linking: inert — no file change.
 //
 // The host assembles the domain-blind per-edge payload from the edge, the
-// endpoints' dispatch identity, the build's deployment identity, and both ends'
+// endpoints' dispatch identity, the build's Release identity, and both ends'
 // resolved annotations; it interprets no annotation value
 // (Invariants 1/3) and resolves no runtime state (Invariant 2) — the
 // deterministic pointer strings a guest returns are piped, not resolved. The
-// deployment identity is copied onto both endpoints as an opaque scalar; the
+// Release identity is copied onto both endpoints as an opaque scalar; the
 // host infers no meaning from it.
 func wireCrossBoundaryLinks(
 	ctx context.Context,

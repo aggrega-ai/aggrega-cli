@@ -21,7 +21,7 @@ import (
 // The two classes are asserted separately on purpose. A malformed declaration
 // must not be reported as an unmet requirement, and an unmet requirement must
 // not be reported as a malformed declaration: they have different remediations,
-// and collapsing them would let a typo in the catalog read as a deployment that
+// and collapsing them would let a typo in the catalog read as an Aggregate that
 // simply forgot an attachment.
 //
 // 🔴 They are asserted over SEPARATE documents, and that is a property of the

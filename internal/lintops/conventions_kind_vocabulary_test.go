@@ -85,7 +85,7 @@ func TestCatalogWalkAdmitsEveryConventionsLintedKind(t *testing.T) {
 // conventions-linted kinds, and declines every other kind the vocabulary knows.
 //
 // Both directions matter. Missing a kind closes the rules over content that
-// should be examined; admitting a deployment-side kind runs catalog-publishing
+// should be examined; admitting a Release or Manifest runs catalog-publishing
 // rules over a document that is not published, reporting findings an author
 // cannot act on.
 func TestConventionsKindGateReadsTheDeclaredVocabulary(t *testing.T) {

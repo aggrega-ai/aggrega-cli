@@ -417,7 +417,7 @@ func resolveBuildOnInspect(flag *bool, cfgValue bool) bool {
 //
 // The layers answer different questions about one file, so an entry from each
 // can stand on the same line without either being a duplicate of the other: one
-// says the deployment is not correct, another that the entity is not
+// says the build is not correct, another that the entity is not
 // publishable. A client that showed them as one list would report a single
 // problem twice; reading Source is what separates them.
 //

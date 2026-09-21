@@ -13,7 +13,7 @@ import (
 	aggerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
-// authoredRelease is the deployment-side fixture. The authoring schema gives a
+// authoredRelease is the Release-side fixture. The authoring schema gives a
 // Release's component surface operator concerns only — no developer values, and
 // no way to declare a component the Aggregate did not — so it is the document
 // the invariant refusals below are driven against.
@@ -48,7 +48,7 @@ func writeRelease(t *testing.T) (root, rel string) {
 //
 // Without it a refusal could be reported for a document that was never valid,
 // and the whole set would pass while proving nothing about the edit. It drives a
-// legitimate deployment-side edit — an operator concern the Release surface does
+// legitimate Release-side edit — an operator concern the Release surface does
 // carry — and asserts it lands.
 func TestTheReleaseFixtureIsValidToBeginWith(t *testing.T) {
 	root, rel := writeRelease(t)
@@ -61,7 +61,7 @@ func TestTheReleaseFixtureIsValidToBeginWith(t *testing.T) {
 		Value: "core/finops/budget-alert:1.0.0",
 	})
 	if err != nil {
-		t.Fatalf("a legitimate deployment-side edit was refused: %v", err)
+		t.Fatalf("a legitimate Release-side edit was refused: %v", err)
 	}
 	if len(res.Written) != 1 {
 		t.Fatalf("Written = %v, want the one document", res.Written)
@@ -75,7 +75,7 @@ func TestTheReleaseFixtureIsValidToBeginWith(t *testing.T) {
 // it is the reason the write is gated on validation rather than on a hand-coded
 // rule.
 //
-// Both rows are things the deployment surface may not declare: developer values,
+// Both rows are things the Release surface may not declare: developer values,
 // and a component the developer's own document did not. Neither prohibition is
 // restated in this package — the authoring schema carries them, and the same
 // refusal would meet the same document typed by hand.
@@ -86,7 +86,7 @@ func TestAnEditTheAuthoringSchemaRefusesWritesNothing(t *testing.T) {
 		names string
 	}{
 		{
-			name: "a deployment document cannot declare developer values",
+			name: "a Release document cannot declare developer values",
 			opts: Options{
 				Kind:  KindSetValue,
 				Node:  []string{"spec", "components", "web"},
@@ -99,7 +99,7 @@ func TestAnEditTheAuthoringSchemaRefusesWritesNothing(t *testing.T) {
 			names: `unexpected property: "values"`,
 		},
 		{
-			name: "a deployment document cannot declare a component of its own",
+			name: "a Release document cannot declare a component of its own",
 			opts: Options{
 				Kind:  KindAddComponent,
 				Node:  []string{"spec", "components"},

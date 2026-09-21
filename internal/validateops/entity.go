@@ -277,13 +277,13 @@ func validatePluginEntity(res *EntityResult, path string, data []byte) error {
 
 // validateRecipeEntity runs the Recipe shape check then the render tiers: it
 // resolves the Recipe's implements Component from the catalog, synthesizes a
-// minimal deployment around a single instance of that Component bound to the
+// minimal build around a single instance of that Component bound to the
 // Recipe under test, and drives the real pipeline — first resolution and guards
 // (render skipped), then a real isolated render.
 //
-// One check of a real deployment is out of reach here and is declined rather
+// One check of a real build is out of reach here and is declined rather
 // than failed: whether the Component's `required: true` uses sockets are
-// populated. The synthesized deployment holds a single instance, so it contains
+// populated. The synthesized build holds a single instance, so it contains
 // no second component an edge could target, and no authoring of the synthesized
 // documents can change that. The declined sockets are named in Diagnostics, so
 // the report states which surface it did not cover instead of leaving a silent
@@ -337,14 +337,14 @@ func validateRecipeEntity(ctx context.Context, res *EntityResult, wsRoot, cacheD
 		tierLookup = lookupWithSocketsOptional(lookup, rec.Spec.Implements, declined)
 		res.Diagnostics = append(res.Diagnostics,
 			fmt.Sprintf("Sockets: required uses sockets not checked (%s)", strings.Join(declined, ", ")),
-			"  Validating a Recipe on its own places its Component in a deployment of one,",
+			"  Validating a Recipe on its own places its Component in a build of one,",
 			"  so no other component exists for a required socket to be wired to. Whether",
 			"  each of these sockets is populated is checked when the Component is deployed",
 			"  in an Aggregate.")
 	}
 
 	recipeLookup := renderer.RecipeLookup{
-		// The synthesized deployment carries a single component instance, so the
+		// The synthesized build carries a single component instance, so the
 		// Recipe under test is the recipe for every node — return it directly
 		// rather than resolving through the catalog, which lets the loose
 		// (possibly not-yet-published or edited-in-place) file drive the render.
@@ -356,7 +356,7 @@ func validateRecipeEntity(ctx context.Context, res *EntityResult, wsRoot, cacheD
 // declaredRequiredSockets returns the names of every uses socket the Component
 // declares `required: true`, in the entity's author order.
 //
-// The synthesized deployment carries a single component instance: it authors no
+// The synthesized build carries a single component instance: it authors no
 // `uses` entry and its Release wires no edge, because there is no second node
 // for an edge to target. Every required socket is therefore one this harness
 // cannot populate, which is why the declared set and the out-of-reach set
@@ -437,7 +437,7 @@ func validateFeatureRecipeEntity(res *EntityResult, path string, data []byte) er
 	return nil
 }
 
-// entityHarness is the synthesized minimal deployment the render tiers drive:
+// entityHarness is the synthesized minimal build the render tiers drive:
 // an in-memory Aggregate (raw bytes), Manifest, and Release around a single
 // component instance of the implements type.
 type entityHarness struct {
@@ -448,7 +448,7 @@ type entityHarness struct {
 }
 
 // syntheticInstanceName is the single component-instance name the synthesized
-// deployment uses. It is a fixed, target-agnostic label so the harness — and
+// build uses. It is a fixed, target-agnostic label so the harness — and
 // thus the rendered output an author inspects — is deterministic.
 const syntheticInstanceName = "instance"
 
@@ -581,7 +581,7 @@ func runRenderTiers(ctx context.Context, res *EntityResult, h entityHarness, loo
 		// pipeline.
 		res.Diagnostics = append(res.Diagnostics,
 			"Render: not completed in isolation",
-			"  The render requires deployment inputs a single-entity harness does not",
+			"  The render requires build inputs a single-entity harness does not",
 			"  synthesize (for example an attached credential or a topology edge). See the",
 			"  render diagnostic below.")
 		return fmt.Errorf("render: %w", err)

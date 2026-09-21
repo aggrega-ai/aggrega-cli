@@ -25,7 +25,7 @@ import (
 // and be told what it points at. That presumes the client has already found
 // somewhere the name is written. These two start from the name and from the
 // Release instead, so a client that holds neither a cursor nor a document can
-// still ask what an entity is and what a deployment depends on.
+// still ask what an entity is and what a Release depends on.
 
 // entityDefinitionParams is the request shape for `aggrega/entityDefinition`.
 //
@@ -338,7 +338,7 @@ type releaseClosureParams struct {
 //
 // Version is the version the reference resolved to, which is not necessarily
 // the version any document asked for — a reference that names no version
-// resolves to one, and that resolved value is what a deployment is actually
+// resolves to one, and that resolved value is what a Release is actually
 // built from. It is empty for a reference that resolved to no version at all.
 //
 // Kind is present only where the reference site recorded one. A reference is
@@ -362,14 +362,14 @@ type ClosureEntity struct {
 // Every collection is always an array on the wire, empty rather than null, so a
 // client iterates them without a null check. The three listings are separate
 // because they are different populations answering to different questions — what
-// the deployment is built from, which shared documents it draws on, and which
+// the Release is built from, which shared documents it draws on, and which
 // guests shape its output — and a client that wants one of the three should not
 // have to filter a merged list to find it.
 //
 // MappingDiagnostics and Deprecations are what is wrong with the closure just
 // listed, and they are reported rather than turned into a refusal: this request
 // reports on a Release rather than producing anything from it, so a client asking
-// what a deployment depends on is answered AND told what is wrong with it. A
+// what a Release depends on is answered AND told what is wrong with it. A
 // listing that carried neither would report a closure as sound that another reader
 // of the same facts reports as broken.
 //
@@ -399,11 +399,11 @@ type releaseClosureResult struct {
 // # This is not the graph, and a client holding the graph does not have it
 //
 // The two answers are derived from the same resolution and describe different
-// things. The graph says what the deployment looks like — the nodes, their
+// things. The graph says what the composition looks like — the nodes, their
 // boundaries, what is wired to what. The closure says what was pulled in to
 // build it, and at which resolved versions. A reader wanting to know why a
 // version moved, or what a change to a shared document would reach, is asking
-// this question; a reader wanting to see the deployment is asking the other.
+// this question; a reader wanting to see the composition is asking the other.
 // One is not recoverable from the other: an entity can be reached without
 // appearing as a node, and a node does not carry the version its type resolved
 // to.
@@ -434,7 +434,7 @@ type releaseClosureResult struct {
 // the same reason: the versions this listing reports are the ones the Release
 // resolved to, and a workspace nobody has prepared has not resolved them yet.
 // A listing produced without one would report what the catalog happens to hold
-// today, which is a different question from what this deployment depends on.
+// today, which is a different question from what this Release depends on.
 func (s *Server) dispatchReleaseClosure(ctx context.Context, req *jsonRPCRequest) error {
 	var params releaseClosureParams
 	if err := decodeParams(req, &params); err != nil {

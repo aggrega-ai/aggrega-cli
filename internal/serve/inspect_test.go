@@ -496,7 +496,7 @@ func TestReleaseClosureComputesNoSecondClosure(t *testing.T) {
 // because a client holding the graph can reasonably assume it already has this.
 //
 // The discriminating fact is an entity the Release reaches that is not a node on
-// its graph. The graph says what the deployment looks like; the closure says what
+// its graph. The graph says what the composition looks like; the closure says what
 // was pulled in to build it. An entity can be in the second without being in the
 // first, which is why one is not recoverable from the other.
 func TestReleaseClosureIsNotTheGraph(t *testing.T) {

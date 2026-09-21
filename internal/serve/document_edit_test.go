@@ -55,7 +55,7 @@ spec:
         size: '{{ .parameters.db_size }}'
 `
 
-// editableRelease is the deployment-side document the invariant refusal is
+// editableRelease is the Release-side document the invariant refusal is
 // driven against. The authoring schema gives a Release's component surface
 // operator concerns only, so a request asking it to carry a developer value
 // composes a document the schema refuses.
@@ -243,7 +243,7 @@ func TestEditDocumentRefusesAResultTheAuthoringSchemaWouldNotAdmit(t *testing.T)
 		"value": 9,
 	})
 	if resp.Error == nil {
-		t.Fatal("a deployment document was allowed to declare a developer value")
+		t.Fatal("a Release document was allowed to declare a developer value")
 	}
 	if !strings.Contains(resp.Error.Message, "E0275") {
 		t.Errorf("the refusal does not carry the condition's short code, which is what a reader "+
