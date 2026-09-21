@@ -74,7 +74,7 @@ var emptyWorkspaceLead = fmt.Sprintf(`What an empty workspace means, and what to
 // process. That client runs where the caller does, so the workspace and the
 // configuration behind it are the caller's own to inspect and change, and the
 // tools that do both are reachable here.
-const emptyWorkspaceStdio = ` You reached it over standard input and output, which means the client running it is on the same machine you are: this workspace is yours to inspect and to repair. cli-config-show reports the configuration in force and where it came from, which is how you tell an unconfigured workspace from a merely empty one, and cli-config-init seeds a working configuration by registering a registry and its signature trust policy. Read the configuration before you change it, and tell the person you are working with what you changed.`
+const emptyWorkspaceStdio = ` You reached it over standard input and output, which means the client running it is on the same machine you are: this workspace is yours to inspect and to repair. config-show reports the configuration in force and which layer decided each setting, which is how you tell an unconfigured workspace from a merely empty one, and cli-config-init seeds a working configuration by registering a registry and its signature trust policy. Read the configuration before you change it, and tell the person you are working with what you changed.`
 
 // emptyWorkspaceHTTP closes the guidance for a caller that reached a listener.
 // Such a caller is somewhere else, the workspace was chosen by whoever started
