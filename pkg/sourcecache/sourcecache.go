@@ -103,7 +103,7 @@ func LookupAndExtract(lf *lockfile.Lockfile, kind, url, chart, moduleSubdir, ver
 	}
 	entry := findEntry(lf, kind, url, chart, moduleSubdir, version)
 	if entry == nil {
-		return "", fmt.Errorf("sourcecache: no lockfile entry for kind=%s url=%s chart=%s module_subdir=%s version=%s: %w",
+		return "", fmt.Errorf("no lockfile entry for kind=%s url=%s chart=%s module_subdir=%s version=%s: %w",
 			kind, url, chart, moduleSubdir, version, ErrFetchNotFound())
 	}
 	slot := SlotPath(workspaceRoot, cacheDir, kind, url, chart, moduleSubdir, version, entry.Digest)
