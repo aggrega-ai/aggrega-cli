@@ -13,14 +13,23 @@ import (
 )
 
 // ErrLockfileDrift wraps every drift detection failure raised by
-// Verify. Errors satisfying errors.Is(err, ErrLockfileDrift()) carry a
+// Verify and by VerifySourceReferences. Errors satisfying
+// errors.Is(err, ErrLockfileDrift()) carry a
 // wrapped message naming every offending URI surfaced across the
 // closure axes (entities, schema libraries, mapping libraries,
-// workload libraries, Wasm plugins). Each axis collects all of its drift entries before
+// workload libraries, artifacts libraries, Wasm plugins), or — from
+// VerifySourceReferences — every source reference whose authored ref now
+// resolves elsewhere. Each axis collects all of its drift entries before
 // returning, so an operator with multiple drifts sees the full list
 // in one diagnostic rather than one URI per iteration. The
 // documented remediation is
 // `aggrega pull --upgrade --release <release>`.
+//
+// The two raise sites report one condition rather than two, because what an
+// operator is told and what they do about it are the same in both: a pin
+// recorded in the lockfile no longer describes what resolves now, and an
+// upgrade is how it is adopted. Splitting them would give one remediation two
+// identities.
 //
 // Cross-tier digest semantics: ClosureLookup standardises on the
 // content digest at every tier — Tier-3 (OCI pull) computes
@@ -49,12 +58,16 @@ var errLockfileDrift = cerrors.Register("lockfile-drift", cerrors.Meta{
 // operators see the full picture.
 //
 // Walks six axes: Entities, SchemaLibraries, MappingLibraries,
-// WorkloadLibraries, ArtifactsLibraries, Plugins. SourceArtifacts are not verified here — they pass
-// through pkg/sourcecache.LookupAndExtract's existing digest gate at
-// build-time read, which compares the cached blob's content digest
-// against the lockfile-supplied digest the orchestrator routes
-// through the sourcecache shim. Wiring the same comparison here
-// would double-verify the same condition.
+// WorkloadLibraries, ArtifactsLibraries, Plugins.
+//
+// SourceArtifacts are not walked here, and the reason is the shape of the
+// argument rather than a judgement about their importance: every axis above is
+// compared against `expected`, which is a closure some caller computed. The
+// source-artifact axis is compared by VerifySourceReferences instead, because
+// the question it answers — does the authored reference still resolve to the
+// recorded commit — cannot be answered from a closure at all. It needs a fresh
+// answer from wherever the reference points, and a caller holding a closure may
+// have obtained one or may not.
 func Verify(lf *Lockfile, expected closure.Closure) error {
 	var driftErrs []error
 	driftErrs = append(driftErrs, collectDrift("entity",
@@ -72,6 +85,136 @@ func Verify(lf *Lockfile, expected closure.Closure) error {
 		return nil
 	}
 	return fmt.Errorf("%w: %w", ErrLockfileDrift(), errors.Join(driftErrs...))
+}
+
+// sourceRefKey joins a recorded source reference to a freshly-resolved one.
+//
+// It is the source-artifact identity MINUS the pinned version, plus the authored
+// ref — and both halves of that are load-bearing. Dropping the pinned version is
+// what makes the join possible at all: the pinned version is part of the identity
+// a resolution computes, so a reference that moved produces a DIFFERENT identity
+// rather than a changed one, and a comparison keyed on the full identity would
+// find no prior row and read the moved reference as a brand-new artifact. Adding
+// the authored ref is what keeps the comparison honest in the other direction: an
+// author who edits `ref:` from one tag to another has changed what they asked
+// for, which is not drift, and only the ref distinguishes that from the same ref
+// resolving elsewhere.
+type sourceRefKey struct {
+	Kind         string
+	URL          string
+	Chart        string
+	ModuleSubdir string
+	RequestedRef string
+}
+
+// VerifySourceReferences reports every source reference whose authored ref now
+// resolves to a different version than the one the lockfile pins for it.
+//
+// prior is the lockfile as it stands; resolved is what a fresh resolution of the
+// same references produced. A nil prior — a run that read no prior lockfile, which
+// is what a full refresh is — reports nothing, so `aggrega pull --upgrade` adopts a
+// moved reference rather than refusing it. That is not a special case written
+// here: it falls out of the prior lockfile being the only thing this compares
+// against, which is why there is no upgrade flag in this signature.
+//
+// # Which rows participate, and why the scope is drawn on the recorded ref
+//
+// Only a row carrying a `requested_ref:` is compared, on both sides. That field
+// records that the pinned version is the RESULT of resolving an authored
+// reference rather than the authored value itself — which is exactly the
+// condition under which the pinned version can move while the authored document
+// stays byte-identical. A row without one pins what its author wrote, so a change
+// there is an edit to the Recipe and not drift.
+//
+// The scope therefore follows what the lockfile records rather than naming a
+// source kind, and it stays correct as kinds are added: whichever adapter
+// transforms an authored reference into a resolved one records the reference it
+// transformed, and is compared on that.
+//
+// # The bound, stated because it is a property of the record rather than of this
+//
+// A Recipe that authors `version:` equal to the very commit its mutable `ref:`
+// currently resolves to records NO `requested_ref:` — the two values agree, so
+// nothing was transformed. The lockfile then carries no evidence that a reference
+// was involved, and there is nothing here to join on. That is a limit of what is
+// recorded, not of this comparison, and widening the join to cover it would
+// refuse a legitimate author edit: a row with no recorded ref is
+// indistinguishable from one whose author simply wrote a different version.
+//
+// # What is compared, and what deliberately is not
+//
+// The pinned version alone. A git commit names immutable content, so comparing
+// the content digest at an unchanged commit adds no signal and would turn a
+// change in how an archive is encoded into reported drift.
+func VerifySourceReferences(prior *Lockfile, resolved []closure.SourceArtifact) error {
+	if prior == nil {
+		return nil
+	}
+	pinned := make(map[sourceRefKey]string, len(prior.SourceArtifacts))
+	for _, sa := range prior.SourceArtifacts {
+		for _, ref := range sa.ReferencedBy {
+			if ref.RequestedRef == "" {
+				continue
+			}
+			k := sourceRefKey{sa.Kind, sa.URL, sa.Chart, sa.ModuleSubdir, ref.RequestedRef}
+			if _, already := pinned[k]; !already {
+				pinned[k] = sa.PinnedVersion
+			}
+		}
+	}
+	if len(pinned) == 0 {
+		return nil
+	}
+
+	var moved []error
+	reported := make(map[sourceRefKey]struct{}, len(pinned))
+	// resolved is walked in its own order, which the descent already sorts, so the
+	// entries below come out in a fixed order for a given pair of inputs.
+	for _, sa := range resolved {
+		for _, ref := range sa.ReferencedBy {
+			if ref.RequestedRef == "" {
+				continue
+			}
+			k := sourceRefKey{sa.Kind, sa.URL, sa.Chart, sa.ModuleSubdir, ref.RequestedRef}
+			was, ok := pinned[k]
+			if !ok || was == sa.PinnedVersion {
+				continue
+			}
+			// One reference reached by two Recipes is one moved reference, not two.
+			if _, done := reported[k]; done {
+				continue
+			}
+			reported[k] = struct{}{}
+			// The remediation rides on each entry rather than on the enclosing
+			// error, and that is forced rather than stylistic: a joined chain is
+			// rendered element by element and the enclosing frame's own text is
+			// not shown, so advice written there reaches nobody. Each element is
+			// an independently-actionable finding, which is what one moved
+			// reference is.
+			moved = append(moved, fmt.Errorf(
+				"source-artifact %s: reference %q moved — the lockfile pins %s, and it now resolves to %s. "+
+					"Adopt where it now points with `aggrega pull --upgrade --release <release>`",
+				sourceArtifactLabel(sa), ref.RequestedRef, was, sa.PinnedVersion))
+		}
+	}
+	if len(moved) == 0 {
+		return nil
+	}
+	return fmt.Errorf("%w: %w", ErrLockfileDrift(), errors.Join(moved...))
+}
+
+// sourceArtifactLabel names a source artifact in the identity terms an author
+// wrote, omitting the two selector terms where the kind does not use them, so the
+// line a reader sees carries no empty fields to decode.
+func sourceArtifactLabel(sa closure.SourceArtifact) string {
+	label := fmt.Sprintf("kind=%s url=%s", sa.Kind, sa.URL)
+	if sa.Chart != "" {
+		label += " chart=" + sa.Chart
+	}
+	if sa.ModuleSubdir != "" {
+		label += " module_subdir=" + sa.ModuleSubdir
+	}
+	return label
 }
 
 // driftKey is the identity triple every axis is compared on: the reference that

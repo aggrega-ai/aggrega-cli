@@ -88,10 +88,11 @@ type SourceArtifact struct {
 // of lockfile.SourceArtifactReference. Entity + URI identify the
 // catalog entity that resolved to the artifact; Field names the
 // source-side path inside the entity's spec (always "spec.source"
-// in the current implementation). RequestedRef preserves the
-// user-authored ref string when the resolved PinnedVersion is a
-// transformed value (terraform-module-git tag/branch → commit SHA);
-// empty otherwise.
+// in the current implementation). RequestedRef preserves the Recipe's
+// authored spec.source.ref, and is written only when the Recipe
+// authored a ref AND the resolved PinnedVersion differs from the
+// Recipe's own spec.source.version (terraform-module-git tag/branch →
+// commit SHA); empty otherwise.
 type SourceArtifactReference struct {
 	Entity       string
 	URI          string

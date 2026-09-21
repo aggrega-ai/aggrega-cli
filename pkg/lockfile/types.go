@@ -274,9 +274,12 @@ type LibraryConsumer struct {
 //     PinnedVersion is the user-authored version (the resolver does
 //     not transform it).
 //   - terraform-module-git: PinnedVersion is the resolved commit
-//     SHA. When the user authored a tag or branch ref, the original
-//     string is preserved on each ReferencedBy entry's RequestedRef
-//     field; for unambiguous SHA refs RequestedRef is empty.
+//     SHA. The authored ref is preserved on each ReferencedBy entry's
+//     RequestedRef field when two conditions hold together — the
+//     Recipe authored a spec.source.ref at all, and PinnedVersion
+//     differs from the Recipe's own spec.source.version. A Recipe
+//     that authors no ref, and one whose authored version already
+//     equals the commit, both leave RequestedRef empty.
 //   - terraform-module-oci: reserved for the future terraform
 //     provider; no adapter ships in the current implementation.
 type SourceArtifact struct {
@@ -317,10 +320,17 @@ type SourceArtifact struct {
 // entity (Recipe or FeatureRecipe) to a source-artifact entry.
 // Entity + URI together identify the catalog entity; Field names the
 // source-side path inside the entity's spec (always "spec.source" in the
-// current implementation). RequestedRef preserves the user-authored ref
-// string when the resolved PinnedVersion is a transformed value
+// current implementation). RequestedRef preserves the Recipe's authored
+// spec.source.ref, and is written only when the Recipe authored a ref AND
+// PinnedVersion differs from the Recipe's own spec.source.version
 // (terraform-module-git tags/branches → commit SHA); empty for
 // kinds where PinnedVersion IS the authored version.
+//
+// It is what makes a moved reference detectable at all. PinnedVersion is
+// part of the identity a resolution computes, so a reference that moves
+// produces a new identity rather than a changed one — the recorded ref is
+// the term a later run joins on to notice that the same question now has a
+// different answer. See VerifySourceReferences.
 type SourceArtifactReference struct {
 	Entity       string `yaml:"entity"`
 	URI          string `yaml:"uri"`

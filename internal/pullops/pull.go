@@ -823,16 +823,30 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	report.resolved(cl)
 
 	if cfg.Verify {
-		// Verify-only path: load the existing lockfile and check
-		// drift against the freshly-computed closure. No disk writes.
-		// Source-artifact descent is skipped — lockfile.Verify covers
-		// the entity/library/plugin axes; source artifacts have their
-		// own digest gate at build-time read.
+		// Verify-only path: load the existing lockfile and check drift against the
+		// freshly-computed closure. No disk writes.
+		//
+		// The source-artifact axis is checked separately, and it has to be: this
+		// branch returns before the graph build below, so the closure in hand has
+		// resolved no sources and holds none — a source-artifact axis folded into
+		// lockfile.Verify here would compare the recorded rows against an empty set
+		// and report nothing, which is a silent pass wearing the shape of a check.
+		// So the recorded references are re-asked at their remotes instead, from the
+		// rows themselves, which is the only place the answer exists.
+		//
+		// The build-time digest gate does NOT cover this. That gate compares the
+		// cached bytes against the digest the lockfile records for them, and a pull
+		// that adopts a moved reference rewrites BOTH in the same act — so the two
+		// values it compares moved together and it is satisfied by construction.
 		lf, _, lerr := lockfile.LoadLockfile(lockfilePath)
 		if lerr != nil {
 			return Result{}, fmt.Errorf("verify: load lockfile %s: %w", lockfilePath, lerr)
 		}
 		if verr := lockfile.Verify(lf, cl); verr != nil {
+			return Result{}, fmt.Errorf("verify: %w", verr)
+		}
+		if verr := verifyRecordedSourceReferences(lf, cfg.sourceResolver(ctx, wsCfg), wsCfg,
+			workspaceRoot, cacheDir, cfg.DiagOut); verr != nil {
 			return Result{}, fmt.Errorf("verify: %w", verr)
 		}
 		// The toolchain the lockfile records is handed back for the caller to
@@ -1027,10 +1041,7 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 					})
 			}
 
-			var srcResolver closure.SourceResolver = sourceResolverShim{ctx: ctx, wsCfg: wsCfg}
-			if cfg.SourceResolver != nil {
-				srcResolver = cfg.SourceResolver
-			}
+			srcResolver := cfg.sourceResolver(ctx, wsCfg)
 			// Ahead of the source descent, which fetches and digests every remote
 			// source the closure names. The descent itself now runs under this
 			// context — the shim carries it into each source's fetch — so a
@@ -1049,6 +1060,27 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 				return fmt.Errorf("source descent: %w", err)
 			}
 			cl.SourceArtifacts = sourceArtifacts
+
+			// Hold each freshly-resolved source reference to the version the prior
+			// lockfile pins for it. A tag or a branch is a name at a remote and the
+			// resolver says so in its own contract: only a commit is immutable, a
+			// re-pushed reference is drift at the next pull, and an upgrade is the
+			// remediation. This is where that sentence is kept.
+			//
+			// The position is the point. It sits after the descent, so the freshly
+			// resolved version exists; and before the freeze, which is the first act of
+			// this run that WRITES — it appends the resolved pins into each writable
+			// recipe file, and a recipe file is authored content a caller cannot take
+			// back. Halting here leaves the workspace exactly as the run found it.
+			//
+			// A full refresh carries no prior lockfile, so it compares against nothing
+			// and adopts — which is how `aggrega pull --upgrade` remains the remediation
+			// without this site testing a flag. A targeted upgrade does hold a prior
+			// lockfile: it names entities to float, a source reference is not one of
+			// them, and floating an unnamed one silently is the thing being fixed.
+			if drift := lockfile.VerifySourceReferences(pinReuse.Prior, sourceArtifacts); drift != nil {
+				return drift
+			}
 
 			// Freeze each writable recipe's intrinsic content pins (source +
 			// $import artifact digests) into the recipe file, from the resolved
