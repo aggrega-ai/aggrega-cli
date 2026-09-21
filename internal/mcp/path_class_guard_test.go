@@ -49,7 +49,11 @@ var workspacePathArguments = map[string]string{
 	// caller's own value decides, and every other authored-document argument
 	// above only opens the file. The edit is confined to the served workspace by
 	// the same helper for that reason rather than by a rule of its own.
-	"edit-document: file":     "the authored document one bounded edit is applied to, and WRITTEN back",
+	"edit-document: file": "the authored document one bounded edit is applied to, and WRITTEN back",
+	// Read rather than written, and it is spelled out because the tool taking it
+	// writes: the drafted files land under the resolved workspace root, which no
+	// argument names, so this is the ONLY path that tool's caller supplies.
+	"import: source":          "the foreign description draft authoring files are translated from",
 	"gen-catalog: plugin":     "the .wasm an entity is generated for",
 	"gen-catalog: output_dir": "the directory generated entities are WRITTEN into",
 	"gen-catalog: overlay":    "the authored overlay a generated entity takes its identity from",

@@ -216,6 +216,11 @@ func runMCP(cmd *cobra.Command, args []string) error {
 		// Supplied from here for the same reason, and over the same tree: the
 		// help a cli:// read serves is the help this tree prints.
 		RenderHelp: commandHelp(cmd.Root()),
+		// Supplied from here because the cascade it binds is assembled in this
+		// package: it is shared with the install path, the plugin listing and the
+		// runtime plugin runner, so a plugin reference a tool call resolves is
+		// resolved by the identical cascade the command line resolves it by.
+		ResolveImportPlugin: importPluginBytes,
 	}
 
 	if listen == "" {

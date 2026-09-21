@@ -268,6 +268,23 @@ func TestDeclaredSchemasStateTheArgumentRulesTheToolsEnforce(t *testing.T) {
 		{editDocumentToolName, "a mapping where a scalar belongs", `{"edit":"set-value","file":"a.yaml","node":["spec"],"name":"k","value":{"cpu":2}}`, false},
 		{editDocumentToolName, "a delivery that is not a boolean", `{"edit":"set-value","file":"a.yaml","node":["spec"],"name":"k","value":"v","dry_run":"yes"}`, false},
 
+		// import: one required subject and three optional arguments, with no
+		// combination rule at all — the format is either named or recognised from
+		// the source's own shape, and the delivery is a property of the caller. A
+		// blank format is a row rather than an omission: a caller that wrote the
+		// key and left it empty said something, and detecting instead would be an
+		// argument quietly substituted, which reads to its sender exactly like one
+		// that was honoured.
+		{importToolName, "a source, with the format recognised from its shape", `{"source":"flow.json"}`, true},
+		{importToolName, "a source whose format is named outright", `{"source":"flow.json","format":"langflow"}`, true},
+		{importToolName, "a source reported rather than written", `{"source":"flow.json","dry_run":true}`, true},
+		{importToolName, "every argument at once", `{"source":"flow.json","format":"flowise","dry_run":false,"workspace_root":"/w"}`, true},
+		{importToolName, "no source", `{}`, false},
+		{importToolName, "a blank source", `{"source":""}`, false},
+		{importToolName, "a source of the wrong type", `{"source":5}`, false},
+		{importToolName, "a blank format, which is neither naming one nor leaving it out", `{"source":"flow.json","format":""}`, false},
+		{importToolName, "a delivery that is not a boolean", `{"source":"flow.json","dry_run":"yes"}`, false},
+
 		// connection-candidates: one required subject, with the optional single
 		// socket alongside. It carries no combination rule, and no coordinate-free
 		// form: there is deliberately no label set here.

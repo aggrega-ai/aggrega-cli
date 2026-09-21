@@ -284,6 +284,12 @@ func NewHTTPHandler(ctx context.Context, cfg Config, transport HTTPConfig) (http
 		announcedTools: announced,
 		renderHelp:     cfg.RenderHelp,
 		startDir:       cfg.WorkspaceRoot,
+		// Handed to this transport exactly as to the other: which plugin a
+		// reference resolves to is a property of the workspace and the process
+		// rather than of how a caller reached it, so an importer that runs for a
+		// client at this machine's keyboard runs for a caller reaching a listener
+		// too, over the one workspace this process serves.
+		resolveImportPlugin: cfg.ResolveImportPlugin,
 		// Marked here as well as at the single construction point below, and the
 		// reason is the acquisition on the next line: it reports its outcome in
 		// the form this session's transport fixes, and it runs before that point

@@ -1,0 +1,444 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Cognitio S.r.l.
+
+package mcp
+
+import (
+	"encoding/json"
+	"errors"
+	"io"
+	"os"
+	"path/filepath"
+	"slices"
+	"sort"
+	"strings"
+	"testing"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/importops"
+	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
+	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
+)
+
+// What stays on this surface when the import itself is the shared layer's: the
+// argument decoding, the resolution of the source through this surface's one
+// path helper, the destination it chooses, the delivery it selects, and the
+// shape of the answer. Format detection, the socket, the guest and the
+// containment of what the guest returns are covered where they live, and this
+// surface's agreement with them is covered by the parity assertion beside this
+// file.
+//
+// 🔴 That split is deliberate. A subsystem's tests follow the subsystem, which
+// leaves the CALL SITE uncovered while every moved test passes.
+
+// importDemoEchoBody is what the demo importer guest drafts: one Component whose
+// name is the format it was asked for. It is read from the guest's behaviour
+// rather than declared by it, which is why the format each case drives with is
+// what names the file the case then looks for.
+func importDemoEchoBody(format string) string {
+	return "kind: Component\nmetadata:\n  name: " + format + "\n"
+}
+
+// A Langflow export and a Flowise export, as the committed source fixtures
+// carry them. They are read from the compiler's own importer-socket fixtures
+// rather than written out here: what these cases drive is recognition of a real
+// exported shape, and a shape invented in this file would be recognised by
+// construction.
+const (
+	langflowFixture = "../compiler/importersocket/testdata/langflow-flow.json"
+	flowiseFixture  = "../compiler/importersocket/testdata/flowise-flow.json"
+)
+
+// importWorkspaceConfig is the configuration every fixture workspace here
+// carries.
+//
+// The cache directory is pinned inside the workspace deliberately. Without it a
+// run would read whatever artifact cache this machine happens to hold, so a case
+// asserting that NO importer advertises a format would be measuring the machine
+// it ran on rather than the workspace under test.
+const importWorkspaceConfig = "workspace: {}\noffline: true\nartifact_cache_dir: .aggrega/cache\n"
+
+// importSourceWorkspace lays a source file down in a workspace of its own and
+// returns the root and the source's workspace-relative name.
+//
+// The workspace carries its own configuration file so that resolution settles
+// here. Without one it would walk upward until it found a configured workspace,
+// reaching the checkout the suite happens to run inside — and the case would
+// then draft entities into a tree nobody wrote it for.
+func importSourceWorkspace(t *testing.T, rel string, content []byte) (root, relPath string) {
+	t.Helper()
+	root = t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, workspaceconfig.ConfigFilename),
+		[]byte(importWorkspaceConfig), 0o644); err != nil {
+		t.Fatalf("write the workspace config: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, rel), content, 0o644); err != nil {
+		t.Fatalf("write the source fixture: %v", err)
+	}
+	return root, rel
+}
+
+// readImportFixture reads one of the committed source fixtures.
+func readImportFixture(t *testing.T, path string) []byte {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read the committed source fixture %s: %v", path, err)
+	}
+	return b
+}
+
+// importDemoResolver stands in for the catalog's capability resolution, so a run
+// drives the real import socket and the real guest without a catalog on disk.
+//
+// It answers for ANY format, which is what lets one guest serve the rows that
+// drive shape detection: the format the detection settled on is the format the
+// guest is asked for, so the file it drafts is named after it and a case can
+// read the detection's answer off the tree.
+type importDemoResolver struct{}
+
+func (importDemoResolver) ImporterPluginForFormat(format string) (types.Plugin, error) {
+	return types.Plugin{
+		Metadata: types.PluginMetadata{Name: "demo-importer", Version: "1.0.0", PluginType: "importer"},
+		Spec:     types.PluginSpec{Importer: &types.PluginImporter{Capabilities: []string{"import:" + format}}},
+	}, nil
+}
+
+// pointImportSeamAtTheDemoGuest points the shared layer's resolver-and-loader
+// seam at the built demo importer fixture for the duration of one case.
+//
+// 🔴 It swaps a package-level variable, so no case using it may be made
+// parallel. The swap is safe as written because the runner resumes a parallel
+// test only once every sequential one has finished, and the cleanup restores it.
+func pointImportSeamAtTheDemoGuest(t *testing.T) {
+	t.Helper()
+	fixture := wasmtest.EnsureFixtureBuilt(t, "import-go.wasm")
+	prev := importops.BuildSeam
+	t.Cleanup(func() { importops.BuildSeam = prev })
+	importops.BuildSeam = func(*workspaceconfig.ResolvedWorkspace, importops.PluginBytesResolver) (importops.Seam, error) {
+		return importops.Seam{
+			ImporterRes: importDemoResolver{},
+			ImporterLoad: func(p types.Plugin) (wasm.PluginSpec, error) {
+				return wasm.PluginSpec{Name: p.Coordinate(), Path: fixture}, nil
+			},
+		}, nil
+	}
+}
+
+// importToolResolver is the plugin-bytes seam a session under test carries.
+//
+// It resolves nothing, and nothing here asks it to: which importer runs is the
+// catalog's decision and its bytes come from the loader above, so this value's
+// whole job is to be non-nil — which is exactly what a session wired by the
+// command layer has and a session that was not does not.
+func importToolResolver(*workspaceconfig.ResolvedWorkspace, string) (pluginpath.ResolvedPlugin, error) {
+	return pluginpath.ResolvedPlugin{}, errors.New("this fixture resolves no importer module of its own")
+}
+
+// importToolServer builds a session over the given workspace root, reached over
+// the process's own streams, carrying the plugin-bytes seam the command layer
+// supplies in production.
+func importToolServer(t *testing.T, root string) *server {
+	t.Helper()
+	return &server{
+		out: io.Discard, logw: io.Discard, serverVersion: "test",
+		startDir:            root,
+		resolveImportPlugin: importToolResolver,
+	}
+}
+
+// importToolPayload decodes the structured answer, failing where the tool
+// reported a failure instead.
+func importToolPayload(t *testing.T, res *callToolResult) importPayload {
+	t.Helper()
+	if res.IsError {
+		t.Fatalf("the import was refused: %s", res.Content[0].Text)
+	}
+	var p importPayload
+	if err := json.Unmarshal(res.StructuredContent, &p); err != nil {
+		t.Fatalf("decode the structured answer: %v (body %s)", err, res.StructuredContent)
+	}
+	return p
+}
+
+// treeUnder lists every file under root by its root-relative path, sorted, so a
+// case asserts what a caller would find rather than what an answer claimed.
+func treeUnder(t *testing.T, root string) []string {
+	t.Helper()
+	var out []string
+	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		rel, rerr := filepath.Rel(root, path)
+		if rerr != nil {
+			return rerr
+		}
+		out = append(out, filepath.ToSlash(rel))
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk %s: %v", root, err)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// TestTheImportToolDraftsIntoTheWorkspaceTheCallResolved is the destination
+// proof at this surface, and it is asserted against the tree rather than against
+// the answer.
+//
+// A reported path and a written path are different facts: a surface that named
+// the right paths and wrote them somewhere else would satisfy an assertion on
+// the answer alone, and the file a caller then goes looking for would not be
+// there. So the file is read back off disk, under the root the call resolved,
+// and the answer is checked for agreeing with it rather than the other way
+// round.
+//
+// It also drives shape detection, because the format is not named: the guest
+// drafts a file named after the format it was asked for, so the file on disk is
+// the detection's own answer.
+func TestTheImportToolDraftsIntoTheWorkspaceTheCallResolved(t *testing.T) {
+	pointImportSeamAtTheDemoGuest(t)
+	root, rel := importSourceWorkspace(t, "flow.json", readImportFixture(t, langflowFixture))
+	before := treeUnder(t, root)
+	s := importToolServer(t, root)
+
+	p := importToolPayload(t, callTool(t, s, importToolName, map[string]any{"source": rel}))
+
+	if p.Format != "langflow" {
+		t.Errorf("the source's shape was read as the %q format, want langflow — the detection did not reach "+
+			"this tool", p.Format)
+	}
+	if len(p.Written) != 1 || p.Written[0] != "langflow.yaml" {
+		t.Errorf("the answer names %v as what reached disk, want exactly [langflow.yaml]", p.Written)
+	}
+	if p.WorkspaceRoot != root {
+		t.Errorf("the answer names %q as the root the drafts are relative to, want the resolved workspace %q",
+			p.WorkspaceRoot, root)
+	}
+	if p.Halted {
+		t.Errorf("the import reported itself halted: %+v", p.Diagnostics)
+	}
+	if p.Drafts != nil {
+		t.Errorf("a write handed the drafted content back as well, which spends a caller's budget on bytes it "+
+			"asked to have written: %+v", p.Drafts)
+	}
+
+	// The tree, which is the claim. The drafted file is under the resolved root,
+	// carrying the bytes the importer produced, and it is the ONLY thing the
+	// import put there.
+	got, err := os.ReadFile(filepath.Join(root, "langflow.yaml"))
+	if err != nil {
+		t.Fatalf("the drafted file is not under the workspace the call resolved: %v", err)
+	}
+	if string(got) != importDemoEchoBody("langflow") {
+		t.Errorf("the drafted file carries %q, want %q", string(got), importDemoEchoBody("langflow"))
+	}
+	if added := treeAdditions(before, treeUnder(t, root)); !slices.Equal(added, []string{"langflow.yaml"}) {
+		t.Errorf("the import put %v into the workspace, want exactly [langflow.yaml]", added)
+	}
+}
+
+// TestTheImportToolsDryRunWritesNothingAndHandsBackTheDrafts pins the reporting
+// delivery: every drafted file's path and content in the answer, and a tree left
+// exactly as it was.
+//
+// Both halves are asserted. A delivery that wrote nothing and also reported
+// nothing would satisfy a check on the tree alone, and one that reported the
+// drafts and wrote them too would satisfy a check on the answer alone.
+func TestTheImportToolsDryRunWritesNothingAndHandsBackTheDrafts(t *testing.T) {
+	pointImportSeamAtTheDemoGuest(t)
+	root, rel := importSourceWorkspace(t, "flow.json", readImportFixture(t, langflowFixture))
+	before := treeUnder(t, root)
+	s := importToolServer(t, root)
+
+	p := importToolPayload(t, callTool(t, s, importToolName,
+		map[string]any{"source": rel, "dry_run": true}))
+
+	if len(p.Written) != 0 {
+		t.Errorf("a reporting delivery named %v as written; nothing reaches disk under it", p.Written)
+	}
+	if len(p.Drafts) != 1 || p.Drafts[0].Path != "langflow.yaml" {
+		t.Fatalf("the answer carries %+v, want one draft for langflow.yaml", p.Drafts)
+	}
+	if p.Drafts[0].Content != importDemoEchoBody("langflow") {
+		t.Errorf("the reported draft carries %q, want the content a write would have put on disk, %q",
+			p.Drafts[0].Content, importDemoEchoBody("langflow"))
+	}
+	if after := treeUnder(t, root); !slices.Equal(after, before) {
+		t.Errorf("a reporting delivery changed the tree\n--- before ---\n%v\n--- after ---\n%v", before, after)
+	}
+}
+
+// TestTheImportToolRefusesASourceWhoseShapeItDoesNotRecognise is the other half
+// of detection: a source that matches no recognised shape is refused asking for
+// the format rather than handed to a guessed importer.
+//
+// The refusal is required to name the argument a caller here can actually send.
+// The shipped sentence names the flag a reader at a terminal passes, which is a
+// remedy no caller of this surface has, so a refusal repeating it would send the
+// caller after something that does not exist.
+func TestTheImportToolRefusesASourceWhoseShapeItDoesNotRecognise(t *testing.T) {
+	pointImportSeamAtTheDemoGuest(t)
+	root, rel := importSourceWorkspace(t, "mystery.json", []byte(`{"foo":"bar"}`))
+	before := treeUnder(t, root)
+	s := importToolServer(t, root)
+
+	res := callTool(t, s, importToolName, map[string]any{"source": rel})
+	if !res.IsError {
+		t.Fatalf("a source matching no recognised shape was imported rather than refused: %s", res.Content[0].Text)
+	}
+	text := res.Content[0].Text
+	if !strings.Contains(text, "'format'") {
+		t.Errorf("the refusal does not name the argument that would settle it: %q", text)
+	}
+	if !strings.Contains(text, rel) {
+		t.Errorf("the refusal does not name the source it could not classify: %q", text)
+	}
+	if strings.Contains(text, "--format") {
+		t.Errorf("the refusal names a command-line flag, which is a remedy this caller does not have: %q", text)
+	}
+	if after := treeUnder(t, root); !slices.Equal(after, before) {
+		t.Errorf("a refused import wrote to the workspace\n--- before ---\n%v\n--- after ---\n%v", before, after)
+	}
+
+	// The control: the same tool over a source whose shape IS recognised is
+	// answered, so the refusal above is attributable to the shape rather than to
+	// anything else about the call.
+	okRoot, okRel := importSourceWorkspace(t, "flow.json", readImportFixture(t, flowiseFixture))
+	p := importToolPayload(t, callTool(t, importToolServer(t, okRoot), importToolName,
+		map[string]any{"source": okRel}))
+	if p.Format != "flowise" {
+		t.Errorf("the control source was read as the %q format, want flowise", p.Format)
+	}
+}
+
+// TestTheImportToolRefusesWhenNoImporterAdvertisesTheFormat is the
+// nothing-attached case, and it is driven with the shared layer's own resolution
+// rather than with the seam the cases above point.
+//
+// The refusal is the shipped one: the condition the catalog registers for a
+// format no plugin advertises, carrying the capability an importer would have to
+// advertise — which is what a reader has to attach. Composing a sentence here
+// instead would be this surface inventing an account of a resolution it does not
+// perform.
+func TestTheImportToolRefusesWhenNoImporterAdvertisesTheFormat(t *testing.T) {
+	root, rel := importSourceWorkspace(t, "flow.json", readImportFixture(t, langflowFixture))
+	before := treeUnder(t, root)
+	s := importToolServer(t, root)
+
+	res := callTool(t, s, importToolName, map[string]any{"source": rel})
+	if !res.IsError {
+		t.Fatalf("a workspace attaching no importer imported anyway: %s", res.Content[0].Text)
+	}
+	text := res.Content[0].Text
+	if !strings.Contains(text, "import:langflow") {
+		t.Errorf("the refusal does not name the capability an importer would have to advertise, which is what "+
+			"the reader has to attach: %q", text)
+	}
+	if !strings.Contains(text, "E0097") {
+		t.Errorf("the refusal carries no short code, so a caller cannot tell an unattached importer from any "+
+			"other failure to import: %q", text)
+	}
+	if after := treeUnder(t, root); !slices.Equal(after, before) {
+		t.Errorf("a refused import wrote to the workspace\n--- before ---\n%v\n--- after ---\n%v", before, after)
+	}
+}
+
+// TestTheImportToolRefusesWhenTheSessionCarriesNoPluginResolution pins the
+// wiring refusal.
+//
+// A session built without the seam the command layer supplies can reach no
+// importer at all, whatever the workspace attaches, and it says so rather than
+// reporting a conversion that did not happen — which is the silent shape a nil
+// seam would otherwise produce.
+func TestTheImportToolRefusesWhenTheSessionCarriesNoPluginResolution(t *testing.T) {
+	pointImportSeamAtTheDemoGuest(t)
+	root, rel := importSourceWorkspace(t, "flow.json", readImportFixture(t, langflowFixture))
+	before := treeUnder(t, root)
+
+	s := importToolServer(t, root)
+	s.resolveImportPlugin = nil
+
+	res := callTool(t, s, importToolName, map[string]any{"source": rel})
+	if !res.IsError {
+		t.Fatalf("a session carrying no plugin resolution imported anyway: %s", res.Content[0].Text)
+	}
+	if after := treeUnder(t, root); !slices.Equal(after, before) {
+		t.Errorf("a refused import wrote to the workspace\n--- before ---\n%v\n--- after ---\n%v", before, after)
+	}
+
+	// The control: the same call on a session that carries it is answered, so
+	// the refusal above measures the seam rather than the fixture.
+	okRoot, okRel := importSourceWorkspace(t, "flow.json", readImportFixture(t, langflowFixture))
+	importToolPayload(t, callTool(t, importToolServer(t, okRoot), importToolName,
+		map[string]any{"source": okRel}))
+}
+
+// TestTheImportToolDeclaresNoArgumentNamingADestination is the decision this
+// item settles, asserted at the surface a caller reads.
+//
+// It is asserted two ways, because either alone would pass over the defect. The
+// declared schema is what a caller composes a call from, so a destination
+// argument appearing there would be offered whether or not anything read it; and
+// the tree is what a caller inspects afterwards, so a value sent anyway must
+// change nothing about where the drafts land.
+func TestTheImportToolDeclaresNoArgumentNamingADestination(t *testing.T) {
+	spec, found := lookupTool(importToolName)
+	if !found {
+		t.Fatalf("no tool is registered as %q, so this assertion measures nothing", importToolName)
+	}
+	var declared struct {
+		Properties map[string]json.RawMessage `json:"properties"`
+	}
+	if err := json.Unmarshal([]byte(spec.inputSchema), &declared); err != nil {
+		t.Fatalf("the declared schema does not parse: %v", err)
+	}
+	for _, name := range []string{"output_dir", "output", "destination", "dir", "directory", "target_dir"} {
+		if _, offered := declared.Properties[name]; offered {
+			t.Errorf("the declared schema offers %q, so a caller composes a call naming where the drafts go; "+
+				"this tool writes relative to the workspace the call resolved and names no destination", name)
+		}
+	}
+
+	pointImportSeamAtTheDemoGuest(t)
+	root, rel := importSourceWorkspace(t, "flow.json", readImportFixture(t, langflowFixture))
+	elsewhere := t.TempDir()
+	p := importToolPayload(t, callTool(t, importToolServer(t, root), importToolName,
+		map[string]any{"source": rel, "output_dir": elsewhere}))
+
+	if p.WorkspaceRoot != root {
+		t.Errorf("a value nothing declares moved the destination to %q; it is the resolved workspace %q",
+			p.WorkspaceRoot, root)
+	}
+	if _, err := os.Stat(filepath.Join(root, "langflow.yaml")); err != nil {
+		t.Errorf("the draft did not land under the resolved workspace: %v", err)
+	}
+	if left := treeUnder(t, elsewhere); len(left) != 0 {
+		t.Errorf("a value nothing declares put %v in a directory the call named", left)
+	}
+}
+
+// treeAdditions names the paths present in after and absent from before, so a
+// case states what an import PUT somewhere rather than restating the whole tree
+// — which would pin the fixture's own layout and would then fail for a reason
+// that has nothing to do with the import.
+func treeAdditions(before, after []string) []string {
+	had := make(map[string]bool, len(before))
+	for _, p := range before {
+		had[p] = true
+	}
+	var added []string
+	for _, p := range after {
+		if !had[p] {
+			added = append(added, p)
+		}
+	}
+	return added
+}

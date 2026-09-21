@@ -100,6 +100,18 @@ var curatedToolNames = map[string][]string{
 	"workspace-entity-index": {"list-entities"},
 	"release-candidates":     {"list-releases"},
 
+	// Adopting what already exists. It is also reachable, for a caller at this
+	// machine's keyboard, as the tool generated from its command, which re-runs
+	// that command in a separate process, writes into whatever directory that
+	// process is sitting in, and answers with the text it printed; this runs the
+	// import inside this server, writes into the workspace the call resolved, and
+	// answers with the drafted paths, the drafted content under a dry run, and
+	// what the importer could not translate — so a caller adopts a foreign
+	// description and reads the outcome without parsing a transcript back into
+	// the facts it was rendered from. The name is the operation's own, which is
+	// the name the command line and the session protocol both use for it.
+	"import": {"import"},
+
 	"feature-attach-candidates": {"attach-candidates"},
 	"connection-candidates":     {"connection-candidates"},
 	"document-insertion-point":  {"insertion-point"},

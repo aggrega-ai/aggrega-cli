@@ -40,6 +40,12 @@ type scopeGridFixture struct {
 	*httpFixture
 	issuer *authorizationServerDouble
 	root   string
+
+	// srv is the session the listener serves, kept so a case may install a seam
+	// the production composition is handed from the command layer. The handler
+	// holds this same pointer and reads such a field per request, so installing
+	// one after construction is what a session with that seam wired looks like.
+	srv *server
 }
 
 // newScopeGridFixture starts one. fills writes the workspace's own auto_pull
@@ -104,7 +110,7 @@ func newScopeGridFixtureWith(t *testing.T, fills bool, deny []string, announce m
 	}
 	ts := httptest.NewServer(h)
 	t.Cleanup(ts.Close)
-	return &scopeGridFixture{httpFixture: &httpFixture{ts: ts, h: h}, issuer: issuer, root: root}
+	return &scopeGridFixture{httpFixture: &httpFixture{ts: ts, h: h}, issuer: issuer, root: root, srv: s}
 }
 
 // grantOf mints a token carrying exactly the named scopes.

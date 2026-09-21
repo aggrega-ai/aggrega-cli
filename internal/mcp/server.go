@@ -14,6 +14,7 @@ import (
 	"os"
 	"sync"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/importops"
 	"github.com/aggrega-ai/aggrega-cli/internal/opsurface"
 	"github.com/aggrega-ai/aggrega-cli/internal/requestcancel"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
@@ -66,6 +67,21 @@ type Config struct {
 	// the same surface to both transports is therefore correct rather than
 	// careless — where it is honoured is settled where the session is composed.
 	Commands []CommandSurface
+
+	// ResolveImportPlugin turns an importer or parser plugin reference into the
+	// module bytes that plugin is run from. The command layer supplies it for
+	// the reason it supplies the two fields around it: the resolution cascade it
+	// binds is assembled there and shared with the install path, the plugin
+	// listing and the runtime plugin runner, so a reference one path accepts
+	// every other path resolves identically. Building a second cascade inside
+	// this package would be a copy that agreed with that one on the day it was
+	// written, and the agreement is what would hide the first divergence.
+	//
+	// A nil resolver reaches no importer at all: the tool that converts a
+	// foreign description refuses, saying so, rather than reporting a conversion
+	// that did not happen. That is the shape every test that is not about it
+	// runs in.
+	ResolveImportPlugin importops.PluginBytesResolver
 
 	// RenderHelp renders a command's help text for the cli:// resource family,
 	// from the command tree this process already holds. The command layer
@@ -176,6 +192,14 @@ type server struct {
 	// tool. Nil calls the in-process catalog-generation core. A test injects a
 	// fake that records the options and returns canned output.
 	runGenCatalog genCatalogRunner
+
+	// resolveImportPlugin turns an importer or parser plugin reference into the
+	// module bytes it is run from, handed in from the command layer because the
+	// resolution cascade it binds is assembled there and shared with every other
+	// path that loads a plugin. Nil reaches no importer, and the import tool
+	// refuses saying so rather than reporting a conversion that did not happen —
+	// there is no fallback, because a cascade built here would be a second one.
+	resolveImportPlugin importops.PluginBytesResolver
 
 	// runLint runs the lint helper for the deferred lint tool. Nil runs the
 	// shared lint core in-process on the server's resolved workspace. A test
@@ -341,6 +365,8 @@ func Run(ctx context.Context, cfg Config) error {
 		renderHelp:     cfg.RenderHelp,
 		startDir:       cfg.WorkspaceRoot,
 		transport:      transportStdio,
+
+		resolveImportPlugin: cfg.ResolveImportPlugin,
 	}
 	return s.run(ctx, stdin)
 }

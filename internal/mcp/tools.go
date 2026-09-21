@@ -180,6 +180,13 @@ func init() {
 		curated("get-schema", getSchemaToolSpec),
 		curated("explain-error", explainErrorToolSpec),
 		curated("scaffold-entity", scaffoldToolSpec),
+		// Beside the scaffold, because the two are the capabilities that PRODUCE
+		// authoring files and a caller arriving cold can reach either without
+		// having named anything first: one starts a document from a kind's
+		// schema, the other converts something that already exists in a foreign
+		// format. The tail behind this set is for a tool that answers once some
+		// other tool has supplied a subject, which neither of these needs.
+		curated("import", importToolSpec),
 		curated("plugin-gen-catalog", genCatalogToolSpec),
 		curated("describe-capabilities", describeCapabilitiesToolSpec),
 	}
