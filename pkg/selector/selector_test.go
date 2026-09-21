@@ -9,7 +9,7 @@
 // keeps the table compact while still catching shape regressions.
 // TestMatchString covers the end-to-end string→bool flow through
 // Parse + matchRequirement against a labels set drawn from the standard
-// 7-Type ontology + compliance + datastore vocabularies, with explicit
+// operational ontology + compliance + datastore vocabularies, with explicit
 // rows for the asymmetric missing-key behaviour (NotEquals / NotIn match
 // when the key is absent; In / Equals fail when it is) and for the
 // nil-labels / empty-selector edge cases.
