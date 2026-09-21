@@ -57,7 +57,7 @@ const (
 	surfaceFeatureType   = "declared on the feature type"
 )
 
-// CarriedConnectionDeliveryIsSocketPermitted reports each delivery mechanism a
+// OriginatedConnectionDeliveryIsSocketPermitted reports each delivery mechanism a
 // connection dictates that the socket it is wired into does not permit, wherever
 // that connection was written.
 //
@@ -102,18 +102,18 @@ const (
 // Findings come back in the order the composition drew the connections and then
 // in the order the author wrote the mechanisms, so identical input yields an
 // identical sequence.
-var CarriedConnectionDeliveryIsSocketPermitted = constraint.Check[
+var OriginatedConnectionDeliveryIsSocketPermitted = constraint.Check[
 	constraint.GraphView,
-	constraint.CarriedConnectionSubject,
+	constraint.OriginatedConnectionSubject,
 ]{
 	Sentinel: ErrUsesInjectForbidden(),
 	Severity: constraint.SeverityFatal,
 	Run: func(
 		v constraint.GraphView,
-		s constraint.CarriedConnectionSubject,
+		s constraint.OriginatedConnectionSubject,
 	) []constraint.Objection {
-		dictated := v.CarriedConnectionAuthoredDelivery(
-			s.NodeID(), s.CarrierKind(), s.CarrierAttachment(),
+		dictated := v.OriginatedConnectionAuthoredDelivery(
+			s.NodeID(), s.OriginKind(), s.OriginAttachment(),
 			s.SocketName(), s.AliasName(), s.TargetNodeID())
 		if len(dictated) == 0 {
 			return nil
@@ -125,8 +125,8 @@ var CarriedConnectionDeliveryIsSocketPermitted = constraint.Check[
 		// holds it to the narrowest view its predicate allows.
 		var surface, owner string
 		var allowed []string
-		if s.CarrierKind() == constraint.CarrierAttachment {
-			owner = v.AttachmentResolvedType(s.NodeID(), s.CarrierAttachment())
+		if s.OriginKind() == constraint.OriginAttachment {
+			owner = v.AttachmentResolvedType(s.NodeID(), s.OriginAttachment())
 			if !slices.Contains(v.AttachmentDeclaredSocketNames(owner), s.SocketName()) {
 				return nil
 			}

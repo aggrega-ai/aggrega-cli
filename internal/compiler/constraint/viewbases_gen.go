@@ -2348,11 +2348,11 @@ func (DescribedViewBase) PerEdgeInject(node string, socket string, alias string)
 	panic("this view does not carry per-edge-inject, which is read from types.IREdge.Inject")
 }
 
-// CarriedConnectionAuthoredDelivery panics. This view does not carry
-// carried-connection-authored-delivery, which is read from
-// ir.CarriedConnections.
-func (DescribedViewBase) CarriedConnectionAuthoredDelivery(node string, carrier string, attachment string, socket string, alias string, target string) []types.OrderedMap[any] {
-	panic("this view does not carry carried-connection-authored-delivery, which is read from ir.CarriedConnections")
+// OriginatedConnectionAuthoredDelivery panics. This view does not carry
+// originated-connection-authored-delivery, which is read from
+// ir.OriginatedConnections.
+func (DescribedViewBase) OriginatedConnectionAuthoredDelivery(node string, origin string, attachment string, socket string, alias string, target string) []types.OrderedMap[any] {
+	panic("this view does not carry originated-connection-authored-delivery, which is read from ir.OriginatedConnections")
 }
 
 // HydratedViewBase is a base for an implementation of HydratedView.
@@ -3217,7 +3217,7 @@ type GraphStageFacts interface {
 	MergedAttachmentNames(node string) []string
 	UsesInjectDeliverySockets(node string, mechanism string, key string) []string
 	PerEdgeInject(node string, socket string, alias string) types.OrderedMap[types.OrderedMap[string]]
-	CarriedConnectionAuthoredDelivery(node string, carrier string, attachment string, socket string, alias string, target string) []types.OrderedMap[any]
+	OriginatedConnectionAuthoredDelivery(node string, origin string, attachment string, socket string, alias string, target string) []types.OrderedMap[any]
 }
 
 // DescribedStageFacts are the facts the described stage declares itself,

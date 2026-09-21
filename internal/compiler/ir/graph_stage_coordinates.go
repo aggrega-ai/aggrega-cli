@@ -52,7 +52,7 @@ const (
 // The attachment axis is named by a fact as well as by an enumerator, so it
 // delegates rather than re-reading the graph beside it. Two readings of one set
 // are free to disagree with nothing comparing them; one reading cannot. The
-// axes no fact names — the node set, the edge set, the carried-connection set,
+// axes no fact names — the node set, the edge set, the originated-connection set,
 // an attachment's pillars and their leaves — are read from the products this
 // value holds.
 //
@@ -62,7 +62,7 @@ const (
 // rule raises in the order it is invoked and that order reaches the build's
 // output. The node set, the attachment set and each pillar's leaves come from
 // ordered carriers and keep the order those carriers hold; the edge set keeps
-// the order the graph holds it in; the carried-connection set keeps the order
+// the order the graph holds it in; the originated-connection set keeps the order
 // the composition drew the connections in; the slot set keeps the order the
 // component type declares its slots in; the pillar axis returns a fixed
 // declared order. No axis here ranges a plain Go map.
@@ -71,10 +71,10 @@ type GraphStageCoordinates struct {
 	view          constraint.GraphView
 	catalogLookup resolver.CatalogLookup
 
-	// releaseFile is the file the deployment was authored in. It is held
+	// releaseFile is the file the Release was authored in. It is held
 	// because one axis is authored there rather than in the document its node
 	// came from: an attachment's infrastructure configuration is the operator's
-	// and the deployment's attachment block is the only surface that admits it.
+	// and the Release's attachment block is the only surface that admits it.
 	releaseFile string
 
 	// sites names, per attachment leaf, where the contribution that won it was
@@ -98,12 +98,12 @@ type GraphStageCoordinates struct {
 	// in, so building one needs the node the edge is sourced at.
 	edges []constraint.EdgeInstance
 
-	// connections is the enumerated carried-connection set, folded once
+	// connections is the enumerated originated-connection set, folded once
 	// alongside the edges. It is a separate axis rather than a projection of
-	// the edge set: a carried connection is keyed by the carrier as well as by
-	// the edge triple, so two connections one attachment apart are two
+	// the edge set: an originated connection is keyed by the origin as well as
+	// by the edge triple, so two connections one attachment apart are two
 	// instances here and one there.
-	connections []constraint.CarriedConnectionInstance
+	connections []constraint.OriginatedConnectionInstance
 }
 
 // NodeInstanceOf returns the framework node instance one node of a compiled
@@ -139,8 +139,8 @@ func NodeInstanceOf(id string, node types.IRNode) constraint.NodeInstance {
 // a slot exists whether or not anything binds it, which is the case the rules
 // over it exist to catch, so it cannot be read off what the node ended up with.
 //
-// The deployment's file is taken for the same class of reason as the catalog:
-// it is not in the graph. One axis is authored on the deployment rather than in
+// The Release's file is taken for the same class of reason as the catalog:
+// it is not in the graph. One axis is authored on the Release rather than in
 // the document its node came from — an attachment's infrastructure
 // configuration, which no other authoring surface admits — so an enumeration
 // naming only the graph's own files could not tell a rule where that axis was
@@ -158,7 +158,7 @@ func NewGraphStageCoordinates(
 	catalogLookup resolver.CatalogLookup,
 	releaseFile string,
 	sites AttachmentSites,
-	connections *CarriedConnections,
+	connections *OriginatedConnections,
 ) *GraphStageCoordinates {
 	if graph == nil || view == nil {
 		return nil
@@ -188,18 +188,18 @@ func NewGraphStageCoordinates(
 			// whose provenance would have to be invented.
 			continue
 		}
-		kind := carrierKindOf(edge)
+		kind := originKindOf(edge)
 		c.edges = append(c.edges, constraint.EdgeInstance{
 			Node:             node,
 			Socket:           edge.Socket,
 			Alias:            edge.Alias,
 			SynthesizedAlias: aliasIsDerived(graph, edge.Source, edge.Socket, kind),
-			// The carrier positions the finding and keys nothing. It is read
-			// from the product that recorded where each carrier's own block was
+			// The origin positions the finding and keys nothing. It is read
+			// from the product that recorded where each origin's own block was
 			// written, addressed by the coordinate the edge carries — so an
 			// edge an attachment drew names that attachment's block rather than
 			// a dependency block the consuming component does not have.
-			Carrier: connections.carrierOfEdge(edge.Source, kind, edge.OriginFeatureInstance),
+			Origin: connections.originOfEdge(edge.Source, kind, edge.OriginFeatureInstance),
 		})
 	}
 	for _, entry := range connections.Entries() {
@@ -207,9 +207,9 @@ func NewGraphStageCoordinates(
 		if !held {
 			continue
 		}
-		c.connections = append(c.connections, constraint.CarriedConnectionInstance{
+		c.connections = append(c.connections, constraint.OriginatedConnectionInstance{
 			Node:             node,
-			Carrier:          entry.Carrier,
+			Origin:           entry.Origin,
 			Socket:           entry.Socket,
 			Alias:            entry.Alias,
 			Target:           entry.Target,
@@ -232,27 +232,27 @@ func (c *GraphStageCoordinates) Nodes() []constraint.NodeInstance { return c.nod
 // in the order the graph holds them.
 //
 // A connection is enumerated once whichever surface drew it — the component's
-// own dependency block, an attachment's, or the deployment's — because the graph
+// own dependency block, an attachment's, or the Release's — because the graph
 // holds one edge per connection however it arrived. The origin is a fact a rule
 // reads, not a reason to enumerate the same connection twice.
 func (c *GraphStageCoordinates) Edges() []constraint.EdgeInstance { return c.edges }
 
-// CarriedConnections returns every connection the composition drew, each paired
-// with the surface that drew it, in the order the composition drew them.
+// OriginatedConnections returns every connection the composition drew, each
+// paired with the surface that drew it, in the order the composition drew them.
 //
 // It is a different axis from [GraphStageCoordinates.Edges] rather than a
 // re-ordering of it, and the difference is the key. The edge axis enumerates one
 // instance per node, socket and alias, which is the key the facts about a
-// connection's resolved shape take; this axis adds the carrier, which is what a
+// connection's resolved shape take; this axis adds the origin, which is what a
 // rule reading a connection's AUTHORED content needs — two attachments on one
 // node may each write one socket and one alias, and each wrote its own payload.
 //
-// A connection is enumerated once per carrier key. Where one carrier key names
+// A connection is enumerated once per origin key. Where one origin key names
 // more than one connection — one attachment instance name declared at two scopes
 // draws one from each block, and the composition records the two identically —
 // the key appears once and the fact keyed by it answers for every payload under
 // it, so no authored block goes unexamined.
-func (c *GraphStageCoordinates) CarriedConnections() []constraint.CarriedConnectionInstance {
+func (c *GraphStageCoordinates) OriginatedConnections() []constraint.OriginatedConnectionInstance {
 	return c.connections
 }
 
@@ -302,11 +302,11 @@ func (c *GraphStageCoordinates) Slots(node string) []string {
 //
 // The values pillar is the developer's and is written in the document that
 // declares the component, so it takes that node's own file. The infrastructure
-// pillar is the operator's and is written on the deployment: it is the only
+// pillar is the operator's and is written on the Release: it is the only
 // authoring surface whose attachment block admits one, on either route a leaf
-// can arrive by — an authored block, where no application-side attachment
+// can arrive by — an authored block, where no Aggregate-side attachment
 // schema declares the key, or an annotation, where the routing admits an
-// infrastructure path from the deployment side alone. So the answer is a
+// infrastructure path from the Release side alone. So the answer is a
 // reading of where such a leaf can come from rather than a guess about where
 // this one did.
 func (c *GraphStageCoordinates) AttachmentPillars(
@@ -526,17 +526,17 @@ func (c *GraphStageCoordinates) attachment(node, attachment string) (types.IRFea
 // derived alias here, and the node's authored block is what says so — the short
 // authoring form lists targets as array elements and gives each connection the
 // target's own name, so no key in the file spells it. A connection an attachment
-// projected or a deployment wired is treated as author-written: the deployment's
+// projected or a Release wired is treated as author-written: the Release's
 // edge surface names an alias per entry as a key, and an attachment's own block
 // is authored in a document this stage's node does not carry, so claiming a
 // derived alias for one would be a guess rather than a reading.
 //
-// It takes the carrier kind rather than a connection, because the two
+// It takes the origin kind rather than a connection, because the two
 // enumerations that need the answer hold the connection in two different shapes
 // — the finalised graph's edge and the composition's — and a second copy keyed
 // on the other shape would be free to answer differently.
-func aliasIsDerived(graph *types.IRGraph, nodeID, socketName, carrierKind string) bool {
-	if carrierKind != "" && carrierKind != constraint.CarrierComponent {
+func aliasIsDerived(graph *types.IRGraph, nodeID, socketName, originKind string) bool {
+	if originKind != "" && originKind != constraint.OriginComponent {
 		return false
 	}
 	node, held := graph.Spec.Nodes.Get(nodeID)
@@ -550,18 +550,18 @@ func aliasIsDerived(graph *types.IRGraph, nodeID, socketName, carrierKind string
 	return len(socket.Compact) > 0
 }
 
-// carrierKindOf is the surface a finalised edge was drawn from, read off the
+// originKindOf is the surface a finalised edge was drawn from, read off the
 // marks the composition stamped on it. It names the kind alone; the site that
 // surface's block was written at is carried on the compilation product that
 // settled it.
-func carrierKindOf(edge types.IREdge) string {
+func originKindOf(edge types.IREdge) string {
 	switch {
 	case edge.OriginRelease:
-		return constraint.CarrierDeployment
+		return constraint.OriginRelease
 	case edge.OriginFeatureInstance != "" || edge.OriginFeature != "":
-		return constraint.CarrierAttachment
+		return constraint.OriginAttachment
 	default:
-		return constraint.CarrierComponent
+		return constraint.OriginComponent
 	}
 }
 
@@ -571,7 +571,7 @@ func carrierKindOf(edge types.IREdge) string {
 var (
 	_ constraint.NodeEnumerator                 = (*GraphStageCoordinates)(nil)
 	_ constraint.EdgeEnumerator                 = (*GraphStageCoordinates)(nil)
-	_ constraint.CarriedConnectionEnumerator    = (*GraphStageCoordinates)(nil)
+	_ constraint.OriginatedConnectionEnumerator = (*GraphStageCoordinates)(nil)
 	_ constraint.AttachmentEnumerator           = (*GraphStageCoordinates)(nil)
 	_ constraint.SlotEnumerator                 = (*GraphStageCoordinates)(nil)
 	_ constraint.MechanismEnumerator            = (*GraphStageCoordinates)(nil)

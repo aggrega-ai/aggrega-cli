@@ -88,7 +88,7 @@ var stages = []stageDecl{
 		// The connection set is named here rather than at the stage after it
 		// because it is complete here: every origin that draws a connection —
 		// a component's own dependency block wherever it was authored, an
-		// attachment's, and the deployment's edge surface — has contributed by
+		// attachment's, and the Release's edge surface — has contributed by
 		// the time this stage holds, and the later graph adds none. A stage
 		// naming it later would place a fact reading it after its derivation
 		// finished, and so report a rule as askable later than it is.
@@ -110,7 +110,7 @@ var stages = []stageDecl{
 			"attachment, with what each of them declares readable as authored — " +
 			"the source it declares, its provides and locals, and the template " +
 			"text of every field it writes one in — together with the path " +
-			"templates the deployment's own scopes declare, every plugin those " +
+			"templates the Release's own scopes declare, every plugin those " +
 			"bindings resolve to, loaded and self-described: the declared " +
 			"capabilities, the scope each dispatched export declares, what each " +
 			"provider reports about assembling and linking a scope's output, and " +
@@ -525,7 +525,7 @@ const declarationCompelsImplementation = "\n\nDeclaring a fact puts its " +
 	"no check reads remains a candidate for removal."
 
 // perComponentBoundaryFold is the paragraph a fact carries when it reads the
-// deployment's per-component projection — the one that folds every scope writing
+// Release's per-component projection — the one that folds every scope writing
 // against a component into a single entry keyed by that component.
 //
 // It is one shared paragraph rather than a copy inside each Doc, on the same
@@ -537,10 +537,10 @@ const declarationCompelsImplementation = "\n\nDeclaring a fact puts its " +
 //
 // A fact keyed on that projection whose ANSWER does not turn on the fold does not
 // carry it, and that exclusion is a judgement rather than an oversight. Whether
-// the deployment wrote an entry against a component at all is true wherever any
+// the Release wrote an entry against a component at all is true wherever any
 // scope wrote one, so there is no contest for a fold to settle and stating one
 // would imply a precedence the answer never consults.
-const perComponentBoundaryFold = "\n\nWhere several scopes of the deployment " +
+const perComponentBoundaryFold = "\n\nWhere several scopes of the Release " +
 	"write against one component, this answers from exactly one of those " +
 	"entries, and which one is settled rather than left to a reader: the scopes " +
 	"are walked in the order the document declares them, each scope's own " +
@@ -1415,7 +1415,7 @@ var facts = []factDecl{
 			"turns on the difference reads the declared socket set first, which " +
 			"is the fact that answers which sockets exist to be asked about.\n" +
 			"\nIt answers for a connection the consuming component's own " +
-			"dependency block drew, and for one the deployment's edge surface " +
+			"dependency block drew, and for one the Release's edge surface " +
 			"wired, and for no other. Its key is a component type and a socket, " +
 			"and that is the whole of it, while the socket a connection an " +
 			"attachment drew is wired into is declared on the attached Feature's " +
@@ -1611,7 +1611,7 @@ var facts = []factDecl{
 			"falls back to the entry's own alias, so the connection is drawn either " +
 			"way, and a rule that read the target and took emptiness for absence " +
 			"would refuse a socket that IS populated.\n\nThat rule is this " +
-			"surface's and does not carry to the deployment's edge surface, whose " +
+			"surface's and does not carry to the Release's edge surface, whose " +
 			"own connection count is a separate fact with the same shape and the " +
 			"opposite rule — so a reader unifying the two makes one of them wrong. " +
 			"There an entry counts only when it names a target, because an omitted " +
@@ -1622,7 +1622,7 @@ var facts = []factDecl{
 			"different job on each surface.\n\nIt reads the instance's own " +
 			"dependency block " +
 			"and no other surface. An attachment's block wires sockets on the " +
-			"Feature it attaches, and a deployment's own edge surface wires sockets " +
+			"Feature it attaches, and a Release's own edge surface wires sockets " +
 			"from a separate document; each is a separate fact because each is " +
 			"separately authored and independently absent. A rule asking whether a " +
 			"socket is populated across every surface that can populate one reads " +
@@ -1687,7 +1687,7 @@ var facts = []factDecl{
 			"names no target and populates nothing, and it appears here as an " +
 			"empty alias because the author wrote an entry there.\n\nIt reads " +
 			"the instance's own dependency block and no other surface. A " +
-			"deployment's own edge surface is a separate fact with the same shape " +
+			"Release's own edge surface is a separate fact with the same shape " +
 			"and the same authorship rule, because it is separately authored and " +
 			"independently absent, and neither carries the other.",
 	},
@@ -2143,7 +2143,7 @@ var facts = []factDecl{
 			"property of it: a rule reporting one finding per socket emits them " +
 			"in this order, so the order is what makes the report the same on " +
 			"every run.\n\nThe set is what the type DECLARES and never what a " +
-			"deployment populates. A component's own dependency block may name a " +
+			"Release populates. A component's own dependency block may name a " +
 			"socket the type declares no entry for, so a rule reading this set " +
 			"as the permitted names would refuse authoring the product accepts; " +
 			"what it answers is which sockets carry a declaration to read.",
@@ -2209,7 +2209,7 @@ var facts = []factDecl{
 			"socket names even though both are name sets over one entity: they " +
 			"are separate authored surfaces with separate rules over them.\n" +
 			"\nDeclaring a slot does not close the attachment surface. A " +
-			"deployment may attach a Feature under a name no slot declares, so a " +
+			"Release may attach a Feature under a name no slot declares, so a " +
 			"rule reading this set as the permitted attachment names would " +
 			"refuse a shape the product supports; what it answers is which names " +
 			"carry a slot declaration for a fill to be checked against.\n\nIt is " +
@@ -2318,7 +2318,7 @@ var facts = []factDecl{
 			"for one connection, as authored — empty when the Release " +
 			"named none.\n\nIt is a separate fact from the target the Aggregate " +
 			"authored, and the pair is what a rule comparing the two needs. A " +
-			"deployment document may not redirect a connection the architecture " +
+			"Release document may not redirect a connection the architecture " +
 			"already drew, and the conflict is precisely a difference between the " +
 			"two targets — neither one alone shows it, so a rule reading either " +
 			"surface without the other cannot tell a redirected connection from a " +
@@ -2493,7 +2493,7 @@ var facts = []factDecl{
 		Subject:     []string{"node"},
 		Params:      []paramDecl{{Name: "node", Type: "string"}},
 		Returns:     "bool",
-		Doc: "ReleaseComponentEntryPresent reports whether the deployment wrote " +
+		Doc: "ReleaseComponentEntryPresent reports whether the Release wrote " +
 			"an entry against one component at all.\n\nIt reports authorship and " +
 			"nothing else, and an entry appears here whether or not it carries " +
 			"any sizing. That rule is stated once for every surface an operator " +
@@ -2501,10 +2501,10 @@ var facts = []factDecl{
 			"per-connection authorship fact states: every field of such an entry " +
 			"is optional, so an entry written and left empty carries nothing at " +
 			"all, and the sizing fact declared beside this one reads its zero " +
-			"value for it — the same zero it reads for a component the deployment " +
+			"value for it — the same zero it reads for a component the Release " +
 			"never wrote against. The two need opposite treatment. An entry that " +
 			"writes no sizing is the maximal violation of a key the component " +
-			"type's contract declares required, while a component this deployment " +
+			"type's contract declares required, while a component this Release " +
 			"never placed is not its to answer for: a component nothing placed is " +
 			"reported on its own once the composition is flattened, naming the " +
 			"ways to place it, and measuring its absent sizing instead would " +
@@ -2515,12 +2515,12 @@ var facts = []factDecl{
 			"nothing to read.\n\nIt answers for both axes a boundary names a " +
 			"component on — an entry under the boundary's own components, and an " +
 			"entry naming a component inside a sub-module the boundary routes — " +
-			"because on both the deployment wrote against that component. A " +
+			"because on both the Release wrote against that component. A " +
 			"routing entry naming no component writes against none, so it " +
 			"contributes nothing here even though it places what the module " +
-			"contains: this reports what the deployment WROTE and never what it " +
+			"contains: this reports what the Release WROTE and never what it " +
 			"placed, and a rule wanting placement reads the fact that names " +
-			"it.\n\nA deployment declaring components at its own top level rather " +
+			"it.\n\nA Release declaring components at its own top level rather " +
 			"than under named boundaries answers here like any other. Normalizing " +
 			"such a document gives it a boundary of its own holding exactly those " +
 			"entries, so the fact covers that authoring form without a reader " +
@@ -2546,8 +2546,8 @@ var facts = []factDecl{
 			"and contributes nothing to this payload, so the scope is not part " +
 			"of this fact's key.\n\nEmpty is the operator writing nothing, and " +
 			"it is one value for two documents that need opposite treatment: an " +
-			"entry the deployment wrote and left without sizing, and a component " +
-			"the deployment wrote no entry against at all. This fact cannot " +
+			"entry the Release wrote and left without sizing, and a component " +
+			"the Release wrote no entry against at all. This fact cannot " +
 			"separate them, so a rule that has to reads the authorship fact " +
 			"declared beside it. What empty never means is that there is nothing " +
 			"to measure — a key the component type's contract declares required " +
@@ -3231,7 +3231,7 @@ var facts = []factDecl{
 			"This reads the drawn connections instead, which is one answer " +
 			"spanning every origin: what a component's own dependency block " +
 			"wrote, wherever that block was authored, and what the " +
-			"deployment's edge surface created — the latter decided by the " +
+			"Release's edge surface created — the latter decided by the " +
 			"same rule that decides whether such an entry draws a connection " +
 			"at all, so this fact and the authored one cannot disagree about " +
 			"it.\n\nWhat it counts and what it deliberately does NOT is a " +
@@ -3283,7 +3283,7 @@ var facts = []factDecl{
 			"document that drew it wrote the name — empty when the composition " +
 			"drew no connection there.\n\nIt answers for every connection " +
 			"whichever surface drew it: a component's own dependency block, an " +
-			"attachment's, and the deployment's edge surface alike. That breadth " +
+			"attachment's, and the Release's edge surface alike. That breadth " +
 			"is what separates it from the authored targets read off the two " +
 			"authoring documents, each of which answers for one surface and one " +
 			"authoring form and reports every other connection as naming " +
@@ -3387,7 +3387,7 @@ var facts = []factDecl{
 		Params:      []paramDecl{{Name: "node", Type: "string"}},
 		Returns:     "(string, bool)",
 		Doc: "NodeBoundaryPlacement is the boundary a node was placed in, and " +
-			"whether anything placed it at all.\n\nA deployment places a " +
+			"whether anything placed it at all.\n\nA Release places a " +
 			"component two ways and this answers for both, which is what makes " +
 			"it a reading of placement rather than of one spelling. A boundary " +
 			"names a component under the id it carries in the flattened set — " +
@@ -3398,7 +3398,7 @@ var facts = []factDecl{
 			"reading it cannot be written against one axis and quietly ignore " +
 			"the other.\n\nThe second result is what a rule over placement " +
 			"turns on, and it is not a convenience. A component nothing placed " +
-			"is emitted outside every boundary the deployment declared, which " +
+			"is emitted outside every boundary the Release declared, which " +
 			"is a defect the build otherwise reports nowhere, so a rule needs to " +
 			"be able to name it.\n\nAn empty boundary path reports as unplaced " +
 			"rather than as a placement carrying no path, and the two are " +
@@ -3492,11 +3492,11 @@ var facts = []factDecl{
 			"the distinction survives flattening and is answerable here.\n\nThe " +
 			"two are asked together by any rule that would otherwise refuse a " +
 			"document an author deliberately wrote. Switching a component off is " +
-			"an authoring act, and the deployment that configures it is not " +
+			"an authoring act, and the Release that configures it is not " +
 			"expected to be rewritten in the same edit — so a rule refusing a " +
 			"reference to a component that is not in the flattened set has to " +
 			"pass a deactivated one, or the toggle would be unusable while any " +
-			"deployment named the component.\n\nA name the composition never " +
+			"Release named the component.\n\nA name the composition never " +
 			"held answers false, exactly as a live component does. The two are " +
 			"distinguished by the flattened-set fact beside this one and never " +
 			"by this one alone, which reports removal and never existence.",
@@ -3509,12 +3509,12 @@ var facts = []factDecl{
 		Subject:     []string{"boundary-component-reference"},
 		Returns:     "[]string",
 		Doc: "BoundaryDeclaredComponentReferences are the components the " +
-			"deployment's boundaries name, by the id each entry addresses in the " +
-			"flattened composition, in the order the deployment declares them — " +
+			"Release's boundaries name, by the id each entry addresses in the " +
+			"flattened composition, in the order the Release declares them — " +
 			"a boundary's own entries before the sub-modules it routes, and an " +
 			"enclosing boundary before the boundaries nested inside it.\n\nA " +
 			"boundary names a component on two axes and this answers for both, " +
-			"which is what makes it a reading of what the deployment declared " +
+			"which is what makes it a reading of what the Release declared " +
 			"rather than of one spelling. One axis names a component under the id " +
 			"it carries once the composition is flattened; the other routes a " +
 			"sub-module and names a component inside it under the local name it " +
@@ -3522,16 +3522,16 @@ var facts = []factDecl{
 			"only name it has. The second is resolved to the same id the first " +
 			"writes, so a reader cannot be written against one axis and quietly " +
 			"ignore the other, and a reader that took a routed entry's local name " +
-			"as an id would refuse every module-routed deployment that names " +
-			"components.\n\nIt reports what the deployment ASKED FOR and never " +
+			"as an id would refuse every module-routed Release that names " +
+			"components.\n\nIt reports what the Release ASKED FOR and never " +
 			"what the composition holds, and the two are separate on purpose. An " +
 			"entry addressing an id the composition does not hold appears here " +
-			"exactly as one that resolves does: the deployment wrote it either " +
+			"exactly as one that resolves does: the Release wrote it either " +
 			"way, and whether anything answers to it is a different question, " +
 			"asked of the flattened set by the fact keyed per node. A reader " +
 			"needing both asks both.\n\nIt is keyed per reference because that is " +
 			"where the question is asked — a rule over an entry is invoked once " +
-			"per entry the deployment wrote — and read with no key because the " +
+			"per entry the Release wrote — and read with no key because the " +
 			"set is the axis itself. The id identifies the entry across the whole " +
 			"Release rather than within one boundary, and that rests on a rule " +
 			"rather than on the authoring surface: the rule over the placements " +
@@ -3541,7 +3541,7 @@ var facts = []factDecl{
 			"needing the entries a document DECLARES, collisions and all, asks " +
 			"that fact instead — the two are separate for exactly that " +
 			"reason.\n\nAn " +
-			"entry the deployment wrote at its own top level appears here like " +
+			"entry the Release wrote at its own top level appears here like " +
 			"any other. Normalizing such a document gives it a boundary of its " +
 			"own holding exactly those entries, so the axis covers that authoring " +
 			"form without a reader knowing the form exists.",
@@ -3609,7 +3609,7 @@ var facts = []factDecl{
 			"different question, asked by a reader who already has the answer " +
 			"to the first and needs somewhere to send an author.\n\nThe " +
 			"spelling is the document's own and never one naming rule applied " +
-			"to every surface. A deployment addresses a component a " +
+			"to every surface. A Release addresses a component a " +
 			"composition contributed by the qualified identifier the " +
 			"composition gave it, while the application's own scope tree keys " +
 			"that same component by the short name it was declared under, so " +
@@ -3702,8 +3702,8 @@ var facts = []factDecl{
 			"an instance authored, and that distinction is the point. An " +
 			"attachment contributed at a scope the node inherits from binds a " +
 			"name on every node beneath that scope, so the authored block is " +
-			"empty for exactly those deployments that rely on sharing; a rule " +
-			"reading the authored names in place of these rejects a deployment " +
+			"empty for exactly those Releases that rely on sharing; a rule " +
+			"reading the authored names in place of these rejects a Release " +
 			"shape the product supports.\n\nThe fact is a name list and " +
 			"not the merged entries themselves. Handing back the entries would " +
 			"let a rule reach the per-leaf configuration provenance the " +
@@ -3777,20 +3777,20 @@ var facts = []factDecl{
 	},
 
 	{
-		Name:        "carried-connection-authored-delivery",
+		Name:        "originated-connection-authored-delivery",
 		Stage:       "graph",
-		SourceField: "ir.CarriedConnections",
-		Subject:     []string{"carried-connection"},
+		SourceField: "ir.OriginatedConnections",
+		Subject:     []string{"originated-connection"},
 		Params: []paramDecl{
 			{Name: "node", Type: "string"},
-			{Name: "carrier", Type: "string"},
+			{Name: "origin", Type: "string"},
 			{Name: "attachment", Type: "string"},
 			{Name: "socket", Type: "string"},
 			{Name: "alias", Type: "string"},
 			{Name: "target", Type: "string"},
 		},
 		Returns: "[]types.OrderedMap[any]",
-		Doc: "CarriedConnectionAuthoredDelivery is the delivery a connection " +
+		Doc: "OriginatedConnectionAuthoredDelivery is the delivery a connection " +
 			"dictates AS IT WAS WRITTEN, keyed by mechanism name in author " +
 			"order, each entry carrying that mechanism's payload as authored.\n" +
 			"\nIt keeps the distinction the resolved per-edge delivery folds " +
@@ -3800,13 +3800,13 @@ var facts = []factDecl{
 			"nothing publishes, read over the resolved form, would refuse every " +
 			"literal too. The payload is carried rather than decomposed because " +
 			"the shape of one delivery entry is the entity contract's to state.\n" +
-			"\nIt is keyed by the carrier as well as the connection because the " +
+			"\nIt is keyed by the origin as well as the connection because the " +
 			"connection triple is not an identity. Two attachments on one node " +
 			"may each write one socket and one alias, and the component itself " +
 			"may write the same pair, so a fact keyed by node, socket and alias " +
 			"answers for one of up to three separately authored blocks and " +
 			"reports the others as approved. The node the connection resolves to is in " +
-			"the key for the same reason: two carriers writing one socket and one " +
+			"the key for the same reason: two origins writing one socket and one " +
 			"alias may name different components, and each delivers against the " +
 			"one it named.\n\nThe result is every payload the " +
 			"key names rather than the first, and the plural is the honest shape " +
@@ -3821,9 +3821,9 @@ var facts = []factDecl{
 			"rather than one stage earlier because of the KEY and not the " +
 			"content. The connection set is complete once the composition " +
 			"finishes and the finalised graph draws none, so the delivery itself " +
-			"travels unchanged from there; the surface each carrier was declared " +
+			"travels unchanged from there; the surface each origin was declared " +
 			"on is settled by the reading that folds the attachment cascade, and " +
-			"a fact keyed by a carrier is complete only once that is.\n\nWhat a delivery " +
+			"a fact keyed by an origin is complete only once that is.\n\nWhat a delivery " +
 			"is measured against is a separate fact on a separate document — the " +
 			"keys the target's component type publishes — so a rule reads the two " +
 			"together and neither carries the other.",
@@ -4536,7 +4536,7 @@ var facts = []factDecl{
 		},
 		Returns: "string",
 		Doc: "BoundaryAuthoredPathTemplateText is the template text one boundary of " +
-			"a deployment writes for one of its path fields, as written and before " +
+			"a Release writes for one of its path fields, as written and before " +
 			"anything is evaluated.\n\nThe field is a coordinate rather than part of " +
 			"this fact's name, and that is the whole shape rather than a detail of " +
 			"it. A boundary writes several path templates and may gain more; naming " +

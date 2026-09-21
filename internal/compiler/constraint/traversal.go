@@ -217,7 +217,7 @@ var (
 
 // JoinBoundaryScope composes the scope path of one boundary from its parent's
 // path and its own name, in the spelling [AuthoredSite.ScopePath] takes on the
-// deployment's nesting axis.
+// Release's nesting axis.
 //
 // It is exported because an enumerator supplying a site on that axis has to
 // compose the path the locator assembly will split back apart, and the separator
@@ -229,7 +229,7 @@ var (
 // to empty, which is the rule [AuthoredSite.ScopePath] declares: such a boundary
 // is not a scope any file spells, so an entry inside one is named at the
 // top-level shape the author did write. That collapse is what makes this a
-// different question from the boundary path a deployment's OUTPUT is routed by,
+// different question from the boundary path a Release's OUTPUT is routed by,
 // which names the synthesized boundary like any other because it is routing
 // artifacts rather than naming a key. The two must be free to answer differently,
 // and they do.
@@ -480,10 +480,10 @@ func RunOnNodeSockets[V View](
 // a coordinate keys a fact, so a segment the file does not contain is dropped
 // while the alias itself still reaches the check.
 //
-// Which BLOCK the locator is rooted at comes from the edge's carrier, through the
+// Which BLOCK the locator is rooted at comes from the edge's origin, through the
 // rule [connectionSite] states. An enumeration whose edges were all drawn by the
-// consuming component's own dependency block records no carrier and gets the
-// shape above; an enumeration that yields edges an attachment or the deployment
+// consuming component's own dependency block records no origin and gets the
+// shape above; an enumeration that yields edges an attachment or the Release
 // drew records one, and those name the block their author wrote rather than a
 // `uses` block the consuming component does not have.
 func RunOnEdges[V View](
@@ -498,7 +498,7 @@ func RunOnEdges[V View](
 			return nil, err
 		}
 		file, segments := connectionSite(
-			edge.Node, edge.Carrier, edge.Socket, edge.Alias, edge.SynthesizedAlias)
+			edge.Node, edge.Origin, edge.Socket, edge.Alias, edge.SynthesizedAlias)
 		subject := newEdgeSubject(
 			file, edge.Node.ID, edge.Socket, edge.Alias, segments...,
 		)
@@ -507,15 +507,15 @@ func RunOnEdges[V View](
 	return out, nil
 }
 
-// carrierNesting is the scope nesting a carrier's site path is spelled with,
+// originNesting is the scope nesting an origin's site path is spelled with,
 // and whether the document is one this rule can name at all.
 //
 // It is the sibling of [pillarNesting] and exists for the same reason: the axis
-// a scope path belongs to is settled by what is being named, and for a carrier
+// a scope path belongs to is settled by what is being named, and for an origin
 // that is which document its block sits in. A document this rule does not know
 // yields no nesting, which routes the finding to file-level positioning rather
 // than to a path spelled with the wrong container key.
-func carrierNesting(document string) (scopeNesting, bool) {
+func originNesting(document string) (scopeNesting, bool) {
 	switch document {
 	case AuthoringDocumentAggregate:
 		return subsystemNesting, true
@@ -527,40 +527,40 @@ func carrierNesting(document string) (scopeNesting, bool) {
 }
 
 // connectionSite is the file and the locator segments naming where a connection
-// was authored, given the carrier that drew it.
+// was authored, given the origin that drew it.
 //
 // It is one rule shared by the two traversals that walk connections, because
 // both name the same authored site and a second copy would be free to spell it
 // differently. Which of the two a rule declares turns on what the rule reads,
 // not on where its finding points.
 //
-// Three shapes, and the first is the one every connection had before carriers
-// were tracked. A carrier nothing recorded, and a carrier that is the consuming
+// Three shapes, and the first is the one every connection had before origins
+// were tracked. An origin nothing recorded, and an origin that is the consuming
 // component's own dependency block, both name that block — which is the site the
 // author wrote in both cases, since a component's own connection is written
 // there and an untracked one is not known to be written anywhere else. They take
-// the node's own segments rather than the recorded carrier's site, so the two
-// share one path instead of two that agree: a recorded component carrier's site
+// the node's own segments rather than the recorded origin's site, so the two
+// share one path instead of two that agree: a recorded component origin's site
 // is [ComponentSite] over the same three values the node instance carries, and
 // reading it here would be a second route to one answer for no gain. An
-// enumeration that records no carrier has no other route in any case.
+// enumeration that records no origin has no other route in any case.
 //
 // A
 // connection an attachment drew names that attachment's own block, at the site
 // the attachment was declared: a component's own attachment block, a scope's
-// block in either document, or a component's entry inside the deployment. A
-// connection the deployment's edge surface drew names that surface.
+// block in either document, or a component's entry inside the Release. A
+// connection the Release's edge surface drew names that surface.
 //
 // The alias contributes a segment only when the author wrote it as a key, which
 // is the rule [RunOnEdges] states in full: the short authoring form lists targets
 // as array elements and gives each connection the target's own name, so no key in
 // the file spells it.
 //
-// A carrier whose site the enumeration could not record yields no segments,
+// An origin whose site the enumeration could not record yields no segments,
 // which is the mechanical form of not inventing a locator.
 func connectionSite(
 	node NodeInstance,
-	carrier ConnectionCarrier,
+	origin ConnectionOrigin,
 	socket, alias string,
 	synthesizedAlias bool,
 ) (string, []string) {
@@ -568,52 +568,52 @@ func connectionSite(
 	if synthesizedAlias {
 		aliasSegment = ""
 	}
-	if carrier.Kind == "" || carrier.Kind == CarrierComponent {
+	if origin.Kind == "" || origin.Kind == OriginComponent {
 		return node.SourceFile,
 			componentInnerSegments(node, authoredKeyUses, socket, aliasSegment)
 	}
-	nesting, named := carrierNesting(carrier.Document)
+	nesting, named := originNesting(origin.Document)
 	if !named {
-		return carrier.SourceFile, nil
+		return origin.SourceFile, nil
 	}
 	var tail []string
-	if carrier.Kind == CarrierAttachment {
-		tail = append(tail, authoredKeyFeatures, carrier.Attachment)
+	if origin.Kind == OriginAttachment {
+		tail = append(tail, authoredKeyFeatures, origin.Attachment)
 	}
 	tail = append(tail, authoredKeyUses, socket, aliasSegment)
-	return carrier.SourceFile, authoredSiteSegments(nesting, carrier.Site, tail...)
+	return origin.SourceFile, authoredSiteSegments(nesting, origin.Site, tail...)
 }
 
-// RunOnCarriedConnections invokes check once per connection together with the
-// carrier that drew it, in the order the enumerator returns them.
+// RunOnOriginatedConnections invokes check once per connection together with the
+// origin that drew it, in the order the enumerator returns them.
 //
-// The set is walked flat rather than per node or per carrier, because the derived
-// kind carries one coordinate whose key is the whole of the node, the carrier and
+// The set is walked flat rather than per node or per origin, because the derived
+// kind carries one coordinate whose key is the whole of the node, the origin and
 // the connection: one order over the whole set, promised by one enumerator.
 //
-// The locator names the carrier's own block and not the consuming component's,
+// The locator names the origin's own block and not the consuming component's,
 // through the rule [connectionSite] states — which is why this traversal exists
 // alongside [RunOnEdges] rather than instead of it. A rule reading what an author
 // WROTE on a connection has to be invoked once per authored connection, and two
 // connections sharing a node, a socket and an alias are two authored blocks.
-func RunOnCarriedConnections[V View](
+func RunOnOriginatedConnections[V View](
 	cancelled Cancellation,
-	connections CarriedConnectionEnumerator,
+	connections OriginatedConnectionEnumerator,
 	view V,
-	check Check[V, CarriedConnectionSubject],
+	check Check[V, OriginatedConnectionSubject],
 ) ([]Objection, error) {
 	var out []Objection
-	for _, connection := range connections.CarriedConnections() {
+	for _, connection := range connections.OriginatedConnections() {
 		if err := cancelled.err(); err != nil {
 			return nil, err
 		}
 		file, segments := connectionSite(
-			connection.Node, connection.Carrier,
+			connection.Node, connection.Origin,
 			connection.Socket, connection.Alias, connection.SynthesizedAlias,
 		)
-		subject := newCarriedConnectionSubject(
+		subject := newOriginatedConnectionSubject(
 			file, connection.Node.ID,
-			connection.Carrier.Kind, connection.Carrier.Attachment,
+			connection.Origin.Kind, connection.Origin.Attachment,
 			connection.Socket, connection.Alias, connection.Target,
 			segments...,
 		)
@@ -853,9 +853,9 @@ func RunOnNodeParameters[V View](
 //
 // This is the one place the mapping lives. An attachment's two pillars are
 // written on two different documents, and each document nests with its own
-// container key: the values the developer wrote sit in the application, which
+// container key: the values the developer wrote sit in the Aggregate, which
 // nests subsystems, and the infrastructure configuration the operator wrote
-// sits on the deployment, which nests boundaries. The file each pillar carries
+// sits on the Release, which nests boundaries. The file each pillar carries
 // says the same thing about the same pillar, so the two are one fact read twice
 // and a disagreement between them would be a locator naming a key in a document
 // that does not contain it.
@@ -901,7 +901,7 @@ func pillarNesting(pillar string) (scopeNesting, bool) {
 // from every scope that reaches that node, so the shape is wrong for most of
 // what lands there. Three sites reach one leaf and only the first of them is
 // the node's own: a component's own attachment block; a component's entry
-// inside a scope, which the deployment keys by the identifier the composition
+// inside a scope, which the Release keys by the identifier the composition
 // gave the node rather than by the name its own document wrote; and a scope's
 // own block, which names no component at all and whose leaves therefore have no
 // component segment to sit under. Naming the node's shape for the second spells
@@ -919,8 +919,8 @@ func pillarNesting(pillar string) (scopeNesting, bool) {
 //
 // # A composed component key costs the locator every segment under it
 //
-// One of the shapes above spells the component with a key a deployment wrote,
-// and a deployment addresses a component a composition contributed by the
+// One of the shapes above spells the component with a key a Release wrote,
+// and a Release addresses a component a composition contributed by the
 // qualified identifier the composition gave it — which carries the separator the
 // locator dialect divides its segments with. The dialect cannot address such a
 // key, so the locator stops at the components block and gives up that segment
@@ -1253,7 +1253,7 @@ func RunOnBoundaryAttachmentTemplateFields[V View](
 }
 
 // RunOnBoundaryPathTemplateFields invokes check once per path template each
-// boundary of a deployment declares, in boundary order and then in the order that
+// boundary of a Release declares, in boundary order and then in the order that
 // boundary's fields are enumerated in.
 //
 // The locator is .spec.boundaries.<boundary>.<field>, with the container's key
@@ -1261,7 +1261,7 @@ func RunOnBoundaryAttachmentTemplateFields[V View](
 // wrote. The boundary DOES contribute segments here, where a boundary-rooted kind
 // whose locator names a FeatureRecipe contributes none: the difference is which
 // document the finding is positioned at. A path template is authored in the
-// deployment document itself, under the scope's own key, so the scope path is
+// Release document itself, under the scope's own key, so the scope path is
 // exactly what walks the reader to it — and the file is the scope's own for the
 // same reason, rather than something the field enumerator restates.
 //
@@ -1275,7 +1275,7 @@ func RunOnBoundaryAttachmentTemplateFields[V View](
 //
 // # What this axis does NOT reach, stated because an unstated bound reads as coverage
 //
-// The scope set is the boundaries the deployment declares. A per-component
+// The scope set is the boundaries the Release declares. A per-component
 // override of the same field — written under a component inside a scope rather
 // than on the scope — is authored at a coordinate no boundary key enumerates, so
 // a rule over this kind is not invoked over it. That carrier keeps the refusal
@@ -1824,7 +1824,7 @@ func RunOnBoundaryAttachmentEmittedPaths[V View](
 // provider's contribution at one evaluated assembly path — in assembly-path
 // order and then provider order.
 //
-// The locator is empty and the source file is the deployment document. An
+// The locator is empty and the source file is the Release document. An
 // assembly path is evaluated output and a provider is selected rather than
 // written, so neither is a key any document holds and neither contributes a
 // segment; naming one would name a path the file does not contain. Both are
@@ -1914,7 +1914,7 @@ func RunOnModules[V View](
 }
 
 // RunOnBoundaryComponentReferences invokes check once per component entry the
-// deployment's boundaries declare, in the order the enumerator returns them.
+// Release's boundaries declare, in the order the enumerator returns them.
 //
 // The axis is flat rather than nested under the boundary set, for the reason
 // [BoundaryComponentReferenceEnumerator] states: the id is the entry's identity,
@@ -2057,7 +2057,7 @@ func RunOnAuthoredAnnotations[V View](
 			return nil, err
 		}
 		var segments []string
-		if nesting, named := carrierNesting(entry.Document); named {
+		if nesting, named := originNesting(entry.Document); named {
 			tail := make([]string, 0, len(entry.RoutedKeys)+2)
 			tail = append(tail, entry.RoutedKeys...)
 			tail = append(tail, authoredKeyAnnotations, entry.Key)
@@ -2119,7 +2119,7 @@ func RunOnBoundaryPlacements[V View](
 			return nil, err
 		}
 		var segments []string
-		if nesting, named := carrierNesting(entry.Placement.Document); named {
+		if nesting, named := originNesting(entry.Placement.Document); named {
 			segments = authoredSiteSegments(nesting, entry.Site, entry.RoutedKeys...)
 		}
 		out = append(out, check.Run(view, newBoundaryPlacementSubject(
@@ -2177,7 +2177,7 @@ func RunOnReleaseEdgeConfigurations[V View](
 			return nil, err
 		}
 		var segments []string
-		if nesting, named := carrierNesting(entry.Configuration.Document); named {
+		if nesting, named := originNesting(entry.Configuration.Document); named {
 			tail := make([]string, 0, len(entry.ComponentKeys)+3)
 			tail = append(tail, entry.ComponentKeys...)
 			tail = append(tail, authoredKeyUses, entry.Configuration.Socket, entry.Configuration.Alias)

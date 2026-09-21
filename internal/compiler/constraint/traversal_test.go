@@ -41,7 +41,7 @@ type traversalView struct{}
 type traversalFixture struct {
 	nodes         []NodeInstance
 	edges         []EdgeInstance
-	connections   []CarriedConnectionInstance
+	connections   []OriginatedConnectionInstance
 	references    []BoundaryComponentReferenceInstance
 	placements    []BoundaryPlacementInstance
 	edgeConfigs   []ReleaseEdgeConfigurationInstance
@@ -138,7 +138,7 @@ func fixtureKey(parts ...string) string { return strings.Join(parts, "\x00") }
 func (f traversalFixture) Nodes() []NodeInstance { return f.nodes }
 func (f traversalFixture) Edges() []EdgeInstance { return f.edges }
 
-func (f traversalFixture) CarriedConnections() []CarriedConnectionInstance {
+func (f traversalFixture) OriginatedConnections() []OriginatedConnectionInstance {
 	return f.connections
 }
 func (f traversalFixture) Boundaries() []AuthoredCoordinate { return f.boundaries }
@@ -345,14 +345,14 @@ func newTraversalFixture() traversalFixture {
 		// their author wrote them in — one attachment declared inside the
 		// component's own block and one declared scope-wide — so the edge axis
 		// enumerates that key once and would present one of the two to every rule.
-		// The set covers every carrier the vocabulary admits, so the locator rule
+		// The set covers every origin the vocabulary admits, so the locator rule
 		// is exercised on each of its arms and on both scope nestings, and the last
 		// entry carries a derived alias so that rule is exercised here too.
-		connections: []CarriedConnectionInstance{
+		connections: []OriginatedConnectionInstance{
 			{
 				Node: webNode, Socket: "zebra", Alias: "primary", Target: "db",
-				Carrier: ConnectionCarrier{
-					Kind:       CarrierComponent,
+				Origin: ConnectionOrigin{
+					Kind:       OriginComponent,
 					Site:       AuthoredSite{Component: "web"},
 					Document:   AuthoringDocumentAggregate,
 					SourceFile: "aggregate.yaml",
@@ -360,8 +360,8 @@ func newTraversalFixture() traversalFixture {
 			},
 			{
 				Node: webNode, Socket: "issuer", Alias: "ca", Target: "ca",
-				Carrier: ConnectionCarrier{
-					Kind:       CarrierAttachment,
+				Origin: ConnectionOrigin{
+					Kind:       OriginAttachment,
 					Attachment: "tls",
 					Site:       AuthoredSite{Component: "web"},
 					Document:   AuthoringDocumentAggregate,
@@ -370,8 +370,8 @@ func newTraversalFixture() traversalFixture {
 			},
 			{
 				Node: webNode, Socket: "issuer", Alias: "ca", Target: "ca",
-				Carrier: ConnectionCarrier{
-					Kind:       CarrierAttachment,
+				Origin: ConnectionOrigin{
+					Kind:       OriginAttachment,
 					Attachment: "tls",
 					Site:       AuthoredSite{ScopePath: "billing.payments"},
 					Document:   AuthoringDocumentAggregate,
@@ -380,8 +380,8 @@ func newTraversalFixture() traversalFixture {
 			},
 			{
 				Node: webNode, Socket: "zebra", Alias: "spare", Target: "cache-standby",
-				Carrier: ConnectionCarrier{
-					Kind:       CarrierDeployment,
+				Origin: ConnectionOrigin{
+					Kind:       OriginRelease,
 					Site:       AuthoredSite{ScopePath: "prod/edge", Component: "web"},
 					Document:   AuthoringDocumentRelease,
 					SourceFile: "release.yaml",
@@ -390,15 +390,15 @@ func newTraversalFixture() traversalFixture {
 			{
 				Node: apiNode, Socket: "db", Alias: "store", Target: "store",
 				SynthesizedAlias: true,
-				Carrier: ConnectionCarrier{
-					Kind:       CarrierComponent,
+				Origin: ConnectionOrigin{
+					Kind:       OriginComponent,
 					Site:       AuthoredSite{ScopePath: "billing", Component: "api"},
 					Document:   AuthoringDocumentAggregate,
 					SourceFile: "billing/aggregate.yaml",
 				},
 			},
 		},
-		// The component entries a deployment declares, covering the two axes a
+		// The component entries a Release declares, covering the two axes a
 		// boundary names components on and the three locator shapes between them.
 		//
 		// The first is written directly under a nested boundary and names a
@@ -706,8 +706,8 @@ func newTraversalFixture() traversalFixture {
 		//
 		// One attachment carrying BOTH pillars, from two different documents, and
 		// that pairing is the whole reason this axis carries a file at all. The
-		// developer wrote the values in the application document; the operator
-		// wrote the infrastructure configuration on the deployment, which is the
+		// developer wrote the values in the Aggregate document; the operator
+		// wrote the infrastructure configuration on the Release, which is the
 		// only surface whose attachment block admits one. A fixture keeping both
 		// pillars in one document would produce the same transcript whether the
 		// file came from the pillar or from the node, so it could not tell a
@@ -1082,7 +1082,7 @@ func traversalCases() []traversalCase {
 		{
 			// The only kind whose subjects contribute no locator segment: an assembly
 			// path is evaluated output and a provider is selected, so neither is a key
-			// the deployment document holds and naming one would spell a path the file
+			// the Release document holds and naming one would spell a path the file
 			// does not contain. The three findings are told apart by their detail
 			// rather than their position, which is what this expectation pins.
 			kind: SubjectAssemblyPathProvider,
@@ -1122,16 +1122,16 @@ func traversalCases() []traversalCase {
 			},
 		},
 		{
-			// One socket and alias on one node, drawn four times by four carriers.
+			// One socket and alias on one node, drawn four times by four origins.
 			// Each finding names the block its own author wrote — the component's
 			// own dependency block, the attachment block inside it, the attachment
-			// block of a scope, and the deployment's entry for the component — and
+			// block of a scope, and the Release's entry for the component — and
 			// each carries that block's own file. Naming the consuming component's
 			// dependency block for all four would spell three paths no file
 			// contains.
-			kind: SubjectCarriedConnection,
+			kind: SubjectOriginatedConnection,
 			run: func(cancelled Cancellation, f traversalFixture, v traversalView) ([]Objection, error) {
-				return RunOnCarriedConnections(cancelled, f, v, raisingCheck[CarriedConnectionSubject]())
+				return RunOnOriginatedConnections(cancelled, f, v, raisingCheck[OriginatedConnectionSubject]())
 			},
 			want: []string{
 				"aggregate.yaml|.spec.components.web.uses.zebra.primary",
@@ -1142,7 +1142,7 @@ func traversalCases() []traversalCase {
 			},
 		},
 		{
-			// The three locator shapes a deployment's component entries take. The
+			// The three locator shapes a Release's component entries take. The
 			// first names a component whose id carries the composition's separator,
 			// so the locator stops at the block holding it — the id is legitimate as
 			// a coordinate and unaddressable as a segment. The second is written
@@ -1244,9 +1244,9 @@ func traversalCases() []traversalCase {
 			// Two invocations over ONE attachment on ONE node, whose locators
 			// differ only in the pillar segment and whose FILES differ outright.
 			// That is the property the axis carries a file for: an attachment's
-			// values are the developer's and are written in the application
+			// values are the developer's and are written in the Aggregate
 			// document, its infrastructure configuration is the operator's and is
-			// written on the deployment, and a file taken from the node would
+			// written on the Release, and a file taken from the node would
 			// attribute the second to a document whose attachment block cannot
 			// hold the key its locator names.
 			kind: SubjectNodeAttachmentPillarLeaf,
@@ -1347,7 +1347,7 @@ func traversalCases() []traversalCase {
 		},
 		{
 			// The path-template axis over the same scope. Both records position
-			// INSIDE the deployment document, under the scope's own key with the
+			// INSIDE the Release document, under the scope's own key with the
 			// container's key repeated for the nesting — which is the half the
 			// axis above deliberately does not do, because its field is written in
 			// a different document from the scope that reaches it. Two records for
@@ -2691,16 +2691,16 @@ func coordinateFlowCases() []coordinateFlowCase {
 			// Every coordinate of the widest kind, read back through the traversal.
 			// The four entries sharing one node, socket and alias are what this
 			// assertion exists for: they are one entry on the edge axis and four
-			// here, so a traversal that dropped the carrier would read as correct
+			// here, so a traversal that dropped the origin would read as correct
 			// on every other assertion and present one connection's content for
 			// all four.
-			kind: SubjectCarriedConnection,
+			kind: SubjectOriginatedConnection,
 			seam: seamTraversal,
 			read: func(f traversalFixture) []string {
-				return readback(func(c Check[traversalView, CarriedConnectionSubject]) ([]Objection, error) {
-					return RunOnCarriedConnections(nil, f, traversalView{}, c)
-				}, func(s CarriedConnectionSubject) string {
-					return s.NodeID() + "|" + s.CarrierKind() + "|" + s.CarrierAttachment() +
+				return readback(func(c Check[traversalView, OriginatedConnectionSubject]) ([]Objection, error) {
+					return RunOnOriginatedConnections(nil, f, traversalView{}, c)
+				}, func(s OriginatedConnectionSubject) string {
+					return s.NodeID() + "|" + s.OriginKind() + "|" + s.OriginAttachment() +
 						"|" + s.SocketName() + "|" + s.AliasName() + "|" + s.TargetNodeID()
 				})
 			},

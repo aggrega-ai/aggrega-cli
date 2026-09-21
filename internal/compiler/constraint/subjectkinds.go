@@ -462,33 +462,33 @@ func newEdgeSubject(sourceFile, node, socket, alias string, segments ...string) 
 	}
 }
 
-// CarriedConnectionSubject is the subject of a check invoked once per connection
-// together with the carrier that drew it.
+// OriginatedConnectionSubject is the subject of a check invoked once per
+// connection together with the origin that drew it.
 //
 // It is the sibling of [EdgeSubject] and not a replacement for it. An edge's
-// identity is the node, the socket and the alias; a carried connection's is that
-// triple plus the surface the connection was drawn from — because the triple
-// alone names up to three separately authored connections at once, and a rule
-// reading a connection's AUTHORED content needs to be invoked for each of them
-// rather than once for all three.
+// identity is the node, the socket and the alias; an originated connection's is
+// that triple plus the surface the connection was drawn from — because the
+// triple alone names up to three separately authored connections at once, and a
+// rule reading a connection's AUTHORED content needs to be invoked for each of
+// them rather than once for all three.
 //
 // So a rule over what a connection RESOLVED to declares [EdgeSubject], whose key
 // is the key those facts take, and a rule over what an author WROTE on one
 // declares this kind.
-type CarriedConnectionSubject interface {
+type OriginatedConnectionSubject interface {
 	Subject
 
 	// NodeID identifies the consumer the connection is drawn from, as every
 	// keyed fact takes it.
 	NodeID() string
 
-	// CarrierKind is which surface drew the connection: one of
-	// [CarrierComponent], [CarrierAttachment] or [CarrierDeployment].
-	CarrierKind() string
+	// OriginKind is which surface drew the connection: one of
+	// [OriginComponent], [OriginAttachment] or [OriginRelease].
+	OriginKind() string
 
-	// CarrierAttachment is the attachment instance name the connection was drawn
-	// from, empty for every kind but [CarrierAttachment].
-	CarrierAttachment() string
+	// OriginAttachment is the attachment instance name the connection was drawn
+	// from, empty for every kind but [OriginAttachment].
+	OriginAttachment() string
 
 	// SocketName is the dependency socket the connection wires.
 	SocketName() string
@@ -498,15 +498,15 @@ type CarriedConnectionSubject interface {
 	AliasName() string
 
 	// TargetNodeID identifies the node the connection resolves to, as every
-	// keyed fact takes it. It is in the identity because two carriers writing
+	// keyed fact takes it. It is in the identity because two origins writing
 	// one socket and one alias may name different targets, and each delivers
 	// against the target it named.
 	TargetNodeID() string
 
-	carriedConnection()
+	originatedConnection()
 }
 
-type carriedConnectionSubject struct {
+type originatedConnectionSubject struct {
 	provenance
 	node       string
 	kind       string
@@ -516,25 +516,25 @@ type carriedConnectionSubject struct {
 	target     string
 }
 
-func (carriedConnectionSubject) carriedConnection() {}
+func (originatedConnectionSubject) originatedConnection() {}
 
-func (s carriedConnectionSubject) NodeID() string { return s.node }
+func (s originatedConnectionSubject) NodeID() string { return s.node }
 
-func (s carriedConnectionSubject) CarrierKind() string { return s.kind }
+func (s originatedConnectionSubject) OriginKind() string { return s.kind }
 
-func (s carriedConnectionSubject) CarrierAttachment() string { return s.attachment }
+func (s originatedConnectionSubject) OriginAttachment() string { return s.attachment }
 
-func (s carriedConnectionSubject) SocketName() string { return s.socket }
+func (s originatedConnectionSubject) SocketName() string { return s.socket }
 
-func (s carriedConnectionSubject) AliasName() string { return s.alias }
+func (s originatedConnectionSubject) AliasName() string { return s.alias }
 
-func (s carriedConnectionSubject) TargetNodeID() string { return s.target }
+func (s originatedConnectionSubject) TargetNodeID() string { return s.target }
 
-func newCarriedConnectionSubject(
+func newOriginatedConnectionSubject(
 	sourceFile, node, kind, attachment, socket, alias, target string,
 	segments ...string,
-) CarriedConnectionSubject {
-	return carriedConnectionSubject{
+) OriginatedConnectionSubject {
+	return originatedConnectionSubject{
 		provenance: newProvenance(sourceFile, segments...),
 		node:       node,
 		kind:       kind,
@@ -642,7 +642,7 @@ func newSubsystemAttachmentSubject(
 // the scope the entry sits in, the component key it was written under, the
 // annotation key and the subkey inside the value, all taken together — so it
 // carries an accessor for each element of that identity rather than one naming
-// the entry, on the same terms [CarriedConnectionSubject] does. No one of them
+// the entry, on the same terms [OriginatedConnectionSubject] does. No one of them
 // names an entry: one annotation key is legitimately written at a scope and
 // again on a component inside that scope, in both documents, with a subkey each.
 //
@@ -749,7 +749,7 @@ func newAuthoredAnnotationSubject(
 // document, the boundary it sits in, what it addresses and the block it was
 // written in, all taken together — so it carries an accessor for each element of
 // that identity rather than one naming the placement, on the same terms
-// [AuthoredAnnotationSubject] and [CarriedConnectionSubject] do.
+// [AuthoredAnnotationSubject] and [OriginatedConnectionSubject] do.
 //
 // No shorter tuple names a placement, and the reason is the fault this kind
 // exists to see. One boundary can name a component directly under the id it
@@ -1593,7 +1593,7 @@ func newBoundaryAttachmentTemplateFieldSubject(
 }
 
 // BoundaryPathTemplateFieldSubject is the subject of a check invoked once per
-// path template one boundary of a deployment declares.
+// path template one boundary of a Release declares.
 //
 // The innermost coordinate is the AUTHORED FIELD the template was written under,
 // which is what makes the kind a family rather than one kind per path-bearing
@@ -1630,7 +1630,7 @@ type BoundaryPathTemplateFieldSubject interface {
 	BoundaryPath() string
 
 	// PathTemplateField is the authored field the check was invoked for, spelled
-	// the way the deployment document writes it.
+	// the way the Release document writes it.
 	PathTemplateField() string
 
 	boundaryPathTemplateField()
@@ -1980,7 +1980,7 @@ func newBoundaryAttachmentPathSubject(
 // Neither coordinate reaches the locator. An assembly path is evaluated output
 // rather than a key any document holds, and a provider is selected by the entity
 // a component names rather than written at this site — so a subject here carries
-// the deployment document and the empty locator, which routes a reader to
+// the Release document and the empty locator, which routes a reader to
 // file-level positioning rather than to a path the file does not contain. The
 // boundaries behind the group are a fact rather than a coordinate, and a group
 // several of them fed has no single authored site to name in any case; a rule
@@ -2518,7 +2518,7 @@ func newBoundaryAttachmentArtifactSubject(
 //
 // It is rooted at the module rather than at the components the module
 // contributes, and the two keyings are not equivalent. Keyed by the component,
-// a rule over what the deployment did with a module would be asked once per
+// a rule over what the Release did with a module would be asked once per
 // component, would report one authoring fault as many, and would name a
 // component where the author's remedy is a single entry — and it would be asked
 // no times at all for a module contributing nothing, which is silence a caller
@@ -2560,11 +2560,11 @@ func newModuleSubject(sourceFile, module string, segments ...string) ModuleSubje
 }
 
 // BoundaryComponentReferenceSubject is the subject of a check invoked once per
-// component entry the deployment's boundaries declare.
+// component entry the Release's boundaries declare.
 //
 // The coordinate is the id the entry addresses in the flattened composition, and
 // it is one coordinate rather than an entry nested under its boundary because the
-// id is the entry's identity: one id declared twice is refused when the deployment
+// id is the entry's identity: one id declared twice is refused when the Release
 // document loads, so an id names exactly one entry across the whole document. The
 // boundary reaches the locator as provenance and keys nothing, which is the
 // division the connection kinds already draw for the surface that drew a
@@ -2572,9 +2572,9 @@ func newModuleSubject(sourceFile, module string, segments ...string) ModuleSubje
 //
 // # What the coordinate is, and what it deliberately is not
 //
-// It is what the deployment ASKED FOR, never what the composition holds. A rule
+// It is what the Release ASKED FOR, never what the composition holds. A rule
 // over this kind is invoked for an entry addressing an id nothing answers to
-// exactly as it is for one that resolves, because the deployment wrote both — and
+// exactly as it is for one that resolves, because the Release wrote both — and
 // an axis carrying only the entries that resolve would never present such a rule
 // its own subject, the offending entry being by construction the one that is
 // absent from the resolved set.

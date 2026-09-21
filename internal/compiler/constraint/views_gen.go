@@ -1340,7 +1340,7 @@ type NormalizedView interface {
 	// that answers which sockets exist to be asked about.
 	//
 	// It answers for a connection the consuming component's own dependency
-	// block drew, and for one the deployment's edge surface wired, and for no
+	// block drew, and for one the Release's edge surface wired, and for no
 	// other. Its key is a component type and a socket, and that is the whole
 	// of it, while the socket a connection an attachment drew is wired into is
 	// declared on the attached Feature's own dependency sockets and never on
@@ -1512,7 +1512,7 @@ type NormalizedView interface {
 	// so the connection is drawn either way, and a rule that read the target
 	// and took emptiness for absence would refuse a socket that IS populated.
 	//
-	// That rule is this surface's and does not carry to the deployment's edge
+	// That rule is this surface's and does not carry to the Release's edge
 	// surface, whose own connection count is a separate fact with the same
 	// shape and the opposite rule — so a reader unifying the two makes one
 	// of them wrong. There an entry counts only when it names a target,
@@ -1524,11 +1524,11 @@ type NormalizedView interface {
 	//
 	// It reads the instance's own dependency block and no other surface. An
 	// attachment's block wires sockets on the Feature it attaches, and a
-	// deployment's own edge surface wires sockets from a separate document;
-	// each is a separate fact because each is separately authored and
-	// independently absent. A rule asking whether a socket is populated across
-	// every surface that can populate one reads them together, and none of
-	// them carries another.
+	// Release's own edge surface wires sockets from a separate document; each
+	// is a separate fact because each is separately authored and independently
+	// absent. A rule asking whether a socket is populated across every surface
+	// that can populate one reads them together, and none of them carries
+	// another.
 	//
 	// It counts connections and never entries. Which aliases the block wrote
 	// an entry under is the separate fact declared beside it, and the two
@@ -1586,7 +1586,7 @@ type NormalizedView interface {
 	// author wrote an entry there.
 	//
 	// It reads the instance's own dependency block and no other surface. A
-	// deployment's own edge surface is a separate fact with the same shape and
+	// Release's own edge surface is a separate fact with the same shape and
 	// the same authorship rule, because it is separately authored and
 	// independently absent, and neither carries the other.
 	//
@@ -1958,9 +1958,9 @@ type NormalizedView interface {
 	// rule reporting one finding per socket emits them in this order, so the
 	// order is what makes the report the same on every run.
 	//
-	// The set is what the type DECLARES and never what a deployment populates.
-	// A component's own dependency block may name a socket the type declares
-	// no entry for, so a rule reading this set as the permitted names would
+	// The set is what the type DECLARES and never what a Release populates. A
+	// component's own dependency block may name a socket the type declares no
+	// entry for, so a rule reading this set as the permitted names would
 	// refuse authoring the product accepts; what it answers is which sockets
 	// carry a declaration to read.
 	//
@@ -2020,7 +2020,7 @@ type NormalizedView interface {
 	// sets over one entity: they are separate authored surfaces with separate
 	// rules over them.
 	//
-	// Declaring a slot does not close the attachment surface. A deployment may
+	// Declaring a slot does not close the attachment surface. A Release may
 	// attach a Feature under a name no slot declares, so a rule reading this
 	// set as the permitted attachment names would refuse a shape the product
 	// supports; what it answers is which names carry a slot declaration for a
@@ -2092,11 +2092,11 @@ type NormalizedView interface {
 	// one connection, as authored — empty when the Release named none.
 	//
 	// It is a separate fact from the target the Aggregate authored, and the
-	// pair is what a rule comparing the two needs. A deployment document may
-	// not redirect a connection the architecture already drew, and the
-	// conflict is precisely a difference between the two targets — neither
-	// one alone shows it, so a rule reading either surface without the other
-	// cannot tell a redirected connection from a confirmed one.
+	// pair is what a rule comparing the two needs. A Release document may not
+	// redirect a connection the architecture already drew, and the conflict is
+	// precisely a difference between the two targets — neither one alone
+	// shows it, so a rule reading either surface without the other cannot tell
+	// a redirected connection from a confirmed one.
 	//
 	// Whether a socket carries a connection at all is a different question,
 	// and the per-socket connection counts each document contributes are what
@@ -2209,7 +2209,7 @@ type NormalizedView interface {
 	// an entry carrying configuration alone appears there and counts nothing
 	// here.
 	//
-	// Where several scopes of the deployment write against one component, this
+	// Where several scopes of the Release write against one component, this
 	// answers from exactly one of those entries, and which one is settled
 	// rather than left to a reader: the scopes are walked in the order the
 	// document declares them, each scope's own entries read before the scopes
@@ -2277,7 +2277,7 @@ type NormalizedView interface {
 	// authorship rule, because it is separately authored and independently
 	// absent, and neither carries the other.
 	//
-	// Where several scopes of the deployment write against one component, this
+	// Where several scopes of the Release write against one component, this
 	// answers from exactly one of those entries, and which one is settled
 	// rather than left to a reader: the scopes are walked in the order the
 	// document declares them, each scope's own entries read before the scopes
@@ -2292,8 +2292,8 @@ type NormalizedView interface {
 	// Keyed by (node, socket); read from types.BoundaryComponent.Uses.
 	ReleaseAuthoredUsesSocketEntryAliases(node string, socket string) []string
 
-	// ReleaseComponentEntryPresent reports whether the deployment wrote an
-	// entry against one component at all.
+	// ReleaseComponentEntryPresent reports whether the Release wrote an entry
+	// against one component at all.
 	//
 	// It reports authorship and nothing else, and an entry appears here
 	// whether or not it carries any sizing. That rule is stated once for every
@@ -2301,14 +2301,14 @@ type NormalizedView interface {
 	// is the one the per-connection authorship fact states: every field of
 	// such an entry is optional, so an entry written and left empty carries
 	// nothing at all, and the sizing fact declared beside this one reads its
-	// zero value for it — the same zero it reads for a component the
-	// deployment never wrote against. The two need opposite treatment. An
-	// entry that writes no sizing is the maximal violation of a key the
-	// component type's contract declares required, while a component this
-	// deployment never placed is not its to answer for: a component nothing
-	// placed is reported on its own once the composition is flattened, naming
-	// the ways to place it, and measuring its absent sizing instead would
-	// report a sizing fault against a document whose fault is placement.
+	// zero value for it — the same zero it reads for a component the Release
+	// never wrote against. The two need opposite treatment. An entry that
+	// writes no sizing is the maximal violation of a key the component type's
+	// contract declares required, while a component this Release never placed
+	// is not its to answer for: a component nothing placed is reported on its
+	// own once the composition is flattened, naming the ways to place it, and
+	// measuring its absent sizing instead would report a sizing fault against
+	// a document whose fault is placement.
 	//
 	// Authorship is reported positively rather than inferred, and that is why
 	// the fact exists. Emptiness is the value both cases produce, so the
@@ -2316,14 +2316,13 @@ type NormalizedView interface {
 	//
 	// It answers for both axes a boundary names a component on — an entry
 	// under the boundary's own components, and an entry naming a component
-	// inside a sub-module the boundary routes — because on both the
-	// deployment wrote against that component. A routing entry naming no
-	// component writes against none, so it contributes nothing here even
-	// though it places what the module contains: this reports what the
-	// deployment WROTE and never what it placed, and a rule wanting placement
-	// reads the fact that names it.
+	// inside a sub-module the boundary routes — because on both the Release
+	// wrote against that component. A routing entry naming no component writes
+	// against none, so it contributes nothing here even though it places what
+	// the module contains: this reports what the Release WROTE and never what
+	// it placed, and a rule wanting placement reads the fact that names it.
 	//
-	// A deployment declaring components at its own top level rather than under
+	// A Release declaring components at its own top level rather than under
 	// named boundaries answers here like any other. Normalizing such a
 	// document gives it a boundary of its own holding exactly those entries,
 	// so the fact covers that authoring form without a reader knowing the form
@@ -2349,12 +2348,12 @@ type NormalizedView interface {
 	// fact's key.
 	//
 	// Empty is the operator writing nothing, and it is one value for two
-	// documents that need opposite treatment: an entry the deployment wrote
-	// and left without sizing, and a component the deployment wrote no entry
-	// against at all. This fact cannot separate them, so a rule that has to
-	// reads the authorship fact declared beside it. What empty never means is
-	// that there is nothing to measure — a key the component type's contract
-	// declares required is violated exactly by the sizing nobody wrote.
+	// documents that need opposite treatment: an entry the Release wrote and
+	// left without sizing, and a component the Release wrote no entry against
+	// at all. This fact cannot separate them, so a rule that has to reads the
+	// authorship fact declared beside it. What empty never means is that there
+	// is nothing to measure — a key the component type's contract declares
+	// required is violated exactly by the sizing nobody wrote.
 	//
 	// The developer's configuration for the same component is a different fact
 	// on a different surface. The two are written on separate documents by
@@ -2365,7 +2364,7 @@ type NormalizedView interface {
 	// an unordered payload would put a byte-identical result at the mercy of
 	// map iteration.
 	//
-	// Where several scopes of the deployment write against one component, this
+	// Where several scopes of the Release write against one component, this
 	// answers from exactly one of those entries, and which one is settled
 	// rather than left to a reader: the scopes are walked in the order the
 	// document declares them, each scope's own entries read before the scopes
@@ -2432,7 +2431,7 @@ type NormalizedView interface {
 	// are asked a different number of times and a rule over either names a
 	// different authored site.
 	//
-	// Where several scopes of the deployment write against one component, this
+	// Where several scopes of the Release write against one component, this
 	// answers from exactly one of those entries, and which one is settled
 	// rather than left to a reader: the scopes are walked in the order the
 	// document declares them, each scope's own entries read before the scopes
@@ -2465,7 +2464,7 @@ type NormalizedView interface {
 	// named component, so the two are asked a different number of times and a
 	// rule over either names a different authored site.
 	//
-	// Where several scopes of the deployment write against one component, this
+	// Where several scopes of the Release write against one component, this
 	// answers from exactly one of those entries, and which one is settled
 	// rather than left to a reader: the scopes are walked in the order the
 	// document declares them, each scope's own entries read before the scopes
@@ -3037,9 +3036,9 @@ type TopologyView interface {
 	// component as carrying nothing. This reads the drawn connections instead,
 	// which is one answer spanning every origin: what a component's own
 	// dependency block wrote, wherever that block was authored, and what the
-	// deployment's edge surface created — the latter decided by the same
-	// rule that decides whether such an entry draws a connection at all, so
-	// this fact and the authored one cannot disagree about it.
+	// Release's edge surface created — the latter decided by the same rule
+	// that decides whether such an entry draws a connection at all, so this
+	// fact and the authored one cannot disagree about it.
 	//
 	// What it counts and what it deliberately does NOT is a third counting
 	// rule, distinct from both authored counts, and a reader unifying the
@@ -3084,7 +3083,7 @@ type TopologyView interface {
 	// no connection there.
 	//
 	// It answers for every connection whichever surface drew it: a component's
-	// own dependency block, an attachment's, and the deployment's edge surface
+	// own dependency block, an attachment's, and the Release's edge surface
 	// alike. That breadth is what separates it from the authored targets read
 	// off the two authoring documents, each of which answers for one surface
 	// and one authoring form and reports every other connection as naming
@@ -3187,19 +3186,18 @@ type TopologyView interface {
 	// NodeBoundaryPlacement is the boundary a node was placed in, and whether
 	// anything placed it at all.
 	//
-	// A deployment places a component two ways and this answers for both,
-	// which is what makes it a reading of placement rather than of one
-	// spelling. A boundary names a component under the id it carries in the
-	// flattened set — for a component a module contributes, that is its
-	// qualified dotted id — and a boundary routes a whole module in at once,
-	// which places every component that module contains without naming any of
-	// them. The two are reconciled before this fact is produced, so a rule
-	// reading it cannot be written against one axis and quietly ignore the
-	// other.
+	// A Release places a component two ways and this answers for both, which
+	// is what makes it a reading of placement rather than of one spelling. A
+	// boundary names a component under the id it carries in the flattened set
+	// — for a component a module contributes, that is its qualified dotted
+	// id — and a boundary routes a whole module in at once, which places
+	// every component that module contains without naming any of them. The two
+	// are reconciled before this fact is produced, so a rule reading it cannot
+	// be written against one axis and quietly ignore the other.
 	//
 	// The second result is what a rule over placement turns on, and it is not
 	// a convenience. A component nothing placed is emitted outside every
-	// boundary the deployment declared, which is a defect the build otherwise
+	// boundary the Release declared, which is a defect the build otherwise
 	// reports nowhere, so a rule needs to be able to name it.
 	//
 	// An empty boundary path reports as unplaced rather than as a placement
@@ -3289,10 +3287,10 @@ type TopologyView interface {
 	//
 	// The two are asked together by any rule that would otherwise refuse a
 	// document an author deliberately wrote. Switching a component off is an
-	// authoring act, and the deployment that configures it is not expected to
-	// be rewritten in the same edit — so a rule refusing a reference to a
+	// authoring act, and the Release that configures it is not expected to be
+	// rewritten in the same edit — so a rule refusing a reference to a
 	// component that is not in the flattened set has to pass a deactivated
-	// one, or the toggle would be unusable while any deployment named the
+	// one, or the toggle would be unusable while any Release named the
 	// component.
 	//
 	// A name the composition never held answers false, exactly as a live
@@ -3303,14 +3301,14 @@ type TopologyView interface {
 	// Keyed by node; read from topology.TopologyResult.Pruned.
 	ComponentDeactivated(node string) bool
 
-	// BoundaryDeclaredComponentReferences are the components the deployment's
+	// BoundaryDeclaredComponentReferences are the components the Release's
 	// boundaries name, by the id each entry addresses in the flattened
-	// composition, in the order the deployment declares them — a boundary's
-	// own entries before the sub-modules it routes, and an enclosing boundary
+	// composition, in the order the Release declares them — a boundary's own
+	// entries before the sub-modules it routes, and an enclosing boundary
 	// before the boundaries nested inside it.
 	//
 	// A boundary names a component on two axes and this answers for both,
-	// which is what makes it a reading of what the deployment declared rather
+	// which is what makes it a reading of what the Release declared rather
 	// than of one spelling. One axis names a component under the id it carries
 	// once the composition is flattened; the other routes a sub-module and
 	// names a component inside it under the local name it carries within that
@@ -3318,18 +3316,18 @@ type TopologyView interface {
 	// second is resolved to the same id the first writes, so a reader cannot
 	// be written against one axis and quietly ignore the other, and a reader
 	// that took a routed entry's local name as an id would refuse every
-	// module-routed deployment that names components.
+	// module-routed Release that names components.
 	//
-	// It reports what the deployment ASKED FOR and never what the composition
+	// It reports what the Release ASKED FOR and never what the composition
 	// holds, and the two are separate on purpose. An entry addressing an id
 	// the composition does not hold appears here exactly as one that resolves
-	// does: the deployment wrote it either way, and whether anything answers
-	// to it is a different question, asked of the flattened set by the fact
-	// keyed per node. A reader needing both asks both.
+	// does: the Release wrote it either way, and whether anything answers to
+	// it is a different question, asked of the flattened set by the fact keyed
+	// per node. A reader needing both asks both.
 	//
 	// It is keyed per reference because that is where the question is asked
-	// — a rule over an entry is invoked once per entry the deployment wrote
-	// — and read with no key because the set is the axis itself. The id
+	// — a rule over an entry is invoked once per entry the Release wrote —
+	// and read with no key because the set is the axis itself. The id
 	// identifies the entry across the whole Release rather than within one
 	// boundary, and that rests on a rule rather than on the authoring surface:
 	// the rule over the placements beside this fact refuses a document that
@@ -3339,7 +3337,7 @@ type TopologyView interface {
 	// all, asks that fact instead — the two are separate for exactly that
 	// reason.
 	//
-	// An entry the deployment wrote at its own top level appears here like any
+	// An entry the Release wrote at its own top level appears here like any
 	// other. Normalizing such a document gives it a boundary of its own
 	// holding exactly those entries, so the axis covers that authoring form
 	// without a reader knowing the form exists.
@@ -3404,11 +3402,11 @@ type GraphView interface {
 	// somewhere to send an author.
 	//
 	// The spelling is the document's own and never one naming rule applied to
-	// every surface. A deployment addresses a component a composition
-	// contributed by the qualified identifier the composition gave it, while
-	// the application's own scope tree keys that same component by the short
-	// name it was declared under, so one component is spelled two ways across
-	// the two surfaces and this names whichever spelling the document that
+	// every surface. A Release addresses a component a composition contributed
+	// by the qualified identifier the composition gave it, while the
+	// application's own scope tree keys that same component by the short name
+	// it was declared under, so one component is spelled two ways across the
+	// two surfaces and this names whichever spelling the document that
 	// supplied the leaf used.
 	//
 	// Keyed by (node, attachment, pillar, leaf); read from ir.AttachmentSites.
@@ -3470,9 +3468,9 @@ type GraphView interface {
 	// It is deliberately separate from the names an instance authored, and
 	// that distinction is the point. An attachment contributed at a scope the
 	// node inherits from binds a name on every node beneath that scope, so the
-	// authored block is empty for exactly those deployments that rely on
-	// sharing; a rule reading the authored names in place of these rejects a
-	// deployment shape the product supports.
+	// authored block is empty for exactly those Releases that rely on sharing;
+	// a rule reading the authored names in place of these rejects a Release
+	// shape the product supports.
 	//
 	// The fact is a name list and not the merged entries themselves. Handing
 	// back the entries would let a rule reach the per-leaf configuration
@@ -3546,9 +3544,9 @@ type GraphView interface {
 	// Keyed by edge; read from types.IREdge.Inject.
 	PerEdgeInject(node string, socket string, alias string) types.OrderedMap[types.OrderedMap[string]]
 
-	// CarriedConnectionAuthoredDelivery is the delivery a connection dictates
-	// AS IT WAS WRITTEN, keyed by mechanism name in author order, each entry
-	// carrying that mechanism's payload as authored.
+	// OriginatedConnectionAuthoredDelivery is the delivery a connection
+	// dictates AS IT WAS WRITTEN, keyed by mechanism name in author order,
+	// each entry carrying that mechanism's payload as authored.
 	//
 	// It keeps the distinction the resolved per-edge delivery folds away. An
 	// entry may deliver a literal or may reference a key the target publishes,
@@ -3558,13 +3556,13 @@ type GraphView interface {
 	// rather than decomposed because the shape of one delivery entry is the
 	// entity contract's to state.
 	//
-	// It is keyed by the carrier as well as the connection because the
+	// It is keyed by the origin as well as the connection because the
 	// connection triple is not an identity. Two attachments on one node may
 	// each write one socket and one alias, and the component itself may write
 	// the same pair, so a fact keyed by node, socket and alias answers for one
 	// of up to three separately authored blocks and reports the others as
 	// approved. The node the connection resolves to is in the key for the same
-	// reason: two carriers writing one socket and one alias may name different
+	// reason: two origins writing one socket and one alias may name different
 	// components, and each delivers against the one it named.
 	//
 	// The result is every payload the key names rather than the first, and the
@@ -3581,16 +3579,16 @@ type GraphView interface {
 	// It is placed here rather than one stage earlier because of the KEY and
 	// not the content. The connection set is complete once the composition
 	// finishes and the finalised graph draws none, so the delivery itself
-	// travels unchanged from there; the surface each carrier was declared on
-	// is settled by the reading that folds the attachment cascade, and a fact
-	// keyed by a carrier is complete only once that is.
+	// travels unchanged from there; the surface each origin was declared on is
+	// settled by the reading that folds the attachment cascade, and a fact
+	// keyed by an origin is complete only once that is.
 	//
 	// What a delivery is measured against is a separate fact on a separate
 	// document — the keys the target's component type publishes — so a
 	// rule reads the two together and neither carries the other.
 	//
-	// Keyed by carried-connection; read from ir.CarriedConnections.
-	CarriedConnectionAuthoredDelivery(node string, carrier string, attachment string, socket string, alias string, target string) []types.OrderedMap[any]
+	// Keyed by originated-connection; read from ir.OriginatedConnections.
+	OriginatedConnectionAuthoredDelivery(node string, origin string, attachment string, socket string, alias string, target string) []types.OrderedMap[any]
 }
 
 // DescribedView exposes the facts complete at the described stage: a
@@ -3598,7 +3596,7 @@ type GraphView interface {
 // attachment, with what each of them declares readable as authored — the
 // source it declares, its provides and locals, and the template text of
 // every field it writes one in — together with the path templates the
-// deployment's own scopes declare, every plugin those bindings resolve to,
+// Release's own scopes declare, every plugin those bindings resolve to,
 // loaded and self-described: the declared capabilities, the scope each
 // dispatched export declares, what each provider reports about assembling
 // and linking a scope's output, and the name each node's provider gives
@@ -4246,7 +4244,7 @@ type DescribedView interface {
 	BoundaryAttachmentAuthoredTemplateText(boundary string, attachment string, field string) string
 
 	// BoundaryAuthoredPathTemplateText is the template text one boundary of a
-	// deployment writes for one of its path fields, as written and before
+	// Release writes for one of its path fields, as written and before
 	// anything is evaluated.
 	//
 	// The field is a coordinate rather than part of this fact's name, and that

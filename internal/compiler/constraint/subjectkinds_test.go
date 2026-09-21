@@ -386,16 +386,16 @@ func TestEveryCoordinateAccessorHasAConstructorParameterToFillIt(t *testing.T) {
 //   - document maps to SourceFile, which the subject contract already supplies. A
 //     document is the whole file, so the coordinate and the provenance are the
 //     same string, and the kind owes no accessor of its own for it.
-//   - carried-connection maps to six: the edge's own three, the two that name the
-//     carrier, and the node the connection resolves to. A connection's identity
+//   - originated-connection maps to six: the edge's own three, the two that name
+//     the origin, and the node the connection resolves to. A connection's identity
 //     is the edge triple together with the surface that drew it, because two
 //     attachments on one node may each write one socket and one alias and the
 //     component itself may write the same pair — so the triple alone names up to
-//     three separately authored connections. The carrier is two accessors rather
-//     than one for the reason [ConnectionCarrier] gives: the kinds are a closed
+//     three separately authored connections. The origin is two accessors rather
+//     than one for the reason [ConnectionOrigin] gives: the kinds are a closed
 //     vocabulary and the attachment name is whatever the author typed, so one
 //     field carrying both would need a reserved spelling nothing enforces. The
-//     target is in the identity because two carriers writing one socket and one
+//     target is in the identity because two origins writing one socket and one
 //     alias may name different components, and each delivers against the one it
 //     named.
 var coordinateAccessors = map[string][]string{
@@ -431,7 +431,7 @@ var coordinateAccessors = map[string][]string{
 	// three.
 	"mapping-entry": {"MappingTier", "MappingAxis", "MappingKey"},
 	// The fourth entry that is not one-to-one, and the reason is the
-	// carried-connection row's applied to an authoring surface rather than to a
+	// originated-connection row's applied to an authoring surface rather than to a
 	// graph one. An annotation entry's identity is the document it was written
 	// in, the scope inside that document, the component key it was written under,
 	// the annotation key and the subkey within the value, all taken together: one
@@ -484,8 +484,8 @@ var coordinateAccessors = map[string][]string{
 	"node":   {"NodeID"},
 	"socket": {"SocketName"},
 	"edge":   {"NodeID", "SocketName", "AliasName"},
-	"carried-connection": {
-		"NodeID", "CarrierKind", "CarrierAttachment", "SocketName", "AliasName", "TargetNodeID",
+	"originated-connection": {
+		"NodeID", "OriginKind", "OriginAttachment", "SocketName", "AliasName", "TargetNodeID",
 	},
 	"attachment":    {"AttachmentName"},
 	"slot":          {"SlotName"},
@@ -502,14 +502,14 @@ var coordinateAccessors = map[string][]string{
 	"template-field": {"TemplateField"},
 	// A separate row from the one above rather than a second use of it, because
 	// the two axes are not the same axis reached differently. This one labels the
-	// path fields a deployment scope writes, whose admitted reference set differs
+	// path fields a Release scope writes, whose admitted reference set differs
 	// per field, where that one labels the template fields of a document whose
 	// fields share one set. The accessor spells the distinction so a check cannot
 	// be written against the wrong axis and still compile.
 	"path-template-field": {"PathTemplateField"},
 	"boundary":            {"BoundaryPath"},
 	// The accessor says the value is a reference rather than a component id,
-	// because the axis is what a deployment ASKED FOR: an entry addressing an id
+	// because the axis is what a Release ASKED FOR: an entry addressing an id
 	// nothing answers to is enumerated exactly as one that resolves is, and an
 	// accessor named for the component would tell a check reading it that the
 	// component is there.
@@ -1095,10 +1095,10 @@ var subjectKindBindings = map[SubjectKind]struct {
 				"spec", "components", "web", "uses", "databases", "primary")
 		},
 	},
-	SubjectCarriedConnection: {
-		iface: reflect.TypeOf((*CarriedConnectionSubject)(nil)).Elem(),
+	SubjectOriginatedConnection: {
+		iface: reflect.TypeOf((*OriginatedConnectionSubject)(nil)).Elem(),
 		make: func(f string) Subject {
-			return newCarriedConnectionSubject(f, "web", CarrierAttachment, "tls", "databases", "primary", "db",
+			return newOriginatedConnectionSubject(f, "web", OriginAttachment, "tls", "databases", "primary", "db",
 				"spec", "components", "web", "features", "tls", "uses", "databases", "primary")
 		},
 	},
@@ -1390,7 +1390,7 @@ var subjectKindBindings = map[SubjectKind]struct {
 	SubjectBoundaryComponentReference: {
 		iface: reflect.TypeOf((*BoundaryComponentReferenceSubject)(nil)).Elem(),
 		// The routed case, because it is the one where the coordinate and the
-		// locator's last segment are different strings: the deployment writes the
+		// locator's last segment are different strings: the Release writes the
 		// component's local name inside the routing entry, and the id it addresses
 		// is that name under the routed module's own prefix.
 		make: func(f string) Subject {

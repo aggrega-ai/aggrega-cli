@@ -148,7 +148,7 @@ spec:
             # connection it draws is authored HERE and reaches every component
             # the scope holds, so its locator names this block and never the
             # consuming component's dependency block — which is what the
-            # carried-connection coordinates are walked against.
+            # originated-connection coordinates are walked against.
             tls:
               uses:
                 issuer:
@@ -165,9 +165,9 @@ spec:
 		// scope writing neither would leave that locator unresolved against any
 		// real file.
 		//
-		// It is the boundaried one of the deployment's two component-routing forms.
+		// It is the boundaried one of the Release's two component-routing forms.
 		// The other is below, and the two are separate documents because the schema
-		// refuses one document carrying both: a deployment either names boundaries
+		// refuses one document carrying both: a Release either names boundaries
 		// or lists components at its own spec level, never both.
 		"release.yaml": `
 apiVersion: aggrega.ai/v1alpha1
@@ -218,9 +218,9 @@ spec:
                         infra:
                           maxmemory: 256mb
           components:
-            # The deployment's own edge surface, wiring a socket the application
+            # The Release's own edge surface, wiring a socket the Aggregate
             # declared and left unbound. A connection drawn here is authored on
-            # the deployment, so its locator names this entry.
+            # the Release, so its locator names this entry.
             web:
               # An annotation whose key carries the locator dialect's separator,
               # which an annotation key conventionally does. A locator over it
@@ -270,8 +270,8 @@ spec:
       components:
         web: {}
 `,
-		// A deployment written in the other component-routing form: components at
-		// the spec level, for a single-scope deployment naming no boundaries. It is
+		// A Release written in the other component-routing form: components at
+		// the spec level, for a single-scope Release naming no boundaries. It is
 		// what the attachment-pillar locator is walked through, because that
 		// locator names the component's own site and this is the form that spells
 		// one there.

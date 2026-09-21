@@ -129,9 +129,9 @@ var connectionInjectReferenceIsPublished = constraint.Check[
 	},
 }
 
-// CarriedConnectionInjectReferenceIsPublished reports each delivery entry on one
-// connection that reads from a key the component the connection points at does
-// not publish, wherever that connection was written.
+// OriginatedConnectionInjectReferenceIsPublished reports each delivery entry on
+// one connection that reads from a key the component the connection points at
+// does not publish, wherever that connection was written.
 //
 // It is the same rule as the one above over a wider set, and the two are
 // separate declarations because they are asked at different stages of different
@@ -158,7 +158,7 @@ var connectionInjectReferenceIsPublished = constraint.Check[
 //
 // # Why every payload the coordinate names is read
 //
-// One carrier key can name more than one connection: an attachment instance name
+// One origin key can name more than one connection: an attachment instance name
 // declared at two scopes draws one connection from each block, and the
 // composition records the two identically. Reading the first would leave the
 // second unexamined while this rule reported nothing, so the fact answers with
@@ -166,27 +166,27 @@ var connectionInjectReferenceIsPublished = constraint.Check[
 //
 // The component the delivery resolves against is the one THIS connection names,
 // which is a coordinate the subject carries rather than a fact read back by the
-// connection triple: two carriers writing one socket and one alias may name
+// connection triple: two origins writing one socket and one alias may name
 // different targets, and a reading keyed by the triple would measure one
-// carrier's delivery against the other's published set.
+// origin's delivery against the other's published set.
 //
 // A target naming no component the composition holds ends the rule, and so does
 // a component type the catalog holds no entry for — for the reasons the rule
 // above states. The detail is the mechanism, the delivery key, the key the entry
 // reads from, the component type it was resolved against, and then the keys that
 // type publishes, sorted.
-var CarriedConnectionInjectReferenceIsPublished = constraint.Check[
+var OriginatedConnectionInjectReferenceIsPublished = constraint.Check[
 	constraint.GraphView,
-	constraint.CarriedConnectionSubject,
+	constraint.OriginatedConnectionSubject,
 ]{
 	Sentinel: ErrInvalidInjectKey(),
 	Severity: constraint.SeverityFatal,
 	Run: func(
 		v constraint.GraphView,
-		s constraint.CarriedConnectionSubject,
+		s constraint.OriginatedConnectionSubject,
 	) []constraint.Objection {
-		dictated := v.CarriedConnectionAuthoredDelivery(
-			s.NodeID(), s.CarrierKind(), s.CarrierAttachment(),
+		dictated := v.OriginatedConnectionAuthoredDelivery(
+			s.NodeID(), s.OriginKind(), s.OriginAttachment(),
 			s.SocketName(), s.AliasName(), s.TargetNodeID())
 		if len(dictated) == 0 {
 			return nil

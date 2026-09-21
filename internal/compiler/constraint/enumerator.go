@@ -129,22 +129,22 @@ type EdgeInstance struct {
 	// not mistaken for it.
 	SynthesizedAlias bool
 
-	// Carrier is the surface that drew the connection, with the site that
+	// Origin is the surface that drew the connection, with the site that
 	// surface's own block was written at. It positions the finding and never
 	// keys anything: the facts a rule over this kind reads are keyed by the
-	// triple above, and the carrier is not among their key.
+	// triple above, and the origin is not among their key.
 	//
-	// The zero value is an enumeration that does not track carriers, and it
+	// The zero value is an enumeration that does not track origins, and it
 	// leaves the locator at the consuming component's own dependency block —
 	// which is the right answer exactly when every connection the enumeration
 	// yields was drawn there. An enumeration that yields connections drawn
 	// elsewhere fills it, or it names a `uses` block those components do not
 	// have.
-	Carrier ConnectionCarrier
+	Origin ConnectionOrigin
 }
 
-// ConnectionCarrier names the surface that drew a connection into the graph — a
-// component's own dependency block, an attachment's, or the deployment's edge
+// ConnectionOrigin names the surface that drew a connection into the graph — a
+// component's own dependency block, an attachment's, or the Release's edge
 // surface — together with where that surface's own block was written.
 //
 // The identity half is carried because the edge triple does not identify a
@@ -156,15 +156,15 @@ type EdgeInstance struct {
 //
 // The kind and the attachment name are two fields rather than one, because the
 // three kinds are a closed vocabulary while the attachment name is whatever the
-// author typed. Folding the deployment into the name field would need a reserved
+// author typed. Folding the Release into the name field would need a reserved
 // spelling no author may use, and a reserved spelling is a rule nothing enforces.
 //
-// # Why the provenance half travels with the carrier
+// # Why the provenance half travels with the origin
 //
 // A connection an attachment drew is authored inside that attachment's block,
 // and that block sits at one of four sites: a component's own attachment block,
-// a scope's block in the application, a scope's block in the deployment, or a
-// component's entry inside the deployment. The consuming node's own segments
+// a scope's block in the Aggregate, a scope's block in the Release, or a
+// component's entry inside the Release. The consuming node's own segments
 // name none of those. Naming them anyway spells a path the file does not
 // contain, and an author sent to a `uses` block their component does not have
 // cannot act on the finding.
@@ -175,26 +175,37 @@ type EdgeInstance struct {
 // settled it, rather than being recovered by matching an edge against the
 // authoring documents a second time.
 //
-// The zero value is a carrier nothing recorded. It names no site and no
+// The zero value is an origin nothing recorded. It names no site and no
 // document, which routes a finding to file-level positioning rather than to an
-// invented path, and it is what an enumeration that does not track carriers
+// invented path, and it is what an enumeration that does not track origins
 // leaves behind.
-type ConnectionCarrier struct {
-	// Kind is which surface drew the connection: one of [CarrierComponent],
-	// [CarrierAttachment] or [CarrierDeployment], and empty when nothing
+//
+// 🔴 This is not the attachment-provenance axis, and the two are never merged
+// into one field. A Feature attachment carries its own origin — whether it was
+// authored explicitly, contributed by the annotation-driven expansion, or a mix
+// of both — as a distinct string type in the IR's own package. Both axes answer
+// "which surface produced this", at different scopes, so they share the word;
+// they do not share a field. Their subjects differ: one reports on an attachment
+// filling a Component's declared slot, this one on an edge wired into a declared
+// socket. Different construction sites, different consumers, and a single field
+// would report on two unrelated declarations under one name with no way for a
+// reader to tell which.
+type ConnectionOrigin struct {
+	// Kind is which surface drew the connection: one of [OriginComponent],
+	// [OriginAttachment] or [OriginRelease], and empty when nothing
 	// recorded it.
 	Kind string
 
 	// Attachment is the attachment instance name the connection was drawn from,
-	// empty for every kind but [CarrierAttachment].
+	// empty for every kind but [OriginAttachment].
 	//
 	// It is the instance name and not the Feature type. Two attachments of one
-	// Feature type on one node are two carriers, each with its own dependency
+	// Feature type on one node are two origins, each with its own dependency
 	// block, so the type would name both.
 	Attachment string
 
-	// Site names where the carrier's own block was written. The zero site names
-	// no scope and no component, which is what a carrier nothing recorded has to
+	// Site names where the origin's own block was written. The zero site names
+	// no scope and no component, which is what an origin nothing recorded has to
 	// read as.
 	Site AuthoredSite
 
@@ -202,61 +213,66 @@ type ConnectionCarrier struct {
 	// [AuthoringDocumentAggregate] or [AuthoringDocumentRelease]. It selects the
 	// scope nesting the site path is spelled with, and it is carried rather than
 	// derived because the kind does not settle it: an attachment's dependency
-	// block is written in the application's scope tree when the developer
-	// declared it and in the deployment's when the operator did.
+	// block is written in the Aggregate's scope tree when the developer
+	// declared it and in the Release's when the operator did.
 	Document string
 
-	// SourceFile is the workspace-relative file the carrier's block was written
-	// in, empty when it has no single-file origin. It is the carrier's own file
-	// and not the consuming node's, because a connection an operator drew is
+	// SourceFile is the workspace-relative file the origin's block was written
+	// in, empty when it has no single file it came from. It is the origin's own
+	// file and not the consuming node's, because a connection an operator drew is
 	// written on a document the node was not.
 	SourceFile string
 }
 
-// The carrier kinds. The set is closed: a connection is drawn by a component's
-// own dependency block, by an attachment's, or by the deployment's edge surface,
+// The origin kinds. The set is closed: a connection is drawn by a component's
+// own dependency block, by an attachment's, or by the Release's edge surface,
 // and there is no fourth surface that draws one.
+//
+// 🔴 The three values are stable comparison tokens carried in fact coordinates
+// and compared across the constraint framework. They are not the identifiers'
+// to follow: renaming a constant here is safe, and changing the string it holds
+// is a behaviour change.
 const (
-	// CarrierComponent is a connection the consuming component's own dependency
+	// OriginComponent is a connection the consuming component's own dependency
 	// block drew.
-	CarrierComponent = "component"
+	OriginComponent = "component"
 
-	// CarrierAttachment is a connection an attachment's own dependency block
+	// OriginAttachment is a connection an attachment's own dependency block
 	// drew, wherever that attachment was declared.
-	CarrierAttachment = "attachment"
+	OriginAttachment = "attachment"
 
-	// CarrierDeployment is a connection the deployment's edge surface drew into
+	// OriginRelease is a connection the Release's edge surface drew into
 	// a declared-but-unbound socket.
-	CarrierDeployment = "deployment"
+	OriginRelease = "deployment"
 )
 
-// The authoring documents a carrier's own block can be written in.
+// The authoring documents an origin's own block can be written in.
 const (
-	// AuthoringDocumentAggregate is the application's own document, whose scopes
+	// AuthoringDocumentAggregate is the Aggregate's own document, whose scopes
 	// nest as subsystems.
 	AuthoringDocumentAggregate = "aggregate"
 
-	// AuthoringDocumentRelease is the deployment's document, whose scopes nest as
+	// AuthoringDocumentRelease is the Release's document, whose scopes nest as
 	// boundaries.
 	AuthoringDocumentRelease = "release"
 )
 
-// CarriedConnectionInstance is one connection together with the carrier that
+// OriginatedConnectionInstance is one connection together with the origin that
 // drew it: which node's which socket, under which alias, from which surface.
 //
-// It is the edge's identity with the carrier added, and the addition is what
-// makes it an identity at all — see [ConnectionCarrier] for the collision it
+// It is the edge's identity with the origin added, and the addition is what
+// makes it an identity at all — see [ConnectionOrigin] for the collision it
 // closes. The kind carries one coordinate, whose key is the whole of node,
-// carrier kind, carrier attachment, socket, alias and resolved target, so a
+// origin kind, origin attachment, socket, alias and resolved target, so a
 // connection is enumerated as one instance and the enumerator promises one order
 // over the whole set.
-type CarriedConnectionInstance struct {
+type OriginatedConnectionInstance struct {
 	// Node is the consumer the connection is drawn from.
 	Node NodeInstance
 
-	// Carrier is the surface that drew the connection, with the site that
+	// Origin is the surface that drew the connection, with the site that
 	// surface's own block was written at.
-	Carrier ConnectionCarrier
+	Origin ConnectionOrigin
 
 	// Socket is the dependency socket the connection wires.
 	Socket string
@@ -268,9 +284,9 @@ type CarriedConnectionInstance struct {
 	// Target is the node the connection resolves to, by the identity every keyed
 	// fact takes.
 	//
-	// It is part of the identity because two carriers writing one socket and one
+	// It is part of the identity because two origins writing one socket and one
 	// alias may name different targets, and each delivers against the target it
-	// named. A key without it would answer one carrier's question with the
+	// named. A key without it would answer one origin's question with the
 	// other's target — measured, not hypothetical: a component's own connection
 	// and an attachment's on the same socket and alias reach the graph as two
 	// connections pointing at two components.
@@ -325,9 +341,9 @@ type AuthoredCoordinate struct {
 //
 // It carries no axis. Which nesting a scope path belongs to is settled by what
 // is being named rather than by the site: an attachment's values are the
-// developer's and are written in the application's own scope tree, while its
+// developer's and are written in the Aggregate's own scope tree, while its
 // infrastructure configuration is the operator's and is written in the
-// deployment's. A field here would be a second answer to a question already
+// Release's. A field here would be a second answer to a question already
 // settled, and two answers can disagree.
 type AuthoredSite struct {
 	// ScopePath is the scope the entry was written in, joined the way that
@@ -369,7 +385,7 @@ type AttachmentLeaf struct {
 	Site AuthoredSite
 }
 
-// BoundaryComponentReferenceInstance is one component entry a deployment's
+// BoundaryComponentReferenceInstance is one component entry a Release's
 // boundary declares: the id the entry addresses in the flattened composition,
 // and where the entry itself was written.
 //
@@ -382,7 +398,7 @@ type AttachmentLeaf struct {
 // collisions and all, enumerates the placements instead — the two axes are
 // separate for exactly that reason. The
 // boundary therefore reaches the locator as provenance and keys nothing, the same
-// division [ConnectionCarrier] draws for a connection's carrier.
+// division [ConnectionOrigin] draws for a connection's origin.
 //
 // # Why the entry's own keys travel with it
 //
@@ -684,25 +700,25 @@ type EdgeEnumerator interface {
 	Edges() []EdgeInstance
 }
 
-// CarriedConnectionEnumerator supplies the carried-connection set: every
-// connection the graph holds, each paired with the carrier that drew it.
+// OriginatedConnectionEnumerator supplies the originated-connection set: every
+// connection the graph holds, each paired with the origin that drew it.
 //
 // It is a separate axis from [EdgeEnumerator] rather than a replacement for it,
 // and the two answer different questions. The edge axis is keyed by node, socket
 // and alias, which is the key the facts about a connection's resolved shape are
-// keyed by; this axis is keyed by that triple plus the carrier, which is what a
+// keyed by; this axis is keyed by that triple plus the origin, which is what a
 // rule reading a connection's AUTHORED content needs, because the authored
 // content of two connections sharing the triple is two different payloads.
 //
-// A carrier key naming more than one connection is possible and is the
+// An origin key naming more than one connection is possible and is the
 // implementor's to state: one attachment instance name declared at two scopes
 // draws one connection from each, and the graph records the two identically. The
 // fact keyed here answers for all of them rather than for the first, so no
 // authored payload goes unexamined.
-type CarriedConnectionEnumerator interface {
-	// CarriedConnections returns every connection with its carrier, in a
+type OriginatedConnectionEnumerator interface {
+	// OriginatedConnections returns every connection with its origin, in a
 	// deterministic order the implementation declares.
-	CarriedConnections() []CarriedConnectionInstance
+	OriginatedConnections() []OriginatedConnectionInstance
 }
 
 // BoundaryEnumerator supplies the boundary set.
@@ -713,7 +729,7 @@ type BoundaryEnumerator interface {
 }
 
 // BoundaryComponentReferenceEnumerator supplies the component entries the
-// deployment's boundaries declare: every entry, on both of the axes a boundary
+// Release's boundaries declare: every entry, on both of the axes a boundary
 // names components on, each carrying the id it addresses and the site it was
 // written at.
 //
@@ -726,12 +742,12 @@ type BoundaryEnumerator interface {
 // every entry of a document written without named boundaries lives, so a whole
 // authoring form would go unenumerated with nothing saying so.
 //
-// The set is what the deployment ASKED FOR and not what the composition holds. An
+// The set is what the Release ASKED FOR and not what the composition holds. An
 // entry addressing an id nothing answers to is enumerated exactly as one that
 // resolves is: a rule over such an entry is asked about it precisely because the
-// deployment wrote it.
+// Release wrote it.
 type BoundaryComponentReferenceEnumerator interface {
-	// BoundaryComponentReferences returns every component entry the deployment's
+	// BoundaryComponentReferences returns every component entry the Release's
 	// boundaries declare, in a deterministic order the implementation declares.
 	BoundaryComponentReferences() []BoundaryComponentReferenceInstance
 }
@@ -1074,7 +1090,7 @@ type BoundaryAttachmentTemplateFieldEnumerator interface {
 }
 
 // BoundaryPathTemplateFieldEnumerator supplies the path templates one boundary of
-// a deployment declares.
+// a Release declares.
 //
 // The axis is keyed per boundary and not per node for the reason the boundary's
 // own attachment axis is: such a template is written once on the scope and
@@ -1298,7 +1314,7 @@ type BoundaryAttachmentArtifactEnumerator interface {
 // were grouped at.
 //
 // Each value is the path a group assembles at, which is output rather than
-// something an author wrote — so the coordinate carries the deployment document
+// something an author wrote — so the coordinate carries the Release document
 // as its source file and the path contributes no locator segment. It is an
 // [AuthoredCoordinate] all the same, because that is how the file travels with
 // the value, and a subject that knows the file positions a finding at it rather
@@ -1397,7 +1413,7 @@ type BoundaryAttachmentEmittedPathEnumerator interface {
 	//
 	// Each name carries its own file, the FeatureRecipe the attachment binds, for
 	// the reason the node-carried attachment axis gives: that is the document an
-	// author edits, and it is neither the deployment the attachment was declared in
+	// author edits, and it is neither the Release the attachment was declared in
 	// nor any component's Recipe.
 	BoundaryAttachmentEmittedPaths(boundary string, attachment string) []AuthoredCoordinate
 }

@@ -601,7 +601,7 @@ type stepsOneToFourOutput struct {
 	// that scope's, so re-declaring them here would be a second set of fields
 	// holding one set of values, free to be filled from somewhere else.
 	//
-	// Among them are the per-attachment-leaf sites, the carriers paired with
+	// Among them are the per-attachment-leaf sites, the origins paired with
 	// each connection's authored delivery, the presentation of the finalised
 	// graph and the enumeration of it — each carried alongside the graph
 	// because the graph itself cannot answer what they answer.
@@ -1037,7 +1037,7 @@ type GraphScope struct {
 	// contribution won that leaf, settled while the cascade folded.
 	AttachmentSites ir.AttachmentSites
 
-	// CarriedConnections pairs every connection the composition drew with the
+	// OriginatedConnections pairs every connection the composition drew with the
 	// surface that drew it and with the delivery that connection dictates as
 	// authored. It is carried alongside the graph because the graph cannot
 	// answer either question: the graph records which attachment instance drew
@@ -1045,7 +1045,7 @@ type GraphScope struct {
 	// stores a delivery as one string per delivery key, so the authored
 	// distinction between a literal and a reference to a published key is gone
 	// from it.
-	CarriedConnections *ir.CarriedConnections
+	OriginatedConnections *ir.OriginatedConnections
 
 	// GraphView presents the finalised graph to a check as the named facts
 	// complete once the whole attachment cascade and the annotation-driven
@@ -1291,11 +1291,11 @@ func buildGraphCollectingFindings(
 				EmissionViolations: carried,
 			}
 
-			// The carriers and the authored deliveries, paired with the connection
+			// The origins and the authored deliveries, paired with the connection
 			// set the composition produced. Built from that set rather than from the
 			// authoring documents, so the connections a rule is invoked for are the
 			// connections the build actually drew.
-			gs.CarriedConnections = ir.NewCarriedConnections(graph, topoResult, resolveResult)
+			gs.OriginatedConnections = ir.NewOriginatedConnections(graph, topoResult, resolveResult)
 
 			// The presentation of the graph just finalised, extending the one the
 			// flattening produced. Built here because this is where every product it
@@ -1304,11 +1304,11 @@ func buildGraphCollectingFindings(
 			// than re-reading that stage's inputs, so building it anywhere else would
 			// mean producing a second answer to facts this one already answers.
 			gs.GraphView = ir.NewGraphView(
-				graph, topoResult.StageView, gs.AttachmentSites, gs.CarriedConnections)
+				graph, topoResult.StageView, gs.AttachmentSites, gs.OriginatedConnections)
 
 			// The enumeration of the same graph, built beside the presentation
 			// because it reads that presentation for the axes a fact already names.
-			// The deployment's file comes from the resolve result, which already
+			// The Release's file comes from the resolve result, which already
 			// carries it so downstream phases can build source locations without
 			// re-discovering it. The per-leaf sites come from the fold that produced
 			// them rather than being recovered here: which scope's contribution won
@@ -1317,7 +1317,7 @@ func buildGraphCollectingFindings(
 			// answered.
 			gs.GraphCoordinates = ir.NewGraphStageCoordinates(
 				graph, gs.GraphView, catalogLookup, releaseFileOf(gs.ResolveResult),
-				gs.AttachmentSites, gs.CarriedConnections,
+				gs.AttachmentSites, gs.OriginatedConnections,
 			)
 
 			if err := ctx.Err(); err != nil {

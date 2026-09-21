@@ -19,7 +19,7 @@ import (
 //
 // The rule it exercises is invoked once per connection together with the
 // surface that drew it, which is a coordinate no hand-assembled input carries:
-// the carrier is settled while the authoring tiers are read, so a fixture that
+// the origin is settled while the authoring tiers are read, so a fixture that
 // fabricated a connection would be proving the fixture's account of the
 // composition rather than the compiler's. Every row therefore writes documents
 // and compiles them.
@@ -245,7 +245,7 @@ spec:
 
 // writeAllowlistWorkspace lays the triad and the per-test catalog entries down
 // in a temp dir and returns the input that builds them. The triad sits at the
-// root so the deployment's pointers resolve beside it.
+// root so the Release's pointers resolve beside it.
 func writeAllowlistWorkspace(t *testing.T, aggregate string) pipelinetest.Input {
 	t.Helper()
 	dir := t.TempDir()
@@ -389,8 +389,8 @@ func TestBuildUsesInjectAllowlist(t *testing.T) {
 	}
 }
 
-// TestBuildUsesInjectAllowlistSeparatesEveryCarrierOnOneSocketAndAlias is the
-// proof the carrier coordinate exists for: one node, one socket and one alias
+// TestBuildUsesInjectAllowlistSeparatesEveryOriginOnOneSocketAndAlias is the
+// proof the origin coordinate exists for: one node, one socket and one alias
 // written three times, once by the component's own dependency block and once by
 // each of two attachments.
 //
@@ -401,7 +401,7 @@ func TestBuildUsesInjectAllowlist(t *testing.T) {
 // one passes unmentioned: the two attachment blocks are measured against the
 // Feature's declaration, which permits `arg` and not `env`, while the
 // component's block is measured against the Component's, which permits `env`.
-func TestBuildUsesInjectAllowlistSeparatesEveryCarrierOnOneSocketAndAlias(t *testing.T) {
+func TestBuildUsesInjectAllowlistSeparatesEveryOriginOnOneSocketAndAlias(t *testing.T) {
 	t.Parallel()
 
 	_, err := pipelinetest.BuildE(t, writeAllowlistWorkspace(t, allowlistAggregate(
@@ -429,14 +429,14 @@ func TestBuildUsesInjectAllowlistSeparatesEveryCarrierOnOneSocketAndAlias(t *tes
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("the halt must carry %s.\n"+
 				"INVARIANT: a connection is examined once per surface that drew it.\n"+
-				"CONSEQUENCE: a carrier the rule is never asked about raises nothing, "+
-				"which reads exactly like a carrier that was examined and approved.\ngot %q",
+				"CONSEQUENCE: an origin the rule is never asked about raises nothing, "+
+				"which reads exactly like an origin that was examined and approved.\ngot %q",
 				want, err.Error())
 		}
 	}
 	// The component's own block dictates `env`, which the Component's own `open`
-	// socket permits. Reporting it would mean the rule measured one carrier's
-	// dictation against another carrier's declaration.
+	// socket permits. Reporting it would mean the rule measured one origin's
+	// dictation against another origin's declaration.
 	if strings.Contains(err.Error(), ".spec.components.api.uses.open.primary") {
 		t.Errorf("the halt names the component's own dependency block, whose dictation its own socket "+
 			"permits; got %q", err.Error())

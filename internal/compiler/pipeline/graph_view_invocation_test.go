@@ -37,13 +37,13 @@ const (
 // The proofs below take it rather than assembling an axis of their own: an
 // enumeration a test writes is the test's account of what the graph holds, and
 // a rule asked about that account proves the account rather than the compiler.
-// The deployment's file is taken from the same place the production path takes
+// The Release's file is taken from the same place the production path takes
 // it, so a proof over this enumeration is a proof over the one the build uses.
 func coordinatesOf(t *testing.T, out *stepsOneToFourOutput, catalogLookup resolver.CatalogLookup) *ir.GraphStageCoordinates {
 	t.Helper()
 	coordinates := ir.NewGraphStageCoordinates(
 		out.IRGraph, out.GraphView, catalogLookup, releaseFileOf(out.ResolveResult),
-		out.AttachmentSites, out.CarriedConnections,
+		out.AttachmentSites, out.OriginatedConnections,
 	)
 	if coordinates == nil {
 		t.Fatal("the compilation produced no enumeration of the finalised graph; no rule over it can be invoked")
@@ -257,7 +257,7 @@ func componentKeysIn(t *testing.T, path string) map[string]bool {
 // compiles a real workspace, takes the presentation the pipeline itself built, and
 // invokes the accessor at every coordinate the framework's own traversal reaches.
 //
-// The deployment is the one nesting components under boundaries and also attaching
+// The Release is the one nesting components under boundaries and also attaching
 // a feature to a boundary itself, so both answers occur in one compilation: an
 // entry keyed under a component, and an entry keyed under none. A fixture carrying
 // only the first would pass an accessor that returned the node's identifier
@@ -273,7 +273,7 @@ func TestGraphPresentationAnswersTheAuthoredComponentOfAnAttachmentLeaf(t *testi
 
 	authored := componentKeysIn(t, locatorBoundariedReleasePath)
 	if len(authored) == 0 {
-		t.Fatal("the deployment document holds no component key at all, so every membership check below " +
+		t.Fatal("the Release document holds no component key at all, so every membership check below " +
 			"would fail for a reason that has nothing to do with the fact under proof")
 	}
 
@@ -295,7 +295,7 @@ func TestGraphPresentationAnswersTheAuthoredComponentOfAnAttachmentLeaf(t *testi
 				}
 				named++
 				if !authored[component] {
-					t.Errorf("the view answers component %q for the leaf at %s, and the deployment "+
+					t.Errorf("the view answers component %q for the leaf at %s, and the Release "+
 						"holds no component under that key.\n"+
 						"INVARIANT: this fact names the key an author can edit, so it is a key the document contains.\n"+
 						"CONSEQUENCE: a reader sent to a component nobody wrote is worse served than one sent nowhere, "+
@@ -321,7 +321,7 @@ func TestGraphPresentationAnswersTheAuthoredComponentOfAnAttachmentLeaf(t *testi
 	}
 	if unnamed == 0 {
 		t.Errorf("every leaf was answered with a component, so this compilation cannot distinguish the " +
-			"fact from one that answers unconditionally — yet the deployment attaches a feature to a " +
+			"fact from one that answers unconditionally — yet the Release attaches a feature to a " +
 			"boundary itself, which names no component")
 	}
 	t.Logf("%d leaf/leaves keyed under a component, %d written scope-wide", named, unnamed)

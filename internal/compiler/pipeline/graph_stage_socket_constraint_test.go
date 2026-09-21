@@ -459,7 +459,7 @@ func TestTheGraphStageRulesReadTheCallersCancellationSignal(t *testing.T) {
 // exactly what a satisfied rule reports.
 func TestTheGraphStageEnumerationRefusesAnAbsentPresentation(t *testing.T) {
 	out := compileFixture(t, readAggregate(t))
-	if ir.NewGraphStageCoordinates(out.IRGraph, nil, fixtureCatalog(t), "", out.AttachmentSites, out.CarriedConnections) != nil {
+	if ir.NewGraphStageCoordinates(out.IRGraph, nil, fixtureCatalog(t), "", out.AttachmentSites, out.OriginatedConnections) != nil {
 		t.Error("an enumeration was built without a view to read facts from")
 	}
 }

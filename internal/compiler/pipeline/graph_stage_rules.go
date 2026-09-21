@@ -98,7 +98,7 @@ func runGraphStageRules(
 	// has drawn by the time the graph is final, so the earlier reading would refuse
 	// a reference that does resolve and would miss one drawn later. Both are asked
 	// over the whole connection set, so a connection an attachment projected or the
-	// deployment wired is refused exactly as a component's own is, and every
+	// Release wired is refused exactly as a component's own is, and every
 	// offending connection is reported in one build rather than the first.
 	violations, err = constraint.RunOnEdges(
 		ctx.Err,
@@ -122,7 +122,7 @@ func runGraphStageRules(
 	}
 	out.Violations = append(out.Violations, violations...)
 
-	// No deployment entry redirects a connection the document that drew it
+	// No Release entry redirects a connection the document that drew it
 	// already targeted, evaluated once per connection. Both targets are read as
 	// written rather than as resolved: a connection naming a module's published
 	// alias resolves to the component id behind it, so a comparison against the
@@ -198,7 +198,7 @@ func runGraphStageRules(
 	// attachment names and each name's resolved type, so an attachment
 	// contributed at a scope the node inherits from satisfies a mandate exactly as
 	// one written on the node does — the authored block alone is empty for
-	// precisely the deployments that rely on sharing. A mandate whose declaration
+	// precisely the Releases that rely on sharing. A mandate whose declaration
 	// cannot be evaluated is not tested here: it is reported at the stage its own
 	// rule is asked at, so a broken declaration never reads as a satisfied
 	// requirement and never as an absent attachment either. The signal is read
@@ -274,7 +274,7 @@ func runGraphStageRules(
 	// green. The keys are the ones the connections DELIVER rather than the ones
 	// their authors wrote, because a delivery that reaches no consumer takes no
 	// key and collides with nothing. The connection set is the graph's own, so a
-	// connection an attachment projected or the deployment wired is in range
+	// connection an attachment projected or the Release wired is in range
 	// exactly as the component's own is. The signal is read once per connection,
 	// which is the granularity the traversal promises, and each finding is
 	// positioned at the delivery entry the author can change.
@@ -292,20 +292,20 @@ func runGraphStageRules(
 	// No delivery entry on any connection reads from a key the component the
 	// connection points at does not publish, evaluated once per connection the
 	// composition drew together with the surface that drew it. The equivalent
-	// reading earlier in the build is answered from the application's own
+	// reading earlier in the build is answered from the Aggregate's own
 	// dependency block, which holds no entry for a connection an attachment
-	// contributed or the deployment wired — and a rule presented no subject
+	// contributed or the Release wired — and a rule presented no subject
 	// reports exactly what a rule invoked and satisfied reports, so the same
 	// authoring mistake halted on one surface and reached rendered output on the
 	// others. The delivery it reads is the one the author wrote rather than the
 	// one the graph stores, because the graph stores a literal and a reference to
 	// a published key in the same shape. The signal is read once per connection,
 	// which is the granularity the traversal promises.
-	violations, err = constraint.RunOnCarriedConnections(
+	violations, err = constraint.RunOnOriginatedConnections(
 		ctx.Err,
 		coordinates,
 		out.GraphView,
-		resolver.CarriedConnectionInjectReferenceIsPublished,
+		resolver.OriginatedConnectionInjectReferenceIsPublished,
 	)
 	if err != nil {
 		return err
@@ -324,11 +324,11 @@ func runGraphStageRules(
 	// the graph stores, because the conversion into the graph drops a payload it
 	// cannot express as one string per delivery key. The signal is read once per
 	// connection, which is the granularity the traversal promises.
-	violations, err = constraint.RunOnCarriedConnections(
+	violations, err = constraint.RunOnOriginatedConnections(
 		ctx.Err,
 		coordinates,
 		out.GraphView,
-		ir.CarriedConnectionDeliveryIsSocketPermitted,
+		ir.OriginatedConnectionDeliveryIsSocketPermitted,
 	)
 	if err != nil {
 		return err
@@ -351,7 +351,7 @@ func runGraphStageRules(
 	return nil
 }
 
-// releaseFileOf reads the deployment's file off the resolve result, empty when
+// releaseFileOf reads the Release's file off the resolve result, empty when
 // no resolve result is in hand.
 //
 // It is read from there rather than from the pipeline's own inputs because the

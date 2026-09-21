@@ -91,12 +91,12 @@ func TestADeliveryKeyTheTargetDoesNotPublishIsRefusedWhereverItWasWritten(t *tes
 			locator: ".spec.subsystems.tier.features.shared_backend.uses.backend.primary",
 		},
 		{
-			name:    "an attachment the deployment declared against one component",
+			name:    "an attachment the Release declared against one component",
 			variant: "release-attached",
 			locator: ".spec.boundaries.cluster.components.api.features.shared_backend.uses.backend.primary",
 		},
 		{
-			name:    "an attachment the deployment declared for a whole boundary",
+			name:    "an attachment the Release declared for a whole boundary",
 			variant: "boundary-attached",
 			locator: ".spec.boundaries.cluster.features.shared_backend.uses.backend.primary",
 		},
@@ -175,7 +175,7 @@ func TestALiteralDeliveryOnAContributedConnectionIsNotRefused(t *testing.T) {
 	}
 }
 
-// TestEachCarrierOnOneSocketAndAliasIsRefusedSeparately is the ambiguity proof
+// TestEachOriginOnOneSocketAndAliasIsRefusedSeparately is the ambiguity proof
 // at the diagnostic level.
 //
 // The workspace writes one socket and one alias three times on one node: legally
@@ -187,7 +187,7 @@ func TestALiteralDeliveryOnAContributedConnectionIsNotRefused(t *testing.T) {
 // Two findings, each naming its own attachment and its own mistyped key, is
 // therefore the assertion — and the component's own legal delivery drawing no
 // finding is the third of the three separations rather than an absence.
-func TestEachCarrierOnOneSocketAndAliasIsRefusedSeparately(t *testing.T) {
+func TestEachOriginOnOneSocketAndAliasIsRefusedSeparately(t *testing.T) {
 	t.Parallel()
 
 	_, err := buildDeliveryOrigin(t, "three-way-typo")
@@ -213,24 +213,24 @@ func TestEachCarrierOnOneSocketAndAliasIsRefusedSeparately(t *testing.T) {
 		}
 	}
 	// The component's own delivery is legal and must not appear. A finding
-	// against it would mean the rule read one carrier's block for another.
+	// against it would mean the rule read one origin's block for another.
 	if strings.Contains(refusal, "OWN_HOST") {
 		t.Errorf("the refusal names the component's own delivery, which is legal; got: %s", refusal)
 	}
 }
 
-// TestTwoCarriersNamingDifferentTargetsAreEachJudgedAgainstTheirOwn closes the
+// TestTwoOriginsNamingDifferentTargetsAreEachJudgedAgainstTheirOwn closes the
 // hole a key without the resolved target leaves.
 //
 // The component's own dependency block and an attachment's write one socket and
 // one alias and name DIFFERENT components. Each delivers against the component it
 // named, so a rule reading the target back by the connection triple would measure
-// one carrier's delivery against the other's published set — refusing legal
+// one origin's delivery against the other's published set — refusing legal
 // authoring, or approving a mistake, depending on which way the mismatch fell.
 //
 // Both deliveries here are legal against their own target and neither is legal
 // against the other's, which is what makes the green discriminating.
-func TestTwoCarriersNamingDifferentTargetsAreEachJudgedAgainstTheirOwn(t *testing.T) {
+func TestTwoOriginsNamingDifferentTargetsAreEachJudgedAgainstTheirOwn(t *testing.T) {
 	t.Parallel()
 
 	artifacts, err := buildDeliveryOrigin(t, "split-target")
@@ -260,7 +260,7 @@ func TestTwoCarriersNamingDifferentTargetsAreEachJudgedAgainstTheirOwn(t *testin
 // scope draws one connection from each block, and the composition records the two
 // identically — same node, same socket, same alias, same attachment instance,
 // same target. So no key derived from what the composition records can separate
-// them, and the fact keyed by that carrier answers with EVERY payload the key
+// them, and the fact keyed by that origin answers with EVERY payload the key
 // names rather than the first.
 //
 // The fixture writes a legal delivery in each block. Both reaching the output is
