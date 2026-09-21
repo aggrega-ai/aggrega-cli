@@ -255,9 +255,9 @@ func TestRecordDeprecationFollowsArtifactIdentity(t *testing.T) {
 // caller's record would address one withdrawal between them.
 func TestWriteOmitsAnAbsentWithdrawalEntirely(t *testing.T) {
 	plain := &Trust{Version: CurrentVersion, Plugins: []TrustedPlugin{current("linter/probe", "sha256:a")}}
-	out, err := marshalCanonical(plain)
+	out, err := CanonicalBytes(plain)
 	if err != nil {
-		t.Fatalf("marshalCanonical: %v", err)
+		t.Fatalf("CanonicalBytes: %v", err)
 	}
 	if body := bodyOf(string(out)); strings.Contains(body, "deprecation") {
 		t.Fatalf("an entry carrying no withdrawal must emit no withdrawal key;\ngot:\n%s", body)

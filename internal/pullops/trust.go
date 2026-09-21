@@ -8,6 +8,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/dryrunreport"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/embedded"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
@@ -279,9 +280,29 @@ func holdVerdictPluginsToTheirRecord(releasePath string, resolutions []verdictPl
 	return nil
 }
 
+// verdictTrustOutcome is what a pull works out about the record beside the
+// lockfile, before anything is put on disk: the record as this run would leave
+// it, how many identities it covers, whether its content moved at all, and
+// whether there was no record before this run.
+//
+// Working it out and putting it there are separate steps, for the reason the
+// recipe freeze and the lockfile write are split the same way: a run asked to
+// report what it would write has to reach the same answer the writing run
+// reaches, and a second derivation of that answer would agree today and diverge
+// the first time either moved.
+type verdictTrustOutcome struct {
+	Trust      *pluginstrust.Trust
+	Recordable int
+	Changed    bool
+	Created    bool
+}
+
 // recordVerdictPluginTrust writes the plugin identities resolved for a Release's
 // verdict-returning attachments into `plugins-trust.yaml` beside that Release's
 // lockfile, and returns how many identities the record covers.
+//
+// It is [verdictTrustAfterPull] plus the write and the creation notice, which is
+// what [reportVerdictPluginTrust] is without them.
 //
 // Nothing to record and no record yet means no file. A workspace that attaches no
 // governance verdict plugin and no linter plugin resolves no identities, so with
@@ -359,11 +380,57 @@ func holdVerdictPluginsToTheirRecord(releasePath string, resolutions []verdictPl
 // configured attachment is recorded like any other. That falls out of asking the
 // binary what it carries rather than deciding it from a build flag.
 func recordVerdictPluginTrust(releasePath string, attachments []workspaceconfig.VerdictAttachment, resolutions []verdictPluginResolution, mode catalog.PinReuseMode, diagOut io.Writer) (int, error) {
+	outcome, err := verdictTrustAfterPull(releasePath, attachments, resolutions, mode)
+	if err != nil {
+		return 0, err
+	}
+	if !outcome.Changed {
+		return outcome.Recordable, nil
+	}
+	path := pluginstrust.PathFor(releasePath)
+	if err := pluginstrust.Write(path, outcome.Trust); err != nil {
+		return 0, err
+	}
+	if outcome.Created {
+		fmt.Fprintf(diagOut, "  notice: created %s, recording the plugin identity resolved for each attachment that returns an accept-or-reject verdict; "+
+			"commit it alongside the lockfile, because one shared record is what lets every build hold those attachments to the same plugin identities\n", path)
+	}
+	return outcome.Recordable, nil
+}
+
+// reportVerdictPluginTrust is [recordVerdictPluginTrust] for a run that reports
+// rather than writes: it returns the bytes the write would have put beside the
+// lockfile, and nil where that write would not have happened at all — the same
+// question the write asks itself, answered from the same outcome.
+//
+// The creation notice is not emitted here, and that is not an omission: it
+// announces a file that now exists, and on a reporting run none was created. The
+// record's own path appears in the report instead, which is where a reader of a
+// preview looks for it.
+func reportVerdictPluginTrust(releasePath string, attachments []workspaceconfig.VerdictAttachment, resolutions []verdictPluginResolution, mode catalog.PinReuseMode) (int, *dryrunreport.File, error) {
+	outcome, err := verdictTrustAfterPull(releasePath, attachments, resolutions, mode)
+	if err != nil {
+		return 0, nil, err
+	}
+	if !outcome.Changed {
+		return outcome.Recordable, nil, nil
+	}
+	out, merr := pluginstrust.CanonicalBytes(outcome.Trust)
+	if merr != nil {
+		return 0, nil, merr
+	}
+	return outcome.Recordable, &dryrunreport.File{Path: pluginstrust.PathFor(releasePath), Content: out}, nil
+}
+
+// verdictTrustAfterPull works out the record this pull leaves behind, and puts
+// nothing on disk. Every rule the doc comment on [recordVerdictPluginTrust]
+// states lives here; that function is this one plus the write.
+func verdictTrustAfterPull(releasePath string, attachments []workspaceconfig.VerdictAttachment, resolutions []verdictPluginResolution, mode catalog.PinReuseMode) (verdictTrustOutcome, error) {
 	recordable := recordableVerdictResolutions(resolutions)
 	path := pluginstrust.PathFor(releasePath)
 	trust, created, err := pluginstrust.LoadOrStart(path)
 	if err != nil {
-		return 0, err
+		return verdictTrustOutcome{}, err
 	}
 
 	// Whether anything is written at all is decided by whether the record's content
@@ -412,17 +479,7 @@ func recordVerdictPluginTrust(releasePath string, attachments []workspaceconfig.
 			changed = true
 		}
 	}
-	if !changed {
-		return len(recordable), nil
-	}
-	if err := pluginstrust.Write(path, trust); err != nil {
-		return 0, err
-	}
-	if created {
-		fmt.Fprintf(diagOut, "  notice: created %s, recording the plugin identity resolved for each attachment that returns an accept-or-reject verdict; "+
-			"commit it alongside the lockfile, because one shared record is what lets every build hold those attachments to the same plugin identities\n", path)
-	}
-	return len(recordable), nil
+	return verdictTrustOutcome{Trust: trust, Recordable: len(recordable), Changed: changed, Created: created}, nil
 }
 
 // reresolvedByThisPull reports whether this pull re-resolves the attachment

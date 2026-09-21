@@ -781,15 +781,21 @@ func TestVerdictTrustRecordHasOneComparisonSite(t *testing.T) {
 			"could adopt what the first refused, and which one ran would depend on the path taken", got)
 	}
 
-	// The reduction both sides read: neither the comparison nor the write may
-	// filter the resolutions for itself, or the two could consider different sets.
+	// The reduction both sides read: neither the comparison nor the decision about
+	// what the record becomes may filter the resolutions for itself, or the two
+	// could consider different sets.
+	//
+	// The second reader is the decision rather than the write, and that is the
+	// stronger form of the same property: a run that writes and a run that reports
+	// what it would write both reach it through that one site, so a reporting path
+	// cannot become a third reader with a set of its own.
 	readers := make([]string, 0, len(callers["pullops.recordableVerdictResolutions"]))
 	for name := range callers["pullops.recordableVerdictResolutions"] {
 		readers = append(readers, name)
 	}
 	sort.Strings(readers)
-	if strings.Join(readers, ",") != "pullops.holdVerdictPluginsToTheirRecord,pullops.recordVerdictPluginTrust" {
-		t.Errorf("callers of recordableVerdictResolutions = %v; want exactly [pullops.holdVerdictPluginsToTheirRecord pullops.recordVerdictPluginTrust]", readers)
+	if strings.Join(readers, ",") != "pullops.holdVerdictPluginsToTheirRecord,pullops.verdictTrustAfterPull" {
+		t.Errorf("callers of recordableVerdictResolutions = %v; want exactly [pullops.holdVerdictPluginsToTheirRecord pullops.verdictTrustAfterPull]", readers)
 	}
 }
 

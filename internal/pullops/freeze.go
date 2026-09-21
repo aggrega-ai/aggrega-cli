@@ -6,6 +6,7 @@ package pullops
 import (
 	"os"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/dryrunreport"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
@@ -35,8 +36,22 @@ import (
 // resolution-time bytes captured before it. The overlay is keyed strictly by URI
 // so a lockfile entity of another kind that happens to share the recipe's bare
 // name is never touched.
-func freezeRecipePins(lazyView *catalog.LazyLookup, entities []closure.ResolvedRef, srcArts []closure.SourceArtifact) (map[string]string, error) {
+//
+// # Reporting instead of writing
+//
+// With reportOnly set, every recipe file is left exactly as it was and the bytes
+// the freeze would have put there are returned alongside the digests, one entry
+// per recipe whose bytes would MOVE — a recipe the freeze would leave
+// byte-identical is not reported, because a report of it would name a file
+// nothing was going to write.
+//
+// The digests are identical either way, and that is what makes the reported run
+// describe the writing one: the post-freeze content digest is the digest of the
+// post-freeze bytes, and those bytes are what the splice produces whether or not
+// anybody puts them on disk.
+func freezeRecipePins(lazyView *catalog.LazyLookup, entities []closure.ResolvedRef, srcArts []closure.SourceArtifact, reportOnly bool) (map[string]string, []dryrunreport.File, error) {
 	postFreezeRecipeDigests := map[string]string{}
+	var reported []dryrunreport.File
 	srcByURI := map[string][]types.SourceDigest{}
 	for _, sa := range srcArts {
 		sd := types.SourceDigest{
@@ -55,6 +70,15 @@ func freezeRecipePins(lazyView *catalog.LazyLookup, entities []closure.ResolvedR
 
 	loader := lazyView.ClosureRecipeLoader()
 	seen := map[string]bool{}
+	// Several entity URIs can resolve to ONE recipe file — a recipe referenced by
+	// its bare name and by its provider-qualified one is two entities over one
+	// document — so the reported set is deduplicated by path as well as by URI.
+	// The writing path needs no such guard, and that is why the duplicate is
+	// invisible there: the second freeze of a file the first one has already
+	// written finds its pins equal and writes nothing. A reporting run writes
+	// nothing either time, so both passes find the file unfrozen and would name it
+	// twice.
+	reportedPaths := map[string]bool{}
 	for _, ent := range entities {
 		if seen[ent.URI] {
 			continue
@@ -66,18 +90,15 @@ func freezeRecipePins(lazyView *catalog.LazyLookup, entities []closure.ResolvedR
 			if !ok {
 				continue
 			}
-			artPins, aerr := recipepin.ArtifactPinsForRecipe(r.Spec.Artifacts, "Recipe", r.Metadata.Name)
-			if aerr != nil {
-				return nil, aerr
+			d, file, ferr := freezeOneRecipe(path, r.Spec.Artifacts, "Recipe", r.Metadata.Name, srcByURI[ent.URI], reportOnly)
+			if ferr != nil {
+				return nil, nil, ferr
 			}
-			if _, werr := recipepin.WritePins(path, srcByURI[ent.URI], artPins); werr != nil {
-				return nil, werr
+			if file != nil && !reportedPaths[path] {
+				reportedPaths[path] = true
+				reported = append(reported, *file)
 			}
 			if !uriShadowedByComponentOrFeature(lazyView, ent.URI) {
-				d, derr := fileContentDigest(path)
-				if derr != nil {
-					return nil, derr
-				}
 				postFreezeRecipeDigests[ent.URI] = d
 			}
 			continue
@@ -87,24 +108,66 @@ func freezeRecipePins(lazyView *catalog.LazyLookup, entities []closure.ResolvedR
 			if !ok {
 				continue
 			}
-			artPins, aerr := recipepin.ArtifactPinsForRecipe(fr.Spec.Artifacts, "FeatureRecipe", fr.Metadata.Name)
-			if aerr != nil {
-				return nil, aerr
+			d, file, ferr := freezeOneRecipe(path, fr.Spec.Artifacts, "FeatureRecipe", fr.Metadata.Name, srcByURI[ent.URI], reportOnly)
+			if ferr != nil {
+				return nil, nil, ferr
 			}
-			if _, werr := recipepin.WritePins(path, srcByURI[ent.URI], artPins); werr != nil {
-				return nil, werr
+			if file != nil && !reportedPaths[path] {
+				reportedPaths[path] = true
+				reported = append(reported, *file)
 			}
 			if !uriShadowedByComponentOrFeature(lazyView, ent.URI) {
-				d, derr := fileContentDigest(path)
-				if derr != nil {
-					return nil, derr
-				}
 				postFreezeRecipeDigests[ent.URI] = d
 			}
 			continue
 		}
 	}
-	return postFreezeRecipeDigests, nil
+	return postFreezeRecipeDigests, reported, nil
+}
+
+// freezeOneRecipe freezes one writable recipe file's intrinsic content pins and
+// returns the file's post-freeze content digest, plus the bytes a reporting run
+// would hand back for it — nil where the file would not move, and always nil on a
+// writing run.
+//
+// The two kinds reach it through one body. They differ in the loader that found
+// them and in the word their diagnostics name them by, and in nothing the freeze
+// itself does — so a second copy of this would be two places for a reporting run
+// to stop agreeing with a writing one.
+//
+// The digest is taken from the on-disk bytes on a writing run and from the
+// would-be bytes on a reporting one. Those are the same bytes: a writing run put
+// exactly what the splice produced on disk a moment earlier.
+//
+// It is computed for every recipe it freezes, including one whose URI also
+// resolves to a Component or a Feature and whose digest the caller therefore
+// discards. That costs one read of a file the freeze has just touched, and it
+// buys the caller being the only place that knows about the shadowing rule —
+// which is where that rule belongs, since it is a fact about what the LOCKFILE
+// records rather than about what the freeze does to a file.
+func freezeOneRecipe(path string, artifacts types.OrderedMap[types.ArtifactEntry], entityKind, entityName string, srcPins []types.SourceDigest, reportOnly bool) (string, *dryrunreport.File, error) {
+	artPins, aerr := recipepin.ArtifactPinsForRecipe(artifacts, entityKind, entityName)
+	if aerr != nil {
+		return "", nil, aerr
+	}
+	if reportOnly {
+		out, rewrites, perr := recipepin.PreviewPins(path, srcPins, artPins)
+		if perr != nil {
+			return "", nil, perr
+		}
+		if !rewrites {
+			return digest.ContentDigest(out), nil, nil
+		}
+		return digest.ContentDigest(out), &dryrunreport.File{Path: path, Content: out}, nil
+	}
+	if _, werr := recipepin.WritePins(path, srcPins, artPins); werr != nil {
+		return "", nil, werr
+	}
+	d, derr := fileContentDigest(path)
+	if derr != nil {
+		return "", nil, derr
+	}
+	return d, nil, nil
 }
 
 // uriShadowedByComponentOrFeature reports whether a recipe URI also resolves to a

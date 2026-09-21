@@ -21,8 +21,15 @@ import (
 // interactive AND the pull-progress surface is not silenced (--quiet). A
 // non-interactive pull (CI, a pipe) or a --quiet pull never prompts — the
 // ambiguity halts loudly instead, so the pull never hangs waiting on input.
+//
+// A dry run is excluded for a different reason than the other three, and it is
+// the reason the exclusion is not optional: answering the prompt WRITES the
+// chosen binding into the workspace configuration, which is a file the run has
+// just promised to leave alone. Left unattached, the ambiguity halts naming what
+// to supply — the same loud outcome every caller with nobody watching gets, and
+// a better one than a preview that edited a config file on its way past.
 func providerBindingHelperEligible(cfg pullConfig) bool {
-	return fileTerminal(os.Stderr) && isTerminal() && !cfg.diag.quiet
+	return fileTerminal(os.Stderr) && isTerminal() && !cfg.diag.quiet && !cfg.DryRun
 }
 
 // runProviderBindingHelper prompts the operator to choose which provider plugin

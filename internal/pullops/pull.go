@@ -4,6 +4,7 @@
 package pullops
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -17,6 +18,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/parse"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
+	"github.com/aggrega-ai/aggrega-cli/internal/dryrunreport"
 	"github.com/aggrega-ai/aggrega-cli/internal/pluginfetchverify"
 	"github.com/aggrega-ai/aggrega-cli/internal/registryindex"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
@@ -145,6 +147,19 @@ type Config struct {
 	// Verify checks the existing lockfile against the current resolution without
 	// writing anything at all, and reports what the lockfile records.
 	Verify bool
+
+	// DryRun computes everything the run would put on disk and puts none of it
+	// there: the files it would have written come back in Result.DryRunFiles, each
+	// with the bytes it would have held, and the lockfile, the recipe files and the
+	// plugin trust record are left exactly as they were.
+	//
+	// It is scoped to the files the run PRODUCES and says nothing about the
+	// content-addressed cache, which fills exactly as it would otherwise — the
+	// resolution is what discovers the answer, so a run that declined to acquire
+	// would have nothing to report. That is the same shape a rendered build's dry
+	// run carries, and it is what makes the report describe a real effect rather
+	// than an empty one.
+	DryRun bool
 
 	// IncludePrerelease is accepted and not yet honored, so a caller that passes
 	// it keeps working when it starts having an effect.
@@ -278,6 +293,20 @@ type Result struct {
 	// and the references that were not reached — which is why the failure is
 	// handed over rather than only written to a diagnostic stream.
 	ExternalInputDiscovery error
+
+	// DryRunFiles is what a run asked to report rather than write would have put
+	// on disk: one entry per file whose bytes would MOVE, carrying the path and the
+	// content it would have held, ordered by path. Empty on every other run, which
+	// writes those files instead.
+	//
+	// It carries the material rather than a rendered transcript, for the reason the
+	// rest of this result does: how a report reads belongs to the surface a reader
+	// is looking at, and a surface answering in a structured payload renders no
+	// transcript at all.
+	//
+	// A file the run would leave byte-identical is absent, because naming it would
+	// tell a reader that a write was coming for it.
+	DryRunFiles []dryrunreport.File
 }
 
 // requireWorkspace returns the workspace a caller threaded in from its own
@@ -399,6 +428,10 @@ func stopped(ctx context.Context) error {
 // Loads workspace config + Release + Manifest + Aggregate, walks the catalog and
 // source closures, and writes the per-Release lockfile.
 //
+// Config.DryRun turns every one of those writes into a report: the run is the
+// same resolution, and the files it would have put on disk come back in
+// Result.DryRunFiles instead of landing there.
+//
 // Returns wrapped errors on workspace-config validation failure,
 // Release/Manifest/Aggregate load failure, closure walk failure
 // (typically a missing catalog entity surfaced by closure.ErrUnresolvableURI),
@@ -414,6 +447,11 @@ func stopped(ctx context.Context) error {
 // the acquisition render; and ahead of the lockfile write. A withdrawal at any
 // of them leaves the pins that were already on disk exactly as they were, which
 // is the same outcome a run that failed before the write produces.
+//
+// The five points are the same on a reporting run, which has no write for them
+// to protect. They are kept rather than skipped because a check that fires in one
+// mode only is one whose other mode nobody exercises, and because a caller that
+// withdrew should stop at the point it named whatever it asked the run to do.
 //
 // The first half of that is what the five points alone cannot give. A check
 // between steps stops the NEXT step; it does nothing to a fetch already in
@@ -895,6 +933,10 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	// about to acquire, so anything reading the file in between would read a
 	// closure this run never produced.
 	var assembled *lockfile.Lockfile
+	// The files a reporting run would have written, collected as the run reaches
+	// each of them and sorted by path once the set is complete. Empty on a writing
+	// run: each write below performs itself instead of reporting.
+	var reported []dryrunreport.File
 	// The configuration the graph below is built against: this workspace's own,
 	// with the transform-role attachments replaced by the reconstruction of the
 	// records this pass just resolved.
@@ -1090,13 +1132,21 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 			// recipe file, and a recipe file is authored content a caller cannot take
 			// back. Everything above it is fetching and computing, which a withdrawn
 			// caller simply discards.
+			//
+			// The check is kept on a reporting run, which writes nothing and has
+			// therefore nothing to protect here. It is one comparison, and a guard
+			// that fires only in one mode is a guard whose other mode nobody
+			// exercises — so a caller that has withdrawn stops at the same point
+			// either way, and the reason it stops does not depend on what it asked
+			// for.
 			if err := stopped(ctx); err != nil {
 				return err
 			}
-			postFreezeRecipeDigests, err := freezeRecipePins(lazyView, cl.Entities, sourceArtifacts)
+			postFreezeRecipeDigests, frozenFiles, err := freezeRecipePins(lazyView, cl.Entities, sourceArtifacts, cfg.DryRun)
 			if err != nil {
 				return fmt.Errorf("freeze recipe pins: %w", err)
 			}
+			reported = append(reported, frozenFiles...)
 
 			lf := buildLockfile(cfg.ReleasePath, cl, cfg.Toolchain, resolvedBindings, mutatorAttachments, verdictInputs, postFreezeRecipeDigests)
 			// Carry forward each unchanged pin's recorded deprecation fact from the
@@ -1183,11 +1233,22 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 		return Result{}, err
 	}
 	if discoveryErr != nil {
-		reportExternalInputDiscoveryFailure(cfg.DiagOut, lockfilePath, len(pins), discoveryErr)
+		reportExternalInputDiscoveryFailure(cfg.DiagOut, lockfilePath, len(pins), cfg.DryRun, discoveryErr)
 	}
 
 	report.phase(PhaseLockfile)
-	if err := lockfile.WriteLockfilePreservingTimestamp(lockfilePath, assembled); err != nil {
+	if cfg.DryRun {
+		// The bytes come from the write's own serializer, through the timestamp rule
+		// the write applies, so what is reported here is what the write would put
+		// there rather than a second rendering of the same lockfile.
+		want, merr := lockfile.CanonicalBytesPreservingTimestamp(lockfilePath, assembled)
+		if merr != nil {
+			return Result{}, fmt.Errorf("report lockfile: %w", merr)
+		}
+		if f := reportedWrite(lockfilePath, want); f != nil {
+			reported = append(reported, *f)
+		}
+	} else if err := lockfile.WriteLockfilePreservingTimestamp(lockfilePath, assembled); err != nil {
 		return Result{}, fmt.Errorf("write lockfile: %w", err)
 	}
 	// Record the identity resolved for each verdict-returning attachment, beside
@@ -1201,10 +1262,29 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	// which is what gets recorded; the attachments say what the configuration
 	// still names, which is what keeps an entry from being dropped — and a
 	// detached plugin is precisely the case with an entry and no resolution.
-	trustedCount, err := recordVerdictPluginTrust(cfg.ReleasePath, wsCfg.VerdictAttachments(), verdictResolutions, pinMode, cfg.DiagOut)
-	if err != nil {
-		return Result{}, err
+	var trustedCount int
+	if cfg.DryRun {
+		count, trustFile, terr := reportVerdictPluginTrust(cfg.ReleasePath, wsCfg.VerdictAttachments(), verdictResolutions, pinMode)
+		if terr != nil {
+			return Result{}, terr
+		}
+		trustedCount = count
+		if trustFile != nil {
+			reported = append(reported, *trustFile)
+		}
+	} else {
+		count, terr := recordVerdictPluginTrust(cfg.ReleasePath, wsCfg.VerdictAttachments(), verdictResolutions, pinMode, cfg.DiagOut)
+		if terr != nil {
+			return Result{}, terr
+		}
+		trustedCount = count
 	}
+	// Sorted by path once the set is complete, rather than left in the order the
+	// run reached each file. The closure's entity order is not a promise, so a
+	// report carrying the collection order would reshuffle between two runs over
+	// identical input — and a report of what a run would write has to be as stable
+	// as what it would write.
+	sort.Slice(reported, func(i, j int) bool { return reported[i].Path < reported[j].Path })
 	return Result{
 		LockfilePath:           lockfilePath,
 		Closure:                cl,
@@ -1212,7 +1292,24 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 		ExternalInputs:         len(assembled.ExternalInputs),
 		DiscoveryRender:        discoveryRender,
 		ExternalInputDiscovery: discoveryErr,
+		DryRunFiles:            reported,
 	}, nil
+}
+
+// reportedWrite returns the entry a reporting run makes for a file whose
+// post-run bytes are want, and nil where the file already holds exactly those
+// bytes.
+//
+// A file the run would leave byte-identical is deliberately not named: naming it
+// would tell a reader a write was coming for it, and the one question a report of
+// this kind answers is which files move. A file that is not there yet has no
+// bytes to match, so it is reported — which is how a first resolution names the
+// lockfile it would create.
+func reportedWrite(path string, want []byte) *dryrunreport.File {
+	if prior, err := os.ReadFile(path); err == nil && bytes.Equal(prior, want) {
+		return nil
+	}
+	return &dryrunreport.File{Path: path, Content: want}
 }
 
 // buildLockfile materialises a *lockfile.Lockfile from the closure

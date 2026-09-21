@@ -104,7 +104,7 @@ func Write(path string, t *Trust) error {
 	if t == nil {
 		return fmt.Errorf("pluginstrust: Write called with nil *Trust")
 	}
-	out, err := marshalCanonical(t)
+	out, err := CanonicalBytes(t)
 	if err != nil {
 		return fmt.Errorf("pluginstrust: marshal %s: %w", path, err)
 	}
@@ -114,11 +114,18 @@ func Write(path string, t *Trust) error {
 	return nil
 }
 
-// marshalCanonical returns the exact bytes Write writes. It is the single
-// serialization path, so any caller comparing bytes against what is on disk
-// compares against what would actually be written rather than against a second
-// rendering that could drift from it.
-func marshalCanonical(t *Trust) ([]byte, error) {
+// CanonicalBytes returns the exact bytes [Write] writes, and writes nothing. It
+// is the single serialization path, so a caller comparing bytes against what is
+// on disk — or reporting what a run would put there — reads what would actually
+// be written rather than a second rendering that could drift from it.
+//
+// It takes no path because none is needed: the record carries no wall-clock
+// stamp, so its canonical bytes depend on the resolution alone and not on what
+// the file beside it happens to say.
+func CanonicalBytes(t *Trust) ([]byte, error) {
+	if t == nil {
+		return nil, fmt.Errorf("pluginstrust: CanonicalBytes called with nil *Trust")
+	}
 	body, err := yaml.Marshal(canonicalise(t))
 	if err != nil {
 		return nil, err

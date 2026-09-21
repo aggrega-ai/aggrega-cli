@@ -33,6 +33,7 @@ import (
 	"path/filepath"
 	"sort"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/dryrunreport"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
 )
 
@@ -131,9 +132,7 @@ func WriteAll(outRoot string, files map[string][]byte) error {
 
 // WriteDryRunReport prints what the render produced instead of persisting it:
 // one header per artifact naming the path that file would have occupied,
-// followed by its bytes. The header is the familiar multi-file form, so a reader
-// can tell a header apart from content that happens to open with a comment
-// marker.
+// followed by its bytes.
 //
 // The path reported is computed by the same function that computes the path a
 // real build writes to, so what a dry run says a file would be called and what a
@@ -141,19 +140,18 @@ func WriteAll(outRoot string, files map[string][]byte) error {
 // which makes the report byte-identical across runs of the same input rather
 // than reshuffled by map iteration.
 //
-// A trailing newline is supplied where the artifact's own bytes lack one, so the
-// next header starts at a column rather than butting onto the last line of
-// content; the blank line after each artifact is the separator between them.
+// What it does NOT own is the report's shape. That shape is a contract a reader
+// learns, and a command whose product is not a rendered artifact set prints the
+// same one — so the rendering lives in [dryrunreport], and this function's whole
+// job is to answer the two questions that are this package's: which host path
+// each name occupies, and in what order the set is walked.
 func WriteDryRunReport(out io.Writer, outDir string, files map[string][]byte) {
-	for _, name := range sortedNames(files) {
-		body := files[name]
-		fmt.Fprintf(out, "==> %s <==\n", hostPath(outDir, name))
-		_, _ = out.Write(body)
-		if len(body) > 0 && body[len(body)-1] != '\n' {
-			fmt.Fprintln(out)
-		}
-		fmt.Fprintln(out)
+	names := sortedNames(files)
+	report := make([]dryrunreport.File, 0, len(names))
+	for _, name := range names {
+		report = append(report, dryrunreport.File{Path: hostPath(outDir, name), Content: files[name]})
 	}
+	dryrunreport.Write(out, report)
 }
 
 // sortedNames returns a rendered file map's names in sorted order — the

@@ -60,6 +60,34 @@ import (
 // than emitting an empty list, so a recipe that no longer references any remote
 // source or any $import artifact carries no vestigial pin section.
 func WritePins(path string, srcPins []types.SourceDigest, artPins []types.ArtifactDigest) (bool, error) {
+	out, rewrites, err := PreviewPins(path, srcPins, artPins)
+	if err != nil {
+		return false, err
+	}
+	if !rewrites {
+		return false, nil
+	}
+	if werr := os.WriteFile(path, out, 0o644); werr != nil {
+		return false, fmt.Errorf("recipepin: write %s: %w", path, werr)
+	}
+	return true, nil
+}
+
+// PreviewPins returns the bytes [WritePins] would leave at path for the same
+// pins, and whether writing them would change the file.
+//
+// It is the computing half of the freeze, and [WritePins] is it plus one call to
+// the filesystem — so a caller reporting what a freeze would do reads the same
+// splice the freeze performs rather than a second rendering of it. The returned
+// bytes are the file's post-freeze content in both cases: on an unchanged
+// declaration they are the bytes already on disk, which is what makes the
+// recipe's post-freeze content digest computable without writing anything.
+//
+// rewrites is false exactly when the recipe already carries pins equal to the
+// freshly-computed ones. The splice is not performed at all in that case, for the
+// reason the freeze does not perform it: a declaration whose sources and $import
+// set are unchanged is read, not re-frozen.
+func PreviewPins(path string, srcPins []types.SourceDigest, artPins []types.ArtifactDigest) ([]byte, bool, error) {
 	src := append([]types.SourceDigest(nil), srcPins...)
 	art := append([]types.ArtifactDigest(nil), artPins...)
 	sortSourcePins(src)
@@ -67,17 +95,17 @@ func WritePins(path string, srcPins []types.SourceDigest, artPins []types.Artifa
 
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return false, fmt.Errorf("recipepin: read %s: %w", path, err)
+		return nil, false, fmt.Errorf("recipepin: read %s: %w", path, err)
 	}
 
 	var root yaml.Node
 	if uerr := yaml.Unmarshal(data, &root); uerr != nil {
-		return false, fmt.Errorf("recipepin: parse %s: %w", path, uerr)
+		return nil, false, fmt.Errorf("recipepin: parse %s: %w", path, uerr)
 	}
 
 	specKey, spec := specMapping(&root)
 	if spec == nil {
-		return false, fmt.Errorf("recipepin: %s: no spec mapping to pin into", path)
+		return nil, false, fmt.Errorf("recipepin: %s: no spec mapping to pin into", path)
 	}
 
 	// A declaration whose pins already match is read, not re-frozen: leave the
@@ -86,17 +114,14 @@ func WritePins(path string, srcPins []types.SourceDigest, artPins []types.Artifa
 	sortSourcePins(existingSrc)
 	sortArtifactPins(existingArt)
 	if pinsEqual(existingSrc, src) && artifactPinsEqual(existingArt, art) {
-		return false, nil
+		return data, false, nil
 	}
 
 	out, serr := splicePins(data, specKey, spec, src, art)
 	if serr != nil {
-		return false, fmt.Errorf("recipepin: freeze %s: %w", path, serr)
+		return nil, false, fmt.Errorf("recipepin: freeze %s: %w", path, serr)
 	}
-	if werr := os.WriteFile(path, out, 0o644); werr != nil {
-		return false, fmt.Errorf("recipepin: write %s: %w", path, werr)
-	}
-	return true, nil
+	return out, true, nil
 }
 
 // splicePins produces the recipe bytes with the sourceDigests / artifactDigests

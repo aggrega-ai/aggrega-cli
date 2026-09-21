@@ -13,6 +13,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
+	"github.com/aggrega-ai/aggrega-cli/internal/dryrunreport"
 	"github.com/aggrega-ai/aggrega-cli/internal/pullops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
@@ -33,6 +34,7 @@ type pullFlags struct {
 	quiet             bool
 	progress          bool
 	assumeYes         bool
+	dryRun            bool
 }
 
 func newPullCmd() *cobra.Command {
@@ -69,6 +71,12 @@ A URI given without --upgrade is a usage error.`,
 			if opts.verify && opts.upgrade {
 				return fmt.Errorf("--verify and --upgrade are mutually exclusive")
 			}
+			// A verify already writes nothing, so the pair would leave --dry-run with
+			// nothing to do. It is refused rather than ignored, because a flag that
+			// quietly does nothing is read as a flag that did something.
+			if opts.verify && opts.dryRun {
+				return fmt.Errorf("--verify and --dry-run are mutually exclusive: --verify already writes nothing")
+			}
 			if len(args) > 0 && !opts.upgrade {
 				return fmt.Errorf("positional arguments name upgrade targets and require --upgrade")
 			}
@@ -76,7 +84,13 @@ A URI given without --upgrade is a usage error.`,
 			// named, so there is nothing here for a person to lose. The gate sits
 			// ahead of the workspace resolution because what it guards is the
 			// operator's intent, which no resolved state can change.
-			if opts.upgrade && len(args) == 0 {
+			//
+			// A dry run is the same case by that criterion rather than an exception to
+			// it: it drops no pin, so there is nothing for a person to lose and
+			// nothing to confirm. That also leaves the one form a reader reaches for
+			// precisely to find out what a refresh would cost them runnable without an
+			// answer nobody is there to give.
+			if opts.upgrade && len(args) == 0 && !opts.dryRun {
 				if err := confirmDestructiveRefresh(cmd.OutOrStdout(), cmd.InOrStdin(), "aggrega pull", opts.assumeYes); err != nil {
 					return err
 				}
@@ -93,6 +107,7 @@ A URI given without --upgrade is a usage error.`,
 				Verify:            opts.verify,
 				IncludePrerelease: opts.includePrerelease,
 				Detail:            opts.detail,
+				DryRun:            opts.dryRun,
 				ws:                rw,
 				diag:              buildDiagOptions{quiet: opts.quiet, progress: opts.progress, noColor: globalDisplay.colorOff, plain: globalDisplay.plain},
 			})
@@ -107,6 +122,7 @@ A URI given without --upgrade is a usage error.`,
 	c.Flags().BoolVar(&opts.quiet, "quiet", false, "Silence the pull-progress surface on stderr. Does not affect stdout. Takes precedence over --progress")
 	c.Flags().BoolVar(&opts.progress, "progress", false, "Force the pull-progress surface on even when stderr is not a terminal, printing plain static phase lines. The default is auto: the interactive phase checklist is shown only when stderr is a terminal")
 	c.Flags().BoolVar(&opts.assumeYes, "yes", false, "Answer the bare --upgrade confirmation in advance, for non-interactive use. It reaches that one prompt and nothing else: every other form of pull asks nothing, so passing it changes no behaviour there")
+	c.Flags().BoolVar(&opts.dryRun, "dry-run", false, "Resolve the dependencies and print what this pull would write instead of writing it: each file's path and the content it would hold go to stdout, and the lockfile, every Recipe and FeatureRecipe whose recorded digests would move, and the plugin trust record are all left untouched. Only the files that would actually change are named. The resolution itself runs exactly as it would otherwise, so the content cache still fills and a bare --upgrade asks nothing because it drops no pin — what a dry run shows is what a pull would write. Not accepted with --verify, which already writes nothing")
 	if err := c.MarkFlagRequired("release"); err != nil {
 		panic(err)
 	}
@@ -144,6 +160,12 @@ type pullConfig struct {
 	Verify            bool
 	IncludePrerelease bool
 	Detail            bool
+	// DryRun reports what this pull would write instead of writing it: each file's
+	// path and the content it would hold go to Out, and the lockfile, the recipe
+	// files and the plugin trust record are left as they were. It is the
+	// command's own spelling of the resolution's reporting mode and carries nothing
+	// beyond it.
+	DryRun bool
 
 	// ws is the resolved workspace, threaded in by the command's RunE from the
 	// shared resolution chokepoint. Required: the shared layer refuses a nil, so a
@@ -304,6 +326,7 @@ func pullRunWithResult(ctx context.Context, cfg pullConfig) (pullops.Result, err
 		Upgrade:           cfg.Upgrade,
 		UpgradeTargets:    cfg.UpgradeTargets,
 		Verify:            cfg.Verify,
+		DryRun:            cfg.DryRun,
 		IncludePrerelease: cfg.IncludePrerelease,
 		CompilerVersion:   provenanceCompilerVersion(),
 		Toolchain:         toolchainStamp(),
@@ -365,6 +388,19 @@ func pullRunWithResult(ctx context.Context, cfg pullConfig) (pullops.Result, err
 	// Clear the in-place surface before the stdout summary so the progress lines
 	// never linger beside the final output.
 	progress.finish()
+	if cfg.DryRun {
+		// The files first and the count after them, so a reader scrolling back from
+		// the summary reaches the content it counts. The report is rendered here
+		// rather than in the shared resolution because how it reads belongs to the
+		// surface a person is looking at — a surface answering in a structured
+		// payload takes the same material and renders none of this.
+		dryrunreport.Write(out, res.DryRunFiles)
+		fmt.Fprintf(out, "Dry run: %d files would be written; nothing was written\n", len(res.DryRunFiles))
+		if res.ExternalInputDiscovery != nil {
+			fmt.Fprintf(out, "The reported lockfile is short of what a pull would write: its external-input pins could not all be discovered (see the diagnostics above). Every other pin it carries, and every other file named above, is what a pull would produce\n")
+		}
+		return res, nil
+	}
 	fmt.Fprintf(out, "Pull complete: %s (entities=%d, source_artifacts=%d, external_inputs=%d%s)\n",
 		res.LockfilePath, len(res.Closure.Entities), len(res.Closure.SourceArtifacts), res.ExternalInputs,
 		trustedPluginsSummary(res.TrustedPlugins))

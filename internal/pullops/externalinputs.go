@@ -151,11 +151,22 @@ func discoverExternalInputs(
 // saying why — which for the case a reader will most often meet, a workspace
 // with no reachable network, leaves the one fact that explains everything
 // unstated.
-func reportExternalInputDiscoveryFailure(out io.Writer, lockfilePath string, pinned int, err error) {
+//
+// reportOnly changes what the middle sentence can claim, and it is a parameter
+// rather than a fixed sentence because the claim would otherwise be false half
+// the time: a run that reported rather than wrote has written no pins at all, so
+// telling its reader that the dependency pins "were written" would name an act
+// that did not happen and a file that did not move.
+func reportExternalInputDiscoveryFailure(out io.Writer, lockfilePath string, pinned int, reportOnly bool, err error) {
 	if out == nil {
 		return
 	}
 	fmt.Fprintf(out, "  external inputs: could not finish rendering %s to discover them: %s\n", lockfilePath, cerrors.CauseChain(err))
+	if reportOnly {
+		fmt.Fprintf(out, "  external inputs: the reported lockfile's dependency pins are complete; it carries %d external input(s), and any this Release also needs are absent from it\n", pinned)
+		fmt.Fprintf(out, "  external inputs: so the reported lockfile is short of what a pull would write on this one axis. A pull rewrites the recorded digests in each Recipe before it renders, and a report leaves those files alone — so a render held to a digest an unwritten file does not yet carry stops here. Resolving for real pins what this render could not reach\n")
+		return
+	}
 	fmt.Fprintf(out, "  external inputs: dependency pins were written and are complete; %d external input(s) pinned, and any this Release also needs are still unpinned\n", pinned)
 	fmt.Fprintf(out, "  external inputs: a build of this Release halts naming the unpinned URL; fixing what stopped the render and resolving again pins it\n")
 }

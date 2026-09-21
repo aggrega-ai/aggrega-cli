@@ -80,15 +80,53 @@ func WriteLockfilePreservingTimestamp(path string, lf *Lockfile) error {
 	if lf == nil {
 		return fmt.Errorf("lockfile: WriteLockfilePreservingTimestamp called with nil *Lockfile")
 	}
-	if prior, rerr := os.ReadFile(path); rerr == nil {
-		next, merr := marshalCanonical(lf)
-		if merr == nil && bytes.Equal(stripGeneratedAt(prior), stripGeneratedAt(next)) {
-			if priorStamp := generatedAtValue(prior); priorStamp != "" {
-				lf.GeneratedAt = priorStamp
-			}
-		}
-	}
+	lf.GeneratedAt = generatedAtFor(path, lf)
 	return WriteLockfile(path, lf)
+}
+
+// CanonicalBytesPreservingTimestamp returns the exact bytes
+// WriteLockfilePreservingTimestamp would write to path, and writes nothing.
+//
+// It is the reporting half of that write, for a caller showing what a resolution
+// would put on disk. Both halves take the stamp from generatedAtFor and the
+// bytes from marshalCanonical, so what a preview reports and what a write
+// performs cannot come apart — a second rendering here would agree today and
+// diverge the first time either the canonical form or the stamp rule moved.
+//
+// The caller's value is left alone, including its stamp: a preview that mutated
+// the lockfile it was asked to describe would change the thing under inspection.
+// The shallow copy is safe because canonicalise deep-copies every composite field
+// before sorting, so nothing here reaches back into the caller's slices.
+func CanonicalBytesPreservingTimestamp(path string, lf *Lockfile) ([]byte, error) {
+	if lf == nil {
+		return nil, fmt.Errorf("lockfile: CanonicalBytesPreservingTimestamp called with nil *Lockfile")
+	}
+	stamped := *lf
+	stamped.GeneratedAt = generatedAtFor(path, lf)
+	return marshalCanonical(&stamped)
+}
+
+// generatedAtFor returns the provenance stamp a timestamp-preserving write puts
+// in lf: the stamp the file at path already carries when the canonical bytes are
+// otherwise unchanged, and lf's own stamp otherwise.
+//
+// It is the single home of that decision. The comparison it makes is against
+// marshalCanonical(lf) — the actual bytes that would be written — and lf's own
+// stamp cannot affect it, because stripGeneratedAt removes that line from both
+// sides before they are compared.
+func generatedAtFor(path string, lf *Lockfile) string {
+	prior, rerr := os.ReadFile(path)
+	if rerr != nil {
+		return lf.GeneratedAt
+	}
+	next, merr := marshalCanonical(lf)
+	if merr != nil || !bytes.Equal(stripGeneratedAt(prior), stripGeneratedAt(next)) {
+		return lf.GeneratedAt
+	}
+	if priorStamp := generatedAtValue(prior); priorStamp != "" {
+		return priorStamp
+	}
+	return lf.GeneratedAt
 }
 
 // stripGeneratedAt returns b with the single top-level `generated_at:` line
