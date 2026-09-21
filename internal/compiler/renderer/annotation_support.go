@@ -114,7 +114,7 @@ func (k nodeInputKind) claimedBy(caps ProviderContract) bool {
 // that reach no consumer and change nothing. It emits into the structured advisory
 // sink and returns nothing: this is a degradation, never a refusal, because a
 // boundary annotation legitimately cascades across components rendering through
-// heterogeneous targets and refusing the build would reject a correct deployment.
+// heterogeneous targets and refusing the build would reject a correct Release.
 //
 // It is asked once per RENDER rather than once per node. A node's own Recipe and
 // each feature attached to that node name their own capability and declare their
@@ -144,7 +144,7 @@ func (k nodeInputKind) claimedBy(caps ProviderContract) bool {
 // drift from the reservation, and it would suppress the case an author most needs
 // told about, which is a mistyped key that reaches nothing and says nothing.
 //
-// Annotations are read in the order the deployment authored them, from the
+// Annotations are read in the order the Release authored them, from the
 // ordered source rather than from the render context's flattened copy, so the
 // advisory stream is byte-stable across runs of identical input.
 //

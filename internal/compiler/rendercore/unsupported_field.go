@@ -51,7 +51,7 @@ const UnsupportedFieldCode = "unsupported-field"
 // untouched. Warn-severity for the same reason the class is: a boundary
 // annotation legitimately cascades across components rendering through
 // heterogeneous targets, so on a mixed boundary some nodes cannot act on it and
-// refusing the build would reject a correct deployment.
+// refusing the build would reject a correct Release.
 //
 // One authored annotation can raise several of these, one per render that cannot
 // act on it. That is not duplication — a node's own Recipe and each feature

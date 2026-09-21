@@ -398,12 +398,12 @@ func TestTheAssembledOutputEnumerationIsTheAttributionsOwn(t *testing.T) {
 	}
 
 	// Every assembly path once, in the order the attribution recorded them, each
-	// positioned at the deployment document and at no path inside it.
+	// positioned at the Release document and at no path inside it.
 	var paths []string
 	for _, p := range coordinates.AssemblyPaths() {
 		paths = append(paths, p.Value)
 		if p.SourceFile != "release.yaml" {
-			t.Errorf("assembly path %q is positioned at %q, want the deployment document", p.Value, p.SourceFile)
+			t.Errorf("assembly path %q is positioned at %q, want the Release document", p.Value, p.SourceFile)
 		}
 	}
 	if want := []string{"shared", "tf"}; !equalStrings(paths, want) {

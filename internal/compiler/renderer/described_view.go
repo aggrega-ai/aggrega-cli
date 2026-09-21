@@ -141,7 +141,7 @@ type describedView struct {
 	// attachment names the document the render actually bound.
 	recipeLookup RecipeLookup
 
-	// release is the deployment document, read only for the text an operator
+	// release is the Release document, read only for the text an operator
 	// authored on a boundary. It is held rather than reached for through the
 	// graph, because the graph's projection of a boundary records one only once
 	// something is attached at it — so a scope carrying a path template and
@@ -206,13 +206,13 @@ type describedView struct {
 // from nothing, and a presentation that answers emptily is worse than an absent
 // one, because a rule reading it cannot tell an empty answer from a real one.
 //
-// The deployment document is taken but is NOT among the products whose absence
+// The Release document is taken but is NOT among the products whose absence
 // returns nil, and the asymmetry is deliberate. The graph, the earlier
-// presentation and the retention key whole classes of fact; the deployment
+// presentation and the retention key whole classes of fact; the Release
 // document keys one, and a render given none enumerates no boundary at all — so a
 // rule over that fact is invoked zero times rather than being answered emptily.
 // The ArtifactsLibrary set is taken but is NOT among the products whose absence
-// returns nil, on the same reading the deployment document carries: a render
+// returns nil, on the same reading the Release document carries: a render
 // given none has no entry importing a library that could resolve, so the facts
 // over it answer as they would for a library nothing declares — which is an
 // answer rather than an absence. The MappingLibrary and WorkloadLibrary sets are
@@ -657,7 +657,7 @@ func (v *describedView) BoundaryAttachmentAuthoredTemplateText(
 }
 
 // BoundaryAuthoredPathTemplateText returns the template text one boundary of a
-// deployment writes for one of its path fields, as written and before anything is
+// Release writes for one of its path fields, as written and before anything is
 // evaluated.
 //
 // It is answered from the same enumeration the field axis is built from, so a

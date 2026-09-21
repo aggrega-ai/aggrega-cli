@@ -49,7 +49,7 @@ import (
 // re-present the k-1 nodes already recorded — so a build of n nodes would raise the
 // same finding once for every later node in the walk, and an author would read one
 // authoring fault repeated a number of times that depends on how many components the
-// application happens to declare.
+// Aggregate happens to declare.
 //
 // # Why the name axis is delegated rather than narrowed with it
 //

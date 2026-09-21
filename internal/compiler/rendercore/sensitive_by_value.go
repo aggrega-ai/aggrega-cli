@@ -28,7 +28,7 @@ const SensitiveByValueCode = "sensitive-by-value"
 
 // SensitiveByValueDiagnostic builds the advisory for one delivery key carrying
 // a declared-sensitive datum as a literal. attachment is the attachment
-// instance name the deployment authored; mechanism is the delivery mechanism
+// instance name the author wrote; mechanism is the delivery mechanism
 // the key lands in (for example "env" or "file"); deliveryKey is the key itself.
 // The caller attaches the location naming the component and the target.
 //

@@ -14,7 +14,7 @@ import (
 // group, and derives nothing else. That attribution is the only thing that knows
 // which providers met at which evaluated path: a boundary's own path declaration
 // says where it wants to land, and only the grouping says who else landed there.
-// An enumeration reading the deployment document instead would name every path
+// An enumeration reading the Release document instead would name every path
 // the operator declared, including ones no component reached, and would present a
 // rule about a collision coordinates at which nothing was grouped.
 //
@@ -81,7 +81,7 @@ func newAssemblyGroupCoordinates(
 // point of the axis, since a rule invoked once per path and provider needs the
 // path several providers share to be one coordinate rather than several.
 //
-// The coordinate is positioned at the deployment document, which is where the
+// The coordinate is positioned at the Release document, which is where the
 // boundaries whose path declarations evaluated to it are written and the only
 // document an operator can change one in. The path itself contributes no locator
 // segment: it is evaluated output rather than a key that document holds.

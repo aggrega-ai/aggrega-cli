@@ -48,7 +48,7 @@ func attachmentLocalsFR(name string, locals ...string) *types.FeatureRecipe {
 
 // attachmentLocalsWorld builds the render products the described stage's locals
 // rules read: a graph carrying one node with one attachment and one boundary
-// carrying one boundary-scope attachment, the deployment document the boundary
+// carrying one boundary-scope attachment, the Release document the boundary
 // axis is derived from, and the binding that resolves each attachment to the
 // FeatureRecipe under test.
 //
@@ -157,7 +157,7 @@ func declaredAttachmentLocalsHalt(
 	if boundaryFR != nil {
 		scopes := axes.Boundaries()
 		if len(scopes) != 1 {
-			t.Fatalf("the boundary axis presents %d boundary(s); want exactly the one the deployment declares",
+			t.Fatalf("the boundary axis presents %d boundary(s); want exactly the one the Release declares",
 				len(scopes))
 		}
 		total := 0

@@ -489,7 +489,7 @@ var errUnknownProvider = cerrors.Register("unknown-provider", cerrors.Meta{
 // each raise names the path, that boundary, and the provider that boundary's
 // output was rendered by — so the conflicting providers and the conflicting
 // boundaries are named across the set rather than listed in one line, and
-// each finding is positioned at the deployment document the boundary was
+// each finding is positioned at the Release document the boundary was
 // declared in. The remedy is to restore the per-provider sub-path default or
 // to change one boundary's directory, which the condition's registered
 // wording does not yet state.
@@ -583,7 +583,7 @@ var errFRTemplateInvalidField = cerrors.Register("featurerecipe-template-invalid
 //
 // Such a FeatureRecipe generates once for a boundary rather than once for each
 // component, so the boundary is where the attachment has to be written:
-// .spec.boundaries.<scope>.features.<name> in the deployment document, at the
+// .spec.boundaries.<scope>.features.<name> in the Release document, at the
 // scope the component sits in or at one enclosing it. An attachment of that
 // name written only against a component names no scope for the recipe to
 // generate for, so nothing decides which boundary it would run at, which values
@@ -591,7 +591,7 @@ var errFRTemplateInvalidField = cerrors.Register("featurerecipe-template-invalid
 //
 // It does not fire on a component that carries such an attachment while a scope
 // enclosing it also declares one of that name. That is the ordinary shape of a
-// boundary attachment reaching a component, and the deployment renders exactly
+// boundary attachment reaching a component, and the Release renders exactly
 // as it does when only the scope declares it.
 //
 // The remedy is to declare the attachment on the boundary it should generate
@@ -745,9 +745,9 @@ var errPluginProviderIncompatible = cerrors.Register("plugin-provider-incompatib
 // than producing an unassembled result the operator only discovers at debug time.
 //
 // It is raised by AssemblyGroupProviderHasItsDeclaredAssembler, once per offending
-// dispatch group, positioned at the deployment document and carrying no locator
+// dispatch group, positioned at the Release document and carrying no locator
 // within it: an assembly path is evaluated output and a provider is selected, so
-// neither is a key that document holds, and a build given no deployment document
+// neither is a key that document holds, and a build given no Release document
 // leaves the finding unpositioned rather than mispositioned. Each objection names
 // the provider and the dispatch path; the remedy — serve the provider through a
 // plugin that advertises both render_node and assemble_boundary — is stated here

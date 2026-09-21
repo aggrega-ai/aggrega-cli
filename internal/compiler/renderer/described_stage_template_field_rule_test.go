@@ -72,7 +72,7 @@ func templateFieldFR(executionScope, block, text string) *types.FeatureRecipe {
 }
 
 // templateFieldWorld builds the render products the rules read: a graph carrying
-// one boundary with one attachment, the deployment document the boundary axis is
+// one boundary with one attachment, the Release document the boundary axis is
 // derived from, and the binding that resolves that attachment to the
 // FeatureRecipe under test.
 func templateFieldWorld(fr *types.FeatureRecipe) (*types.IRGraph, *resolver.ResolveResult, RecipeLookup) {
@@ -129,7 +129,7 @@ func declaredTemplateFieldHalt(t *testing.T, fr *types.FeatureRecipe) error {
 
 	scopes := axes.Boundaries()
 	if len(scopes) != 1 {
-		t.Fatalf("the boundary axis presents %d boundary(s); want exactly the one the deployment declares",
+		t.Fatalf("the boundary axis presents %d boundary(s); want exactly the one the Release declares",
 			len(scopes))
 	}
 	total := 0

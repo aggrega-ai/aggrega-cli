@@ -549,7 +549,7 @@ func attachmentArtifactContentPinHalt(
 // nodes already recorded — so a build of n nodes would ask about n(n+1)/2 subjects
 // and would raise the same finding once for every later node in the walk. An
 // author would read one authoring fault repeated a number of times that depends on
-// how many components the application happens to declare.
+// how many components the Aggregate happens to declare.
 //
 // # Why the attachment axis is delegated rather than narrowed with it
 //
@@ -895,16 +895,16 @@ func runProvidesContractRule(
 	return objectionsAsHalt(raised, "Recipes short of the output contract their Component declares")
 }
 
-// objectionsAsDeveloperHalt renders what a rule about what an application's own
+// objectionsAsDeveloperHalt renders what a rule about what an Aggregate's own
 // author wrote raised as the render's halt, attributing the fault to the
-// application document.
+// Aggregate document.
 //
 // It is the fourth sibling of [objectionsAsHalt] and shares the whole of its
 // per-objection rendering; what it does not share is the category, which is the
 // one thing the four of them genuinely differ on. A rule about what an entity
 // declares sends an author to a catalog document, a rule about output the compiler
 // produced to no document at all, a rule about where a boundary's output landed to
-// the deployment document — and this one to the application, because an injection
+// the Release document — and this one to the Aggregate, because an injection
 // block and the attachment that duplicates its key are both written there and the
 // remedy is to remove one of them.
 func objectionsAsDeveloperHalt(objections []constraint.Objection, envelope string) error {

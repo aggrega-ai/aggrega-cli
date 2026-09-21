@@ -37,7 +37,7 @@ const (
 	// merely required SOME value would pass over it, and the whole failure being
 	// proved against is one where a default is mistaken for a success.
 	vendoredValuesDefault = "DEFAULT-NOT-A-REAL-VALUE-8f3a1c"
-	// authoredAttachmentValue is what the deployment authored on the attachment
+	// authoredAttachmentValue is what the Aggregate authored on the attachment
 	// and what its FeatureRecipe's own valuesMapping resolves to. It reaches the
 	// rendered output only through the umbrella's per-contributor values block.
 	authoredAttachmentValue = "AUTHORED-ON-THE-ATTACHMENT-6b21ef"
@@ -78,7 +78,7 @@ func valuesReadingChart(t *testing.T, chartName, resourceName, fallback string) 
 // The attachment's value is authored on the attachment in the IR and read by the
 // FeatureRecipe's own valuesMapping, rather than being a constant in that
 // mapping. Both routes would put a value in the same place, and the authored one
-// is the one a deployment actually takes — so a mapping that ignored its context
+// is the one a build actually takes — so a mapping that ignored its context
 // entirely would satisfy a constant fixture and fail a real one.
 func renderComponentScopeValuedAttachment(t *testing.T) map[string]renderer.AssembledFile {
 	t.Helper()
@@ -427,7 +427,7 @@ func requireUmbrellaScopes(t *testing.T, files map[string]renderer.AssembledFile
 }
 
 // TestAttachmentValuesReachTheChartTheAttachmentBrought is the discriminating
-// proof: the value a deployment authored on an attachment has to appear in what
+// proof: the value a Aggregate authored on an attachment has to appear in what
 // the chart tool PRODUCED, and the value the vendored chart ships as its own
 // default has to be absent from it.
 //

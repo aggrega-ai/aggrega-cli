@@ -67,7 +67,7 @@ import (
 // derivation the product owns, and two derivations that agree today are what
 // hide the day they stop agreeing. A literal moves when the identity a chart is
 // addressed by moves, or when the alphabet a chart name is written in changes —
-// and either of those is a change to what a deployment author reads, so it is
+// and either of those is a change to what a Release author reads, so it is
 // meant to be re-measured deliberately rather than absorbed.
 //
 // # 🔴 The reasoning behind this file has a known expiry; the assertion does not

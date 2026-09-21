@@ -896,7 +896,7 @@ type attachmentRenderItem struct {
 	// the attachment's authored values were checked against, and therefore the
 	// entity whose declarations govern those values wherever one is read. It is
 	// deliberately not the Feature the bound FeatureRecipe implements: which
-	// FeatureRecipe binds to an attachment is decided by the deployment's own
+	// FeatureRecipe binds to an attachment is decided by the Manifest's own
 	// mapping and nothing holds the two spellings equal, so a reader that took
 	// the FeatureRecipe's word for it could read a different entity's
 	// declarations over this attachment's data.
@@ -1081,7 +1081,7 @@ func featureAttachmentSlots(fr *types.FeatureRecipe, input RendererInput) types.
 // owner records nothing and asks nothing.
 //
 // annotations are the platform annotations authored for the scope this render's
-// output lands in, in the order the deployment authored them. They are supplied by
+// output lands in, in the order the Release authored them. They are supplied by
 // the caller for the same reason the owner is — the set is the caller's own
 // knowledge and differs by scope: the per-component caller passes the host node's
 // merged annotations, the boundary-scope caller its boundary's. They arrive as the

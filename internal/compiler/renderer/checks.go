@@ -93,7 +93,7 @@ import (
 // against; a boundary name and a provider name are both bare words, and nothing
 // else in the message would tell them apart. All three are in the detail because
 // the subject carries no locator — a directory is evaluated output and a provider
-// is selected, so neither is a key the deployment document holds — which leaves
+// is selected, so neither is a key the Release document holds — which leaves
 // the detail as the only place the offending group's coordinates are stated.
 var AssemblyPathServesOneProvider = constraint.Check[
 	constraint.DispatchedView,
@@ -150,7 +150,7 @@ var AssemblyPathServesOneProvider = constraint.Check[
 // names the provider, so that is the value it is read against; the path is a
 // second value the wording does not name, and it is in the detail because the
 // subject carries no locator — an assembly path is evaluated output and a provider
-// is selected, so neither is a key the deployment document holds.
+// is selected, so neither is a key the Release document holds.
 var AssemblyGroupProviderHasItsDeclaredAssembler = constraint.Check[
 	constraint.DispatchedView,
 	constraint.AssemblyPathProviderSubject,
@@ -197,7 +197,7 @@ var AssemblyGroupProviderHasItsDeclaredAssembler = constraint.Check[
 // It reads two facts about the group it was invoked for, and it needs both. The
 // resolved names alone cannot tell a disagreement that matters from one the
 // provider is indifferent to: a provider may name its assembly from the first
-// value it finds, and a rule reading the names alone would refuse a deployment
+// value it finds, and a rule reading the names alone would refuse a Release
 // that provider renders correctly. The declaration alone says nothing about
 // whether this group's boundaries agree.
 //
@@ -220,7 +220,7 @@ var AssemblyGroupProviderHasItsDeclaredAssembler = constraint.Check[
 // read against; the annotation, the boundary, the provider and the path are values
 // the wording does not name, and they are in the detail because the subject
 // carries no locator — an assembly path is evaluated output and a provider is
-// selected, so neither is a key the deployment document holds.
+// selected, so neither is a key the Release document holds.
 var AssemblyGroupBoundariesAgreeOnAssemblyName = constraint.Check[
 	constraint.DispatchedView,
 	constraint.AssemblyPathProviderSubject,
@@ -278,7 +278,7 @@ var AssemblyGroupBoundariesAgreeOnAssemblyName = constraint.Check[
 // contributor's own declaration carried the name more than once.
 //
 // The kind is a word rather than a value because it is what tells an author where
-// to go: a component's name is written among the components a deployment
+// to go: a component's name is written among the components an Aggregate
 // declares, a boundary-scope feature's among that boundary's features. The value
 // the caption precedes stays the contributor's own name, quoted by the framework,
 // so nothing here renders a value.
@@ -406,7 +406,7 @@ func derivedNameScopeCaption(contributorKind string) string {
 // read against; the space, the contributor, the provider and the path are values
 // the wording does not name, and they are in the detail because the subject
 // carries no locator — an assembly path is evaluated output and a provider is
-// selected, so neither is a key the deployment document holds.
+// selected, so neither is a key the Release document holds.
 var AssemblyGroupDerivesEachNameOnce = constraint.Check[
 	constraint.DispatchedView,
 	constraint.AssemblyPathProviderSubject,
@@ -608,7 +608,7 @@ var CrossBoundaryLinkPlaceholderResolved = constraint.Check[
 // One end advertising linking is enough for the wiring to have been attempted
 // and to be impossible, and the author who attached that provider is the one
 // who expected native wiring. Requiring both claims would say nothing for the
-// ordinary mixed deployment, where one provider links and the other does not,
+// ordinary mixed build, where one provider links and the other does not,
 // which is the case this rule exists for.
 //
 // Its detail leads with the far end, which the registered wording is about and
@@ -1721,7 +1721,7 @@ var BoundaryAttachmentTemplateReadsOnlyDefinedReferences = constraint.Check[
 //
 // It is invoked once per path template the boundary writes, with the authored
 // field as the innermost coordinate, so one declaration covers every one of them
-// and a field the deployment surface gains later is covered with nothing here
+// and a field the Release surface gains later is covered with nothing here
 // moving. The alternative — a rule per path-bearing field — puts the field
 // identity in structure, and a field whose declaration somebody forgot is then
 // silently ungated with nothing able to report the omission.
@@ -3216,7 +3216,7 @@ var BoundaryAttachmentEmittedNameProducedByOneBlock = constraint.Check[
 // contributed nothing to the colliding path. Such a finding sends its reader to a
 // document that is not the problem, which is worse than a finding with no position
 // at all. Keyed here the group has no single authored site to name, so the
-// deployment document is the position and the boundaries that fed the group are
+// Release document is the position and the boundaries that fed the group are
 // named in the detail: every site an operator could act on, and no claim that one
 // of them is at fault.
 //
@@ -3587,7 +3587,7 @@ var AttachmentPipelineStepOwnScopeHasAMergedTarget = constraint.Check[
 //
 // # Emptiness
 //
-// A component the deployment placed in no scope has no ancestor to walk, so a
+// A component the Release placed in no scope has no ancestor to walk, so a
 // boundary-scope attachment on it is reported here. That is the honest reading:
 // there is no scope such a recipe could generate for, which is the same fault
 // with the walk finding nothing rather than finding scopes that declare nothing.

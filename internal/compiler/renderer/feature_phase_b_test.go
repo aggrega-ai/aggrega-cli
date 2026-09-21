@@ -147,7 +147,7 @@ func TestExecutePhaseBForFeature_RendersValuesMapping(t *testing.T) {
 // the one thing about this assembly a render-level fixture cannot separate: WHICH
 // entity each half of it reads.
 //
-// The two spellings are equal in an ordinary deployment — the Feature an
+// The two spellings are equal in an ordinary build — the Feature an
 // attachment names, and the Feature the bound FeatureRecipe implements — and
 // nothing holds them equal, so a reader that took either one for both would pass
 // every ordinary render while being wrong about which author's declarations it

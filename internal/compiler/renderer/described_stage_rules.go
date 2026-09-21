@@ -233,7 +233,7 @@ func describedStageHalt(objections []constraint.Objection) error {
 // It is its own set beside the plugin-report one above rather than two more
 // members of it, and for the reason the authored-text sets below are their own:
 // both facts this rule reads are authored — the scope a FeatureRecipe declares
-// and the attachments a deployment writes at a boundary — and neither depends on
+// and the attachments a Release writes at a boundary — and neither depends on
 // a plugin describing itself. Folding the axes together would put the rule
 // behind that set's resolution guard, and a rule skipped by a guard reports
 // exactly what a rule that ran and approved reports.
@@ -266,7 +266,7 @@ type boundaryScopeAttachmentAxes interface {
 //
 // # Every offending attachment is reported, not the first
 //
-// The rule is invoked once per attachment, so a deployment carrying three such
+// The rule is invoked once per attachment, so a Release carrying three such
 // attachments raises three objections and an author corrects all three from one
 // build. Each objection carries its own position — the document the attachment
 // was written in, and the authored key inside it — which is why they are not
@@ -1062,7 +1062,7 @@ type authoredTemplateFieldAxes interface {
 // a refusal the build did not already make.
 //
 // The cancellation signal is the caller's own, so a long walk over a large
-// deployment stops within one boundary of the caller asking it to.
+// Release stops within one boundary of the caller asking it to.
 func runAuthoredTemplateFieldRule(
 	ctx context.Context,
 	view constraint.DescribedView,
@@ -1092,7 +1092,7 @@ func runAuthoredTemplateFieldRule(
 }
 
 // authoredPathTemplateAxes is the axis pair the rules over an authored path
-// template are invoked once per: the boundary set a deployment declares, and the
+// template are invoked once per: the boundary set a Release declares, and the
 // path fields each of those boundaries writes.
 //
 // It is a fifth set beside the four above rather than more members of any of
@@ -1116,7 +1116,7 @@ type authoredPathTemplateAxes interface {
 }
 
 // runAuthoredPathTemplateRule invokes the rules declared over the path templates
-// each boundary of a deployment writes, and returns what they raised as the
+// each boundary of a Release writes, and returns what they raised as the
 // render's halt.
 //
 // It runs before anything is evaluated, which is what the rules read for: a
@@ -1127,11 +1127,11 @@ type authoredPathTemplateAxes interface {
 //
 // # One declaration per field, one rule per fault
 //
-// The rules are invoked once per path template, so a deployment reaching outside
+// The rules are invoked once per path template, so a Release reaching outside
 // what a scope may name in both of its fields raises two objections and an
 // operator corrects both from one build. That is wider than the evaluation-time
 // refusal beneath this, which stops at the first template it reaches — and each
-// objection carries its own position, the scope's own key inside the deployment
+// objection carries its own position, the scope's own key inside the Release
 // document, which is why they are not folded into one message: a position is
 // something an operator navigates to, and a single message naming several can be
 // navigated to none.
@@ -1144,7 +1144,7 @@ type authoredPathTemplateAxes interface {
 //
 // # What this does NOT reach, stated because an unstated bound reads as coverage
 //
-// The axis is the boundaries the deployment declares. The per-component field is
+// The axis is the boundaries the Release declares. The per-component field is
 // authored beneath a component inside a scope, at a coordinate no boundary key
 // enumerates, so the rules are not invoked over it; and the default this package
 // supplies where a scope writes nothing is not authored text at all, so it is not
@@ -1156,7 +1156,7 @@ type authoredPathTemplateAxes interface {
 // a refusal the build did not already make.
 //
 // The cancellation signal is the caller's own, so a long walk over a large
-// deployment stops within one boundary of the caller asking it to.
+// Release stops within one boundary of the caller asking it to.
 func runAuthoredPathTemplateRule(
 	ctx context.Context,
 	view constraint.DescribedView,
@@ -1224,7 +1224,7 @@ type crossBoundaryLinkAxis interface {
 // parsing a position back out of a sentence.
 //
 // Every offending connection is reported rather than the first, because the rule
-// is invoked once per connection: a deployment wiring three connections across a
+// is invoked once per connection: a composition wiring three connections across a
 // provider seam tells the author about all three from one build, each positioned
 // at the site the connection was authored in.
 //

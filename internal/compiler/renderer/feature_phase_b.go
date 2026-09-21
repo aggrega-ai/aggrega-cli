@@ -315,8 +315,8 @@ func ExecutePhaseBForFeature(ctx *types.TemplateContext, fr *types.FeatureRecipe
 //     checked against.
 //
 // 🔴 The first and the third deliberately read different entities, and they are
-// equal in most deployments without being held equal by anything: which
-// FeatureRecipe binds to an attachment is decided by the deployment's mapping,
+// equal in most builds without being held equal by anything: which
+// FeatureRecipe binds to an attachment is decided by the Manifest's mapping,
 // not by what the FeatureRecipe implements. Two authoring surfaces are in play —
 // the attachment's values are written where the attachment is attached, and the
 // workload's entries inside the FeatureRecipe — so each is joined against the

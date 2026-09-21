@@ -50,7 +50,7 @@ type boundaryScopeGraphFacts struct {
 	constraint.GraphView
 
 	// placement is the boundary the node was placed in, empty for a node the
-	// deployment placed in no boundary at all.
+	// Release placed in no boundary at all.
 	placement string
 
 	// declaring is the set of boundary paths that declare an attachment under
@@ -174,7 +174,7 @@ func TestTheBoundaryScopeAttachmentRuleIsReachedAndItsObjectionHalts(t *testing.
 			declaring: []string{"cluster/services-net"},
 		},
 		{
-			name:      "the deployment placed the component in no boundary",
+			name:      "the Release placed the component in no boundary",
 			placement: "",
 			declaring: []string{"cluster"},
 		},

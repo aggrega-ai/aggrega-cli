@@ -263,7 +263,7 @@ func pathTemplateScopeFor(field string) templateScope {
 //
 // The two travel together because a surface deriving one from the other would be
 // free to differ from this one. The field is what a diagnostic quotes, what
-// positions a finding inside the deployment document, and what selects the
+// positions a finding inside the Release document, and what selects the
 // reference set the text is checked against; the text is what that check parses.
 type BoundaryPathTemplateField struct {
 	// Field is the authored key the template was written under, which is also the

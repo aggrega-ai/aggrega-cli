@@ -146,7 +146,7 @@ func TestWarnUnhonorableAnnotations_CoveringClaimsStaySilent(t *testing.T) {
 }
 
 // TestWarnUnhonorableAnnotations_PerNodeAndAuthorOrdered proves one authored key
-// set produces one advisory per uncovered key, in the order the deployment
+// set produces one advisory per uncovered key, in the order the Release
 // authored them, so the stream is byte-stable across runs of identical input.
 func TestWarnUnhonorableAnnotations_PerNodeAndAuthorOrdered(t *testing.T) {
 	t.Parallel()

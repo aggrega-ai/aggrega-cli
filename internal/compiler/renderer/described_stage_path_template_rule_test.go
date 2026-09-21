@@ -14,7 +14,7 @@ import (
 )
 
 // The proofs in this file cover the two rules declared over the path templates a
-// deployment's boundaries write.
+// Release's boundaries write.
 //
 // Every proof drives the PRODUCTION invocation site over the real presentation
 // and the real enumeration, and each asserts against the halt's own identity
@@ -37,14 +37,14 @@ const (
 	pathTemplateScopePath  = pathTemplateOuterScope + "/" + pathTemplateInnerScope
 	pathTemplateFile       = "release.yaml"
 
-	// pathTemplateScopeLocator is the inner scope's site as the deployment
+	// pathTemplateScopeLocator is the inner scope's site as the Release
 	// document spells it: the container's key repeated once per level of the
 	// nesting, which is what a single spliced segment would lose.
 	pathTemplateScopeLocator = ".spec.boundaries." + pathTemplateOuterScope +
 		".boundaries." + pathTemplateInnerScope
 )
 
-// pathTemplateWorld builds the render products the rules read: a deployment whose
+// pathTemplateWorld builds the render products the rules read: a Release whose
 // scopes nest, with the path templates the caller states written on the inner one.
 //
 // The scopes nest because the locator repeats the container's key for each level,
@@ -91,12 +91,12 @@ func declaredPathTemplateHalt(t *testing.T, directory, subDirectory string) erro
 	}
 	axes := newDescribedStageCoordinates(graph, localsAxis{}, recipes, lookup, resolved)
 	if axes == nil {
-		t.Fatal("the enumeration refused to build over a graph and a deployment document")
+		t.Fatal("the enumeration refused to build over a graph and a Release document")
 	}
 
 	scopes := axes.Boundaries()
 	if len(scopes) != 2 {
-		t.Fatalf("the boundary axis presents %d scope(s); want the two the deployment nests", len(scopes))
+		t.Fatalf("the boundary axis presents %d scope(s); want the two the Release nests", len(scopes))
 	}
 	total := 0
 	for _, scope := range scopes {
@@ -110,7 +110,7 @@ func declaredPathTemplateHalt(t *testing.T, directory, subDirectory string) erro
 	}
 	want := len(BoundaryPathTemplateFields(types.Boundary{Directory: directory, SubDirectory: subDirectory}))
 	if total != want {
-		t.Fatalf("the field axis presents %d path template(s) for a deployment writing %d; "+
+		t.Fatalf("the field axis presents %d path template(s) for a Release writing %d; "+
 			"the verdict below would certify nothing", total, want)
 	}
 	if total == 0 {
@@ -227,7 +227,7 @@ func TestThePathTemplateRulesAreReachedAndTheirObjectionsHalt(t *testing.T) {
 				t.Errorf("the halt does not name the field %q, so an operator cannot tell which of the "+
 					"scope's templates offends: %v", tc.field, halt)
 			}
-			// The position is asserted as the locator the deployment document
+			// The position is asserted as the locator the Release document
 			// actually spells, with the container's key repeated for the nesting.
 			// A traversal splicing the scope path in as one segment would produce
 			// .spec.boundaries.prod/edge.<field> — a key no file contains — and
@@ -376,7 +376,7 @@ func TestThePathTemplateEnumerationCarriesWhatTheScopeWrote(t *testing.T) {
 //
 // The evaluation beneath the declaration is retained deliberately — it reaches a
 // per-component override of the same field, which no boundary key enumerates, and
-// it runs where a render holds no deployment document for the axis to walk. Two
+// it runs where a render holds no Release document for the axis to walk. Two
 // paths for one rule is dis-unification unless they share the decision, and the
 // agreement is exactly what would hide a later divergence. So this asserts they
 // report the SAME identity for the same text rather than that they both refuse.

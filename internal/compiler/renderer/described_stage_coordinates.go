@@ -46,7 +46,7 @@ type GraphCoordinates interface {
 // Every axis returns a deterministic order and each states which. A pipeline's
 // steps keep the order the entity declares them in; a Recipe's provides keys and
 // its locals each keep the order that Recipe declares them in; the boundary set
-// keeps the deployment's own order, enclosing scope before the scopes nested inside
+// keeps the Release's own order, enclosing scope before the scopes nested inside
 // it; a boundary's attachments keep the order that boundary declares them in. No
 // axis here ranges a plain Go map.
 //
@@ -71,7 +71,7 @@ type describedStageCoordinates struct {
 	// same instance-plus-type key the render resolves attachments with.
 	recipeLookup RecipeLookup
 
-	// release is the deployment document. The boundary set is read from it and
+	// release is the Release document. The boundary set is read from it and
 	// not from the graph's projection of boundary attachments: that projection
 	// records a boundary only once something is attached at it, so an axis over
 	// it would be narrower than the boundary set a rule is asked about, and it
@@ -113,7 +113,7 @@ func newDescribedStageCoordinates(
 	return c
 }
 
-// releaseOf is the deployment document a render was given, nil when it was given
+// releaseOf is the Release document a render was given, nil when it was given
 // no resolve result.
 //
 // One home because two consumers need it: the boundary axes this file derives,
@@ -128,7 +128,7 @@ func releaseOf(resolved *resolver.ResolveResult) *types.Release {
 	return resolved.Release
 }
 
-// releaseFileOf is the deployment document a boundary coordinate is positioned
+// releaseFileOf is the Release document a boundary coordinate is positioned
 // at, empty when the render was given no resolve result.
 //
 // A boundary is declared in that document and nowhere else, so it is the only
@@ -410,7 +410,7 @@ func (c *describedStageCoordinates) AttachmentPipelineSteps(
 	return stepCoordinatesOf(fr.Spec.Pipeline, fr.Metadata.Name)
 }
 
-// Boundaries returns every boundary the deployment declares, at every depth,
+// Boundaries returns every boundary the Release declares, at every depth,
 // enclosing scope before the scopes nested inside it.
 //
 // A scope normalization synthesized carries no path of its own and contributes
@@ -425,7 +425,7 @@ func (c *describedStageCoordinates) Boundaries() []constraint.AuthoredCoordinate
 }
 
 // BoundaryAttachments returns the attachments one boundary declares on itself,
-// in the order the deployment declares them.
+// in the order the Release declares them.
 func (c *describedStageCoordinates) BoundaryAttachments(boundary string) []string {
 	var out []string
 	c.walkBoundaries(func(path string, b types.Boundary) {
@@ -616,12 +616,12 @@ func (c *describedStageCoordinates) BoundaryPathTemplateFields(boundary string) 
 }
 
 // walkBoundaries visits every declared boundary with the path it is named by,
-// descending into nested scopes, in the deployment's own order.
+// descending into nested scopes, in the Release's own order.
 func (c *describedStageCoordinates) walkBoundaries(visit func(path string, b types.Boundary)) {
 	walkReleaseBoundaries(c.release, visit)
 }
 
-// walkReleaseBoundaries visits every boundary a deployment declares with the path
+// walkReleaseBoundaries visits every boundary a Release declares with the path
 // it is named by, descending into nested scopes, in the document's own order.
 //
 // A scope normalization synthesized is not visited: the operator declared no such
@@ -663,7 +663,7 @@ func walkReleaseBoundaries(release *types.Release, visit func(path string, b typ
 	}
 }
 
-// boundaryAtPath returns the boundary a deployment declares at one path.
+// boundaryAtPath returns the boundary a Release declares at one path.
 //
 // It walks rather than indexing, through the one walk above, so the path it
 // matches is spelled exactly as the axis that produced the coordinate spelled it.

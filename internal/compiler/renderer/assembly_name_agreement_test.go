@@ -241,7 +241,7 @@ func TestRenderAll_MergedGroupNamingStaysSilentWhereItMust(t *testing.T) {
 		{
 			// Nothing declared the annotation anywhere in either boundary's
 			// ancestry, so the cascade holds no entry for either. That is the
-			// ordinary shape of a deployment that never names its assemblies.
+			// ordinary shape of a Release that never names its assemblies.
 			name:       "annotation declared nowhere",
 			annotation: "aggrega.ai/assembly-name",
 			mustAgree:  true,

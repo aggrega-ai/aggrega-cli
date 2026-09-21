@@ -1225,7 +1225,7 @@ func findFRAttachmentBoundary(boundaryFeatures types.OrderedMap[types.OrderedMap
 // rule reads the facts it is handed. What the two share is the walk, not the
 // lookup, so only the walk lives here.
 //
-// A component the deployment placed in no scope has no ancestor to walk, and the
+// A component the Release placed in no scope has no ancestor to walk, and the
 // empty path is reported as no scope rather than as a scope named by the empty
 // string — a boundary whose path is empty is one the compiler synthesized, which
 // the operator declared nothing at.

@@ -1013,7 +1013,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			return nil, err
 		}
 
-		// The rules over the path templates each boundary of the deployment
+		// The rules over the path templates each boundary of the Release
 		// writes, asked against the same presentation and the same enumeration.
 		//
 		// They are asked here, ahead of the boundary directory walk and the node
@@ -1718,7 +1718,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		}
 
 		// The node's declared input kinds are settled now, and the resolved
-		// provider and the deployment's authored annotations were already in hand —
+		// provider and the Release's authored annotations were already in hand —
 		// so this is the one point that holds every fact the advisory needs. It
 		// reports the platform annotations this node carries that its target's own
 		// support claim covers for none of those kinds: authored directives that
