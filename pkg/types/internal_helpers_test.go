@@ -111,8 +111,8 @@ func TestAnnotationBindingMaps_LenAndLookup(t *testing.T) {
 	}
 }
 
-// TestIsValidComponentType_DiscriminatesOntology pins the 7-type
-// ontology discriminator. Every documented type returns true; an
+// TestIsValidComponentType_DiscriminatesOntology pins the component-type
+// discriminator. Every declared type returns true; an
 // unknown type returns false.
 func TestIsValidComponentType_DiscriminatesOntology(t *testing.T) {
 	t.Parallel()

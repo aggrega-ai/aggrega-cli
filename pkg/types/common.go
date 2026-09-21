@@ -75,7 +75,9 @@ type WellKnownAnnotation struct {
 	Scope []string `json:"scope,omitempty" yaml:"scope,omitempty"`
 }
 
-// ComponentType is the 7-type Cloud-Native Ontology from component-v1alpha1.schema.json.
+// ComponentType is the reserved component-type vocabulary declared in
+// component-v1alpha1.schema.json. The schema enumerates the values this key
+// accepts, so this set mirrors that enumeration and changes with it.
 type ComponentType string
 
 const (
@@ -85,7 +87,6 @@ const (
 	ComponentTypeFunction       ComponentType = "function"
 	ComponentTypeStatefulServer ComponentType = "stateful-server"
 	ComponentTypeResource       ComponentType = "resource"
-	ComponentTypeMessaging      ComponentType = "messaging"
 )
 
 // ValidComponentTypes is the set of valid ComponentType values for quick lookup.
@@ -96,15 +97,15 @@ var ValidComponentTypes = map[ComponentType]bool{
 	ComponentTypeFunction:       true,
 	ComponentTypeStatefulServer: true,
 	ComponentTypeResource:       true,
-	ComponentTypeMessaging:      true,
 }
 
-// IsValidComponentType returns true if t is one of the 7-type ontology values.
+// IsValidComponentType returns true if t is one of the values the reserved
+// component-type enumeration declares.
 func IsValidComponentType(t ComponentType) bool {
 	return ValidComponentTypes[t]
 }
 
-// ComponentTypeLabel is the reserved label key for the 7-type ontology.
+// ComponentTypeLabel is the reserved label key carrying the component-type vocabulary.
 const ComponentTypeLabel = "component.aggrega.ai/type"
 
 // FeatureKindLabel is the reserved label key for credential feature discrimination.
