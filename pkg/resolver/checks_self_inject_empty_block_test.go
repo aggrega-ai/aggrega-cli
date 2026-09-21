@@ -24,7 +24,7 @@ func (n selfInjectNodes) Nodes() []constraint.NodeInstance {
 // component instance, out of the two authored values that carry them: the
 // instance itself and the catalog entry its type names.
 //
-// Every answer is computed here the way the fact's own source carrier says it is
+// Every answer is computed here the way the fact's own source field says it is
 // read, rather than being set row by row. A stub whose booleans were assigned per
 // row would be asserting the distinction instead of deriving it, and would keep
 // passing if the authored surface stopped supporting the distinction at all.

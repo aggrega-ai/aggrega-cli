@@ -58,7 +58,7 @@ func extendsChainDepthAdvice(length int) string {
 // declarations below hand it the answer each was invoked for. The rule does not
 // vary by kind: the chain is followed the same way on each, the loop means the
 // same thing on each, and the remedy is the same edit. What varies is which
-// document the chain was read from, and that is the carrier axis the three
+// document the chain was read from, and that is the document-kind axis the three
 // declarations express.
 func extendsChainCycleObjections(
 	s constraint.DocumentSubject,
@@ -153,7 +153,7 @@ var componentExtendsChainStaysWithinTheDepthBound = constraint.Check[
 	},
 }
 
-// featureExtendsChainReachesNoEntityTwice is the Feature carrier's declaration of
+// featureExtendsChainReachesNoEntityTwice is the Feature document's declaration of
 // the rule componentExtendsChainReachesNoEntityTwice declares for a Component.
 // Why there are several, and why every one of them raises one condition, is
 // stated there; it is not repeated here, because a rule's reasoning has one home.
@@ -172,7 +172,7 @@ var featureExtendsChainReachesNoEntityTwice = constraint.Check[
 	},
 }
 
-// featureExtendsChainStaysWithinTheDepthBound is the Feature carrier's
+// featureExtendsChainStaysWithinTheDepthBound is the Feature document's
 // declaration of the rule componentExtendsChainStaysWithinTheDepthBound declares
 // for a Component.
 var featureExtendsChainStaysWithinTheDepthBound = constraint.Check[
@@ -190,7 +190,7 @@ var featureExtendsChainStaysWithinTheDepthBound = constraint.Check[
 	},
 }
 
-// manifestExtendsChainReachesNoEntityTwice is the Manifest carrier's declaration
+// manifestExtendsChainReachesNoEntityTwice is the Manifest document's declaration
 // of the rule componentExtendsChainReachesNoEntityTwice declares for a Component.
 //
 // What a Manifest contributes of its own is what only a Manifest knows: a link is
@@ -213,7 +213,7 @@ var manifestExtendsChainReachesNoEntityTwice = constraint.Check[
 	},
 }
 
-// manifestExtendsChainStaysWithinTheDepthBound is the Manifest carrier's
+// manifestExtendsChainStaysWithinTheDepthBound is the Manifest document's
 // declaration of the rule componentExtendsChainStaysWithinTheDepthBound declares
 // for a Component.
 var manifestExtendsChainStaysWithinTheDepthBound = constraint.Check[
@@ -231,7 +231,7 @@ var manifestExtendsChainStaysWithinTheDepthBound = constraint.Check[
 	},
 }
 
-// releaseExtendsChainReachesNoEntityTwice is the Release carrier's declaration of
+// releaseExtendsChainReachesNoEntityTwice is the Release document's declaration of
 // the rule componentExtendsChainReachesNoEntityTwice declares for a Component.
 //
 // What a Release contributes of its own is what the Manifest's declaration
@@ -254,7 +254,7 @@ var releaseExtendsChainReachesNoEntityTwice = constraint.Check[
 	},
 }
 
-// releaseExtendsChainStaysWithinTheDepthBound is the Release carrier's
+// releaseExtendsChainStaysWithinTheDepthBound is the Release document's
 // declaration of the rule componentExtendsChainStaysWithinTheDepthBound declares
 // for a Component.
 var releaseExtendsChainStaysWithinTheDepthBound = constraint.Check[

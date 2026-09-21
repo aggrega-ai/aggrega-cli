@@ -134,7 +134,7 @@ func newDocumentAssertionSubject(sourceFile, assertion string, segments ...strin
 // no pillar has a coordinate here and would have none on a kind keyed by pillar.
 //
 // It is one kind over both authored document kinds that carry the block. Which
-// document a key was read from is the carrier axis, which the facts carry; the
+// document a key was read from is the document-kind axis, which the facts carry; the
 // coordinate is the same site in either — a key inside one document's schema
 // block — so a second kind would draw a distinction neither the locator nor a
 // rule over it can see.

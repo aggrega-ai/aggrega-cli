@@ -658,7 +658,7 @@ type DocumentView interface {
 	// FeatureExtendsChainLength is how many entities the chain the presented
 	// Feature extends reaches, and whether that chain ends cleanly.
 	//
-	// It is the Feature carrier's declaration of what the Component's own
+	// It is the Feature document's declaration of what the Component's own
 	// length fact declares for a Component. Why there are two, and why a chain
 	// that closes on itself has no length to report, is stated there.
 	//
@@ -669,12 +669,12 @@ type DocumentView interface {
 	// presented Manifest extends returns to a Manifest already in it, and
 	// whether the chain closes on itself at all.
 	//
-	// It is the Manifest carrier's declaration of what the Component's own
+	// It is the Manifest document's declaration of what the Component's own
 	// cycle fact declares for a Component, and the reason there are several is
 	// stated on the Feature's.
 	//
 	// One thing about it is the Manifest's own and is stated here because no
-	// other carrier's declaration could: a link is a FILE. Two Manifest files
+	// other document's declaration could: a link is a FILE. Two Manifest files
 	// may legally declare one name, so they are two links and a chain passing
 	// through both has not met itself — while the edge this answers names
 	// each link the way its author named it, which is the text an author reads
@@ -686,7 +686,7 @@ type DocumentView interface {
 	// ManifestExtendsChainLength is how many Manifests the chain the presented
 	// Manifest extends reaches, and whether that chain ends cleanly.
 	//
-	// It is the Manifest carrier's declaration of what the Component's own
+	// It is the Manifest document's declaration of what the Component's own
 	// length fact declares for a Component. Why there are several, and why a
 	// chain that closes on itself has no length to report, is stated there.
 	// The count is of files rather than of names, for the reason the
@@ -699,7 +699,7 @@ type DocumentView interface {
 	// presented Release extends returns to a Release already in it, and
 	// whether the chain closes on itself at all.
 	//
-	// It is the Release carrier's declaration of what the Component's own
+	// It is the Release document's declaration of what the Component's own
 	// cycle fact declares for a Component, and the reason there are several is
 	// stated on the Feature's.
 	//
@@ -717,7 +717,7 @@ type DocumentView interface {
 	// ReleaseExtendsChainLength is how many Releases the chain the presented
 	// Release extends reaches, and whether that chain ends cleanly.
 	//
-	// It is the Release carrier's declaration of what the Component's own
+	// It is the Release document's declaration of what the Component's own
 	// length fact declares for a Component. Why there are several, and why a
 	// chain that closes on itself has no length to report, is stated there.
 	// The count is of files rather than of names, for the reason the Release's
@@ -874,8 +874,8 @@ type DocumentView interface {
 	//
 	// It is a separate fact from the values overlay above rather than the
 	// other half of one, because the two are written at two authored keys: a
-	// fact naming both carriers would be a fact about two sites, and a rule
-	// reading it could not say which of them the author is being sent to.
+	// fact naming both source fields would be a fact about two sites, and a
+	// rule reading it could not say which of them the author is being sent to.
 	//
 	// Whether a source is present is a shape question and is the whole of what
 	// this answers. What the pointer contains is the engine's contract to
@@ -998,12 +998,12 @@ type DocumentView interface {
 	// empty reference are different findings, and a rule that cannot tell them
 	// apart reports the wrong one.
 	//
-	// Its source carrier names the structure and not one of its fields, which
-	// is the honest naming here rather than a looser one. A tier holds the
-	// type axis and the name axis as two sibling maps of identical shape, and
-	// which of the two an entry sits in is the entry's own axis coordinate —
-	// so naming either field would state half the source and leave the other
-	// half to be discovered from the accessor's parameters.
+	// Its source field names the structure and not one of its fields, which is
+	// the honest naming here rather than a looser one. A tier holds the type
+	// axis and the name axis as two sibling maps of identical shape, and which
+	// of the two an entry sits in is the entry's own axis coordinate — so
+	// naming either field would state half the source and leave the other half
+	// to be discovered from the accessor's parameters.
 	//
 	// Keyed by (document, mapping-entry); read from types.MappingTier.
 	ManifestRecipeMappingReference(document string, tier string, axis string, key string) (string, bool)
@@ -1018,8 +1018,9 @@ type DocumentView interface {
 	//
 	// It is a separate fact from the values overlay beside it rather than the
 	// other half of one, because the two are written at two authored keys: a
-	// fact naming both carriers would be a fact about two sites, and a rule
-	// consulting it could not say which of them the author is being sent to.
+	// fact naming both source fields would be a fact about two sites, and a
+	// rule consulting it could not say which of them the author is being sent
+	// to.
 	//
 	// Keyed by document; read from types.FeatureRecipeSpec.Source.
 	FeatureRecipeSourceDeclared(document string) bool
@@ -2505,7 +2506,7 @@ type NormalizedView interface {
 	// It is one fact over the whole document rather than one per section. The
 	// sections are declared together in one authored node, a reader selects
 	// the one it wants from it, and splitting them would be three facts
-	// sharing one carrier that can only be absent or present together.
+	// sharing one source field that can only be absent or present together.
 	//
 	// A type that inherits its contract carries no separate authored document
 	// to read: inheritance copies the base's sections down as the base wrote
@@ -3366,15 +3367,15 @@ type GraphView interface {
 	// sides, so splitting it into per-coordinate accessors would make the
 	// question un-askable and the accessors individually meaningless.
 	//
-	// Each pillar has its own carrier, and the pillar coordinate is what
+	// Each pillar has its own source field, and the pillar coordinate is what
 	// selects between them: an attachment's configuration is recorded as one
 	// provenance map per pillar, so asking about a leaf of the developer's
 	// configuration and asking about a leaf of the operator's read different
-	// maps under one fact. Both carriers are named in this declaration for
-	// that reason — a reader reconciling the placement table against the
+	// maps under one fact. Both source fields are named in this declaration
+	// for that reason — a reader reconciling the placement table against the
 	// code would otherwise find one of the two and conclude the other pillar
-	// is unaccounted for. A pillar neither carrier is kept for yields the zero
-	// record, which is the same answer as a leaf the author wrote with no
+	// is unaccounted for. A pillar neither source field is kept for yields the
+	// zero record, which is the same answer as a leaf the author wrote with no
 	// annotation behind it and deliberately so: every field a rule reads is
 	// absent in both cases.
 	//
@@ -3431,7 +3432,7 @@ type GraphView interface {
 	// which socket constraint applies.
 	//
 	// This names the Feature TYPE and never the per-attachment instance. The
-	// instance is a separate coordinate on a separate carrier, and a rule
+	// instance is a separate coordinate on a separate source field, and a rule
 	// reaching for the declaration needs the type, so a fact conflating them
 	// would hand half of its readers the wrong string.
 	//
@@ -3621,8 +3622,8 @@ type DescribedView interface {
 	//
 	// The set is the step plugin's own declaration about itself. Which
 	// provider a step actually runs under is a separate question on a separate
-	// carrier, so a rule matching the two composes this fact with that one
-	// rather than asking a single fact to span both surfaces.
+	// source field, so a rule matching the two composes this fact with that
+	// one rather than asking a single fact to span both surfaces.
 	//
 	// Keyed by (node, pipeline-step); read from
 	// wasm.PluginDescriptor.Capabilities.
@@ -4222,9 +4223,9 @@ type DescribedView interface {
 	// forgotten. Keyed by the field, the axis is data: one more label is
 	// enumerated and nothing else moves.
 	//
-	// One fact serves every field because one reference set does. Within a
-	// carrier the render context is one type, so what a template on any of
-	// these fields may name is one question with one answer, and a rule
+	// One fact serves every field because one reference set does. Within one
+	// FeatureRecipe the render context is one type, so what a template on any
+	// of these fields may name is one question with one answer, and a rule
 	// reading this fact decides it the same way whichever field it was invoked
 	// for.
 	//
@@ -4257,15 +4258,16 @@ type DescribedView interface {
 	// else moves.
 	//
 	// One fact serves every field even though the reference sets differ, and
-	// that is worth stating because it is the reverse of the carrier this
-	// shape was first built on. There, one set served the whole carrier and
-	// the fact carried the question whole. Here the two fields are checked
-	// against two different admitted sets over one context type — a
-	// whole-boundary template is evaluated once for the scope, so a single
-	// component's id would make the emitted path depend on evaluation order,
-	// while a per-component segment is evaluated once for each component
-	// placed. The fact stays one because it hands over TEXT: which set applies
-	// follows from the field, which the reader already has as a coordinate.
+	// that is worth stating because it is the reverse of the FeatureRecipe
+	// this shape was first built on. There, one set served the whole
+	// FeatureRecipe and the fact carried the question whole. Here the two
+	// fields are checked against two different admitted sets over one context
+	// type — a whole-boundary template is evaluated once for the scope, so a
+	// single component's id would make the emitted path depend on evaluation
+	// order, while a per-component segment is evaluated once for each
+	// component placed. The fact stays one because it hands over TEXT: which
+	// set applies follows from the field, which the reader already has as a
+	// coordinate.
 	//
 	// The fact is the text and not an analysis of it, on the reading every
 	// authored-text fact carries: a collected reference set is a judgement
@@ -4818,10 +4820,10 @@ type HydratedView interface {
 	// That distinction is worth stating here because nothing else states it.
 	// The two read the same authoring block at the same coordinates and differ
 	// in nothing but the stage and whether evaluation has happened — and the
-	// report of facts sharing a carrier pairs them by stage, carrier and
-	// subject together, so it does not pair these two and never will. A reader
-	// who suspects duplication has this paragraph and nothing else to settle
-	// it with.
+	// report of facts sharing a source field pairs them by stage, source field
+	// and subject together, so it does not pair these two and never will. A
+	// reader who suspects duplication has this paragraph and nothing else to
+	// settle it with.
 	//
 	// The text is the entry's content whichever form the entry took: written
 	// inline, supplied by an imported file, or supplied by an entry of a
@@ -5149,10 +5151,10 @@ type HydratedView interface {
 // EmittedView exposes the facts complete at the emitted stage: each
 // render's own emitted file set, complete and attributed: every file that
 // render produced, under the name it will be placed by, together with the
-// authored input block each came from — held per carrier, so a node's
-// own render, the render one attachment carries on a node, and the render
-// one boundary-scope attachment carries each answer for their own emission
-// — all of it before anything is sorted into an assembly group.
+// authored input block each came from — held per render, so a node's own
+// render, the render one attachment carries on a node, and the render one
+// boundary-scope attachment carries each answer for their own emission —
+// all of it before anything is sorted into an assembly group.
 //
 // It embeds HydratedView, so every fact complete earlier is readable here
 // and the containment is a compile-time fact rather than a documented
@@ -5211,8 +5213,8 @@ type EmittedView interface {
 	// attachment carries on a node, deduplicated, in the order that render
 	// produced them.
 	//
-	// It is the carrier-keyed form of the node's own origin set and answers
-	// the same question of a different document. A FeatureRecipe can produce a
+	// It is the owner-keyed form of the node's own origin set and answers the
+	// same question of a different document. A FeatureRecipe can produce a
 	// file from more than one block — a source, a workload, an artifacts
 	// entry, and a step of a pipeline each contribute under a name chosen
 	// independently of the others — so more than one entry here means two

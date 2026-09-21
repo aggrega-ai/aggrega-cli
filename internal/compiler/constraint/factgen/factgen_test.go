@@ -245,7 +245,7 @@ func TestSubjectKindsPartitionTheFacts(t *testing.T) {
 // The calibration matters more than the assertion. An empty share list is the
 // expected result for a registry with no near-duplicates, and an empty list is
 // indistinguishable from a broken detector unless the detector is shown to fire.
-// So this feeds it a pair sharing a stage, a carrier and a subject, and requires
+// So this feeds it a pair sharing a stage, a source field and a subject, and requires
 // the pair back.
 func TestTupleSharesAreReported(t *testing.T) {
 	t.Parallel()
@@ -264,19 +264,19 @@ func TestTupleSharesAreReported(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Errorf("two facts sharing a stage, a source carrier and a subject were not reported as sharing "+
+		t.Errorf("two facts sharing a stage, a source field and a subject were not reported as sharing "+
 			"a tuple; the near-duplicate print is not firing, so an empty share list would mean nothing.\n"+
 			"got: %+v", deriveTupleShares(probed))
 	}
 }
 
-// authoredSlotCarrier is the structure whose authored fields the facts below
+// authoredSlotSourceField is the structure whose authored fields the facts below
 // must account for: one attachment slot as an entity declares it.
-const authoredSlotCarrier = "types.AttachmentSlot"
+const authoredSlotSourceField = "types.AttachmentSlot"
 
-// authoredSocketCarrier is the second declaration held in lockstep: one
+// authoredSocketSourceField is the second declaration held in lockstep: one
 // dependency socket as an entity declares it.
-const authoredSocketCarrier = "types.UsesSchemaEntry"
+const authoredSocketSourceField = "types.UsesSchemaEntry"
 
 // attachmentSlotFieldsWithoutFacts records, per authored field of the slot
 // declaration, why no fact reads it. An entry is a claim that no rule over the
@@ -296,18 +296,18 @@ var attachmentSlotFieldsWithoutFacts = map[string]string{
 		"changes, so a rule over the slot's shape has nothing to decide from it",
 }
 
-// authoredCarriersHeldInLockstep are the declarations whose every authored field
+// authoredSourceFieldsHeldInLockstep are the declarations whose every authored field
 // must be accounted for — by a fact that reads it, or by a recorded reason why
 // no rule has an input there.
 //
 // It is a list rather than one entry because the failure it prevents is a
 // property of the class rather than of any one declaration: an authored field no
 // fact reads is invisible to every rule over that declaration's shape, whichever
-// declaration it sits on. A carrier absent from this list is unguarded, so
+// declaration it sits on. A declaration absent from this list is unguarded, so
 // adding one here is how the guarantee widens.
-var authoredCarriersHeldInLockstep = []struct {
-	carrier string
-	decl    reflect.Type
+var authoredSourceFieldsHeldInLockstep = []struct {
+	sourceField string
+	decl        reflect.Type
 	// without records, per authored field, why no fact reads it. Empty means
 	// every authored field the declaration carries is read by some fact, which
 	// is an assertion rather than an omission: the pairing refuses a reason that
@@ -315,14 +315,14 @@ var authoredCarriersHeldInLockstep = []struct {
 	without map[string]string
 }{
 	{
-		carrier: authoredSlotCarrier,
-		decl:    reflect.TypeOf(types.AttachmentSlot{}),
-		without: attachmentSlotFieldsWithoutFacts,
+		sourceField: authoredSlotSourceField,
+		decl:        reflect.TypeOf(types.AttachmentSlot{}),
+		without:     attachmentSlotFieldsWithoutFacts,
 	},
 	{
-		carrier: authoredSocketCarrier,
-		decl:    reflect.TypeOf(types.UsesSchemaEntry{}),
-		without: nil,
+		sourceField: authoredSocketSourceField,
+		decl:        reflect.TypeOf(types.UsesSchemaEntry{}),
+		without:     nil,
 	},
 }
 
@@ -347,7 +347,7 @@ type slotFieldFindings struct {
 // running its own copy of this partition would only prove that copy fires.
 func pairAuthoredFieldsWithFacts(
 	decl reflect.Type,
-	carrier string,
+	sourceField string,
 	decls []factDecl,
 	without map[string]string,
 ) slotFieldFindings {
@@ -366,7 +366,7 @@ func pairAuthoredFieldsWithFacts(
 
 	covered := map[string]string{}
 	for _, f := range decls {
-		if field, ok := strings.CutPrefix(f.SourceField, carrier+"."); ok {
+		if field, ok := strings.CutPrefix(f.SourceField, sourceField+"."); ok {
 			covered[field] = f.Name
 		}
 	}
@@ -399,7 +399,7 @@ func pairAuthoredFieldsWithFacts(
 	return out
 }
 
-// TestEveryAuthoredCarrierFieldHasAFact holds each registered declaration and
+// TestEveryAuthoredSourceFieldHasAFact holds each registered declaration and
 // the facts over it in lockstep, in both directions.
 //
 // The failure it prevents is silent, which is why it is a test rather than a
@@ -408,50 +408,50 @@ func pairAuthoredFieldsWithFacts(
 // reports nothing about that field. Nothing goes red, so nothing prompts anyone
 // to look — and a census someone has to remember to re-run is not enforcement.
 //
-// Both directions are asserted per carrier. An authored field with neither a fact
+// Both directions are asserted per declaration. An authored field with neither a fact
 // nor a recorded reason fails, and so does a fact naming a field the declaration
 // does not carry, which is what a rename leaves behind.
 //
-// The carrier set is asserted non-empty for the same reason each carrier's field
+// The declaration set is asserted non-empty for the same reason each declaration's field
 // set is: a loop over no rows passes every assertion inside it.
-func TestEveryAuthoredCarrierFieldHasAFact(t *testing.T) {
+func TestEveryAuthoredSourceFieldHasAFact(t *testing.T) {
 	t.Parallel()
 
-	if len(authoredCarriersHeldInLockstep) == 0 {
-		t.Fatal("no carrier is held in lockstep, so this test checks nothing")
+	if len(authoredSourceFieldsHeldInLockstep) == 0 {
+		t.Fatal("no declaration is held in lockstep, so this test checks nothing")
 	}
 
-	for _, c := range authoredCarriersHeldInLockstep {
-		t.Run(c.carrier, func(t *testing.T) {
+	for _, c := range authoredSourceFieldsHeldInLockstep {
+		t.Run(c.sourceField, func(t *testing.T) {
 			t.Parallel()
 
-			found := pairAuthoredFieldsWithFacts(c.decl, c.carrier, facts, c.without)
+			found := pairAuthoredFieldsWithFacts(c.decl, c.sourceField, facts, c.without)
 
 			// A declaration reporting no authored fields would satisfy every
 			// assertion below while checking nothing, so the population is
 			// asserted before the findings are read.
-			empty := pairAuthoredFieldsWithFacts(c.decl, c.carrier, nil, nil)
+			empty := pairAuthoredFieldsWithFacts(c.decl, c.sourceField, nil, nil)
 			if len(empty.unexplained) == 0 {
 				t.Fatalf("%s reports no authored fields at all, so this pairing checks nothing",
-					c.carrier)
+					c.sourceField)
 			}
-			t.Logf("%s carries %d authored field(s)", c.carrier, len(empty.unexplained))
+			t.Logf("%s carries %d authored field(s)", c.sourceField, len(empty.unexplained))
 
 			if len(found.unexplained) > 0 {
 				t.Errorf("%s declares %d authored field(s) that no fact reads and no recorded "+
 					"reason covers: %v\neach is either a field a rule over this declaration's "+
 					"shape cannot see, which wants a fact, or one no rule has a use for, which "+
 					"wants its reason recorded beside the others",
-					c.carrier, len(found.unexplained), found.unexplained)
+					c.sourceField, len(found.unexplained), found.unexplained)
 			}
 			if len(found.dangling) > 0 {
 				t.Errorf("%d fact(s) read a field %s does not carry as an authored field: %v\n"+
 					"a fact naming a field that was renamed or removed reads nothing",
-					len(found.dangling), c.carrier, found.dangling)
+					len(found.dangling), c.sourceField, found.dangling)
 			}
 			if len(found.stale) > 0 {
 				t.Errorf("%d recorded reason(s) no longer hold over %s: %v\nremove each entry",
-					len(found.stale), c.carrier, found.stale)
+					len(found.stale), c.sourceField, found.stale)
 			}
 		})
 	}
@@ -532,7 +532,7 @@ func TestTheAttachmentSlotPairingReportsWhatItIsGiven(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got := pairAuthoredFieldsWithFacts(tc.decl, authoredSlotCarrier, facts, tc.without)
+			got := pairAuthoredFieldsWithFacts(tc.decl, authoredSlotSourceField, facts, tc.without)
 			reported := tc.read(got)
 			if tc.want == "" {
 				if len(reported) > 0 {

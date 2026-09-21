@@ -334,9 +334,9 @@ values:
   in_none:
     allOf: [ { properties: { alpha_s: { type: string } } } ]
 `)).Values
-	for _, carrier := range []string{"in_allof", "in_anyof", "in_oneof", "in_if", "in_then", "in_else", "in_not"} {
-		if !values[carrier+".zz_s"] {
-			t.Errorf("a declaration under %q was not collected; got %v", carrier, values)
+	for _, branch := range []string{"in_allof", "in_anyof", "in_oneof", "in_if", "in_then", "in_else", "in_not"} {
+		if !values[branch+".zz_s"] {
+			t.Errorf("a declaration under %q was not collected; got %v", branch, values)
 		}
 	}
 	if values["in_none.alpha_s"] || values["in_none"] {

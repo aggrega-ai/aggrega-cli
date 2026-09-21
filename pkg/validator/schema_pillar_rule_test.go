@@ -14,7 +14,7 @@ import (
 
 // TestValidateSchemaPillars_RefusesAnUnknownKeyOnBothAuthoredKinds drives the
 // pillar-key rule over each authored kind that carries a schema block, because a
-// rule declared per carrier can cover one kind and silently pass the other — and a
+// rule declared per document kind can cover one kind and silently pass the other — and a
 // half-covering refusal reads as coverage.
 //
 // It asserts the condition's identity as well as the words, because a consumer
@@ -210,16 +210,16 @@ func TestAuthoredSchemaPillarKeysReadsOnlyAMapping(t *testing.T) {
 	}
 }
 
-// TestSchemaPillarChecksShareOneConditionAndOneSeverity pins that the two carrier
+// TestSchemaPillarChecksShareOneConditionAndOneSeverity pins that the two document-kind
 // declarations are two spellings of one rule.
 //
 // Two declarations raising two identities would make the diagnostic an author
 // reads depend on which authored kind they wrote, which is the outcome declaring
-// the rule per carrier exists to avoid.
+// the rule per document kind exists to avoid.
 func TestSchemaPillarChecksShareOneConditionAndOneSeverity(t *testing.T) {
 	t.Parallel()
 	if !errors.Is(componentSchemaKeyNamesAPillar.Sentinel, featureSchemaKeyNamesAPillar.Sentinel) {
-		t.Errorf("the two carrier declarations must raise one condition; got %v and %v",
+		t.Errorf("the two document-kind declarations must raise one condition; got %v and %v",
 			componentSchemaKeyNamesAPillar.Sentinel, featureSchemaKeyNamesAPillar.Sentinel)
 	}
 	if !errors.Is(componentSchemaKeyNamesAPillar.Sentinel, ErrUnknownSchemaPillar()) {

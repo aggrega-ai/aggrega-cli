@@ -42,7 +42,7 @@ func schemaPillarKeyAdvice(key string) string {
 // declarations below hand it the key each was invoked for. The rule does not vary
 // by kind: the block is written under the same key on each, admits the same three
 // pillars on each, and is consumed the same way. What varies is which document the
-// key was read from, and that is the carrier axis the two declarations express.
+// key was read from, and that is the document-kind axis the two declarations express.
 func schemaPillarKeyObjections(
 	s constraint.DocumentSchemaPillarSubject,
 	key string,
@@ -61,7 +61,7 @@ func schemaPillarKeyObjections(
 // It is one of two declarations of one rule, and the plurality is forced by the
 // check type rather than chosen: a check carries exactly one subject type parameter
 // and reads one presentation, and the two authored kinds that carry a schema block
-// are two carriers. A fact is filed under exactly one of them, so a single
+// are two document kinds. A fact is filed under exactly one of them, so a single
 // declaration would govern one kind and read as though it governed the rule — which
 // is worse than an absent check, because nothing would ever prompt a second look at
 // the kind it silently passed. Both declarations raise the same condition, so the
@@ -92,7 +92,7 @@ var componentSchemaKeyNamesAPillar = constraint.Check[
 // featureSchemaKeyNamesAPillar refuses a Feature whose schema block declares a
 // top-level key naming no data pillar.
 //
-// It is the Feature carrier's declaration of the rule componentSchemaKeyNamesAPillar
+// It is the Feature document's declaration of the rule componentSchemaKeyNamesAPillar
 // declares for a Component. Why there are two, and why both raise one condition, is
 // stated there; it is not repeated here, because a rule's reasoning has one home.
 var featureSchemaKeyNamesAPillar = constraint.Check[
@@ -102,7 +102,7 @@ var featureSchemaKeyNamesAPillar = constraint.Check[
 	Sentinel: ErrUnknownSchemaPillar(),
 	Severity: constraint.SeverityFatal,
 	SubjectOnly: "reads SchemaPillarKey, the authored key the subject carries, " +
-		"for the reason the Component carrier's declaration states.",
+		"for the reason the Component document's declaration states.",
 	Run: func(
 		_ constraint.DocumentView,
 		s constraint.DocumentSchemaPillarSubject,

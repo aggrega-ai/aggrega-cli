@@ -8,14 +8,14 @@ import (
 	"testing"
 )
 
-// The carrier derivation takes its fact and stage sets as arguments rather than
+// The document-kind derivation takes its fact and stage sets as arguments rather than
 // reading the registry, and its own documentation says why: "so that the refusals
 // below can be shown to fire: a refusal nothing exercises is indistinguishable
 // from a refusal that never triggers". This file is where they are shown to fire.
 //
 // 🔴 The count in that documentation is short of what the function refuses, and
 // the rows below are built from the function rather than from the sentence. Four
-// shapes are enumerated there — a carrier declared away from the document stage,
+// shapes are enumerated there — a document kind declared away from the document stage,
 // a document-stage fact naming no kind, a declaration disagreeing with a
 // derivation, and a declaration repeating one. A fifth refusal sits ahead of all
 // of them and is not in that enumeration: a registry declaring no stage of the
@@ -26,7 +26,7 @@ import (
 // because a table of refusals alone passes for a function that refuses
 // everything.
 
-// documentStages is the minimal stage set a carrier derivation needs: one stage
+// documentStages is the minimal stage set a document-kind derivation needs: one stage
 // of the name the axis applies at.
 //
 // It is built per call rather than shared, so a row cannot mutate the set a
@@ -37,26 +37,26 @@ func documentStages() []stageDecl {
 
 // documentFact is a document-stage fact declaration with the coordinates every
 // row below varies from.
-func documentFact(name, sourceField, carrier string) factDecl {
+func documentFact(name, sourceField, documentKind string) factDecl {
 	return factDecl{
-		Name:        name,
-		Stage:       documentStage,
-		SourceField: sourceField,
-		Carrier:     carrier,
-		Subject:     []string{"document"},
-		Returns:     "string",
-		Doc:         "A fact declared for the carrier derivation's own refusals.",
+		Name:         name,
+		Stage:        documentStage,
+		SourceField:  sourceField,
+		DocumentKind: documentKind,
+		Subject:      []string{"document"},
+		Returns:      "string",
+		Doc:          "A fact declared for the document-kind derivation's own refusals.",
 	}
 }
 
-// TestDeriveCarriersRefusals drives every shape the carrier derivation refuses,
+// TestDeriveDocumentKindsRefusals drives every shape the document-kind derivation refuses,
 // and asserts the refusal names the fact and says which shape it met.
 //
 // The assertion is on the message rather than only on the error being non-nil,
 // because every row returns a non-nil error and a test asserting that alone
 // would pass with all seven refusals collapsed into one. What each row pins is
 // that the refusal it met is the refusal it aimed at.
-func TestDeriveCarriersRefusals(t *testing.T) {
+func TestDeriveDocumentKindsRefusals(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
 		name string
@@ -74,32 +74,32 @@ func TestDeriveCarriersRefusals(t *testing.T) {
 			wants:  []string{"no stage named", documentStage, "has no stage to apply at"},
 		},
 		{
-			name: "a carrier is declared at a stage other than the document stage",
+			name: "a document kind is declared at a stage other than the document stage",
 			facts: []factDecl{{
-				Name:        "probe",
-				Stage:       "graph",
-				SourceField: "ir.Graph.Nodes",
-				Carrier:     "Component",
-				Subject:     []string{"node"},
-				Returns:     "string",
-				Doc:         "A later-stage fact carrying a carrier it may not carry.",
+				Name:         "probe",
+				Stage:        "graph",
+				SourceField:  "ir.Graph.Nodes",
+				DocumentKind: "Component",
+				Subject:      []string{"node"},
+				Returns:      "string",
+				Doc:          "A later-stage fact declaring a document kind it may not declare.",
 			}},
 			stages: append(documentStages(),
 				stageDecl{Name: "graph", Extends: documentStage, Holds: "one graph", HostPowers: noHostPowers}),
 			wants: []string{
-				`fact "probe" declares carrier "Component" at stage "graph"`,
+				`fact "probe" declares document kind "Component" at stage "graph"`,
 				"varies by authored document kind",
-				"a single carrier",
+				"a single kind",
 			},
 		},
 		{
-			name:   "a declaration repeats what the source carrier already derives",
+			name:   "a declaration repeats what the source field already derives",
 			facts:  []factDecl{documentFact("probe", "types.ComponentSpec.Assertions", "Component")},
 			stages: documentStages(),
 			wants:  []string{"already derives", "one home", "cannot drift apart"},
 		},
 		{
-			name:   "a declaration disagrees with what the source carrier derives",
+			name:   "a declaration disagrees with what the source field derives",
 			facts:  []factDecl{documentFact("probe", "types.ComponentSpec.Assertions", "Feature")},
 			stages: documentStages(),
 			wants:  []string{`derives "Component"`, "one of the two", "is wrong"},
@@ -108,16 +108,16 @@ func TestDeriveCarriersRefusals(t *testing.T) {
 			name:   "a document-stage fact names no kind at all",
 			facts:  []factDecl{documentFact("probe", "resolver.ResolveInputs.AggregateRawBytes", "")},
 			stages: documentStages(),
-			wants:  []string{"names no authored kind", "Declare Carrier", "an omission and a"},
+			wants:  []string{"names no authored kind", "Declare DocumentKind", "an omission and a"},
 		},
 		{
-			name:   "a declared carrier is spelled as the carrier type rather than the kind",
+			name:   "a declared kind is spelled as the source structure rather than the kind",
 			facts:  []factDecl{documentFact("probe", "resolver.ResolveInputs.AggregateRawBytes", "types.ComponentSpec")},
 			stages: documentStages(),
 			wants:  []string{"is not a document kind", "no package qualifier", "no field path"},
 		},
 		{
-			name:   "a declared carrier is not capitalised",
+			name:   "a declared kind is not capitalised",
 			facts:  []factDecl{documentFact("probe", "resolver.ResolveInputs.AggregateRawBytes", "component")},
 			stages: documentStages(),
 			wants:  []string{"is not a document kind", "capitalised"},
@@ -125,7 +125,7 @@ func TestDeriveCarriersRefusals(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			groups, err := deriveCarriers(tc.facts, tc.stages)
+			groups, err := deriveDocumentKinds(tc.facts, tc.stages)
 			if err == nil {
 				t.Fatalf("the derivation accepted %d group(s); this shape must be refused", len(groups))
 			}
@@ -142,17 +142,17 @@ func TestDeriveCarriersRefusals(t *testing.T) {
 	}
 }
 
-// TestDeriveCarriersAcceptsTheShapesItIsFor is the positive control for the table
+// TestDeriveDocumentKindsAcceptsTheShapesItIsFor is the positive control for the table
 // above: without it, every refusal there is satisfied by a derivation that
 // refuses whatever it is handed.
 //
 // It also pins the two input paths a fact has to a kind — derived from the source
-// carrier, and declared where that derivation yields nothing — and the order the
+// field, and declared where that derivation yields nothing — and the order the
 // groups come back in, which is the registry's own and not sorted: a generated
 // artifact is byte-compared against its committed copy, so an order that is a
 // property of the declarations reproduces and one that is a property of a map
 // does not.
-func TestDeriveCarriersAcceptsTheShapesItIsFor(t *testing.T) {
+func TestDeriveDocumentKindsAcceptsTheShapesItIsFor(t *testing.T) {
 	t.Parallel()
 	facts := []factDecl{
 		documentFact("derived-kind", "types.FeatureSpec.Schema", ""),
@@ -164,20 +164,20 @@ func TestDeriveCarriersAcceptsTheShapesItIsFor(t *testing.T) {
 			SourceField: "ir.Graph.Nodes",
 			Subject:     []string{"node"},
 			Returns:     "string",
-			Doc:         "A later-stage fact, which the carrier axis does not apply to.",
+			Doc:         "A later-stage fact, which the document-kind axis does not apply to.",
 		},
 	}
 	stages := append(documentStages(),
 		stageDecl{Name: "graph", Extends: documentStage, Holds: "one graph", HostPowers: noHostPowers})
 
-	groups, err := deriveCarriers(facts, stages)
+	groups, err := deriveDocumentKinds(facts, stages)
 	if err != nil {
 		t.Fatalf("the derivation refused a registry it is for: %v", err)
 	}
 
 	wantKinds := []string{"Feature", "Aggregate"}
 	if len(groups) != len(wantKinds) {
-		t.Fatalf("derived %d carrier group(s); want %d, one per authored kind the document-stage "+
+		t.Fatalf("derived %d document-kind group(s); want %d, one per authored kind the document-stage "+
 			"facts name", len(groups), len(wantKinds))
 	}
 	for i, want := range wantKinds {
@@ -195,15 +195,15 @@ func TestDeriveCarriersAcceptsTheShapesItIsFor(t *testing.T) {
 	}
 }
 
-// TestDeriveCarriersAdmitsASingleKindStageDeclaringNoCarrier pins the one thing
+// TestDeriveDocumentKindsAdmitsASingleKindStageDeclaringNoDocumentKind pins the one thing
 // the derivation cannot see, so that it is a recorded decision rather than a
 // trap somebody meets later.
 //
 // A stage after the root may present one authored document rather than a
 // compilation — the catalog stage does, holding one Manifest beside the catalog
-// it resolves against. Such a stage is single-kind, so it needs no carrier and
+// it resolves against. Such a stage is single-kind, so it needs no document kind and
 // declares none, and this derivation admits it: the refusal keys on a NON-EMPTY
-// carrier at a non-document stage, so a fact with no carrier trips nothing
+// document kind at a non-document stage, so a fact declaring none trips nothing
 // wherever it sits.
 //
 // That admission is correct for a single-kind stage and silent for one that has
@@ -213,7 +213,7 @@ func TestDeriveCarriersAcceptsTheShapesItIsFor(t *testing.T) {
 // refuse that, which is why the obligation is written on the stage's own
 // declaration in the registry — and why this test exists rather than an
 // assertion nobody can write.
-func TestDeriveCarriersAdmitsASingleKindStageDeclaringNoCarrier(t *testing.T) {
+func TestDeriveDocumentKindsAdmitsASingleKindStageDeclaringNoDocumentKind(t *testing.T) {
 	t.Parallel()
 	facts := []factDecl{
 		documentFact("derived-kind", "types.FeatureSpec.Schema", ""),
@@ -224,7 +224,7 @@ func TestDeriveCarriersAdmitsASingleKindStageDeclaringNoCarrier(t *testing.T) {
 			Subject:     []string{"document", "annotation-binding"},
 			Returns:     "bool",
 			Doc: "A fact at a stage presenting one authored document of a fixed kind, " +
-				"which declares no carrier because the stage itself names the kind.",
+				"which declares no document kind because the stage itself names the kind.",
 		},
 	}
 	stages := append(documentStages(), stageDecl{
@@ -234,12 +234,12 @@ func TestDeriveCarriersAdmitsASingleKindStageDeclaringNoCarrier(t *testing.T) {
 		HostPowers: noHostPowers,
 	})
 
-	groups, err := deriveCarriers(facts, stages)
+	groups, err := deriveDocumentKinds(facts, stages)
 	if err != nil {
-		t.Fatalf("the derivation refused a single-kind stage declaring no carrier: %v", err)
+		t.Fatalf("the derivation refused a single-kind stage declaring no document kind: %v", err)
 	}
 	if len(groups) != 1 {
-		t.Fatalf("derived %d carrier group(s); want 1 — the carrier axis groups document-stage "+
+		t.Fatalf("derived %d document-kind group(s); want 1 — the document-kind axis groups document-stage "+
 			"facts alone, so a fact at the single-kind stage joins no group", len(groups))
 	}
 	for _, f := range groups[0].Facts {
@@ -250,13 +250,13 @@ func TestDeriveCarriersAdmitsASingleKindStageDeclaringNoCarrier(t *testing.T) {
 	}
 }
 
-// TestDeriveCarrierReadsTheKindOffTheSourceCarrier pins the derivation itself,
+// TestDeriveDocumentKindReadsTheKindOffTheSourceField pins the derivation itself,
 // which is the half the table above reaches only through its caller.
 //
 // The negative rows are what make the positive ones mean something: a derivation
 // answering every input would satisfy the positive rows alone, and the shapes it
-// must decline are exactly the ones a fact declares its carrier for.
-func TestDeriveCarrierReadsTheKindOffTheSourceCarrier(t *testing.T) {
+// must decline are exactly the ones a fact declares its document kind for.
+func TestDeriveDocumentKindReadsTheKindOffTheSourceField(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
 		sourceField string
@@ -274,19 +274,19 @@ func TestDeriveCarrierReadsTheKindOffTheSourceCarrier(t *testing.T) {
 		// The prefix without the suffix, and the suffix without the prefix.
 		{"types.Component.Assertions", "", false},
 		{"other.ComponentSpec.Assertions", "", false},
-		// A carrier type that is the prefix and suffix and nothing between.
+		// A source structure that is the prefix and suffix and nothing between.
 		{"types.Spec.Field", "", false},
-		// No dot at all, so there is no carrier type to read.
+		// No dot at all, so there is no source structure to read.
 		{"AggregateRawBytes", "", false},
 	} {
 		t.Run(tc.sourceField, func(t *testing.T) {
 			t.Parallel()
-			kind, ok := deriveCarrier(tc.sourceField)
+			kind, ok := deriveDocumentKind(tc.sourceField)
 			if ok != tc.wantOK {
-				t.Fatalf("deriveCarrier(%q) reported ok=%v; want %v", tc.sourceField, ok, tc.wantOK)
+				t.Fatalf("deriveDocumentKind(%q) reported ok=%v; want %v", tc.sourceField, ok, tc.wantOK)
 			}
 			if kind != tc.wantKind {
-				t.Errorf("deriveCarrier(%q) = %q; want %q", tc.sourceField, kind, tc.wantKind)
+				t.Errorf("deriveDocumentKind(%q) = %q; want %q", tc.sourceField, kind, tc.wantKind)
 			}
 		})
 	}

@@ -74,7 +74,7 @@ type Boundary struct {
 // replica count, storage class, etc.) that flow into the IR's per-node
 // infra_mapping. The field's presence here distinguishes BoundaryComponent
 // from [Boundary]: the latter is a routing container with annotation-only
-// metadata; the former is the actual sizing carrier for a routed
+// metadata; the former is what actually holds the sizing for a routed
 // component.
 type BoundaryComponent struct {
 	Description  string `json:"description,omitempty" yaml:"description,omitempty"`

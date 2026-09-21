@@ -181,7 +181,7 @@ func RunOnDocumentAssertions[V View](
 // appear in. Nothing here sorts and nothing here derives a key.
 //
 // It serves both authored kinds that carry the block, and takes neither as an
-// argument. Which kind a key was read from is the carrier axis, which the view
+// argument. Which kind a key was read from is the document-kind axis, which the view
 // carries: a caller presents the document it is holding, and the facts that
 // presentation answers are the facts that kind carries. The coordinate is the same
 // site in either.

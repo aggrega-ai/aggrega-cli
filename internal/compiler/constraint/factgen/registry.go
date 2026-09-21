@@ -47,20 +47,20 @@ var stages = []stageDecl{
 		// reach is the catalog's, not the compilation's.
 		//
 		// 🔴 THIS STAGE PRESENTS ONE AUTHORED DOCUMENT AND NOT A COMPILATION, so
-		// it is the second stage the carrier axis could apply at — and the only
+		// it is the second stage the document-kind axis could apply at — and the only
 		// reason it does not is that every fact here is carried by one kind, the
 		// Manifest, which the stage itself fixes. A stage whose facts all name one
-		// kind has a single carrier, so there is nothing for a second axis to
-		// distinguish and no carrier is declared.
+		// kind has a single document kind, so there is nothing for a second axis to
+		// distinguish and none is declared.
 		//
 		// 🔴 THE FIRST FACT A SECOND DOCUMENT KIND NEEDS HERE ENDS THAT, AND
-		// NOTHING WILL STOP YOU. deriveCarriers refuses a NON-EMPTY carrier
+		// NOTHING WILL STOP YOU. deriveDocumentKinds refuses a NON-EMPTY document kind
 		// declared away from the document stage, and a fact declared here with no
-		// carrier trips nothing — so the day a Release or a Recipe fact lands
+		// document kind trips nothing — so the day a Release or a Recipe fact lands
 		// here, the stage silently starts answering two kinds through one set of
 		// accessors with no axis separating them. Making the axis apply at more
 		// than one stage is the change that owes: per-kind bases and obligation
-		// interfaces here as well as at the root, and a carrier declaration that
+		// interfaces here as well as at the root, and a document-kind declaration that
 		// is refused today. It is deferred rather than avoided, and it is written
 		// on the declaration rather than only in a record so that whoever adds
 		// that fact meets it where they are working.
@@ -168,7 +168,7 @@ var stages = []stageDecl{
 		Holds: "each render's own emitted file set, complete and attributed: every " +
 			"file that render produced, under the name it will be placed by, " +
 			"together with the authored input block each came from — held per " +
-			"carrier, so a node's own render, the render one attachment carries on " +
+			"render, so a node's own render, the render one attachment carries on " +
 			"a node, and the render one boundary-scope attachment carries each " +
 			"answer for their own emission — all of it before anything is sorted " +
 			"into an assembly group",
@@ -564,13 +564,13 @@ var facts = []factDecl{
 	// ---------------------------------------------------------------- document
 
 	{
-		Name:        "raw-aggregate-text",
-		Stage:       "document",
-		SourceField: "resolver.ResolveInputs.AggregateRawBytes",
-		Carrier:     "Aggregate",
-		Subject:     []string{"document"},
-		Params:      []paramDecl{{Name: "document", Type: "string"}},
-		Returns:     "[]byte",
+		Name:         "raw-aggregate-text",
+		Stage:        "document",
+		SourceField:  "resolver.ResolveInputs.AggregateRawBytes",
+		DocumentKind: "Aggregate",
+		Subject:      []string{"document"},
+		Params:       []paramDecl{{Name: "document", Type: "string"}},
+		Returns:      "[]byte",
 		Doc: "RawAggregateText is the Aggregate's bytes as authored, before " +
 			"parameter interpolation.\n\nIt is a separate fact from the " +
 			"interpolated document rather than the same fact at an earlier " +
@@ -602,11 +602,11 @@ var facts = []factDecl{
 			"chain root's first.",
 	},
 	{
-		Name:        "entity-assertion-declaring-entity",
-		Stage:       "document",
-		SourceField: "types.ComponentMetadata.Name",
-		Carrier:     "Component",
-		Subject:     []string{"document", "assertion"},
+		Name:         "entity-assertion-declaring-entity",
+		Stage:        "document",
+		SourceField:  "types.ComponentMetadata.Name",
+		DocumentKind: "Component",
+		Subject:      []string{"document", "assertion"},
 		Params: []paramDecl{
 			{Name: "document", Type: "string"},
 			{Name: "assertion", Type: "string"},
@@ -744,7 +744,7 @@ var facts = []factDecl{
 		Returns:     "(int, bool)",
 		Doc: "FeatureExtendsChainLength is how many entities the chain the presented " +
 			"Feature extends reaches, and whether that chain ends cleanly.\n\nIt is " +
-			"the Feature carrier's declaration of what the Component's own length " +
+			"the Feature document's declaration of what the Component's own length " +
 			"fact declares for a Component. Why there are two, and why a chain that " +
 			"closes on itself has no length to report, is stated there.",
 	},
@@ -758,10 +758,10 @@ var facts = []factDecl{
 		Doc: "ManifestExtendsChainCycleEdge is the edge at which the chain the " +
 			"presented Manifest extends returns to a Manifest already in it, and " +
 			"whether the chain closes on itself at all.\n\nIt is the Manifest " +
-			"carrier's declaration of what the Component's own cycle fact declares " +
+			"document's declaration of what the Component's own cycle fact declares " +
 			"for a Component, and the reason there are several is stated on the " +
 			"Feature's.\n\nOne thing about it is the Manifest's own and is stated " +
-			"here because no other carrier's declaration could: a link is a FILE. " +
+			"here because no other document's declaration could: a link is a FILE. " +
 			"Two Manifest files may legally declare one name, so they are two links " +
 			"and a chain passing through both has not met itself — while the edge " +
 			"this answers names each link the way its author named it, which is the " +
@@ -776,7 +776,7 @@ var facts = []factDecl{
 		Returns:     "(int, bool)",
 		Doc: "ManifestExtendsChainLength is how many Manifests the chain the " +
 			"presented Manifest extends reaches, and whether that chain ends " +
-			"cleanly.\n\nIt is the Manifest carrier's declaration of what the " +
+			"cleanly.\n\nIt is the Manifest document's declaration of what the " +
 			"Component's own length fact declares for a Component. Why there are " +
 			"several, and why a chain that closes on itself has no length to " +
 			"report, is stated there. The count is of files rather than of names, for the " +
@@ -792,7 +792,7 @@ var facts = []factDecl{
 		Doc: "ReleaseExtendsChainCycleEdge is the edge at which the chain the " +
 			"presented Release extends returns to a Release already in it, and " +
 			"whether the chain closes on itself at all.\n\nIt is the Release " +
-			"carrier's declaration of what the Component's own cycle fact declares " +
+			"document's declaration of what the Component's own cycle fact declares " +
 			"for a Component, and the reason there are several is stated on the " +
 			"Feature's.\n\nWhat the Release contributes of its own is what the " +
 			"Manifest's declaration contributes of its: a link is a FILE. Two " +
@@ -812,7 +812,7 @@ var facts = []factDecl{
 		Returns:     "(int, bool)",
 		Doc: "ReleaseExtendsChainLength is how many Releases the chain the " +
 			"presented Release extends reaches, and whether that chain ends " +
-			"cleanly.\n\nIt is the Release carrier's declaration of what the " +
+			"cleanly.\n\nIt is the Release document's declaration of what the " +
 			"Component's own length fact declares for a Component. Why there are " +
 			"several, and why a chain that closes on itself has no length to " +
 			"report, is stated there. The count is of files rather than of names, " +
@@ -852,13 +852,13 @@ var facts = []factDecl{
 			"answering both sides is stated there.",
 	},
 	{
-		Name:        "release-extends-chain-inherited-literal-directories",
-		Stage:       "document",
-		SourceField: "types.Boundary.Directory",
-		Carrier:     "Release",
-		Subject:     []string{"document"},
-		Params:      []paramDecl{{Name: "document", Type: "string"}},
-		Returns:     "[]string",
+		Name:         "release-extends-chain-inherited-literal-directories",
+		Stage:        "document",
+		SourceField:  "types.Boundary.Directory",
+		DocumentKind: "Release",
+		Subject:      []string{"document"},
+		Params:       []paramDecl{{Name: "document", Type: "string"}},
+		Returns:      "[]string",
 		Doc: "ReleaseExtendsChainInheritedLiteralDirectories are the boundaries " +
 			"whose output directory the presented Release inherited from the " +
 			"Release it extends and which carry no template variable, named by " +
@@ -873,13 +873,13 @@ var facts = []factDecl{
 			"Only the fold holds both halves.",
 	},
 	{
-		Name:        "manifest-annotation-binding-keys",
-		Stage:       "document",
-		SourceField: "types.MappingTier.Annotations",
-		Carrier:     "Manifest",
-		Subject:     []string{"document", "annotation-binding"},
-		Params:      []paramDecl{{Name: "document", Type: "string"}},
-		Returns:     "[]string",
+		Name:         "manifest-annotation-binding-keys",
+		Stage:        "document",
+		SourceField:  "types.MappingTier.Annotations",
+		DocumentKind: "Manifest",
+		Subject:      []string{"document", "annotation-binding"},
+		Params:       []paramDecl{{Name: "document", Type: "string"}},
+		Returns:      "[]string",
 		Doc: "ManifestAnnotationBindingKeys are the annotation keys the " +
 			"presented Manifest's binding registry declares, in author " +
 			"order.\n\nAn annotation binding is what lets an operator write a " +
@@ -897,11 +897,11 @@ var facts = []factDecl{
 			"acts on.",
 	},
 	{
-		Name:        "manifest-annotation-binding-feature",
-		Stage:       "document",
-		SourceField: "types.AnnotationBinding.Feature",
-		Carrier:     "Manifest",
-		Subject:     []string{"document", "annotation-binding"},
+		Name:         "manifest-annotation-binding-feature",
+		Stage:        "document",
+		SourceField:  "types.AnnotationBinding.Feature",
+		DocumentKind: "Manifest",
+		Subject:      []string{"document", "annotation-binding"},
 		Params: []paramDecl{
 			{Name: "document", Type: "string"},
 			{Name: "binding", Type: "string"},
@@ -916,11 +916,11 @@ var facts = []factDecl{
 			"apart reports the wrong one.",
 	},
 	{
-		Name:        "manifest-annotation-binding-routes",
-		Stage:       "document",
-		SourceField: "types.AnnotationBinding.Maps",
-		Carrier:     "Manifest",
-		Subject:     []string{"document", "annotation-binding"},
+		Name:         "manifest-annotation-binding-routes",
+		Stage:        "document",
+		SourceField:  "types.AnnotationBinding.Maps",
+		DocumentKind: "Manifest",
+		Subject:      []string{"document", "annotation-binding"},
 		Params: []paramDecl{
 			{Name: "document", Type: "string"},
 			{Name: "binding", Type: "string"},
@@ -941,11 +941,11 @@ var facts = []factDecl{
 			"the findings reach the reader.",
 	},
 	{
-		Name:        "annotation-binding-subkey-target",
-		Stage:       "document",
-		SourceField: "types.AnnotationBinding",
-		Carrier:     "Manifest",
-		Subject:     []string{"document", "annotation-binding"},
+		Name:         "annotation-binding-subkey-target",
+		Stage:        "document",
+		SourceField:  "types.AnnotationBinding",
+		DocumentKind: "Manifest",
+		Subject:      []string{"document", "annotation-binding"},
 		Params: []paramDecl{
 			{Name: "binding", Type: "string"},
 			{Name: "subkey", Type: "string"},
@@ -1000,7 +1000,7 @@ var facts = []factDecl{
 		Doc: "RecipeSourceDeclared reports whether the presented Recipe declares " +
 			"a source pointer.\n\nIt is a separate fact from the values " +
 			"overlay above rather than the other half of one, because the two " +
-			"are written at two authored keys: a fact naming both carriers " +
+			"are written at two authored keys: a fact naming both source fields " +
 			"would be a fact about two sites, and a rule reading it could not " +
 			"say which of them the author is being sent to.\n\nWhether a " +
 			"source is present is a shape question and is the whole of what " +
@@ -1128,11 +1128,11 @@ var facts = []factDecl{
 			"not move.",
 	},
 	{
-		Name:        "manifest-recipe-mapping-reference",
-		Stage:       "document",
-		SourceField: "types.MappingTier",
-		Carrier:     "Manifest",
-		Subject:     []string{"document", "mapping-entry"},
+		Name:         "manifest-recipe-mapping-reference",
+		Stage:        "document",
+		SourceField:  "types.MappingTier",
+		DocumentKind: "Manifest",
+		Subject:      []string{"document", "mapping-entry"},
 		Params: []paramDecl{
 			{Name: "document", Type: "string"},
 			{Name: "tier", Type: "string"},
@@ -1147,7 +1147,7 @@ var facts = []factDecl{
 			"two-result fact states: coordinates nobody wrote and a declared " +
 			"entry naming the empty reference are different findings, and a " +
 			"rule that cannot tell them apart reports the wrong one.\n\nIts " +
-			"source carrier names the structure and not one of its fields, " +
+			"source field names the structure and not one of its fields, " +
 			"which is the honest naming here rather than a looser one. A " +
 			"tier holds the type axis and the name axis as two sibling maps " +
 			"of identical shape, and which of the two an entry sits in is " +
@@ -1245,7 +1245,7 @@ var facts = []factDecl{
 			"define, so nothing here looks inside it.\n\nIt is a separate fact " +
 			"from the values overlay beside it rather than the other half of " +
 			"one, because the two are written at two authored keys: a fact " +
-			"naming both carriers would be a fact about two sites, and a rule " +
+			"naming both source fields would be a fact about two sites, and a rule " +
 			"consulting it could not say which of them the author is being sent " +
 			"to.",
 	},
@@ -2682,7 +2682,7 @@ var facts = []factDecl{
 			"one fact over the whole document rather than one per section. The " +
 			"sections are declared together in one authored node, a reader " +
 			"selects the one it wants from it, and splitting them would be " +
-			"three facts sharing one carrier that can only be absent or present " +
+			"three facts sharing one source field that can only be absent or present " +
 			"together.\n\nA type that inherits its contract carries no separate " +
 			"authored document to read: inheritance copies the base's sections " +
 			"down as the base wrote them, so the authored node already holds " +
@@ -3567,15 +3567,15 @@ var facts = []factDecl{
 			"annotation-supplied one is a single question whose answer needs " +
 			"both sides, so splitting it into per-coordinate accessors would " +
 			"make the question un-askable and the accessors individually " +
-			"meaningless.\n\nEach pillar has its own carrier, and the pillar " +
+			"meaningless.\n\nEach pillar has its own source field, and the pillar " +
 			"coordinate is what selects between them: an attachment's " +
 			"configuration is recorded as one provenance map per pillar, so " +
 			"asking about a leaf of the developer's configuration and asking " +
 			"about a leaf of the operator's read different maps under one fact. " +
-			"Both carriers are named in this declaration for that reason — a " +
+			"Both source fields are named in this declaration for that reason — a " +
 			"reader reconciling the placement table against the code would " +
 			"otherwise find one of the two and conclude the other pillar is " +
-			"unaccounted for. A pillar neither carrier is kept for yields the " +
+			"unaccounted for. A pillar neither source field is kept for yields the " +
 			"zero record, which is the same answer as a leaf the author wrote " +
 			"with no annotation behind it and deliberately so: every field a rule " +
 			"reads is absent in both cases.",
@@ -3649,7 +3649,7 @@ var facts = []factDecl{
 			"carries the edge's socket, and therefore which socket constraint " +
 			"applies.\n\nThis names the Feature TYPE and never the " +
 			"per-attachment instance. The instance is a separate coordinate on a " +
-			"separate carrier, and a rule reaching for the declaration needs the " +
+			"separate source field, and a rule reaching for the declaration needs the " +
 			"type, so a fact conflating them would hand half of its readers the " +
 			"wrong string.",
 	},
@@ -3850,7 +3850,7 @@ var facts = []factDecl{
 			"declaration instead of treating it as unconstrained.\n\nThe set " +
 			"is the step plugin's own declaration about itself. Which provider " +
 			"a step actually runs under is a separate question on a separate " +
-			"carrier, so a rule matching the two composes this fact with that " +
+			"source field, so a rule matching the two composes this fact with that " +
 			"one rather than asking a single fact to span both surfaces.",
 	},
 	{
@@ -4512,7 +4512,7 @@ var facts = []factDecl{
 			"ungated if any of the four were forgotten. Keyed by the field, the " +
 			"axis is data: one more label is enumerated and nothing else " +
 			"moves.\n\nOne fact serves every field because one reference set does. " +
-			"Within a carrier the render context is one type, so what a template on " +
+			"Within one FeatureRecipe the render context is one type, so what a template on " +
 			"any of these fields may name is one question with one answer, and a " +
 			"rule reading this fact decides it the same way whichever field it was " +
 			"invoked for.\n\nThe fact is the text and not an analysis of it, on the " +
@@ -4546,8 +4546,8 @@ var facts = []factDecl{
 			"the four were forgotten. Keyed by the field, the axis is data: one more " +
 			"name is enumerated and nothing else moves.\n\nOne fact serves every " +
 			"field even though the reference sets differ, and that is worth stating " +
-			"because it is the reverse of the carrier this shape was first built " +
-			"on. There, one set served the whole carrier and the fact carried the " +
+			"because it is the reverse of the FeatureRecipe this shape was first built " +
+			"on. There, one set served the whole FeatureRecipe and the fact carried the " +
 			"question whole. Here the two fields are checked against two different " +
 			"admitted sets over one context type — a whole-boundary template is " +
 			"evaluated once for the scope, so a single component's id would make the " +
@@ -5196,8 +5196,8 @@ var facts = []factDecl{
 			"distinction is worth stating here because nothing else states it. " +
 			"The two read the same authoring block at the same coordinates and " +
 			"differ in nothing but the stage and whether evaluation has " +
-			"happened — and the report of facts sharing a carrier pairs them by " +
-			"stage, carrier and subject together, so it does not pair these two " +
+			"happened — and the report of facts sharing a source field pairs them by " +
+			"stage, source field and subject together, so it does not pair these two " +
 			"and never will. A reader who suspects duplication has this " +
 			"paragraph and nothing else to settle it with.\n\nThe text is the " +
 			"entry's content whichever form the entry took: written inline, " +
@@ -5628,7 +5628,7 @@ var facts = []factDecl{
 		Doc: "AttachmentEmittedFileOriginSet are the authored input blocks that " +
 			"produced the file standing at one output name within the render one " +
 			"attachment carries on a node, deduplicated, in the order that render " +
-			"produced them.\n\nIt is the carrier-keyed form of the node's own " +
+			"produced them.\n\nIt is the owner-keyed form of the node's own " +
 			"origin set and answers the same question of a different document. A " +
 			"FeatureRecipe can produce a file from more than one block — a source, " +
 			"a workload, an artifacts entry, and a step of a pipeline each " +

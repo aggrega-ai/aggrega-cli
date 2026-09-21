@@ -105,7 +105,7 @@ func renderRegion(render func(chain, []kind, []tupleShare) ([]byte, error)) ([]b
 	if err := validateFacts(); err != nil {
 		return nil, err
 	}
-	if _, err := deriveCarriers(facts, stages); err != nil {
+	if _, err := deriveDocumentKinds(facts, stages); err != nil {
 		return nil, err
 	}
 	c, err := deriveChain()
@@ -141,7 +141,7 @@ var targets = map[string]func(chain, []kind, []tupleShare) ([]byte, error){
 //
 // Every derivation runs for every target, so a registry that does not derive —
 // an unoccupied stage, a stage chain with an unordered pair in it, a fact naming
-// no source carrier, a document-stage fact whose authored kind neither derives
+// no source field, a document-stage fact whose authored kind neither derives
 // nor is declared — halts generation of all of them rather than only of the one
 // that happens to read the broken part.
 func generateFor(base string) ([]byte, error) {
@@ -157,7 +157,7 @@ func generateFor(base string) ([]byte, error) {
 	if err := validateFacts(); err != nil {
 		return nil, err
 	}
-	if _, err := deriveCarriers(facts, stages); err != nil {
+	if _, err := deriveDocumentKinds(facts, stages); err != nil {
 		return nil, err
 	}
 	c, err := deriveChain()
@@ -172,7 +172,7 @@ func generateFor(base string) ([]byte, error) {
 }
 
 // report prints what the run derived, and the facts sharing a stage, a source
-// carrier and a subject.
+// source field and a subject.
 //
 // The share list is printed on every run rather than written to a file of its
 // own, because it is a prompt to a reader rather than a fact about the tree: a
@@ -193,7 +193,7 @@ func report(w *os.File, out string) {
 	reportInvocationInstrument(w)
 	reportCallerInstrument(w)
 	if len(shares) == 0 {
-		fmt.Fprintln(w, "factgen: no two facts share a (stage, source carrier, subject) tuple")
+		fmt.Fprintln(w, "factgen: no two facts share a (stage, source field, subject) tuple")
 		return
 	}
 	fmt.Fprintf(w, "factgen: %d tuple(s) shared by more than one fact — review each, a share is not proof of duplication:\n",

@@ -30,20 +30,20 @@ import (
 // than an accident of naming.
 func baseName(stage string) string { return viewName(stage) + "Base" }
 
-// carrierBaseName derives the refusing-base type name for one authored document
+// documentBaseName derives the refusing-base type name for one authored document
 // kind, pairing by name with that kind's obligation interface.
-func carrierBaseName(kind string) string { return kind + "DocumentBase" }
+func documentBaseName(kind string) string { return kind + "DocumentBase" }
 
-// carrierFactsName derives the obligation interface name for one authored
+// documentFactsName derives the obligation interface name for one authored
 // document kind.
-func carrierFactsName(kind string) string { return kind + "DocumentFacts" }
+func documentFactsName(kind string) string { return kind + "DocumentFacts" }
 
 // stageFactsName derives the obligation interface name for one stage.
 func stageFactsName(stage string) string { return pascal(stage) + "StageFacts" }
 
 // emitViewBases renders the refusing bases and the obligation interfaces: one
 // base per authored document kind at the root stage, one per stage after it, and
-// one interface per document-stage carrier and per later stage.
+// one interface per document-stage kind and per later stage.
 //
 // The two halves answer one question from opposite sides. A base supplies the
 // methods a view declares that the implementation embedding it does not carry,
@@ -62,18 +62,18 @@ func stageFactsName(stage string) string { return pascal(stage) + "StageFacts" }
 // embedder does not carry — the other kinds' facts at the root stage, and the
 // earlier stages' facts after it.
 func emitViewBases(c chain) ([]byte, error) {
-	groups, err := deriveCarriers(facts, stages)
+	groups, err := deriveDocumentKinds(facts, stages)
 	if err != nil {
 		return nil, err
 	}
 
-	// The carrier per fact is read back out of the groups rather than resolved a
+	// The kind per fact is read back out of the groups rather than resolved a
 	// second time, so the refusal a base states and the obligation an interface
 	// declares cannot name different kinds for one fact.
-	carrierOf := make(map[string]string, len(facts))
+	documentKindOf := make(map[string]string, len(facts))
 	for _, g := range groups {
 		for _, f := range g.Facts {
-			carrierOf[f.Name] = g.Kind
+			documentKindOf[f.Name] = g.Kind
 		}
 	}
 
@@ -93,19 +93,19 @@ func emitViewBases(c chain) ([]byte, error) {
 		for _, f := range g.Facts {
 			carried[f.Name] = true
 		}
-		name := carrierBaseName(g.Kind)
+		name := documentBaseName(g.Kind)
 		b.WriteString("\n")
-		b.WriteString(wrapComment("", carrierBaseDoc(c, g)))
+		b.WriteString(wrapComment("", documentBaseDoc(c, g)))
 		fmt.Fprintf(&b, "type %s struct{}\n", name)
 		for _, f := range c.facts[root] {
 			if carried[f.Name] {
 				continue
 			}
-			writeRefusal(&b, name, f, carrierOf[f.Name])
+			writeRefusal(&b, name, f, documentKindOf[f.Name])
 		}
 	}
 
-	// Every stage after the root has a single carrier — a compilation for most of
+	// Every stage after the root has a single document kind — a compilation for most of
 	// them, one authored kind the stage itself fixes for a stage presenting one
 	// document — so its base is per stage rather than per kind: it refuses the
 	// facts of the stage it extends and, by embedding, of everything that stage
@@ -123,14 +123,14 @@ func emitViewBases(c chain) ([]byte, error) {
 		}
 
 		for _, f := range c.facts[prev] {
-			writeRefusal(&b, name, f, carrierOf[f.Name])
+			writeRefusal(&b, name, f, documentKindOf[f.Name])
 		}
 	}
 
 	for _, g := range groups {
 		b.WriteString("\n")
-		b.WriteString(wrapComment("", carrierFactsDoc(g)))
-		writeFactMethods(&b, carrierFactsName(g.Kind), g.Facts)
+		b.WriteString(wrapComment("", documentFactsDoc(g)))
+		writeFactMethods(&b, documentFactsName(g.Kind), g.Facts)
 	}
 
 	for _, s := range c.order {
@@ -151,8 +151,8 @@ func emitViewBases(c chain) ([]byte, error) {
 
 // writeRefusal renders one base method: the accessor's signature, a body that
 // panics, and the godoc opening with the same sentence the panic carries.
-func writeRefusal(b *strings.Builder, base string, f factDecl, carrier string) {
-	refusal := refusalSentence(f, carrier)
+func writeRefusal(b *strings.Builder, base string, f factDecl, documentKind string) {
+	refusal := refusalSentence(f, documentKind)
 	b.WriteString("\n")
 	b.WriteString(wrapComment("", fmt.Sprintf("%s panics. %s.", accessorName(f.Name), capitalised(refusal))))
 	fmt.Fprintf(b, "func (%s) %s(%s) %s {\n", base, accessorName(f.Name), paramList(f.Params), f.Returns)
@@ -181,13 +181,13 @@ func writeFactMethods(b *strings.Builder, name string, fs []factDecl) {
 //
 // The two halves of the answer differ by stage, because the registry records two
 // different things. A document-stage fact names the authored document kind, which
-// is the axis that stage carries. A later-stage fact has one carrier for the
+// is the axis that stage carries. A later-stage fact has one kind for the
 // whole stage — a compilation, or the one authored kind that stage fixes — so
 // what a reader needs is the field it is read from.
-func refusalSentence(f factDecl, carrier string) string {
-	if carrier != "" {
+func refusalSentence(f factDecl, documentKind string) string {
+	if documentKind != "" {
 		return fmt.Sprintf("this view does not carry %s, which %s %s document carries",
-			f.Name, article(carrier), carrier)
+			f.Name, article(documentKind), documentKind)
 	}
 	return fmt.Sprintf("this view does not carry %s, which is read from %s",
 		f.Name, f.SourceField)
@@ -242,26 +242,26 @@ func baseDoc(c chain, i int) string {
 	return doc
 }
 
-// carrierBaseDoc is the godoc for one authored document kind's refusing base.
-func carrierBaseDoc(c chain, g carrierGroup) string {
+// documentBaseDoc is the godoc for one authored document kind's refusing base.
+func documentBaseDoc(c chain, g documentKindGroup) string {
 	root := c.order[0]
 	return fmt.Sprintf(
 		"%s is a base for an implementation of %s that presents %s %s.\n\n"+
 			"It declares a refusing method for every %s-stage fact %s %s does not carry, and for none of the facts it does. The omission is the design rather than an economy: a base supplying this kind's own facts would satisfy %s by method promotion, so the assertion would hold an implementation to nothing and a fact declared for this kind would compile everywhere and refuse only when it was read.\n\n"+
 			"An implementation embeds it, writes a body for each fact this kind carries, and asserts %s. A fact then declared for this kind fails to compile on those implementations, and a fact declared for another kind does not reach them.",
-		carrierBaseName(g.Kind), viewName(root.Name), article(g.Kind), g.Kind,
+		documentBaseName(g.Kind), viewName(root.Name), article(g.Kind), g.Kind,
 		root.Name, article(g.Kind), g.Kind,
-		carrierFactsName(g.Kind), carrierFactsName(g.Kind))
+		documentFactsName(g.Kind), documentFactsName(g.Kind))
 }
 
-// carrierFactsDoc is the godoc for one authored document kind's obligation
+// documentFactsDoc is the godoc for one authored document kind's obligation
 // interface.
-func carrierFactsDoc(g carrierGroup) string {
+func documentFactsDoc(g documentKindGroup) string {
 	return fmt.Sprintf(
 		"%s are the document-stage facts %s %s carries.\n\n"+
 			"An implementation presenting %s %s asserts it, and that assertion is the thing a refusing base cannot supply. A fact declared for this kind then fails to compile on the implementations claiming it, and on no other; without the assertion the same declaration compiles everywhere and refuses when it is read, which moves the discovery from building to running.\n\n"+
 			"Each method is an accessor the view chain declares and documents. The documentation is not repeated here: a fact's documentation has one home, and a second copy would be the one that drifts.",
-		carrierFactsName(g.Kind), article(g.Kind), g.Kind, article(g.Kind), g.Kind)
+		documentFactsName(g.Kind), article(g.Kind), g.Kind, article(g.Kind), g.Kind)
 }
 
 // stageFactsDoc is the godoc for one stage's obligation interface.

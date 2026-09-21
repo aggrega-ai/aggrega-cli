@@ -139,7 +139,7 @@ func TestEquallyFailingSiblingsAreBothReportedAtTheirOwnPaths(t *testing.T) {
 // TestNoWholeSubtreeCheckReportsAChildViolation pins the mechanism the
 // test above depends on: the check performed at a position reports only
 // what that position constrains, so the walk's own descent is the single
-// carrier of a child's finding. Without this, a child violation is
+// reporter of a child's finding. Without this, a child violation is
 // reported twice — once at the child and once, non-deterministically
 // chosen, at each ancestor.
 func TestNoWholeSubtreeCheckReportsAChildViolation(t *testing.T) {

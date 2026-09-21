@@ -115,7 +115,7 @@ func (s ExtendsChainSpec[T]) name(v T) string {
 // A chain that returns to an entity already in it, and one that ends cleanly
 // past the depth bound, are each a declared rule over a declared fact — see
 // componentExtendsChainReachesNoEntityTwice and
-// componentExtendsChainStaysWithinTheDepthBound, together with the carriers each
+// componentExtendsChainStaysWithinTheDepthBound, together with the document kinds each
 // other authored kind that declares extends supplies. What this function does for
 // those two is present the shape
 // its own walk produced and render whatever came back, exactly as every other
@@ -125,7 +125,7 @@ func (s ExtendsChainSpec[T]) name(v T) string {
 // there is no shape to present: the walk cannot reach the entity, so nothing it
 // could hand a rule would describe the chain the author wrote.
 //
-// kind selects which carrier's declarations are asked, and a kind none of them
+// kind selects which document kind's declarations are asked, and a kind none of them
 // covers is refused rather than passed. Silently passing would leave a whole
 // authored kind's chains ungoverned by two rules that every other kind's are
 // held to, with nothing in the build saying so.

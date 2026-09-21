@@ -205,7 +205,7 @@ func TestClosedFormMatchesLibraryDecoding(t *testing.T) {
 
 // TestPruneKeepsWhatTheWalkDoesNotEvaluate checks the reduction from the
 // side that loses coverage silently: a constraint the walk does not
-// evaluate has no second carrier, so removing it from the reduced copy
+// evaluate is evaluated nowhere else, so removing it from the reduced copy
 // means nothing checks it and every document passes it.
 //
 // The keyword index is nil here, which is the state of a position the walk

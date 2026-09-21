@@ -893,7 +893,7 @@ func featureRecipesImplementing(frs map[string]types.FeatureRecipe, featureType 
 // violation twice.
 //
 // The shape reading stays because it is a different condition with a different
-// carrier, and one this function has always been a DELIBERATE second reading of
+// root, and one this function has always been a DELIBERATE second reading of
 // rather than the only one: resolver.ManifestRecipeReferenceFaults judges the
 // same shape over the authored mapping entry and names the key the author wrote,
 // while this is rooted at the component instance whose resolution missed and

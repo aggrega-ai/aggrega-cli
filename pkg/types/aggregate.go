@@ -21,7 +21,7 @@ import (
 // parameter template the resolver renders to a literal before the topology
 // reads it; the topology then interprets the literal strictly as a boolean.
 //
-// The carrier fields hold *ActiveFlag, and the pointer is what separates a
+// The toggle fields hold *ActiveFlag, and the pointer is what separates a
 // toggle nobody wrote from one that is written and carries an empty literal.
 // A nil pointer means the toggle was omitted, and the entity is present by
 // default. A non-nil pointer means the author wrote a toggle, which must then
@@ -85,10 +85,10 @@ func (a *ActiveFlag) UnmarshalJSON(data []byte) error {
 // Aggregate's struct declarations (Aggregate, AggregateMetadata, AggregateSpec)
 // are generated into aggregate_gen.go from the published aggregate-v1alpha1
 // schema; their godoc is the schema's descriptions. This hand-written companion
-// holds the per-instance carrier types the generated spec references —
+// holds the per-instance entry types the generated spec references —
 // SubAggregate, Subsystem, and ComponentInstance — which carry the
 // Annotations / Uses / Inject / Features surfaces and their polymorphic decode.
-// Annotations live on those per-instance carriers; AggregateSpec itself carries
+// Annotations live on those per-instance entries; AggregateSpec itself carries
 // no top-level Annotations.
 
 // SubAggregate is a nested aggregate acting as an imported module.

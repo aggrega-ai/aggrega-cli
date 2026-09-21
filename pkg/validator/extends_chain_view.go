@@ -19,7 +19,7 @@ import (
 // over the entity type it follows, and the shape it produces is not.
 //
 // The derivation of what each rule reads lives on this type rather than at each
-// view, which is what keeps three carriers' presentations answering one question
+// view, which is what keeps three document kinds' presentations answering one question
 // the same way. A per-view derivation would agree on the day it was written and
 // would be free to diverge afterwards, at which point one authored kind's chain
 // would be judged by a rule the other two are exempt from.

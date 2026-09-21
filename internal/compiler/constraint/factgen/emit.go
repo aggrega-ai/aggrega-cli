@@ -112,7 +112,7 @@ func emitViews(c chain) ([]byte, error) {
 
 // accessorDoc assembles one accessor's godoc: the fact's own documentation, then
 // the two lines a reader needs to relate the accessor to the registry — what it
-// is keyed by and which carrier it reads — and, where one exists, the reported
+// is keyed by and which source field it reads — and, where one exists, the reported
 // exception to the no-raw-document rule.
 func accessorDoc(f factDecl) string {
 	doc := f.Doc
@@ -334,12 +334,12 @@ func emitPlacementTable(c chain, kinds []kind, shares []tupleShare) ([]byte, err
 	fmt.Fprintf(&b, "\nTotal: **%d facts** over **%d stages**.\n\n", len(facts), len(c.order))
 
 	b.WriteString("## Facts\n\n")
-	b.WriteString("The source carrier is the pipeline product field the fact reads, named as a Go\n")
+	b.WriteString("The source field is the pipeline product field the fact reads, named as a Go\n")
 	b.WriteString("structure and field — or, where the product is carried as a function parameter\n")
-	b.WriteString("rather than as a field, that single carrier. The subject key is what the fact\n")
+	b.WriteString("rather than as a field, that single parameter. The subject key is what the fact\n")
 	b.WriteString("is keyed by; it derives the subject-kind set and is deliberately distinct from\n")
 	b.WriteString("the accessor's arguments, which may read a projection of a coordinate.\n\n")
-	b.WriteString("| Fact | Accessor | Stage | Source carrier | Subject key | Result |\n")
+	b.WriteString("| Fact | Accessor | Stage | Source field | Subject key | Result |\n")
 	b.WriteString("|---|---|---|---|---|---|\n")
 	for _, s := range c.order {
 		for _, f := range c.facts[s.Name] {
@@ -388,8 +388,8 @@ func emitPlacementTable(c chain, kinds []kind, shares []tupleShare) ([]byte, err
 	}
 	fmt.Fprintf(&b, "\nTotal: **%d kinds**.\n\n", len(kinds))
 
-	b.WriteString("## Facts sharing a (stage, source carrier, subject) tuple\n\n")
-	b.WriteString("Two facts sharing all three read one carrier at one point of the compilation\n")
+	b.WriteString("## Facts sharing a (stage, source field, subject) tuple\n\n")
+	b.WriteString("Two facts sharing all three read one source field at one point of the compilation\n")
 	b.WriteString("and answer one subject. **A share is not proof of duplication.** Same-name\n")
 	b.WriteString("duplication is closed by two mechanisms rather than one: the language rejects\n")
 	b.WriteString("two declarations of a name at one stage, or at two stages with differing\n")
@@ -398,12 +398,12 @@ func emitPlacementTable(c chain, kinds []kind, shares []tupleShare) ([]byte, err
 	b.WriteString("Same semantics under two different names is not closed and there is no\n")
 	b.WriteString("mechanism for it — this list is the mitigation, and it turns an invisible risk\n")
 	b.WriteString("into a reviewable one. It is also bounded: it says\n")
-	b.WriteString("nothing about one rule restated at two stages over two carriers, which is a\n")
+	b.WriteString("nothing about one rule restated at two stages over two source fields, which is a\n")
 	b.WriteString("shape it structurally cannot see.\n\n")
 	if len(shares) == 0 {
 		b.WriteString("No two declared facts share a tuple.\n")
 	} else {
-		b.WriteString("| Stage | Source carrier | Subject | Facts |\n")
+		b.WriteString("| Stage | Source field | Subject | Facts |\n")
 		b.WriteString("|---|---|---|---|\n")
 		for _, sh := range shares {
 			quoted := make([]string, 0, len(sh.Facts))

@@ -36,7 +36,7 @@ import (
 // a Recipe must declare a rendering surface and a FeatureRecipe may legitimately
 // declare none. One fact spanning both kinds would let a rule written for one be
 // invoked on the other with nothing objecting, which is the coverage question the
-// carrier axis exists to answer.
+// document-kind axis exists to answer.
 //
 // It satisfies the whole document-stage view, which declares facts a FeatureRecipe
 // cannot carry: an Aggregate's text and parameter contract, an entity's

@@ -54,7 +54,7 @@ func (k kind) Traversal() string {
 	return "pull"
 }
 
-// tupleShare is a group of facts sharing a stage, a source carrier and a subject
+// tupleShare is a group of facts sharing a stage, a source field and a subject
 // key.
 //
 // A share is not proof of duplication and the generator does not treat it as
@@ -218,7 +218,7 @@ func deriveKinds() ([]kind, error) {
 }
 
 // deriveTupleShares returns the groups of facts sharing a stage, a source
-// carrier and a subject key, in the order the group's first fact is declared.
+// source field and a subject key, in the order the group's first fact is declared.
 func deriveTupleShares(fs []factDecl) []tupleShare {
 	var out []tupleShare
 	index := make(map[string]int)
@@ -326,7 +326,7 @@ func validateFacts() error {
 		case f.Name == "":
 			return fmt.Errorf("a fact is declared with no name")
 		case f.SourceField == "":
-			return fmt.Errorf("fact %q names no source carrier, so it cannot be checked against its "+
+			return fmt.Errorf("fact %q names no source field, so it cannot be checked against its "+
 				"near-duplicates", f.Name)
 		case f.Returns == "":
 			return fmt.Errorf("fact %q declares no result", f.Name)

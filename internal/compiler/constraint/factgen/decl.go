@@ -134,7 +134,7 @@ type stageDecl struct {
 	// production is allowed to do, and the disagreement would be invisible.
 	//
 	// A fact has no slot for one in any case: factDecl declares a stage, a
-	// carrier, a subject key and a result, and there is nowhere in that to
+	// source field, a subject key and a result, and there is nowhere in that to
 	// record a filesystem read. So a power cannot arrive through a fact even by
 	// accident. Declaring it here is not the preferred route to the axis; it is
 	// the only one.
@@ -171,42 +171,41 @@ type factDecl struct {
 
 	// SourceField names the pipeline product field the fact reads, as a Go
 	// structure and field. Where the product is carried as a function
-	// parameter rather than as a field, it names that single carrier instead;
-	// what matters is that exactly one carrier is named, because two facts
-	// sharing a stage, a carrier and a subject are the mechanically flaggable
-	// shape of same-semantics-under-a-different-name duplication.
+	// parameter rather than as a field, it names that single parameter
+	// instead; what matters is that exactly one source field is named, because
+	// two facts sharing a stage, a source field and a subject are the
+	// mechanically flaggable shape of same-semantics-under-a-different-name
+	// duplication.
 	SourceField string
 
-	// Carrier names the authored document kind that carries this fact — the
-	// kind a user writes as the document's own kind, and never the Go
-	// structure the value is read out of, which SourceField names. The two
-	// slots both say "carrier" and mean different things: one is where the
-	// value sits in the compiler, the other is what a user would have to open
-	// in order to change it.
+	// DocumentKind names the authored document kind that carries this fact —
+	// the kind a user writes as the document's own kind. It is what a user
+	// would have to open in order to change the value, where SourceField is
+	// where that value sits in the compiler.
 	//
 	// It applies at the document stage alone, because that is the only stage
 	// whose presentation VARIES BY AUTHORED DOCUMENT KIND: it presents one
 	// authored document of whichever kind a caller hands over, so it has two
 	// axes — when the fact is complete, and which kind of document carries it.
-	// Every other stage has a single carrier and so nothing for a second axis to
-	// distinguish, for one of two reasons: it presents one compilation, which is
-	// one thing; or it presents one authored document of a kind the stage itself
-	// fixes, which the catalog stage does. A declaration at such a stage is
-	// refused rather than ignored, because a value nothing reads is a value a
-	// reviewer trusts.
+	// Every other stage has a single document kind and so nothing for a second
+	// axis to distinguish, for one of two reasons: it presents one compilation,
+	// which is one thing; or it presents one authored document of a kind the
+	// stage itself fixes, which the catalog stage does. A declaration at such a
+	// stage is refused rather than ignored, because a value nothing reads is a
+	// value a reviewer trusts.
 	//
 	// 🔴 A single-kind stage sidesteps the axis only while it stays single-kind,
-	// and nothing here enforces that: the refusal keys on a non-empty carrier, so
-	// a fact declared at such a stage with no carrier passes. What the first fact
-	// of a second kind there would owe is written on that stage's own declaration
-	// in the registry.
+	// and nothing here enforces that: the refusal keys on a non-empty document
+	// kind, so a fact declared at such a stage with none passes. What the first
+	// fact of a second kind there would owe is written on that stage's own
+	// declaration in the registry.
 	//
 	// It is declared only where the kind does not derive from SourceField.
-	// Where the source carrier is one authored entity's spec type, the kind is
+	// Where the source field is one authored entity's spec type, the kind is
 	// read from that type's own name, and declaring it again would give one
 	// kind two homes — so a declaration repeating a successful derivation is
 	// refused alongside one that contradicts it.
-	Carrier string
+	DocumentKind string
 
 	// Subject is the coordinate list the fact is keyed by, outermost first —
 	// so {"node", "socket"} means the fact is asked once per socket per node.
@@ -232,13 +231,15 @@ type factDecl struct {
 	// accessor handing back a document reopens re-derivation for every check.
 	//
 	// Nor may it mention a type whose field some fact names in its SourceField.
-	// Reading a value out of a carrier is what every fact does; handing the
-	// carrier itself back is what this refuses, because a check holding that
+	// Reading a value out of a source structure is what every fact does;
+	// handing the source structure itself back is what this refuses, because a
+	// check holding that
 	// structure can read the very field another fact declares separately, at its
 	// own stage and with its own placement, and so re-derive it. A compilation
 	// product sits outside the authored-entity closure by design — facts over
 	// products must remain declarable, and most of the later stages read one —
-	// so this is the rule that closes the same hole for a product carrier.
+	// so this is the rule that closes the same hole for a product's own source
+	// structure.
 	//
 	// On the other axis, a result may not mention a function type, at any
 	// nesting depth — bare, inside a container, or as a type argument. A fact is

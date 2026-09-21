@@ -227,10 +227,10 @@ func TestRecipeByURI_BareSingleProvider(t *testing.T) {
 
 	one := fakeCatalog(v1)
 	if r, ok := one.RecipeByURI("mariadb-rds:1.0.0"); !ok || r.Metadata.Version != "1.0.0" {
-		t.Errorf("bare versioned single-carrier: ok=%v", ok)
+		t.Errorf("bare versioned single-provider: ok=%v", ok)
 	}
 	if r, ok := one.RecipeByURI("mariadb-rds"); !ok || r.Metadata.Version != "1.0.0" {
-		t.Errorf("bare unversioned single-carrier: ok=%v", ok)
+		t.Errorf("bare unversioned single-provider: ok=%v", ok)
 	}
 	// Reversed: see this test's own note on the retired version-blind fallback.
 	if r, ok := one.RecipeByURI("mariadb-rds:9.9.9"); ok {

@@ -13,7 +13,7 @@ import (
 // as a constraint declaration. See checks.go for what a declaration here is.
 //
 // It sits in its own file rather than beside the annotation-binding readings
-// because the two share a stage and a carrier without sharing a subject: those
+// because the two share a stage and a source field without sharing a subject: those
 // are invoked once per declared binding, this once per mapping entry, and
 // grouping them under one file name would suggest a reader looking for either
 // would find both.
