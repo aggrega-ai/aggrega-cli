@@ -101,7 +101,7 @@ type inspectOptions struct {
 	// it reaches and at which resolved versions — in place of the resolved-node
 	// view. It selects a different document about the same subject rather than a
 	// different format for one document, which is what separates it from output:
-	// the node view says what the deployment looks like, and the closure says
+	// the node view says what the Release looks like, and the closure says
 	// what was pulled in to build it.
 	//
 	// Only a Release resolves a closure. Every other kind refuses the request

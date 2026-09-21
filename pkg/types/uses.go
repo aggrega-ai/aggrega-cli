@@ -64,7 +64,7 @@ type VerboseUsesEntry struct {
 	// It has no Infra counterpart by construction: per-connection infra is
 	// the operator's surface and is authored on a Release edge entry, which
 	// carries its own Infra field. The developer declares the connection and
-	// its values; the deployment sizes it.
+	// its values; the Release sizes it.
 	Values OrderedMap[any] `yaml:"values,omitempty" json:"values,omitempty,omitzero"`
 }
 

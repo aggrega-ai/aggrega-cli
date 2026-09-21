@@ -683,7 +683,7 @@ func newSkippedEntity(path string, data []byte, err error) SkippedEntity {
 //
 // The refusal is located at the pillar's own authored field and source line, and
 // attributed to the entity that DECLARED the contract rather than to any
-// document configuring it — an application author handed a component type whose
+// document configuring it — an Aggregate author handed a component type whose
 // contract is unusable has nothing to change in their own file. The validator's
 // own text is carried verbatim, since re-deriving what is wrong with the schema
 // would be a second answer to keep in step.
@@ -2121,7 +2121,7 @@ func resolveSubAggregateParameters(typeName string, raw []byte, absPath, returnP
 	if verrs := resolver.ValidateParametersAgainstContract(contract, resolved, absPath); len(verrs) > 0 {
 		// Every finding here is one unfulfilled slot of one contract, so one
 		// sentence is true of all of them and names the fix: the parameter
-		// contract of a sub-module the application composes was not fulfilled.
+		// contract of a sub-module the Aggregate composes was not fulfilled.
 		// That makes the group a condition rather than a roll-up, and a
 		// condition declares its identity so the header opens with that
 		// condition's registered sentence.

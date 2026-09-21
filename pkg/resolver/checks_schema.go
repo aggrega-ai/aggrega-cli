@@ -110,7 +110,7 @@ var componentValuesConformToTheType = constraint.Check[
 }
 
 // componentInfraConformsToTheType reports each way the physical sizing a
-// deployment wrote for a component fails the contract its component type
+// Release wrote for a component fails the contract its component type
 // declares over it.
 //
 // It is the operator-side counterpart of the rule beside it, over the other
@@ -118,23 +118,23 @@ var componentValuesConformToTheType = constraint.Check[
 // operator sets must be one the component type declares, because that type's
 // contract is the correct home for every such key.
 //
-// What is opted into is the component type's CONTRACT, never the deployment's
+// What is opted into is the component type's CONTRACT, never the Release's
 // content, which is the same standing the pillar beside it has. Once the type
 // declares a contract for this pillar, the sizing is measured for every
-// component the deployment wrote an entry against, including an entry carrying
+// component the Release wrote an entry against, including an entry carrying
 // no sizing at all: an empty payload is the maximal violation of a key the
 // contract declares required, not a case with nothing to check. A required key
 // exists precisely to catch the entry that wrote nothing, so a rule that skipped
 // it would be inert in the one case it was declared for.
 //
-// The components it measures are the ones the deployment wrote entries against,
+// The components it measures are the ones the Release wrote entries against,
 // read as authorship rather than as content, which is the standing the per-edge
 // rule below has for the same reason. Every field of such an entry is optional,
 // so an entry with none set carries nothing at all and the sizing fact reads its
-// zero value for it — the same zero it reads for a component the deployment
+// zero value for it — the same zero it reads for a component the Release
 // wrote no entry against. The two need opposite treatment: an entry that writes
 // nothing is the maximal violation of a required key, while a component this
-// deployment never placed is not its to answer for. Measuring the second would
+// Release never placed is not its to answer for. Measuring the second would
 // report a sizing fault against a document whose fault is placement, and it
 // would do so before the composition is flattened — displacing the report a
 // component nothing placed already earns, which names the two ways to place it
@@ -222,14 +222,14 @@ var connectionValuesConformToTheSocket = constraint.Check[
 }
 
 // connectionInfraConformsToTheSocket reports each way the physical sizing a
-// deployment wrote for one connection fails the contract the socket declares
+// Release wrote for one connection fails the contract the socket declares
 // over it.
 //
 // It is the operator-side counterpart of the rule beside it, over the other
 // pillar and the other document, and the socket declares a separate contract for
 // each — so a socket may constrain one pillar and say nothing about the other.
 //
-// The connections it measures are the entries the deployment wrote, read as
+// The connections it measures are the entries the Release wrote, read as
 // authorship rather than as content. Both fields of such an entry are optional,
 // so an entry with neither set carries nothing at all and every content fact
 // reads its zero value for it — the same zero those facts read for an alias

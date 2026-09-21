@@ -405,7 +405,7 @@ func TestVerboseUsesEntry_Values_RoundTrip(t *testing.T) {
 
 // TestVerboseUsesEntry_CarriesNoInfraSurface pins the absence of a per-edge
 // infra surface on the developer's dependency block. Per-connection infra is
-// the deployment's surface, authored on a Release edge entry; the Aggregate
+// the operator's surface, authored on a Release edge entry; the Aggregate
 // entry has nowhere to carry it. A document that writes one is refused by the
 // Aggregate's own schema before reaching this type, so the property asserted
 // here is the type-level half: no infra content survives a decode, and no

@@ -121,8 +121,8 @@ func configurationFindings(
 	return locatorsOf(objections)
 }
 
-// sizingFindings asks the sizing-conformance rule over one application document
-// and one deployment boundary block, and returns the locators it raised.
+// sizingFindings asks the sizing-conformance rule over one Aggregate document
+// and one Release boundary block, and returns the locators it raised.
 func sizingFindings(
 	t *testing.T, agg *types.Aggregate, catalog CatalogLookup, boundaries string,
 ) []string {
@@ -138,7 +138,7 @@ func sizingFindings(
 	return locatorsOf(objections)
 }
 
-// svcSizing is the deployment block the sizing rows below write for component
+// svcSizing is the Release block the sizing rows below write for component
 // "svc", indented into the boundary envelope.
 func svcSizing(body string) string {
 	return `    prod:

@@ -32,7 +32,7 @@ import (
 const deliveryKeyReadCount = 200
 
 // deliveryKeyOrderDocument declares the same five delivery keys twice on one
-// application: once as a mapping and once as an array.
+// Aggregate: once as a mapping and once as an array.
 //
 // Both are written in the same deliberately non-alphabetical order, so an answer
 // reporting the author's order and an answer reporting a sorted one cannot be
@@ -71,7 +71,7 @@ func TestRereadingOneInjectionBlockAnswersWithOneDeliveryKeySequence(t *testing.
 
 	agg := loadAggregate(t, deliveryKeyOrderDocument)
 
-	// The reading under test answers from the application's own instances and
+	// The reading under test answers from the Aggregate's own instances and
 	// consults no catalog, so none is supplied and nothing here rests on how a
 	// catalog-less resolve behaves.
 	view := newNormalizedView(normalized(t, agg), nil, CatalogLookup{}, nil)

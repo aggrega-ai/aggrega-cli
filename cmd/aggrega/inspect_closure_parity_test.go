@@ -105,7 +105,7 @@ func TestClosureListingCoversEveryDeclaredLibraryAxis(t *testing.T) {
 // resolution reaches a shared document and raises both finding classes at once.
 //
 // The Manifest maps the component the Aggregate instantiates onto a Recipe that
-// implements it — so the deployment resolves — and carries a SECOND mapping onto a
+// implements it — so the Release resolves — and carries a SECOND mapping onto a
 // Recipe implementing an unrelated type, which is the mapping fault. Splitting the
 // two keeps the fault from also breaking the resolution: a fixture whose only
 // mapping was inconsistent would refuse before there was a listing to report a
@@ -393,7 +393,7 @@ func TestClosureListingCarriesEverythingTheResolutionReachedAndDecided(t *testin
 	}
 
 	// The listing is still delivered. A finding that displaced it would leave a
-	// reader asking what a deployment depends on with one complaint in place of the
+	// reader asking what a Release depends on with one complaint in place of the
 	// answer, which is what reporting instead of refusing exists to avoid.
 	if !strings.Contains(got, "Entities (") {
 		t.Errorf("the command wrote findings and no entity listing, so a finding displaced the answer the "+

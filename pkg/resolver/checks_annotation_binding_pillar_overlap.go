@@ -30,9 +30,9 @@ import (
 // rather than undecided — the lookup the runtime performs answers with the infra
 // pillar for a path declared under both, consistently, so the rendered output of
 // a document carrying the overlap is as determined as that of one without it.
-// What the author loses is the values side of that path, which the application
+// What the author loses is the values side of that path, which the Aggregate
 // surface can then no longer reach; the build halts there, at expansion, if the
-// application ever tries. Refusing the document here would refuse authoring the
+// Aggregate ever tries. Refusing the document here would refuse authoring the
 // compiler accepts, for a shape that renders deterministically.
 //
 // It reports against the losing claim. The walk is over the routes the values

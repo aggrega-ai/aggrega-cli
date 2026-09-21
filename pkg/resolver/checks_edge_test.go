@@ -124,7 +124,7 @@ func TestReleaseComponentFieldPath(t *testing.T) {
 	}
 }
 
-// edgeSocketFindings asks the rule about a socket the deployment's edge surface
+// edgeSocketFindings asks the rule about a socket the Release's edge surface
 // wires, and returns the sockets it reported.
 func edgeSocketFindings(
 	t *testing.T, agg *types.Aggregate, release *types.Release, catalog CatalogLookup,
@@ -141,10 +141,10 @@ func edgeSocketFindings(
 }
 
 // TestTheReleaseEdgeSocketRuleSeesAnEdgeWrittenAtTheRootSurface pins that a
-// deployment authoring its edges at the top-level component surface — which the
+// Release authoring its edges at the top-level component surface — which the
 // loader folds into a synthesized boundary — is still read by the rule.
 //
-// The fold is what makes this worth a test: the rule reads the deployment through
+// The fold is what makes this worth a test: the rule reads the Release through
 // the presentation, and a reading that only walked DECLARED boundaries would find
 // nothing at all for such a document while every test written against an explicit
 // boundary carried on passing.

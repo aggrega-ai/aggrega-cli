@@ -494,7 +494,7 @@ func TestRunAdvisories_Deterministic(t *testing.T) {
 }
 
 // TestRunAdvisories_NoAggregateDocumentIsSilent pins the one input that ends
-// the suite before any traversal: with no application document there is nothing
+// the suite before any traversal: with no Aggregate document there is nothing
 // to ask a reading about.
 func TestRunAdvisories_NoAggregateDocumentIsSilent(t *testing.T) {
 	t.Parallel()
@@ -504,7 +504,7 @@ func TestRunAdvisories_NoAggregateDocumentIsSilent(t *testing.T) {
 		t.Fatalf("RunAdvisories: %v", err)
 	}
 	if got != nil {
-		t.Fatalf("expected no advisories with no application document; got %v", got)
+		t.Fatalf("expected no advisories with no Aggregate document; got %v", got)
 	}
 }
 

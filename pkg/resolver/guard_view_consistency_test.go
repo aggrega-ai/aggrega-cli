@@ -68,8 +68,8 @@ func TestGuardEntityViewInconsistency_Classifies(t *testing.T) {
 // classified would report one fault twice.
 //
 // 🔴 The other half of the pair — that the required-socket rule stays silent on
-// such a component — is asserted where that rule is proved, over the composed
-// application whose facts it reads. The silence alone would also be produced by a
+// such a component — is asserted where that rule is proved, over the
+// composition whose facts it reads. The silence alone would also be produced by a
 // rule that never reached the component, which is why the assertion sits beside a
 // fixture that can show the rule being invoked.
 func TestTheAbsentCatalogEntryIsClassifiedByTheRuleThatOwnsIt(t *testing.T) {

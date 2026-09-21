@@ -37,7 +37,7 @@ import (
 // report an identical sequence.
 //
 // Nothing here halts. An author who accepts the overlap keeps the deterministic
-// routing the tie-break performs; the halt that catches an application-side
+// routing the tie-break performs; the halt that catches an Aggregate-side
 // annotation reaching the dropped pillar remains the load-bearing safety net.
 //
 // Returns nil when no Manifest was resolved or when no binding declares an

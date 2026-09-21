@@ -73,7 +73,7 @@ func contractNode(t *testing.T, content string) *yaml.Node {
 	return nil
 }
 
-// guardFindings asks the whole declared suite over one application and returns
+// guardFindings asks the whole declared suite over one Aggregate and returns
 // what a build would halt on.
 func guardFindings(t *testing.T, catalog CatalogLookup) []*ResolverError {
 	t.Helper()

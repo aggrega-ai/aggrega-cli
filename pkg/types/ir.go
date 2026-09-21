@@ -256,7 +256,7 @@ type IRNode struct {
 	// The subject is the payload those two mappings carry rather than the
 	// blocks they were built from, so a leaf standing at a value the
 	// Component's schema declares as a default is named alongside one a
-	// deployment wrote. A filled default is a datum the graph carries, and
+	// Release wrote. A filled default is a datum the graph carries, and
 	// a marking read off the written blocks alone would leave it unnamed.
 	//
 	// A leaf is named where a declaration COVERS it, on the same reading
@@ -523,7 +523,7 @@ type IRFeatureEntry struct {
 	// The subject is the payload the attachment ends up carrying rather
 	// than the block it was built from, so a leaf standing at a value the
 	// Feature's schema declares as a default is named alongside one a
-	// deployment wrote. A filled default is a datum the payload carries,
+	// Release wrote. A filled default is a datum the payload carries,
 	// and a marking read off the written block alone would leave it
 	// unnamed.
 	//
@@ -533,11 +533,11 @@ type IRFeatureEntry struct {
 	// questions, so neither behaviour is the other's bug. Sensitive
 	// reports a property of the catalog entity plus the slot it fills, so
 	// a reader can reason about the entity in isolation and gets the same
-	// answer in every deployment. This field reports which data one
-	// deployment put where, which is deployment-specific by construction:
+	// answer in every Release. This field reports which data one
+	// Release put where, which is Release-specific by construction:
 	// a leaf appears here only because this attachment's payload carries a
 	// value at it. Intersecting inside Sensitive would make one entity
-	// sensitive in one deployment and not another; declining to intersect
+	// sensitive in one Release and not another; declining to intersect
 	// here would name leaves that carry nothing.
 	//
 	// A leaf is named where a declaration COVERS it: the Feature's schema

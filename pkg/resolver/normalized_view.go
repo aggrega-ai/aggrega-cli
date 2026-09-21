@@ -57,7 +57,7 @@ import (
 // and wrong. Those refusals come from the embedded base rather than being
 // written here.
 //
-// The parameter names the application's contract declares are the one such fact
+// The parameter names the Aggregate's contract declares are the one such fact
 // this could answer and does not. They survive normalization, so the value is
 // still reachable from here — but the presentation of the authored document
 // produces that fact already, reading the bytes as authored where this would
@@ -80,10 +80,10 @@ type normalizedView struct {
 	// writes bodies for exactly the facts that stage declares.
 	constraint.NormalizedViewBase
 
-	// aggregate is the normalized application document.
+	// aggregate is the normalized Aggregate document.
 	aggregate types.NormalizedAggregate
 
-	// release is the deployment document, nil when the caller holds none.
+	// release is the Release document, nil when the caller holds none.
 	release *types.Release
 
 	// catalog is how a declared type is reached.
@@ -93,11 +93,11 @@ type normalizedView struct {
 	// presentation shares.
 	parameters map[string]any
 
-	// instances is every component instance the application declares, by the
+	// instances is every component instance the Aggregate declares, by the
 	// identity every keyed fact takes.
 	instances map[string]types.ComponentInstance
 
-	// releaseComponents is every component the deployment wrote against, by the
+	// releaseComponents is every component the Release wrote against, by the
 	// same identity.
 	releaseComponents map[string]types.BoundaryComponent
 
@@ -331,7 +331,7 @@ func (v *normalizedView) collectSubsystemContent(
 	}
 }
 
-// collectBoundaryContent records every component the deployment wrote against
+// collectBoundaryContent records every component the Release wrote against
 // and every scope-wide attachment it declared, descending the boundary tree, and
 // appends each declared scope's path to order in the order the document declares
 // it.
@@ -495,7 +495,7 @@ func (v *normalizedView) AuthoredAnnotationSubvalue(
 // resolveContracts resolves every declared contract this presentation can be
 // asked about, once each.
 //
-// It walks the component types the application names rather than the whole
+// It walks the component types the Aggregate names rather than the whole
 // catalog: a type nothing declares has no fact keyed by it, and resolving it
 // would pay for a contract nobody reads. Each socket the resolved type declares
 // contributes its two per-edge contracts, so a reader asking about a socket that
@@ -645,7 +645,7 @@ func (v *normalizedView) instanceUses(node, socket string) (types.UsesSocketValu
 	return inst.Uses.Get(socket)
 }
 
-// releaseUses returns one socket's authored entries from the deployment's edge
+// releaseUses returns one socket's authored entries from the Release's edge
 // surface for a component.
 func (v *normalizedView) releaseUses(node, socket string) (types.OrderedMap[types.ReleaseUsesEntry], bool) {
 	bc := v.releaseComponents[node]
@@ -675,7 +675,7 @@ func (v *normalizedView) AttachmentAuthoredUsesSocketNames(node string, attachme
 }
 
 // SubsystemAttachmentDeclaration returns what one scope-wide attachment of the
-// application declares, and whether an attachment of that name exists there.
+// Aggregate declares, and whether an attachment of that name exists there.
 func (v *normalizedView) SubsystemAttachmentDeclaration(
 	subsystem string, attachment string,
 ) (constraint.AttachmentDeclaration, bool) {
@@ -819,29 +819,29 @@ func (v *normalizedView) verboseEntry(node, socket, alias string) (types.Verbose
 	return sv.Verbose.Get(alias)
 }
 
-// ---------------------------------------------------------------- deployment facts
+// ---------------------------------------------------------------- Release facts
 
-// ReleaseComponentEntryPresent reports whether the deployment wrote an entry
+// ReleaseComponentEntryPresent reports whether the Release wrote an entry
 // against one component, on either of the axes a boundary names components on.
 func (v *normalizedView) ReleaseComponentEntryPresent(node string) bool {
 	_, present := v.releaseComponents[node]
 	return present
 }
 
-// ReleaseComponentInfra returns the physical sizing the deployment wrote for one
+// ReleaseComponentInfra returns the physical sizing the Release wrote for one
 // component, in author order, empty when it wrote none.
 func (v *normalizedView) ReleaseComponentInfra(node string) types.OrderedMap[any] {
 	return v.releaseComponents[node].Infra
 }
 
-// releaseAttachment returns one attachment the deployment wrote against a
+// releaseAttachment returns one attachment the Release wrote against a
 // component.
 func (v *normalizedView) releaseAttachment(node, attachment string) (types.BoundaryFeature, bool) {
 	bc := v.releaseComponents[node]
 	return bc.Features.Get(attachment)
 }
 
-// releaseAttachmentNames returns the names the deployment's own attachment block
+// releaseAttachmentNames returns the names the Release's own attachment block
 // declares against a component, in author order.
 //
 // It is unexported because the axis is what needs it, and the axis holds this
@@ -853,7 +853,7 @@ func (v *normalizedView) releaseAttachmentNames(node string) []string {
 	return bc.Features.Keys()
 }
 
-// ReleaseAuthoredUsesSocketConnections returns the connections the deployment's
+// ReleaseAuthoredUsesSocketConnections returns the connections the Release's
 // edge surface carries for one component, one entry per socket it wrote, in
 // author order, each holding that socket's connection count.
 //
@@ -875,7 +875,7 @@ func (v *normalizedView) ReleaseAuthoredUsesSocketConnections(node string) types
 	return out
 }
 
-// ReleaseAuthoredUsesSocketEntryAliases returns the aliases the deployment's
+// ReleaseAuthoredUsesSocketEntryAliases returns the aliases the Release's
 // edge surface wrote an entry under for one socket, in author order.
 func (v *normalizedView) ReleaseAuthoredUsesSocketEntryAliases(node string, socket string) []string {
 	aliases, ok := v.releaseUses(node, socket)
@@ -885,7 +885,7 @@ func (v *normalizedView) ReleaseAuthoredUsesSocketEntryAliases(node string, sock
 	return aliases.Keys()
 }
 
-// ReleasePerEdgeTarget returns the component one connection of the deployment's
+// ReleasePerEdgeTarget returns the component one connection of the Release's
 // edge surface names, empty when the entry named none.
 func (v *normalizedView) ReleasePerEdgeTarget(node string, socket string, alias string) string {
 	entry, ok := v.releaseEdgeEntry(node, socket, alias)
@@ -907,7 +907,7 @@ func (v *normalizedView) ReleasePerEdgeInfra(
 	return entry.Infra
 }
 
-// releaseEdgeEntry returns one connection's entry on the deployment's edge
+// releaseEdgeEntry returns one connection's entry on the Release's edge
 // surface.
 func (v *normalizedView) releaseEdgeEntry(node, socket, alias string) (types.ReleaseUsesEntry, bool) {
 	aliases, ok := v.releaseUses(node, socket)
@@ -918,7 +918,7 @@ func (v *normalizedView) releaseEdgeEntry(node, socket, alias string) (types.Rel
 }
 
 // BoundaryAttachmentDeclaration returns what one scope-wide attachment of the
-// deployment declares, and whether an attachment of that name exists there.
+// Release declares, and whether an attachment of that name exists there.
 func (v *normalizedView) BoundaryAttachmentDeclaration(
 	boundary string, attachment string,
 ) (constraint.AttachmentDeclaration, bool) {
@@ -936,7 +936,7 @@ func (v *normalizedView) BoundaryAttachmentDeclaration(
 	}, true
 }
 
-// ReleaseAttachmentType returns the Feature type one attachment the deployment
+// ReleaseAttachmentType returns the Feature type one attachment the Release
 // wrote against a component names, and whether an attachment of that name
 // exists.
 func (v *normalizedView) ReleaseAttachmentType(node string, attachment string) (string, bool) {

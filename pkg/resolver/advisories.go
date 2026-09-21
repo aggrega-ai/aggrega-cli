@@ -64,7 +64,7 @@ type RecipeBinding func(instanceName, componentType string) (*types.Recipe, bool
 // with no binding to offer passes nil and that one rule is asked about nothing
 // while every other rule is unaffected.
 //
-// Returns no findings when the application document is absent.
+// Returns no findings when the Aggregate document is absent.
 func RunAdvisories(
 	cancelled constraint.Cancellation,
 	na types.NormalizedAggregate,
@@ -92,9 +92,9 @@ func RunAdvisories(
 // runDeclaredAdvisories asks every advisory rule whose facts are complete before
 // the composition is flattened.
 //
-// The rules whose SUBJECT the application wrote name the application document, and
+// The rules whose SUBJECT the Aggregate wrote name the Aggregate document, and
 // that is their subject matter rather than a simplification: a reading of what the
-// deployment wrote is not attributable to the application, and a rule of that kind
+// Release wrote is not attributable to the Aggregate, and a rule of that kind
 // arriving here would need the second document named the way the halting suite
 // names it. A rule whose subject sits inside a third document — a Recipe entry the
 // caller's binding resolves — names that document per finding instead, because its
@@ -145,10 +145,10 @@ func runDeclaredAdvisories(
 	}
 
 	// Once per key the Recipe bound to a component publishes. This one is
-	// attributed per finding rather than to the application document, because the
+	// attributed per finding rather than to the Aggregate document, because the
 	// entry it objects about is written in the Recipe and its locator names a path
-	// inside that document — a path the application does not contain. The
-	// application stands as the fallback for a subject carrying no file, which is
+	// inside that document — a path the Aggregate does not contain. The
+	// Aggregate stands as the fallback for a subject carrying no file, which is
 	// what a coordinate derived from the authoring documents carries.
 	//
 	// The axis is empty when the caller offered no binding, so a caller with none

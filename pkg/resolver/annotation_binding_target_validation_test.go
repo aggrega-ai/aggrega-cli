@@ -26,7 +26,7 @@ import (
 // The wrapper exists so a test states the Manifest and the catalog it is about
 // and nothing else. The entry is asked over the resolve's products because the
 // rule reads the catalog, which is reachable only once the resolve holds one; a
-// test naming an application document as well would be fixing a fact this rule
+// test naming an Aggregate document as well would be fixing a fact this rule
 // does not read.
 func validateBindingTargets(manifest *types.Manifest, catalog CatalogLookup) error {
 	return ValidateAnnotationBindingTargets(&ResolveResult{Manifest: manifest}, catalog)

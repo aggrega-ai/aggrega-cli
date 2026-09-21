@@ -188,8 +188,8 @@ func placedEdgeSockets(
 }
 
 // TestTheReleaseEdgeSocketRuleReachesEveryPlacement proves the socket rule
-// reaches a component wherever the application declares it, in BOTH directions:
-// a deployment naming a socket the consuming component does not declare is
+// reaches a component wherever the Aggregate declares it, in BOTH directions:
+// a Release naming a socket the consuming component does not declare is
 // reported, and one naming a socket it does declare is not.
 //
 // The passing half is the load-bearing one — a rule that skipped the component
@@ -217,12 +217,12 @@ func TestTheReleaseEdgeSocketRuleReachesEveryPlacement(t *testing.T) {
 }
 
 // TestTheConnectionSizingRuleReachesEveryPlacement proves the per-edge sizing
-// rule reaches a component wherever the application declares it, in both
+// rule reaches a component wherever the Aggregate declares it, in both
 // directions: operator per-edge sizing that violates the socket's contract is
 // reported, and conforming sizing of the same shape is not.
 //
 // The locator names the placement the author wrote, so it differs per placement
-// even though the component's identity — the name the deployment addresses it by
+// even though the component's identity — the name the Release addresses it by
 // — does not.
 func TestTheConnectionSizingRuleReachesEveryPlacement(t *testing.T) {
 	t.Parallel()
@@ -260,7 +260,7 @@ func TestTheConnectionSizingRuleReachesEveryPlacement(t *testing.T) {
 // The required-socket rule is deliberately absent from this file. It reads three
 // surfaces and the last of them is the connection set a composition produces, so
 // it cannot be asked of the two authoring documents alone — it is declared over
-// the composed application and proved beside that stage's presentation, over
+// the composition and proved beside that stage's presentation, over
 // every placement this file enumerates and over a component a module
 // contributes, which no reading taken here could reach.
 

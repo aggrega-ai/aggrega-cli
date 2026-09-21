@@ -66,7 +66,7 @@ spec:
         size: '{{ .parameters.db_size }}'
 `
 
-// authoredReleaseForEdit is the deployment-side fixture. The authoring schema
+// authoredReleaseForEdit is the Release-side fixture. The authoring schema
 // gives a Release's component surface operator concerns only — no developer
 // values — so it is the document the invariant refusal is driven against.
 const authoredReleaseForEdit = `# The production deployment.
@@ -198,7 +198,7 @@ func TestAnEditTheSchemaRefusesLeavesTheFileByteIdentical(t *testing.T) {
 //
 // Without it the refusal could be reported for a document that was never valid,
 // and the case above would pass while proving nothing about the edit. It drives
-// an operator concern the deployment surface does carry and requires it to land.
+// an operator concern the Release surface does carry and requires it to land.
 func TestTheReleaseFixtureAcceptsALegitimateEditFirst(t *testing.T) {
 	t.Parallel()
 	ws, abs := editDocumentWorkspace(t, "prod.release.yaml", authoredReleaseForEdit)
@@ -214,7 +214,7 @@ func TestTheReleaseFixtureAcceptsALegitimateEditFirst(t *testing.T) {
 		Out:        &bytes.Buffer{},
 	})
 	if err != nil {
-		t.Fatalf("a legitimate deployment-side edit was refused: %v", err)
+		t.Fatalf("a legitimate Release-side edit was refused: %v", err)
 	}
 	if on := readFileForEdit(t, abs); !strings.Contains(on, "type: core/finops/budget-alert:1.0.0\n") {
 		t.Errorf("the attachment did not land\n--- document ---\n%s", on)

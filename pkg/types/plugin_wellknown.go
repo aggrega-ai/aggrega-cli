@@ -116,7 +116,7 @@ func ValidateWellKnownAnnotationScopes(p Plugin) error {
 // reports covered. Collapsing the two is the mistake this distinction exists to
 // prevent. A provider that declares no support claim at all has said
 // nothing, and inferring "this key is not read" from silence would put a negative
-// claim in the provider author's mouth and report it to a deployment author as
+// claim in the provider author's mouth and report it to a Release author as
 // the provider's own word. The residue is real and is not papered over: a
 // provider that reads none of these keys and declares nothing is indistinguishable
 // here from one that reads them all, so its authors get no advisory. That gap is

@@ -36,12 +36,12 @@ import (
 //
 // Its scope is the component's own dependency block alone, which is the one
 // surface where a socket name matching no declaration is accepted. An
-// attachment's block and a deployment's edge surface may each name only a
+// attachment's block and a Release's edge surface may each name only a
 // declared socket, so a near miss there is already refused and reporting it
 // again would report it twice.
 //
 // It is invoked once per component rather than once per socket, for the reason
-// the halting rule on the deployment surface is: the socket axis enumerates what
+// the halting rule on the Release surface is: the socket axis enumerates what
 // a component type declares, and the socket this rule is about is by definition
 // not among them, so a per-socket invocation would never be presented with its
 // own subject. The set the component wrote is read as a fact instead.
@@ -87,7 +87,7 @@ var authoredSocketNameNearADeclaredOne = constraint.Check[
 	},
 }
 
-// attachmentNameNearADeclaredSlot reports each attachment an application wrote
+// attachmentNameNearADeclaredSlot reports each attachment an Aggregate wrote
 // under a name its component's type declares no slot for while declaring one
 // within a single edit of it.
 //
@@ -96,10 +96,10 @@ var authoredSocketNameNearADeclaredOne = constraint.Check[
 // a mistyped slot name silently becomes one instead of filling the slot the
 // author meant, and this rule is what makes the pair visible.
 //
-// It is asked of the application's own declaration. An attachment only the
-// deployment declares is the supported way to add one, and the two surfaces are
+// It is asked of the Aggregate's own declaration. An attachment only the
+// Release declares is the supported way to add one, and the two surfaces are
 // separately authored, so a rule reading one for the other would advise about a
-// name the application never wrote.
+// name the Aggregate never wrote.
 //
 // The detail leads with the name the attachment was written under, which is the
 // value the rule's own wording is about and so carries no caption. The component

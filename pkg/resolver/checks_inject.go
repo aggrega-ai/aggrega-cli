@@ -76,7 +76,7 @@ var selfInjectReferenceIsPublished = constraint.Check[
 // component the build wires rather than against a second reading of the same
 // authoring.
 //
-// A target naming no component the application declares ends the rule. Such a
+// A target naming no component the Aggregate declares ends the rule. Such a
 // component exists only once the composition is flattened, so there is no
 // published contract here to measure the reference against.
 //
@@ -135,7 +135,7 @@ var connectionInjectReferenceIsPublished = constraint.Check[
 //
 // It is the same rule as the one above over a wider set, and the two are
 // separate declarations because they are asked at different stages of different
-// facts. The rule above reads the application's own dependency block, which is
+// facts. The rule above reads the Aggregate's own dependency block, which is
 // complete as soon as the documents are normalized, and is asked there so a
 // developer's own typo halts at the earliest point it can. This one reads the
 // connection set the composition produced — every connection, whichever surface

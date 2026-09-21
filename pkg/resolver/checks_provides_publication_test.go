@@ -39,7 +39,7 @@ func bindEvery(r *types.Recipe) RecipeBinding {
 	return func(string, string) (*types.Recipe, bool) { return r, true }
 }
 
-// componentsNamed is an application declaring one instance of the fixture type per
+// componentsNamed is an Aggregate declaring one instance of the fixture type per
 // name given, in that order.
 func componentsNamed(t *testing.T, names ...string) types.NormalizedAggregate {
 	t.Helper()

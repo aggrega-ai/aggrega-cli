@@ -47,13 +47,13 @@ func TestTheNodeAxisIsInstanceNameOrderRatherThanDeclarationOrder(t *testing.T) 
 //
 // The rules over a connection are split across the two documents: one measures
 // what the developer wrote against the socket's contract, its sibling measures
-// what the deployment wrote against a separate contract for the same socket. An
+// what the Release wrote against a separate contract for the same socket. An
 // axis carrying one document's connections leaves the other rule invoked for
 // none of the connections it exists to judge.
 //
 // INVARIANT: a connection either document wrote is enumerated, and a connection
 // both wrote is enumerated exactly once.
-// CONSEQUENCE: were the deployment's connections missing, the rule over what an
+// CONSEQUENCE: were the Release's connections missing, the rule over what an
 // operator wrote would never be asked about them — raising nothing, failing no
 // test, and leaving the build green over unchecked input.
 func TestTheConnectionAxisCarriesBothAuthoringDocuments(t *testing.T) {
@@ -76,7 +76,7 @@ func TestTheConnectionAxisCarriesBothAuthoringDocuments(t *testing.T) {
 		Spec:     types.AggregateSpec{Components: components},
 	})
 
-	// The deployment configures the connection the developer already wrote on
+	// The Release configures the connection the developer already wrote on
 	// `shared`, and wires one the developer did not write at all on `cache`.
 	relShared := types.OrderedMap[types.ReleaseUsesEntry]{}
 	relShared.Set("both", types.ReleaseUsesEntry{Target: "db"})
@@ -106,7 +106,7 @@ func TestTheConnectionAxisCarriesBothAuthoringDocuments(t *testing.T) {
 		t.Fatalf("the connection axis returned %v; want %v.\n"+
 			"INVARIANT: every connection either document wrote appears once, developer "+
 			"document first.\n"+
-			"CONSEQUENCE: a missing deployment connection leaves the operator-side rule "+
+			"CONSEQUENCE: a missing Release connection leaves the operator-side rule "+
 			"never invoked for it; a duplicated one reports a single authoring fault twice.",
 			got, want)
 	}
@@ -167,8 +167,8 @@ func TestAShortFormConnectionCarriesNoAuthoredAlias(t *testing.T) {
 // TestTheScopeAxesOmitScopesNormalizationSynthesized pins both scope axes
 // against the one case that separates a declared scope from a produced one.
 //
-// Normalization folds an application's root components into a synthesized scope
-// and a deployment's root components into a synthesized boundary. Neither was
+// Normalization folds an Aggregate's root components into a synthesized scope
+// and a Release's root components into a synthesized boundary. Neither was
 // declared by anybody, so neither has an authored site an attachment of it could
 // be reported at.
 //
@@ -179,7 +179,7 @@ func TestAShortFormConnectionCarriesNoAuthoredAlias(t *testing.T) {
 func TestTheScopeAxesOmitScopesNormalizationSynthesized(t *testing.T) {
 	t.Parallel()
 
-	// The synthesized scope and a declared one cannot coexist in one application:
+	// The synthesized scope and a declared one cannot coexist in one Aggregate:
 	// normalization folds the root surface into a synthesized scope only when the
 	// author declared no scope at all. So the two halves are separate documents,
 	// and authoring them as one would produce a shape normalization never emits.
@@ -202,7 +202,7 @@ func TestTheScopeAxesOmitScopesNormalizationSynthesized(t *testing.T) {
 			"proves nothing about synthesized scopes.")
 	}
 	if got := coordinateValues(folded.Subsystems()); len(got) != 0 {
-		t.Errorf("the application's scope axis returned %v; want no scopes.\n"+
+		t.Errorf("the Aggregate's scope axis returned %v; want no scopes.\n"+
 			"INVARIANT: a scope normalization synthesized is not a scope an author declared.\n"+
 			"CONSEQUENCE: a rule over it reports at a key no file contains.", got)
 	}
@@ -221,7 +221,7 @@ func TestTheScopeAxesOmitScopesNormalizationSynthesized(t *testing.T) {
 	gotSubsystems := coordinateValues(nested.Subsystems())
 	wantSubsystems := []string{"edge", "edge.deep", "core"}
 	if !equalStrings(gotSubsystems, wantSubsystems) {
-		t.Errorf("the application's scope axis returned %v; want %v.\n"+
+		t.Errorf("the Aggregate's scope axis returned %v; want %v.\n"+
 			"INVARIANT: author order, with an enclosing scope before the scopes nested "+
 			"inside it.\n"+
 			"CONSEQUENCE: enumeration order reaches diagnostics, so one document reports "+
@@ -242,7 +242,7 @@ func TestTheScopeAxesOmitScopesNormalizationSynthesized(t *testing.T) {
 	gotBoundaries := coordinateValues(deployed.Boundaries())
 	wantBoundaries := []string{"prod", "prod/eu"}
 	if !equalStrings(gotBoundaries, wantBoundaries) {
-		t.Errorf("the deployment's scope axis returned %v; want %v.\n"+
+		t.Errorf("the Release's scope axis returned %v; want %v.\n"+
 			"INVARIANT: declared scopes only, outer before nested, in author order.\n"+
 			"CONSEQUENCE: a rule over a synthesized boundary reports at a key no file contains.",
 			gotBoundaries, wantBoundaries)
@@ -281,7 +281,7 @@ func TestEveryAxisReturnsOneSequenceAcrossRepeatedConstructions(t *testing.T) {
 	uses.Set("backend", types.UsesSocketValue{Verbose: verbose})
 
 	// The components live inside a declared scope rather than at the root,
-	// because normalization folds the root surface only for an application that
+	// because normalization folds the root surface only for an Aggregate that
 	// declares no scope — so a document carrying both would leave its root
 	// components outside every scope, which is a shape normalization never emits
 	// and which no walk reaches.

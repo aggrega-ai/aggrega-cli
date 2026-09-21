@@ -104,13 +104,13 @@ func attachmentSocketObjections(
 // the attachment holding it.
 //
 // Two conditions end the rule before the comparison, and each one narrows it to
-// the surface it is the rule for. An attachment the application does not declare
+// the surface it is the rule for. An attachment the Aggregate does not declare
 // under this name on this component ends it: the Release may declare one under
 // the same name, and that surface is a separate declaration with its own rule, so
 // reading one for the other would measure a Release-authored attachment's sockets
-// against an application attachment's type. A socket the application's own entry
+// against an Aggregate attachment's type. A socket the Aggregate's own entry
 // does not wire ends it too, for the same reason at the finer coordinate — the
-// axis carries the sockets either document wired, so a socket only the deployment
+// axis carries the sockets either document wired, so a socket only the Release
 // wrote arrives here and belongs to the twin below.
 var componentAttachmentSocketDeclared = constraint.Check[
 	constraint.NormalizedView,
@@ -136,14 +136,14 @@ var componentAttachmentSocketDeclared = constraint.Check[
 }
 
 // releaseComponentAttachmentSocketDeclared reports a socket an attachment the
-// deployment writes against a named component wires that the Feature it attaches
+// Release writes against a named component wires that the Feature it attaches
 // does not declare.
 //
-// It is the deployment-side twin of the per-component surface, invoked once per
+// It is the Release-side twin of the per-component surface, invoked once per
 // socket for the same reason and narrowed to its own document by the same two
 // conditions. Adding an attachment a component's own document never declared is
-// supported there, so the rule has to be asked of the deployment's own
-// declaration rather than inferred from the application's.
+// supported there, so the rule has to be asked of the Release's own
+// declaration rather than inferred from the Aggregate's.
 var releaseComponentAttachmentSocketDeclared = constraint.Check[
 	constraint.NormalizedView,
 	constraint.NodeAttachmentSocketSubject,
@@ -168,7 +168,7 @@ var releaseComponentAttachmentSocketDeclared = constraint.Check[
 }
 
 // subsystemAttachmentSocketDeclared reports each socket an attachment written at
-// an application scope wires that the Feature it attaches does not declare.
+// an Aggregate scope wires that the Feature it attaches does not declare.
 //
 // It is keyed by the scope rather than by a component because that is where the
 // author wrote it: one such attachment reaches every component the scope holds,
@@ -200,9 +200,9 @@ var subsystemAttachmentSocketDeclared = constraint.Check[
 }
 
 // boundaryAttachmentSocketDeclared reports each socket an attachment written at
-// a deployment scope wires that the Feature it attaches does not declare.
+// a Release scope wires that the Feature it attaches does not declare.
 //
-// It is the deployment-side twin of the application-scope surface, keyed by that
+// It is the Release-side twin of the Aggregate-scope surface, keyed by that
 // scope for the same reason: the attachment is authored once and contributes
 // many times, and a scope holding no component would otherwise never be asked.
 var boundaryAttachmentSocketDeclared = constraint.Check[
@@ -229,30 +229,30 @@ var boundaryAttachmentSocketDeclared = constraint.Check[
 	},
 }
 
-// releaseEdgeSocketDeclared reports each socket a deployment's own edge surface
+// releaseEdgeSocketDeclared reports each socket a Release's own edge surface
 // writes on a component that the component's type does not declare.
 //
 // The rule survives the relaxation on the component's own dependency block, and
-// the asymmetry is the point: an application author owns their application's
+// the asymmetry is the point: an Aggregate author owns their Aggregate's
 // topology and may name a socket the catalog did not anticipate, while the
-// deployment surface wires and configures within an architecture it did not
+// Release surface wires and configures within an architecture it did not
 // author. Letting it name a socket nothing declares would let it introduce
-// topology the application never declared.
+// topology the Aggregate never declared.
 //
 // It is invoked once per component rather than once per socket, because the
 // socket axis enumerates what a component type DECLARES and the socket this
 // rule refuses is by definition not among them — so a per-socket invocation
-// would never be presented with its own subject. The set the deployment wrote is
+// would never be presented with its own subject. The set the Release wrote is
 // read as a fact instead, and the rule compares the two.
 //
-// A component whose type the application does not declare ends the rule: its
+// A component whose type the Aggregate does not declare ends the rule: its
 // document is loaded only once the composition is flattened, so there is no type
 // here to read a declared socket set from. A type the catalog holds no entry for
 // ends it too — the declared set reads empty for it, and refusing every socket
 // wired on a type nobody found would report the wrong thing. What that absence
 // means is a separate rule's question.
 //
-// The detail is the component type, the socket the deployment wrote, and then
+// The detail is the component type, the socket the Release wrote, and then
 // the socket names that type declares, in author order.
 var releaseEdgeSocketDeclared = constraint.Check[
 	constraint.NormalizedView,

@@ -29,7 +29,7 @@ func socketCarriesAConnection(counted types.OrderedMap[int], socket string) bool
 //
 // Three surfaces can populate such a socket and the rule reads all three,
 // because a socket any one of them binds is wired in the graph that gets
-// rendered. The component's own dependency block and the deployment's edge
+// rendered. The component's own dependency block and the Release's edge
 // surface are what the two authors wrote; the connection set the build resolved
 // is what the composition contributed, and it is the only one that answers for a
 // component a module contributes, whose own dependency block lives in a document
@@ -37,7 +37,7 @@ func socketCarriesAConnection(counted types.OrderedMap[int], socket string) bool
 //
 // Reading the resolved set is what places this rule where it sits. The two
 // authored surfaces are complete as soon as both documents are in view, and a
-// rule reading only those answers for components the application declares
+// rule reading only those answers for components the Aggregate declares
 // directly and refuses to judge the rest — which is one rule in two mechanisms,
 // each seeing a different half of the input. Reading all three states the rule
 // once, at the point the last of its evidence is complete.

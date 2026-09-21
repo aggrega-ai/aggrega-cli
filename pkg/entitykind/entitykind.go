@@ -60,7 +60,7 @@ const (
 	Workload Kind = "Workload"
 	// Manifest is the operator's deployment-target document.
 	Manifest Kind = "Manifest"
-	// Release is the operator's deployment document.
+	// Release is the operator's environment-binding document.
 	Release Kind = "Release"
 )
 

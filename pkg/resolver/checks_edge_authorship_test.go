@@ -68,7 +68,7 @@ spec: {}
 // twoConnectionAggregate draws two connections on one socket, primary and
 // replica, both reaching db and both authoring the required per-edge value. Their
 // developer half therefore conforms, so anything the per-edge rules report for
-// these components comes from the deployment's own edge surface.
+// these components comes from the Release's own edge surface.
 const twoConnectionAggregate = `apiVersion: aggrega.ai/v1alpha1
 kind: Aggregate
 metadata:
@@ -124,25 +124,25 @@ func edgeConfigurationLocators(
 
 // TestTheOperatorPerEdgeContractIsJudgedWhereItWasWritten pins which connections
 // of a socket the operator-side per-edge contract is measured against: exactly
-// the ones the deployment wrote an entry for, and every one of those.
+// the ones the Release wrote an entry for, and every one of those.
 //
 // Both halves are load-bearing and they pull in opposite directions.
 //
 // An entry carrying nothing at all is still an entry, and it is the maximal
-// violation of a key the socket declares required. Both fields of a deployment's
+// violation of a key the socket declares required. Both fields of a Release's
 // per-edge entry are optional, so an entry with neither set is a document this
 // surface accepts, and a rule that demanded content before measuring would pass
 // over exactly the input the required key exists to catch.
 //
-// A connection the deployment wrote NO entry for is not this contract's business.
+// A connection the Release wrote NO entry for is not this contract's business.
 // The operator's per-edge block is where the operator's per-edge configuration is
-// authored; a connection the application's own dependency block drew and the
-// deployment never configured has nothing authored here to measure, and reporting
+// authored; a connection the Aggregate's own dependency block drew and the
+// Release never configured has nothing authored here to measure, and reporting
 // one would reject a document both surfaces accept.
 //
-// The two together fix the rule at "one judgement per entry the deployment wrote",
+// The two together fix the rule at "one judgement per entry the Release wrote",
 // which is a different set from "one per connection the build draws" — including
-// the row where the deployment writes an entry at an alias no connection carries.
+// the row where the Release writes an entry at an alias no connection carries.
 func TestTheOperatorPerEdgeContractIsJudgedWhereItWasWritten(t *testing.T) {
 	t.Parallel()
 	cat := authorshipCatalog(t)
@@ -150,7 +150,7 @@ func TestTheOperatorPerEdgeContractIsJudgedWhereItWasWritten(t *testing.T) {
 
 	cases := []struct {
 		name string
-		// alias and body are the single per-edge entry the deployment writes;
+		// alias and body are the single per-edge entry the Release writes;
 		// alias is empty for the row that writes none at all.
 		alias string
 		body  string
@@ -158,7 +158,7 @@ func TestTheOperatorPerEdgeContractIsJudgedWhereItWasWritten(t *testing.T) {
 		want []string
 	}{
 		{
-			name: "a connection the deployment configures nowhere",
+			name: "a connection the Release configures nowhere",
 			want: nil,
 		},
 		{
@@ -202,13 +202,13 @@ func TestTheOperatorPerEdgeContractIsJudgedWhereItWasWritten(t *testing.T) {
 }
 
 // TestTheDeveloperPerEdgeContractIsJudgedWhereItWasWritten is the mirror on the
-// application's own dependency block, and it exists because the two surfaces are
+// Aggregate's own dependency block, and it exists because the two surfaces are
 // separately authored and independently absent: a rule established on one of them
 // says nothing about the other.
 //
-// The second half is the one that is easy to lose. A connection the deployment
+// The second half is the one that is easy to lose. A connection the Release
 // drew into a declared-but-unbound socket exists in the built graph while the
-// application's block wrote nothing for it, so its developer per-edge contract has
+// Aggregate's block wrote nothing for it, so its developer per-edge contract has
 // nothing authored to measure — and it reads identically, in the entry's own
 // content, to a developer entry that authored nothing.
 func TestTheDeveloperPerEdgeContractIsJudgedWhereItWasWritten(t *testing.T) {
@@ -239,9 +239,9 @@ spec:
 		t.Errorf("a developer entry authoring no required per-edge key raised %v; want %v", got, want)
 	}
 
-	// The same alias, drawn by the deployment instead. The application's block
+	// The same alias, drawn by the Release instead. The Aggregate's block
 	// authored nothing there, so the developer contract has nothing to measure —
-	// and the deployment's entry authors the key its own contract requires, so
+	// and the Release's entry authors the key its own contract requires, so
 	// the operator half is silent too and a report here could only be the
 	// developer half speaking where it was not written.
 	oneConnection := parseAggregate(t, `apiVersion: aggrega.ai/v1alpha1
@@ -263,11 +263,11 @@ spec:
 `)
 	rel := releaseNaming(t, "databases", "replica", "target: db\ninfra:\n  storage_class: fast\n")
 	if got := edgeConfigurationLocators(t, oneConnection, rel, cat); len(got) != 0 {
-		t.Errorf("a connection the application's block never wrote must not be measured against "+
+		t.Errorf("a connection the Aggregate's block never wrote must not be measured against "+
 			"its developer contract; got %v", got)
 	}
 	if got := edgeSizingLocators(t, oneConnection, rel, cat); len(got) != 0 {
-		t.Errorf("the deployment's own entry authors the key its contract requires, so the "+
+		t.Errorf("the Release's own entry authors the key its contract requires, so the "+
 			"operator half must be silent too; got %v", got)
 	}
 }

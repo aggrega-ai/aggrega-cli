@@ -74,8 +74,8 @@ func (e *UsesSchemaEntry) PillarNode(pillar string) *yaml.Node {
 
 // AttachmentSlot declares one named attachment slot on a Component or Feature.
 // A slot is a place an attachment is expected: the entity declares it, and a
-// deployment fills it by attaching a Feature under the slot's name. Declaring a
-// slot never closes the attachment surface — a deployment may attach a Feature
+// Release fills it by attaching a Feature under the slot's name. Declaring a
+// slot never closes the attachment surface — a Release may attach a Feature
 // under a name no slot declares, so one entity serves both a slot-filled
 // attachment and an attachment shared at a broader scope.
 //

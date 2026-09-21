@@ -513,7 +513,7 @@ func TestCelEmbedded_LabelTransformDrivesFeatureAttachment(t *testing.T) {
 // The confinement matters because a plugin attached to shape labels is the
 // invited exception to the rule that nothing invents infrastructure: the
 // invitation is exactly as wide as the role. A policy naming a node the
-// deployment does not have, or dropping a label the node does not carry, is
+// graph does not have, or dropping a label the node does not carry, is
 // reaching past the label set it was invited to shape.
 //
 // The refusal is asserted at the acquisition, which is where a label-transform
@@ -528,7 +528,7 @@ func TestCelEmbedded_LabelTransformConfinementIsEnforced(t *testing.T) {
 		policy string
 	}{
 		{
-			name:   "a decision naming a node the deployment does not have",
+			name:   "a decision naming a node the graph does not have",
 			policy: `{"labels": [{"node": "no-such-node", "key": "tier", "value": "gold"}]}`,
 		},
 		{
@@ -625,7 +625,7 @@ func TestCelEmbedded_AnnotationTransformExpandsIntoAFeature(t *testing.T) {
 }
 
 // TestCelEmbedded_AnnotationTransformConfinementIsEnforced drives the guest into
-// the annotation confinement: a decision naming a component the deployment does
+// the annotation confinement: a decision naming a component the graph does
 // not have must be refused loudly rather than applied or dropped.
 //
 // The refusal is asserted at the acquisition, which is where an
@@ -646,7 +646,7 @@ func TestCelEmbedded_AnnotationTransformConfinementIsEnforced(t *testing.T) {
 		[]string{catalogDir, standardCatalogDir(t)},
 		celAttachment("annotation-transform", "policy.cel", ""))
 	if err == nil {
-		t.Fatal("an annotation naming a component the deployment does not have must be refused")
+		t.Fatal("an annotation naming a component the graph does not have must be refused")
 	}
 	if !errors.Is(err, pipeline.ErrAnnotationInjectionRejected()) {
 		t.Fatalf("want ErrAnnotationInjectionRejected, got: %v", err)

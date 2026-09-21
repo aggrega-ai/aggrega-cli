@@ -225,14 +225,14 @@ func mergeAggregate(features types.OrderedMap[types.FeatureInstance]) *types.Agg
 	}
 }
 
-// boundaryDecl is one boundary of the deployment and the attachment types it
+// boundaryDecl is one boundary of the Release and the attachment types it
 // declares against the one component, in author order.
 type boundaryDecl struct {
 	name        string
 	attachments []namedType
 }
 
-// mergeRelease builds a deployment whose named boundaries each write against the
+// mergeRelease builds a Release whose named boundaries each write against the
 // one component, carrying the attachment types each boundary declares for it.
 func mergeRelease(boundaries []boundaryDecl) *types.Release {
 	declared := types.OrderedMap[types.Boundary]{}
@@ -256,10 +256,10 @@ func TestTheAttachmentTypeAgreementRuleReportsOnlyANameBothDocumentsType(t *test
 
 	for _, tc := range []struct {
 		name string
-		// authored is the attachment block the application declares, in author
+		// authored is the attachment block the Aggregate declares, in author
 		// order.
 		authored []namedType
-		// boundaries is what the deployment writes against the same component.
+		// boundaries is what the Release writes against the same component.
 		boundaries []boundaryDecl
 		raised     []string
 	}{
@@ -334,7 +334,7 @@ func TestTheAttachmentTypeAgreementRuleReportsOnlyANameBothDocumentsType(t *test
 	}
 }
 
-// One component may be declared in exactly one boundary, and the deployment
+// One component may be declared in exactly one boundary, and the Release
 // document is refused at read time when it is declared in two.
 //
 // 🔴 The rule above reads one boundary's whole attachment block per component,
@@ -377,7 +377,7 @@ spec:
 
 	_, err := LoadReleaseFromBytes([]byte(twoBoundaries), "release.yaml")
 	if err == nil {
-		t.Fatal("a deployment placing one component in two boundaries was accepted.\n" +
+		t.Fatal("a Release placing one component in two boundaries was accepted.\n" +
 			"INVARIANT: each component is declared in exactly one boundary, refused at read time.\n" +
 			"CONSEQUENCE: the attachment-type rule folds that component's attachments to one " +
 			"boundary's block, so it would read only one of the two and report no conflict.")
@@ -489,7 +489,7 @@ func TestTheSlotPermittedDeliveryRuleReportsEachMechanismTheSlotRefuses(t *testi
 
 	for _, tc := range []struct {
 		name string
-		// attachments is the block the application declares, in author order.
+		// attachments is the block the Aggregate declares, in author order.
 		attachments []namedFill
 		raised      []string
 	}{
@@ -667,7 +667,7 @@ func TestTheSlotPermittedDeliveryRuleEndsWhereNoSlotIsDeclared(t *testing.T) {
 }
 
 // ------------------------------------------------------------------ the rules
-// about a socket name an attachment or a deployment edge wires
+// about a socket name an attachment or a Release edge wires
 
 // The types the socket-name rows author against. Two component types and two
 // Feature types the catalog holds, and one of each it does not, so a row
@@ -751,7 +751,7 @@ func declaredSocketsOf(objections []constraint.Objection) []string {
 	return out
 }
 
-// wiredAttachment is one attachment of an application document: the Feature it
+// wiredAttachment is one attachment of an Aggregate document: the Feature it
 // attaches and the sockets it wires, in author order.
 func wiredAttachment(featureType string, sockets ...string) types.FeatureInstance {
 	fi := types.FeatureInstance{Type: featureType}
@@ -781,7 +781,7 @@ func socketAggregate(features types.OrderedMap[types.FeatureInstance]) *types.Ag
 	}
 }
 
-// releaseDocument wraps a boundary block in the envelope every deployment
+// releaseDocument wraps a boundary block in the envelope every Release
 // document carries, so a row writes only the part under test.
 //
 // The envelope matters to the rows rather than being scaffolding: the document
@@ -801,19 +801,19 @@ spec:
 ` + boundaries
 }
 
-// loadRelease reads a deployment document through the real loader.
+// loadRelease reads a Release document through the real loader.
 //
-// 🔴 The rows below build their deployment side this way rather than assembling
+// 🔴 The rows below build their Release side this way rather than assembling
 // the value directly, and the reason is measured rather than stylistic: the
 // loader folds a top-level component surface into the synthesized boundary and
 // refuses a document placing one component in two boundaries, so a value
-// assembled beside it can encode a shape no deployment reaching the rule ever
+// assembled beside it can encode a shape no Release reaching the rule ever
 // has. A behaviour observed only in such a value is not the product's behaviour.
 func loadRelease(t *testing.T, body string) *types.Release {
 	t.Helper()
 	release, err := LoadReleaseFromBytes([]byte(body), "release.yaml")
 	if err != nil {
-		t.Fatalf("the deployment document this row is written against does not load, "+
+		t.Fatalf("the Release document this row is written against does not load, "+
 			"so the row would be testing a shape the product refuses: %v", err)
 	}
 	return release
@@ -906,13 +906,13 @@ func TestTheComponentAttachmentSocketRuleReportsASocketTheFeatureDoesNotDeclare(
 	}
 }
 
-// The rule over an attachment the deployment writes against a named component.
+// The rule over an attachment the Release writes against a named component.
 //
 // 🔴 It is asked about every attachment name EITHER document declares on the
 // component, and about every socket EITHER document wires under that name. The
-// row for a name only the deployment declares pins both, since the socket it
-// reports exists only in the deployment. A rule asked only about the
-// application's names, or walked only over the application's sockets, would never
+// row for a name only the Release declares pins both, since the socket it
+// reports exists only in the Release. A rule asked only about the
+// Aggregate's names, or walked only over the Aggregate's sockets, would never
 // be presented with such a subject, and silence from a rule never asked is
 // indistinguishable from approval: no build goes red, and the enforcement is
 // simply gone.
@@ -923,16 +923,16 @@ func TestTheReleaseComponentAttachmentSocketRuleReadsBothDocumentsNames(t *testi
 
 	for _, tc := range []struct {
 		name string
-		// authored is the attachment block the application declares. Its entries
-		// wire nothing, so every report below comes from the deployment's block.
+		// authored is the attachment block the Aggregate declares. Its entries
+		// wire nothing, so every report below comes from the Release's block.
 		authored []namedFill
-		// deployed is the boundary block of the deployment document.
+		// deployed is the boundary block of the Release document.
 		deployed string
 		raised   []string
 		sockets  []string
 	}{
 		{
-			name: "an attachment both documents declare is reported when the deployment wires a socket the Feature does not declare",
+			name: "an attachment both documents declare is reported when the Release wires a socket the Feature does not declare",
 			authored: []namedFill{
 				{"audit", wiredAttachment(socketAuditType)},
 			},
@@ -950,17 +950,17 @@ func TestTheReleaseComponentAttachmentSocketRuleReadsBothDocumentsNames(t *testi
 			sockets: []string{"ghost"},
 		},
 		{
-			// 🔴 An attachment only the deployment declares. The rule's own
+			// 🔴 An attachment only the Release declares. The rule's own
 			// contract is that adding such an attachment is supported, so it has
-			// to be asked of the deployment's declaration rather than inferred
-			// from the application's — and the coordinate it is asked per names
-			// the application's attachments first and then any the deployment
-			// declares that the application does not.
+			// to be asked of the Release's declaration rather than inferred
+			// from the Aggregate's — and the coordinate it is asked per names
+			// the Aggregate's attachments first and then any the Release
+			// declares that the Aggregate does not.
 			//
-			// The locator is rooted at the component's site on the application
-			// document while the offending text is in the deployment. Recorded
+			// The locator is rooted at the component's site on the Aggregate
+			// document while the offending text is in the Release. Recorded
 			// rather than corrected: it is the site the axis presents.
-			name:     "an attachment only the deployment declares is reported",
+			name:     "an attachment only the Release declares is reported",
 			authored: nil,
 			deployed: `    edge:
       directory: ./output
@@ -1047,14 +1047,14 @@ func nestedScope(
 	return levels[0], sub
 }
 
-// scopeDecl is one declared scope of the application document: the nesting the
+// scopeDecl is one declared scope of the Aggregate document: the nesting the
 // author wrote it under, and the attachments it carries.
 type scopeDecl struct {
 	levels      []string
 	attachments []namedFill
 }
 
-// scopedAggregate builds an application document declaring the supplied scopes,
+// scopedAggregate builds an Aggregate document declaring the supplied scopes,
 // in the order they are written.
 func scopedAggregate(scopes []scopeDecl) *types.Aggregate {
 	subs := types.OrderedMap[types.Subsystem]{}
@@ -1068,7 +1068,7 @@ func scopedAggregate(scopes []scopeDecl) *types.Aggregate {
 	}
 }
 
-// The rule over an attachment written at a scope of the application document.
+// The rule over an attachment written at a scope of the Aggregate document.
 func TestTheScopeAttachmentSocketRuleNamesEveryLevelOfANestedScope(t *testing.T) {
 	t.Parallel()
 
@@ -1153,7 +1153,7 @@ func TestTheScopeAttachmentSocketRuleNamesEveryLevelOfANestedScope(t *testing.T)
 	}
 }
 
-// The rule over an attachment written at a scope of the deployment document.
+// The rule over an attachment written at a scope of the Release document.
 func TestTheReleaseScopeAttachmentSocketRuleNamesEveryLevelOfANestedScope(t *testing.T) {
 	t.Parallel()
 
@@ -1251,7 +1251,7 @@ func TestTheReleaseScopeAttachmentSocketRuleNamesEveryLevelOfANestedScope(t *tes
 	}
 }
 
-// edgeAggregate builds the two components the deployment-edge rows wire between.
+// edgeAggregate builds the two components the Release-edge rows wire between.
 // The consuming component's type is supplied so a row can name one the catalog
 // holds no entry for.
 func edgeAggregate(consumerType string) *types.Aggregate {
@@ -1264,7 +1264,7 @@ func edgeAggregate(consumerType string) *types.Aggregate {
 	}
 }
 
-// The rule over a socket the deployment's own edge surface wires.
+// The rule over a socket the Release's own edge surface wires.
 //
 // 🔴 The rule raises once per offending SOCKET rather than once per entry written
 // under it, so its locator sequence is degenerate — every objection names the same
@@ -1286,10 +1286,10 @@ func TestTheReleaseEdgeSocketRuleReportsOncePerOffendingSocket(t *testing.T) {
 		sockets []string
 	}{
 		{
-			// The declared socket and the component the application does not
+			// The declared socket and the component the Aggregate does not
 			// declare sit beside the one fault, so both skips are exercised by
 			// their absence from the expectation.
-			name: "a socket the consuming component's type does not declare is reported; a declared one and a component the application never declared are not",
+			name: "a socket the consuming component's type does not declare is reported; a declared one and a component the Aggregate never declared are not",
 			deployed: `    edge:
       directory: ./output
       components:
@@ -1376,7 +1376,7 @@ func TestTheReleaseEdgeSocketRuleReportsOncePerOffendingSocket(t *testing.T) {
 	}
 }
 
-// A deployment wiring an edge on a component whose type the catalog holds no
+// A Release wiring an edge on a component whose type the catalog holds no
 // entry for ends this rule: a type nobody found declares an empty socket set, and
 // refusing every socket wired on it would report the wrong thing. The rule about
 // a type resolved as a catalog identity nobody found reports that fault instead,
@@ -1844,7 +1844,7 @@ func TestTheConnectionDeliveryReferenceRuleReportsAnEntryReadingAnUnpublishedKey
 		{
 			// The entry reading a published key, the connection dictating no
 			// delivery at all, and the connection naming a component the
-			// application does not declare all sit beside the one fault.
+			// Aggregate does not declare all sit beside the one fault.
 			name: "an entry reading from a key the target does not publish is reported; a published one, a connection dictating nothing and one naming no declared component are not",
 			connections: []namedConnection{
 				{alias: "primary", target: "cache", block: deliveryBlock{env: []any{
@@ -2902,7 +2902,7 @@ func TestTheComponentConfigurationConformanceRuleMeasuresTheAuthoredPillar(t *te
 	}
 }
 
-// The rule about the physical sizing a deployment wrote for a component.
+// The rule about the physical sizing a Release wrote for a component.
 //
 // One row authors the component at DEPTH in the boundary tree, so a derivation
 // that stopped at the outer scope would be visible rather than merely possible.
@@ -2914,17 +2914,17 @@ func TestTheComponentSizingConformanceRuleMeasuresWhatTheReleaseWrote(t *testing
 	for _, tc := range []struct {
 		name       string
 		components []conformanceComponent
-		// deployed is the boundary block of the deployment document.
+		// deployed is the boundary block of the Release document.
 		deployed string
 		raised   []string
 	}{
 		{
-			// The deployment writes a violating payload for one component and no
+			// The Release writes a violating payload for one component and no
 			// sizing block at all for the other. Both are reported: the contract is
 			// opted into on the component type's side, so the component nobody wrote
 			// sizing for is measured against it exactly as its sibling is, and the
 			// required key it omits is the maximal violation of that contract.
-			name: "sizing violating the contract is reported, and so is the component the deployment wrote no sizing for",
+			name: "sizing violating the contract is reported, and so is the component the Release wrote no sizing for",
 			components: []conformanceComponent{
 				{name: "api", typ: conformanceContractedType,
 					values: conformancePayload("replicas", 1)},
@@ -2969,7 +2969,7 @@ func TestTheComponentSizingConformanceRuleMeasuresWhatTheReleaseWrote(t *testing
 			// required key rather than passed over. The positive control beside it is
 			// the component that violates on written content, so the row cannot pass
 			// over nothing.
-			name: "a component the deployment wrote an empty sizing block for is reported, beside its sibling that wrote a violating one",
+			name: "a component the Release wrote an empty sizing block for is reported, beside its sibling that wrote a violating one",
 			components: []conformanceComponent{
 				{name: "api", typ: conformanceContractedType,
 					values: conformancePayload("replicas", 1)},
@@ -3017,12 +3017,12 @@ func TestTheComponentSizingConformanceRuleMeasuresWhatTheReleaseWrote(t *testing
 		{
 			// Authorship, which is the one thing separating the two components in
 			// this row: both read the same empty sizing, and only the one the
-			// deployment wrote an entry against is the deployment's to answer for.
+			// Release wrote an entry against is the Release's to answer for.
 			// The other is placed nowhere, and a component placed nowhere is
 			// reported once the composition is flattened, at a key its author can
 			// act on — so measuring its absent sizing here would replace that
 			// report with one asking for a key under an entry that is not there.
-			name: "a component the deployment wrote no entry against is not reported, beside the one it named and left without sizing",
+			name: "a component the Release wrote no entry against is not reported, beside the one it named and left without sizing",
 			components: []conformanceComponent{
 				{name: "api", typ: conformanceContractedType,
 					values: conformancePayload("replicas", 1)},
@@ -3038,7 +3038,7 @@ func TestTheComponentSizingConformanceRuleMeasuresWhatTheReleaseWrote(t *testing
 		},
 		{
 			// A type whose catalog entry declares no contract over the sizing
-			// pillar is not measured, whatever the deployment wrote for it. The
+			// pillar is not measured, whatever the Release wrote for it. The
 			// contracted sibling beside it keeps the silence attributable.
 			name: "a type declaring no sizing contract is not measured, beside a contracted sibling that is",
 			components: []conformanceComponent{
@@ -3087,7 +3087,7 @@ func TestTheComponentSizingConformanceRuleMeasuresWhatTheReleaseWrote(t *testing
 // the two derivations of one fact directly, rather than inferring their agreement
 // from the rows above passing.
 //
-// 🔴 The deployment's sizing is derived twice from one tree by two walks that
+// 🔴 The Release's sizing is derived twice from one tree by two walks that
 // share no symbol: the presentation derives it for the rule, and the render path
 // is handed a pre-computed per-component map. Two walks with no shared symbol is
 // the shape that agrees until the day one of them changes, and nothing compiles
@@ -3242,10 +3242,10 @@ func TestTheConnectionSizingConformanceRuleMeasuresWhatTheReleaseWrote(t *testin
 		raised     []string
 	}{
 		{
-			// The deployment configures a connection the application declared,
+			// The Release configures a connection the Aggregate declared,
 			// which is the ordinary shape: the operator supplies sizing for an
 			// edge the developer's architecture already draws.
-			name: "sizing violating the socket's contract on a connection the application declared is reported",
+			name: "sizing violating the socket's contract on a connection the Aggregate declared is reported",
 			components: []conformanceComponent{
 				{name: "web", typ: conformanceContractedType,
 					values: conformancePayload("replicas", 1),
@@ -3267,11 +3267,11 @@ func TestTheConnectionSizingConformanceRuleMeasuresWhatTheReleaseWrote(t *testin
 			raised: []string{".spec.components.web.uses.store.primary.infra.tier"},
 		},
 		{
-			// The deployment wires a connection the application did not declare,
+			// The Release wires a connection the Aggregate did not declare,
 			// which the edge surface permits within a declared socket. The rule
-			// still positions it in the application's dependency block — where the
+			// still positions it in the Aggregate's dependency block — where the
 			// file contains no such key at all.
-			name: "sizing on a connection only the deployment wired is reported, positioned in the application's block",
+			name: "sizing on a connection only the Release wired is reported, positioned in the Aggregate's block",
 			components: []conformanceComponent{
 				{name: "db", typ: conformanceBareType},
 				{name: "web", typ: conformanceContractedType,
@@ -3291,10 +3291,10 @@ func TestTheConnectionSizingConformanceRuleMeasuresWhatTheReleaseWrote(t *testin
 			raised: []string{".spec.components.web.uses.store.primary.infra.tier"},
 		},
 		{
-			// A connection the deployment wrote an entry for but no sizing on is
+			// A connection the Release wrote an entry for but no sizing on is
 			// the maximal violation of a key the socket's contract declares
 			// required, on the same terms as its configuration counterpart.
-			name: "a connection the deployment wrote no sizing on is measured against a key the socket's contract declares required",
+			name: "a connection the Release wrote no sizing on is measured against a key the socket's contract declares required",
 			components: []conformanceComponent{
 				{name: "web", typ: conformanceContractedType,
 					values: conformancePayload("replicas", 1),

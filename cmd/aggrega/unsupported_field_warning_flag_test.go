@@ -257,7 +257,7 @@ func TestBuildCmd_UnsupportedFieldWarningFlagReachesTheFilter(t *testing.T) {
 // command's half, which is a separate registration feeding a separate variable
 // down a separate call path — so the build test above cannot stand in for it.
 // The entity scope drives a Recipe through a real render around a synthesized
-// minimal deployment, which is the scope the flag's help text says it applies
+// minimal Release, which is the scope the flag's help text says it applies
 // to, and the same warning surface carries the result.
 func TestValidateCmd_UnsupportedFieldWarningFlagReachesTheFilter(t *testing.T) {
 	// Not parallel: the warning surface is the process stderr, which this moves.

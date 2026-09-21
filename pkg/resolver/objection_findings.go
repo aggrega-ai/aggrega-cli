@@ -51,8 +51,8 @@ import (
 //
 // The entity names the document the findings are about, and it is supplied
 // rather than derived because the rules reporting through here span both
-// authoring documents: a rule over what the deployment wrote is not attributable
-// to the application, and a conversion that named one document for everything
+// authoring documents: a rule over what the Release wrote is not attributable
+// to the Aggregate, and a conversion that named one document for everything
 // would send an operator to a file they did not write in.
 //
 // Findings come back in the order the objections were raised, which is the order
@@ -106,7 +106,7 @@ func findingsWithNoSubject(objections []constraint.Objection) []*ResolverError {
 //
 // It exists for a rule whose subject is authored in neither of the two documents a
 // resolve is about. Such a rule's locator names a path inside a third document —
-// a Recipe's own entry, say — and attributing it to the application would name a
+// a Recipe's own entry, say — and attributing it to the Aggregate would name a
 // path that document does not contain, which sends a reader to a key they cannot
 // find. The document kind is supplied because a subject carries the file it was
 // authored in and not what kind of entity that file holds, and the entity

@@ -24,7 +24,7 @@ import (
 // The node set it walks has to be complete, and it is complete only once the
 // composition is flattened. A component a sub-aggregate contributes is declared
 // in that sub-aggregate's document, which is read at flattening, so a rule asked
-// over the application's own instance list would never be invoked for one — and
+// over the Aggregate's own instance list would never be invoked for one — and
 // a rule that is never invoked reports exactly what a rule that ran and approved
 // reports. That silence is the failure this placement exists to prevent: an
 // unmapped component inside a module would reach rendered output with nothing

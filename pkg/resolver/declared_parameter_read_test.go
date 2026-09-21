@@ -71,7 +71,7 @@ func declaredReadLocators(t *testing.T, raw []byte, contract types.OrderedMap[an
 }
 
 // A default is not an exemption. A default no reference reads reaches the
-// rendered output no more than a value a deployment supplies does, so a
+// rendered output no more than a value a Release supplies does, so a
 // defaulted declaration is objected about exactly as a bare one is.
 //
 // Nothing about the rule's body distinguishes the two — which is the point: the

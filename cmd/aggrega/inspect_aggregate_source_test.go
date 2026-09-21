@@ -14,7 +14,7 @@ import (
 
 // bothSpellingsAggregate authors the same parameter reference in both spellings
 // in one values block, alongside values that are not references at all. Neither
-// spelling can render a value — the document declares no deployment supplying
+// spelling can render a value — the document declares no Release supplying
 // one — so what each must print is the expression the author wrote.
 const bothSpellingsAggregate = `apiVersion: aggrega.ai/v1alpha1
 kind: Aggregate

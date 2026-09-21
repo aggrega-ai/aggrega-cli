@@ -266,8 +266,8 @@ type ComponentInstanceRef struct {
 // module imported under the spec's aggregates surface are NOT in the result. A
 // [SubAggregate] carries a type reference rather than the module's own
 // components, so those exist only once the referenced Aggregate is loaded, and
-// they reach the deployment when topology flattens the imports. A consumer that
-// must reason about every component a deployment renders therefore reads the
+// they reach the build when topology flattens the imports. A consumer that
+// must reason about every component a build renders therefore reads the
 // flattened topology as well as this walk; one that means "the components this
 // document declares" is served exactly by this walk.
 //

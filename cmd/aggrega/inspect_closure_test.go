@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-// fullstackFixture is the worked deployment the closure cases below resolve
+// fullstackFixture is the worked example the closure cases below resolve
 // against: a Release with its Aggregate and Manifest beside it, over a catalog
 // carrying the entities they reach.
 const fullstackFixture = "../../internal/compiler/testdata/fullstack-app"
@@ -33,7 +33,7 @@ func runInspectClosure(t *testing.T, release string, level inspectLevel) (string
 }
 
 // TestInspectClosure_Resolved proves the command answers the operation's Release
-// half: which entities the deployment reaches, and at which resolved versions.
+// half: which entities the Release reaches, and at which resolved versions.
 //
 // It asserts the resolved versions rather than only the references, because the
 // version is the half the resolved-node view structurally cannot carry — a node
@@ -109,7 +109,7 @@ func TestInspectClosure_LevelsDiffer(t *testing.T) {
 // whose closure could not be resolved.
 //
 // An empty listing for any of the three would report a typo, or a broken
-// workspace, as a deployment that depends on nothing.
+// workspace, as a Release that depends on nothing.
 func TestInspectClosure_ThreeOutcomes(t *testing.T) {
 	t.Parallel()
 

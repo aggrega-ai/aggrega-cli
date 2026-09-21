@@ -639,7 +639,7 @@ labels contains {"node": id, "key": "role.aggrega.ai/kind", "value": "cache"} if
 // The confinement matters because a plugin attached to shape labels is the
 // invited exception to the rule that nothing invents infrastructure: the
 // invitation is exactly as wide as the role. A policy naming a node the
-// deployment does not have, or dropping a label the node does not carry, is
+// graph does not have, or dropping a label the node does not carry, is
 // reaching past the label set it was invited to shape.
 //
 // The refusal is asserted at the acquisition, which is where a label-transform
@@ -654,7 +654,7 @@ func TestRegoEmbedded_LabelTransformConfinementIsEnforced(t *testing.T) {
 		policy string
 	}{
 		{
-			name: "a decision naming a node the deployment does not have",
+			name: "a decision naming a node the graph does not have",
 			policy: `package tagging
 
 import rego.v1
@@ -851,7 +851,7 @@ annotations contains {
 }
 
 // TestRegoEmbedded_AnnotationTransformConfinementIsEnforced drives the guest
-// into the annotation confinement: a decision naming a component the deployment
+// into the annotation confinement: a decision naming a component the graph
 // does not have must be refused loudly rather than applied or dropped.
 //
 // The refusal is asserted at the acquisition, which is where an
@@ -876,7 +876,7 @@ annotations contains {
 		[]string{catalogDir, standardCatalogDir(t)},
 		regoAttachment("annotation-transform", "policy.rego", ""))
 	if err == nil {
-		t.Fatal("an annotation naming a component the deployment does not have must be refused")
+		t.Fatal("an annotation naming a component the graph does not have must be refused")
 	}
 	if !errors.Is(err, pipeline.ErrAnnotationInjectionRejected()) {
 		t.Fatalf("want ErrAnnotationInjectionRejected, got: %v", err)

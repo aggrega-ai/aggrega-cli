@@ -104,9 +104,9 @@ func manifestDocumentOf(*ResolveResult) string {
 	return ""
 }
 
-// normalizedAggregateOf is the application document an embedded presentation of a
+// normalizedAggregateOf is the Aggregate document an embedded presentation of a
 // compilation is built from, normalized. A resolve holding none presents an empty
-// one rather than nothing: an absent application declares no instance for a rule
+// one rather than nothing: an absent Aggregate declares no instance for a rule
 // to be wrong about, so the presentation is still answerable rather than absent.
 func normalizedAggregateOf(result *ResolveResult) types.NormalizedAggregate {
 	if result.Aggregate == nil {

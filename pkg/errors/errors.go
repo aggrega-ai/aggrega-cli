@@ -59,7 +59,7 @@ const (
 	// and rejected the build against a rule it enforces. Distinct from
 	// DeveloperError and CatalogError because the rejection is neither a
 	// developer authoring mistake on the Aggregate nor a catalog/ops
-	// authoring fault — it is a policy the deployment must satisfy. The
+	// authoring fault — it is a policy the build must satisfy. The
 	// remediation is to bring the input into compliance with the enforced
 	// policy or to reconsider the policy attachment, not to correct an
 	// authoring error in the Aggregate.

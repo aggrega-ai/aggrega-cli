@@ -33,8 +33,8 @@ const (
 //
 // It answers a different question from the resolved-node view this command
 // renders by default. The closure says what was pulled in to build the
-// deployment, and at which resolved versions; the node view says what the
-// deployment looks like. Neither is recoverable from the other: an entity can be
+// Release, and at which resolved versions; the node view says what the
+// Release looks like. Neither is recoverable from the other: an entity can be
 // reached without appearing as a node, and a node does not carry the version its
 // type resolved to.
 //
@@ -45,7 +45,7 @@ const (
 // nothing the reconstruction of a recorded pin set would add to it.
 //
 // A record of pinned versions is read where the workspace has one and the view is
-// seeded with it, so the versions reported are the ones this deployment resolves
+// seeded with it, so the versions reported are the ones this Release resolves
 // to rather than whatever the catalog happens to hold today. A workspace with no
 // such record resolves over the catalog as it stands.
 func renderReleaseClosure(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, releasePath string, catalogDirs []string, opts inspectOptions) error {
@@ -222,7 +222,7 @@ func renderClosureLibraries(opts inspectOptions, cl closure.Closure) {
 //
 // The version is the resolved value rather than whatever a document asked for — a
 // reference naming no version resolves to one, and that resolved value is what a
-// deployment is actually built from. A reference that resolved to no version at
+// Release is actually built from. A reference that resolved to no version at
 // all prints its reference alone rather than an empty pair of brackets.
 func closureLine(opts inspectOptions, uri, version string) string {
 	if version == "" {

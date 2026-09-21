@@ -17,8 +17,8 @@ import (
 // It sits in its own file rather than in checks.go because that file holds the
 // reading over an Aggregate's parameter contract, and the two share a stage
 // without sharing a subject: one is invoked per declared parameter of the
-// application's document, the other per declared binding of the deployment
-// composition's. Grouping them under one file name would suggest a reader
+// Aggregate's document, the other per declared binding of the Manifest's
+// registry. Grouping them under one file name would suggest a reader
 // looking for either would find both.
 
 // annotationBindingKeyAvoidsTheReservedPrefix reports each annotation binding

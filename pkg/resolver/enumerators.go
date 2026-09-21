@@ -95,7 +95,7 @@ func (c *coordinateSet) withRecipeBinding(recipeFor RecipeBinding) *coordinateSe
 //
 // It reads both documents because the rules over a connection are split across
 // them: one measures what the developer wrote against the socket's contract, the
-// next measures what the deployment wrote against a separate contract for the
+// next measures what the Release wrote against a separate contract for the
 // same socket. Each rule narrows to its own document's entries on its own, so an
 // axis carrying only one document's connections would leave the other rule
 // invoked for none of the connections it exists to judge — silently, because a
@@ -134,7 +134,7 @@ func connectionsOf(view *normalizedView, node constraint.NodeInstance) []constra
 	}
 	deployed := view.ReleaseAuthoredUsesSocketConnections(node.ID)
 	for _, socket := range deployed.Keys() {
-		// The deployment's edge surface names an alias per entry as a key, so an
+		// The Release's edge surface names an alias per entry as a key, so an
 		// alias reached here is always one the operator wrote.
 		for _, alias := range view.ReleaseAuthoredUsesSocketEntryAliases(node.ID, socket) {
 			emit(socket, alias, false)
@@ -143,7 +143,7 @@ func connectionsOf(view *normalizedView, node constraint.NodeInstance) []constra
 	return out
 }
 
-// Nodes returns every component instance the application declares, in instance
+// Nodes returns every component instance the Aggregate declares, in instance
 // -name order.
 //
 // The order is the name sort the rest of this package's diagnostics already read
@@ -153,15 +153,15 @@ func (c *coordinateSet) Nodes() []constraint.NodeInstance { return c.nodes }
 
 // Edges returns every connection both authoring documents wrote, in node order,
 // then the developer document's sockets in author order followed by any socket
-// only the deployment wrote, and within each socket that document's aliases in
+// only the Release wrote, and within each socket that document's aliases in
 // author order.
 //
 // The developer document comes first because it is the document that declares
-// the architecture; the deployment's entries follow, contributing the
+// the architecture; the Release's entries follow, contributing the
 // connections it wired that the developer did not.
 func (c *coordinateSet) Edges() []constraint.EdgeInstance { return c.edges }
 
-// Subsystems returns every scope the application's author declared, at every
+// Subsystems returns every scope the Aggregate's author declared, at every
 // depth, in author order with an enclosing scope before the scopes nested inside
 // it.
 //
@@ -176,7 +176,7 @@ func (c *coordinateSet) Subsystems() []constraint.AuthoredCoordinate {
 	return authoredCoordinates(c.view.subsystemPaths)
 }
 
-// Boundaries returns every scope the deployment declares, at every depth, in
+// Boundaries returns every scope the Release declares, at every depth, in
 // author order with an enclosing scope before the scopes nested inside it.
 //
 // It is the sibling of [coordinateSet.Subsystems] on the other authoring
@@ -218,15 +218,15 @@ func authoredCoordinates(paths []string) []constraint.AuthoredCoordinate {
 }
 
 // Attachments returns the attachments declared against one node by either
-// authoring document: the application's own block in author order, then any name
-// the deployment declares that the application does not, in the deployment's
+// authoring document: the Aggregate's own block in author order, then any name
+// the Release declares that the Aggregate does not, in the Release's
 // author order.
 //
 // Both documents are read because the rules over an attachment are split across
 // them, exactly as the connection axis beside this one is. One measures what the
-// application declared, the next measures what the deployment declared, and each
+// Aggregate declared, the next measures what the Release declared, and each
 // narrows to its own document's block on its own — so an axis carrying only the
-// application's names would leave the deployment-side rule invoked for none of
+// Aggregate's names would leave the Release-side rule invoked for none of
 // the attachments it exists to judge. That absence has no loud form: a rule never
 // asked raises nothing and every build stays green.
 //
@@ -245,8 +245,8 @@ func (c *coordinateSet) Attachments(node string) []string {
 
 // AttachmentSockets returns the sockets one attachment of one node WIRES —
 // never the set the Feature it attaches declares — read from either authoring
-// document: the application's own entries in author order, then any socket the
-// deployment wires that the application does not, in the deployment's author
+// document: the Aggregate's own entries in author order, then any socket the
+// Release wires that the Aggregate does not, in the Release's author
 // order.
 //
 // Which of the two sets the axis means is the axis's contract rather than a
@@ -261,7 +261,7 @@ func (c *coordinateSet) Attachments(node string) []string {
 // Both documents are read for the reason the attachment axis above this one
 // reads both. The rules over what an attachment wires are split across the
 // documents, each narrowing to its own document's entries in its own body, so an
-// axis carrying only the application's sockets would leave the deployment-side
+// axis carrying only the Aggregate's sockets would leave the Release-side
 // rule invoked for none of the sockets it exists to judge — and that absence has
 // no loud form: a rule never asked raises nothing and every build stays green.
 //
@@ -292,7 +292,7 @@ func (c *coordinateSet) DeliveryKeys(node string, mechanism string) []string {
 }
 
 // SubsystemAttachments returns the attachments one declared scope of the
-// application carries, in author order.
+// Aggregate carries, in author order.
 //
 // It reads the same block the fact keyed by that scope reads, so the scope a
 // rule is invoked for is a scope that fact can answer about.
@@ -302,7 +302,7 @@ func (c *coordinateSet) SubsystemAttachments(subsystem string) []string {
 }
 
 // BoundaryAttachments returns the attachments one declared scope of the
-// deployment carries, in author order, read from the same block the fact keyed
+// Release carries, in author order, read from the same block the fact keyed
 // by that scope reads.
 func (c *coordinateSet) BoundaryAttachments(boundary string) []string {
 	features := c.view.boundaryFeatures[boundary]

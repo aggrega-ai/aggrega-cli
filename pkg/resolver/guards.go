@@ -210,7 +210,7 @@ type NodeRecipeResolution struct {
 //
 // One decision is made here and only one: which authoring document each rule's
 // findings name. That is the rule's subject matter — a rule measuring what the
-// deployment wrote is not attributable to the application — and it is why the
+// Release wrote is not attributable to the Aggregate — and it is why the
 // conversion takes the document as a parameter instead of deriving one for
 // everything.
 //
@@ -227,12 +227,12 @@ type NodeRecipeResolution struct {
 // The required uses-socket rule is not asked here either, and the reason is a
 // third one worth keeping separate from the cascade above. Three surfaces can
 // populate a socket a Component's usesSchema declares required: the component's
-// own `uses` block, the deployment's per-edge `uses`, and the connection set the
+// own `uses` block, the Release's per-edge `uses`, and the connection set the
 // composition produced. Two of the three are in scope here and the third is not,
 // so a reading taken at this point would answer for the components the
-// application declares directly and would have to decline for the rest — one
+// Aggregate declares directly and would have to decline for the rest — one
 // rule in two mechanisms, each seeing a different half of the input. The rule is
-// declared over the composed application instead, where all three surfaces have
+// declared over the composition instead, where all three surfaces have
 // contributed, and asked once over every node.
 //
 // # The catalog
@@ -263,7 +263,7 @@ type NodeRecipeResolution struct {
 // which every axis of the enumeration promises — so identical input yields a
 // byte-identical sequence.
 //
-// Returns no findings when the application document is absent.
+// Returns no findings when the Aggregate document is absent.
 //
 // The derived contracts the rules read are resolved ONCE, here, and every rule
 // that needs one reads it rather than compiling it again. Compiling per rule
@@ -314,7 +314,7 @@ func RunGuards(
 //
 // Each finding is attributed to the catalog entity that DECLARED the contract
 // rather than to the document that wrote the configuration, because the
-// correction is on the declaration: an application author handed a component
+// correction is on the declaration: an Aggregate author handed a component
 // type whose contract does not compile has nothing to change in their own file.
 // The locator is the authored field inside that entity, so the diagnostic names
 // the key the fix goes in.
@@ -366,8 +366,8 @@ func contractField(f ContractResolutionFailure) string {
 	return fmt.Sprintf(".spec.usesSchema.%s.%s", f.Socket, field)
 }
 
-// releaseDocumentName renders the deployment document a finding names. A build
-// with no deployment document names the kind alone; nothing it could be asked
+// releaseDocumentName renders the Release document a finding names. A build
+// with no Release document names the kind alone; nothing it could be asked
 // about exists, so no rule attributed to it raises.
 func releaseDocumentName(release *types.Release) string {
 	if release == nil {
@@ -380,9 +380,9 @@ func releaseDocumentName(release *types.Release) string {
 //
 // developerDocument and operatorDocument are the two authoring documents a
 // finding can name. Which one each rule takes is the rule's subject matter: a
-// rule reading what the deployment wrote names the deployment, so an operator
+// rule reading what the Release wrote names the Release, so an operator
 // reading the diagnostic is sent to the file they wrote in rather than to the
-// application's.
+// Aggregate's.
 //
 // A rule may also name NEITHER, and that third binding is not a special case of
 // the two: it is the answer for a rule reporting a divergence inside the

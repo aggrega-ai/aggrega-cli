@@ -164,7 +164,7 @@ func ReleaseEntryCreatesEdge(entry types.ReleaseUsesEntry) bool {
 // two is a division of labour rather than a hole.
 //
 // Both halts survive the relaxation on the component's own `uses` surface, and
-// their survival is deliberate. An attachment does not author the application's
+// their survival is deliberate. An attachment does not author the Aggregate's
 // topology; it participates in the topology the attached Feature declares, so the
 // Feature's usesSchema is the whole of what its sockets may be. An author naming
 // a socket their own component's type declares no entry for is authoring the

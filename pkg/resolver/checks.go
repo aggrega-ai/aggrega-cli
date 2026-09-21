@@ -75,7 +75,7 @@ var aggregateTextParsesAsATemplate = constraint.Check[
 // that no reference in the Aggregate's own text reads.
 //
 // A declared parameter is the authoring surface for varying one value per
-// deployment: a Release fulfils the declaration, and a `{{ .parameters.<key> }}`
+// environment: a Release fulfils the declaration, and a `{{ .parameters.<key> }}`
 // reference carries the fulfilled value into the values it belongs to. A
 // declaration no reference reads leaves that variation with nowhere to land, so
 // whatever a Release supplies for it, the rendered output is the same.

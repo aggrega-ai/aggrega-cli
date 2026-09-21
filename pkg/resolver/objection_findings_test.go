@@ -110,7 +110,7 @@ func TestAConvertedFindingStaysMatchableByItsSentinel(t *testing.T) {
 //
 // The rules reporting through this conversion span both authoring documents, so
 // the attribution cannot be derived from the objection: a rule over what the
-// deployment wrote is not the application's fault, and naming one document for
+// Release wrote is not the Aggregate's fault, and naming one document for
 // everything would send an operator to a file they did not write in.
 //
 // INVARIANT: findings carry the entity the caller named.

@@ -44,7 +44,7 @@ func singleTypeCatalog(comp types.Component) CatalogLookup {
 	}
 }
 
-// oneInstanceAggregate is an application declaring one component of the fixture
+// oneInstanceAggregate is an Aggregate declaring one component of the fixture
 // type, carrying the supplied authored values.
 func oneInstanceAggregate(t *testing.T, name string, values types.OrderedMap[any]) types.NormalizedAggregate {
 	t.Helper()
@@ -382,7 +382,7 @@ func TestTheRulesReportEachFaultOfOneDocumentExactlyOnce(t *testing.T) {
 		{
 			rule:       "the sizing-conformance rule",
 			objections: sizing,
-			// No deployment document, so nothing wrote sizing to measure.
+			// No Release document, so nothing wrote sizing to measure.
 			want: nil,
 		},
 		{

@@ -34,7 +34,7 @@ import (
 //     A Component or Feature has its pillar structure checked; a Workload,
 //     FeatureRecipe or Plugin has its shape checked; and a Recipe is driven
 //     through the real compilation pipeline around a synthesized minimal
-//     deployment so an author sees the isolated rendered output before wiring
+//     Release so an author sees the isolated rendered output before wiring
 //     the entity into any Aggregate. Kinds outside that set are refused here
 //     and are reached by the whole-catalog and --release scopes instead.
 //
