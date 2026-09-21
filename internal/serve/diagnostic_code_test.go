@@ -447,7 +447,7 @@ func TestDiagnosticCodeOnCascadeFailure(t *testing.T) {
 // file because it is about the workspace rather than about a position in that
 // file.
 //
-// The class reaches the wire through a carrier no other class uses. The
+// The class reaches the wire through an envelope no other class uses. The
 // resolution hands its caller a rendered envelope, and rendering an error to
 // text is one-way: the condition is reachable only through the failure the
 // envelope carries beside that text. An edit that dropped the carried failure
@@ -500,9 +500,9 @@ func TestDiagnosticCodeOnClosureExtendsFailure(t *testing.T) {
 	findCodeOnWire(t, entries, "extends-merge-failed")
 }
 
-// TestClosureEnvelopeCarriesTheFailureItRendered pins the carrier itself, so a
-// change that removes it fails naming the carrier rather than only leaving a key
-// missing from a wire assertion.
+// TestClosureEnvelopeCarriesTheFailureItRendered pins the envelope field that
+// holds the failure, so a change that removes it fails naming that field rather
+// than only leaving a key missing from a wire assertion.
 //
 // It also pins that carrying the failure left matching alone: the same value is
 // still recognised by the condition it names, which is the property that would

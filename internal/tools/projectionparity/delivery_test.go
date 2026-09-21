@@ -232,10 +232,10 @@ func Run() error {
 			want: []string{"delivery-not-offered internal/core.Options.Report on the second surface"},
 		},
 		{
-			// A request another capability's package composes is a carrier, not a
+			// A request another capability's package composes is delegated, not a
 			// request a caller composes: the delivery travels with a delegation
 			// rather than being asked for at that surface.
-			name: "a request another capability composes is excluded as a carrier",
+			name: "a request another capability composes is excluded as delegated",
 			files: map[string]string{
 				"internal/authored/authored.go": deliveryVocabulary,
 				"internal/core/core.go":         deliveryCore,
@@ -290,15 +290,15 @@ func Run() error {
 	}
 }
 
-// TestTheDeliveryReadExcludesACarrierLoudly pins that an excluded carrier is
-// named rather than dropped in silence, and that the capability it carries for
-// is still under check one hop out.
+// TestTheDeliveryReadExcludesADelegatedRequestLoudly pins that an excluded
+// delegated request is named rather than dropped in silence, and that the
+// capability it carries for is still under check one hop out.
 //
 // The exclusion is a decision about what this read certifies, so a reader has to
 // be able to see its size from the same run that reports the verdict — and the
 // exclusion must not be readable as an escape: wrapping a capability in a second
 // core moves the checked request outward, it does not remove it.
-func TestTheDeliveryReadExcludesACarrierLoudly(t *testing.T) {
+func TestTheDeliveryReadExcludesADelegatedRequestLoudly(t *testing.T) {
 	t.Parallel()
 
 	result := analyzeDelivery(t, map[string]string{
@@ -347,8 +347,8 @@ func Run() error {
 		}
 	}
 	if !named {
-		t.Errorf("the carrier is not named among the %d excluded request(s): %v; an exclusion nothing "+
-			"reports is a loss of coverage that arrives as a green", len(result.Delegated), result.Delegated)
+		t.Errorf("the delegated request is not named among the %d excluded request(s): %v; an exclusion "+
+			"nothing reports is a loss of coverage that arrives as a green", len(result.Delegated), result.Delegated)
 	}
 
 	// The outer request is the one a caller composes, so it stays under check —

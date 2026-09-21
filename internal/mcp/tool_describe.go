@@ -99,8 +99,8 @@ type describeEntityPayload struct {
 // filter a merged list to find it.
 //
 // Each listing carries a count as well as its members, because the concise format
-// answers with counts and no members: the count is the only carrier there, so a
-// listing added here owes one too.
+// answers with counts and no members: the count is the only thing that reports
+// what a listing reached there, so a listing added here owes one too.
 type describeReleasePayload struct {
 	Release      string       `json:"release"`
 	Aggregate    string       `json:"aggregate"`

@@ -287,7 +287,7 @@ func TestTheAttachmentContainerAndInsertionPointToolsCompose(t *testing.T) {
 			edited := applyInsertionPayload(t, string(before), position,
 				[]string{"audit:", "  type: demo/audit"})
 
-			// The assertion the carrier check cannot make: a container naming a
+			// The assertion the component check cannot make: a container naming a
 			// scope the document does not carry is CREATED by the insertion
 			// rather than refused, so the attachment then lands on an instance
 			// reading correctly inside a scope nobody authored. That case parses,
@@ -300,13 +300,13 @@ func TestTheAttachmentContainerAndInsertionPointToolsCompose(t *testing.T) {
 					was, now, edited)
 			}
 
-			carriers := attachmentCarriers(t, edited, "audit")
-			if len(carriers) != 1 {
+			components := componentsWithAttachment(t, edited, "audit")
+			if len(components) != 1 {
 				t.Fatalf("%d component instance(s) carry the attachment after the edit, want exactly 1: %v\n---\n%s---",
-					len(carriers), carriers, edited)
+					len(components), components, edited)
 			}
-			if want := tc.wantScopePath + "/" + tc.node; carriers[0] != want {
-				t.Fatalf("the attachment landed on %q, want %q\n---\n%s---", carriers[0], want, edited)
+			if want := tc.wantScopePath + "/" + tc.node; components[0] != want {
+				t.Fatalf("the attachment landed on %q, want %q\n---\n%s---", components[0], want, edited)
 			}
 		})
 	}
@@ -334,15 +334,16 @@ func instanceCensus(t *testing.T, content string) string {
 	return strings.Join(out, ", ")
 }
 
-// attachmentCarriers re-reads a document through the compiler's own Aggregate
-// decode and normalized instance walk, and returns every instance carrying an
-// attachment under the given name, as "<scope path>/<instance name>".
+// componentsWithAttachment re-reads a document through the compiler's own
+// Aggregate decode and normalized instance walk, and returns every component
+// instance carrying an attachment under the given name, as
+// "<scope path>/<instance name>".
 //
 // Reading it back through the compiler rather than through a text match is what
 // makes this a proof about the document: a decode that fails and an attachment
 // that landed under a sibling component are each visible here and neither is
 // visible in a substring search.
-func attachmentCarriers(t *testing.T, content, instance string) []string {
+func componentsWithAttachment(t *testing.T, content, instance string) []string {
 	t.Helper()
 	var agg types.Aggregate
 	if err := yaml.Unmarshal([]byte(content), &agg); err != nil {

@@ -1031,7 +1031,7 @@ func Third(a core.Answer) {
 func TestTheReadTerminatesOnAValueHandedRoundACycle(t *testing.T) {
 	t.Parallel()
 
-	carrier := `package one
+	bothFieldsSurface := `package one
 
 import "planted/internal/core"
 
@@ -1055,7 +1055,7 @@ func project() {
 			name: "a helper that hands the value to itself is answered rather than followed again",
 			files: map[string]string{
 				"internal/core/core.go": twoFieldCore,
-				"internal/one/one.go":   carrier,
+				"internal/one/one.go":   bothFieldsSurface,
 				"internal/two/two.go": `package two
 
 import (
@@ -1096,7 +1096,7 @@ func Show(a core.Answer) {
 			name: "a value handed back and forth inside a helper package is declined at the budget",
 			files: map[string]string{
 				"internal/core/core.go": twoFieldCore,
-				"internal/one/one.go":   carrier,
+				"internal/one/one.go":   bothFieldsSurface,
 				"internal/two/two.go": `package two
 
 import (

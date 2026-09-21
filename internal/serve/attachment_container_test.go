@@ -459,18 +459,18 @@ func TestAttachmentContainerAnswerAppliesAndTheDocumentReloads(t *testing.T) {
 					was, now, edited)
 			}
 
-			carriers := attachmentCarriers(t, edited, "audit")
-			if len(carriers) != 1 {
+			components := componentsWithAttachment(t, edited, "audit")
+			if len(components) != 1 {
 				t.Fatalf("%d component instance(s) carry the attachment after the edit, want exactly 1: %v\n---\n%s---",
-					len(carriers), carriers, edited)
+					len(components), components, edited)
 			}
 			authoredName := tc.node
 			if i := strings.LastIndex(authoredName, "."); i >= 0 {
 				authoredName = authoredName[i+1:]
 			}
 			want := tc.subsystem + "/" + authoredName
-			if carriers[0] != want {
-				t.Fatalf("the attachment landed on %q, want %q\n---\n%s---", carriers[0], want, edited)
+			if components[0] != want {
+				t.Fatalf("the attachment landed on %q, want %q\n---\n%s---", components[0], want, edited)
 			}
 		})
 	}
@@ -549,16 +549,17 @@ func instanceCensus(t *testing.T, content string) string {
 	return strings.Join(out, ", ")
 }
 
-// attachmentCarriers re-reads a document through the compiler's own Aggregate
-// decode and normalized instance walk, and returns every instance carrying an
-// attachment under the given name, as "<subsystem path>/<instance name>".
+// componentsWithAttachment re-reads a document through the compiler's own
+// Aggregate decode and normalized instance walk, and returns every component
+// instance carrying an attachment under the given name, as
+// "<subsystem path>/<instance name>".
 //
 // Reading it back through the compiler rather than through a text match is what
 // makes this a proof about the document rather than about the bytes: a decode
 // that fails, an attachment that landed under the wrong component, and one that
 // landed at a scope level the walk does not reach are each visible here and none
 // of them is visible in a substring search.
-func attachmentCarriers(t *testing.T, content, instance string) []string {
+func componentsWithAttachment(t *testing.T, content, instance string) []string {
 	t.Helper()
 	var agg types.Aggregate
 	if err := yaml.Unmarshal([]byte(content), &agg); err != nil {

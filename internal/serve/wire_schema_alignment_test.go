@@ -659,7 +659,7 @@ func maximalWireValue(t *testing.T, s wireSubject) any {
 	return value.Interface()
 }
 
-// rawMessageType is the raw-JSON carrier the wire types use for values whose
+// rawMessageType is the raw-JSON field type the wire types use for values whose
 // shape is decided elsewhere.
 var rawMessageType = reflect.TypeOf(json.RawMessage(nil))
 

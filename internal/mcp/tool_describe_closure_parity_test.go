@@ -389,9 +389,10 @@ func TestDescribeReleaseCarriesEverythingTheResolutionReachedAndDecided(t *testi
 // TestDescribeReleaseCountsSurviveTheConciseFormat pins that the concise format
 // keeps every count and every finding while dropping the listings.
 //
-// The counts are the concise format's only carrier for what was reached, so a
-// listing added to this report owes one: without it a caller choosing concise is
-// told a Release draws on nothing rather than told how much it draws on.
+// The counts are the only thing the concise format reports about what was
+// reached, so a listing added to this report owes one: without it a caller
+// choosing concise is told a Release draws on nothing rather than told how much
+// it draws on.
 func TestDescribeReleaseCountsSurviveTheConciseFormat(t *testing.T) {
 	t.Parallel()
 	root, catalogDir, releasePath := describeClosureWorkspace(t, true)

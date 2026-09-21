@@ -69,9 +69,9 @@ const (
 // ResultPackage is the package directory declaring Result, which is what
 // separates two results of the same name; Result alone is the struct's own name,
 // and more than one package in a module may declare it. Field is the field at
-// issue, empty for a finding about a whole result. Carriers are the surfaces
-// that do carry the field, sorted. Detail carries whatever the kind needs beyond
-// those.
+// issue, empty for a finding about a whole result. ProjectedBy names the
+// surfaces that do project the field, sorted. Detail carries whatever the kind
+// needs beyond those.
 type Finding struct {
 	Kind          Kind
 	File          string
@@ -81,7 +81,7 @@ type Finding struct {
 	Result        string
 	ResultPackage string
 	Field         string
-	Carriers      []string
+	ProjectedBy   []string
 	Detail        string
 }
 
@@ -111,13 +111,13 @@ func (f Finding) String() string {
 		fmt.Fprintf(&b, "%s drops %s.%s, which %s computes and %s carries. "+
 			"Carry it, or say where it is dropped why this surface cannot: "+
 			"// projection-omits %s.%s: <reason>",
-			f.Surface, f.Result, f.Field, f.Core, strings.Join(f.Carriers, " and "),
+			f.Surface, f.Result, f.Field, f.Core, strings.Join(f.ProjectedBy, " and "),
 			f.qualifiedResult(), f.Field)
 	case ResultDiscarded:
 		fmt.Fprintf(&b, "%s calls %s and discards its %s, so every fact it computed is dropped at once, "+
 			"while %s carries %s. Carry it, or say where it is discarded why this surface cannot: "+
 			"// projection-omits %s: <reason>",
-			f.Surface, f.Core, f.Result, strings.Join(f.Carriers, " and "), f.Detail, f.qualifiedResult())
+			f.Surface, f.Core, f.Result, strings.Join(f.ProjectedBy, " and "), f.Detail, f.qualifiedResult())
 	case UnreadableSite:
 		fmt.Fprintf(&b, "%s's use of the %s from %s %s, so no parity verdict is drawn for it here",
 			f.Surface, f.Result, f.Core, f.Detail)
@@ -1080,8 +1080,8 @@ func (a *analysis) reportDivergence() {
 		// A result one surface threw away whole is reported once, naming what the
 		// OTHER surfaces carry. One exclusion, and it is the difference between a
 		// divergence and a shape every surface shares: a result no surface reads
-		// any field of is a computation nobody projects, so there is no carrier
-		// for the discarding surface to disagree with.
+		// any field of is a computation nobody projects, so there is no
+		// projecting surface for the discarding surface to disagree with.
 		//
 		// Deliberately NOT excluded: a surface that discards the result at one
 		// call and reads it at another. The call that discarded it still carries
@@ -1090,10 +1090,10 @@ func (a *analysis) reportDivergence() {
 		// surface answers it at the site if the choice was deliberate. Its
 		// per-field findings are withheld separately, because a read that met a
 		// discarded binding did not follow that projection to a full field set.
-		var carriedAnywhere []string
+		var projectedAnywhere []string
 		for _, surface := range consumers {
 			if len(a.reads[pairKey(surface, resultKey)]) > 0 {
-				carriedAnywhere = append(carriedAnywhere, surface)
+				projectedAnywhere = append(projectedAnywhere, surface)
 			}
 		}
 		for _, surface := range consumers {
@@ -1108,12 +1108,12 @@ func (a *analysis) reportDivergence() {
 				continue
 			}
 			var others, carried []string
-			for _, carrier := range carriedAnywhere {
-				if carrier == surface {
+			for _, peer := range projectedAnywhere {
+				if peer == surface {
 					continue
 				}
-				others = append(others, carrier)
-				for field := range a.reads[pairKey(carrier, resultKey)] {
+				others = append(others, peer)
+				for field := range a.reads[pairKey(peer, resultKey)] {
 					carried = append(carried, field)
 				}
 			}
@@ -1121,21 +1121,21 @@ func (a *analysis) reportDivergence() {
 				continue
 			}
 			slices.Sort(carried)
-			finding.Carriers = others
+			finding.ProjectedBy = others
 			finding.Detail = strings.Join(slices.Compact(carried), ", ")
 			a.findings = append(a.findings, finding)
 		}
 
 		for _, field := range rt.fields {
-			var carriers, droppers []string
+			var projecting, droppers []string
 			for _, surface := range consumers {
 				if a.reads[pairKey(surface, resultKey)][field] {
-					carriers = append(carriers, surface)
+					projecting = append(projecting, surface)
 					continue
 				}
 				droppers = append(droppers, surface)
 			}
-			if len(carriers) == 0 {
+			if len(projecting) == 0 {
 				// No surface projects it. The shared computation may be
 				// producing something nobody carries, which is a different
 				// defect with a different repair.
@@ -1156,7 +1156,7 @@ func (a *analysis) reportDivergence() {
 				finding := a.firstSite[pair]
 				finding.Kind = DroppedField
 				finding.Field = field
-				finding.Carriers = carriers
+				finding.ProjectedBy = projecting
 				a.findings = append(a.findings, finding)
 			}
 		}

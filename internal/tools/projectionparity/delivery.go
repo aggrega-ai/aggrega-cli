@@ -270,14 +270,14 @@ func AnalyzeDelivery(root, modulePath, coreScope, deliveryDir string, surfaces [
 	// 🔴 Excluding these is not a licence and it opens no escape. A capability
 	// whose request is delegated still has its own caller-facing request in this
 	// census, and that one is checked on every surface: what is excluded is the
-	// inner carrier, one hop below the entry point a caller actually composes.
-	// Wrapping a capability in a second core therefore hides nothing — it moves
-	// the checked request outward, not away.
+	// inner delegated request, one hop below the entry point a caller actually
+	// composes. Wrapping a capability in a second core therefore hides nothing —
+	// it moves the checked request outward, not away.
 	//
-	// Left in, each such carrier reports a finding whose own text is false: it
-	// names a surface as offering the choice where that surface merely passes a
-	// field it never sets, and it accuses a surface of declining a delivery no
-	// caller can ask any surface for.
+	// Left in, each such delegated request reports a finding whose own text is
+	// false: it names a surface as offering the choice where that surface merely
+	// passes a field it never sets, and it accuses a surface of declining a
+	// delivery no caller can ask any surface for.
 	delegated, err := deliveryDelegatedRequests(s, coreDirs, byQualified)
 	if err != nil {
 		return res, err
@@ -609,7 +609,7 @@ func deliveryCapabilitiesIn(s *source, dir, deliveryDir, deliveryTypeName, deliv
 //
 // The test is the package boundary and nothing softer: a request composed inside
 // a core other than the one declaring it was composed by code answering for some
-// other capability, which is what makes it a carrier rather than something a
+// other capability, which is what makes it delegated rather than something a
 // caller fills. A request composed only inside its OWN package is not delegated —
 // a constructor or a default belongs to the capability itself.
 func deliveryDelegatedRequests(s *source, coreDirs []string, capabilities map[string]DeliveryCapability) ([]string, error) {
@@ -656,8 +656,8 @@ func deliveryDelegatedRequests(s *source, coreDirs []string, capabilities map[st
 	}
 
 	// Each entry begins with the qualified name, which is what the caller splits
-	// on to drop the carrier from its census, so the site is carried in the same
-	// string as the name rather than in a second structure keyed on it.
+	// on to drop the delegated request from its census, so the site is carried in
+	// the same string as the name rather than in a second structure keyed on it.
 	out := make([]string, 0, len(seen))
 	for _, entry := range seen {
 		out = append(out, entry)
