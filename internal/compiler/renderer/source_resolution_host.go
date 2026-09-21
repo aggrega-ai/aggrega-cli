@@ -11,27 +11,11 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/parse"
 	"github.com/aggrega-ai/aggrega-cli/internal/sourceref"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
-	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/recipepin"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourcecache"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
-
-// lockfileSourceRecord returns the lockfile source-artifact record for the
-// identity {kind, url, chart, moduleSubdir, version}, and whether one is present.
-func lockfileSourceRecord(lf *lockfile.Lockfile, kind, url, chart, moduleSubdir, version string) (lockfile.SourceArtifact, bool) {
-	if lf == nil {
-		return lockfile.SourceArtifact{}, false
-	}
-	for _, sa := range lf.SourceArtifacts {
-		if sa.Kind == kind && sa.URL == url && sa.Chart == chart &&
-			sa.ModuleSubdir == moduleSubdir && sa.PinnedVersion == version {
-			return sa, true
-		}
-	}
-	return lockfile.SourceArtifact{}, false
-}
 
 // resolveSourceForNode populates nodeCtx.Source and
 // nodeCtx.OriginalSource per the build-time source-artifact contract.
@@ -121,15 +105,26 @@ func resolveEntitySource(input RendererInput, source any, locals types.OrderedMa
 	if spec == nil {
 		return nil, nil
 	}
-	// Build-verify: the recipe's own recorded source pin must agree with the
-	// lockfile's source-artifact record for the same {kind, url, version}. Both
-	// derive from one resolution, so a disagreement is an integrity fault; the
+	// Build-verify: where the recipe's own recorded source pin and the lockfile's
+	// source-artifact record both describe the identity this node just resolved,
+	// they must agree. A recipe frozen alongside the lockfile records both from one
+	// resolution, so a disagreement between them is an integrity fault; the
 	// cache-extract below independently verifies the cached bytes against the
-	// lockfile digest, so this recipe-vs-lockfile check completes the chain
-	// (recipe pin == lockfile record == cached bytes). A recipe with no recorded
-	// pin (never frozen) has nothing to cross-check and proceeds on the lockfile.
+	// lockfile digest, so agreement here completes the chain (recipe pin ==
+	// lockfile record == cached bytes).
+	//
+	// 🔴 The comparison is scoped to what both records cover, and the scope is
+	// narrower than "every build". A recipe carries one pin per source identity it
+	// was frozen against, and a templated source resolves to a different identity
+	// per consuming instance, so a recipe holds no pin for an identity its freeze
+	// never reached — a recipe never frozen at all, and a recipe whose pins came
+	// from some other resolution than this workspace's, both land there. Such a
+	// build proceeds on the lockfile, which is the record the fetch itself reads.
+	// The lockfile side needs no guard of its own: the cache lookup below asks the
+	// same question of the same record, and a build whose identity the lockfile
+	// does not pin halts there rather than here.
 	if pin, ok := recipepin.MatchSourcePin(srcPins, spec.Kind, spec.URL, spec.Chart, spec.ModuleSubdir, spec.Version); ok {
-		if lfrec, found := lockfileSourceRecord(input.Lockfile, spec.Kind, spec.URL, spec.Chart, spec.ModuleSubdir, spec.Version); found {
+		if lfrec, found := input.Lockfile.FindSourceArtifact(spec.Kind, spec.URL, spec.Chart, spec.ModuleSubdir, spec.Version); found {
 			if pin.Digest != lfrec.Digest || pin.ManifestDigest != lfrec.ManifestDigest {
 				return nil, fmt.Errorf("source-artifact %s@%s: recipe pin (digest %s) disagrees with lockfile record (digest %s): %w",
 					spec.URL, spec.Version, pin.Digest, lfrec.Digest, oci.ErrFetchIntegrity())

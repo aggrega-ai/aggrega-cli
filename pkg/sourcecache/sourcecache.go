@@ -101,8 +101,8 @@ func LookupAndExtract(lf *lockfile.Lockfile, kind, url, chart, moduleSubdir, ver
 	if lf == nil {
 		return "", fmt.Errorf("sourcecache: lockfile is nil: %w", ErrFetchNotFound())
 	}
-	entry := findEntry(lf, kind, url, chart, moduleSubdir, version)
-	if entry == nil {
+	entry, found := lf.FindSourceArtifact(kind, url, chart, moduleSubdir, version)
+	if !found {
 		return "", fmt.Errorf("no lockfile entry for kind=%s url=%s chart=%s module_subdir=%s version=%s: %w",
 			kind, url, chart, moduleSubdir, version, ErrFetchNotFound())
 	}
@@ -186,17 +186,6 @@ func LookupAndExtract(lf *lockfile.Lockfile, kind, url, chart, moduleSubdir, ver
 func SlotPath(workspaceRoot, cacheDir, kind, url, chart, moduleSubdir, version, digest string) string {
 	slot, _ := cacheslot.Slot(workspaceRoot, cacheDir, kind, url, chart, moduleSubdir, version, digest)
 	return slot
-}
-
-func findEntry(lf *lockfile.Lockfile, kind, url, chart, moduleSubdir, version string) *lockfile.SourceArtifact {
-	for i := range lf.SourceArtifacts {
-		sa := &lf.SourceArtifacts[i]
-		if sa.Kind == kind && sa.URL == url && sa.Chart == chart &&
-			sa.ModuleSubdir == moduleSubdir && sa.PinnedVersion == version {
-			return sa
-		}
-	}
-	return nil
 }
 
 // extractTarGz extracts the gzipped tar archive in archiveBytes into

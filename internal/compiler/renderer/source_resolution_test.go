@@ -298,6 +298,113 @@ func TestResolveEntitySource_RecipePinDisagreesWithLockfileHalts(t *testing.T) {
 	}
 }
 
+// TestResolveEntitySource_UnpinnedIdentityHaltsAtTheFetch proves that the
+// recipe-vs-lockfile cross-check needs no guard of its own on the lockfile side:
+// when the lockfile pins no row for the identity a node resolved, the build halts
+// at the cache lookup with ErrFetchNotFound whatever the recipe happens to record,
+// so the cross-check standing down there is never a build proceeding unverified.
+//
+// The rows differ only in what the recipe records, which is the point: the recipe
+// side cannot change the verdict when the lockfile has nothing to fetch from. The
+// first row is the positive control — the same fixture with the identity pinned,
+// where the cross-check does run and does agree.
+func TestResolveEntitySource_UnpinnedIdentityHaltsAtTheFetch(t *testing.T) {
+	t.Parallel()
+	const (
+		url      = "oci://hub.aggrega.ai/charts/tls"
+		resolved = "1.2.3"
+	)
+	source := map[string]any{"kind": "helm-oci-chart", "url": url, "version": resolved}
+
+	// fixture builds a cache slot and a lockfile for pinnedVersion, and returns the
+	// blob's content digest so a row can record an agreeing pin.
+	fixture := func(t *testing.T, pinnedVersion string) (RendererInput, string) {
+		t.Helper()
+		root := t.TempDir()
+		blob := buildTGZForResolveTest(t, map[string]string{
+			"Chart.yaml": "apiVersion: v2\nname: tls\nversion: 1.2.3\n",
+		})
+		d := digestOfBytes(blob)
+		slot := sourcecache.SlotPath(root, ".aggrega/cache", "helm-oci-chart", url, "", "", pinnedVersion, d)
+		mustMkdirAll(t, slot)
+		mustWriteFile(t, filepath.Join(slot, "blob.tgz"), blob)
+		mustWriteChartManifest(t, slot, blob)
+		mustWriteMetadata(t, filepath.Join(slot, "metadata.yaml"), metadata.CacheMetadata{
+			Kind: "helm-oci-chart", URL: url, Version: pinnedVersion, Digest: d,
+			Mediatype: "application/vnd.cncf.helm.chart.content.v1.tar+gzip",
+			PulledAt:  time.Date(2026, 5, 22, 12, 0, 0, 0, time.UTC),
+		})
+		return RendererInput{
+			Lockfile: &lockfile.Lockfile{
+				Version: 1, Release: "./r.yaml", GeneratedAt: "2026-05-22T10:00:00Z",
+				SourceArtifacts: []lockfile.SourceArtifact{{
+					Kind: "helm-oci-chart", URL: url, PinnedVersion: pinnedVersion, Digest: d,
+					Mediatype: "application/vnd.cncf.helm.chart.content.v1.tar+gzip",
+				}},
+			},
+			WorkspaceRoot: root, CacheDir: ".aggrega/cache",
+		}, d
+	}
+
+	cases := []struct {
+		name string
+		// pinnedVersion is what the lockfile row records. Equal to the resolved
+		// version means the identity is pinned; anything else means it is not.
+		pinnedVersion string
+		// recipePin builds the recipe's recorded pins from the fixture's digest.
+		recipePin func(fixtureDigest string) []types.SourceDigest
+		wantErr   error
+	}{
+		{
+			name:          "the identity is pinned and the recipe agrees: the cross-check runs and the fetch succeeds",
+			pinnedVersion: resolved,
+			recipePin: func(d string) []types.SourceDigest {
+				return []types.SourceDigest{{Kind: "helm-oci-chart", URL: url, Version: resolved, Digest: d}}
+			},
+			wantErr: nil,
+		},
+		{
+			name:          "the identity is unpinned and the recipe records an agreeing pin: the fetch halts",
+			pinnedVersion: "abc123commit",
+			recipePin: func(d string) []types.SourceDigest {
+				return []types.SourceDigest{{Kind: "helm-oci-chart", URL: url, Version: resolved, Digest: d}}
+			},
+			wantErr: oci.ErrFetchNotFound(),
+		},
+		{
+			name:          "the identity is unpinned and the recipe records a disagreeing pin: the fetch still halts",
+			pinnedVersion: "abc123commit",
+			recipePin: func(string) []types.SourceDigest {
+				return []types.SourceDigest{{Kind: "helm-oci-chart", URL: url, Version: resolved, Digest: "sha256:deadbeef"}}
+			},
+			wantErr: oci.ErrFetchNotFound(),
+		},
+		{
+			name:          "the identity is unpinned and the recipe records nothing: the fetch halts",
+			pinnedVersion: "abc123commit",
+			recipePin:     func(string) []types.SourceDigest { return nil },
+			wantErr:       oci.ErrFetchNotFound(),
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			input, d := fixture(t, tc.pinnedVersion)
+			_, err := resolveEntitySource(input, source, types.OrderedMap[string]{},
+				"tls-helm:1.0.0", map[string]any{}, map[string]any{}, tc.recipePin(d))
+			switch {
+			case tc.wantErr == nil && err != nil:
+				t.Fatalf("a pinned identity with an agreeing recipe pin must resolve; got %v", err)
+			case tc.wantErr != nil && err == nil:
+				t.Fatalf("an unpinned identity must halt; the build resolved instead")
+			case tc.wantErr != nil && !errors.Is(err, tc.wantErr):
+				t.Errorf("halt = %v; want one wrapping %v", err, tc.wantErr)
+			}
+		})
+	}
+}
+
 // TestResolveEntitySource_LocalForwardsVerbatim is the MANDATORY local-source
 // regression lock: even with lockfile + workspace + cache all set, a local/inline
 // source short-circuits to verbatim — only REMOTE sources route through

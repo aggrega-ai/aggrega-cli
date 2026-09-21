@@ -45,6 +45,40 @@ func PluginPins(lf *Lockfile) pluginpath.PinMaps {
 	return out
 }
 
+// FindSourceArtifact returns the source-artifact row this record pins for the
+// identity {kind, url, chart, moduleSubdir, version}, and whether one is present.
+// A nil record pins nothing and reports absence rather than panicking, so a
+// caller holding an optional record asks the question the same way as one holding
+// a loaded record.
+//
+// The identity is the whole of the five terms: url is the authored identity URL,
+// chart names the chart within a repo root, and moduleSubdir the directory within
+// a git-sourced repository, so two charts of one repo root and two directories of
+// one repository at one commit are distinct artifacts rather than one. version is
+// matched against the row's pinned version, which for a kind whose resolver
+// transforms the authored version — a git reference resolved to a commit — is the
+// resolved value rather than the authored one.
+//
+// The lookup lives here rather than at each surface that needs it because this
+// package owns what a recorded closure says. Two surfaces asking the same question
+// of the same rows would be two readings of one record, free to disagree about
+// which terms make an artifact the same artifact — and because the answers feed a
+// verification and the fetch it guards, a disagreement between them would decide
+// whether the verification runs at all.
+func (lf *Lockfile) FindSourceArtifact(kind, url, chart, moduleSubdir, version string) (*SourceArtifact, bool) {
+	if lf == nil {
+		return nil, false
+	}
+	for i := range lf.SourceArtifacts {
+		sa := &lf.SourceArtifacts[i]
+		if sa.Kind == kind && sa.URL == url && sa.Chart == chart &&
+			sa.ModuleSubdir == moduleSubdir && sa.PinnedVersion == version {
+			return sa, true
+		}
+	}
+	return nil, false
+}
+
 // PinsByURI returns a map from canonical entity URI to the content
 // digest the lockfile pins for it, across entities, schema libraries,
 // mapping libraries, workload libraries, and wasm plugins — every kind
