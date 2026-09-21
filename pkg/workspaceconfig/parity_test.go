@@ -12,6 +12,34 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
+// wantParityFixtureRevision is the revision of the shared case manifest THIS
+// side was written against, and the assertion below refuses any other.
+//
+// 🔴 IT IS A DELIBERATE NEAR-DUPLICATE OF THE EXTENSION'S OWN PINNED COPY AND
+// MUST NOT BE UNIFIED WITH IT. The two sides of this pair exist because the
+// discovery climb is implemented twice across a language boundary; the whole
+// value of the cross-check is that the two were written independently, and a
+// constant one side reads from the other blinds the check exactly as a shared
+// implementation would. One constant cannot disagree with itself, and
+// disagreement is the entire signal.
+//
+// What the pin buys: a parity pair with a shared fixture proves the two sides
+// AGREE, never that both RAN — a side that compiles and is executed by nothing
+// reports nothing, and the pair then certifies a comparison that never
+// happened. Pinning the revision here makes a green from this side evidence
+// that THIS side read the revision named below. Bumping the manifest's revision
+// therefore refuses both sides until each side's own copy is moved, which
+// cannot be done without running both.
+//
+// 🔴 TWO BOUNDS SHIP WITH IT. It cannot catch a runner-level filter, because no
+// test observes its own non-execution; what covers that is the build driver's
+// target table, which runs the extension package's suite, and the npm
+// test-execution census that refuses a package declaring a suite no target
+// runs. And it says nothing about the OTHER side's execution: it pins this
+// side's reading, and two greens pinned to one revision are what jointly mean
+// both sides read it.
+const wantParityFixtureRevision = 2
+
 // parityCase mirrors one entry of testdata/discovery_parity_cases.json — the
 // single shared source of workspace-discovery cases. The extension's discovery
 // test materializes the SAME file, so adding a case (or a new marker) here
@@ -41,10 +69,17 @@ func TestDiscoveryParityCases(t *testing.T) {
 		t.Fatalf("read parity cases: %v", err)
 	}
 	var doc struct {
-		Cases []parityCase `json:"cases"`
+		Revision int          `json:"revision"`
+		Cases    []parityCase `json:"cases"`
 	}
 	if err := json.Unmarshal(data, &doc); err != nil {
 		t.Fatalf("parse parity cases: %v", err)
+	}
+	if doc.Revision != wantParityFixtureRevision {
+		t.Fatalf("parity manifest revision: got %d; want %d — this side is pinned to %d. "+
+			"Move this pin and the extension's own pin together, and run BOTH sides: a pair "+
+			"whose sides name different revisions has not compared anything.",
+			doc.Revision, wantParityFixtureRevision, wantParityFixtureRevision)
 	}
 	if len(doc.Cases) == 0 {
 		t.Fatal("no parity cases found")
