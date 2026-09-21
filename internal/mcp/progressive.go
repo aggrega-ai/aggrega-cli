@@ -29,7 +29,8 @@ import (
 //
 // So candidacy answers when a caller is about to propose an attachment or an
 // edge; the attachment container answers once it has settled what to attach; the
-// insertion point answers when it is about to write the text; the cache
+// insertion point answers when it is about to write the text; the bounded edit
+// answers when it has settled what to write and where, and applies it; the cache
 // inventory answers when a caller is deciding whether to reclaim space; the
 // configured-registry listing and the index search answer about what lies
 // outside the workspace, which is a question asked after what is inside it is
@@ -47,6 +48,7 @@ var deferredToolRegistry = []toolSpec{
 	curated("connection-candidates", connectionCandidatesToolSpec),
 	curated("document-insertion-point", insertionPointToolSpec),
 	curated("attachment-container", attachmentContainerToolSpec),
+	curated("document-edit", editDocumentToolSpec),
 	curated("cache-status", cacheStatusToolSpec),
 	curated("registry-list", registryListToolSpec),
 	curated("search", searchToolSpec),

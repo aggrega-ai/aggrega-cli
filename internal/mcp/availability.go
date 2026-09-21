@@ -105,6 +105,18 @@ var curatedToolNames = map[string][]string{
 	"document-insertion-point":  {"insertion-point"},
 	"attachment-container":      {"attachment-container"},
 
+	// The applying half of structured authoring, whose reading half the four
+	// names above are. It is also reachable, for a caller at this machine's
+	// keyboard, as the tool generated from its command, which re-runs that
+	// command in a separate process and answers with the text it printed; this
+	// runs the edit inside this server and answers with where the entry landed,
+	// which container levels it had to create, and what reached disk — so a
+	// caller applies an edit and reads the outcome without parsing a transcript
+	// back into the facts it was rendered from. The name is the one the session
+	// protocol gives the same capability, because a caller reading both surfaces
+	// should meet one concept under one name.
+	"document-edit": {"edit-document"},
+
 	// The two inventories. Each is also reachable, for a caller at this machine's
 	// keyboard, as the tool generated from its command, which returns that
 	// command's rendered output; these carry the

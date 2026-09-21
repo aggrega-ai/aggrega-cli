@@ -244,6 +244,30 @@ func TestDeclaredSchemasStateTheArgumentRulesTheToolsEnforce(t *testing.T) {
 		{"attachment-container", "a blank graph node", `{"graph_node":"","release":"r.yaml"}`, false},
 		{"attachment-container", "a graph node of the wrong type", `{"graph_node":5,"release":"r.yaml"}`, false},
 
+		// edit-document: four required arguments, plus two rules that hold only
+		// for some of the edits — the socket a wiring needs, and the non-empty
+		// reference the three entity-carrying edits need. Both are declared as
+		// conditionals rather than as alternatives, because the condition is the
+		// value of one argument rather than a choice between shapes, and the
+		// tool refuses each of them through the shared layer's own check.
+		{editDocumentToolName, "adding a component", `{"edit":"add-component","file":"a.yaml","node":["spec","components"],"name":"web","value":"core/api-server:1.0.0"}`, true},
+		{editDocumentToolName, "wiring an edge, which names its socket", `{"edit":"wire-edge","file":"a.yaml","node":["spec","components","web"],"name":"db","value":"spec.components.store","socket":"database"}`, true},
+		{editDocumentToolName, "setting a number, which stays a number", `{"edit":"set-value","file":"a.yaml","node":["spec","components","web"],"name":"instances","value":3}`, true},
+		{editDocumentToolName, "setting nothing at all, which only set-value admits", `{"edit":"set-value","file":"a.yaml","node":["spec","components","web"],"name":"note","value":null}`, true},
+		{editDocumentToolName, "an edit with every optional argument", `{"edit":"set-value","file":"a.yaml","node":["spec"],"name":"k","value":"v","dry_run":true,"workspace_root":"/w"}`, true},
+		{editDocumentToolName, "no arguments at all", `{}`, false},
+		{editDocumentToolName, "an edit outside the closed set", `{"edit":"delete-component","file":"a.yaml","node":["spec"],"name":"web","value":"x"}`, false},
+		{editDocumentToolName, "a blank document", `{"edit":"add-component","file":"","node":["spec"],"name":"web","value":"x"}`, false},
+		{editDocumentToolName, "a node path with no segments", `{"edit":"add-component","file":"a.yaml","node":[],"name":"web","value":"x"}`, false},
+		{editDocumentToolName, "a blank node segment", `{"edit":"add-component","file":"a.yaml","node":[""],"name":"web","value":"x"}`, false},
+		{editDocumentToolName, "a blank entry name", `{"edit":"set-value","file":"a.yaml","node":["spec"],"name":"","value":"v"}`, false},
+		{editDocumentToolName, "wiring an edge with no socket", `{"edit":"wire-edge","file":"a.yaml","node":["spec","components","web"],"name":"db","value":"spec.components.store"}`, false},
+		{editDocumentToolName, "wiring an edge with a blank socket", `{"edit":"wire-edge","file":"a.yaml","node":["spec","components","web"],"name":"db","value":"t","socket":""}`, false},
+		{editDocumentToolName, "adding a component with no reference", `{"edit":"add-component","file":"a.yaml","node":["spec"],"name":"web"}`, false},
+		{editDocumentToolName, "adding a component whose reference is a number", `{"edit":"add-component","file":"a.yaml","node":["spec"],"name":"web","value":5}`, false},
+		{editDocumentToolName, "a mapping where a scalar belongs", `{"edit":"set-value","file":"a.yaml","node":["spec"],"name":"k","value":{"cpu":2}}`, false},
+		{editDocumentToolName, "a delivery that is not a boolean", `{"edit":"set-value","file":"a.yaml","node":["spec"],"name":"k","value":"v","dry_run":"yes"}`, false},
+
 		// connection-candidates: one required subject, with the optional single
 		// socket alongside. It carries no combination rule, and no coordinate-free
 		// form: there is deliberately no label set here.

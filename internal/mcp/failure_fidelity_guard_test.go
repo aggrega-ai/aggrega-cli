@@ -136,6 +136,20 @@ var proseOnlyFailureReturns = map[string]int{
 	// here for the same reason: all four are decided before generation starts,
 	// against an empty output buffer, so none of them drops anything.
 	"tool_gencatalog.go": 9,
+	// The document edit. Five of these are decided from the arguments alone,
+	// ahead of anything the edit reads or composes: the refusal of a request
+	// naming no document, the refusal of one naming no edit, the withdrawal a
+	// caller signals before any resolution, a workspace that could not be
+	// resolved, and the refusal of a document path this session may not name.
+	//
+	// The sixth is the only post-run one, and that it loses nothing is
+	// established rather than assumed: every failing return of the shared edit
+	// layer's entry point hands back the zero result, so no partially-populated
+	// result exists for this return to carry. What the layer refused on reaches
+	// the caller in the refusal's own words — opened by the registered short
+	// code where the condition carries one, and carrying the validator's own
+	// sentence where the refusal is the schema's.
+	"tool_document_edit.go": 6,
 	// Position lookup, workspace description, the progressive surface, and the
 	// shared argument-decode helper: argument and context refusals. Position
 	// lookup carries one more, refusing a document path this session may not name

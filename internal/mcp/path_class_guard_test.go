@@ -44,9 +44,15 @@ var workspacePathArguments = map[string]string{
 	"publish-artifact: file":        "the data artifact published",
 	"deprecate-artifact: from":      "the batch file a withdrawal reads its entries from",
 	"insertion-point: file":         "the authored document a position is located in",
-	"gen-catalog: plugin":           "the .wasm an entity is generated for",
-	"gen-catalog: output_dir":       "the directory generated entities are WRITTEN into",
-	"gen-catalog: overlay":          "the authored overlay a generated entity takes its identity from",
+	// The one entry here that names a document this surface WRITES rather than
+	// reads, which is why it is spelled out: the reach given is the reach a
+	// caller's own value decides, and every other authored-document argument
+	// above only opens the file. The edit is confined to the served workspace by
+	// the same helper for that reason rather than by a rule of its own.
+	"edit-document: file":     "the authored document one bounded edit is applied to, and WRITTEN back",
+	"gen-catalog: plugin":     "the .wasm an entity is generated for",
+	"gen-catalog: output_dir": "the directory generated entities are WRITTEN into",
+	"gen-catalog: overlay":    "the authored overlay a generated entity takes its identity from",
 }
 
 // resolversReachedOnlyByTheHelper are the path-resolving calls that may appear
