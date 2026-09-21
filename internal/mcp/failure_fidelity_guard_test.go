@@ -126,6 +126,22 @@ var proseOnlyFailureReturns = map[string]int{
 	// while reading exactly like a small one. So at that failure return there is
 	// no structured answer in hand to carry, by the operation's own design.
 	"tool_inventory.go": 4,
+	// The configuration reading. Both of these are pre-flight and neither loses
+	// anything, but they are pre-flight in two different senses and the second is
+	// the one worth stating.
+	//
+	// The first is a workspace that could not be resolved. Nothing has been read
+	// at that point — there is no cascade, no layer and no setting — so there is
+	// no reading in hand to carry.
+	//
+	// The second is the provenance replay itself failing. It walks the cascade one
+	// layer at a time and reports a layer it cannot read or parse, and it hands
+	// back nothing rather than a partial attribution: a settings list missing the
+	// layers that could not be read reads exactly like a workspace those layers
+	// never contributed to, which is a wrong answer indistinguishable from a right
+	// one. So the whole reading is withheld by that layer's own design, and there
+	// is no partially-populated result for this return to carry.
+	"tool_configuration.go": 2,
 	// Catalog generation. Its failure return drops the output accumulated before
 	// the failure, which the generated command-tool surface beside it keeps.
 	//

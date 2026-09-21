@@ -139,6 +139,17 @@ var curatedToolNames = map[string][]string{
 	"registry-list": {"registry-list"},
 	"search":        {"search"},
 
+	// The configuration reading, which joins those inventories on the same terms
+	// and for the same reason: it is also reachable, for a caller at this
+	// machine's keyboard, as the tool generated from its command, which returns
+	// that command's rendered table; this carries the settings themselves, so a
+	// caller reads whether a capability is attached without parsing a column
+	// layout back into the values it was rendered from. What it adds to the
+	// family is the reading that says whether a capability exists at all — a
+	// provider, an importer or a governance check that is absent and one that is
+	// merely not configured here look alike until this is read.
+	"config-show": {"config-show"},
+
 	// The four publication verbs. Each is also reachable, for a caller at this
 	// machine's keyboard, as the tool generated from its command, which re-runs
 	// that command in a separate process and

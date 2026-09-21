@@ -34,8 +34,11 @@ import (
 // inventory answers when a caller is deciding whether to reclaim space; the
 // configured-registry listing and the index search answer about what lies
 // outside the workspace, which is a question asked after what is inside it is
-// known; and the four publication verbs answer when a caller has finished
-// authoring and is ready to put something where other people will resolve it.
+// known; the configuration reading answers once something has not worked and a
+// caller is establishing whether the capability it wanted is absent or merely
+// unattached here; and the four publication verbs answer when a caller has
+// finished authoring and is ready to put something where other people will
+// resolve it.
 //
 // Here or above, an entry names the operation it answers and takes its
 // advertised name from that operation's row, so which registry a tool sits in
@@ -52,6 +55,7 @@ var deferredToolRegistry = []toolSpec{
 	curated("cache-status", cacheStatusToolSpec),
 	curated("registry-list", registryListToolSpec),
 	curated("search", searchToolSpec),
+	curated("config-show", configShowToolSpec),
 	curated("push", publishEntityToolSpec),
 	curated("push-artifact", publishArtifactToolSpec),
 	curated("sign", signArtifactsToolSpec),
