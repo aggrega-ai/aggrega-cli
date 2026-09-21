@@ -68,7 +68,7 @@ func WritePins(path string, srcPins []types.SourceDigest, artPins []types.Artifa
 		return false, nil
 	}
 	if werr := os.WriteFile(path, out, 0o644); werr != nil {
-		return false, fmt.Errorf("recipepin: write %s: %w", path, werr)
+		return false, fmt.Errorf("write %s: %w", path, werr)
 	}
 	return true, nil
 }
@@ -95,17 +95,17 @@ func PreviewPins(path string, srcPins []types.SourceDigest, artPins []types.Arti
 
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, false, fmt.Errorf("recipepin: read %s: %w", path, err)
+		return nil, false, fmt.Errorf("read %s: %w", path, err)
 	}
 
 	var root yaml.Node
 	if uerr := yaml.Unmarshal(data, &root); uerr != nil {
-		return nil, false, fmt.Errorf("recipepin: parse %s: %w", path, uerr)
+		return nil, false, fmt.Errorf("parse %s: %w", path, uerr)
 	}
 
 	specKey, spec := specMapping(&root)
 	if spec == nil {
-		return nil, false, fmt.Errorf("recipepin: %s: no spec mapping to pin into", path)
+		return nil, false, fmt.Errorf("%s: no spec mapping to pin into", path)
 	}
 
 	// A declaration whose pins already match is read, not re-frozen: leave the
@@ -119,7 +119,7 @@ func PreviewPins(path string, srcPins []types.SourceDigest, artPins []types.Arti
 
 	out, serr := splicePins(data, specKey, spec, src, art)
 	if serr != nil {
-		return nil, false, fmt.Errorf("recipepin: freeze %s: %w", path, serr)
+		return nil, false, fmt.Errorf("freeze %s: %w", path, serr)
 	}
 	return out, true, nil
 }

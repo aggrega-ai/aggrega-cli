@@ -124,7 +124,7 @@ func Write(path string, t *Trust) error {
 // the file beside it happens to say.
 func CanonicalBytes(t *Trust) ([]byte, error) {
 	if t == nil {
-		return nil, fmt.Errorf("pluginstrust: CanonicalBytes called with nil *Trust")
+		return nil, fmt.Errorf("internal: the plugin trust record to serialize is missing")
 	}
 	body, err := yaml.Marshal(canonicalise(t))
 	if err != nil {
