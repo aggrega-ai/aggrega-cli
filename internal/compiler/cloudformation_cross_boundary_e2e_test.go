@@ -252,7 +252,7 @@ func TestCloudFormationTwoBoundary_CrossStackWiring(t *testing.T) {
 	}
 	// The export name carries the deployment identity from the link payload — the
 	// Release's metadata.name — as its scope segment, so it is no longer the
-	// empty-segment placeholder. Distinct deployments sharing an account and region
+	// empty-segment placeholder. Distinct Releases sharing an account and region
 	// therefore produce distinct export names.
 	if !strings.Contains(exportName, "cloudformation-two-boundary") {
 		t.Fatalf("producer export name %q is missing the deployment segment %q", exportName, "cloudformation-two-boundary")

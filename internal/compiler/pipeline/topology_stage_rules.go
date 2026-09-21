@@ -21,7 +21,7 @@ import (
 // broken declaration is on a catalog Component and the position an author sees
 // it at is the component instance that names that type. The kind is what decides
 // the fault category a caller routes on, so naming the authoring surface instead
-// would report a catalog fault as the deployment author's to fix.
+// would report a catalog fault as the Aggregate author's to fix.
 const topologyStageEntity = "Component"
 
 // The entity an identity finding from this stage is reported against, which is
@@ -49,7 +49,7 @@ const topologyStageIdentityEntity = "Aggregate"
 // in the Manifest whichever arm fired. The kind decides the fault category a
 // caller routes on, and a category names one document: reporting these against
 // the component would send the reader into the catalog, and against the
-// application would send them into a file that records no mapping at all.
+// Aggregate would send them into a file that records no mapping at all.
 const topologyStageMappingEntity = "Manifest"
 
 // topologyStageFindings accumulates what this site's rules raised, holding apart
@@ -252,7 +252,7 @@ func runTopologyStageRules(
 	// composition produced, which is why the rule is asked here — it is the
 	// earliest point at which every surface that can satisfy the requirement has
 	// contributed. Asked over every node the composition holds, so a component a
-	// module contributed is judged by the same rule as one the application
+	// module contributed is judged by the same rule as one the Aggregate
 	// declared directly.
 	socketObjections, err := constraint.RunOnNodeSockets(
 		ctx.Err,
@@ -274,7 +274,7 @@ func runTopologyStageRules(
 	// catalog holds, through an explicit entry in the Manifest's mapping table.
 	// The node set it walks has to be complete, and a component a sub-aggregate
 	// contributes joins that set only when the composition is flattened — asked
-	// over the application's own instance list the rule would never be invoked for
+	// over the Aggregate's own instance list the rule would never be invoked for
 	// one, and a rule that is never invoked reports exactly what a rule that ran
 	// and approved reports. So this is the earliest stage that can ask it, and the
 	// enumeration here is the flattened composition's own.

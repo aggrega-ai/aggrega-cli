@@ -70,8 +70,8 @@ func TestContribAttachmentUses_UndeclaredSocketHaltsAtEveryScope(t *testing.T) {
 			wantSocket:  "bogus-boundary-socket",
 		},
 		{
-			// 🔴 The locator names the component's site on the APPLICATION document
-			// while the attachment itself is written on the deployment. That follows
+			// 🔴 The locator names the component's site on the AGGREGATE document
+			// while the attachment itself is written on the Release. That follows
 			// from the coordinate this rule is invoked per — a component's
 			// attachment names, taken from both documents and presented under the
 			// component — and the entity beside it says which document to open.

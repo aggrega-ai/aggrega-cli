@@ -120,7 +120,7 @@ func TestUsesEdgeConfig_InfraSchemaDefaultsMaterialise(t *testing.T) {
 			t.Errorf("declared per-edge infra default did not reach rendered output: missing %q\n--- merged ---\n%s", want, filled)
 		}
 	}
-	// The caches socket is declared but left unbound in that deployment, so no
+	// The caches socket is declared but left unbound in that Release, so no
 	// edge exists to carry its default.
 	if !strings.Contains(filled, `CACHE_POOL: ""`) {
 		t.Errorf("an unbound socket must contribute no defaulted infra; want an empty CACHE_POOL\n--- merged ---\n%s", filled)

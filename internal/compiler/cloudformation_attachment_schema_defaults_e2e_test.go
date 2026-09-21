@@ -70,7 +70,7 @@ func TestCloudFormationSchemaDefaults_EveryAuthoringSurfaceMaterialises(t *testi
 	}{
 		{
 			// The control: the consumer Component declares infra.tier and the
-			// deployment authors no infra for that component at all.
+			// Release authors no infra for that component at all.
 			surface:   "the Component's own infra pillar",
 			logicalID: "ReportingApp",
 			property:  "Tier",

@@ -29,9 +29,9 @@ import (
 // production path invokes the rule, not merely that the rule would object if
 // something asked it.
 //
-// The deployment document each proof needs is written into a temporary directory
+// The Release document each proof needs is written into a temporary directory
 // rather than committed, because every one of them wants a different edge
-// surface over the same application and the fixture on disk is shared with other
+// surface over the same Aggregate and the fixture on disk is shared with other
 // proofs.
 
 // retargetSentinelsIn returns the locators of every finding the no-retarget rule
@@ -47,14 +47,14 @@ func retargetSentinelsIn(t *testing.T, out *stepsOneToFourOutput) []string {
 	return found
 }
 
-// releaseWith writes a deployment document carrying the given boundary tree
-// and returns its path. The pointers to the application and the manifest are
+// releaseWith writes a Release document carrying the given boundary tree
+// and returns its path. The pointers to the Aggregate and the manifest are
 // absolute so the document resolves from anywhere.
 func releaseWith(t *testing.T, boundaries string) string {
 	t.Helper()
 	aggregate, err := filepath.Abs(invocationAggregatePath)
 	if err != nil {
-		t.Fatalf("resolve the application's path: %v", err)
+		t.Fatalf("resolve the Aggregate's path: %v", err)
 	}
 	manifest, err := filepath.Abs(invocationManifestPath)
 	if err != nil {
@@ -74,13 +74,13 @@ spec:
 
 	path := filepath.Join(t.TempDir(), "release.yaml")
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
-		t.Fatalf("write the deployment document: %v", err)
+		t.Fatalf("write the Release document: %v", err)
 	}
 	return path
 }
 
 // compileAgainstRelease runs the real pre-render pipeline over the fullstack
-// application and a deployment document written for one proof.
+// Aggregate and a Release document written for one proof.
 func compileAgainstRelease(t *testing.T, aggregate []byte, releasePath string) *stepsOneToFourOutput {
 	t.Helper()
 	out, _ := compileWorkspace(t, workspaceFixture{
@@ -94,8 +94,8 @@ func compileAgainstRelease(t *testing.T, aggregate []byte, releasePath string) *
 
 // withThreeDeclaredConnections adds a second connection to the front end's
 // dependency block and a second consumer declaring one of its own, so a
-// deployment document can conflict with several connections at once and the
-// reported order can be read against the order the application declares them in.
+// Release document can conflict with several connections at once and the
+// reported order can be read against the order the Aggregate declares them in.
 //
 // One conflicting connection cannot prove the reporting shape: a reading that
 // returned after the first would pass such a document, and returning after the
@@ -118,8 +118,8 @@ func withThreeDeclaredConnections(t *testing.T, aggregate []byte) []byte {
 	return bytes.Replace(aggregate, []byte(anchor), []byte(extended), 1)
 }
 
-// threeConsumersPlaced is the boundary tree the extended application needs, with
-// no deployment entry on any connection.
+// threeConsumersPlaced is the boundary tree the extended Aggregate needs, with
+// no Release entry on any connection.
 const threeConsumersPlaced = `    frontend-ns:
       directory: ./dist/frontend
       annotations:
@@ -206,8 +206,8 @@ func TestEveryRedirectedConnectionIsReportedInOneRun(t *testing.T) {
 		if message == "" {
 			t.Errorf("finding at %q renders to nothing", o.Locator())
 		}
-		// Both targets belong in the sentence: the one the application declared
-		// says what is being displaced, and the one the deployment names says
+		// Both targets belong in the sentence: the one the Aggregate declared
+		// says what is being displaced, and the one the Release names says
 		// what displaced it. Neither alone tells the author what to change.
 		if !strings.Contains(message, "backend") || !strings.Contains(message, "frontend") {
 			t.Errorf("finding at %q names only one side of the disagreement: %s", o.Locator(), message)
@@ -242,7 +242,7 @@ func TestARedirectedConnectionKeepsTheDeclaredTarget(t *testing.T) {
 //
 // A connection naming an alias resolves to the component the module publishes it
 // for, so the resolved target and the name the author typed differ on both
-// sides. A rule comparing the deployment's entry against the resolved target
+// sides. A rule comparing the Release's entry against the resolved target
 // would report this document — which is legitimate authoring the build accepts —
 // as a redirection. Comparing what each document WROTE is what keeps it silent,
 // and only a fixture whose two forms differ can tell the two comparisons apart.
@@ -250,8 +250,8 @@ func TestAReleaseNamingTheDeclaredTargetRedirectsNothing(t *testing.T) {
 	aggregate := readAggregate(t)
 	const anchor = "        databases:\n          - data.main-db\n"
 	// The connection is rewritten into the form that carries an alias of its
-	// own, because a deployment entry is keyed by the alias and the short form
-	// takes the target itself as one — which the deployment schema will not
+	// own, because a Release entry is keyed by the alias and the short form
+	// takes the target itself as one — which the Release schema will not
 	// accept as a key.
 	const viaAlias = "        databases:\n          primary:\n            target: data.public_db\n"
 	if !bytes.Contains(aggregate, []byte(anchor)) {
@@ -298,7 +298,7 @@ func TestAReleaseNamingTheDeclaredTargetRedirectsNothing(t *testing.T) {
 	out := compileAgainstRelease(t, aggregate, release)
 
 	if got := retargetSentinelsIn(t, out); len(got) != 0 {
-		t.Fatalf("a deployment naming exactly what the application declared redirects nothing; got %v", got)
+		t.Fatalf("a Release naming exactly what the Aggregate declared redirects nothing; got %v", got)
 	}
 	// The control is only worth having if the two forms really do differ here.
 	declared := out.GraphView.PerEdgeAuthoredTarget("backend", "databases", "primary")

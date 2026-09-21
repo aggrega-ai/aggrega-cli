@@ -17,7 +17,7 @@
 //     without being validated, because it reached no edge for the per-edge walk
 //     to find;
 //   - a component type declaring a required sizing key with no default was
-//     satisfied by a deployment that wrote no sizing at all, and by one that
+//     satisfied by a Release that wrote no sizing at all, and by one that
 //     wrote a key the closed contract does not declare.
 
 package compiler_test
@@ -108,10 +108,10 @@ func TestSubaggCoverage_ReleaseDroppedEntryInfraHalts(t *testing.T) {
 // TestSubaggCoverage_ComponentInfraConformance covers the component-level `infra`
 // pillar on a module-contributed component: the operator-side half of a component
 // type's contract, which the resolution-stage rule cannot reach because its
-// subject is the root application's own instance list.
+// subject is the root Aggregate's own instance list.
 //
 // The rows are the cells of the grid the two conditions make, not the margins of
-// it. What binds the rule is a pair — the deployment placed the component, AND
+// it. What binds the rule is a pair — the Release placed the component, AND
 // the sizing it placed does not satisfy the contract — so a row per condition
 // would leave the interaction unstated. Placement itself has two spellings, and
 // both are rows because the rule reads placement rather than a spelling: naming
@@ -121,7 +121,7 @@ func TestSubaggCoverage_ReleaseDroppedEntryInfraHalts(t *testing.T) {
 // of the case a required key exists to catch.
 //
 // The unplaced row is the discriminating one and asserts BOTH directions. A
-// component this deployment placed nowhere has a different fault with a different
+// component this Release placed nowhere has a different fault with a different
 // remedy, so the placement rule must be the one that speaks — and asserting only
 // that it did would still pass if the sizing rule spoke alongside it, which is
 // exactly the displacement the row exists to refuse.
@@ -146,7 +146,7 @@ func TestSubaggCoverage_ComponentInfraConformance(t *testing.T) {
 			want:    resolver.ErrSchemaConformance(),
 		},
 		{
-			name:    "a component this deployment placed nowhere is reported as unplaced, not as unsized",
+			name:    "a component this Release placed nowhere is reported as unplaced, not as unsized",
 			release: "release-sized-unplaced.yaml",
 			want:    topology.ErrUnplacedComponent(),
 			forbid:  resolver.ErrSchemaConformance(),
@@ -162,7 +162,7 @@ func TestSubaggCoverage_ComponentInfraConformance(t *testing.T) {
 			_, err := pipelinetest.BuildE(t, subaggCoverageInput(tc.release))
 			if tc.want == nil {
 				if err != nil {
-					t.Fatalf("the conforming deployment must build; got %v", err)
+					t.Fatalf("the conforming Release must build; got %v", err)
 				}
 				return
 			}

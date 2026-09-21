@@ -9,7 +9,7 @@
 // Two shapes are covered. Three databases whose instance names differ only in
 // punctuation prove that each declared database reaches the stack: a transform
 // that merely drops the punctuation maps all three onto one name, so the stack
-// would carry fewer resources than the deployment declared. Two databases of the
+// would carry fewer resources than the Aggregate declared. Two databases of the
 // same type read by two applications prove that each consumer's injected host
 // references the database it names and that the stack outputs carry each
 // database's connection identity separately.
@@ -73,7 +73,7 @@ func cfnMixedEnginesInput(t *testing.T) pipelinetest.Input {
 // three MariaDB databases whose instance names differ only in punctuation into
 // one stack and asserts from the emitted bytes that all three are present under
 // three distinct resource names. The count is the load-bearing assertion: three
-// declared databases that render as two resources mean one deployment-declared
+// declared databases that render as two resources mean one Aggregate-declared
 // database is absent from the template with nothing said about it.
 func TestCloudFormationPunctuationOnlyNames_EveryDatabaseReachesTheStack(t *testing.T) {
 	in := cfnPunctuationInput(t)
@@ -285,7 +285,7 @@ func TestCloudFormationMixedEngines_Deterministic(t *testing.T) {
 // The refusal comes from the host comparing the names each provider declared it
 // derived, so the assertion is against that halt specifically: a build that
 // merely failed for some other reason would not prove the names were what
-// stopped it. The message has to name the deployment's own words — both
+// stopped it. The message has to name the Aggregate's own words — both
 // instances and the name they landed on — because renaming one of them is the
 // author's remedy.
 func TestCloudFormationClashingResourceNames_Halts(t *testing.T) {

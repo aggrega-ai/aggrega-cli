@@ -26,7 +26,7 @@ import (
 //
 // The delegation is honest for a node a module contributed, and the reason is
 // the accessors' own declarations rather than a convention applied on top of
-// them. An earlier-stage fact over the application's own instance list answers
+// them. An earlier-stage fact over the Aggregate's own instance list answers
 // about the document that list was read from, and its declaration says so: a
 // component a module contributes is declared in that module's document, which is
 // read only when the composition is flattened, so the earlier fact reports it as
@@ -75,11 +75,11 @@ type topologyView struct {
 	// dotted prefix and including the nodes its nested modules contributed.
 	contributed map[string][]string
 
-	// references is every component entry the deployment's boundaries declare,
+	// references is every component entry the Release's boundaries declare,
 	// on both of the axes a boundary names components on, in the order the
-	// deployment declares them.
+	// Release declares them.
 	//
-	// It is what the deployment asked for and is deliberately not reconciled
+	// It is what the Release asked for and is deliberately not reconciled
 	// against the node set above: an entry addressing an id nothing answers to
 	// is exactly the entry a rule over this axis exists to be asked about, so
 	// folding the two together here would remove the subject before any rule saw
@@ -144,7 +144,7 @@ func newTopologyView(
 
 	// Each node's Recipe resolution, joined once, over the flattened set — so a
 	// component a sub-aggregate contributed is resolved by the same join as one
-	// the application declared, under the qualified identity the composition gave
+	// the Aggregate declared, under the qualified identity the composition gave
 	// it. That identity is what the mapping's name axis is matched against, and
 	// it exists only here.
 	if resolveRecipe != nil {
@@ -307,9 +307,9 @@ func (v *topologyView) connectionAt(node, socket, alias string) (NormalizedEdge,
 // NodeBoundaryPlacement returns the boundary a node was placed in, and whether
 // anything placed it.
 //
-// The two axes a deployment places a component on are already reconciled in what
+// The two axes a Release places a component on are already reconciled in what
 // this reads: the build writes a node's placement from the per-component map,
-// which the deployment's own two axes were folded into, and from the placement a
+// which the Release's own two axes were folded into, and from the placement a
 // routed module confers on every component it contains. So a component named by
 // its dotted id and a component reached by routing its module are both placed
 // here, and neither needs an axis-specific reading.
@@ -331,9 +331,9 @@ func (v *topologyView) ModuleContributedNodes(module string) []string {
 	return v.contributed[module]
 }
 
-// BoundaryDeclaredComponentReferences returns the components the deployment's
+// BoundaryDeclaredComponentReferences returns the components the Release's
 // boundaries name, by the id each entry addresses in the flattened composition,
-// in the order the deployment declares them.
+// in the order the Release declares them.
 func (v *topologyView) BoundaryDeclaredComponentReferences() []string {
 	if len(v.references) == 0 {
 		return nil
@@ -345,8 +345,8 @@ func (v *topologyView) BoundaryDeclaredComponentReferences() []string {
 	return out
 }
 
-// BoundaryComponentReferences returns every component entry the deployment's
-// boundaries declare, in the order the deployment declares them: a boundary's own
+// BoundaryComponentReferences returns every component entry the Release's
+// boundaries declare, in the order the Release declares them: a boundary's own
 // entries before the sub-modules it routes, and an enclosing boundary before the
 // boundaries nested inside it.
 //
@@ -426,10 +426,10 @@ func releaseEdgeConfigurations(
 	return out
 }
 
-// boundaryComponentReferences folds the component entries a deployment's
+// boundaryComponentReferences folds the component entries a Release's
 // boundaries declare into the shape a traversal over them enumerates.
 //
-// It walks the NORMALIZED deployment, so a document that declares its components
+// It walks the NORMALIZED Release, so a document that declares its components
 // at the top level rather than under named boundaries is covered by the same
 // walk: normalization gives such a document a boundary of its own holding exactly
 // those entries, and that boundary contributes no scope level, so its entries are
@@ -440,10 +440,10 @@ func releaseEdgeConfigurations(
 // addresses and the keys the author typed to write it. Reading either map
 // directly would be a second reconciliation, free to disagree with the one the
 // placement itself was derived from — and a reader that took a routing entry's
-// local name for an id would report every module-routed deployment as addressing
+// local name for an id would report every module-routed Release as addressing
 // components that do not exist.
 //
-// The order is the deployment's own at every level, so a rule invoked once per
+// The order is the Release's own at every level, so a rule invoked once per
 // entry reports in the order an author reads the document.
 func boundaryComponentReferences(rel *types.Release) []constraint.BoundaryComponentReferenceInstance {
 	normalized := types.NormalizeRelease(rel).Release()
@@ -480,12 +480,12 @@ func boundaryComponentReferences(rel *types.Release) []constraint.BoundaryCompon
 // shape of an id cannot.
 //
 // The first shape exists for the one boundary an author did not write. A
-// deployment that names no boundaries has its entries folded into a boundary
+// Release that names no boundaries has its entries folded into a boundary
 // normalization synthesized, which spells no level, so the keys relative to it
 // have nothing to be relative to and naming them alone would produce a path the
 // document does not contain. Those entries are named at the top-level site the
 // author did write instead. Such a boundary holds no routing entries at all — it
-// is built from the deployment's own component surface — so its declarations are
+// is built from the Release's own component surface — so its declarations are
 // the direct ones and the component travels on the site.
 func referenceInstance(
 	scopePath string,

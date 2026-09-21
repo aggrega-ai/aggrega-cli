@@ -550,7 +550,7 @@ const perComponentBoundaryFold = "\n\nWhere several scopes of the Release " +
 	"their depths. The rule belongs in the declaration because the fact is keyed " +
 	"by the component alone and has to yield one answer: an implementor left to " +
 	"pick would pick the opposite as readily, and a rule measuring this against " +
-	"what the application declared would then be comparing the wrong entry."
+	"what the Aggregate declared would then be comparing the wrong entry."
 
 // facts declares every fact the framework exposes.
 //
@@ -1711,13 +1711,13 @@ var facts = []factDecl{
 			{Name: "attachment", Type: "string"},
 		},
 		Returns: "(string, bool)",
-		Doc: "AuthoredAttachmentType is the Feature type an application declares " +
+		Doc: "AuthoredAttachmentType is the Feature type an Aggregate declares " +
 			"for one attachment on one component, reported absent when the " +
-			"application declares no attachment under that name for it.\n\nIt is " +
+			"Aggregate declares no attachment under that name for it.\n\nIt is " +
 			"a separate fact from the type a Release declares for the same " +
 			"attachment name, and the pair is what makes the agreement question " +
 			"askable at all. Both documents may name one attachment — this one " +
-			"carries the application's own configuration, the Release's carries " +
+			"carries the Aggregate's own configuration, the Release's carries " +
 			"the physical sizing — and the two are merged into one attachment " +
 			"further down, which only means anything if they name the same " +
 			"Feature. A rule reading one surface alone cannot see a " +
@@ -2608,13 +2608,13 @@ var facts = []factDecl{
 			"a separate fact from the type the Aggregate declares for the same " +
 			"attachment name, and the pair is what makes the agreement question " +
 			"askable at all. Both documents may name one attachment — the " +
-			"application's own declaration carries its configuration, the " +
+			"Aggregate's own declaration carries its configuration, the " +
 			"Release's carries the physical sizing — and the two are merged " +
 			"into one attachment further down, which only means anything if they " +
 			"name the same Feature. A rule reading one surface alone cannot see " +
 			"a disagreement.\n\nThe absence is reported rather than resolved, " +
 			"and it carries a distinction the rule turns on: an attachment only " +
-			"the application declares is nothing to reconcile, an attachment " +
+			"the Aggregate declares is nothing to reconcile, an attachment " +
 			"only the Release declares is the supported way to add one, and " +
 			"an attachment naming no type states nothing to disagree with. All " +
 			"three are legitimate, so only a name declared on both sides with a " +
@@ -2642,7 +2642,7 @@ var facts = []factDecl{
 			"attached Feature, a separate declaration surface from the " +
 			"component's own sockets, which is why the fact is keyed per " +
 			"attachment as well as per node.\n\nIt is a separate fact from the " +
-			"sockets the application's own attachment of the same name wires. " +
+			"sockets the Aggregate's own attachment of the same name wires. " +
 			"Both documents may declare an attachment under one name and each " +
 			"wires what it wires, so a rule reading one surface alone would " +
 			"measure the other's sockets against nothing.\n\nIt is also a " +
@@ -3036,16 +3036,16 @@ var facts = []factDecl{
 			"contributes, which is what separates it from the type an instance " +
 			"declares. A component a sub-aggregate contributes is declared in " +
 			"that sub-aggregate's document, which is read only when the " +
-			"composition is flattened — so the fact over the application's own " +
+			"composition is flattened — so the fact over the Aggregate's own " +
 			"instance list cannot see it, and a rule reading that alone reports " +
 			"every such component as not existing and then declines to judge it. " +
 			"This reads the flattened node instead, where a node contributed by " +
 			"any document carries its type the same way.\n\nOne read serves " +
 			"both tiers and there is deliberately no second path to keep in " +
-			"step. A node the application declared directly and a node a " +
+			"step. A node the Aggregate declared directly and a node a " +
 			"composition contributed are the same shape here, so a rule reading " +
 			"this needs no fallback and cannot acquire two behaviours that drift " +
-			"apart.\n\nIt does not replace the fact over the application's own " +
+			"apart.\n\nIt does not replace the fact over the Aggregate's own " +
 			"instance list, and that fact does not replace it. That one is " +
 			"complete earlier, so a rule asked before the composition is " +
 			"flattened can read it and cannot read this; and it separates a name " +
@@ -3611,7 +3611,7 @@ var facts = []factDecl{
 			"spelling is the document's own and never one naming rule applied " +
 			"to every surface. A Release addresses a component a " +
 			"composition contributed by the qualified identifier the " +
-			"composition gave it, while the application's own scope tree keys " +
+			"composition gave it, while the Aggregate's own scope tree keys " +
 			"that same component by the short name it was declared under, so " +
 			"one component is spelled two ways across the two surfaces and " +
 			"this names whichever spelling the document that supplied the leaf " +

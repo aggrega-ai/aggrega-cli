@@ -129,10 +129,10 @@ func integrationCatalog() resolver.CatalogLookup {
 // derived from the Aggregate rather than written per fixture because a fixture
 // that imports a module and deploys it nowhere is a Release the product refuses:
 // such a module's components render outside every declared boundary, so the shape
-// is one no real deployment can have and one no test should assert against.
+// is one no real Release can have and one no test should assert against.
 //
 // The boundary names every component the Aggregate declares at its top level for
-// that same reason, one level further in. A component the deployment places nowhere
+// that same reason, one level further in. A component the Release places nowhere
 // draws its output location, sync wave, annotations and per-component
 // infrastructure from nowhere exactly as an unplaced module's components do, and
 // a Release leaving one unplaced is refused too. Deriving both surfaces from the
@@ -147,7 +147,7 @@ func integrationCatalog() resolver.CatalogLookup {
 // The boundary context is wired by the resolver's own walk rather than
 // hand-assigned. A hand-built map would be a second derivation of what a resolve
 // computes, and the two would agree only for as long as nobody changed either —
-// so the fixture would model a deployment the product cannot produce.
+// so the fixture would model a Release the product cannot produce.
 func buildResolveResult(agg *types.Aggregate) *resolver.ResolveResult {
 	local := types.Boundary{Directory: "./output"}
 	if agg != nil {

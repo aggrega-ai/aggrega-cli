@@ -12,7 +12,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 )
 
-// The proofs here drive a real build of three deployments that differ in exactly
+// The proofs here drive a real build of three Releases that differ in exactly
 // one thing: where an attachment binding a FeatureRecipe that generates once for
 // a boundary is declared.
 //
@@ -23,7 +23,7 @@ import (
 // cascade, the dedup key, the boundary-scope dispatch and the assembly — and a
 // fixture that modelled any of those would be asserting its own model.
 
-// boundaryScopeCatalogPaths are the catalog entries the three deployments share:
+// boundaryScopeCatalogPaths are the catalog entries the three Releases share:
 // the Feature and FeatureRecipe of a real boundary-scope attachment, plus the
 // schema library its values schema references.
 var boundaryScopeCatalogPaths = []string{
@@ -32,7 +32,7 @@ var boundaryScopeCatalogPaths = []string{
 	"../../../aggrega-hub/aggrega-catalog/schemalibrary/base-components/1.0.0/library.yaml",
 }
 
-// renderBoundaryScopeVariant builds one of the three deployments over the shared
+// renderBoundaryScopeVariant builds one of the three Releases over the shared
 // recipes and catalog, returning the rendered file set or the build's halt.
 func renderBoundaryScopeVariant(t *testing.T, releaseFile string) (map[string][]byte, error) {
 	t.Helper()
@@ -85,7 +85,7 @@ func differingRenderedPaths(left, right map[string][]byte) []string {
 // renders exactly what the scope-only form renders. That is what separates the
 // rule the build now carries — refuse only where NO scope enclosing the component
 // declares the attachment — from one refusing a component-carried attachment
-// outright, which would reject a deployment that builds.
+// outright, which would reject a Release that builds.
 //
 // The comparison is shown to be capable of failing before it is trusted: the same
 // two sets are compared again with one byte moved, and the proof fails if that
@@ -95,7 +95,7 @@ func TestBoundaryScopeAttachment_ComponentCarriedRendersIdentically(t *testing.T
 
 	scopeOnly, err := renderBoundaryScopeVariant(t, "compose-sourced-with-bridge.yaml")
 	if err != nil {
-		t.Fatalf("the scope-only deployment did not build: %v", joinErrorChain(err))
+		t.Fatalf("the scope-only Release did not build: %v", joinErrorChain(err))
 	}
 	alsoOnComponent, err := renderBoundaryScopeVariant(t, "boundary-scope-attachment-inherited.yaml")
 	if err != nil {
@@ -104,7 +104,7 @@ func TestBoundaryScopeAttachment_ComponentCarriedRendersIdentically(t *testing.T
 	}
 
 	if len(scopeOnly) == 0 {
-		t.Fatal("the scope-only deployment rendered no file; the comparison below would certify nothing")
+		t.Fatal("the scope-only Release rendered no file; the comparison below would certify nothing")
 	}
 	if differing := differingRenderedPaths(scopeOnly, alsoOnComponent); len(differing) != 0 {
 		t.Errorf("restating the attachment against a component moved %d rendered path(s): %v",
@@ -136,11 +136,11 @@ func TestBoundaryScopeAttachment_ComponentCarriedRendersIdentically(t *testing.T
 }
 
 // TestBoundaryScopeAttachment_NoDeclaringScopeHalts is the invocation proof at
-// the build's own entry point: the deployment that declares the attachment only
+// the build's own entry point: the Release that declares the attachment only
 // against a component halts, and the halt names the fault rather than a
 // consequence of it.
 //
-// The identity is asserted rather than "an error", because this deployment
+// The identity is asserted rather than "an error", because this Release
 // already halted before the rule existed — on the render reaching for a boundary
 // projection and finding none, which names a missing lookup rather than the
 // authoring mistake. A proof accepting any error would keep passing if the rule
@@ -164,7 +164,7 @@ func TestBoundaryScopeAttachment_NoDeclaringScopeHalts(t *testing.T) {
 		}
 	}
 
-	// The same deployment reached ahead of every reading that would otherwise
+	// The same Release reached ahead of every reading that would otherwise
 	// report a consequence: the boundary projection lookup this configuration used
 	// to fail at reports the missing projection, not the authoring fault, so a
 	// halt still carrying that wording would mean the rule ran too late.

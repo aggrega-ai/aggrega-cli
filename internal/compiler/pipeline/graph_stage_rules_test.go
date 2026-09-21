@@ -89,7 +89,7 @@ func compileWorkspace(
 			Manifest:          manifest,
 			AggregateRawBytes: aggregate,
 			AggregatePath:     fixture.aggregatePath,
-			// The deployment's path is supplied because one enumerated axis is
+			// The Release's path is supplied because one enumerated axis is
 			// authored there: an attachment's infra pillar. Leaving it out would
 			// leave that axis unpositioned, so a proof over it would be measuring
 			// the omission rather than the compiler.
@@ -284,12 +284,12 @@ func TestGraphStageEnumerationWalksTheSlotsAComponentTypeDeclares(t *testing.T) 
 }
 
 // giveTheRoutingAttachmentAValuesPillar rewrites the fixture so the attachment
-// the deployment already configures also carries a developer-authored values
+// the Release already configures also carries a developer-authored values
 // leaf.
 //
 // The pairing is what the proof needs and no committed workspace carries it: the
-// deployment's own document already attaches this feature with an infra pillar,
-// and the rewrite adds the other half in the application document, so one
+// Release's own document already attaches this feature with an infra pillar,
+// and the rewrite adds the other half in the Aggregate document, so one
 // attachment ends up carrying one pillar from each of the two authoring
 // surfaces. The rewrite is in memory, because the fixture on disk is shared with
 // other proofs and must keep producing exactly what they expect.
@@ -329,8 +329,8 @@ type pillarLeafPosition struct {
 // than an enumerator's return value on its own.
 //
 // The two-document pairing is the whole of it. A developer writes an
-// attachment's values in the application document; an operator writes its
-// infrastructure configuration on the deployment, which is the only authoring
+// attachment's values in the Aggregate document; an operator writes its
+// infrastructure configuration on the Release, which is the only authoring
 // surface whose attachment block admits one. A leaf of the second positioned in
 // the first names a key that document cannot contain, so an editor following the
 // position lands nowhere — and a single-document fixture cannot see that,
@@ -381,10 +381,10 @@ func TestEachAttachmentPillarNamesItsOwnAuthoringDocument(t *testing.T) {
 	// The two paths differ as well as the two files, and that is the same
 	// property rather than a second one. Each pillar is written in the document
 	// that admits it, and the two documents nest their components differently:
-	// the application writes this one at its own top level, while the deployment
+	// the Aggregate writes this one at its own top level, while the Release
 	// routes it into a boundary. So the position of each is the shape its own
 	// document has, and a single shape spelled for both would be wrong for one of
-	// them wherever the two documents disagree — which is most deployments.
+	// them wherever the two documents disagree — which is most builds.
 	want := []pillarLeafPosition{
 		{
 			pillar:     "values",
@@ -407,7 +407,7 @@ func TestEachAttachmentPillarNamesItsOwnAuthoringDocument(t *testing.T) {
 		if seen[i] != want[i] {
 			t.Errorf("invocation %d carried %+v; want %+v.\n"+
 				"INVARIANT: a pillar's leaf is positioned in the document that pillar was authored in.\n"+
-				"CONSEQUENCE: an infrastructure leaf attributed to the application document names a key "+
+				"CONSEQUENCE: an infrastructure leaf attributed to the Aggregate document names a key "+
 				"that document's attachment block cannot hold, so the position resolves nowhere.",
 				i, seen[i], want[i])
 		}

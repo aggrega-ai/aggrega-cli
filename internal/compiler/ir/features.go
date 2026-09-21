@@ -515,8 +515,8 @@ func collectNodeFeatures(
 				}
 			}
 			// The component segment is the node's own identifier and not the name
-			// its Aggregate wrote, because that is the key the deployment uses:
-			// a deployment addresses a component the composition contributed by
+			// its Aggregate wrote, because that is the key the Release uses:
+			// a Release addresses a component the composition contributed by
 			// the qualified identifier the composition gave it. Which spelling a
 			// document uses is a property of the document, which is why the site
 			// is recorded where the document is read rather than derived later
@@ -1159,7 +1159,7 @@ func deriveTopLevelOrigin(values, infra types.OrderedMap[types.FieldProvenance])
 // about a datum an author left readable.
 //
 // The slot pairs with the attachment by NAME for both Binding and the slot half
-// of Sensitive: a deployment fills a slot by attaching a Feature under the
+// of Sensitive: an author fills a slot by attaching a Feature under the
 // slot's name, so the attachment's instance name IS the slot name. The slot set
 // belongs to the NODE's Component, so it is the same set whichever cascade tier
 // contributed the attachment.
@@ -1169,15 +1169,15 @@ func deriveTopLevelOrigin(values, infra types.OrderedMap[types.FieldProvenance])
 // for. Sensitivity is a property of the catalog entity plus the slot it fills,
 // so a linter, a guest or a policy can reason about the entity in isolation;
 // intersecting with the carried values would make the same field sensitive in
-// one deployment and not another.
+// one build and not another.
 //
 // SensitivePayloadLeaves does intersect, and the two are not in tension because
 // they are answers to different questions. Sensitive answers what the entity is,
-// which must not vary by deployment. SensitivePayloadLeaves answers where this
-// deployment put data, which varies by deployment necessarily — a leaf is named
+// which must not vary by build. SensitivePayloadLeaves answers where this
+// build put data, which varies by build necessarily — a leaf is named
 // there only because this attachment's payload carries a value at it. Neither
 // rule belongs on the other field: intersecting inside Sensitive would make one
-// entity sensitive in one deployment and not another, and declining to intersect
+// entity sensitive in one build and not another, and declining to intersect
 // in SensitivePayloadLeaves would name leaves that carry nothing.
 //
 // Every input is a declaration or a mapping the compiler itself built. No value
@@ -1324,7 +1324,7 @@ func deriveInjectSensitivity(inject types.OrderedMap[types.OrderedMap[string]], 
 //
 // Each caller passes the payload the graph goes on to carry rather than the
 // block it was built from, so a leaf standing at a schema-declared default is
-// named alongside one a deployment wrote.
+// named alongside one an author wrote.
 //
 // It is the ONE home for the per-leaf marking, and its three subjects are the
 // three places the graph carries pillar data: a merged attachment's own values
@@ -1509,7 +1509,7 @@ func collectBoundaryWideFeatures(boundaries types.OrderedMap[types.Boundary], bo
 // on the name, so a boundary an operator declares and happens to name the same
 // as the synthesized one keeps its level. This is the boundary axis's form of
 // the rule the component locator applies to a synthesized scope on the
-// application side.
+// Aggregate side.
 func boundaryScopePath(prefix, name string, synthesized bool) string {
 	if synthesized {
 		return ""

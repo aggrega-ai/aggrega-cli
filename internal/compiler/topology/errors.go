@@ -101,7 +101,7 @@ var errUnboundReleaseEdgeConfig = cerrors.Register("unbound-release-edge-config"
 // finalised graph, and by nothing else. The diagnostic carries the missing
 // target and the socket it was wired into, positioned by the framework at the
 // authored entry in the document that drew the connection — so an edge an
-// attachment or a deployment drew names that document rather than a dependency
+// attachment or a Release drew names that document rather than a dependency
 // block the consuming component does not have.
 //
 // A target the composition removed by a false `active` toggle is reported by
@@ -282,7 +282,7 @@ var errMutatorPatchRejected = cerrors.Register("mutator-patch-rejected", cerrors
 // once the composition is flattened, and routing the whole sub-module in under
 // `aggregates`, which places every component that module contains. A sub-module
 // reaching neither has its components rendered outside every boundary the
-// deployment declared, so their output location, sync wave, annotations and
+// Release declared, so their output location, sync wave, annotations and
 // per-component infrastructure all come from nowhere.
 //
 // It halts rather than warning because the alternative is a silent one: the
@@ -307,7 +307,7 @@ var errUnplacedSubModule = cerrors.Register("unplaced-sub-module", cerrors.Meta{
 // naming it under a boundary's `components`, under the id it carries once the
 // composition is flattened, or routing the sub-module that contributes it in
 // under `aggregates`, which places every component that module contains. A
-// component reaching neither is rendered outside every boundary the deployment
+// component reaching neither is rendered outside every boundary the Release
 // declared, so its output location, sync wave, annotations and per-component
 // infrastructure all come from nowhere.
 //
@@ -353,7 +353,7 @@ var errUnplacedComponent = cerrors.Register("unplaced-component", cerrors.Meta{
 // the other.
 //
 // A subsystem contributes nothing to the id a component carries, so a component
-// the application declares inside a subsystem is addressed by its bare name. An
+// the Aggregate declares inside a subsystem is addressed by its bare name. An
 // entry naming it under the subsystem instead addresses nothing and fires this.
 //
 // A component switched off by a false `active` toggle does not fire it. Such a

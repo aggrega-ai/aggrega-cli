@@ -228,7 +228,7 @@ func TestAttachmentDefaults_ALaterTierSupplyingTheKeyIsNotOverwritten(t *testing
 
 	// Every row attaches the instance from at least one tier. That is a
 	// precondition rather than a convenience: a declared default fills a leaf of
-	// an attachment the deployment made, and it does not conjure the attachment
+	// an attachment an author made, and it does not conjure the attachment
 	// itself. A node nothing attached to carries no attachment for a default to
 	// land on, which is the correct answer and is asserted separately below.
 	for _, tc := range []struct {
@@ -288,7 +288,7 @@ func TestAttachmentDefaults_ALaterTierSupplyingTheKeyIsNotOverwritten(t *testing
 
 // TestAttachmentDefaults_NoAttachmentMeansNothingToFill states the boundary of
 // the fill, because the alternative is a defect rather than a nicety: a declared
-// default fills a leaf of an attachment a deployment made, and it must not bring
+// default fills a leaf of an attachment an author made, and it must not bring
 // the attachment into existence.
 //
 // A Feature declaring defaults is attached to nothing here. The node comes out
@@ -299,7 +299,7 @@ func TestAttachmentDefaults_NoAttachmentMeansNothingToFill(t *testing.T) {
 	t.Parallel()
 	result := collectWithTiers(t, "core/settings", types.OrderedMap[any]{}, nil, nil)
 	if result.Features.Len() != 0 {
-		t.Errorf("the node carries attachment(s) %v, but nothing attached one; a declared default fills a leaf of an attachment a deployment made and never creates the attachment",
+		t.Errorf("the node carries attachment(s) %v, but nothing attached one; a declared default fills a leaf of an attachment an author made and never creates the attachment",
 			result.Features.Keys())
 	}
 }

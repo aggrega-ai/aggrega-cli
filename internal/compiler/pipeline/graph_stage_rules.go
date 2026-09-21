@@ -243,7 +243,7 @@ func runGraphStageRules(
 	// finalised graph carries it, keyed by the identity the graph gives the
 	// component — which is what lets the question be asked of a component a
 	// sub-aggregate contributed: the equivalent reading earlier in the build is
-	// answered from the application's own documents and holds no entry for such a
+	// answered from the Aggregate's own documents and holds no entry for such a
 	// component, and a rule presented no subject reports exactly what a rule
 	// invoked and satisfied reports. The connections the answer reads are the
 	// graph's own, so a key delivered through a connection an attachment

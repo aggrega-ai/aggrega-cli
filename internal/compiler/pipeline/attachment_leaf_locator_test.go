@@ -18,16 +18,16 @@ import (
 
 // The documents the locator proof compiles.
 //
-// The two deployments are separate files because the shapes are mutually
+// The two Releases are separate files because the shapes are mutually
 // exclusive: one routing its components at the top level declares no boundary,
 // and one nesting them under boundaries declares nothing at the top level. A
 // single fixture could show only one of the two.
 //
-// They share one application, and it is one that pulls in no module. That is
-// forced rather than chosen: a deployment routing components at its own top
-// level has no surface on which to place a module, so an application carrying
-// one cannot be deployed in that form at all. Sharing the application keeps the
-// difference between the two compilations the deployment shape and nothing else.
+// They share one Aggregate, and it is one that pulls in no module. That is
+// forced rather than chosen: a Release routing components at its own top
+// level has no surface on which to place a module, so an Aggregate carrying
+// one cannot be deployed in that form at all. Sharing the Aggregate keeps the
+// difference between the two compilations the Release shape and nothing else.
 const (
 	locatorAggregatePath         = "../../../internal/compiler/testdata/fullstack-app/aggregates/annotation-release-side.yaml"
 	locatorFlatReleasePath       = "../../../internal/compiler/testdata/fullstack-app/releases/attachment-locator-flat.yaml"
@@ -178,7 +178,7 @@ func assertResolves(t *testing.T, form string, p leafPosition) {
 // attachment leaf's position is a place that exists.
 //
 // Three authoring forms, and the third is the one the proof exists for. A
-// deployment routing its components at the top level writes an attachment under
+// Release routing its components at the top level writes an attachment under
 // `.spec.components`; one nesting them under boundaries writes it under the
 // boundary chain; and one attaching a feature to a boundary itself writes no
 // component key at all. The first is the shape a position built from the node's
@@ -211,7 +211,7 @@ func TestAttachmentLeafLocatorResolvesInTheDocumentItNames(t *testing.T) {
 		}
 	})
 
-	t.Run("a deployment with no boundaries", func(t *testing.T) {
+	t.Run("a Release with no boundaries", func(t *testing.T) {
 		positions := collectLeafPositions(t, locatorFlatReleasePath)
 		var infra []leafPosition
 		for _, p := range positions {
@@ -221,7 +221,7 @@ func TestAttachmentLeafLocatorResolvesInTheDocumentItNames(t *testing.T) {
 			}
 		}
 		if len(infra) == 0 {
-			t.Fatal("no infrastructure leaf was enumerated; the deployment-side shape this subtest exists for was never reached")
+			t.Fatal("no infrastructure leaf was enumerated; the Release-side shape this subtest exists for was never reached")
 		}
 		// Stated as well as walked, because the walk alone cannot say the
 		// position names the *right* site: the generated scope holding a
@@ -234,7 +234,7 @@ func TestAttachmentLeafLocatorResolvesInTheDocumentItNames(t *testing.T) {
 		}
 	})
 
-	t.Run("a deployment nesting its components under boundaries", func(t *testing.T) {
+	t.Run("a Release nesting its components under boundaries", func(t *testing.T) {
 		positions := collectLeafPositions(t, locatorBoundariedReleasePath)
 
 		var componentScoped, boundaryWide []leafPosition

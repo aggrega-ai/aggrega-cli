@@ -752,7 +752,7 @@ type BoundaryComponentReferenceEnumerator interface {
 	BoundaryComponentReferences() []BoundaryComponentReferenceInstance
 }
 
-// SubsystemEnumerator supplies the subsystem set: every scope the application's
+// SubsystemEnumerator supplies the subsystem set: every scope the Aggregate's
 // author declared, at every depth.
 //
 // Each value is the scope's path from the document's own scope set rather than a

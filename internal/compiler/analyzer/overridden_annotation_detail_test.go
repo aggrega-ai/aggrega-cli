@@ -12,7 +12,7 @@ import (
 
 // The finding this proof is about, in an author's terms.
 //
-// A deployment addresses a component a composition contributed by the qualified
+// A Release addresses a component a composition contributed by the qualified
 // identifier the composition gave it, and that identifier carries the separator a
 // position divides its segments with. The position therefore stops at the
 // components block and gives up the component and everything written under it, so
@@ -71,9 +71,9 @@ func (v leafProvenanceView) PerLeafAttachmentAuthoredComponent(
 // enumeratedAttachmentLeaf is the axis the rule is invoked over: one node, one
 // attachment, one pillar, one leaf, with the site the entry was written at.
 //
-// The attachment name is a field rather than a constant because a deployment's
+// The attachment name is a field rather than a constant because a Release's
 // attachment names admit the separator a position divides its segments with,
-// while an application's do not — so one of the shapes below truncates on the
+// while an Aggregate's do not — so one of the shapes below truncates on the
 // attachment instead of on the component, and the axis has to be able to spell
 // both.
 type enumeratedAttachmentLeaf struct {
@@ -124,10 +124,10 @@ func TestTheOverriddenAnnotationAdvisoryNamesTheCoordinatesThePositionGaveUp(t *
 		want       string
 	}{
 		{
-			// The shape a composed deployment reaches. The position stops at the
+			// The shape a composed build reaches. The position stops at the
 			// components block, so every coordinate under it reaches the author
 			// only through the detail.
-			name: "a component the deployment keys by its qualified identifier",
+			name: "a component the Release keys by its qualified identifier",
 			axis: enumeratedAttachmentLeaf{
 				node:       composed,
 				attachment: "audit",
@@ -160,7 +160,7 @@ func TestTheOverriddenAnnotationAdvisoryNamesTheCoordinatesThePositionGaveUp(t *
 		{
 			// The cell neither row above reaches: the coordinate the position gives
 			// up is the ATTACHMENT rather than the component, because a
-			// deployment's attachment names admit the separator too. The position
+			// Release's attachment names admit the separator too. The position
 			// stops at the attachments block, there is no component to name, and
 			// the attachment reaches the author only through the detail.
 			//
@@ -168,7 +168,7 @@ func TestTheOverriddenAnnotationAdvisoryNamesTheCoordinatesThePositionGaveUp(t *
 			// annotation's own site names no component — which is what makes the
 			// two values distinguishable rather than one of them a copy of the
 			// other.
-			name: "an attachment the deployment names with a separator in it",
+			name: "an attachment the Release names with a separator in it",
 			axis: enumeratedAttachmentLeaf{
 				node:       composed,
 				attachment: "audit.v2",

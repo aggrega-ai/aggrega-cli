@@ -68,7 +68,7 @@ func locatorsOfFindings(findings []*resolver.ResolverError) []string {
 	return out
 }
 
-// The application shapes. Each names a target that exists, so a fixture halts
+// The Aggregate shapes. Each names a target that exists, so a fixture halts
 // for the rule under test and not for a connection reaching nothing.
 const (
 	// requiredSocketUnbound leaves the required socket the type declares
@@ -146,7 +146,7 @@ spec:
       type: app/db:1.0.0
 `
 	// requiredSocketInDeclaredSubsystem puts the offending component inside a
-	// scope the author declared, alongside the component a deployment can wire
+	// scope the author declared, alongside the component a Release can wire
 	// it to.
 	requiredSocketInDeclaredSubsystem = `apiVersion: aggrega.ai/v1alpha1
 kind: Aggregate
@@ -193,7 +193,7 @@ spec:
       type: app/db:1.0.0
 `
 	// twoConsumersOneBound carries two components declaring the same
-	// requirement, so a deployment binding one of them leaves the other's
+	// requirement, so a Release binding one of them leaves the other's
 	// socket unpopulated.
 	twoConsumersOneBound = `apiVersion: aggrega.ai/v1alpha1
 kind: Aggregate
@@ -282,7 +282,7 @@ spec:
 `
 )
 
-// The deployment shapes. Each places the module so a routed fixture is not
+// The Release shapes. Each places the module so a routed fixture is not
 // reported for being unplaced.
 const (
 	releasePlacingTheModule = `apiVersion: aggrega.ai/v1alpha1
@@ -296,7 +296,7 @@ spec:
       aggregates:
         mod: {}
 `
-	// releaseBindingTheSocket creates the connection the application left out.
+	// releaseBindingTheSocket creates the connection the Aggregate left out.
 	releaseBindingTheSocket = `apiVersion: aggrega.ai/v1alpha1
 kind: Release
 metadata:
@@ -314,13 +314,13 @@ spec:
         db: {}
 `
 	// releaseBindingTheSocketBesideASibling is the same binding for the
-	// application that declares a second consumer. It is a fixture of its own
+	// Aggregate that declares a second consumer. It is a fixture of its own
 	// rather than a widening of the one above, because that one is shared with an
-	// application declaring no sibling, and naming a component that application
+	// Aggregate declaring no sibling, and naming a component that Aggregate
 	// does not declare would replace the fault under test with a different one.
 	//
-	// It places every component its application declares, so the composition the
-	// rule is asked about is one a deployment could really produce: a component
+	// It places every component its Aggregate declares, so the composition the
+	// rule is asked about is one a Release could really produce: a component
 	// belonging to no boundary halts before any rule about sockets is reached.
 	releaseBindingTheSocketBesideASibling = `apiVersion: aggrega.ai/v1alpha1
 kind: Release
@@ -363,8 +363,8 @@ spec:
         db: {}
 `
 	// releaseBindingASubsystemComponent creates the connection for a component
-	// the application declared inside a scope, addressing it by the bare
-	// instance name — which is how a deployment names a component at every
+	// the Aggregate declared inside a scope, addressing it by the bare
+	// instance name — which is how a Release names a component at every
 	// placement.
 	releaseBindingASubsystemComponent = `apiVersion: aggrega.ai/v1alpha1
 kind: Release
@@ -408,9 +408,9 @@ spec:
 //
 // The rows are grouped by which surface the population came from, because that
 // grouping is the rule's own structure: it reads the component's own dependency
-// block, the deployment's edge surface and the connection set the composition
+// block, the Release's edge surface and the connection set the composition
 // produced, and a row is a claim about one of those three. The negative rows
-// beside each are what stop a surface being read too generously — a deployment
+// beside each are what stop a surface being read too generously — a Release
 // entry that configures rather than creates, a binding on a sibling socket, a
 // binding on another component.
 func TestTheRequiredSocketRuleReadsEverySurfaceThatCanPopulateASocket(t *testing.T) {
@@ -446,18 +446,18 @@ func TestTheRequiredSocketRuleReadsEverySurfaceThatCanPopulateASocket(t *testing
 			agg:  optionalSocketUnbound,
 		},
 		{
-			name:    "the deployment creates the connection",
+			name:    "the Release creates the connection",
 			agg:     requiredSocketUnbound,
 			release: releaseBindingTheSocket,
 		},
 		{
-			name:     "a deployment entry naming no target creates nothing",
+			name:     "a Release entry naming no target creates nothing",
 			agg:      requiredSocketUnbound,
 			release:  releaseConfiguringWithoutATarget,
 			locators: []string{".spec.components.api.uses.databases"},
 		},
 		{
-			name:     "the deployment binds a sibling socket",
+			name:     "the Release binds a sibling socket",
 			agg:      requiredSocketUnbound,
 			release:  releaseBindingAnotherSocket,
 			locators: []string{".spec.components.api.uses.databases"},
@@ -499,12 +499,12 @@ func TestTheRequiredSocketRuleReadsEverySurfaceThatCanPopulateASocket(t *testing
 			locators: []string{".spec.components.api.uses.databases"},
 		},
 		{
-			name:    "the deployment binds a component the application declared inside a scope",
+			name:    "the Release binds a component the Aggregate declared inside a scope",
 			agg:     requiredSocketInDeclaredSubsystem,
 			release: releaseBindingASubsystemComponent,
 		},
 		{
-			name:     "the deployment binds the socket on a sibling component",
+			name:     "the Release binds the socket on a sibling component",
 			agg:      twoConsumersOneBound,
 			release:  releaseBindingTheSocketBesideASibling,
 			locators: []string{".spec.components.sibling.uses.databases"},

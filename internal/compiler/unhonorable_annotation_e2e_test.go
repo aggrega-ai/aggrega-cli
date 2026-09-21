@@ -7,7 +7,7 @@
 // guests, and read off the same structured channel the terminal and the editor
 // both display.
 //
-// One deployment authors three annotations against one target whose support claim
+// One Release authors three annotations against one target whose support claim
 // covers exactly one of them, so all three outcomes are proved from a single
 // build. That shape is deliberate: a silence measured in a build where nothing
 // fires proves only that the check is quiet, while a silence measured beside a
@@ -148,7 +148,7 @@ func TestUnhonorableAnnotation_OutputIsByteIdentical(t *testing.T) {
 	pipelinetest.AssertDeterministic(t, advisoryInput())
 }
 
-// multiKindInput is the deployment whose three nodes differ only in which input
+// multiKindInput is the build whose three nodes differ only in which input
 // kinds their Recipe declares — one declaring both of the target's node-scoped
 // paths, one declaring each alone — under one boundary annotating three keys.
 func multiKindInput() pipelinetest.Input {
@@ -167,7 +167,7 @@ func multiKindInput() pipelinetest.Input {
 // end-to-end acceptance for a node declaring more than one input kind, through the
 // real pipeline against the real compiled guests.
 //
-// The deployment authors one key the target reads only where it builds the pod
+// The Release authors one key the target reads only where it builds the pod
 // itself. The node declaring both paths therefore DOES have it applied, through its
 // synthesized half, so no advisory may name it — while the node declaring the
 // vendored path alone must still be advised, and the node declaring the synthesized
@@ -274,7 +274,7 @@ func TestUnhonorableAnnotation_MultiKindOutputIsByteIdentical(t *testing.T) {
 	pipelinetest.AssertDeterministic(t, multiKindInput())
 }
 
-// crossingInput names one of the deployments that differ only in which crossing
+// crossingInput names one of the builds that differ only in which crossing
 // carries the artifacts. They share a catalog — one component, one target, one
 // authored annotation — so what a build's advisories differ by is the crossing
 // and nothing else.
@@ -363,7 +363,7 @@ func TestUnhonorableAnnotation_AdvisedWhicheverCrossingRendersTheOutput(t *testi
 // TestUnhonorableAnnotation_AttachmentAdvisoryNamesTheKindTheAttachmentDeclares
 // asserts against the line a user reads, for a render reached through an
 // attachment. The kind named has to be the ATTACHMENT's own: on both of these
-// deployments the host component synthesizes its Workload, which the target's
+// builds the host component synthesizes its Workload, which the target's
 // claim covers, so naming the host's kind would describe a crossing that had the
 // annotation applied and would invite deleting one that is in fact working.
 func TestUnhonorableAnnotation_AttachmentAdvisoryNamesTheKindTheAttachmentDeclares(t *testing.T) {
@@ -400,7 +400,7 @@ func TestUnhonorableAnnotation_AttachmentAdvisoryNamesTheKindTheAttachmentDeclar
 }
 
 // TestUnhonorableAnnotation_HonouredCrossingsEmitStableBytes pins the
-// out-of-band contract on the deployment where nothing is ignored: it raises no
+// out-of-band contract on the build where nothing is ignored: it raises no
 // advisory, builds, and emits the same bytes on every run.
 func TestUnhonorableAnnotation_HonouredCrossingsEmitStableBytes(t *testing.T) {
 	t.Parallel()
@@ -418,7 +418,7 @@ func TestUnhonorableAnnotation_AttachmentCrossingOutputIsByteIdentical(t *testin
 
 // TestUnhonorableAnnotation_AttachmentCrossingNeverHalts pins that the advisory
 // stays a degradation on the attachment crossing too. A boundary annotation
-// cascades to every attachment beneath it, so a deployment whose attachments
+// cascades to every attachment beneath it, so a build whose attachments
 // cannot act on one still succeeds and still emits their documents — including
 // the very file the annotation was dropped from.
 func TestUnhonorableAnnotation_AttachmentCrossingNeverHalts(t *testing.T) {

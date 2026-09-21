@@ -1102,7 +1102,7 @@ type GraphScope struct {
 	// rule's findings name the authoring surface whose author fixes them, which is
 	// known at the site that invoked the rule and nowhere afterwards. Converting
 	// at the invocation is what lets a mapping rule report against the Manifest
-	// while the rules beside it report against the application, and a slice of raw
+	// while the rules beside it report against the Aggregate, and a slice of raw
 	// objections would have lost that by the time anything read it.
 	//
 	// 🔴 A caller that carries this slice and never reads it reports the finding to

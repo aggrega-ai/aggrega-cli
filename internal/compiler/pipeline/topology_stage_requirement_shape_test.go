@@ -165,7 +165,7 @@ func TestTheRequirementShapeRuleHaltsThroughTheViolationChannel(t *testing.T) {
 						t.Errorf("violation %d message does not name %q: %q", i, want, violation.Message)
 					}
 				}
-				// The fault is the catalog author's, not the deployment author's,
+				// The fault is the catalog author's, not the Aggregate author's,
 				// and the entity is what carries that to the conversion.
 				converted := violation.ToCompilerError()
 				if converted.Category() != cerrors.CatalogError {

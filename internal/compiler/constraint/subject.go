@@ -225,7 +225,7 @@ const locatorSeparator = "."
 // else in the dialect distinguishes a segment boundary from a separator inside a
 // segment, which is why the guarantee is enforced here rather than described: an
 // authored key may itself contain the separator — an artifact's output name is a
-// filename, a file mechanism delivers into a mount path, and a deployment
+// filename, a file mechanism delivers into a mount path, and a Release
 // addresses a composed component by the qualified identifier the composition
 // gave it — and joining such a key in would produce a string that reads equally
 // as one key or as two.

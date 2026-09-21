@@ -28,7 +28,7 @@ import (
 // declares one. Before it, the third of those existed nowhere in the tree at all,
 // so a rule over it could be invoked and would report on nothing.
 //
-// # Three deployments over one Aggregate, each differing in one binding
+// # Three builds over one Aggregate, each differing in one binding
 //
 // The Aggregate, the attachments, their FeatureRecipes and the step plugin are
 // the same documents in all three. What moves between them is which Recipe the
@@ -43,7 +43,7 @@ import (
 // discrete document left to address and the build halts on that condition
 // instead.
 //
-// Each refusing deployment was arranged so exactly ONE of the four declared
+// Each refusing build was arranged so exactly ONE of the four declared
 // rules raises. That is not tidiness: the render reports a single finding as
 // itself and joins several under an envelope carrying no position of its own, so
 // a build raising two unrelated findings could not have either one's position
@@ -54,13 +54,13 @@ const (
 	stepManifestPath  = "../../../internal/compiler/testdata/pipeline-provider-compat/manifest.yaml"
 	stepCatalogPath   = "../../../internal/compiler/testdata/pipeline-provider-compat/catalog"
 
-	// The deployment whose component renders through a provider the step plugin
+	// The build whose component renders through a provider the step plugin
 	// its own Recipe's pipeline names declares no compatibility with. Its build
 	// halts, and the finding names that provider.
 	stepIncompatibleOwnManifestPath = "../../../internal/compiler/testdata/pipeline-provider-compat/manifest-incompatible-own.yaml"
 	stepIncompatibleOwnReleasePath  = "../../../internal/compiler/testdata/pipeline-provider-compat/release-incompatible-own.yaml"
 
-	// The deployment whose component renders through a provider that folds its
+	// The build whose component renders through a provider that folds its
 	// dispatch group into a single document. Its build halts on the attachment's
 	// own-scope step, which has no discrete document to address.
 	stepMergedTargetManifestPath = "../../../internal/compiler/testdata/pipeline-provider-compat/manifest-merged-target.yaml"
@@ -68,7 +68,7 @@ const (
 
 	// The plugin every pipeline in the fixture names, and the artifact behind it.
 	// Its own self-report declares compatibility with the provider the admitted
-	// deployment's entities declare, so an admitted build is admitted because the
+	// build's entities declare, so an admitted build is admitted because the
 	// declaration matches rather than because nothing was read.
 	stepPluginURI      = "pipeline-step/patch:1.0.0"
 	stepPluginArtifact = "frp-step-patch-rust.wasm"
@@ -86,7 +86,7 @@ const (
 	stepAttachmentStep = "annotate_attachment_output"
 )
 
-// stepBuild is one compiled and rendered deployment of the fixture, together
+// stepBuild is one compiled and rendered build of the fixture, together
 // with the render's own error rather than a failure — so a proof about a build
 // the render refuses can read that refusal.
 type stepBuild struct {
@@ -100,7 +100,7 @@ type stepBuild struct {
 	axes          stepAxes
 }
 
-// buildStepFixture compiles one deployment of the fixture, resolves its
+// buildStepFixture compiles one build of the fixture, resolves its
 // pipeline-step plugin through the real resolution cascade, and renders it the
 // way the production spine renders: through the same provider dispatch, with the
 // plugin resolution wired, and with the enumeration the finalised graph carries
@@ -180,7 +180,7 @@ func buildStepFixture(t *testing.T, manifestPath, releasePath string) stepBuild 
 	}
 }
 
-// renderStepFixture renders the compiled deployment with the plugin resolution
+// renderStepFixture renders the compiled build with the plugin resolution
 // wired, the finalised graph's enumeration supplied, and the build's own provider
 // dispatch — and returns the render's own error rather than failing, so a proof
 // about a build the render refuses can read that refusal.
@@ -295,7 +295,7 @@ type stepAxes struct {
 	// enumerated here is the pipeline the render ran.
 	recipeLookup renderer.RecipeLookup
 
-	// release is the deployment document. The boundary set is read from it and
+	// release is the Release document. The boundary set is read from it and
 	// not from the graph's projection of boundary attachments: that projection
 	// records a boundary only once something is attached at it, so an axis over it
 	// would be narrower than the boundary set an implementation is asked for, and
@@ -338,7 +338,7 @@ func (a stepAxes) AttachmentPipelineSteps(node string, attachment string) []cons
 	return stepCoordinates(fr.Spec.Pipeline, fr.Metadata.Name)
 }
 
-// Boundaries returns every boundary the deployment declares, at every depth,
+// Boundaries returns every boundary the Release declares, at every depth,
 // enclosing scope before the scopes nested inside it.
 //
 // A scope normalization synthesized carries no path of its own and contributes
@@ -353,7 +353,7 @@ func (a stepAxes) Boundaries() []constraint.AuthoredCoordinate {
 }
 
 // BoundaryAttachments returns the attachments one boundary declares on itself, in
-// the order the deployment declares them.
+// the order the Release declares them.
 func (a stepAxes) BoundaryAttachments(boundary string) []string {
 	var out []string
 	a.walkBoundaries(func(path string, b types.Boundary) {
@@ -378,7 +378,7 @@ func (a stepAxes) BoundaryAttachmentPipelineSteps(
 }
 
 // walkBoundaries visits every declared boundary with the path it is named by,
-// descending into nested scopes, in the deployment's own order.
+// descending into nested scopes, in the Release's own order.
 func (a stepAxes) walkBoundaries(visit func(path string, b types.Boundary)) {
 	if a.release == nil {
 		return
@@ -542,7 +542,7 @@ func TestThePipelineStepAxesComeFromTheCompiledBuild(t *testing.T) {
 			}
 		}
 		if !slices.Equal(paths, []string{"main", "store", "spare"}) {
-			t.Errorf("Boundaries() = %v, want every boundary the deployment declares", paths)
+			t.Errorf("Boundaries() = %v, want every boundary the Release declares", paths)
 		}
 		if projected := build.out.IRGraph.Spec.BoundaryFeatures.Len(); projected >= len(paths) {
 			t.Errorf("the graph projects %d boundary attachment set(s) against %d declared boundaries; the axis is no longer distinguishable from that projection",
@@ -755,13 +755,13 @@ func TestTheProviderCompatibilityRulesAreInvokedOverTheCompiledBuild(t *testing.
 // The rule runs inside the render, ahead of the component walk, so a build
 // carrying the refused shape halts and publishes no presentation — and the halt
 // IS the verdict, read from a compilation of authored documents with every fact
-// the build itself produced. The deployment differs from the admitted one in a
+// the build itself produced. The build differs from the admitted one in a
 // single binding: which Recipe the component type binds, and therefore which
 // provider renders the component's own documents.
 //
 // # Why the finding is attributable, and why it is not the halt itself
 //
-// The provider the deployment names is one the step plugin does not declare, and
+// The provider the bound Recipe names is one the step plugin does not declare, and
 // the plugin's declared set is read off the build and asserted — so a plugin that
 // came to declare that provider fails this proof rather than making it vacuous.
 //
@@ -819,7 +819,7 @@ func TestTheProviderCompatibilityRuleRefusesAnUndeclaredProvider(t *testing.T) {
 			t.Fatalf("the halt does not carry the incompatibility condition: %+v", build.renderErr)
 		}
 		// The one condition the halt must NOT carry. Every other declared rule
-		// over these axes is satisfied by this deployment, so a second sentinel
+		// over these axes is satisfied by this build, so a second sentinel
 		// here would mean the refusal is not attributable to this one.
 		if errors.Is(build.renderErr, renderer.ErrPipelinePatchPreAssembly()) {
 			t.Errorf("the halt also carries the no-merged-target condition; the refusal is not attributable: %+v",
@@ -837,7 +837,7 @@ func TestTheProviderCompatibilityRuleRefusesAnUndeclaredProvider(t *testing.T) {
 		positioned := map[string]int{}
 		for _, finding := range findings {
 			// Where an author fixes it: the authored step inside the entity that
-			// declares it, which is neither the Aggregate nor the deployment.
+			// declares it, which is neither the Aggregate nor the Release.
 			if finding.Source().File != recipe.Metadata.Name {
 				t.Errorf("finding positioned in %q; want the entity that declares the step, %q",
 					finding.Source().File, recipe.Metadata.Name)
@@ -887,7 +887,7 @@ func authoredOwnSteps(build stepBuild) []string {
 // The two facts the rule pairs are the step's declared scope, which is the
 // plugin's own self-report, and how the component's provider assembles a dispatch
 // group, which is the provider guest's own self-report. Both are read from the
-// build through the presentation the render published, and the deployment decides
+// build through the presentation the render published, and the Manifest decides
 // the second by binding a different Recipe — the merging provider in the refusal,
 // the non-merging one in the admission — so each direction is a compilation of
 // authored documents rather than a value chosen here.
@@ -961,7 +961,7 @@ func TestTheOwnScopeMergedTargetRuleRefusesAStepWithNoTarget(t *testing.T) {
 				stepIDs(steps), stepAttachmentStep)
 		}
 
-		// The half of the condition the deployment moves, and the half it does not.
+		// The half of the condition the build moves, and the half it does not.
 		// The component's provider merges; the attachment still renders through a
 		// provider its step plugin declares, which is what leaves the compatibility
 		// rule silent and this one the only rule that can raise.

@@ -11,7 +11,7 @@ import (
 // here because the condition it reports is registered here, and it reads the
 // flattened composition because that is the earliest presentation carrying both
 // authored targets keyed by the same connection: the one the drawing document
-// wrote, whichever surface that was, and the one the deployment's entry names.
+// wrote, whichever surface that was, and the one the Release's entry names.
 // The second of the two is complete a stage earlier and is answered here by the
 // presentation this one extends, so no later stage is needed to hold the pair.
 //
@@ -25,7 +25,7 @@ import (
 // 🔴 The presentation this rule declares and the suite that invokes it are one
 // stage apart, and that gap is deliberate rather than a mismatch to close. A
 // rule is walked over an axis, and the flattened composition enumerates
-// modules, nodes, node sockets and the components a deployment's boundaries
+// modules, nodes, node sockets and the components a Release's boundaries
 // name — it enumerates no connections at all. The finalised graph carries the
 // earliest connection enumeration, so that is where this rule is invoked from.
 // Moving the invocation to the stage the declaration names would leave nothing
@@ -33,23 +33,23 @@ import (
 // would claim the rule needs a later presentation than its facts do.
 
 // ReleaseKeepsTheDeclaredConnectionTarget reports each dependency connection
-// whose deployment entry names a target differing from the one the document that
+// whose Release entry names a target differing from the one the document that
 // drew the connection wrote.
 //
-// A deployment may configure a connection the application declared, and it may
+// A Release may configure a connection the Aggregate declared, and it may
 // wire one into a socket the architecture declared and left unbound; it may not
 // redirect a connection that already exists, because the architecture is the
-// application's to declare. An entry naming the same target, or naming none at
+// Aggregate's to declare. An entry naming the same target, or naming none at
 // all, is a configuration and ends this rule without an objection.
 //
 // It is invoked once per connection whichever surface drew it, so a connection a
 // component's own dependency block wrote, one an attachment projected and one
-// the deployment itself wired are all asked. A connection the deployment wired
+// the Release itself wired are all asked. A connection the Release wired
 // names its own target on both sides of the comparison and so never objects,
 // which is what keeps the rule about redirection rather than about authorship.
 //
 // The connection keeps the target its drawing document gave it whether or not
-// this rule objects: the pass that reads the deployment's edge surface leaves a
+// this rule objects: the pass that reads the Release's edge surface leaves a
 // conflicting entry's target and its infrastructure alone, so a redirection that
 // is refused is never half-applied.
 var ReleaseKeepsTheDeclaredConnectionTarget = constraint.Check[

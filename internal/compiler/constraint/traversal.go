@@ -1985,7 +1985,7 @@ func moduleAuthoredSegments(modulePath string) []string {
 // Unlike a component instance, a scope reached here always has an expressible
 // authored site, so this traversal carries no counterpart to the component
 // locator's synthesized-container rule. Normalization synthesizes a scope to hold
-// an application's top-level components and gives it no attachment surface of its
+// an Aggregate's top-level components and gives it no attachment surface of its
 // own, and the authoring surface declares attachments on a component or on a scope
 // and nowhere else — so every attachment this traversal reaches was written inside
 // a scope the author named.

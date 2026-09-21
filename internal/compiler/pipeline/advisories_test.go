@@ -73,7 +73,7 @@ const (
 //
 // The lint half is an unread parameter rather than a mis-spelled dependency
 // socket, and the choice is forced rather than stylistic: a socket needs a target,
-// this deployment places exactly one component in a boundary, and a second
+// this Release places exactly one component in a boundary, and a second
 // component authored to be the target is a component in no boundary — which halts
 // the run before static analysis and takes the other half of the proof with it.
 // An unread parameter needs nothing but its own declaration.

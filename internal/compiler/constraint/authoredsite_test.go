@@ -280,7 +280,7 @@ spec:
 		// which is not an omission but the authoring rule: the infra pillar is the
 		// operator's and this is the only surface whose attachment block admits
 		// one, while the values beside it are the developer's and are written in
-		// the application document above. One attachment, two pillars, two
+		// the Aggregate document above. One attachment, two pillars, two
 		// documents — which is what the pillar axis carries a file for.
 		"release-flat.yaml": `
 apiVersion: aggrega.ai/v1alpha1

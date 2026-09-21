@@ -14,7 +14,7 @@
 // The workspace, its writer and its positive control are shared with the
 // negative-authoring corpus beside this file. Each row renames the one component
 // on BOTH authoring surfaces, so the document stays internally consistent and the
-// halt is attributable to the identity rather than to a component the deployment
+// halt is attributable to the identity rather than to a component the Release
 // no longer places.
 package compiler_test
 
@@ -34,7 +34,7 @@ import (
 // that places it.
 //
 // Both surfaces are rewritten because a rename on one alone authors a component
-// the deployment does not place, which halts for a different reason entirely —
+// the Release does not place, which halts for a different reason entirely —
 // and a row failing on that would read exactly like a row failing on its own
 // fault.
 func renameCorpusComponent(wf *workspaceFiles, identity string) {
@@ -188,7 +188,7 @@ func TestComponentIdentityRefusal_HaltsOnAnIdentityThatCannotBeStamped(t *testin
 						i, row.wantMessage, rendered)
 				}
 
-				// The fault is a name the developer wrote in the application they
+				// The fault is a name the developer wrote in the Aggregate they
 				// authored, so the category has to send them there. Reporting it as a
 				// catalog fault would point them at a file holding nothing they can
 				// change.

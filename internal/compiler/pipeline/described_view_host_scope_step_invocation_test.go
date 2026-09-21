@@ -45,9 +45,9 @@ import (
 // component's Recipe has to declare that same provider for the build to be
 // admitted at all, which is what makes this workspace the one that can be asked.
 //
-// # Two deployments, and why each verdict is attributable
+// # Two builds, and why each verdict is attributable
 //
-// The workspace is compiled twice, under two deployments that differ in exactly
+// The workspace is compiled twice, under two Manifests that differ in exactly
 // one binding: which Recipe the host component binds, and therefore which
 // provider renders the host component's own documents. Nothing else moves — the
 // Aggregate, the attachment, its FeatureRecipe and the step's plugin are the same
@@ -67,23 +67,23 @@ import (
 // reason at all.
 //
 // A workspace whose two providers coincided would pass under both readings, and a
-// single deployment would leave one of the two directions unexercised.
+// single build would leave one of the two directions unexercised.
 const (
 	hostScopeAggregatePath = "../../../internal/compiler/testdata/host-patch-helmchart/aggregate.yaml"
 	hostScopeCatalogPath   = "../../../internal/compiler/testdata/host-patch-helmchart/catalog"
 
-	// The deployment whose host component renders through the provider the step
+	// The build whose host component renders through the provider the step
 	// plugin declares. Its build is admitted.
 	hostScopeChartManifestPath = "../../../internal/compiler/testdata/host-patch-helmchart/manifest.yaml"
 	hostScopeChartReleasePath  = "../../../internal/compiler/testdata/host-patch-helmchart/release.yaml"
 
-	// The deployment whose host component renders through a third provider the
+	// The build whose host component renders through a third provider the
 	// step's plugin does not declare. Its build halts, and the finding names that
 	// provider rather than the attachment's own.
 	hostScopeOtherManifestPath = "../../../internal/compiler/testdata/host-patch-helmchart/manifest-synthesized-host.yaml"
 	hostScopeOtherReleasePath  = "../../../internal/compiler/testdata/host-patch-helmchart/release-synthesized-host.yaml"
 
-	// The step plugin both deployments bind, and the artifact behind it. Its
+	// The step plugin both builds bind, and the artifact behind it. Its
 	// self-report declares the host document root and one compatible provider.
 	hostScopePluginURI      = "pipeline-step/host-patch:1.0.0"
 	hostScopePluginArtifact = "frp-step-host-patch-rust.wasm"
@@ -108,7 +108,7 @@ type hostScopeBuild struct {
 	axes         stepAxes
 }
 
-// buildHostScopeFixture compiles the host-patch workspace under one deployment
+// buildHostScopeFixture compiles the host-patch workspace under one Manifest and Release
 // and renders it the way the production spine renders: through the same hybrid
 // engine factory, with the plugin resolution wired, and with the enumeration the
 // finalised graph carries handed to the render.
@@ -153,7 +153,7 @@ func buildHostScopeFixture(t *testing.T, manifestPath, releasePath string) hostS
 	// The provider dispatch the build itself uses, rather than a stand-in. The
 	// host component here is rendered from chart source, so a stand-in engine
 	// would decide the outcome of the walk that follows the rules instead of the
-	// provider the deployment named.
+	// provider the bound Recipe names.
 	ctx := context.Background()
 	sharedLoader := wasm.NewCachingLoaderFromContext(ctx, wasm.ExternalInputsFromContext(ctx))
 	factory, providerVersion, closeEngines := enginefactory.NewHybrid(catalogLookup, lookup, sharedLoader)
@@ -365,7 +365,7 @@ func TestTheAttachmentPipelineStepRuleAdmitsAHostAddressedStepOnACompiledBuild(t
 //
 // # Why the finding is attributable, and why it is not the halt itself
 //
-// The step's plugin declares neither of this deployment's two providers, so BOTH
+// The step's plugin declares neither of this build's two providers, so BOTH
 // readings refuse it and the existence of a halt separates nothing. What separates
 // them is the provider the finding names. A reading matching the step against the
 // attachment's own provider names that one; this one names the host component's,

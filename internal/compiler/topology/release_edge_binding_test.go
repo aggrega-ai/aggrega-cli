@@ -609,7 +609,7 @@ spec:
 			release: releaseOnSocket("caches"),
 		},
 		// The required-socket rule is not in this table: it is declared over the
-		// composed application and invoked by the pass that reads this stage's
+		// composition and invoked by the pass that reads this stage's
 		// presentation, so a build alone does not report it. Both directions of
 		// it — a module leaving the socket unbound and a module binding it — are
 		// proved beside the declaration instead.

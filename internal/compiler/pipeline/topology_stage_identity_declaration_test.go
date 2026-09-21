@@ -27,7 +27,7 @@ import (
 // that size is a rewrite wearing a splice's name. It keeps the fixture's
 // component types, its module import and its dependency wiring, so every other
 // rule on the way sees exactly what the committed fixture gives them, and it
-// keeps the deployment's placement satisfied, which the placement rules ahead of
+// keeps the Release's placement satisfied, which the placement rules ahead of
 // this one require.
 
 // twoSubsystemsOneName declares `backend` in two subsystems. Both take the
@@ -78,7 +78,7 @@ spec:
 // It differs from the document above in the `legacy` subsystem and in nothing
 // else, which is what makes it a control for the duplicate name rather than for
 // the subsystem arrangement. Renaming the second declaration instead would leave
-// a component the deployment places nowhere, and the placement rule ahead of this
+// a component the Release places nowhere, and the placement rule ahead of this
 // one would halt on that — a different fault, proving nothing about this one.
 const twoSubsystemsDistinctNames = `apiVersion: aggrega.ai/v1alpha1
 kind: Aggregate
@@ -217,7 +217,7 @@ func TestTwoSubsystemsDeclaringOneNameHaltsTheBuild(t *testing.T) {
 		}
 	}
 	t.Logf("rendered finding: %s", rendered)
-	// The remedy is the deployment author's own document, so the category has to
+	// The remedy is the Aggregate author's own document, so the category has to
 	// send them there rather than to the catalog.
 	if got := reported[0].ToCompilerError().Category(); got != cerrors.DeveloperError {
 		t.Errorf("category = %v, want %v", got, cerrors.DeveloperError)

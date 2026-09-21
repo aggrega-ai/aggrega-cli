@@ -17,8 +17,8 @@ import (
 )
 
 // The proofs in this file cover the required uses-socket rule as the build
-// actually asks it: over the composed application, from the pass that holds that
-// composition, with a real catalog and a real deployment document.
+// actually asks it: over the composition, from the pass that holds that
+// composition, with a real catalog and a real Release document.
 //
 // The rule's own reading — which surfaces populate a socket, which do not, and
 // where the finding is positioned — is proved beside its declaration. What can
@@ -43,7 +43,7 @@ type catalogSplice struct {
 // socket on each application component type and no requirement anywhere, so a
 // requirement has to be written in for the rule to have anything to say.
 var (
-	// webUIRequiresItsSocket marks the socket the application's own document
+	// webUIRequiresItsSocket marks the socket the Aggregate's own document
 	// writes a connection on, so removing that connection is the whole edit a
 	// negative fixture needs.
 	webUIRequiresItsSocket = catalogSplice{
@@ -51,7 +51,7 @@ var (
 		anchor:      "  usesSchema:\n    apis:\n",
 		replacement: "  usesSchema:\n    apis:\n      required: true\n",
 	}
-	// webUIRequiresASecondSocket adds a second requirement the application
+	// webUIRequiresASecondSocket adds a second requirement the Aggregate
 	// cannot have satisfied, so one component offends twice.
 	webUIRequiresASecondSocket = catalogSplice{
 		file:   "base/components/web-ui.yaml",
@@ -71,7 +71,7 @@ var (
 	}
 )
 
-// The application's whole dependency block on the component whose type the
+// The Aggregate's whole dependency block on the component whose type the
 // splices above put a requirement on. It is quoted to the end of the document
 // because removing a prefix of it would orphan the keys nested under it.
 const frontendDependencyBlock = "      uses:\n        apis:\n          my-api:\n            target: backend\n" +
@@ -112,17 +112,17 @@ func splicedCatalog(t *testing.T, splices ...catalogSplice) string {
 }
 
 // compileAgainst drives the whole pre-render pipeline over the fixture
-// application, optionally with its dependency block removed, and hands back the
+// Aggregate, optionally with its dependency block removed, and hands back the
 // error instead of failing on it.
 func compileAgainst(t *testing.T, catalogPath string, dropTheDependencyBlock bool) error {
 	t.Helper()
 	aggregate, err := os.ReadFile(invocationAggregatePath)
 	if err != nil {
-		t.Fatalf("read the application document: %v", err)
+		t.Fatalf("read the Aggregate document: %v", err)
 	}
 	if dropTheDependencyBlock {
 		if !bytes.Contains(aggregate, []byte(frontendDependencyBlock)) {
-			t.Fatal("the application fixture no longer carries the dependency block these proofs remove; the edit would be silently inert")
+			t.Fatal("the Aggregate fixture no longer carries the dependency block these proofs remove; the edit would be silently inert")
 		}
 		aggregate = bytes.Replace(aggregate, []byte(frontendDependencyBlock), nil, 1)
 	}
@@ -130,18 +130,18 @@ func compileAgainst(t *testing.T, catalogPath string, dropTheDependencyBlock boo
 }
 
 // compileDocuments drives the whole pre-render pipeline over one catalog, one
-// deployment document and one application document, and hands back the error
+// Release document and one Aggregate document, and hands back the error
 // instead of failing on it.
 //
 // It is the one place a proof in this package compiles a document set, so a
-// proof that varies the deployment and one that varies the application drive the
+// proof that varies the Release and one that varies the Aggregate drive the
 // same path. A second assembly of these inputs would agree with this one until
 // one of them was edited, and nothing would compare them.
 func compileDocuments(t *testing.T, catalogPath, releasePath string, aggregate []byte) error {
 	t.Helper()
 	rel, err := resolver.LoadRelease(releasePath)
 	if err != nil {
-		t.Fatalf("load the deployment document: %v", err)
+		t.Fatalf("load the Release document: %v", err)
 	}
 	manifest, err := resolver.LoadManifest(invocationManifestPath)
 	if err != nil {
@@ -230,12 +230,12 @@ func TestTheRequiredSocketRuleIsInvokedByTheBuildAndHalts(t *testing.T) {
 // proof above is read against.
 //
 // Without it, a rule that refused every document would look like a success: the
-// only difference between the two is the one connection the application writes,
+// only difference between the two is the one connection the Aggregate writes,
 // and the requirement is declared identically in both.
 func TestTheRequiredSocketRuleAcceptsThePopulatedAggregate(t *testing.T) {
 	t.Parallel()
 	if err := compileAgainst(t, splicedCatalog(t, webUIRequiresItsSocket), false); err != nil {
-		t.Fatalf("an application that populates the required socket must build; got %v", err)
+		t.Fatalf("an Aggregate that populates the required socket must build; got %v", err)
 	}
 }
 
@@ -243,7 +243,7 @@ func TestTheRequiredSocketRuleAcceptsThePopulatedAggregate(t *testing.T) {
 // proof for the half of the composition no reading of the two authoring
 // documents can see.
 //
-// The offending component is declared inside the module the application imports,
+// The offending component is declared inside the module the Aggregate imports,
 // so its dependency block is not in either document the resolve holds. The
 // connection set the composition produced is what answers for it, and that set
 // exists only once the composition is flattened — which is why the rule sits

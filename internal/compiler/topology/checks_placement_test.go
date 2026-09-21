@@ -268,7 +268,7 @@ spec:
 // The first is that a module's placement covers what it contains: routing the
 // outer module places the inner module's components too, so neither module is
 // reported even though no entry anywhere names the inner one. Reporting it would
-// send an author to add a routing entry for a module the deployment has already
+// send an author to add a routing entry for a module the Release has already
 // placed.
 //
 // The second is how a nested module is named when nothing places it. The entry an
@@ -375,7 +375,7 @@ spec:
 			t.Fatalf("the halt must carry its violations; got %T", err)
 		}
 		// Both modules are reported: the inner one contributed the node, and the
-		// outer one contains it, so each is a module the deployment placed
+		// outer one contains it, so each is a module the Release placed
 		// nowhere and each is one an author can fix at its own key.
 		got := make([]string, 0, len(multi.Violations))
 		for _, v := range multi.Violations {
@@ -393,17 +393,17 @@ spec:
 // already reported.
 //
 // The case that separates a correct pair from a naive one is a module the
-// deployment placed nowhere: it is one authoring fault with one remedy at one
+// Release placed nowhere: it is one authoring fault with one remedy at one
 // key, and a component rule that did not pass a module's own components would
 // report it once for the module and again for every component the module
 // contributed. The first row pins that it is reported once.
 //
 // The second row is the ground the module rule does not cover at all — a
-// component of the application's own document, which belongs to no module and so
+// component of the Aggregate's own document, which belongs to no module and so
 // is reported by nothing until the component rule exists.
 //
 // The third row is the case the two rules divide between them and the exclusion
-// must not swallow: a module the deployment placed only in part. The module rule
+// must not swallow: a module the Release placed only in part. The module rule
 // reads such a module as placed and passes it by design, so the components it
 // left unnamed are the component rule's, and each is reported at its own key.
 // The exclusion is therefore keyed on the module being placed nowhere rather
@@ -424,7 +424,7 @@ spec:
 // Each row asserts the whole violation set rather than only that the named rule
 // is in it, and on the last two rows that is what carries the second half of the
 // claim: a set holding no `.spec.aggregates` locator is the evidence that the
-// module rule stayed silent on a module the deployment placed in part. The
+// module rule stayed silent on a module the Release placed in part. The
 // module rule's own silence cannot be observed any other way once a sibling
 // halts the build, so asserting the set is what keeps it observable.
 func TestPlacementRulesDivideTheGroundAndEachReportsOnce(t *testing.T) {
@@ -456,7 +456,7 @@ spec:
     store:
       type: app/db:1.0.0
 `
-	// No module at all: both components are the application's own, and the
+	// No module at all: both components are the Aggregate's own, and the
 	// boundary names one of them.
 	const rootWithOwnComponents = `apiVersion: aggrega.ai/v1alpha1
 kind: Aggregate
@@ -548,7 +548,7 @@ spec:
 			wantFields: []string{".spec.aggregates.mod"},
 		},
 		{
-			name:       "a component of the application's own document is reported once, by the component rule",
+			name:       "a component of the Aggregate's own document is reported once, by the component rule",
 			root:       rootWithOwnComponents,
 			release:    boundaryNamingOnlyTheConsumer,
 			sentinel:   ErrUnplacedComponent(),
@@ -612,7 +612,7 @@ spec:
 // disagree about the same node, and which of them the exclusion reads is the
 // whole question.
 //
-// The first row is the disagreement itself: the deployment names the outer
+// The first row is the disagreement itself: the Release names the outer
 // module's own component and nothing the inner one contributed. Reading the outer
 // key would report every component of the inner module, on top of the one report
 // the module rule already makes at the inner module's key — the many-reports-for-
@@ -641,7 +641,7 @@ spec:
       type: ./outer.yaml
 `
 	// The outer module carries a component of its own as well as the nested
-	// module, so the deployment can place the outer module without placing
+	// module, so the Release can place the outer module without placing
 	// anything the inner one contributed.
 	const outerModule = `apiVersion: aggrega.ai/v1alpha1
 kind: Aggregate
@@ -788,11 +788,11 @@ spec:
 // routing entry naming a component the module does declare must pass for the same
 // reason one coordinate in: the local name is resolved through the module's prefix
 // before it is compared, and a rule comparing the local name against the flattened
-// set would refuse every module-routed deployment that names components.
+// set would refuse every module-routed Release that names components.
 //
 // The last row is the shape a stricter rule would wrongly halt. A component
 // switched off by a false activation toggle is declared and deliberately removed,
-// and the deployment that configures it is not rewritten in the same edit.
+// and the Release that configures it is not rewritten in the same edit.
 func TestBoundaryComponentResolutionReadsBothAxesAndNotTheSpelling(t *testing.T) {
 	t.Parallel()
 
@@ -983,7 +983,7 @@ spec:
 // and what it asked the composition for.
 //
 // The two halves are separately assertable because they are separately losable. A
-// finding carrying the id and no position leaves an author searching a deployment
+// finding carrying the id and no position leaves an author searching a Release
 // document for a key; a finding carrying a position and no id leaves them at the
 // right block without the value to compare against the composition — and on the
 // routed axis the id is not the name the file spells, so the position alone
@@ -1067,7 +1067,7 @@ spec:
             store: {}
             reader: {}
 `
-	// The deployment writes its entries at its own top level, which normalization
+	// The Release writes its entries at its own top level, which normalization
 	// folds into a boundary the author never wrote. The locator has to name the
 	// site the author did write.
 	const topLevelEntries = `apiVersion: aggrega.ai/v1alpha1

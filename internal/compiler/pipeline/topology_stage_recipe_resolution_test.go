@@ -22,7 +22,7 @@ import (
 // documents rather than of an assertion.
 //
 // The fixture is what makes the coverage question answerable at all. Its
-// application declares two components of its own AND imports a module that
+// Aggregate declares two components of its own AND imports a module that
 // declares a third, so the composition holds three nodes of two provenances: a
 // component the author wrote in the document under compilation, and a component
 // that exists only once the module's own document has been read. A rule asked
@@ -177,7 +177,7 @@ func describeWithManifest(t *testing.T, aggregate, manifest string) (*Tier4Resul
 	)
 }
 
-// fixtureAggregate is the committed application document, read rather than
+// fixtureAggregate is the committed Aggregate document, read rather than
 // restated so a proof cannot drift from the composition the rest of this package
 // compiles.
 func fixtureAggregate(t *testing.T) string {
@@ -213,7 +213,7 @@ func violationsCarrying(t *testing.T, err error, condition error) []*resolver.Re
 // mapping for that class's own component type and leaving every other entry in
 // place. The module-contributed case is the one that cannot be proved anywhere
 // earlier: the component it names exists only once the module's own document has
-// been read, so a rule asked over the application's own instance list is never
+// been read, so a rule asked over the Aggregate's own instance list is never
 // invoked for it and reports success while never looking.
 func TestUnmappedComponentHaltsForEachNodeClassTheCompositionCarries(t *testing.T) {
 	t.Parallel()
@@ -225,7 +225,7 @@ func TestUnmappedComponentHaltsForEachNodeClassTheCompositionCarries(t *testing.
 		wantLocator   string
 	}{
 		{
-			name:          "a component the application itself declares",
+			name:          "a component the Aggregate itself declares",
 			componentType: fixturePlainNodeType,
 			wantNode:      fixturePlainNodeID,
 			wantLocator:   ".spec.components.backend",
@@ -318,7 +318,7 @@ func TestAnUnmappedComponentIsCarriedByARunThatOnlyDescribes(t *testing.T) {
 		wantNode      string
 	}{
 		{
-			name:          "a component the application itself declares",
+			name:          "a component the Aggregate itself declares",
 			componentType: fixturePlainNodeType,
 			wantNode:      fixturePlainNodeID,
 		},
@@ -416,7 +416,7 @@ func TestMappedToAnAbsentRecipeHaltsNamingTheMappingValue(t *testing.T) {
 	}
 }
 
-// aggregateWithPinnedBackendType is the committed application with the one
+// aggregateWithPinnedBackendType is the committed Aggregate with the one
 // component type this file doubles a mapping key for written at an exact version.
 //
 // It differs from the committed document in that one type reference and in

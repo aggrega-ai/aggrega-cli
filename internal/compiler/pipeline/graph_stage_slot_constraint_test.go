@@ -33,13 +33,13 @@ import (
 // # Why this rule's fixture is spliced on two surfaces rather than one
 //
 // A slot's constraint is declared on the component catalog entity and the fill
-// that fails it is declared in the application, so making the rule raise needs
+// that fails it is declared in the Aggregate, so making the rule raise needs
 // both. No committed workspace declares a slot carrying a `selector` at all, so
 // a proof compiling one unspliced would exercise a rule that ends on its first
 // condition for every subject — which reports exactly what a satisfied rule
 // reports. The catalog half is written into a temporary copy so the committed
 // fixture keeps producing what every other proof over it expects, and the
-// application half is spliced in memory for the same reason.
+// Aggregate half is spliced in memory for the same reason.
 
 // slotName is the attachment slot the splices below declare and fill. It is a
 // name no committed entity uses, so a fixture that stopped carrying the splice
@@ -52,7 +52,7 @@ const slotName = "audit"
 const slotFillType = "core/proof-injector"
 
 // catalogDeclaringSlots copies the fixture catalog into a temporary tree and
-// gives the two component types the application's own components are declared
+// gives the two component types the Aggregate's own components are declared
 // with the supplied attachment-slot schema.
 //
 // Two entities rather than one, and that is what every enumeration and
@@ -129,7 +129,7 @@ func catalogWithASlotConstraint(t *testing.T, declaration string) string {
 	return root
 }
 
-// fillBothSlots binds the declared slot on both of the application's own
+// fillBothSlots binds the declared slot on both of the Aggregate's own
 // components.
 //
 // Two fills rather than one, because a proof that the rule reports every
@@ -384,7 +384,7 @@ func TestTheSlotFillRuleIsInvokedOncePerSlotAComponentTypeDeclares(t *testing.T)
 // ends on the unbound case without raising — which makes its silence there a
 // decision rather than an omission.
 func TestTheSlotFillRuleIsAskedAboutASlotNothingBinds(t *testing.T) {
-	// The unspliced application binds nothing under the declared slot name.
+	// The unspliced Aggregate binds nothing under the declared slot name.
 	out, catalogLookup := compileSlotWorkspace(t, offendedSlotConstraint, readAggregate(t))
 	coordinates := coordinatesOf(t, out, catalogLookup)
 

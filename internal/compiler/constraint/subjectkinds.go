@@ -2527,7 +2527,7 @@ func newBoundaryAttachmentArtifactSubject(
 //
 // Its provenance is the document that DECLARES the module, which is the parent's
 // document rather than the module's own: the root Aggregate for a module the
-// application imports directly, and the importing module's document for one
+// Aggregate imports directly, and the importing module's document for one
 // nested inside it. That is where the entry a rule would send an author to fix
 // actually sits.
 type ModuleSubject interface {

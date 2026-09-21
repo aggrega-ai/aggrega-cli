@@ -384,7 +384,7 @@ func (c *GraphStageCoordinates) AttachmentPillarLeaves(
 // It reads the block the finalised graph carries for the node, which is what
 // keys this axis where the facts a rule over it reads are keyed. The equivalent
 // fact belongs to an earlier stage and is answered from the documents that stage
-// holds — the application's own instances — so it holds no entry for a component
+// holds — the Aggregate's own instances — so it holds no entry for a component
 // a sub-aggregate contributed, whose identity here carries the contributing
 // module's prefix. An axis delegating to it would present a rule no subject at
 // all for such a node, and a rule invoked zero times reports exactly what a rule

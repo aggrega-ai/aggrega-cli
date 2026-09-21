@@ -144,7 +144,7 @@ func TestCloudFormationDerivedIDCollision_HaltsNamingEveryInstanceThatMet(t *tes
 			len(findings), len(cfnDerivedIDCollidingInstances()), whole)
 	}
 
-	// Every colliding instance is named, as the deployment document spells it.
+	// Every colliding instance is named, as the Aggregate document spells it.
 	for _, instance := range cfnDerivedIDCollidingInstances() {
 		if !strings.Contains(whole, `"`+instance+`"`) {
 			t.Errorf("the halt does not name the instance %q, so an author cannot tell it is one of the names to change:\n%s",

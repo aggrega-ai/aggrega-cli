@@ -280,7 +280,7 @@ func findEdge(edges []NormalizedEdge, source, socket, alias string) *NormalizedE
 // map onto the produced edge.
 //
 // It also pins the other half of the split — the edge's Infra stays empty
-// with no Release in play. Per-connection infra is the deployment's surface,
+// with no Release in play. Per-connection infra is the Release's surface,
 // so a build driven by the Aggregate alone contributes none, and the edge
 // arrives at the conformance gate with nothing to measure. The companion
 // Release-side test beside this one supplies that half.

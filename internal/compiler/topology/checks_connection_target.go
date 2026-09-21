@@ -35,7 +35,7 @@ import (
 //
 // It is invoked once per connection whichever surface drew it, so a connection a
 // component's own dependency block wrote, one an attachment projected and one the
-// deployment wired are all asked. That breadth is the rule's point: a target that
+// Release wired are all asked. That breadth is the rule's point: a target that
 // answers to nothing leaves the consumer's delivery silently empty, and which
 // document drew the connection changes nothing about that.
 //

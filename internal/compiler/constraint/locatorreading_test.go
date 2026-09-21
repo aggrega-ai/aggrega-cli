@@ -326,10 +326,10 @@ var (
 )
 
 // TestAComposedComponentKeyLeavesTheLocatorAtTheBlock is the third axis, and the
-// one an ordinary deployment reaches rather than a contrived one.
+// one an ordinary Release reaches rather than a contrived one.
 //
-// A deployment addresses a component a composition contributed by the qualified
-// identifier the composition gave it, and the deployment's own component key
+// A Release addresses a component a composition contributed by the qualified
+// identifier the composition gave it, and the Release's own component key
 // admits that spelling. So the key carries the dialect's separator as ONE
 // authored key, which the dialect cannot address: the locator stops at the
 // components block and gives up the component AND everything written under it —
@@ -358,9 +358,9 @@ func TestAComposedComponentKeyLeavesTheLocatorAtTheBlock(t *testing.T) {
 		wantLost    []string
 	}{
 		{
-			// The shape that loses coordinates. The deployment's key is the
+			// The shape that loses coordinates. The Release's key is the
 			// qualified identifier, so the locator stops four segments in.
-			name: "a deployment keying a composed component under a boundary",
+			name: "a Release keying a composed component under a boundary",
 			fixture: attachmentLeafFixture(composedNode, authoredKeyInfra, "region",
 				"releases/prod.yaml", AuthoredSite{ScopePath: "prod", Component: "billing.api"}),
 			wantLocator: ".spec.boundaries.prod.components",

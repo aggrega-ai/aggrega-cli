@@ -82,7 +82,7 @@ spec:
 
 // dictatingCorpusRelease places BOTH components the dictating Aggregate declares.
 //
-// The base Release names only `api`, and a component the deployment places in no
+// The base Release names only `api`, and a component the Release places in no
 // boundary is refused during topology construction — ahead of the edge pass whose
 // verdict the rows below exist to pin. A row pairing the dictating Aggregate with
 // the base Release would therefore carry a second, incidental fault and would
@@ -332,7 +332,7 @@ spec:
 		// The subsystem's `worker` is deliberately left out of the Release's
 		// boundary. This document is rejected as it loads, so no topology is ever
 		// built from it and no rule over a component's placement is ever asked
-		// about it; naming `worker` in a boundary would assert a deployment for a
+		// about it; naming `worker` in a boundary would assert a Release for a
 		// reading of the document the product never forms.
 		{name: "aggregate-components-and-subsystems-both", want: envelope.ErrEntityEnvelope(), mutate: func(wf *workspaceFiles) {
 			wf.aggregate = `apiVersion: aggrega.ai/v1alpha1

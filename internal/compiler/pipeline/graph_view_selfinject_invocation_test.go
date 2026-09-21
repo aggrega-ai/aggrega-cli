@@ -94,7 +94,7 @@ const (
 // The axes read the injection block the finalised graph carries for a node,
 // keyed by the identity that graph gives it. That is the whole reason they exist
 // rather than delegating to the fact naming the same keys: the fact belongs to a
-// stage whose presentation is built from the application's own documents, so it
+// stage whose presentation is built from the Aggregate's own documents, so it
 // answers emptily for a component a sub-aggregate contributed — and an axis
 // answering emptily presents a rule no subject at all, which reads exactly like a
 // rule that ran and approved.

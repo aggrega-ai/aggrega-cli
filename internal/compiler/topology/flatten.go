@@ -82,7 +82,7 @@ type flattenResult struct {
 // declared it.
 //
 // The declaring document is the IMPORTING one — the root Aggregate for a module
-// the application imports directly, the importing module's own document for one
+// the Aggregate imports directly, the importing module's own document for one
 // nested inside it — because that is where the `aggregates` entry a diagnostic
 // would point an author at actually sits. The module's own document declares its
 // contents and never its import.

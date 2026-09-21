@@ -28,7 +28,7 @@ import (
 // enumeration a test assembles proves the test's account of the graph rather
 // than the compiler's.
 //
-// # Why the fixture is spliced on the catalog rather than in the application
+// # Why the fixture is spliced on the catalog rather than in the Aggregate
 //
 // A presence mandate is an annotation on the component catalog entity, and no
 // committed workspace this package compiles declares one. A proof compiling one
@@ -47,7 +47,7 @@ const (
 )
 
 // catalogDeclaringMandates copies the fixture catalog into a temporary tree and
-// gives the two component types the application's own components are declared
+// gives the two component types the Aggregate's own components are declared
 // with the supplied metadata.annotations body.
 //
 // Two entities rather than one, and both enumeration proofs below rest on it: a
@@ -110,7 +110,7 @@ func compileMandateWorkspace(
 const unsatisfiedMandate = "    " + mandateKey + ": " + mandateType + "\n"
 
 // attachTheDemandedType attaches the demanded Feature type on both of the
-// application's own components, under a name no slot declares — which is the
+// Aggregate's own components, under a name no slot declares — which is the
 // case a presence mandate exists for, since it asks about a type under any name.
 func attachTheDemandedType(t *testing.T, aggregate []byte) []byte {
 	t.Helper()

@@ -121,7 +121,7 @@ func misdirectTheDatabaseSocket(t *testing.T, aggregate []byte) []byte {
 // only its own stage, or answered emptily, could not produce the finding below.
 //
 // The subject is an edge whose target is a component a module contributed. That
-// is deliberate: the earlier stage's fact over the application's own instance
+// is deliberate: the earlier stage's fact over the Aggregate's own instance
 // list cannot see such a component, so the finding is evidence that the
 // delegation reaches the right producer rather than the nearest one.
 func TestGraphPresentationAnswersARuleFromTheCompiledGraph(t *testing.T) {

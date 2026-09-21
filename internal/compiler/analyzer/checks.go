@@ -28,11 +28,11 @@ import (
 //
 // Where a rule here needs the component type of a node, it reads the type the
 // node carries in the flattened set rather than the type an instance declares
-// in the application's own list. The two answer differently for a component a
+// in the Aggregate's own list. The two answer differently for a component a
 // sub-aggregate contributes: that component is declared in the sub-aggregate's
-// own document, so a rule reading the application's instance list alone finds
+// own document, so a rule reading the Aggregate's instance list alone finds
 // no instance of that name and then declines to judge it. The flattened set is
-// read uniformly and deliberately without a fallback — a node the application
+// read uniformly and deliberately without a fallback — a node the Aggregate
 // declared directly and a node a composition contributed carry their type the
 // same way there, so one read serves both and there is no second path that
 // could drift from the first.
@@ -270,7 +270,7 @@ var SlotFillSatisfiesSlotSelector = constraint.Check[
 // name's resolved type, which is why the rule cannot be answered from the
 // authored block alone. An attachment contributed at a scope the node inherits
 // from binds a name on every node beneath that scope, so the authored block is
-// empty for exactly those deployments that rely on sharing.
+// empty for exactly those builds that rely on sharing.
 //
 // A mandate whose declaration cannot be evaluated is skipped here rather than
 // counted as unsatisfied, and it is reported by
@@ -476,7 +476,7 @@ var ComponentIdentityIsUsable = constraint.Check[
 // is what makes the rule honest rather than a convenience: an attachment
 // contributed once at a scope the node inherits from binds the slot for every
 // component beneath that scope, so a rule over the authored block would reject
-// exactly the deployment shape that relies on sharing. One entity therefore
+// exactly the build shape that relies on sharing. One entity therefore
 // serves both the per-consumer fill and the shared attachment, and the
 // requirement holds for both.
 //
@@ -543,8 +543,8 @@ var RequiredAttachmentSlotBound = constraint.Check[
 // as a row of quoted strings with nothing saying which is which.
 //
 // The coordinates are there because a locator cannot always carry them. A
-// deployment addresses a component a composition contributed by the qualified
-// identifier the composition gave it, and a deployment's attachment names admit
+// Release addresses a component a composition contributed by the qualified
+// identifier the composition gave it, and a Release's attachment names admit
 // the separator the locator dialect divides its segments with — so on those
 // surfaces the position stops at the block above the offending key and gives up
 // everything written under it at once. Naming what it gave up is what turns a
@@ -564,7 +564,7 @@ var RequiredAttachmentSlotBound = constraint.Check[
 // keeps a scope-wide finding from acquiring a component it never had.
 //
 // With that fact read, the finding names every coordinate a position can give up.
-// A deployment's boundary names and an application's scope and component names
+// A Release's boundary names and an Aggregate's scope and component names
 // admit no separator, so a position truncated at all is truncated at the
 // components block or at the attachments block, and the component, the
 // attachment, the pillar and the key are exactly what lies below those two. So

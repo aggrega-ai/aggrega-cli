@@ -14,21 +14,21 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 )
 
-// The proofs in this file pin WHICH diagnostic a component the deployment placed
+// The proofs in this file pin WHICH diagnostic a component the Release placed
 // in no boundary receives, against a component type whose sizing contract
 // declares a required key.
 //
 // Two rules can speak about that document and only one of them is useful to its
 // author. The sizing contract is measured before the composition is flattened,
-// and the sizing a deployment never wrote is empty — the same empty a deployment
+// and the sizing a Release never wrote is empty — the same empty a Release
 // that placed the component and wrote no sizing produces. A rule reading that
 // content alone cannot tell the two apart, so it would report a missing sizing
-// key for a component the deployment never placed and stop the build before the
+// key for a component the Release never placed and stop the build before the
 // placement rule was ever asked. The author would then be told to add a key
 // under an entry that is not there.
 //
 // What decides it is authorship: the sizing rule measures the components the
-// deployment wrote entries against, and a component it wrote no entry against is
+// Release wrote entries against, and a component it wrote no entry against is
 // the placement rule's to report. The proofs below fix that from the outside, at
 // the halt a build actually produces, because the two rules sit at different
 // stages and no test inside either package can see which one speaks first.
@@ -42,9 +42,9 @@ var webUIRequiresASizingKey = catalogSplice{
 	replacement: "  schema:\n    infra:\n      region: { type: string, required: true }\n",
 }
 
-// The deployment's whole boundary block for the component under proof, quoted as
+// The Release's whole boundary block for the component under proof, quoted as
 // the fixture writes it. It is replaced wholesale per row: the component is
-// declared by the application and placed only here, so removing this block is
+// declared by the Aggregate and placed only here, so removing this block is
 // what leaves it placed nowhere.
 const frontendBoundaryBlock = `    frontend-ns:
       directory: ./dist/frontend
@@ -93,7 +93,7 @@ const frontendPlacedWithTheKey = `    frontend-ns:
                 target_var: "API_HOST"
 `
 
-// releaseWithBoundary writes the fixture deployment document with its boundary
+// releaseWithBoundary writes the fixture Release document with its boundary
 // block replaced, and returns the path to the copy. An empty replacement leaves
 // the component placed in no boundary.
 //
@@ -104,15 +104,15 @@ func releaseWithBoundary(t *testing.T, boundary string) string {
 	t.Helper()
 	source, err := os.ReadFile(invocationReleasePath)
 	if err != nil {
-		t.Fatalf("read the deployment document: %v", err)
+		t.Fatalf("read the Release document: %v", err)
 	}
 	if !bytes.Contains(source, []byte(frontendBoundaryBlock)) {
-		t.Fatal("the deployment fixture no longer carries the boundary block these proofs replace; the edit would be silently inert")
+		t.Fatal("the Release fixture no longer carries the boundary block these proofs replace; the edit would be silently inert")
 	}
 	out := bytes.Replace(source, []byte(frontendBoundaryBlock), []byte(boundary), 1)
 	path := filepath.Join(t.TempDir(), "release.yaml")
 	if err := os.WriteFile(path, out, 0o600); err != nil {
-		t.Fatalf("write the edited deployment document: %v", err)
+		t.Fatalf("write the edited Release document: %v", err)
 	}
 	return path
 }
@@ -170,7 +170,7 @@ func TestAComponentPlacedNowhereIsReportedByThePlacementRule(t *testing.T) {
 			}
 			aggregate, err := os.ReadFile(invocationAggregatePath)
 			if err != nil {
-				t.Fatalf("read the application document: %v", err)
+				t.Fatalf("read the Aggregate document: %v", err)
 			}
 			halt := compileDocuments(t,
 				splicedCatalog(t, splices...), releaseWithBoundary(t, ""), aggregate)
@@ -178,7 +178,7 @@ func TestAComponentPlacedNowhereIsReportedByThePlacementRule(t *testing.T) {
 			finding := soleViolation(t, halt, topology.ErrUnplacedComponent())
 			const wantField = ".spec.components.frontend"
 			if finding.Field != wantField {
-				t.Errorf("the finding must position at the component the deployment has to place, %q; got %q",
+				t.Errorf("the finding must position at the component the Release has to place, %q; got %q",
 					wantField, finding.Field)
 			}
 			// The remedy is the whole point: the author is told which key to
@@ -197,7 +197,7 @@ func TestAComponentPlacedNowhereIsReportedByThePlacementRule(t *testing.T) {
 // half, and it is what keeps the proof above from being satisfied by a rule that
 // reports nothing.
 //
-// A deployment that places the component and writes no sizing block at all is the
+// A Release that places the component and writes no sizing block at all is the
 // input a required sizing key is declared for, and it must still halt on the
 // contract rather than build.
 func TestARequiredSizingKeyIsMeasuredForAComponentTheReleasePlaced(t *testing.T) {
@@ -205,7 +205,7 @@ func TestARequiredSizingKeyIsMeasuredForAComponentTheReleasePlaced(t *testing.T)
 
 	aggregate, err := os.ReadFile(invocationAggregatePath)
 	if err != nil {
-		t.Fatalf("read the application document: %v", err)
+		t.Fatalf("read the Aggregate document: %v", err)
 	}
 	halt := compileDocuments(t,
 		splicedCatalog(t, webUIRequiresASizingKey),
@@ -215,7 +215,7 @@ func TestARequiredSizingKeyIsMeasuredForAComponentTheReleasePlaced(t *testing.T)
 	finding := soleViolation(t, halt, resolver.ErrSchemaConformance())
 	const wantField = ".spec.components.frontend.infra.region"
 	if finding.Field != wantField {
-		t.Errorf("the finding must position at the sizing key the deployment has to write, %q; got %q",
+		t.Errorf("the finding must position at the sizing key the Release has to write, %q; got %q",
 			wantField, finding.Field)
 	}
 }
@@ -225,19 +225,19 @@ func TestARequiredSizingKeyIsMeasuredForAComponentTheReleasePlaced(t *testing.T)
 //
 // Without it, a pipeline that refused every one of these documents would look
 // like two successes: the only difference between this row and the one beside it
-// is the single key the deployment writes, and the contract is declared
+// is the single key the Release writes, and the contract is declared
 // identically in both.
 func TestAReleaseWritingTheRequiredSizingKeyBuilds(t *testing.T) {
 	t.Parallel()
 
 	aggregate, err := os.ReadFile(invocationAggregatePath)
 	if err != nil {
-		t.Fatalf("read the application document: %v", err)
+		t.Fatalf("read the Aggregate document: %v", err)
 	}
 	if err := compileDocuments(t,
 		splicedCatalog(t, webUIRequiresASizingKey),
 		releaseWithBoundary(t, frontendPlacedWithTheKey),
 		aggregate); err != nil {
-		t.Fatalf("a deployment writing the required sizing key must build; got %v", err)
+		t.Fatalf("a Release writing the required sizing key must build; got %v", err)
 	}
 }

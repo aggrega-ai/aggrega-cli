@@ -232,7 +232,7 @@ func TestCloudFormationAuthoredExport_NameCollidingWithNothingShips(t *testing.T
 //
 // The two are chosen to sit as close to the derived name as a different string
 // can. One is in the derived shape and names the database's `port` provides key,
-// which no uses-edge injects across a boundary in this deployment — so no export
+// which no uses-edge injects across a boundary in this build — so no export
 // is derived for it. That is the case a comparison built from a component's
 // declared provides keys rather than from the keys an edge actually injects
 // would refuse, and refusing it would reject a name that meets nothing in this

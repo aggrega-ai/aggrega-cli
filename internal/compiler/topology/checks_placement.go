@@ -14,7 +14,7 @@ import (
 // components no boundary holds.
 //
 // A boundary holds a component two ways and the rule reads both, because either
-// one places it: the deployment names the component under the id it carries once
+// one places it: the Release names the component under the id it carries once
 // the composition is flattened, or it routes the module in and places every
 // component that module contains. The rule therefore fires on placement rather
 // than on a spelling — a module whose components are all named individually is
@@ -29,7 +29,7 @@ import (
 // A module contributing no component passes: there is nothing to place, and a
 // module a false activation toggle removed contributed nothing because it was
 // never composed. A module whose components are only partly placed passes too —
-// the deployment placed it, and which of its components carry their own entries
+// the Release placed it, and which of its components carry their own entries
 // is a separate question this rule does not ask.
 //
 // The detail is the module's dotted prefix.
@@ -66,9 +66,9 @@ var subModuleIsPlaced = constraint.Check[
 // routing its module are both placed, and the fact it reads has already
 // reconciled the two. So the rule fires only on a component nothing placed by
 // either route, which is the one shape that renders outside every boundary the
-// deployment declared.
+// Release declared.
 //
-// It passes a component of a sub-module the deployment placed nowhere, and that
+// It passes a component of a sub-module the Release placed nowhere, and that
 // exclusion is what keeps it off the ground the module rule owns. Such a module
 // is one authoring fault with one remedy at one key, and the module rule reports
 // it once there; reporting it again per component would report one fault many
@@ -76,12 +76,12 @@ var subModuleIsPlaced = constraint.Check[
 //
 // The exclusion is narrow rather than total, and the difference is a whole case
 // that would otherwise reach a reader from nothing at all. A module the
-// deployment placed only in part is placed, so the module rule passes it by
-// design; the components of it the deployment did not name are then this rule's,
+// Release placed only in part is placed, so the module rule passes it by
+// design; the components of it the Release did not name are then this rule's,
 // and each is reported at its own key. An exclusion keyed on "some module
 // contributed this" rather than on "no boundary placed that module" would pass
 // those components too, and they would render outside every boundary the
-// deployment declared with nothing saying so — which is the silent build both
+// Release declared with nothing saying so — which is the silent build both
 // rules exist to end. Dropping the exclusion outright would trade that gap for
 // the noise it was written to prevent, so it is narrowed and not removed.
 //
@@ -162,7 +162,7 @@ var componentIsPlaced = constraint.Check[
 //
 // It runs where it does because this is the earliest point holding all of the
 // rule's evidence: the module set exists once the composition is flattened, and a
-// node's placement is written after that, from the deployment's own two axes and
+// node's placement is written after that, from the Release's own two axes and
 // from the placement a routed module confers. Asked earlier, the rule would read
 // an unwritten placement and report every module as unplaced.
 //
@@ -170,8 +170,8 @@ var componentIsPlaced = constraint.Check[
 // resolve's callers goes through, so this rule's output is shaped like theirs
 // rather than like a second opinion about what a diagnostic is.
 //
-// A build holding no deployment document asks nothing. The rule is about what the
-// deployment placed, and a build without one declares no boundary at all, so
+// A build holding no Release document asks nothing. The rule is about what the
+// Release placed, and a build without one declares no boundary at all, so
 // every module would be reported for the absence of a document the caller never
 // supplied.
 func guardSubModulePlacement(
@@ -195,7 +195,7 @@ func guardSubModulePlacement(
 // composition holds.
 //
 // It runs where its sibling does, and for the same reason: a node's placement is
-// written from the deployment's own two axes and from the placement a routed
+// written from the Release's own two axes and from the placement a routed
 // module confers, and the second of those is written only once the composition is
 // flattened, because a module's routing entry names no components until its
 // document is loaded. Asked earlier, the rule would read a placement the build
@@ -211,7 +211,7 @@ func guardSubModulePlacement(
 // resolve's callers goes through, so this rule's output is shaped like its
 // sibling's rather than like a second opinion about what a diagnostic is.
 //
-// A build holding no deployment document asks nothing, for its sibling's reason:
+// A build holding no Release document asks nothing, for its sibling's reason:
 // a build without one declares no boundary at all, so every component would be
 // reported for the absence of a document the caller never supplied.
 func guardComponentPlacement(
@@ -231,14 +231,14 @@ func guardComponentPlacement(
 		objections, releaseEntityName(cfg.ResolveResult.Release)), nil
 }
 
-// boundaryComponentResolves reports each component entry the deployment's
+// boundaryComponentResolves reports each component entry the Release's
 // boundaries declare that addresses nothing the composition holds.
 //
 // It is the over-naming counterpart of the two rules above and is a separate rule
 // rather than a branch of either, because it asks a different question of a
 // different subject. Those ask of a component the composition holds whether
-// anything placed it; this asks of an entry the deployment wrote whether anything
-// answers to it. Neither implies the other: a deployment can name a component that
+// anything placed it; this asks of an entry the Release wrote whether anything
+// answers to it. Neither implies the other: a Release can name a component that
 // does not exist while every component that does exist is properly placed, and it
 // can leave a real component unplaced while every entry it wrote resolves.
 //
@@ -254,9 +254,9 @@ func guardComponentPlacement(
 // once and neither axis can be quietly left out.
 //
 // A component the composition removed because its activation toggle read false
-// passes. Switching a component off is an authoring act, and the deployment that
+// passes. Switching a component off is an authoring act, and the Release that
 // configures it is not expected to be rewritten in the same edit — so refusing
-// the entry would make the toggle unusable while any deployment named the
+// the entry would make the toggle unusable while any Release named the
 // component. The two questions are asked of two facts, because the fact naming a
 // flattened node's type reports membership and declines to say why a name is
 // absent.
@@ -289,7 +289,7 @@ var boundaryComponentResolves = constraint.Check[
 }
 
 // guardBoundaryComponentResolution asks the resolution rule of every component
-// entry the deployment's boundaries declare.
+// entry the Release's boundaries declare.
 //
 // It runs where the placement rules beside it run, and for a related but distinct
 // reason: those need a node's placement, which is written once the composition is
@@ -302,7 +302,7 @@ var boundaryComponentResolves = constraint.Check[
 // resolve's callers goes through, so this rule's output is shaped like its
 // neighbours' rather than like a second opinion about what a diagnostic is.
 //
-// A build holding no deployment document asks nothing, for its neighbours'
+// A build holding no Release document asks nothing, for its neighbours'
 // reason: a build without one declares no boundary and therefore no entry, so
 // there is nothing to resolve.
 func guardBoundaryComponentResolution(

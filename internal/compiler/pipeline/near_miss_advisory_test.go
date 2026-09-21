@@ -38,7 +38,7 @@ import (
 // spelled as the edit that produces it.
 type nearMissProbe struct {
 	name string
-	// splice rewrites the application document's bytes in memory. The fixture on
+	// splice rewrites the Aggregate document's bytes in memory. The fixture on
 	// disk is shared with other proofs and must keep producing what they expect.
 	splice func(*testing.T, []byte) []byte
 	// decorate adjusts what the catalog declares, for a reading whose near miss

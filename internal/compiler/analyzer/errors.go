@@ -68,7 +68,7 @@ var errSlotSelectorUnsatisfied = cerrors.Register("slot-selector-unsatisfied", c
 // through the framework over the presentation of the finalised graph. The
 // stage is what makes the rule honest: an attachment contributed at a
 // subsystem, boundary or Release scope binds the slot for every component
-// under that scope, so a slot is satisfied whether the deployment fills it
+// under that scope, so a slot is satisfied whether an author fills it
 // per-consumer or attaches once at a scope the consumers share. Only the
 // post-cascade set can see both shapes, and the check is a name-presence
 // test over it — it never inspects what the fill means.

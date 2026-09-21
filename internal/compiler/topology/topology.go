@@ -850,7 +850,7 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 		}
 
 		// The same relation read from its other end, asked of every component
-		// entry the deployment wrote: those two ask whether anything placed a
+		// entry the Release wrote: those two ask whether anything placed a
 		// component, this asks whether anything answers to an entry. It reads the
 		// flattened node set, so it could not be asked before the composition was
 		// flattened either.
@@ -928,8 +928,8 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 // of a check depend on how deep the author nested the component.
 //
 // Both component pillars are asked, and each names the document whose author
-// wrote it: the application for the configuration a component declares, the
-// deployment for the physical sizing placed against it. Asking one and not the
+// wrote it: the Aggregate for the configuration a component declares, the
+// Release for the physical sizing placed against it. Asking one and not the
 // other would make which half of a component type's contract binds depend on how
 // deep the author nested the component, which is the same coverage-by-nesting
 // the paragraph above rules out.
@@ -1035,12 +1035,12 @@ func guardSubAggregateNodes(flat *flattenResult, edges []NormalizedEdge, cfg Bui
 				fmt.Sprintf(".%s", nodeID), "the Component schema")...)
 
 			// Component infra — the operator-side pillar, over the other document.
-			// Its scope is the components the deployment PLACED, which is the same
+			// Its scope is the components the Release PLACED, which is the same
 			// standing the rule over root components has and is reached here by the
 			// same reading: the placement map holds an entry for a node the
-			// deployment named and for a node the placement of a routed module
+			// Release named and for a node the placement of a routed module
 			// covers, and that entry also carries the sizing. So the question of
-			// whether this deployment answers for the node, and the payload it
+			// whether this Release answers for the node, and the payload it
 			// answered with, come from one lookup and cannot disagree.
 			//
 			// An entry carrying no sizing is measured rather than skipped: every
@@ -1049,10 +1049,10 @@ func guardSubAggregateNodes(flat *flattenResult, edges []NormalizedEdge, cfg Bui
 			// two need opposite treatment. An entry that writes nothing is the
 			// maximal violation of a key the contract declares required — that being
 			// the one case a required key exists to catch — while a component this
-			// deployment placed nowhere is not its to answer for and has a different
+			// Release placed nowhere is not its to answer for and has a different
 			// fault, reported by the placement rule that runs after this pass.
 			//
-			// The finding names the deployment rather than the application, because
+			// The finding names the Release rather than the Aggregate, because
 			// that is the document whose author wrote the sizing and the one they
 			// edit to fix it.
 			if release != nil {
@@ -1104,9 +1104,9 @@ func guardSubAggregateNodes(flat *flattenResult, edges []NormalizedEdge, cfg Bui
 	return errs
 }
 
-// releaseEntityName renders the deployment document a finding in this package
+// releaseEntityName renders the Release document a finding in this package
 // names. It is one home for the rendering because every rule here reporting
-// against the deployment needs the same string, and hand-written copies of it
+// against the Release needs the same string, and hand-written copies of it
 // are free to spell one document differently — a reader comparing two
 // diagnostics about the same file could not account for the difference, and
 // nothing compares them.

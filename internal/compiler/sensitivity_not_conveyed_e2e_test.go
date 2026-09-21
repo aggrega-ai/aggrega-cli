@@ -6,7 +6,7 @@
 // real pipeline against the real compiled Wasm guests, and read off the same
 // structured channel the terminal and the editor both display.
 //
-// One deployment authors the same two values against the same two declarations
+// One Aggregate authors the same two values against the same two declarations
 // on three nodes that differ only in what their Recipe declares, so all three
 // outcomes come from a single build. That shape is deliberate: a silence
 // measured in a build where nothing fires proves only that the check is quiet,

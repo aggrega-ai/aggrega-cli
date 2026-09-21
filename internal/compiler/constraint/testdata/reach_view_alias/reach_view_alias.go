@@ -21,10 +21,10 @@ import (
 )
 
 type (
-	// deployedApplication is the authored application document under another name.
+	// deployedApplication is the authored Aggregate document under another name.
 	deployedApplication = whatever.Aggregate
 
-	// environmentBinding is the deployment document under another name.
+	// environmentBinding is the Release document under another name.
 	environmentBinding = whatever.Release
 
 	// wiring is the finalised graph under another name.
