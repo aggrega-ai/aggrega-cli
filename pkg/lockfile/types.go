@@ -273,7 +273,7 @@ type LibraryConsumer struct {
 //   - helm-oci-chart, helm-https-chart, compose-https-fragment:
 //     PinnedVersion is the user-authored version (the resolver does
 //     not transform it).
-//   - terraform-module-git: PinnedVersion is the resolved commit
+//   - git-repository: PinnedVersion is the resolved commit
 //     SHA. The authored ref is preserved on each ReferencedBy entry's
 //     RequestedRef field when two conditions hold together — the
 //     Recipe authored a spec.source.ref at all, and PinnedVersion
@@ -323,7 +323,7 @@ type SourceArtifact struct {
 // current implementation). RequestedRef preserves the Recipe's authored
 // spec.source.ref, and is written only when the Recipe authored a ref AND
 // PinnedVersion differs from the Recipe's own spec.source.version
-// (terraform-module-git tags/branches → commit SHA); empty for
+// (git-repository tags/branches → commit SHA); empty for
 // kinds where PinnedVersion IS the authored version.
 //
 // It is what makes a moved reference detectable at all. PinnedVersion is

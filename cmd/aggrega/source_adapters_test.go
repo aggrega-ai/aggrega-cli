@@ -24,7 +24,7 @@ func TestShippedSourceAdaptersRegistered(t *testing.T) {
 		"helm-oci-chart",
 		"helm-https-chart",
 		"compose-https-fragment",
-		"terraform-module-git",
+		"git-repository",
 	} {
 		if !registered[kind] {
 			t.Errorf("source kind %q has no adapter in the default dispatcher — the wiring import in source_adapters.go is missing", kind)

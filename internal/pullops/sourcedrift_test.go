@@ -40,7 +40,7 @@ func gitRefLockfile(pinned, requestedRef string) *lockfile.Lockfile {
 	return &lockfile.Lockfile{
 		Version: 1,
 		SourceArtifacts: []lockfile.SourceArtifact{{
-			Kind:          "terraform-module-git",
+			Kind:          "git-repository",
 			URL:           "git://example.invalid/repo",
 			PinnedVersion: pinned,
 			ReferencedBy: []lockfile.SourceArtifactReference{{

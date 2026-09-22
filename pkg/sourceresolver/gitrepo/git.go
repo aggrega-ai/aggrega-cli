@@ -1,27 +1,35 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Cognitio S.r.l.
 
-// Package terraform implements the terraform-module-git source-
-// resolver adapter. The adapter clones a Git repository to a
-// temporary directory (production path; bounded peak memory for
-// large modules), resolves the user-supplied ref (tag, branch, or
+// Package gitrepo implements the git-repository source-resolver
+// adapter. The adapter clones a Git repository to a temporary
+// directory (production path; bounded peak memory for large
+// repositories), resolves the user-supplied ref (tag, branch, or
 // commit SHA) to an immutable commit SHA via ResolveRevision,
 // checks out at that SHA, archives the working tree (or the
 // optional ModuleSubdir) into a deterministic .tar.gz, computes
 // the content digest, populates the cache slot, and returns a
 // ResolvedSource with the commit SHA recorded as PinnedVersion.
 //
+// The adapter is blind to what the archived directory holds. It
+// retrieves bytes from a repository and asserts nothing about their
+// format; whichever provider consumes the archive is what knows
+// whether the directory is a chart, a module, or anything else.
+// That is why the kind names the transport and the location rather
+// than a format.
+//
 // Ref normalisation is load-bearing: only commit SHAs are
 // immutable; tags and branches may be re-pushed at the registry.
 // The adapter resolves at lock time so the lockfile always pins a
-// commit SHA. A re-pushed ref produces drift at the next pull;
-// "aggrega pull --upgrade --release <release>" is the remediation.
+// commit SHA. A ref that resolves to a different commit than the
+// one it pinned halts the next pull instead of being adopted;
+// "aggrega pull --upgrade --release <release>" adopts it.
 //
 // Auth: go-git's default transports honour SSH keys, ~/.netrc, and
 // gitconfig credential helpers. The adapter passes spec.URL through
 // to git.CloneContext unchanged, so any URL shape go-git accepts
-// works (https://, ssh://, git+ssh://, file://).
-package terraform
+// works (https://, ssh://, git+ssh://, git://).
+package gitrepo
 
 import (
 	"context"
@@ -43,12 +51,13 @@ import (
 	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
 )
 
-// Kind names the terraform-module-git source kind.
-const Kind = "terraform-module-git"
+// Kind names the git-repository source kind.
+const Kind = "git-repository"
 
-// MediatypeTarGz is the canonical media-type recorded for git-sourced
-// terraform module archives. Generic application/gzip is correct;
-// there is no terraform-specific OCI media-type at this stage.
+// MediatypeTarGz is the canonical media-type recorded for the archives
+// this adapter builds. Generic application/gzip is correct precisely
+// because the adapter does not know or care what the archived
+// directory holds, so no format-specific media-type would be truthful.
 const MediatypeTarGz = "application/gzip"
 
 // cloneFunc is the seam between production go-git CloneContext and
@@ -63,7 +72,7 @@ type adapter struct {
 	clone cloneFunc
 }
 
-// NewAdapter returns a terraform-module-git adapter wired to
+// NewAdapter returns a git-repository adapter wired to
 // git.PlainCloneContext in production.
 func NewAdapter() sourceresolver.Adapter {
 	return &adapter{clone: defaultClone}
@@ -91,7 +100,7 @@ func defaultClone(ctx context.Context, destDir, url string, httpClient *http.Cli
 	})
 }
 
-// Kind returns the terraform-module-git kind string.
+// Kind returns the git-repository kind string.
 func (a *adapter) Kind() string { return Kind }
 
 // Resolve clones the repository at spec.URL into a temp directory,
@@ -116,9 +125,9 @@ func (a *adapter) Kind() string { return Kind }
 // way out in that case as in every other, so a clone that ends part way
 // leaves nothing behind it.
 func (a *adapter) Resolve(ctx context.Context, spec sourceresolver.SourceSpec) (*sourceresolver.ResolvedSource, error) {
-	cloneDir, err := os.MkdirTemp("", "aggrega-tf-git-*")
+	cloneDir, err := os.MkdirTemp("", "aggrega-git-repo-*")
 	if err != nil {
-		return nil, fmt.Errorf("terraform-module-git: tempdir: %w", err)
+		return nil, fmt.Errorf("git-repository: tempdir: %w", err)
 	}
 	defer os.RemoveAll(cloneDir)
 
@@ -144,10 +153,10 @@ func (a *adapter) Resolve(ctx context.Context, spec sourceresolver.SourceSpec) (
 
 	wt, err := repo.Worktree()
 	if err != nil {
-		return nil, fmt.Errorf("terraform-module-git: worktree: %w", err)
+		return nil, fmt.Errorf("git-repository: worktree: %w", err)
 	}
 	if err := wt.Checkout(&git.CheckoutOptions{Hash: *hash}); err != nil {
-		return nil, fmt.Errorf("terraform-module-git: checkout %s: %w", hash.String(), err)
+		return nil, fmt.Errorf("git-repository: checkout %s: %w", hash.String(), err)
 	}
 
 	walkRoot := cloneDir
@@ -156,24 +165,24 @@ func (a *adapter) Resolve(ctx context.Context, spec sourceresolver.SourceSpec) (
 	}
 	entries, err := walkExcludingGit(walkRoot)
 	if err != nil {
-		return nil, fmt.Errorf("terraform-module-git: walk: %w", err)
+		return nil, fmt.Errorf("git-repository: walk: %w", err)
 	}
 
 	archiveBytes, err := encodeTarGz(entries)
 	if err != nil {
-		return nil, fmt.Errorf("terraform-module-git: archive: %w", err)
+		return nil, fmt.Errorf("git-repository: archive: %w", err)
 	}
 	digest := archive.Digest(archiveBytes)
 	commitSHA := hash.String()
 	slot, err := cacheslot.Slot(spec.WorkspaceRoot, spec.CacheDir, Kind, spec.URL, "", spec.ModuleSubdir, commitSHA, digest)
 	if err != nil {
-		return nil, fmt.Errorf("terraform-module-git: %w", err)
+		return nil, fmt.Errorf("git-repository: %w", err)
 	}
-	// A git-cloned module has no OCI manifest; the archive is verified against
-	// the recorded content digest alone.
+	// A git-cloned working tree has no OCI manifest; the archive is verified
+	// against the recorded content digest alone.
 	if err := cacheslot.WriteBlobAndMetadata(slot, archiveBytes,
 		Kind, spec.URL, commitSHA, digest, MediatypeTarGz, "", nil); err != nil {
-		return nil, fmt.Errorf("terraform-module-git: %w", err)
+		return nil, fmt.Errorf("git-repository: %w", err)
 	}
 
 	return &sourceresolver.ResolvedSource{
@@ -190,7 +199,7 @@ func (a *adapter) Resolve(ctx context.Context, spec sourceresolver.SourceSpec) (
 
 // walkExcludingGit walks rootPath via internal/archive.WalkDirectory
 // and filters out the .git/ subtree so the archive carries only the
-// module's working-tree content.
+// repository's working-tree content.
 func walkExcludingGit(rootPath string) ([]archive.Entry, error) {
 	all, err := archive.WalkDirectory(rootPath)
 	if err != nil {

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Cognitio S.r.l.
 
-package terraform
+package gitrepo
 
 import (
 	"context"
@@ -19,7 +19,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/object"
 )
 
-func TestTerraformGitResolveHappyPath(t *testing.T) {
+func TestGitRepositoryResolveHappyPath(t *testing.T) {
 	t.Parallel()
 	fixtureDir, _ := buildFixtureRepo(t, map[string]string{
 		"main.tf":      `resource "null_resource" "x" {}`,
@@ -56,7 +56,7 @@ func TestTerraformGitResolveHappyPath(t *testing.T) {
 	}
 }
 
-func TestTerraformGitResolveTagToSHA(t *testing.T) {
+func TestGitRepositoryResolveTagToSHA(t *testing.T) {
 	t.Parallel()
 	fixtureDir, headSHA := buildFixtureRepoWithTag(t, "v1.0.0", map[string]string{
 		"main.tf": `resource "null_resource" "x" {}`,
@@ -78,7 +78,7 @@ func TestTerraformGitResolveTagToSHA(t *testing.T) {
 	}
 }
 
-func TestTerraformGitResolveMissingRefWrapsNotFound(t *testing.T) {
+func TestGitRepositoryResolveMissingRefWrapsNotFound(t *testing.T) {
 	t.Parallel()
 	fixtureDir, _ := buildFixtureRepo(t, map[string]string{
 		"main.tf": `resource "null_resource" "x" {}`,
@@ -97,7 +97,7 @@ func TestTerraformGitResolveMissingRefWrapsNotFound(t *testing.T) {
 	}
 }
 
-func TestTerraformGitResolveDeterministicArchive(t *testing.T) {
+func TestGitRepositoryResolveDeterministicArchive(t *testing.T) {
 	t.Parallel()
 	fixtureDir, _ := buildFixtureRepo(t, map[string]string{
 		"main.tf":      `resource "null_resource" "x" {}`,
@@ -126,7 +126,7 @@ func TestTerraformGitResolveDeterministicArchive(t *testing.T) {
 	}
 }
 
-func TestTerraformGitResolveModuleSubdir(t *testing.T) {
+func TestGitRepositoryResolveModuleSubdir(t *testing.T) {
 	t.Parallel()
 	fixtureDir, _ := buildFixtureRepo(t, map[string]string{
 		"root.tf":             `# root`,

@@ -13,10 +13,10 @@ package main
 // One import of the helm package covers both helm adapters (helm-oci-chart and
 // helm-https-chart register in the same package's init functions). The shipped
 // kinds are helm-oci-chart, helm-https-chart, compose-https-fragment, and
-// terraform-module-git; the reserved terraform-module-oci kind has no adapter
-// yet and is intentionally absent.
+// git-repository; the reserved terraform-module-oci kind has no adapter yet and
+// is intentionally absent.
 import (
 	_ "github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/compose"
+	_ "github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/gitrepo"
 	_ "github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/helm"
-	_ "github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/terraform"
 )

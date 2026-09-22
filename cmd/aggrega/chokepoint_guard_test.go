@@ -471,8 +471,8 @@ func TestEgressLibraryImportChokepointGuard(t *testing.T) {
 	// the module root, slash-separated) permitted to import it.
 	banned := map[string]map[string]bool{
 		"github.com/go-git/go-git/v5": {
-			"pkg/egress":                   true,
-			"pkg/sourceresolver/terraform": true,
+			"pkg/egress":                 true,
+			"pkg/sourceresolver/gitrepo": true,
 		},
 		"github.com/sigstore/sigstore-go/pkg/sign": {
 			"pkg/egress":  true,

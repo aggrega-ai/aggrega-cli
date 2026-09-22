@@ -91,7 +91,7 @@ type SourceArtifact struct {
 // in the current implementation). RequestedRef preserves the Recipe's
 // authored spec.source.ref, and is written only when the Recipe
 // authored a ref AND the resolved PinnedVersion differs from the
-// Recipe's own spec.source.version (terraform-module-git tag/branch →
+// Recipe's own spec.source.version (git-repository tag/branch →
 // commit SHA); empty otherwise.
 type SourceArtifactReference struct {
 	Entity       string

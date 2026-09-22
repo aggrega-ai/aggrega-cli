@@ -3,7 +3,7 @@
 
 // Package archive provides a strict deterministic .tar.gz writer and
 // a sha256 digest helper used by every source-resolver adapter that
-// creates an archive (compose-https-fragment, terraform-module-git,
+// creates an archive (compose-https-fragment, git-repository,
 // and helm-https when index-resolved). Archives produced here are
 // byte-identical across runs given the same input: zero modification
 // time, uid/gid 0/0, fixed mode bits (0644 files, 0755 directories),

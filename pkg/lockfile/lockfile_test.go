@@ -576,7 +576,7 @@ func TestWriteSourceArtifactsCanonicalOrdering(t *testing.T) {
 		Release:     "./r.yaml",
 		GeneratedAt: "2026-05-22T10:23:14Z",
 		SourceArtifacts: []lockfile.SourceArtifact{
-			{Kind: "terraform-module-git", URL: "https://example.com/mod.git", PinnedVersion: "abc123", Digest: "sha256:1", Mediatype: "application/gzip", ReferencedBy: []lockfile.SourceArtifactReference{{Entity: "recipe", URI: "u1", Field: "spec.source"}}},
+			{Kind: "git-repository", URL: "https://example.com/mod.git", PinnedVersion: "abc123", Digest: "sha256:1", Mediatype: "application/gzip", ReferencedBy: []lockfile.SourceArtifactReference{{Entity: "recipe", URI: "u1", Field: "spec.source"}}},
 			{Kind: "helm-oci-chart", URL: "oci://r/c", PinnedVersion: "26.0.0", Digest: "sha256:2", Mediatype: "application/vnd.cncf.helm.chart.content.v1.tar+gzip", ReferencedBy: []lockfile.SourceArtifactReference{{Entity: "recipe", URI: "u2", Field: "spec.source"}}},
 			{Kind: "helm-oci-chart", URL: "oci://r/c", PinnedVersion: "25.0.0", Digest: "sha256:3", Mediatype: "application/vnd.cncf.helm.chart.content.v1.tar+gzip", ReferencedBy: []lockfile.SourceArtifactReference{{Entity: "recipe", URI: "u3", Field: "spec.source"}}},
 			{Kind: "compose-https-fragment", URL: "https://example.com/a.yaml", PinnedVersion: "1.0.0", Digest: "sha256:4", Mediatype: "application/x-yaml", ReferencedBy: []lockfile.SourceArtifactReference{{Entity: "recipe", URI: "u4", Field: "spec.source"}}},
@@ -589,16 +589,16 @@ func TestWriteSourceArtifactsCanonicalOrdering(t *testing.T) {
 	out, _ := os.ReadFile(path)
 	// Expected order by (Kind, URL, PinnedVersion):
 	//   compose-https-fragment / https://example.com/a.yaml / 1.0.0
+	//   git-repository / https://example.com/mod.git / abc123
 	//   helm-oci-chart / oci://r/c / 25.0.0
 	//   helm-oci-chart / oci://r/c / 26.0.0
-	//   terraform-module-git / https://example.com/mod.git / abc123
 	composeIdx := strings.Index(string(out), "compose-https-fragment")
+	gitIdx := strings.Index(string(out), "git-repository")
 	helmIdx := strings.Index(string(out), "helm-oci-chart")
-	tfIdx := strings.Index(string(out), "terraform-module-git")
 	helm25Idx := strings.Index(string(out), "25.0.0")
 	helm26Idx := strings.Index(string(out), "26.0.0")
-	if !(composeIdx < helmIdx && helmIdx < tfIdx) {
-		t.Errorf("SourceArtifacts not sorted by Kind: compose=%d helm=%d tf=%d", composeIdx, helmIdx, tfIdx)
+	if !(composeIdx < gitIdx && gitIdx < helmIdx) {
+		t.Errorf("SourceArtifacts not sorted by Kind: compose=%d git=%d helm=%d", composeIdx, gitIdx, helmIdx)
 	}
 	if !(helm25Idx < helm26Idx) {
 		t.Errorf("within same Kind+URL, PinnedVersion should sort lexicographically: 25.0.0@%d 26.0.0@%d", helm25Idx, helm26Idx)

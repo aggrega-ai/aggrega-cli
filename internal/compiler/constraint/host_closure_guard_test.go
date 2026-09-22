@@ -155,7 +155,7 @@ func TestHostClosureGuardDetectsBothEdges(t *testing.T) {
 		modulePath + "/internal/compiler/renderer/wasmengine",
 		modulePath + "/internal/compiler/renderer/enginefactory",
 		modulePath + "/pkg/sourceresolver/helm",
-		modulePath + "/pkg/sourceresolver/terraform",
+		modulePath + "/pkg/sourceresolver/gitrepo",
 		"helm.sh/helm/v3/pkg/chart",
 	}
 

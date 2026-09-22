@@ -226,10 +226,10 @@ func TestMatchHelpers(t *testing.T) {
 		t.Errorf("MatchSourcePin should not match a different version")
 	}
 	gitSrc := []types.SourceDigest{
-		{Kind: "terraform-module-git", URL: "g", ModuleSubdir: "modules/alpha", Version: "sha", Digest: "da"},
-		{Kind: "terraform-module-git", URL: "g", ModuleSubdir: "modules/beta", Version: "sha", Digest: "db"},
+		{Kind: "git-repository", URL: "g", ModuleSubdir: "modules/alpha", Version: "sha", Digest: "da"},
+		{Kind: "git-repository", URL: "g", ModuleSubdir: "modules/beta", Version: "sha", Digest: "db"},
 	}
-	if p, ok := recipepin.MatchSourcePin(gitSrc, "terraform-module-git", "g", "", "modules/beta", "sha"); !ok || p.Digest != "db" {
+	if p, ok := recipepin.MatchSourcePin(gitSrc, "git-repository", "g", "", "modules/beta", "sha"); !ok || p.Digest != "db" {
 		t.Errorf("MatchSourcePin should select the pin for the named module subdirectory; got %+v ok=%v", p, ok)
 	}
 	art := []types.ArtifactDigest{{Name: "x.yaml", Digest: "d"}}

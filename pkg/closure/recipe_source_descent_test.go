@@ -88,7 +88,7 @@ func mediatypeFor(kind string) string {
 		return "application/vnd.cncf.helm.chart.content.v1.tar+gzip"
 	case "compose-https-fragment":
 		return "application/x-yaml"
-	case "terraform-module-git":
+	case "git-repository":
 		return "application/gzip"
 	default:
 		return "application/octet-stream"
@@ -567,7 +567,7 @@ func TestDescendKeepsGitModuleSubdirectoriesDistinct(t *testing.T) {
 	betaURI := "hub.aggrega.ai/recipe/terraform/beta:1.0.0"
 	mk := func(subdir string) map[string]any {
 		return map[string]any{
-			"kind":          "terraform-module-git",
+			"kind":          "git-repository",
 			"url":           repo,
 			"version":       commit,
 			"ref":           commit,
@@ -625,11 +625,11 @@ func TestDescendKeepsGitModuleSubdirectoriesDistinct(t *testing.T) {
 	}
 }
 
-func TestDescendPreservesTerraformGitRequestedRef(t *testing.T) {
+func TestDescendPreservesGitRepositoryRequestedRef(t *testing.T) {
 	t.Parallel()
 	uri := "hub.aggrega.ai/recipe/terraform/vpc:1.0.0"
 	source := map[string]any{
-		"kind":    "terraform-module-git",
+		"kind":    "git-repository",
 		"url":     "https://example.com/mod.git",
 		"version": "v1.0.0",
 		"ref":     "v1.0.0",

@@ -64,7 +64,7 @@ var errUnknownKind = cerrors.Register("unknown-source-kind", cerrors.Meta{
 // sentinels by design — adapters MAY pass any error value as the
 // sentinel. The typical case is one of the four fetch sentinels;
 // future evolution may introduce kind-specific sentinels (e.g.,
-// a terraform-git ref-not-found surface) that benefit from the
+// a git-repository ref-not-found surface) that benefit from the
 // same uniform wrapping. The function is generic across sentinel
 // types.
 //

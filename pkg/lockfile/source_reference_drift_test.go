@@ -20,7 +20,7 @@ const (
 // pins, and the reference (if any) that version was resolved FROM.
 func priorRow(pinned, requestedRef string) SourceArtifact {
 	return SourceArtifact{
-		Kind:          "terraform-module-git",
+		Kind:          "git-repository",
 		URL:           "git://example.invalid/repo",
 		ModuleSubdir:  "modules/alpha",
 		PinnedVersion: pinned,
@@ -37,7 +37,7 @@ func priorRow(pinned, requestedRef string) SourceArtifact {
 // terms, carried on the closure-side type the descent produces.
 func freshRow(pinned, requestedRef string) closure.SourceArtifact {
 	return closure.SourceArtifact{
-		Kind:          "terraform-module-git",
+		Kind:          "git-repository",
 		URL:           "git://example.invalid/repo",
 		ModuleSubdir:  "modules/alpha",
 		PinnedVersion: pinned,
@@ -117,7 +117,7 @@ func TestVerifySourceReferences(t *testing.T) {
 			prior: &Lockfile{SourceArtifacts: []SourceArtifact{
 				priorRow(commitOne, "v1.0.0"),
 				{
-					Kind: "terraform-module-git", URL: "git://example.invalid/repo",
+					Kind: "git-repository", URL: "git://example.invalid/repo",
 					ModuleSubdir: "modules/beta", PinnedVersion: commitOne,
 					ReferencedBy: []SourceArtifactReference{{
 						Entity: "recipe", URI: "terraform/beta-mod:1.0.0",
@@ -128,7 +128,7 @@ func TestVerifySourceReferences(t *testing.T) {
 			resolved: []closure.SourceArtifact{
 				freshRow(commitTwo, "v1.0.0"),
 				{
-					Kind: "terraform-module-git", URL: "git://example.invalid/repo",
+					Kind: "git-repository", URL: "git://example.invalid/repo",
 					ModuleSubdir: "modules/beta", PinnedVersion: commitOne,
 					ReferencedBy: []closure.SourceArtifactReference{{
 						Entity: "recipe", URI: "terraform/beta-mod:1.0.0",
@@ -181,12 +181,12 @@ func TestVerifySourceReferencesDoesNotReportOneReferenceTwice(t *testing.T) {
 		}
 	}
 	prior := &Lockfile{SourceArtifacts: []SourceArtifact{{
-		Kind: "terraform-module-git", URL: "git://example.invalid/repo",
+		Kind: "git-repository", URL: "git://example.invalid/repo",
 		ModuleSubdir: "modules/alpha", PinnedVersion: commitOne,
 		ReferencedBy: twoReferrers(commitOne),
 	}}}
 	resolved := []closure.SourceArtifact{{
-		Kind: "terraform-module-git", URL: "git://example.invalid/repo",
+		Kind: "git-repository", URL: "git://example.invalid/repo",
 		ModuleSubdir: "modules/alpha", PinnedVersion: commitTwo,
 		ReferencedBy: []closure.SourceArtifactReference{
 			{Entity: "recipe", URI: "terraform/alpha-mod:1.0.0", Field: "spec.source", RequestedRef: "v1.0.0"},

@@ -51,12 +51,12 @@ func TestSlotSeparatesGitModuleSubdirectories(t *testing.T) {
 		commit = "b149cd9719865f0afdb19df745c5458c2cd45cc8"
 		dg     = "sha256:abcdef0123456789"
 	)
-	alpha, err := cacheslot.Slot("/ws", ".aggrega/cache", "terraform-module-git",
+	alpha, err := cacheslot.Slot("/ws", ".aggrega/cache", "git-repository",
 		url, "", "modules/alpha", commit, dg)
 	if err != nil {
 		t.Fatalf("Slot alpha: %v", err)
 	}
-	beta, err := cacheslot.Slot("/ws", ".aggrega/cache", "terraform-module-git",
+	beta, err := cacheslot.Slot("/ws", ".aggrega/cache", "git-repository",
 		url, "", "modules/beta", commit, dg)
 	if err != nil {
 		t.Fatalf("Slot beta: %v", err)
@@ -66,19 +66,19 @@ func TestSlotSeparatesGitModuleSubdirectories(t *testing.T) {
 	}
 
 	// An empty subdirectory must leave every other kind's layout untouched.
-	whole, err := cacheslot.Slot("/ws", ".aggrega/cache", "terraform-module-git",
+	whole, err := cacheslot.Slot("/ws", ".aggrega/cache", "git-repository",
 		url, "", "", commit, dg)
 	if err != nil {
 		t.Fatalf("Slot whole: %v", err)
 	}
 	if want := filepath.Join("/ws", ".aggrega/cache", "source-artifacts",
-		"terraform-module-git", "git.example.com", "infra/modules.git",
+		"git-repository", "git.example.com", "infra/modules.git",
 		commit, "abcdef012345"); whole != want {
 		t.Errorf("empty module subdirectory changed the slot layout:\n  got  %s\n  want %s", whole, want)
 	}
 
 	// A relative component must not steer the slot out of the cache root.
-	escaped, err := cacheslot.Slot("/ws", ".aggrega/cache", "terraform-module-git",
+	escaped, err := cacheslot.Slot("/ws", ".aggrega/cache", "git-repository",
 		url, "", "../../../etc", commit, dg)
 	if err != nil {
 		t.Fatalf("Slot escaped: %v", err)

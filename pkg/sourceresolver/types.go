@@ -8,7 +8,7 @@
 // framework that routes by source kind.
 //
 // Four per-kind transport adapters — helm-oci-chart, helm-https-chart,
-// compose-https-fragment and terraform-module-git — live in sub-packages
+// compose-https-fragment and git-repository — live in sub-packages
 // and register with the dispatcher at import time. Consumers that want
 // the full registered set blank-import the adapter sub-packages
 // alongside this one; the dispatcher then routes any registered kind
@@ -48,9 +48,9 @@ import (
 // The side knobs (Chart, ModuleSubdir, Ref) are optional and
 // consumed only by the kinds that need them: Chart by helm-oci-chart
 // and helm-https-chart (when the URL is a repo root rather than a
-// direct chart artifact); ModuleSubdir by terraform-module-git and
-// terraform-module-oci (when the module sits inside a larger
-// repository or registry artifact); Ref by terraform-module-git
+// direct chart artifact); ModuleSubdir by git-repository and
+// terraform-module-oci (when the artifact sits in a directory inside
+// a larger repository or registry artifact); Ref by git-repository
 // (tag, branch, or commit SHA). Adapters ignore knobs they don't
 // recognise.
 //
@@ -113,7 +113,7 @@ type SourceSpec struct {
 // Mediatype is the canonical media-type for the kind (e.g.,
 // "application/vnd.cncf.helm.chart.content.v1.tar+gzip" for helm
 // charts, "application/x-yaml" for compose fragments,
-// "application/gzip" for terraform-git archives). The adapter
+// "application/gzip" for git-repository archives). The adapter
 // populates this from its kind-specific constant or from the
 // upstream registry's manifest mediatype when available. The
 // lockfile writer copies the field verbatim into the lockfile's

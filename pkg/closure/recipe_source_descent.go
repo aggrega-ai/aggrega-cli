@@ -717,7 +717,7 @@ func classifyKindFromScheme(url, recipeURI string) (string, error) {
 		strings.HasPrefix(url, "git://"),
 		strings.HasPrefix(url, "ssh://"),
 		strings.HasSuffix(url, ".git"):
-		return "terraform-module-git", nil
+		return "git-repository", nil
 	default:
 		return "", fmt.Errorf(
 			"resolve: %s spec.source URL %q is ambiguous — "+
@@ -731,7 +731,7 @@ func classifyKindFromScheme(url, recipeURI string) (string, error) {
 func isKnownKind(kind string) bool {
 	switch kind {
 	case "helm-oci-chart", "helm-https-chart", "compose-https-fragment",
-		"terraform-module-git", "terraform-module-oci":
+		"git-repository", "terraform-module-oci":
 		return true
 	default:
 		return false

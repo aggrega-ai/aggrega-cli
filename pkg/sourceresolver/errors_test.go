@@ -183,7 +183,7 @@ func TestWrapHostExtractionFromHTTPSScheme(t *testing.T) {
 func TestWrapHostExtractionFromGitScheme(t *testing.T) {
 	t.Parallel()
 	spec := sourceresolver.SourceSpec{
-		Kind:    "terraform-module-git",
+		Kind:    "git-repository",
 		URL:     "git+ssh://git@github.com/example/module.git",
 		Version: "abc123",
 	}

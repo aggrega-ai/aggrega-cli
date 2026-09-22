@@ -85,7 +85,7 @@ spec:
   capability: helm
   implements: core/server
   source:
-    kind: terraform-module-git
+    kind: git-repository
     url: git://example.invalid/repo
     version: "v1.0.0"
     ref: "v1.0.0"
