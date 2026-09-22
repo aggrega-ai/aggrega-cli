@@ -416,6 +416,22 @@ jobs:
           echo "::add-mask::$id_token"
           echo "SIGSTORE_ID_TOKEN=$id_token" >> "$GITHUB_ENV"
 
+      - name: Make the image builder available
+        # The tooling image is built with `docker buildx build --platform … --push`,
+        # and buildx is a docker CLI PLUGIN rather than part of docker itself. Where
+        # the plugin is absent the CLI parses `buildx build` as positional arguments
+        # to its root command, so the first unrecognised flag is what it reports:
+        # `unknown flag: --platform`, followed by the ROOT usage rather than
+        # `docker build`'s. That names the flag instead of the missing plugin, so it
+        # reads as a defect in the build script and is not one — the script asks for
+        # the right tool and the tool is not installed. This step supplies it.
+        #
+        # It runs unconditionally, including on a dry run that pushes nothing. A dry
+        # run exists to answer whether the real run would work, so it has to meet the
+        # same prerequisites; skipping the builder here would let this failure hide
+        # until the next real publish, which is exactly how it was found.
+        uses: docker/setup-buildx-action@v3
+
       - name: Build and push the tooling image
         # Packages the freshly-built embedded binary as the tooling image at the
         # reserved tools/ namespace so consumer CI can run the CLI without a Go
