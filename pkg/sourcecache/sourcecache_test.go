@@ -209,7 +209,7 @@ func TestLookupAndExtractHappyPath(t *testing.T) {
 	seedSlot(t, root, ".aggrega/cache", "helm-oci-chart", "oci://r/c", "25.0.8", blob, digest)
 	lf := fixtureLockfile("helm-oci-chart", "oci://r/c", "25.0.8", digest)
 
-	extracted, err := sourcecache.LookupAndExtract(lf, "helm-oci-chart", "oci://r/c", "", "", "25.0.8", root, ".aggrega/cache")
+	extracted, err := sourcecache.LookupAndExtract(lf, "helm-oci-chart", "oci://r/c", "", "", "25.0.8", "", root, ".aggrega/cache")
 	if err != nil {
 		t.Fatalf("LookupAndExtract: %v", err)
 	}
@@ -238,7 +238,7 @@ func TestLookupAndExtractNestedChartLayout(t *testing.T) {
 	seedSlot(t, root, ".aggrega/cache", "helm-oci-chart", "oci://r/c", "25.0.8", blob, digest)
 	lf := fixtureLockfile("helm-oci-chart", "oci://r/c", "25.0.8", digest)
 
-	extracted, err := sourcecache.LookupAndExtract(lf, "helm-oci-chart", "oci://r/c", "", "", "25.0.8", root, ".aggrega/cache")
+	extracted, err := sourcecache.LookupAndExtract(lf, "helm-oci-chart", "oci://r/c", "", "", "25.0.8", "", root, ".aggrega/cache")
 	if err != nil {
 		t.Fatalf("LookupAndExtract: %v", err)
 	}
@@ -257,7 +257,7 @@ func TestLookupAndExtractMissingLockfileEntryWrapsNotFound(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	lf := &lockfile.Lockfile{Version: 1, Release: "./r.yaml", GeneratedAt: "2026-05-22T10:00:00Z"}
-	_, err := sourcecache.LookupAndExtract(lf, "helm-oci-chart", "oci://r/c", "", "", "1.0.0", root, ".aggrega/cache")
+	_, err := sourcecache.LookupAndExtract(lf, "helm-oci-chart", "oci://r/c", "", "", "1.0.0", "", root, ".aggrega/cache")
 	if !errors.Is(err, sourcecache.ErrFetchNotFound()) {
 		t.Errorf("missing lockfile entry should wrap ErrFetchNotFound; got %v", err)
 	}
@@ -278,7 +278,7 @@ func TestLookupAndExtractTamperedArchiveWrapsIntegrity(t *testing.T) {
 	}
 
 	lf := fixtureLockfile("helm-oci-chart", "oci://r/c", "1.0.0", originalDigest)
-	_, err := sourcecache.LookupAndExtract(lf, "helm-oci-chart", "oci://r/c", "", "", "1.0.0", root, ".aggrega/cache")
+	_, err := sourcecache.LookupAndExtract(lf, "helm-oci-chart", "oci://r/c", "", "", "1.0.0", "", root, ".aggrega/cache")
 	if !errors.Is(err, sourcecache.ErrFetchIntegrity()) {
 		t.Errorf("tampered .tgz should wrap ErrFetchIntegrity; got %v", err)
 	}
@@ -295,7 +295,7 @@ func TestLookupAndExtractMetadataMismatchWrapsIntegrity(t *testing.T) {
 	seedSlot(t, root, ".aggrega/cache", "helm-oci-chart", "oci://r/c", "1.0.0", blob, "sha256:1111111111111111111111111111111111111111111111111111111111111111")
 
 	lf := fixtureLockfile("helm-oci-chart", "oci://r/c", "1.0.0", blobDigest)
-	_, err := sourcecache.LookupAndExtract(lf, "helm-oci-chart", "oci://r/c", "", "", "1.0.0", root, ".aggrega/cache")
+	_, err := sourcecache.LookupAndExtract(lf, "helm-oci-chart", "oci://r/c", "", "", "1.0.0", "", root, ".aggrega/cache")
 	if !errors.Is(err, sourcecache.ErrFetchIntegrity()) {
 		t.Errorf("metadata digest mismatch should wrap ErrFetchIntegrity; got %v", err)
 	}
@@ -326,7 +326,7 @@ func TestLookupAndExtractManifestAuthorityBeatsForgedPins(t *testing.T) {
 	}
 
 	lf := fixtureLockfile("helm-oci-chart", "oci://r/c", "1.0.0", forgedDigest)
-	_, err := sourcecache.LookupAndExtract(lf, "helm-oci-chart", "oci://r/c", "", "", "1.0.0", root, ".aggrega/cache")
+	_, err := sourcecache.LookupAndExtract(lf, "helm-oci-chart", "oci://r/c", "", "", "1.0.0", "", root, ".aggrega/cache")
 	if !errors.Is(err, sourcecache.ErrFetchIntegrity()) {
 		t.Errorf("forged archive + forged content pins: err = %v; want ErrFetchIntegrity from the manifest-authority check", err)
 	}
@@ -347,7 +347,7 @@ func TestLookupAndExtractOCIManifestLessSlotFailsClosed(t *testing.T) {
 		t.Fatalf("remove manifest: %v", err)
 	}
 	lf := fixtureLockfile("helm-oci-chart", "oci://r/c", "1.0.0", digestOf(blob))
-	if _, err := sourcecache.LookupAndExtract(lf, "helm-oci-chart", "oci://r/c", "", "", "1.0.0", root, ".aggrega/cache"); !errors.Is(err, sourcecache.ErrFetchNotFound()) {
+	if _, err := sourcecache.LookupAndExtract(lf, "helm-oci-chart", "oci://r/c", "", "", "1.0.0", "", root, ".aggrega/cache"); !errors.Is(err, sourcecache.ErrFetchNotFound()) {
 		t.Errorf("manifest-less OCI slot: err = %v; want ErrFetchNotFound (fail-closed miss)", err)
 	}
 }
@@ -370,7 +370,7 @@ func TestLookupAndExtractNonOCIManifestLessSlotReadsOnContentPin(t *testing.T) {
 		t.Fatalf("non-OCI slot unexpectedly has a manifest (stat err = %v)", err)
 	}
 	lf := fixtureLockfile(kind, url, "1.0.0", digestOf(blob))
-	extracted, err := sourcecache.LookupAndExtract(lf, kind, url, "", "", "1.0.0", root, ".aggrega/cache")
+	extracted, err := sourcecache.LookupAndExtract(lf, kind, url, "", "", "1.0.0", "", root, ".aggrega/cache")
 	if err != nil {
 		t.Fatalf("non-OCI manifest-less faithful slot: err = %v; want content-pin resolve", err)
 	}
@@ -384,7 +384,7 @@ func TestLookupAndExtractNonOCIManifestLessSlotReadsOnContentPin(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(slot, "blob.tgz"), tampered, 0o644); err != nil {
 		t.Fatalf("tamper blob: %v", err)
 	}
-	if _, err := sourcecache.LookupAndExtract(lf, kind, url, "", "", "1.0.0", root, ".aggrega/cache"); !errors.Is(err, sourcecache.ErrFetchIntegrity()) {
+	if _, err := sourcecache.LookupAndExtract(lf, kind, url, "", "", "1.0.0", "", root, ".aggrega/cache"); !errors.Is(err, sourcecache.ErrFetchIntegrity()) {
 		t.Errorf("non-OCI drifted slot: err = %v; want ErrFetchIntegrity", err)
 	}
 }
@@ -398,7 +398,7 @@ func TestLookupAndExtractFaithfulOCISlotPasses(t *testing.T) {
 	blob := buildTGZ(t, map[string]string{"mariadb/Chart.yaml": "name: mariadb\nversion: 1.0.0\n"})
 	seedSlot(t, root, ".aggrega/cache", "helm-oci-chart", "oci://r/c", "1.0.0", blob, digestOf(blob))
 	lf := fixtureLockfile("helm-oci-chart", "oci://r/c", "1.0.0", digestOf(blob))
-	extracted, err := sourcecache.LookupAndExtract(lf, "helm-oci-chart", "oci://r/c", "", "", "1.0.0", root, ".aggrega/cache")
+	extracted, err := sourcecache.LookupAndExtract(lf, "helm-oci-chart", "oci://r/c", "", "", "1.0.0", "", root, ".aggrega/cache")
 	if err != nil {
 		t.Fatalf("faithful OCI slot: %v", err)
 	}
@@ -438,7 +438,7 @@ func TestLookupAndExtractForgedManifestCaughtByLockfilePin(t *testing.T) {
 	lf := fixtureLockfile("helm-oci-chart", "oci://r/c", "1.0.0", forgedDigest)
 	lf.SourceArtifacts[0].ManifestDigest = originalManifestDigest
 
-	_, err := sourcecache.LookupAndExtract(lf, "helm-oci-chart", "oci://r/c", "", "", "1.0.0", root, ".aggrega/cache")
+	_, err := sourcecache.LookupAndExtract(lf, "helm-oci-chart", "oci://r/c", "", "", "1.0.0", "", root, ".aggrega/cache")
 	if !errors.Is(err, oci.ErrCachedManifestIntegrity()) {
 		t.Errorf("forged archive + forged content pins + forged manifest: err = %v; want ErrCachedManifestIntegrity from the lockfile manifest-digest pin", err)
 	}
@@ -457,7 +457,7 @@ func TestLookupAndExtractFaithfulManifestPinPasses(t *testing.T) {
 	lf := fixtureLockfile("helm-oci-chart", "oci://r/c", "1.0.0", digestOf(blob))
 	lf.SourceArtifacts[0].ManifestDigest = digestOf(ociChartManifest(t, blob))
 
-	extracted, err := sourcecache.LookupAndExtract(lf, "helm-oci-chart", "oci://r/c", "", "", "1.0.0", root, ".aggrega/cache")
+	extracted, err := sourcecache.LookupAndExtract(lf, "helm-oci-chart", "oci://r/c", "", "", "1.0.0", "", root, ".aggrega/cache")
 	if err != nil {
 		t.Fatalf("faithful OCI slot with matching manifest pin: %v", err)
 	}
@@ -493,7 +493,7 @@ func TestLookupAndExtractSignedChartOfflineExtracts(t *testing.T) {
 	}
 
 	lf := fixtureLockfile("helm-oci-chart", "oci://r/c", "25.0.8", digest)
-	extracted, err := sourcecache.LookupAndExtract(lf, "helm-oci-chart", "oci://r/c", "", "", "25.0.8", root, ".aggrega/cache")
+	extracted, err := sourcecache.LookupAndExtract(lf, "helm-oci-chart", "oci://r/c", "", "", "25.0.8", "", root, ".aggrega/cache")
 	if err != nil {
 		t.Fatalf("signed-chart offline extract: err = %v; want clean extract (no integrity/gzip failure)", err)
 	}
@@ -525,7 +525,7 @@ func TestLookupAndExtractSingleContentLayerNonRegression(t *testing.T) {
 	seedSlot(t, root, ".aggrega/cache", "helm-oci-chart", "oci://r/c", "1.0.0", blob, digest)
 
 	lf := fixtureLockfile("helm-oci-chart", "oci://r/c", "1.0.0", digest)
-	extracted, err := sourcecache.LookupAndExtract(lf, "helm-oci-chart", "oci://r/c", "", "", "1.0.0", root, ".aggrega/cache")
+	extracted, err := sourcecache.LookupAndExtract(lf, "helm-oci-chart", "oci://r/c", "", "", "1.0.0", "", root, ".aggrega/cache")
 	if err != nil {
 		t.Fatalf("single-content-layer slot: err = %v; want unchanged clean extract", err)
 	}
@@ -549,14 +549,14 @@ func TestExtractTarGzDeterministicAcrossRuns(t *testing.T) {
 	seedSlot(t, root, ".aggrega/cache", "helm-oci-chart", "oci://r/c", "1.0.0", blob, digest)
 	lf := fixtureLockfile("helm-oci-chart", "oci://r/c", "1.0.0", digest)
 
-	extracted1, err := sourcecache.LookupAndExtract(lf, "helm-oci-chart", "oci://r/c", "", "", "1.0.0", root, ".aggrega/cache")
+	extracted1, err := sourcecache.LookupAndExtract(lf, "helm-oci-chart", "oci://r/c", "", "", "1.0.0", "", root, ".aggrega/cache")
 	if err != nil {
 		t.Fatalf("Extract 1: %v", err)
 	}
 	a1, _ := os.ReadFile(filepath.Join(extracted1, "a.txt"))
 	b1, _ := os.ReadFile(filepath.Join(extracted1, "sub/b.txt"))
 
-	extracted2, err := sourcecache.LookupAndExtract(lf, "helm-oci-chart", "oci://r/c", "", "", "1.0.0", root, ".aggrega/cache")
+	extracted2, err := sourcecache.LookupAndExtract(lf, "helm-oci-chart", "oci://r/c", "", "", "1.0.0", "", root, ".aggrega/cache")
 	if err != nil {
 		t.Fatalf("Extract 2: %v", err)
 	}
@@ -587,7 +587,7 @@ func TestExtractedDirectoryRegeneratedFromArchive(t *testing.T) {
 	}
 
 	lf := fixtureLockfile("helm-oci-chart", "oci://r/c", "1.0.0", digest)
-	extracted, err := sourcecache.LookupAndExtract(lf, "helm-oci-chart", "oci://r/c", "", "", "1.0.0", root, ".aggrega/cache")
+	extracted, err := sourcecache.LookupAndExtract(lf, "helm-oci-chart", "oci://r/c", "", "", "1.0.0", "", root, ".aggrega/cache")
 	if err != nil {
 		t.Fatalf("LookupAndExtract: %v", err)
 	}
@@ -629,7 +629,7 @@ func TestExtractRejectsPathTraversal(t *testing.T) {
 	seedSlot(t, root, ".aggrega/cache", "helm-oci-chart", "oci://r/c", "1.0.0", blob, digest)
 	lf := fixtureLockfile("helm-oci-chart", "oci://r/c", "1.0.0", digest)
 
-	_, err := sourcecache.LookupAndExtract(lf, "helm-oci-chart", "oci://r/c", "", "", "1.0.0", root, ".aggrega/cache")
+	_, err := sourcecache.LookupAndExtract(lf, "helm-oci-chart", "oci://r/c", "", "", "1.0.0", "", root, ".aggrega/cache")
 	if !errors.Is(err, sourcecache.ErrFetchIntegrity()) {
 		t.Errorf("path-traversal entry should halt with ErrFetchIntegrity; got %v", err)
 	}
@@ -682,7 +682,7 @@ func TestExtractAcceptsLeadingDoubleDotEntry(t *testing.T) {
 	seedSlot(t, root, ".aggrega/cache", "helm-oci-chart", "oci://r/c", "1.0.0", blob, digest)
 	lf := fixtureLockfile("helm-oci-chart", "oci://r/c", "1.0.0", digest)
 
-	dir, err := sourcecache.LookupAndExtract(lf, "helm-oci-chart", "oci://r/c", "", "", "1.0.0", root, ".aggrega/cache")
+	dir, err := sourcecache.LookupAndExtract(lf, "helm-oci-chart", "oci://r/c", "", "", "1.0.0", "", root, ".aggrega/cache")
 	if err != nil {
 		t.Fatalf("LookupAndExtract: %v — an entry name beginning with two dots is an ordinary name, not a traversal", err)
 	}

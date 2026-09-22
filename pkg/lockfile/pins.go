@@ -46,18 +46,31 @@ func PluginPins(lf *Lockfile) pluginpath.PinMaps {
 }
 
 // FindSourceArtifact returns the source-artifact row this record pins for the
-// identity {kind, url, chart, moduleSubdir, version}, and whether one is present.
-// A nil record pins nothing and reports absence rather than panicking, so a
-// caller holding an optional record asks the question the same way as one holding
-// a loaded record.
+// artifact a caller has just resolved, and whether one is present. A nil record
+// pins nothing and reports absence rather than panicking, so a caller holding an
+// optional record asks the question the same way as one holding a loaded record.
 //
-// The identity is the whole of the five terms: url is the authored identity URL,
-// chart names the chart within a repo root, and moduleSubdir the directory within
-// a git-sourced repository, so two charts of one repo root and two directories of
-// one repository at one commit are distinct artifacts rather than one. version is
-// matched against the row's pinned version, which for a kind whose resolver
-// transforms the authored version — a git reference resolved to a commit — is the
-// resolved value rather than the authored one.
+// The location terms are the whole of {kind, url, chart, moduleSubdir}: url is the
+// authored identity URL, chart names the chart within a repo root, and moduleSubdir
+// the directory within a git-sourced repository, so two charts of one repo root and
+// two directories of one repository at one commit are distinct artifacts rather
+// than one.
+//
+// # The join is on what the author wrote, and that is the whole point of the ref term
+//
+// A caller supplies both the authored reference and the authored version, because
+// which of them identifies the artifact depends on whether the kind's resolver
+// transforms it. A resolver that pins the authored version verbatim leaves the two
+// the same string. A resolver that resolves a reference to something immutable — a
+// git tag or branch to a commit — leaves the row pinned at a value the author never
+// wrote, so a lookup keyed on the pinned version alone could never find it from the
+// authored document.
+//
+// So the reference is tried first, against the reference the row records having
+// resolved; where that finds nothing, the pinned version is matched as before. The
+// order matters in one direction only: a row recorded before a reference was
+// recorded for it is still found by its pinned version, so a lockfile written
+// either way answers the same question.
 //
 // The lookup lives here rather than at each surface that needs it because this
 // package owns what a recorded closure says. Two surfaces asking the same question
@@ -65,9 +78,25 @@ func PluginPins(lf *Lockfile) pluginpath.PinMaps {
 // which terms make an artifact the same artifact — and because the answers feed a
 // verification and the fetch it guards, a disagreement between them would decide
 // whether the verification runs at all.
-func (lf *Lockfile) FindSourceArtifact(kind, url, chart, moduleSubdir, version string) (*SourceArtifact, bool) {
+func (lf *Lockfile) FindSourceArtifact(kind, url, chart, moduleSubdir, version, ref string) (*SourceArtifact, bool) {
 	if lf == nil {
 		return nil, false
+	}
+	// Author-written reference first. A row records the reference on each
+	// back-pointer that authored one, so one reference reaching a row through any
+	// of them is that row.
+	if ref != "" {
+		for i := range lf.SourceArtifacts {
+			sa := &lf.SourceArtifacts[i]
+			if sa.Kind != kind || sa.URL != url || sa.Chart != chart || sa.ModuleSubdir != moduleSubdir {
+				continue
+			}
+			for _, rb := range sa.ReferencedBy {
+				if rb.RequestedRef != "" && rb.RequestedRef == ref {
+					return sa, true
+				}
+			}
+		}
 	}
 	for i := range lf.SourceArtifacts {
 		sa := &lf.SourceArtifacts[i]

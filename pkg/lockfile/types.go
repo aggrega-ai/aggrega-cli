@@ -273,13 +273,14 @@ type LibraryConsumer struct {
 //   - helm-oci-chart, helm-https-chart, compose-https-fragment:
 //     PinnedVersion is the user-authored version (the resolver does
 //     not transform it).
+//     A build finds such an entry by that same authored version.
 //   - git-repository: PinnedVersion is the resolved commit
 //     SHA. The authored ref is preserved on each ReferencedBy entry's
-//     RequestedRef field when two conditions hold together — the
-//     Recipe authored a spec.source.ref at all, and PinnedVersion
-//     differs from the Recipe's own spec.source.version. A Recipe
-//     that authors no ref, and one whose authored version already
-//     equals the commit, both leave RequestedRef empty.
+//     RequestedRef field whenever the Recipe authored one; a Recipe
+//     that authors no ref leaves it empty. A build finds such an
+//     entry by the authored ref rather than by the commit, which is
+//     what lets a Recipe name a tag and still resolve to the commit
+//     that tag was pinned at.
 //   - terraform-module-oci: reserved for the future terraform
 //     provider; no adapter ships in the current implementation.
 type SourceArtifact struct {
@@ -321,16 +322,18 @@ type SourceArtifact struct {
 // Entity + URI together identify the catalog entity; Field names the
 // source-side path inside the entity's spec (always "spec.source" in the
 // current implementation). RequestedRef preserves the Recipe's authored
-// spec.source.ref, and is written only when the Recipe authored a ref AND
-// PinnedVersion differs from the Recipe's own spec.source.version
-// (git-repository tags/branches → commit SHA); empty for
-// kinds where PinnedVersion IS the authored version.
+// spec.source.ref, and is written whenever the Recipe authored one
+// (git-repository tags/branches → commit SHA); empty when it authored none,
+// which is every kind whose resolver pins the authored version verbatim.
 //
-// It is what makes a moved reference detectable at all. PinnedVersion is
-// part of the identity a resolution computes, so a reference that moves
-// produces a new identity rather than a changed one — the recorded ref is
-// the term a later run joins on to notice that the same question now has a
-// different answer. See VerifySourceReferences.
+// It carries both halves of what an authored reference is needed for, and
+// recording it unconditionally is what keeps them from excluding each other.
+// PinnedVersion is part of the identity a resolution computes, so a reference
+// that moves produces a new identity rather than a changed one — the recorded
+// ref is the term a later run joins on to notice that the same question now has
+// a different answer (see VerifySourceReferences), and the term a build joins on
+// to find this row from a document that names the reference rather than the
+// commit (see FindSourceArtifact).
 type SourceArtifactReference struct {
 	Entity       string `yaml:"entity"`
 	URI          string `yaml:"uri"`

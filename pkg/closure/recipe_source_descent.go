@@ -156,7 +156,14 @@ func DescendRecipeSources(
 				Field:     entityFieldTag,
 				Component: comp.Component,
 			}
-			if resolved.PinnedVersion != spec.Version && spec.Ref != "" {
+			// Every authored reference is recorded, whatever it resolved to. The
+			// record is what a later run joins on — to find the artifact from the
+			// authored document, and to notice that the reference now resolves
+			// elsewhere — and both of those are needed exactly as much when the
+			// reference happens to agree with the authored version today. Recording
+			// only a disagreement made the set of sources that carry a reference and
+			// the set that can be built from one disjoint.
+			if spec.Ref != "" {
 				ref.RequestedRef = spec.Ref
 			}
 

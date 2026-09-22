@@ -120,26 +120,25 @@ type sourceRefKey struct {
 // # Which rows participate, and why the scope is drawn on the recorded ref
 //
 // Only a row carrying a `requested_ref:` is compared, on both sides. That field
-// records that the pinned version is the RESULT of resolving an authored
-// reference rather than the authored value itself — which is exactly the
-// condition under which the pinned version can move while the authored document
-// stays byte-identical. A row without one pins what its author wrote, so a change
-// there is an edit to the Recipe and not drift.
+// records that the Recipe authored a reference — a name that points at content
+// rather than naming it — which is exactly the condition under which the pinned
+// version can move while the authored document stays byte-identical. A row
+// without one pins what its author wrote, so a change there is an edit to the
+// Recipe and not drift.
 //
 // The scope therefore follows what the lockfile records rather than naming a
 // source kind, and it stays correct as kinds are added: whichever adapter
-// transforms an authored reference into a resolved one records the reference it
-// transformed, and is compared on that.
+// resolves an authored reference records the reference it resolved, and is
+// compared on that.
 //
 // # The bound, stated because it is a property of the record rather than of this
 //
-// A Recipe that authors `version:` equal to the very commit its mutable `ref:`
-// currently resolves to records NO `requested_ref:` — the two values agree, so
-// nothing was transformed. The lockfile then carries no evidence that a reference
-// was involved, and there is nothing here to join on. That is a limit of what is
-// recorded, not of this comparison, and widening the join to cover it would
-// refuse a legitimate author edit: a row with no recorded ref is
-// indistinguishable from one whose author simply wrote a different version.
+// A Recipe that authors no reference at all records no `requested_ref:`, so the
+// lockfile carries no evidence that a reference was involved and there is nothing
+// here to join on. That is a limit of what is recorded, not of this comparison,
+// and widening the join to cover it would refuse a legitimate author edit: a row
+// with no recorded ref is indistinguishable from one whose author simply wrote a
+// different version.
 //
 // # What is compared, and what deliberately is not
 //

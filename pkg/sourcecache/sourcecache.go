@@ -3,11 +3,14 @@
 
 // Package sourcecache owns the build-time read-and-extract pipeline
 // for source artifacts pinned in the lockfile. The package looks up
-// a `source_artifacts:` entry by
-// {kind, url, chart, module_subdir, pinned_version} (url is the authored
+// a `source_artifacts:` entry by its location terms
+// {kind, url, chart, module_subdir} (url is the authored
 // identity URL; chart names the chart within a repo-root helm source and
 // module_subdir the directory within a git-sourced repository, each empty
-// for the kinds it does not apply to),
+// for the kinds it does not apply to) together with what the author wrote to
+// select a version — the declared `ref:` where there is one, the declared
+// `version:` otherwise, so a source declared at a git tag is found in a record
+// that pins the commit that tag resolved to —
 // verifies the full SHA-256 of the cached archive against both the
 // lockfile entry's digest and the cache slot's metadata.yaml
 // digest, wipes and regenerates the `extracted/` subdirectory from
@@ -79,8 +82,8 @@ func ErrFetchNotFound() error { return oci.ErrFetchNotFound() }
 // pkg/oci, on the same terms as ErrFetchNotFound above.
 func ErrFetchIntegrity() error { return oci.ErrFetchIntegrity() }
 
-// LookupAndExtract looks up the lockfile entry for {kind, url, chart,
-// module_subdir, pinned_version}, verifies the full SHA-256 of the cached `.tgz`
+// LookupAndExtract looks up the lockfile entry for the artifact the caller
+// resolved, verifies the full SHA-256 of the cached `.tgz`
 // against the entry's digest AND the cache slot's metadata.yaml
 // digest, wipes and regenerates the `extracted/` subdirectory from
 // the archive, and returns the absolute path of `extracted/`. The
@@ -89,24 +92,42 @@ func ErrFetchIntegrity() error { return oci.ErrFetchIntegrity() }
 // chart untars under a <chartname>/ subdirectory, and the consumer
 // resolves its artifact within.
 //
-// Returns ErrFetchNotFound when no lockfile entry matches the
-// {kind, url, chart, module_subdir, pinned_version} identity, or — for an OCI source kind — when the
+// The row is found by what the author wrote — ref where the source declares one,
+// version otherwise — which is what lets a source declared at a git tag or branch
+// be found in a record that pins the commit it resolved to. The lookup itself is
+// the lockfile's, so this read and the pin comparison beside it cannot come to
+// disagree about which row describes the artifact.
+//
+// Returns ErrFetchNotFound when no lockfile entry matches, or — for an OCI source kind — when the
 // cache slot carries the archive but no persisted OCI manifest (an incomplete
 // cache entry; the caller re-pulls). Returns ErrFetchIntegrity on digest
 // mismatch (either content pin, or the manifest layer digest for an OCI slot)
 // or on archive corruption. Returns wrapped fs errors on read/write/extract
 // failures. A non-OCI source kind (HTTPS chart, git module) carries no manifest
 // by construction and stays on content-pin authority.
-func LookupAndExtract(lf *lockfile.Lockfile, kind, url, chart, moduleSubdir, version, workspaceRoot, cacheDir string) (string, error) {
+func LookupAndExtract(lf *lockfile.Lockfile, kind, url, chart, moduleSubdir, version, ref, workspaceRoot, cacheDir string) (string, error) {
 	if lf == nil {
 		return "", fmt.Errorf("sourcecache: lockfile is nil: %w", ErrFetchNotFound())
 	}
-	entry, found := lf.FindSourceArtifact(kind, url, chart, moduleSubdir, version)
+	entry, found := lf.FindSourceArtifact(kind, url, chart, moduleSubdir, version, ref)
 	if !found {
-		return "", fmt.Errorf("no lockfile entry for kind=%s url=%s chart=%s module_subdir=%s version=%s: %w",
-			kind, url, chart, moduleSubdir, version, ErrFetchNotFound())
+		// The reference is named only where the source declares one, so the line
+		// reports the terms the lookup actually used rather than an empty field the
+		// reader would have to know to ignore.
+		refPart := ""
+		if ref != "" {
+			refPart = fmt.Sprintf(" ref=%s", ref)
+		}
+		return "", fmt.Errorf("no lockfile entry for kind=%s url=%s chart=%s module_subdir=%s version=%s%s: %w",
+			kind, url, chart, moduleSubdir, version, refPart, ErrFetchNotFound())
 	}
-	slot := SlotPath(workspaceRoot, cacheDir, kind, url, chart, moduleSubdir, version, entry.Digest)
+	// The slot is addressed by the version the row PINS, never by the one the
+	// document authored. Acquisition wrote the slot under whatever it resolved to,
+	// so the resolved value is the only one that addresses it — the two are the
+	// same string for a kind that pins the authored version verbatim, which is why
+	// reading the authored one worked for as long as those were the only sources a
+	// build could reach.
+	slot := SlotPath(workspaceRoot, cacheDir, kind, url, chart, moduleSubdir, entry.PinnedVersion, entry.Digest)
 	blobPath := filepath.Join(slot, "blob.tgz")
 	blobBytes, err := os.ReadFile(blobPath)
 	if err != nil {

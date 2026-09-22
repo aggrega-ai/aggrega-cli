@@ -32,7 +32,9 @@ import (
 //     paths are never lockfile-pinned.
 //   - Remote source + lockfile/workspace/cacheDir all set on input:
 //     evaluates source via closure.EvaluateSourceSpec, looks up the
-//     lockfile entry by {kind, url, version}, verifies the cached
+//     lockfile entry by its location terms plus what the author wrote to
+//     select a version — the declared ref where there is one, the declared
+//     version otherwise — verifies the cached
 //     archive's full digest, regenerates the extracted/ directory,
 //     and populates Source with the extracted path + OriginalSource
 //     with the verbatim spec.
@@ -79,8 +81,8 @@ func resolveSourceForNode(input RendererInput, recipe *types.Recipe, nodeCtx *No
 // FeatureRecipe's — to the value an engine consumes, through ONE body both call
 // sites share (the component node loop via resolveSourceForNode, the FeatureRecipe
 // render sites directly). A local/inline source forwards verbatim; a remote source
-// with lockfile + workspaceRoot + cacheDir all set is evaluated to a
-// {kind, url, version} identity and resolved through the lockfile-pin cache extract;
+// with lockfile + workspaceRoot + cacheDir all set is evaluated to its authored
+// coordinates and resolved through the lockfile-pin cache extract;
 // with any of those inputs unset it forwards verbatim (preserving the pre-lockfile
 // path). infra is the resolving instance's per-instance infra; uri is the entity URI
 // for the source-spec evaluation. Returns the resolved source (extracted cache path,
@@ -123,8 +125,13 @@ func resolveEntitySource(input RendererInput, source any, locals types.OrderedMa
 	// The lockfile side needs no guard of its own: the cache lookup below asks the
 	// same question of the same record, and a build whose identity the lockfile
 	// does not pin halts there rather than here.
+	//
+	// The authored reference is passed here as well as to the fetch below, and the
+	// two must stay identical: the lookup answers which row describes this
+	// artifact, so asking it two different questions would decide whether the
+	// comparison runs rather than what it concludes.
 	if pin, ok := recipepin.MatchSourcePin(srcPins, spec.Kind, spec.URL, spec.Chart, spec.ModuleSubdir, spec.Version); ok {
-		if lfrec, found := input.Lockfile.FindSourceArtifact(spec.Kind, spec.URL, spec.Chart, spec.ModuleSubdir, spec.Version); found {
+		if lfrec, found := input.Lockfile.FindSourceArtifact(spec.Kind, spec.URL, spec.Chart, spec.ModuleSubdir, spec.Version, spec.Ref); found {
 			if pin.Digest != lfrec.Digest || pin.ManifestDigest != lfrec.ManifestDigest {
 				return nil, fmt.Errorf("source-artifact %s@%s: recipe pin (digest %s) disagrees with lockfile record (digest %s): %w",
 					spec.URL, spec.Version, pin.Digest, lfrec.Digest, oci.ErrFetchIntegrity())
@@ -133,11 +140,19 @@ func resolveEntitySource(input RendererInput, source any, locals types.OrderedMa
 	}
 	extracted, err := sourcecache.LookupAndExtract(
 		input.Lockfile,
-		spec.Kind, spec.URL, spec.Chart, spec.ModuleSubdir, spec.Version,
+		spec.Kind, spec.URL, spec.Chart, spec.ModuleSubdir, spec.Version, spec.Ref,
 		input.WorkspaceRoot, input.CacheDir,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("source-artifact %s@%s: %w", spec.URL, spec.Version, err)
+		// Name the source by whichever coordinate its author actually wrote. A
+		// source declared only at a `ref:` has no version to print, and "@" with
+		// nothing after it reads as a missing value rather than as a source
+		// identified a different way.
+		at := spec.Version
+		if at == "" {
+			at = spec.Ref
+		}
+		return nil, fmt.Errorf("source-artifact %s@%s: %w", spec.URL, at, err)
 	}
 	return extracted, nil
 }

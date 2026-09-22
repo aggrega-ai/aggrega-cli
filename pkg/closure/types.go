@@ -89,10 +89,8 @@ type SourceArtifact struct {
 // catalog entity that resolved to the artifact; Field names the
 // source-side path inside the entity's spec (always "spec.source"
 // in the current implementation). RequestedRef preserves the Recipe's
-// authored spec.source.ref, and is written only when the Recipe
-// authored a ref AND the resolved PinnedVersion differs from the
-// Recipe's own spec.source.version (git-repository tag/branch →
-// commit SHA); empty otherwise.
+// authored spec.source.ref, and is written whenever the Recipe authored one
+// (git-repository tag/branch → commit SHA); empty when it authored none.
 type SourceArtifactReference struct {
 	Entity       string
 	URI          string

@@ -100,11 +100,12 @@ func resolveRecordedSourceReferences(
 				URL:          sa.URL,
 				Chart:        sa.Chart,
 				ModuleSubdir: sa.ModuleSubdir,
-				// The ref is the whole question. No authored version is supplied,
-				// and none is recorded to supply: a row carries a requested ref
-				// precisely when the pinned version is that ref's RESULT rather than
-				// an authored value, so the ref is the only input the recorded pin
-				// was derived from.
+				// The ref is the whole question, and no authored version is supplied
+				// because none would be read: an adapter that resolves a reference
+				// selects what to fetch from the reference alone, so the ref is the
+				// only input the recorded pin was derived from. A row carries a
+				// requested ref whenever its Recipe authored one, which is the same
+				// set of rows whose pin can move while the document stays unchanged.
 				Ref:           ref.RequestedRef,
 				WorkspaceRoot: workspaceRoot,
 				CacheDir:      cacheDir,
