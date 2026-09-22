@@ -486,12 +486,34 @@ jobs:
             DRY="false"
           fi
 
+          # Stage each guest under the filename the PUBLISHER will look for, and
+          # ask the product's own tool what that filename is rather than building
+          # one here. The guests are embedded as <name>.wasm.gz, but a plugin's
+          # guest file is identified by socket AND name — `governance--cel.wasm`,
+          # not `cel.wasm` — because a name is unique only within its socket.
+          # Deriving the staged name from the .gz filename produced `cel.wasm`,
+          # the publisher looked for `governance--cel.wasm`, and all 14 failed.
+          #
+          # 🔴 `internal/buildtools/pluginguestfile` is the one place that rule
+          # lives, and publish-plugins.sh resolves every guest through it. Reading
+          # the socket out of the entity path and joining it here would work today
+          # and be a second copy of the rule — the first naming change would break
+          # this loop silently, since a wrong name looks exactly like a missing file.
           WASM_DIR="$RUNNER_TEMP/wasm"
           mkdir -p "$WASM_DIR"
-          for gz in aggrega-cli/internal/wasm/embedded/plugins/*.wasm.gz; do
-            base="$(basename "$gz" .wasm.gz)"
-            gunzip -c "$gz" > "$WASM_DIR/$base.wasm"
+          staged=0
+          for entity in "$RUNNER_TEMP"/entities/*/*/*/plugin.yaml; do
+            [ -f "$entity" ] || continue
+            leaf="$(cd aggrega-cli && GOWORK=off go run ./internal/buildtools/pluginguestfile -entity "$entity")"
+            # entities/<socket>/<name>/<version>/plugin.yaml -> <name>
+            name="$(basename "$(dirname "$(dirname "$entity")")")"
+            src="aggrega-cli/internal/wasm/embedded/plugins/$name.wasm.gz"
+            [ -f "$src" ] || { echo "no embedded guest for $entity at $src" >&2; exit 1; }
+            gunzip -c "$src" > "$WASM_DIR/$leaf"
+            staged=$((staged + 1))
           done
+          [ "$staged" -gt 0 ] || { echo "staged no guests — entity generation produced nothing" >&2; exit 1; }
+          echo "staged $staged guest(s) into $WASM_DIR"
 
           args=(enumerate-embedded --entities-dir "$RUNNER_TEMP/entities" --wasm-dir "$WASM_DIR" --registry "$REGISTRY")
           if [ "$DRY" = "true" ]; then
