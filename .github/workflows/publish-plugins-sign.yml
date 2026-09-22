@@ -266,7 +266,19 @@ jobs:
         uses: actions/setup-go@v6
         with:
           go-version-file: aggrega-cli/go.mod
-          cache-dependency-path: aggrega-cli/go.sum
+          # 🔴 CACHING OFF, DELIBERATELY. setup-go caches GOMODCACHE and GOCACHE by
+          # default, which is right on an ephemeral hosted runner where both vanish
+          # between jobs. This workflow runs on a PERSISTENT self-hosted runner,
+          # where they are still on disk next run — so the post-job step was tarring
+          # and uploading ~3 GB to the Actions cache service, taking minutes, only to
+          # download it again over files that never left. It also competes for the
+          # 10 GB per-repository cache budget and evicts entries that are not
+          # redundant.
+          #
+          # ⚠️ Reverse this if the job is ever moved back to a hosted runner: there
+          # the cache is not redundant and its absence means re-downloading the whole
+          # dependency graph every run.
+          cache: false
 
       - name: Install Rust for the wasm32-wasip1 embedded guest
         # Building the CLI regenerates its embedded guests; one guest is a Rust
