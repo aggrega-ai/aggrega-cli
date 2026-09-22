@@ -14,6 +14,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
+	"github.com/aggrega-ai/aggrega-cli/internal/sourceref"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/compactform"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
@@ -38,10 +39,12 @@ type RenderedArtifact struct {
 // Diagnostics is the ordered set of report lines — the identity header, the
 // per-tier status lines (schema, pillars/shape, resolution, render), the
 // declined-check line naming any required uses sockets a single-entity run
-// could not cover, and the render-failure explanation when the isolated render
-// did not complete — each verbatim and newline-free (a renderer emits one per
-// line). Artifacts carries the rendered output of a render-bearing Recipe,
-// ordered by key, so a caller can print the bytes or summarize a count. Notes
+// could not cover, the not-attempted explanation when the Recipe's source is one
+// a single-entity run cannot fetch, and the render-failure explanation when a
+// render that WAS attempted did not complete — each verbatim and newline-free
+// (a renderer emits one per line). Artifacts carries the rendered output of a
+// render-bearing Recipe, ordered by key, so a caller can print the bytes or
+// summarize a count. Notes
 // carries advisory lines a caller routes to a diagnostic stream rather than the
 // primary report. Kind is the resolved entity kind, empty when the input never
 // resolved to a known kind (in which case the returned error explains why and
@@ -281,13 +284,27 @@ func validatePluginEntity(res *EntityResult, path string, data []byte) error {
 // Recipe under test, and drives the real pipeline — first resolution and guards
 // (render skipped), then a real isolated render.
 //
-// One check of a real build is out of reach here and is declined rather
-// than failed: whether the Component's `required: true` uses sockets are
+// Two checks of a real build are out of reach here, and each is declined rather
+// than failed.
+//
+// The first is whether the Component's `required: true` uses sockets are
 // populated. The synthesized build holds a single instance, so it contains
 // no second component an edge could target, and no authoring of the synthesized
-// documents can change that. The declined sockets are named in Diagnostics, so
-// the report states which surface it did not cover instead of leaving a silent
-// difference between what validate checks and what a build checks.
+// documents can change that.
+//
+// The second is the render itself, when the Recipe's source is one that has to
+// be fetched. A single-entity run reads no lockfile and no cache, so it holds
+// neither a record of which bytes that source resolves to nor a store to resolve
+// them from, and the infrastructure code the Recipe names exists nowhere it can
+// reach. That is asked of sourceref.NeedsFetch, which is the one home for the
+// question, so this surface and the resolution it would otherwise drive draw the
+// line in the same place. A source the workspace already holds is NOT declined:
+// it needs no fetch, so a render over it is attempted and a failure in it is a
+// real finding.
+//
+// Both declines are named in Diagnostics, so the report states which surface it
+// did not cover instead of leaving a silent difference between what validate
+// checks and what a build checks.
 func validateRecipeEntity(ctx context.Context, res *EntityResult, wsRoot, cacheDir string, dirs []string, path string, data []byte, suppressUnsupportedFieldWarnings bool) error {
 	var rec types.Recipe
 	if err := yaml.Unmarshal(data, &rec); err != nil {
@@ -350,7 +367,8 @@ func validateRecipeEntity(ctx context.Context, res *EntityResult, wsRoot, cacheD
 		// (possibly not-yet-published or edited-in-place) file drive the render.
 		Recipe: func(string, string) (*types.Recipe, bool) { return &rec, true },
 	}
-	return runRenderTiers(ctx, res, harness, tierLookup, recipeLookup, cat.SubAggregateLoader(), suppressUnsupportedFieldWarnings)
+	return runRenderTiers(ctx, res, harness, tierLookup, recipeLookup, cat.SubAggregateLoader(),
+		suppressUnsupportedFieldWarnings, sourceref.NeedsFetch(rec.Spec.Source))
 }
 
 // declaredRequiredSockets returns the names of every uses socket the Component
@@ -535,7 +553,11 @@ func buildEntityHarness(implements, recipeURI string, comp *types.Component, loo
 // (guard violations, render warnings) surface on the process diagnostic stream
 // through the pipeline itself; the accumulated result carries only this scope's
 // deterministic report.
-func runRenderTiers(ctx context.Context, res *EntityResult, h entityHarness, lookup resolver.CatalogLookup, recipeLookup renderer.RecipeLookup, subAggregateLoader topology.SubAggregateLoader, suppressUnsupportedFieldWarnings bool) error {
+//
+// sourceNeedsFetch declines Tier 3 and reports it as not attempted. Tier 2 still
+// runs and still fails the run on a resolution error, so declining the render
+// narrows what is covered without softening anything that is.
+func runRenderTiers(ctx context.Context, res *EntityResult, h entityHarness, lookup resolver.CatalogLookup, recipeLookup renderer.RecipeLookup, subAggregateLoader topology.SubAggregateLoader, suppressUnsupportedFieldWarnings, sourceNeedsFetch bool) error {
 	// A single-entity harness runs against no workspace at all — it synthesizes
 	// its Release in memory — so the defaults are the configuration in force, and
 	// they are supplied explicitly rather than left unset: an unsupplied
@@ -562,6 +584,21 @@ func runRenderTiers(ctx context.Context, res *EntityResult, h entityHarness, loo
 		return fmt.Errorf("resolution: %w", err)
 	}
 	res.Diagnostics = append(res.Diagnostics, "Resolution: valid")
+
+	// Decline the render for this run and say so, rather than report the
+	// author's own valid Recipe as broken. Everything above was checked; what is
+	// left unchecked is named, so the report is narrower than a build's rather
+	// than quieter about the same ground.
+	if sourceNeedsFetch {
+		res.Diagnostics = append(res.Diagnostics,
+			"Render: not attempted (this Recipe's source is fetched)",
+			"  Validating one entity on its own reads no lockfile, reads and writes no",
+			"  cache, and makes no network request, so the chart or module this Recipe",
+			"  names is never retrieved and there is nothing to render from. To render",
+			"  it, build a Release that deploys a component this Recipe implements.")
+		res.Valid = true
+		return nil
+	}
 
 	// Tier 3: real render. Provider resolution is embedded-wins (the render-tier
 	// catalog enables it upstream), so a core-provider recipe resolves its

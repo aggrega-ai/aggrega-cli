@@ -64,6 +64,41 @@ func IsLocal(source any) bool {
 	}
 }
 
+// Declared reports whether a source value names anything at all.
+//
+// A source that evaluated to an empty string leaves the entity with none just as
+// an absent source does, and an author cannot tell the two apart from the
+// outcome — so this is one condition rather than two. Any shape other than nil
+// and string carries a source: a structured source is a container, and a
+// container that exists names something.
+func Declared(source any) bool {
+	switch s := source.(type) {
+	case nil:
+		return false
+	case string:
+		return s != ""
+	default:
+		return true
+	}
+}
+
+// NeedsFetch reports whether a source can only be obtained over a transport.
+//
+// It is the question a run asks about its own reach rather than about the
+// entity: a reference the workspace already holds is usable from whatever is on
+// disk, while one named by a transport reference exists nowhere until something
+// retrieves it. A run holding no record of what to retrieve, and no store to
+// retrieve it into, can satisfy the first and cannot begin the second.
+//
+// It sits beside the locality rule rather than above it because it is that rule
+// plus the one thing a value has that a reference does not, which is that it may
+// name nothing at all. Deriving it anywhere else would put the transport list in
+// one package and the conclusion drawn from it in another, which is the split
+// this package exists to prevent.
+func NeedsFetch(source any) bool {
+	return Declared(source) && !IsLocal(source)
+}
+
 // IsLocalURL reports whether a single source reference names something the
 // workspace already holds.
 //

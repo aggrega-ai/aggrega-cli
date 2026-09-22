@@ -63,7 +63,11 @@ func newValidateCmd() *cobra.Command {
 			"kind carries: pillar structure for a Component or Feature; shape for a\n" +
 			"Workload, FeatureRecipe or Plugin; and for a Recipe, shape plus an end-to-end\n" +
 			"compile against a minimal generated harness, so its resolution, its guards\n" +
-			"and a render of its output are all exercised. Any other kind is refused here\n" +
+			"and a render of its output are all exercised. Where that Recipe's source is\n" +
+			"one that has to be fetched, the render is reported as not attempted instead:\n" +
+			"validating one entity on its own reads no lockfile, reads and writes no cache\n" +
+			"and makes no network request, so the chart or module it names is never\n" +
+			"retrieved and there is nothing to render from. Any other kind is refused here\n" +
 			"today and is checked in a wider scope instead: a whole-catalog run reaches an\n" +
 			"Aggregate and the library kinds, and --release reaches a Manifest and a\n" +
 			"Release. The command writes nothing to disk.",

@@ -176,3 +176,62 @@ func TestAnchorToDocumentAnchorsARelativeDocumentAgainstTheProcessDirectory(t *t
 		t.Errorf("anchored against the wrong base: got %q, want %q", got, want)
 	}
 }
+
+// TestDeclaredSeparatesNamingNothingFromNamingSomething covers the one condition
+// two readers depend on agreeing about: a source that evaluated to an empty
+// string leaves the entity with none just as an absent source does.
+func TestDeclaredSeparatesNamingNothingFromNamingSomething(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name   string
+		source any
+		want   bool
+	}{
+		{"absent", nil, false},
+		{"an empty reference", "", false},
+		{"a relative path", "./chart", true},
+		{"a registry reference", "oci://example.test/chart", true},
+		{"a structured source", map[string]any{"url": "oci://example.test/chart"}, true},
+		{"a structured source naming no url", map[string]any{"kind": "helm-oci-chart"}, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := Declared(tc.source); got != tc.want {
+				t.Errorf("Declared(%#v) = %v, want %v", tc.source, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestNeedsFetchAsksAboutTheTransportNotTheShape covers the rule a run consults
+// about its own reach. Two rows carry the whole point and would each be wrong
+// under a shape-based reading: a STRUCTURED source naming a path the workspace
+// already holds needs no fetch, and a bare STRING naming a transport does.
+// Reading "is it a structured source" instead would get both backwards.
+func TestNeedsFetchAsksAboutTheTransportNotTheShape(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name   string
+		source any
+		want   bool
+	}{
+		{"absent", nil, false},
+		{"an empty reference", "", false},
+		{"a relative path", "./module", false},
+		{"an absolute path", "/srv/chart", false},
+		{"a structured source naming a relative path", map[string]any{"url": "./chart"}, false},
+		{"a registry reference", "oci://example.test/chart", true},
+		{"a web reference", "https://example.test/chart.tgz", true},
+		{"a repository named by suffix", "example.test/repo.git", true},
+		{"a structured registry source", map[string]any{"kind": "helm-oci-chart", "url": "oci://example.test/chart"}, true},
+		{"a structured web source", map[string]any{"kind": "helm-https-chart", "url": "https://example.test/charts"}, true},
+		{"a structured source naming no url", map[string]any{"kind": "helm-oci-chart"}, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := NeedsFetch(tc.source); got != tc.want {
+				t.Errorf("NeedsFetch(%#v) = %v, want %v", tc.source, got, tc.want)
+			}
+		})
+	}
+}

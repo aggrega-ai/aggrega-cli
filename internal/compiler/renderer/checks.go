@@ -12,6 +12,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 	"github.com/aggrega-ai/aggrega-cli/internal/gotmpl"
+	"github.com/aggrega-ai/aggrega-cli/internal/sourceref"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
@@ -1937,17 +1938,10 @@ func pillarRefMatches(ref, pillar string) bool {
 // One helper for the same reason the pillar roots above have one home: this is a
 // single decision with more than one reader, and a copy per reader would agree
 // today and would be exactly what diverges the next time the emptiness condition
-// changes. Any shape other than nil and string carries a source: a structured
-// source is a container, and a container that exists names something.
+// changes. The rule itself lives in sourceref, beside the locality rule that
+// reads the same value, because readers outside this package ask it too.
 func sourceValueDeclared(src any) bool {
-	switch s := src.(type) {
-	case nil:
-		return false
-	case string:
-		return s != ""
-	default:
-		return true
-	}
+	return sourceref.Declared(src)
 }
 
 // recipeSourceDeclared reports whether a Recipe carries a source, reading the

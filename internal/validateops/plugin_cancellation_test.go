@@ -122,8 +122,10 @@ func TestAnEntityValidationWhoseContextHasAlreadyEndedRunsNoPipeline(t *testing.
 	withdrawn, stop := context.WithCancel(context.Background())
 	stop()
 
-	werr := runRenderTiers(withdrawn, &withdrawnRes, harness, lookup, recipeLookup, nil, false)
-	lerr := runRenderTiers(context.Background(), &liveRes, harness, lookup, recipeLookup, nil, false)
+	// The probe Recipe carries no source, so the render tier is reached rather
+	// than declined — which is what makes the withdrawal observable here.
+	werr := runRenderTiers(withdrawn, &withdrawnRes, harness, lookup, recipeLookup, nil, false, false)
+	lerr := runRenderTiers(context.Background(), &liveRes, harness, lookup, recipeLookup, nil, false, false)
 
 	if werr == nil {
 		t.Fatal("the withdrawn render tier succeeded; a run whose caller had already withdrawn " +
