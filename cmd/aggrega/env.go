@@ -35,6 +35,20 @@ const helpCatalogDir = "Catalog directory; repeatable. Each --catalog is prepend
 	"directory at the workspace root when there is one. A workspace whose catalog_dirs is " +
 	"written as an empty list reads no local catalog at all."
 
+// helpReleasePath is the --release flag's help text for the two commands that
+// take a Release as the whole subject of the run, held once for the reason
+// helpCatalogDir above is: both resolve the value the same way, and a reader
+// comparing the two must not be told two different things about where a relative
+// path is looked for.
+//
+// It states the anchoring because that is the half a reader cannot infer. The
+// same Release is nameable over the language-server surface too, where a request
+// carries no working directory and the path is relative to the workspace root
+// instead — so a reader moving between the two meets one spelling resolving to
+// two files unless each surface says which it means.
+const helpReleasePath = "Path to Release YAML file (required). A relative path resolves against " +
+	"the directory you run the command in, not against the workspace root"
+
 // helpOffline is the offline flag's help text, held beside the composition that
 // reads the flag so the promise a reader is given and the layer that keeps it
 // sit in one place.
