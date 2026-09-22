@@ -131,7 +131,7 @@ func peekDocumentHeader(doc *yaml.Node) (apiVersion, kind string, ok bool) {
 			kind = val.Value
 		}
 	}
-	if !strings.HasPrefix(apiVersion, "aggrega.ai/") {
+	if !strings.HasPrefix(apiVersion, aggregaAPIGroup+"/") {
 		return "", "", false
 	}
 	return apiVersion, kind, true

@@ -221,6 +221,120 @@ func TestTheEntityIndexReportsWhatTheDocumentDeclaresNotWhatItIsCalled(t *testin
 	})
 }
 
+// newMixedProjectWorkspace writes a workspace holding Aggrega documents beside
+// the rendered Kubernetes manifests a team that commits its build output keeps
+// next to them. Every document in it declares a kind and a name, so what the
+// listing does with each is decided by its apiVersion alone.
+//
+// It is deliberately separate from the discovery fixture above: that one is
+// sized against the paging assertions built on it, and a fixture whose entity
+// count moves would make those answer a different question.
+func newMixedProjectWorkspace(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	for path, content := range map[string]string{
+		"parts/api.yaml": `apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: example/compute/api
+  version: "1.0.0"
+`,
+		// No apiVersion: an unfinished Aggrega document, which the listing
+		// reports so its author can be told what it is missing.
+		"parts/draft.yaml": `kind: Component
+metadata:
+  name: example/compute/draft
+`,
+		"rendered/deployment.yaml": `apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+`,
+		"rendered/service.yaml": `apiVersion: v1
+kind: Service
+metadata:
+  name: api
+`,
+	} {
+		full := filepath.Join(root, filepath.FromSlash(path))
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatalf("mkdir for %s: %v", path, err)
+		}
+		if err := os.WriteFile(full, []byte(content), 0o644); err != nil {
+			t.Fatalf("write %s: %v", path, err)
+		}
+	}
+	return root
+}
+
+// TestTheEntityListingOffersOnlyNamesTheOtherToolsCanTake drives the admission
+// rule through the tool a client actually calls, and it is the half the daemon's
+// own test cannot make: this listing tells a caller it is how the names for
+// every other tool are obtained, so a name it offers that describe, validate and
+// build all refuse is a listing that has misdirected its caller.
+//
+// The draft row is the one that keeps the rule honest in the other direction. A
+// document declaring no apiVersion is still offered, because it is an Aggrega
+// document with something missing rather than another project's file, and a
+// listing that hid it would leave its author with no way to find out it is there.
+func TestTheEntityListingOffersOnlyNamesTheOtherToolsCanTake(t *testing.T) {
+	root := newMixedProjectWorkspace(t)
+	s := &server{out: io.Discard, logw: io.Discard, startDir: root}
+
+	var got listEntitiesResult
+	decodeStructured(t, callDiscoveryTool(t, s, "list-entities", map[string]any{
+		"workspace_root": root, "response_format": "detailed",
+	}), &got)
+
+	byFile := map[string]string{}
+	for _, e := range got.Entities {
+		if e.File != "" {
+			byFile[e.File] = e.Kind + " " + e.Name
+		}
+	}
+
+	t.Run("an Aggrega document declaring the group is offered", func(t *testing.T) {
+		const file = "parts/api.yaml"
+		want := "Component example/compute/api"
+		if byFile[file] != want {
+			t.Fatalf("%s is reported as %q; want %q", file, byFile[file], want)
+		}
+	})
+
+	t.Run("an Aggrega document declaring no apiVersion is still offered", func(t *testing.T) {
+		const file = "parts/draft.yaml"
+		want := "Component example/compute/draft"
+		if byFile[file] != want {
+			t.Fatalf("%s is reported as %q; want %q. A document with no apiVersion is an Aggrega document "+
+				"missing a field, not another project's file, and hiding it leaves its author nothing to act on.",
+				file, byFile[file], want)
+		}
+	})
+
+	for _, rendered := range []string{"rendered/deployment.yaml", "rendered/service.yaml"} {
+		t.Run("a rendered manifest is not offered: "+rendered, func(t *testing.T) {
+			if entry, reported := byFile[rendered]; reported {
+				t.Fatalf("%s was offered as %q. Every other tool refuses that name, so the listing that says it "+
+					"is how names are obtained would have handed its caller one that resolves nowhere.",
+					rendered, entry)
+			}
+		})
+	}
+
+	// The breakdown is what a caller reading the summary sees, so a foreign kind
+	// surviving there is as misleading as one surviving in the records.
+	for _, k := range got.Kinds {
+		if k.Kind == "Deployment" || k.Kind == "Service" {
+			t.Errorf("the per-kind breakdown still counts %d %s, so the summary reports a population the "+
+				"records no longer carry", k.Count, k.Kind)
+		}
+	}
+	if got.Count != len(byFile) {
+		t.Errorf("count = %d but %d distinct files were reported; the total and the records disagree",
+			got.Count, len(byFile))
+	}
+}
+
 // TestTheReleaseListingIsDecidedByContentNotFilename is the same proof for the
 // Release listing, and it is the half that a corpus of conventionally-named
 // fixtures cannot make: the two assertions pull in opposite directions, so an

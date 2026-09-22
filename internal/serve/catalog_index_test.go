@@ -235,6 +235,148 @@ func TestCatalogIndexSkipsForeignYAMLAndUnaddressableDocuments(t *testing.T) {
 	}
 }
 
+// writeAPIGroupFixture lays out a workspace whose documents differ only in the
+// apiVersion they declare, so what the index does with each one is decided by
+// that and by nothing else. Every document here declares a kind: and a
+// metadata.name, which is what makes the fixture discriminating: a rule reading
+// only those two admits all six.
+//
+// The three rows that are not the obvious cases carry the weight. A document
+// declaring a bare version and no group at all is the shape a core Kubernetes
+// object takes, and no group is not this one. A document declaring a subgroup of
+// aggrega.ai is ours. And a document declaring a group that merely ENDS in the
+// same letters is not, which is what separates a group test from a substring
+// one.
+func writeAPIGroupFixture(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	files := map[string]string{
+		// Declares Aggrega's own group: an entity.
+		"declared.yaml": `apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: declared
+`,
+		// Declares a subgroup of it: also ours.
+		"subgroup.yaml": `apiVersion: extensions.aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: subgroup
+`,
+		// Declares NO apiVersion. Admitted: an aggrega document whose
+		// apiVersion is missing is still an aggrega document, and one an
+		// author can be told is incomplete only if it is reported at all.
+		"draft.yaml": `kind: Component
+metadata:
+  name: draft
+`,
+		// A rendered Kubernetes manifest, declaring a group of its own.
+		"rendered-deployment.yaml": `apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rendered-deployment
+`,
+		// A core Kubernetes object: a bare version, belonging to no group.
+		"rendered-service.yaml": `apiVersion: v1
+kind: Service
+metadata:
+  name: rendered-service
+`,
+		// A group ending in the same letters without being a subgroup.
+		"lookalike.yaml": `apiVersion: notaggrega.ai/v1
+kind: Component
+metadata:
+  name: lookalike
+`,
+	}
+	for rel, content := range files {
+		if err := os.WriteFile(filepath.Join(root, rel), []byte(content), 0o644); err != nil {
+			t.Fatalf("write %s: %v", rel, err)
+		}
+	}
+	return root
+}
+
+// TestCatalogIndexAdmitsAggregaDocumentsAndSkipsEveryOtherProject drives the
+// admission rule in both directions through the daemon's own method, reading
+// each verdict back off the marshalled response.
+//
+// The rule is negative: a document is skipped when it POSITIVELY declares an
+// apiVersion belonging to another group. Absence is not a foreign group, so the
+// draft row is admitted — and that row is the whole reason the rule is written
+// this way rather than as "admit what declares Aggrega's group", which would
+// drop every document an author has not finished writing while the catalog
+// still resolved it by name.
+func TestCatalogIndexAdmitsAggregaDocumentsAndSkipsEveryOtherProject(t *testing.T) {
+	srv := newTestServer(t, writeAPIGroupFixture(t), &bytes.Buffer{}, &bytes.Buffer{})
+	body, entities := catalogIndexOverWire(t, srv)
+
+	reported := map[string]bool{}
+	for _, entity := range entities {
+		name, _ := entity["name"].(string)
+		reported[name] = true
+	}
+
+	for _, row := range []struct {
+		name  string
+		admit bool
+		why   string
+	}{
+		{"declared", true, "it declares aggrega.ai, which is this compiler's own group"},
+		{"subgroup", true, "it declares a subgroup of aggrega.ai, which is still ours"},
+		{"draft", true, "it declares no apiVersion at all, and absence is not another project's group"},
+		{"rendered-deployment", false, "it declares apps/v1, which is another project's group"},
+		{"rendered-service", false, "it declares a bare v1, which belongs to no group and so not to ours"},
+		{"lookalike", false, "it declares notaggrega.ai, which ends in the same letters without being a subgroup"},
+	} {
+		if reported[row.name] != row.admit {
+			verb := "is absent from"
+			if reported[row.name] {
+				verb = "reached"
+			}
+			t.Errorf("%q %s the index; it should be %v, because %s.\nresponse: %s",
+				row.name, verb, map[bool]string{true: "reported", false: "skipped"}[row.admit], row.why, body)
+		}
+	}
+}
+
+// TestCatalogIndexReportsTheAPIVersionItAdmittedOn pins that the field the rule
+// reads is the field a client receives, so a caller can see for itself why a
+// document was admitted — including the admitted document that declares none,
+// which arrives as the empty string rather than as a missing key.
+func TestCatalogIndexReportsTheAPIVersionItAdmittedOn(t *testing.T) {
+	srv := newTestServer(t, writeAPIGroupFixture(t), &bytes.Buffer{}, &bytes.Buffer{})
+	body, entities := catalogIndexOverWire(t, srv)
+
+	want := map[string]string{
+		"declared": "aggrega.ai/v1alpha1",
+		"subgroup": "extensions.aggrega.ai/v1alpha1",
+		"draft":    "",
+	}
+	seen := map[string]bool{}
+	for _, entity := range entities {
+		name, _ := entity["name"].(string)
+		expected, ours := want[name]
+		if !ours {
+			continue
+		}
+		seen[name] = true
+		got, present := entity["apiVersion"]
+		if !present {
+			t.Errorf("%q carries no apiVersion key at all: %s", name, body)
+			continue
+		}
+		if got != expected {
+			t.Errorf("%q[apiVersion] = %v, want %q", name, got, expected)
+		}
+	}
+	for name := range want {
+		if !seen[name] {
+			t.Errorf("%q never reached the index, so this test asserted nothing about it: %s", name, body)
+		}
+	}
+}
+
 // TestCatalogIndexIsByteStableAcrossRepeatedRequests is the determinism
 // assertion, and it is discriminating rather than decorative because the
 // nondeterminism it guards is live: the parse cache iterates in Go map

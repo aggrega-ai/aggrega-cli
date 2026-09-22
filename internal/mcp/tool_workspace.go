@@ -218,8 +218,10 @@ var listEntitiesToolSpec = toolSpec{
 		"whether to ask again. Call this first in an unfamiliar workspace: it takes no subject, so it is how you " +
 		"obtain the names the other tools accept — describe, validate and build refuse a name they cannot resolve " +
 		"rather than answering empty — and the summary tells you how much there is before you ask for any of it. A " +
-		"document counts as an entity when it declares both a kind and a name; foreign YAML declaring no kind is " +
-		"skipped. Pair it with list-releases and join the two on kind, name and file.",
+		"document counts as an entity when it declares both a kind and a name and declares no apiVersion outside " +
+		"Aggrega's own, so YAML declaring no kind — a chart's values file, a configuration file — is skipped, and " +
+		"so is a document belonging to another project, such as a rendered Kubernetes manifest. Pair it with " +
+		"list-releases and join the two on kind, name and file.",
 	workspaceSelectionNote: "Optional `workspace_root` and `catalog_dirs` override discovery.",
 	inputSchema: `{
   "type": "object",
@@ -310,7 +312,7 @@ func renderListEntitiesText(p listEntitiesResult) string {
 		fmt.Fprintf(&b, "  %s: %d\n", k.Kind, k.Count)
 	}
 	if p.Count == 0 {
-		b.WriteString("  none — no document under this root declares both a kind and a name\n")
+		b.WriteString("  none — no Aggrega document under this root declares both a kind and a name\n")
 	}
 	if p.Returned == 0 && p.Count > 0 {
 		fmt.Fprintf(&b, "\nCall again with response_format \"detailed\" for the entity records themselves, "+

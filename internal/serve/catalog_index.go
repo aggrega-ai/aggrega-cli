@@ -6,6 +6,7 @@ package serve
 import (
 	"context"
 	"sort"
+	"strings"
 
 	"go.yaml.in/yaml/v3"
 
@@ -88,10 +89,14 @@ func (s *Server) dispatchCatalogIndex(ctx context.Context, req *jsonRPCRequest) 
 //
 // A document is an entity here when it declares both a kind: and a
 // metadata.name: those two are what make it addressable, and a document
-// missing either is not something a caller can refer to afterwards.
-// Foreign YAML in the workspace — configuration, a chart's values file —
-// declares no kind: and is skipped, which is what keeps this an entity
-// index rather than a file listing.
+// missing either is not something a caller can refer to afterwards. A
+// document that declares an apiVersion in another project's group is
+// skipped whatever else it carries, so a rendered Kubernetes manifest —
+// which declares a kind: and a metadata.name of its own — is not reported
+// as something this workspace holds. Those two rules together are what
+// keep this an entity index rather than a file listing: the first drops
+// YAML that addresses nothing, the second drops documents that address
+// something this compiler does not read.
 //
 // # The index spans both places an entity can come from
 //
@@ -173,6 +178,10 @@ func workspaceEntityIndex(ctx context.Context, root string, view *catalog.LazyLo
 		if kind == "" {
 			return true
 		}
+		apiVersion := scalarAtPathOnDoc(doc.node, []string{"apiVersion"})
+		if declaresForeignAPIGroup(apiVersion) {
+			return true
+		}
 		name, _ := metadataNameOf(doc.node)
 		if name == "" {
 			return true
@@ -194,7 +203,7 @@ func workspaceEntityIndex(ctx context.Context, root string, view *catalog.LazyLo
 		out = append(out, CatalogEntity{
 			Kind:        kind,
 			Name:        name,
-			APIVersion:  scalarAtPathOnDoc(doc.node, []string{"apiVersion"}),
+			APIVersion:  apiVersion,
 			Description: scalarAtPathOnDoc(doc.node, []string{"metadata", "description"}),
 			Labels:      stringMapAtPathOnDoc(doc.node, []string{"metadata", "labels"}),
 			File:        rel,
@@ -223,6 +232,47 @@ func workspaceEntityIndex(ctx context.Context, root string, view *catalog.LazyLo
 		return entityOrderLess(a.Kind, a.Name, a.File, b.Kind, b.Name, b.File)
 	})
 	return out
+}
+
+// aggregaAPIGroup is the apiVersion group an aggrega document declares. The
+// group alone, without a version: what a reader of it asks is whose document
+// this is, and every version of the vocabulary answers that the same way.
+const aggregaAPIGroup = "aggrega.ai"
+
+// declaresForeignAPIGroup reports whether an apiVersion positively names a group
+// other than aggrega.ai or a subgroup of it.
+//
+// The test is negative, and the absent case is the reason. A document declaring
+// no apiVersion at all is not foreign and is admitted: an aggrega document whose
+// apiVersion is missing is still an aggrega document, one the catalog resolves
+// and validation has a diagnostic to describe. Reading absence as foreign would
+// drop it from the index while every surface that resolves by name still found
+// it, which reports a workspace nobody authored — where admitting it reports a
+// document an author can then be told is incomplete.
+//
+// It enumerates no kinds, and that is what separates it from a list of entity
+// kinds written beside the index. Such a list has to be remembered when a kind
+// is added and stops reporting the new one silently when it is not, which is a
+// wrong answer indistinguishable from a right one; a group test admits a kind
+// added tomorrow with no edit here. The same reasoning rules out keying this on
+// a closed set of known apiVersion values, which would drop every document of a
+// version the set had not yet been taught.
+//
+// An apiVersion carrying no "/" declares a version in no group at all — the
+// shape a core Kubernetes object takes — and no group is not this one.
+//
+// This is deliberately not peekDocumentHeader's non-aggrega guard, and the two
+// must not be unified. That guard answers which schema validates a buffer, so
+// it can only admit a document that positively names one and reads an absent
+// apiVersion as unclassifiable. This answers which documents a workspace holds,
+// where an unclassifiable document is exactly the one worth reporting. The two
+// share the group name above and nothing else.
+func declaresForeignAPIGroup(apiVersion string) bool {
+	if apiVersion == "" {
+		return false
+	}
+	group, _, _ := strings.Cut(apiVersion, "/")
+	return group != aggregaAPIGroup && !strings.HasSuffix(group, "."+aggregaAPIGroup)
 }
 
 // stringMapAtPathOnDoc reads the mapping doc declares at the supplied
