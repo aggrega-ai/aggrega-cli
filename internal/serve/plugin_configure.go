@@ -60,8 +60,8 @@ func (s *Server) pluginScope(configPath string, machineWide bool) pluginWriteSco
 // 🔴 What this confines without exception is where an operation WRITES. A
 // destination of the request's own choosing would let a session create or
 // overwrite files in a tree it was never opened over, and no request here may
-// name one: every outputDir, and every file a method edits in place, is judged
-// here.
+// name one: every destination a request carries — each outputDir, the build's
+// outputParent, and every file a method edits in place — is judged here.
 //
 // A path an operation only READS is a separate question, decided per parameter
 // rather than by one rule over all of them, because a file the person driving the

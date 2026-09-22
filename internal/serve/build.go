@@ -23,16 +23,25 @@ import (
 // resolves the output directory against the directory it was run in, which is a
 // location the person running it stated by standing there. A request carries no
 // such location, so this wire resolves it against the workspace root instead —
-// and OutputDir is how a caller states the location a terminal states by
+// and OutputParent is how a caller states the location a terminal states by
 // standing somewhere.
 type buildParams struct {
 	Release string `json:"release"`
 
-	// OutputDir is where in the workspace this build writes, relative to the
-	// workspace root: the output directory resolves under it, exactly as it
-	// resolves under the invocation directory at a terminal. So a caller sending
-	// the folder its reader is looking at gets the artifacts a build run in that
-	// folder would have produced, in the place that build would have put them.
+	// OutputParent is the directory the output directory is created inside,
+	// relative to the workspace root: the artifacts land in the output directory
+	// beneath it, exactly as they land beneath the invocation directory at a
+	// terminal. So a caller sending the folder its reader is looking at gets the
+	// artifacts a build run in that folder would have produced, in the place that
+	// build would have put them.
+	//
+	// 🔴 It names the output directory's PARENT and never the output directory
+	// itself, which is what separates it from the destination the other writing
+	// methods on this wire take. Those name the directory written INTO, so a
+	// caller sending one folder name to each gets its files directly inside that
+	// folder there and one level down here. The two are different things, so they
+	// carry different names rather than one name a reader would have to try to
+	// tell apart.
 	//
 	// Absent leaves the anchor at the workspace root, which is where every
 	// request that does not send it already writes. Empty is the same state and
@@ -45,7 +54,7 @@ type buildParams struct {
 	// field makes the caller's is where INSIDE the workspace a build writes; it
 	// does not make the daemon a writer pointed anywhere by whoever is on the
 	// other end of the pipe.
-	OutputDir string `json:"outputDir,omitempty"`
+	OutputParent string `json:"outputParent,omitempty"`
 
 	// AutoPull resolves the Release's dependencies before the render, as this
 	// build's first step: the same resolution aggrega/resolveDependencies
@@ -146,8 +155,8 @@ func (s *Server) dispatchBuild(ctx context.Context, req *jsonRPCRequest) error {
 //
 // # Where it writes, and what anchors it
 //
-// Into the default output directory, resolved under the workspace root the
-// request named — or, where the request sent outputDir, under that location
+// Into the default output directory, created inside the workspace root the
+// request named — or, where the request sent outputParent, inside that location
 // inside the workspace instead.
 //
 // 🔴 The anchor is not shared with the command line. What the two surfaces
@@ -155,9 +164,9 @@ func (s *Server) dispatchBuild(ctx context.Context, req *jsonRPCRequest) error {
 // the other; what they do not share is what that name resolves against. A
 // terminal resolves it against the directory the command was run in, which is a
 // location the person running it stated by standing there. A request states no
-// such location, so this wire's anchor is the workspace root, and outputDir is
-// how a caller states what standing somewhere states at a terminal. Absent, the
-// anchor stays at the root, which is what every request that sends nothing
+// such location, so this wire's anchor is the workspace root, and outputParent
+// is how a caller states what standing somewhere states at a terminal. Absent,
+// the anchor stays at the root, which is what every request that sends nothing
 // already gets.
 //
 // A destination the request names is confined to the workspace this session
@@ -215,7 +224,7 @@ func (s *Server) handleBuild(ctx context.Context, params buildParams) (buildResu
 	// one this session may not write to is refused having rendered nothing and,
 	// where it asked for a fill, having written no lockfile for a build that was
 	// never going to land.
-	outRoot, destErr := s.buildOutputRoot(params.OutputDir)
+	outRoot, destErr := s.buildOutputRoot(params.OutputParent)
 	if destErr != nil {
 		return buildResult{}, destErr
 	}
@@ -420,14 +429,21 @@ func dependencyResolutionNotices(lines []string) []buildNotice {
 }
 
 // buildOutputRoot is the directory a build performed by this daemon writes to:
-// the default output directory, resolved under the location inside the workspace
-// the request named, or under the workspace root this session anchored to when
+// the default output directory, created inside the location within the workspace
+// the request named, or inside the workspace root this session anchored to when
 // the request named none.
 //
 // It is a method rather than a literal at the call site so that what the daemon
 // can write to is readable from a test, and so that the anchoring is stated once.
 //
-// 🔴 outputDir is judged by workspacePath rather than by a comparison written
+// 🔴 The joined default output directory is why the parameter names a PARENT.
+// What the caller sends is the directory the output directory is created inside,
+// so the directory that ends up holding the artifacts is one level below the
+// value sent — which is the whole of the difference between this parameter and
+// the destination the other writing methods on this wire take, and the reason
+// the two carry different names.
+//
+// 🔴 outputParent is judged by workspacePath rather than by a comparison written
 // here, because that is the one rule every destination on this surface takes —
 // so what this method may return is bounded by the workspace the session opened,
 // and a second containment written beside it could not drift away from the
@@ -435,7 +451,7 @@ func dependencyResolutionNotices(lines []string) []buildNotice {
 // and the fault, so a caller is told what to send rather than only that it sent
 // the wrong thing.
 //
-// An empty outputDir is the request that named none rather than a value to
+// An empty outputParent is the request that named none rather than a value to
 // judge. It is what a caller computing the root's own path relative to itself
 // produces, and the root is precisely where a request naming nothing already
 // writes, so the two states are one state.
@@ -446,9 +462,9 @@ func dependencyResolutionNotices(lines []string) []buildNotice {
 // directory would write somewhere neither surface named. A request that names a
 // destination against such a session is refused by the rule above, which has no
 // root to confine anything against.
-func (s *Server) buildOutputRoot(outputDir string) (string, *jsonRPCError) {
-	if outputDir != "" {
-		anchor, err := s.workspacePath("build: outputDir", outputDir)
+func (s *Server) buildOutputRoot(outputParent string) (string, *jsonRPCError) {
+	if outputParent != "" {
+		anchor, err := s.workspacePath("build: outputParent", outputParent)
 		if err != nil {
 			return "", &jsonRPCError{
 				Code:    jsonRPCInvalidParams,

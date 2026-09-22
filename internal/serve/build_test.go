@@ -191,11 +191,11 @@ func TestBuildOutputRootIsAnchoredToTheWorkspace(t *testing.T) {
 	outside := t.TempDir()
 
 	for _, tc := range []struct {
-		name      string
-		root      string
-		outputDir string
-		want      string
-		refused   bool
+		name         string
+		root         string
+		outputParent string
+		want         string
+		refused      bool
 	}{
 		{
 			name: "naming no destination resolves under the anchored root",
@@ -203,50 +203,50 @@ func TestBuildOutputRootIsAnchoredToTheWorkspace(t *testing.T) {
 			want: filepath.Join(ws, artifactout.DefaultOutputDir),
 		},
 		{
-			name:      "an empty destination is the same state as naming none",
-			root:      ws,
-			outputDir: "",
-			want:      filepath.Join(ws, artifactout.DefaultOutputDir),
+			name:         "an empty destination is the same state as naming none",
+			root:         ws,
+			outputParent: "",
+			want:         filepath.Join(ws, artifactout.DefaultOutputDir),
 		},
 		{
-			name:      "a destination inside the workspace anchors the output under it",
-			root:      ws,
-			outputDir: "docs",
-			want:      filepath.Join(ws, "docs", artifactout.DefaultOutputDir),
+			name:         "a destination inside the workspace anchors the output under it",
+			root:         ws,
+			outputParent: "docs",
+			want:         filepath.Join(ws, "docs", artifactout.DefaultOutputDir),
 		},
 		{
-			name:      "the root named as itself is the root",
-			root:      ws,
-			outputDir: ".",
-			want:      filepath.Join(ws, artifactout.DefaultOutputDir),
+			name:         "the root named as itself is the root",
+			root:         ws,
+			outputParent: ".",
+			want:         filepath.Join(ws, artifactout.DefaultOutputDir),
 		},
 		{
-			name:      "an absolute destination outside the workspace is refused",
-			root:      ws,
-			outputDir: outside,
-			refused:   true,
+			name:         "an absolute destination outside the workspace is refused",
+			root:         ws,
+			outputParent: outside,
+			refused:      true,
 		},
 		{
-			name:      "a destination climbing out of the workspace is refused",
-			root:      ws,
-			outputDir: "../elsewhere",
-			refused:   true,
+			name:         "a destination climbing out of the workspace is refused",
+			root:         ws,
+			outputParent: "../elsewhere",
+			refused:      true,
 		},
 		{
 			name: "a daemon with no anchor resolves to the relative default",
 			want: artifactout.DefaultOutputDir,
 		},
 		{
-			name:      "a daemon with no anchor refuses a named destination",
-			outputDir: "docs",
-			refused:   true,
+			name:         "a daemon with no anchor refuses a named destination",
+			outputParent: "docs",
+			refused:      true,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got, envelope := (&Server{workspaceRoot: tc.root}).buildOutputRoot(tc.outputDir)
+			got, envelope := (&Server{workspaceRoot: tc.root}).buildOutputRoot(tc.outputParent)
 			if tc.refused {
 				if envelope == nil {
-					t.Fatalf("buildOutputRoot(%q) resolved to %q, want a refusal", tc.outputDir, got)
+					t.Fatalf("buildOutputRoot(%q) resolved to %q, want a refusal", tc.outputParent, got)
 				}
 				// The sentence is the shared rule's own, reached through this
 				// method rather than composed here: a copy written in this file
@@ -255,24 +255,24 @@ func TestBuildOutputRootIsAnchoredToTheWorkspace(t *testing.T) {
 				// beside it, because a refusal that does not name the field leaves
 				// its reader nothing to correct.
 				for _, want := range []string{
-					"build: outputDir",
+					"build: outputParent",
 					"must name a path inside the workspace this session opened",
 					"relative to its root",
 				} {
 					if !strings.Contains(envelope.Message, want) {
-						t.Errorf("the refusal of %q reads %q, which does not carry %q", tc.outputDir, envelope.Message, want)
+						t.Errorf("the refusal of %q reads %q, which does not carry %q", tc.outputParent, envelope.Message, want)
 					}
 				}
 				if envelope.Code != jsonRPCInvalidParams {
-					t.Errorf("the refusal of %q carries code %d, want the invalid-params code %d", tc.outputDir, envelope.Code, jsonRPCInvalidParams)
+					t.Errorf("the refusal of %q carries code %d, want the invalid-params code %d", tc.outputParent, envelope.Code, jsonRPCInvalidParams)
 				}
 				return
 			}
 			if envelope != nil {
-				t.Fatalf("buildOutputRoot(%q) refused with %q, want %q", tc.outputDir, envelope.Message, tc.want)
+				t.Fatalf("buildOutputRoot(%q) refused with %q, want %q", tc.outputParent, envelope.Message, tc.want)
 			}
 			if got != tc.want {
-				t.Errorf("buildOutputRoot(%q) = %q, want %q", tc.outputDir, got, tc.want)
+				t.Errorf("buildOutputRoot(%q) = %q, want %q", tc.outputParent, got, tc.want)
 			}
 		})
 	}
