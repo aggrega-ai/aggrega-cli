@@ -377,7 +377,7 @@ metadata:
 spec:
   source: ./charts/api
   valuesMapping:
-    $import: ChartWrapValues#/mappings/SingleWorkloadChart
+    $import: SourcedChartValues#/mappings/SingleWorkloadChart
   workload:
     $import: BaseWorkloads#/workloads/StatelessService
   locals:

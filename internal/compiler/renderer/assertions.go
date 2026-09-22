@@ -40,7 +40,7 @@ type AssertionContext struct {
 
 // AssertionRecipeContext exposes Recipe-specific surface to Step 5b
 // assertions: metadata for identity (name, version, etc.) plus source
-// for the wrapped chart/module pointer. Nil at Step 4b.
+// for the chart or module the Recipe sources. Nil at Step 4b.
 //
 // The json tags carry the same reason as AssertionContext's: the delivered key
 // set is what assertion bodies are authored against, so it is declared here.
