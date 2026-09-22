@@ -12,9 +12,8 @@ package serve
 // one and relies on the graph inspection tolerating the divergence. So every
 // request driven from THIS file refuses, and what it asserts is the half a
 // succeeding run cannot show — that the write sits downstream of every gate, so
-// a build that refuses writes nothing at all, and that the destination is
-// derived from the workspace this session anchored to rather than from anything
-// a request carries.
+// a build that refuses writes nothing at all, and that the destination stays
+// inside the workspace this session anchored to whatever a request carries.
 //
 // The succeeding write is reachable from this package, and it is asserted in
 // build_auto_pull_test.go rather than here: a build asked to resolve its
@@ -171,25 +170,111 @@ func TestBuildWritesNothingWhenItRefuses(t *testing.T) {
 	}
 }
 
-// TestBuildOutputRootIsAnchoredToTheWorkspace pins where this method may write.
-// The destination is derived from the workspace root the session anchored to and
-// from the one output-directory name both surfaces share, so no request can
-// point the daemon at a directory of its own choosing — there is no parameter to
-// carry one, and this is what makes that absence checkable rather than merely
-// stated.
+// TestBuildOutputRootIsAnchoredToTheWorkspace pins where this method may write,
+// and what it refuses to be pointed at.
 //
-// The rootless row is the honest fallback: a daemon with no anchor resolves to
-// the same relative default the command line uses, because inventing an absolute
-// path from the process's working directory would write somewhere neither
-// surface named.
+// The destination is composed from two things and no others: the location inside
+// the workspace the request named, and the one output-directory name both
+// surfaces share. A request may move the first WITHIN the workspace this session
+// opened and may not move it out — every value is judged by the same rule every
+// other destination on this surface takes, so the bound is checkable here rather
+// than merely asserted in prose.
+//
+// The rootless rows are the honest fallback and its limit. A daemon with no
+// anchor resolves to the same relative default the command line uses, because
+// inventing an absolute path from the process's working directory would write
+// somewhere neither surface named; and a request that names a destination
+// against such a session is refused, there being no root to confine it against.
 func TestBuildOutputRootIsAnchoredToTheWorkspace(t *testing.T) {
 	t.Parallel()
 	ws := t.TempDir()
-	if got, want := (&Server{workspaceRoot: ws}).buildOutputRoot(), filepath.Join(ws, "dist"); got != want {
-		t.Errorf("buildOutputRoot() = %q, want %q", got, want)
-	}
-	if got, want := (&Server{}).buildOutputRoot(), "dist"; got != want {
-		t.Errorf("a daemon with no anchored workspace resolves to %q, want the relative default %q", got, want)
+	outside := t.TempDir()
+
+	for _, tc := range []struct {
+		name      string
+		root      string
+		outputDir string
+		want      string
+		refused   bool
+	}{
+		{
+			name: "naming no destination resolves under the anchored root",
+			root: ws,
+			want: filepath.Join(ws, artifactout.DefaultOutputDir),
+		},
+		{
+			name:      "an empty destination is the same state as naming none",
+			root:      ws,
+			outputDir: "",
+			want:      filepath.Join(ws, artifactout.DefaultOutputDir),
+		},
+		{
+			name:      "a destination inside the workspace anchors the output under it",
+			root:      ws,
+			outputDir: "docs",
+			want:      filepath.Join(ws, "docs", artifactout.DefaultOutputDir),
+		},
+		{
+			name:      "the root named as itself is the root",
+			root:      ws,
+			outputDir: ".",
+			want:      filepath.Join(ws, artifactout.DefaultOutputDir),
+		},
+		{
+			name:      "an absolute destination outside the workspace is refused",
+			root:      ws,
+			outputDir: outside,
+			refused:   true,
+		},
+		{
+			name:      "a destination climbing out of the workspace is refused",
+			root:      ws,
+			outputDir: "../elsewhere",
+			refused:   true,
+		},
+		{
+			name: "a daemon with no anchor resolves to the relative default",
+			want: artifactout.DefaultOutputDir,
+		},
+		{
+			name:      "a daemon with no anchor refuses a named destination",
+			outputDir: "docs",
+			refused:   true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, envelope := (&Server{workspaceRoot: tc.root}).buildOutputRoot(tc.outputDir)
+			if tc.refused {
+				if envelope == nil {
+					t.Fatalf("buildOutputRoot(%q) resolved to %q, want a refusal", tc.outputDir, got)
+				}
+				// The sentence is the shared rule's own, reached through this
+				// method rather than composed here: a copy written in this file
+				// would agree on the day it was written and stop agreeing the day
+				// that rule is reworded. The parameter's own label is asserted
+				// beside it, because a refusal that does not name the field leaves
+				// its reader nothing to correct.
+				for _, want := range []string{
+					"build: outputDir",
+					"must name a path inside the workspace this session opened",
+					"relative to its root",
+				} {
+					if !strings.Contains(envelope.Message, want) {
+						t.Errorf("the refusal of %q reads %q, which does not carry %q", tc.outputDir, envelope.Message, want)
+					}
+				}
+				if envelope.Code != jsonRPCInvalidParams {
+					t.Errorf("the refusal of %q carries code %d, want the invalid-params code %d", tc.outputDir, envelope.Code, jsonRPCInvalidParams)
+				}
+				return
+			}
+			if envelope != nil {
+				t.Fatalf("buildOutputRoot(%q) refused with %q, want %q", tc.outputDir, envelope.Message, tc.want)
+			}
+			if got != tc.want {
+				t.Errorf("buildOutputRoot(%q) = %q, want %q", tc.outputDir, got, tc.want)
+			}
+		})
 	}
 }
 

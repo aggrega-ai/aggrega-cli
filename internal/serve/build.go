@@ -18,19 +18,34 @@ import (
 // workspace-relative path to the Release YAML, under the same contract every
 // Release-naming parameter here carries.
 //
-// There is no output-directory parameter, and its absence is the contract rather
-// than an omission. The daemon writes into the workspace the request named and
-// nowhere else, so a caller cannot name a destination; a request carrying one
-// would make the daemon a general-purpose writer pointed by whoever is on the
-// other end of the pipe.
-//
-// Naming the workspace is not naming a destination, and the difference is what
-// keeps that bound intact. A workspace root is the tree the request is about, and
-// the output directory is derived from it by the shared arithmetic the command
-// line derives it by — so the caller says which workspace, and where inside it a
-// build writes is not the caller's to say.
+// Where a build writes is anchored, and the two surfaces anchor it differently
+// because what they have to anchor against differs. A build at a terminal
+// resolves the output directory against the directory it was run in, which is a
+// location the person running it stated by standing there. A request carries no
+// such location, so this wire resolves it against the workspace root instead —
+// and OutputDir is how a caller states the location a terminal states by
+// standing somewhere.
 type buildParams struct {
 	Release string `json:"release"`
+
+	// OutputDir is where in the workspace this build writes, relative to the
+	// workspace root: the output directory resolves under it, exactly as it
+	// resolves under the invocation directory at a terminal. So a caller sending
+	// the folder its reader is looking at gets the artifacts a build run in that
+	// folder would have produced, in the place that build would have put them.
+	//
+	// Absent leaves the anchor at the workspace root, which is where every
+	// request that does not send it already writes. Empty is the same state and
+	// not a separate one: it is what a caller computing the root's own path
+	// relative to itself produces, and the root is exactly what that names.
+	//
+	// 🔴 It is a destination, so it is confined to the workspace this session
+	// opened by the one rule every destination on this surface is judged by — an
+	// absolute value and one climbing out of the root are both refused. What the
+	// field makes the caller's is where INSIDE the workspace a build writes; it
+	// does not make the daemon a writer pointed anywhere by whoever is on the
+	// other end of the pipe.
+	OutputDir string `json:"outputDir,omitempty"`
 
 	// AutoPull resolves the Release's dependencies before the render, as this
 	// build's first step: the same resolution aggrega/resolveDependencies
@@ -129,19 +144,31 @@ func (s *Server) dispatchBuild(ctx context.Context, req *jsonRPCRequest) error {
 // request that reports without writing is aggrega/buildPreview, which exists so
 // the choice between the two is the caller's to make explicitly.
 //
-// # Where it writes, and why the caller does not choose
+// # Where it writes, and what anchors it
 //
-// Into the default output directory under the workspace root the request named.
-// That is the same location the command line writes to when it is run in that
-// workspace, which is what makes the two surfaces produce one tree rather than
-// two; the directory name has one home so neither surface can move without the
-// other.
+// Into the default output directory, resolved under the workspace root the
+// request named — or, where the request sent outputDir, under that location
+// inside the workspace instead.
 //
-// The destination is therefore derived rather than requested, and the write goes
-// through the shared build-output entry point, which clears the boundaries
-// subtree a previous build left and refuses a rendered name that resolves
-// outside the output root. Both belong to what a build's write is, so both
-// happen here exactly as they happen on the command line.
+// 🔴 The anchor is not shared with the command line. What the two surfaces
+// share is the directory NAME, which has one home so neither can move without
+// the other; what they do not share is what that name resolves against. A
+// terminal resolves it against the directory the command was run in, which is a
+// location the person running it stated by standing there. A request states no
+// such location, so this wire's anchor is the workspace root, and outputDir is
+// how a caller states what standing somewhere states at a terminal. Absent, the
+// anchor stays at the root, which is what every request that sends nothing
+// already gets.
+//
+// A destination the request names is confined to the workspace this session
+// opened, through the one rule every destination on this surface is judged by.
+// So a request may say where inside the workspace a build writes, and may not
+// point the write out of it.
+//
+// The write then goes through the shared build-output entry point, which clears
+// the boundaries subtree a previous build left and refuses a rendered name that
+// resolves outside the output root. Both belong to what a build's write is, so
+// both happen here exactly as they happen on the command line.
 //
 // # Whether the lockfile is filled is the request's to say, or the workspace's
 //
@@ -184,6 +211,15 @@ func (s *Server) dispatchBuild(ctx context.Context, req *jsonRPCRequest) error {
 // produce bytes a fully-pinned render would not have, which is why the finding is
 // published rather than left to be inferred from an output directory.
 func (s *Server) handleBuild(ctx context.Context, params buildParams) (buildResult, *jsonRPCError) {
+	// The destination is resolved before anything else runs, so a request naming
+	// one this session may not write to is refused having rendered nothing and,
+	// where it asked for a fill, having written no lockfile for a build that was
+	// never going to land.
+	outRoot, destErr := s.buildOutputRoot(params.OutputDir)
+	if destErr != nil {
+		return buildResult{}, destErr
+	}
+
 	// The fill, before the render, because what it writes is what the render's
 	// opening gates read. Its own account of itself is kept for the answer's
 	// notices: a caller that asked for the fill is owed what the fill did, and
@@ -263,7 +299,6 @@ func (s *Server) handleBuild(ctx context.Context, params buildParams) (buildResu
 		}
 	}
 
-	outRoot := s.buildOutputRoot()
 	if err := artifactout.WriteBuildOutput(outRoot, completed.Artifacts); err != nil {
 		// A write failure is reported as the workspace-not-resolvable class the
 		// daemon already carries for a workspace it cannot read as expected, and
@@ -385,18 +420,46 @@ func dependencyResolutionNotices(lines []string) []buildNotice {
 }
 
 // buildOutputRoot is the directory a build performed by this daemon writes to:
-// the default output directory, resolved against the workspace root this session
-// anchored to.
+// the default output directory, resolved under the location inside the workspace
+// the request named, or under the workspace root this session anchored to when
+// the request named none.
 //
 // It is a method rather than a literal at the call site so that what the daemon
 // can write to is readable from a test, and so that the anchoring is stated once.
+//
+// 🔴 outputDir is judged by workspacePath rather than by a comparison written
+// here, because that is the one rule every destination on this surface takes —
+// so what this method may return is bounded by the workspace the session opened,
+// and a second containment written beside it could not drift away from the
+// first. The refusal carries that rule's own sentence, which names the workspace
+// and the fault, so a caller is told what to send rather than only that it sent
+// the wrong thing.
+//
+// An empty outputDir is the request that named none rather than a value to
+// judge. It is what a caller computing the root's own path relative to itself
+// produces, and the root is precisely where a request naming nothing already
+// writes, so the two states are one state.
+//
 // A daemon holding no workspace root resolves to the relative default, which is
 // what the command line does with the same value — there is no session anchor to
 // improve on it, and inventing an absolute path from the process's working
-// directory would write somewhere neither surface named.
-func (s *Server) buildOutputRoot() string {
-	if s.workspaceRoot == "" {
-		return artifactout.DefaultOutputDir
+// directory would write somewhere neither surface named. A request that names a
+// destination against such a session is refused by the rule above, which has no
+// root to confine anything against.
+func (s *Server) buildOutputRoot(outputDir string) (string, *jsonRPCError) {
+	if outputDir != "" {
+		anchor, err := s.workspacePath("build: outputDir", outputDir)
+		if err != nil {
+			return "", &jsonRPCError{
+				Code:    jsonRPCInvalidParams,
+				Message: "invalid params: " + err.Error(),
+				cause:   err,
+			}
+		}
+		return filepath.Join(anchor, artifactout.DefaultOutputDir), nil
 	}
-	return filepath.Join(s.workspaceRoot, artifactout.DefaultOutputDir)
+	if s.workspaceRoot == "" {
+		return artifactout.DefaultOutputDir, nil
+	}
+	return filepath.Join(s.workspaceRoot, artifactout.DefaultOutputDir), nil
 }

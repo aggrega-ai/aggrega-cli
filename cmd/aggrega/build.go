@@ -97,7 +97,7 @@ the rendered tree reviewable as a diff.`,
 			return runBuild(cmd, args, opts)
 		},
 	}
-	c.Flags().StringVar(&opts.releasePath, "release", "", "Path to Release YAML file (required)")
+	c.Flags().StringVar(&opts.releasePath, "release", "", "Path to Release YAML file (required). A relative path resolves against the directory you run the command in, not against the workspace root")
 	c.Flags().StringArrayVar(&opts.catalogDirs, "catalog", nil, helpCatalogDir)
 	c.Flags().BoolVar(&opts.traceEnabled, "trace", false, "write per-node intermediate files to .trace/ (sibling to dist/) for post-mortem inspection")
 	c.Flags().BoolVar(&opts.traceUnredacted, "trace-unredacted", false, helpTraceUnredacted)
