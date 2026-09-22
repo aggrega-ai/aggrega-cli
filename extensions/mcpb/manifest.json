@@ -1,0 +1,44 @@
+{
+  "manifest_version": "0.3",
+  "name": "aggrega",
+  "display_name": "Aggrega",
+  "version": "0.1.0",
+  "description": "Runs Aggrega as a Model Context Protocol server, so an assistant can compile and inspect a Release and read catalog entities through a structured protocol instead of scraping command output. This package carries no Aggrega program of its own: it launches the aggrega executable already installed on this machine, at the path you supply below.",
+  "author": {
+    "name": "aggrega-ai"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/aggrega-ai/aggrega-cli"
+  },
+  "homepage": "https://aggrega.ai",
+  "documentation": "https://aggrega.ai/docs",
+  "license": "Apache-2.0",
+  "server": {
+    "type": "binary",
+    "entry_point": "${user_config.binary_path}",
+    "mcp_config": {
+      "command": "${user_config.binary_path}",
+      "args": [
+        "mcp"
+      ]
+    }
+  },
+  "tools_generated": true,
+  "prompts_generated": true,
+  "compatibility": {
+    "platforms": [
+      "darwin",
+      "win32",
+      "linux"
+    ]
+  },
+  "user_config": {
+    "binary_path": {
+      "type": "file",
+      "title": "Path to the aggrega executable",
+      "description": "Select the aggrega executable already installed on this machine — the same program that runs when you type aggrega version at a terminal. This package launches that program rather than carrying one of its own, so the server does not start until this path is set.",
+      "required": true
+    }
+  }
+}
