@@ -110,7 +110,7 @@ func TestEmitRenderWarnings_DisplayBytesAreUnchanged(t *testing.T) {
 			{Severity: abi.SeverityWarn, Message: "bare advisory, no position"},
 			{
 				Severity: abi.SeverityWarn,
-				Message:  `unused .infra key "cpu"`,
+				Message:  `.infra key "cpu" is read by no template`,
 				Location: &renderer.DiagnosticLocation{URI: "api"},
 			},
 		},
@@ -118,7 +118,7 @@ func TestEmitRenderWarnings_DisplayBytesAreUnchanged(t *testing.T) {
 	}
 
 	const want = "  warning: bare advisory, no position\n" +
-		"  warning: node \"api\": unused .infra key \"cpu\"\n" +
+		"  warning: node \"api\": .infra key \"cpu\" is read by no template\n" +
 		"  warning: node \"api\" (provider \"compose\"): target \"compose\" does not support scheduling and omitted it\n"
 
 	var shown bytes.Buffer
@@ -164,7 +164,7 @@ func TestMergeRenderDiagnostics_CarriesBothStreamsInDisplayOrder(t *testing.T) {
 	t.Parallel()
 	uncoded := renderer.Diagnostic{
 		Severity: abi.SeverityWarn,
-		Message:  `unused .infra key "cpu"`,
+		Message:  `.infra key "cpu" is read by no template`,
 		Location: &renderer.DiagnosticLocation{URI: "api"},
 	}
 	result := &renderer.RenderResult{

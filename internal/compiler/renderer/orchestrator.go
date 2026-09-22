@@ -1565,11 +1565,18 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		values := state.ResolvedValues
 
 		// Ghost Infrastructure: authored values, infra and per-connection uses
-		// keys the Recipe's valuesMapping never reads, so a catalog author
-		// notices a knob nothing consumes. See unreadValueWarnings for what the
-		// reading covers.
+		// keys no template the Recipe declares ever reads, so an author notices a
+		// knob nothing consumes. See unreadValueWarnings for what the reading
+		// covers.
+		//
+		// The AUTHORED document is what this reads, which is why it goes back to
+		// the lookup rather than using the local copy above. The reading asks
+		// which keys the Recipe's templates reference, and a source template has
+		// by this point been replaced by the value it produced — so the local copy
+		// no longer carries the reference, and a reading given it would report a
+		// key the source coordinate consumes as read by nothing.
 		result.Warnings = append(result.Warnings,
-			unreadValueWarnings(nodeID, recipe, tmplCtx.Values, tmplCtx.Infra, tmplCtx.Context.Uses)...)
+			unreadValueWarnings(nodeID, nodeRecipes[nodeID], tmplCtx.Values, tmplCtx.Infra, tmplCtx.Context.Uses)...)
 
 		hasWorkload := recipe != nil && !recipe.Spec.Workload.IsEmpty()
 

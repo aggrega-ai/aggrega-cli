@@ -62,17 +62,17 @@ func wsdWarningLines(t *testing.T) []string {
 }
 
 // wsdWantLines is what a terminal prints for that fixture, byte for byte and in
-// order. It is not an aspiration: it was captured from a build BEFORE the
-// advisory stream became structured, so the same expectation holds on both sides
-// of that change and a line that moved by one character fails here.
+// order. It is not an aspiration: every line was captured from a real build, and
+// a line that moves by one character fails here.
 //
-// Each line's attribution is composed by the one display formatter from a
-// position the raising site now carries as a field, rather than written into the
-// message by the site itself — which is exactly the substitution these bytes
-// exist to hold still.
+// Each line's attribution — the `node "api": ` prefix — is composed by the one
+// display formatter from a position the raising site carries as a field, rather
+// than written into the message by the site itself. Holding the whole stream
+// still is what makes that composition invisible to a reader, which is the
+// property these bytes exist to guard.
 var wsdWantLines = []string{
-	`node "api": unused .infra key "cpu" (not referenced by valuesMapping of recipe "ghost-recipe")`,
-	`node "api": unused .infra key "replicas" (not referenced by valuesMapping of recipe "ghost-recipe")`,
+	`node "api": .infra key "cpu" is read by no template in recipe "ghost-recipe" — correct the spelling, or remove the key`,
+	`node "api": .infra key "replicas" is read by no template in recipe "ghost-recipe" — correct the spelling, or remove the key`,
 	`node "api": pipeline (1 steps) validated but not executed (no plugin path resolver configured)`,
 	`node "api": recipe "ghost-recipe" promotes component label "tier", which component "core/compute/api-server" does not declare; no label is stamped for it`,
 }

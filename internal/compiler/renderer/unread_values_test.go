@@ -68,8 +68,8 @@ func TestUnreadValueWarnings_NodeValuesAndInfra(t *testing.T) {
 
 	got := uvWarnings(t, "api", graph, uvRecipe(`p: {{ .values.port }} r: {{ .infra.replicas }}`))
 	want := []string{
-		`node "api": unused .values key "orphan_value" (not referenced by valuesMapping of recipe "consumer-recipe")`,
-		`node "api": unused .infra key "orphan_infra" (not referenced by valuesMapping of recipe "consumer-recipe")`,
+		`node "api": .values key "orphan_value" is read by no template in recipe "consumer-recipe" — correct the spelling, or remove the key`,
+		`node "api": .infra key "orphan_infra" is read by no template in recipe "consumer-recipe" — correct the spelling, or remove the key`,
 	}
 	if len(got) != len(want) {
 		t.Fatalf("warning count = %d, want %d:\n%s", len(got), len(want), uvJoined(got))
@@ -242,12 +242,13 @@ func TestUnreadValueWarnings_DeterministicOrder(t *testing.T) {
 			Values: projOM("a_two", 2, "a_one", 1)})
 	graph.Spec.ValuesMapping.Set("api", json.RawMessage(`{"node_key":1}`))
 
+	const suffix = ` is read by no template in recipe "consumer-recipe" — correct the spelling, or remove the key`
 	want := []string{
-		`node "api": unused .values key "node_key" (not referenced by valuesMapping of recipe "consumer-recipe")`,
-		`node "api": unused .context.uses.zeta.values key "z_one" (not referenced by valuesMapping of recipe "consumer-recipe")`,
-		`node "api": unused .context.uses.zeta.values key "z_two" (not referenced by valuesMapping of recipe "consumer-recipe")`,
-		`node "api": unused .context.uses.alpha.values key "a_one" (not referenced by valuesMapping of recipe "consumer-recipe")`,
-		`node "api": unused .context.uses.alpha.values key "a_two" (not referenced by valuesMapping of recipe "consumer-recipe")`,
+		`node "api": .values key "node_key"` + suffix,
+		`node "api": .context.uses.zeta.values key "z_one"` + suffix,
+		`node "api": .context.uses.zeta.values key "z_two"` + suffix,
+		`node "api": .context.uses.alpha.values key "a_one"` + suffix,
+		`node "api": .context.uses.alpha.values key "a_two"` + suffix,
 	}
 	first := uvWarnings(t, "api", graph, uvRecipe(`x: 1`))
 	if len(first) != len(want) {

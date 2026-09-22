@@ -464,7 +464,7 @@ func TestPublishRenderDiagnostics_CarriesTheRenderAdvisoriesThatCarryNoClass(t *
 	s.publishRenderDiagnostics(ctx, file, []renderer.Diagnostic{
 		{
 			Severity:  abi.SeverityWarn,
-			Message:   `unused .infra key "cpu" (not referenced by valuesMapping of recipe "ghost-recipe")`,
+			Message:   `.infra key "cpu" is read by no template in recipe "ghost-recipe" — correct the spelling, or remove the key`,
 			SourceRef: "cpu",
 			Location:  &renderer.DiagnosticLocation{URI: "api"},
 		},
@@ -484,7 +484,7 @@ func TestPublishRenderDiagnostics_CarriesTheRenderAdvisoriesThatCarryNoClass(t *
 	// surfaces read the one formatter. Asserting it here is what makes "the editor
 	// shows what the build showed" a checked property rather than an intention.
 	wantText := []string{
-		`node "api": unused .infra key "cpu" (not referenced by valuesMapping of recipe "ghost-recipe")`,
+		`node "api": .infra key "cpu" is read by no template in recipe "ghost-recipe" — correct the spelling, or remove the key`,
 		`node "api" (provider "compose"): the provider raised this while rendering`,
 	}
 	for i, want := range wantText {

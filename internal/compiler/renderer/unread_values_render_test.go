@@ -5,6 +5,8 @@ package renderer_test
 
 import (
 	"context"
+	"encoding/json"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -156,5 +158,53 @@ func TestRenderAll_NoPerEdgeValuesNoPerEdgeWarning(t *testing.T) {
 		if strings.Contains(w, ".context.uses") {
 			t.Errorf("an edge with no authored per-connection value produced: %s", w)
 		}
+	}
+}
+
+// TestRenderAll_KeyConsumedBySourceIsNotReportedUnread is the real-render proof
+// that a key a source coordinate consumes is read.
+//
+// It has to run through RenderAll rather than through the reading alone, and the
+// reason is the whole of this test. By the time a node's advisories are raised,
+// the render holds a copy of the Recipe whose source carries the value the
+// template PRODUCED — the template text is gone. A reading given that copy finds
+// no reference to the key and reports it unread, on the same run whose output the
+// key decided. The reading itself cannot notice: handed the authored document, as
+// every unit-level reading is, it answers correctly.
+//
+// The fixture is a terraform recipe sourcing a local module directory, so the
+// source resolves from disk and the render completes with nothing fetched. The
+// second infra key is the positive control in the same render: a reading that had
+// simply gone quiet would satisfy the first assertion perfectly, so the two run
+// together or neither means anything.
+func TestRenderAll_KeyConsumedBySourceIsNotReportedUnread(t *testing.T) {
+	moduleDir := writeTerraformModule(t, terraformModuleFixture())
+
+	const valuesPillar = `{"db_name":"appdb","upstream_endpoint":"${aws_db_instance.main.endpoint}"}`
+	const valuesMapping = `db_name: "{{ .values.db_name }}"
+rds_endpoint: "{{ .values.upstream_endpoint }}"
+`
+	input := terraformLocalInput("db", valuesPillar)
+	input.Graph.Spec.InfraMapping.Set("db", json.RawMessage(
+		`{"module_dir":`+strconv.Quote(moduleDir)+`,"read_by_nothing":"x"}`))
+
+	// The source is a template over the infra key, and nothing else reads it.
+	lookup := terraformLocalRecipeLookup("{{ .infra.module_dir }}", valuesMapping)
+
+	result, err := renderer.RenderAll(context.Background(), input, lookup, wasmEngineFactory(t))
+	if err != nil {
+		t.Fatalf("RenderAll: %v", err)
+	}
+	var lines []string
+	for _, d := range result.Warnings {
+		lines = append(lines, renderer.RenderDiagnosticText(d))
+	}
+	joined := strings.Join(lines, "\n")
+
+	if strings.Contains(joined, `"module_dir"`) {
+		t.Errorf("a key the source coordinate consumes was reported unread:\n%s", joined)
+	}
+	if !strings.Contains(joined, `"read_by_nothing"`) {
+		t.Errorf("the control key, which nothing reads, was not reported — the reading is silent rather than correct:\n%s", joined)
 	}
 }
