@@ -325,10 +325,10 @@ func TestResolveEntitySource_RecipePinDisagreesWithLockfileHalts(t *testing.T) {
 // TestResolveEntitySource_UnpinnedIdentityHaltsAtTheFetch proves that the
 // recipe-vs-lockfile cross-check needs no guard of its own on the lockfile side:
 // when the lockfile pins no row for the identity a node resolved, the build halts
-// at the cache lookup with ErrFetchNotFound whatever the recipe happens to record,
+// at the cache lookup with ErrFetchNotFound whatever is recorded for the recipe,
 // so the cross-check standing down there is never a build proceeding unverified.
 //
-// The rows differ only in what the recipe records, which is the point: the recipe
+// The rows differ only in what is recorded for the recipe, which is the point: that
 // side cannot change the verdict when the lockfile has nothing to fetch from. The
 // first row is the positive control — the same fixture with the identity pinned,
 // where the cross-check does run and does agree.

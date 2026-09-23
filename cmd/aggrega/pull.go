@@ -161,8 +161,8 @@ type pullConfig struct {
 	IncludePrerelease bool
 	Detail            bool
 	// DryRun reports what this pull would write instead of writing it: each file's
-	// path and the content it would hold go to Out, and the lockfile, the recipe
-	// files and the plugin trust record are left as they were. It is the
+	// path and the content it would hold go to Out, and the lockfile, the entity
+	// locks and the plugin trust record are left as they were. It is the
 	// command's own spelling of the resolution's reporting mode and carries nothing
 	// beyond it.
 	DryRun bool

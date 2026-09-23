@@ -104,8 +104,8 @@ type hydratedProjection struct {
 	// differently each time.
 	ArtifactTemplateText types.OrderedMap[string]
 
-	// ArtifactRecordedContentPin is the content digest the node's Recipe recorded
-	// for each of its artifacts, keyed by the output name the entry resolves to.
+	// ArtifactRecordedContentPin is the content digest recorded beside the node's
+	// Recipe for each of its artifacts, keyed by the output name the entry resolves to.
 	//
 	// An entry is present only where the walk resolved a form that carries a pin —
 	// content supplied by an imported file — so presence in this map is the whole
@@ -193,8 +193,8 @@ type nodeAttachmentProjection struct {
 	// held in the order the entries were walked.
 	AttachmentArtifactTemplateText types.OrderedMap[string]
 
-	// AttachmentArtifactRecordedContentPin is the content digest the
-	// FeatureRecipe recorded for each of the attachment's artifacts, keyed by the
+	// AttachmentArtifactRecordedContentPin is the content digest recorded beside
+	// the FeatureRecipe for each of the attachment's artifacts, keyed by the
 	// output name the entry resolves to.
 	//
 	// An entry is present only where the walk resolved a form that carries a pin,
@@ -236,8 +236,8 @@ type boundaryAttachmentProjection struct {
 	// the entry resolves to and held in the order the entries were walked.
 	BoundaryAttachmentArtifactTemplateText types.OrderedMap[string]
 
-	// BoundaryAttachmentArtifactRecordedContentPin is the content digest the
-	// FeatureRecipe recorded for each of the boundary-scope attachment's
+	// BoundaryAttachmentArtifactRecordedContentPin is the content digest recorded
+	// beside the FeatureRecipe for each of the boundary-scope attachment's
 	// artifacts, keyed by the output name the entry resolves to.
 	//
 	// An entry is present only where the walk resolved a form that carries a pin,
@@ -375,8 +375,8 @@ func (h *hydratedProjections) recordArtifactTemplate(nodeID, outputName, text st
 	p.ArtifactTemplateText.Set(outputName, text)
 }
 
-// recordArtifactContentPin retains the content digest a node's Recipe recorded
-// for one of its artifacts, under the output name that entry resolves to.
+// recordArtifactContentPin retains the content digest recorded beside a node's
+// Recipe for one of its artifacts, under the output name that entry resolves to.
 //
 // It is called from the artifacts walk beside the text recording, and only for an
 // entry whose resolved form carries a pin. So an artifact absent from this map is
@@ -538,8 +538,8 @@ type attachmentOwner interface {
 	// resolves to.
 	recordArtifactTemplate(outputName, text string)
 
-	// recordArtifactContentPin retains the content digest this attachment's
-	// FeatureRecipe recorded for one artifact, under the output name that entry
+	// recordArtifactContentPin retains the content digest recorded beside this
+	// attachment's FeatureRecipe for one artifact, under the output name that entry
 	// resolves to.
 	//
 	// It is called only where the walk resolved a form that carries a pin, so a

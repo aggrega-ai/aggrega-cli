@@ -225,13 +225,13 @@ func (v *hydratedView) ArtifactTemplateText(node string, artifact string) string
 	return text
 }
 
-// ArtifactRecordedContentPin returns the content digest a node's Recipe recorded
-// for one of its artifacts, and whether the entry carries a recorded pin at all.
+// ArtifactRecordedContentPin returns the content digest recorded beside a node's
+// Recipe for one of its artifacts, and whether the entry carries a recorded pin.
 //
 // The second result is what says a comparison is owed. The retention holds an
 // entry only where the walk resolved a form that carries a pin, so an absent
-// answer covers three cases that need the same treatment: a Recipe that was never
-// frozen, an entry whose form carries no pin, and a node or an artifact this
+// answer covers three cases that need the same treatment: a Recipe with no pin
+// recorded beside it, an entry whose form carries no pin, and a node or an artifact this
 // retention does not hold — including an artifact of an attachment rather than of
 // the node's own Recipe, which is answered through that attachment's own owner.
 func (v *hydratedView) ArtifactRecordedContentPin(node string, artifact string) (string, bool) {
@@ -330,15 +330,15 @@ func (v *hydratedView) AttachmentArtifactTemplateText(
 	return text
 }
 
-// AttachmentArtifactRecordedContentPin returns the content digest the
-// FeatureRecipe one attachment binds on a node recorded for one of its artifacts,
+// AttachmentArtifactRecordedContentPin returns the content digest recorded beside
+// the FeatureRecipe one attachment binds on a node, for one of its artifacts,
 // and whether the entry carries a recorded pin at all.
 //
 // It is answered from the attachment's own owner and never from the node's, on
 // the reading the text accessor beside it states: the attachment's render walks the
 // same producer under the host component's node identity, so a node-keyed answer
-// would measure this FeatureRecipe's content against whatever the host's Recipe
-// recorded.
+// would measure this FeatureRecipe's content against whatever was recorded for the
+// host's Recipe.
 func (v *hydratedView) AttachmentArtifactRecordedContentPin(
 	node string, attachment string, artifact string,
 ) (string, bool) {
@@ -453,8 +453,8 @@ func (v *hydratedView) BoundaryAttachmentArtifactTemplateText(
 	return text
 }
 
-// BoundaryAttachmentArtifactRecordedContentPin returns the content digest the
-// FeatureRecipe one boundary-scope attachment binds recorded for one of its
+// BoundaryAttachmentArtifactRecordedContentPin returns the content digest recorded
+// beside the FeatureRecipe one boundary-scope attachment binds, for one of its
 // artifacts, and whether the entry carries a recorded pin at all.
 //
 // It is rooted at the boundary for the reason the text accessor beside it is: such

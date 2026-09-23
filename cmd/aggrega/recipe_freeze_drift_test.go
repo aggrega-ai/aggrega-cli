@@ -90,7 +90,7 @@ spec:
 `)
 	writeHelmRendererPlugin(t, filepath.Join(catalogRoot, "providers"))
 	// The $import target: a loose file next to the recipe whose bytes the freeze
-	// hashes into the recipe's artifactDigests, so the recipe file changes at freeze.
+	// hashes into the artifactDigests of the lock beside the recipe.
 	writeFixture(t, filepath.Join(catalogRoot, "recipes", "extra.yaml"), `apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -153,8 +153,8 @@ func TestFreezeFullURIRecipeOnePullFixpoint(t *testing.T) {
 	// value the lockfile must carry for the Component both before and after the fix.
 	componentDigest := digest.ContentDigest(mustReadFile(t, componentPath))
 
-	// A single pull: resolves the closure, freezes the recipe's pins into its
-	// file, and writes the lockfile.
+	// A single pull: resolves the closure, freezes the recipe's pins into the
+	// lock beside it, and writes the lockfile.
 	if err := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{catalogDir}, DiagOut: io.Discard, Out: io.Discard, diag: buildDiagOptions{quiet: true}}); err != nil {
 		t.Fatalf("pull: %v", err)
 	}

@@ -80,7 +80,7 @@ const (
 // it, keyed by the host Recipe's document.
 //
 // An empty pin records NO pins for that document, which is the state of a Recipe
-// that was never frozen. It is spelled as an absent record rather than as an entry
+// no pull has pinned. It is spelled as an absent record rather than as an entry
 // with an empty digest because the two are different inputs: an entry recording an
 // empty digest is a recorded pin whose value is empty, which the rule compares
 // against and refuses.
@@ -172,13 +172,13 @@ func pinFeatureLookup(importPath, pin string) (renderer.RecipeLookup, recipepin.
 
 // TestAnImportedArtifactWithNoRecordedPinRendersWhateverItsContent holds the
 // branch the two directions above do not reach: an entry supplied by an imported
-// file whose Recipe records no pin for it.
+// file for which no pin is recorded beside its Recipe.
 //
 // The render retains the file that entry was supplied from for EVERY imported
 // entry, not only for one carrying a pin, because which file supplied an entry
-// and whether a document froze a digest for it are different questions. So this
-// is the row that says the wider retention introduced no verdict: a Recipe that
-// was never frozen has nothing to compare, and content that would fail the
+// and whether a digest is recorded for it are different questions. So this
+// is the row that says the wider retention introduced no verdict: a Recipe with
+// no pin recorded has nothing to compare, and content that would fail the
 // comparison if a pin existed renders here.
 //
 // It is driven at the render entry rather than at check level because a
@@ -253,8 +253,8 @@ func TestTheArtifactContentPinRuleAdmitsAndRefusesOnANodesOwnRecipe(t *testing.T
 // It is the proof the node-rooted test above structurally cannot give. A
 // FeatureRecipe's entries flow through the same artifacts walk under the HOST
 // component's node identity, so a build refusing them through the node-keyed facts
-// would be measuring this FeatureRecipe's content against the host Recipe's recorded
-// pin — and here the host records none, so such a build admits the drift silently.
+// would be measuring this FeatureRecipe's content against the pin recorded for the
+// host Recipe — and here none is recorded for it, so such a build admits the drift silently.
 func TestTheArtifactContentPinRuleAdmitsAndRefusesOnAnAttachmentsFeatureRecipe(t *testing.T) {
 	t.Parallel()
 

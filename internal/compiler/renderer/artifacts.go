@@ -151,7 +151,7 @@ func buildArtifactsProjection(
 		// entry, which is the one place that knows whether the entry's form carries
 		// one at all; an entry with no recorded pin leaves both rules with nothing to
 		// compare, which is the ordinary answer for an inline entry and for a Recipe
-		// that was never frozen.
+		// with no pin recorded beside it.
 		//
 		// Two lines for the same reason the pillar readings below are two: the facts
 		// are keyed by the owner the render was reached from, so an attachment's
@@ -307,10 +307,10 @@ func buildArtifactsProjection(
 				//
 				// It is retained for EVERY imported entry rather than only for one
 				// carrying a recorded pin, because the two are different questions:
-				// which file supplied this entry, and whether the document froze a
-				// digest for it. Gating the path on the pin would make the fact answer
-				// emptily for an unfrozen Recipe, whose entries name a file exactly as
-				// a frozen one's do.
+				// which file supplied this entry, and whether a pull recorded a digest
+				// for it beside the document. Gating the path on the pin would make the
+				// fact answer emptily for a Recipe with nothing recorded, whose entries
+				// name a file exactly as a pinned one's do.
 				state.recordArtifactImportedPath(name, entry.Import)
 				// The recorded pin is retained here rather than at the emit seam,
 				// because this is the one branch that knows the entry's resolved form
@@ -322,9 +322,9 @@ func buildArtifactsProjection(
 				// whether the comparison applied would put the form gate in as many
 				// places as there are readers.
 				//
-				// A Recipe that was never frozen records nothing, which leaves the
-				// rules over this entry with nothing to compare and is the ordinary
-				// answer rather than an approval. The pins are the ones the load
+				// A Recipe no pull has pinned has nothing recorded beside it, which
+				// leaves the rules over this entry with nothing to compare and is the
+				// ordinary answer rather than an approval. The pins are the ones the load
 				// recorded for the document this entity was read from, resolved onto
 				// the state when it was built — so an entity declared in no document
 				// records nothing here for the same reason.

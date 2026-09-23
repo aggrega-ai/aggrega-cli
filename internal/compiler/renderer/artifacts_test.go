@@ -216,7 +216,7 @@ metadata:
 //
 // The form gate lives at the recording site, so the three rows below are the
 // whole of it: an imported entry with a recorded pin retains that pin, an
-// imported entry in an unfrozen Recipe retains nothing, and an inline entry
+// imported entry in a Recipe with no pin recorded retains nothing, and an inline entry
 // retains nothing even where a pin was authored under its key. The last is the
 // one a reader is most likely to expect the other way — a hand-authored pin on
 // an inline entry is admitted by the schema and compared by nothing, because an
@@ -288,7 +288,7 @@ func TestBuildArtifactsProjection_ImportPinRetention(t *testing.T) {
 // the two disagree, which is the input the declared rule refuses.
 //
 // It is the positive control for the retention rows above: without it a recording
-// that stored the text's own digest rather than the Recipe's recorded one would
+// that stored the text's own digest rather than the one recorded beside the Recipe would
 // satisfy every row there and never disagree with anything.
 func TestBuildArtifactsProjection_TamperedImportLeavesTheTwoFactsDisagreeing(t *testing.T) {
 	tmplCtx, state, nodeCtx := newArtifactsCtx()

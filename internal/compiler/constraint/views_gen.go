@@ -4834,15 +4834,15 @@ type HydratedView interface {
 	// Keyed by (node, artifact); read from types.RecipeSpec.Artifacts.
 	ArtifactTemplateText(node string, artifact string) string
 
-	// ArtifactRecordedContentPin is the content digest a node's Recipe
-	// recorded for one of its artifacts, and whether the entry carries a
+	// ArtifactRecordedContentPin is the content digest recorded beside a
+	// node's Recipe for one of its artifacts, and whether the entry carries a
 	// recorded pin at all.
 	//
 	// The second result is load-bearing and is not a convenience over an empty
-	// string. A Recipe that was never frozen records no pin, an entry whose
+	// string. A Recipe no pull has pinned has no pin recorded, an entry whose
 	// authoring form carries none records none either, and a rule that could
 	// not tell those from a pin whose value happened to be empty would either
-	// refuse every unfrozen Recipe or admit a pin it never compared.
+	// refuse every unpinned Recipe or admit a pin it never compared.
 	//
 	// A pin is recorded for exactly one authoring form: an entry supplied by
 	// an imported file from the workspace. An inline entry is part of the
@@ -4984,12 +4984,12 @@ type HydratedView interface {
 	// types.FeatureRecipeSpec.Artifacts.
 	AttachmentArtifactTemplateText(node string, attachment string, artifact string) string
 
-	// AttachmentArtifactRecordedContentPin is the content digest the
-	// FeatureRecipe one attachment binds on a node recorded for one of its
+	// AttachmentArtifactRecordedContentPin is the content digest recorded
+	// beside the FeatureRecipe one attachment binds on a node, for one of its
 	// artifacts, and whether the entry carries a recorded pin at all.
 	//
 	// Every reading the node-scoped form carries applies here over a different
-	// document: the second result separates an unfrozen FeatureRecipe and an
+	// document: the second result separates an unpinned FeatureRecipe and an
 	// entry whose form carries no pin from a pin whose value is empty, and a
 	// pin is recorded for exactly one authoring form, the entry supplied by an
 	// imported file.
@@ -4997,8 +4997,8 @@ type HydratedView interface {
 	// It is keyed by the attachment as well as by the node for the reason the
 	// text fact beside it is: the attachment's render walks the same producer
 	// under the HOST component's node identity, so a pin keyed by the node
-	// alone would measure the attachment's own content against whatever the
-	// host's Recipe happened to record — and two attachments on one node
+	// alone would measure the attachment's own content against whatever was
+	// recorded for the host's Recipe — and two attachments on one node
 	// record independently, with nothing making their output names distinct.
 	//
 	// Keyed by (node, attachment, artifact); read from
@@ -5109,12 +5109,12 @@ type HydratedView interface {
 	// types.FeatureRecipeSpec.Artifacts.
 	BoundaryAttachmentArtifactTemplateText(boundary string, attachment string, artifact string) string
 
-	// BoundaryAttachmentArtifactRecordedContentPin is the content digest the
-	// FeatureRecipe one boundary-scope attachment binds recorded for one of
-	// its artifacts, and whether the entry carries a recorded pin at all.
+	// BoundaryAttachmentArtifactRecordedContentPin is the content digest
+	// recorded beside the FeatureRecipe one boundary-scope attachment binds
+	// for one of its artifacts, and whether the entry carries a pin at all.
 	//
 	// Every reading the two node-rooted forms carry applies here: the second
-	// result separates an unfrozen FeatureRecipe and an entry whose form
+	// result separates an unpinned FeatureRecipe and an entry whose form
 	// carries no pin from a pin whose value is empty, and a pin is recorded
 	// for exactly one authoring form, the entry supplied by an imported file.
 	//
