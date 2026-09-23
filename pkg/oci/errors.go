@@ -91,6 +91,43 @@ var errAmbiguousContentLayer = cerrors.Register("ambiguous-content-layer", cerro
 		"selection over fetched content that could not be made."),
 })
 
+// ErrBundleNoEntityDocument is returned when a published bundle carries no
+// entity document at its root, so there is nothing to recover the entity the
+// artifact was published for from. Call sites wrap this sentinel with the root
+// entries the bundle does carry, because the entity file's name is exactly what
+// the caller cannot predict and the listing is what tells an author whether the
+// document is missing or merely not an entity.
+//
+// It names an artifact that unpacks cleanly and holds no entity, which is a
+// different outcome from an artifact that fails to unpack: the latter surfaces
+// as the underlying archive error.
+func ErrBundleNoEntityDocument() error { return errBundleNoEntityDocument }
+
+var errBundleNoEntityDocument = cerrors.Register("bundle-no-entity-document", cerrors.Meta{
+	ShortCode: "E0298",
+	Message:   "oci: published bundle carries no entity document",
+	RulePlace: cerrors.NotARule("A published bundle was unpacked and its root carries no document declaring a " +
+		"publishable entity kind. The bundle is unpacked in order to be read, and what it reports is a " +
+		"selection over unpacked content that found nothing to take."),
+})
+
+// ErrBundleAmbiguousEntityDocument is returned when a published bundle carries
+// more than one entity document at its root, so the entity the artifact was
+// published for cannot be selected. Selection halts loudly rather than pick one:
+// a bundle is built from a directory, so two entities authored side by side
+// produce one set of bytes under each of their coordinates, and choosing either
+// would hand a consumer the other entity under the name it asked for. Call sites
+// wrap this sentinel with the names of the colliding documents.
+func ErrBundleAmbiguousEntityDocument() error { return errBundleAmbiguousEntityDocument }
+
+var errBundleAmbiguousEntityDocument = cerrors.Register("bundle-ambiguous-entity-document", cerrors.Meta{
+	ShortCode: "E0299",
+	Message:   "oci: published bundle carries more than one entity document",
+	RulePlace: cerrors.NotARule("A published bundle was unpacked and its root carries more than one document " +
+		"declaring a publishable entity kind, so no document can be selected. The bundle is unpacked in " +
+		"order to be read, and what it reports is a selection over unpacked content that could not be made."),
+})
+
 // ErrCachedManifestIntegrity is returned when a cached OCI manifest blob no
 // longer hashes to the manifest digest the artifact commits to — the offline
 // manifest self-verify. It is distinct from ErrFetchIntegrity (which covers a

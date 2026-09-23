@@ -141,9 +141,8 @@ func TestPublishArtifactsLibraryEndToEnd(t *testing.T) {
 	}
 	if oci.IsTarGzBundle(pulled.Bytes) {
 		t.Error("published content carries the gzip magic: this kind was bundled as an archive. " +
-			"A library entity is self-contained — an archive of its directory would also sweep in " +
-			"co-located files, and the consume side recovers an entity from an archive by looking " +
-			"for a root recipe.yaml, which a library directory does not have")
+			"A library entity is self-contained, so an archive of its directory would sweep in " +
+			"co-located files that are not part of the artifact")
 	}
 	// The stray-file search decompresses first when the content is an archive.
 	// Searching the raw bytes alone would be blind in exactly the case this check

@@ -1440,14 +1440,28 @@ func (l *LazyLookup) foldRecipeShellEntity(kind string, parseData, rawBytes []by
 // is in allowed into the enumerated maps, under the SAME verify-on-read / pin
 // discipline resolveComponent uses (tier2ReadVerified). The pin set (SetPins) is
 // the lockfile's URI→digest map; the cache is keyed by URI, not walkable like the
-// Tier-1 dirs, so enumeration is pin-driven. A pinned slot that is absent, drifted,
-// or unreadable is skipped — a clean miss; an entity the build actually needs that
-// is missing surfaces as a loud halt at the guard layer, not here. Recipe /
-// FeatureRecipe slots are tar.gz bundles: the bundle is unwrapped to parse the
-// entity YAML, but the WHOLE bundle blob is retained as entityBytes so the pinned
-// digest covers the bundle (parity with the cache→catalog bridge). Deterministic:
-// pins are visited in sorted URI order, so first-wins shadowing among pinned
-// duplicates is stable across runs.
+// Tier-1 dirs, so enumeration is pin-driven. Bundled slots are tar.gz archives:
+// the bundle is unwrapped to parse the entity YAML, but the WHOLE bundle blob is
+// retained as entityBytes so the pinned digest covers the bundle (parity with the
+// cache→catalog bridge). Deterministic: pins are visited in sorted URI order, so
+// first-wins shadowing among pinned duplicates is stable across runs.
+//
+// # Two skips, and only one of them is silent
+//
+// A pinned slot that is absent, drifted, or unreadable is skipped without a
+// diagnostic, and each of those three has its own reason to stay quiet: an absent
+// slot is the ordinary state of a pin resolved at Tier-1, a drift is already
+// reported by the closure-level lockfile verify on the same request, and an
+// unreadable slot leaves nothing to report about. An entity the build actually
+// needs that goes missing this way surfaces as a loud halt at the guard layer.
+//
+// A slot that is present, verified against its pin, and then cannot be unwrapped
+// is a different outcome and is RECORDED. The artifact is there and is the bytes
+// the lockfile committed to; what failed is reading an entity out of it. Left
+// silent it is indistinguishable from the entity never having been pinned, which
+// is a claim about the lockfile rather than about the artifact — so it is skipped
+// through the same channel every other unindexable document uses, keyed by the
+// pinned reference, and reaches a caller through SkippedEntities.
 func (l *LazyLookup) foldPinnedCacheEntities(allowed map[string]bool) {
 	uris := make([]string, 0, len(l.pins))
 	for uri := range l.pins {
@@ -1467,6 +1481,7 @@ func (l *LazyLookup) foldPinnedCacheEntities(allowed map[string]bool) {
 		if oci.IsTarGzBundle(blob) {
 			y, uerr := oci.EntityYAMLFromBundle(blob)
 			if uerr != nil {
+				l.recordRecipeSkip("lockfile-pinned:"+uri, uerr)
 				continue
 			}
 			parseData = y
@@ -1500,11 +1515,25 @@ func (l *LazyLookup) foldPinnedSchemaLibrary(parseData, rawBytes []byte, src str
 	l.entityBytes[entityBytesKey("SchemaLibrary", lib.Metadata.Name)] = rawBytes
 }
 
-// recordRecipeSkip emits the one-line tolerance warning and records the reason,
-// keyed by file path (a parse failure has no reliable identity to key on).
-func (l *LazyLookup) recordRecipeSkip(path string, err error) {
-	fmt.Fprintf(os.Stderr, "  recipe: %s skipped: %s\n", path, err.Error())
-	l.recipeSkips[path] = err
+// recordRecipeSkip emits the one-line tolerance warning and records the reason.
+//
+// The key is where the refused document was read from, because a document that
+// could not be parsed has no reliable identity to key on: a file path for a
+// catalog-directory document, and the pinned reference for a lockfile-pinned
+// cache slot, which is not a file anyone authored. SkippedEntities recovers what
+// identity it can from each and treats an unreadable key as the answer rather
+// than as a gap.
+//
+// One source is warned about once. The pinned-slot fold runs from two builders
+// over two different kind sets, and a slot refused before its kind can be read is
+// refused by both — so a reader would meet one artifact's failure twice while the
+// record held the single entry it always held. The record is the thing that
+// matters and is written unconditionally; the warning follows it.
+func (l *LazyLookup) recordRecipeSkip(source string, err error) {
+	if _, already := l.recipeSkips[source]; !already {
+		fmt.Fprintf(os.Stderr, "  recipe: %s skipped: %s\n", source, err.Error())
+	}
+	l.recipeSkips[source] = err
 }
 
 // recordShadowedComponent emits the one-line first-win notice when a later

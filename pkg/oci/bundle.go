@@ -25,13 +25,43 @@ func IsTarGzBundle(b []byte) bool {
 	return len(b) >= 2 && b[0] == 0x1f && b[1] == 0x8b
 }
 
-// EntityYAMLFromBundle extracts the entity YAML — the root `recipe.yaml` anchor —
-// from a Recipe / FeatureRecipe tar.gz bundle produced by Bundle. The bundle
-// carries the recipe's per-version directory (the entity file plus any sibling
-// source files); the entity file is the root `recipe.yaml`. It is the inverse of
-// Bundle's tar.gz arm, used to fold a registry-pulled recipe into the catalog
-// (the catalog holds the parsed recipe; the lockfile-drift pin stays over the
-// whole bundle blob). Returns an error when the bundle has no root recipe.yaml.
+// EntityYAMLFromBundle extracts the entity YAML from a tar.gz bundle produced by
+// Bundle's archive arm. The bundle carries the entity's per-version directory —
+// the entity file plus any co-located source — and this is the inverse of that
+// arm, used to fold a registry-pulled entity into the catalog (the catalog holds
+// the parsed entity; the lockfile-drift pin stays over the whole bundle blob).
+//
+// # The entity is located by what the document IS, never by what it is called
+//
+// The bundle is built from a directory and no file in it is privileged, so the
+// entity file's name is whatever its author chose; a name this function matched
+// on would be a convention nothing imposes, and an entity file named anything
+// else would bundle cleanly and never unbundle. The anchor is therefore the
+// preamble: the one document at the bundle ROOT whose kind is a kind this
+// transport publishes, read through MediaTypeForKind so the kind set has a
+// single home rather than a second list here.
+//
+// The rule cannot instead be parameterised by the kind the caller is looking
+// for. A consumer reads an entity's kind FROM the entity, which is inside the
+// bundle, so at the moment the bundle must be opened there is no kind to
+// parameterise with — the anchor has to be derivable from the artifact alone.
+//
+// Two bounds fall out of that and are deliberate. Only the root is considered:
+// a Recipe's co-located source may carry whole entity documents of its own, and
+// those are payload rather than a second anchor. And a root document that
+// declares no publishable kind is not a candidate at all, which is what keeps a
+// compose fragment or a Kubernetes manifest sitting beside the entity from being
+// mistaken for it.
+//
+// # Both failures are named rather than guessed at
+//
+// No candidate returns ErrBundleNoEntityDocument listing the root entries that
+// were present; more than one returns ErrBundleAmbiguousEntityDocument naming
+// the colliding documents. The second is the case that matters most: two
+// same-version entities authored in one directory bundle to byte-identical
+// archives, so each of their coordinates carries the same bytes, and returning
+// either document would hand a consumer the other entity under the name it
+// asked for — a substitution nothing downstream could detect.
 func EntityYAMLFromBundle(blob []byte) ([]byte, error) {
 	gz, err := gzip.NewReader(bytes.NewReader(blob))
 	if err != nil {
@@ -39,6 +69,10 @@ func EntityYAMLFromBundle(blob []byte) ([]byte, error) {
 	}
 	defer gz.Close()
 	tr := tar.NewReader(gz)
+
+	var rootEntries []string
+	var found []string
+	var entity []byte
 	for {
 		hdr, nerr := tr.Next()
 		if nerr == io.EOF {
@@ -47,15 +81,71 @@ func EntityYAMLFromBundle(blob []byte) ([]byte, error) {
 		if nerr != nil {
 			return nil, fmt.Errorf("oci: unbundle tar: %w", nerr)
 		}
-		if hdr.Name == "recipe.yaml" {
-			data, rerr := io.ReadAll(tr)
-			if rerr != nil {
-				return nil, fmt.Errorf("oci: unbundle read recipe.yaml: %w", rerr)
-			}
-			return data, nil
+		if hdr.Typeflag != tar.TypeReg || strings.Contains(hdr.Name, "/") {
+			continue
+		}
+		rootEntries = append(rootEntries, hdr.Name)
+		data, rerr := io.ReadAll(tr)
+		if rerr != nil {
+			return nil, fmt.Errorf("read %s from the published bundle: %w", hdr.Name, rerr)
+		}
+		if !declaresPublishableKind(data) {
+			continue
+		}
+		found = append(found, hdr.Name)
+		if entity == nil {
+			entity = data
 		}
 	}
-	return nil, fmt.Errorf("oci: bundle has no recipe.yaml entity anchor")
+
+	// Sorted so a diagnostic is a function of the bundle's contents rather than
+	// of the order the archive happened to store them in.
+	sort.Strings(rootEntries)
+	sort.Strings(found)
+	switch len(found) {
+	case 1:
+		return entity, nil
+	case 0:
+		return nil, fmt.Errorf("bundle root carries %s: %w",
+			describeRootEntries(rootEntries), ErrBundleNoEntityDocument())
+	default:
+		return nil, fmt.Errorf("bundle root carries %d entity documents (%s): %w",
+			len(found), strings.Join(found, ", "), ErrBundleAmbiguousEntityDocument())
+	}
+}
+
+// declaresPublishableKind reports whether data is an entity document of a kind
+// this transport publishes.
+//
+// The kind set is read from the mediatype table through MediaTypeForKind rather
+// than listed here, so a kind added to that table becomes locatable inside a
+// bundle without a second list to update — and a document declaring some other
+// `kind:`, such as a Kubernetes manifest shipped as co-located source, is not a
+// candidate.
+//
+// The header decode is local rather than shared with the catalog's own kind peek:
+// the catalog package consumes this one, so the dependency cannot run the other
+// way. What single-sourcing buys here is the kind SET, and that is what the
+// MediaTypeForKind call reads.
+func declaresPublishableKind(data []byte) bool {
+	var hdr struct {
+		Kind string `yaml:"kind"`
+	}
+	if err := yaml.Unmarshal(data, &hdr); err != nil {
+		return false
+	}
+	_, err := MediaTypeForKind(hdr.Kind)
+	return err == nil
+}
+
+// describeRootEntries renders the root listing carried on the no-entity refusal.
+// The listing is what tells an author whether the entity document is missing
+// from the artifact or merely not recognised as one, which a bare count cannot.
+func describeRootEntries(names []string) string {
+	if len(names) == 0 {
+		return "no files at all"
+	}
+	return fmt.Sprintf("no entity document among %s", strings.Join(names, ", "))
 }
 
 // Bundle reads the entity at entityPath and returns the bundled
