@@ -45,6 +45,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginstrust"
+	"github.com/aggrega-ai/aggrega-cli/pkg/recipepin"
 	clischemas "github.com/aggrega-ai/aggrega-cli/pkg/schemas/jsonschema"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
@@ -302,6 +303,19 @@ func alignmentCases() []alignmentCase {
 			roots:      []reflect.Type{reflect.TypeOf(lockfile.Lockfile{})},
 			exceptions: map[string]string{},
 			maximals:   []any{maximalLockfile()},
+		},
+		{
+			// The entity lock is hand-written against its schema and carries no
+			// envelope, for the same reason the per-Release record above does not:
+			// it is written and read by the product rather than authored. Its rows
+			// are the pin types the entity schemas also reference, so the walk here
+			// is what holds one pin shape to one schema while it is declared in two
+			// places.
+			kind:       envelope.KindEntityLock,
+			schema:     schemas.EntityLockV1alpha1,
+			roots:      []reflect.Type{reflect.TypeOf(recipepin.Lock{})},
+			exceptions: map[string]string{},
+			maximals:   []any{maximalEntityLock()},
 		},
 		{
 			// The trust record is hand-written against its schema and carries no

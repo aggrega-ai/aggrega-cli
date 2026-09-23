@@ -13,6 +13,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginstrust"
 	"github.com/aggrega-ai/aggrega-cli/pkg/plugintype"
+	"github.com/aggrega-ai/aggrega-cli/pkg/recipepin"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
@@ -685,6 +686,32 @@ func maximalLockfile() lockfile.Lockfile {
 				Field:        "spec.source",
 				RequestedRef: "v1.0.0",
 			}},
+		}},
+	}
+}
+
+// maximalEntityLock populates every field of the entity lock: the schema version
+// and one fully-populated row of each pin class. The source row carries the two
+// optional identity knobs (a chart within a repository root, a directory within
+// a repository) and the optional manifest digest as well as the four required
+// fields, because those optional positions are exactly what a maximal instance
+// exists to reach; no real source carries both knobs at once, and the instance
+// is a field-surface probe rather than an authored document.
+func maximalEntityLock() recipepin.Lock {
+	return recipepin.Lock{
+		Version: recipepin.CurrentLockVersion,
+		SourceDigests: []types.SourceDigest{{
+			Kind:           "helm-oci-chart",
+			URL:            "oci://registry-1.docker.io/bitnamicharts/mariadb",
+			Chart:          "mariadb",
+			ModuleSubdir:   "modules/database",
+			Version:        "1.0.0",
+			Digest:         pinDigest,
+			ManifestDigest: pinDigest,
+		}},
+		ArtifactDigests: []types.ArtifactDigest{{
+			Name:   "networkpolicy.yaml",
+			Digest: pinDigest,
 		}},
 	}
 }

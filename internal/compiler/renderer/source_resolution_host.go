@@ -144,8 +144,8 @@ func resolveEntitySource(input RendererInput, source any, locals types.OrderedMa
 	if pin, ok := recipepin.MatchSourcePin(srcPins, spec.Kind, spec.URL, spec.Chart, spec.ModuleSubdir, spec.Version); ok {
 		if lfrec, found := input.Lockfile.FindSourceArtifact(spec.Kind, spec.URL, spec.Chart, spec.ModuleSubdir, spec.Version, spec.Ref); found {
 			if pin.Digest != lfrec.Digest || pin.ManifestDigest != lfrec.ManifestDigest {
-				return nil, fmt.Errorf("source-artifact %s@%s: recipe pin (digest %s) disagrees with lockfile record (digest %s): %w",
-					spec.URL, spec.Version, pin.Digest, lfrec.Digest, oci.ErrFetchIntegrity())
+				return nil, fmt.Errorf("source-artifact %s@%s: the source pin recorded beside the entity in %s (digest %s) disagrees with the lockfile record (digest %s): %w",
+					spec.URL, spec.Version, recipepin.LockFileName, pin.Digest, lfrec.Digest, oci.ErrFetchIntegrity())
 			}
 		}
 	}

@@ -15,40 +15,38 @@ import (
 )
 
 // freezeRecipePins is the resolution-phase freeze: for every writable (Tier-1)
-// Recipe and FeatureRecipe the closure reaches, it writes the recipe's intrinsic
-// content pins — sourceDigests (from the resolved remote sources) and
-// artifactDigests (from the $import artifact files) — into the recipe file,
-// modelling the go.mod/go.sum discipline where resolution records the pins the
-// author commits and the build verifies them.
+// Recipe and FeatureRecipe the closure reaches, it records the entity's
+// intrinsic content pins — one per resolved remote source, one per $import
+// artifact file — into the lock file beside that entity, modelling the
+// go.mod/go.sum discipline where resolution records the pins the author commits
+// and the build verifies them.
 //
 // Source pins come from the source-descent result (already fetched + digested);
 // artifact pins are computed here from the $import files on disk. The write is
-// surgical and idempotent — a recipe whose declared sources and $import set are
-// unchanged is left byte-identical. A recipe living in a content-addressed cache
+// idempotent — an entity whose declared sources and $import set are unchanged
+// leaves its lock byte-identical. A recipe living in a content-addressed cache
 // slot (registry-resolved) has no writable path and is skipped: it arrives
 // pre-pinned from its own publish.
 //
-// Returns a map from recipe entity URI to the recipe file's POST-freeze content
-// digest, for every writable recipe entity processed (recomputed even when the
-// freeze left the file byte-identical, since the on-disk bytes are what the
-// build re-hashes). The pull flow overlays this onto the matching lockfile entity
-// so the recorded digest reflects the file as it stands after the freeze, not the
-// resolution-time bytes captured before it. The overlay is keyed strictly by URI
-// so a lockfile entity of another kind that happens to share the recipe's bare
-// name is never touched.
+// The entity document itself is never opened for writing, so a recipe file is
+// byte-identical across the freeze whatever its pins do. That is what the
+// returned digest map reports: recipe entity URI to the recipe file's content
+// digest, for every writable recipe entity processed. The pull flow overlays it
+// onto the matching lockfile entity so the recorded digest reflects the file as
+// it stands, and the overlay is keyed strictly by URI so a lockfile entity of
+// another kind that happens to share the recipe's bare name is never touched.
 //
 // # Reporting instead of writing
 //
-// With reportOnly set, every recipe file is left exactly as it was and the bytes
+// With reportOnly set, every lock file is left exactly as it was and the bytes
 // the freeze would have put there are returned alongside the digests, one entry
-// per recipe whose bytes would MOVE — a recipe the freeze would leave
+// per entity whose lock would MOVE — an entity whose lock the freeze would leave
 // byte-identical is not reported, because a report of it would name a file
 // nothing was going to write.
 //
 // The digests are identical either way, and that is what makes the reported run
-// describe the writing one: the post-freeze content digest is the digest of the
-// post-freeze bytes, and those bytes are what the splice produces whether or not
-// anybody puts them on disk.
+// describe the writing one: the recipe file is not a party to the freeze, so its
+// digest is the same value whether or not anybody writes a lock beside it.
 func freezeRecipePins(lazyView *catalog.LazyLookup, entities []closure.ResolvedRef, srcArts []closure.SourceArtifact, reportOnly bool) (map[string]string, []dryrunreport.File, error) {
 	postFreezeRecipeDigests := map[string]string{}
 	var reported []dryrunreport.File
@@ -125,47 +123,48 @@ func freezeRecipePins(lazyView *catalog.LazyLookup, entities []closure.ResolvedR
 	return postFreezeRecipeDigests, reported, nil
 }
 
-// freezeOneRecipe freezes one writable recipe file's intrinsic content pins and
-// returns the file's post-freeze content digest, plus the bytes a reporting run
-// would hand back for it — nil where the file would not move, and always nil on a
-// writing run.
+// freezeOneRecipe records one writable entity's intrinsic content pins into the
+// lock beside it and returns the entity file's content digest, plus the lock
+// bytes a reporting run would hand back — nil where the lock would not move, and
+// always nil on a writing run.
 //
 // The two kinds reach it through one body. They differ in the loader that found
 // them and in the word their diagnostics name them by, and in nothing the freeze
 // itself does — so a second copy of this would be two places for a reporting run
 // to stop agreeing with a writing one.
 //
-// The digest is taken from the on-disk bytes on a writing run and from the
-// would-be bytes on a reporting one. Those are the same bytes: a writing run put
-// exactly what the splice produced on disk a moment earlier.
+// The entity file's digest is read from disk on both runs, and it is the same
+// value on both because the freeze does not write to that file at all. The
+// reported run therefore describes the writing one by construction rather than
+// by two computations being kept in step.
 //
-// It is computed for every recipe it freezes, including one whose URI also
-// resolves to a Component or a Feature and whose digest the caller therefore
-// discards. That costs one read of a file the freeze has just touched, and it
-// buys the caller being the only place that knows about the shadowing rule —
-// which is where that rule belongs, since it is a fact about what the LOCKFILE
-// records rather than about what the freeze does to a file.
+// The digest is computed for every entity it freezes, including one whose URI
+// also resolves to a Component or a Feature and whose digest the caller
+// therefore discards. That costs one read, and it buys the caller being the only
+// place that knows about the shadowing rule — which is where that rule belongs,
+// since it is a fact about what the LOCKFILE records rather than about what the
+// freeze does to a file.
 func freezeOneRecipe(path string, artifacts types.OrderedMap[types.ArtifactEntry], entityKind, entityName string, srcPins []types.SourceDigest, reportOnly bool) (string, *dryrunreport.File, error) {
 	artPins, aerr := recipepin.ArtifactPinsForRecipe(artifacts, entityKind, entityName)
 	if aerr != nil {
 		return "", nil, aerr
 	}
+	d, derr := fileContentDigest(path)
+	if derr != nil {
+		return "", nil, derr
+	}
 	if reportOnly {
-		out, rewrites, perr := recipepin.PreviewPins(path, srcPins, artPins)
+		out, rewrites, perr := recipepin.PreviewLock(path, srcPins, artPins)
 		if perr != nil {
 			return "", nil, perr
 		}
 		if !rewrites {
-			return digest.ContentDigest(out), nil, nil
+			return d, nil, nil
 		}
-		return digest.ContentDigest(out), &dryrunreport.File{Path: path, Content: out}, nil
+		return d, &dryrunreport.File{Path: recipepin.LockPath(path), Content: out}, nil
 	}
-	if _, werr := recipepin.WritePins(path, srcPins, artPins); werr != nil {
+	if _, werr := recipepin.WriteLock(path, srcPins, artPins); werr != nil {
 		return "", nil, werr
-	}
-	d, derr := fileContentDigest(path)
-	if derr != nil {
-		return "", nil, derr
 	}
 	return d, nil, nil
 }

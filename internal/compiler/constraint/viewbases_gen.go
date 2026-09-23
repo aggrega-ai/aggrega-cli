@@ -2732,9 +2732,9 @@ func (EmittedViewBase) ArtifactTemplateText(node string, artifact string) string
 
 // ArtifactRecordedContentPin panics. This view does not carry
 // artifact-recorded-content-pin, which is read from
-// types.RecipeSpec.ArtifactDigests.
+// recipepin.Lock.ArtifactDigests.
 func (EmittedViewBase) ArtifactRecordedContentPin(node string, artifact string) (string, bool) {
-	panic("this view does not carry artifact-recorded-content-pin, which is read from types.RecipeSpec.ArtifactDigests")
+	panic("this view does not carry artifact-recorded-content-pin, which is read from recipepin.Lock.ArtifactDigests")
 }
 
 // ArtifactImportedPath panics. This view does not carry
@@ -2766,9 +2766,9 @@ func (EmittedViewBase) AttachmentArtifactTemplateText(node string, attachment st
 
 // AttachmentArtifactRecordedContentPin panics. This view does not carry
 // attachment-artifact-recorded-content-pin, which is read from
-// types.FeatureRecipeSpec.ArtifactDigests.
+// recipepin.Lock.ArtifactDigests.
 func (EmittedViewBase) AttachmentArtifactRecordedContentPin(node string, attachment string, artifact string) (string, bool) {
-	panic("this view does not carry attachment-artifact-recorded-content-pin, which is read from types.FeatureRecipeSpec.ArtifactDigests")
+	panic("this view does not carry attachment-artifact-recorded-content-pin, which is read from recipepin.Lock.ArtifactDigests")
 }
 
 // AttachmentArtifactImportedPath panics. This view does not carry
@@ -2801,9 +2801,9 @@ func (EmittedViewBase) BoundaryAttachmentArtifactTemplateText(boundary string, a
 
 // BoundaryAttachmentArtifactRecordedContentPin panics. This view does not
 // carry boundary-attachment-artifact-recorded-content-pin, which is read
-// from types.FeatureRecipeSpec.ArtifactDigests.
+// from recipepin.Lock.ArtifactDigests.
 func (EmittedViewBase) BoundaryAttachmentArtifactRecordedContentPin(boundary string, attachment string, artifact string) (string, bool) {
-	panic("this view does not carry boundary-attachment-artifact-recorded-content-pin, which is read from types.FeatureRecipeSpec.ArtifactDigests")
+	panic("this view does not carry boundary-attachment-artifact-recorded-content-pin, which is read from recipepin.Lock.ArtifactDigests")
 }
 
 // BoundaryAttachmentArtifactImportedPath panics. This view does not carry

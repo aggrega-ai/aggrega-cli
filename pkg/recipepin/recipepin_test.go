@@ -10,8 +10,6 @@ import (
 	"strings"
 	"testing"
 
-	"go.yaml.in/yaml/v3"
-
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/recipepin"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -30,6 +28,31 @@ spec:
     image: nginx
 `
 
+// mixedRecipe carries the mixed content an authored document may hold: 2-space
+// indentation, a folded (>) scalar in metadata, a comment, quoted scalars, and a
+// literal (|) block whose body contains an internal blank line. None of it is
+// the pin writer's business, and the assertions below are that none of it moves.
+const mixedRecipe = `apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: mixed
+  version: "1.0.0"
+  description: >
+    A folded description that spans several
+    words and must survive verbatim.
+spec:
+  capability: helm
+  implements: "core/datastore/thing"
+  # a preserved comment
+  provides:
+    host: "{{ .context.instance_id }}-svc"
+    port: "5432"
+  valuesMapping: |
+    image: nginx
+
+    replicas: 3
+`
+
 func writeRecipe(t *testing.T, body string) string {
 	t.Helper()
 	p := filepath.Join(t.TempDir(), "recipe.yaml")
@@ -39,155 +62,258 @@ func writeRecipe(t *testing.T, body string) string {
 	return p
 }
 
-func readSpec(t *testing.T, path string) map[string]any {
+func mustRead(t *testing.T, p string) []byte {
 	t.Helper()
-	data, err := os.ReadFile(path)
+	b, err := os.ReadFile(p)
 	if err != nil {
 		t.Fatalf("read: %v", err)
 	}
-	var doc map[string]any
-	if err := yaml.Unmarshal(data, &doc); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-	spec, _ := doc["spec"].(map[string]any)
-	return spec
+	return b
 }
 
-func TestWritePinsFreezesSourceAndArtifactSections(t *testing.T) {
-	p := writeRecipe(t, bareRecipe)
-	src := []types.SourceDigest{{Kind: "helm-https-chart", URL: "https://x/c.tgz", Version: "1.0.0", Digest: "sha256:aaa"}}
-	art := []types.ArtifactDigest{{Name: "extra.yaml", Digest: "sha256:bbb"}}
+func sampleSourcePin(dig string) []types.SourceDigest {
+	return []types.SourceDigest{{Kind: "helm-https-chart", URL: "https://x/c.tgz", Version: "1.0.0", Digest: dig}}
+}
 
-	changed, err := recipepin.WritePins(p, src, art)
+func sampleArtifactPin(dig string) []types.ArtifactDigest {
+	return []types.ArtifactDigest{{Name: "extra.yaml", Digest: dig}}
+}
+
+// TestLockPathIsTheEntitySibling pins the placement the whole design rests on:
+// the lock is found by the directory the entity sits in, under one name, so a
+// reader who knows the entity's path knows the lock's without knowing its kind.
+func TestLockPathIsTheEntitySibling(t *testing.T) {
+	got := recipepin.LockPath(filepath.Join("catalog", "recipe", "helm", "app", "1.0.0", "recipe.yaml"))
+	want := filepath.Join("catalog", "recipe", "helm", "app", "1.0.0", recipepin.LockFileName)
+	if got != want {
+		t.Errorf("LockPath = %q; want %q", got, want)
+	}
+}
+
+// TestWriteLockRecordsBothPinClasses drives the writer over both classes at once
+// and reads the result back through the reader, so the round trip is asserted
+// through the pair rather than against a hand-spelled document.
+func TestWriteLockRecordsBothPinClasses(t *testing.T) {
+	p := writeRecipe(t, bareRecipe)
+	src := sampleSourcePin("sha256:aaa")
+	art := sampleArtifactPin("sha256:bbb")
+
+	changed, err := recipepin.WriteLock(p, src, art)
 	if err != nil {
-		t.Fatalf("WritePins: %v", err)
+		t.Fatalf("WriteLock: %v", err)
 	}
 	if !changed {
-		t.Fatalf("expected changed=true on first freeze")
+		t.Fatalf("expected changed=true on the first write")
 	}
-	spec := readSpec(t, p)
-	if _, ok := spec["sourceDigests"]; !ok {
-		t.Errorf("sourceDigests not written: %v", spec)
+
+	lock, present, err := recipepin.ReadLock(p)
+	if err != nil {
+		t.Fatalf("ReadLock: %v", err)
 	}
-	if _, ok := spec["artifactDigests"]; !ok {
-		t.Errorf("artifactDigests not written: %v", spec)
+	if !present {
+		t.Fatalf("ReadLock reported no lock after one was written")
 	}
-	// Untouched keys and the comment survive.
-	body, _ := os.ReadFile(p)
-	if !strings.Contains(string(body), "preserved comment") {
-		t.Errorf("comment not preserved:\n%s", body)
+	if len(lock.SourceDigests) != 1 || lock.SourceDigests[0].Digest != "sha256:aaa" {
+		t.Errorf("source pins round-tripped as %+v", lock.SourceDigests)
 	}
-	if !strings.Contains(string(body), "implements: server") {
-		t.Errorf("existing keys not preserved:\n%s", body)
+	if len(lock.ArtifactDigests) != 1 || lock.ArtifactDigests[0].Digest != "sha256:bbb" {
+		t.Errorf("artifact pins round-tripped as %+v", lock.ArtifactDigests)
+	}
+	if lock.Version != 1 {
+		t.Errorf("lock version = %d; want 1", lock.Version)
 	}
 }
 
-func TestWritePinsIdempotentWhenUnchanged(t *testing.T) {
-	p := writeRecipe(t, bareRecipe)
-	src := []types.SourceDigest{{Kind: "helm-https-chart", URL: "https://x/c.tgz", Version: "1.0.0", Digest: "sha256:aaa"}}
-	art := []types.ArtifactDigest{{Name: "extra.yaml", Digest: "sha256:bbb"}}
+// TestWriteLockNeverWritesTheAuthoredDocument is the executable form of the
+// ruling this file exists to serve: whatever the pins do — appear, move, or go
+// away — the entity document's bytes do not change.
+//
+// It is asserted over the three transitions rather than over one, because the
+// three reach the writer by different paths and a document write could be
+// introduced on any of them alone.
+func TestWriteLockNeverWritesTheAuthoredDocument(t *testing.T) {
+	p := writeRecipe(t, mixedRecipe)
+	original := []byte(mixedRecipe)
 
-	if _, err := recipepin.WritePins(p, src, art); err != nil {
-		t.Fatalf("first WritePins: %v", err)
+	for _, step := range []struct {
+		name string
+		src  []types.SourceDigest
+		art  []types.ArtifactDigest
+	}{
+		{name: "pins appear", src: sampleSourcePin("sha256:aaa"), art: sampleArtifactPin("sha256:bbb")},
+		{name: "a pin moves", src: sampleSourcePin("sha256:CHANGED"), art: sampleArtifactPin("sha256:bbb")},
+		{name: "pins go away"},
+	} {
+		if _, err := recipepin.WriteLock(p, step.src, step.art); err != nil {
+			t.Fatalf("%s: WriteLock: %v", step.name, err)
+		}
+		if got := mustRead(t, p); !bytes.Equal(got, original) {
+			t.Fatalf("%s: the authored document moved:\n--- want ---\n%q\n--- got ---\n%q", step.name, original, got)
+		}
 	}
-	first, _ := os.ReadFile(p)
+}
 
-	// Re-freeze the SAME pins (order permuted to prove canonicalization): no write.
-	changed, err := recipepin.WritePins(p, src, art)
+// TestWriteLockLeavesARealRecipeUntouched repeats the claim above against a
+// real-shaped published recipe rather than a synthetic one. The fixture supplies
+// shape; the property — a pin write touches no byte of the entity document —
+// holds for any document, so the fixture stands in for none in particular.
+func TestWriteLockLeavesARealRecipeUntouched(t *testing.T) {
+	original, err := os.ReadFile(filepath.Join("testdata", "mariadb-bitnami.yaml"))
 	if err != nil {
-		t.Fatalf("second WritePins: %v", err)
+		t.Fatalf("read recipe fixture: %v", err)
+	}
+	p := filepath.Join(t.TempDir(), "mariadb-bitnami.yaml")
+	if err := os.WriteFile(p, original, 0o644); err != nil {
+		t.Fatalf("copy: %v", err)
+	}
+
+	src := []types.SourceDigest{{
+		Kind:           "helm-oci-chart",
+		URL:            "oci://registry-1.docker.io/bitnamicharts/mariadb",
+		Version:        "1.0.0",
+		Digest:         "sha256:deadbeef",
+		ManifestDigest: "sha256:cafebabe",
+	}}
+	if _, werr := recipepin.WriteLock(p, src, nil); werr != nil {
+		t.Fatalf("WriteLock: %v", werr)
+	}
+	if got := mustRead(t, p); !bytes.Equal(got, original) {
+		t.Fatalf("the published recipe's bytes moved")
+	}
+
+	lockBody := mustRead(t, recipepin.LockPath(p))
+	if !bytes.Contains(lockBody, []byte("manifestDigest: sha256:cafebabe")) {
+		t.Errorf("the OCI manifest digest did not reach the lock:\n%s", lockBody)
+	}
+	if bytes.Contains(lockBody, []byte("artifactDigests")) {
+		t.Errorf("an empty artifact list must not be emitted:\n%s", lockBody)
+	}
+}
+
+// TestWriteLockIsIdempotent asserts the file is left byte-identical when the
+// declarations have not moved. It is what lets an author keep the lock under
+// version control: a re-run that churned the file would put a diff in front of
+// them that says nothing about their inputs.
+func TestWriteLockIsIdempotent(t *testing.T) {
+	p := writeRecipe(t, bareRecipe)
+	src := sampleSourcePin("sha256:aaa")
+	art := sampleArtifactPin("sha256:bbb")
+
+	if _, err := recipepin.WriteLock(p, src, art); err != nil {
+		t.Fatalf("first WriteLock: %v", err)
+	}
+	first := mustRead(t, recipepin.LockPath(p))
+
+	// The same pins, handed over in the opposite order, to prove the canonical
+	// sort rather than the caller's ordering is what the file records.
+	permutedSrc := append(sampleSourcePin("sha256:aaa"), types.SourceDigest{
+		Kind: "git-repository", URL: "https://a/b", Version: "sha", Digest: "sha256:zzz",
+	})
+	if _, err := recipepin.WriteLock(p, permutedSrc, art); err != nil {
+		t.Fatalf("widening WriteLock: %v", err)
+	}
+	reordered := []types.SourceDigest{
+		{Kind: "git-repository", URL: "https://a/b", Version: "sha", Digest: "sha256:zzz"},
+		sampleSourcePin("sha256:aaa")[0],
+	}
+	changed, err := recipepin.WriteLock(p, reordered, art)
+	if err != nil {
+		t.Fatalf("re-ordered WriteLock: %v", err)
 	}
 	if changed {
-		t.Errorf("expected changed=false when pins unchanged (read, not re-frozen)")
+		t.Errorf("a re-ordered but equal pin set reported a change")
 	}
-	second, _ := os.ReadFile(p)
-	if string(first) != string(second) {
-		t.Errorf("unchanged re-freeze churned the file:\n--- first ---\n%s\n--- second ---\n%s", first, second)
+
+	if _, err := recipepin.WriteLock(p, src, art); err != nil {
+		t.Fatalf("narrowing WriteLock: %v", err)
+	}
+	if got := mustRead(t, recipepin.LockPath(p)); !bytes.Equal(got, first) {
+		t.Errorf("returning to the original pins did not reproduce the original bytes:\n--- want ---\n%s\n--- got ---\n%s", first, got)
 	}
 }
 
-// blankLinesBeforeSourceDigests returns the count of consecutive blank
-// (empty or whitespace-only) lines immediately preceding the first line whose
-// left-trimmed content begins with "sourceDigests:". It returns -1 when no such
-// line is present.
-func blankLinesBeforeSourceDigests(t *testing.T, body []byte) int {
-	t.Helper()
-	lines := strings.Split(string(body), "\n")
-	for i, line := range lines {
-		if !strings.HasPrefix(strings.TrimLeft(line, " \t"), "sourceDigests:") {
-			continue
-		}
-		n := 0
-		for j := i - 1; j >= 0 && strings.TrimSpace(lines[j]) == ""; j-- {
-			n++
-		}
-		return n
-	}
-	return -1
-}
-
-func TestWritePinsBlankLineBeforeSourceDigestsIdempotent(t *testing.T) {
+// TestWriteLockRemovesTheFileWhenNothingIsPinned asserts an entity that stops
+// reaching outside itself stops carrying a lock, rather than carrying one that
+// records nothing.
+func TestWriteLockRemovesTheFileWhenNothingIsPinned(t *testing.T) {
 	p := writeRecipe(t, bareRecipe)
-	src := []types.SourceDigest{{Kind: "helm-https-chart", URL: "https://x/c.tgz", Version: "1.0.0", Digest: "sha256:aaa"}}
-
-	if _, err := recipepin.WritePins(p, src, nil); err != nil {
-		t.Fatalf("first WritePins: %v", err)
+	if _, err := recipepin.WriteLock(p, sampleSourcePin("sha256:aaa"), nil); err != nil {
+		t.Fatalf("WriteLock: %v", err)
 	}
-	if n := blankLinesBeforeSourceDigests(t, mustRead(t, p)); n != 1 {
-		t.Fatalf("first freeze: want exactly 1 blank line before sourceDigests, got %d:\n%s", n, mustRead(t, p))
-	}
-
-	// Re-emit (a changed digest forces a re-marshal): the guard must not
-	// accumulate a second blank line before the block.
-	src2 := []types.SourceDigest{{Kind: "helm-https-chart", URL: "https://x/c.tgz", Version: "1.0.0", Digest: "sha256:bbb"}}
-	changed, err := recipepin.WritePins(p, src2, nil)
+	changed, err := recipepin.WriteLock(p, nil, nil)
 	if err != nil {
-		t.Fatalf("re-freeze WritePins: %v", err)
+		t.Fatalf("clearing WriteLock: %v", err)
 	}
 	if !changed {
-		t.Fatalf("expected changed=true when the digest changed")
+		t.Errorf("clearing a present lock reported no change")
 	}
-	if n := blankLinesBeforeSourceDigests(t, mustRead(t, p)); n != 1 {
-		t.Fatalf("re-freeze: want exactly 1 blank line before sourceDigests, got %d:\n%s", n, mustRead(t, p))
+	if _, serr := os.Stat(recipepin.LockPath(p)); !os.IsNotExist(serr) {
+		t.Errorf("the lock file survived a clear: %v", serr)
+	}
+	// And clearing again is a no-op rather than an error.
+	changed, err = recipepin.WriteLock(p, nil, nil)
+	if err != nil {
+		t.Fatalf("second clearing WriteLock: %v", err)
+	}
+	if changed {
+		t.Errorf("clearing an absent lock reported a change")
 	}
 }
 
-func TestWritePinsReFreezesWhenPinsChange(t *testing.T) {
+// TestReadLockAbsentIsNotAFailure holds the distinction the reader's flag
+// exists for: nothing recorded is a different answer from something that would
+// not read, and only the second is a failure.
+func TestReadLockAbsentIsNotAFailure(t *testing.T) {
 	p := writeRecipe(t, bareRecipe)
-	src := []types.SourceDigest{{Kind: "helm-https-chart", URL: "https://x/c.tgz", Version: "1.0.0", Digest: "sha256:aaa"}}
-	if _, err := recipepin.WritePins(p, src, nil); err != nil {
-		t.Fatalf("first WritePins: %v", err)
-	}
-	// A changed source digest re-freezes.
-	src2 := []types.SourceDigest{{Kind: "helm-https-chart", URL: "https://x/c.tgz", Version: "1.0.0", Digest: "sha256:ZZZ"}}
-	changed, err := recipepin.WritePins(p, src2, nil)
+	lock, present, err := recipepin.ReadLock(p)
 	if err != nil {
-		t.Fatalf("re-freeze: %v", err)
+		t.Fatalf("ReadLock over a directory with no lock: %v", err)
 	}
-	if !changed {
-		t.Errorf("expected changed=true when a source digest changed")
+	if present {
+		t.Errorf("ReadLock reported a lock where none was written")
 	}
-	if !strings.Contains(string(mustRead(t, p)), "sha256:ZZZ") {
-		t.Errorf("re-freeze did not update the digest")
+	if len(lock.SourceDigests) != 0 || len(lock.ArtifactDigests) != 0 {
+		t.Errorf("an absent lock yielded pins: %+v", lock)
 	}
 }
 
-func TestWritePinsRemovesEmptySections(t *testing.T) {
-	p := writeRecipe(t, bareRecipe)
-	src := []types.SourceDigest{{Kind: "helm-https-chart", URL: "https://x/c.tgz", Version: "1.0.0", Digest: "sha256:aaa"}}
-	if _, err := recipepin.WritePins(p, src, nil); err != nil {
-		t.Fatalf("freeze: %v", err)
-	}
-	// Now the recipe no longer references any remote source: the section is removed.
-	changed, err := recipepin.WritePins(p, nil, nil)
-	if err != nil {
-		t.Fatalf("clear: %v", err)
-	}
-	if !changed {
-		t.Errorf("expected changed=true when clearing a present section")
-	}
-	if _, ok := readSpec(t, p)["sourceDigests"]; ok {
-		t.Errorf("sourceDigests should have been removed when empty")
+// TestReadLockRefusesWhatItsSchemaRejects is the falsifiability half of the
+// reader: a lock whose document the schema refuses is an error rather than a
+// silently empty pin set. The three rows are the three shapes that would
+// otherwise decode to something and lose a pin on the way — a key with no field
+// behind it, a version this package does not speak, and a row missing the digest
+// that is the whole point of the row.
+func TestReadLockRefusesWhatItsSchemaRejects(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		body string
+	}{
+		{
+			name: "a key the shape has no field for",
+			body: "version: 1\nsourceDigest:\n  - digest: sha256:aaa\n",
+		},
+		{
+			name: "a version this package does not speak",
+			body: "version: 2\n",
+		},
+		{
+			name: "a source row with no digest",
+			body: "version: 1\nsourceDigests:\n  - kind: helm-https-chart\n    url: https://x/c.tgz\n    version: 1.0.0\n",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := writeRecipe(t, bareRecipe)
+			if err := os.WriteFile(recipepin.LockPath(p), []byte(tc.body), 0o644); err != nil {
+				t.Fatalf("plant the lock: %v", err)
+			}
+			lock, present, err := recipepin.ReadLock(p)
+			if err == nil {
+				t.Fatalf("ReadLock admitted a refused document: present=%v lock=%+v", present, lock)
+			}
+			if !strings.Contains(err.Error(), recipepin.LockFileName) {
+				t.Errorf("the failure does not name the file that would not read: %v", err)
+			}
+		})
 	}
 }
 
@@ -238,260 +364,5 @@ func TestMatchHelpers(t *testing.T) {
 	}
 	if _, ok := recipepin.MatchArtifactPin(art, "y.yaml"); ok {
 		t.Errorf("MatchArtifactPin should not match a different name")
-	}
-}
-
-func mustRead(t *testing.T, p string) []byte {
-	t.Helper()
-	b, err := os.ReadFile(p)
-	if err != nil {
-		t.Fatalf("read: %v", err)
-	}
-	return b
-}
-
-// mixedRecipe carries the mixed content a byte-faithful splice must preserve:
-// 2-space indentation, a folded (>) scalar in metadata, a comment, quoted
-// scalars, and a literal (|) block whose body contains an internal blank line.
-const mixedRecipe = `apiVersion: aggrega.ai/v1alpha1
-kind: Recipe
-metadata:
-  name: mixed
-  version: "1.0.0"
-  description: >
-    A folded description that spans several
-    words and must survive the freeze verbatim.
-spec:
-  capability: helm
-  implements: "core/datastore/thing"
-  # a preserved comment
-  provides:
-    host: "{{ .context.instance_id }}-svc"
-    port: "5432"
-  valuesMapping: |
-    image: nginx
-
-    replicas: 3
-`
-
-// excisePinSection removes the pin section (the blank separator plus the
-// contiguous sourceDigests/artifactDigests blocks written at the end of spec)
-// from b, returning what remains. It relies on the pin section sitting at the
-// end of the file, which is where WritePins appends it.
-func excisePinSection(b []byte) []byte {
-	lines := strings.Split(string(b), "\n")
-	first := -1
-	for i, l := range lines {
-		t := strings.TrimLeft(l, " ")
-		if strings.HasPrefix(t, "sourceDigests:") || strings.HasPrefix(t, "artifactDigests:") {
-			first = i
-			break
-		}
-	}
-	if first == -1 {
-		return b
-	}
-	start := first
-	if start > 0 && strings.TrimSpace(lines[start-1]) == "" {
-		start--
-	}
-	end := len(lines)
-	for end > first && strings.TrimSpace(lines[end-1]) == "" {
-		end--
-	}
-	res := append([]string{}, lines[:start]...)
-	res = append(res, lines[end:]...)
-	return []byte(strings.Join(res, "\n"))
-}
-
-// differingLines returns the 0-indexed lines that differ between a and b.
-func differingLines(a, b []byte) []int {
-	la := strings.Split(string(a), "\n")
-	lb := strings.Split(string(b), "\n")
-	var diff []int
-	n := len(la)
-	if len(lb) > n {
-		n = len(lb)
-	}
-	for i := 0; i < n; i++ {
-		var x, y string
-		if i < len(la) {
-			x = la[i]
-		}
-		if i < len(lb) {
-			y = lb[i]
-		}
-		if x != y {
-			diff = append(diff, i)
-		}
-	}
-	return diff
-}
-
-func TestWritePinsByteFaithfulAdd(t *testing.T) {
-	p := writeRecipe(t, mixedRecipe)
-	original := []byte(mixedRecipe)
-
-	src := []types.SourceDigest{{Kind: "helm-https-chart", URL: "https://x/c.tgz", Version: "1.0.0", Digest: "sha256:aaa"}}
-	art := []types.ArtifactDigest{{Name: "extra.yaml", Digest: "sha256:bbb"}}
-	changed, err := recipepin.WritePins(p, src, art)
-	if err != nil {
-		t.Fatalf("WritePins: %v", err)
-	}
-	if !changed {
-		t.Fatalf("expected changed=true on first freeze")
-	}
-	result := mustRead(t, p)
-
-	// Every byte outside the appended pin section is identical to the original.
-	if got := excisePinSection(result); !bytes.Equal(got, original) {
-		t.Fatalf("bytes outside the pin section drifted:\n--- want ---\n%q\n--- got ---\n%q", original, got)
-	}
-
-	// The distinctive mixed-content fragments survive verbatim.
-	for _, frag := range []string{
-		"  description: >\n    A folded description that spans several\n    words and must survive the freeze verbatim.\n",
-		"  # a preserved comment\n",
-		"  implements: \"core/datastore/thing\"\n",
-		"  valuesMapping: |\n    image: nginx\n\n    replicas: 3\n",
-	} {
-		if !bytes.Contains(result, []byte(frag)) {
-			t.Errorf("fragment not preserved verbatim:\n%q\nin:\n%s", frag, result)
-		}
-	}
-
-	// The pin section is present, at 2-space indentation, sourceDigests first.
-	if !bytes.Contains(result, []byte("\n  sourceDigests:\n")) {
-		t.Errorf("sourceDigests block not written at 2-space indent:\n%s", result)
-	}
-	if !bytes.Contains(result, []byte("\n  artifactDigests:\n")) {
-		t.Errorf("artifactDigests block not written at 2-space indent:\n%s", result)
-	}
-	if si, ai := bytes.Index(result, []byte("sourceDigests:")), bytes.Index(result, []byte("artifactDigests:")); si > ai {
-		t.Errorf("sourceDigests must precede artifactDigests (src=%d art=%d)", si, ai)
-	}
-}
-
-func TestWritePinsByteFaithfulChange(t *testing.T) {
-	p := writeRecipe(t, mixedRecipe)
-	src := []types.SourceDigest{{Kind: "helm-https-chart", URL: "https://x/c.tgz", Version: "1.0.0", Digest: "sha256:aaa"}}
-	art := []types.ArtifactDigest{{Name: "extra.yaml", Digest: "sha256:bbb"}}
-	if _, err := recipepin.WritePins(p, src, art); err != nil {
-		t.Fatalf("first WritePins: %v", err)
-	}
-	added := mustRead(t, p)
-
-	// Change only the source digest: only the digest line may differ.
-	src2 := []types.SourceDigest{{Kind: "helm-https-chart", URL: "https://x/c.tgz", Version: "1.0.0", Digest: "sha256:CHANGED"}}
-	changed, err := recipepin.WritePins(p, src2, art)
-	if err != nil {
-		t.Fatalf("change WritePins: %v", err)
-	}
-	if !changed {
-		t.Fatalf("expected changed=true when the digest changed")
-	}
-	after := mustRead(t, p)
-
-	diff := differingLines(added, after)
-	if len(diff) != 1 {
-		t.Fatalf("expected exactly one differing line, got %d: %v\n--- added ---\n%s\n--- after ---\n%s", len(diff), diff, added, after)
-	}
-	afterLines := strings.Split(string(after), "\n")
-	if dl := strings.TrimSpace(afterLines[diff[0]]); dl != "digest: sha256:CHANGED" {
-		t.Errorf("the differing line is not the digest line: %q", dl)
-	}
-}
-
-func TestWritePinsByteFaithfulRemoveRestoresOriginal(t *testing.T) {
-	p := writeRecipe(t, mixedRecipe)
-	original := []byte(mixedRecipe)
-
-	src := []types.SourceDigest{{Kind: "helm-https-chart", URL: "https://x/c.tgz", Version: "1.0.0", Digest: "sha256:aaa"}}
-	art := []types.ArtifactDigest{{Name: "extra.yaml", Digest: "sha256:bbb"}}
-	if _, err := recipepin.WritePins(p, src, art); err != nil {
-		t.Fatalf("add WritePins: %v", err)
-	}
-
-	// Removing all pins restores the file byte-for-byte.
-	changed, err := recipepin.WritePins(p, nil, nil)
-	if err != nil {
-		t.Fatalf("remove WritePins: %v", err)
-	}
-	if !changed {
-		t.Fatalf("expected changed=true when clearing present sections")
-	}
-	if got := mustRead(t, p); !bytes.Equal(got, original) {
-		t.Fatalf("remove did not restore the original bytes:\n--- want ---\n%q\n--- got ---\n%q", original, got)
-	}
-}
-
-// TestWritePinsByteFaithfulOnRealRecipe copies a real-shaped recipe fixture
-// into a temp dir (the fixture itself is never touched), freezes one source
-// pin, and asserts that no byte outside the pin region drifts: the folded
-// description, the literal valuesMapping block, and the 2-space indentation
-// carry through byte-for-byte, and the frozen result carries a sourceDigests
-// block and no artifactDigests.
-//
-// The fixture is read as-is, so it may arrive pin-free or already carrying a
-// frozen pin section — the freeze correspondingly adds the block or replaces the
-// one present. The non-pin comparison therefore excises the pin region from both
-// the frozen result and the copied original, which isolates the bytes the splice
-// must not touch without constraining what the fixture happens to carry.
-//
-// The property under test — a pin splice touches no byte outside the pin
-// region — holds for any real-shaped recipe, so the fixture supplies shape
-// rather than standing in for any particular published document.
-func TestWritePinsByteFaithfulOnRealRecipe(t *testing.T) {
-	original, err := os.ReadFile(filepath.Join("testdata", "mariadb-bitnami.yaml"))
-	if err != nil {
-		t.Fatalf("read recipe fixture: %v", err)
-	}
-	p := filepath.Join(t.TempDir(), "mariadb-bitnami.yaml")
-	if err := os.WriteFile(p, original, 0o644); err != nil {
-		t.Fatalf("copy: %v", err)
-	}
-
-	src := []types.SourceDigest{{
-		Kind:           "helm-oci-chart",
-		URL:            "oci://registry-1.docker.io/bitnamicharts/mariadb",
-		Version:        "1.0.0",
-		Digest:         "sha256:deadbeef",
-		ManifestDigest: "sha256:cafebabe",
-	}}
-	changed, err := recipepin.WritePins(p, src, nil)
-	if err != nil {
-		t.Fatalf("WritePins: %v", err)
-	}
-	if !changed {
-		t.Fatalf("expected changed=true")
-	}
-	result := mustRead(t, p)
-
-	// Every byte outside the pin region is identical. Both sides are excised so
-	// the comparison isolates the non-pin bytes regardless of whether the example
-	// already carried a frozen pin section of its own.
-	if got, want := excisePinSection(result), excisePinSection(original); !bytes.Equal(got, want) {
-		t.Fatalf("bytes outside the pin section drifted from the original recipe at line(s) %v", differingLines(got, want))
-	}
-	// Only a sourceDigests block was added; no artifactDigests appeared.
-	if !bytes.Contains(result, []byte("\n  sourceDigests:\n")) {
-		t.Errorf("sourceDigests block not added")
-	}
-	if bytes.Contains(result, []byte("artifactDigests")) {
-		t.Errorf("artifactDigests must not appear when no artifact pins are frozen")
-	}
-	// The folded description, the literal block, and the 2-space indentation
-	// survive verbatim.
-	for _, frag := range []string{
-		"  description: >\n",
-		"    Aggregate into source resolution.\n",
-		"  valuesMapping: |\n",
-		"    ## ── Image overrides",
-		"  capability: helm\n",
-		"    - ReadWriteOnce\n",
-	} {
-		if !bytes.Contains(result, []byte(frag)) {
-			t.Errorf("fragment not preserved verbatim: %q", frag)
-		}
 	}
 }

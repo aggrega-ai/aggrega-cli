@@ -17,6 +17,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/compactform"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"github.com/aggrega-ai/aggrega-cli/pkg/recipepin"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
@@ -1254,6 +1255,11 @@ func parseFeatureEntity(data []byte, path string) (types.Feature, error) {
 // The source is anchored through anchorEntitySource, which both source-bearing
 // kinds share and which documents what that resolution decides and why.
 //
+// It also points the entity's content pins at the lock file beside it, through
+// applyRecordedPins. That belongs here for the same reason the path rewrites do:
+// this is where the document and the directory it was read from are both in
+// hand, and every later reader has the entity alone.
+//
 // Unlike parseComponentEntity, this self-wraps every failure into its final
 // CATALOG_ERROR shape (unmarshal, source rewrite, artifact rewrite each carry a
 // distinct message; ValidateRecipe already returns a shaped error) so a single
@@ -1293,7 +1299,42 @@ func parseRecipeEntity(data []byte, path string) (types.Recipe, error) {
 	if err := resolveArtifactImports(path, "Recipe", &e.Spec.Artifacts); err != nil {
 		return types.Recipe{}, err
 	}
+
+	if err := applyRecordedPins(path, &e.Spec.SourceDigests, &e.Spec.ArtifactDigests); err != nil {
+		return types.Recipe{}, err
+	}
 	return e, nil
+}
+
+// applyRecordedPins points an entity's content pins at the lock file beside it,
+// and is the one body both pin-bearing kinds route through.
+//
+// The lock is where a resolution records what it acquired, so where one is
+// present it is what the build compares against: an entity document is never
+// machine-written, which means the pins in hand at this point were typed by
+// somebody rather than derived, and preferring them would compare a build
+// against an assertion instead of against a measurement.
+//
+// Absence of a lock leaves whatever the document carried untouched. That is not
+// a fallback so much as the honest reading of the two cases: an entity with no
+// lock beside it has had nothing recorded for it, and an entity that still
+// declares its pins inline is read as declaring them until that surface is gone.
+//
+// A lock that will not read is a failure rather than an absence, and the reason
+// is the one that makes the file worth having: a pin nobody could read is a
+// comparison that silently does not happen, which reads exactly like a build
+// whose inputs had not moved.
+func applyRecordedPins(path string, srcPins *[]types.SourceDigest, artPins *[]types.ArtifactDigest) error {
+	lock, present, err := recipepin.ReadLock(path)
+	if err != nil {
+		return err
+	}
+	if !present {
+		return nil
+	}
+	*srcPins = lock.SourceDigests
+	*artPins = lock.ArtifactDigests
+	return nil
 }
 
 // anchorEntitySource resolves an entity's authored source against the directory
@@ -1431,10 +1472,11 @@ func resolveArtifactImports(entityPath, kind string, artifacts *types.OrderedMap
 // parseFeatureRecipeEntity is the FeatureRecipe analogue of parseRecipeEntity:
 // envelope gate, unmarshal, kind-check, the load-time shape rules
 // (validator.ValidateFeatureRecipe), and the same relative-source and
-// relative-`$import` rewrites against the entity file's own directory. Both
-// kinds route their artifacts rewrite through resolveArtifactImports and their
-// source through anchorEntitySource, so the two cannot drift; that function
-// documents what the source resolution decides and why.
+// relative-`$import` rewrites against the entity file's own directory, and the
+// same reading of the lock file beside it. Both kinds route their artifacts
+// rewrite through resolveArtifactImports, their source through
+// anchorEntitySource and their pins through applyRecordedPins, so the two cannot
+// drift; those functions document what each resolution decides and why.
 // Self-wraps its failures like parseRecipeEntity.
 func parseFeatureRecipeEntity(data []byte, path string) (types.FeatureRecipe, error) {
 	if _, eerr := envelope.ValidateBytes(envelope.KindFeatureRecipe, data, path); eerr != nil {
@@ -1469,6 +1511,10 @@ func parseFeatureRecipeEntity(data []byte, path string) (types.FeatureRecipe, er
 	e.Spec.Workload.Import = workloadTarget
 
 	if err := resolveArtifactImports(path, "FeatureRecipe", &e.Spec.Artifacts); err != nil {
+		return types.FeatureRecipe{}, err
+	}
+
+	if err := applyRecordedPins(path, &e.Spec.SourceDigests, &e.Spec.ArtifactDigests); err != nil {
 		return types.FeatureRecipe{}, err
 	}
 	return e, nil

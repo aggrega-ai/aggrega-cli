@@ -5209,7 +5209,7 @@ var facts = []factDecl{
 	{
 		Name:        "artifact-recorded-content-pin",
 		Stage:       "hydrated",
-		SourceField: "types.RecipeSpec.ArtifactDigests",
+		SourceField: "recipepin.Lock.ArtifactDigests",
 		Subject:     []string{"node", "artifact"},
 		Params: []paramDecl{
 			{Name: "node", Type: "string"},
@@ -5378,7 +5378,7 @@ var facts = []factDecl{
 	{
 		Name:        "attachment-artifact-recorded-content-pin",
 		Stage:       "hydrated",
-		SourceField: "types.FeatureRecipeSpec.ArtifactDigests",
+		SourceField: "recipepin.Lock.ArtifactDigests",
 		Subject:     []string{"node", "attachment", "artifact"},
 		Params: []paramDecl{
 			{Name: "node", Type: "string"},
@@ -5519,7 +5519,7 @@ var facts = []factDecl{
 	{
 		Name:        "boundary-attachment-artifact-recorded-content-pin",
 		Stage:       "hydrated",
-		SourceField: "types.FeatureRecipeSpec.ArtifactDigests",
+		SourceField: "recipepin.Lock.ArtifactDigests",
 		Subject:     []string{"boundary", "attachment", "artifact"},
 		Params: []paramDecl{
 			{Name: "boundary", Type: "string"},

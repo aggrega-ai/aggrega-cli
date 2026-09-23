@@ -88,6 +88,7 @@ const (
 	KindRelease          Kind = "Release"
 	KindAggregaConfig    Kind = "AggregaConfig"
 	KindLockfile         Kind = "Lockfile"
+	KindEntityLock       Kind = "EntityLock"
 	KindWorkload         Kind = "Workload"
 	// KindIR is the emitted intermediate representation. It is an
 	// OUTPUT-side, TEST-ONLY kind: no loader calls ValidateBytes/
@@ -120,6 +121,7 @@ var schemaSource = map[Kind]string{
 	KindRelease:          schemas.ReleaseV1alpha1,
 	KindAggregaConfig:    schemas.AggregaConfigV1alpha1,
 	KindLockfile:         schemas.LockfileV1alpha1,
+	KindEntityLock:       schemas.EntityLockV1alpha1,
 	KindWorkload:         clischemas.WorkloadJSONSchema,
 	KindIR:               schemas.IRSchemaV1alpha1,
 }

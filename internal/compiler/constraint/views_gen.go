@@ -4864,7 +4864,7 @@ type HydratedView interface {
 	// the key with the bundle's own filename nested under it, matches no
 	// recorded pin, which is the same answer its authoring form gives.
 	//
-	// Keyed by (node, artifact); read from types.RecipeSpec.ArtifactDigests.
+	// Keyed by (node, artifact); read from recipepin.Lock.ArtifactDigests.
 	ArtifactRecordedContentPin(node string, artifact string) (string, bool)
 
 	// ArtifactImportedPath is the file one of a node's artifacts was supplied
@@ -5002,7 +5002,7 @@ type HydratedView interface {
 	// record independently, with nothing making their output names distinct.
 	//
 	// Keyed by (node, attachment, artifact); read from
-	// types.FeatureRecipeSpec.ArtifactDigests.
+	// recipepin.Lock.ArtifactDigests.
 	AttachmentArtifactRecordedContentPin(node string, attachment string, artifact string) (string, bool)
 
 	// AttachmentArtifactImportedPath is the file one artifact of the
@@ -5126,7 +5126,7 @@ type HydratedView interface {
 	// holding none.
 	//
 	// Keyed by (boundary, attachment, artifact); read from
-	// types.FeatureRecipeSpec.ArtifactDigests.
+	// recipepin.Lock.ArtifactDigests.
 	BoundaryAttachmentArtifactRecordedContentPin(boundary string, attachment string, artifact string) (string, bool)
 
 	// BoundaryAttachmentArtifactImportedPath is the file one artifact of the
