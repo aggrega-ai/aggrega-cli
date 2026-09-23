@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"github.com/aggrega-ai/aggrega-cli/pkg/recipepin"
 )
 
 // pinChartTgz builds a minimal, deterministic Helm chart archive (nested under a
@@ -144,8 +145,14 @@ func serveChart(t *testing.T, blob []byte) *httptest.Server {
 }
 
 // TestE1FreezeAtResolution proves an unpinned local Recipe with a remote source,
-// once pulled, carries a sourceDigests pin whose digest equals the fetched
-// archive's hash AND the lockfile records the matching source_artifacts entry.
+// once pulled, has a sourceDigests pin whose digest equals the fetched archive's
+// hash recorded in the lock beside it AND the lockfile records the matching
+// source_artifacts entry.
+//
+// The pin's destination is the lock and not the recipe, so the recipe file is
+// held to being byte-identical across the pull in the same breath: a freeze that
+// records what it resolved and rewrites what the author typed would satisfy the
+// pin assertions and still be wrong.
 func TestE1FreezeAtResolution(t *testing.T) {
 	blob := pinChartTgz(t)
 	srv := serveChart(t, blob)
@@ -154,27 +161,37 @@ func TestE1FreezeAtResolution(t *testing.T) {
 	chartURL := srv.URL + "/pinchart.tgz"
 	releasePath := sourcedPinFixture(t, root, chartURL)
 	recipePath := filepath.Join(root, "catalog", "recipes", "server.yaml")
+	lockPath := recipepin.LockPath(recipePath)
 
-	// Before pull: no pins.
-	if strings.Contains(string(mustReadFile(t, recipePath)), "sourceDigests") {
+	// Before pull: no pins, in either of the two places one could sit.
+	recipeBefore := mustReadFile(t, recipePath)
+	if strings.Contains(string(recipeBefore), "sourceDigests") {
 		t.Fatalf("recipe carried sourceDigests before pull")
+	}
+	if _, err := os.Stat(lockPath); !os.IsNotExist(err) {
+		t.Fatalf("a lock sat beside the recipe before pull; stat err = %v", err)
 	}
 
 	if err := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{filepath.Join(root, "catalog")}}); err != nil {
 		t.Fatalf("pullRun: %v", err)
 	}
 
-	// After pull: the recipe file carries sourceDigests == the fetched hash.
-	recipeBody := string(mustReadFile(t, recipePath))
-	if !strings.Contains(recipeBody, "sourceDigests") {
-		t.Fatalf("freeze did not write sourceDigests into the recipe:\n%s", recipeBody)
+	// After pull: the lock beside the recipe carries sourceDigests == the
+	// fetched hash.
+	lockBody := string(mustReadFile(t, lockPath))
+	if !strings.Contains(lockBody, "sourceDigests") {
+		t.Fatalf("freeze did not write sourceDigests into %s:\n%s", lockPath, lockBody)
 	}
 	wantDigest := sha256OCI(blob)
-	if !strings.Contains(recipeBody, wantDigest) {
-		t.Errorf("recipe sourceDigests missing fetched hash %s:\n%s", wantDigest, recipeBody)
+	if !strings.Contains(lockBody, wantDigest) {
+		t.Errorf("lock sourceDigests missing fetched hash %s:\n%s", wantDigest, lockBody)
 	}
-	if !strings.Contains(recipeBody, chartURL) {
-		t.Errorf("recipe sourceDigests missing url %s:\n%s", chartURL, recipeBody)
+	if !strings.Contains(lockBody, chartURL) {
+		t.Errorf("lock sourceDigests missing url %s:\n%s", chartURL, lockBody)
+	}
+	// ...and the authored recipe is exactly what it was.
+	if recipeAfter := mustReadFile(t, recipePath); !bytes.Equal(recipeAfter, recipeBefore) {
+		t.Errorf("the freeze rewrote the authored recipe;\n--- before ---\n%s\n--- after ---\n%s", recipeBefore, recipeAfter)
 	}
 
 	// The lockfile records the matching source_artifacts entry.
@@ -188,8 +205,13 @@ func TestE1FreezeAtResolution(t *testing.T) {
 }
 
 // TestE1PullIsIdempotentAfterFreeze proves a second pull over the now-frozen
-// recipe rewrites a byte-identical lockfile (modulo generated_at) and leaves the
-// recipe file byte-identical — the freeze reaches a fixpoint after one pull.
+// recipe rewrites a byte-identical lockfile (modulo generated_at), leaves the
+// lock beside the recipe byte-identical, and leaves the recipe file
+// byte-identical — the freeze reaches a fixpoint after one pull.
+//
+// The lock is the file the freeze writes, so it is the one the fixpoint claim is
+// really about; the recipe's invariance is the separate claim that an authored
+// file is not a party to the freeze at all.
 func TestE1PullIsIdempotentAfterFreeze(t *testing.T) {
 	blob := pinChartTgz(t)
 	srv := serveChart(t, blob)
@@ -203,16 +225,21 @@ func TestE1PullIsIdempotentAfterFreeze(t *testing.T) {
 		t.Fatalf("first pull: %v", err)
 	}
 	recipe1 := mustReadFile(t, recipePath)
+	entityLock1 := mustReadFile(t, recipepin.LockPath(recipePath))
 	lock1 := stripGeneratedAt(mustReadFile(t, filepath.Join(root, "release.lock")))
 
 	if err := pullRun(context.Background(), pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{catalogDir}}); err != nil {
 		t.Fatalf("second pull: %v", err)
 	}
 	recipe2 := mustReadFile(t, recipePath)
+	entityLock2 := mustReadFile(t, recipepin.LockPath(recipePath))
 	lock2 := stripGeneratedAt(mustReadFile(t, filepath.Join(root, "release.lock")))
 
 	if !bytes.Equal(recipe1, recipe2) {
 		t.Errorf("second pull churned the frozen recipe:\n--- first ---\n%s\n--- second ---\n%s", recipe1, recipe2)
+	}
+	if !bytes.Equal(entityLock1, entityLock2) {
+		t.Errorf("second pull churned the lock beside the recipe:\n--- first ---\n%s\n--- second ---\n%s", entityLock1, entityLock2)
 	}
 	if !bytes.Equal(lock1, lock2) {
 		t.Errorf("second pull churned the lockfile (excluding generated_at):\n--- first ---\n%s\n--- second ---\n%s", lock1, lock2)

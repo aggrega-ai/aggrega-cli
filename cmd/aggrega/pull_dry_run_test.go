@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
+	"github.com/aggrega-ai/aggrega-cli/pkg/recipepin"
 )
 
 // withoutGeneratedAt drops every column-0 `generated_at:` line, so two lockfile
@@ -98,25 +99,27 @@ func pullWriting(t *testing.T, root, releasePath, catalogDir string) {
 // state and its result is compared against the report byte for byte.
 //
 // The fixture's Recipe carries a $import artifact, which is what makes the
-// freeze rewrite the recipe file — and rewriting it moves the recipe's content
-// digest in the lockfile too, so one workspace puts two files in play with no
-// registry and no network.
+// freeze write a lock beside that recipe — and that lock, together with the
+// Release's own lockfile, puts two files in play with no registry and no
+// network. The authored recipe is not one of them: no run writes it, so it is
+// held to being byte-identical across both halves rather than expected to move.
 func TestPullDryRunNamesEveryFileItWouldWriteAndWritesNone(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
 	releasePath := fullURICollisionFixture(t, root)
 	catalogDir := filepath.Join(root, "catalog")
 	recipePath := filepath.Join(catalogDir, "recipes", "server.yaml")
+	entityLockPath := recipepin.LockPath(recipePath)
 	lockfilePath := lockfile.PathFor(releasePath)
 
 	recipeBefore := mustReadFile(t, recipePath)
-	if strings.Contains(string(recipeBefore), "artifactDigests") {
-		t.Fatalf("the fixture must start unfrozen, or the report below has nothing to add:\n%s", recipeBefore)
+	if _, err := os.Stat(entityLockPath); !os.IsNotExist(err) {
+		t.Fatalf("the fixture must start unfrozen, or the report below has nothing to add; stat %s err = %v", entityLockPath, err)
 	}
 
 	// (a) The reported run.
 	stdout := pullDryRun(t, root, releasePath, catalogDir)
-	for _, want := range []string{"==> " + recipePath + " <==", "==> " + lockfilePath + " <=="} {
+	for _, want := range []string{"==> " + entityLockPath + " <==", "==> " + lockfilePath + " <=="} {
 		if !strings.Contains(stdout, want) {
 			t.Errorf("the report must name every file the pull would write; missing %q in:\n%s", want, stdout)
 		}
@@ -125,34 +128,42 @@ func TestPullDryRunNamesEveryFileItWouldWriteAndWritesNone(t *testing.T) {
 		t.Errorf("the summary must count the files it named; got:\n%s", stdout)
 	}
 	// The recipe is reached under two entity URIs in this fixture — its bare name
-	// and its provider-qualified one — and it is one file, so it is named once.
-	if n := strings.Count(stdout, "==> "+recipePath+" <=="); n != 1 {
-		t.Errorf("the recipe is one file and must be named once; the report names it %d times:\n%s", n, stdout)
+	// and its provider-qualified one — and both resolve to one document in one
+	// directory, so they share one lock and it is named once.
+	if n := strings.Count(stdout, "==> "+entityLockPath+" <=="); n != 1 {
+		t.Errorf("the two URIs share one lock and it must be named once; the report names it %d times:\n%s", n, stdout)
 	}
 
-	if got := mustReadFile(t, recipePath); !bytes.Equal(got, recipeBefore) {
-		t.Errorf("the reported run rewrote the recipe;\nbefore:\n%s\nafter:\n%s", recipeBefore, got)
+	// Nothing the report named exists on disk...
+	if _, err := os.Stat(entityLockPath); !os.IsNotExist(err) {
+		t.Errorf("the reported run must create no lock at %s; stat err = %v", entityLockPath, err)
 	}
 	if _, err := os.Stat(lockfilePath); !os.IsNotExist(err) {
 		t.Errorf("the reported run must create no lockfile at %s; stat err = %v", lockfilePath, err)
 	}
+	// ...and the authored recipe, which the report never names, is untouched.
+	if got := mustReadFile(t, recipePath); !bytes.Equal(got, recipeBefore) {
+		t.Errorf("the reported run rewrote the recipe;\nbefore:\n%s\nafter:\n%s", recipeBefore, got)
+	}
 
 	// (b) The same pull without the flag, from the same starting state.
 	pullWriting(t, root, releasePath, catalogDir)
-	recipeAfter := mustReadFile(t, recipePath)
+	entityLockAfter := mustReadFile(t, entityLockPath)
 	lockAfter := mustReadFile(t, lockfilePath)
-	if bytes.Equal(recipeAfter, recipeBefore) {
-		t.Fatalf("the writing run left the recipe unchanged, so the report above described nothing:\n%s", recipeAfter)
+	// The writing run must actually have moved what the report described —
+	// otherwise the assertions above are satisfied by a report of nothing.
+	if !strings.Contains(string(entityLockAfter), "artifactDigests") {
+		t.Fatalf("the writing run must have frozen the recipe's pins into its lock:\n%s", entityLockAfter)
 	}
-	if !strings.Contains(string(recipeAfter), "artifactDigests") {
-		t.Fatalf("the writing run must have frozen the recipe's pins:\n%s", recipeAfter)
+	if got := mustReadFile(t, recipePath); !bytes.Equal(got, recipeBefore) {
+		t.Errorf("the writing run rewrote the authored recipe;\nbefore:\n%s\nafter:\n%s", recipeBefore, got)
 	}
 
 	// The report is held to the write byte for byte, which is the strongest form
 	// of "it describes a real effect": not merely that something moved, but that
 	// what moved is what was reported.
-	if !strings.Contains(stdout, string(recipeAfter)) {
-		t.Errorf("the recipe the writing run produced is not what the report showed;\nwritten:\n%s\nreported:\n%s", recipeAfter, stdout)
+	if !strings.Contains(stdout, string(entityLockAfter)) {
+		t.Errorf("the lock the writing run produced is not what the report showed;\nwritten:\n%s\nreported:\n%s", entityLockAfter, stdout)
 	}
 	if !strings.Contains(withoutGeneratedAt(stdout), withoutGeneratedAt(string(lockAfter))) {
 		t.Errorf("the lockfile the writing run produced is not what the report showed;\nwritten:\n%s\nreported:\n%s", lockAfter, stdout)

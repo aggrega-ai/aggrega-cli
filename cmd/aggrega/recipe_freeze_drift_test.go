@@ -14,16 +14,19 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/buildops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
+	"github.com/aggrega-ai/aggrega-cli/pkg/recipepin"
 )
 
 // fullURICollisionFixture authors a buildable workspace whose Recipe is
 // referenced from the Manifest by its FULL provider-qualified URI
 // (helm/server:1.0.0) so it lands as a pinned closure ENTITY, and whose Recipe
 // carries a $import artifact so the resolution-phase freeze actually WRITES
-// artifactDigests into the recipe file (its on-disk bytes change at freeze). The
-// Recipe's bare name (server) deliberately COLLIDES with the Component's bare
-// name (server) — the exact condition under which a by-bare-name reconciliation
-// would corrupt the Component's recorded digest. Returns the release path.
+// artifactDigests into the lock beside the recipe — the workspace acquires a
+// file at freeze without the Recipe itself needing a remote source or a network.
+// The Recipe's bare name (server) deliberately COLLIDES with the Component's
+// bare name (server) — the exact condition under which a by-bare-name
+// reconciliation would corrupt the Component's recorded digest. Returns the
+// release path.
 func fullURICollisionFixture(t *testing.T, root string) string {
 	t.Helper()
 	catalogRoot := filepath.Join(root, "catalog")
@@ -126,12 +129,18 @@ spec:
 }
 
 // TestFreezeFullURIRecipeOnePullFixpoint proves the one-pull fixpoint for a
-// recipe referenced by full URI whose freeze rewrites its file: after a SINGLE
-// pull, the lockfile records the recipe's POST-freeze content digest, so a build
-// (which verifies the lockfile against a freshly-recomputed closure) sees no
-// drift — no "lockfile out of date" halt and no need for a second, healing pull.
-// It also asserts the collision guard: the Component that shares the recipe's
-// bare name keeps its own untouched content digest in the lockfile.
+// recipe referenced by full URI whose freeze writes a lock beside it: after a
+// SINGLE pull, the lockfile records the content digest the recipe file actually
+// has, so a build (which verifies the lockfile against a freshly-recomputed
+// closure) sees no drift — no "lockfile out of date" halt and no need for a
+// second, healing pull. It also asserts the collision guard: the Component that
+// shares the recipe's bare name keeps its own untouched content digest in the
+// lockfile.
+//
+// The freeze is observed on the lock, because that is the file it writes. A
+// freeze that wrote nothing at all would leave the lockfile trivially in
+// agreement with a recipe nobody touched, which is why the lock's presence and
+// content are asserted before the fixpoint claim is made.
 func TestFreezeFullURIRecipeOnePullFixpoint(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
@@ -151,14 +160,16 @@ func TestFreezeFullURIRecipeOnePullFixpoint(t *testing.T) {
 	}
 
 	// The freeze must actually have written pins — otherwise the test would not
-	// exercise the post-freeze digest path at all.
-	recipeBody := string(mustReadFile(t, recipePath))
-	if !strings.Contains(recipeBody, "artifactDigests") {
-		t.Fatalf("freeze did not write artifactDigests; the test does not exercise the post-freeze path:\n%s", recipeBody)
+	// exercise the frozen path at all.
+	lockPath := recipepin.LockPath(recipePath)
+	lockBody := string(mustReadFile(t, lockPath))
+	if !strings.Contains(lockBody, "artifactDigests") {
+		t.Fatalf("freeze did not write artifactDigests into %s; the test does not exercise the frozen path:\n%s", lockPath, lockBody)
 	}
-	// The post-freeze content digest of the recipe file — the value the lockfile's
-	// recipe entity must carry, and the value the build recomputes from the file.
-	recipeDigest := digest.ContentDigest([]byte(recipeBody))
+	// The content digest of the recipe file as it stands after the freeze — the
+	// value the lockfile's recipe entity must carry, and the value the build
+	// recomputes from the file.
+	recipeDigest := digest.ContentDigest(mustReadFile(t, recipePath))
 	if recipeDigest == componentDigest {
 		t.Fatalf("test setup degenerate: recipe and component share a content digest")
 	}
