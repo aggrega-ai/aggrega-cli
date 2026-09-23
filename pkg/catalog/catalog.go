@@ -227,7 +227,7 @@ func LoadAll(workspaceRoot string, dirs ...string) (*Catalog, error) {
 	return LoadAllWithCacheDir(workspaceRoot, "", dirs...)
 }
 
-// LoadAllWithCacheDir is LoadAll with the content-addressed cache directory
+// LoadAllWithCacheDir is LoadAll with the artifact cache directory
 // skipped during the walk. cacheDir is the workspace-relative cache path (the
 // resolution-artifact store, e.g. ".aggrega/cache"); a directory whose path
 // relative to a walked root equals cacheDir is skipped, so cached
@@ -361,7 +361,7 @@ type ShadowedEntity struct {
 }
 
 // loadAllPassOne runs the indexing walk only — the filesystem walk + per-file
-// indexing with the content-addressed cache directory skipped — and returns the
+// indexing with the artifact cache directory skipped — and returns the
 // catalog BEFORE pillar validation (validateSchemaPillarsPass).
 // LoadAllWithCacheDir runs pillar validation immediately after. cacheDir ""
 // disables the cache skip.
@@ -497,8 +497,8 @@ func (c *Catalog) walkDirInto(dir, cacheClean string, tolerant bool) ([]SkippedE
 // this directory", so every walk that enumerates authored catalog entities
 // routes through it and the walks cannot drift on the answer.
 //
-// The cache stores resolution artifacts — bytes a registry fetch placed there,
-// addressed by content and vouched for by a lockfile digest. They are not
+// The cache stores resolution artifacts — fetched bytes kept under the coordinate
+// they were fetched at and vouched for by a lockfile digest. They are not
 // authored catalog entities, and a walk that reads one as though an author had
 // written it takes bytes nothing has verified, on a path the author cannot edit.
 //

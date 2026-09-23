@@ -251,8 +251,8 @@ var operationAvailability = map[string]serveAvailability{
 
 	// The session resolves a Release's dependencies, which is also where the
 	// external inputs its render consumes are pinned: one request, one acquisition
-	// moment. It reaches registries and it writes — the lockfile, the
-	// content-addressed cache, and the input store — and it is not a question about
+	// moment. It reaches registries and it writes — the lockfile, the entity and
+	// source-artifact cache, and the input store — and it is not a question about
 	// the workspace: a caller sending it has asked for the work, exactly as a
 	// caller sending a build has asked for artifacts.
 	//

@@ -36,5 +36,5 @@
 // is written — a reference the workspace already holds and an entity the catalog
 // holds a writable file for are two different meanings of "local", and only the
 // second decides where the step may write. An entity a resolution reached through
-// the content-addressed cache has no such home and is passed over.
+// the artifact cache has no such home and is passed over.
 package entitypin

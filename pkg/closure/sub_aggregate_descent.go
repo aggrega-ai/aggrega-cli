@@ -43,9 +43,9 @@ var errSubAggregateDepth = cerrors.Register("sub-aggregate-depth", cerrors.Meta{
 
 // AggregateLoader loads the parsed body of a resolved (pinned) sub-aggregate so
 // DescendSubAggregates can re-walk its own references. The digest is the pin
-// just recorded for the URI; a cache-backed implementation reads the
-// content-addressed slot and verifies it against the digest before returning,
-// so the descent walks the exact bytes the pin covers — never a
+// just recorded for the URI; a cache-backed implementation reads the cache
+// slot for that URI and version and verifies it against the digest before
+// returning, so the descent walks the exact bytes the pin covers — never a
 // re-serialization or an unverified read.
 //
 // The loader is injected rather than exposed as a Lookup method because only
@@ -99,7 +99,7 @@ func RequireAggregateLoader(lookup Lookup) (AggregateLoader, error) {
 // reconstruction a build or a serve drift check performs against an existing
 // lockfile (ReconstructClosureAxes). A hermetic caller is unaffected by that
 // reach, because the loader's contract is a read of already-resolved bytes —
-// authored catalog bytes, or the content-addressed slot the pin names, verified
+// authored catalog bytes, or the cache slot the pin names, verified
 // against that pin — never a fetch. The shape mirrors DescendRecipeSources: a
 // separate pass over the resolved closure driven by an injected loader.
 //

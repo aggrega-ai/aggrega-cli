@@ -31,8 +31,8 @@ import (
 // Release instantiates is never rendered here, so its pins are no fact about this
 // Release and its lock is left exactly as it was. Of those, only an entity with a
 // writable home is considered — a document in one of the workspace's catalog
-// directories. An entity resolved through the content-addressed cache has no such
-// home; see [entitypin.WritableHome] for why that is the catalog's meaning of
+// directories. An entity resolved through the artifact cache has no such home;
+// see [entitypin.WritableHome] for why that is the catalog's meaning of
 // "local" rather than the one a source's own reference text carries.
 //
 // # Pin, or hold the lock to the pins

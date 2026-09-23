@@ -94,8 +94,8 @@ type entityDefinitionParams struct {
 //
 // It is empty in one case, and that case is a statement about the entity rather
 // than a gap in the answer: an entity resolved from a registry lives in a
-// content-addressed cache slot, which is not a document anybody authored, so
-// there is none to name.
+// cache slot, which is not a document anybody authored, so there is none to
+// name.
 //
 // AuthoredLength is the length in bytes of the authored text the resolution
 // retained, and only the Aggregate is served with one — it is the kind whose text

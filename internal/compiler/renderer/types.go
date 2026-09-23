@@ -73,8 +73,8 @@ type RendererInput struct {
 	// caller that assembles a render's input directly: nothing was recorded for it
 	// to compare against, so the pin comparisons conclude nothing rather than
 	// approving. An entity resolved from a registry reads the same way — it lives
-	// in a content-addressed slot rather than a directory a lock could sit beside,
-	// so it has no key here.
+	// in a cache slot rather than in a directory its author owns, where a lock
+	// could sit beside it, so it has no key here.
 	RecordedPins recipepin.Lookup
 
 	// Trace, when non-nil, captures per-pass intermediate state under

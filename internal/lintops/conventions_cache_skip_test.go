@@ -12,7 +12,7 @@ import (
 
 // TestWalkCatalogEntityFiles_SkipsArtifactCache pins the conventions walk to the
 // contract RunRelease's documentation states: an entity resolved from a
-// content-addressed cache slot carries no local file to lint and is skipped,
+// cache slot carries no local file to lint and is skipped,
 // because the publishing rules check author-time conventions that only apply to
 // a file the author owns. A cached slot is a resolution artifact — reporting a
 // convention finding against it hands the author a path they cannot edit and a

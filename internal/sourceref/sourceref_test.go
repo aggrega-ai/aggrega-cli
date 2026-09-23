@@ -369,7 +369,7 @@ func TestAnchorToDocumentResolvesOnlyWhatItShould(t *testing.T) {
 		{"a web reference is carried through", document, "https://example.test/chart.tgz", "https://example.test/chart.tgz"},
 		{"a repository reference is carried through", document, "example.test/repo.git", "example.test/repo.git"},
 		// No declaring document: an entity resolved from a registry lives in a
-		// content-addressed slot rather than a file, so there is no directory for a
+		// cache slot rather than a file, so there is no directory for a
 		// relative reference to be relative to and it is handed back.
 		{"no declaring document leaves a relative path alone", "", "./charts/app", "./charts/app"},
 		{"no declaring document leaves an absolute path alone", "", "/opt/charts/app", "/opt/charts/app"},

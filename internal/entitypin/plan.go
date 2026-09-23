@@ -207,11 +207,11 @@ func sourcePinsByEntity(srcArts []closure.SourceArtifact) map[string][]types.Sou
 // the catalog's — whether the directory walk recorded a file for the entity — and
 // never the reference-text meaning a source's own spelling carries: an entity
 // with a remote source can have a writable home, and an entity with a local
-// source can have none. An entity a resolution reached through the
-// content-addressed cache answers false, because a cache slot is addressed by
-// what was fetched into it and a file written there would falsify it; an entity a
-// caller names by its document answers true, because the view the step reads it
-// through walked that document's own directory.
+// source can have none. An entity a resolution reached through the artifact
+// cache answers false, because its slot holds what a fetch placed there under the
+// entity's coordinate and version — no document its author edits or commits; an
+// entity a caller names by its document answers true, because the view the step
+// reads it through walked that document's own directory.
 func WritableHome(view *catalog.LazyLookup, kind, capability, name, version string) (string, bool) {
 	switch kind {
 	case "Recipe":

@@ -877,7 +877,7 @@ func renderReleaseFile(ctx context.Context, rw *workspaceconfig.ResolvedWorkspac
 	}
 	catalogLookup := cat.CatalogLookup()
 	// A catalog directory walk enumerates authored entities and deliberately steps
-	// over the content-addressed cache, so a plugin this workspace acquired from a
+	// over the artifact cache, so a plugin this workspace acquired from a
 	// registry is reachable only through a cache-backed read. Without one the entity
 	// front finds no such plugin at all and a transform-role guest halts here as
 	// not-an-entity — while a build of the same documents resolves it and runs it.

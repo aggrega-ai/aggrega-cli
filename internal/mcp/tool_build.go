@@ -70,7 +70,7 @@ type buildFile struct {
 //
 // The render is the whole of what writes nothing. A build asked to resolve its
 // dependencies first performs that resolution before rendering, and that step
-// writes the lockfile and fills the content-addressed store — so "in memory"
+// writes the lockfile and fills the artifact cache — so "in memory"
 // describes where the ARTIFACTS go, which is what a caller reading this shape is
 // choosing between, and never a claim that the call as a whole left the
 // workspace untouched. DependencyResolution below is present exactly when it

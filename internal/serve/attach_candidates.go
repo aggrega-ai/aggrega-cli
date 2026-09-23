@@ -227,7 +227,7 @@ type AttachCandidatesResult struct {
 // looks nothing up at all. Addressing a graph node builds the Release's
 // graph through the same computation the graph query runs, so it resolves
 // that Release's closure through the ordinary catalog cascade — which
-// serves from the local directories and the content-addressed cache
+// serves from the local directories and the artifact cache
 // first, and can reach the configured registry for an entity neither
 // carries. A surface that claimed otherwise for every coordinate would be
 // describing only the cheaper one.

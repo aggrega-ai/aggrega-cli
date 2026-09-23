@@ -125,7 +125,7 @@ func writePassedOverKinds(out io.Writer, passedOver map[string]int) {
 // machinery the compiler uses (the shared closure resolver over the lazy lookup)
 // and runs the structural publishing-linter rules over the catalog entity files
 // that closure reaches. Entities are resolved to their author-owned catalog
-// files; registry-pinned entities living in a content-addressed cache slot carry
+// files; registry-pinned entities living in a cache slot carry
 // no local file to lint and are skipped (the publishing-linter checks author-time
 // conventions, which only apply to locally-authored files). Findings are advisory
 // — conventions never halt on a convention finding alone.

@@ -154,7 +154,7 @@ type Config struct {
 	// plugin trust record are left exactly as they were.
 	//
 	// It is scoped to the files the run PRODUCES and says nothing about the
-	// content-addressed cache, which fills exactly as it would otherwise — the
+	// artifact cache, which fills exactly as it would otherwise — the
 	// resolution is what discovers the answer, so a run that declined to acquire
 	// would have nothing to report. That is the same shape a rendered build's dry
 	// run carries, and it is what makes the report describe a real effect rather

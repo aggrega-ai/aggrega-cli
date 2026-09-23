@@ -194,7 +194,7 @@ func (s *Server) dispatchResolveDependencies(ctx context.Context, req *jsonRPCRe
 //
 // # What it writes, which is intended and reported
 //
-// The per-Release lockfile, the content-addressed cache, the trust record beside
+// The per-Release lockfile, the artifact cache, the trust record beside
 // the lockfile, and — where the request or the workspace asks for the pin step —
 // the lock beside each Recipe and FeatureRecipe with a writable home. Every one of
 // those is the operation's product rather than a side effect,

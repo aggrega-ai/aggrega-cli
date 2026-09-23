@@ -12,7 +12,7 @@
 // The two arms differ in exactly one thing: where the guest's bytes come from. A
 // co-located guest sits beside its Plugin entity in a catalog directory and is
 // reachable by walking that directory. A registry-published guest is acquired
-// into the content-addressed cache, which no catalog directory walk reaches, so
+// into the artifact cache, which no catalog directory walk reaches, so
 // it is resolvable only through a cache-backed read. Everything else — the
 // component, the recipe, the workspace, the attachment, the acquisition pass — is
 // identical between them, so an arm that fails while the other passes localises

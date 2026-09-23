@@ -191,8 +191,8 @@ func (l *LazyLookup) AsCatalogLookup() resolver.CatalogLookup {
 		// reference to its catalog directory, so the build-load cascade's co-located
 		// tier resolves a core guest from beside its catalog entity when the binary
 		// embeds none. Only catalog-directory (Tier-1) entities carry a directory;
-		// a registry-resolved (Tier-2) entity lives in a content-addressed cache
-		// slot and never appears here.
+		// a registry-resolved (Tier-2) entity lives in a cache slot and never
+		// appears here.
 		PluginColocatedDirs: l.pluginColocatedDirs(),
 		// The recipe lookups and the joint instance resolution over the
 		// lazily-enumerated recipe set, so a rule asked at a stage of the
@@ -494,9 +494,8 @@ type LazyLookup struct {
 
 	// localEntityPaths maps entityBytesKey(kind, identityKey) to the filesystem
 	// path an enumerated entity was authored in, for Tier-1 (catalog-directory)
-	// entities only. A registry-resolved (Tier-2) entity lives in a
-	// content-addressed cache slot, which nobody authored, and is never recorded
-	// here.
+	// entities only. A registry-resolved (Tier-2) entity lives in a cache slot,
+	// which nobody authored, and is never recorded here.
 	//
 	// That Tier-1-only rule serves two consumers at once. A caller writing beside
 	// an entity — the entity author's pin step — is scoped to author-owned
@@ -825,7 +824,7 @@ func (l *LazyLookup) Feature(uri string) (types.Feature, bool) {
 //
 // It enumerates the Tier-1 directory index and only that, so it reads the
 // filesystem and never the network. A Feature reachable only from the
-// content-addressed cache or from a registry has no entry in that index and
+// artifact cache or from a registry has no entry in that index and
 // is not reported — the honest bound, because enumerating those would mean
 // fetching, and a caller asking what is already here must not be the thing
 // that reaches out. Callers that need the whole surface resolve a URI they
@@ -1186,7 +1185,7 @@ func (l *LazyLookup) buildSchemaLibraries() error {
 // LocalRecipePath returns the writable filesystem path a Tier-1 (catalog-
 // directory) Recipe was authored in, keyed by its identity {target, name,
 // version}, and whether one is recorded. A registry-resolved Recipe living in a
-// content-addressed cache slot returns ("", false), so the entity author's pin
+// cache slot returns ("", false), so the entity author's pin
 // step writes only beside author-owned files. Triggers the Tier-1 index walk on
 // first call.
 //
@@ -1218,9 +1217,8 @@ func (l *LazyLookup) LocalFeatureRecipePath(target, name, version string) (strin
 // identity shape moves.
 //
 // Only a Tier-1 (catalog-directory) entity has one. An entity resolved from a
-// registry lives in a content-addressed cache slot, which is not a document
-// anybody authored, so it is reported as no path rather than as the slot's
-// location.
+// registry lives in a cache slot, which is not a document anybody authored, so
+// it is reported as no path rather than as the slot's location.
 //
 // The Aggregate is deliberately not answered here. Its own accessor already
 // carries the document it was loaded from, and answering it a second way would

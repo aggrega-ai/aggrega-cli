@@ -376,7 +376,7 @@ func (c *Catalog) featureRecipeDocument(fr *types.FeatureRecipe) (string, bool) 
 // answer differently.
 //
 // An entity resolved from a registry has no answer here. It lives in a
-// content-addressed cache slot, which is not a document anybody authored, so it
+// cache slot, which is not a document anybody authored, so it
 // is reported as having none rather than as the slot's location — the same
 // reading every other path-reporting accessor on this catalog takes.
 // RecordedPins reports the content pins in force for every pin-bearing entity

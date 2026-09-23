@@ -82,8 +82,8 @@ type Entity struct {
 	//
 	// It is empty where the backing has no authored document to name, which is a
 	// statement about the entity rather than a gap in the answer: an entity
-	// resolved from a registry lives in a content-addressed cache slot, and a
-	// cache slot is not a document anybody wrote.
+	// resolved from a registry lives in a cache slot, and a cache slot is not a
+	// document anybody wrote.
 	//
 	// Source is recorded as the backing records it. A backing that stores a path
 	// relative to a workspace root hands back the relative form, so a caller that

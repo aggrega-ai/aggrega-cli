@@ -273,7 +273,7 @@ func IsTemplated(ref string) bool {
 //
 // Four references come back exactly as given, and each for its own reason. An
 // empty documentPath names no declaring document — an entity resolved from a
-// registry lives in a content-addressed slot rather than in a file anybody
+// registry lives in a cache slot rather than in a file anybody
 // authored, so there is no directory for its reference to be relative to and
 // handing the reference back is the honest answer. A reference that is not local
 // names something fetched over a transport, and joining it to a directory would

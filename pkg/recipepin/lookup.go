@@ -42,7 +42,7 @@ func (p Pins) Empty() bool {
 // inputs that had not moved.
 //
 // An entity with no document on disk has no key here. One resolved from a
-// registry lives in a content-addressed slot rather than in a file anybody
+// registry lives in a cache slot rather than in a file anybody
 // authored, so it records nothing — the same answer every other path-keyed
 // reading of such an entity gives.
 type Lookup map[string]Pins
