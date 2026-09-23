@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Cognitio S.r.l.
 
-// Tests which scalar `source:` values a catalog load anchors against the
-// declaring entity's own directory, for both kinds that carry a source.
+// Tests which `source:` values a catalog load anchors against the declaring
+// entity's own directory, for both kinds that carry a source and both shapes a
+// source is authored in — one reference, or a block of named fields.
 //
 // The property under test is that anchoring is gated twice, on two independent
 // readings of the value's own text. It runs only where the value names something
@@ -25,8 +26,12 @@
 // gate, and a repair reaching one and not the other would pass every assertion
 // made against the first alone.
 //
-// The rows are the authoring axis for a scalar source, so a form nobody covers
-// is a missing row rather than an absent function.
+// The rows are the authoring axis for a source, so a form nobody covers is a
+// missing row rather than an absent function. The structured rows carry a
+// provider-defined key and a templated identity field alongside the reference,
+// because the gate is over the REFERENCE alone: a block whose version is still
+// text has a url its author wrote out in full, and a repair that read the whole
+// block for template text would defer that url to no directory at all.
 
 package catalog
 
@@ -130,6 +135,175 @@ func loadedScalarSources(t *testing.T, catalogDir string) map[string]string {
 		out["FeatureRecipe"] = s
 	}
 	return out
+}
+
+// loadedStructuredSources returns the single Recipe's and the single
+// FeatureRecipe's post-load structured source from a loaded catalog, keyed by the
+// kind for the failure messages.
+//
+// It is the structured counterpart of loadedScalarSources and asserts the shape
+// as well as reading it: a structured source that came back as a scalar, or as
+// anything else, is the failure rather than a value to go on and compare.
+func loadedStructuredSources(t *testing.T, catalogDir string) map[string]map[string]any {
+	t.Helper()
+	c, err := LoadAll("", catalogDir)
+	if err != nil {
+		t.Fatalf("LoadAll: %v", err)
+	}
+	if len(c.Recipes) != 1 {
+		t.Fatalf("expected 1 Recipe; got %d", len(c.Recipes))
+	}
+	if len(c.FeatureRecipes) != 1 {
+		t.Fatalf("expected 1 FeatureRecipe; got %d", len(c.FeatureRecipes))
+	}
+	out := make(map[string]map[string]any, 2)
+	for _, r := range c.Recipes {
+		s, ok := r.Spec.Source.(map[string]any)
+		if !ok {
+			t.Fatalf("Recipe: source did not come back as a block of fields: %#v", r.Spec.Source)
+		}
+		out["Recipe"] = s
+	}
+	for _, fr := range c.FeatureRecipes {
+		s, ok := fr.Spec.Source.(map[string]any)
+		if !ok {
+			t.Fatalf("FeatureRecipe: source did not come back as a block of fields: %#v", fr.Spec.Source)
+		}
+		out["FeatureRecipe"] = s
+	}
+	return out
+}
+
+// structuredSourceURL reads the url entry out of a loaded structured source,
+// failing rather than returning a zero value where the entry is absent or is not
+// text — either of which would make every comparison below pass vacuously.
+func structuredSourceURL(t *testing.T, kind string, source map[string]any) string {
+	t.Helper()
+	url, ok := source["url"].(string)
+	if !ok {
+		t.Fatalf("%s: structured source carries no url text: %#v", kind, source["url"])
+	}
+	return url
+}
+
+// TestStructuredSourceAnchorsItsLocalURLAgainstTheEntityDirectory pins that a
+// source authored as a block of named fields is anchored on the same terms a
+// single reference is: its url names where the author wrote it, so it resolves
+// against their own document's directory rather than against wherever the build
+// runs from.
+//
+// The url is read back by opening the directory it names and reading the sentinel
+// out of it, not by comparing strings, because the property is which base it was
+// resolved against and the test runs from a directory holding a decoy at the same
+// relative path.
+//
+// Every other key travels verbatim, and the row carries two that must: a
+// provider-defined key, which reaches the entity's own templates rather than the
+// fetch, and an identity field whose text decides which artifact is named. A
+// rewrite reaching either of those would change what the source means while the
+// url assertion still passed.
+func TestStructuredSourceAnchorsItsLocalURLAgainstTheEntityDirectory(t *testing.T) {
+	for _, authored := range []string{
+		`{kind: helm-oci-chart, url: ./charts/app, version: "1.0.0", repository_alias: upstream}`,
+		`{kind: helm-oci-chart, url: charts/app, version: "1.0.0", repository_alias: upstream}`,
+	} {
+		t.Run(authored, func(t *testing.T) {
+			catalogDir := sourceAnchorCatalog(t, authored)
+			for kind, source := range loadedStructuredSources(t, catalogDir) {
+				url := structuredSourceURL(t, kind, source)
+				if !filepath.IsAbs(url) {
+					t.Errorf("%s: the block's local url was not anchored: %q", kind, url)
+					continue
+				}
+				body, err := os.ReadFile(filepath.Join(url, "Chart.yaml"))
+				if err != nil {
+					t.Errorf("%s: anchored url unreadable: %v", kind, err)
+					continue
+				}
+				if read := strings.TrimSpace(string(body)); read != beside {
+					t.Errorf("%s: anchored against the wrong base: read %q from %q, want %q",
+						kind, read, url, beside)
+				}
+				if got := source["version"]; got != "1.0.0" {
+					t.Errorf("%s: an identity field was rewritten by the anchoring: %#v", kind, got)
+				}
+				if got := source["repository_alias"]; got != "upstream" {
+					t.Errorf("%s: a provider-defined key was rewritten by the anchoring: %#v", kind, got)
+				}
+				if got := source["kind"]; got != "helm-oci-chart" {
+					t.Errorf("%s: the kind was rewritten by the anchoring: %#v", kind, got)
+				}
+			}
+		})
+	}
+}
+
+// TestStructuredSourceLeavesEveryURLThatNamesNoLocalPath pins the gate the row
+// above is the negative control for: a block whose url names something fetched
+// over a transport, or is still template text, comes back exactly as authored.
+//
+// The templated-version row is the one that separates the two template questions.
+// Its url is a value and its version is text, so the url is anchored now and the
+// version is left for the Release that fills it in — a reading that asked whether
+// the source's IDENTITY was still text would defer the url too, and leave it
+// relative to whatever directory the build happened to run from.
+func TestStructuredSourceLeavesEveryURLThatNamesNoLocalPath(t *testing.T) {
+	cases := []struct {
+		name     string
+		authored string
+		wantURL  string
+		anchored bool
+	}{
+		{
+			name:     "oci chart reference",
+			authored: `{kind: helm-oci-chart, url: "oci://ghcr.io/example/chart", version: "1.0.0"}`,
+			wantURL:  "oci://ghcr.io/example/chart",
+		},
+		{
+			name:     "git repository reference",
+			authored: `{kind: git-repository, url: "https://example.com/org/repo.git", ref: main}`,
+			wantURL:  "https://example.com/org/repo.git",
+		},
+		{
+			name:     "templated url",
+			authored: `{kind: helm-oci-chart, url: "{{ .locals.chart_dir }}", version: "1.0.0"}`,
+			wantURL:  "{{ .locals.chart_dir }}",
+		},
+		{
+			name:     "templated version over a local url",
+			authored: `{kind: helm-oci-chart, url: ./charts/app, version: "{{ .infra.tag }}"}`,
+			wantURL:  "",
+			anchored: true,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			catalogDir := sourceAnchorCatalog(t, tc.authored)
+			for kind, source := range loadedStructuredSources(t, catalogDir) {
+				url := structuredSourceURL(t, kind, source)
+				if tc.anchored {
+					if !filepath.IsAbs(url) {
+						t.Errorf("%s: a local url beside a templated identity field must still be anchored: %q",
+							kind, url)
+					}
+					if got := source["version"]; got != "{{ .infra.tag }}" {
+						t.Errorf("%s: the templated identity field was evaluated or rewritten at load: %#v", kind, got)
+					}
+					continue
+				}
+				if url != tc.wantURL {
+					t.Errorf("%s: url was rewritten by the load: %q became %q", kind, tc.wantURL, url)
+				}
+				if filepath.IsAbs(url) {
+					t.Errorf("%s: url came back as a filesystem path: %q", kind, url)
+				}
+				if strings.Contains(url, catalogDir) {
+					t.Errorf("%s: url carries the catalog location: %q", kind, url)
+				}
+			}
+		})
+	}
 }
 
 // TestScalarSourceCarriesTransportReferencesThrough pins that a scalar source

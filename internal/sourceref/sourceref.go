@@ -73,6 +73,23 @@ const templateOpen = "{{"
 // the identity knowable.
 var identityFields = [...]string{"kind", "url", "chart", "module_subdir", "version", "ref"}
 
+// IdentityFields returns the structured-source keys [IdentityTemplated] consults,
+// which are the keys whose authored text fixes which artifact a source names.
+//
+// It is exported for one reason: the package that builds a source's fetch
+// coordinates declares the same keys, and it declares them from a package this
+// stdlib-only leaf cannot import, so the correspondence between the two sets can
+// only be checked from that side. Nothing in the reading itself needs this, and a
+// caller reaching for it to re-derive the reading is re-implementing
+// [IdentityTemplated] rather than checking it.
+//
+// It returns a copy, so a caller cannot rewrite the set it is checking against.
+func IdentityFields() []string {
+	out := make([]string, len(identityFields))
+	copy(out, identityFields[:])
+	return out
+}
+
 // Reference returns the single reference a source value names, and whether the
 // value is a shape a reference can be read out of at all.
 //
@@ -89,6 +106,20 @@ var identityFields = [...]string{"kind", "url", "chart", "module_subdir", "versi
 // read. A source that reaches lock-time descent in a shape neither covers is
 // refused there by name, so reporting it unreadable here defers to that refusal
 // rather than standing in for it.
+//
+// # Why this walk and the source-template walk stay apart
+//
+// The renderer's source-template walk classifies which PARTS of a source carry a
+// template and what each part is called; this one projects the single reference a
+// source names. Both cross the same union of shapes and neither is folded into the
+// other, because they ask different questions and are reached from different
+// sides: the catalog load and the dependency descent read a source long before any
+// render and cannot import the renderer, which is what puts this projection in a
+// stdlib-only leaf. Each site composes its own question over it — where a relative
+// reference is anchored, what path a local one names, whether the author already
+// knows which artifact is meant — and a single classifier folding those together
+// would answer none of them cleanly. What must stay in step is only the union of
+// shapes, which is why each walk names the other where it is declared.
 func Reference(source any) (ref string, readable bool) {
 	switch s := source.(type) {
 	case string:

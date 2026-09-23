@@ -1233,22 +1233,8 @@ func parseFeatureEntity(data []byte, path string) (types.Feature, error) {
 // cannot drift. The cross-entity dup-identity check is a catalog-level concern
 // and stays with the indexing caller, not here.
 //
-// A scalar source is anchored through sourceref, which is where both the
-// locality reading and the resolution itself live: a reference carrying a
-// transport scheme names something fetched rather than a path, and joining one to
-// a directory destroys the reference and leaves a value every later pass reads as
-// local — the pass that pins a Release's dependencies pins nothing, and the
-// render then stats a directory nobody authored. That single reading also answers
-// the empty case, which is why no separate emptiness test sits beside it.
-//
-// A source written as a TEMPLATE is deliberately left as the author wrote it. It
-// names nothing until it has been evaluated, so the directory it is relative to
-// belongs to the value it produces, and the render anchors it there once that
-// value exists. Anchoring the template's text instead reads as harmless whenever
-// the value happens to be relative — a directory joined to a relative path is the
-// same directory either way — while silently mangling every value that is not,
-// because an absolute path, a transport reference and an empty result are each
-// decided by text the join has already prefixed by the time they exist.
+// The source is anchored through anchorEntitySource, which both source-bearing
+// kinds share and which documents what that resolution decides and why.
 //
 // Unlike parseComponentEntity, this self-wraps every failure into its final
 // CATALOG_ERROR shape (unmarshal, source rewrite, artifact rewrite each carry a
@@ -1268,13 +1254,12 @@ func parseRecipeEntity(data []byte, path string) (types.Recipe, error) {
 	if err := validator.ValidateRecipe(&e, path); err != nil {
 		return types.Recipe{}, err
 	}
-	if s, ok := e.Spec.Source.(string); ok && !sourceref.IsTemplated(s) {
-		anchored, err := sourceref.AnchorToDocument(path, s)
-		if err != nil {
-			return types.Recipe{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, fmt.Sprintf("resolve Recipe source %q", s))
-		}
-		e.Spec.Source = anchored
+	anchoredSource, err := anchorEntitySource(path, "Recipe", e.Spec.Source)
+	if err != nil {
+		return types.Recipe{}, err
 	}
+	e.Spec.Source = anchoredSource
+
 	mappingTarget, err := resolveImportPath(path, e.Spec.ValuesMapping.Import, e.Spec.ValuesMapping)
 	if err != nil {
 		return types.Recipe{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, fmt.Sprintf("resolve Recipe valuesMapping $import target %q", e.Spec.ValuesMapping.Import))
@@ -1291,6 +1276,48 @@ func parseRecipeEntity(data []byte, path string) (types.Recipe, error) {
 		return types.Recipe{}, err
 	}
 	return e, nil
+}
+
+// anchorEntitySource resolves an entity's authored source against the directory
+// of the document that declared it, and is the one body both source-bearing kinds
+// route through.
+//
+// The resolution itself lives in sourceref, which is where the locality reading
+// lives too: a reference carrying a transport scheme names something fetched
+// rather than a path, and joining one to a directory destroys the reference and
+// leaves a value every later pass reads as local — the pass that pins a Release's
+// dependencies pins nothing, and the render then stats a directory nobody
+// authored. That single reading also answers the empty case, which is why no
+// separate emptiness test sits beside it.
+//
+// It asks that resolution for the source VALUE rather than for a reference, so
+// both shapes a source is authored in are covered by one rule: a scalar source is
+// its own reference, and a structured source names its reference at the url entry
+// and carries every other key — including the keys the provider reads — through
+// untouched. Asking for a reference instead is what left the structured shape
+// unanchored: a relative url an author wrote beside their own document stayed
+// relative to whatever directory the build ran from.
+//
+// A reference written as a TEMPLATE is deliberately left as the author wrote it.
+// It names nothing until it has been evaluated, so the directory it is relative to
+// belongs to the value it produces, and the render anchors it there once that
+// value exists. Anchoring the template's text instead reads as harmless whenever
+// the value happens to be relative — a directory joined to a relative path is the
+// same directory either way — while silently mangling every value that is not,
+// because an absolute path, a transport reference and an empty result are each
+// decided by text the join has already prefixed by the time they exist. The test
+// is over the REFERENCE, not over the source's identity: a structured source whose
+// version is a template still has a url its author wrote out in full.
+//
+// kind names the entity in the failure, as it does for the artifacts rewrite, so
+// each caller's diagnostic reads as its own.
+func anchorEntitySource(entityPath, kind string, source any) (any, error) {
+	anchored, err := sourceref.AnchorSource(entityPath, source)
+	if err != nil {
+		ref, _ := sourceref.Reference(source)
+		return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: entityPath}, fmt.Sprintf("resolve %s source %q", kind, ref))
+	}
+	return anchored, nil
 }
 
 // importRef is the shape the three import-bearing Recipe and FeatureRecipe
@@ -1387,9 +1414,9 @@ func resolveArtifactImports(entityPath, kind string, artifacts *types.OrderedMap
 // envelope gate, unmarshal, kind-check, the load-time shape rules
 // (validator.ValidateFeatureRecipe), and the same relative-source and
 // relative-`$import` rewrites against the entity file's own directory. Both
-// kinds route their artifacts rewrite through resolveArtifactImports and both
-// gate their scalar source on the same sourceref reading, so the two cannot
-// drift; parseRecipeEntity documents what that reading decides and why.
+// kinds route their artifacts rewrite through resolveArtifactImports and their
+// source through anchorEntitySource, so the two cannot drift; that function
+// documents what the source resolution decides and why.
 // Self-wraps its failures like parseRecipeEntity.
 func parseFeatureRecipeEntity(data []byte, path string) (types.FeatureRecipe, error) {
 	if _, eerr := envelope.ValidateBytes(envelope.KindFeatureRecipe, data, path); eerr != nil {
@@ -1405,13 +1432,12 @@ func parseFeatureRecipeEntity(data []byte, path string) (types.FeatureRecipe, er
 	if err := validator.ValidateFeatureRecipe(&e, path); err != nil {
 		return types.FeatureRecipe{}, err
 	}
-	if s, ok := e.Spec.Source.(string); ok && !sourceref.IsTemplated(s) {
-		anchored, err := sourceref.AnchorToDocument(path, s)
-		if err != nil {
-			return types.FeatureRecipe{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, fmt.Sprintf("resolve FeatureRecipe source %q", s))
-		}
-		e.Spec.Source = anchored
+	anchoredSource, err := anchorEntitySource(path, "FeatureRecipe", e.Spec.Source)
+	if err != nil {
+		return types.FeatureRecipe{}, err
 	}
+	e.Spec.Source = anchoredSource
+
 	mappingTarget, err := resolveImportPath(path, e.Spec.ValuesMapping.Import, e.Spec.ValuesMapping)
 	if err != nil {
 		return types.FeatureRecipe{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, fmt.Sprintf("resolve FeatureRecipe valuesMapping $import target %q", e.Spec.ValuesMapping.Import))

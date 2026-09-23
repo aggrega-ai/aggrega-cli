@@ -241,11 +241,27 @@ func (s sourceTemplateSurface) where(label string) string {
 //
 // Other places in the compiler also switch on this union, and they are
 // deliberately NOT folded in here, because they ask a different question of the
-// same value: whether a source is declared at all, whether its URL is local, and
-// which kind and URI it names at lock time. Only the two readers above ask which
-// of its parts carry a template and what each of those parts is called, so only
-// those two share this walk. Folding a different question in would produce a
-// classifier that answers none of them cleanly.
+// same value: whether a source is declared at all, whether its reference is
+// local, whether the fields that fix WHICH artifact it names are still text, and
+// which kind and URI it names at lock time.
+//
+// Those questions share a walk of their own, in internal/sourceref, and the
+// split between the two walks is the carve-out above rather than a lapse from it.
+// What is shared there is one projection — the reference a source names, read out
+// of either shape — and each site composes its own question on top of it: the
+// catalog load asks where a relative reference is anchored, this package's
+// resolution asks what path a local one names, and the lock-time descent asks
+// whether the author already knows which artifact it is. None of them asks which
+// PARTS carry a template or what each part is called, which is the only question
+// this walk answers and the reason the two cannot be merged: that leaf is
+// stdlib-only, which is what lets the catalog load and the dependency descent
+// reach it at all, and neither can import this package. A reader tempted to unify
+// them would be folding a per-field question into a per-source one and would get
+// a classifier answering neither cleanly.
+//
+// The two walks do cover the same two-shape union, and each says so where it is
+// declared, so a shape taught to one is a shape the other is missing rather than
+// a difference nobody notices.
 //
 // fn's error is returned unwrapped and stops the walk. Map iteration order is
 // Go's own and therefore unspecified; the walk's result is an unordered map, so

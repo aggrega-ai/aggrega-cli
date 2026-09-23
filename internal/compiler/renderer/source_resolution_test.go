@@ -405,25 +405,54 @@ func TestResolveEntitySource_UnpinnedIdentityHaltsAtTheFetch(t *testing.T) {
 	}
 }
 
-// TestResolveEntitySource_LocalForwardsVerbatim is the MANDATORY local-source
-// regression lock: even with lockfile + workspace + cache all set, a local/inline
-// source short-circuits to verbatim — only REMOTE sources route through
-// resolve+extract. This holds the FR local-source path byte-identical (the FR render
-// sites set frNodeCtx.Source = this verbatim value, identical to the prior
-// verbatim-forward behaviour for local sources).
-func TestResolveEntitySource_LocalForwardsVerbatim(t *testing.T) {
+// TestResolveEntitySource_LocalForwardsTheReferenceItNames is the MANDATORY
+// local-source regression lock, and it pins two things at once.
+//
+// Even with lockfile + workspace + cache all set, a local source short-circuits:
+// only REMOTE sources route through resolve+extract. And what is forwarded is the
+// REFERENCE the source names, read out of whichever shape it was authored in — an
+// engine consumes a path, so handing on the block of authored fields instead
+// reached the dispatch as a shape it refuses and reported a Go type at an author
+// who had written a directory.
+//
+// The two shapes carry the same reference, so the rows assert one expected value
+// and a repair reaching only one of them fails the other. The scalar row is what
+// holds the FeatureRecipe local-source path byte-identical: a scalar source is its
+// own reference, so that row's forwarded value is unchanged.
+func TestResolveEntitySource_LocalForwardsTheReferenceItNames(t *testing.T) {
 	t.Parallel()
-	input := RendererInput{
-		Lockfile:      &lockfile.Lockfile{Version: 1},
-		WorkspaceRoot: "/ws",
-		CacheDir:      ".aggrega/cache",
+	const reference = "./charts/local-tls"
+	cases := []struct {
+		name   string
+		source any
+	}{
+		{name: "one reference", source: reference},
+		{
+			name: "a block of fields naming it at the url",
+			source: map[string]any{
+				"kind":             "helm-oci-chart",
+				"url":              reference,
+				"version":          "1.2.3",
+				"repository_alias": "upstream",
+			},
+		},
 	}
-	resolved, err := resolveEntitySource(input, "./charts/local-tls", types.OrderedMap[string]{}, "tls-helm:1.0.0", map[string]any{}, map[string]any{}, nil)
-	if err != nil {
-		t.Fatalf("resolveEntitySource (local): %v", err)
-	}
-	if resolved != "./charts/local-tls" {
-		t.Errorf("local source must forward verbatim (no cache route); got %v", resolved)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			input := RendererInput{
+				Lockfile:      &lockfile.Lockfile{Version: 1},
+				WorkspaceRoot: "/ws",
+				CacheDir:      ".aggrega/cache",
+			}
+			resolved, err := resolveEntitySource(input, tc.source, types.OrderedMap[string]{}, "tls-helm:1.0.0", map[string]any{}, map[string]any{}, nil)
+			if err != nil {
+				t.Fatalf("resolveEntitySource (local): %v", err)
+			}
+			if resolved != reference {
+				t.Errorf("a local source must forward the reference it names, and no cache route; got %#v", resolved)
+			}
+		})
 	}
 }
 

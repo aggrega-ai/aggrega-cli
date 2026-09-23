@@ -106,11 +106,17 @@ func DescendRecipeSources(
 		if source == nil {
 			continue
 		}
-		// A reference the workspace already holds is never pinned, so the descent
-		// has nothing to acquire for it. The reading is the one every pass that
-		// asks this question shares, which is what keeps the set of references a
-		// lockfile pins and the set a render fetches from drifting apart.
-		if sourceref.IsLocal(source) {
+		// What this run owes the source is decided once, here, before anything is
+		// acquired — and the decision is carried into the loop below rather than
+		// consumed and discarded. A reference the workspace already holds is never
+		// pinned, so the descent has nothing to acquire for it and the walk ends
+		// here; the reading behind that is the one every pass asking the question
+		// shares, which is what keeps the set of references a lockfile pins and the
+		// set a render fetches from drifting apart. The two remaining routes differ
+		// in whether the artifact this source names is the same one for every
+		// instance that uses it, which is what a failure below has to say.
+		route := routeForSource(source)
+		if route == routeWorkspaceHeld {
 			continue
 		}
 
@@ -147,7 +153,8 @@ func DescendRecipeSources(
 
 			resolved, err := sourceResolver.Resolve(*spec)
 			if err != nil {
-				return nil, fmt.Errorf("resolve: resolve source for %s %q: %w", entityKind, ent.URI, err)
+				return nil, fmt.Errorf("resolve: resolve source for %s %q%s: %w",
+					entityKind, ent.URI, route.attribution(comp.Component), err)
 			}
 
 			ref := SourceArtifactReference{
@@ -220,6 +227,68 @@ func DescendRecipeSources(
 		return a.PinnedVersion < b.PinnedVersion
 	})
 	return out, nil
+}
+
+// sourceRoute names what a run owes one entity's source: the decision the descent
+// takes before it acquires anything, and the one the locality reading alone used
+// to make and then discard.
+//
+// The three answers are not degrees of one another. A reference the workspace
+// already holds is acquired by nobody and pinned by nothing. A fetched source
+// whose author wrote its identity out in full names one artifact, so a single
+// resolution describes every instance that uses it. A fetched source whose
+// identity is still template text names an artifact only once an instance's own
+// infra has filled that text in, so both the resolution and any failure of it
+// belong to that instance rather than to the entity — which is the difference a
+// reader of a failure has to be told, because it decides where they look.
+type sourceRoute int
+
+const (
+	// routeWorkspaceHeld is a source naming something the workspace already holds.
+	// Nothing is fetched for it and nothing pins it.
+	routeWorkspaceHeld sourceRoute = iota
+	// routeAuthoredIdentity is a fetched source whose author wrote out every field
+	// that fixes which artifact it names.
+	routeAuthoredIdentity
+	// routeResolvedIdentity is a fetched source with at least one such field still
+	// template text, so which artifact it names is settled per using instance.
+	routeResolvedIdentity
+)
+
+// routeForSource reads a source's route off the source value itself, through the
+// two readings that live in the one leaf both this descent and the render reach.
+//
+// Locality is asked first and is the only answer that ends the walk. Whether the
+// identity is still text is deliberately NOT a second skip: this descent resolves
+// a source once per using instance against that instance's own infra, which is
+// precisely how a templated identity is made concrete and pinned, so reading that
+// fact as a reason to skip would leave unpinned exactly the sources a lockfile
+// exists to pin.
+func routeForSource(source any) sourceRoute {
+	switch {
+	case sourceref.IsLocal(source):
+		return routeWorkspaceHeld
+	case sourceref.IdentityTemplated(source):
+		return routeResolvedIdentity
+	default:
+		return routeAuthoredIdentity
+	}
+}
+
+// attribution names the instance an acquisition failure belongs to, and says
+// nothing where the failure belongs to the entity instead.
+//
+// A source whose identity its author wrote out in full resolves to the same
+// artifact for every instance, so naming one of them would report as one
+// instance's failure what is every instance's. A source whose identity is filled
+// in per instance resolves to whatever that instance's infra says, so the failure
+// is that instance's alone and a reader cannot begin looking until they know
+// which one it was.
+func (r sourceRoute) attribution(instance string) string {
+	if r != routeResolvedIdentity || instance == "" {
+		return ""
+	}
+	return fmt.Sprintf(" used by %q, whose own infra fills in which artifact that source names", instance)
 }
 
 // EvaluateSourceSpec is the build-time-orchestrator entry point for
@@ -305,6 +374,34 @@ func buildSourceSpec(source any, values, infra map[string]any, locals types.Orde
 	}
 }
 
+// sourceSpecFields declares, per authored structured-source key, where that key's
+// value lands in a SourceSpec and whether it is evaluated as a template on the
+// way. kind and url are taken as the author wrote them; the four that select a
+// version or a part of a repository are evaluated against {.values, .infra,
+// .locals} first.
+//
+// It is a declared table rather than a switch because the key set has to stay
+// enumerable. The same six authored keys are the set a source's identity is read
+// out of, in the stdlib-only leaf this package imports, and the two sites share no
+// symbol — a switch gives a guard nothing to compare, so a seventh key taught to
+// one side could sit there unread by the other with every test green. This table
+// is what that guard reads, on this side.
+//
+// Walking the declared order rather than the authored map also fixes WHICH of
+// several failing fields reports first, which map iteration left to chance.
+var sourceSpecFields = [...]struct {
+	key       string
+	evaluated bool
+	assign    func(*SourceSpec, string)
+}{
+	{"kind", false, func(spec *SourceSpec, v string) { spec.Kind = v }},
+	{"url", false, func(spec *SourceSpec, v string) { spec.URL = v }},
+	{"version", true, func(spec *SourceSpec, v string) { spec.Version = v }},
+	{"chart", true, func(spec *SourceSpec, v string) { spec.Chart = v }},
+	{"ref", true, func(spec *SourceSpec, v string) { spec.Ref = v }},
+	{"module_subdir", true, func(spec *SourceSpec, v string) { spec.ModuleSubdir = v }},
+}
+
 func buildSpecFromMap(s map[string]any, values, infra map[string]any, locals types.OrderedMap[string], recipeURI string, original any) (*SourceSpec, error) {
 	spec := &SourceSpec{OriginalSource: original}
 	ctx := templateContext{
@@ -316,37 +413,21 @@ func buildSpecFromMap(s map[string]any, values, infra map[string]any, locals typ
 		return nil, err
 	}
 
-	for k, v := range mapStringValues(s) {
-		switch k {
-		case "kind":
-			spec.Kind = v
-		case "url":
-			spec.URL = v
-		case "version":
-			resolved, err := evalSourceTemplate(v, ctx, recipeURI+".spec.source.version")
-			if err != nil {
-				return nil, err
-			}
-			spec.Version = resolved
-		case "chart":
-			resolved, err := evalSourceTemplate(v, ctx, recipeURI+".spec.source.chart")
-			if err != nil {
-				return nil, err
-			}
-			spec.Chart = resolved
-		case "ref":
-			resolved, err := evalSourceTemplate(v, ctx, recipeURI+".spec.source.ref")
-			if err != nil {
-				return nil, err
-			}
-			spec.Ref = resolved
-		case "module_subdir":
-			resolved, err := evalSourceTemplate(v, ctx, recipeURI+".spec.source.module_subdir")
-			if err != nil {
-				return nil, err
-			}
-			spec.ModuleSubdir = resolved
+	authored := mapStringValues(s)
+	for _, field := range sourceSpecFields {
+		v, present := authored[field.key]
+		if !present {
+			continue
 		}
+		if !field.evaluated {
+			field.assign(spec, v)
+			continue
+		}
+		resolved, err := evalSourceTemplate(v, ctx, recipeURI+".spec.source."+field.key)
+		if err != nil {
+			return nil, err
+		}
+		field.assign(spec, resolved)
 	}
 
 	if spec.Kind == "" {

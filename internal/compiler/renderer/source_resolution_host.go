@@ -27,9 +27,10 @@ import (
 //     sourceless contract. Whether a Recipe carries a source is asked
 //     of recipeSourceDeclared, which is the one home for that question,
 //     so this arm and every other reader of it answer alike.
-//   - Local-string source (./..., /..., file://...): both Source and
-//     OriginalSource set to the verbatim string. Tier-1 / Tier-2
-//     paths are never lockfile-pinned.
+//   - Local source (./..., /..., file://...), authored as a scalar reference or
+//     as a structured block: Source is set to the reference the source names, and
+//     OriginalSource to the value as authored. Local references are never
+//     lockfile-pinned.
 //   - Remote source + lockfile/workspace/cacheDir all set on input:
 //     evaluates source via closure.EvaluateSourceSpec, looks up the
 //     lockfile entry by its location terms plus what the author wrote to
@@ -80,7 +81,8 @@ func resolveSourceForNode(input RendererInput, recipe *types.Recipe, nodeCtx *No
 // resolveEntitySource resolves one entity's source — a component Recipe's or a
 // FeatureRecipe's — to the value an engine consumes, through ONE body both call
 // sites share (the component node loop via resolveSourceForNode, the FeatureRecipe
-// render sites directly). A local/inline source forwards verbatim; a remote source
+// render sites directly). A local source forwards the reference it names, read out
+// of whichever shape the source was authored in; a remote source
 // with lockfile + workspaceRoot + cacheDir all set is evaluated to its authored
 // coordinates and resolved through the lockfile-pin cache extract;
 // with any of those inputs unset it forwards verbatim (preserving the pre-lockfile
@@ -95,7 +97,16 @@ func resolveEntitySource(input RendererInput, source any, locals types.OrderedMa
 		return nil, nil
 	}
 	if sourceref.IsLocal(source) {
-		return source, nil
+		// What an engine consumes is the path, so what is forwarded is the
+		// reference rather than the value that carries it. The two coincide for a
+		// scalar source and do not for a structured one, where the value is a block
+		// of authored fields and only its url names a place on disk — forwarding the
+		// block reached the dispatch as a shape it refuses, naming a Go type at a
+		// user who wrote a directory. The reference is non-empty here by
+		// construction: the locality reading answers over the same projection, and
+		// an empty reference is not local.
+		ref, _ := sourceref.Reference(source)
+		return ref, nil
 	}
 	if input.Lockfile == nil || input.WorkspaceRoot == "" || input.CacheDir == "" {
 		return source, nil
