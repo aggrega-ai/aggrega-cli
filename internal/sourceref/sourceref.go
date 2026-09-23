@@ -31,6 +31,18 @@
 // one question — resolve this reference now, or resolve what it produces later —
 // and a surface that could answer one without the other would answer it wrongly
 // for exactly the references that differ.
+//
+// # Two questions about templates, and reading one for the other gets both wrong
+//
+// A source field carrying a template raises two questions that look like one.
+// Whether THIS FIELD is still text decides when it is resolved, and it is asked of
+// one string. Whether THE SOURCE'S IDENTITY is still text decides whether its
+// author already knows which artifact it names, and so whether that artifact can
+// be pinned ahead of a Release; it is asked of a whole source, and only the
+// fields the artifact-identity join is keyed on can answer it. A structured source
+// whose provider-defined key carries a template answers yes to the first about
+// that key and no to the second about the whole, which is why both readings live
+// here, named apart, over one walk of the shapes a source takes.
 package sourceref
 
 import (
@@ -43,22 +55,99 @@ import (
 // single spelling decides every reading of whether a reference is still text.
 const templateOpen = "{{"
 
+// identityFields names the structured-source keys whose authored text fixes WHICH
+// artifact the source names, as opposed to how it is configured once obtained.
+//
+// The set is the terms the artifact-identity join is keyed on, read off that join
+// rather than restated from any document: the location terms kind, url, chart and
+// module_subdir, plus BOTH keys that can decide the version term. Which of those
+// two decides it depends on the kind — a resolver that pins the authored version
+// verbatim leaves version deciding, and one that resolves a reference to something
+// immutable leaves ref deciding and pins a value the author never wrote — so a
+// reading that took only one of them would call an artifact's identity knowable
+// for a kind where it is not.
+//
+// A structured source is an open object and every other key it carries is
+// provider-defined, reaching the entity's own templates rather than the fetch. Such
+// a key decides nothing about which artifact is named, so a template in one leaves
+// the identity knowable.
+var identityFields = [...]string{"kind", "url", "chart", "module_subdir", "version", "ref"}
+
+// Reference returns the single reference a source value names, and whether the
+// value is a shape a reference can be read out of at all.
+//
+// It is the one place the two shapes a source field takes are walked for that
+// term. A scalar source IS its reference. A structured source names it at the url
+// entry, which is the field naming what would be fetched; a structured source
+// carrying no url, or one whose url is not text, is a readable shape that names
+// nothing, which is a different answer from a shape this package cannot read.
+//
+// Any other shape reports unreadable. That includes a structured source that
+// arrived through an order-preserving decode, which is an ordered container rather
+// than a map — the same two-shape union the source-template walk covers, mirrored
+// here deliberately so the two cannot come to disagree about which values they can
+// read. A source that reaches lock-time descent in a shape neither covers is
+// refused there by name, so reporting it unreadable here defers to that refusal
+// rather than standing in for it.
+func Reference(source any) (ref string, readable bool) {
+	switch s := source.(type) {
+	case string:
+		return s, true
+	case map[string]any:
+		url, _ := s["url"].(string)
+		return url, true
+	default:
+		return "", false
+	}
+}
+
 // IsLocal reports whether a source value names a reference the workspace already
 // holds rather than one fetched over a transport.
 //
-// It accepts the two shapes a source field takes. A scalar reference is read
-// directly. A structured source is read through its url entry, which is the field
-// naming what would be fetched, so a structured source carrying no url — or one
-// whose url is not text — reaches the rule with nothing and is not local, the same
+// It accepts the two shapes a source field takes, through the one walk that reads
+// a reference out of either. A structured source carrying no url — or one whose
+// url is not text — reaches the rule with nothing and is not local, the same
 // answer a scalar naming nothing gets. Any other shape names nothing this rule can
 // place and is not local either.
 func IsLocal(source any) bool {
+	ref, _ := Reference(source)
+	return IsLocalURL(ref)
+}
+
+// IdentityTemplated reports whether a source value's identity is still text: that
+// is, whether any field whose authored value fixes WHICH artifact the source names
+// carries a template action.
+//
+// It is the question a pin turns on, and it is deliberately not the question
+// [IsTemplated] answers. IsTemplated reads one field's text, which is what decides
+// whether THAT field is anchored now or once it has a value. This reads a whole
+// source and asks whether its author already knows what it resolves to: a source
+// whose identity is written out in full is knowable to them, while one whose
+// identity comes from a template is knowable only once a Release fills it in.
+//
+// The distinction between an identity-bearing field and a provider-defined one is
+// the whole of what this adds over a substring test, and it runs both ways. A
+// template anywhere in a scalar source makes the identity unknowable, because a
+// scalar source IS its own identity. A template in a structured source's version,
+// ref, chart, module_subdir, kind or url does the same. A template in any other
+// key of a structured source does NOT: that key is the provider's, it reaches the
+// entity's templates rather than the fetch, and the artifact named is the same one
+// whatever it renders to.
+//
+// A shape no reference can be read out of reports false. Such a shape is refused
+// by name where a source spec is built, so answering true here would report a
+// templated identity for a value whose identity was never read.
+func IdentityTemplated(source any) bool {
 	switch s := source.(type) {
 	case string:
-		return IsLocalURL(s)
+		return IsTemplated(s)
 	case map[string]any:
-		url, _ := s["url"].(string)
-		return IsLocalURL(url)
+		for _, field := range identityFields {
+			if text, ok := s[field].(string); ok && IsTemplated(text) {
+				return true
+			}
+		}
+		return false
 	default:
 		return false
 	}
@@ -138,6 +227,11 @@ func IsLocalURL(ref string) bool {
 //
 // The delimiter is the one the source surface evaluates with, so this reading and
 // that evaluation cannot come to disagree about which references are text.
+//
+// It reads ONE field's text and answers about that field alone. Whether a whole
+// source's identity is still text is [IdentityTemplated], which is a different
+// question with a different answer: a structured source whose provider-defined key
+// carries a template has a field that is text and an identity that is not.
 func IsTemplated(ref string) bool {
 	return strings.Contains(ref, templateOpen)
 }
@@ -167,4 +261,67 @@ func AnchorToDocument(documentPath, ref string) (string, error) {
 		return ref, nil
 	}
 	return filepath.Abs(filepath.Join(filepath.Dir(documentPath), ref))
+}
+
+// AnchorSource resolves a source VALUE against the directory of the document that
+// declared it, whichever of the two shapes the value takes, and returns the source
+// with nothing but its reference rewritten.
+//
+// It is [AnchorToDocument] applied at the level a source field is authored at, so
+// the rule for what a relative source is relative to is stated once and reaches
+// both shapes. A scalar source is its own reference and comes back as the resolved
+// one. A structured source has its url entry resolved and every other key carried
+// through untouched, including the keys the provider reads.
+//
+// 🔴 The template test here is over the REFERENCE and deliberately not over the
+// identity. What is being rewritten is the reference, so what decides whether the
+// rewrite is owed now is whether the reference names a path yet — a structured
+// source whose version is a template still has a url an author wrote out in full,
+// and deferring that url would leave it relative to whatever directory the build
+// happens to run from. [IdentityTemplated] answers a different question, about
+// whether the artifact can be pinned, and neither answer stands in for the other.
+//
+// A value whose reference needs no rewriting comes back as the same value rather
+// than as a rebuilt copy of itself, and a shape no reference can be read out of
+// comes back untouched.
+func AnchorSource(documentPath string, source any) (any, error) {
+	ref, readable := Reference(source)
+	if !readable || IsTemplated(ref) {
+		return source, nil
+	}
+	anchored, err := AnchorToDocument(documentPath, ref)
+	if err != nil {
+		return nil, err
+	}
+	if anchored == ref {
+		return source, nil
+	}
+	return withReference(source, anchored), nil
+}
+
+// withReference returns a source value with its reference replaced and every other
+// part carried verbatim.
+//
+// It is kept unexported so the rewrite has one entry point: a caller that could
+// replace a reference without going through the anchoring above would be free to
+// write a value the anchoring rule never sanctioned.
+//
+// The structured arm rebuilds the map rather than writing into the caller's, so a
+// parsed document is not altered under a reader holding it. The rebuilt map's
+// iteration order is Go's own, as the authored map's already is, and no rendered
+// byte depends on either.
+func withReference(source any, ref string) any {
+	switch s := source.(type) {
+	case string:
+		return ref
+	case map[string]any:
+		out := make(map[string]any, len(s))
+		for k, v := range s {
+			out[k] = v
+		}
+		out["url"] = ref
+		return out
+	default:
+		return source
+	}
 }

@@ -5,6 +5,7 @@ package sourceref
 
 import (
 	"path/filepath"
+	"reflect"
 	"testing"
 )
 
@@ -103,6 +104,242 @@ func TestIsTemplatedReadsWhetherTheReferenceIsStillText(t *testing.T) {
 				t.Errorf("IsTemplated(%q) = %v, want %v", tc.ref, got, tc.want)
 			}
 		})
+	}
+}
+
+// TestReferenceReadsTheOneTermOutOfEitherShape covers the walk both readings and
+// the anchoring share. The two columns are separate on purpose: a readable shape
+// naming nothing and a shape no reference can be read out of both yield the empty
+// string, and every caller that has to tell them apart can only do so from the
+// second column.
+func TestReferenceReadsTheOneTermOutOfEitherShape(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name         string
+		source       any
+		wantRef      string
+		wantReadable bool
+	}{
+		{"absent", nil, "", false},
+		{"a scalar naming nothing", "", "", true},
+		{"a scalar path", "./charts/app", "./charts/app", true},
+		{"a scalar registry reference", "oci://example.test/chart", "oci://example.test/chart", true},
+		{"structured, naming a path", map[string]any{"kind": "helm-oci-chart", "url": "./charts/app"}, "./charts/app", true},
+		{"structured, naming a registry reference", map[string]any{"url": "oci://example.test/c"}, "oci://example.test/c", true},
+		{"structured, naming no url", map[string]any{"chart": "api"}, "", true},
+		{"structured, url is not text", map[string]any{"url": 7}, "", true},
+		{"a shape no reference can be read out of", 7, "", false},
+		{"an ordered container is not the map arm", []any{"url", "./charts/app"}, "", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ref, readable := Reference(tc.source)
+			if ref != tc.wantRef || readable != tc.wantReadable {
+				t.Errorf("Reference(%#v) = (%q, %v), want (%q, %v)",
+					tc.source, ref, readable, tc.wantRef, tc.wantReadable)
+			}
+		})
+	}
+}
+
+// TestIdentityTemplatedSeparatesTheIdentityFromTheRest covers the reading a pin
+// turns on, in BOTH directions, because a reading that answered "still text" for
+// everything would satisfy every positive row on its own.
+//
+// The rows are built as pairs. Each identity-bearing field appears once carrying a
+// template and the whole set appears once written out in full, so a field dropped
+// from the set fails its own row rather than hiding behind a sibling. The
+// provider-defined rows are the negative half and are the only ones that separate
+// this reading from a substring test over the whole block: a template is present,
+// the artifact named is the same one whatever it renders to, and the answer is
+// that the identity is knowable.
+func TestIdentityTemplatedSeparatesTheIdentityFromTheRest(t *testing.T) {
+	t.Parallel()
+	const concreteOCI = "oci://example.test/charts/app:1.0.0"
+	full := func(overrides map[string]any) map[string]any {
+		out := map[string]any{
+			"kind":          "helm-oci-chart",
+			"url":           concreteOCI,
+			"chart":         "app",
+			"module_subdir": "modules/app",
+			"version":       "1.0.0",
+			"ref":           "v1.0.0",
+		}
+		for k, v := range overrides {
+			out[k] = v
+		}
+		return out
+	}
+	for _, tc := range []struct {
+		name   string
+		source any
+		want   bool
+	}{
+		// Concrete: the identity is written out in full and is knowable now.
+		{"absent", nil, false},
+		{"a scalar naming nothing", "", false},
+		{"a scalar registry reference", concreteOCI, false},
+		{"a scalar relative path", "./charts/app", false},
+		{"structured, every identity field written out", full(nil), false},
+		{"structured, a literal version alone", map[string]any{"kind": "helm-oci-chart", "url": concreteOCI, "version": "1.0.0"}, false},
+		{"structured, a relative url and a literal version", map[string]any{"kind": "helm-oci-chart", "url": "./charts/app", "version": "1.0.0"}, false},
+		// Concrete despite a template: the key is the provider's, not the identity's.
+		{"structured, a template in a provider-defined key", full(map[string]any{"registry_alias": "{{ .infra.alias }}"}), false},
+		{"structured, a template in a provider-defined key and nothing else", map[string]any{"url": concreteOCI, "workspace": "{{ .values.ws }}"}, false},
+		// Still text: one identity-bearing field at a time.
+		{"structured, a templated kind", full(map[string]any{"kind": "{{ .infra.kind }}"}), true},
+		{"structured, a templated url", full(map[string]any{"url": "oci://{{ .infra.registry }}/charts/app"}), true},
+		{"structured, a templated chart", full(map[string]any{"chart": "{{ .values.flavor }}"}), true},
+		{"structured, a templated module_subdir", full(map[string]any{"module_subdir": "modules/{{ .values.flavor }}"}), true},
+		{"structured, a templated version", full(map[string]any{"version": "{{ .infra.source_version }}"}), true},
+		{"structured, a templated ref", full(map[string]any{"ref": "{{ .infra.commit }}"}), true},
+		{"a scalar carrying a template", "oci://{{ .infra.registry }}/charts/app:1.0.0", true},
+		// A shape no reference can be read out of: the identity was never read, and
+		// the lock-time spec build refuses such a value by name.
+		{"a shape no reference can be read out of", 7, false},
+		{"an ordered container is not the map arm", []any{"url", concreteOCI}, false},
+		// A non-text identity field carries no template text to find.
+		{"structured, a numeric version", map[string]any{"url": concreteOCI, "version": 1}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := IdentityTemplated(tc.source); got != tc.want {
+				t.Errorf("IdentityTemplated(%#v) = %v, want %v", tc.source, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestIdentityTemplatedReadsEveryFieldItDeclares drives the declared field set
+// itself, so a reading that declares a field and then does not consult it fails
+// here. That is the shape a hand-written switch over field names would take.
+//
+// It cannot see a field REMOVED from the declared set, because a removed field
+// takes its own row away with it — that half is covered by the named rows in the
+// table above, one per field, which fail on the field they name.
+func TestIdentityTemplatedReadsEveryFieldItDeclares(t *testing.T) {
+	t.Parallel()
+	for _, field := range identityFields {
+		t.Run(field, func(t *testing.T) {
+			t.Parallel()
+			source := map[string]any{"url": "oci://example.test/charts/app:1.0.0"}
+			source[field] = "{{ .infra.x }}"
+			if !IdentityTemplated(source) {
+				t.Errorf("a template in %q left the identity reported as knowable", field)
+			}
+		})
+	}
+}
+
+// TestAnchorSourceRewritesNothingButTheReference covers the anchoring at the level
+// a source is authored at, over both shapes.
+//
+// Two properties are asserted together because a rewrite that got either alone
+// would read as correct: the reference comes back resolved, and every other key of
+// a structured source comes back exactly as authored — including one carrying a
+// template, which this step must not evaluate, and including a version, which
+// decides nothing about where a relative path is anchored.
+func TestAnchorSourceRewritesNothingButTheReference(t *testing.T) {
+	t.Parallel()
+	const document = "/srv/catalog/recipes/app.yaml"
+	for _, tc := range []struct {
+		name     string
+		document string
+		source   any
+		want     any
+	}{
+		{
+			"a scalar relative path is anchored",
+			document, "./charts/app", "/srv/catalog/recipes/charts/app",
+		},
+		{
+			"a scalar registry reference is carried through",
+			document, "oci://example.test/chart:1.0.0", "oci://example.test/chart:1.0.0",
+		},
+		{
+			"a scalar template is left for the value it produces",
+			document, "./charts/{{ .values.flavor }}", "./charts/{{ .values.flavor }}",
+		},
+		{
+			"a structured relative url is anchored and the rest is carried",
+			document,
+			map[string]any{"kind": "helm-oci-chart", "url": "./charts/app", "version": "1.0.0"},
+			map[string]any{"kind": "helm-oci-chart", "url": "/srv/catalog/recipes/charts/app", "version": "1.0.0"},
+		},
+		{
+			"a structured absolute url already names where it is",
+			document,
+			map[string]any{"kind": "helm-oci-chart", "url": "/opt/charts/app", "version": "1.0.0"},
+			map[string]any{"kind": "helm-oci-chart", "url": "/opt/charts/app", "version": "1.0.0"},
+		},
+		{
+			"a structured registry url is carried through",
+			document,
+			map[string]any{"kind": "helm-oci-chart", "url": "oci://example.test/c", "version": "1.0.0"},
+			map[string]any{"kind": "helm-oci-chart", "url": "oci://example.test/c", "version": "1.0.0"},
+		},
+		{
+			"a templated version does not defer the url",
+			document,
+			map[string]any{"kind": "helm-oci-chart", "url": "./charts/app", "version": "{{ .infra.source_version }}"},
+			map[string]any{"kind": "helm-oci-chart", "url": "/srv/catalog/recipes/charts/app", "version": "{{ .infra.source_version }}"},
+		},
+		{
+			"a templated url is left for the value it produces",
+			document,
+			map[string]any{"kind": "helm-oci-chart", "url": "./charts/{{ .values.flavor }}", "version": "1.0.0"},
+			map[string]any{"kind": "helm-oci-chart", "url": "./charts/{{ .values.flavor }}", "version": "1.0.0"},
+		},
+		{
+			"a provider-defined key is carried through unevaluated",
+			document,
+			map[string]any{"url": "./charts/app", "workspace": "{{ .values.ws }}"},
+			map[string]any{"url": "/srv/catalog/recipes/charts/app", "workspace": "{{ .values.ws }}"},
+		},
+		{
+			"a structured source naming no url is untouched",
+			document, map[string]any{"chart": "api"}, map[string]any{"chart": "api"},
+		},
+		{
+			"a url that is not text is untouched",
+			document, map[string]any{"url": 7}, map[string]any{"url": 7},
+		},
+		{
+			"no declaring document leaves a relative url alone",
+			"",
+			map[string]any{"url": "./charts/app"},
+			map[string]any{"url": "./charts/app"},
+		},
+		{
+			"a shape no reference can be read out of is untouched",
+			document, 7, 7,
+		},
+		{"an absent source stays absent", document, nil, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := AnchorSource(tc.document, tc.source)
+			if err != nil {
+				t.Fatalf("AnchorSource(%q, %#v): %v", tc.document, tc.source, err)
+			}
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("AnchorSource(%q, %#v) = %#v, want %#v", tc.document, tc.source, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestAnchorSourceDoesNotWriteIntoTheAuthoredMap pins the property the table above
+// structurally cannot see: the caller's own map is a parsed document that other
+// readers hold, so the rewrite has to produce a new one rather than edit it.
+func TestAnchorSourceDoesNotWriteIntoTheAuthoredMap(t *testing.T) {
+	t.Parallel()
+	authored := map[string]any{"kind": "helm-oci-chart", "url": "./charts/app", "version": "1.0.0"}
+	if _, err := AnchorSource("/srv/catalog/recipes/app.yaml", authored); err != nil {
+		t.Fatalf("AnchorSource: %v", err)
+	}
+	if authored["url"] != "./charts/app" {
+		t.Errorf("the authored map was rewritten in place: url is now %#v", authored["url"])
 	}
 }
 
