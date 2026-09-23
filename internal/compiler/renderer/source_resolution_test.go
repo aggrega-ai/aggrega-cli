@@ -19,6 +19,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"github.com/aggrega-ai/aggrega-cli/pkg/recipepin"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourcecache"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/cacheslot"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/metadata"
@@ -51,7 +52,7 @@ func TestResolveSourceForNodeSourcelessRecipeBypassesResolver(t *testing.T) {
 		Metadata: types.RecipeMetadata{Name: "r", Version: "1.0.0"},
 		Spec:     types.RecipeSpec{Source: nil},
 	}
-	if err := resolveSourceForNode(RendererInput{}, recipe, &nodeCtx); err != nil {
+	if err := resolveSourceForNode(RendererInput{}, recipe, "", &nodeCtx); err != nil {
 		t.Fatalf("sourceless recipe should not error: %v", err)
 	}
 	if nodeCtx.Source != nil {
@@ -65,7 +66,7 @@ func TestResolveSourceForNodeSourcelessRecipeBypassesResolver(t *testing.T) {
 func TestResolveSourceForNodeNilRecipeBypassesResolver(t *testing.T) {
 	t.Parallel()
 	nodeCtx := NodeRenderContext{}
-	if err := resolveSourceForNode(RendererInput{}, nil, &nodeCtx); err != nil {
+	if err := resolveSourceForNode(RendererInput{}, nil, "", &nodeCtx); err != nil {
 		t.Fatalf("nil recipe should not error: %v", err)
 	}
 	if nodeCtx.Source != nil || nodeCtx.OriginalSource != nil {
@@ -88,7 +89,7 @@ func TestResolveSourceForNodeLocalSourceBypassesResolver(t *testing.T) {
 		WorkspaceRoot: "/ws",
 		CacheDir:      ".aggrega/cache",
 	}
-	if err := resolveSourceForNode(input, recipe, &nodeCtx); err != nil {
+	if err := resolveSourceForNode(input, recipe, "", &nodeCtx); err != nil {
 		t.Fatalf("local source should not error: %v", err)
 	}
 	if got, _ := nodeCtx.Source.(string); got != "./local-chart" {
@@ -107,7 +108,7 @@ func TestResolveSourceForNodeFallsBackWhenLockfileNil(t *testing.T) {
 		Spec:     types.RecipeSpec{Source: "oci://hub.aggrega.ai/charts/mariadb"},
 	}
 	// Lockfile is nil — orchestrator falls back to verbatim forwarding.
-	if err := resolveSourceForNode(RendererInput{}, recipe, &nodeCtx); err != nil {
+	if err := resolveSourceForNode(RendererInput{}, recipe, "", &nodeCtx); err != nil {
 		t.Fatalf("nil lockfile should fall back, not error: %v", err)
 	}
 	if got, _ := nodeCtx.Source.(string); got != "oci://hub.aggrega.ai/charts/mariadb" {
@@ -170,7 +171,7 @@ func TestResolveSourceForNodeResolvesRemoteSourceFromLockfile(t *testing.T) {
 	}
 
 	nodeCtx := NodeRenderContext{}
-	if err := resolveSourceForNode(input, recipe, &nodeCtx); err != nil {
+	if err := resolveSourceForNode(input, recipe, "", &nodeCtx); err != nil {
 		t.Fatalf("resolveSourceForNode: %v", err)
 	}
 	resolvedPath, _ := nodeCtx.Source.(string)
@@ -236,7 +237,7 @@ func TestResolveEntitySource_FeatureRecipeRemoteResolvesFromLockfile(t *testing.
 		"url":     "oci://hub.aggrega.ai/charts/tls",
 		"version": "1.2.3",
 	}
-	resolved, err := resolveEntitySource(input, source, types.OrderedMap[string]{}, "tls-helm:1.0.0", map[string]any{}, map[string]any{}, nil)
+	resolved, err := resolveEntitySource(input, source, types.OrderedMap[string]{}, "tls-helm:1.0.0", map[string]any{}, map[string]any{}, "")
 	if err != nil {
 		t.Fatalf("resolveEntitySource (FR remote): %v", err)
 	}
@@ -250,10 +251,16 @@ func TestResolveEntitySource_FeatureRecipeRemoteResolvesFromLockfile(t *testing.
 }
 
 // TestResolveEntitySource_RecipePinDisagreesWithLockfileHalts proves the
-// recipe-side pin verify (matrix row 14): a recipe-carried sourceDigests pin
+// entity-side pin verify (matrix row 14): a source pin recorded for the entity
 // whose digest disagrees with the lockfile source-artifact record for the same
 // {kind, url, version} is an integrity fault — both derive from one resolution,
 // so a disagreement halts loudly with ErrFetchIntegrity.
+//
+// The pins reach the resolution through the render input's lookup, keyed by the
+// document the entity was declared in, so this also proves that key is the one
+// the resolution reads: the third leg records the same disagreeing pin under a
+// different document and the build resolves, which it could not do if the lookup
+// were being consulted by anything other than the key passed in.
 func TestResolveEntitySource_RecipePinDisagreesWithLockfileHalts(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
@@ -282,19 +289,36 @@ func TestResolveEntitySource_RecipePinDisagreesWithLockfileHalts(t *testing.T) {
 		WorkspaceRoot: root, CacheDir: ".aggrega/cache",
 	}
 	source := map[string]any{"kind": "helm-oci-chart", "url": "oci://hub.aggrega.ai/charts/tls", "version": "1.2.3"}
-	// The recipe pin disagrees with the lockfile digest.
-	badPins := []types.SourceDigest{{Kind: "helm-oci-chart", URL: "oci://hub.aggrega.ai/charts/tls", Version: "1.2.3", Digest: "sha256:deadbeef"}}
-	_, err := resolveEntitySource(input, source, types.OrderedMap[string]{}, "tls-helm:1.0.0", map[string]any{}, map[string]any{}, badPins)
+	const document = "/ws/catalog/recipe/helm/tls/1.0.0/recipe.yaml"
+	pinsAt := func(documentPath, d string) recipepin.Lookup {
+		return recipepin.Lookup{documentPath: recipepin.Pins{SourceDigests: []types.SourceDigest{
+			{Kind: "helm-oci-chart", URL: "oci://hub.aggrega.ai/charts/tls", Version: "1.2.3", Digest: d},
+		}}}
+	}
+
+	// The pin recorded for this entity disagrees with the lockfile digest.
+	input.RecordedPins = pinsAt(document, "sha256:deadbeef")
+	_, err := resolveEntitySource(input, source, types.OrderedMap[string]{}, "tls-helm:1.0.0", map[string]any{}, map[string]any{}, document)
 	if err == nil {
-		t.Fatalf("disagreeing recipe pin resolved without halting")
+		t.Fatalf("a disagreeing recorded pin resolved without halting")
 	}
 	if !errors.Is(err, oci.ErrFetchIntegrity()) {
-		t.Errorf("recipe-pin disagreement error = %v; want ErrFetchIntegrity", err)
+		t.Errorf("recorded-pin disagreement error = %v; want ErrFetchIntegrity", err)
 	}
+
 	// An agreeing pin resolves cleanly.
-	goodPins := []types.SourceDigest{{Kind: "helm-oci-chart", URL: "oci://hub.aggrega.ai/charts/tls", Version: "1.2.3", Digest: digest}}
-	if _, err := resolveEntitySource(input, source, types.OrderedMap[string]{}, "tls-helm:1.0.0", map[string]any{}, map[string]any{}, goodPins); err != nil {
-		t.Fatalf("agreeing recipe pin should resolve: %v", err)
+	input.RecordedPins = pinsAt(document, digest)
+	if _, err := resolveEntitySource(input, source, types.OrderedMap[string]{}, "tls-helm:1.0.0", map[string]any{}, map[string]any{}, document); err != nil {
+		t.Fatalf("an agreeing recorded pin should resolve: %v", err)
+	}
+
+	// The same disagreeing pin filed under a DIFFERENT document is not this
+	// entity's pin, so the comparison has nothing to run against and the build
+	// resolves. Without this leg the two above would pass equally well against a
+	// lookup that ignored its key and answered with whatever single entry it held.
+	input.RecordedPins = pinsAt("/ws/catalog/recipe/helm/other/1.0.0/recipe.yaml", "sha256:deadbeef")
+	if _, err := resolveEntitySource(input, source, types.OrderedMap[string]{}, "tls-helm:1.0.0", map[string]any{}, map[string]any{}, document); err != nil {
+		t.Fatalf("a pin recorded for another document must not be read as this entity's: %v", err)
 	}
 }
 
@@ -346,17 +370,20 @@ func TestResolveEntitySource_UnpinnedIdentityHaltsAtTheFetch(t *testing.T) {
 		}, d
 	}
 
+	const document = "/ws/catalog/recipe/helm/tls/1.0.0/recipe.yaml"
+
 	cases := []struct {
 		name string
 		// pinnedVersion is what the lockfile row records. Equal to the resolved
 		// version means the identity is pinned; anything else means it is not.
 		pinnedVersion string
-		// recipePin builds the recipe's recorded pins from the fixture's digest.
+		// recipePin builds the pins recorded for the entity from the fixture's
+		// digest.
 		recipePin func(fixtureDigest string) []types.SourceDigest
 		wantErr   error
 	}{
 		{
-			name:          "the identity is pinned and the recipe agrees: the cross-check runs and the fetch succeeds",
+			name:          "the identity is pinned and the entity's record agrees: the cross-check runs and the fetch succeeds",
 			pinnedVersion: resolved,
 			recipePin: func(d string) []types.SourceDigest {
 				return []types.SourceDigest{{Kind: "helm-oci-chart", URL: url, Version: resolved, Digest: d}}
@@ -364,7 +391,7 @@ func TestResolveEntitySource_UnpinnedIdentityHaltsAtTheFetch(t *testing.T) {
 			wantErr: nil,
 		},
 		{
-			name:          "the identity is unpinned and the recipe records an agreeing pin: the fetch halts",
+			name:          "the identity is unpinned and the entity records an agreeing pin: the fetch halts",
 			pinnedVersion: "abc123commit",
 			recipePin: func(d string) []types.SourceDigest {
 				return []types.SourceDigest{{Kind: "helm-oci-chart", URL: url, Version: resolved, Digest: d}}
@@ -372,7 +399,7 @@ func TestResolveEntitySource_UnpinnedIdentityHaltsAtTheFetch(t *testing.T) {
 			wantErr: oci.ErrFetchNotFound(),
 		},
 		{
-			name:          "the identity is unpinned and the recipe records a disagreeing pin: the fetch still halts",
+			name:          "the identity is unpinned and the entity records a disagreeing pin: the fetch still halts",
 			pinnedVersion: "abc123commit",
 			recipePin: func(string) []types.SourceDigest {
 				return []types.SourceDigest{{Kind: "helm-oci-chart", URL: url, Version: resolved, Digest: "sha256:deadbeef"}}
@@ -380,7 +407,7 @@ func TestResolveEntitySource_UnpinnedIdentityHaltsAtTheFetch(t *testing.T) {
 			wantErr: oci.ErrFetchNotFound(),
 		},
 		{
-			name:          "the identity is unpinned and the recipe records nothing: the fetch halts",
+			name:          "the identity is unpinned and the entity records nothing: the fetch halts",
 			pinnedVersion: "abc123commit",
 			recipePin:     func(string) []types.SourceDigest { return nil },
 			wantErr:       oci.ErrFetchNotFound(),
@@ -391,8 +418,9 @@ func TestResolveEntitySource_UnpinnedIdentityHaltsAtTheFetch(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			input, d := fixture(t, tc.pinnedVersion)
+			input.RecordedPins = recipepin.Lookup{document: recipepin.Pins{SourceDigests: tc.recipePin(d)}}
 			_, err := resolveEntitySource(input, source, types.OrderedMap[string]{},
-				"tls-helm:1.0.0", map[string]any{}, map[string]any{}, tc.recipePin(d))
+				"tls-helm:1.0.0", map[string]any{}, map[string]any{}, document)
 			switch {
 			case tc.wantErr == nil && err != nil:
 				t.Fatalf("a pinned identity with an agreeing recipe pin must resolve; got %v", err)
@@ -445,7 +473,7 @@ func TestResolveEntitySource_LocalForwardsTheReferenceItNames(t *testing.T) {
 				WorkspaceRoot: "/ws",
 				CacheDir:      ".aggrega/cache",
 			}
-			resolved, err := resolveEntitySource(input, tc.source, types.OrderedMap[string]{}, "tls-helm:1.0.0", map[string]any{}, map[string]any{}, nil)
+			resolved, err := resolveEntitySource(input, tc.source, types.OrderedMap[string]{}, "tls-helm:1.0.0", map[string]any{}, map[string]any{}, "")
 			if err != nil {
 				t.Fatalf("resolveEntitySource (local): %v", err)
 			}
@@ -474,7 +502,7 @@ func TestResolveSourceForNodeHaltsOnMissingLockfileEntry(t *testing.T) {
 		WorkspaceRoot: root,
 		CacheDir:      ".aggrega/cache",
 	}
-	err := resolveSourceForNode(input, recipe, &NodeRenderContext{})
+	err := resolveSourceForNode(input, recipe, "", &NodeRenderContext{})
 	if !errors.Is(err, sourcecache.ErrFetchNotFound()) {
 		t.Errorf("missing lockfile entry should wrap ErrFetchNotFound; got %v", err)
 	}

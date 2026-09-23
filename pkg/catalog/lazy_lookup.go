@@ -22,6 +22,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/compactform"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"github.com/aggrega-ai/aggrega-cli/pkg/recipepin"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
@@ -89,6 +90,7 @@ func NewLazyLookup(workspaceRoot, cacheDir string, catalogDirs []string, puller 
 		recipeSkips:        map[string]error{},
 		entityBytes:        map[string][]byte{},
 		localEntityPaths:   map[string]string{},
+		recordedPins:       recipepin.Lookup{},
 	}
 }
 
@@ -320,6 +322,7 @@ func (l *LazyLookup) Reset() {
 	l.recipeCat = nil
 	l.entityBytes = map[string][]byte{}
 	l.localEntityPaths = map[string]string{}
+	l.recordedPins = recipepin.Lookup{}
 }
 
 // Prime copies the supplied catalog's already-merged Components and
@@ -508,6 +511,16 @@ type LazyLookup struct {
 	// componentIndex and featureIndex, which are the maps the per-URI cascade
 	// reads to find the file in the first place. Populated by the Tier-1 walks.
 	localEntityPaths map[string]string
+
+	// recordedPins holds the content pins in force for each pin-bearing entity
+	// this backing enumerated, keyed by the document it was read from. It is the
+	// lazy backing's half of what the eager load records under the same name, and
+	// the recipe-catalog shell hands it on to the render.
+	//
+	// It follows localEntityPaths' Tier-1-only rule and for the same reason: a
+	// pinned cache slot is not a directory a lock could sit beside, so a Tier-2
+	// entity records nothing here and is answered as recording nothing.
+	recordedPins recipepin.Lookup
 
 	// entityBytes retains the RAW authored bytes of every enumerated /
 	// resolved entity, keyed by entityBytesKey(kind, metadata.name) — the same
@@ -1358,6 +1371,7 @@ func (l *LazyLookup) foldRecipeShellEntity(kind string, parseData, rawBytes []by
 				l.entityBytes[entityBytesKey("Recipe", key)] = rawBytes
 				if local {
 					l.localEntityPaths[entityBytesKey("Recipe", key)] = src
+					l.recordedPins.Record(src, effectivePins(e.Spec.SourceDigests, e.Spec.ArtifactDigests))
 				}
 			},
 			func() {
@@ -1375,6 +1389,7 @@ func (l *LazyLookup) foldRecipeShellEntity(kind string, parseData, rawBytes []by
 				l.entityBytes[entityBytesKey("FeatureRecipe", key)] = rawBytes
 				if local {
 					l.localEntityPaths[entityBytesKey("FeatureRecipe", key)] = src
+					l.recordedPins.Record(src, effectivePins(e.Spec.SourceDigests, e.Spec.ArtifactDigests))
 				}
 			},
 			func() {
@@ -1596,7 +1611,13 @@ func (l *LazyLookup) recipeCatalog() *Catalog {
 		// construction: its slot is a label naming a pin, not a document, and the
 		// walk deliberately retains no path for one.
 		pathByIdentity: l.localEntityPaths,
-		workspaceRoot:  l.workspaceRoot,
+		// The pins the same walk recorded, under the same documents, so the shell
+		// answers "what was recorded for this entity" from the reading that
+		// resolved it rather than from a second one free to disagree. A Tier-2
+		// entity is absent here for the reason it is absent above: its slot is a
+		// label naming a pin, and a lock sits beside a document.
+		recordedPins:  l.recordedPins,
+		workspaceRoot: l.workspaceRoot,
 		// The lazy backing is the production build/pull resolution path, so it
 		// resolves core providers from the binary's embedded set (embedded-wins).
 		resolveEmbeddedProviders: true,
@@ -1640,6 +1661,19 @@ func (l *LazyLookup) ArtifactsLibraries() map[string]types.ArtifactsLibrary {
 	defer l.mu.Unlock()
 	l.buildRecipeIndex()
 	return l.artifactsLibraries
+}
+
+// RecordedPins returns the content pins in force for every pin-bearing entity
+// the lazy enumeration reached, keyed by the document each was read from — the
+// render's input for comparing what a build acquired against what the resolution
+// recorded. Triggers the recipe-shell enumeration on first call.
+//
+// It answers through the recipe-catalog shell rather than from the backing's own
+// map, so the lazy and eager views expose one reading of the same fact.
+func (l *LazyLookup) RecordedPins() recipepin.Lookup {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.recipeCatalog().RecordedPins()
 }
 
 // RecipeLookupWithManifest exposes the catalog matcher's Manifest-aware recipe

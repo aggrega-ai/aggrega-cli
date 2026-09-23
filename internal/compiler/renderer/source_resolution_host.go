@@ -54,7 +54,12 @@ import (
 // matching lockfile entry (build-time drift signal). Returns the
 // wrapped error from sourcecache.LookupAndExtract on digest mismatch,
 // missing cache slot, or extract failure.
-func resolveSourceForNode(input RendererInput, recipe *types.Recipe, nodeCtx *NodeRenderContext) error {
+// documentPath is the file this node's Recipe was declared in, and it is the key
+// the recorded-pin comparison below reads its pins under. It is supplied by the
+// caller rather than looked up here because the lookup that answers it is the
+// caller's own, and a Recipe resolved from a registry passes the empty string,
+// which records nothing and leaves that comparison with nothing to conclude.
+func resolveSourceForNode(input RendererInput, recipe *types.Recipe, documentPath string, nodeCtx *NodeRenderContext) error {
 	if !recipeSourceDeclared(recipe) {
 		return nil
 	}
@@ -69,7 +74,7 @@ func resolveSourceForNode(input RendererInput, recipe *types.Recipe, nodeCtx *No
 		infra = parse.NodePayloadMap(input.Graph.Spec.InfraMapping, nodeCtx.NodeID)
 	}
 	resolved, err := resolveEntitySource(
-		input, recipe.Spec.Source, recipe.Spec.Locals, uri, values, infra, recipe.Spec.SourceDigests,
+		input, recipe.Spec.Source, recipe.Spec.Locals, uri, values, infra, documentPath,
 	)
 	if err != nil {
 		return err
@@ -90,9 +95,14 @@ func resolveSourceForNode(input RendererInput, recipe *types.Recipe, nodeCtx *No
 // for the source-spec evaluation. Returns the resolved source (extracted cache path,
 // or the verbatim source) and nil when the source evaluates to nil.
 //
+// documentPath is the file the entity was declared in, and it is the only thing
+// this body needs in order to read the source pins recorded for that entity: the
+// pins travel on the render input keyed by document, so every caller supplies the
+// key rather than the pins and there is one place that turns one into the other.
+//
 // Wrapping fetch errors into the FETCH_ERROR category is the caller's concern via
 // wrapSourceResolutionError, so both call sites surface fetch failures identically.
-func resolveEntitySource(input RendererInput, source any, locals types.OrderedMap[string], uri string, values, infra map[string]any, srcPins []types.SourceDigest) (any, error) {
+func resolveEntitySource(input RendererInput, source any, locals types.OrderedMap[string], uri string, values, infra map[string]any, documentPath string) (any, error) {
 	if source == nil {
 		return nil, nil
 	}
@@ -118,20 +128,28 @@ func resolveEntitySource(input RendererInput, source any, locals types.OrderedMa
 	if spec == nil {
 		return nil, nil
 	}
-	// Build-verify: where the recipe's own recorded source pin and the lockfile's
+	// Build-verify: where the source pin recorded for this entity and the lockfile's
 	// source-artifact record both describe the identity this node just resolved,
-	// they must agree. A recipe frozen alongside the lockfile records both from one
+	// they must agree. An entity frozen alongside the lockfile records both from one
 	// resolution, so a disagreement between them is an integrity fault; the
 	// cache-extract below independently verifies the cached bytes against the
-	// lockfile digest, so agreement here completes the chain (recipe pin ==
+	// lockfile digest, so agreement here completes the chain (recorded pin ==
 	// lockfile record == cached bytes).
 	//
+	// The pin is read from the render input's record of what the load settled for
+	// this entity's document, never from the entity value in hand. The two would be
+	// one fact with two answers, and the entity's own surface is the authored one:
+	// what a build compares against is what the resolution measured, which is
+	// recorded beside the document rather than inside it.
+	//
 	// 🔴 The comparison is scoped to what both records cover, and the scope is
-	// narrower than "every build". A recipe carries one pin per source identity it
+	// narrower than "every build". An entity carries one pin per source identity it
 	// was frozen against, and a templated source resolves to a different identity
-	// per consuming instance, so a recipe holds no pin for an identity its freeze
-	// never reached — a recipe never frozen at all, and a recipe whose pins came
-	// from some other resolution than this workspace's, both land there. Such a
+	// per consuming instance, so an entity holds no pin for an identity its freeze
+	// never reached — an entity never frozen at all, and one whose pins came
+	// from some other resolution than this workspace's, both land there. An entity
+	// declared in no document on disk lands there too: it has no directory a lock
+	// could sit beside, so nothing was recorded under it. Such a
 	// build proceeds on the lockfile, which is the record the fetch itself reads.
 	// The lockfile side needs no guard of its own: the cache lookup below asks the
 	// same question of the same record, and a build whose identity the lockfile
@@ -141,6 +159,7 @@ func resolveEntitySource(input RendererInput, source any, locals types.OrderedMa
 	// two must stay identical: the lookup answers which row describes this
 	// artifact, so asking it two different questions would decide whether the
 	// comparison runs rather than what it concludes.
+	srcPins := input.RecordedPins.For(documentPath).SourceDigests
 	if pin, ok := recipepin.MatchSourcePin(srcPins, spec.Kind, spec.URL, spec.Chart, spec.ModuleSubdir, spec.Version); ok {
 		if lfrec, found := input.Lockfile.FindSourceArtifact(spec.Kind, spec.URL, spec.Chart, spec.ModuleSubdir, spec.Version, spec.Ref); found {
 			if pin.Digest != lfrec.Digest || pin.ManifestDigest != lfrec.ManifestDigest {

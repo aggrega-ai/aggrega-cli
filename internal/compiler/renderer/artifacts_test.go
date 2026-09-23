@@ -13,6 +13,7 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
+	"github.com/aggrega-ai/aggrega-cli/pkg/recipepin"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -259,7 +260,7 @@ func TestBuildArtifactsProjection_ImportPinRetention(t *testing.T) {
 			state.hydrated = store
 			resetArtifacts(state)
 			state.Recipe.Spec.Artifacts.Set("policy", row.entry)
-			state.Recipe.Spec.ArtifactDigests = row.pins
+			state.RecordedPins = recipepin.Pins{ArtifactDigests: row.pins}
 
 			if _, err := buildArtifactsProjection(nil, tmplCtx, state, nodeCtx, "{{", "}}"); err != nil {
 				t.Fatalf("buildArtifactsProjection: %v", err)
@@ -304,7 +305,7 @@ func TestBuildArtifactsProjection_TamperedImportLeavesTheTwoFactsDisagreeing(t *
 
 	resetArtifacts(state)
 	state.Recipe.Spec.Artifacts.Set("policy", types.ArtifactEntry{Import: p})
-	state.Recipe.Spec.ArtifactDigests = []types.ArtifactDigest{{Name: "policy", Digest: frozen}}
+	state.RecordedPins = recipepin.Pins{ArtifactDigests: []types.ArtifactDigest{{Name: "policy", Digest: frozen}}}
 
 	if err := os.WriteFile(p, []byte("kind: NetworkPolicy\nmetadata:\n  name: allow-all\n"), 0o644); err != nil {
 		t.Fatalf("tamper: %v", err)

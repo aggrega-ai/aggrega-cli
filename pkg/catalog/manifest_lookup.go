@@ -13,6 +13,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/ociref"
+	"github.com/aggrega-ai/aggrega-cli/pkg/recipepin"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
@@ -378,6 +379,26 @@ func (c *Catalog) featureRecipeDocument(fr *types.FeatureRecipe) (string, bool) 
 // content-addressed cache slot, which is not a document anybody authored, so it
 // is reported as having none rather than as the slot's location — the same
 // reading every other path-reporting accessor on this catalog takes.
+// RecordedPins reports the content pins in force for every pin-bearing entity
+// this catalog indexed, keyed by the document each was read from.
+//
+// It is the render's one source for those pins: the load is where an entity and
+// the directory it was read from are both in hand, so it is the only pass that
+// can say which lock sits beside which document. A reader keys into it with the
+// same document entityDocument reports, so the pins a build compares against and
+// the file a diagnostic names come from one reading of the catalog rather than
+// two.
+//
+// An entity resolved from a registry has no entry, for the reason entityDocument
+// reports none for it: its slot is not a document anybody authored, and there is
+// no directory for a lock to sit beside.
+func (c *Catalog) RecordedPins() recipepin.Lookup {
+	if c == nil {
+		return nil
+	}
+	return c.recordedPins
+}
+
 func (c *Catalog) entityDocument(kind, provider, name, version string) (string, bool) {
 	path, ok := c.pathByIdentity[entityBytesKey(kind, recipeIdentityKey(provider, name, version))]
 	if !ok || path == "" {

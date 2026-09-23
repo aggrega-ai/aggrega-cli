@@ -182,6 +182,10 @@ func loadInputs(in Input) (*loadedWorkspace, error) {
 			MappingLibraries:   cat.MappingLibraries,
 			WorkloadLibraries:  cat.WorkloadLibraries,
 			ArtifactsLibraries: cat.ArtifactsLibraries,
+			// The pins the fixture's own catalog load recorded, so a fixture whose
+			// entity carries a lock beside it drives the same comparison a build
+			// does rather than a quieter one.
+			RecordedPins: cat.RecordedPins(),
 			// Arbitrary fixed fixture, not a real version: production derives the
 			// compiler-version from the build, but tests inject a constant so the
 			// provenance stamp (and the aggrega.ai/compiler-version label it renders

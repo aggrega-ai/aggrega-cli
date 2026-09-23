@@ -25,6 +25,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/redact"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/labels"
+	"github.com/aggrega-ai/aggrega-cli/pkg/recipepin"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
 )
@@ -643,7 +644,7 @@ func phaseB6(
 			return nil, nil, nil, nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: frDocument}, fmt.Sprintf("node %q attachment %q source", nodeID, item.Instance))
 		}
 		frNodeCtx.OriginalSource = evaluatedSource
-		resolvedSrc, err := resolveEntitySource(input, evaluatedSource, fr.Spec.Locals, frSourceURI(fr), item.OwnValues, item.OwnInfra, fr.Spec.SourceDigests)
+		resolvedSrc, err := resolveEntitySource(input, evaluatedSource, fr.Spec.Locals, frSourceURI(fr), item.OwnValues, item.OwnInfra, frDocument)
 		if err != nil {
 			return nil, nil, nil, nil, wrapSourceResolutionError(err, nodeID, fmt.Sprintf("node %q attachment %q source resolution", nodeID, item.Instance))
 		}
@@ -658,7 +659,8 @@ func phaseB6(
 		// nothing makes one's output names distinct from the other's or from the
 		// node's own. It carries this render's presentation too, so the rule declared
 		// over the owner's facts can be asked inside the walk that records them.
-		frFiles, frComponentID, err := renderFeatureRecipeFiles(ctx, frEngine, fr, &frCtx, frNodeCtx, frValues.Resolved, resolvedSrc, frDocument, item.Identity,
+		frFiles, frComponentID, err := renderFeatureRecipeFiles(ctx, frEngine, fr, &frCtx, frNodeCtx, frValues.Resolved, resolvedSrc, frDocument,
+			input.RecordedPins.For(frDocument), item.Identity,
 			ownerProductsOf(state).attachmentOnNode(nodeID, item.Instance),
 			featureAttachmentSlots(fr, input), input.WorkloadLibraries, input.ArtifactsLibraries,
 			nodeAnnotations, input.CatalogLookup.ProviderPlugin)
@@ -1098,6 +1100,12 @@ func featureAttachmentSlots(fr *types.FeatureRecipe, input RendererInput) types.
 // is the caller's own. An entity resolved from a registry has no such document and
 // passes the empty string, which positions those diagnostics at no file — the same
 // answer the component render path gives for a Recipe in the same position.
+//
+// recordedPins are the content pins the load recorded for that same document, and
+// they arrive already resolved for the same reason documentPath does: the lookup
+// that answers them travels on the render input the caller holds. They reach the
+// artifacts walk through the state built below, where an imported file whose
+// current bytes have moved off its recorded pin halts the render.
 func renderFeatureRecipeFiles(
 	ctx context.Context,
 	frEngine Provider,
@@ -1107,6 +1115,7 @@ func renderFeatureRecipeFiles(
 	frValues map[string]any,
 	resolvedSrc any,
 	documentPath string,
+	recordedPins recipepin.Pins,
 	identity attachmentIdentity,
 	hydrated attachmentOwner,
 	slots types.OrderedMap[types.AttachmentSlot],
@@ -1236,16 +1245,22 @@ func renderFeatureRecipeFiles(
 	synth := &types.Recipe{
 		Metadata: types.RecipeMetadata{Name: fr.Metadata.Name, Version: fr.Metadata.Version},
 		Spec: types.RecipeSpec{
-			Capability:      fr.Spec.Capability,
-			Implements:      fr.Spec.Implements,
-			Source:          resolvedSrc,
-			ValuesMapping:   fr.Spec.ValuesMapping,
-			Workload:        fr.Spec.Workload,
-			Artifacts:       fr.Spec.Artifacts,
-			ArtifactDigests: fr.Spec.ArtifactDigests,
+			Capability:    fr.Spec.Capability,
+			Implements:    fr.Spec.Implements,
+			Source:        resolvedSrc,
+			ValuesMapping: fr.Spec.ValuesMapping,
+			Workload:      fr.Spec.Workload,
+			Artifacts:     fr.Spec.Artifacts,
 		},
 	}
 	state := NewPhaseBState(synth, frNodeCtx.NodeID, frNodeCtx.BoundaryPath, documentPath)
+	// This attachment's own recorded pins, so the artifacts walk below compares
+	// against what was recorded for the FeatureRecipe's document rather than
+	// against the host component's. They travel on the state and not on the
+	// synthesized Recipe above: what that value carries is the authored shape the
+	// sub-passes render from, and a derived record copied into it would be read as
+	// something the FeatureRecipe's author had written.
+	state.RecordedPins = recordedPins
 	// The owner this render records against and is checked under. It is set
 	// instead of the per-node retention a component render carries, never beside it:
 	// the passes below walk the same producers under the node identity above, so

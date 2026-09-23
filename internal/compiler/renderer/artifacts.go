@@ -324,8 +324,11 @@ func buildArtifactsProjection(
 				//
 				// A Recipe that was never frozen records nothing, which leaves the
 				// rules over this entry with nothing to compare and is the ordinary
-				// answer rather than an approval.
-				if pin, ok := recipepin.MatchArtifactPin(state.Recipe.Spec.ArtifactDigests, key); ok {
+				// answer rather than an approval. The pins are the ones the load
+				// recorded for the document this entity was read from, resolved onto
+				// the state when it was built — so an entity declared in no document
+				// records nothing here for the same reason.
+				if pin, ok := recipepin.MatchArtifactPin(state.RecordedPins.ArtifactDigests, key); ok {
 					state.recordArtifactContentPin(name, pin.Digest)
 				}
 			}

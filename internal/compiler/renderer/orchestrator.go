@@ -1448,6 +1448,11 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// the state owns. A capture taking its own route would be free to show the
 		// emitted workload document where the display promised a re-render of it.
 		state := NewPhaseBState(recipe, nodeID, node.BoundaryPath, recipeLookup.recipeDocument(recipe))
+		// The pins the load recorded for that same document, resolved here so the
+		// sub-passes below read one answer rather than each keying into the lookup
+		// for itself. A node whose Recipe was declared in no document on disk
+		// resolves to the zero pins, which record nothing.
+		state.RecordedPins = input.RecordedPins.For(state.RecipePath)
 		state.Trace = traceWriter
 		// The retentions travel onto this node's own state so the artifacts walk can
 		// record each entry's template text where that text is resolved, and each
@@ -1708,7 +1713,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		nodeCtx.DerivedKeySink = func(declared types.OrderedMap[[]string]) {
 			state.DerivedKeys.declare(nodeContributor, declared)
 		}
-		if err := resolveSourceForNode(input, recipe, &nodeCtx); err != nil {
+		if err := resolveSourceForNode(input, recipe, state.RecipePath, &nodeCtx); err != nil {
 			return nil, wrapSourceResolutionError(err, nodeID,
 				fmt.Sprintf("node %q source resolution", nodeID))
 		}

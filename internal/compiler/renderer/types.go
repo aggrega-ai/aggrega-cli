@@ -9,6 +9,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/trace"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
+	"github.com/aggrega-ai/aggrega-cli/pkg/recipepin"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
@@ -55,6 +56,26 @@ type RendererInput struct {
 	Lockfile      *lockfile.Lockfile
 	WorkspaceRoot string
 	CacheDir      string
+
+	// RecordedPins answers the content pins in force for the entity declared in a
+	// named document: what the resolution recorded for that entity's remote source
+	// and for each file its artifacts entries import. The render compares what it
+	// acquired against these, and halts where the two disagree.
+	//
+	// It is keyed by document path because a lock is defined by the directory it
+	// sits in, and it is supplied by the load rather than read here: the entity and
+	// the directory it came from are both in hand at load and in no later pass, so
+	// asking the filesystem again from inside a render would be a second reading of
+	// one fact, free to answer differently from the one the entity itself was
+	// resolved under.
+	//
+	// nil leaves every entity recording nothing. That is the honest reading for a
+	// caller that assembles a render's input directly: nothing was recorded for it
+	// to compare against, so the pin comparisons conclude nothing rather than
+	// approving. An entity resolved from a registry reads the same way — it lives
+	// in a content-addressed slot rather than a directory a lock could sit beside,
+	// so it has no key here.
+	RecordedPins recipepin.Lookup
 
 	// Trace, when non-nil, captures per-pass intermediate state under
 	// .trace/ (sibling to dist/) for the --trace debug surface. nil

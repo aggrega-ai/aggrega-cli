@@ -14,6 +14,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
+	"github.com/aggrega-ai/aggrega-cli/pkg/recipepin"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -56,22 +57,41 @@ containers:
     image: myapp:latest
 `
 
+// pinHostDocument and pinFeatureDocument are the files the fixture's two
+// pin-bearing entities are declared in. They are the keys the render reads
+// recorded pins under, so a fixture supplying pins without also reporting a
+// document would be handing the render a record it has no key for — and the
+// render would then admit every drift for a reason that has nothing to do with
+// what is being proved.
+//
+// They are deliberately DIFFERENT documents. A FeatureRecipe's entries flow
+// through the same artifacts walk under the host component's node identity, so
+// two entities sharing one key would let a build compare an attachment's content
+// against the host's record and still look correct.
+const (
+	pinHostDocument    = "/ws/catalog/recipe/helm/api-recipe/1.0.0/recipe.yaml"
+	pinFeatureDocument = "/ws/catalog/featurerecipe/helm/mon/1.0.0/featurerecipe.yaml"
+)
+
 // pinHostLookup binds the host component to a Recipe whose artifacts block carries
 // one imported entry with the given recorded pin, and the monitoring feature to a
 // FeatureRecipe carrying no artifacts at all — so any halt is attributable to the
-// host's own owner.
+// host's own owner. It returns the pin record the render input carries alongside
+// it, keyed by the host Recipe's document.
 //
-// An empty pin builds a Recipe carrying NO artifactDigests block, which is the
-// state of a Recipe that was never frozen. It is spelled as an absent block rather
-// than as an entry with an empty digest because the two are different inputs: an
-// entry recording an empty digest is a recorded pin whose value is empty, which
-// the rule compares against and refuses.
-func pinHostLookup(importPath, pin string) renderer.RecipeLookup {
+// An empty pin records NO pins for that document, which is the state of a Recipe
+// that was never frozen. It is spelled as an absent record rather than as an entry
+// with an empty digest because the two are different inputs: an entry recording an
+// empty digest is a recorded pin whose value is empty, which the rule compares
+// against and refuses.
+func pinHostLookup(importPath, pin string) (renderer.RecipeLookup, recipepin.Lookup) {
 	artifacts := types.OrderedMap[types.ArtifactEntry]{}
 	artifacts.Set("pin-host-policy.yaml", types.ArtifactEntry{Import: importPath})
-	var digests []types.ArtifactDigest
+	pins := recipepin.Lookup{}
 	if pin != "" {
-		digests = []types.ArtifactDigest{{Name: "pin-host-policy.yaml", Digest: pin}}
+		pins.Record(pinHostDocument, recipepin.Pins{
+			ArtifactDigests: []types.ArtifactDigest{{Name: "pin-host-policy.yaml", Digest: pin}},
+		})
 	}
 	return renderer.RecipeLookup{
 		Recipe: func(_, componentType string) (*types.Recipe, bool) {
@@ -81,11 +101,10 @@ func pinHostLookup(importPath, pin string) renderer.RecipeLookup {
 			return &types.Recipe{
 				Metadata: types.RecipeMetadata{Name: "api-recipe", Version: "1.0.0"},
 				Spec: types.RecipeSpec{
-					Capability:      "helm",
-					Implements:      "core/compute/api-server",
-					Workload:        types.WorkloadTemplate{Inline: pinWorkload},
-					Artifacts:       artifacts,
-					ArtifactDigests: digests,
+					Capability: "helm",
+					Implements: "core/compute/api-server",
+					Workload:   types.WorkloadTemplate{Inline: pinWorkload},
+					Artifacts:  artifacts,
 				},
 			}, true
 		},
@@ -102,15 +121,22 @@ func pinHostLookup(importPath, pin string) renderer.RecipeLookup {
 				},
 			}, true
 		},
-	}
+		RecipeDocument:        func(*types.Recipe) (string, bool) { return pinHostDocument, true },
+		FeatureRecipeDocument: func(*types.FeatureRecipe) (string, bool) { return pinFeatureDocument, true },
+	}, pins
 }
 
 // pinFeatureLookup is the mirror: the host Recipe declares no artifacts and the
 // FeatureRecipe carries the imported entry and the recorded pin, so any halt is
-// attributable to the attachment's own owner.
-func pinFeatureLookup(importPath, pin string) renderer.RecipeLookup {
+// attributable to the attachment's own owner. The pin is recorded under the
+// FeatureRecipe's OWN document, and the host's document records nothing.
+func pinFeatureLookup(importPath, pin string) (renderer.RecipeLookup, recipepin.Lookup) {
 	artifacts := types.OrderedMap[types.ArtifactEntry]{}
 	artifacts.Set("pin-feature-policy.yaml", types.ArtifactEntry{Import: importPath})
+	pins := recipepin.Lookup{}
+	pins.Record(pinFeatureDocument, recipepin.Pins{
+		ArtifactDigests: []types.ArtifactDigest{{Name: "pin-feature-policy.yaml", Digest: pin}},
+	})
 	return renderer.RecipeLookup{
 		Recipe: func(_, componentType string) (*types.Recipe, bool) {
 			if componentType != "core/compute/api-server" {
@@ -132,15 +158,16 @@ func pinFeatureLookup(importPath, pin string) renderer.RecipeLookup {
 			return &types.FeatureRecipe{
 				Metadata: types.FeatureRecipeMetadata{Name: "mon"},
 				Spec: types.FeatureRecipeSpec{
-					Capability:      "helm",
-					Implements:      "core/monitoring",
-					Workload:        types.WorkloadTemplate{Inline: pinWorkload},
-					Artifacts:       artifacts,
-					ArtifactDigests: []types.ArtifactDigest{{Name: "pin-feature-policy.yaml", Digest: pin}},
+					Capability: "helm",
+					Implements: "core/monitoring",
+					Workload:   types.WorkloadTemplate{Inline: pinWorkload},
+					Artifacts:  artifacts,
 				},
 			}, true
 		},
-	}
+		RecipeDocument:        func(*types.Recipe) (string, bool) { return pinHostDocument, true },
+		FeatureRecipeDocument: func(*types.FeatureRecipe) (string, bool) { return pinFeatureDocument, true },
+	}, pins
 }
 
 // TestAnImportedArtifactWithNoRecordedPinRendersWhateverItsContent holds the
@@ -161,9 +188,10 @@ func TestAnImportedArtifactWithNoRecordedPinRendersWhateverItsContent(t *testing
 	t.Parallel()
 
 	driftedPath, _ := pinImportFile(t, pinImportDrifted)
+	lookup, pins := pinHostLookup(driftedPath, "")
 	if _, err := renderer.RenderAll(
-		context.Background(), pinPinnedInput(t),
-		pinHostLookup(driftedPath, ""), testHelmFactory(t),
+		context.Background(), pinPinnedInput(t, pins),
+		lookup, testHelmFactory(t),
 	); err != nil {
 		t.Fatalf("a Recipe that recorded no pin for its imported artifact must render "+
 			"whatever that file now holds: %v", err)
@@ -176,15 +204,17 @@ func TestTheArtifactContentPinRuleAdmitsAndRefusesOnANodesOwnRecipe(t *testing.T
 	t.Parallel()
 
 	intactPath, intactPin := pinImportFile(t, pinImportBody)
+	intactLookup, intactPins := pinHostLookup(intactPath, intactPin)
 	if _, err := renderer.RenderAll(
-		context.Background(), pinPinnedInput(t), pinHostLookup(intactPath, intactPin), testHelmFactory(t),
+		context.Background(), pinPinnedInput(t, intactPins), intactLookup, testHelmFactory(t),
 	); err != nil {
 		t.Fatalf("a Recipe whose imported artifact still matches its recorded pin must render: %v", err)
 	}
 
 	driftedPath, _ := pinImportFile(t, pinImportDrifted)
+	driftedLookup, driftedPins := pinHostLookup(driftedPath, intactPin)
 	_, err := renderer.RenderAll(
-		context.Background(), pinPinnedInput(t), pinHostLookup(driftedPath, intactPin), testHelmFactory(t),
+		context.Background(), pinPinnedInput(t, driftedPins), driftedLookup, testHelmFactory(t),
 	)
 	if err == nil {
 		t.Fatal("a Recipe whose imported artifact no longer matches its recorded pin rendered; want a halt")
@@ -229,15 +259,17 @@ func TestTheArtifactContentPinRuleAdmitsAndRefusesOnAnAttachmentsFeatureRecipe(t
 	t.Parallel()
 
 	intactPath, intactPin := pinImportFile(t, pinImportBody)
+	intactLookup, intactPins := pinFeatureLookup(intactPath, intactPin)
 	if _, err := renderer.RenderAll(
-		context.Background(), pinPinnedInput(t), pinFeatureLookup(intactPath, intactPin), testHelmFactory(t),
+		context.Background(), pinPinnedInput(t, intactPins), intactLookup, testHelmFactory(t),
 	); err != nil {
 		t.Fatalf("a FeatureRecipe whose imported artifact still matches its recorded pin must render: %v", err)
 	}
 
 	driftedPath, _ := pinImportFile(t, pinImportDrifted)
+	driftedLookup, driftedPins := pinFeatureLookup(driftedPath, intactPin)
 	_, err := renderer.RenderAll(
-		context.Background(), pinPinnedInput(t), pinFeatureLookup(driftedPath, intactPin), testHelmFactory(t),
+		context.Background(), pinPinnedInput(t, driftedPins), driftedLookup, testHelmFactory(t),
 	)
 	if err == nil {
 		t.Fatal("a FeatureRecipe whose imported artifact no longer matches its recorded pin rendered; want a halt")
@@ -263,9 +295,14 @@ func TestTheArtifactContentPinRuleAdmitsAndRefusesOnAnAttachmentsFeatureRecipe(t
 // supplied, so the render publishes the mid-render presentation the rules are
 // invoked against. A fixture omitting it would leave them invoked zero times for a
 // reason that has nothing to do with what is being proved.
-func pinPinnedInput(t *testing.T) renderer.RendererInput {
+func pinPinnedInput(t *testing.T, pins recipepin.Lookup) renderer.RendererInput {
 	t.Helper()
 	input := monitoringFeatureInput(t)
 	input.GraphView = invocationGraphFacts{}
+	// The pin record the fixture's entities were resolved under. It travels on the
+	// input rather than on the entities because that is where the build carries it,
+	// and a fixture that supplied it any other way would be proving a route the
+	// product does not take.
+	input.RecordedPins = pins
 	return input
 }

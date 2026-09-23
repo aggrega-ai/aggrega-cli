@@ -37,6 +37,7 @@ import (
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
+	"github.com/aggrega-ai/aggrega-cli/pkg/recipepin"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
@@ -179,6 +180,13 @@ type Inputs struct {
 	// `artifacts.<name>: { $import: <Library>#/artifacts/<entry> }` resolves at
 	// render. nil when no ArtifactsLibraries are present.
 	ArtifactsLibraries map[string]types.ArtifactsLibrary
+
+	// RecordedPins are the content pins the load recorded for each pin-bearing
+	// entity, keyed by the document that entity was read from. They flow to the
+	// renderer, which compares what a build acquired against them and halts where
+	// the two disagree. nil records nothing for every entity, which leaves those
+	// comparisons with nothing to conclude rather than approving.
+	RecordedPins recipepin.Lookup
 
 	// TolerateCatalogViewInconsistency opts a caller out of the guard-layer
 	// halt for a component type that resolved AS A CATALOG REFERENCE yet is
@@ -1793,6 +1801,11 @@ func RunPipeline(
 			MappingLibraries:   inputs.MappingLibraries,
 			WorkloadLibraries:  inputs.WorkloadLibraries,
 			ArtifactsLibraries: inputs.ArtifactsLibraries,
+			// The pins the load recorded, forwarded for the reason the library sets
+			// above are: the load is where an entity and the directory it was read
+			// from are both in hand, so a render that asked the filesystem again
+			// would be a second reading of one fact.
+			RecordedPins: inputs.RecordedPins,
 			Trace:              traceWriter,
 			TraceMode:          traceMode,
 			YAMLIndent:         inputs.WorkspaceConfig.Build.YAMLIndent,

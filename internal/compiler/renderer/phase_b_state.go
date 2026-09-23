@@ -7,6 +7,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/trace"
 	"github.com/aggrega-ai/aggrega-cli/internal/redact"
+	"github.com/aggrega-ai/aggrega-cli/pkg/recipepin"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -38,6 +39,20 @@ type PhaseBState struct {
 	RecipePath    string
 	RecipeName    string
 	RecipeVersion string
+
+	// RecordedPins are the content pins in force for the entity this node renders
+	// — the render input's answer for the document at RecipePath, resolved once as
+	// the state is built rather than at each reader. The artifacts walk compares an
+	// imported file's current bytes against the pin recorded for its key and halts
+	// where the two disagree.
+	//
+	// It is resolved by whoever builds the state, because the two scopes that build
+	// one hold different entities: the component loop's is the node's own Recipe,
+	// and an attachment's is the FeatureRecipe that attachment binds. The zero
+	// value records nothing, which leaves the comparison with nothing to conclude
+	// — the ordinary answer for an entity that was never resolved, and for one
+	// declared in no document on disk.
+	RecordedPins recipepin.Pins
 
 	// ResolvedValues is the values dictionary B.1 produces (or, for
 	// sourceless Recipes today, the values context flattened into a plain

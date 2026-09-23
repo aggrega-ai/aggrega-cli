@@ -15,6 +15,7 @@ package catalog
 
 import (
 	"path"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -181,6 +182,53 @@ func TestAReadableLockLoadsAndItsPinsReachTheEntity(t *testing.T) {
 			}
 			if len(art) != 1 || art[0].Digest != "sha256:bbb" {
 				t.Errorf("%s: the recorded artifact pin did not reach the entity: %+v", kind, art)
+			}
+		})
+	}
+}
+
+// TestTheLoadRecordsEachEntitysPinsUnderItsOwnDocument is the producer half of
+// the render's pin comparison: the load files what it settled under the document
+// the entity was read from, which is the key the render looks it up by.
+//
+// It is a separate assertion from the one above rather than a second look at the
+// same fact. Pins reaching the ENTITY is what a reader of that entity sees; pins
+// reaching the LOOKUP is what the render sees, and the render holds no entity
+// value it could read them off. A load that applied the lock correctly and filed
+// nothing would satisfy every row above while leaving every comparison the render
+// makes with nothing to compare — which reads exactly like inputs that had not
+// moved.
+//
+// The lookup is indexed directly rather than through its accessor, so a failure
+// here is attributable to the load filing nothing rather than to the accessor
+// answering emptily.
+func TestTheLoadRecordsEachEntitysPinsUnderItsOwnDocument(t *testing.T) {
+	t.Parallel()
+	for kind, k := range pinBearingKinds {
+		kind, k := kind, k
+		t.Run(kind, func(t *testing.T) {
+			t.Parallel()
+			dir := t.TempDir()
+			writeCatalogFile(t, dir, k.rel, k.body)
+			writeCatalogFile(t, dir, lockRelFor(k.rel), readableLock)
+
+			cat, err := LoadAll("", dir)
+			if err != nil {
+				t.Fatalf("%s: a readable lock must not stop the load: %v", kind, err)
+			}
+			document := filepath.Join(dir, filepath.FromSlash(k.rel))
+			recorded := cat.RecordedPins()
+			pins, filed := recorded[document]
+			if !filed {
+				t.Fatalf("%s: the load filed no pins for %q, so the render has no key for this entity "+
+					"and every comparison its pins exist for silently does not happen (filed: %d document(s))",
+					kind, document, len(recorded))
+			}
+			if len(pins.SourceDigests) != 1 || pins.SourceDigests[0].Digest != "sha256:aaa" {
+				t.Errorf("%s: the filed source pin is not the recorded one: %+v", kind, pins.SourceDigests)
+			}
+			if len(pins.ArtifactDigests) != 1 || pins.ArtifactDigests[0].Digest != "sha256:bbb" {
+				t.Errorf("%s: the filed artifact pin is not the recorded one: %+v", kind, pins.ArtifactDigests)
 			}
 		})
 	}

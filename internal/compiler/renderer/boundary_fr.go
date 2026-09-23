@@ -561,7 +561,7 @@ func dispatchBoundaryScopeFR(
 	// infra (graph.Spec.BoundaryFeatures) the lock-time descent pins from —
 	// so a remote source is cache-extracted at build and the build-time
 	// identity matches the lockfile pin. A local source forwards verbatim.
-	resolvedSrc, err := resolveEntitySource(input, evaluatedSource, fr.Spec.Locals, frSourceURI(fr), nil, feat.Infra.TemplateAlphabeticalMapDeep(), fr.Spec.SourceDigests)
+	resolvedSrc, err := resolveEntitySource(input, evaluatedSource, fr.Spec.Locals, frSourceURI(fr), nil, feat.Infra.TemplateAlphabeticalMapDeep(), frDocument)
 	if err != nil {
 		return wrapSourceResolutionError(err, frNodeCtx.NodeID, fmt.Sprintf("boundary-scope FR %q source resolution", frInstance))
 	}
@@ -643,7 +643,8 @@ func dispatchBoundaryScopeFR(
 	// reaches it. Read from the ordered per-boundary map for the same reason the
 	// per-component caller reads the ordered IR node — the advisory stream stays
 	// byte-stable across runs of identical input.
-	emitted, _, err := renderFeatureRecipeFiles(ctx, frEngine, fr, frCtx, frNodeCtx, frValues.Resolved, resolvedSrc, frDocument, attachmentIdentity{},
+	emitted, _, err := renderFeatureRecipeFiles(ctx, frEngine, fr, frCtx, frNodeCtx, frValues.Resolved, resolvedSrc, frDocument,
+		input.RecordedPins.For(frDocument), attachmentIdentity{},
 		ownerProductsOf(state).attachmentOnBoundary(key.BoundaryPath, frInstance),
 		featureAttachmentSlots(fr, input), input.WorkloadLibraries, input.ArtifactsLibraries,
 		boundaryAnnotations[key.BoundaryPath], input.CatalogLookup.ProviderPlugin)

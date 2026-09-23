@@ -135,6 +135,19 @@ type Catalog struct {
 	// file paths when an ordered multi-directory merge records a ShadowedEntity.
 	pathByIdentity map[string]string
 
+	// recordedPins holds the content pins in force for each pin-bearing entity
+	// this catalog indexed, keyed by the document that entity was read from. The
+	// render reads it to compare what a build acquired against what the
+	// resolution recorded, which is a question only the load can answer: the
+	// entity and the directory it was read from are both in hand here and in no
+	// later pass.
+	//
+	// It is keyed by document rather than by identity for the reason
+	// recipepin.Lookup states, and it holds what applyRecordedPins settled — the
+	// lock beside the document where one sits, the document's own pins where none
+	// does. An entity read from no file on disk records nothing.
+	recordedPins recipepin.Lookup
+
 	// Shadows records, in deterministic listed-directory order, every entity a
 	// higher-precedence catalog directory overrode during a multi-directory
 	// load (see ShadowedEntity). Empty for a single-directory load. Surfaced on
@@ -434,6 +447,7 @@ func newPassOneCatalog(workspaceRoot string) *Catalog {
 		aggregateSources:   make(map[string]string),
 		entityBytes:        make(map[string][]byte),
 		pathByIdentity:     make(map[string]string),
+		recordedPins:       make(recipepin.Lookup),
 	}
 }
 
@@ -545,10 +559,12 @@ func (acc *Catalog) mergeFrom(perDir *Catalog, perDirRoot string, winnerDir map[
 	mergeKind(acc, "Recipe", acc.Recipes, perDir.Recipes, perDir, perDirRoot, winnerDir, func(k string) {
 		bk := entityBytesKey("Recipe", k)
 		acc.entityBytes[bk] = perDir.entityBytes[bk]
+		acc.carryRecordedPins(perDir, bk)
 	})
 	mergeKind(acc, "FeatureRecipe", acc.FeatureRecipes, perDir.FeatureRecipes, perDir, perDirRoot, winnerDir, func(k string) {
 		bk := entityBytesKey("FeatureRecipe", k)
 		acc.entityBytes[bk] = perDir.entityBytes[bk]
+		acc.carryRecordedPins(perDir, bk)
 	})
 	mergeKind(acc, "Aggregate", acc.Aggregates, perDir.Aggregates, perDir, perDirRoot, winnerDir, func(k string) {
 		acc.aggregateSources[k] = perDir.aggregateSources[k]
@@ -582,6 +598,21 @@ func (acc *Catalog) mergeFrom(perDir *Catalog, perDirRoot string, winnerDir map[
 		bk := entityBytesKey("Plugin", perDir.Plugins[k].Coordinate())
 		acc.entityBytes[bk] = perDir.entityBytes[bk]
 	})
+}
+
+// carryRecordedPins folds one winning entity's recorded pins from a
+// per-directory index into the accumulated one, under the document that entity
+// was read from. identityKey is the kind-namespaced identity the merge is
+// resolving, which is how the document is looked up.
+//
+// It is called only from a merge's insert arm, so a shadowed occurrence's pins
+// never reach the accumulated catalog. That matters because these are keyed by
+// document and documents do not collide: a plain union would carry both
+// occurrences' pins side by side, and the loser's entry would sit there
+// answering for a file the build never read.
+func (acc *Catalog) carryRecordedPins(perDir *Catalog, identityKey string) {
+	document := perDir.pathByIdentity[identityKey]
+	acc.recordedPins.Record(document, perDir.recordedPins.For(document))
 }
 
 // mergeKind merges one entity kind from src into dst with first-win precedence,
@@ -1042,6 +1073,7 @@ func (c *Catalog) indexFile(data []byte, path string) error {
 		}
 		c.Recipes[rKey] = e
 		c.entityBytes[entityBytesKey("Recipe", rKey)] = data
+		c.recordedPins.Record(path, effectivePins(e.Spec.SourceDigests, e.Spec.ArtifactDigests))
 	case "FeatureRecipe":
 		e, err := parseFeatureRecipeEntity(data, path)
 		if err != nil {
@@ -1053,6 +1085,7 @@ func (c *Catalog) indexFile(data []byte, path string) error {
 		}
 		c.FeatureRecipes[frKey] = e
 		c.entityBytes[entityBytesKey("FeatureRecipe", frKey)] = data
+		c.recordedPins.Record(path, effectivePins(e.Spec.SourceDigests, e.Spec.ArtifactDigests))
 	case "Aggregate":
 		e, err := parseAggregateEntity(data, path)
 		if err != nil {
@@ -1335,6 +1368,18 @@ func applyRecordedPins(path string, srcPins *[]types.SourceDigest, artPins *[]ty
 	*srcPins = lock.SourceDigests
 	*artPins = lock.ArtifactDigests
 	return nil
+}
+
+// effectivePins reads the pins in force for an entity applyRecordedPins has
+// already run over.
+//
+// It is one line, and it exists so that "which pins does a parsed entity
+// actually carry" is answered in one place rather than at each of the four sites
+// that index a pin-bearing entity. Those sites record the answer under the
+// document they read it from, and a second spelling of it would be free to
+// record something the render never sees.
+func effectivePins(srcPins []types.SourceDigest, artPins []types.ArtifactDigest) recipepin.Pins {
+	return recipepin.Pins{SourceDigests: srcPins, ArtifactDigests: artPins}
 }
 
 // anchorEntitySource resolves an entity's authored source against the directory
