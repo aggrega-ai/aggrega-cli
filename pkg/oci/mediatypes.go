@@ -39,22 +39,27 @@ const (
 	MediaTypeWorkloadLibrary  = "application/vnd.aggrega.workloadlibrary.v1alpha1+yaml"
 	MediaTypeArtifactsLibrary = "application/vnd.aggrega.artifactslibrary.v1alpha1+yaml"
 	MediaTypeAggregate        = "application/vnd.aggrega.aggregate.v1alpha1+yaml"
-	// MediaTypePlugin is the mediatype of the Plugin entity's YAML —
-	// the authoring/metadata surface that pins the .wasm artifact by digest.
+	// MediaTypePlugin is the mediatype of the Plugin entity's YAML, which a
+	// Plugin publication carries as its manifest's config blob.
 	MediaTypePlugin = "application/vnd.aggrega.wasmplugin.v1alpha1+yaml"
-	// MediaTypeWasm is the mediatype of the raw .wasm artifact a Plugin
-	// entity references by ref+digest. It is published as its own OCI artifact,
-	// separate from the entity, and is passed directly to Push rather than
-	// resolved through MediaTypeForKind (the .wasm is an artifact, not a
-	// catalog entity kind).
+	// MediaTypeWasm is the mediatype of a Plugin's .wasm executable, which a
+	// Plugin publication carries as the layer of the same manifest whose config
+	// blob is the entity (see PushPluginManifest). It is not resolved through
+	// MediaTypeForKind: the .wasm is part of a Plugin publication, not a catalog
+	// entity kind of its own.
 	MediaTypeWasm = "application/vnd.aggrega.wasm.v1alpha1+wasm"
 	// MediaTypeDocs is the mediatype of a documentation bundle — a gzipped
 	// tar of rendered documentation, published as a standalone data artifact
-	// rather than a catalog entity. Like MediaTypeWasm it is a non-kind
-	// artifact passed directly to Push, never resolved through
-	// MediaTypeForKind: no entity kind lowercases to "docs", so the bundle
-	// carries no entity envelope and rides the kind-agnostic transport.
+	// rather than a catalog entity. It is a non-kind artifact, never resolved
+	// through MediaTypeForKind: no entity kind lowercases to "docs", so the
+	// bundle carries no entity envelope and rides the kind-agnostic transport.
 	MediaTypeDocs = "application/vnd.aggrega.docs.v1alpha1+tar+gz"
+	// MediaTypeSignatureBundle is the cosign-compatible Sigstore bundle media
+	// type a signature is attached under: the artifactType of the OCI referrer
+	// that carries the bundle, and the media type of that referrer's one layer.
+	// It is declared with the transport so the transport can name what it
+	// carries; the signing package re-exports it as its bundle media type.
+	MediaTypeSignatureBundle = "application/vnd.dev.sigstore.bundle.v0.3+json"
 )
 
 // kindMediaTypes maps the catalog entity kind string (matching the

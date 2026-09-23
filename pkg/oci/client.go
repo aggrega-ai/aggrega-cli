@@ -175,9 +175,13 @@ func mergeCreatedAnnotations(annotations map[string]string) map[string]string {
 
 // packArtifact uploads `content` and packs a deterministic OCI manifest
 // referencing it into `target`, returning the manifest descriptor. It
-// does NOT tag. Push and ManifestDigest share it so the digest a guard
-// previews against an in-memory store is byte-identical to the digest a
-// real push produces.
+// does NOT tag. Push, PushNamed, ManifestDigest and ManifestDigestNamed share it
+// so the digest a guard previews against an in-memory store is byte-identical to
+// the digest a real push produces.
+//
+// `fileName` is stamped on the content layer as its title — the name a standard
+// registry client writes the content to (see contentTitle). An empty name stamps
+// no title.
 //
 // `annotations` carries the searchable catalog annotations to stamp onto the
 // manifest (see SearchableMetadata); it is merged with the pinned creation
@@ -185,7 +189,7 @@ func mergeCreatedAnnotations(annotations map[string]string) map[string]string {
 // the creation pin. Because the digest preview and the real push route through
 // this one helper, both stamp identical annotations and produce an identical
 // digest.
-func packArtifact(ctx context.Context, target oras.Target, mediaType string, content []byte, annotations map[string]string) (ocispec.Descriptor, error) {
+func packArtifact(ctx context.Context, target oras.Target, mediaType, fileName string, content []byte, annotations map[string]string) (ocispec.Descriptor, error) {
 	contentDesc, err := oras.PushBytes(ctx, target, mediaType, content)
 	if err != nil {
 		return ocispec.Descriptor{}, fmt.Errorf("oci: push content: %w", err)
@@ -196,7 +200,7 @@ func packArtifact(ctx context.Context, target oras.Target, mediaType string, con
 		oras.PackManifestVersion1_1,
 		mediaType,
 		oras.PackManifestOptions{
-			Layers:              []ocispec.Descriptor{contentDesc},
+			Layers:              []ocispec.Descriptor{withTitle(contentDesc, fileName)},
 			ManifestAnnotations: mergeCreatedAnnotations(annotations),
 		},
 	)
@@ -224,8 +228,24 @@ func packArtifact(ctx context.Context, target oras.Target, mediaType string, con
 // previews the digest with ManifestDigest before pushing MUST pass the same
 // annotations map to both, or the previewed digest will not equal the pushed
 // digest.
+//
+// The content layer is titled from `mediaType`: an entity kind's content is
+// entity.yaml or entity.tar.gz according to its transport shape (see
+// contentTitle). A media type this package derives no title for stamps none, so
+// a caller publishing content of such a type supplies the name with PushNamed.
 func Push(ctx context.Context, target oras.Target, tag string, mediaType string, content []byte, annotations map[string]string) (string, error) {
-	manifestDesc, err := packArtifact(ctx, target, mediaType, content, annotations)
+	return PushNamed(ctx, target, tag, mediaType, contentTitle(mediaType), content, annotations)
+}
+
+// PushNamed is Push for content whose file name is supplied by the caller rather
+// than derived from its media type — a standalone data artifact, which carries
+// no entity and is named by its publisher. `fileName` is stamped on the content
+// layer as the org.opencontainers.image.title annotation, the name a standard
+// registry client writes the content to; an empty name stamps no title. The name
+// is part of the manifest and therefore of its digest, so a caller that previews
+// the digest with ManifestDigestNamed MUST pass the same name to both.
+func PushNamed(ctx context.Context, target oras.Target, tag, mediaType, fileName string, content []byte, annotations map[string]string) (string, error) {
+	manifestDesc, err := packArtifact(ctx, target, mediaType, fileName, content, annotations)
 	if err != nil {
 		return "", err
 	}
@@ -248,7 +268,16 @@ func Push(ctx context.Context, target oras.Target, tag string, mediaType string,
 // therefore part of the digest, so a preview computed with a different set will
 // not match the pushed digest.
 func ManifestDigest(ctx context.Context, mediaType string, content []byte, annotations map[string]string) (string, error) {
-	manifestDesc, err := packArtifact(ctx, memory.New(), mediaType, content, annotations)
+	return ManifestDigestNamed(ctx, mediaType, contentTitle(mediaType), content, annotations)
+}
+
+// ManifestDigestNamed computes, without contacting any remote, the manifest
+// digest PushNamed would produce for `content` of `mediaType` published under
+// `fileName`. It is ManifestDigest for content whose name the caller supplies,
+// and the same equality holds: a preview computed with the name and annotations
+// a PushNamed will stamp equals the digest that push lands.
+func ManifestDigestNamed(ctx context.Context, mediaType, fileName string, content []byte, annotations map[string]string) (string, error) {
+	manifestDesc, err := packArtifact(ctx, memory.New(), mediaType, fileName, content, annotations)
 	if err != nil {
 		return "", err
 	}

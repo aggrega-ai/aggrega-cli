@@ -68,6 +68,12 @@ func PluginManifestDigest(ctx context.Context, entityYAML, wasm []byte, annotati
 // both. It does NOT tag. The creation annotation is pinned so the manifest
 // digest is a pure function of the two inputs and the stamped annotations.
 //
+// Both descriptors carry a title, because a standard registry client writes
+// each titled descriptor to a file — the config included — and skips an
+// untitled one: the entity is entity.yaml and the executable entity.wasm (see
+// contentTitle). The titles derive from the two media types alone, so they keep
+// the manifest digest a pure function of the inputs.
+//
 // `annotations` carries the searchable catalog annotations (see
 // SearchableMetadata); it is merged with the pinned creation annotation into
 // one manifest-annotation map. A nil or empty map stamps only the creation pin.
@@ -76,10 +82,12 @@ func packPluginManifest(ctx context.Context, target oras.Target, entityYAML, was
 	if err != nil {
 		return ocispec.Descriptor{}, fmt.Errorf("oci: push plugin entity config: %w", err)
 	}
+	configDesc = withTitle(configDesc, contentTitle(MediaTypePlugin))
 	wasmDesc, err := oras.PushBytes(ctx, target, MediaTypeWasm, wasm)
 	if err != nil {
 		return ocispec.Descriptor{}, fmt.Errorf("oci: push plugin wasm layer: %w", err)
 	}
+	wasmDesc = withTitle(wasmDesc, contentTitle(MediaTypeWasm))
 	manifestDesc, err := oras.PackManifest(
 		ctx,
 		target,

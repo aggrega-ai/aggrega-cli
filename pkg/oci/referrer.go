@@ -56,6 +56,11 @@ func AttachReferrer(ctx context.Context, target oras.Target, subjectRef string, 
 //
 // The subject artifact is NOT re-pushed, re-tagged, or mutated: the referrer
 // is a sibling manifest pointing back at the existing subject digest.
+//
+// The payload layer is titled from `artifactType`, so a standard registry client
+// pulling the referrer writes the payload to a named file — a signature bundle
+// to signature.json, a deprecation marker to deprecation.json (see
+// contentTitle).
 func AttachReferrerToDescriptor(ctx context.Context, target oras.Target, subjectDesc ocispec.Descriptor, artifactType string, payload []byte) (ocispec.Descriptor, error) {
 	payloadDesc, err := oras.PushBytes(ctx, target, artifactType, payload)
 	if err != nil {
@@ -69,7 +74,7 @@ func AttachReferrerToDescriptor(ctx context.Context, target oras.Target, subject
 		artifactType,
 		oras.PackManifestOptions{
 			Subject:             &subjectDesc,
-			Layers:              []ocispec.Descriptor{payloadDesc},
+			Layers:              []ocispec.Descriptor{withTitle(payloadDesc, contentTitle(artifactType))},
 			ManifestAnnotations: map[string]string{ocispec.AnnotationCreated: epochCreated},
 		},
 	)

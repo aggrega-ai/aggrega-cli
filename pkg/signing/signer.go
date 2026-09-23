@@ -3,13 +3,21 @@
 
 package signing
 
-import "context"
+import (
+	"context"
+
+	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+)
 
 // BundleMediaType is the cosign-compatible Sigstore bundle media type
 // carried as the OCI referrer artifactType when a signature is attached
 // to a published artifact. A verifier discovers signatures by listing
 // referrers of this artifactType on an artifact's manifest.
-const BundleMediaType = "application/vnd.dev.sigstore.bundle.v0.3+json"
+//
+// It is the transport's own declaration, re-exported: the OCI package packs
+// the referrer and names the file a standard registry client writes the
+// bundle to, so the media type is declared there once and read here.
+const BundleMediaType = oci.MediaTypeSignatureBundle
 
 // Signer produces a Sigstore signature bundle binding a signature to an
 // artifact's OCI manifest digest. The bundle bytes are attached to the

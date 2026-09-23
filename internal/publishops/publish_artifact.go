@@ -87,16 +87,17 @@ type PushArtifactResult struct {
 
 // PushArtifact publishes the file at cfg.FilePath as a standalone OCI data
 // artifact at <registry>/docs/<name>:<tag>. It reads the file bytes verbatim
-// and hands them to the kind-agnostic pkg/oci.Push transport under cfg.MediaType
-// — it never parses an entity envelope, never dispatches on a Kind, and never
-// resolves a mediatype through MediaTypeForKind. The bytes are opaque: any
-// media type is accepted, defaulting to the documentation-bundle media type.
+// and hands them to the kind-agnostic pkg/oci.PushNamed transport under
+// cfg.MediaType, named cfg.Name — it never parses an entity envelope, never
+// dispatches on a Kind, and never resolves a mediatype through
+// MediaTypeForKind. The bytes are opaque: any media type is accepted,
+// defaulting to the documentation-bundle media type.
 //
 // Per Aggrega's deterministic-output discipline, callers SHOULD supply the
 // bundle bytes pre-canonicalised (sorted tar entries, zero timestamps, gzip
-// default compression); Push adds no canonicalisation but pins the manifest's
-// creation annotation, so byte-identical content yields a byte-identical
-// manifest digest.
+// default compression); the transport adds no canonicalisation but pins the
+// manifest's creation annotation, so byte-identical content published under
+// the same name yields a byte-identical manifest digest.
 //
 // Signing is not performed here: the published artifact is signed by reference
 // with the signing verb, which is kind-agnostic and needs only the reference this
@@ -185,8 +186,16 @@ func PushArtifact(ctx context.Context, cfg PushArtifactConfig) (PushArtifactResu
 	// Immutability guard on the version tag: a re-publication of a byte-identical
 	// artifact is an idempotent no-op; a tag already pointing at different
 	// content is refused. The proposed digest is previewed with the SAME
-	// (mediaType, content, nil-annotations) triple oci.Push receives below, so
-	// the preview digest equals the digest the publication would land.
+	// (mediaType, file name, content, nil-annotations) inputs oci.PushNamed
+	// receives below, so the preview digest equals the digest the publication
+	// would land.
+	//
+	// The file name a standard registry client writes the artifact to is the name
+	// the publisher gave it. A data artifact carries no entity, so no name can be
+	// derived from what it is, and the publisher's name is already the artifact's
+	// identity at docs/<name> — which keeps the manifest a function of that
+	// identity rather than of the local file it was read from.
+	//
 	// The last point before anything reaches the registry. Everything above is
 	// local — reading the file, deriving the reference, building the content — and
 	// a caller that withdrew discards all of it; what follows is published and
@@ -199,7 +208,7 @@ func PushArtifact(ctx context.Context, cfg PushArtifactConfig) (PushArtifactResu
 	if err != nil {
 		return PushArtifactResult{}, fmt.Errorf("resolve %s:%s: %w", reference, cfg.Tag, err)
 	}
-	proposedDigest, err := oci.ManifestDigest(ctx, mediaType, content, nil)
+	proposedDigest, err := oci.ManifestDigestNamed(ctx, mediaType, cfg.Name, content, nil)
 	if err != nil {
 		return PushArtifactResult{}, fmt.Errorf("%s:%s: %w", reference, cfg.Tag, err)
 	}
@@ -215,7 +224,7 @@ func PushArtifact(ctx context.Context, cfg PushArtifactConfig) (PushArtifactResu
 			reference, cfg.Tag, existingDigest, proposedDigest, oci.ErrImmutableTagConflict())
 	}
 
-	digest, err := oci.Push(ctx, target, cfg.Tag, mediaType, content, nil)
+	digest, err := oci.PushNamed(ctx, target, cfg.Tag, mediaType, cfg.Name, content, nil)
 	if err != nil {
 		return PushArtifactResult{}, fmt.Errorf("push %s:%s: %w", reference, cfg.Tag, err)
 	}
