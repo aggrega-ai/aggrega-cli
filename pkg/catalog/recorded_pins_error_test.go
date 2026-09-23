@@ -1,0 +1,211 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Cognitio S.r.l.
+
+// Tests for the load-side half of the entity lock: a lock that will not read
+// stops the load rather than being read as an entity with nothing pinned.
+//
+// The reader's own refusal is covered where the reader lives. What is covered
+// here is the CALLER propagating that refusal, which is a different failure:
+// a reader that refuses correctly and a caller that swallows the refusal
+// produce an entity carrying no pins and a load reporting success, and every
+// comparison the pins exist for then silently does not happen — which on a
+// build reads exactly like inputs that had not moved.
+
+package catalog
+
+import (
+	"path"
+	"strings"
+	"testing"
+
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
+	"github.com/aggrega-ai/aggrega-cli/pkg/recipepin"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
+)
+
+// lockRelFor names the lock beside an entity written at rel. It derives the
+// sibling the same way the product does rather than spelling the filename a
+// second time, so a test fixture cannot keep planting a file at a name the
+// reader has stopped looking for.
+func lockRelFor(rel string) string {
+	return path.Join(path.Dir(rel), recipepin.LockFileName)
+}
+
+// loadedPins reads back the pins a loaded entity carries, for whichever
+// pin-bearing kind the row names. It exists so each assertion states what it
+// wants rather than branching on kind in line, and it fails loudly on a kind it
+// does not know rather than reporting an empty pin set for one.
+func loadedPins(t *testing.T, cat *Catalog, kind, uri string) ([]types.SourceDigest, []types.ArtifactDigest) {
+	t.Helper()
+	switch kind {
+	case "Recipe":
+		e, ok := cat.RecipeByURI(uri)
+		if !ok {
+			t.Fatalf("the loaded catalog holds no Recipe at %q", uri)
+		}
+		return e.Spec.SourceDigests, e.Spec.ArtifactDigests
+	case "FeatureRecipe":
+		e, ok := cat.FeatureRecipeByURI(uri)
+		if !ok {
+			t.Fatalf("the loaded catalog holds no FeatureRecipe at %q", uri)
+		}
+		return e.Spec.SourceDigests, e.Spec.ArtifactDigests
+	default:
+		t.Fatalf("loadedPins does not know the kind %q", kind)
+		return nil, nil
+	}
+}
+
+const lockBearingRecipeYAML = `apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: pinned-recipe
+  version: "1.0.0"
+spec:
+  capability: helm
+  implements: core/api-server:1.0.0
+  source: https://example.invalid/c.tgz
+`
+
+const lockBearingFeatureRecipeYAML = `apiVersion: aggrega.ai/v1alpha1
+kind: FeatureRecipe
+metadata:
+  name: pinned-feature-recipe
+  version: "1.0.0"
+spec:
+  capability: helm
+  implements: core/sidecar
+  source: https://example.invalid/c.tgz
+`
+
+// readableLock is a lock the published schema admits. It is the positive
+// control for every row below: without it a refusal could equally mean the
+// load rejects any entity with a lock beside it, and the negative rows would
+// pass for the wrong reason.
+const readableLock = `version: 1
+sourceDigests:
+  - kind: helm-https-chart
+    url: https://example.invalid/c.tgz
+    version: "1.0.0"
+    digest: sha256:aaa
+artifactDigests:
+  - name: extra.yaml
+    digest: sha256:bbb
+`
+
+// unreadableLocks are documents the lock's published schema refuses, one fault
+// each so a row keeps covering its own fault when an earlier gate changes.
+var unreadableLocks = map[string]string{
+	"a version this package does not speak": "version: 2\n",
+	"a key the shape has no field for":      "version: 1\nsourceDigest:\n  - digest: sha256:aaa\n",
+	"a source row with no digest":           "version: 1\nsourceDigests:\n  - kind: helm-https-chart\n    url: https://example.invalid/c.tgz\n    version: \"1.0.0\"\n",
+	"not a document at all":                 "\tthis is not yaml: [\n",
+}
+
+// pinBearingKinds is the grid's first axis. Both pin-bearing kinds route
+// through one body, so a guard proved on one is not proved on the other: the
+// call is written twice and only a per-kind row reports a call site that was
+// left behind.
+var pinBearingKinds = map[string]struct {
+	rel  string
+	body string
+	uri  string
+}{
+	"Recipe": {
+		rel:  "recipe/helm/pinned-recipe/recipe.yaml",
+		body: lockBearingRecipeYAML,
+		uri:  "helm/pinned-recipe:1.0.0",
+	},
+	"FeatureRecipe": {
+		rel:  "featurerecipe/helm/pinned-feature-recipe/featurerecipe.yaml",
+		body: lockBearingFeatureRecipeYAML,
+		uri:  "helm/pinned-feature-recipe:1.0.0",
+	},
+}
+
+// TestAnUnreadableLockStopsTheLoadRatherThanReadingTheEntityAsUnpinned is the
+// caller-side assertion. Each row plants one refused lock beside one entity and
+// requires the load to fail naming the file that would not read — never to
+// succeed with the entity's pins silently empty.
+func TestAnUnreadableLockStopsTheLoadRatherThanReadingTheEntityAsUnpinned(t *testing.T) {
+	t.Parallel()
+	for kind, k := range pinBearingKinds {
+		kind, k := kind, k
+		for name, body := range unreadableLocks {
+			name, body := name, body
+			t.Run(kind+"/"+name, func(t *testing.T) {
+				t.Parallel()
+				dir := t.TempDir()
+				writeCatalogFile(t, dir, k.rel, k.body)
+				writeCatalogFile(t, dir, lockRelFor(k.rel), body)
+
+				cat, err := LoadAll("", dir)
+				if err == nil {
+					t.Fatalf("%s: the load admitted a lock that will not read; "+
+						"the entity would be built against nothing and the build would report agreement (catalog=%+v)", kind, cat != nil)
+				}
+				// Read the whole chain, not the outermost frame: a frame
+				// renders itself alone by design, so asking err.Error() here
+				// would report the walk's own description and drop the frame
+				// that names the file's actual fault.
+				chain := cerrors.CauseChain(err)
+				if !strings.Contains(chain, recipepin.LockFileName) {
+					t.Errorf("%s: the failure does not name the file that would not read: %s", kind, chain)
+				}
+			})
+		}
+	}
+}
+
+// TestAReadableLockLoadsAndItsPinsReachTheEntity is the positive control for
+// the rows above and the statement of what a lock is for: the recorded pins
+// become the entity's pins, so the comparison the build makes is against what
+// the resolution measured.
+func TestAReadableLockLoadsAndItsPinsReachTheEntity(t *testing.T) {
+	t.Parallel()
+	for kind, k := range pinBearingKinds {
+		kind, k := kind, k
+		t.Run(kind, func(t *testing.T) {
+			t.Parallel()
+			dir := t.TempDir()
+			writeCatalogFile(t, dir, k.rel, k.body)
+			writeCatalogFile(t, dir, lockRelFor(k.rel), readableLock)
+
+			cat, err := LoadAll("", dir)
+			if err != nil {
+				t.Fatalf("%s: a readable lock must not stop the load: %v", kind, err)
+			}
+			src, art := loadedPins(t, cat, kind, k.uri)
+			if len(src) != 1 || src[0].Digest != "sha256:aaa" {
+				t.Errorf("%s: the recorded source pin did not reach the entity: %+v", kind, src)
+			}
+			if len(art) != 1 || art[0].Digest != "sha256:bbb" {
+				t.Errorf("%s: the recorded artifact pin did not reach the entity: %+v", kind, art)
+			}
+		})
+	}
+}
+
+// TestNoLockLeavesTheEntityLoadable separates the two answers the reader's
+// found-flag exists for: nothing recorded is not something that would not read,
+// and only the second stops a load.
+func TestNoLockLeavesTheEntityLoadable(t *testing.T) {
+	t.Parallel()
+	for kind, k := range pinBearingKinds {
+		kind, k := kind, k
+		t.Run(kind, func(t *testing.T) {
+			t.Parallel()
+			dir := t.TempDir()
+			writeCatalogFile(t, dir, k.rel, k.body)
+
+			cat, err := LoadAll("", dir)
+			if err != nil {
+				t.Fatalf("%s: an entity with no lock beside it must load: %v", kind, err)
+			}
+			src, art := loadedPins(t, cat, kind, k.uri)
+			if len(src) != 0 || len(art) != 0 {
+				t.Errorf("%s: an entity with no lock acquired pins from somewhere: src=%+v art=%+v", kind, src, art)
+			}
+		})
+	}
+}

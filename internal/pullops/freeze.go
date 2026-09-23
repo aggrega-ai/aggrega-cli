@@ -25,8 +25,11 @@ import (
 // artifact pins are computed here from the $import files on disk. The write is
 // idempotent — an entity whose declared sources and $import set are unchanged
 // leaves its lock byte-identical. A recipe living in a content-addressed cache
-// slot (registry-resolved) has no writable path and is skipped: it arrives
-// pre-pinned from its own publish.
+// slot (registry-resolved) has no path in the workspace and is skipped: the lock
+// is a file an author commits beside their own entity, and a cache slot is
+// neither authored nor committed — its bytes are addressed by the digest of what
+// was fetched into it, so a derived file written there would falsify the slot
+// rather than record anything.
 //
 // The entity document itself is never opened for writing, so a recipe file is
 // byte-identical across the freeze whatever its pins do. That is what the
