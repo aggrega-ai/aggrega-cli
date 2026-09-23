@@ -194,7 +194,6 @@ func wasmContract(c *pluginpath.ProviderContractClaim) *wasm.ProviderContract {
 			ArtifactsStandalone: c.InputKinds.ArtifactsStandalone,
 		},
 		BoundaryAssembly:     c.BoundaryAssembly,
-		SourceFilter:         c.SourceFilter,
 		ReusableInstance:     c.ReusableInstance,
 		CrossBoundaryLinking: c.CrossBoundaryLinking,
 		NestSegment:          c.NestSegment,

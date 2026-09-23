@@ -194,7 +194,6 @@ func maximalPlugin() types.Plugin {
 					},
 					BoundaryAssembly:   "merge",
 					ArtifactDelimiters: &types.PluginArtifactDelimiters{Left: "[[", Right: "]]"},
-					SourceFilter:       []string{"templates/"},
 				},
 			},
 			PipelineStep: &types.PluginPipelineStep{Capabilities: []string{"helm"}},

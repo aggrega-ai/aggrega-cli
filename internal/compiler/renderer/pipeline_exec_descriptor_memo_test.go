@@ -270,7 +270,6 @@ func populatedDescriptor() wasm.PluginDescriptor {
 			InputKinds:             wasm.InputKinds{Sourced: true, Synthesized: true, ArtifactsStandalone: true},
 			BoundaryAssembly:       "merge",
 			ArtifactDelimiters:     &wasm.ArtifactDelimiters{Left: "[[", Right: "]]"},
-			SourceFilter:           []string{"chart/**"},
 			AssemblyNameAnnotation: &wasm.AssemblyNameAnnotation{Annotation: "aggrega.ai/name", RequireUnique: true},
 			ReusableInstance:       true,
 			CrossBoundaryLinking:   true,
@@ -319,7 +318,6 @@ func mutate(d *wasm.PluginDescriptor) {
 	d.Exports[0].Input[0] = 'X'
 	d.Exports[0].Output[0] = 'X'
 	d.Contract.BoundaryAssembly = "mutated"
-	d.Contract.SourceFilter[0] = "mutated"
 	d.Contract.ArtifactDelimiters.Left = "mutated"
 	d.Contract.AssemblyNameAnnotation.Annotation = "mutated"
 	d.Commands[0].Name = "mutated"

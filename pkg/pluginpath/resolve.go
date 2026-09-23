@@ -219,9 +219,9 @@ type PluginContractClaim struct {
 // ProviderContractClaim is the neutral, pluginpath-owned shape of an entity's
 // authored provider render-behavior contract: the input kinds the plugin renders,
 // how it assembles a dispatch group's per-node output and which directories that
-// output sits under, the artifact-template delimiter pair, and any source-file
-// restriction. It carries no dependency on
-// internal/wasm; the loader's caller maps it onto the wasm-side claim shape.
+// output sits under, and the artifact-template delimiter pair. It carries no
+// dependency on internal/wasm; the loader's caller maps it onto the wasm-side
+// claim shape.
 type ProviderContractClaim struct {
 	// InputKinds is the authored input-kind claim.
 	InputKinds PluginInputKindsClaim
@@ -231,9 +231,6 @@ type ProviderContractClaim struct {
 	// ArtifactDelimiters is the authored artifact-template delimiter pair, or
 	// nil when the plugin uses the default pair.
 	ArtifactDelimiters *PluginArtifactDelimitersClaim
-	// SourceFilter is the authored source-file restriction, or nil when the
-	// plugin consumes every file in a supplied set.
-	SourceFilter []string
 	// AssemblyNameAnnotation is the authored assembly-name annotation, or nil
 	// when the plugin names its assembly from the dispatch path alone.
 	AssemblyNameAnnotation *PluginAssemblyNameAnnotationClaim

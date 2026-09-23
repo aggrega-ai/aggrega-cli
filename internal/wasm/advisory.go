@@ -76,7 +76,6 @@ func (c ProviderContract) isZero() bool {
 		!c.InputKinds.ArtifactsStandalone &&
 		c.BoundaryAssembly == "" &&
 		c.ArtifactDelimiters == nil &&
-		len(c.SourceFilter) == 0 &&
 		c.AssemblyNameAnnotation == nil &&
 		!c.ReusableInstance &&
 		!c.CrossBoundaryLinking

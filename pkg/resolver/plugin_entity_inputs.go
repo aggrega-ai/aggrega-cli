@@ -19,8 +19,8 @@ import (
 // The capability claim goes through the resolver's single
 // entity → neutral → wasm claim mapping — the exact mapping the load gate
 // cross-checks against — so the authored fields (input kinds, boundary assembly,
-// delimiters, source filter, reusable-instance, cross-boundary-linking) carried
-// into the describe() comparison match the load surface. An entity authoring
+// delimiters, reusable-instance, cross-boundary-linking) carried into the
+// describe() comparison match the load surface. An entity authoring
 // neither exports nor a capabilities block yields a nil claim, mapped here to a
 // zero claim that cross-checks as a no-op. The host-function record is the
 // entity's runtime block (nil when it declares none). The command mirror and

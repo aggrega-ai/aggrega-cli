@@ -58,7 +58,6 @@ func pluginContractClaim(c types.ProviderContract) *pluginpath.ProviderContractC
 		// re-introduce a site that silently drops a kind.
 		InputKinds:           c.InputKinds,
 		BoundaryAssembly:     c.BoundaryAssembly,
-		SourceFilter:         c.SourceFilter,
 		ReusableInstance:     c.ReusableInstance,
 		CrossBoundaryLinking: c.CrossBoundaryLinking,
 		NestSegment:          c.NestSegment,

@@ -209,7 +209,6 @@ func IsZeroContract(c wasm.ProviderContract) bool {
 	return c.InputKinds == (wasm.InputKinds{}) &&
 		c.BoundaryAssembly == "" &&
 		c.ArtifactDelimiters == nil &&
-		len(c.SourceFilter) == 0 &&
 		c.AssemblyNameAnnotation == nil &&
 		!c.ReusableInstance &&
 		!c.CrossBoundaryLinking &&
@@ -243,7 +242,6 @@ func descriptorContract(c *wasm.ProviderContract) *types.ProviderContract {
 			ArtifactsStandalone: c.InputKinds.ArtifactsStandalone,
 		},
 		BoundaryAssembly:     c.BoundaryAssembly,
-		SourceFilter:         c.SourceFilter,
 		ReusableInstance:     c.ReusableInstance,
 		CrossBoundaryLinking: c.CrossBoundaryLinking,
 		NestSegment:          c.NestSegment,

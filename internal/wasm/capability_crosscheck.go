@@ -62,8 +62,8 @@ type EntityExportClaim struct {
 // When the entity authors a provider render-behavior contract, it is compared
 // field-by-field against the descriptor's self-reported contract: the input
 // kinds, the boundary-assembly mode, the artifact-template delimiter pair, the
-// assembly-name annotation, the source filter, the reusable-instance claim, and
-// the cross-boundary-linking claim must each agree. A nil contract skips the
+// assembly-name annotation, the reusable-instance claim, the cross-boundary-linking
+// claim, and the nest segment must each agree. A nil contract skips the
 // provider-level comparison — an entity is not required to author a
 // render-behavior contract.
 //
@@ -199,11 +199,6 @@ func crossCheckProviderContract(entityIdentity string, want, got ProviderContrac
 	if err := crossCheckAssemblyNameAnnotation(entityIdentity, want.AssemblyNameAnnotation, got.AssemblyNameAnnotation); err != nil {
 		return err
 	}
-	if !equalStringSlices(want.SourceFilter, got.SourceFilter) {
-		return fmt.Errorf(
-			"entity %q declares source_filter %v but the plugin's describe() reports %v: %w",
-			entityIdentity, want.SourceFilter, got.SourceFilter, ErrWasmContractMismatch())
-	}
 	if want.ReusableInstance != got.ReusableInstance {
 		return fmt.Errorf(
 			"entity %q declares reusable_instance %t but the plugin's describe() reports %t: %w",
@@ -255,20 +250,6 @@ func crossCheckAssemblyNameAnnotation(entityIdentity string, want, got *Assembly
 			entityIdentity, want.Annotation, want.RequireUnique, got.Annotation, got.RequireUnique, ErrWasmContractMismatch())
 	}
 	return nil
-}
-
-// equalStringSlices reports whether two string slices carry the same elements
-// in the same order. A nil slice and an empty slice compare equal.
-func equalStringSlices(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
 }
 
 // findDescriptorExport returns the descriptor's export of the given name and

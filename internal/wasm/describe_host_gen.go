@@ -29,7 +29,7 @@ type PluginDescriptor struct {
 	Capabilities []string `json:"capabilities,omitempty" yaml:"capabilities,omitempty" cbor:"capabilities,omitempty"`
 	// Exports The exports the plugin offers, in declared order. The host validates that the per-type minimum export is present and binds the per-export host surface before invoking each export.
 	Exports []PluginExport `json:"exports" yaml:"exports" cbor:"exports"`
-	// Contract The provider's render-behavior self-report — the input kinds it renders, how it assembles a dispatch group's per-node output, the artifact-template delimiter pair it applies, and any source-file restriction. It describes the provider as a whole rather than any one export. Absent for a plugin that declares no render-behavior contract.
+	// Contract The provider's render-behavior self-report — the input kinds it renders, how it assembles a dispatch group's per-node output, and the artifact-template delimiter pair it applies. It describes the provider as a whole rather than any one export. Absent for a plugin that declares no render-behavior contract.
 	Contract *ProviderContract `json:"contract,omitempty" yaml:"contract,omitempty" cbor:"contract,omitempty"`
 	// Description The plugin's own one-line human-readable description of what it does, distinct from a per-export description and from the entity's metadata description. It is informational; the host neither validates nor acts on it.
 	Description string `json:"description,omitempty" yaml:"description,omitempty" cbor:"description,omitempty"`
@@ -103,7 +103,7 @@ type PluginDescriptorMeta struct {
 	Commit string `json:"commit,omitempty" yaml:"commit,omitempty" cbor:"commit,omitempty"`
 }
 
-// ProviderContract A provider's self-declaration of the compile-time render behaviors it performs across the nodes it renders — the input kinds it accepts, whether and how it assembles a dispatch group's per-node output into a single artifact, the Go-template delimiter pair it applies to imported artifact files, and any restriction on which source files it consumes. It describes the provider as a whole, not any one export. The load gate cross-checks it against the entity's authored claim.
+// ProviderContract A provider's self-declaration of the compile-time render behaviors it performs across the nodes it renders — the input kinds it accepts, whether and how it assembles a dispatch group's per-node output into a single artifact, and the Go-template delimiter pair it applies to imported artifact files. It describes the provider as a whole, not any one export. The load gate cross-checks it against the entity's authored claim.
 type ProviderContract struct {
 	// InputKinds Which of the three Recipe input kinds the plugin renders: a sourced file set, a synthesized workload, and a standalone artifacts-only node.
 	InputKinds InputKinds `json:"input_kinds" yaml:"input_kinds" cbor:"input_kinds"`
@@ -111,8 +111,6 @@ type ProviderContract struct {
 	BoundaryAssembly string `json:"boundary_assembly" yaml:"boundary_assembly" cbor:"boundary_assembly"`
 	// ArtifactDelimiters The Go-template delimiter pair the plugin applies to imported artifact files. Absent means the default open/close pair; a plugin whose target syntax collides with that pair reports an alternate pair here.
 	ArtifactDelimiters *ArtifactDelimiters `json:"artifact_delimiters,omitempty" yaml:"artifact_delimiters,omitempty" cbor:"artifact_delimiters,omitempty"`
-	// SourceFilter The source-file paths the plugin consumes when a node supplies a file set. Absent means the plugin consumes every file in the set.
-	SourceFilter []string `json:"source_filter,omitempty" yaml:"source_filter,omitempty" cbor:"source_filter,omitempty"`
 	// AssemblyNameAnnotation A boundary annotation whose resolved value names the artifact the plugin assembles from a dispatch group. Absent means the plugin names its assembly from the dispatch path alone.
 	AssemblyNameAnnotation *AssemblyNameAnnotation `json:"assembly_name_annotation,omitempty" yaml:"assembly_name_annotation,omitempty" cbor:"assembly_name_annotation,omitempty"`
 	// ReusableInstance Whether one loaded plugin instance may serve every render, assemble, and validate crossing of the build rather than a fresh instance per crossing. A plugin declares it true only when it holds no state across crossings. Absent (false) is the safe default: the host loads a fresh instance per crossing.
@@ -993,22 +991,6 @@ func (t ProviderContract) MarshalJSON() ([]byte, error) {
 			buf.Write(enc)
 		}
 	}
-	if len(t.SourceFilter) != 0 {
-		if !first {
-			buf.WriteByte(',')
-		}
-		first = false
-		buf.WriteString("\"source_filter\":")
-		buf.WriteByte('[')
-		for i := range t.SourceFilter {
-			if i > 0 {
-				buf.WriteByte(',')
-			}
-			ev := t.SourceFilter[i]
-			writeJSONString(&buf, ev)
-		}
-		buf.WriteByte(']')
-	}
 	if t.AssemblyNameAnnotation != nil {
 		if !first {
 			buf.WriteByte(',')
@@ -1095,23 +1077,6 @@ func (t *ProviderContract) UnmarshalJSON(data []byte) error {
 				}
 				t.ArtifactDelimiters = v
 			}
-		case "source_filter":
-			t.SourceFilter = nil
-			if err := expectDelim(dec, '['); err != nil {
-				return err
-			}
-			for dec.More() {
-				var elem string
-				if s, err := readString(dec); err != nil {
-					return err
-				} else {
-					elem = s
-				}
-				t.SourceFilter = append(t.SourceFilter, elem)
-			}
-			if err := expectDelim(dec, ']'); err != nil {
-				return err
-			}
 		case "assembly_name_annotation":
 			if raw, err := readRaw(dec, data); err != nil {
 				return err
@@ -1159,7 +1124,7 @@ func (t *ProviderContract) UnmarshalJSON(data []byte) error {
 // key would yield an empty value indistinguishable from a real one. The
 // check reads the object's own keys and does not descend.
 func (t *ProviderContract) UnmarshalJSONStrict(data []byte) error {
-	if err := refuseUndeclaredJSONKeys(data, "input_kinds", "boundary_assembly", "artifact_delimiters", "source_filter", "assembly_name_annotation", "reusable_instance", "cross_boundary_linking", "nest_segment"); err != nil {
+	if err := refuseUndeclaredJSONKeys(data, "input_kinds", "boundary_assembly", "artifact_delimiters", "assembly_name_annotation", "reusable_instance", "cross_boundary_linking", "nest_segment"); err != nil {
 		return err
 	}
 	return t.UnmarshalJSON(data)
@@ -2183,9 +2148,6 @@ func (t ProviderContract) appendCBOR(dst []byte) ([]byte, error) {
 	if t.NestSegment != "" {
 		n++
 	}
-	if len(t.SourceFilter) != 0 {
-		n++
-	}
 	if t.ReusableInstance != false {
 		n++
 	}
@@ -2207,14 +2169,6 @@ func (t ProviderContract) appendCBOR(dst []byte) ([]byte, error) {
 	if t.NestSegment != "" {
 		dst = appendCBORTextString(dst, "nest_segment")
 		dst = appendCBORTextString(dst, t.NestSegment)
-	}
-	if len(t.SourceFilter) != 0 {
-		dst = appendCBORTextString(dst, "source_filter")
-		dst = appendCBORHead(dst, 4, uint64(len(t.SourceFilter)))
-		for i := range t.SourceFilter {
-			ev := t.SourceFilter[i]
-			dst = appendCBORTextString(dst, ev)
-		}
 	}
 	dst = appendCBORTextString(dst, "boundary_assembly")
 	dst = appendCBORTextString(dst, t.BoundaryAssembly)
@@ -2281,24 +2235,6 @@ func (t *ProviderContract) decodeCBOR(dec *cborDec) error {
 				}
 				t.ArtifactDelimiters = v
 			}
-		case "source_filter":
-			{
-				sn, err := dec.readArrayHeader()
-				if err != nil {
-					return err
-				}
-				s := make([]string, 0, sn)
-				for si := 0; si < sn; si++ {
-					var ev string
-					if s, err := dec.readTextString(); err != nil {
-						return err
-					} else {
-						ev = s
-					}
-					s = append(s, ev)
-				}
-				t.SourceFilter = s
-			}
 		case "assembly_name_annotation":
 			{
 				v := new(AssemblyNameAnnotation)
@@ -2341,7 +2277,7 @@ func (t *ProviderContract) decodeCBOR(dec *cborDec) error {
 // key would yield an empty value indistinguishable from a real one. The
 // check reads the map's own keys and does not descend.
 func (t *ProviderContract) DecodeCBORStrict(data []byte) error {
-	if err := refuseUndeclaredCBORKeys(data, "input_kinds", "boundary_assembly", "artifact_delimiters", "source_filter", "assembly_name_annotation", "reusable_instance", "cross_boundary_linking", "nest_segment"); err != nil {
+	if err := refuseUndeclaredCBORKeys(data, "input_kinds", "boundary_assembly", "artifact_delimiters", "assembly_name_annotation", "reusable_instance", "cross_boundary_linking", "nest_segment"); err != nil {
 		return err
 	}
 	return t.DecodeCBOR(data)

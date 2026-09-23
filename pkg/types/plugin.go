@@ -343,9 +343,8 @@ type PluginCommandFlag struct {
 // behaviors, authored on the entity's provider block as the contract the host
 // cross-checks against the plugin's own describe() self-report at publish and at
 // load: the input kinds it renders, how it assembles a dispatch group's per-node
-// output, the Go-template delimiter pair it applies to imported artifact files,
-// and any restriction on which source files it consumes. It describes the
-// provider as a whole, not any one export.
+// output, and the Go-template delimiter pair it applies to imported artifact
+// files. It describes the provider as a whole, not any one export.
 //
 // It is an alias of the generated PluginSpecProviderContract, so the name and
 // the type identity both survive while the shape is single-sourced at the
