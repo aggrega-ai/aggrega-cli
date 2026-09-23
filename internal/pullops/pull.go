@@ -892,6 +892,14 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 			workspaceRoot, cacheDir, cfg.DiagOut); verr != nil {
 			return Result{}, fmt.Errorf("verify: %w", verr)
 		}
+		// The locks beside the Release's own Recipes and FeatureRecipes are held to
+		// what a build compares them with. Nothing above reads them: the lockfile
+		// records each entity by its document's digest, and a lock is a file of its
+		// own, so without this a verify reports a match over a workspace whose build
+		// halts on a drifted pin.
+		if verr := verifyEntityLocks(lf, lazyView, cl.Entities); verr != nil {
+			return Result{}, fmt.Errorf("verify: %w", verr)
+		}
 		// The toolchain the lockfile records is handed back for the caller to
 		// report. Verify is the surface a user reaches to find out what a lockfile
 		// says, and it has the file loaded already, so the stamp is read back here

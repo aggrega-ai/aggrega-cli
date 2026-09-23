@@ -778,7 +778,7 @@ func ErrArtifactContentMismatch() error { return errArtifactContentMismatch }
 
 var errArtifactContentMismatch = cerrors.Register("artifact-content-mismatch", cerrors.Meta{
 	ShortCode: "E0026",
-	Message:   "imported artifact content does not match the recipe's recorded digest",
+	Message:   "imported artifact content does not match the digest recorded for it in entity.lock",
 	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 

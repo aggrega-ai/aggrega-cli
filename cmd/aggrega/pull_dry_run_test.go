@@ -193,11 +193,11 @@ func TestPullDryRunOverAnUnchangedWorkspaceNamesNothing(t *testing.T) {
 // TestPullDryRunSaysWhereItsLockfileIsShort pins the one case the report cannot
 // describe completely, and holds it to saying so on both streams.
 //
-// A pull rewrites each Recipe's recorded digests and then renders the Release to
-// find out which external inputs it consumes. A report leaves those recipes
+// A pull rewrites the entity.lock beside each Recipe and then renders the Release
+// to find out which external inputs it consumes. A report leaves those locks
 // alone, so where a recorded digest has gone stale — here, because the imported
-// file was edited after the last resolution — that render is held to a digest
-// the unwritten file does not yet carry and stops. The reported lockfile is then
+// file was edited after the last resolution — that render is held to the stale
+// digest the unwritten lock still records and stops. The reported lockfile is then
 // short of a real one on its external-input axis alone.
 //
 // The assertion is that the shortfall is ANNOUNCED. A report that carried on
@@ -212,8 +212,8 @@ func TestPullDryRunSaysWhereItsLockfileIsShort(t *testing.T) {
 
 	pullWriting(t, root, releasePath, catalogDir)
 
-	// Move the imported file, which leaves the recipe's recorded digest for it
-	// stale until the next freeze rewrites it.
+	// Change the imported file, which leaves the digest entity.lock records for it
+	// stale until the next freeze rewrites the lock.
 	writeFixture(t, importPath, `apiVersion: v1
 kind: ConfigMap
 metadata:
