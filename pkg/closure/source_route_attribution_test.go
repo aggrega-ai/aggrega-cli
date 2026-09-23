@@ -80,7 +80,7 @@ func TestAcquisitionFailureNamesTheInstanceOnlyWhereTheInstanceDecidesTheArtifac
 			wantReason: "a git source's reference fixes its identity exactly as a version does elsewhere",
 		},
 		{
-			name: "scalar reference, which is its own identity",
+			name:   "scalar reference, which is its own identity",
 			source: "oci://hub.aggrega.ai/charts/mariadb",
 			// A scalar carries no template here, so its identity is written out and
 			// the failure is the entity's. The row exists because the reading answers
