@@ -18,9 +18,9 @@
 // # It runs only when it is asked, on every surface
 //
 // Resolving dependencies reaches registries and writes: it fills the per-Release
-// lockfile, populates the content-addressed cache, and appends resolved digests
-// into the recipe files it froze. Every one of those is intended, and none of
-// them may happen because somebody was typing.
+// lockfile, populates the content-addressed cache, and records resolved digests
+// in the lock file beside each recipe it froze. Every one of those is intended,
+// and none of them may happen because somebody was typing.
 //
 // The rule is a property of the invocation path rather than of any one caller: a
 // registry-reaching or state-writing operation runs on EXPLICIT INVOCATION and

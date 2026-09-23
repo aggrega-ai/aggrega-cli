@@ -44,22 +44,23 @@ func seedVerifiedSlot(t *testing.T, ws, cacheDir, uri, version string, body []by
 }
 
 // TestDiscoveryRenderIsPinnedToTheLockfileItRecords proves that the pin set the
-// discovery render is held to is the set the lockfile records, for a URI whose
-// digest the recipe freeze rewrote.
+// discovery render is held to is the set the LOCKFILE records, rather than
+// whatever the closure walk left on the view.
 //
 // The two sets cannot be separated by comparing rendered bytes. A writable recipe
 // is read from the local catalog rather than from a pinned cache slot, so a stale
 // pin for it changes no output today and a whole-artifact comparison passes under
 // either ordering. What does separate them is the verifying read itself: it
 // recomputes a cache slot's content digest and compares it to the pin the view
-// holds, so a view holding the pre-freeze digest reports drift against the very
-// slot a view holding the lockfile's digest accepts.
+// holds, so a view holding a stale digest reports drift against the very slot a
+// view holding the lockfile's digest accepts.
 //
-// The fixture is built around that. The slot carries the POST-freeze bytes — what
-// the lockfile records — while the view is seeded with the PRE-freeze digest,
-// which is the state the resolution leaves behind. The first assertion confirms
-// that seeded state really does disagree with the slot, so the second assertion
-// is known to be capable of failing rather than assumed to be.
+// The fixture is built around that. The slot carries the bytes the lockfile
+// records, while the view is seeded with the digest of different bytes — the
+// shape a view is in whenever what it walked and what the lockfile settled on
+// have diverged. The first assertion confirms that seeded state really does
+// disagree with the slot, so the second assertion is known to be capable of
+// failing rather than assumed to be.
 func TestDiscoveryRenderIsPinnedToTheLockfileItRecords(t *testing.T) {
 	t.Parallel()
 
@@ -70,49 +71,47 @@ func TestDiscoveryRenderIsPinnedToTheLockfileItRecords(t *testing.T) {
 	)
 	ws := t.TempDir()
 
-	// The recipe file as it stands AFTER the freeze appended its intrinsic
-	// content pins. This is what the lockfile records and what a build re-hashes.
-	postFreeze := []byte("apiVersion: aggrega.ai/v1alpha1\n" +
+	// The recipe body the lockfile records and a build re-hashes.
+	recorded := []byte("apiVersion: aggrega.ai/v1alpha1\n" +
 		"kind: Recipe\nmetadata:\n  name: database\n  version: 1.0.0\n" +
-		"spec:\n  sourceDigests:\n    - digest: sha256:frozen\n")
-	// The same recipe as the resolution digested it, BEFORE the freeze wrote the
-	// pins in. This is the digest the closure-derived pin set carries.
-	preFreeze := []byte("apiVersion: aggrega.ai/v1alpha1\n" +
+		"spec:\n  capability: helm\n")
+	// A different body, standing in for whatever the view was left holding. Only
+	// its digest is used; the bytes need to differ and nothing more.
+	divergent := []byte("apiVersion: aggrega.ai/v1alpha1\n" +
 		"kind: Recipe\nmetadata:\n  name: database\n  version: 1.0.0\n" +
 		"spec: {}\n")
 
-	postFreezeDigest, manifestDigest := seedVerifiedSlot(t, ws, cacheDir, uri+":"+version, version, postFreeze)
-	preFreezeDigest := digest.ContentDigest(preFreeze)
-	if preFreezeDigest == postFreezeDigest {
-		t.Fatal("fixture does not exercise the freeze: the pre- and post-freeze bodies digest identically")
+	recordedDigest, manifestDigest := seedVerifiedSlot(t, ws, cacheDir, uri+":"+version, version, recorded)
+	staleDigest := digest.ContentDigest(divergent)
+	if staleDigest == recordedDigest {
+		t.Fatal("fixture is inert: the two bodies digest identically, so no view state can disagree with the slot")
 	}
 
-	// What buildLockfile produces once the post-freeze overlay is applied: the
-	// digest of the recipe file as the freeze left it.
+	// What buildLockfile produces: the digest of the recipe file as it stands.
 	lf := &lockfile.Lockfile{
 		Version: 1,
 		Entities: []lockfile.Entity{{
 			URI:             uri,
 			ResolvedVersion: version,
-			Digest:          postFreezeDigest,
+			Digest:          recordedDigest,
 			ManifestDigest:  manifestDigest,
 		}},
 	}
 
 	view := catalog.NewLazyLookup(ws, cacheDir, nil, nil)
-	// The state the resolution leaves the view in: pinned from the closure it
-	// walked, which digested the recipe before the freeze rewrote it.
+	// The state the resolution can leave the view in: pinned from the closure it
+	// walked rather than from the lockfile the run went on to settle.
 	view.SetPins(map[string]catalog.Pin{uri: {
 		ResolvedVersion: version,
-		Digest:          preFreezeDigest,
+		Digest:          staleDigest,
 		ManifestDigest:  manifestDigest,
 	}})
 
-	// Positive control. The pre-freeze pin must genuinely disagree with the slot,
+	// Positive control. The seeded pin must genuinely disagree with the slot,
 	// otherwise the assertion below would pass on a view nobody re-pinned and
 	// would be proving nothing.
 	if err := view.VerifyPinnedIntegrity(); !errors.Is(err, oci.ErrFetchIntegrity()) {
-		t.Fatalf("pre-freeze pin does not disagree with the recorded slot, so this test cannot detect the defect it names: got %v", err)
+		t.Fatalf("the seeded pin does not disagree with the recorded slot, so this test cannot detect the defect it names: got %v", err)
 	}
 
 	// The render cannot complete here — there is no Release to render — and it is
@@ -132,6 +131,6 @@ func TestDiscoveryRenderIsPinnedToTheLockfileItRecords(t *testing.T) {
 	if err := view.VerifyPinnedIntegrity(); err != nil {
 		t.Fatalf("the render is held to a pin the lockfile does not record: %v\n"+
 			"the lockfile records %s for %s; the view still carries %s",
-			err, postFreezeDigest, uri, preFreezeDigest)
+			err, recordedDigest, uri, staleDigest)
 	}
 }

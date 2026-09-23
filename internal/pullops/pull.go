@@ -1116,9 +1116,10 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 			//
 			// The position is the point. It sits after the descent, so the freshly
 			// resolved version exists; and before the freeze, which is the first act of
-			// this run that WRITES — it appends the resolved pins into each writable
-			// recipe file, and a recipe file is authored content a caller cannot take
-			// back. Halting here leaves the workspace exactly as the run found it.
+			// this run that WRITES — it records the resolved pins in the lock file
+			// beside each writable recipe, and that file is workspace content a caller
+			// cannot take back. Halting here leaves the workspace exactly as the run
+			// found it.
 			//
 			// A full refresh carries no prior lockfile, so it compares against nothing
 			// and adopts — which is how `aggrega pull --upgrade` remains the remediation
@@ -1130,12 +1131,12 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 			}
 
 			// Freeze each writable recipe's intrinsic content pins (source +
-			// $import artifact digests) into the recipe file, from the resolved
-			// sources — the resolution-time record the build later verifies.
+			// $import artifact digests) into the lock file beside it, from the
+			// resolved sources — the resolution-time record the build later verifies.
 			// Ahead of the freeze, because the freeze is the first step in this run
-			// that writes: it appends the resolved content pins into each writable
-			// recipe file, and a recipe file is authored content a caller cannot take
-			// back. Everything above it is fetching and computing, which a withdrawn
+			// that writes: it records the resolved content pins beside each writable
+			// recipe, and that file is workspace content a caller cannot take back.
+			// Everything above it is fetching and computing, which a withdrawn
 			// caller simply discards.
 			//
 			// The check is kept on a reporting run, which writes nothing and has

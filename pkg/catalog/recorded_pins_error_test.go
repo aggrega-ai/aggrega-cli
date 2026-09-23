@@ -7,7 +7,7 @@
 // The reader's own refusal is covered where the reader lives. What is covered
 // here is the CALLER propagating that refusal, which is a different failure:
 // a reader that refuses correctly and a caller that swallows the refusal
-// produce an entity carrying no pins and a load reporting success, and every
+// produce a load reporting success with nothing filed for the entity, and every
 // comparison the pins exist for then silently does not happen — which on a
 // build reads exactly like inputs that had not moved.
 
@@ -21,7 +21,6 @@ import (
 
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/recipepin"
-	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // lockRelFor names the lock beside an entity written at rel. It derives the
@@ -32,28 +31,23 @@ func lockRelFor(rel string) string {
 	return path.Join(path.Dir(rel), recipepin.LockFileName)
 }
 
-// loadedPins reads back the pins a loaded entity carries, for whichever
-// pin-bearing kind the row names. It exists so each assertion states what it
-// wants rather than branching on kind in line, and it fails loudly on a kind it
-// does not know rather than reporting an empty pin set for one.
-func loadedPins(t *testing.T, cat *Catalog, kind, uri string) ([]types.SourceDigest, []types.ArtifactDigest) {
+// loadedEntityExists reports whether the loaded catalog holds the pin-bearing
+// entity the row names, for whichever kind that is. The entity value itself
+// carries no pins to read — an entity document declares none — so what a row
+// asserts about an entity is that it loaded at all; the pins are read from the
+// lookup instead.
+func loadedEntityExists(t *testing.T, cat *Catalog, kind, uri string) bool {
 	t.Helper()
 	switch kind {
 	case "Recipe":
-		e, ok := cat.RecipeByURI(uri)
-		if !ok {
-			t.Fatalf("the loaded catalog holds no Recipe at %q", uri)
-		}
-		return e.Spec.SourceDigests, e.Spec.ArtifactDigests
+		_, ok := cat.RecipeByURI(uri)
+		return ok
 	case "FeatureRecipe":
-		e, ok := cat.FeatureRecipeByURI(uri)
-		if !ok {
-			t.Fatalf("the loaded catalog holds no FeatureRecipe at %q", uri)
-		}
-		return e.Spec.SourceDigests, e.Spec.ArtifactDigests
+		_, ok := cat.FeatureRecipeByURI(uri)
+		return ok
 	default:
-		t.Fatalf("loadedPins does not know the kind %q", kind)
-		return nil, nil
+		t.Fatalf("loadedEntityExists does not know the kind %q", kind)
+		return false
 	}
 }
 
@@ -158,11 +152,15 @@ func TestAnUnreadableLockStopsTheLoadRatherThanReadingTheEntityAsUnpinned(t *tes
 	}
 }
 
-// TestAReadableLockLoadsAndItsPinsReachTheEntity is the positive control for
-// the rows above and the statement of what a lock is for: the recorded pins
-// become the entity's pins, so the comparison the build makes is against what
-// the resolution measured.
-func TestAReadableLockLoadsAndItsPinsReachTheEntity(t *testing.T) {
+// TestAReadableLockLeavesTheEntityLoadable is the positive control for the rows
+// above: without it a refusal could equally mean the load rejects any entity
+// with a lock beside it, and every negative row would pass for the wrong reason.
+//
+// It asserts loadability alone. What the lock's pins become is asserted by
+// TestTheLoadRecordsEachEntitysPinsUnderItsOwnDocument below, which is the only
+// place they are observable — an entity document declares no pins, so the loaded
+// entity value has none to read.
+func TestAReadableLockLeavesTheEntityLoadable(t *testing.T) {
 	t.Parallel()
 	for kind, k := range pinBearingKinds {
 		kind, k := kind, k
@@ -176,12 +174,8 @@ func TestAReadableLockLoadsAndItsPinsReachTheEntity(t *testing.T) {
 			if err != nil {
 				t.Fatalf("%s: a readable lock must not stop the load: %v", kind, err)
 			}
-			src, art := loadedPins(t, cat, kind, k.uri)
-			if len(src) != 1 || src[0].Digest != "sha256:aaa" {
-				t.Errorf("%s: the recorded source pin did not reach the entity: %+v", kind, src)
-			}
-			if len(art) != 1 || art[0].Digest != "sha256:bbb" {
-				t.Errorf("%s: the recorded artifact pin did not reach the entity: %+v", kind, art)
+			if !loadedEntityExists(t, cat, kind, k.uri) {
+				t.Fatalf("%s: the loaded catalog holds nothing at %q", kind, k.uri)
 			}
 		})
 	}
@@ -237,6 +231,10 @@ func TestTheLoadRecordsEachEntitysPinsUnderItsOwnDocument(t *testing.T) {
 // TestNoLockLeavesTheEntityLoadable separates the two answers the reader's
 // found-flag exists for: nothing recorded is not something that would not read,
 // and only the second stops a load.
+//
+// It also states the whole of what an entity with no lock is pinned to, which is
+// nothing. There is no second place a pin could come from: the document has no
+// surface to declare one on.
 func TestNoLockLeavesTheEntityLoadable(t *testing.T) {
 	t.Parallel()
 	for kind, k := range pinBearingKinds {
@@ -250,9 +248,12 @@ func TestNoLockLeavesTheEntityLoadable(t *testing.T) {
 			if err != nil {
 				t.Fatalf("%s: an entity with no lock beside it must load: %v", kind, err)
 			}
-			src, art := loadedPins(t, cat, kind, k.uri)
-			if len(src) != 0 || len(art) != 0 {
-				t.Errorf("%s: an entity with no lock acquired pins from somewhere: src=%+v art=%+v", kind, src, art)
+			if !loadedEntityExists(t, cat, kind, k.uri) {
+				t.Fatalf("%s: the loaded catalog holds nothing at %q", kind, k.uri)
+			}
+			document := filepath.Join(dir, filepath.FromSlash(k.rel))
+			if pins, filed := cat.RecordedPins()[document]; filed && !pins.Empty() {
+				t.Errorf("%s: an entity with no lock acquired pins from somewhere: %+v", kind, pins)
 			}
 		})
 	}

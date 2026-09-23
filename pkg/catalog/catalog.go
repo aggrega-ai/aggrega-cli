@@ -1063,7 +1063,7 @@ func (c *Catalog) indexFile(data []byte, path string) error {
 		// validation, relative source / artifact-$import rewrites) so the eager
 		// and lazy backings cannot drift. The dup-identity check is catalog-level
 		// state and stays here.
-		e, err := parseRecipeEntity(data, path)
+		e, pins, err := parseRecipeEntity(data, path)
 		if err != nil {
 			return err
 		}
@@ -1073,9 +1073,9 @@ func (c *Catalog) indexFile(data []byte, path string) error {
 		}
 		c.Recipes[rKey] = e
 		c.entityBytes[entityBytesKey("Recipe", rKey)] = data
-		c.recordedPins.Record(path, effectivePins(e.Spec.SourceDigests, e.Spec.ArtifactDigests))
+		c.recordedPins.Record(path, pins)
 	case "FeatureRecipe":
-		e, err := parseFeatureRecipeEntity(data, path)
+		e, pins, err := parseFeatureRecipeEntity(data, path)
 		if err != nil {
 			return err
 		}
@@ -1085,7 +1085,7 @@ func (c *Catalog) indexFile(data []byte, path string) error {
 		}
 		c.FeatureRecipes[frKey] = e
 		c.entityBytes[entityBytesKey("FeatureRecipe", frKey)] = data
-		c.recordedPins.Record(path, effectivePins(e.Spec.SourceDigests, e.Spec.ArtifactDigests))
+		c.recordedPins.Record(path, pins)
 	case "Aggregate":
 		e, err := parseAggregateEntity(data, path)
 		if err != nil {
@@ -1288,98 +1288,88 @@ func parseFeatureEntity(data []byte, path string) (types.Feature, error) {
 // The source is anchored through anchorEntitySource, which both source-bearing
 // kinds share and which documents what that resolution decides and why.
 //
-// It also points the entity's content pins at the lock file beside it, through
-// applyRecordedPins. That belongs here for the same reason the path rewrites do:
-// this is where the document and the directory it was read from are both in
-// hand, and every later reader has the entity alone.
+// It also reads the content pins recorded for the entity, from the lock file
+// beside it, and returns them alongside. That belongs here for the same reason
+// the path rewrites do: this is where the document and the directory it was read
+// from are both in hand, and every later reader has the entity alone. The pins
+// are returned rather than carried on the entity because an entity document
+// declares no pins — what the machine derived lives beside it.
 //
 // Unlike parseComponentEntity, this self-wraps every failure into its final
 // CATALOG_ERROR shape (unmarshal, source rewrite, artifact rewrite each carry a
 // distinct message; ValidateRecipe already returns a shaped error) so a single
 // `return err` at the caller preserves byte-identical diagnostics.
-func parseRecipeEntity(data []byte, path string) (types.Recipe, error) {
+func parseRecipeEntity(data []byte, path string) (types.Recipe, recipepin.Pins, error) {
 	if _, eerr := envelope.ValidateBytes(envelope.KindRecipe, data, path); eerr != nil {
-		return types.Recipe{}, cerrors.Wrap(eerr, cerrors.CatalogError, cerrors.SourceLocation{File: path}, eerr.Error())
+		return types.Recipe{}, recipepin.Pins{}, cerrors.Wrap(eerr, cerrors.CatalogError, cerrors.SourceLocation{File: path}, eerr.Error())
 	}
 	var e types.Recipe
 	if err := yaml.Unmarshal(data, &e); err != nil {
-		return types.Recipe{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, "unmarshal Recipe")
+		return types.Recipe{}, recipepin.Pins{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, "unmarshal Recipe")
 	}
 	if e.Kind != "Recipe" {
-		return types.Recipe{}, fmt.Errorf("expected kind Recipe, got %q", e.Kind)
+		return types.Recipe{}, recipepin.Pins{}, fmt.Errorf("expected kind Recipe, got %q", e.Kind)
 	}
 	if err := validator.ValidateRecipe(&e, path); err != nil {
-		return types.Recipe{}, err
+		return types.Recipe{}, recipepin.Pins{}, err
 	}
 	anchoredSource, err := anchorEntitySource(path, "Recipe", e.Spec.Source)
 	if err != nil {
-		return types.Recipe{}, err
+		return types.Recipe{}, recipepin.Pins{}, err
 	}
 	e.Spec.Source = anchoredSource
 
 	mappingTarget, err := resolveImportPath(path, e.Spec.ValuesMapping.Import, e.Spec.ValuesMapping)
 	if err != nil {
-		return types.Recipe{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, fmt.Sprintf("resolve Recipe valuesMapping $import target %q", e.Spec.ValuesMapping.Import))
+		return types.Recipe{}, recipepin.Pins{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, fmt.Sprintf("resolve Recipe valuesMapping $import target %q", e.Spec.ValuesMapping.Import))
 	}
 	e.Spec.ValuesMapping.Import = mappingTarget
 
 	workloadTarget, err := resolveImportPath(path, e.Spec.Workload.Import, e.Spec.Workload)
 	if err != nil {
-		return types.Recipe{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, fmt.Sprintf("resolve Recipe workload $import target %q", e.Spec.Workload.Import))
+		return types.Recipe{}, recipepin.Pins{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, fmt.Sprintf("resolve Recipe workload $import target %q", e.Spec.Workload.Import))
 	}
 	e.Spec.Workload.Import = workloadTarget
 
 	if err := resolveArtifactImports(path, "Recipe", &e.Spec.Artifacts); err != nil {
-		return types.Recipe{}, err
+		return types.Recipe{}, recipepin.Pins{}, err
 	}
 
-	if err := applyRecordedPins(path, &e.Spec.SourceDigests, &e.Spec.ArtifactDigests); err != nil {
-		return types.Recipe{}, err
+	pins, err := recordedPins(path)
+	if err != nil {
+		return types.Recipe{}, recipepin.Pins{}, err
 	}
-	return e, nil
+	return e, pins, nil
 }
 
-// applyRecordedPins points an entity's content pins at the lock file beside it,
-// and is the one body both pin-bearing kinds route through.
+// recordedPins reads the content pins recorded for the entity at path, from the
+// lock file beside it. It is the one body both pin-bearing kinds route through,
+// and the one answer to "which pins are in force for this entity" — a second
+// spelling of it would be free to settle something the render never sees.
 //
-// The lock is where a resolution records what it acquired, so where one is
-// present it is what the build compares against: an entity document is never
-// machine-written, which means the pins in hand at this point were typed by
-// somebody rather than derived, and preferring them would compare a build
-// against an assertion instead of against a measurement.
+// The lock is the only home for these pins. An entity document is never
+// machine-written, so nothing an author typed is a measurement of what was
+// acquired; the file beside it is where the resolution records what it fetched
+// and what it read, and that is what the build compares against.
 //
-// Absence of a lock leaves whatever the document carried untouched. That is not
-// a fallback so much as the honest reading of the two cases: an entity with no
-// lock beside it has had nothing recorded for it, and an entity that still
-// declares its pins inline is read as declaring them until that surface is gone.
+// Absence of a lock is an entity with nothing recorded for it, which is the zero
+// value rather than an error: a recipe with no remote source and no imported
+// artifact has nothing to pin, and one whose source is templated has an identity
+// knowable only per-Release.
 //
 // A lock that will not read is a failure rather than an absence, and the reason
 // is the one that makes the file worth having: a pin nobody could read is a
 // comparison that silently does not happen, which reads exactly like a build
 // whose inputs had not moved.
-func applyRecordedPins(path string, srcPins *[]types.SourceDigest, artPins *[]types.ArtifactDigest) error {
+func recordedPins(path string) (recipepin.Pins, error) {
 	lock, present, err := recipepin.ReadLock(path)
 	if err != nil {
-		return err
+		return recipepin.Pins{}, err
 	}
 	if !present {
-		return nil
+		return recipepin.Pins{}, nil
 	}
-	*srcPins = lock.SourceDigests
-	*artPins = lock.ArtifactDigests
-	return nil
-}
-
-// effectivePins reads the pins in force for an entity applyRecordedPins has
-// already run over.
-//
-// It is one line, and it exists so that "which pins does a parsed entity
-// actually carry" is answered in one place rather than at each of the four sites
-// that index a pin-bearing entity. Those sites record the answer under the
-// document they read it from, and a second spelling of it would be free to
-// record something the render never sees.
-func effectivePins(srcPins []types.SourceDigest, artPins []types.ArtifactDigest) recipepin.Pins {
-	return recipepin.Pins{SourceDigests: srcPins, ArtifactDigests: artPins}
+	return recipepin.Pins{SourceDigests: lock.SourceDigests, ArtifactDigests: lock.ArtifactDigests}, nil
 }
 
 // anchorEntitySource resolves an entity's authored source against the directory
@@ -1520,49 +1510,50 @@ func resolveArtifactImports(entityPath, kind string, artifacts *types.OrderedMap
 // relative-`$import` rewrites against the entity file's own directory, and the
 // same reading of the lock file beside it. Both kinds route their artifacts
 // rewrite through resolveArtifactImports, their source through
-// anchorEntitySource and their pins through applyRecordedPins, so the two cannot
+// anchorEntitySource and their pins through recordedPins, so the two cannot
 // drift; those functions document what each resolution decides and why.
 // Self-wraps its failures like parseRecipeEntity.
-func parseFeatureRecipeEntity(data []byte, path string) (types.FeatureRecipe, error) {
+func parseFeatureRecipeEntity(data []byte, path string) (types.FeatureRecipe, recipepin.Pins, error) {
 	if _, eerr := envelope.ValidateBytes(envelope.KindFeatureRecipe, data, path); eerr != nil {
-		return types.FeatureRecipe{}, cerrors.Wrap(eerr, cerrors.CatalogError, cerrors.SourceLocation{File: path}, eerr.Error())
+		return types.FeatureRecipe{}, recipepin.Pins{}, cerrors.Wrap(eerr, cerrors.CatalogError, cerrors.SourceLocation{File: path}, eerr.Error())
 	}
 	var e types.FeatureRecipe
 	if err := yaml.Unmarshal(data, &e); err != nil {
-		return types.FeatureRecipe{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, "unmarshal FeatureRecipe")
+		return types.FeatureRecipe{}, recipepin.Pins{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, "unmarshal FeatureRecipe")
 	}
 	if e.Kind != "FeatureRecipe" {
-		return types.FeatureRecipe{}, fmt.Errorf("expected kind FeatureRecipe, got %q", e.Kind)
+		return types.FeatureRecipe{}, recipepin.Pins{}, fmt.Errorf("expected kind FeatureRecipe, got %q", e.Kind)
 	}
 	if err := validator.ValidateFeatureRecipe(&e, path); err != nil {
-		return types.FeatureRecipe{}, err
+		return types.FeatureRecipe{}, recipepin.Pins{}, err
 	}
 	anchoredSource, err := anchorEntitySource(path, "FeatureRecipe", e.Spec.Source)
 	if err != nil {
-		return types.FeatureRecipe{}, err
+		return types.FeatureRecipe{}, recipepin.Pins{}, err
 	}
 	e.Spec.Source = anchoredSource
 
 	mappingTarget, err := resolveImportPath(path, e.Spec.ValuesMapping.Import, e.Spec.ValuesMapping)
 	if err != nil {
-		return types.FeatureRecipe{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, fmt.Sprintf("resolve FeatureRecipe valuesMapping $import target %q", e.Spec.ValuesMapping.Import))
+		return types.FeatureRecipe{}, recipepin.Pins{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, fmt.Sprintf("resolve FeatureRecipe valuesMapping $import target %q", e.Spec.ValuesMapping.Import))
 	}
 	e.Spec.ValuesMapping.Import = mappingTarget
 
 	workloadTarget, err := resolveImportPath(path, e.Spec.Workload.Import, e.Spec.Workload)
 	if err != nil {
-		return types.FeatureRecipe{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, fmt.Sprintf("resolve FeatureRecipe workload $import target %q", e.Spec.Workload.Import))
+		return types.FeatureRecipe{}, recipepin.Pins{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, fmt.Sprintf("resolve FeatureRecipe workload $import target %q", e.Spec.Workload.Import))
 	}
 	e.Spec.Workload.Import = workloadTarget
 
 	if err := resolveArtifactImports(path, "FeatureRecipe", &e.Spec.Artifacts); err != nil {
-		return types.FeatureRecipe{}, err
+		return types.FeatureRecipe{}, recipepin.Pins{}, err
 	}
 
-	if err := applyRecordedPins(path, &e.Spec.SourceDigests, &e.Spec.ArtifactDigests); err != nil {
-		return types.FeatureRecipe{}, err
+	pins, err := recordedPins(path)
+	if err != nil {
+		return types.FeatureRecipe{}, recipepin.Pins{}, err
 	}
-	return e, nil
+	return e, pins, nil
 }
 
 // parseAggregateEntity is the single per-entity Aggregate resolution: unmarshal

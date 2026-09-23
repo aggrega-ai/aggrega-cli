@@ -112,7 +112,7 @@ spec:
       $import: ./artifacts/extra.tmpl
 `, "mappings/values.tmpl", "workload/body.yaml.tmpl", "artifacts/extra.tmpl", "charts/app/Chart.yaml")
 
-	r, err := parseRecipeEntity(mustRead(t, path), path)
+	r, _, err := parseRecipeEntity(mustRead(t, path), path)
 	if err != nil {
 		t.Fatalf("parse Recipe: %v", err)
 	}
@@ -156,7 +156,7 @@ spec:
       $import: ./artifacts/extra.tmpl
 `, "mappings/values.tmpl", "workload/body.yaml.tmpl", "artifacts/extra.tmpl", "charts/sidecar/Chart.yaml")
 
-	fr, err := parseFeatureRecipeEntity(mustRead(t, path), path)
+	fr, _, err := parseFeatureRecipeEntity(mustRead(t, path), path)
 	if err != nil {
 		t.Fatalf("parse FeatureRecipe: %v", err)
 	}
@@ -201,7 +201,7 @@ spec:
       $import: `+absTarget+`
 `)
 
-	r, err := parseRecipeEntity(mustRead(t, path), path)
+	r, _, err := parseRecipeEntity(mustRead(t, path), path)
 	if err != nil {
 		t.Fatalf("parse Recipe: %v", err)
 	}
@@ -251,12 +251,12 @@ spec:
 `
 
 	admitted := importBaseFixture(t, "recipe.yaml", fmt.Sprintf(body, "BaseMappings#/mappings/SimpleValues"))
-	if _, err := parseRecipeEntity(mustRead(t, admitted), admitted); err != nil {
+	if _, _, err := parseRecipeEntity(mustRead(t, admitted), admitted); err != nil {
 		t.Fatalf("the host-less identity form should load: %v", err)
 	}
 
 	refused := importBaseFixture(t, "recipe.yaml", fmt.Sprintf(body, "oci://hub.example.com/mappinglibrary/example/helpers:1.0.0"))
-	_, err := parseRecipeEntity(mustRead(t, refused), refused)
+	_, _, err := parseRecipeEntity(mustRead(t, refused), refused)
 	if err == nil {
 		t.Fatal("a registry host on the valuesMapping $import should be refused as the document is read")
 	}

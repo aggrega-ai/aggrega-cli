@@ -1360,7 +1360,7 @@ func (l *LazyLookup) buildRecipeIndex() {
 func (l *LazyLookup) foldRecipeShellEntity(kind string, parseData, rawBytes []byte, src string, local bool) {
 	switch kind {
 	case "Recipe":
-		e, perr := parseRecipeEntity(parseData, src)
+		e, pins, perr := parseRecipeEntity(parseData, src)
 		if perr != nil {
 			l.recordRecipeSkip(src, perr)
 			return
@@ -1371,14 +1371,14 @@ func (l *LazyLookup) foldRecipeShellEntity(kind string, parseData, rawBytes []by
 				l.entityBytes[entityBytesKey("Recipe", key)] = rawBytes
 				if local {
 					l.localEntityPaths[entityBytesKey("Recipe", key)] = src
-					l.recordedPins.Record(src, effectivePins(e.Spec.SourceDigests, e.Spec.ArtifactDigests))
+					l.recordedPins.Record(src, pins)
 				}
 			},
 			func() {
 				l.recordRecipeSkip(src, fmt.Errorf("duplicate recipe identity %q; this file is shadowed", key))
 			})
 	case "FeatureRecipe":
-		e, perr := parseFeatureRecipeEntity(parseData, src)
+		e, pins, perr := parseFeatureRecipeEntity(parseData, src)
 		if perr != nil {
 			l.recordRecipeSkip(src, perr)
 			return
@@ -1389,7 +1389,7 @@ func (l *LazyLookup) foldRecipeShellEntity(kind string, parseData, rawBytes []by
 				l.entityBytes[entityBytesKey("FeatureRecipe", key)] = rawBytes
 				if local {
 					l.localEntityPaths[entityBytesKey("FeatureRecipe", key)] = src
-					l.recordedPins.Record(src, effectivePins(e.Spec.SourceDigests, e.Spec.ArtifactDigests))
+					l.recordedPins.Record(src, pins)
 				}
 			},
 			func() {

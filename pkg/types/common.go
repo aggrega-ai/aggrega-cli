@@ -20,23 +20,23 @@ type Maintainer struct {
 	URL   string `json:"url,omitempty" yaml:"url,omitempty"`
 }
 
-// SourceDigest is a recipe-carried content pin for one resolved remote source.
-// Identity is {Kind, URL, Chart, ModuleSubdir, Version} — URL is the authored
-// source URL (a repo root or a direct .tgz for helm-https), and the two selector
-// terms name whatever the URL alone does not: Chart names the chart within a repo
-// root, so two charts served from one repo root at the same version pin
-// distinctly, and ModuleSubdir names the directory within a git-sourced
-// repository, so two directories of one repository at one commit pin distinctly.
-// A single recipe carries more than one entry when its source knobs are templated
-// and resolve differently per consuming instance, which is why both selector terms
+// SourceDigest is a content pin for one resolved remote source, recorded in the
+// entity.lock file beside the entity that fetched it. Identity is
+// {Kind, URL, Chart, ModuleSubdir, Version} — URL is the authored source URL (a
+// repo root or a direct .tgz for helm-https), and the two selector terms name
+// whatever the URL alone does not: Chart names the chart within a repo root, so
+// two charts served from one repo root at the same version pin distinctly, and
+// ModuleSubdir names the directory within a git-sourced repository, so two
+// directories of one repository at one commit pin distinctly. A single entity's
+// lock carries more than one entry when its source knobs are templated and
+// resolve differently per consuming instance, which is why both selector terms
 // belong to the identity here as well as in the lockfile. Digest is the SHA-256 of
 // the fetched archive and ManifestDigest is the OCI manifest digest for an
-// OCI-distributed source (empty otherwise). The resolution phase freezes these
-// from the fetched bytes into a writable recipe file; the build reads them back
-// and verifies the cached source has not drifted.
+// OCI-distributed source (empty otherwise). The resolution phase writes these into
+// the lock from the fetched bytes; the build reads them back and verifies the
+// cached source has not drifted. The entity document itself is never written to.
 //
-// Defined in recipe-v1alpha1.schema.json#/properties/spec/properties/sourceDigests/items
-// and mirrored by featurerecipe-v1alpha1.schema.json.
+// Defined in entity-lock-v1alpha1.schema.json#/properties/sourceDigests/items.
 type SourceDigest struct {
 	Kind           string `json:"kind" yaml:"kind"`
 	URL            string `json:"url" yaml:"url"`
@@ -47,13 +47,12 @@ type SourceDigest struct {
 	ManifestDigest string `json:"manifestDigest,omitempty" yaml:"manifestDigest,omitempty"`
 }
 
-// ArtifactDigest is a recipe-carried content pin for one artifact whose value is
-// a file import. Name is the artifacts: map key; Digest is the SHA-256 of the
-// imported file's bytes. Inline (literal) artifacts are part of the entity and
-// carry no separate pin.
+// ArtifactDigest is a content pin for one artifact whose value is a file import,
+// recorded in the entity.lock file beside the entity that imports it. Name is the
+// artifacts: map key; Digest is the SHA-256 of the imported file's bytes. Inline
+// (literal) artifacts are part of the entity and carry no separate pin.
 //
-// Defined in recipe-v1alpha1.schema.json#/properties/spec/properties/artifactDigests/items
-// and mirrored by featurerecipe-v1alpha1.schema.json.
+// Defined in entity-lock-v1alpha1.schema.json#/properties/artifactDigests/items.
 type ArtifactDigest struct {
 	Name   string `json:"name" yaml:"name"`
 	Digest string `json:"digest" yaml:"digest"`
