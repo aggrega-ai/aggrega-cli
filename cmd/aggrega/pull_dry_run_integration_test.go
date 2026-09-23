@@ -16,14 +16,15 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/verdicttest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginstrust"
+	"github.com/aggrega-ai/aggrega-cli/pkg/recipepin"
 )
 
 // dryRunThreeFileWorkspace lays a workspace where ONE pull writes all three of
-// the files a pull can write: the lockfile, a Recipe whose recorded digests the
-// freeze fills in, and the plugin identity record.
+// the files a pull can write: the lockfile, the lock beside a Recipe into which
+// the pull records that Recipe's pins, and the plugin identity record.
 //
 // It is the two existing fixtures composed rather than a third one authored. The
-// Recipe carrying a $import artifact is what puts a recipe file in play, and a
+// Recipe carrying a $import artifact is what puts a lock beside it in play, and a
 // linter attachment served by a registry is what puts the identity record in
 // play — neither fixture reaches all three on its own, and the point of this one
 // is that a reader previewing a pull sees every file it touches rather than the
@@ -68,8 +69,9 @@ func readOrAbsent(t *testing.T, path string) []byte {
 // Three files rather than one is the point of the test. A preview naming only
 // the lockfile would teach a reader that the lockfile is all a pull touches,
 // which is the belief this flag exists to correct — so the assertion is per
-// file, and the recipe and the identity record are named as explicitly as the
-// lockfile is.
+// file, and the entity lock and the identity record are named as explicitly as
+// the lockfile is. The Recipe itself is held to being untouched by both runs,
+// because a pull records what it derives beside an authored file and never in it.
 func TestIntegration_PullDryRunCoversEveryFileAPullWrites(t *testing.T) {
 	host := startRegistry(t, nil)
 	root, releasePath, published := dryRunThreeFileWorkspace(t, host)
@@ -77,17 +79,19 @@ func TestIntegration_PullDryRunCoversEveryFileAPullWrites(t *testing.T) {
 	catalogDir := filepath.Join(root, "catalog")
 
 	recipePath := filepath.Join(catalogDir, "recipes", "server.yaml")
+	entityLockPath := recipepin.LockPath(recipePath)
 	lockfilePath := lockfile.PathFor(releasePath)
 	recordPath := pluginstrust.PathFor(releasePath)
 
 	recipeBefore := readOrAbsent(t, recipePath)
+	entityLockBefore := readOrAbsent(t, entityLockPath)
 	lockBefore := readOrAbsent(t, lockfilePath)
 	recordBefore := readOrAbsent(t, recordPath)
-	if lockBefore != nil || recordBefore != nil {
-		t.Fatalf("precondition: neither the lockfile nor the identity record exists before the first pull")
+	if lockBefore != nil || recordBefore != nil || entityLockBefore != nil {
+		t.Fatalf("precondition: none of the lockfile, the entity lock and the identity record exists before the first pull")
 	}
-	if strings.Contains(string(recipeBefore), "artifactDigests") {
-		t.Fatalf("precondition: the recipe starts unfrozen, or the report has nothing to add for it:\n%s", recipeBefore)
+	if recipeBefore == nil {
+		t.Fatalf("precondition: the fixture must author the recipe the entity lock sits beside")
 	}
 
 	// (a) The reported run: every file named, nothing moved.
@@ -107,10 +111,13 @@ func TestIntegration_PullDryRunCoversEveryFileAPullWrites(t *testing.T) {
 	if strings.Contains(diag.String(), "external inputs: could not finish") {
 		t.Fatalf("the reported run could not finish its external-input discovery, so its lockfile is not what a pull would write:\n%s", diag.String())
 	}
-	for _, path := range []string{recipePath, lockfilePath, recordPath} {
+	for _, path := range []string{entityLockPath, lockfilePath, recordPath} {
 		if !strings.Contains(stdout, "==> "+path+" <==") {
 			t.Errorf("the report must name %s; it named:\n%s", path, stdout)
 		}
+	}
+	if strings.Contains(stdout, "==> "+recipePath+" <==") {
+		t.Errorf("the report named the authored recipe, which no pull writes:\n%s", stdout)
 	}
 	if !strings.Contains(stdout, "Dry run: 3 files would be written; nothing was written") {
 		t.Errorf("the summary must count all three files; got:\n%s", stdout)
@@ -127,6 +134,9 @@ func TestIntegration_PullDryRunCoversEveryFileAPullWrites(t *testing.T) {
 
 	if got := readOrAbsent(t, recipePath); !bytes.Equal(got, recipeBefore) {
 		t.Errorf("the reported run rewrote the recipe;\nbefore:\n%s\nafter:\n%s", recipeBefore, got)
+	}
+	if got := readOrAbsent(t, entityLockPath); got != nil {
+		t.Errorf("the reported run created an entity lock:\n%s", got)
 	}
 	if got := readOrAbsent(t, lockfilePath); got != nil {
 		t.Errorf("the reported run created a lockfile:\n%s", got)
@@ -149,10 +159,14 @@ func TestIntegration_PullDryRunCoversEveryFileAPullWrites(t *testing.T) {
 	}
 
 	recipeAfter := readOrAbsent(t, recipePath)
+	entityLockAfter := readOrAbsent(t, entityLockPath)
 	lockAfter := readOrAbsent(t, lockfilePath)
 	recordAfter := readOrAbsent(t, recordPath)
-	if bytes.Equal(recipeAfter, recipeBefore) {
-		t.Fatalf("the writing run left the recipe unchanged, so the report described nothing for it")
+	if !bytes.Equal(recipeAfter, recipeBefore) {
+		t.Errorf("the writing run rewrote the authored recipe;\nbefore:\n%s\nafter:\n%s", recipeBefore, recipeAfter)
+	}
+	if entityLockAfter == nil {
+		t.Fatal("the writing run wrote no entity lock, so the report described nothing for it")
 	}
 	if lockAfter == nil {
 		t.Fatal("the writing run wrote no lockfile, so the report described nothing for it")
@@ -181,8 +195,8 @@ func TestIntegration_PullDryRunCoversEveryFileAPullWrites(t *testing.T) {
 	// Each reported file is held to the bytes the writing run produced. The
 	// lockfile is compared with its wall-clock provenance stamp set aside, which
 	// is the one field two runs over identical input are expected to differ on.
-	if !strings.Contains(stdout, string(recipeAfter)) {
-		t.Errorf("the recipe the writing run produced is not what the report showed;\nwritten:\n%s\nreported:\n%s", recipeAfter, stdout)
+	if !strings.Contains(stdout, string(entityLockAfter)) {
+		t.Errorf("the entity lock the writing run produced is not what the report showed;\nwritten:\n%s\nreported:\n%s", entityLockAfter, stdout)
 	}
 	if !strings.Contains(stdout, string(recordAfter)) {
 		t.Errorf("the identity record the writing run produced is not what the report showed;\nwritten:\n%s\nreported:\n%s", recordAfter, stdout)

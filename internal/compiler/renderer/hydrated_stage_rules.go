@@ -439,8 +439,8 @@ func runArtifactContentPinRule(
 	findingFile := artifactFindingFile(state)
 	if state.hydrated == nil {
 		return cerrors.Unidentified(cerrors.CatalogError, cerrors.SourceLocation{File: findingFile},
-			fmt.Sprintf("artifact %q could not be checked against the content digest its Recipe "+
-				"recorded — internal error: the check's inputs were incomplete. This is a fault in "+
+			fmt.Sprintf("artifact %q could not be checked against the content digest recorded for it "+
+				"beside its Recipe — internal error: the check's inputs were incomplete. This is a fault in "+
 				"the compiler rather than in the Recipe, so there is nothing to correct in the "+
 				"catalog", outputName), nil, nil)
 	}
@@ -457,7 +457,7 @@ func runArtifactContentPinRule(
 		return err
 	}
 	return objectionsAsHalt(raised, fmt.Sprintf(
-		"artifact %q content does not match the digest its Recipe recorded", outputName))
+		"artifact %q content does not match the digest recorded for it beside its Recipe", outputName))
 }
 
 // runAttachmentArtifactContentPinRule asks the pin rule declared over whichever
@@ -517,8 +517,8 @@ func runAttachmentArtifactContentPinRule(
 	}
 
 	return cerrors.Unidentified(cerrors.CatalogError, cerrors.SourceLocation{File: findingFile},
-		fmt.Sprintf("artifact %q could not be checked against the content digest the FeatureRecipe "+
-			"recorded — internal error: the render carries no identity to check it under. This is a "+
+		fmt.Sprintf("artifact %q could not be checked against the content digest recorded for it "+
+			"beside the FeatureRecipe — internal error: the render carries no identity to check it under. This is a "+
 			"fault in the compiler rather than in the FeatureRecipe, so there is nothing to correct "+
 			"in the catalog", outputName), nil, nil)
 }
@@ -534,7 +534,7 @@ func attachmentArtifactContentPinHalt(
 	raised []constraint.Objection, attachment, outputName string,
 ) error {
 	return objectionsAsHalt(raised, fmt.Sprintf(
-		"artifact %q content does not match the digest the FeatureRecipe attachment %q binds recorded",
+		"artifact %q content does not match the digest recorded for it beside the FeatureRecipe attachment %q binds",
 		outputName, attachment))
 }
 

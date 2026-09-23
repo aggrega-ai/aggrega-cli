@@ -2272,9 +2272,9 @@ var BoundaryAttachmentArtifactPillarDeclared = constraint.Check[
 // standing bare beside a quoted output name is two quoted strings a reader cannot
 // tell apart — the bare slot is already taken by the artifact.
 //
-// It is spelled once here rather than at each calling value. Three copies would
-// agree the day they were written, and the agreement is what would hide the next
-// change to the caption or the order.
+// It is spelled once, in [artifactContentPinDetail], rather than at each calling
+// value. Three copies would agree the day they were written, and the agreement is
+// what would hide the next change to the caption or the order.
 func artifactContentPinObjections[S artifactPillarSubject](
 	s S,
 	templateText string,
@@ -2290,26 +2290,46 @@ func artifactContentPinObjections[S artifactPillarSubject](
 	if got == pin {
 		return nil
 	}
-	detail := []constraint.DetailValue{
-		constraint.Uncaptioned(s.ArtifactName()),
-		constraint.Captioned("imported file", importedPath),
-		constraint.Captioned("its content digests to", got),
-		constraint.Captioned("the recorded pin is", pin),
-	}
-	return []constraint.Objection{s.RaiseWith(
-		ErrArtifactContentMismatch(), append(detail, ownerDetail...)...,
+	detail := artifactContentPinDetail(s.ArtifactName(), importedPath, got, pin)
+	return []constraint.Objection{s.RaiseWithAdvice(
+		ErrArtifactContentMismatch(), artifactContentPinAdvice, append(detail, ownerDetail...)...,
 	)}
 }
 
+// artifactContentPinDetail is the one spelling of what an imported-file pin
+// disagreement names: the artifact, bare, because the registered sentence already
+// says the finding is about imported artifact content; then the imported file and
+// the two digests, each captioned, because they are otherwise strings a reader
+// cannot tell apart. Every composer of the finding builds its detail here — the
+// build's checks and [ArtifactContentPinMismatch] alike — so the finding reads the
+// same whichever command reports it.
+func artifactContentPinDetail(artifact, importedPath, current, recorded string) []constraint.DetailValue {
+	return []constraint.DetailValue{
+		constraint.Uncaptioned(artifact),
+		constraint.Captioned("imported file", importedPath),
+		constraint.Captioned("its content digests to", current),
+		constraint.Captioned("the recorded pin is", recorded),
+	}
+}
+
+// artifactContentPinAdvice is what an imported-file pin disagreement tells its
+// reader to do. It is advice rather than part of the registered sentence because
+// advice belongs to the raise path, and it is one constant because every path that
+// raises this finding offers the same two remedies: the file was changed on
+// purpose, so the pin is re-recorded, or it was not, so the file is restored.
+const artifactContentPinAdvice = "If the file was changed on purpose, run `aggrega pull --release <release>` " +
+	"to record its new digest; otherwise restore the file"
+
 // ArtifactContentMatchesItsRecordedPin reports each of a node's artifacts whose
-// imported content no longer digests to the pin its Recipe recorded.
+// imported content no longer digests to the pin recorded for it in the lock beside
+// its Recipe.
 //
-// A Recipe carrying a recorded pin for an entry has been frozen against the bytes
-// that entry's imported file held at resolution. The build re-digests the file it
-// reads and refuses the disagreement, so a file edited after resolution halts
-// loudly rather than rendering content nothing verified. A Recipe that was never
-// frozen records no pin and has nothing to compare, which is why the fact reports
-// presence rather than answering with an empty digest.
+// A pin recorded for an entry is the digest of the bytes that entry's imported file
+// held when a pull resolved the Recipe. The build re-digests the file it reads and
+// refuses the disagreement, so a file edited after the pull halts loudly rather
+// than rendering content nothing verified. A Recipe no pull has resolved has no pin
+// recorded beside it and nothing to compare, which is why the fact reports presence
+// rather than answering with an empty digest.
 //
 // It reads two facts and holds no traversal over subjects, because it is invoked
 // once per artifact the node's walk resolved. Both are keyed by the node and the
@@ -2347,16 +2367,16 @@ var ArtifactContentMatchesItsRecordedPin = constraint.Check[
 
 // AttachmentArtifactContentMatchesItsRecordedPin reports each artifact of the
 // FeatureRecipe one attachment binds on a node whose imported content no longer
-// digests to the pin that FeatureRecipe recorded.
+// digests to the pin recorded for it in the lock beside that FeatureRecipe.
 //
 // Every reading the value above sets out applies here over a different document.
 // Each of its two facts is keyed by the attachment as well as by the node, and that
 // is what makes the verdict the attachment's rather than the host's: the render of
 // an attachment walks the same producer under the HOST component's node identity,
 // so facts keyed by the node alone would measure this FeatureRecipe's content
-// against the host Recipe's recorded pin — admitting drifted content wherever the
-// host recorded nothing, and refusing intact content wherever the host recorded a
-// pin under the same output name.
+// against the pin recorded for the host Recipe — admitting drifted content wherever
+// the host has no pin, and refusing intact content wherever the host has one under
+// the same output name.
 //
 // Its detail names the attachment, which is what says which FeatureRecipe: the
 // locator names the artifacts block inside that document, and a node may carry
@@ -2386,7 +2406,7 @@ var AttachmentArtifactContentMatchesItsRecordedPin = constraint.Check[
 
 // BoundaryAttachmentArtifactContentMatchesItsRecordedPin reports each artifact of
 // the FeatureRecipe one boundary-scope attachment binds whose imported content no
-// longer digests to the pin that FeatureRecipe recorded.
+// longer digests to the pin recorded for it in the lock beside that FeatureRecipe.
 //
 // It is the same question the two values above ask, rooted where such an attachment
 // is declared. A boundary-scope attachment is written once on a boundary and reaches

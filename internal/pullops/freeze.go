@@ -16,13 +16,30 @@ import (
 
 // freezeRecipePins is the resolution-phase freeze: for every writable (Tier-1)
 // Recipe and FeatureRecipe the closure reaches, it records the entity's
-// intrinsic content pins — one per resolved remote source, one per $import
-// artifact file — into the lock file beside that entity, modelling the
-// go.mod/go.sum discipline where resolution records the pins the author commits
-// and the build verifies them.
+// intrinsic content pins — one per resolved remote source whose identity its
+// author wrote out in full, one per $import artifact file — into the lock file
+// beside that entity, modelling the go.mod/go.sum discipline where resolution
+// records the pins the author commits and the build verifies them.
 //
 // Source pins come from the source-descent result (already fetched + digested);
-// artifact pins are computed here from the $import files on disk. The write is
+// artifact pins are computed here from the $import files on disk.
+//
+// # Which source pins belong beside the entity
+//
+// A pin lives where its identity is knowable. A source whose author wrote every
+// identity field out in full names one artifact for every Release that uses the
+// entity, so its pin is a fact about the entity and is recorded beside it. A
+// source whose identity is filled in from a template names an artifact only once
+// an instance's own values do the filling: two Releases may resolve it to two
+// different artifacts, and a file every Release shares cannot hold a value only
+// one of them decided. Such a source gets no pin here. Each identity it resolves
+// to is still pinned in the lockfile of the Release that resolved it, which is
+// the record the build fetches against.
+//
+// Which of the two a source is was decided once, by the descent, before anything
+// was acquired, and each back-pointer carries that decision; this pass reads it
+// rather than reading the source again, so the descent and the freeze cannot come
+// to disagree about which sources were written out in full. The write is
 // idempotent — an entity whose declared sources and $import set are unchanged
 // leaves its lock byte-identical. A recipe living in a content-addressed cache
 // slot (registry-resolved) has no path in the workspace and is skipped: the lock
@@ -54,7 +71,12 @@ func freezeRecipePins(lazyView *catalog.LazyLookup, entities []closure.ResolvedR
 	postFreezeRecipeDigests := map[string]string{}
 	var reported []dryrunreport.File
 	srcByURI := map[string][]types.SourceDigest{}
-	for _, sa := range srcArts {
+	// An artifact carries one back-pointer per instance that resolved it, and
+	// several instances of one entity resolve one authored identity to the same
+	// artifact — so an entity is handed each artifact once, however many of its
+	// instances reached it, rather than once per instance.
+	handed := map[string]map[int]bool{}
+	for i, sa := range srcArts {
 		sd := types.SourceDigest{
 			Kind:           sa.Kind,
 			URL:            sa.URL,
@@ -65,6 +87,13 @@ func freezeRecipePins(lazyView *catalog.LazyLookup, entities []closure.ResolvedR
 			ManifestDigest: sa.ManifestDigest,
 		}
 		for _, ref := range sa.ReferencedBy {
+			if !ref.IdentityAuthored || handed[ref.URI][i] {
+				continue
+			}
+			if handed[ref.URI] == nil {
+				handed[ref.URI] = map[int]bool{}
+			}
+			handed[ref.URI][i] = true
 			srcByURI[ref.URI] = append(srcByURI[ref.URI], sd)
 		}
 	}

@@ -114,7 +114,9 @@ func DescendRecipeSources(
 		// shares, which is what keeps the set of references a lockfile pins and the
 		// set a render fetches from drifting apart. The two remaining routes differ
 		// in whether the artifact this source names is the same one for every
-		// instance that uses it, which is what a failure below has to say.
+		// instance that uses it, which is what a failure below has to say and what
+		// each reference carries onward, so the pass that records pins beside the
+		// entity acts on this decision rather than taking it again.
 		route := routeForSource(source)
 		if route == routeWorkspaceHeld {
 			continue
@@ -158,10 +160,11 @@ func DescendRecipeSources(
 			}
 
 			ref := SourceArtifactReference{
-				Entity:    entityKind,
-				URI:       ent.URI,
-				Field:     entityFieldTag,
-				Component: comp.Component,
+				Entity:           entityKind,
+				URI:              ent.URI,
+				Field:            entityFieldTag,
+				Component:        comp.Component,
+				IdentityAuthored: route == routeAuthoredIdentity,
 			}
 			// Every authored reference is recorded, whatever it resolved to. The
 			// record is what a later run joins on — to find the artifact from the
@@ -264,6 +267,13 @@ const (
 // precisely how a templated identity is made concrete and pinned, so reading that
 // fact as a reason to skip would leave unpinned exactly the sources a lockfile
 // exists to pin.
+//
+// What that fact does decide is where else a pin may be recorded. The lockfile
+// pins every identity the descent resolves; the lock beside an entity records a
+// pin only for a source whose identity its author wrote out in full, because only
+// such a source names the same artifact for every Release. Each reference carries
+// the route's answer as [SourceArtifactReference.IdentityAuthored], so the one
+// reading here is the one that decision rests on.
 func routeForSource(source any) sourceRoute {
 	switch {
 	case sourceref.IsLocal(source):

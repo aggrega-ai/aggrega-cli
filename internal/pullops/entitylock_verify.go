@@ -5,14 +5,11 @@ package pullops
 
 import (
 	"errors"
-	"fmt"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
-	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
-	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/recipepin"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
@@ -33,15 +30,18 @@ import (
 //
 // Both classes are read through the record a build reads — the pins the catalog
 // load filed under the entity's document — and each disagreement is reported
-// under the condition a build halts with, because one finding reported under two
-// identities depending on which command found it is two answers to one question.
+// under the condition a build halts with, in the words a build uses, because one
+// finding reported two ways depending on which command found it is two answers to
+// one question. Neither diagnostic is composed here: each comes from the one home
+// the build's own comparison uses.
 //
 //   - An imported-file pin is compared with the digest of that file as it is on
 //     disk now, computed by the function the pull records it with. That is the
 //     same digest a build takes of the same bytes, so the two commands agree on
-//     every file.
+//     every file. The finding is renderer.ArtifactContentPinMismatch's.
 //   - A source pin is compared with the digest the lockfile records for that
-//     source, which is the pair a build compares before it reads the cache.
+//     source by recipepin.CheckSourcePin, which is the comparison a build makes
+//     before it reads the cache.
 //
 // A pin the lock does not carry is not reported: a build has nothing to compare
 // there either, so reporting it would refuse a workspace its build accepts. For a
@@ -50,16 +50,23 @@ import (
 // records is a separate check a build makes when it reads the cache, and it is not
 // what this reports.
 //
-// # The identity a source pin is looked up under
+// # The coordinates a source pin is looked up under
 //
-// A source pin is found under the identity the lockfile row records, which is the
-// identity the pull wrote it under. For every source whose resolver pins the
-// authored version verbatim — every row carrying no authored reference — that is
-// the identity a build looks the pin up under as well. For a row carrying an
-// authored reference the pinned version is the commit the reference resolved to,
-// which is not what the entity names, so this check compares a pin a build's own
-// lookup does not reach. A disagreement there is still a lock a pull would
-// rewrite, so it is reported rather than passed over.
+// A build looks a source pin up under the coordinates the entity authors —
+// crucially, the version it writes — and a pull records the pin under the version
+// the resolution pinned. The two are the same version exactly when the resolution
+// pinned what the author wrote, and a lockfile back-pointer says which case it
+// is: one recording no authored reference was resolved by pinning the authored
+// version as written, so the row's pinned version is the version the entity
+// names; one recording an authored reference was resolved to the commit that
+// reference named, which the entity does not name.
+//
+// So each row is asked about through each of this entity's back-pointers, and
+// only a back-pointer recording no authored reference hands the comparison the
+// row's coordinates. One recording a reference is passed over, because a build of
+// the same entity looks its pin up under a version that is not that commit and
+// compares nothing there — reporting it would refuse a workspace its build
+// accepts.
 //
 // Only an entity read from a document in a workspace catalog directory has a lock,
 // so an entity resolved from a registry is passed over here exactly as the pull
@@ -109,20 +116,18 @@ func verifyEntityLocks(lf *lockfile.Lockfile, lazyView *catalog.LazyLookup, enti
 				}
 				entry, _ := locked.artifacts.Get(now.Name)
 				report(locked.path+"\x00artifact\x00"+now.Name,
-					artifactPinDisagreement(locked.path, now.Name, entry.Import, now.Digest, pin.Digest))
+					renderer.ArtifactContentPinMismatch(locked.path, now.Name, entry.Import, now.Digest, pin.Digest))
 			}
 		}
 
 		for _, row := range lf.SourceArtifacts {
-			if !referencesEntity(row, ent.URI) {
+			if !reachedAtItsAuthoredVersion(row, ent.URI) {
 				continue
 			}
-			pin, pinned := recipepin.MatchSourcePin(pins.SourceDigests, row.Kind, row.URL, row.Chart, row.ModuleSubdir, row.PinnedVersion)
-			if !pinned || (pin.Digest == row.Digest && pin.ManifestDigest == row.ManifestDigest) {
-				continue
+			if err := recipepin.CheckSourcePin(pins.SourceDigests, lf, recipepin.LockPath(locked.path),
+				row.Kind, row.URL, row.Chart, row.ModuleSubdir, row.PinnedVersion, ""); err != nil {
+				report(locked.path+"\x00source\x00"+row.Kind+"\x00"+row.URL+"\x00"+row.Chart+"\x00"+row.ModuleSubdir+"\x00"+row.PinnedVersion, err)
 			}
-			report(locked.path+"\x00source\x00"+row.Kind+"\x00"+row.URL+"\x00"+row.Chart+"\x00"+row.ModuleSubdir+"\x00"+row.PinnedVersion,
-				sourcePinDisagreement(recipepin.LockPath(locked.path), row, pin))
 		}
 	}
 	return errors.Join(findings...)
@@ -161,58 +166,22 @@ func lockedEntityFor(loader closure.RecipeLoader, lazyView *catalog.LazyLookup, 
 	return lockedEntity{}, false
 }
 
-// referencesEntity reports whether a lockfile source row was resolved for the
-// entity at uri. The join is on the back-pointer's URI because that is the join
-// the pull uses when it decides which rows become which entity's source pins.
-func referencesEntity(row lockfile.SourceArtifact, uri string) bool {
+// reachedAtItsAuthoredVersion reports whether a lockfile source row was resolved
+// for the entity at uri through a back-pointer that records no authored reference
+// — the one case in which the row's pinned version is the version the entity
+// itself names, and so the case in which a build of the entity reaches the pin
+// recorded under it.
+//
+// The join is on the back-pointer's URI because that is the join the pull uses
+// when it decides which rows become which entity's source pins. A row this entity
+// reached only through an authored reference answers false: its pinned version is
+// the commit that reference resolved to, and the version the entity names is not
+// that commit.
+func reachedAtItsAuthoredVersion(row lockfile.SourceArtifact, uri string) bool {
 	for _, ref := range row.ReferencedBy {
-		if ref.URI == uri {
+		if ref.URI == uri && ref.RequestedRef == "" {
 			return true
 		}
 	}
 	return false
-}
-
-// artifactPinDisagreement reports an imported file whose content no longer
-// digests to the pin the lock beside its entity records.
-//
-// It is positioned where a build positions the same finding — at the artifacts
-// block of the document that authors the import — and it names the imported file
-// and both digests, which are the three things a reader needs in order to tell a
-// changed file from a changed pin.
-func artifactPinDisagreement(documentPath, artifact, importedPath, current, recorded string) error {
-	condition := renderer.ErrArtifactContentMismatch()
-	return cerrors.Wrap(condition, cerrors.CatalogError,
-		cerrors.SourceLocation{File: documentPath, Locator: ".spec.artifacts"},
-		cerrors.ComposeMessage(condition, []string{
-			fmt.Sprintf("%q", artifact),
-			fmt.Sprintf("imported file %q", importedPath),
-			fmt.Sprintf("its content digests to %q", current),
-			fmt.Sprintf("the recorded pin is %q", recorded),
-		}, "If the file was changed on purpose, run `aggrega pull --release <release>` to record its new "+
-			"digest; otherwise restore the file"))
-}
-
-// sourcePinDisagreement reports a source pin in a lock that disagrees with the
-// digest the lockfile records for the same source.
-//
-// It is positioned at the lock, because both remedies act on the lock: restoring
-// the committed file, or a pull rewriting it from the same resolution the lockfile
-// records. It names both values of whichever digest
-// disagrees — the content digest, or the manifest digest where the content digests
-// agree — since either file may be the one that moved, and two equal values would
-// tell a reader nothing.
-func sourcePinDisagreement(lockPath string, row lockfile.SourceArtifact, pin types.SourceDigest) error {
-	which, pinned, recorded := "digest", pin.Digest, row.Digest
-	if pin.Digest == row.Digest {
-		which, pinned, recorded = "manifest digest", pin.ManifestDigest, row.ManifestDigest
-	}
-	condition := oci.ErrFetchIntegrity()
-	return cerrors.Wrap(condition, cerrors.FetchError,
-		cerrors.SourceLocation{File: lockPath},
-		cerrors.ComposeMessage(condition, []string{
-			fmt.Sprintf("source-artifact %s@%s", row.URL, row.PinnedVersion),
-			fmt.Sprintf("the source pin recorded in %s has %s %s", recipepin.LockFileName, which, pinned),
-			fmt.Sprintf("the lockfile records %s", recorded),
-		}, "Restore "+recipepin.LockFileName+", or run `aggrega pull --release <release>` to rewrite it"))
 }

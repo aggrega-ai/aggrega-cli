@@ -6,6 +6,7 @@ package renderer
 import (
 	"fmt"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 	"github.com/aggrega-ai/aggrega-cli/internal/gotmpl"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/refcycle"
@@ -763,17 +764,18 @@ var errBoundaryAssemblerMissing = cerrors.Register("boundary-assembly-not-provid
 	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
-// ErrArtifactContentMismatch is the Loud Guardrail halt raised at build when
-// an artifact's imported file ($import) has drifted from the content digest
-// the recipe recorded for it at resolution. The recipe carries an
-// artifactDigests pin per $import artifact, frozen from the file's bytes; the
-// build re-digests the file and halts here when the two disagree, so an
-// imported artifact silently edited after resolution never renders unverified.
-// The wrapping chain names the recipe, the artifact key, and the imported
-// path; the remedy is to re-resolve (re-freeze the pin) if the change was
-// intended, or restore the file. Category: CATALOG_ERROR (a catalog-authored
-// imported artifact drifted from its recorded pin). Match with
-// errors.Is(err, ErrArtifactContentMismatch()).
+// ErrArtifactContentMismatch is the Loud Guardrail halt raised when an
+// artifact's imported file ($import) has drifted from the content digest
+// recorded for it in the entity.lock beside the Recipe or FeatureRecipe that
+// imports it. A pull records one artifactDigests pin there per $import artifact,
+// digested from the file's bytes; the build re-digests the file and halts here
+// when the two disagree, so an imported artifact edited after the pull never
+// renders unverified, and a verifying pull reports the same disagreement under
+// the same condition. The diagnostic is positioned at the importing document and
+// names the artifact key, the imported path and both digests; the remedy is to
+// re-run the pull if the change was intended, or restore the file. Category:
+// CATALOG_ERROR (a catalog-authored imported artifact drifted from its recorded
+// pin). Match with errors.Is(err, ErrArtifactContentMismatch()).
 func ErrArtifactContentMismatch() error { return errArtifactContentMismatch }
 
 var errArtifactContentMismatch = cerrors.Register("artifact-content-mismatch", cerrors.Meta{
@@ -781,6 +783,29 @@ var errArtifactContentMismatch = cerrors.Register("artifact-content-mismatch", c
 	Message:   "imported artifact content does not match the digest recorded for it in entity.lock",
 	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
+
+// ArtifactContentPinMismatch returns the halt a build raises for an imported file
+// whose content no longer digests to the pin recorded for it, for a command that
+// finds the same disagreement outside a build.
+//
+// It composes the finding from the parts the build's own checks compose it from —
+// the registered sentence, the detail list and the advice — and renders the detail
+// and the position through the constraint framework's own spelling, so the two
+// commands cannot come to report one disagreement in two ways. It is positioned
+// at the entry inside the document that authors the import, which is where the
+// build's check over a Recipe's own entry positions the same finding.
+//
+// A build reaching the same entry through a FeatureRecipe attachment adds the
+// attachment to its detail, because a node may carry several; a caller here holds
+// the document itself, so it has no attachment to name.
+func ArtifactContentPinMismatch(documentPath, artifact, importedPath, current, recorded string) error {
+	condition := ErrArtifactContentMismatch()
+	return cerrors.Wrap(condition, cerrors.CatalogError,
+		cerrors.SourceLocation{File: documentPath, Locator: constraint.ArtifactEntryLocator(artifact)},
+		cerrors.ComposeMessage(condition,
+			constraint.RenderDetail(artifactContentPinDetail(artifact, importedPath, current, recorded)...),
+			artifactContentPinAdvice))
+}
 
 // ErrCrossProviderLinkUnsupported marks a cross-boundary uses edge whose two
 // ends assemble into dispatch groups rendered by different providers, where at

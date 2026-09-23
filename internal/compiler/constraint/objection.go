@@ -172,14 +172,43 @@ func (o Objection) Detail() []string {
 // accessors because they land in separate parts of a sentence, and a boundary
 // reading only this one drops the remedy for a rule that carries one.
 func (o Objection) RenderedDetail() []string {
-	if len(o.detail) == 0 {
+	return RenderDetail(o.detail...)
+}
+
+// RenderDetail spells detail values as a message reads them: each value quoted,
+// with its caption ahead of it where it carries one. It is nil for no values.
+//
+// It is the spelling [Objection.RenderedDetail] returns, available to a caller
+// that states a rule's finding without an objection to read it from — a command
+// that reaches the same finding outside a check invocation, and must report it
+// in the same words a build does. Such a caller builds the values with
+// [Uncaptioned] and [Captioned], exactly as the rule does, and a detail list then
+// has one spelling whichever of them reports it.
+//
+// It does not construct an objection. The seal on those is unchanged: a raised
+// finding still comes only from a subject the framework supplied, and this
+// renders values, never provenance.
+func RenderDetail(values ...DetailValue) []string {
+	if len(values) == 0 {
 		return nil
 	}
-	out := make([]string, 0, len(o.detail))
-	for _, d := range o.detail {
+	out := make([]string, 0, len(values))
+	for _, d := range values {
 		out = append(out, d.render())
 	}
 	return out
+}
+
+// ArtifactEntryLocator returns the locator a document's artifacts entry is
+// positioned at — the one a check raised over that entry carries — for a caller
+// that reports the same finding without a subject to read the position from.
+//
+// It is assembled by the same two steps a subject's provenance is, so the two
+// positions cannot come to differ. An entry name carrying the locator separator,
+// as a filename does, positions the finding at the artifacts block rather than
+// inside it, for the reason [authoredLocator] states.
+func ArtifactEntryLocator(entry string) string {
+	return authoredLocator(documentSpecSegments(authoredKeyArtifacts, entry)...)
 }
 
 // ObjectionMessage renders what one check raised as the text a diagnostic

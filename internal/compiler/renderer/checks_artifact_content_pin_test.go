@@ -10,6 +10,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
 // The artifact-content-pin rule reads two declared facts, and this file runs each
@@ -497,4 +498,71 @@ func TestArtifactContentPinRuleOverEachAttachmentOwner(t *testing.T) {
 				"full message: %s", msg)
 		}
 	})
+}
+
+// TestTheBuildAndAVerifyReportAnImportedFileDriftAsOneFinding holds the two
+// composers of an imported-file pin disagreement to one finding: the build's
+// check, raised through the framework, and the finding a command outside a build
+// composes from the same parts. Both are handed one set of inputs, and their
+// messages and positions must be equal — so a change to the detail, a caption, the
+// advice or the locator on one side fails here rather than reaching a reader as
+// two answers to one question.
+//
+// Two entry names are driven because the locator treats them differently: a name
+// carrying the separator, as a filename does, is positioned at the artifacts
+// block, and a name without one at the entry itself. A composer hard-coding either
+// position would agree with the check on one row and not the other.
+func TestTheBuildAndAVerifyReportAnImportedFileDriftAsOneFinding(t *testing.T) {
+	t.Parallel()
+
+	const node = "api"
+	intactPin := digest.ContentDigest([]byte(pinBodyIntact))
+	driftedDigest := digest.ContentDigest([]byte(pinBodyDrifted))
+
+	for _, entry := range []string{"policy", "netpol.yaml"} {
+		t.Run(entry, func(t *testing.T) {
+			t.Parallel()
+
+			var facts constraint.HydratedView = artifactContentPinFactStub{
+				text: map[string]string{factKey(node, entry): pinBodyDrifted},
+				pin:  map[string]string{factKey(node, entry): intactPin},
+				path: map[string]string{factKey(node, entry): nodeImportedPath},
+			}
+			sites := artifactContentPinSites{
+				nodes: []constraint.NodeInstance{{ID: node}},
+				artifacts: map[string][]constraint.AuthoredCoordinate{
+					factKey(node): {{Value: entry, SourceFile: "recipe.yaml"}},
+				},
+			}
+			raised, err := constraint.RunOnNodeArtifacts(
+				nil, sites, sites, facts, ArtifactContentMatchesItsRecordedPin,
+			)
+			if err != nil {
+				t.Fatalf("traversal: %v", err)
+			}
+			if len(raised) != 1 {
+				t.Fatalf("the drifted entry must raise exactly once, or there is no build finding to compare; raised %d", len(raised))
+			}
+			build := raised[0]
+
+			outside := ArtifactContentPinMismatch("recipe.yaml", entry, nodeImportedPath, driftedDigest, intactPin)
+			if !errors.Is(outside, ErrArtifactContentMismatch()) {
+				t.Fatalf("the finding composed outside a build does not carry the build's condition: %v", outside)
+			}
+			var composed *cerrors.CompilerError
+			if !errors.As(outside, &composed) {
+				t.Fatalf("the finding composed outside a build is not a positioned diagnostic: %T", outside)
+			}
+
+			if got, want := composed.Message(), constraint.ObjectionMessage(build); got != want {
+				t.Errorf("the two commands word one finding differently.\nbuild:   %s\noutside: %s", want, got)
+			}
+			if got, want := composed.Source(), (cerrors.SourceLocation{File: build.SourceFile(), Locator: build.Locator()}); got != want {
+				t.Errorf("the two commands position one finding differently.\nbuild:   %+v\noutside: %+v", want, got)
+			}
+			if !strings.Contains(composed.Message(), artifactContentPinAdvice) {
+				t.Errorf("the finding does not tell its reader what to do.\nfull message: %s", composed.Message())
+			}
+		})
+	}
 }

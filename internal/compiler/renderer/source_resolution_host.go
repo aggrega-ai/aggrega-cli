@@ -11,7 +11,6 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/parse"
 	"github.com/aggrega-ai/aggrega-cli/internal/sourceref"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
-	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/recipepin"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourcecache"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -134,7 +133,8 @@ func resolveEntitySource(input RendererInput, source any, locals types.OrderedMa
 	// resolution, so a disagreement between them is an integrity fault; the
 	// cache-extract below independently verifies the cached bytes against the
 	// lockfile digest, so agreement here completes the chain (recorded pin ==
-	// lockfile record == cached bytes).
+	// lockfile record == cached bytes). The comparison and its diagnostic are
+	// recipepin.CheckSourcePin's, the one home a verify of the same lock calls too.
 	//
 	// The pin is read from the render input's record of what the load settled for
 	// this entity's document, never from the entity value in hand. The two would be
@@ -143,13 +143,13 @@ func resolveEntitySource(input RendererInput, source any, locals types.OrderedMa
 	// recorded beside the document rather than inside it.
 	//
 	// 🔴 The comparison is scoped to what both records cover, and the scope is
-	// narrower than "every build". An entity carries one pin per source identity it
-	// was frozen against, and a templated source resolves to a different identity
-	// per consuming instance, so an entity holds no pin for an identity its freeze
-	// never reached — an entity never frozen at all, and one whose pins came
-	// from some other resolution than this workspace's, both land there. An entity
-	// declared in no document on disk lands there too: it has no directory a lock
-	// could sit beside, so nothing was recorded under it. Such a
+	// narrower than "every build". A pull records a pin beside an entity only for a
+	// source whose identity its author wrote out in full, so an entity whose source
+	// identity is filled in from a template holds none. An entity never frozen at
+	// all holds none either, and so does one whose lock came from some other
+	// resolution than this workspace's, for any identity that resolution did not
+	// reach. An entity declared in no document on disk lands there too: it has no
+	// directory a lock could sit beside, so nothing was recorded under it. Such a
 	// build proceeds on the lockfile, which is the record the fetch itself reads.
 	// The lockfile side needs no guard of its own: the cache lookup below asks the
 	// same question of the same record, and a build whose identity the lockfile
@@ -160,13 +160,9 @@ func resolveEntitySource(input RendererInput, source any, locals types.OrderedMa
 	// artifact, so asking it two different questions would decide whether the
 	// comparison runs rather than what it concludes.
 	srcPins := input.RecordedPins.For(documentPath).SourceDigests
-	if pin, ok := recipepin.MatchSourcePin(srcPins, spec.Kind, spec.URL, spec.Chart, spec.ModuleSubdir, spec.Version); ok {
-		if lfrec, found := input.Lockfile.FindSourceArtifact(spec.Kind, spec.URL, spec.Chart, spec.ModuleSubdir, spec.Version, spec.Ref); found {
-			if pin.Digest != lfrec.Digest || pin.ManifestDigest != lfrec.ManifestDigest {
-				return nil, fmt.Errorf("source-artifact %s@%s: the source pin recorded beside the entity in %s (digest %s) disagrees with the lockfile record (digest %s): %w",
-					spec.URL, spec.Version, recipepin.LockFileName, pin.Digest, lfrec.Digest, oci.ErrFetchIntegrity())
-			}
-		}
+	if err := recipepin.CheckSourcePin(srcPins, input.Lockfile, recipepin.LockPath(documentPath),
+		spec.Kind, spec.URL, spec.Chart, spec.ModuleSubdir, spec.Version, spec.Ref); err != nil {
+		return nil, err
 	}
 	extracted, err := sourcecache.LookupAndExtract(
 		input.Lockfile,

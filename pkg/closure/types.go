@@ -103,6 +103,22 @@ type SourceArtifactReference struct {
 	// coincides; the field distinguishes them. Empty when the reference was not
 	// resolved per-instance.
 	Component string
+	// IdentityAuthored reports whether the referencing entity's author wrote out
+	// in full every field that fixes which artifact its source names. It is the
+	// descent's own reading of the source, taken once before anything was
+	// acquired, carried here so a later pass acts on that decision rather than
+	// reading the source a second time.
+	//
+	// It is what decides whether the pin belongs beside the entity. An identity
+	// written out in full names one artifact whatever uses the entity, so its pin
+	// is a fact about the entity. An identity filled in from a template names an
+	// artifact only once an instance's own values do the filling, so it is known
+	// per Release rather than beside the entity, and the lockfile of each Release
+	// is where each identity it resolves to is pinned.
+	//
+	// It is not recorded in a lockfile: the lockfile pins every identity either
+	// way, so it has nothing to decide with it.
+	IdentityAuthored bool
 }
 
 // ComponentSourceInfra pairs a using instance with the per-instance infra its
