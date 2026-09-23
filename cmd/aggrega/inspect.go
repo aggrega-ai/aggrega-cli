@@ -53,9 +53,10 @@ func newInspectCmd() *cobra.Command {
 	)
 	c := &cobra.Command{
 		Use:   "inspect [identifier]",
-		Short: "Inspect a catalog entity by name, or an entity file by path",
+		Short: "Inspect a catalog entity by name, an entity file by path, or a published entity by its registry reference",
 		Long: `Render a readable view of any Aggrega entity — a catalog entity by name, an
-authored entity file by path, or a fully-resolved Release.
+authored entity file by path, an entity published in a registry, or a
+fully-resolved Release.
 
 It answers "what does this entity actually resolve to?": which entities extend
 which bases, which Recipe maps to each type, which Features attach to each node,
@@ -63,7 +64,19 @@ and where each Feature's contributions came from.
 
 A single argument routes by its shape. A path — anything starting with ./, ../
 or /, or ending in .yaml or .yml — is read as a file and inspected by its own
-kind: header. Anything else is looked up by name in the catalog search stack.
+kind: header. A registry reference — oci://<host>/<repository>:<tag>, or
+@<digest> in place of :<tag> — is read from the registry that publishes it.
+Anything else is looked up by name in the catalog search stack.
+
+A registry reference shows the entity exactly as it was published: unpacked
+from the archive its kind is published as where it is one, and rendered by the
+same view a file of that kind gets. Reading it reaches the network, using the
+credentials this machine holds for that registry, and an offline workspace
+refuses it. The fetched bytes are checked against the digest the artifact's
+own manifest records for them, which establishes that they are the bytes that
+manifest names and nothing more: no signature attached to the artifact is
+verified, no withdrawal recorded against it is reported, and nothing is
+written — no cache entry and no lockfile.
 
 Three verbosity levels apply to every kind: --list for identifiers only, the
 default for a structured overview, and --detail for full field bodies. --list
@@ -93,6 +106,9 @@ they are from the readable layouts. Pass --unredacted to print them instead.`,
 
   # An authored file by path, identifiers only
   aggrega inspect ./catalog/components/api-server.yaml --list
+
+  # An entity as it was published, read straight from its registry
+  aggrega inspect oci://hub.aggrega.ai/component/core/compute/api-server:1.0.0
 
   # A Release resolved end to end, with full field bodies
   aggrega inspect ./releases/production.yaml --detail
@@ -208,10 +224,11 @@ they are from the readable layouts. Pass --unredacted to print them instead.`,
 //   - Path-shaped argument (starts with ./, ../, /, or ends with .yaml /
 //     .yml) → load the file, peek at kind:, dispatch to the appropriate
 //     inspector branch (Component → schema; Release → per-component
-//     Feature listings with provenance brackets; other kinds → forward-
-//     compatible "not yet implemented" error).
-//   - OCI URI (starts with oci://) → "not yet implemented" error; the
-//     OCI resolver path is a separate work item.
+//     Feature listings with provenance brackets; an embedded-only kind or
+//     an unknown kind → an error saying which).
+//   - Registry reference (starts with oci://) → the entity published at that
+//     coordinate, read through the shared published-entity reading and
+//     rendered by the same per-kind inspector a file of its kind gets.
 //   - Anything else → treated as a catalog entity name, resolved by identity
 //     across every entity kind (Component, Plugin, Feature, Recipe,
 //     FeatureRecipe, Aggregate, SchemaLibrary, MappingLibrary, WorkloadLibrary,
@@ -225,8 +242,17 @@ they are from the readable layouts. Pass --unredacted to print them instead.`,
 // them resolve a dependency closure and one builds a graph — work that leaves the
 // process and that a reader must be able to stop.
 func dispatchInspect(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, identifier string, catalogDirs []string, opts inspectOptions) error {
-	if strings.HasPrefix(identifier, "oci://") {
-		return fmt.Errorf("inspect for OCI URIs not yet implemented; resolve to a local path or use a catalog name")
+	if compilerops.IsRegistryReference(identifier) {
+		// No kind a registry publishes is a Release, so both Release-only
+		// documents are refused before anything is fetched rather than after a
+		// round trip that could only end the same way.
+		if opts.irGraph {
+			return refuseIRGraph("a published entity")
+		}
+		if opts.closure {
+			return refuseClosure("a published entity")
+		}
+		return inspectPublishedEntity(ctx, rw, identifier, catalogDirs, opts)
 	}
 
 	if isPathInput(identifier) {
@@ -244,6 +270,51 @@ func dispatchInspect(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace,
 		return refuseClosure("a catalog entity")
 	}
 	return inspectCatalogEntity(ctx, rw, identifier, catalogDirs, opts)
+}
+
+// inspectPublishedEntity reads the entity a registry reference publishes and
+// renders it through the per-kind inspector a file of that kind is rendered
+// through.
+//
+// The reading is the shared one every surface showing a published entity runs, so
+// this command, the daemon and the tool protocol read the same bytes from one
+// coordinate the same way — including how they refuse. What it hands back is the
+// entity document with any archive already unpacked, which is exactly the input
+// every per-kind inspector is written against: they read the bytes they are
+// handed as a document, and this is the one place those bytes come from a
+// registry rather than a file.
+//
+// The reference stands in for the file path. The inspectors use that value only
+// to name the subject in their own diagnostics, never to read from disk, so a
+// refusal from one of them names the coordinate a person typed.
+//
+// Under the readable layouts the coordinate and the manifest digest follow the
+// entity, because which manifest was read is the one fact about the answer the
+// view itself cannot show. Under --output yaml nothing follows the document, so a
+// consumer parsing it receives the document and nothing else.
+func inspectPublishedEntity(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, reference string, catalogDirs []string, opts inspectOptions) error {
+	rw, err := workspaceOrResolve(rw)
+	if err != nil {
+		return err
+	}
+	entity, err := compilerops.ReadPublishedEntity(ctx, rw.Config(), reference)
+	if err != nil {
+		return err
+	}
+	render, ok := kindRenderers[entity.Kind]
+	if !ok {
+		// Unreachable while every publishable kind has an inspector, and stated
+		// rather than assumed: a kind added to the publishable set without one
+		// would otherwise print nothing here.
+		return fmt.Errorf("%s publishes a %s, which inspect has no view for", reference, entity.Kind)
+	}
+	if err := render(ctx, rw, reference, entity.Document, catalogDirs, opts); err != nil {
+		return err
+	}
+	if opts.output != outputYAML {
+		fmt.Fprintf(opts.out, "\nPublished at: %s\nManifest digest: %s\n", entity.Reference, entity.Digest)
+	}
+	return nil
 }
 
 // refuseReleaseOnly reports a request for a document only a Release resolves,
@@ -364,8 +435,9 @@ func resolveSiblingYAML(dir, name string) string {
 type kindRenderer func(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, path string, data []byte, catalogDirs []string, opts inspectOptions) error
 
 // kindRenderers maps an entity kind to its file-path inspector. inspectPath
-// dispatches through this table; kinds absent from it fall through to the
-// not-yet-implemented / non-standalone handling in inspectPath.
+// dispatches through this table; a kind absent from it is refused there, as
+// embedded-only where it exists only inside another entity and as unknown
+// otherwise.
 var kindRenderers = map[string]kindRenderer{
 	"Component":        renderComponentFile,
 	"Feature":          renderFeatureFile,

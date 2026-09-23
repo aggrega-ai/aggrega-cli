@@ -99,8 +99,8 @@ var errAmbiguousContentLayer = cerrors.Register("ambiguous-content-layer", cerro
 // document is missing or merely not an entity.
 //
 // It names an artifact that unpacks cleanly and holds no entity, which is a
-// different outcome from an artifact that fails to unpack: the latter surfaces
-// as the underlying archive error.
+// different outcome from an artifact that fails to unpack: the latter is
+// ErrBundleUnreadable.
 func ErrBundleNoEntityDocument() error { return errBundleNoEntityDocument }
 
 var errBundleNoEntityDocument = cerrors.Register("bundle-no-entity-document", cerrors.Meta{
@@ -126,6 +126,47 @@ var errBundleAmbiguousEntityDocument = cerrors.Register("bundle-ambiguous-entity
 	RulePlace: cerrors.NotARule("A published bundle was unpacked and its root carries more than one document " +
 		"declaring a publishable entity kind, so no document can be selected. The bundle is unpacked in " +
 		"order to be read, and what it reports is a selection over unpacked content that could not be made."),
+})
+
+// ErrBundleUnreadable is returned when bytes published at a coordinate begin as
+// an archive and cannot be unpacked as one: the compression stream, or the
+// archive inside it, is not well formed.
+//
+// It is kept apart from ErrBundleNoEntityDocument because the two call for
+// different things from whoever reads them. An archive that unpacks and holds no
+// entity is a question about what was put in it; one that does not unpack at all
+// is a defect in the published bytes, which no reader can repair and which only
+// publishing a new version replaces. Call sites wrap it with the archive error
+// that stopped the unpacking written into the message.
+func ErrBundleUnreadable() error { return errBundleUnreadable }
+
+var errBundleUnreadable = cerrors.Register("bundle-unreadable", cerrors.Meta{
+	ShortCode: "E0300",
+	Message:   "oci: published bundle cannot be unpacked",
+	RulePlace: cerrors.NotARule("A published bundle was opened in order to be read and is not a well-formed archive. The " +
+		"bundle is unpacked in order to be read, and what it reports is an operation over fetched content " +
+		"that could not be carried out."),
+})
+
+// ErrPublishedArtifactNotAnEntity is returned when bytes read from a coordinate
+// in order to present the entity published there — unpacked first where they are
+// an archive — are not an entity document of a kind a registry publishes: they do
+// not parse, declare no kind, or declare a kind that is not published.
+//
+// It is the document-shaped counterpart of ErrBundleNoEntityDocument. That one
+// says an archive held no entity at its root; this one says the document a
+// coordinate carries is not one, which is what a reader meets when a reference
+// names a data artifact, an executable or a deployment-side document rather than
+// an entity. Call sites wrap it with the kind the bytes declared, where they
+// declared one.
+func ErrPublishedArtifactNotAnEntity() error { return errPublishedArtifactNotAnEntity }
+
+var errPublishedArtifactNotAnEntity = cerrors.Register("published-artifact-not-an-entity", cerrors.Meta{
+	ShortCode: "E0301",
+	Message:   "oci: published artifact is not an entity document",
+	RulePlace: cerrors.NotARule("Bytes fetched from a coordinate were read in order to present the entity they carry, and " +
+		"they declare no kind a registry publishes. It reports a selection over fetched content that found " +
+		"nothing to take."),
 })
 
 // ErrCachedManifestIntegrity is returned when a cached OCI manifest blob no

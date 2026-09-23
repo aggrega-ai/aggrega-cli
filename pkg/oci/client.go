@@ -68,15 +68,9 @@ type PullResult struct {
 // sentinels in errors.go via errors.Is once they wrap their own
 // diagnostic context.
 func Pull(ctx context.Context, target oras.ReadOnlyTarget, tag string, expectedMediaType ...string) (*PullResult, error) {
-	manifestDesc, err := target.Resolve(ctx, tag)
+	manifestDesc, err := resolveReference(ctx, target, tag)
 	if err != nil {
-		if errors.Is(err, errdef.ErrNotFound) {
-			return nil, fmt.Errorf("oci: %q: %w", tag, ErrFetchNotFound())
-		}
-		if isUnauthorized(err) {
-			return nil, fmt.Errorf("oci: resolve %q: %v: %w", tag, err, ErrFetchUnauthorized())
-		}
-		return nil, fmt.Errorf("oci: resolve %q: %w", tag, err)
+		return nil, err
 	}
 
 	manifestRC, err := target.Fetch(ctx, manifestDesc)
@@ -89,6 +83,38 @@ func Pull(ctx context.Context, target oras.ReadOnlyTarget, tag string, expectedM
 		return nil, fmt.Errorf("oci: read manifest %q: %w", tag, err)
 	}
 
+	return contentFromManifest(ctx, target, tag, manifestDesc, manifestBytes, expectedMediaType...)
+}
+
+// resolveReference resolves a tag or digest on target to the manifest it names,
+// mapping a missing reference to ErrFetchNotFound and a refused or absent
+// credential to ErrFetchUnauthorized.
+//
+// It is the one resolve every read of a published artifact begins with, so the
+// two failures a reader acts on are classified identically whichever descriptor
+// of the manifest it goes on to read.
+func resolveReference(ctx context.Context, target oras.ReadOnlyTarget, tag string) (ocispec.Descriptor, error) {
+	manifestDesc, err := target.Resolve(ctx, tag)
+	if err != nil {
+		if errors.Is(err, errdef.ErrNotFound) {
+			return ocispec.Descriptor{}, fmt.Errorf("oci: %q: %w", tag, ErrFetchNotFound())
+		}
+		if isUnauthorized(err) {
+			return ocispec.Descriptor{}, fmt.Errorf("oci: resolve %q: %v: %w", tag, err, ErrFetchUnauthorized())
+		}
+		return ocispec.Descriptor{}, fmt.Errorf("oci: resolve %q: %w", tag, err)
+	}
+	return manifestDesc, nil
+}
+
+// contentFromManifest reads the content layer a fetched manifest commits to,
+// verifies it against that manifest, and returns it as a PullResult.
+//
+// It is the second half of Pull, separated so a reader that has already fetched
+// the manifest — and decided from it that the content layer is what it wants —
+// reads the layer through the same selection and the same verify rather than a
+// copy of them.
+func contentFromManifest(ctx context.Context, target oras.ReadOnlyTarget, tag string, manifestDesc ocispec.Descriptor, manifestBytes []byte, expectedMediaType ...string) (*PullResult, error) {
 	contentDesc, mediaType, err := descriptorFromManifest(manifestBytes, expectedMediaType...)
 	if err != nil {
 		return nil, fmt.Errorf("oci: parse manifest %q: %w", tag, err)

@@ -5,11 +5,19 @@ package main
 
 import (
 	"context"
+	"errors"
 	"io"
+	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
+
+	"github.com/aggrega-ai/aggrega-cli/pkg/egress"
 )
 
 // TestResolveSiblingYAML_AllBranches pins each documented branch:
@@ -214,15 +222,57 @@ func TestRunBuild_MissingRelease(t *testing.T) {
 	}
 }
 
-// TestRunInspect_OCI pins the OCI not-implemented branch.
+// TestRunInspect_OCI pins that a registry reference with a library-entry
+// fragment appended — `#/schemas/X`, the suffix that selects one entry inside a
+// library — is refused for its shape. The fragment's own slash leaves no tag or
+// digest where the reference is read for one, so the refusal names the reference
+// as typed and the two forms a registry reference is written in, and it is raised
+// before anything is resolved or fetched.
+//
+// Two things make "before anything is fetched" observable rather than inferred.
+// The workspace is offline, so a reading that got as far as the egress gate would
+// be refused as offline instead of for its shape. And the reference names a
+// loopback listener that counts every connection it accepts, whatever protocol
+// arrives on it, so a reading that dialled the host the reference names by any
+// route — through the egress gate or around it — is counted.
 func TestRunInspect_OCI(t *testing.T) {
 	t.Parallel()
-	err := dispatchInspect(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{}), "oci://hub/lib@1#/schemas/X", nil, testInspectOptions(io.Discard))
-	if err == nil {
-		t.Errorf("OCI URI should error")
+
+	var dials atomic.Int64
+	listener := httptest.NewUnstartedServer(http.NotFoundHandler())
+	listener.Config.ConnState = func(_ net.Conn, state http.ConnState) {
+		if state == http.StateNew {
+			dials.Add(1)
+		}
 	}
-	if !strings.Contains(err.Error(), "not yet implemented") {
-		t.Errorf("error should mention not yet implemented; got %v", err)
+	listener.Start()
+	t.Cleanup(listener.Close)
+	ref := "oci://" + listener.Listener.Addr().String() + "/lib@1#/schemas/X"
+
+	root := t.TempDir()
+	writeWorkspaceConfig(t, root, "workspace: {}\noffline: true")
+	rw := resolveTempWorkspace(t, tempWorkspaceOptions{Root: root})
+
+	err := dispatchInspect(context.Background(), rw, ref, nil, testInspectOptions(io.Discard))
+	if err == nil {
+		t.Fatalf("dispatchInspect(%q) succeeded; a reference naming no tag or digest must be refused", ref)
+	}
+	if errors.Is(err, egress.ErrOfflineEgress()) {
+		t.Fatalf("err = %v; want the shape refusal, raised ahead of the egress gate", err)
+	}
+	msg := err.Error()
+	for _, want := range []string{
+		strconv.Quote(ref),
+		"is not a registry reference",
+		"oci://<host>/<repository>:<tag>",
+		"oci://<host>/<repository>@<digest>",
+	} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("err = %q; want it to carry %q", msg, want)
+		}
+	}
+	if n := dials.Load(); n != 0 {
+		t.Errorf("the listener the reference names accepted %d connection(s); a malformed reference must be refused before anything is dialled", n)
 	}
 }
 

@@ -112,8 +112,15 @@ var proseOnlyFailureReturns = map[string]int{
 	// One entry each is the refusal of a response format the tool does not
 	// declare, read from the arguments alone and ahead of the scope the call goes
 	// on to select, so neither has run anything whose findings it could carry.
+	//
+	// Description reads a registry reference as well, and that path adds three.
+	// Two refuse before anything is fetched — a reference sent over a listener,
+	// and a workspace that could not be resolved — so neither has run anything.
+	// The third is a read that failed: it hands back no partial entity, so the
+	// one thing it has in hand is the condition that stopped it, and the prose
+	// opens with that condition's short code.
 	"tool_validate.go": 18,
-	"tool_describe.go": 8,
+	"tool_describe.go": 11,
 	// Publishing. Whether the push returns a partially-populated result
 	// alongside its error is not established, so whether these lose anything is
 	// unmeasured rather than known.

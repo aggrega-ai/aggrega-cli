@@ -14,6 +14,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
@@ -146,9 +147,11 @@ type entityDefinitionResult struct {
 // mistyped request. Its message carries the catalog-skip annotation for that
 // reason, since a file the tolerant enumeration refused is the usual cause.
 //
-// It resolves through the session's catalog view and reaches no registry
-// beyond what that view's own tiers reach, writes nothing, and publishes no
-// diagnostics — so it disturbs no layer another request wrote into the client's
+// A name resolves through the session's catalog view and reaches no registry
+// beyond what that view's own tiers reach. A registry reference sent as the
+// name is read from the registry that publishes it instead — see
+// publishedEntityDefinition. Either way it writes nothing and publishes no
+// diagnostics, so it disturbs no layer another request wrote into the client's
 // Problems panel.
 func (s *Server) dispatchEntityDefinition(ctx context.Context, req *jsonRPCRequest) error {
 	var params entityDefinitionParams
@@ -163,6 +166,15 @@ func (s *Server) dispatchEntityDefinition(ctx context.Context, req *jsonRPCReque
 			"invalid params: name must be the entity's identity, as it is written where one entity "+
 				"references another; the request named none")
 	}
+	// A reference that is not one the reading accepts is a malformed request,
+	// corrected by whoever composed it, rather than a state of the registry — so
+	// it is refused in the band a client corrects rather than the one a user acts
+	// on, before anything is fetched.
+	if compilerops.IsRegistryReference(name) {
+		if err := compilerops.CheckRegistryReference(name); err != nil {
+			return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
+		}
+	}
 
 	result, errEnvelope := s.entityDefinition(ctx, name)
 	if errEnvelope != nil {
@@ -174,6 +186,9 @@ func (s *Server) dispatchEntityDefinition(ctx context.Context, req *jsonRPCReque
 // entityDefinition resolves name across every catalog kind and marshals the
 // match, or produces the refusal for a name that resolved to nothing.
 func (s *Server) entityDefinition(ctx context.Context, name string) (entityDefinitionResult, *jsonRPCError) {
+	if compilerops.IsRegistryReference(name) {
+		return s.publishedEntityDefinition(ctx, name)
+	}
 	// No pins: this request names no Release, so there is no pin set for one.
 	// The view is still request-scoped, so a resolution here cannot perturb a
 	// concurrent request that does hold pins.
@@ -207,6 +222,61 @@ func (s *Server) entityDefinition(ctx context.Context, name string) (entityDefin
 		File:           file,
 		AuthoredLength: len(match.Bytes),
 		Definition:     string(definition),
+	}, nil
+}
+
+// publishedEntityDefinition answers a name that is a registry reference with the
+// entity published at that coordinate, read through the reading every surface
+// showing a published entity shares.
+//
+// The request named the reference, so reaching the registry is what it asked
+// for — the same footing every other request here that goes out to a registry
+// stands on. It reaches it with this workspace's egress posture and the
+// credentials of the user this daemon runs as, writes nothing, and publishes no
+// diagnostics.
+//
+// The answer is the by-name one's shape, filled from what was published rather
+// than from what a catalog resolved:
+//
+//   - Definition is the entity document exactly as it was published — unpacked
+//     from an archive where its kind publishes as one, with no inheritance
+//     applied. It is what the publisher put at the coordinate, which is the
+//     question a reference asks; a catalog resolution is the question a name
+//     asks.
+//   - AuthoredLength is that document's length, because the definition here IS
+//     an authored document rather than a rendering of a resolved one — which is
+//     the distinction the field exists to let a client draw.
+//   - File is empty: an entity read from a registry has no document on this
+//     machine to name.
+//   - PublishScope is omitted. The request already holds the coordinate, which
+//     is where the entity is published, so a second statement of that read out
+//     of its content would say the same thing another way.
+//
+// A reference nothing is published under, a credential the registry refuses, an
+// artifact that cannot be unpacked or holds no entity, and an offline workspace
+// are each refused with entity-not-resolvable. The message leads with the short
+// code of the condition that names the failure, where the failure carries one,
+// and ends with what to do about it.
+func (s *Server) publishedEntityDefinition(ctx context.Context, reference string) (entityDefinitionResult, *jsonRPCError) {
+	entity, err := compilerops.ReadPublishedEntity(ctx, s.wsConfig, reference)
+	if err != nil {
+		message := "entityDefinition: " + err.Error()
+		if short, ok := cerrors.ShortCodeOf(err); ok {
+			message = "entityDefinition: " + short + ": " + err.Error()
+		}
+		return entityDefinitionResult{}, &jsonRPCError{
+			Code:    errEntityNotResolvable,
+			Message: message,
+			cause:   err,
+		}
+	}
+	return entityDefinitionResult{
+		Kind:           entity.Kind,
+		Name:           entity.Name,
+		Version:        entity.Version,
+		Description:    entity.Description,
+		AuthoredLength: len(entity.Document),
+		Definition:     string(entity.Document),
 	}, nil
 }
 

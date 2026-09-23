@@ -6,11 +6,13 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/egress"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -95,19 +97,84 @@ func TestInspect_AnnotationCrossSide_Annotation_HeterogeneousBrackets(t *testing
 	}
 }
 
-// TestInspect_OciUri_ReturnsNotImplemented pins the OCI-URI branch's
-// not-yet-implemented error message. The branch returns a
-// forward-compatible error rather than silently falling through to
-// the catalog-name path; operators see a clear signal that OCI
-// inspect is deferred.
-func TestInspect_OciUri_ReturnsNotImplemented(t *testing.T) {
+// TestInspect_OciUri_ReadsFromTheRegistry pins that an oci:// identifier is routed
+// to the registry reading rather than falling through to the catalog-name path,
+// and that each refusal it can meet ahead of the network is the one named.
+//
+// Every row runs in a workspace that is offline, so no row can reach a network
+// whatever the code under test does: a broken shape check would be refused at the
+// egress gate rather than dialling out. That is also what makes the ordering
+// assertable — a malformed reference must be refused for its shape, which the
+// offline refusal would otherwise mask, and a Release-only flag must be refused
+// before either.
+//
+// Reading a coordinate that exists is driven end to end against an in-process
+// registry by the integration-tagged proof beside the registry round-trip.
+func TestInspect_OciUri_ReadsFromTheRegistry(t *testing.T) {
 	t.Parallel()
-	err := dispatchInspect(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{}), "oci://registry.example.com/components/api:1.0.0", nil, testInspectOptions(io.Discard))
-	if err == nil {
-		t.Fatal("expected not-implemented error for oci:// argument; got nil")
+	cases := []struct {
+		name  string
+		ref   string
+		opts  func(*inspectOptions)
+		check func(t *testing.T, err error)
+	}{
+		{
+			name: "a well-formed reference meets the egress gate",
+			ref:  "oci://registry.example.com/component/core/api:1.0.0",
+			check: func(t *testing.T, err error) {
+				if !errors.Is(err, egress.ErrOfflineEgress()) {
+					t.Errorf("err = %v; want the offline refusal, which is only reached by the registry reading", err)
+				}
+			},
+		},
+		{
+			name: "a reference naming no repository is refused for its shape",
+			ref:  "oci://registry.example.com",
+			check: func(t *testing.T, err error) {
+				if errors.Is(err, egress.ErrOfflineEgress()) || !strings.Contains(err.Error(), "is not a registry reference") {
+					t.Errorf("err = %v; want the shape refusal, ahead of the egress gate", err)
+				}
+			},
+		},
+		{
+			name: "a reference naming no version is refused for its shape",
+			ref:  "oci://registry.example.com/component/core/api",
+			check: func(t *testing.T, err error) {
+				if errors.Is(err, egress.ErrOfflineEgress()) || !strings.Contains(err.Error(), "is not a registry reference") {
+					t.Errorf("err = %v; want the shape refusal, ahead of the egress gate", err)
+				}
+			},
+		},
+		{
+			name: "a Release-only document is refused before anything else",
+			ref:  "oci://registry.example.com/component/core/api:1.0.0",
+			opts: func(o *inspectOptions) { o.irGraph = true },
+			check: func(t *testing.T, err error) {
+				if errors.Is(err, egress.ErrOfflineEgress()) || !strings.Contains(err.Error(), "--ir-graph applies to a Release") {
+					t.Errorf("err = %v; want the --ir-graph refusal, ahead of the egress gate", err)
+				}
+			},
+		},
 	}
-	if !strings.Contains(err.Error(), "not yet implemented") {
-		t.Errorf("error message should signal not-yet-implemented; got: %v", err)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			writeWorkspaceConfig(t, root, "workspace: {}\noffline: true")
+			rw := resolveTempWorkspace(t, tempWorkspaceOptions{Root: root})
+			opts := testInspectOptions(io.Discard)
+			if tc.opts != nil {
+				tc.opts(&opts)
+			}
+			err := dispatchInspect(context.Background(), rw, tc.ref, nil, opts)
+			if err == nil {
+				t.Fatalf("dispatchInspect(%q) succeeded; every row here must be refused", tc.ref)
+			}
+			if strings.Contains(err.Error(), "matched no catalog entity") {
+				t.Fatalf("dispatchInspect(%q) fell through to the catalog-name path: %v", tc.ref, err)
+			}
+			tc.check(t, err)
+		})
 	}
 }
 

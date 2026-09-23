@@ -49,10 +49,11 @@ func IsTarGzBundle(b []byte) bool {
 // for the pin and passes them through here for the parse; this returns the
 // document and never rewrites what the caller pinned.
 //
-// An archive carrying no locatable entity document returns
-// [ErrBundleNoEntityDocument], and one carrying more than one returns
-// [ErrBundleAmbiguousEntityDocument] — never an empty document, because a
-// consumer cannot tell an empty answer from an absent one.
+// An archive that does not unpack returns [ErrBundleUnreadable], one carrying no
+// locatable entity document returns [ErrBundleNoEntityDocument], and one
+// carrying more than one returns [ErrBundleAmbiguousEntityDocument] — never an
+// empty document, because a consumer cannot tell an empty answer from an absent
+// one.
 func EntityYAML(published []byte) ([]byte, error) {
 	if !IsTarGzBundle(published) {
 		return published, nil
@@ -88,19 +89,23 @@ func EntityYAML(published []byte) ([]byte, error) {
 // compose fragment or a Kubernetes manifest sitting beside the entity from being
 // mistaken for it.
 //
-// # Both failures are named rather than guessed at
+// # Every failure is named rather than guessed at
 //
-// No candidate returns ErrBundleNoEntityDocument listing the root entries that
-// were present; more than one returns ErrBundleAmbiguousEntityDocument naming
-// the colliding documents. The second is the case that matters most: two
-// same-version entities authored in one directory bundle to byte-identical
-// archives, so each of their coordinates carries the same bytes, and returning
-// either document would hand a consumer the other entity under the name it
-// asked for — a substitution nothing downstream could detect.
+// An archive that does not unpack returns ErrBundleUnreadable, with the archive
+// error that stopped it carried in the message rather than as a second wrapped
+// error, so the failure keeps a single chain and whoever renders it meets the
+// whole sentence a caller composes around it. No candidate returns
+// ErrBundleNoEntityDocument listing the root entries that were present; more
+// than one returns ErrBundleAmbiguousEntityDocument naming the colliding
+// documents. The last is the case that matters most: two same-version entities
+// authored in one directory bundle to byte-identical archives, so each of their
+// coordinates carries the same bytes, and returning either document would hand
+// a consumer the other entity under the name it asked for — a substitution
+// nothing downstream could detect.
 func entityYAMLFromBundle(blob []byte) ([]byte, error) {
 	gz, err := gzip.NewReader(bytes.NewReader(blob))
 	if err != nil {
-		return nil, fmt.Errorf("oci: unbundle gzip: %w", err)
+		return nil, fmt.Errorf("oci: unbundle gzip: %v: %w", err, ErrBundleUnreadable())
 	}
 	defer gz.Close()
 	tr := tar.NewReader(gz)
@@ -114,7 +119,7 @@ func entityYAMLFromBundle(blob []byte) ([]byte, error) {
 			break
 		}
 		if nerr != nil {
-			return nil, fmt.Errorf("oci: unbundle tar: %w", nerr)
+			return nil, fmt.Errorf("oci: unbundle tar: %v: %w", nerr, ErrBundleUnreadable())
 		}
 		if hdr.Typeflag != tar.TypeReg || strings.Contains(hdr.Name, "/") {
 			continue
@@ -122,7 +127,7 @@ func entityYAMLFromBundle(blob []byte) ([]byte, error) {
 		rootEntries = append(rootEntries, hdr.Name)
 		data, rerr := io.ReadAll(tr)
 		if rerr != nil {
-			return nil, fmt.Errorf("read %s from the published bundle: %w", hdr.Name, rerr)
+			return nil, fmt.Errorf("read %s from the published bundle: %v: %w", hdr.Name, rerr, ErrBundleUnreadable())
 		}
 		if !declaresPublishableKind(data) {
 			continue

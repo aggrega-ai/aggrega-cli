@@ -11,6 +11,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
 )
 
@@ -134,6 +135,33 @@ type describeReleasePayload struct {
 	Deprecations []string `json:"deprecations,omitempty"`
 }
 
+// describePublishedPayload is the structured payload for a registry reference
+// subject: the entity published at that coordinate, exactly as it was published.
+//
+// It is a shape of its own rather than the entity payload with fields left
+// empty, because it answers a different question. The entity payload is what a
+// catalog RESOLVED a name to, inheritance applied; this is what a publisher PUT
+// at a coordinate. Document is therefore the published entity document itself —
+// unpacked from the archive where the coordinate carries one, with nothing
+// merged into it — and it is carried as the text it was published as rather than
+// re-encoded, so a caller reading it reads the publisher's own document.
+//
+// Archive says whether the coordinate's bytes were an archive the document was
+// unpacked from. MediaType is the artifact type the manifest declares, and
+// ManifestDigest is that manifest's digest: what to name to read the same bytes
+// again, and what the fetched content was checked against.
+type describePublishedPayload struct {
+	Reference      string `json:"reference"`
+	Kind           string `json:"kind"`
+	Name           string `json:"name"`
+	Version        string `json:"version"`
+	Description    string `json:"description,omitempty"`
+	MediaType      string `json:"media_type"`
+	Archive        bool   `json:"archive"`
+	ManifestDigest string `json:"manifest_digest"`
+	Document       string `json:"document"`
+}
+
 var describeToolSpec = toolSpec{
 	kinds:   []string{"component", "feature", "release"},
 	summary: "Describes a catalog entity, an entity file, or everything a Release reaches.",
@@ -143,6 +171,11 @@ var describeToolSpec = toolSpec{
 		"Release is built FROM, not its shape — the resolved Aggregate and Manifest identities plus every catalog " +
 		"entity and shared library it reaches, with resolved versions. Use `name` to understand a building block " +
 		"before wiring it into an Aggregate, and `release` to see what a Release depends on before building it. " +
+		"`name` may instead be a registry reference, oci://<host>/<repository>:<tag> or @<digest>, which reads the " +
+		"entity exactly as it was published there — reaching that registry with the credentials of the machine this " +
+		"server runs on, checking the bytes against the digest the artifact's own manifest records and against nothing " +
+		"else, and writing nothing. A reference is read only for a client that launched this server over its " +
+		"standard input and output. " +
 		"`response_format` shapes the `release` mode: detailed (every reference) or concise (identity and counts).",
 	workspaceSelectionNote: "Optional `workspace_root` and `catalog_dirs` override discovery.",
 	inputSchema: `{
@@ -151,7 +184,7 @@ var describeToolSpec = toolSpec{
     "name": {
       "type": "string",
       "minLength": 1,
-      "description": "A catalog entity type URI (any kind) to resolve and describe, e.g. core/compute/api-server. Mutually exclusive with release."
+      "description": "A catalog entity type URI (any kind) to resolve and describe, e.g. core/compute/api-server — or a registry reference, e.g. oci://hub.aggrega.ai/component/core/compute/api-server:1.0.0, to read the entity published there. Mutually exclusive with release."
     },
     "release": {
       "type": "string",
@@ -202,6 +235,8 @@ func describeInvoke(s *server, ctx context.Context, args json.RawMessage) (*call
 		return errorResult("describe takes exactly one of 'name' or 'release', not both")
 	case name == "" && release == "":
 		return errorResult("describe requires either a 'name' (catalog entity) or a 'release' (path)")
+	case compilerops.IsRegistryReference(name):
+		return s.describePublishedEntity(ctx, a, name)
 	case name != "":
 		return s.describeCatalogEntity(a, name)
 	default:
@@ -245,6 +280,67 @@ func (s *server) describeCatalogEntity(a describeArgs, name string) (*callToolRe
 		Definition: def,
 	}
 	return textResult(renderDescribeEntityText(payload), payload)
+}
+
+// describePublishedEntity reads the entity a registry reference publishes, through
+// the reading every surface showing a published entity shares, and answers with it
+// as it was published.
+//
+// # Only for a caller at this machine's keyboard
+//
+// The read reaches a registry the CALLER named, with the credentials the user this
+// process runs as holds. A client that launched this server over its own streams
+// is that user, so what it spends is its own — the same footing the command line
+// stands on. A caller reaching a listener is not: it would be directing this host
+// to contact a registry of its choosing with this host's credentials, from a tool
+// whose declared reach promises nothing leaves the process. That is refused here,
+// by name, before anything is resolved or fetched, rather than answered under a
+// reach the operation does not declare.
+//
+// A failure is answered as guidance the caller can act on: what could not be read,
+// the short code of the condition that names why where the failure carries one,
+// and what to do about it.
+func (s *server) describePublishedEntity(ctx context.Context, a describeArgs, reference string) (*callToolResult, *rpcError) {
+	if s.transport == transportHTTP {
+		return errorResult("describe reads a registry reference only for a client that launched this server over " +
+			"its standard input and output. Reached over HTTP, the read would contact a registry the call names with " +
+			"the credentials of the machine this server runs on, and that is not offered here. Describe the entity by " +
+			"its catalog name instead; whoever runs this server can read the reference at a terminal on its host with " +
+			"`aggrega inspect " + reference + "`.")
+	}
+	tw, err := s.resolveToolWorkspace(a.WorkspaceRoot, a.CatalogDirs)
+	if err != nil {
+		return errorResult(explainToolError("Could not resolve the workspace whose network posture the read runs under.", err, ""))
+	}
+	entity, err := compilerops.ReadPublishedEntity(ctx, tw.cfg, reference)
+	if err != nil {
+		text := err.Error()
+		if short, ok := cerrors.ShortCodeOf(err); ok {
+			text = short + ": " + text
+		}
+		return errorResult("Could not read the entity published at " + reference + ".\n\n" + explainDiagnostic(text, ""))
+	}
+	payload := describePublishedPayload{
+		Reference: entity.Reference, Kind: entity.Kind, Name: entity.Name, Version: entity.Version,
+		Description: entity.Description, MediaType: entity.MediaType, Archive: entity.Archive,
+		ManifestDigest: entity.Digest, Document: string(entity.Document),
+	}
+	return textResult(renderDescribePublishedText(payload), payload)
+}
+
+// renderDescribePublishedText renders the human-readable summary of a published
+// entity: the identity it declares, where it was read from, and the document
+// itself, which is the answer a caller asking about a coordinate wants to read.
+func renderDescribePublishedText(p describePublishedPayload) string {
+	var b strings.Builder
+	line := fmt.Sprintf("%s %s (version %s), published at %s", p.Kind, p.Name, p.Version, p.Reference)
+	if strings.TrimSpace(p.Description) != "" {
+		line += ": " + p.Description
+	}
+	b.WriteString(line)
+	fmt.Fprintf(&b, "\nmanifest: %s\n\n", p.ManifestDigest)
+	b.WriteString(strings.TrimRight(p.Document, "\n"))
+	return b.String()
 }
 
 // describeRelease resolves a Release's catalog closure and returns a summary of

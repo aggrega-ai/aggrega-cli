@@ -41,6 +41,7 @@ import (
 // publishes as.
 var publishedByteSources = map[string]bool{
 	"Pull":                    true, // a registry fetch by reference + tag
+	"PullPublishedEntity":     true, // the fetch of whatever descriptor carries a coordinate's entity
 	"PullEntity":              true, // the kind-bound entity fetch
 	"PullLibrary":             true, // the kind-bound library fetch
 	"PullAggregate":           true, // the bare-name Aggregate fetch
@@ -90,6 +91,7 @@ var publishedByteReaders = map[string]string{
 	"pkg/catalog.LazyLookup.resolveFeatureForClosure":   "parses a Feature for the walk, read through entityDocumentIn (oci.EntityYAML)",
 	"pkg/catalog.catalogLookup.tier3CatalogEntity":      "forwards the entity tier's answer and its resolution; parses nothing",
 	"internal/lintops.fetchPreviousRegistryVersion":     "converts the previous version for the evolution comparison, read through oci.EntityYAML",
+	"internal/compilerops.ReadPublishedEntity":          "reads the entity a reference publishes for a person to see, read through oci.EntityYAML; caches and pins nothing",
 
 	// --- not entity documents: a plugin binary, its manifest, or another payload ---
 	"pkg/catalog.LazyLookup.PluginFromCacheByURI":              "a Plugin entity from the manifest's config blob; a Plugin publishes as a manifest, never through the bundler",

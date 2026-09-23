@@ -5,14 +5,12 @@ package oci
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2"
 	"oras.land/oras-go/v2/content/memory"
-	"oras.land/oras-go/v2/errdef"
 )
 
 // PushPluginManifest packs a Plugin entity and its .wasm executable into ONE
@@ -152,20 +150,25 @@ func FetchPluginManifest(ctx context.Context, target oras.ReadOnlyTarget, tag st
 // so a missing or auth-refused plugin entity surfaces the same sentinels the
 // entity-pull tier and its remediation expect.
 func FetchPluginEntity(ctx context.Context, target oras.ReadOnlyTarget, tag string) (*PullResult, error) {
-	manifestDesc, err := target.Resolve(ctx, tag)
+	manifestDesc, err := resolveReference(ctx, target, tag)
 	if err != nil {
-		if errors.Is(err, errdef.ErrNotFound) {
-			return nil, fmt.Errorf("oci: %q: %w", tag, ErrFetchNotFound())
-		}
-		if isUnauthorized(err) {
-			return nil, fmt.Errorf("oci: resolve %q: %v: %w", tag, err, ErrFetchUnauthorized())
-		}
-		return nil, fmt.Errorf("oci: resolve %q: %w", tag, err)
+		return nil, err
 	}
 	manifestBytes, err := fetchBlob(ctx, target, manifestDesc)
 	if err != nil {
 		return nil, fmt.Errorf("oci: fetch manifest %q: %w", tag, err)
 	}
+	return pluginEntityFromManifest(ctx, target, tag, manifestDesc, manifestBytes)
+}
+
+// pluginEntityFromManifest reads the Plugin entity a fetched single plugin
+// manifest carries as its config blob, verifies it against the manifest's config
+// descriptor, and returns it as a PullResult.
+//
+// It is the second half of FetchPluginEntity, separated so a reader that has
+// already fetched the manifest and found it to be a plugin manifest reads the
+// config blob through the same verify rather than a copy of it.
+func pluginEntityFromManifest(ctx context.Context, target oras.ReadOnlyTarget, tag string, manifestDesc ocispec.Descriptor, manifestBytes []byte) (*PullResult, error) {
 	view, err := parseManifest(manifestBytes)
 	if err != nil {
 		return nil, fmt.Errorf("oci: parse manifest %q: %w", tag, err)

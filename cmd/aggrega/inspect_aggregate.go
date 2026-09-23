@@ -43,7 +43,23 @@ func renderAggregateFile(_ context.Context, rw *workspaceconfig.ResolvedWorkspac
 		return emitYAMLRoundTrip(opts, path, data)
 	}
 
-	agg, err := resolver.LoadAggregate(path)
+	// The bytes handed in are the document, whichever branch reached here: the
+	// file branch read them from path, the catalog branch carries the authored
+	// bytes it retained, and the registry branch unpacked them from what a
+	// coordinate publishes. Decoding them rather than re-reading path is what lets
+	// the last of those work at all — there, path names a coordinate and no file.
+	//
+	// The catalog's accessor reports retained bytes without saying whether it
+	// found any, so an empty value is read from path instead. That is the same
+	// document for the two branches that have a file behind them, and the registry
+	// branch always arrives with bytes.
+	var agg *types.Aggregate
+	var err error
+	if len(data) > 0 {
+		agg, err = resolver.LoadAggregateFromBytes(data, path)
+	} else {
+		agg, err = resolver.LoadAggregate(path)
+	}
 	if err != nil {
 		return fmt.Errorf("load aggregate: %w", err)
 	}
