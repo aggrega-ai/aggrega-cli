@@ -339,11 +339,19 @@ func (l *catalogLookup) LoadAggregate(uri, version, digest string) (*types.Aggre
 	// manifest digest; the manifest self-verify step is skipped, while the
 	// persisted manifest still authorities the content (VerifyContentAgainstManifest)
 	// and the content pin remains the independent root of trust.
-	data, err := tier2ReadVerified(l.workspaceRoot, l.cacheDir, versionedSlotURI(uri, version), digest, "")
+	blob, err := tier2ReadVerified(l.workspaceRoot, l.cacheDir, versionedSlotURI(uri, version), digest, "")
 	if err != nil {
 		return nil, err
 	}
-	return resolver.LoadAggregateFromBytes(data, uri)
+	// The slot holds the artifact the pin covers, which for some kinds is an
+	// archive; the descent parses the document inside it. The verify above runs
+	// over the blob for exactly that reason — narrowing it to the document would
+	// verify less than the lockfile committed to.
+	document, derr := oci.EntityYAML(blob)
+	if derr != nil {
+		return nil, fmt.Errorf("catalog: sub-aggregate %s: %w", uri, derr)
+	}
+	return resolver.LoadAggregateFromBytes(document, uri)
 }
 
 // ClosureRecipeLoader hands out the recipe loader over this lookup's in-memory
@@ -1158,7 +1166,11 @@ func tier3PullCatalogEntity(ctx context.Context, workspaceRoot, cacheDir string,
 		// closure URI (what the build re-reads) plus the pinned version.
 		pinnedVersion := resolvedVersion
 		if !hasFloor {
-			if mv := entityMetadataVersion(result.Bytes); mv != "" {
+			mv, verr := entityMetadataVersion(result.Bytes)
+			if verr != nil {
+				return nil, closure.Resolution{}, fmt.Errorf("catalog: tier-3 pull %s: %w", uri, verr)
+			}
+			if mv != "" {
 				pinnedVersion = mv
 			}
 		}
@@ -1233,7 +1245,11 @@ func (l *catalogLookup) tier3Library(ctx context.Context, uri, kind string) (clo
 		// the floor) and the cache key must agree.
 		pinnedVersion := resolvedVersion
 		if !hasFloor {
-			if mv := entityMetadataVersion(result.Bytes); mv != "" {
+			mv, verr := entityMetadataVersion(result.Bytes)
+			if verr != nil {
+				return closure.Resolution{}, fmt.Errorf("catalog: tier-3 pull %s %s: %w", kind, name, verr)
+			}
+			if mv != "" {
 				pinnedVersion = mv
 			}
 		}
@@ -1306,7 +1322,7 @@ func (l *catalogLookup) tier3Aggregate(ctx context.Context, uri string) (closure
 
 // PullAndCacheAggregate fetches a bare-name published Aggregate via the puller's
 // AggregatePuller capability, caches it under name:metadata.version, and returns
-// the verified bytes + resolved version (the fetched metadata.version identity)
+// the entity document + resolved version (the fetched metadata.version identity)
 // + content digest + the OCI manifest digest the artifact's signature commits
 // to. found is false when the puller is nil (the hermetic build path), lacks the
 // AggregatePuller capability, or the registry has no such aggregate
@@ -1314,6 +1330,16 @@ func (l *catalogLookup) tier3Aggregate(ctx context.Context, uri string) (closure
 // single fetch+cache+pin primitive shared by the closure's tier3Aggregate (sub
 // path) and the triad resolver's Tier-3 seam (top-level path): one cache layout,
 // one identity rule, two call sites.
+//
+// # The document is returned, the digest covers the artifact
+//
+// data is what a caller parses and interpolates, so it is the entity document,
+// already taken out of whatever shape the coordinate served — the caller does
+// not meet the published shape and therefore cannot get it wrong. digest is
+// computed over the whole fetched artifact, because that is what the content pin
+// commits to and what the cache slot holds; the two are deliberately not the
+// same bytes, and collapsing them either pins less than was fetched or hands a
+// parser something that is not a document.
 func PullAndCacheAggregate(ctx context.Context, workspaceRoot, cacheDir string, puller OCIPuller, ref string) (data []byte, version, digest, manifestDigest string, found bool, err error) {
 	if puller == nil {
 		return nil, "", "", "", false, nil
@@ -1335,7 +1361,10 @@ func PullAndCacheAggregate(ctx context.Context, workspaceRoot, cacheDir string, 
 	// the pin matches the build-side tier-1 (bridged) derivation and a
 	// tag != metadata.version publish does not drift. Fall back to the fetch
 	// coordinate only for a body that carries no version.
-	version = entityMetadataVersion(result.Bytes)
+	version, verr := entityMetadataVersion(result.Bytes)
+	if verr != nil {
+		return nil, "", "", "", false, fmt.Errorf("catalog: tier-3 pull Aggregate %s: %w", name, verr)
+	}
 	if version == "" {
 		version = fetchVersion
 	}
@@ -1343,7 +1372,11 @@ func PullAndCacheAggregate(ctx context.Context, workspaceRoot, cacheDir string, 
 	if werr := writeEntityToCacheSlot(workspaceRoot, cacheDir, versionedKey, version, result); werr != nil {
 		return nil, "", "", "", false, fmt.Errorf("catalog: tier-3 cache write Aggregate %s: %w", name, werr)
 	}
-	return result.Bytes, version, contentDigest(result.Bytes), result.Digest, true, nil
+	document, derr := oci.EntityYAML(result.Bytes)
+	if derr != nil {
+		return nil, "", "", "", false, fmt.Errorf("catalog: tier-3 pull Aggregate %s: %w", name, derr)
+	}
+	return document, version, contentDigest(result.Bytes), result.Digest, true, nil
 }
 
 // writeEntityToCacheSlot stores the pulled bytes at the standard

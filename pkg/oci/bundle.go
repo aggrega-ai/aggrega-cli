@@ -21,11 +21,46 @@ import (
 // IsTarGzBundle reports whether b begins with the gzip magic — i.e. it is a
 // Recipe / FeatureRecipe tar.gz bundle (Bundle's tar.gz arm) rather than a
 // plain-YAML entity (Component / Feature / Aggregate).
+//
+// It answers a question about the PUBLISHED SHAPE and nothing else. A consumer
+// that holds bytes from a coordinate and wants the entity inside them calls
+// [EntityYAML], which asks this and unwraps in one step; there is no second
+// place to write that pair, because the unwrapper is unexported.
 func IsTarGzBundle(b []byte) bool {
 	return len(b) >= 2 && b[0] == 0x1f && b[1] == 0x8b
 }
 
-// EntityYAMLFromBundle extracts the entity YAML from a tar.gz bundle produced by
+// EntityYAML returns the entity document carried by bytes published at a
+// registry coordinate, whatever shape they were published in: an archive is
+// unwrapped to the document inside it, and a document is returned unchanged.
+//
+// # Why this is the only entry, and the unwrapper is not
+//
+// Which kinds publish as an archive is a property of [Bundle]'s dispatch, not
+// of any consumer, so a consumer that asks "is this one of those" has taken on
+// a fact it cannot keep current — and every consumer that fails to ask reads an
+// archive as a document, which a YAML decode answers with an empty envelope
+// rather than a refusal. Routing the question through one function makes the
+// answer a property of this package: a caller states what it HAS (bytes from a
+// coordinate) and is handed what it NEEDS, with no shape test of its own.
+//
+// The blob stays the caller's to keep. A content pin commits to the whole
+// published artifact, so a consumer that both pins and parses holds the bytes
+// for the pin and passes them through here for the parse; this returns the
+// document and never rewrites what the caller pinned.
+//
+// An archive carrying no locatable entity document returns
+// [ErrBundleNoEntityDocument], and one carrying more than one returns
+// [ErrBundleAmbiguousEntityDocument] — never an empty document, because a
+// consumer cannot tell an empty answer from an absent one.
+func EntityYAML(published []byte) ([]byte, error) {
+	if !IsTarGzBundle(published) {
+		return published, nil
+	}
+	return entityYAMLFromBundle(published)
+}
+
+// entityYAMLFromBundle extracts the entity YAML from a tar.gz bundle produced by
 // Bundle's archive arm. The bundle carries the entity's per-version directory —
 // the entity file plus any co-located source — and this is the inverse of that
 // arm, used to fold a registry-pulled entity into the catalog (the catalog holds
@@ -62,7 +97,7 @@ func IsTarGzBundle(b []byte) bool {
 // archives, so each of their coordinates carries the same bytes, and returning
 // either document would hand a consumer the other entity under the name it
 // asked for — a substitution nothing downstream could detect.
-func EntityYAMLFromBundle(blob []byte) ([]byte, error) {
+func entityYAMLFromBundle(blob []byte) ([]byte, error) {
 	gz, err := gzip.NewReader(bytes.NewReader(blob))
 	if err != nil {
 		return nil, fmt.Errorf("oci: unbundle gzip: %w", err)

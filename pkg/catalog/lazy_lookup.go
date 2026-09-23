@@ -893,9 +893,11 @@ func (l *LazyLookup) resolveComponentContext(ctx context.Context, uri string) (t
 	if bytes, outcome := l.tier2Verified(uri); outcome == tier2Use {
 		// parseComponentEntity is the shared per-entity resolve; a non-Component
 		// kind returns an error and the cascade falls through to Tier-3.
-		if comp, err := parseComponentEntity(bytes, uri); err == nil {
-			l.entityBytes[entityBytesKey("Component", comp.Metadata.Name)] = bytes
-			return comp, true
+		if doc, ok := entityDocumentIn(bytes); ok {
+			if comp, err := parseComponentEntity(doc, uri); err == nil {
+				l.entityBytes[entityBytesKey("Component", comp.Metadata.Name)] = bytes
+				return comp, true
+			}
 		}
 	} else if outcome == tier2Skip {
 		// Cache drifted from the pin; diagnostic already emitted. Do not use the
@@ -905,12 +907,32 @@ func (l *LazyLookup) resolveComponentContext(ctx context.Context, uri string) (t
 	}
 	bytes, _, err := tier3PullCatalogEntity(ctx, l.workspaceRoot, l.cacheDir, l.puller, uri, "Component")
 	if err == nil && bytes != nil {
-		if comp, perr := parseComponentEntity(bytes, uri); perr == nil {
-			l.entityBytes[entityBytesKey("Component", comp.Metadata.Name)] = bytes
-			return comp, true
+		if doc, ok := entityDocumentIn(bytes); ok {
+			if comp, perr := parseComponentEntity(doc, uri); perr == nil {
+				l.entityBytes[entityBytesKey("Component", comp.Metadata.Name)] = bytes
+				return comp, true
+			}
 		}
 	}
 	return types.Component{}, false
+}
+
+// entityDocumentIn returns the entity document inside bytes a resolution tier
+// handed back, and false when the artifact cannot be opened.
+//
+// It is [oci.EntityYAML] in the shape these cascades speak: they signal by
+// boolean and fall through to the next tier, so an error here has to become a
+// miss rather than a halt. That is not a swallow — a tier that cannot yield the
+// entity leaves the cascade to exhaust, and an entity the build actually needs
+// then surfaces as a loud refusal at the guard layer, keyed to what the build
+// asked for rather than to how one tier failed.
+//
+// The caller keeps the bytes it was given. The retained entityBytes entry is the
+// whole artifact, because that is what the pinned digest covers; only the parse
+// takes the document.
+func entityDocumentIn(published []byte) ([]byte, bool) {
+	document, err := oci.EntityYAML(published)
+	return document, err == nil
 }
 
 // resolveFeature mirrors resolveComponent for the Feature surface.
@@ -929,9 +951,11 @@ func (l *LazyLookup) resolveFeatureContext(ctx context.Context, uri string) (typ
 		return feat, true
 	}
 	if bytes, outcome := l.tier2Verified(uri); outcome == tier2Use {
-		if feat, err := parseFeatureEntity(bytes, uri); err == nil {
-			l.entityBytes[entityBytesKey("Feature", feat.Metadata.Name)] = bytes
-			return feat, true
+		if doc, ok := entityDocumentIn(bytes); ok {
+			if feat, err := parseFeatureEntity(doc, uri); err == nil {
+				l.entityBytes[entityBytesKey("Feature", feat.Metadata.Name)] = bytes
+				return feat, true
+			}
 		}
 	} else if outcome == tier2Skip {
 		// Cache drifted from the pin; diagnostic already emitted. Do not use the
@@ -940,9 +964,11 @@ func (l *LazyLookup) resolveFeatureContext(ctx context.Context, uri string) (typ
 	}
 	bytes, _, err := tier3PullCatalogEntity(ctx, l.workspaceRoot, l.cacheDir, l.puller, uri, "Feature")
 	if err == nil && bytes != nil {
-		if feat, perr := parseFeatureEntity(bytes, uri); perr == nil {
-			l.entityBytes[entityBytesKey("Feature", feat.Metadata.Name)] = bytes
-			return feat, true
+		if doc, ok := entityDocumentIn(bytes); ok {
+			if feat, perr := parseFeatureEntity(doc, uri); perr == nil {
+				l.entityBytes[entityBytesKey("Feature", feat.Metadata.Name)] = bytes
+				return feat, true
+			}
 		}
 	}
 	return types.Feature{}, false
@@ -1477,14 +1503,10 @@ func (l *LazyLookup) foldPinnedCacheEntities(allowed map[string]bool) {
 		if err != nil {
 			continue
 		}
-		parseData := blob
-		if oci.IsTarGzBundle(blob) {
-			y, uerr := oci.EntityYAMLFromBundle(blob)
-			if uerr != nil {
-				l.recordRecipeSkip("lockfile-pinned:"+uri, uerr)
-				continue
-			}
-			parseData = y
+		parseData, uerr := oci.EntityYAML(blob)
+		if uerr != nil {
+			l.recordRecipeSkip("lockfile-pinned:"+uri, uerr)
+			continue
 		}
 		kind := peekEntityKind(parseData)
 		if !allowed[kind] {
@@ -2426,17 +2448,21 @@ func (l *LazyLookup) resolveComponentForClosure(ctx context.Context, uri string,
 		return l.closureResolution("Component", comp.Metadata.Name, comp.Metadata.Version, uri, closure.ResolutionPathCatalog), true
 	}
 	if bytes, outcome := l.tier2Verified(uri); outcome == tier2Use {
-		if comp, err := parseComponentEntity(bytes, uri); err == nil {
-			l.entityBytes[entityBytesKey("Component", comp.Metadata.Name)] = bytes
-			return l.closureResolution("Component", comp.Metadata.Name, comp.Metadata.Version, uri, closure.ResolutionPathCache), true
+		if doc, ok := entityDocumentIn(bytes); ok {
+			if comp, err := parseComponentEntity(doc, uri); err == nil {
+				l.entityBytes[entityBytesKey("Component", comp.Metadata.Name)] = bytes
+				return l.closureResolution("Component", comp.Metadata.Name, comp.Metadata.Version, uri, closure.ResolutionPathCache), true
+			}
 		}
 	} else if outcome == tier2Skip {
 		return closure.Resolution{}, false
 	}
 	if bytes, _, err := tier3PullCatalogEntity(ctx, l.workspaceRoot, l.cacheDir, puller, uri, "Component"); err == nil && bytes != nil {
-		if comp, perr := parseComponentEntity(bytes, uri); perr == nil {
-			l.entityBytes[entityBytesKey("Component", comp.Metadata.Name)] = bytes
-			return l.closureResolution("Component", comp.Metadata.Name, comp.Metadata.Version, uri, closure.ResolutionPathRegistry), true
+		if doc, ok := entityDocumentIn(bytes); ok {
+			if comp, perr := parseComponentEntity(doc, uri); perr == nil {
+				l.entityBytes[entityBytesKey("Component", comp.Metadata.Name)] = bytes
+				return l.closureResolution("Component", comp.Metadata.Name, comp.Metadata.Version, uri, closure.ResolutionPathRegistry), true
+			}
 		}
 	}
 	return closure.Resolution{}, false
@@ -2449,17 +2475,21 @@ func (l *LazyLookup) resolveFeatureForClosure(ctx context.Context, uri string, p
 		return l.closureResolution("Feature", feat.Metadata.Name, feat.Metadata.Version, uri, closure.ResolutionPathCatalog), true
 	}
 	if bytes, outcome := l.tier2Verified(uri); outcome == tier2Use {
-		if feat, err := parseFeatureEntity(bytes, uri); err == nil {
-			l.entityBytes[entityBytesKey("Feature", feat.Metadata.Name)] = bytes
-			return l.closureResolution("Feature", feat.Metadata.Name, feat.Metadata.Version, uri, closure.ResolutionPathCache), true
+		if doc, ok := entityDocumentIn(bytes); ok {
+			if feat, err := parseFeatureEntity(doc, uri); err == nil {
+				l.entityBytes[entityBytesKey("Feature", feat.Metadata.Name)] = bytes
+				return l.closureResolution("Feature", feat.Metadata.Name, feat.Metadata.Version, uri, closure.ResolutionPathCache), true
+			}
 		}
 	} else if outcome == tier2Skip {
 		return closure.Resolution{}, false
 	}
 	if bytes, _, err := tier3PullCatalogEntity(ctx, l.workspaceRoot, l.cacheDir, puller, uri, "Feature"); err == nil && bytes != nil {
-		if feat, perr := parseFeatureEntity(bytes, uri); perr == nil {
-			l.entityBytes[entityBytesKey("Feature", feat.Metadata.Name)] = bytes
-			return l.closureResolution("Feature", feat.Metadata.Name, feat.Metadata.Version, uri, closure.ResolutionPathRegistry), true
+		if doc, ok := entityDocumentIn(bytes); ok {
+			if feat, perr := parseFeatureEntity(doc, uri); perr == nil {
+				l.entityBytes[entityBytesKey("Feature", feat.Metadata.Name)] = bytes
+				return l.closureResolution("Feature", feat.Metadata.Name, feat.Metadata.Version, uri, closure.ResolutionPathRegistry), true
+			}
 		}
 	}
 	return closure.Resolution{}, false

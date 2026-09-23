@@ -16,6 +16,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/sourceref"
 	"github.com/aggrega-ai/aggrega-cli/pkg/compactform"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
+	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
@@ -246,19 +247,36 @@ func peekEntityKind(data []byte) string {
 	return hdr.Kind
 }
 
-// entityMetadataVersion reads metadata.version from an entity's raw bytes, or
-// "" when the bytes are not a parseable YAML envelope. The registry tier pins
-// this (the entity's identity) rather than the OCI tag it was fetched under.
-func entityMetadataVersion(data []byte) string {
+// entityMetadataVersion reads metadata.version from the bytes published at a
+// registry coordinate. The registry tier pins this (the entity's identity)
+// rather than the OCI tag it was fetched under.
+//
+// The bytes are taken through [oci.EntityYAML] first, because two of the kinds
+// this product publishes go to a coordinate as an archive rather than as a
+// document. A decode applied to the archive directly yields an empty version,
+// which every caller here would read as "this entity declares none" and answer
+// by falling back to the tag — recording the label somebody happened to publish
+// under as the resolved identity, with nothing printed and nothing non-zero.
+// An archive that cannot be opened is therefore an error rather than an empty
+// string: those two outcomes have opposite correct responses, and a single
+// return value cannot tell them apart.
+//
+// A document that parses but declares no version still returns ("", nil). That
+// is the case the tag fallback exists for, and it stays a caller's decision.
+func entityMetadataVersion(published []byte) (string, error) {
+	data, err := oci.EntityYAML(published)
+	if err != nil {
+		return "", err
+	}
 	var hdr struct {
 		Metadata struct {
 			Version string `yaml:"version"`
 		} `yaml:"metadata"`
 	}
 	if err := yaml.Unmarshal(data, &hdr); err != nil {
-		return ""
+		return "", nil
 	}
-	return hdr.Metadata.Version
+	return hdr.Metadata.Version, nil
 }
 
 // sortedMapKeys returns the keys of any string-keyed map in sorted order — the

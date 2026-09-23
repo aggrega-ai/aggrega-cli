@@ -56,7 +56,7 @@ func TestBundledEntityIsFoundWhateverTheEntityFileIsNamed(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Bundle: %v", err)
 			}
-			got, err := oci.EntityYAMLFromBundle(archive)
+			got, err := oci.EntityYAML(archive)
 			if err != nil {
 				t.Fatalf("a bundle whose entity file is named %q must still yield its entity: %v", fileName, err)
 			}
@@ -94,7 +94,7 @@ func TestBundleRootDocumentThatIsNotAnEntityIsNotMistakenForOne(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Bundle: %v", err)
 	}
-	got, err := oci.EntityYAMLFromBundle(archive)
+	got, err := oci.EntityYAML(archive)
 	if err != nil {
 		t.Fatalf("a bundle carrying non-entity documents beside its entity must still yield the entity: %v", err)
 	}
@@ -121,7 +121,7 @@ func TestBundledEntityIsFoundOnlyAtTheBundleRoot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Bundle: %v", err)
 	}
-	got, err := oci.EntityYAMLFromBundle(archive)
+	got, err := oci.EntityYAML(archive)
 	if err != nil {
 		t.Fatalf("a nested entity document is payload, not a second anchor: %v", err)
 	}
@@ -169,7 +169,7 @@ func TestSiblingEntitiesBundleByteIdenticallyAndTheReadSideRefuses(t *testing.T)
 	}
 	t.Logf("two coordinates, one artifact: %d bytes, byte-identical", len(firstArchive))
 
-	_, err = oci.EntityYAMLFromBundle(firstArchive)
+	_, err = oci.EntityYAML(firstArchive)
 	if !errors.Is(err, oci.ErrBundleAmbiguousEntityDocument()) {
 		t.Fatalf("an artifact carrying two entity documents must be refused, not resolved to one of them; got %v", err)
 	}
@@ -204,12 +204,12 @@ func TestBundleWithNoEntityDocumentIsRefused(t *testing.T) {
 	}
 	stripped := repackWithout(t, archive, "recipe.yaml")
 
-	if _, err := oci.EntityYAMLFromBundle(stripped); !errors.Is(err, oci.ErrBundleNoEntityDocument()) {
+	if _, err := oci.EntityYAML(stripped); !errors.Is(err, oci.ErrBundleNoEntityDocument()) {
 		t.Fatalf("an artifact with no entity document must be refused by name; got %v", err)
 	}
 	// Calibration: the same archive WITH its entity resolves, so the refusal
 	// above is the missing entity and not the repack.
-	if _, err := oci.EntityYAMLFromBundle(archive); err != nil {
+	if _, err := oci.EntityYAML(archive); err != nil {
 		t.Fatalf("the unstripped archive must still resolve, or the refusal above proves nothing: %v", err)
 	}
 }
@@ -254,7 +254,7 @@ func TestEveryBundlingKindRoundTripsThroughTheAnchor(t *testing.T) {
 			continue
 		}
 		archived = append(archived, kind)
-		got, uerr := oci.EntityYAMLFromBundle(data)
+		got, uerr := oci.EntityYAML(data)
 		if uerr != nil {
 			t.Errorf("kind %q ships as an archive but its entity cannot be located in it: %v", kind, uerr)
 			continue

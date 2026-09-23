@@ -872,7 +872,16 @@ func fetchPreviousRegistryVersion(
 	if err != nil {
 		return nil, "", fmt.Errorf("pull %s: %w", latest, err)
 	}
-	previousJSON, _, err := yamlToLinterJSON(pull.Bytes)
+	// The predecessor arrives in whatever shape its kind publishes as. Two of them
+	// publish as an archive, so the comparison reads the entity document out of
+	// the fetched artifact before converting it — without that step the evolution
+	// gate cannot compare a Recipe or a FeatureRecipe against its predecessor at
+	// all, and a publish that should have been checked is refused instead.
+	previousDocument, derr := oci.EntityYAML(pull.Bytes)
+	if derr != nil {
+		return nil, "", fmt.Errorf("read previous %s: %w", latest, derr)
+	}
+	previousJSON, _, err := yamlToLinterJSON(previousDocument)
 	if err != nil {
 		return nil, "", fmt.Errorf("parse previous %s: %w", latest, err)
 	}

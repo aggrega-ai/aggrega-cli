@@ -76,7 +76,7 @@ func TestPublishedRecipeYieldsItsEntityWhateverTheFileIsNamed(t *testing.T) {
 	if !oci.IsTarGzBundle(pulled.Bytes) {
 		t.Fatalf("a Recipe must publish as an archive, or the anchor below is never reached")
 	}
-	entity, err := oci.EntityYAMLFromBundle(pulled.Bytes)
+	entity, err := oci.EntityYAML(pulled.Bytes)
 	if err != nil {
 		t.Fatalf("a published Recipe must yield its entity however its file was named: %v", err)
 	}
@@ -141,7 +141,7 @@ func TestTwoSiblingRecipesPublishOneArtifactAndTheConsumerIsRefused(t *testing.T
 	}
 	t.Logf("two published coordinates, one artifact: %d bytes, byte-identical", len(frontendArtifact))
 
-	_, err := oci.EntityYAMLFromBundle(databaseArtifact)
+	_, err := oci.EntityYAML(databaseArtifact)
 	if !errors.Is(err, oci.ErrBundleAmbiguousEntityDocument()) {
 		t.Fatalf("pulling the second coordinate must be refused, not answered with the first entity; got %v", err)
 	}

@@ -569,16 +569,21 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	// pinning its metadata.version (identity), not the OCI tag. Resolution-only —
 	// build passes a nil puller, so Tier-3 never networks and a registry top-level
 	// resolves from the pinned cache through the lazy lookup.
+	//
+	// The bytes handed back are already the entity document whatever shape the
+	// coordinate served, so this seam never meets the published shape and has no
+	// discrimination of its own to get wrong; the digest beside them still covers
+	// the whole artifact, which is what the pin commits to.
 	registryFetch := func(ref string) (resolver.ResolvedAggregate, bool, error) {
-		data, version, digest, manifestDigest, found, ferr := catalog.PullAndCacheAggregate(ctx, workspaceRoot, cacheDir, puller, ref)
+		document, version, digest, manifestDigest, found, ferr := catalog.PullAndCacheAggregate(ctx, workspaceRoot, cacheDir, puller, ref)
 		if ferr != nil || !found {
 			return resolver.ResolvedAggregate{}, found, ferr
 		}
-		agg, perr := resolver.LoadAggregateFromBytes(data, ref)
+		agg, perr := resolver.LoadAggregateFromBytes(document, ref)
 		if perr != nil {
 			return resolver.ResolvedAggregate{}, false, perr
 		}
-		return resolver.ResolvedAggregate{Aggregate: agg, Bytes: data, ResolvedVersion: version, Digest: digest, ManifestDigest: manifestDigest, FromRegistry: true}, true, nil
+		return resolver.ResolvedAggregate{Aggregate: agg, Bytes: document, ResolvedVersion: version, Digest: digest, ManifestDigest: manifestDigest, FromRegistry: true}, true, nil
 	}
 	aggRes, err := resolver.ResolveAggregate(releaseDir, rel.Spec.Aggregate, cat.AggregateLookup(), registryFetch)
 	if err != nil {
