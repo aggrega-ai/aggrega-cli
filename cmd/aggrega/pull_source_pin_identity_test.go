@@ -166,12 +166,17 @@ func TestPullRecordsASourcePinBesideAnEntityOnlyForAnIdentityItsAuthorWroteOut(t
 	templatedBefore := mustReadFile(t, templatedRecipe)
 	authoredBefore := mustReadFile(t, authoredRecipe)
 
+	// The pull runs the pin step, as --pin-sources does: which source lands beside
+	// which entity is the step's routing, and by default a pull records nothing
+	// there and halts on the authored-identity Recipe instead.
+	pinSources := true
 	pull := func() {
 		t.Helper()
 		if err := pullRun(context.Background(), pullConfig{
 			ws:             resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
 			ReleasePath:    releasePath,
 			CatalogDirs:    []string{catalogDir},
+			PinSources:     &pinSources,
 			sourceResolver: verbatimSourceResolver{},
 			DiagOut:        io.Discard,
 			Out:            io.Discard,

@@ -118,6 +118,7 @@ var operationAvailability = map[string]opsurface.OperationAvailability{
 	"login":              opsurface.Exposed("aggrega login"),
 	"logout":             opsurface.Exposed("aggrega logout"),
 	"mcp":                opsurface.Exposed("aggrega mcp"),
+	"pin":                opsurface.Exposed("aggrega pin"),
 	"plugin-add":         opsurface.Exposed("aggrega plugin add"),
 	"plugin-gen-catalog": opsurface.Exposed("aggrega plugin gen-catalog"),
 	"plugin-list":        opsurface.Exposed("aggrega plugin list"),

@@ -160,6 +160,11 @@ var operations = []Operation{
 	{"plugin-list", ReachNone, "Report the plugins resolvable here, with their declared metadata."},
 	{"plugin-remove", ReachMachine, "Remove a configured plugin of a named type."},
 	{"plugin-run-local", ReachNone, "Load a local guest module and call one of its exports."},
+	// The step writes the lock beside the entity it is given and fills the
+	// workspace's own content cache with the sources it fetched, so it reaches no
+	// further than the workspace does — the same reach a dependency resolution
+	// has, which is the caller it shares the step with.
+	{"pin", ReachWorkspace, "Record the content pins for an entity's external inputs in the entity.lock beside it."},
 	{"plugin-sync", ReachWorkspace, "Sync a plugin's machine-owned records in its entity file with its module."},
 	{"pull", ReachWorkspace, "Resolve catalog and source dependencies into the cache and write the per-Release lockfile."},
 	{"push", ReachRegistry, "Bundle and publish a catalog entity to an OCI registry."},

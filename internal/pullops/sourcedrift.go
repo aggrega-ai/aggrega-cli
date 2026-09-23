@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/entitypin"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/egress"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
@@ -26,7 +27,7 @@ func (c Config) sourceResolver(ctx context.Context, wsCfg workspaceconfig.Config
 	if c.SourceResolver != nil {
 		return c.SourceResolver
 	}
-	return sourceResolverShim{ctx: ctx, wsCfg: wsCfg}
+	return entitypin.SourceResolver(ctx, wsCfg)
 }
 
 // recordedReference names one question this pass asks a remote: which artifact

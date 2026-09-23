@@ -498,9 +498,9 @@ type LazyLookup struct {
 	// content-addressed cache slot, which nobody authored, and is never recorded
 	// here.
 	//
-	// That Tier-1-only rule serves two consumers at once. A caller writing back
-	// into an entity — the resolution-time pin freeze — is scoped to author-owned
-	// files and never touches a pinned cache slot. A caller reporting where an
+	// That Tier-1-only rule serves two consumers at once. A caller writing beside
+	// an entity — the entity author's pin step — is scoped to author-owned
+	// directories and never touches a pinned cache slot. A caller reporting where an
 	// entity was declared is answered with a document that exists on this machine
 	// as a document, rather than with a cache slot's location.
 	//
@@ -1186,8 +1186,8 @@ func (l *LazyLookup) buildSchemaLibraries() error {
 // LocalRecipePath returns the writable filesystem path a Tier-1 (catalog-
 // directory) Recipe was authored in, keyed by its identity {target, name,
 // version}, and whether one is recorded. A registry-resolved Recipe living in a
-// content-addressed cache slot returns ("", false), so the resolution-time pin
-// freeze writes only into author-owned files. Triggers the Tier-1 index walk on
+// content-addressed cache slot returns ("", false), so the entity author's pin
+// step writes only beside author-owned files. Triggers the Tier-1 index walk on
 // first call.
 //
 // It hands back the path as the walk recorded it, because its caller writes to

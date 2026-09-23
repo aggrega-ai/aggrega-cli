@@ -527,7 +527,7 @@ func runAttachmentArtifactContentPinRule(
 // as, and it names the FeatureRecipe rather than the Recipe.
 //
 // One home for the wording because the two owners give an author the same thing to
-// do — re-freeze the entry's pin if the change was intended, or restore the file —
+// do — re-pin the entry if the change was intended, or restore the file —
 // and which owner reached it is not a difference the author acts on. The
 // attachment is named because it is what says which FeatureRecipe.
 func attachmentArtifactContentPinHalt(

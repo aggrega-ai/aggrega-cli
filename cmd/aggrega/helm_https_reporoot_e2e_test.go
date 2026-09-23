@@ -29,7 +29,9 @@ import (
 func sourcedRepoRootFixture(t *testing.T, root, repoRootURL, chart string) string {
 	t.Helper()
 	catalogRoot := filepath.Join(root, "catalog")
-	writeFixture(t, filepath.Join(root, ".aggrega-config.yaml"), "workspace: {}\nauto_pull: false\n")
+	// pin_sources_at_pull on: the pull under test records the recipe's source pin
+	// beside it, which by default a pull does not do and halts for.
+	writeFixture(t, filepath.Join(root, ".aggrega-config.yaml"), "workspace: {}\nauto_pull: false\npin_sources_at_pull: true\n")
 	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
 kind: Aggregate
 metadata:
@@ -234,7 +236,9 @@ func serveHelmRepoMulti(t *testing.T, version string, charts map[string][]byte) 
 func collisionRepoRootFixture(t *testing.T, root, repoRootURL, chartA, chartB string) string {
 	t.Helper()
 	catalogRoot := filepath.Join(root, "catalog")
-	writeFixture(t, filepath.Join(root, ".aggrega-config.yaml"), "workspace: {}\nauto_pull: false\n")
+	// pin_sources_at_pull on: the pull under test records the recipe's source pin
+	// beside it, which by default a pull does not do and halts for.
+	writeFixture(t, filepath.Join(root, ".aggrega-config.yaml"), "workspace: {}\nauto_pull: false\npin_sources_at_pull: true\n")
 	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
 kind: Aggregate
 metadata:

@@ -39,6 +39,7 @@ func dryRunThreeFileWorkspace(t *testing.T, host string) (root, releasePath stri
 		"  catalog_dirs:\n"+
 		"    - "+filepath.Join(root, "catalog")+"\n"+
 		"auto_pull: false\n"+
+		"pin_sources_at_pull: true\n"+
 		"default_registry: \""+host+"\"\n"+
 		"plugins:\n"+
 		"  linter:\n"+

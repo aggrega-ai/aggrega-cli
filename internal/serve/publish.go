@@ -104,6 +104,10 @@ func reachOf(reference string, landed bool) publicationReach {
 // rather than a path, which is what makes it the channel this surface accepts;
 // leaving it out falls through to whatever the environment already carries, and
 // when nothing does the publication refuses rather than asking anybody.
+//
+// pinSources runs the entity author's pin step on the entity before it is
+// bundled. It is a pointer for the reason sign is: absent follows the
+// workspace's pin_sources_at_push, and either value overrides it.
 type publishEntityParams struct {
 	Entity        string `json:"entity"`
 	Registry      string `json:"registry,omitempty"`
@@ -114,6 +118,7 @@ type publishEntityParams struct {
 	RekorURL      string `json:"rekorUrl,omitempty"`
 	TimestampURL  string `json:"timestampUrl,omitempty"`
 	IdentityToken string `json:"identityToken,omitempty"`
+	PinSources    *bool  `json:"pinSources,omitempty"`
 }
 
 // publishEntityResult is the aggrega/publishEntity response.
@@ -144,6 +149,11 @@ type publishEntityResult struct {
 	AlreadyPublished bool             `json:"alreadyPublished"`
 	DryRun           bool             `json:"dryRun"`
 	Reach            publicationReach `json:"reach"`
+
+	// Pin is what the pin step did to the entity's lock before the bundle was
+	// built, in the shape aggrega/pin answers with, and is absent where this
+	// publication did not run the step.
+	Pin *pinResult `json:"pin,omitempty"`
 }
 
 // publishArtifactParams is what aggrega/publishArtifact takes: the file to
@@ -328,6 +338,7 @@ func (s *Server) publishEntityConfig(params publishEntityParams, progressOut io.
 		TimestampURL:      params.TimestampURL,
 		IDToken:           params.IdentityToken,
 		PluginPath:        pluginPath,
+		PinSources:        params.PinSources,
 		Workspace:         s.resolvedWorkspace,
 		IdentitySupply:    daemonIdentitySupply,
 		DestinationSupply: daemonDestinationSupply,
@@ -370,6 +381,10 @@ func runPublishEntity(ctx context.Context, cfg publishops.PushConfig) (publishEn
 	// number beside it, in either direction.
 	if res.PluginSize != 0 {
 		out.PluginSizeText = cacheops.HumanSize(int64(res.PluginSize))
+	}
+	if res.Pin != nil {
+		pin := pinReportOf(*res.Pin, cfg.Workspace.Root(), res.DryRun)
+		out.Pin = &pin
 	}
 	return out, nil
 }

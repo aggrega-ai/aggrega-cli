@@ -42,8 +42,8 @@ import (
 // # What the diagnostic names
 //
 // It is positioned at lockPath, because both remedies act on the lock: restoring
-// the committed file, or a pull rewriting it from the resolution the lockfile
-// records. It names both values of whichever digest disagrees — the content
+// the committed file, or the pin step rewriting it from a fresh resolution. It
+// names both values of whichever digest disagrees — the content
 // digest, or the manifest digest where the content digests agree — because either
 // record may be the one that moved, and two equal values would tell a reader
 // nothing.
@@ -86,7 +86,7 @@ func CheckSourcePin(pins []types.SourceDigest, lf *lockfile.Lockfile, lockPath, 
 // load-bearing rather than stylistic: a build wraps every fetch failure and adds
 // the family's generic remediation unless the chain already carries one, and the
 // generic one for an integrity fault is a full upgrade — a heavier act than this
-// fault needs, since restoring the lock or re-running the pull rewrites exactly
-// the file that disagrees.
+// fault needs, since restoring the lock or pinning the entity again rewrites
+// exactly the file that disagrees.
 const sourcePinRemediation = "remediation: restore " + LockFileName +
-	", or run `aggrega pull --release <release>` to rewrite it"
+	", or run `aggrega pin` on the entity to rewrite it"

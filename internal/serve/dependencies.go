@@ -29,11 +29,18 @@ import (
 // a directory the workspace does not name. Naming the workspace is what selects
 // that search stack, not a way around it: the stack is the named workspace's own
 // configuration, read the way the command line reads it.
+//
+// PinSources runs the entity author's pin step over the entities the Release
+// builds, rather than halting on one whose lock does not record its pins. It is a
+// pointer so an absent field and an explicit false are distinguishable: absent
+// follows the workspace's pin_sources_at_pull, and either value overrides it —
+// the command line's --pin-sources on the same terms.
 type resolveDependenciesParams struct {
-	Release string   `json:"release"`
-	Upgrade bool     `json:"upgrade,omitempty"`
-	Targets []string `json:"targets,omitempty"`
-	Verify  bool     `json:"verify,omitempty"`
+	Release    string   `json:"release"`
+	Upgrade    bool     `json:"upgrade,omitempty"`
+	Targets    []string `json:"targets,omitempty"`
+	Verify     bool     `json:"verify,omitempty"`
+	PinSources *bool    `json:"pinSources,omitempty"`
 }
 
 // dependencyResolutionReport is what a completed dependency resolution reports
@@ -188,8 +195,9 @@ func (s *Server) dispatchResolveDependencies(ctx context.Context, req *jsonRPCRe
 // # What it writes, which is intended and reported
 //
 // The per-Release lockfile, the content-addressed cache, the trust record beside
-// the lockfile, and the resolved content digests frozen into each writable recipe
-// file. Every one of those is the operation's product rather than a side effect,
+// the lockfile, and — where the request or the workspace asks for the pin step —
+// the lock beside each Recipe and FeatureRecipe with a writable home. Every one of
+// those is the operation's product rather than a side effect,
 // and what this surface owes is that a caller can see it happened: the result
 // names the lockfile and every reference pinned into it.
 //
@@ -222,6 +230,7 @@ func (s *Server) handleResolveDependencies(ctx context.Context, params resolveDe
 		Upgrade:         params.Upgrade,
 		UpgradeTargets:  params.Targets,
 		Verify:          params.Verify,
+		PinSources:      params.PinSources,
 		CompilerVersion: s.compilerVersion,
 		Toolchain:       s.toolchain,
 		DiagOut:         io.MultiWriter(&notices, progress.writer()),

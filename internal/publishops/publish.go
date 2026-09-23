@@ -12,6 +12,7 @@ import (
 	"go.yaml.in/yaml/v3"
 	"oras.land/oras-go/v2"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/entitypin"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/registryhost"
@@ -56,6 +57,13 @@ type PushConfig struct {
 	// content digest, and publishes them as an OCI artifact addressed by that
 	// digest before publishing the entity. Empty for every non-Plugin kind.
 	PluginPath string
+
+	// PinSources is this invocation's answer to whether the publication runs the
+	// entity author's pin step on the entity before bundling it: nil defers to
+	// the workspace's pin_sources_at_push, and a value overrides that setting in
+	// either direction. The step is the one every caller that pins reaches, so
+	// the lock it writes is the lock `aggrega pin` writes.
+	PinSources *bool
 
 	// Workspace is the resolved workspace the caller threads in. Required: Push
 	// refuses a nil rather than resolving one of its own, because resolving here
@@ -271,6 +279,11 @@ type PushResult struct {
 	// DryRun reports that nothing was published: the bundle was computed and the
 	// destination was never contacted.
 	DryRun bool
+
+	// Pin is what the pin step did to the entity's lock before the bundle was
+	// built, and nil where this publication did not run it. On a dry run it
+	// reports what the step would have written, and wrote nothing.
+	Pin *entitypin.Result
 }
 
 // writePublicationFacts writes the transport facts of a publication — what kind
@@ -393,6 +406,26 @@ func Push(ctx context.Context, cfg PushConfig) (PushResult, error) {
 		return PushResult{}, fmt.Errorf("%s: missing metadata.version", cfg.EntityPath)
 	}
 
+	// The pin step runs here, ahead of every refusal that judges the entity and
+	// ahead of the bundle, and both positions are the point. The bundle is built
+	// from the entity's directory, so a lock written after it would be missing
+	// from what is published and the published digest would describe a directory
+	// that no longer exists. And a publication that pins on the author's behalf
+	// pins before the entity is judged, so what is judged is the entity as
+	// pinned. The refusals above it are about the invocation — the offline
+	// posture, a destination nobody named, a document that is not an entity — and
+	// no pin could answer any of them.
+	//
+	// It runs where the entity has a writable home, which a publication always
+	// has: the entity is named by its document, and the step reads it from that
+	// document's own directory. So the restriction a dependency resolution meets
+	// on a cache-resident entity is the same predicate here, satisfied rather
+	// than skipped.
+	pinned, err := pinBeforePublishing(ctx, out, cfg, rw)
+	if err != nil {
+		return PushResult{}, err
+	}
+
 	// Signing policy. A publication is refused unsigned when EITHER the destination
 	// registry requires signatures OR the workspace signing policy requires a
 	// signature for this artifact kind. Signing is on by default whenever
@@ -432,7 +465,11 @@ func Push(ctx context.Context, cfg PushConfig) (PushResult, error) {
 	// the immutability guard, and the content-digest spelling are reused, not
 	// re-spelled.
 	if header.Kind == "Plugin" {
-		return pushPlugin(ctx, out, cfg, registry, wantSign, header.Metadata.Name, header.Metadata.Version, cfg.EntityPath, data)
+		res, perr := pushPlugin(ctx, out, cfg, registry, wantSign, header.Metadata.Name, header.Metadata.Version, cfg.EntityPath, data)
+		if perr == nil {
+			res.Pin = pinned
+		}
+		return res, perr
 	}
 
 	bundleBytes, mediaType, err := oci.Bundle(header.Kind, cfg.EntityPath)
@@ -449,6 +486,7 @@ func Push(ctx context.Context, cfg PushConfig) (PushResult, error) {
 		MediaType: mediaType,
 		Size:      len(bundleBytes),
 		Signed:    wantSign,
+		Pin:       pinned,
 	}
 
 	// Searchable catalog annotations, built once and stamped identically onto

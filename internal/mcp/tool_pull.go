@@ -29,12 +29,17 @@ import (
 // UpgradeTargets doubles as the switch and the subject: a resolution upgrades
 // exactly the references it names, so there is no second flag beside it that could
 // disagree with it about whether an upgrade was asked for.
+//
+// PinSources is a pointer so an absent argument and an explicit false are
+// distinguishable: absent follows the workspace's pin_sources_at_pull, and either
+// value overrides it — the command line's --pin-sources on the same terms.
 type pullArgs struct {
 	Release        string   `json:"release"`
 	WorkspaceRoot  string   `json:"workspace_root"`
 	CatalogDirs    []string `json:"catalog_dirs"`
 	Verify         bool     `json:"verify"`
 	UpgradeTargets []string `json:"upgrade_targets"`
+	PinSources     *bool    `json:"pin_sources"`
 }
 
 // pullCorePlugin is one core plugin's recorded version in a lockfile's toolchain
@@ -135,7 +140,10 @@ var pullToolSpec = toolSpec{
 		"from pins the workspace already carries, and this is what makes them exist. Pass `verify` to compare the recorded " +
 		"lockfile against what resolves today and write nothing, which is how you detect drift. Pass `upgrade_targets` " +
 		"with entity URIs to re-resolve only those, holding every other pin; no argument re-resolves everything at once, " +
-		"because that discards the whole lockfile and a tool call has nobody to confirm it.",
+		"because that discards the whole lockfile and a tool call has nobody to confirm it. A Recipe or FeatureRecipe " +
+		"the Release builds from a catalog directory must have its inputs' pins recorded in the entity.lock beside it, " +
+		"and by default a resolution over one whose lock does not refuses and names the pin tool; pass `pin_sources` " +
+		"to run that same step here instead.",
 	workspaceSelectionNote: "Optional `workspace_root` and `catalog_dirs` override discovery.",
 	inputSchema: `{
   "type": "object",
@@ -163,6 +171,10 @@ var pullToolSpec = toolSpec{
       "items": { "type": "string", "minLength": 1 },
       "minItems": 1,
       "description": "Entity URIs to re-resolve, in the bare authored form such as core/database. Each named pin is dropped and re-resolved to the highest available version; all other pins and the recorded external inputs are held. Omit to reconcile instead. Cannot be combined with verify."
+    },
+    "pin_sources": {
+      "type": "boolean",
+      "description": "Run the entity author's pin step over the Recipes and FeatureRecipes the Release builds from a catalog directory, writing the entity.lock beside each, instead of refusing on one whose lock does not record its pins. Absent follows the workspace's pin_sources_at_pull setting; either value overrides it."
     }
   },
   "required": ["release"],
@@ -402,6 +414,7 @@ func pullResolutionConfig(s *server, tw *toolWorkspace, releasePath string, a pu
 		Upgrade:         len(targets) > 0,
 		UpgradeTargets:  targets,
 		Verify:          a.Verify,
+		PinSources:      a.PinSources,
 		CompilerVersion: s.serverVersion,
 		Toolchain:       s.toolchain,
 		DiagOut:         diagOut,

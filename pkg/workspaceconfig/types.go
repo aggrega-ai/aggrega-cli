@@ -97,6 +97,20 @@ type Config struct {
 	AutoPull         bool   `yaml:"auto_pull"`
 	ArtifactCacheDir string `yaml:"artifact_cache_dir"`
 
+	// PinSourcesAtPull and PinSourcesAtPush are each operation's own default for
+	// whether it runs the entity author's pin step rather than halting, or
+	// publishing unpinned: pull's resolution over the entities a Release builds,
+	// and push's publication of the one entity it is given. Both are false by
+	// default, and a command's own --pin-sources answer overrides its key in both
+	// directions — see PullPinsSources and PushPinsSources, which are where that
+	// precedence is decided.
+	//
+	// They are two keys rather than one because they are two operations, and a
+	// key's name should say which operation it governs: one key governing both
+	// would span an axis its name hides.
+	PinSourcesAtPull bool `yaml:"pin_sources_at_pull"`
+	PinSourcesAtPush bool `yaml:"pin_sources_at_push"`
+
 	Build   BuildConfig   `yaml:"build"`
 	Plugins PluginsConfig `yaml:"plugins"`
 
@@ -524,6 +538,43 @@ func (c Config) ResolvedArtifactCacheDir() string {
 // about the configuration.
 func (c Config) FillsLockfile(requested bool) bool {
 	return requested || c.AutoPull
+}
+
+// PullPinsSources reports whether a dependency resolution runs the pin step over
+// the entities it builds, given this one invocation's answer: nil when the
+// invocation said nothing, or the value it gave.
+//
+// The invocation's answer overrides the workspace's pin_sources_at_pull in BOTH
+// directions, and that is the whole rule, stated here because this is the only
+// place it is decided. A workspace configured to pin still has to be able to get
+// the halt back for one invocation, and one configured to halt still has to be
+// able to pin once, or the setting would be a trapdoor rather than a default.
+// That is also why this differs from FillsLockfile, whose two inputs are
+// additive: there, no input turns the fill off.
+//
+// Every surface that carries a pull composes this one decision — the command
+// line's --pin-sources, the daemon's pinSources request field, the tool
+// protocol's pin_sources argument, and a build's own dependency fill, which is a
+// pull — so none of them decides it a second way.
+func (c Config) PullPinsSources(requested *bool) bool {
+	return pinsSources(c.PinSourcesAtPull, requested)
+}
+
+// PushPinsSources reports whether a publication runs the pin step over the
+// entity it publishes before it bundles it, given this one invocation's answer.
+// It is PullPinsSources' rule applied to pin_sources_at_push: the invocation's
+// answer overrides the workspace's in both directions.
+func (c Config) PushPinsSources(requested *bool) bool {
+	return pinsSources(c.PinSourcesAtPush, requested)
+}
+
+// pinsSources is the precedence both operations share: an invocation's own
+// answer where it gave one, the workspace's setting otherwise.
+func pinsSources(setting bool, requested *bool) bool {
+	if requested != nil {
+		return *requested
+	}
+	return setting
 }
 
 // BuildConfig groups build-time strictness dials and authoring

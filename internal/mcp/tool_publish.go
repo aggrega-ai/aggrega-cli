@@ -270,6 +270,10 @@ type publishEntityArgs struct {
 	TimestampURL  string `json:"timestamp_url"`
 	IdentityToken string `json:"identity_token"`
 	WorkspaceRoot string `json:"workspace_root"`
+	// PinSources runs the entity author's pin step before the bundle is built. It
+	// is a pointer for the reason Sign is: absent follows the workspace's
+	// pin_sources_at_push, and either value overrides it.
+	PinSources *bool `json:"pin_sources"`
 }
 
 // publishEntityPayload is the catalog-entity publication's structured result: the
@@ -291,6 +295,9 @@ type publishEntityPayload struct {
 	AlreadyPublished bool             `json:"already_published"`
 	DryRun           bool             `json:"dry_run"`
 	Reach            publicationReach `json:"reach"`
+	// Pin is what the pin step did to the entity's lock before the bundle was
+	// built, in the pin tool's own shape, and absent where the call did not pin.
+	Pin *pinPayload `json:"pin,omitempty"`
 }
 
 var publishEntityToolSpec = toolSpec{
@@ -303,9 +310,11 @@ var publishEntityToolSpec = toolSpec{
 		"bundle and contact nothing. Signing follows the destination registry's policy unless `sign` says " +
 		"otherwise, and a registry that requires signatures refuses an unsigned publication whatever you send — " +
 		"there is no argument that bypasses that refusal. Keyless signing resolves an identity from " +
-		"`identity_token`, and refuses loudly when nothing carries one, because nothing here can prompt. The " +
-		"result carries where the entity landed, the tag, the published digest, whether it was signed, and how " +
-		"far the call reached.",
+		"`identity_token`, and refuses loudly when nothing carries one, because nothing here can prompt. Set " +
+		"`pin_sources` to run the entity author's pin step first — the pin tool's step, writing the entity.lock " +
+		"beside the entity inside your workspace so it is part of what is published. The result carries where " +
+		"the entity landed, the tag, the published digest, whether it was signed, what the pin step did, and " +
+		"how far the call reached.",
 	inputSchema: `{
   "type": "object",
   "properties": {
@@ -353,6 +362,10 @@ var publishEntityToolSpec = toolSpec{
       "type": "string",
       "description": "Timestamp authority endpoint for keyless signing. Absent uses the configured or public-good default."
     },
+    "pin_sources": {
+      "type": "boolean",
+      "description": "Run the entity author's pin step on the entity before bundling it, writing the entity.lock beside it inside the workspace. Absent follows the workspace's pin_sources_at_push setting; either value overrides it."
+    },
     "workspace_root": {
       "type": "string",
       "description": "Optional workspace root override. Defaults to discovery from the server's working directory."
@@ -362,6 +375,7 @@ var publishEntityToolSpec = toolSpec{
 }`,
 	signingKeyNote:      signingKeySelectionNote,
 	signingKeyArguments: signingKeyArguments,
+	reachEscalation:     publishReach,
 	invoke:              publishEntityInvoke,
 }
 
@@ -425,6 +439,7 @@ func (s *server) publishEntityConfig(a publishEntityArgs) (publishops.PushConfig
 		RekorURL:                  a.RekorURL,
 		TimestampURL:              a.TimestampURL,
 		IDToken:                   a.IdentityToken,
+		PinSources:                a.PinSources,
 		EnvLookup:                 credentials.envLookup,
 		ConfiguredKeyNotConsulted: credentials.configuredKeyNotConsulted,
 		Workspace:                 tw.rw,
@@ -445,7 +460,7 @@ func runPublishEntity(ctx context.Context, cfg publishops.PushConfig) (publishEn
 	if err != nil {
 		return publishEntityPayload{}, err
 	}
-	return publishEntityPayload{
+	payload := publishEntityPayload{
 		Reference:        res.Reference,
 		Tag:              res.Tag,
 		Kind:             res.Kind,
@@ -457,7 +472,12 @@ func runPublishEntity(ctx context.Context, cfg publishops.PushConfig) (publishEn
 		AlreadyPublished: res.AlreadyPublished,
 		DryRun:           res.DryRun,
 		Reach:            reachOf(res.Reference, !res.DryRun),
-	}, nil
+	}
+	if res.Pin != nil {
+		pin := pinPayloadOf(*res.Pin, res.DryRun)
+		payload.Pin = &pin
+	}
+	return payload, nil
 }
 
 // renderPublishEntityText renders the human-readable summary of a publication.
@@ -477,6 +497,7 @@ func renderPublishEntityText(p publishEntityPayload) string {
 	if p.Signed {
 		b.WriteString(" A signature was attached and cannot be recalled from anyone who fetches it.")
 	}
+	b.WriteString(renderPinOutcome(p.Pin))
 	return b.String()
 }
 

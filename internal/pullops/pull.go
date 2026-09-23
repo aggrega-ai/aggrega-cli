@@ -150,7 +150,7 @@ type Config struct {
 
 	// DryRun computes everything the run would put on disk and puts none of it
 	// there: the files it would have written come back in Result.DryRunFiles, each
-	// with the bytes it would have held, and the lockfile, the recipe files and the
+	// with the bytes it would have held, and the lockfile, the entity locks and the
 	// plugin trust record are left exactly as they were.
 	//
 	// It is scoped to the files the run PRODUCES and says nothing about the
@@ -164,6 +164,18 @@ type Config struct {
 	// IncludePrerelease is accepted and not yet honored, so a caller that passes
 	// it keeps working when it starts having an effect.
 	IncludePrerelease bool
+
+	// PinSources is this invocation's answer to whether the resolution runs the
+	// pin step over the entities it builds — recording, in the lock beside each
+	// Recipe and FeatureRecipe with a writable home, the pins its inputs need —
+	// rather than halting on an entity whose lock does not record them.
+	//
+	// It is a pointer because the invocation's answer overrides the workspace's
+	// in BOTH directions, and an unset invocation defers to the workspace: nil
+	// takes the workspace's pin_sources_at_pull setting, true pins whatever that
+	// setting says, and false halts whatever it says. A plain boolean could not
+	// tell an invocation that asked for nothing from one that asked for the halt.
+	PinSources *bool
 
 	// CompilerVersion is the build identity stamped into IR provenance. It is
 	// supplied rather than derived here, because the value names the binary the
@@ -443,7 +455,7 @@ func stopped(ctx context.Context) error {
 // ctx is the caller's own; the resolution carries it into every step that leaves
 // the process and observes it at five points of its own: ahead of the closure
 // walk, which is the first step that can reach a registry; ahead of the source
-// descent; ahead of the freeze, which is the first step that writes; ahead of
+// descent; ahead of the pin step, which is the first step that writes; ahead of
 // the acquisition render; and ahead of the lockfile write. A withdrawal at any
 // of them leaves the pins that were already on disk exactly as they were, which
 // is the same outcome a run that failed before the write produces.
@@ -1096,7 +1108,11 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 					})
 			}
 
-			srcResolver := cfg.sourceResolver(ctx, wsCfg)
+			// One resolver serves both the descent and the pin step below, and it
+			// fetches each distinct source once: the pin step resolves the
+			// authored-identity sources of the entities this Release builds a second
+			// time, and those are the same requests the descent has just made.
+			srcResolver := resolveEachSourceOnce(cfg.sourceResolver(ctx, wsCfg))
 			// Ahead of the source descent, which fetches and digests every remote
 			// source the closure names. The descent itself now runs under this
 			// context — the shim carries it into each source's fetch — so a
@@ -1123,11 +1139,11 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 			// remediation. This is where that sentence is kept.
 			//
 			// The position is the point. It sits after the descent, so the freshly
-			// resolved version exists; and before the freeze, which is the first act of
-			// this run that WRITES — it records the resolved pins in the lock file
-			// beside each writable recipe, and that file is workspace content a caller
-			// cannot take back. Halting here leaves the workspace exactly as the run
-			// found it.
+			// resolved version exists; and before the pin step, which is the first act
+			// of this run that can WRITE — asked to pin, it records the resolved pins in
+			// the lock beside each entity with a writable home, and that file is
+			// workspace content a caller cannot take back. Halting here leaves the
+			// workspace exactly as the run found it.
 			//
 			// A full refresh carries no prior lockfile, so it compares against nothing
 			// and adopts — which is how `aggrega pull --upgrade` remains the remediation
@@ -1138,31 +1154,35 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 				return drift
 			}
 
-			// Freeze each writable recipe's intrinsic content pins (source +
-			// $import artifact digests) into the lock file beside it, from the
-			// resolved sources — the resolution-time record the build later verifies.
-			// Ahead of the freeze, because the freeze is the first step in this run
-			// that writes: it records the resolved content pins beside each writable
-			// recipe, and that file is workspace content a caller cannot take back.
-			// Everything above it is fetching and computing, which a withdrawn
-			// caller simply discards.
+			// The pin step over the entities this Release builds: it either records
+			// each one's pins in the lock beside it or holds that lock to them and
+			// halts on one that does not record them — which of the two is this
+			// invocation's answer, falling back to the workspace's setting. See
+			// entityPins for which entities it covers.
 			//
-			// The check is kept on a reporting run, which writes nothing and has
-			// therefore nothing to protect here. It is one comparison, and a guard
-			// that fires only in one mode is a guard whose other mode nobody
-			// exercises — so a caller that has withdrawn stops at the same point
-			// either way, and the reason it stops does not depend on what it asked
-			// for.
+			// Ahead of it, because pinning is the first step in this run that
+			// writes: it records pins beside each entity with a writable home, and
+			// that file is workspace content a caller cannot take back. Everything
+			// above it is fetching and computing, which a withdrawn caller simply
+			// discards.
+			//
+			// The check is kept on a reporting run and on a run that only holds the
+			// locks to their pins, neither of which writes here and so neither of
+			// which has anything to protect. It is one comparison, and a guard that
+			// fires only in one mode is a guard whose other mode nobody exercises —
+			// so a caller that has withdrawn stops at the same point either way, and
+			// the reason it stops does not depend on what it asked for.
 			if err := stopped(ctx); err != nil {
 				return err
 			}
-			postFreezeRecipeDigests, frozenFiles, err := freezeRecipePins(lazyView, cl.Entities, sourceArtifacts, cfg.DryRun)
+			pinnedEntityDigests, pinnedFiles, err := entityPins(lazyView, cl.Entities, perEntityInfra,
+				srcResolver, workspaceRoot, cacheDir, wsCfg.PullPinsSources(cfg.PinSources), cfg.DryRun)
 			if err != nil {
-				return fmt.Errorf("freeze recipe pins: %w", err)
+				return fmt.Errorf("pin sources: %w", err)
 			}
-			reported = append(reported, frozenFiles...)
+			reported = append(reported, pinnedFiles...)
 
-			lf := buildLockfile(cfg.ReleasePath, cl, cfg.Toolchain, resolvedBindings, mutatorAttachments, verdictInputs, postFreezeRecipeDigests)
+			lf := buildLockfile(cfg.ReleasePath, cl, cfg.Toolchain, resolvedBindings, mutatorAttachments, verdictInputs, pinnedEntityDigests)
 			// Carry forward each unchanged pin's recorded deprecation fact from the
 			// prior lockfile before verification runs. A warm-cache (Tier-2) re-run
 			// does not re-touch the registry, so it does not re-discover markers; the
@@ -1334,7 +1354,7 @@ func reportedWrite(path string, want []byte) *dryrunreport.File {
 // produced the file. Versions only, so it stays identical across machines that
 // resolved the same closure with the same compiler; advisory, so nothing compares
 // it.
-func buildLockfile(releasePath string, cl closure.Closure, toolchain *lockfile.ToolchainStamp, bindings map[string]lockfile.ProviderBinding, mutators []lockfile.MutatorAttachment, verdictInputs []lockfile.VerdictInput, postFreezeRecipeDigests map[string]string) *lockfile.Lockfile {
+func buildLockfile(releasePath string, cl closure.Closure, toolchain *lockfile.ToolchainStamp, bindings map[string]lockfile.ProviderBinding, mutators []lockfile.MutatorAttachment, verdictInputs []lockfile.VerdictInput, pinnedEntityDigests map[string]string) *lockfile.Lockfile {
 	lf := &lockfile.Lockfile{
 		Version:     1,
 		Release:     filepath.Base(releasePath),
@@ -1357,13 +1377,13 @@ func buildLockfile(releasePath string, cl closure.Closure, toolchain *lockfile.T
 	lf.VerdictInputs = append([]lockfile.VerdictInput(nil), verdictInputs...)
 
 	for _, e := range cl.Entities {
-		// A writable recipe's content digest was captured at resolution, before
-		// the freeze rewrote the recipe file's intrinsic pins. Overlay the
-		// post-freeze content digest (keyed strictly by URI) so the lockfile
-		// records the file as the build will re-hash it — otherwise the very
-		// next build reports lockfile drift for the recipe the freeze just wrote.
+		// A writable recipe's content digest is overlaid from the pin step's own
+		// reading of the document (keyed strictly by URI), taken after anything
+		// the step wrote, so the lockfile records the file as the build will
+		// re-hash it. The step writes beside the document and never into it, so
+		// the two readings agree; the overlay keeps them one reading.
 		entDigest := e.Digest
-		if pf, ok := postFreezeRecipeDigests[e.URI]; ok {
+		if pf, ok := pinnedEntityDigests[e.URI]; ok {
 			entDigest = pf
 		}
 		lf.Entities = append(lf.Entities, lockfile.Entity{

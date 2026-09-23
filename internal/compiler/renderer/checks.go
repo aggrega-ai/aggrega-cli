@@ -2242,7 +2242,7 @@ var BoundaryAttachmentArtifactPillarDeclared = constraint.Check[
 // the text is the fact and the digest is a function of it: a second recorded digest
 // beside the text would be a second answer to one question, free to disagree with
 // the bytes the text fact carries. The digest is the shared content digest the
-// freeze itself uses, so the value compared and the value recorded come from one
+// pin step itself uses, so the value compared and the value recorded come from one
 // implementation.
 //
 // importedPath is the file the entry was supplied from, which the calling value
@@ -2317,8 +2317,8 @@ func artifactContentPinDetail(artifact, importedPath, current, recorded string) 
 // advice belongs to the raise path, and it is one constant because every path that
 // raises this finding offers the same two remedies: the file was changed on
 // purpose, so the pin is re-recorded, or it was not, so the file is restored.
-const artifactContentPinAdvice = "If the file was changed on purpose, run `aggrega pull --release <release>` " +
-	"to record its new digest; otherwise restore the file"
+const artifactContentPinAdvice = "If the file was changed on purpose, run `aggrega pin` on the entity that " +
+	"imports it to record its new digest; otherwise restore the file"
 
 // ArtifactContentMatchesItsRecordedPin reports each of a node's artifacts whose
 // imported content no longer digests to the pin recorded for it in the lock beside

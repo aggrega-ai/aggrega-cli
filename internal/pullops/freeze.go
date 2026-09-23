@@ -4,213 +4,112 @@
 package pullops
 
 import (
-	"os"
+	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/dryrunreport"
+	"github.com/aggrega-ai/aggrega-cli/internal/entitypin"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
-	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
-	"github.com/aggrega-ai/aggrega-cli/pkg/recipepin"
-	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// freezeRecipePins is the resolution-phase freeze: for every writable (Tier-1)
-// Recipe and FeatureRecipe the closure reaches, it records the entity's
-// intrinsic content pins — one per resolved remote source whose identity its
-// author wrote out in full, one per $import artifact file — into the lock file
-// beside that entity, modelling the go.mod/go.sum discipline where resolution
-// records the pins the author commits and the build verifies them.
+// entityPins is the pin step as a dependency resolution runs it: over every
+// Recipe and FeatureRecipe this Release builds that has a writable home, it
+// either records the pins in the lock beside each entity or holds the lock on
+// disk to them, and it returns the content digest of each such entity's document.
 //
-// Source pins come from the source-descent result (already fetched + digested);
-// artifact pins are computed here from the $import files on disk.
+// # One step, and this is a caller of it
 //
-// # Which source pins belong beside the entity
+// The computation is the author's own pin step — [entitypin.Compute] — and not a
+// second one kept in step with it, so the lock a resolution writes for an entity
+// is the lock the author's own run writes for it, byte for byte. What this adds is
+// only which entities the step is run over and what is done with its plan.
 //
-// A pin lives where its identity is knowable. A source whose author wrote every
-// identity field out in full names one artifact for every Release that uses the
-// entity, so its pin is a fact about the entity and is recorded beside it. A
-// source whose identity is filled in from a template names an artifact only once
-// an instance's own values do the filling: two Releases may resolve it to two
-// different artifacts, and a file every Release shares cannot hold a value only
-// one of them decided. Such a source gets no pin here. Each identity it resolves
-// to is still pinned in the lockfile of the Release that resolved it, which is
-// the record the build fetches against.
+// # Which entities
 //
-// Which of the two a source is was decided once, by the descent, before anything
-// was acquired, and each back-pointer carries that decision; this pass reads it
-// rather than reading the source again, so the descent and the freeze cannot come
-// to disagree about which sources were written out in full. The write is
-// idempotent — an entity whose declared sources and $import set are unchanged
-// leaves its lock byte-identical. A recipe living in a content-addressed cache
-// slot (registry-resolved) has no path in the workspace and is skipped: the lock
-// is a file an author commits beside their own entity, and a cache slot is
-// neither authored nor committed — its bytes are addressed by the digest of what
-// was fetched into it, so a derived file written there would falsify the slot
-// rather than record anything.
+// The ones this Release builds: an entity the closure reaches with at least one
+// instance using it. An entity mapped in the Manifest that nothing in this
+// Release instantiates is never rendered here, so its pins are no fact about this
+// Release and its lock is left exactly as it was. Of those, only an entity with a
+// writable home is considered — a document in one of the workspace's catalog
+// directories. An entity resolved through the content-addressed cache has no such
+// home; see [entitypin.WritableHome] for why that is the catalog's meaning of
+// "local" rather than the one a source's own reference text carries.
 //
-// The entity document itself is never opened for writing, so a recipe file is
-// byte-identical across the freeze whatever its pins do. That is what the
-// returned digest map reports: recipe entity URI to the recipe file's content
-// digest, for every writable recipe entity processed. The pull flow overlays it
-// onto the matching lockfile entity so the recorded digest reflects the file as
-// it stands, and the overlay is keyed strictly by URI so a lockfile entity of
+// # Pin, or hold the lock to the pins
+//
+// pin says which. When it is set, every lock is brought up to date — or, on a
+// reporting run, the bytes it would hold are returned instead. When it is not,
+// nothing is written, and an entity whose lock does not record a pin its inputs
+// need halts the run, naming the entity, each missing input and the class it
+// belongs to, and the step that records them. The two are one plan read two ways,
+// so the halt is raised exactly where a pinning run would have written.
+//
+// # The digests
+//
+// The entity document is never opened for writing, so its digest is the same
+// value whether or not a lock is written beside it. That is what the returned map
+// reports, keyed by entity URI, for the pull to overlay onto the matching
+// lockfile entity; the overlay is keyed strictly by URI so a lockfile entity of
 // another kind that happens to share the recipe's bare name is never touched.
-//
-// # Reporting instead of writing
-//
-// With reportOnly set, every lock file is left exactly as it was and the bytes
-// the freeze would have put there are returned alongside the digests, one entry
-// per entity whose lock would MOVE — an entity whose lock the freeze would leave
-// byte-identical is not reported, because a report of it would name a file
-// nothing was going to write.
-//
-// The digests are identical either way, and that is what makes the reported run
-// describe the writing one: the recipe file is not a party to the freeze, so its
-// digest is the same value whether or not anybody writes a lock beside it.
-func freezeRecipePins(lazyView *catalog.LazyLookup, entities []closure.ResolvedRef, srcArts []closure.SourceArtifact, reportOnly bool) (map[string]string, []dryrunreport.File, error) {
-	postFreezeRecipeDigests := map[string]string{}
-	var reported []dryrunreport.File
-	srcByURI := map[string][]types.SourceDigest{}
-	// An artifact carries one back-pointer per instance that resolved it, and
-	// several instances of one entity resolve one authored identity to the same
-	// artifact — so an entity is handed each artifact once, however many of its
-	// instances reached it, rather than once per instance.
-	handed := map[string]map[int]bool{}
-	for i, sa := range srcArts {
-		sd := types.SourceDigest{
-			Kind:           sa.Kind,
-			URL:            sa.URL,
-			Chart:          sa.Chart,
-			ModuleSubdir:   sa.ModuleSubdir,
-			Version:        sa.PinnedVersion,
-			Digest:         sa.Digest,
-			ManifestDigest: sa.ManifestDigest,
-		}
-		for _, ref := range sa.ReferencedBy {
-			if !ref.IdentityAuthored || handed[ref.URI][i] {
-				continue
-			}
-			if handed[ref.URI] == nil {
-				handed[ref.URI] = map[int]bool{}
-			}
-			handed[ref.URI][i] = true
-			srcByURI[ref.URI] = append(srcByURI[ref.URI], sd)
-		}
-	}
-
-	loader := lazyView.ClosureRecipeLoader()
-	seen := map[string]bool{}
-	// Several entity URIs can resolve to ONE recipe file — a recipe referenced by
-	// its bare name and by its provider-qualified one is two entities over one
-	// document — so the reported set is deduplicated by path as well as by URI.
-	// The writing path needs no such guard, and that is why the duplicate is
-	// invisible there: the second freeze of a file the first one has already
-	// written finds its pins equal and writes nothing. A reporting run writes
-	// nothing either time, so both passes find the file unfrozen and would name it
-	// twice.
-	reportedPaths := map[string]bool{}
+func entityPins(lazyView *catalog.LazyLookup, entities []closure.ResolvedRef, used map[string][]closure.ComponentSourceInfra,
+	resolver closure.SourceResolver, workspaceRoot, cacheDir string, pin, reportOnly bool) (map[string]string, []dryrunreport.File, error) {
+	var uris []string
 	for _, ent := range entities {
-		if seen[ent.URI] {
+		if len(used[ent.URI]) == 0 {
 			continue
 		}
-		seen[ent.URI] = true
+		uris = append(uris, ent.URI)
+	}
+	plan, err := entitypin.Compute(entitypin.Inputs{
+		View:          lazyView,
+		URIs:          uris,
+		Resolver:      resolver,
+		WorkspaceRoot: workspaceRoot,
+		CacheDir:      cacheDir,
+	})
+	if err != nil {
+		return nil, nil, err
+	}
 
-		if r, err := loader.LoadRecipe(ent.URI); err == nil {
-			path, ok := lazyView.LocalRecipePath(r.Spec.Capability, r.Metadata.Name, r.Metadata.Version)
-			if !ok {
-				continue
-			}
-			d, file, ferr := freezeOneRecipe(path, r.Spec.Artifacts, "Recipe", r.Metadata.Name, srcByURI[ent.URI], reportOnly)
-			if ferr != nil {
-				return nil, nil, ferr
-			}
-			if file != nil && !reportedPaths[path] {
-				reportedPaths[path] = true
-				reported = append(reported, *file)
-			}
-			if !uriShadowedByComponentOrFeature(lazyView, ent.URI) {
-				postFreezeRecipeDigests[ent.URI] = d
-			}
-			continue
+	var reported []dryrunreport.File
+	switch {
+	case !pin:
+		if err := plan.Unpinned(); err != nil {
+			return nil, nil, err
 		}
-		if fr, err := loader.LoadFeatureRecipe(ent.URI); err == nil {
-			path, ok := lazyView.LocalFeatureRecipePath(fr.Spec.Capability, fr.Metadata.Name, fr.Metadata.Version)
-			if !ok {
-				continue
-			}
-			d, file, ferr := freezeOneRecipe(path, fr.Spec.Artifacts, "FeatureRecipe", fr.Metadata.Name, srcByURI[ent.URI], reportOnly)
-			if ferr != nil {
-				return nil, nil, ferr
-			}
-			if file != nil && !reportedPaths[path] {
-				reportedPaths[path] = true
-				reported = append(reported, *file)
-			}
-			if !uriShadowedByComponentOrFeature(lazyView, ent.URI) {
-				postFreezeRecipeDigests[ent.URI] = d
-			}
-			continue
+	case reportOnly:
+		_, files, rerr := plan.Report()
+		if rerr != nil {
+			return nil, nil, rerr
+		}
+		reported = files
+	default:
+		if _, werr := plan.Write(); werr != nil {
+			return nil, nil, werr
 		}
 	}
-	return postFreezeRecipeDigests, reported, nil
-}
 
-// freezeOneRecipe records one writable entity's intrinsic content pins into the
-// lock beside it and returns the entity file's content digest, plus the lock
-// bytes a reporting run would hand back — nil where the lock would not move, and
-// always nil on a writing run.
-//
-// The two kinds reach it through one body. They differ in the loader that found
-// them and in the word their diagnostics name them by, and in nothing the freeze
-// itself does — so a second copy of this would be two places for a reporting run
-// to stop agreeing with a writing one.
-//
-// The entity file's digest is read from disk on both runs, and it is the same
-// value on both because the freeze does not write to that file at all. The
-// reported run therefore describes the writing one by construction rather than
-// by two computations being kept in step.
-//
-// The digest is computed for every entity it freezes, including one whose URI
-// also resolves to a Component or a Feature and whose digest the caller
-// therefore discards. That costs one read, and it buys the caller being the only
-// place that knows about the shadowing rule — which is where that rule belongs,
-// since it is a fact about what the LOCKFILE records rather than about what the
-// freeze does to a file.
-func freezeOneRecipe(path string, artifacts types.OrderedMap[types.ArtifactEntry], entityKind, entityName string, srcPins []types.SourceDigest, reportOnly bool) (string, *dryrunreport.File, error) {
-	artPins, aerr := recipepin.ArtifactPinsForRecipe(artifacts, entityKind, entityName)
-	if aerr != nil {
-		return "", nil, aerr
-	}
-	d, derr := fileContentDigest(path)
-	if derr != nil {
-		return "", nil, derr
-	}
-	if reportOnly {
-		out, rewrites, perr := recipepin.PreviewLock(path, srcPins, artPins)
-		if perr != nil {
-			return "", nil, perr
+	digests := map[string]string{}
+	for uri, d := range plan.EntityDigests() {
+		if !uriShadowedByComponentOrFeature(lazyView, uri) {
+			digests[uri] = d
 		}
-		if !rewrites {
-			return d, nil, nil
-		}
-		return d, &dryrunreport.File{Path: recipepin.LockPath(path), Content: out}, nil
 	}
-	if _, werr := recipepin.WriteLock(path, srcPins, artPins); werr != nil {
-		return "", nil, werr
-	}
-	return d, nil, nil
+	return digests, reported, nil
 }
 
 // uriShadowedByComponentOrFeature reports whether a recipe URI also resolves to a
 // Component or Feature. The closure resolves an entity URI component-first, then
 // feature, then recipe — so when a bare recipe name is shared with a Component or
 // Feature of the same identity, the lockfile entity for that URI tracks the
-// shadowing Component/Feature bytes, not the recipe's. The freeze never edits a
-// Component or Feature file, so a shadowed entity's recorded digest is already
-// stable across the freeze and must NOT be overlaid with the recipe file's
-// post-freeze digest — doing so would fabricate drift the build would then flag.
-// Only a URI that resolves solely to the recipe carries the recipe's bytes in the
-// lockfile, and only that entity needs the post-freeze overlay.
+// shadowing Component/Feature bytes, not the recipe's. Such an entity's recorded
+// digest must NOT be overlaid with the recipe file's digest — doing so would
+// fabricate drift the build would then flag. Only a URI that resolves solely to
+// the recipe carries the recipe's bytes in the lockfile, and only that entity
+// takes the overlay.
+//
+// It is the caller's rule rather than the pin step's, because it is a fact about
+// what the LOCKFILE records rather than about what the step does to a file.
 func uriShadowedByComponentOrFeature(lazyView *catalog.LazyLookup, uri string) bool {
 	if _, ok := lazyView.Component(uri); ok {
 		return true
@@ -221,14 +120,41 @@ func uriShadowedByComponentOrFeature(lazyView *catalog.LazyLookup, uri string) b
 	return false
 }
 
-// fileContentDigest hashes a file's on-disk bytes with the same content-address
-// spelling the closure and build-time drift verify use, so a post-freeze recipe
-// digest computed here is byte-comparable with the digest the build recomputes
-// from the same file.
-func fileContentDigest(path string) (string, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return "", err
+// onceEachSourceResolver resolves each distinct source spec once per run and
+// answers every later request for the same spec with the first answer.
+//
+// A resolution acquires a source for the Release's own lockfile and then runs the
+// pin step, which resolves the authored-identity sources of the entities the
+// Release builds a second time, with no Release in reach. Those are the same
+// specs — an authored identity carries no template, so it resolves to the same
+// request whatever instance asked — and fetching each twice in one run would be
+// the same bytes downloaded twice. So the two share this, and a spec is fetched
+// once.
+//
+// It is keyed on every field a resolution reads other than the authored value
+// the answer echoes, and it keeps only answers: a failure is returned as it is
+// and ends the run, so there is nothing to remember about it.
+type onceEachSourceResolver struct {
+	next     closure.SourceResolver
+	resolved map[string]closure.ResolvedSource
+}
+
+func resolveEachSourceOnce(next closure.SourceResolver) *onceEachSourceResolver {
+	return &onceEachSourceResolver{next: next, resolved: map[string]closure.ResolvedSource{}}
+}
+
+func (o *onceEachSourceResolver) Resolve(spec closure.SourceSpec) (*closure.ResolvedSource, error) {
+	key := strings.Join([]string{spec.Kind, spec.URL, spec.Version, spec.Chart, spec.ModuleSubdir, spec.Ref,
+		spec.WorkspaceRoot, spec.CacheDir}, "\x00")
+	if prior, ok := o.resolved[key]; ok {
+		answer := prior
+		answer.OriginalSource = spec.OriginalSource
+		return &answer, nil
 	}
-	return digest.ContentDigest(data), nil
+	res, err := o.next.Resolve(spec)
+	if err != nil {
+		return nil, err
+	}
+	o.resolved[key] = *res
+	return res, nil
 }

@@ -29,6 +29,7 @@ type pushFlags struct {
 	idToken    string
 	pluginPath string
 	listKinds  bool
+	pinSources bool
 }
 
 // pushConfig is the publication operation's input contract, which lives with the
@@ -60,7 +61,13 @@ over the manifest digest before any bytes reach the registry, so a failed
 signing refuses the push rather than leaving unsigned content published.
 
 Push refuses to replace content already published at the same version:
-publish changed content under a new version instead.`,
+publish changed content under a new version instead.
+
+A Recipe or FeatureRecipe carries the pins for its own inputs in the entity.lock
+beside it, and pinning them is a step you run before publishing: aggrega pin.
+Pass --pin-sources, or set pin_sources_at_push in the workspace configuration, to
+have push run that same step first, so the lock it writes is part of what is
+published; --pin-sources=false skips it for one run.`,
 		Example: `  # Publish to the workspace's default registry
   aggrega push catalog/components/api-server.yaml
 
@@ -107,6 +114,7 @@ publish changed content under a new version instead.`,
 				TimestampURL: opts.timestamp,
 				IDToken:      opts.idToken,
 				PluginPath:   opts.pluginPath,
+				PinSources:   explicitBool(cmd, "pin-sources", opts.pinSources),
 				Workspace:    rw,
 			}
 			// --sign is tri-state: when the operator passes it explicitly we
@@ -130,6 +138,7 @@ publish changed content under a new version instead.`,
 	c.Flags().StringVar(&opts.idToken, "identity-token", "", "OIDC identity token for keyless signing. Optional at an interactive terminal (a browser flow acquires one) and on GitHub Actions (the workflow OIDC token is minted automatically); required for other non-interactive/CI use, where it may instead be exported as AGGREGA_IDENTITY_TOKEN or SIGSTORE_ID_TOKEN.")
 	c.Flags().StringVar(&opts.pluginPath, "plugin", "", "Path to the local .wasm artifact for a Plugin entity. Required when publishing a Plugin: publish pushes the .wasm artifact, computes its content digest, and pushes the entity.")
 	c.Flags().BoolVar(&opts.listKinds, "list-kinds", false, "List every entity kind that can be published, then exit without publishing anything. The output is machine-readable and its shape is stable: one kind per line, in sorted order, with nothing else.")
+	c.Flags().BoolVar(&opts.pinSources, "pin-sources", false, helpPushPinSources)
 	return c
 }
 

@@ -39,17 +39,24 @@ const CurrentLockVersion = 1
 // the file in their own directory and in their own diffs, and it says the two
 // things that are actionable from there: nothing here was typed by hand, and the
 // command that brings it up to date.
-const lockHeader = "# Content pins for this entity's external inputs, written by `aggrega pull`.\n" +
-	"# Commit it beside the entity. Re-run the pull to bring it up to date.\n"
+//
+// It names the author's own pin step rather than any command that may run that
+// step on the author's behalf, because the step is the one writer of the file
+// whichever command invoked it, and it is the command an author reaches for when
+// the file is out of date.
+const lockHeader = "# Content pins for this entity's external inputs, written by `aggrega pin`.\n" +
+	"# Commit it beside the entity. Run `aggrega pin` on the entity again to bring it up to date.\n"
 
 // Lock is the decoded content of an entity's lock file: the content pins for the
 // inputs the entity reaches for outside its own document.
 //
-// The two pin classes are the two ways an entity depends on bytes it does not
+// Each list is one class of pin: one way an entity depends on bytes it does not
 // itself carry — an acquired remote source, and a file an artifacts entry
-// imports from the workspace — and they are kept as separate lists because they
-// are keyed differently: a source by its resolved identity, an imported file by
-// the artifacts key that consumes it.
+// imports from the workspace — and the classes are kept as separate lists
+// because they are keyed differently: a source by its resolved identity, an
+// imported file by the artifacts key that consumes it. The classes are
+// enumerated once, by the table the unpinned-entity halt reads, so a class added
+// here is added there in the same change or a guard refuses it.
 //
 // The rows are the same types the entity's own pin blocks are built from, which
 // is what keeps one pin from reading two ways depending on where it was written.

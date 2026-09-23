@@ -43,7 +43,7 @@ import (
 // are parameters because this computation is shared by both kinds and the map
 // alone says which entity declared it. A failure to read one of the imported
 // files reports the entity, the artifacts key and the path together, which is
-// what a reader at the pin freeze has to have in order to know which of a
+// what a reader at the pin step has to have in order to know which of a
 // closure's recipes to open.
 func ArtifactPinsForRecipe(artifacts types.OrderedMap[types.ArtifactEntry], entityKind, entityName string) ([]types.ArtifactDigest, error) {
 	var pins []types.ArtifactDigest
@@ -63,10 +63,10 @@ func ArtifactPinsForRecipe(artifacts types.OrderedMap[types.ArtifactEntry], enti
 }
 
 // artifactImportLoadError reports an artifacts entry whose $import: names a file
-// the pin freeze could not acquire, as the load failure it is.
+// the pin step could not acquire, as the load failure it is.
 //
 // It names a condition this package does not declare, because the failure is not
-// specific to the pin freeze: the same file is read again when the entry is
+// specific to the pin step: the same file is read again when the entry is
 // rendered, and the same authoring mistake on a valuesMapping or a workload
 // import is the same failure with the same remedy. One identity covers them, and
 // each raise path supplies the clause saying where it happened.
@@ -83,9 +83,9 @@ func ArtifactPinsForRecipe(artifacts types.OrderedMap[types.ArtifactEntry], enti
 // shown the vocabulary of the file they would open to fix it.
 //
 // Its advice is [types.ImportFragmentAdvice], the same sentence the render's own
-// raise path attaches, and it is carried here for the reason the freeze exists:
+// raise path attaches, and it is carried here for the reason the pin step exists:
 // editing an artifacts `$import:` invalidates the pin the entity's lock records,
-// so the author who mistyped one reaches the freeze before the render and
+// so the author who mistyped one reaches the pin step before the render and
 // would otherwise be the one reader of the three who is told nothing. The
 // sentence has one home rather than a copy here, so the two paths cannot come to
 // say different things about one mistake.

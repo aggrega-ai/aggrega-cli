@@ -204,10 +204,14 @@ spec:
 `)
 	res := verbatimSourceResolver{}
 
+	// The seed pull runs the pin step, as --pin-sources does, because the pin it
+	// records beside the Recipe is what the verify below is held to.
+	pinSources := true
 	if err := pullRun(context.Background(), pullConfig{
 		ws:             resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
 		ReleasePath:    releasePath,
 		CatalogDirs:    []string{catalogDir},
+		PinSources:     &pinSources,
 		sourceResolver: res,
 		DiagOut:        io.Discard,
 		Out:            io.Discard,

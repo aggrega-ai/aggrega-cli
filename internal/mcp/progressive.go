@@ -38,9 +38,11 @@ import (
 // caller is establishing whether the capability it wanted is absent or merely
 // unattached here; the plugin reading answers at that same moment and about the
 // other half of it, once the configuration has said an attachment exists and
-// the question has become whether it reaches a guest that works; and the four
-// publication verbs answer when a caller has finished authoring and is ready to
-// put something where other people will resolve it.
+// the question has become whether it reaches a guest that works; the pin step
+// answers once an entity's inputs are settled and before it is consumed, and it
+// needs the entity another tool located or drafted; and the four publication
+// verbs answer when a caller has finished authoring and is ready to put
+// something where other people will resolve it.
 //
 // Here or above, an entry names the operation it answers and takes its
 // advertised name from that operation's row, so which registry a tool sits in
@@ -59,6 +61,7 @@ var deferredToolRegistry = []toolSpec{
 	curated("search", searchToolSpec),
 	curated("config-show", configShowToolSpec),
 	curated("plugin-list", pluginListToolSpec),
+	curated("pin", pinToolSpec),
 	curated("push", publishEntityToolSpec),
 	curated("push-artifact", publishArtifactToolSpec),
 	curated("sign", signArtifactsToolSpec),

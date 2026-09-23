@@ -264,6 +264,14 @@ var operationAvailability = map[string]serveAvailability{
 	// each row that happens to reach it.
 	"pull": servedAt(at("aggrega/resolveDependencies", (*Server).dispatchResolveDependencies)),
 
+	// The session also runs the entity author's own pin step, the one a
+	// dependency resolution runs when asked to pin: it records, in the lock beside
+	// the entity a request names, the pins for the inputs that entity reads. It
+	// writes inside the workspace and reaches the hosts the entity's sources name,
+	// which is the resolution's own reach, and it is admitted on the same rule: a
+	// caller that sent it has asked for the pin.
+	"pin": servedAt(at("aggrega/pin", (*Server).dispatchPin)),
+
 	// The session reports and maintains the caches that serve the work. One of
 	// them is the workspace's own artifact cache; two are shared across every
 	// project on the machine, and this daemon is what fills the compiled-module

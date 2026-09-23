@@ -7,6 +7,7 @@ import (
 	"errors"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
+	"github.com/aggrega-ai/aggrega-cli/internal/entitypin"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
@@ -146,18 +147,18 @@ type lockedEntity struct {
 // the pull writes a lock beside, and reports false for anything else — another
 // kind, or an entity with no document in a workspace catalog directory.
 //
-// It resolves through the loader and the path accessors the pull's own freeze uses,
-// so the set of entities checked here is the set whose locks that freeze writes.
+// It resolves through the loader and the writable-home predicate the pin step uses,
+// so the set of entities checked here is the set whose locks that step writes.
 func lockedEntityFor(loader closure.RecipeLoader, lazyView *catalog.LazyLookup, uri string) (lockedEntity, bool) {
 	if r, err := loader.LoadRecipe(uri); err == nil {
-		path, ok := lazyView.LocalRecipePath(r.Spec.Capability, r.Metadata.Name, r.Metadata.Version)
+		path, ok := entitypin.WritableHome(lazyView, "Recipe", r.Spec.Capability, r.Metadata.Name, r.Metadata.Version)
 		if !ok {
 			return lockedEntity{}, false
 		}
 		return lockedEntity{path: path, kind: "Recipe", name: r.Metadata.Name, artifacts: r.Spec.Artifacts}, true
 	}
 	if fr, err := loader.LoadFeatureRecipe(uri); err == nil {
-		path, ok := lazyView.LocalFeatureRecipePath(fr.Spec.Capability, fr.Metadata.Name, fr.Metadata.Version)
+		path, ok := entitypin.WritableHome(lazyView, "FeatureRecipe", fr.Spec.Capability, fr.Metadata.Name, fr.Metadata.Version)
 		if !ok {
 			return lockedEntity{}, false
 		}

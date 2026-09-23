@@ -344,7 +344,7 @@ type verdictTrustChange struct {
 // record before this run.
 //
 // Working it out and putting it there are separate steps, for the reason the
-// recipe freeze and the lockfile write are split the same way: a run asked to
+// entity pin step and the lockfile write are split the same way: a run asked to
 // report what it would write has to reach the same answer the writing run
 // reaches, and a second derivation of that answer would agree today and diverge
 // the first time either moved. Carrying the per-entry classification here rather

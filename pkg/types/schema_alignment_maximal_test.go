@@ -502,6 +502,8 @@ func maximalAggregaConfig() workspaceconfig.Config {
 		DefaultRegistry:  "hub.aggrega.ai",
 		Offline:          true,
 		AutoPull:         true,
+		PinSourcesAtPull: true,
+		PinSourcesAtPush: true,
 		ArtifactCacheDir: ".aggrega/cache",
 		Build: workspaceconfig.BuildConfig{
 			AuthoringRelease:         "./releases/prod.yaml",

@@ -32,8 +32,10 @@ func fullURICollisionFixture(t *testing.T, root string) string {
 	catalogRoot := filepath.Join(root, "catalog")
 	// auto_pull off so `build` reads the pull-frozen lockfile and verifies drift
 	// against it, rather than re-pulling and healing any lag — the exact state the
-	// one-pull fixpoint must hold in.
-	writeFixture(t, filepath.Join(root, ".aggrega-config.yaml"), "workspace: {}\nauto_pull: false\n")
+	// one-pull fixpoint must hold in. pin_sources_at_pull on, so the pull runs the
+	// pin step and writes the lock this fixpoint is about rather than halting on a
+	// recipe whose lock does not record its imported file yet.
+	writeFixture(t, filepath.Join(root, ".aggrega-config.yaml"), "workspace: {}\nauto_pull: false\npin_sources_at_pull: true\n")
 	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
 kind: Aggregate
 metadata:

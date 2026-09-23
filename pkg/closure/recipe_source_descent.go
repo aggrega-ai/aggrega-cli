@@ -57,6 +57,55 @@ func DescendRecipeSources(
 	sourceResolver SourceResolver,
 	workspaceRoot, cacheDir string,
 ) ([]SourceArtifact, error) {
+	return descendSources(closure, recipeLoader, sourceResolver, workspaceRoot, cacheDir,
+		func(uri string, _ sourceRoute) []ComponentSourceInfra { return perEntityInfra[uri] })
+}
+
+// DescendAuthoredSources resolves, for every Recipe and FeatureRecipe in the
+// closure, each source whose author wrote its identity out in full — and no
+// other — once per entity, with no Release in reach.
+//
+// It is the descent an author's own pin step runs. Such a source names one
+// artifact whatever instance uses it, so resolving it needs nothing a Release
+// supplies: its identity fields carry no template, and the fields that are
+// evaluated at all are evaluated against empty values and infra. That is what
+// makes it resolvable before any Release exists. A source whose identity is still
+// template text is skipped rather than resolved against nothing, because which
+// artifact it names is decided by each Release that uses the entity, and so is
+// pinned in that Release's lockfile rather than beside the entity.
+//
+// It runs the same body [DescendRecipeSources] runs, and differs only in which
+// instances a source is resolved for: none per Release, one with nothing
+// supplied. The routing reading, the spec construction, the resolution and the
+// dedupe are therefore one implementation, so a pin the author records and a pin
+// a pull records for the same authored source cannot come to be computed two
+// ways. Each back-pointer carries no component, because no instance asked for
+// the artifact.
+func DescendAuthoredSources(
+	closure Closure,
+	recipeLoader RecipeLoader,
+	sourceResolver SourceResolver,
+	workspaceRoot, cacheDir string,
+) ([]SourceArtifact, error) {
+	return descendSources(closure, recipeLoader, sourceResolver, workspaceRoot, cacheDir,
+		func(_ string, route sourceRoute) []ComponentSourceInfra {
+			if route != routeAuthoredIdentity {
+				return nil
+			}
+			return []ComponentSourceInfra{{}}
+		})
+}
+
+// descendSources is the one body both descents run. instancesFor names, per
+// entity and per the route its source takes, the instances the source is
+// resolved for; an entity it names none for is skipped.
+func descendSources(
+	closure Closure,
+	recipeLoader RecipeLoader,
+	sourceResolver SourceResolver,
+	workspaceRoot, cacheDir string,
+	instancesFor func(uri string, route sourceRoute) []ComponentSourceInfra,
+) ([]SourceArtifact, error) {
 	dedupe := map[string]*SourceArtifact{}
 	var order []string
 
@@ -130,7 +179,7 @@ func DescendRecipeSources(
 		// but instantiated/attached by nothing in this Release; its source is
 		// never built, so skip it rather than pin an unconsumed artifact (or
 		// halt on an infra-templated source no instance supplies infra for).
-		comps := perEntityInfra[ent.URI]
+		comps := instancesFor(ent.URI, route)
 		if len(comps) == 0 {
 			continue
 		}

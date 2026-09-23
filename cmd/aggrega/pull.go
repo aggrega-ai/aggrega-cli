@@ -35,6 +35,7 @@ type pullFlags struct {
 	progress          bool
 	assumeYes         bool
 	dryRun            bool
+	pinSources        bool
 }
 
 func newPullCmd() *cobra.Command {
@@ -66,7 +67,15 @@ such a plugin carries no lockfile pin, and its identity is recorded beside the l
 Naming one the workspace still attaches adopts the identity it resolves to. Naming one the
 workspace no longer attaches drops its recorded identity — the one way to clear an entry that
 outlived the attachment it was recorded for. A bare --upgrade does both for every plugin at once.
-A URI given without --upgrade is a usage error.`,
+A URI given without --upgrade is a usage error.
+
+Each Recipe and FeatureRecipe this Release builds from one of your catalog directories carries
+the pins for its own inputs in the entity.lock beside it: a remote source: written out in full,
+and a file an artifacts entry imports. Recording them is the entity author's step, aggrega pin.
+By default pull records none of them, and halts on an entity whose lock is missing any, naming
+the entity, each input and its class, and the command that records them. Pass --pin-sources,
+or set pin_sources_at_pull in the workspace configuration, to have pull run that same step
+instead; --pin-sources=false restores the halt for one run.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if opts.verify && opts.upgrade {
 				return fmt.Errorf("--verify and --upgrade are mutually exclusive")
@@ -108,6 +117,7 @@ A URI given without --upgrade is a usage error.`,
 				IncludePrerelease: opts.includePrerelease,
 				Detail:            opts.detail,
 				DryRun:            opts.dryRun,
+				PinSources:        explicitBool(cmd, "pin-sources", opts.pinSources),
 				ws:                rw,
 				diag:              buildDiagOptions{quiet: opts.quiet, progress: opts.progress, noColor: globalDisplay.colorOff, plain: globalDisplay.plain},
 			})
@@ -122,7 +132,8 @@ A URI given without --upgrade is a usage error.`,
 	c.Flags().BoolVar(&opts.quiet, "quiet", false, "Silence the pull-progress surface on stderr. Does not affect stdout. Takes precedence over --progress")
 	c.Flags().BoolVar(&opts.progress, "progress", false, "Force the pull-progress surface on even when stderr is not a terminal, printing plain static phase lines. The default is auto: the interactive phase checklist is shown only when stderr is a terminal")
 	c.Flags().BoolVar(&opts.assumeYes, "yes", false, "Answer the bare --upgrade confirmation in advance, for non-interactive use. It reaches that one prompt and nothing else: every other form of pull asks nothing, so passing it changes no behaviour there")
-	c.Flags().BoolVar(&opts.dryRun, "dry-run", false, "Resolve the dependencies and print what this pull would write instead of writing it: each file's path and the content it would hold go to stdout, and the lockfile, the entity.lock beside every Recipe and FeatureRecipe whose recorded pins would move, and the plugin trust record are all left untouched. Only the files that would actually change are named. The resolution itself runs exactly as it would otherwise, so the content cache still fills and a bare --upgrade asks nothing because it drops no pin — what a dry run shows is what a pull would write. Not accepted with --verify, which already writes nothing")
+	c.Flags().BoolVar(&opts.dryRun, "dry-run", false, "Resolve the dependencies and print what this pull would write instead of writing it: each file's path and the content it would hold go to stdout, and the lockfile, the entity.lock beside every Recipe and FeatureRecipe whose recorded pins would move under --pin-sources, and the plugin trust record are all left untouched. Only the files that would actually change are named. The resolution itself runs exactly as it would otherwise, so the content cache still fills, a pull that would halt on an unpinned entity halts here too, and a bare --upgrade asks nothing because it drops no pin — what a dry run shows is what a pull would write. Not accepted with --verify, which already writes nothing")
+	c.Flags().BoolVar(&opts.pinSources, "pin-sources", false, helpPullPinSources)
 	if err := c.MarkFlagRequired("release"); err != nil {
 		panic(err)
 	}
@@ -166,6 +177,12 @@ type pullConfig struct {
 	// command's own spelling of the resolution's reporting mode and carries nothing
 	// beyond it.
 	DryRun bool
+
+	// PinSources is this invocation's --pin-sources answer: nil where the flag was
+	// not passed, so the workspace's pin_sources_at_pull decides, and the value
+	// passed otherwise, which overrides that setting in either direction. Build's
+	// automatic fill leaves it nil, so a fill follows the workspace's setting.
+	PinSources *bool
 
 	// ws is the resolved workspace, threaded in by the command's RunE from the
 	// shared resolution chokepoint. Required: the shared layer refuses a nil, so a
@@ -327,6 +344,7 @@ func pullRunWithResult(ctx context.Context, cfg pullConfig) (pullops.Result, err
 		UpgradeTargets:    cfg.UpgradeTargets,
 		Verify:            cfg.Verify,
 		DryRun:            cfg.DryRun,
+		PinSources:        cfg.PinSources,
 		IncludePrerelease: cfg.IncludePrerelease,
 		CompilerVersion:   provenanceCompilerVersion(),
 		Toolchain:         toolchainStamp(),

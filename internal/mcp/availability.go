@@ -87,9 +87,18 @@ func OperationAvailability() map[string]opsurface.OperationAvailability {
 // backed by a command is reachable both as the generated command tool and, where
 // a curated tool answers it too, under that tool's goal-shaped name.
 var curatedToolNames = map[string][]string{
-	"validate":               {"validate"},
-	"build":                  {"build"},
-	"pull":                   {"pull"},
+	"validate": {"validate"},
+	"build":    {"build"},
+	"pull":     {"pull"},
+
+	// The entity author's own pin step, run inside this server. It is also
+	// reachable, for a caller at this machine's keyboard, as the tool generated
+	// from its command; this one answers with what the step did to the lock rather
+	// than with the text the command printed, and it is the one a caller reaching
+	// a listener has, since that session derives no generated tools. The name is
+	// the operation's own, which is the name the command line and the session
+	// protocol both use for it.
+	"pin":                    {"pin"},
 	"inspect":                {"describe"},
 	"get-schema":             {"get-schema"},
 	"plugin-gen-catalog":     {"gen-catalog"},

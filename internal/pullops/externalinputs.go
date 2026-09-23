@@ -44,9 +44,8 @@ import (
 // It installs the view's pins from the lockfile it is handed, so the set the
 // render verifies against is the set that lockfile records. Doing it here rather
 // than leaving the view as the resolution left it is what keeps the two from
-// drifting apart: the resolution pins from the closure it walked, and the recipe
-// freeze afterwards changes the content digest of every writable recipe it
-// rewrites.
+// drifting apart: the resolution pins from the closure it walked, while the
+// lockfile is what the write records, and only one of the two is read here.
 //
 // # What it writes
 //
@@ -88,13 +87,10 @@ func discoverExternalInputs(
 	// to this call, in this call, rather than left as whatever the resolution
 	// above last installed on the view.
 	//
-	// The resolution computes its pin set from the closure it walked, and it does
-	// so before the recipe freeze runs. The freeze rewrites a writable recipe's
-	// intrinsic content pins and so changes that recipe file's content digest, and
-	// the lockfile records the post-freeze digest. A view still carrying the
-	// pre-freeze set would therefore verify a frozen recipe against a digest the
-	// lockfile does not record — the two disagreeing for exactly the entities the
-	// freeze touched. Installing the lockfile's own pins here removes the
+	// The resolution computes its pin set from the closure it walked, before the
+	// lockfile handed here was composed, so a view still carrying that set would
+	// hold the render to a record the write does not make wherever the two differ.
+	// Installing the lockfile's own pins here removes the
 	// disagreement by removing the second set: what the render is held to and what
 	// the write records are the same object, so no ordering between them exists to
 	// get wrong.

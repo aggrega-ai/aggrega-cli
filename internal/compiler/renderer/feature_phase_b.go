@@ -42,7 +42,7 @@ import (
 // build has to read, and a sentence about library references would be wrong at
 // most of those sites. Here it is right at all of them, because every caller is
 // the file arm of an `$import:`. It is [types.ImportFragmentAdvice] rather than
-// a sentence of this package's own, because the pin freeze reports the same
+// a sentence of this package's own, because the pin step reports the same
 // failure for an artifacts entry from its own raise path and the two have to say
 // the same thing.
 func importLoadError(path string, cause error, surface string) error {

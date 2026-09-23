@@ -394,10 +394,15 @@ var hermeticCoveredAxes = []string{
 func pullThenCensus(t *testing.T, root, releasePath string) *lockfile.Lockfile {
 	t.Helper()
 	var diag, out bytes.Buffer
+	// The resolution runs the pin step, as --pin-sources does: the fixture's
+	// Recipe carries an authored-identity chart source, and by default a pull
+	// halts on an entity whose lock does not record its pin.
+	pinSources := true
 	err := pullRun(context.Background(), pullConfig{
 		ws:          resolveWorkspaceWithConfig(t, root, hermeticWorkspaceConfig(false)),
 		ReleasePath: releasePath,
 		CatalogDirs: hermeticFixtureCatalogDirs(root),
+		PinSources:  &pinSources,
 		DiagOut:     &diag,
 		Out:         &out,
 	})

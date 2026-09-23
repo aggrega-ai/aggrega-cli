@@ -107,6 +107,7 @@ func newRootCmd() *cobra.Command {
 	// are; their children name their own operations where they are built.
 	mustAttach(root, newBuildCmd(), "build")
 	mustAttach(root, newPullCmd(), "pull")
+	mustAttach(root, newPinCmd(), "pin")
 	mustAttach(root, newInspectCmd(), "inspect")
 	mustAttach(root, newImportCmd(), "import")
 	mustAttach(root, newEditDocumentCmd(), "document-edit")

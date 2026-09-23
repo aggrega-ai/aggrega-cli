@@ -64,7 +64,12 @@ func sourcedPinFixture(t *testing.T, root, chartURL string) string {
 	// auto_pull off so `build` is hermetic — it reads the pull-frozen lockfile and
 	// cached source rather than re-fetching from the network, which is the state a
 	// committed release builds in and the state the recipe-pin verify runs against.
-	writeFixture(t, filepath.Join(root, ".aggrega-config.yaml"), "workspace: {}\nauto_pull: false\n")
+	//
+	// pin_sources_at_pull on, because what these tests exercise is a pull that
+	// records the recipe's pins beside it. By default a pull records none and
+	// halts on an entity whose lock does not hold them; this workspace asks every
+	// pull, a build's own fill included, to run the pin step instead.
+	writeFixture(t, filepath.Join(root, ".aggrega-config.yaml"), "workspace: {}\nauto_pull: false\npin_sources_at_pull: true\n")
 	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
 kind: Aggregate
 metadata:

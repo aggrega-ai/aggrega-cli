@@ -767,13 +767,14 @@ var errBoundaryAssemblerMissing = cerrors.Register("boundary-assembly-not-provid
 // ErrArtifactContentMismatch is the Loud Guardrail halt raised when an
 // artifact's imported file ($import) has drifted from the content digest
 // recorded for it in the entity.lock beside the Recipe or FeatureRecipe that
-// imports it. A pull records one artifactDigests pin there per $import artifact,
-// digested from the file's bytes; the build re-digests the file and halts here
-// when the two disagree, so an imported artifact edited after the pull never
-// renders unverified, and a verifying pull reports the same disagreement under
-// the same condition. The diagnostic is positioned at the importing document and
-// names the artifact key, the imported path and both digests; the remedy is to
-// re-run the pull if the change was intended, or restore the file. Category:
+// imports it. The pin step records one artifactDigests pin there per $import
+// artifact, digested from the file's bytes; the build re-digests the file and
+// halts here when the two disagree, so an imported artifact edited after it was
+// pinned never renders unverified, and a verifying pull reports the same
+// disagreement under the same condition. The diagnostic is positioned at the
+// importing document and names the artifact key, the imported path and both
+// digests; the remedy is to pin the entity again if the change was intended, or
+// restore the file. Category:
 // CATALOG_ERROR (a catalog-authored imported artifact drifted from its recorded
 // pin). Match with errors.Is(err, ErrArtifactContentMismatch()).
 func ErrArtifactContentMismatch() error { return errArtifactContentMismatch }

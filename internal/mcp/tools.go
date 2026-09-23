@@ -52,8 +52,8 @@ import (
 //
 // reachEscalation reports how far a call would actually reach, where this tool's
 // own arguments can widen it past the class its operation declares. Nil is a
-// tool that reaches exactly what it declares whatever it is sent, which is every
-// tool here but one. It is consulted before the tool runs and reads the same
+// tool that reaches exactly what it declares whatever it is sent, which is the
+// ordinary case. It is consulted before the tool runs and reads the same
 // composition the tool itself reads, so the class a caller is admitted against
 // is the class the call would have had: a second derivation of the same decision
 // would agree on the day it was written and stop agreeing the first time one of
