@@ -90,6 +90,7 @@ func NewLazyLookup(workspaceRoot, cacheDir string, catalogDirs []string, puller 
 		recipeSkips:       map[string]error{},
 		entityBytes:       map[string][]byte{},
 		localEntityPaths:  map[string]string{},
+		layoutDocuments:   map[string]string{},
 		recordedPins:      recipepin.Lookup{},
 	}
 }
@@ -322,6 +323,7 @@ func (l *LazyLookup) Reset() {
 	l.recipeCat = nil
 	l.entityBytes = map[string][]byte{}
 	l.localEntityPaths = map[string]string{}
+	l.layoutDocuments = map[string]string{}
 	l.recordedPins = recipepin.Lookup{}
 }
 
@@ -521,6 +523,20 @@ type LazyLookup struct {
 	// entity records nothing here and is answered as recording nothing.
 	recordedPins recipepin.Lookup
 
+	// layoutDocuments maps entityBytesKey(kind, identityKey) to the document a
+	// pinned (Tier-2) Recipe's or FeatureRecipe's parse was anchored at: its place
+	// in the layout of its cache slot's verified artifact. It is what a source
+	// written as a template is anchored at once the render has evaluated it, so a
+	// relative result resolves inside what was published exactly as the load's
+	// anchoring of every other source does.
+	//
+	// It is kept apart from localEntityPaths on purpose. That map answers where an
+	// author's file is — and a caller writing beside it, the pin step, must never
+	// write into a cache slot — while this one answers only what a pulled entity's
+	// content paths are relative to. It depends on the pins, so SetPins and Reset
+	// drop it with the rest of the enumerated state.
+	layoutDocuments map[string]string
+
 	// entityBytes retains the RAW authored bytes of every enumerated /
 	// resolved entity, keyed by entityBytesKey(kind, metadata.name) — the same
 	// key the eager catalog uses. The closure lookup (ClosureLookup) hashes
@@ -589,6 +605,7 @@ func (l *LazyLookup) SetPins(pins map[string]Pin) {
 	l.plugins = map[string]types.Plugin{}
 	l.aggregateSources = map[string]string{}
 	l.recipeSkips = map[string]error{}
+	l.layoutDocuments = map[string]string{}
 }
 
 // VerifyPinnedIntegrity is the BUILD's loud integrity gate: it reads every pinned
@@ -728,21 +745,26 @@ const (
 //   - slot absent, or no pin threaded for uri -> (nil, tier2Fetch): the cascade
 //     re-establishes at Tier-3 (an on-demand fetch verifies against the registry
 //     descriptor), rather than returning unverified cache bytes.
-func (l *LazyLookup) tier2Verified(uri string) ([]byte, tier2Outcome) {
+//
+// On tier2Use it also returns the slot the bytes were read from, which is where
+// a caller that parses them lays them out (unpackEntitySlot).
+func (l *LazyLookup) tier2Verified(uri string) ([]byte, string, tier2Outcome) {
 	pin, havePin := l.pins[uri]
 	if !havePin {
-		return nil, tier2Fetch
+		return nil, "", tier2Fetch
 	}
 	// The cache slot is keyed by the versioned URI; combine the lookup URI with
 	// the pin's resolved version so a bare-URI pin addresses the right slot.
-	bytes, err := tier2ReadVerified(l.workspaceRoot, l.cacheDir, versionedSlotURI(uri, pin.ResolvedVersion), pin.Digest, pin.ManifestDigest)
+	slotURI := versionedSlotURI(uri, pin.ResolvedVersion)
+	bytes, err := tier2ReadVerified(l.workspaceRoot, l.cacheDir, slotURI, pin.Digest, pin.ManifestDigest)
 	switch {
 	case err == nil:
-		return bytes, tier2Use
+		slot, _, _ := tier2Slot(l.workspaceRoot, l.cacheDir, slotURI)
+		return bytes, slot, tier2Use
 	case errors.Is(err, oci.ErrFetchIntegrity()), errors.Is(err, oci.ErrCachedManifestIntegrity()):
-		return nil, tier2Skip
+		return nil, "", tier2Skip
 	default: // oci.ErrFetchNotFound (slot absent / incomplete) or an unreadable slot
-		return nil, tier2Fetch
+		return nil, "", tier2Fetch
 	}
 }
 
@@ -902,11 +924,11 @@ func (l *LazyLookup) resolveComponentContext(ctx context.Context, uri string) (t
 	if comp, ok := l.tier1ReadComponent(uri); ok {
 		return comp, true
 	}
-	if bytes, outcome := l.tier2Verified(uri); outcome == tier2Use {
+	if bytes, slot, outcome := l.tier2Verified(uri); outcome == tier2Use {
 		// parseComponentEntity is the shared per-entity resolve; a non-Component
 		// kind returns an error and the cascade falls through to Tier-3.
-		if doc, ok := entityDocumentIn(bytes); ok {
-			if comp, err := parseComponentEntity(doc, uri); err == nil {
+		if path, doc, ok := registryDocument(slot, bytes, uri); ok {
+			if comp, err := parseComponentEntity(doc, path); err == nil {
 				l.entityBytes[entityBytesKey("Component", comp.Metadata.Name)] = bytes
 				return comp, true
 			}
@@ -917,10 +939,10 @@ func (l *LazyLookup) resolveComponentContext(ctx context.Context, uri string) (t
 		// request (an honest degraded preview, not a false-green render).
 		return types.Component{}, false
 	}
-	bytes, _, err := tier3PullCatalogEntity(ctx, l.workspaceRoot, l.cacheDir, l.puller, uri, "Component")
+	bytes, res, err := tier3PullCatalogEntity(ctx, l.workspaceRoot, l.cacheDir, l.puller, uri, "Component")
 	if err == nil && bytes != nil {
-		if doc, ok := entityDocumentIn(bytes); ok {
-			if comp, perr := parseComponentEntity(doc, uri); perr == nil {
+		if path, doc, ok := registryDocument(tier3Slot(l.workspaceRoot, l.cacheDir, uri, res), bytes, uri); ok {
+			if comp, perr := parseComponentEntity(doc, path); perr == nil {
 				l.entityBytes[entityBytesKey("Component", comp.Metadata.Name)] = bytes
 				return comp, true
 			}
@@ -929,22 +951,34 @@ func (l *LazyLookup) resolveComponentContext(ctx context.Context, uri string) (t
 	return types.Component{}, false
 }
 
-// entityDocumentIn returns the entity document inside bytes a resolution tier
-// handed back, and false when the artifact cannot be opened.
+// registryDocument returns the entity document inside bytes a registry tier
+// handed back, together with the path the document's parse is anchored at, and
+// false when the artifact cannot be opened or laid out.
 //
-// It is [oci.EntityYAML] in the shape these cascades speak: they signal by
-// boolean and fall through to the next tier, so an error here has to become a
-// miss rather than a halt. That is not a swallow — a tier that cannot yield the
-// entity leaves the cascade to exhaust, and an entity the build actually needs
-// then surfaces as a loud refusal at the guard layer, keyed to what the build
-// asked for rather than to how one tier failed.
+// The artifact is laid out in the slot it was read from or written to
+// (unpackEntitySlot), and the path is the document's own place in that layout, so
+// a path the entity declares relative to its document resolves inside what was
+// published. With no slot — no cache directory is configured, so a fetch was
+// written nowhere — there is nothing to lay the artifact out in, and the document
+// is parsed against label, which names the entity rather than a directory.
+//
+// It speaks the shape these cascades speak: they signal by boolean and fall
+// through to the next tier, so an error here has to become a miss rather than a
+// halt. That is not a swallow — a tier that cannot yield the entity leaves the
+// cascade to exhaust, and an entity the build actually needs then surfaces as a
+// loud refusal at the guard layer, keyed to what the build asked for rather than
+// to how one tier failed.
 //
 // The caller keeps the bytes it was given. The retained entityBytes entry is the
 // whole artifact, because that is what the pinned digest covers; only the parse
 // takes the document.
-func entityDocumentIn(published []byte) ([]byte, bool) {
-	document, err := oci.EntityYAML(published)
-	return document, err == nil
+func registryDocument(slot string, published []byte, label string) (string, []byte, bool) {
+	if slot == "" {
+		document, err := oci.EntityYAML(published)
+		return label, document, err == nil
+	}
+	path, document, err := unpackEntitySlot(slot, published)
+	return path, document, err == nil
 }
 
 // resolveFeature mirrors resolveComponent for the Feature surface.
@@ -962,9 +996,9 @@ func (l *LazyLookup) resolveFeatureContext(ctx context.Context, uri string) (typ
 	if feat, ok := l.tier1ReadFeature(uri); ok {
 		return feat, true
 	}
-	if bytes, outcome := l.tier2Verified(uri); outcome == tier2Use {
-		if doc, ok := entityDocumentIn(bytes); ok {
-			if feat, err := parseFeatureEntity(doc, uri); err == nil {
+	if bytes, slot, outcome := l.tier2Verified(uri); outcome == tier2Use {
+		if path, doc, ok := registryDocument(slot, bytes, uri); ok {
+			if feat, err := parseFeatureEntity(doc, path); err == nil {
 				l.entityBytes[entityBytesKey("Feature", feat.Metadata.Name)] = bytes
 				return feat, true
 			}
@@ -974,10 +1008,10 @@ func (l *LazyLookup) resolveFeatureContext(ctx context.Context, uri string) (typ
 		// drifted bytes and do not self-heal.
 		return types.Feature{}, false
 	}
-	bytes, _, err := tier3PullCatalogEntity(ctx, l.workspaceRoot, l.cacheDir, l.puller, uri, "Feature")
+	bytes, res, err := tier3PullCatalogEntity(ctx, l.workspaceRoot, l.cacheDir, l.puller, uri, "Feature")
 	if err == nil && bytes != nil {
-		if doc, ok := entityDocumentIn(bytes); ok {
-			if feat, perr := parseFeatureEntity(doc, uri); perr == nil {
+		if path, doc, ok := registryDocument(tier3Slot(l.workspaceRoot, l.cacheDir, uri, res), bytes, uri); ok {
+			if feat, perr := parseFeatureEntity(doc, path); perr == nil {
 				l.entityBytes[entityBytesKey("Feature", feat.Metadata.Name)] = bytes
 				return feat, true
 			}
@@ -1326,7 +1360,7 @@ func (l *LazyLookup) buildRecipeIndex() {
 			if uerr := yaml.Unmarshal(data, &hdr); uerr != nil {
 				return nil
 			}
-			l.foldRecipeShellEntity(hdr.Kind, data, data, path, true)
+			l.foldRecipeShellEntity(hdr.Kind, data, data, path, "")
 			return nil
 		})
 	}
@@ -1350,15 +1384,41 @@ func (l *LazyLookup) buildRecipeIndex() {
 // cache slot; src labels the source for skip diagnostics. The single fold path
 // feeds both the Tier-1 walk and the pinned Tier-2 pass, so the two cannot drift.
 //
-// local says which of those two the entity arrived through, and it gates the
-// localEntityPaths retention alone: a Tier-1 file's src is a document on this
-// machine, while a pinned slot's src is a label naming the pin rather than a path
-// anybody could open. So the bytes are retained either way — the digest covers
-// both — and the path only where there is one.
-func (l *LazyLookup) foldRecipeShellEntity(kind string, parseData, rawBytes []byte, src string, local bool) {
+// slot is the cache slot a pinned entity was read from, and empty for a Tier-1
+// file; it says which of those two the entity arrived through. It gates the
+// localEntityPaths retention: a Tier-1 file's src is a document on this machine,
+// while a pinned slot's src is a label naming the pin rather than a path anybody
+// could open. So the bytes are retained either way — the digest covers both — and
+// the path only where there is one.
+//
+// It also decides what a Recipe's or FeatureRecipe's parse is anchored at, those
+// being the kinds whose document names content by a path relative to itself. A
+// Tier-1 file is parsed at its own path. A pinned slot's artifact is laid out in
+// the slot first (unpackEntitySlot) and parsed at its document's place there, so
+// the source and imports it names resolve inside what was published; src stays
+// the label every skip is recorded under. A pinned slot's document is parsed alone:
+// the lock its publication carries is laid out beside it and not read, because
+// pins are recorded only for a catalog-directory entity and a pulled one's sources
+// are held to the Release's lockfile. Every other kind is parsed at src as it
+// always is: none of them names content by a path, and an Aggregate's src is its
+// source provenance, which a layout path would move.
+func (l *LazyLookup) foldRecipeShellEntity(kind string, parseData, rawBytes []byte, src, slot string) {
+	local := slot == ""
 	switch kind {
 	case "Recipe":
-		e, pins, perr := parseRecipeEntity(parseData, src)
+		docPath, lerr := contentAnchor(src, slot, rawBytes)
+		if lerr != nil {
+			l.recordRecipeSkip(src, lerr)
+			return
+		}
+		var e types.Recipe
+		var pins recipepin.Pins
+		var perr error
+		if local {
+			e, pins, perr = parseRecipeEntity(parseData, docPath)
+		} else {
+			e, perr = resolveRecipeDocument(parseData, docPath)
+		}
 		if perr != nil {
 			l.recordRecipeSkip(src, perr)
 			return
@@ -1370,13 +1430,27 @@ func (l *LazyLookup) foldRecipeShellEntity(kind string, parseData, rawBytes []by
 				if local {
 					l.localEntityPaths[entityBytesKey("Recipe", key)] = src
 					l.recordedPins.Record(src, pins)
+				} else {
+					l.layoutDocuments[entityBytesKey("Recipe", key)] = docPath
 				}
 			},
 			func() {
 				l.recordRecipeSkip(src, fmt.Errorf("duplicate recipe identity %q; this file is shadowed", key))
 			})
 	case "FeatureRecipe":
-		e, pins, perr := parseFeatureRecipeEntity(parseData, src)
+		docPath, lerr := contentAnchor(src, slot, rawBytes)
+		if lerr != nil {
+			l.recordRecipeSkip(src, lerr)
+			return
+		}
+		var e types.FeatureRecipe
+		var pins recipepin.Pins
+		var perr error
+		if local {
+			e, pins, perr = parseFeatureRecipeEntity(parseData, docPath)
+		} else {
+			e, perr = resolveFeatureRecipeDocument(parseData, docPath)
+		}
 		if perr != nil {
 			l.recordRecipeSkip(src, perr)
 			return
@@ -1388,6 +1462,8 @@ func (l *LazyLookup) foldRecipeShellEntity(kind string, parseData, rawBytes []by
 				if local {
 					l.localEntityPaths[entityBytesKey("FeatureRecipe", key)] = src
 					l.recordedPins.Record(src, pins)
+				} else {
+					l.layoutDocuments[entityBytesKey("FeatureRecipe", key)] = docPath
 				}
 			},
 			func() {
@@ -1482,8 +1558,11 @@ func (l *LazyLookup) foldRecipeShellEntity(kind string, parseData, rawBytes []by
 // Tier-1 dirs, so enumeration is pin-driven. Bundled slots are tar.gz archives:
 // the bundle is unwrapped to parse the entity YAML, but the WHOLE bundle blob is
 // retained as entityBytes so the pinned digest covers the bundle (parity with the
-// cache→catalog bridge). Deterministic: pins are visited in sorted URI order, so
-// first-wins shadowing among pinned duplicates is stable across runs.
+// cache→catalog bridge). A Recipe's or FeatureRecipe's slot is also laid out from
+// that verified blob and parsed at its document's place in the layout, so the
+// files it carries are read from what was published (foldRecipeShellEntity).
+// Deterministic: pins are visited in sorted URI order, so first-wins shadowing
+// among pinned duplicates is stable across runs.
 //
 // # Two skips, and only one of them is silent
 //
@@ -1512,8 +1591,16 @@ func (l *LazyLookup) foldPinnedCacheEntities(allowed map[string]bool) {
 		// A bare-URI pin (a sub-aggregate / library referenced by bare name, pinned
 		// with a separate ResolvedVersion) addresses its versioned cache slot via
 		// versionedSlotURI — the same key the cache→catalog bridge reads.
-		blob, err := tier2ReadVerified(l.workspaceRoot, l.cacheDir, versionedSlotURI(uri, pin.ResolvedVersion), pin.Digest, pin.ManifestDigest)
+		slotURI := versionedSlotURI(uri, pin.ResolvedVersion)
+		blob, err := tier2ReadVerified(l.workspaceRoot, l.cacheDir, slotURI, pin.Digest, pin.ManifestDigest)
 		if err != nil {
+			continue
+		}
+		// The verified read above succeeded through this same derivation, so the slot
+		// is there; an empty one would fold a pinned entity as a catalog-directory
+		// file, which is why the case is skipped rather than passed on.
+		slot, _, ok := tier2Slot(l.workspaceRoot, l.cacheDir, slotURI)
+		if !ok {
 			continue
 		}
 		parseData, uerr := oci.EntityYAML(blob)
@@ -1529,8 +1616,20 @@ func (l *LazyLookup) foldPinnedCacheEntities(allowed map[string]bool) {
 			l.foldPinnedSchemaLibrary(parseData, blob, "lockfile-pinned:"+uri)
 			continue
 		}
-		l.foldRecipeShellEntity(kind, parseData, blob, "lockfile-pinned:"+uri, false)
+		l.foldRecipeShellEntity(kind, parseData, blob, "lockfile-pinned:"+uri, slot)
 	}
+}
+
+// contentAnchor returns the path a Recipe's or FeatureRecipe's parse anchors the
+// entity's content paths at: src itself for a catalog-directory file, which slot
+// is empty for, and otherwise the entity's document in the layout of the slot's
+// verified artifact, rebuilt from rawBytes by unpackEntitySlot.
+func contentAnchor(src, slot string, rawBytes []byte) (string, error) {
+	if slot == "" {
+		return src, nil
+	}
+	path, _, err := unpackEntitySlot(slot, rawBytes)
+	return path, err
 }
 
 // foldPinnedSchemaLibrary folds one lockfile-pinned SchemaLibrary cache slot into
@@ -1614,8 +1713,12 @@ func (l *LazyLookup) recipeCatalog() *Catalog {
 		// resolved it rather than from a second one free to disagree. A Tier-2
 		// entity is absent here for the reason it is absent above: its slot is a
 		// label naming a pin, and a lock sits beside a document.
-		recordedPins:  l.recordedPins,
-		workspaceRoot: l.workspaceRoot,
+		recordedPins: l.recordedPins,
+		// The documents a pinned Recipe's or FeatureRecipe's parse was anchored at,
+		// in its slot's layout — never reported as a file anybody authored, and read
+		// only to anchor what a templated source produces at render.
+		layoutDocuments: l.layoutDocuments,
+		workspaceRoot:   l.workspaceRoot,
 		// The lazy backing is the production build/pull resolution path, so it
 		// resolves core providers from the binary's embedded set (embedded-wins).
 		resolveEmbeddedProviders: true,
@@ -2479,9 +2582,9 @@ func (l *LazyLookup) resolveComponentForClosure(ctx context.Context, uri string,
 	if comp, ok := l.tier1ReadComponent(uri); ok {
 		return l.closureResolution("Component", comp.Metadata.Name, comp.Metadata.Version, uri, closure.ResolutionPathCatalog), true
 	}
-	if bytes, outcome := l.tier2Verified(uri); outcome == tier2Use {
-		if doc, ok := entityDocumentIn(bytes); ok {
-			if comp, err := parseComponentEntity(doc, uri); err == nil {
+	if bytes, slot, outcome := l.tier2Verified(uri); outcome == tier2Use {
+		if path, doc, ok := registryDocument(slot, bytes, uri); ok {
+			if comp, err := parseComponentEntity(doc, path); err == nil {
 				l.entityBytes[entityBytesKey("Component", comp.Metadata.Name)] = bytes
 				return l.closureResolution("Component", comp.Metadata.Name, comp.Metadata.Version, uri, closure.ResolutionPathCache), true
 			}
@@ -2489,9 +2592,9 @@ func (l *LazyLookup) resolveComponentForClosure(ctx context.Context, uri string,
 	} else if outcome == tier2Skip {
 		return closure.Resolution{}, false
 	}
-	if bytes, _, err := tier3PullCatalogEntity(ctx, l.workspaceRoot, l.cacheDir, puller, uri, "Component"); err == nil && bytes != nil {
-		if doc, ok := entityDocumentIn(bytes); ok {
-			if comp, perr := parseComponentEntity(doc, uri); perr == nil {
+	if bytes, res, err := tier3PullCatalogEntity(ctx, l.workspaceRoot, l.cacheDir, puller, uri, "Component"); err == nil && bytes != nil {
+		if path, doc, ok := registryDocument(tier3Slot(l.workspaceRoot, l.cacheDir, uri, res), bytes, uri); ok {
+			if comp, perr := parseComponentEntity(doc, path); perr == nil {
 				l.entityBytes[entityBytesKey("Component", comp.Metadata.Name)] = bytes
 				return l.closureResolution("Component", comp.Metadata.Name, comp.Metadata.Version, uri, closure.ResolutionPathRegistry), true
 			}
@@ -2506,9 +2609,9 @@ func (l *LazyLookup) resolveFeatureForClosure(ctx context.Context, uri string, p
 	if feat, ok := l.tier1ReadFeature(uri); ok {
 		return l.closureResolution("Feature", feat.Metadata.Name, feat.Metadata.Version, uri, closure.ResolutionPathCatalog), true
 	}
-	if bytes, outcome := l.tier2Verified(uri); outcome == tier2Use {
-		if doc, ok := entityDocumentIn(bytes); ok {
-			if feat, err := parseFeatureEntity(doc, uri); err == nil {
+	if bytes, slot, outcome := l.tier2Verified(uri); outcome == tier2Use {
+		if path, doc, ok := registryDocument(slot, bytes, uri); ok {
+			if feat, err := parseFeatureEntity(doc, path); err == nil {
 				l.entityBytes[entityBytesKey("Feature", feat.Metadata.Name)] = bytes
 				return l.closureResolution("Feature", feat.Metadata.Name, feat.Metadata.Version, uri, closure.ResolutionPathCache), true
 			}
@@ -2516,9 +2619,9 @@ func (l *LazyLookup) resolveFeatureForClosure(ctx context.Context, uri string, p
 	} else if outcome == tier2Skip {
 		return closure.Resolution{}, false
 	}
-	if bytes, _, err := tier3PullCatalogEntity(ctx, l.workspaceRoot, l.cacheDir, puller, uri, "Feature"); err == nil && bytes != nil {
-		if doc, ok := entityDocumentIn(bytes); ok {
-			if feat, perr := parseFeatureEntity(doc, uri); perr == nil {
+	if bytes, res, err := tier3PullCatalogEntity(ctx, l.workspaceRoot, l.cacheDir, puller, uri, "Feature"); err == nil && bytes != nil {
+		if path, doc, ok := registryDocument(tier3Slot(l.workspaceRoot, l.cacheDir, uri, res), bytes, uri); ok {
+			if feat, perr := parseFeatureEntity(doc, path); perr == nil {
 				l.entityBytes[entityBytesKey("Feature", feat.Metadata.Name)] = bytes
 				return l.closureResolution("Feature", feat.Metadata.Name, feat.Metadata.Version, uri, closure.ResolutionPathRegistry), true
 			}

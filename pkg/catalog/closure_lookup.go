@@ -19,6 +19,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/plugintype"
 	"github.com/aggrega-ai/aggrega-cli/pkg/registryhost"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
+	"github.com/aggrega-ai/aggrega-cli/pkg/sourcecache"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
 )
@@ -1029,14 +1030,10 @@ func (l *catalogLookup) recordRefetchNotice(uri, newDigest string) {
 // unset, when the URI carries no version pin, or when the cache slot
 // is empty or unreadable.
 func tier2ReadSlotUnverified(workspaceRoot, cacheDir, uri string) ([]byte, closure.Resolution, bool) {
-	if cacheDir == "" {
+	slot, version, ok := tier2Slot(workspaceRoot, cacheDir, uri)
+	if !ok {
 		return nil, closure.Resolution{}, false
 	}
-	_, version, hasV := resolver.SplitVersionedURI(uri)
-	if !hasV || version == "" {
-		return nil, closure.Resolution{}, false
-	}
-	slot := oci.CachePath(workspaceRoot, cacheDir, uri, version)
 	bytes, err := readCacheSlotBytes(slot)
 	if err != nil {
 		return nil, closure.Resolution{}, false
@@ -1428,6 +1425,74 @@ func isLibraryMediaType(mt string) bool {
 		}
 	}
 	return false
+}
+
+// tier2Slot returns the cache slot a Tier-2 read of the versioned URI uri
+// addresses, and the version that slot is keyed by, or false when there is no
+// such slot to read: no cache directory is configured, or the URI carries no
+// version. It is the one derivation of that slot, so the read that verifies a
+// slot's bytes and the unpack that lays them out afterwards cannot come to
+// address different directories.
+func tier2Slot(workspaceRoot, cacheDir, uri string) (string, string, bool) {
+	if cacheDir == "" {
+		return "", "", false
+	}
+	_, version, hasV := resolver.SplitVersionedURI(uri)
+	if !hasV || version == "" {
+		return "", "", false
+	}
+	return oci.CachePath(workspaceRoot, cacheDir, uri, version), version, true
+}
+
+// tier3Slot returns the cache slot tier3PullCatalogEntity wrote the bytes it
+// resolved uri to, given the resolution it returned: the slot is keyed by the URI
+// as passed and by the version the resolution records, which is the version the
+// write used. It returns "" where no slot was written, because no cache directory
+// is configured.
+func tier3Slot(workspaceRoot, cacheDir, uri string, res closure.Resolution) string {
+	if cacheDir == "" {
+		return ""
+	}
+	return oci.CachePath(workspaceRoot, cacheDir, uri, res.ResolvedVersion)
+}
+
+// unpackEntitySlot lays out, in the cache slot at slot, the files the published
+// artifact the slot holds carries, and returns the path of the entity's document
+// among them together with the document itself.
+//
+// published is the slot's artifact, and it must already be verified: the caller
+// has checked it against its pin, or has just fetched it from the registry under
+// the digest the registry named. The layout is rebuilt from those bytes on every
+// call, through the same regeneration the source-artifact cache uses, so nothing
+// found in the slot's extracted directory is ever trusted on its own — a file
+// changed or added there by hand is discarded rather than read, and an artifact
+// that fails verification never reaches this point, so it is never laid out.
+//
+// An archive is laid out as its entries, and a document published on its own is
+// laid out as that one file. Handing the entity's parse the document's path in
+// this layout is what makes a path the entity declares relative to its own
+// document — a Recipe's local source, a file an `$import:` names — resolve inside
+// what was published, exactly as it resolves beside the entity in a catalog
+// directory; and the rule refusing a content path that leaves the entity's own
+// directory holds over the layout unchanged, since that directory is the layout.
+func unpackEntitySlot(slot string, published []byte) (string, []byte, error) {
+	name, document, err := oci.EntityFile(published)
+	if err != nil {
+		return "", nil, err
+	}
+	var dir string
+	if oci.IsTarGzBundle(published) {
+		dir, err = sourcecache.RegenerateExtracted(slot, published)
+	} else {
+		dir, err = sourcecache.ResetExtracted(slot)
+		if err == nil {
+			err = os.WriteFile(filepath.Join(dir, name), published, 0o644)
+		}
+	}
+	if err != nil {
+		return "", nil, fmt.Errorf("catalog: lay out the cached entity at %s: %w", slot, err)
+	}
+	return filepath.Join(dir, name), document, nil
 }
 
 // readCacheSlotBytes reads the entity bytes from a cache slot. Tries

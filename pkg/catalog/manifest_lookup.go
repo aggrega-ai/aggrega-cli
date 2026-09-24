@@ -335,8 +335,8 @@ func (c *Catalog) RecipeLookupWithManifest(manifest *types.Manifest) renderer.Re
 	}
 }
 
-// recipeDocument reports the file a resolved Recipe was indexed from, and
-// whether one is recorded.
+// recipeDocument reports the document a resolved Recipe was parsed at, and
+// whether one is recorded (see entityDocument).
 //
 // It takes the entity the caller already holds rather than an identity, so the
 // key formula stays here beside the walk that recorded the path. Spelled at the
@@ -363,22 +363,6 @@ func (c *Catalog) featureRecipeDocument(fr *types.FeatureRecipe) (string, bool) 
 	return c.entityDocument("FeatureRecipe", fr.Spec.Capability, fr.Metadata.Name, fr.Metadata.Version)
 }
 
-// entityDocument reports the file the entity of the given kind and identity was
-// indexed from, and whether one is recorded.
-//
-// The key is composed through entityBytesKey because that is the declared
-// spelling of a kind-namespaced identity, and both backings already record this
-// fact under it.
-//
-// It reads the one index each backing populates as it walks — the eager load
-// claims each identity as it indexes a file, and the lazy backing hands its own
-// record of the same fact to the shell it builds — so the two backings cannot
-// answer differently.
-//
-// An entity resolved from a registry has no answer here. It lives in a
-// cache slot, which is not a document anybody authored, so it
-// is reported as having none rather than as the slot's location — the same
-// reading every other path-reporting accessor on this catalog takes.
 // RecordedPins reports the content pins in force for every pin-bearing entity
 // this catalog indexed, keyed by the document each was read from.
 //
@@ -389,9 +373,10 @@ func (c *Catalog) featureRecipeDocument(fr *types.FeatureRecipe) (string, bool) 
 // the file a diagnostic names come from one reading of the catalog rather than
 // two.
 //
-// An entity resolved from a registry has no entry, for the reason entityDocument
-// reports none for it: its slot is not a document anybody authored, and there is
-// no directory for a lock to sit beside.
+// An entity resolved from a registry has no entry: its cache slot is not a
+// directory anybody authored a lock in, so the load records nothing for it, and a
+// reader keying in with the layout document entityDocument reports for it finds
+// nothing recorded.
 func (c *Catalog) RecordedPins() recipepin.Lookup {
 	if c == nil {
 		return nil
@@ -399,12 +384,36 @@ func (c *Catalog) RecordedPins() recipepin.Lookup {
 	return c.recordedPins
 }
 
+// entityDocument reports the document the entity of the given kind and identity
+// was parsed at, and whether one is recorded.
+//
+// The key is composed through entityBytesKey because that is the declared
+// spelling of a kind-namespaced identity, and both backings already record this
+// fact under it.
+//
+// For an entity read from a catalog directory it is the file the entity was
+// indexed from. It reads the one index each backing populates as it walks — the
+// eager load claims each identity as it indexes a file, and the lazy backing
+// hands its own record of the same fact to the shell it builds — so the two
+// backings cannot answer differently.
+//
+// For a Recipe or FeatureRecipe resolved from a registry it is the entity's
+// document in the layout of its cache slot, which is where the load anchored the
+// entity's content paths; the render anchors what a source template produces at
+// the same document, so a relative result resolves inside what was published
+// rather than against the directory the build runs in. That document is not a
+// file anybody authored, and nothing that reports where an entity was declared
+// reads it: the authored-file index is consulted first and holds none for such an
+// entity.
 func (c *Catalog) entityDocument(kind, provider, name, version string) (string, bool) {
-	path, ok := c.pathByIdentity[entityBytesKey(kind, recipeIdentityKey(provider, name, version))]
-	if !ok || path == "" {
-		return "", false
+	key := entityBytesKey(kind, recipeIdentityKey(provider, name, version))
+	if path, ok := c.pathByIdentity[key]; ok && path != "" {
+		return path, true
 	}
-	return path, true
+	if path, ok := c.layoutDocuments[key]; ok && path != "" {
+		return path, true
+	}
+	return "", false
 }
 
 func (c *Catalog) componentTypeToRecipeWithManifest(manifest *types.Manifest) func(string, string) (*types.Recipe, bool) {

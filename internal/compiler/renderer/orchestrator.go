@@ -752,9 +752,10 @@ type RecipeLookup struct {
 	//
 	// The document is what a relative source is resolved against once its template
 	// has produced a value, and what a diagnostic raised inside the render names as
-	// its location. A Recipe resolved from a registry lives in a cache slot
-	// rather than in a file anybody authored and is reported as no document,
-	// which is the honest answer rather than a miss.
+	// its location. A Recipe resolved from a registry is reported at its document in
+	// the layout of its cache slot — where the load anchored its content paths — so
+	// a relative result resolves inside what was published, as it does beside a
+	// Recipe in a catalog directory.
 	//
 	// It may be nil. A nil field reports no document, so a caller that does not wire
 	// it renders a templated relative source as the template produced it and

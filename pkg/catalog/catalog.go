@@ -148,6 +148,14 @@ type Catalog struct {
 	// does. An entity read from no file on disk records nothing.
 	recordedPins recipepin.Lookup
 
+	// layoutDocuments maps "<Kind>:<identity-key>" to the document a
+	// registry-resolved Recipe's or FeatureRecipe's parse was anchored at — its
+	// place in the layout of its cache slot's verified artifact. It is consulted
+	// only after pathByIdentity, and only to say what a source a template produced
+	// at render is relative to; it is never reported as a file anybody authored.
+	// A catalog loaded from directories holds none, so it stays empty there.
+	layoutDocuments map[string]string
+
 	// Shadows records, in deterministic listed-directory order, every entity a
 	// higher-precedence catalog directory overrode during a multi-directory
 	// load (see ShadowedEntity). Empty for a single-directory load. Surfaced on

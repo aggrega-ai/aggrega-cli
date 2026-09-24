@@ -24,8 +24,9 @@ import (
 //
 // It answers a question about the PUBLISHED SHAPE and nothing else. A consumer
 // that holds bytes from a coordinate and wants the entity inside them calls
-// [EntityYAML], which asks this and unwraps in one step; there is no second
-// place to write that pair, because the unwrapper is unexported.
+// [EntityYAML], or [EntityFile] for the file name as well, which ask this and
+// unwrap in one step; there is no second place to write that pair, because the
+// unwrapper is unexported.
 func IsTarGzBundle(b []byte) bool {
 	return len(b) >= 2 && b[0] == 0x1f && b[1] == 0x8b
 }
@@ -55,17 +56,40 @@ func IsTarGzBundle(b []byte) bool {
 // empty document, because a consumer cannot tell an empty answer from an absent
 // one.
 func EntityYAML(published []byte) ([]byte, error) {
-	if !IsTarGzBundle(published) {
-		return published, nil
-	}
-	return entityYAMLFromBundle(published)
+	_, document, err := EntityFile(published)
+	return document, err
 }
 
-// entityYAMLFromBundle extracts the entity YAML from a tar.gz bundle produced by
-// Bundle's archive arm. The bundle carries the entity's directory — the entity
-// file plus any co-located source — and this is the inverse of that
-// arm, used to fold a registry-pulled entity into the catalog (the catalog holds
-// the parsed entity; the lockfile-drift pin stays over the whole bundle blob).
+// EntityFile returns the entity document carried by bytes published at a
+// registry coordinate together with the name of the file that document is once
+// those bytes are laid out in a directory: the entity's own file name at the
+// root of an archive, and SingleDocumentFileName for a document published on
+// its own, which is then the whole of what the coordinate carries.
+//
+// It is what a consumer reads that lays a published entity out on disk and hands
+// the entity's parse the document's path there, so a path the entity declares
+// relative to its own document resolves inside what was published — exactly as
+// it resolves beside the entity in a catalog directory. The document is located
+// by the same rule [EntityYAML] applies and fails in the same named ways, so the
+// two can never disagree about which file an archive's entity is.
+func EntityFile(published []byte) (string, []byte, error) {
+	if !IsTarGzBundle(published) {
+		return SingleDocumentFileName, published, nil
+	}
+	return entityFileInBundle(published)
+}
+
+// SingleDocumentFileName is the file a document published on its own is laid
+// out as: the name a generic registry client writes such a publication under,
+// which is the title every single-document publication is stamped with.
+const SingleDocumentFileName = titleStemEntity + ".yaml"
+
+// entityFileInBundle extracts the entity YAML, and the name it is carried under,
+// from a tar.gz bundle produced by Bundle's archive arm. The bundle carries the
+// entity's directory — the entity file plus any co-located source — and this is
+// the inverse of that arm, used to fold a registry-pulled entity into the catalog
+// (the catalog holds the parsed entity; the lockfile-drift pin stays over the
+// whole bundle blob).
 //
 // # The entity is located by what the document IS, never by what it is called
 //
@@ -102,10 +126,10 @@ func EntityYAML(published []byte) ([]byte, error) {
 // coordinates carries the same bytes, and returning either document would hand
 // a consumer the other entity under the name it asked for — a substitution
 // nothing downstream could detect.
-func entityYAMLFromBundle(blob []byte) ([]byte, error) {
+func entityFileInBundle(blob []byte) (string, []byte, error) {
 	gz, err := gzip.NewReader(bytes.NewReader(blob))
 	if err != nil {
-		return nil, fmt.Errorf("unbundle gzip: %v: %w", err, ErrBundleUnreadable())
+		return "", nil, fmt.Errorf("unbundle gzip: %v: %w", err, ErrBundleUnreadable())
 	}
 	defer gz.Close()
 	tr := tar.NewReader(gz)
@@ -119,7 +143,7 @@ func entityYAMLFromBundle(blob []byte) ([]byte, error) {
 			break
 		}
 		if nerr != nil {
-			return nil, fmt.Errorf("unbundle tar: %v: %w", nerr, ErrBundleUnreadable())
+			return "", nil, fmt.Errorf("unbundle tar: %v: %w", nerr, ErrBundleUnreadable())
 		}
 		if hdr.Typeflag != tar.TypeReg || strings.Contains(hdr.Name, "/") {
 			continue
@@ -127,7 +151,7 @@ func entityYAMLFromBundle(blob []byte) ([]byte, error) {
 		rootEntries = append(rootEntries, hdr.Name)
 		data, rerr := io.ReadAll(tr)
 		if rerr != nil {
-			return nil, fmt.Errorf("read %s from the published bundle: %v: %w", hdr.Name, rerr, ErrBundleUnreadable())
+			return "", nil, fmt.Errorf("read %s from the published bundle: %v: %w", hdr.Name, rerr, ErrBundleUnreadable())
 		}
 		if !declaresPublishableKind(data) {
 			continue
@@ -144,12 +168,12 @@ func entityYAMLFromBundle(blob []byte) ([]byte, error) {
 	sort.Strings(found)
 	switch len(found) {
 	case 1:
-		return entity, nil
+		return found[0], entity, nil
 	case 0:
-		return nil, fmt.Errorf("bundle root carries %s: %w",
+		return "", nil, fmt.Errorf("bundle root carries %s: %w",
 			describeRootEntries(rootEntries), ErrBundleNoEntityDocument())
 	default:
-		return nil, fmt.Errorf("bundle root carries %d entity documents (%s): %w",
+		return "", nil, fmt.Errorf("bundle root carries %d entity documents (%s): %w",
 			len(found), strings.Join(found, ", "), ErrBundleAmbiguousEntityDocument())
 	}
 }

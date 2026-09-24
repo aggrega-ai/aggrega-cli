@@ -186,17 +186,60 @@ func LookupAndExtract(lf *lockfile.Lockfile, kind, url, chart, moduleSubdir, ver
 		return "", fmt.Errorf("sourcecache: read manifest for %s: %w", blobPath, mrerr)
 	}
 
-	extractedDir := filepath.Join(slot, "extracted")
-	if err := os.RemoveAll(extractedDir); err != nil {
-		return "", fmt.Errorf("sourcecache: wipe extracted dir %s: %w", extractedDir, err)
+	return RegenerateExtracted(slot, blobBytes)
+}
+
+// extractedDirName is the directory inside a cache slot that holds the files the
+// slot's artifact carries.
+const extractedDirName = "extracted"
+
+// ExtractedDir returns the directory inside the cache slot at slot where the
+// files the slot's artifact carries are laid out. It is derived beside the
+// artifact rather than recorded anywhere, and it is rebuilt from the artifact on
+// every read, so nothing about it is authoritative.
+func ExtractedDir(slot string) string {
+	return filepath.Join(slot, extractedDirName)
+}
+
+// RegenerateExtracted empties the extracted directory of the cache slot at slot
+// and rebuilds it from archive, a gzipped tar the caller has already verified,
+// returning the directory's path. An archive entry that would land outside the
+// directory is refused with a wrapped ErrFetchIntegrity and nothing beside the
+// directory is written.
+//
+// It is the one statement of how a cache slot's extracted directory is rebuilt,
+// for a source artifact's slot and a catalog entity's slot alike, and it rebuilds
+// on every call rather than when something looks out of date: a file changed or
+// added below the directory by hand is discarded rather than trusted, while the
+// archive the directory is rebuilt from is the thing the caller's digest check
+// covers. Two readers that disagreed about what survives a read would give the
+// two caches different trust in the same kind of directory.
+func RegenerateExtracted(slot string, archive []byte) (string, error) {
+	dir, err := ResetExtracted(slot)
+	if err != nil {
+		return "", err
 	}
-	if err := os.MkdirAll(extractedDir, 0o755); err != nil {
-		return "", fmt.Errorf("sourcecache: mkdir extracted dir %s: %w", extractedDir, err)
+	if err := extractTarGz(archive, dir); err != nil {
+		return "", fmt.Errorf("sourcecache: extract into %s: %w", dir, err)
 	}
-	if err := extractTarGz(blobBytes, extractedDir); err != nil {
-		return "", fmt.Errorf("sourcecache: extract %s: %w", blobPath, err)
+	return dir, nil
+}
+
+// ResetExtracted removes the extracted directory of the cache slot at slot and
+// recreates it empty, returning its path. It is the first half of
+// [RegenerateExtracted], exported for a slot whose artifact is a single document
+// rather than an archive: that slot's directory holds the document alone, and it
+// is emptied the same way before the document is written into it, so nothing an
+// earlier read or a hand edit left there survives either.
+func ResetExtracted(slot string) (string, error) {
+	dir := ExtractedDir(slot)
+	if err := os.RemoveAll(dir); err != nil {
+		return "", fmt.Errorf("sourcecache: wipe extracted dir %s: %w", dir, err)
 	}
-	return extractedDir, nil
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", fmt.Errorf("sourcecache: mkdir extracted dir %s: %w", dir, err)
+	}
+	return dir, nil
 }
 
 // SlotPath returns the cache-slot directory for the given lockfile
