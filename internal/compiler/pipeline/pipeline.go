@@ -1806,9 +1806,9 @@ func RunPipeline(
 			// from are both in hand, so a render that asked the filesystem again
 			// would be a second reading of one fact.
 			RecordedPins: inputs.RecordedPins,
-			Trace:              traceWriter,
-			TraceMode:          traceMode,
-			YAMLIndent:         inputs.WorkspaceConfig.Build.YAMLIndent,
+			Trace:        traceWriter,
+			TraceMode:    traceMode,
+			YAMLIndent:   inputs.WorkspaceConfig.Build.YAMLIndent,
 			// Bind the entity-fronted plugin-resolution path so a Recipe /
 			// FeatureRecipe pipeline step's plugin URI — a Plugin entity URI —
 			// resolves to its verified .wasm bytes: the entity-front translates the
