@@ -84,12 +84,13 @@ type PublishedEntity struct {
 // reading reports what a coordinate carries, and says nothing about whether it
 // should be trusted.
 //
-// # Every failure is named, and carries what to do about it
+// # Which failures are named, and carry what to do about it
 //
 // A reference nothing is published under, a credential the registry refuses, an
 // archive that does not unpack, an archive holding no entity or more than one, and
 // a document that is not an entity each return an error wrapping the condition
-// that names it, followed by a remediation. None of them returns an empty entity:
+// that names it, followed by a remediation; a registry that cannot be reached
+// returns the network error as the client reported it. None returns an empty entity:
 // an answer with nothing in it would read to a caller exactly like an entity with
 // nothing to say about itself.
 func ReadPublishedEntity(ctx context.Context, cfg workspaceconfig.Config, reference string) (PublishedEntity, error) {
