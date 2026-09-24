@@ -105,7 +105,7 @@ func EntityYAML(published []byte) ([]byte, error) {
 func entityYAMLFromBundle(blob []byte) ([]byte, error) {
 	gz, err := gzip.NewReader(bytes.NewReader(blob))
 	if err != nil {
-		return nil, fmt.Errorf("oci: unbundle gzip: %v: %w", err, ErrBundleUnreadable())
+		return nil, fmt.Errorf("unbundle gzip: %v: %w", err, ErrBundleUnreadable())
 	}
 	defer gz.Close()
 	tr := tar.NewReader(gz)
@@ -119,7 +119,7 @@ func entityYAMLFromBundle(blob []byte) ([]byte, error) {
 			break
 		}
 		if nerr != nil {
-			return nil, fmt.Errorf("oci: unbundle tar: %v: %w", nerr, ErrBundleUnreadable())
+			return nil, fmt.Errorf("unbundle tar: %v: %w", nerr, ErrBundleUnreadable())
 		}
 		if hdr.Typeflag != tar.TypeReg || strings.Contains(hdr.Name, "/") {
 			continue

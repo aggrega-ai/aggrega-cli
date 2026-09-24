@@ -46,7 +46,7 @@ func PullPublishedEntity(ctx context.Context, target oras.ReadOnlyTarget, refere
 	}
 	manifestBytes, err := fetchBlob(ctx, target, manifestDesc)
 	if err != nil {
-		return nil, fmt.Errorf("oci: fetch manifest %q: %w", reference, err)
+		return nil, fmt.Errorf("fetch manifest %q: %w", reference, err)
 	}
 	if IsPluginManifest(manifestBytes) {
 		return pluginEntityFromManifest(ctx, target, reference, manifestDesc, manifestBytes)
