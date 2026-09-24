@@ -293,10 +293,9 @@ func IsTemplated(ref string) bool {
 // refuses one that leaves the document's directory, an absolute path included.
 // What it resolves to reads the same whatever directory the build runs from.
 //
-// An empty documentPath names no declaring document — an entity resolved from a
-// registry lives in a cache slot rather than in a file anybody authored — so there
-// is no directory for the reference to be relative to, and it comes back as
-// given. It is still judged: the verdict is a property of the path rather than of
+// An empty documentPath names no declaring document — the entity reached the
+// caller with no file on disk its paths are relative to — so there is no
+// directory for the reference to be relative to, and it comes back as given. It is still judged: the verdict is a property of the path rather than of
 // the directory it is relative to, so a path that could leave any directory is
 // refused here as it is everywhere else.
 //
