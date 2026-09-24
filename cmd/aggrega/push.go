@@ -52,6 +52,11 @@ publishes, one per line and nothing else, so a script can read it directly.
 Release and Manifest are deployment-side inputs rather than catalog artifacts
 and are refused.
 
+Every kind has a directory of its own except Aggregate, Release and Manifest: an
+entity of any other kind is refused when another entity sits in its directory,
+before anything is pinned or bundled, and the refusal names the entity in the way.
+The directory's name is not judged.
+
 A content digest is computed over the entity's authoring tree and embedded in
 the OCI manifest, so "aggrega pull" can detect tampering between publish and
 pull.

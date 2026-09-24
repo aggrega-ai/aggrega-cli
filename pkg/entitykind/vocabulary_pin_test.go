@@ -33,6 +33,7 @@ import (
 var nonEntitySchemaTokens = map[string]string{
 	"ir":                        "the emitted intermediate representation, an output rather than an authored document",
 	"lockfile":                  "a generated build artifact, not authored by hand",
+	"entity-lock":               "the content pins recorded beside an entity by its pin step, not authored by hand",
 	"aggrega-config":            "workspace configuration, which is not an entity",
 	"cache-metadata":            "bookkeeping for the artifact cache",
 	"template-context":          "the shape handed to a template, not a document a user writes",
@@ -127,6 +128,7 @@ func TestEveryEntityKindHasAnEnvelopeSchema(t *testing.T) {
 	nonEntityEnvelopeKinds := map[envelope.Kind]string{
 		envelope.KindAggregaConfig: "workspace configuration",
 		envelope.KindLockfile:      "a generated build artifact",
+		envelope.KindEntityLock:    "the content pins recorded beside an entity by its pin step",
 		envelope.KindPluginsTrust:  "a generated record of trusted plugin identities",
 		envelope.KindIR:            "the emitted intermediate representation",
 	}

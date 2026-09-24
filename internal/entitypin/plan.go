@@ -24,12 +24,22 @@ import (
 // consider; a URI that is not a Recipe or FeatureRecipe, or that has no writable
 // home in View, is passed over. Resolver acquires each source the step pins, and
 // WorkspaceRoot and CacheDir are where it stores what it fetched.
+//
+// ForWriting says the caller will write the plan, or report what writing it
+// would do, rather than only hold the locks on disk to it. A plan for writing
+// claims each entity's lock file, so every entity it covers is first held to
+// having a directory of its own — see [RefuseSharedDirectory] — before anything
+// is resolved; a plan computed only to be checked claims nothing and is not held
+// to that, which is what keeps a pull that does not pin from refusing a
+// directory it writes nothing into. Only a plan computed for writing can be
+// written or reported.
 type Inputs struct {
 	View          *catalog.LazyLookup
 	URIs          []string
 	Resolver      closure.SourceResolver
 	WorkspaceRoot string
 	CacheDir      string
+	ForWriting    bool
 }
 
 // Plan is what the pin step would record for each entity it was given, computed
@@ -42,7 +52,19 @@ type Plan struct {
 	workspaceRoot string
 	entities      []entityPlan
 	digests       map[string]string
+
+	// forWriting records that the plan was computed for writing, so each of its
+	// entities was held to a directory of its own before it was planned. Write
+	// and Report refuse a plan without it rather than write a lock no such check
+	// preceded.
+	forWriting bool
 }
+
+// errPlanNotForWriting is the refusal Write and Report give a plan computed only
+// to be checked. It is a fault in how a caller assembled the step, not anything
+// an author can cause.
+var errPlanNotForWriting = errors.New("internal: the pin step's plan was computed to be checked, not written; " +
+	"compute it with ForWriting so each entity is first held to a directory of its own")
 
 // entityPlan is one entity the step would pin: the document it was read from,
 // the kind and name that identify it to a reader, the pins its inputs need now
@@ -88,8 +110,15 @@ type Outcome struct {
 //
 // A failure to acquire a source, or to read an imported file, is returned as is:
 // nothing is written by Compute, so a run that stops here has changed nothing.
+//
+// A plan computed for writing refuses, before any source is resolved, every
+// entity that shares its directory with another entity where its kind has a
+// directory of its own, all of them in one run. The refusal comes first because
+// it is free and local, and because resolving a source for an entity that could
+// never be pinned would spend a fetch on a verdict already decided — or, for a
+// source that does not resolve, report the fetch instead of the rule.
 func Compute(in Inputs) (Plan, error) {
-	plan := Plan{workspaceRoot: in.WorkspaceRoot, digests: map[string]string{}}
+	plan := Plan{workspaceRoot: in.WorkspaceRoot, digests: map[string]string{}, forWriting: in.ForWriting}
 	loader := in.View.ClosureRecipeLoader()
 
 	type homed struct {
@@ -98,6 +127,7 @@ func Compute(in Inputs) (Plan, error) {
 		artifacts     types.OrderedMap[types.ArtifactEntry]
 	}
 	var planned []homed
+	var refused []error
 	byPath := map[string]int{}
 	seen := map[string]bool{}
 	for _, uri := range in.URIs {
@@ -129,6 +159,12 @@ func Compute(in Inputs) (Plan, error) {
 		if _, dup := byPath[path]; dup {
 			continue
 		}
+		if in.ForWriting {
+			if err := RefuseSharedDirectory(path); err != nil {
+				refused = append(refused, err)
+				continue
+			}
+		}
 		byPath[path] = len(planned)
 		planned = append(planned, homed{
 			uri:       uri,
@@ -136,6 +172,16 @@ func Compute(in Inputs) (Plan, error) {
 			artifacts: artifacts,
 			plan:      entityPlan{path: path, kind: kind, name: name, recorded: in.View.RecordedPins().For(path)},
 		})
+	}
+	// One refusal is returned as itself, so the diagnostic a reader meets is the
+	// one a publication gives over the same document; several are reported
+	// together, as the unpinned-entity halt reports every entity it finds.
+	switch len(refused) {
+	case 0:
+	case 1:
+		return Plan{}, refused[0]
+	default:
+		return Plan{}, errors.Join(refused...)
 	}
 
 	var cl closure.Closure
@@ -265,6 +311,9 @@ func (p Plan) Unpinned(remedy recipepin.Remedy) error {
 // byte-identical, and an entity that reads nothing a lock records a pin for has
 // its lock removed rather than emptied.
 func (p Plan) Write() ([]Outcome, error) {
+	if !p.forWriting {
+		return nil, errPlanNotForWriting
+	}
 	out := make([]Outcome, 0, len(p.entities))
 	for _, e := range p.entities {
 		changed, err := recipepin.WriteLock(e.path, e.want.SourceDigests, e.want.ArtifactDigests)
@@ -283,11 +332,14 @@ func (p Plan) Write() ([]Outcome, error) {
 // naming it would tell a reader a write was coming for it. A lock the step would
 // remove is named with no content.
 //
-// Where two entities share one directory they share one lock, and [Plan.Write]
-// writes it for each in document order, so the lock is left holding what the
-// last of them records. The report names that final content, so what it shows
-// is what a writing run leaves behind.
+// Every entity in a plan for writing has a directory of its own, so no two of
+// them name one lock. The report is still keyed by lock path, naming each lock's
+// final content, so that what it shows is what a writing run leaves behind
+// without that depending on the directory rule having held.
 func (p Plan) Report() ([]Outcome, []dryrunreport.File, error) {
+	if !p.forWriting {
+		return nil, nil, errPlanNotForWriting
+	}
 	outcomes := make([]Outcome, 0, len(p.entities))
 	type last struct {
 		content []byte

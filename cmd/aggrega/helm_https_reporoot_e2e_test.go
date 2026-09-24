@@ -310,7 +310,9 @@ spec:
     values: {}
 `)
 	writeHelmRendererPlugin(t, filepath.Join(catalogRoot, "providers"))
-	writeFixture(t, filepath.Join(catalogRoot, "recipes", "server.yaml"), fmt.Sprintf(`apiVersion: aggrega.ai/v1alpha1
+	// Each Recipe in a directory of its own: the pull pins both, and a pin writes
+	// the one lock its entity's directory holds.
+	writeFixture(t, filepath.Join(catalogRoot, "recipes", "server", "server.yaml"), fmt.Sprintf(`apiVersion: aggrega.ai/v1alpha1
 kind: Recipe
 metadata:
   name: server
@@ -324,7 +326,7 @@ spec:
     chart: %s
     version: "1.0.0"
 `, repoRootURL, chartA))
-	writeFixture(t, filepath.Join(catalogRoot, "recipes", "worker.yaml"), fmt.Sprintf(`apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogRoot, "recipes", "worker", "worker.yaml"), fmt.Sprintf(`apiVersion: aggrega.ai/v1alpha1
 kind: Recipe
 metadata:
   name: worker

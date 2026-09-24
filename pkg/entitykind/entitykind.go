@@ -80,6 +80,16 @@ type Entry struct {
 	// A kind without one has its guidance pointers fall back to the
 	// language-reference index rather than naming a page that does not exist.
 	ReferencePage bool
+	// SharesDirectory reports whether a document of this kind may sit in one
+	// directory beside other entity documents. Every other kind has a directory
+	// of its own, as a published entity has one coordinate per version.
+	//
+	// The rule is stated by exception on purpose: the zero value is the rule, so
+	// a kind added to the vocabulary without this field set is one entity per
+	// directory from the moment it exists, and nobody has to remember to opt it
+	// in. The kinds that set it are the top-level documents a workspace root
+	// holds side by side and that carry no files of their own to package.
+	SharesDirectory bool
 }
 
 // entries is the vocabulary, in fixed author-defined order: catalog-authored
@@ -95,11 +105,11 @@ var entries = []Entry{
 	{Kind: MappingLibrary, ConventionsLinted: true, ReferencePage: true},
 	{Kind: WorkloadLibrary, ConventionsLinted: true, ReferencePage: false},
 	{Kind: ArtifactsLibrary, ConventionsLinted: true, ReferencePage: false},
-	{Kind: Aggregate, ConventionsLinted: false, ReferencePage: true},
+	{Kind: Aggregate, ConventionsLinted: false, ReferencePage: true, SharesDirectory: true},
 	{Kind: Plugin, ConventionsLinted: true, ReferencePage: true},
 	{Kind: Workload, ConventionsLinted: false, ReferencePage: true},
-	{Kind: Manifest, ConventionsLinted: false, ReferencePage: true},
-	{Kind: Release, ConventionsLinted: false, ReferencePage: true},
+	{Kind: Manifest, ConventionsLinted: false, ReferencePage: true, SharesDirectory: true},
+	{Kind: Release, ConventionsLinted: false, ReferencePage: true, SharesDirectory: true},
 }
 
 // Entries returns every entry in fixed author-defined order. The returned slice
@@ -200,4 +210,25 @@ func ConventionsLinted() []Kind {
 func IsConventionsLinted(k Kind) bool {
 	e, ok := Lookup(k)
 	return ok && e.ConventionsLinted
+}
+
+// SharesDirectory reports whether a document of the named kind may sit in one
+// directory beside other entity documents. An unrecognised token reports false,
+// so a kind the vocabulary does not contain is held to a directory of its own
+// rather than admitted by default.
+func SharesDirectory(k Kind) bool {
+	e, ok := Lookup(k)
+	return ok && e.SharesDirectory
+}
+
+// DirectorySharing returns every kind that may share a directory, in fixed
+// author-defined order. The returned slice is freshly allocated.
+func DirectorySharing() []Kind {
+	out := make([]Kind, 0, len(entries))
+	for _, e := range entries {
+		if e.SharesDirectory {
+			out = append(out, e.Kind)
+		}
+	}
+	return out
 }

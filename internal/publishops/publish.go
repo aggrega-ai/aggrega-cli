@@ -181,29 +181,23 @@ const componentCategoryLabel = "component.aggrega.ai/category"
 // metadata.description, and metadata.labels. Description and labels feed
 // the searchable annotations stamped onto the published manifest.
 //
-// A second decode of the same document happens inside pkg/oci, where
-// the per-version path check reads metadata.version to compare it against
-// the entity's per-version directory. The two are deliberately separate, and the
-// reason is worth stating so nobody folds them together on the strength of the
-// one field they share:
+// The shared-directory predicate Push reaches decodes the same document's kind
+// and name a second time, and the two are deliberately separate so nobody folds
+// them together on the strength of the fields they share:
 //
-//   - They are not the same shape. That decode reads exactly one field; this one
-//     reads six. Five of the six are meaningless to the version check, so a
-//     shared struct would carry them into a package with no use for them.
-//   - They cannot be shared in the direction it would have to run. This package
-//     consumes pkg/oci; pkg/oci does not consume this one, so the shared type
-//     would have to live on the pkg/oci side — which is the side that needs
-//     least of it.
-//   - Their requirements on the one shared field differ, and only on this side.
-//     Labels here must survive as an ordered map because the whole map is
-//     stamped onto the published manifest and identical input must produce
-//     byte-identical published bytes. The version check has no such constraint,
-//     reads no labels, and would gain nothing from the ordering.
+//   - The predicate is shared with the pin step, which is handed a path and
+//     nothing else, so it reads the kind it judges from the document itself
+//     rather than trusting a caller to pass one — a kind handed in by one of its
+//     two callers would be a way for the two to disagree about one document.
+//   - They are not the same shape. The predicate reads two fields; this header
+//     reads six, and the labels among them must survive as an ordered map
+//     because the whole map is stamped onto the published manifest, which the
+//     predicate has no use for.
 //
 // So this is one document read twice for two unrelated questions, not one
-// mechanism written twice. What must stay in step is only the field NAME the two
-// agree on, and that name comes from the published entity schema rather than
-// from either struct.
+// mechanism written twice. What must stay in step is only the field NAMES the two
+// agree on, and those come from the published entity schema rather than from
+// either struct.
 type pushEntityHeader struct {
 	Kind     string `yaml:"kind"`
 	Metadata struct {
@@ -330,9 +324,10 @@ func writePublicationFacts(out io.Writer, kind, mediaType string, size, pluginSi
 
 // Push bundles the entity at cfg.EntityPath and publishes it.
 // Reads workspace config; parses the entity envelope (kind,
-// metadata.name, metadata.version); routes a Plugin to the one-manifest
-// packer and every other kind through pkg/oci.Bundle (per-kind dispatch,
-// the per-version subdir guard, Recipe / FeatureRecipe tar.gz directory
+// metadata.name, metadata.version); refuses an entity that shares its
+// directory with another entity where its kind has a directory of its own;
+// routes a Plugin to the one-manifest packer and every other kind through
+// pkg/oci.Bundle (per-kind dispatch, Recipe / FeatureRecipe tar.gz directory
 // walking); constructs the OCI repository reference; publishes via pkg/oci.Push.
 //
 // Signing is sign-before-publish: when signing is requested, Push computes
@@ -345,14 +340,15 @@ func writePublicationFacts(out io.Writer, kind, mediaType string, size, pluginSi
 // signature is valid for the published bytes.
 //
 // Returns wrapped errors on workspace-config validation failure,
-// entity-file read / parse failure, the unpinned-entity halt
+// entity-file read / parse failure, the shared-directory halt
+// (entitypin.ErrEntitySharesItsDirectory) for an entity of a kind that has a
+// directory of its own with another entity beside it, the unpinned-entity halt
 // (recipepin.ErrEntityNotPinned) for a Recipe or FeatureRecipe whose lock does
 // not record every pin the pin step would record, where this invocation does not
-// run the step, bundle failure (including
-// ErrUnknownEntityKind for non-publishable kinds and
-// ErrEntityVersionPathMismatch for an entity whose metadata.version
-// disagrees with its per-version subdirectory), signer-construction /
-// signing failure (refused before publishing), and publication failure.
+// run the step, bundle failure (including ErrUnknownEntityKind for
+// non-publishable kinds), signer-construction / signing failure (refused before
+// publishing), and publication failure. The directory's name is not judged: an
+// entity alone in its directory publishes wherever that directory sits.
 //
 // When cfg.DryRun is true, Push prints the proposed
 // <reference>:<tag> + mediatype + bundle byte count and returns
@@ -419,6 +415,18 @@ func Push(ctx context.Context, cfg PushConfig) (PushResult, error) {
 		return PushResult{}, fmt.Errorf("%s: missing metadata.version", cfg.EntityPath)
 	}
 
+	// An entity of a kind that has a directory of its own is refused here when
+	// another entity sits beside it — whether or not this publication pins, and
+	// for every kind, a Plugin included. It comes ahead of the pin step because the
+	// step writes the one lock the directory has room for, and ahead of every other
+	// judgement of the entity because it costs one directory listing and fetches
+	// nothing. It is the predicate the pin step asks, reached rather than restated,
+	// so a publication refuses exactly the directories `aggrega pin` refuses, in the
+	// same words.
+	if err := entitypin.RefuseSharedDirectory(cfg.EntityPath); err != nil {
+		return PushResult{}, err
+	}
+
 	// The pin step runs here, ahead of every refusal that judges the entity and
 	// ahead of the bundle, and both positions are the point. The bundle is built
 	// from the entity's directory, so a lock written after it would be missing
@@ -426,8 +434,8 @@ func Push(ctx context.Context, cfg PushConfig) (PushResult, error) {
 	// that no longer exists. And a publication that pins on the author's behalf
 	// pins before the entity is judged, so what is judged is the entity as
 	// pinned. The refusals above it are about the invocation — the offline
-	// posture, a destination nobody named, a document that is not an entity — and
-	// no pin could answer any of them.
+	// posture, a destination nobody named, a document that is not an entity — or
+	// about a directory the entity shares, and no pin could answer any of them.
 	//
 	// It runs where the entity has a writable home, which a publication always
 	// has: the entity is named by its document, and the step reads it from that

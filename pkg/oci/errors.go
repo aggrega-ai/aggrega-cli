@@ -218,24 +218,6 @@ var errUnknownEntityKind = cerrors.Register("unknown-entity-kind", cerrors.Meta{
 		"anything a user supplied."),
 })
 
-// ErrEntityVersionPathMismatch is returned by the publish-time
-// per-version-subdirectory validator when a publishable entity's
-// filesystem path version segment (the parent directory of the entity
-// file) doesn't match the entity's metadata.version field. It applies
-// to every publishable kind — Component, Feature, Plugin, Aggregate,
-// Recipe, FeatureRecipe, SchemaLibrary, MappingLibrary. Call sites wrap
-// this sentinel with both values for the operator's diagnostic.
-func ErrEntityVersionPathMismatch() error { return errEntityVersionPathMismatch }
-
-var errEntityVersionPathMismatch = cerrors.Register("entity-version-path-mismatch", cerrors.Meta{
-	ShortCode: "E0134",
-	Message:   "oci: entity per-version subdirectory mismatch",
-	RulePlace: cerrors.RuleNoStageReaches("A push evaluates the rule, as the publication bundle walks the catalog tree and compares each " +
-		"entity file's per-version directory with the version that entity's own metadata declares. " +
-		"Publication reads a tree on disk rather than anything compiled, so no declared stage of a " +
-		"compilation holds the layout the comparison turns on."),
-})
-
 // ErrOCILocationCollision fires when two DISTINCT catalog identities map to the
 // same OCI repository location — e.g. two SchemaLibrary identities that differ
 // only in case (AIDatastores vs AiDatastores both lower to schemalibrary/

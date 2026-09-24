@@ -124,13 +124,14 @@ func TestUnpinnedHaltsUntilTheStepHasWrittenAndThenIsSilent(t *testing.T) {
 	writeFile(t, recipe, recipeYAML("server",
 		"  source:\n    kind: helm-https-chart\n    url: https://example.invalid/s.tgz\n    version: \"1.0.0\"\n", true))
 	writeFile(t, filepath.Join(cat, "server", "extra.yaml"), "kind: ConfigMap\n")
-	compute := func() Plan {
+	compute := func(forWriting bool) Plan {
 		t.Helper()
 		plan, err := Compute(Inputs{
 			View:          catalog.NewLazyLookup(ws, "", []string{cat}, nil),
 			URIs:          []string{"helm/server:1.0.0"},
 			Resolver:      &recordingResolver{},
 			WorkspaceRoot: ws,
+			ForWriting:    forWriting,
 		})
 		if err != nil {
 			t.Fatalf("Compute: %v", err)
@@ -138,7 +139,7 @@ func TestUnpinnedHaltsUntilTheStepHasWrittenAndThenIsSilent(t *testing.T) {
 		return plan
 	}
 
-	err := compute().Unpinned(testRemedy)
+	err := compute(false).Unpinned(testRemedy)
 	if !errors.Is(err, recipepin.ErrEntityNotPinned()) {
 		t.Fatalf("an entity with no lock must halt under the unpinned-entity condition; got %v", err)
 	}
@@ -148,10 +149,10 @@ func TestUnpinnedHaltsUntilTheStepHasWrittenAndThenIsSilent(t *testing.T) {
 		}
 	}
 
-	if _, err := compute().Write(); err != nil {
+	if _, err := compute(true).Write(); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
-	if err := compute().Unpinned(testRemedy); err != nil {
+	if err := compute(false).Unpinned(testRemedy); err != nil {
 		t.Fatalf("once the step has written the lock the same plan must be silent; got %v", err)
 	}
 }
@@ -233,7 +234,7 @@ func TestReportIsTheWriteWithoutTheWrite(t *testing.T) {
 	writeFile(t, recipe, recipeYAML("server", "", true))
 	writeFile(t, filepath.Join(cat, "server", "extra.yaml"), "kind: ConfigMap\n")
 	plan, err := Compute(Inputs{View: catalog.NewLazyLookup(ws, "", []string{cat}, nil),
-		URIs: []string{"helm/server:1.0.0"}, Resolver: &recordingResolver{}, WorkspaceRoot: ws})
+		URIs: []string{"helm/server:1.0.0"}, Resolver: &recordingResolver{}, WorkspaceRoot: ws, ForWriting: true})
 	if err != nil {
 		t.Fatalf("Compute: %v", err)
 	}

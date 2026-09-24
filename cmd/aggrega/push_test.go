@@ -107,14 +107,10 @@ spec:
 	}
 }
 
-// TestPushSchemaLibraryHonoursPerVersionSubdir pins that a library whose
-// entity file sits directly under a <version> directory matching its
-// metadata.version passes the per-version subdir gate inside
-// pkg/oci.Bundle. That parent-directory pairing is the whole of what the
-// gate reads; the segments above it are the authoring layout
-// (schemalibrary/<name>/<version>/library.yaml for a library kind, which
-// carries no publisher segment) and the gate does not check them.
-func TestPushSchemaLibraryHonoursPerVersionSubdir(t *testing.T) {
+// TestPushSchemaLibraryInThePerVersionLayout pins that a library laid out the way
+// the catalog lays out every library kind — schemalibrary/<name>/<version>/
+// library.yaml, with no publisher segment — publishes under its own mediatype.
+func TestPushSchemaLibraryInThePerVersionLayout(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
 	libPath := filepath.Join(root, "schemalibrary", "core", "Probes", "1.0.0", "library.yaml")
@@ -146,15 +142,21 @@ spec:
 	}
 }
 
-// TestPushSchemaLibraryRejectsPathVersionMismatch pins that a
-// library whose metadata.version disagrees with its per-version
-// subdirectory halts with the canonical mismatch sentinel before
-// any network call.
-func TestPushSchemaLibraryRejectsPathVersionMismatch(t *testing.T) {
-	root := t.TempDir()
-	t.Chdir(root)
-	libPath := filepath.Join(root, "schemalibrary", "core", "Probes", "1.0.0", "library.yaml")
-	writeEntityFixture(t, libPath, `apiVersion: aggrega.ai/v1alpha1
+// TestPushPublishesAnEntityAloneInItsDirectoryWhateverTheDirectoryIsNamed pins
+// that a publication judges whether an entity has its directory to itself and not
+// what that directory is called: a library in a directory named for a different
+// version than it declares, and one in a flat directory named for nothing, each
+// publish at the version the entity declares.
+func TestPushPublishesAnEntityAloneInItsDirectoryWhateverTheDirectoryIsNamed(t *testing.T) {
+	for name, rel := range map[string]string{
+		"a directory named for another version": filepath.Join("schemalibrary", "core", "Probes", "1.0.0", "library.yaml"),
+		"a flat directory":                      filepath.Join("libraries", "probes.yaml"),
+	} {
+		t.Run(name, func(t *testing.T) {
+			root := t.TempDir()
+			t.Chdir(root)
+			libPath := filepath.Join(root, rel)
+			writeEntityFixture(t, libPath, `apiVersion: aggrega.ai/v1alpha1
 kind: SchemaLibrary
 metadata:
   name: Probes
@@ -164,17 +166,19 @@ spec:
     LivenessProbe:
       type: object
 `)
-	err := pushRun(t.Context(), pushConfig{
-		Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
-		EntityPath: libPath,
-		Registry:   "example.com",
-		PushTarget: memory.New(),
-	})
-	if err == nil {
-		t.Fatal("expected ErrEntityVersionPathMismatch; got nil")
-	}
-	if !errors.Is(err, oci.ErrEntityVersionPathMismatch()) {
-		t.Errorf("error should wrap ErrEntityVersionPathMismatch; got %v", err)
+			store := memory.New()
+			if err := pushRun(t.Context(), pushConfig{
+				Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
+				EntityPath: libPath,
+				Registry:   "example.com",
+				PushTarget: store,
+			}); err != nil {
+				t.Fatalf("an entity alone in its directory must publish wherever that directory sits; got %v", err)
+			}
+			if _, err := oci.Pull(context.Background(), store, "2.0.0"); err != nil {
+				t.Fatalf("the library must be published at the version it declares: %v", err)
+			}
+		})
 	}
 }
 

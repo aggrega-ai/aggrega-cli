@@ -31,6 +31,9 @@ import (
 //     command line's pin command, a publication that pins first, the daemon's pin
 //     method and the tool protocol's pin tool. The hold is reached by a
 //     publication that does not pin, and by nothing else.
+//   - Whether an entity has its directory to itself is decided by one predicate,
+//     reached by the pin step and by a publication, and composed into one
+//     refusal — so the two moments cannot come to disagree about a directory.
 //
 // A legitimate new caller changes one of the sets below, and the failure is the
 // point: whoever adds one has to say so here, next to the others, rather than
@@ -214,6 +217,22 @@ func TestThePinStepIsOneImplementation(t *testing.T) {
 			callee: "publishops.pinBeforePublishing",
 			why:    "a publication runs the step once, before it bundles",
 			want:   []string{"publishops.Push"},
+		},
+		{
+			// One predicate decides whether an entity has its directory to itself,
+			// and it is reached at the two moments something is produced from that
+			// directory and at no other: the pin step's plan for writing, which every
+			// caller that pins goes through, and a publication, whether or not it
+			// pins. A catalog load, a lint or a validate calling it would join this
+			// set, and so would a second implementation calling the listing helpers.
+			callee: "entitypin.RefuseSharedDirectory",
+			why:    "the directory rule is one predicate, asked by the pin step and by a publication and by nothing else",
+			want:   []string{"entitypin.Compute", "publishops.Push"},
+		},
+		{
+			callee: "entitypin.sharedDirectory",
+			why:    "the directory rule's refusal is composed in one place, so both moments give one diagnostic",
+			want:   []string{"entitypin.RefuseSharedDirectory"},
 		},
 	}
 	for _, tc := range cases {

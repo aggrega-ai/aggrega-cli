@@ -904,6 +904,10 @@ var retiredShortCodes = []retirement{
 		"a fault in the compiler rather than in an authored document — and the condition raised when a " +
 		"build resolves a component type the catalog it reads then holds no entry for reports that " +
 		"state now, and its code is `E0154`."},
+	{"E0134", "It named a publishable entity whose directory was not named after the version the entity " +
+		"declares; a publication no longer judges a directory's name, and the condition raised when an " +
+		"entity shares its directory with another entity where its kind has a directory of its own is " +
+		"`E0303`."},
 	{"E0157", "It named an Aggregate key — a component, feature, subsystem or nested-module " +
 		"instance name — that did not match the authored-name pattern. Every one of those key " +
 		"surfaces is constrained to that same spelling by the Aggregate schema, which refuses " +

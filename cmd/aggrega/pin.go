@@ -44,8 +44,10 @@ written to. Re-running over unchanged inputs leaves the lock byte-identical; an 
 nothing a lock records has its lock removed. A Component, a Feature or any other kind that reads
 no such input is reported as having nothing to pin, and nothing beside it is touched.
 
-Every entity in one directory shares that directory's entity.lock, so give an entity that pins
-anything a directory of its own.
+A directory holds one entity.lock, so the step refuses a Recipe or FeatureRecipe that shares its
+directory with any other entity, naming the entity in the way, whether or not either has anything
+to pin. Every kind has a directory of its own except Aggregate, Release and Manifest, which may sit
+side by side; a push holds the entity it publishes to the same rule.
 
 aggrega pull --pin-sources and aggrega push --pin-sources run this same step on your behalf, and
 write the same bytes.`,

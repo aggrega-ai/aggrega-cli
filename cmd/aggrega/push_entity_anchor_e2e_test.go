@@ -13,6 +13,7 @@ import (
 
 	orasoci "oras.land/oras-go/v2/content/oci"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/entitypin"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 )
 
@@ -85,21 +86,23 @@ func TestPublishedRecipeYieldsItsEntityWhateverTheFileIsNamed(t *testing.T) {
 	}
 }
 
-// TestTwoSiblingRecipesPublishOneArtifactAndTheConsumerIsRefused is the
-// end-to-end form of the substitution this anchor exists to stop.
+// TestTwoSiblingRecipesAreRefusedAtPublicationAndTheirArtifactAtTheConsumer is
+// the end-to-end form of the substitution this anchor exists to stop, from both
+// ends.
 //
 // Two same-version Recipes authored side by side in one version directory are
-// published under two coordinates. The publish path is unchanged and still
-// accepts both — what an artifact contains is not this anchor's concern — so
-// each coordinate carries a bundle of the whole directory, and the two are
-// byte-identical. The assertion that matters is what a consumer then gets when
-// it pulls the SECOND coordinate: not the first entity under the second's name,
-// but a refusal naming both documents.
+// refused by this product's publication, each naming the other, and nothing
+// reaches either store. The read side must still be correct for an artifact
+// built from such a directory, because an artifact already published — by an
+// earlier publisher, or by a client that is not this product — carries exactly
+// that shape. So the two archives are built as the bundler builds them, and the
+// assertion that matters is what a consumer gets for the SECOND coordinate: not
+// the first entity under the second's name, but a refusal naming both documents.
 //
 // The byte-identity check runs first and fatals rather than errors: if the two
 // artifacts ever stopped being identical there would be no substitution left to
 // refuse, and the refusal below would be proving something else.
-func TestTwoSiblingRecipesPublishOneArtifactAndTheConsumerIsRefused(t *testing.T) {
+func TestTwoSiblingRecipesAreRefusedAtPublicationAndTheirArtifactAtTheConsumer(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
 	versionDir := filepath.Join(root, "recipes", "shared", "1.0.0")
@@ -109,31 +112,38 @@ func TestTwoSiblingRecipesPublishOneArtifactAndTheConsumerIsRefused(t *testing.T
 	writeEntityFixture(t, databasePath, anchorRecipeBody("database"))
 
 	workspace := resolveTempWorkspace(t, tempWorkspaceOptions{Root: root})
-	// One store per coordinate: two entity identities publish to two
-	// repositories, which is what makes them two things a consumer can ask for.
-	pull := func(entityPath string) []byte {
-		t.Helper()
+	for path, other := range map[string]string{frontendPath: "database.yaml", databasePath: "frontend.yaml"} {
 		store, err := orasoci.New(t.TempDir())
 		if err != nil {
 			t.Fatalf("orasoci.New: %v", err)
 		}
-		if err := pushRun(t.Context(), pushConfig{
+		err = pushRun(t.Context(), pushConfig{
 			Workspace:  workspace,
-			EntityPath: entityPath,
+			EntityPath: path,
 			Registry:   "example.com",
 			PushTarget: store,
-		}); err != nil {
-			t.Fatalf("pushRun %s: %v", entityPath, err)
+		})
+		if !errors.Is(err, entitypin.ErrEntitySharesItsDirectory()) {
+			t.Fatalf("publishing %s beside another Recipe must be refused under the shared-directory condition; got %v", path, err)
 		}
-		pulled, err := oci.Pull(context.Background(), store, "1.0.0")
-		if err != nil {
-			t.Fatalf("oci.Pull %s: %v", entityPath, err)
+		if !strings.Contains(err.Error(), other) {
+			t.Errorf("the refusal must name the other entity in the way, %s; got %v", other, err)
 		}
-		return pulled.Bytes
+		if _, perr := oci.Pull(context.Background(), store, "1.0.0"); perr == nil {
+			t.Errorf("a refused publication of %s landed bytes in its store", path)
+		}
 	}
 
-	frontendArtifact := pull(frontendPath)
-	databaseArtifact := pull(databasePath)
+	bundle := func(entityPath string) []byte {
+		t.Helper()
+		data, _, err := oci.Bundle("Recipe", entityPath)
+		if err != nil {
+			t.Fatalf("oci.Bundle %s: %v", entityPath, err)
+		}
+		return data
+	}
+	frontendArtifact := bundle(frontendPath)
+	databaseArtifact := bundle(databasePath)
 	if !bytes.Equal(frontendArtifact, databaseArtifact) {
 		t.Fatalf("two sibling entities in one directory no longer publish byte-identical artifacts "+
 			"(%d vs %d bytes); there is no substitution left for the refusal below to be about",

@@ -260,7 +260,9 @@ spec:
 
 	// The api Recipe sources a remote chart, which is the source-artifact pin. Its
 	// rendered document exists only if the cached archive served the offline build.
-	writeFixture(t, filepath.Join(catalogDir, "recipes", "api.yaml"), fmt.Sprintf(`apiVersion: aggrega.ai/v1alpha1
+	// Each Recipe sits in a directory of its own, because the pull below pins, and
+	// a pin writes the one lock its entity's directory holds.
+	writeFixture(t, filepath.Join(catalogDir, "recipes", "api", "api.yaml"), fmt.Sprintf(`apiVersion: aggrega.ai/v1alpha1
 kind: Recipe
 metadata:
   name: api-recipe
@@ -291,7 +293,7 @@ data:
 `)
 	writeFixture(t, filepath.Join(cacheChart, "values.schema.json"),
 		fmt.Sprintf(`{"$schema":"https://json-schema.org/draft/2020-12/schema","$ref":%q}`, schemaURL))
-	writeFixture(t, filepath.Join(catalogDir, "recipes", "cache.yaml"), fmt.Sprintf(`apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogDir, "recipes", "cache", "cache.yaml"), fmt.Sprintf(`apiVersion: aggrega.ai/v1alpha1
 kind: Recipe
 metadata:
   name: cache-recipe
@@ -307,7 +309,7 @@ spec:
 	// The queue Recipe is sourceless: its workload and its extra artifacts each
 	// come from a library, which is what puts those two library kinds in the
 	// closure.
-	writeFixture(t, filepath.Join(catalogDir, "recipes", "queue.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogDir, "recipes", "queue", "queue.yaml"), `apiVersion: aggrega.ai/v1alpha1
 kind: Recipe
 metadata:
   name: queue-recipe

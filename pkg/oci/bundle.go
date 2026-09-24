@@ -62,8 +62,8 @@ func EntityYAML(published []byte) ([]byte, error) {
 }
 
 // entityYAMLFromBundle extracts the entity YAML from a tar.gz bundle produced by
-// Bundle's archive arm. The bundle carries the entity's per-version directory —
-// the entity file plus any co-located source — and this is the inverse of that
+// Bundle's archive arm. The bundle carries the entity's directory — the entity
+// file plus any co-located source — and this is the inverse of that
 // arm, used to fold a registry-pulled entity into the catalog (the catalog holds
 // the parsed entity; the lockfile-drift pin stays over the whole bundle blob).
 //
@@ -208,22 +208,13 @@ func describeRootEntries(names []string) string {
 //     carry zeroed timestamps so two independent Bundle invocations
 //     against the same input produce byte-identical archives.
 //
-// For every publishable kind, Bundle first invokes
-// validateEntityVersionPathSubdir on the entityPath; a mismatch between
-// the path's version segment (the entity file's parent directory) and
-// the entity's metadata.version returns ErrEntityVersionPathMismatch
-// wrapped with both values.
+// Bundle judges nothing about where the entity sits. The name of the entity's
+// directory is a catalog convention and no input to the artifact, and whether
+// the directory belongs to the entity alone is decided before Bundle is reached,
+// by the publication that calls it.
 func Bundle(kind, entityPath string) ([]byte, string, error) {
 	mediaType, err := MediaTypeForKind(kind)
 	if err != nil {
-		return nil, "", err
-	}
-
-	// Every publishable kind sits in a per-version subdirectory whose name
-	// equals the entity's metadata.version. The entity file
-	// (component.yaml, plugin.yaml, recipe.yaml, library.yaml, …) is the
-	// parent-dir anchor.
-	if err := validateEntityVersionPathSubdir(entityPath); err != nil {
 		return nil, "", err
 	}
 
@@ -253,55 +244,9 @@ func Bundle(kind, entityPath string) ([]byte, string, error) {
 		// MediaTypeKinds enumerates and fails on this sentinel, so the gap reds
 		// the build instead of waiting for a push. Which arm a new kind joins is
 		// still a judgement — bare YAML for a self-contained entity, tar.gz for
-		// one whose version directory carries co-located source.
+		// one whose directory carries co-located source.
 		return nil, "", ErrUnknownEntityKind()
 	}
-}
-
-// validateEntityVersionPathSubdir enforces the catalog-side authoring
-// discipline for every publishable entity kind:
-//
-//	<kind>/<publisher-or-provider>/.../<name>/<version>/<entity>.yaml
-//
-// The segments between the kind and the name vary by kind — a Component
-// carries a category as well as a publisher, and a library kind carries
-// neither — so only the tail is fixed: the path's <version> segment (the
-// parent directory of the entity file — component.yaml, recipe.yaml,
-// library.yaml, …) MUST equal the entity's metadata.version field, and
-// that parent directory is the only path segment this function reads.
-// Mismatch returns ErrEntityVersionPathMismatch wrapped with both values
-// so the operator can correct the path or the metadata as appropriate.
-func validateEntityVersionPathSubdir(entityPath string) error {
-	parentVersion := filepath.Base(filepath.Dir(entityPath))
-
-	data, err := os.ReadFile(entityPath)
-	if err != nil {
-		return fmt.Errorf("oci: read library %s for per-version validation: %w", entityPath, err)
-	}
-
-	// Deliberately a local decode of one field rather than a shared entity
-	// header. The push verb decodes the same document into a wider header of its
-	// own, and the two are kept apart on purpose: this check needs only
-	// metadata.version, it has no use for the labels the push side must preserve
-	// in author order, and the wider header lives in the command layer, which
-	// consumes this package rather than the reverse. Sharing a struct would move
-	// five unused fields into this package to unify one. The field NAME is what
-	// must agree, and that comes from the published entity schema, not from
-	// either struct.
-	var envelope struct {
-		Metadata struct {
-			Version string `yaml:"version"`
-		} `yaml:"metadata"`
-	}
-	if err := yaml.Unmarshal(data, &envelope); err != nil {
-		return fmt.Errorf("oci: parse library %s for per-version validation: %w", entityPath, err)
-	}
-
-	if envelope.Metadata.Version != parentVersion {
-		return fmt.Errorf("oci: %s: path version %q != metadata.version %q: %w",
-			entityPath, parentVersion, envelope.Metadata.Version, ErrEntityVersionPathMismatch())
-	}
-	return nil
 }
 
 // bundleTarGzDirectory walks dirPath (a Recipe / FeatureRecipe

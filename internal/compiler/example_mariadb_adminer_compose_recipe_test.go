@@ -53,7 +53,7 @@ func TestExampleMariaDBAdminerComposeRecipe_WorkloadSynthesis(t *testing.T) {
 
 	cat, err := catalog.LoadAll("",
 		exampleCatalog+"/component/mariadb.yaml",
-		exampleCatalog+"/recipe/mariadb.yaml",
+		exampleCatalog+"/recipe/compose/mariadb/1.0.0/recipe.yaml",
 	)
 	if err != nil {
 		t.Fatalf("catalog load: %v", err)

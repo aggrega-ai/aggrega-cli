@@ -46,6 +46,11 @@ import (
 // belongs to, and the step that records them. The two are one plan read two ways,
 // so the halt is raised exactly where a pinning run would have written.
 //
+// Only a pinning run claims the entities' lock files, so only a pinning run holds
+// each entity to a directory of its own, before anything is resolved. A pull that
+// does not pin writes nothing into any directory, and a Release whose entities
+// share one stays pullable and buildable.
+//
 // # The digests
 //
 // The entity document is never opened for writing, so its digest is the same
@@ -68,6 +73,7 @@ func entityPins(lazyView *catalog.LazyLookup, entities []closure.ResolvedRef, us
 		Resolver:      resolver,
 		WorkspaceRoot: workspaceRoot,
 		CacheDir:      cacheDir,
+		ForWriting:    pin,
 	})
 	if err != nil {
 		return nil, nil, err

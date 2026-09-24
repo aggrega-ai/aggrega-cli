@@ -85,7 +85,7 @@ type pinnedEntityHeader struct {
 // An entity of a kind that reads nothing a lock records — a Component, say —
 // reports that it is not pinnable and touches nothing.
 func Pin(ctx context.Context, opts Options) (Result, error) {
-	res, plan, err := planNamed(ctx, opts)
+	res, plan, err := planNamed(ctx, opts, true)
 	if err != nil || !res.Pinnable {
 		return res, err
 	}
@@ -126,8 +126,12 @@ func Pin(ctx context.Context, opts Options) (Result, error) {
 //
 // An entity of a kind that reads nothing a lock records has nothing to hold, and
 // Hold returns nil for it without resolving anything.
+//
+// Hold writes nothing, so it claims no lock file and does not itself hold the
+// entity to a directory of its own; the publication that calls it has already
+// asked [RefuseSharedDirectory] over the same document.
 func Hold(ctx context.Context, opts Options, remedy recipepin.Remedy) error {
-	res, plan, err := planNamed(ctx, opts)
+	res, plan, err := planNamed(ctx, opts, false)
 	if err != nil || !res.Pinnable {
 		return err
 	}
@@ -145,7 +149,9 @@ func Hold(ctx context.Context, opts Options, remedy recipepin.Remedy) error {
 // file it read, so the one predicate every caller of the step reads is
 // satisfied here without a case of its own. The returned Result is filled in
 // as far as reading the document goes; its Outcome is the caller's to fill.
-func planNamed(ctx context.Context, opts Options) (Result, Plan, error) {
+// forWriting is whether the caller will write or report the plan, which is what
+// holds the entity to a directory of its own before anything is resolved.
+func planNamed(ctx context.Context, opts Options, forWriting bool) (Result, Plan, error) {
 	rw := opts.Workspace
 	if rw == nil {
 		return Result{}, Plan{}, fmt.Errorf("internal: no resolved workspace supplied — the caller must resolve one and pass it in")
@@ -194,6 +200,7 @@ func planNamed(ctx context.Context, opts Options) (Result, Plan, error) {
 		Resolver:      SourceResolver(ctx, wsCfg),
 		WorkspaceRoot: root,
 		CacheDir:      cacheDir,
+		ForWriting:    forWriting,
 	})
 	if err != nil {
 		return Result{}, Plan{}, err

@@ -24,8 +24,8 @@ func TestPullPushTarGzRecipeRoundTrip(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 
-	// Per-version layout: recipe.yaml sits under a <version>/ dir matching its
-	// metadata.version (the generalized per-version-subdir contract).
+	// The catalog's per-version layout — recipe.yaml under a <version>/ directory
+	// named for its metadata.version — which Bundle packages but does not require.
 	dir := filepath.Join(t.TempDir(), "1.0.0")
 	if err := os.MkdirAll(filepath.Join(dir, "source"), 0o755); err != nil {
 		t.Fatalf("mkdir source/: %v", err)
@@ -66,38 +66,57 @@ func TestPullPushTarGzRecipeRoundTrip(t *testing.T) {
 	}
 }
 
-func TestPullPushLibraryPerVersionSubdirEnforced(t *testing.T) {
+// TestBundleJudgesNoDirectoryName holds Bundle to packaging the entity it is
+// given wherever that entity sits: a directory's name is a catalog convention,
+// not an input to the artifact. A library in a directory named for its version,
+// one in a directory named for a different version, and a Recipe in a directory
+// named for nothing at all each bundle — the first as the control that the
+// fixture reaches the arm, the other two as the cases a name check would refuse.
+func TestBundleJudgesNoDirectoryName(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
+	library := func(version string) []byte {
+		return []byte("apiVersion: aggrega.ai/v1alpha1\nkind: SchemaLibrary\nmetadata:\n  name: core/base-types\n  version: " +
+			version + "\nspec:\n  schemas: {}\n")
+	}
 
-	good := filepath.Join(root, "schema-library", "core", "base-types", "1.0.0")
-	if err := os.MkdirAll(good, 0o755); err != nil {
+	for _, tc := range []struct {
+		name, dir, declared string
+	}{
+		{"named for its version", filepath.Join(root, "schemalibrary", "base-types", "1.0.0"), "1.0.0"},
+		{"named for another version", filepath.Join(root, "schemalibrary", "base-types", "1.5.0"), "2.0.0"},
+	} {
+		if err := os.MkdirAll(tc.dir, 0o755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		body := library(tc.declared)
+		mustWrite(t, filepath.Join(tc.dir, "library.yaml"), body)
+		data, mediaType, err := oci.Bundle("SchemaLibrary", filepath.Join(tc.dir, "library.yaml"))
+		if err != nil {
+			t.Fatalf("%s: a library must bundle wherever it sits; got %v", tc.name, err)
+		}
+		if mediaType != oci.MediaTypeSchemaLibrary {
+			t.Errorf("%s: mediaType %q", tc.name, mediaType)
+		}
+		if !bytes.Equal(data, body) {
+			t.Errorf("%s: a library bundles as its document unchanged", tc.name)
+		}
+	}
+
+	flat := filepath.Join(root, "catalog", "recipes")
+	if err := os.MkdirAll(flat, 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	mustWrite(t, filepath.Join(good, "library.yaml"),
-		[]byte("apiVersion: aggrega.ai/v1alpha1\nkind: SchemaLibrary\nmetadata:\n  name: core/base-types\n  version: 1.0.0\nspec:\n  schemas: {}\n"))
-
-	_, mediaType, err := oci.Bundle("SchemaLibrary", filepath.Join(good, "library.yaml"))
+	mustWrite(t, filepath.Join(flat, "server.yaml"), []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Recipe\nmetadata:\n  name: server\n  version: 1.0.0\n"))
+	archive, mediaType, err := oci.Bundle("Recipe", filepath.Join(flat, "server.yaml"))
 	if err != nil {
-		t.Fatalf("good library Bundle: %v", err)
+		t.Fatalf("a Recipe in a directory named for nothing must bundle; got %v", err)
 	}
-	if mediaType != oci.MediaTypeSchemaLibrary {
-		t.Errorf("mediaType: %q", mediaType)
+	if mediaType != oci.MediaTypeRecipe {
+		t.Errorf("flat Recipe mediaType %q", mediaType)
 	}
-
-	bad := filepath.Join(root, "schema-library", "core", "base-types", "1.5.0")
-	if err := os.MkdirAll(bad, 0o755); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
-	mustWrite(t, filepath.Join(bad, "library.yaml"),
-		[]byte("apiVersion: aggrega.ai/v1alpha1\nkind: SchemaLibrary\nmetadata:\n  name: core/base-types\n  version: 2.0.0\nspec:\n  schemas: {}\n"))
-
-	_, _, err = oci.Bundle("SchemaLibrary", filepath.Join(bad, "library.yaml"))
-	if err == nil {
-		t.Fatal("expected ErrEntityVersionPathMismatch; got nil")
-	}
-	if !errors.Is(err, oci.ErrEntityVersionPathMismatch()) {
-		t.Errorf("error should wrap ErrEntityVersionPathMismatch; got %v", err)
+	if files := readTarGz(t, archive); len(files) != 1 || files["server.yaml"] == nil {
+		t.Errorf("the flat Recipe's archive must carry its document; carries %v", files)
 	}
 }
 
@@ -124,12 +143,10 @@ func TestBundleDeterminism(t *testing.T) {
 	}
 }
 
-// TestBundleBareKindsPerVersionSubdir covers the bare-YAML publishable kinds
-// (Component / Feature / Aggregate), which the per-version-subdir
-// check did NOT cover before this change. Each must bundle in-layout (the entity
-// file's parent dir equals metadata.version) and fail off-layout with
-// ErrEntityVersionPathMismatch.
-func TestBundleBareKindsPerVersionSubdir(t *testing.T) {
+// TestBundleBareKindsWhereverTheySit covers the bare-YAML publishable kinds: each
+// bundles as its document unchanged, under its own mediatype, both in the
+// catalog's per-version layout and in a directory whose name is not its version.
+func TestBundleBareKindsWhereverTheySit(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
 		kind, file string
@@ -168,26 +185,28 @@ func TestBundleBareKindsPerVersionSubdir(t *testing.T) {
 				t.Fatalf("mkdir: %v", err)
 			}
 			mustWrite(t, filepath.Join(ver, tc.file), body(tc.kind))
-			if _, _, err := oci.Bundle(tc.kind, filepath.Join(ver, tc.file)); !errors.Is(err, oci.ErrEntityVersionPathMismatch()) {
-				t.Errorf("off-layout %s should wrap ErrEntityVersionPathMismatch; got %v", tc.kind, err)
+			data, mt, err := oci.Bundle(tc.kind, filepath.Join(ver, tc.file))
+			if err != nil {
+				t.Fatalf("off-layout %s must bundle: a directory's name is not judged; got %v", tc.kind, err)
+			}
+			if mt != tc.mt || !bytes.Equal(data, body(tc.kind)) {
+				t.Errorf("off-layout %s bundled as %q with other bytes than its document", tc.kind, mt)
 			}
 		})
 	}
 }
 
-// TestBundlePluginPerVersionSubdirEnforced proves the Plugin arm on both
-// sides of the per-version guard, which covers Plugin exactly as it covers
-// every other publishable kind. In-layout — the entity file's parent
-// directory equals its metadata.version — a Plugin bundles to the verbatim
-// entity YAML under the Plugin entity mediatype. Off-layout it halts with
-// ErrEntityVersionPathMismatch, and the Component at the same off-layout
-// path is the control proving the halt is the guard rather than the fixture.
-func TestBundlePluginPerVersionSubdirEnforced(t *testing.T) {
+// TestBundlePluginIsItsDocumentWhereverItSits proves the Plugin arm returns the
+// verbatim entity YAML under the Plugin entity mediatype both in the catalog's
+// per-version layout and in a directory whose name is not its version, with a
+// Component in that same directory as the contrast that the second answer is the
+// arm's rather than something Plugin-specific.
+func TestBundlePluginIsItsDocumentWhereverItSits(t *testing.T) {
 	t.Parallel()
 	body := []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Plugin\nmetadata:\n  name: frp/patch\n  version: 1.0.0\nspec:\n  plugin: \"oci://hub.aggrega.ai/plugin/frp/patch:1.0.0\"\n")
 
-	// In-layout: the parent dir equals metadata.version, so the guard passes
-	// and the bare-YAML arm returns the entity file unchanged.
+	// In-layout: the parent dir equals metadata.version, and the bare-YAML arm
+	// returns the entity file unchanged.
 	inLayout := filepath.Join(t.TempDir(), "1.0.0")
 	if err := os.MkdirAll(inLayout, 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
@@ -206,25 +225,33 @@ func TestBundlePluginPerVersionSubdirEnforced(t *testing.T) {
 		t.Errorf("Plugin bundle should be the verbatim entity YAML")
 	}
 
-	// Off-layout: the parent dir is not the version, so the guard halts.
+	// Off-layout: the parent dir is not the version, and nothing about that is
+	// judged here.
 	dir := filepath.Join(t.TempDir(), "wasm-plugins")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 	offPath := filepath.Join(dir, "plugin.yaml")
 	mustWrite(t, offPath, body)
-	if _, _, err := oci.Bundle("Plugin", offPath); !errors.Is(err, oci.ErrEntityVersionPathMismatch()) {
-		t.Errorf("off-layout Plugin should wrap ErrEntityVersionPathMismatch; got %v", err)
+	offData, offMT, err := oci.Bundle("Plugin", offPath)
+	if err != nil {
+		t.Fatalf("off-layout Plugin must bundle; got %v", err)
+	}
+	if offMT != oci.MediaTypePlugin || !bytes.Equal(offData, body) {
+		t.Errorf("off-layout Plugin bundled as %q with other bytes than its document", offMT)
 	}
 
-	// The contrast that keeps the assertion honest: a Component at the same
-	// off-layout path halts identically, so the Plugin halt above is the
-	// shared guard and not something Plugin-specific.
+	// The contrast: a Component in the same directory answers the same way, so
+	// the Plugin answer above is the bare arm's and not something Plugin-specific.
 	compBody := []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: demo/x\n  version: 1.0.0\n")
 	compPath := filepath.Join(dir, "component.yaml")
 	mustWrite(t, compPath, compBody)
-	if _, _, err := oci.Bundle("Component", compPath); !errors.Is(err, oci.ErrEntityVersionPathMismatch()) {
-		t.Errorf("Component off-layout should still wrap ErrEntityVersionPathMismatch; got %v", err)
+	compData, _, err := oci.Bundle("Component", compPath)
+	if err != nil {
+		t.Fatalf("Component off-layout must bundle; got %v", err)
+	}
+	if !bytes.Equal(compData, compBody) {
+		t.Errorf("Component off-layout bundled other bytes than its document")
 	}
 }
 
@@ -256,9 +283,8 @@ func TestBundleCoversEveryMediaTypeKind(t *testing.T) {
 	for _, kind := range kinds {
 		t.Run(kind, func(t *testing.T) {
 			t.Parallel()
-			// In-layout for every kind: the entity file's parent dir equals its
-			// metadata.version, which satisfies the per-version guard every
-			// publishable kind passes through.
+			// The catalog's per-version layout for every kind, so the fixture is
+			// the shape a published entity is authored in.
 			ver := filepath.Join(t.TempDir(), "1.0.0")
 			if err := os.MkdirAll(ver, 0o755); err != nil {
 				t.Fatalf("mkdir: %v", err)
@@ -271,7 +297,7 @@ func TestBundleCoversEveryMediaTypeKind(t *testing.T) {
 			if errors.Is(err, oci.ErrUnknownEntityKind()) {
 				t.Fatalf("kind %q resolves a mediatype but Bundle has no case for it: it is publishable "+
 					"by the mediatype table and unbundleable in fact. Add an arm to Bundle's switch — "+
-					"bare YAML for a self-contained entity, tar.gz for one whose version directory "+
+					"bare YAML for a self-contained entity, tar.gz for one whose directory "+
 					"carries co-located source.", kind)
 			}
 			if err != nil {
