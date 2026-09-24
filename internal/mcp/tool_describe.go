@@ -172,10 +172,11 @@ var describeToolSpec = toolSpec{
 		"entity and shared library it reaches, with resolved versions. Use `name` to understand a building block " +
 		"before wiring it into an Aggregate, and `release` to see what a Release depends on before building it. " +
 		"`name` may instead be a registry reference, oci://<host>/<repository>:<tag> or @<digest>, which reads the " +
-		"entity exactly as it was published there — reaching that registry with the credentials of the machine this " +
-		"server runs on, checking the bytes against the digest the artifact's own manifest records and against nothing " +
-		"else, and writing nothing. A reference is read only for a client that launched this server over its " +
-		"standard input and output. " +
+		"entity exactly as it was published there — reaching that registry with the login the machine this server " +
+		"runs on holds for it, checking the bytes against the digest the artifact's own manifest records and against " +
+		"nothing else, and writing nothing. Over a listener, a reference is read only from a registry the served " +
+		"workspace is configured with — its default registry, or one listed under `registries` — and a reference to " +
+		"any other host is refused before that host is contacted. " +
 		"`response_format` shapes the `release` mode: detailed (every reference) or concise (identity and counts).",
 	workspaceSelectionNote: "Optional `workspace_root` and `catalog_dirs` override discovery.",
 	inputSchema: `{
@@ -286,39 +287,26 @@ func (s *server) describeCatalogEntity(a describeArgs, name string) (*callToolRe
 // the reading every surface showing a published entity shares, and answers with it
 // as it was published.
 //
-// # Only for a caller at this machine's keyboard
-//
-// The read reaches a registry the CALLER named, with the credentials the user this
-// process runs as holds. A client that launched this server over its own streams
-// is that user, so what it spends is its own — the same footing the command line
-// stands on. A caller reaching a listener is not: it would be directing this host
-// to contact a registry of its choosing with this host's credentials, from a tool
-// whose declared reach promises nothing leaves the process. That is refused here,
-// by name, before anything is resolved or fetched, rather than answered under a
-// reach the operation does not declare.
+// The read reaches the registry the reference names, with the login the user this
+// process runs as holds for that registry, and takes no credential from the call.
+// Over a listener it reaches only a registry the served workspace is configured
+// with, which publishedReadRefusal decides after the workspace resolves and before
+// anything is contacted.
 //
 // A failure is answered as guidance the caller can act on: what could not be read,
 // the short code of the condition that names why where the failure carries one,
 // and what to do about it.
 func (s *server) describePublishedEntity(ctx context.Context, a describeArgs, reference string) (*callToolResult, *rpcError) {
-	if s.transport == transportHTTP {
-		return errorResult("describe reads a registry reference only for a client that launched this server over " +
-			"its standard input and output. Reached over HTTP, the read would contact a registry the call names with " +
-			"the credentials of the machine this server runs on, and that is not offered here. Describe the entity by " +
-			"its catalog name instead; whoever runs this server can read the reference at a terminal on its host with " +
-			"`aggrega inspect " + reference + "`.")
-	}
 	tw, err := s.resolveToolWorkspace(a.WorkspaceRoot, a.CatalogDirs)
 	if err != nil {
 		return errorResult(explainToolError("Could not resolve the workspace whose network posture the read runs under.", err, ""))
 	}
+	if refusal := tw.publishedReadRefusal(reference); refusal != "" {
+		return errorResult(refusal)
+	}
 	entity, err := compilerops.ReadPublishedEntity(ctx, tw.cfg, reference)
 	if err != nil {
-		text := err.Error()
-		if short, ok := cerrors.ShortCodeOf(err); ok {
-			text = short + ": " + text
-		}
-		return errorResult("Could not read the entity published at " + reference + ".\n\n" + explainDiagnostic(text, ""))
+		return errorResult(publishedReadFailure(reference, err))
 	}
 	payload := describePublishedPayload{
 		Reference: entity.Reference, Kind: entity.Kind, Name: entity.Name, Version: entity.Version,
@@ -326,6 +314,58 @@ func (s *server) describePublishedEntity(ctx context.Context, a describeArgs, re
 		ManifestDigest: entity.Digest, Document: string(entity.Document),
 	}
 	return textResult(renderDescribePublishedText(payload), payload)
+}
+
+// publishedReadRefusal reports the corrective text for a registry reference this
+// session does not read, or the empty string when the read may go ahead.
+//
+// A client that launched this server over its own streams is at this machine's
+// keyboard, so it reads from whatever registry it names with its own login — the
+// footing the command line stands on — and nothing is decided here.
+//
+// A caller reaching a listener is somewhere else, and the login the read spends
+// is this host's. So it reads only from a registry the served workspace is
+// configured with, as the configuration's own answer to that question decides,
+// and asked about the host the read itself would contact. That closes both things
+// a caller-chosen destination would open: reading through this host's login from
+// a registry the workspace does not use, and pointing this host at an address of
+// the caller's choosing, a service on this machine included. What stays open is
+// deliberate: a read-scoped caller reads what this host's login can read on a
+// registry the workspace is configured with, which a person at this host's
+// terminal can do as well.
+//
+// The workspace is the served one — a caller on a listener cannot name another —
+// so the set a call is held to is one the operator configured. A reference whose
+// host cannot be read is refused with the reading's own sentence, since there is
+// no host to admit; nothing has been contacted at either refusal.
+func (tw *toolWorkspace) publishedReadRefusal(reference string) string {
+	if tw.transport != transportHTTP {
+		return ""
+	}
+	host, err := compilerops.RegistryReferenceHost(reference)
+	if err != nil {
+		return publishedReadFailure(reference, err)
+	}
+	if tw.cfg.IsConfiguredRegistry(host) {
+		return ""
+	}
+	return fmt.Sprintf("describe did not read %s: %s is not a registry this workspace is configured with, and "+
+		"nothing was contacted. Over a listener, a registry reference is read only from the served workspace's "+
+		"default registry or a registry listed under `registries` in its configuration. Describe the entity by its "+
+		"catalog name instead; whoever runs this server can add the registry to the served workspace with "+
+		"`aggrega registry add %s --workspace` run there, or read the reference at a terminal on its host with "+
+		"`aggrega inspect %s`.", reference, host, host, reference)
+}
+
+// publishedReadFailure is the text a read that could not go ahead is answered
+// with: what could not be read, the short code of the condition that names why
+// where the failure carries one, and the guidance that condition carries.
+func publishedReadFailure(reference string, err error) string {
+	text := err.Error()
+	if short, ok := cerrors.ShortCodeOf(err); ok {
+		text = short + ": " + text
+	}
+	return "Could not read the entity published at " + reference + ".\n\n" + explainDiagnostic(text, "")
 }
 
 // renderDescribePublishedText renders the human-readable summary of a published

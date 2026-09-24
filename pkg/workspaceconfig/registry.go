@@ -43,3 +43,40 @@ func (c Config) ResolveRegistry(token string) (string, error) {
 			token, len(matched), matched, ErrAmbiguousRegistryAlias())
 	}
 }
+
+// IsConfiguredRegistry reports whether host is a registry this configuration is
+// configured with: the host DefaultRegistry names, or the host of any entry
+// under Registries. It is the one answer to that question, so a surface that
+// admits a registry by the configuration asks it here rather than composing the
+// set for itself.
+//
+// Both sides are compared by their host authority through registryhost.Of — the
+// scheme, any path and any userinfo dropped, the port kept — because a login is
+// stored per host and a registry is contacted per host. So a default carrying a
+// repository path ("ghcr.io/acme") admits its host, and a reference or a URL
+// passed as host is reduced to its host before it is compared. The comparison is
+// exact and keeps case, as every per-host lookup in this package does: a host
+// spelled differently is refused rather than guessed at.
+//
+// A default written as an alias is resolved to its entry's host first, through
+// ResolveRegistry. A default whose alias names two entries resolves to no host
+// and so admits nothing on its own; the hosts that alias names are still
+// admitted, as the entries they are. A host that reduces to nothing is never
+// admitted, and neither is an entry or a default that does.
+func (c Config) IsConfiguredRegistry(host string) bool {
+	want := registryhost.Of(host)
+	if want == "" {
+		return false
+	}
+	if c.DefaultRegistry != "" {
+		if resolved, err := c.ResolveRegistry(c.DefaultRegistry); err == nil && registryhost.Of(resolved) == want {
+			return true
+		}
+	}
+	for _, r := range c.Registries {
+		if registryhost.Of(r.Host) == want {
+			return true
+		}
+	}
+	return false
+}

@@ -107,7 +107,7 @@ func ReadPublishedEntity(ctx context.Context, cfg workspaceconfig.Config, refere
 	}
 	published, err := oci.PullPublishedEntity(ctx, repo, target)
 	if err != nil {
-		return PublishedEntity{}, fmt.Errorf("read %s: %w%s", reference, err, fetchRemediation(err, registryhost.Of(repository)))
+		return PublishedEntity{}, fmt.Errorf("read %s: %w%s", reference, err, fetchRemediation(err, repositoryHost(repository)))
 	}
 	document, err := oci.EntityYAML(published.Bytes)
 	if err != nil {
@@ -142,6 +142,33 @@ func ReadPublishedEntity(ctx context.Context, cfg workspaceconfig.Config, refere
 func CheckRegistryReference(reference string) error {
 	_, _, err := splitRegistryReference(reference)
 	return err
+}
+
+// RegistryReferenceHost reports the registry host a registry reference
+// addresses — the host ReadPublishedEntity contacts for it, and names in a
+// remediation — or why reference is not a registry reference it can read.
+//
+// It is derived exactly as the reading derives it, from the repository the same
+// split produces, so a surface deciding whether to let a read go ahead decides on
+// the host the read would contact rather than on a second parse of the reference
+// that could come to disagree with it. The result is a host authority: no scheme,
+// no path and no userinfo, with the port kept.
+func RegistryReferenceHost(reference string) (string, error) {
+	repository, _, err := splitRegistryReference(reference)
+	if err != nil {
+		return "", err
+	}
+	return repositoryHost(repository), nil
+}
+
+// repositoryHost is the host a repository split from a registry reference
+// addresses. It is the one derivation both the reading and RegistryReferenceHost
+// use, and it agrees with the host the registry client is constructed for on
+// every repository that client accepts: that client takes the text before the
+// first slash as the registry and refuses one carrying userinfo, which is what
+// registryhost.Of returns for such a repository.
+func repositoryHost(repository string) string {
+	return registryhost.Of(repository)
 }
 
 // splitRegistryReference splits `oci://<host>/<repository>:<tag>` or

@@ -6,9 +6,11 @@ package compilerops
 import (
 	"context"
 	"errors"
+	"net/http"
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/hometest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/egress"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
@@ -101,6 +103,64 @@ func TestReadPublishedEntityRefusesBeforeDialling(t *testing.T) {
 	_, err = ReadPublishedEntity(context.Background(), offline, "oci://hub.aggrega.ai/component/core/x:1.0.0")
 	if !errors.Is(err, egress.ErrOfflineEgress()) {
 		t.Errorf("offline workspace: err = %v; want ErrOfflineEgress", err)
+	}
+}
+
+// TestRegistryReferenceHostIsTheHostTheReadContacts holds the host a surface
+// admits a read by to the host the read then contacts. RegistryReferenceHost
+// derives the host from the split reference; the registry client the reading
+// builds parses the same repository for itself. A surface deciding on one and a
+// client contacting the other is a surface that admits one registry and reaches
+// another, so each row here is either refused by the client before anything is
+// contacted, or addresses exactly the host RegistryReferenceHost reports.
+//
+// The adversarial rows are the shapes on which the two parsers could part:
+// userinfo in front of a configured host, a second scheme, a scheme-like
+// separator inside the path, a bracketed address, and a mixed-case host. The
+// ordinary rows are the positive control — without them a client refusing
+// everything would satisfy the property.
+//
+// Not parallel: it points the credential home at a scratch directory for its
+// duration, because constructing a registry client reads that file.
+func TestRegistryReferenceHostIsTheHostTheReadContacts(t *testing.T) {
+	hometest.Isolate(t)
+	constructed := 0
+	for _, reference := range []string{
+		"oci://hub.aggrega.ai/component/core/compute/api-server:1.0.0",
+		"oci://127.0.0.1:5000/recipe/helm/svc:2.1.0",
+		"oci://localhost:5000/component/core/x@sha256:" + strings.Repeat("a", 64),
+		"oci://[::1]:5000/component/core/x:1.0.0",
+		"oci://Registry.Example.com/component/core/x:1.0.0",
+		"oci://evil.example.com@hub.aggrega.ai/component/core/x:1.0.0",
+		"oci://hub.aggrega.ai@evil.example.com/component/core/x:1.0.0",
+		"oci://evil.example.com://hub.aggrega.ai/component/core/x:1.0.0",
+		"oci://https://hub.aggrega.ai/component/core/x:1.0.0",
+		"oci://evil.example.com/a://hub.aggrega.ai/component/core/x:1.0.0",
+		"oci://hub.aggrega.ai/component/core/x:tag@sha256:" + strings.Repeat("b", 64),
+	} {
+		host, err := RegistryReferenceHost(reference)
+		if err != nil {
+			// Refused as a reference, so neither parser is ever reached; nothing to hold.
+			continue
+		}
+		repository, _, err := splitRegistryReference(reference)
+		if err != nil {
+			t.Fatalf("%s: RegistryReferenceHost accepted a reference the reading's split refuses: %v", reference, err)
+		}
+		repo, err := oci.NewRemoteRepository(repository, &http.Client{})
+		if err != nil {
+			// The client refuses the repository before anything is contacted, so no
+			// host is reached whatever RegistryReferenceHost reported.
+			continue
+		}
+		constructed++
+		if repo.Reference.Registry != host {
+			t.Errorf("%s: a surface would admit %q, and the read would contact %q", reference, host, repo.Reference.Registry)
+		}
+	}
+	if constructed < 5 {
+		t.Fatalf("only %d reference(s) reached a constructed client; the ordinary rows are the control, and without "+
+			"them this holds nothing", constructed)
 	}
 }
 

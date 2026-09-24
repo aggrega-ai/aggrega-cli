@@ -101,6 +101,77 @@ func TestResolveRegistryHostToken(t *testing.T) {
 	}
 }
 
+// TestIsConfiguredRegistry pins which hosts a configuration admits: the host its
+// default registry names and the host of every entry it lists, compared by host
+// authority on both sides, and nothing else.
+//
+// Each row carries one configuration shape and a host that shape must admit or
+// refuse, so a regression names the shape it broke. The refusing rows are the
+// ones a lax comparison would pass: a host listed nowhere, the same host on
+// another port, the path-bearing default's own repository path, the alias
+// itself, and a differently cased spelling. An alias default naming two entries
+// needs a configuration of its own, so it is asserted after the table.
+func TestIsConfiguredRegistry(t *testing.T) {
+	t.Parallel()
+	listed := []RegistryConfig{
+		{Host: "registry.example.com"},
+		{Host: "127.0.0.1:5000", Name: "local"},
+	}
+	cases := []struct {
+		name string
+		cfg  Config
+		host string
+		want bool
+	}{
+		{"a never-initialised configuration admits the hub", Default(), "hub.aggrega.ai", true},
+		{"a never-initialised configuration refuses any other host", Default(), "registry.example.com", false},
+		{"the default registry's host is admitted", Config{DefaultRegistry: "ghcr.io"}, "ghcr.io", true},
+		{"a host listed only under registries is admitted", Config{DefaultRegistry: "hub.aggrega.ai", Registries: listed}, "registry.example.com", true},
+		{"a host listed nowhere is refused", Config{DefaultRegistry: "hub.aggrega.ai", Registries: listed}, "unlisted.example.com", false},
+		{"a listed host with its port is admitted", Config{Registries: listed}, "127.0.0.1:5000", true},
+		{"a listed host on another port is refused", Config{Registries: listed}, "127.0.0.1:5001", false},
+		{"a listed host without its port is refused", Config{Registries: listed}, "127.0.0.1", false},
+		{"a path-bearing default admits its host", Config{DefaultRegistry: "ghcr.io/acme/catalog"}, "ghcr.io", true},
+		{"a path-bearing default admits nothing named after its path", Config{DefaultRegistry: "ghcr.io/acme/catalog"}, "acme", false},
+		{"an alias default admits the host its entry names", Config{DefaultRegistry: "local", Registries: listed}, "127.0.0.1:5000", true},
+		{"an alias default admits nothing named after the alias", Config{DefaultRegistry: "private", Registries: []RegistryConfig{{Host: "private.example.com:8443", Name: "private"}}}, "private", false},
+		{"an alias default reaching an unlisted host is resolved first", Config{DefaultRegistry: "private", Registries: []RegistryConfig{{Host: "private.example.com:8443", Name: "private"}}}, "private.example.com:8443", true},
+		{"a reference is reduced to its host before it is compared", Config{DefaultRegistry: "ghcr.io"}, "oci://ghcr.io/acme/api:1.0.0", true},
+		{"userinfo does not carry an unlisted host in", Config{DefaultRegistry: "ghcr.io"}, "ghcr.io@unlisted.example.com", false},
+		{"a differently cased spelling is refused", Config{DefaultRegistry: "ghcr.io"}, "GHCR.io", false},
+		{"an empty host is refused", Default(), "", false},
+		{"an empty configuration admits nothing", Config{}, "hub.aggrega.ai", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := tc.cfg.IsConfiguredRegistry(tc.host); got != tc.want {
+				t.Errorf("IsConfiguredRegistry(%q) = %v, want %v (default %q, registries %+v)",
+					tc.host, got, tc.want, tc.cfg.DefaultRegistry, tc.cfg.Registries)
+			}
+		})
+	}
+
+	// The ambiguous-alias row is only a refusal of the default if the alias really
+	// is ambiguous and the hosts it names are really listed; asserted here so the
+	// row cannot pass for the wrong reason.
+	ambiguous := Config{DefaultRegistry: "shared", Registries: []RegistryConfig{
+		{Host: "a.example.com", Name: "shared"},
+		{Host: "b.example.com", Name: "shared"},
+	}}
+	if _, err := ambiguous.ResolveRegistry(ambiguous.DefaultRegistry); !errors.Is(err, ErrAmbiguousRegistryAlias()) {
+		t.Fatalf("the ambiguous-alias configuration does not resolve as ambiguous: %v", err)
+	}
+	for _, host := range []string{"a.example.com", "b.example.com"} {
+		if !ambiguous.IsConfiguredRegistry(host) {
+			t.Errorf("%s is a listed entry and was refused because the default's alias is ambiguous", host)
+		}
+	}
+	if ambiguous.IsConfiguredRegistry("shared") {
+		t.Error("the ambiguous alias itself was admitted as a host")
+	}
+}
+
 // TestRegistryNameRoundTrips proves the alias field survives a write through
 // UpsertRegistry and a reload through schema validation.
 func TestRegistryNameRoundTrips(t *testing.T) {

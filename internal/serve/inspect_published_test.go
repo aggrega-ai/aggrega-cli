@@ -22,8 +22,8 @@ import (
 // proof reaches no network; that refusal is only reachable through the reading,
 // which is what makes it evidence of the route. The server holds no catalog view
 // at all, so a call that fell through to the catalog path would not get as far as
-// a refusal. Reading a coordinate that exists is driven against a registry by the
-// command line's integration-tagged proof, through the same reading.
+// a refusal. Reading a coordinate that exists is driven against a registry by this
+// package's integration-tagged proof, through the same dispatch.
 func TestEntityDefinitionReadsARegistryReferenceSentAsTheName(t *testing.T) {
 	t.Parallel()
 	s := &Server{wsConfig: workspaceconfig.Config{Offline: true}}
