@@ -104,8 +104,8 @@ func TestLookupAndExtractAddressesTheSlotByThePinnedVersion(t *testing.T) {
 	// WHICH slot was read rather than about how a path is spelled.
 	wantSlot := sourcecache.SlotPath(root, ".aggrega/cache",
 		"git-repository", "git://example.invalid/repo", "", "", commit, lf.SourceArtifacts[0].Digest)
-	if got := filepath.Dir(extracted); got != wantSlot {
-		t.Errorf("extracted from %q, want the slot addressed by the pinned commit %q", got, wantSlot)
+	if want := sourcecache.ExtractedTree(wantSlot, lf.SourceArtifacts[0].Digest); extracted != want {
+		t.Errorf("extracted into %q, want the tree inside the slot addressed by the pinned commit %q", extracted, want)
 	}
 }
 

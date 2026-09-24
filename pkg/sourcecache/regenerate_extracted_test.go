@@ -18,9 +18,10 @@ import (
 
 // TestRegenerateExtractedRebuildsTheDirectoryFromTheArchive drives the exported
 // regeneration directly — the step both the source-artifact cache and the entity
-// cache rebuild their extracted directories through. Whatever the directory held
+// cache rebuild their extracted trees through. Whatever the archive's tree held
 // before the call, a file changed, a file added, is gone after it, and what is
-// left is exactly the archive's content.
+// left is exactly the archive's content, in the tree named by the archive's
+// digest.
 func TestRegenerateExtractedRebuildsTheDirectoryFromTheArchive(t *testing.T) {
 	t.Parallel()
 	slot := t.TempDir()
@@ -29,14 +30,14 @@ func TestRegenerateExtractedRebuildsTheDirectoryFromTheArchive(t *testing.T) {
 		"chart/templates/cm.yaml": "kind: ConfigMap\n",
 		"recipe.yaml":             "kind: Recipe\n",
 	})
-	stale := sourcecache.ExtractedDir(slot)
-	if err := os.MkdirAll(filepath.Join(stale, "chart", "templates"), 0o755); err != nil {
+	tree := sourcecache.ExtractedTree(slot, digestOf(archive))
+	if err := os.MkdirAll(filepath.Join(tree, "chart", "templates"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(stale, "chart", "templates", "cm.yaml"), []byte("edited by hand\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(tree, "chart", "templates", "cm.yaml"), []byte("edited by hand\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(stale, "planted.yaml"), []byte("added by hand\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(tree, "planted.yaml"), []byte("added by hand\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -44,8 +45,8 @@ func TestRegenerateExtractedRebuildsTheDirectoryFromTheArchive(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RegenerateExtracted: %v", err)
 	}
-	if dir != sourcecache.ExtractedDir(slot) {
-		t.Errorf("returned %q; want the slot's extracted directory %q", dir, sourcecache.ExtractedDir(slot))
+	if dir != tree {
+		t.Errorf("returned %q; want the tree named by the archive's digest %q", dir, tree)
 	}
 	got, err := os.ReadFile(filepath.Join(dir, "chart", "templates", "cm.yaml"))
 	if err != nil || !bytes.Equal(got, []byte("kind: ConfigMap\n")) {
@@ -63,23 +64,27 @@ func TestRegenerateExtractedRebuildsTheDirectoryFromTheArchive(t *testing.T) {
 
 // TestRegenerateExtractedRefusesAnEntryLeavingTheDirectory pins the traversal
 // refusal on the exported step itself: an entry that would land outside the
-// extracted directory is refused as an integrity failure, and nothing is written
-// beside the directory.
+// archive's tree is refused as an integrity failure before anything is written —
+// not beside the tree, where the climb would land, and not the tree itself.
 func TestRegenerateExtractedRefusesAnEntryLeavingTheDirectory(t *testing.T) {
 	t.Parallel()
 	slot := t.TempDir()
 	var buf bytes.Buffer
 	gz := gzip.NewWriter(&buf)
 	tw := tar.NewWriter(gz)
-	body := []byte("escaped\n")
-	if err := tw.WriteHeader(&tar.Header{
-		Name: "../escaped.yaml", Mode: 0o644, Size: int64(len(body)),
-		Typeflag: tar.TypeReg, ModTime: time.Unix(0, 0).UTC(), Format: tar.FormatPAX,
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := tw.Write(body); err != nil {
-		t.Fatal(err)
+	for _, e := range []struct{ name, body string }{
+		{"inside.yaml", "inside\n"},
+		{"../escaped.yaml", "escaped\n"},
+	} {
+		if err := tw.WriteHeader(&tar.Header{
+			Name: e.name, Mode: 0o644, Size: int64(len(e.body)),
+			Typeflag: tar.TypeReg, ModTime: time.Unix(0, 0).UTC(), Format: tar.FormatPAX,
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tw.Write([]byte(e.body)); err != nil {
+			t.Fatal(err)
+		}
 	}
 	_ = tw.Close()
 	_ = gz.Close()
@@ -88,31 +93,57 @@ func TestRegenerateExtractedRefusesAnEntryLeavingTheDirectory(t *testing.T) {
 	if !errors.Is(err, sourcecache.ErrFetchIntegrity()) {
 		t.Fatalf("an entry leaving the directory must be refused as an integrity failure; got %v", err)
 	}
-	if _, statErr := os.Stat(filepath.Join(slot, "escaped.yaml")); !os.IsNotExist(statErr) {
-		t.Errorf("the escaping entry was written beside the extracted directory (stat err = %v)", statErr)
+	for _, p := range []string{
+		filepath.Join(slot, "escaped.yaml"),
+		filepath.Join(sourcecache.ExtractedDir(slot), "escaped.yaml"),
+		sourcecache.ExtractedTree(slot, digestOf(buf.Bytes())),
+	} {
+		if _, statErr := os.Stat(p); !os.IsNotExist(statErr) {
+			t.Errorf("%s was written although the archive was refused (stat err = %v)", p, statErr)
+		}
 	}
 }
 
-// TestResetExtractedEmptiesTheDirectory pins the first half on its own: the
-// directory exists afterwards and holds nothing, whatever it held before.
-func TestResetExtractedEmptiesTheDirectory(t *testing.T) {
+// TestRegenerateExtractedDocumentLaysOutTheOneFile pins the single-document form: the
+// tree named by the document's digest holds that document under its name and
+// nothing else, whatever an earlier read or a hand edit left there.
+func TestRegenerateExtractedDocumentLaysOutTheOneFile(t *testing.T) {
 	t.Parallel()
 	slot := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(sourcecache.ExtractedDir(slot), "sub"), 0o755); err != nil {
+	document := []byte("kind: Component\n")
+	tree := sourcecache.ExtractedTree(slot, digestOf(document))
+	if err := os.MkdirAll(filepath.Join(tree, "sub"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(sourcecache.ExtractedDir(slot), "sub", "left.yaml"), []byte("x\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(tree, "sub", "left.yaml"), []byte("x\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	dir, err := sourcecache.ResetExtracted(slot)
-	if err != nil {
-		t.Fatalf("ResetExtracted: %v", err)
+	if err := os.WriteFile(filepath.Join(tree, "entity.yaml"), []byte("kind: Edited\n"), 0o644); err != nil {
+		t.Fatal(err)
 	}
-	entries, err := os.ReadDir(dir)
+
+	dir, err := sourcecache.RegenerateExtractedDocument(slot, "entity.yaml", document)
 	if err != nil {
-		t.Fatalf("the extracted directory does not exist after a reset: %v", err)
+		t.Fatalf("RegenerateExtractedDocument: %v", err)
 	}
-	if len(entries) != 0 {
-		t.Errorf("the extracted directory holds %d entries after a reset; want none", len(entries))
+	if dir != tree {
+		t.Errorf("returned %q; want the tree named by the document's digest %q", dir, tree)
+	}
+	if got := treeFiles(t, dir); len(got) != 1 || got["entity.yaml"] != string(document) {
+		t.Errorf("the tree holds %v; want exactly entity.yaml holding the document", got)
+	}
+}
+
+// TestRegenerateExtractedDocumentRefusesANameLeavingTheTree pins that the document's
+// name is judged by the same containment rule an archive entry is.
+func TestRegenerateExtractedDocumentRefusesANameLeavingTheTree(t *testing.T) {
+	t.Parallel()
+	slot := t.TempDir()
+	_, err := sourcecache.RegenerateExtractedDocument(slot, "../entity.yaml", []byte("kind: Component\n"))
+	if !errors.Is(err, sourcecache.ErrFetchIntegrity()) {
+		t.Fatalf("a document name leaving the tree must be refused as an integrity failure; got %v", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(sourcecache.ExtractedDir(slot), "entity.yaml")); !os.IsNotExist(statErr) {
+		t.Errorf("the document was written beside the tree (stat err = %v)", statErr)
 	}
 }

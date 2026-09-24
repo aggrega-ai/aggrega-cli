@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourcecache"
 )
@@ -228,7 +229,12 @@ func TestIntegration_RegistryEntityReadsTheFilesItsArchiveCarries(t *testing.T) 
 		{"helm/bannered-local:1.0.0", "chart/templates/greeting.yaml"},
 		{"helm/banner-local:1.0.0", "chart/templates/banner.yaml"},
 	} {
-		laid := filepath.Join(sourcecache.ExtractedDir(oci.CachePath(ws, ".aggrega/cache", slot.uri, "1.0.0")), filepath.FromSlash(slot.file))
+		dir := oci.CachePath(ws, ".aggrega/cache", slot.uri, "1.0.0")
+		pulled, err := os.ReadFile(filepath.Join(dir, "blob"))
+		if err != nil {
+			t.Fatalf("after the pull, %s's cache slot holds no artifact: %v", slot.uri, err)
+		}
+		laid := filepath.Join(sourcecache.ExtractedTree(dir, digest.ContentDigest(pulled)), filepath.FromSlash(slot.file))
 		if _, err := os.Stat(laid); err != nil {
 			t.Errorf("after the pull, %s's cache slot does not hold its laid-out chart: %v", slot.uri, err)
 		}

@@ -1,0 +1,455 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Cognitio S.r.l.
+
+package sourcecache
+
+import (
+	"archive/tar"
+	"bytes"
+	"compress/gzip"
+	"errors"
+	"fmt"
+	"io"
+	"io/fs"
+	"os"
+	"path"
+	"path/filepath"
+	"sort"
+
+	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
+)
+
+// extractedDirName is the directory inside a cache slot that holds the files the
+// slot's artifact carries.
+const extractedDirName = "extracted"
+
+// layoutFileMode is the permission every laid-out file is written with.
+const layoutFileMode = 0o644
+
+// ExtractedDir returns the directory inside the cache slot at slot under which the
+// files the slot's artifact carries are laid out. It is derived beside the artifact
+// rather than recorded anywhere, and what it holds is rebuilt from the artifact on
+// every read, so nothing in it is authoritative.
+func ExtractedDir(slot string) string {
+	return filepath.Join(slot, extractedDirName)
+}
+
+// ExtractedTree returns the directory inside [ExtractedDir] where the files of the
+// artifact whose content digest is contentDigest are laid out. Each artifact content
+// has a tree of its own, named by the digest's filesystem spelling, so a slot whose
+// artifact is replaced while a build is still reading the previous one never has that
+// build's tree rewritten to the new content under it.
+func ExtractedTree(slot, contentDigest string) string {
+	return filepath.Join(ExtractedDir(slot), digest.Segment(contentDigest))
+}
+
+// RegenerateExtracted lays out the files archive carries — a gzipped tar the caller
+// has already verified — in the slot's tree for that archive ([ExtractedTree]), and
+// returns the tree's path. An archive entry that would land outside the tree is
+// refused with a wrapped ErrFetchIntegrity before anything is written.
+//
+// It is the one statement of how a cache slot's laid-out files are rebuilt, for a
+// source artifact's slot and a catalog entity's slot alike, and it rebuilds on every
+// call rather than when something looks out of date: every file the archive carries
+// is compared, byte for byte, with what the tree holds in its place and replaced
+// when it is missing, differs or is not a regular file, and anything in the tree the
+// archive does not carry is removed. A file changed or added in the tree by hand is
+// therefore discarded rather than trusted, while the archive the tree is rebuilt from
+// is the thing the caller's digest check covers.
+//
+// A file that already holds the archive's bytes is left exactly as it is, and that is
+// what makes the tree safe to read while another read of the same slot rebuilds it,
+// in the same process or in another one sharing the workspace: a reader never finds
+// a file it was handed missing or partly written, including a reader that opens the
+// files well after the call that laid them out returned. A file that does need
+// replacing is written beside the tree and renamed over its place, so a reader sees
+// the file it held or the new one. Emptying the tree and extracting it again would
+// open exactly the window this closes.
+//
+// Every regular file and directory entry is laid out; an entry of any other type (a
+// link, a device) is not, and whatever the tree holds in its place is removed.
+// A directory is created 0755 before the process umask and a file is written 0644;
+// the archive's own modes, owners and times are not carried.
+func RegenerateExtracted(slot string, archive []byte) (string, error) {
+	return regenerate(slot, archive, tarGzEntries(archive))
+}
+
+// RegenerateExtractedDocument is [RegenerateExtracted] for an artifact that is a
+// single document rather than an archive: the slot's tree for it holds that one file,
+// under name, rebuilt the same way on every call. name must be a plain relative file
+// name; one that would land outside the tree is refused with a wrapped
+// ErrFetchIntegrity.
+func RegenerateExtractedDocument(slot, name string, document []byte) (string, error) {
+	return regenerate(slot, document, documentEntry(name, document))
+}
+
+// regenerate lays out what entries yields in the tree ExtractedTree names for
+// artifact.
+func regenerate(slot string, artifact []byte, entries entrySource) (string, error) {
+	tree := ExtractedTree(slot, digest.ContentDigest(artifact))
+	if err := layOut(slot, tree, entries); err != nil {
+		return "", fmt.Errorf("sourcecache: extract into %s: %w", tree, err)
+	}
+	return tree, nil
+}
+
+// entrySource walks the entries an artifact carries, in order, handing visit each
+// entry's header and a reader over its body. It can be walked more than once.
+type entrySource func(visit func(hdr *tar.Header, body io.Reader) error) error
+
+// tarGzEntries walks the entries of the gzipped tar archive.
+func tarGzEntries(archive []byte) entrySource {
+	return func(visit func(*tar.Header, io.Reader) error) error {
+		gz, err := gzip.NewReader(bytes.NewReader(archive))
+		if err != nil {
+			return fmt.Errorf("gunzip: %w", err)
+		}
+		defer gz.Close()
+		tr := tar.NewReader(gz)
+		for {
+			hdr, err := tr.Next()
+			if err == io.EOF {
+				return nil
+			}
+			if err != nil {
+				return fmt.Errorf("tar next: %w", err)
+			}
+			if err := visit(hdr, tr); err != nil {
+				return err
+			}
+		}
+	}
+}
+
+// documentEntry walks one regular-file entry, name, holding document.
+func documentEntry(name string, document []byte) entrySource {
+	return func(visit func(*tar.Header, io.Reader) error) error {
+		hdr := &tar.Header{Name: name, Typeflag: tar.TypeReg, Size: int64(len(document))}
+		return visit(hdr, bytes.NewReader(document))
+	}
+}
+
+// treePlan is what a tree must hold: every directory an entry names or implies, and
+// every file, keyed by its slash-separated place in the tree, with the ordinal of the
+// entry that decides it. Where an archive names one file twice the later entry
+// decides it, as it would in an extraction that wrote them in order.
+type treePlan struct {
+	dirs  map[string]bool
+	files map[string]int
+}
+
+// carries reports whether rel is a place the artifact lays something out at.
+func (p treePlan) carries(rel string) bool {
+	if p.dirs[rel] {
+		return true
+	}
+	_, ok := p.files[rel]
+	return ok
+}
+
+// addDir records rel and every directory above it.
+func (p treePlan) addDir(rel string) {
+	for rel != "." && rel != "/" && rel != "" && !p.dirs[rel] {
+		p.dirs[rel] = true
+		rel = path.Dir(rel)
+	}
+}
+
+// sortedDirs returns the directories in lexical order, which puts every directory
+// before the ones below it.
+func (p treePlan) sortedDirs() []string {
+	out := make([]string, 0, len(p.dirs))
+	for d := range p.dirs {
+		out = append(out, d)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// entryPlace returns the slash-separated place an entry lands at in the tree, false
+// for an entry naming the tree itself, and a wrapped ErrFetchIntegrity for one that
+// would land outside it.
+//
+// An entry name is slash-separated by the archive format's own definition, so
+// containment is judged in slash arithmetic — the same answer on every platform — and
+// the name is converted to a host path only where a file is touched. An entry name
+// that merely begins with two dots is an ordinary name. The joined host path is not
+// re-checked after the join: an entry the containment test accepts cannot join to a
+// place outside the tree, which is the property that test reports, and re-deriving
+// the same conclusion from the joined path would be a second implementation of the
+// containment rule, free to disagree with the first.
+func entryPlace(hdr *tar.Header) (string, bool, error) {
+	rel := path.Clean(hdr.Name)
+	if rel == "." || rel == "/" {
+		return "", false, nil
+	}
+	if !pathscope.IsLocalSlash(hdr.Name) {
+		return "", false, fmt.Errorf("path traversal attempt %q in archive: %w", hdr.Name, ErrFetchIntegrity())
+	}
+	return rel, true, nil
+}
+
+// planTree reads what entries lays out, refusing an entry that would land outside
+// the tree and an archive naming one place as both a file and a directory.
+func planTree(entries entrySource) (treePlan, error) {
+	plan := treePlan{dirs: map[string]bool{}, files: map[string]int{}}
+	ordinal := -1
+	err := entries(func(hdr *tar.Header, _ io.Reader) error {
+		ordinal++
+		rel, ok, err := entryPlace(hdr)
+		if err != nil || !ok {
+			return err
+		}
+		switch hdr.Typeflag {
+		case tar.TypeDir:
+			plan.addDir(rel)
+		case tar.TypeReg:
+			plan.addDir(path.Dir(rel))
+			plan.files[rel] = ordinal
+		}
+		return nil
+	})
+	if err != nil {
+		return treePlan{}, err
+	}
+	names := make([]string, 0, len(plan.files))
+	for rel := range plan.files {
+		names = append(names, rel)
+	}
+	sort.Strings(names)
+	for _, rel := range names {
+		if plan.dirs[rel] {
+			return treePlan{}, fmt.Errorf("archive entry %q is both a file and a directory", rel)
+		}
+	}
+	return plan, nil
+}
+
+// layOut makes tree hold exactly what entries carries; see [RegenerateExtracted].
+// Temporary files are written in the slot's extracted directory, beside the tree
+// rather than in it, so no reader of the tree ever lists one and no concurrent
+// layout of the same tree ever removes another's.
+func layOut(slot, tree string, entries entrySource) error {
+	plan, err := planTree(entries)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(slot, 0o755); err != nil {
+		return fmt.Errorf("mkdir %q: %w", slot, err)
+	}
+	staging := ExtractedDir(slot)
+	for _, dir := range append([]string{staging, tree}, hostPaths(tree, plan.sortedDirs())...) {
+		if err := ensureDir(dir); err != nil {
+			return err
+		}
+	}
+
+	// Compare every carried file first, and write only the ones that differ.
+	stale := map[int]bool{}
+	if err := eachDecidingFile(entries, plan, func(ordinal int, rel string, hdr *tar.Header, body io.Reader) error {
+		if !holdsBytes(filepath.Join(tree, filepath.FromSlash(rel)), hdr.Size, body) {
+			stale[ordinal] = true
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	if len(stale) > 0 {
+		if err := eachDecidingFile(entries, plan, func(ordinal int, rel string, _ *tar.Header, body io.Reader) error {
+			if !stale[ordinal] {
+				return nil
+			}
+			return replaceFile(staging, filepath.Join(tree, filepath.FromSlash(rel)), body)
+		}); err != nil {
+			return err
+		}
+	}
+	return removeUncarried(tree, plan)
+}
+
+// hostPaths joins each slash-separated place under tree as a host path.
+func hostPaths(tree string, rels []string) []string {
+	out := make([]string, 0, len(rels))
+	for _, rel := range rels {
+		out = append(out, filepath.Join(tree, filepath.FromSlash(rel)))
+	}
+	return out
+}
+
+// eachDecidingFile calls fn for every regular-file entry that decides its place in
+// the plan, with the entry's ordinal and its body.
+func eachDecidingFile(entries entrySource, plan treePlan, fn func(ordinal int, rel string, hdr *tar.Header, body io.Reader) error) error {
+	ordinal := -1
+	return entries(func(hdr *tar.Header, body io.Reader) error {
+		ordinal++
+		if hdr.Typeflag != tar.TypeReg {
+			return nil
+		}
+		rel, ok, err := entryPlace(hdr)
+		if err != nil || !ok {
+			return err
+		}
+		if plan.files[rel] != ordinal {
+			return nil
+		}
+		return fn(ordinal, rel, hdr, body)
+	})
+}
+
+// ensureDir makes p a real directory. Something else in its place — a file, or a
+// link, which is removed rather than followed — is replaced. A directory another
+// layout of the same tree created first is accepted.
+func ensureDir(p string) error {
+	fi, err := os.Lstat(p)
+	switch {
+	case err == nil && fi.IsDir():
+		return nil
+	case err == nil:
+		if err := os.RemoveAll(p); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return fmt.Errorf("remove %q: %w", p, err)
+		}
+	case !errors.Is(err, fs.ErrNotExist):
+		return fmt.Errorf("stat %q: %w", p, err)
+	}
+	if err := os.Mkdir(p, 0o755); err != nil {
+		if fi, lerr := os.Lstat(p); lerr == nil && fi.IsDir() {
+			return nil
+		}
+		return fmt.Errorf("mkdir %q: %w", p, err)
+	}
+	return nil
+}
+
+// holdsBytes reports whether p is a regular file whose content is exactly the size
+// bytes body yields. Anything else in its place — nothing, a directory, a link, a
+// file that cannot be read, other bytes — reports false, and the caller replaces it.
+func holdsBytes(p string, size int64, body io.Reader) bool {
+	fi, err := os.Lstat(p)
+	if err != nil || !fi.Mode().IsRegular() || fi.Size() != size {
+		return false
+	}
+	f, err := os.Open(p)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	return sameStream(f, body)
+}
+
+// sameFiles reports whether a is a regular file holding exactly the bytes of b.
+func sameFiles(a, b string) bool {
+	fb, err := os.Open(b)
+	if err != nil {
+		return false
+	}
+	defer fb.Close()
+	fi, err := fb.Stat()
+	if err != nil {
+		return false
+	}
+	return holdsBytes(a, fi.Size(), fb)
+}
+
+// sameStream reports whether a and b yield the same bytes to their ends.
+func sameStream(a, b io.Reader) bool {
+	bufA := make([]byte, 32*1024)
+	bufB := make([]byte, 32*1024)
+	for {
+		na, errA := io.ReadFull(a, bufA)
+		nb, errB := io.ReadFull(b, bufB)
+		if na != nb || !bytes.Equal(bufA[:na], bufB[:nb]) {
+			return false
+		}
+		endA := errA == io.EOF || errA == io.ErrUnexpectedEOF
+		endB := errB == io.EOF || errB == io.ErrUnexpectedEOF
+		if endA || endB {
+			return endA && endB
+		}
+		if errA != nil || errB != nil {
+			return false
+		}
+	}
+}
+
+// replaceFile writes body to a temporary file in staging and renames it over target,
+// so a reader of target sees the file it held or the new one and never a missing or
+// partly written one.
+func replaceFile(staging, target string, body io.Reader) error {
+	tmp, err := os.CreateTemp(staging, ".layout-*")
+	if err != nil {
+		return fmt.Errorf("create a file for %q: %w", target, err)
+	}
+	tmpName := tmp.Name()
+	discard := func() { _ = os.Remove(tmpName) }
+	if _, err := io.Copy(tmp, body); err != nil {
+		_ = tmp.Close()
+		discard()
+		return fmt.Errorf("copy %q: %w", target, err)
+	}
+	if err := tmp.Close(); err != nil {
+		discard()
+		return fmt.Errorf("close %q: %w", target, err)
+	}
+	if err := os.Chmod(tmpName, layoutFileMode); err != nil {
+		discard()
+		return fmt.Errorf("chmod %q: %w", target, err)
+	}
+	// A rename cannot replace a directory, so whatever is not a regular file in the
+	// file's place goes first; a link goes with it rather than being relied on to be
+	// replaced.
+	if fi, err := os.Lstat(target); err == nil && !fi.Mode().IsRegular() {
+		if err := os.RemoveAll(target); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			discard()
+			return fmt.Errorf("remove %q: %w", target, err)
+		}
+	}
+	if err := os.Rename(tmpName, target); err != nil {
+		// Another read laying out the same artifact may already have put the file in
+		// place, and a platform may refuse to replace a file another reader holds
+		// open. Either way the place stands only if it already holds these bytes.
+		same := sameFiles(target, tmpName)
+		discard()
+		if same {
+			return nil
+		}
+		return fmt.Errorf("rename into %q: %w", target, err)
+	}
+	return nil
+}
+
+// removeUncarried removes everything below tree that the plan does not lay out. A
+// place the plan does lay out is kept whatever it holds now: the passes before this
+// one made it right, and a place found otherwise at this point was changed by
+// something racing the read, which the next read answers.
+func removeUncarried(tree string, plan treePlan) error {
+	return filepath.WalkDir(tree, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				return nil
+			}
+			return err
+		}
+		if p == tree {
+			return nil
+		}
+		rel, err := filepath.Rel(tree, p)
+		if err != nil {
+			return err
+		}
+		rel = filepath.ToSlash(rel)
+		if plan.carries(rel) {
+			if d.IsDir() && !plan.dirs[rel] {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if err := os.RemoveAll(p); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return fmt.Errorf("remove %q: %w", p, err)
+		}
+		if d.IsDir() {
+			return filepath.SkipDir
+		}
+		return nil
+	})
+}

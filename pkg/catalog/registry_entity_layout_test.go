@@ -175,7 +175,7 @@ func TestPinnedEntityReadsTheFilesItsArchiveCarries(t *testing.T) {
 			}
 
 			slot := oci.CachePath(root, layoutCacheDir, row.uri, "1.0.0")
-			want := filepath.Join(sourcecache.ExtractedDir(slot), "chart")
+			want := filepath.Join(sourcecache.ExtractedTree(slot, pin.Digest), "chart")
 			if got != want {
 				t.Fatalf("source anchored at %q; want the chart inside the slot's layout %q", got, want)
 			}
@@ -211,7 +211,7 @@ func TestPinnedRecipeRenderDocumentIsItsLayoutDocument(t *testing.T) {
 			writeTree(t, pub, map[string]string{"recipe.yaml": row.doc})
 			root := t.TempDir()
 			pin := seedPinnedSlot(t, root, row.kind, filepath.Join(pub, "recipe.yaml"), uri, "1.0.0")
-			want := filepath.Join(sourcecache.ExtractedDir(oci.CachePath(root, layoutCacheDir, uri, "1.0.0")), "recipe.yaml")
+			want := filepath.Join(sourcecache.ExtractedTree(oci.CachePath(root, layoutCacheDir, uri, "1.0.0"), pin.Digest), "recipe.yaml")
 
 			ll := NewLazyLookup(root, layoutCacheDir, nil, nil)
 			ll.SetPins(map[string]Pin{uri: pin})
@@ -261,8 +261,8 @@ func TestPinnedSlotLayoutIsRebuiltFromTheBlobOnEveryRead(t *testing.T) {
 	root := t.TempDir()
 	pin := seedPinnedSlot(t, root, "Recipe", filepath.Join(pub, "recipe.yaml"), uri, "1.0.0")
 	slot := oci.CachePath(root, layoutCacheDir, uri, "1.0.0")
-	template := filepath.Join(sourcecache.ExtractedDir(slot), "chart", "templates", "banner.yaml")
-	stray := filepath.Join(sourcecache.ExtractedDir(slot), "chart", "templates", "stray.yaml")
+	template := filepath.Join(sourcecache.ExtractedTree(slot, pin.Digest), "chart", "templates", "banner.yaml")
+	stray := filepath.Join(sourcecache.ExtractedTree(slot, pin.Digest), "chart", "templates", "stray.yaml")
 
 	read := func() {
 		t.Helper()
@@ -435,14 +435,14 @@ spec:
 	if strings.Contains(string(contract), "planted_by_the_consumer") {
 		t.Errorf("the resolved contract was read from the consumer's working directory:\n%s", contract)
 	}
-	laid, err := os.ReadFile(filepath.Join(sourcecache.ExtractedDir(slot), "component.yaml"))
+	laid, err := os.ReadFile(filepath.Join(sourcecache.ExtractedTree(slot, pin.Digest), "component.yaml"))
 	if err != nil {
 		t.Fatalf("the slot's layout does not hold the published document under its own name: %v", err)
 	}
 	if string(laid) != doc {
 		t.Errorf("the laid-out document differs from the one published:\n%s", laid)
 	}
-	if _, err := os.Stat(filepath.Join(sourcecache.ExtractedDir(slot), "schema.yaml")); err != nil {
+	if _, err := os.Stat(filepath.Join(sourcecache.ExtractedTree(slot, pin.Digest), "schema.yaml")); err != nil {
 		t.Errorf("the layout does not hold the schema file the publication carried: %v", err)
 	}
 }
@@ -474,7 +474,7 @@ spec:
 	if _, ok := ll.Component(uri); !ok {
 		t.Fatalf("the pinned Component did not resolve from its slot; skips = %v", ll.Skips())
 	}
-	if _, err := os.Stat(filepath.Join(sourcecache.ExtractedDir(slot), oci.SingleDocumentFileName)); err != nil {
+	if _, err := os.Stat(filepath.Join(sourcecache.ExtractedTree(slot, pin.Digest), oci.SingleDocumentFileName)); err != nil {
 		t.Errorf("the slot's layout does not hold the document: %v", err)
 	}
 }

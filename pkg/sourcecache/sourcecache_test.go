@@ -575,9 +575,9 @@ func TestExtractedDirectoryRegeneratedFromArchive(t *testing.T) {
 	digest := digestOf(blob)
 	slot := seedSlot(t, root, ".aggrega/cache", "helm-oci-chart", "oci://r/c", "1.0.0", blob, digest)
 
-	// Pre-populate extracted/ with a "tampered" file that should NOT
-	// survive the next LookupAndExtract.
-	tamperedDir := filepath.Join(slot, "extracted")
+	// Pre-populate the archive's tree under extracted/ with a "tampered"
+	// file that should NOT survive the next LookupAndExtract.
+	tamperedDir := sourcecache.ExtractedTree(slot, digest)
 	if err := os.MkdirAll(tamperedDir, 0o755); err != nil {
 		t.Fatal(err)
 	}

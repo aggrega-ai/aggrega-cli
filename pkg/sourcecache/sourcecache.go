@@ -13,9 +13,9 @@
 // that pins the commit that tag resolved to —
 // verifies the full SHA-256 of the cached archive against both the
 // lockfile entry's digest and the cache slot's metadata.yaml
-// digest, wipes and regenerates the `extracted/` subdirectory from
-// the archive, and returns the absolute path of the extracted
-// directory for engines to consume.
+// digest, rebuilds the archive's tree under the `extracted/`
+// subdirectory from the archive, and returns the absolute path of
+// that tree for engines to consume.
 //
 // The package is the build-time complement to pkg/sourceresolver
 // (the lock-time pull pipeline). The orchestrator at render time
@@ -30,12 +30,12 @@
 // namespacing only and is never what the gate compares: it keeps the
 // same {kind, url, version} re-tagged at different content in
 // distinct slots, and a full SHA-256 over the archive bytes is what
-// actually decides. And because the extracted directory is wiped and
-// regenerated from the archive on every read, a hand-edit made below
-// it is silently discarded on the next build, while a hand-edit to the
-// archive itself is caught and refuses the build — so a local change
-// that appears to work is a change that will not survive, and the two
-// cases fail in opposite ways.
+// actually decides. And because the extracted tree is rebuilt from the
+// archive on every read, a hand-edit made in it is silently discarded
+// on the next build, while a hand-edit to the archive itself is caught
+// and refuses the build — so a local change that appears to work is a
+// change that will not survive, and the two cases fail in opposite
+// ways.
 //
 // The package re-exports the four fetch-error sentinels from pkg/oci
 // so consumers can errors.Is against either name without importing
@@ -43,18 +43,13 @@
 package sourcecache
 
 import (
-	"archive/tar"
-	"compress/gzip"
 	"fmt"
-	"io"
 	"os"
-	"path"
 	"path/filepath"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
-	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/cacheslot"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/helm"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/metadata"
@@ -85,12 +80,13 @@ func ErrFetchIntegrity() error { return oci.ErrFetchIntegrity() }
 // LookupAndExtract looks up the lockfile entry for the artifact the caller
 // resolved, verifies the full SHA-256 of the cached `.tgz`
 // against the entry's digest AND the cache slot's metadata.yaml
-// digest, wipes and regenerates the `extracted/` subdirectory from
-// the archive, and returns the absolute path of `extracted/`. The
-// archive is extracted verbatim, so the returned path is the archive
-// root — not necessarily a directly-loadable artifact root: a Helm
-// chart untars under a <chartname>/ subdirectory, and the consumer
-// resolves its artifact within.
+// digest, rebuilds the archive's tree under the `extracted/`
+// subdirectory from the archive ([RegenerateExtracted]), and returns
+// the absolute path of that tree. The archive is extracted verbatim,
+// so the returned path is the archive root — not necessarily a
+// directly-loadable artifact root: a Helm chart untars under a
+// <chartname>/ subdirectory, and the consumer resolves its artifact
+// within.
 //
 // The row is found by what the author wrote — ref where the source declares one,
 // version otherwise — which is what lets a source declared at a git tag or branch
@@ -189,59 +185,6 @@ func LookupAndExtract(lf *lockfile.Lockfile, kind, url, chart, moduleSubdir, ver
 	return RegenerateExtracted(slot, blobBytes)
 }
 
-// extractedDirName is the directory inside a cache slot that holds the files the
-// slot's artifact carries.
-const extractedDirName = "extracted"
-
-// ExtractedDir returns the directory inside the cache slot at slot where the
-// files the slot's artifact carries are laid out. It is derived beside the
-// artifact rather than recorded anywhere, and it is rebuilt from the artifact on
-// every read, so nothing about it is authoritative.
-func ExtractedDir(slot string) string {
-	return filepath.Join(slot, extractedDirName)
-}
-
-// RegenerateExtracted empties the extracted directory of the cache slot at slot
-// and rebuilds it from archive, a gzipped tar the caller has already verified,
-// returning the directory's path. An archive entry that would land outside the
-// directory is refused with a wrapped ErrFetchIntegrity and nothing beside the
-// directory is written.
-//
-// It is the one statement of how a cache slot's extracted directory is rebuilt,
-// for a source artifact's slot and a catalog entity's slot alike, and it rebuilds
-// on every call rather than when something looks out of date: a file changed or
-// added below the directory by hand is discarded rather than trusted, while the
-// archive the directory is rebuilt from is the thing the caller's digest check
-// covers. Two readers that disagreed about what survives a read would give the
-// two caches different trust in the same kind of directory.
-func RegenerateExtracted(slot string, archive []byte) (string, error) {
-	dir, err := ResetExtracted(slot)
-	if err != nil {
-		return "", err
-	}
-	if err := extractTarGz(archive, dir); err != nil {
-		return "", fmt.Errorf("sourcecache: extract into %s: %w", dir, err)
-	}
-	return dir, nil
-}
-
-// ResetExtracted removes the extracted directory of the cache slot at slot and
-// recreates it empty, returning its path. It is the first half of
-// [RegenerateExtracted], exported for a slot whose artifact is a single document
-// rather than an archive: that slot's directory holds the document alone, and it
-// is emptied the same way before the document is written into it, so nothing an
-// earlier read or a hand edit left there survives either.
-func ResetExtracted(slot string) (string, error) {
-	dir := ExtractedDir(slot)
-	if err := os.RemoveAll(dir); err != nil {
-		return "", fmt.Errorf("sourcecache: wipe extracted dir %s: %w", dir, err)
-	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return "", fmt.Errorf("sourcecache: mkdir extracted dir %s: %w", dir, err)
-	}
-	return dir, nil
-}
-
 // SlotPath returns the cache-slot directory for the given lockfile
 // entry's identity. Mirrors the promoted cacheslot.Slot — takes the
 // digest from the lockfile entry and computes the slot path directly
@@ -250,91 +193,4 @@ func ResetExtracted(slot string) (string, error) {
 func SlotPath(workspaceRoot, cacheDir, kind, url, chart, moduleSubdir, version, digest string) string {
 	slot, _ := cacheslot.Slot(workspaceRoot, cacheDir, kind, url, chart, moduleSubdir, version, digest)
 	return slot
-}
-
-// extractTarGz extracts the gzipped tar archive in archiveBytes into
-// destDir. Extraction is deterministic: zero mtimes on every file,
-// current-process uid/gid (archive's uid/gid ignored), no setuid /
-// setgid / sticky bits propagated, no extended attributes carried
-// through. Entries that would land outside destDir are rejected with a
-// wrapped ErrFetchIntegrity.
-//
-// A tar entry name is slash-separated by the archive format's own
-// definition, so containment is judged in slash arithmetic — the same
-// answer on every platform — and the name is converted to a host path
-// only to create the file. An entry name that merely begins with two
-// dots is an ordinary name and extracts.
-//
-// The joined destination is not re-checked after the join. An entry the
-// containment test accepts cannot join to a location outside destDir,
-// which is the property that test reports; re-deriving the same
-// conclusion from the joined path would be a second implementation of
-// the containment rule, free to disagree with the first.
-func extractTarGz(archiveBytes []byte, destDir string) error {
-	gz, err := gzip.NewReader(bytesReader(archiveBytes))
-	if err != nil {
-		return fmt.Errorf("gunzip: %w", err)
-	}
-	defer gz.Close()
-	tr := tar.NewReader(gz)
-	for {
-		hdr, err := tr.Next()
-		if err == io.EOF {
-			return nil
-		}
-		if err != nil {
-			return fmt.Errorf("tar next: %w", err)
-		}
-		cleanRel := path.Clean(hdr.Name)
-		if cleanRel == "." || cleanRel == "/" {
-			continue
-		}
-		if !pathscope.IsLocalSlash(hdr.Name) {
-			return fmt.Errorf("path traversal attempt %q in archive: %w", hdr.Name, ErrFetchIntegrity())
-		}
-		dest := filepath.Join(destDir, filepath.FromSlash(cleanRel))
-		switch hdr.Typeflag {
-		case tar.TypeDir:
-			if err := os.MkdirAll(dest, 0o755); err != nil {
-				return fmt.Errorf("mkdir %q: %w", dest, err)
-			}
-		case tar.TypeReg:
-			if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
-				return fmt.Errorf("mkdir parent of %q: %w", dest, err)
-			}
-			f, err := os.OpenFile(dest, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
-			if err != nil {
-				return fmt.Errorf("open %q: %w", dest, err)
-			}
-			if _, err := io.Copy(f, tr); err != nil {
-				_ = f.Close()
-				return fmt.Errorf("copy %q: %w", dest, err)
-			}
-			if err := f.Close(); err != nil {
-				return fmt.Errorf("close %q: %w", dest, err)
-			}
-		}
-	}
-}
-
-// bytesReader is a thin adapter so we can pass a []byte to
-// gzip.NewReader without importing bytes for a one-line read source.
-// Using a small io.Reader implementation keeps the import surface
-// minimal in callers that read this file.
-func bytesReader(b []byte) io.Reader {
-	return &bReader{b: b}
-}
-
-type bReader struct {
-	b   []byte
-	pos int
-}
-
-func (r *bReader) Read(p []byte) (int, error) {
-	if r.pos >= len(r.b) {
-		return 0, io.EOF
-	}
-	n := copy(p, r.b[r.pos:])
-	r.pos += n
-	return n, nil
 }

@@ -1471,7 +1471,11 @@ func tier3Slot(workspaceRoot, cacheDir, uri string, res closure.Resolution) stri
 // call, through the same regeneration the source-artifact cache uses, so nothing
 // found in the slot's extracted directory is ever trusted on its own — a file
 // changed or added there by hand is discarded rather than read, and an artifact
-// that fails verification never reaches this point, so it is never laid out.
+// that fails verification never reaches this point, so it is never laid out. That
+// regeneration also leaves a file already holding the artifact's bytes untouched,
+// which is what lets another read of the same slot — a concurrent request, or a
+// second command over the same workspace — go on reading the layout it was handed
+// while this one rebuilds it.
 //
 // An archive is laid out as its entries, and a document published on its own is
 // laid out as that one file. Handing the entity's parse the document's path in
@@ -1489,10 +1493,7 @@ func unpackEntitySlot(slot string, published []byte) (string, []byte, error) {
 	if oci.IsTarGzBundle(published) {
 		dir, err = sourcecache.RegenerateExtracted(slot, published)
 	} else {
-		dir, err = sourcecache.ResetExtracted(slot)
-		if err == nil {
-			err = os.WriteFile(filepath.Join(dir, name), published, 0o644)
-		}
+		dir, err = sourcecache.RegenerateExtractedDocument(slot, name, published)
 	}
 	if err != nil {
 		return "", nil, fmt.Errorf("catalog: lay out the cached entity at %s: %w", slot, err)
