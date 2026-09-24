@@ -61,7 +61,7 @@ entities:
         - release.spec.manifest
     - uri: mariadb-chart:1.0.0
       resolved_version: 1.0.0
-      digest: sha256:df7b88e656d0b839ae13bb32862f694b8fb19e06f3f678953906b8d775c1dd29
+      digest: sha256:28472c44eb6529b4df5d0292437c1c4b6a0a352f66defc4a96e9f429bd96b821
       referenced_from:
         - manifest.spec.mappings.components.type.core/datastore/mariadb:1.0.0
     - uri: provided-secret:1.0.0

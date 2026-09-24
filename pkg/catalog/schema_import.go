@@ -4,9 +4,11 @@
 package catalog
 
 import (
+	"errors"
 	"os"
 	"strings"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/sourceref"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/refcycle"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
@@ -135,6 +137,16 @@ func substituteSchemaImport(entityPath string, node *yaml.Node, where string, st
 
 	resolved, err := resolveAgainstEntityDir(entityPath, target)
 	if err != nil {
+		// A path leaving the entity's directory is a fault in what the author
+		// wrote and carries its own condition, which is kept on the chain rather
+		// than folded into the load failure below: that failure is about a file
+		// that could not be acquired, and this one names a file the entity may
+		// not reach at all.
+		if errors.Is(err, sourceref.ErrContentOutsideEntityDirectory()) {
+			return cerrors.Wrap(err, cerrors.CatalogError,
+				cerrors.SourceLocation{File: entityPath, Line: nodeLineOf(node)},
+				where+": imported schema "+quoteTarget(target))
+		}
 		return schemaImportLoadError(entityPath, node,
 			where+": resolve imported schema path "+quoteTarget(target)+": "+err.Error())
 	}
@@ -250,6 +262,11 @@ func quoteTarget(target string) string { return "\"" + target + "\"" }
 // that do not parse are not faults in a document at all — there is no imported
 // document to judge — so they report under [resolver.ErrYAMLLoad], whose
 // registered sentence is true of each of them.
+//
+// A path that leaves the entity's directory, or names an absolute location, is
+// neither of those: it is refused before anything is read, under
+// [sourceref.ErrContentOutsideEntityDirectory], the condition every content path
+// an entity declares meets.
 //
 // Category: CATALOG_ERROR — the fault is in an authored catalog document's
 // schema surface, or in the file beside it that the surface names. Match with

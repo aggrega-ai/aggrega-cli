@@ -4,4 +4,4 @@ metadata: { name: aux-sourced-compose, version: "1.0.0" }
 spec:
   capability: compose
   implements: feature.id/aux-sourced
-  source: ../aux-fragment/aux.yaml
+  source: ./aux-fragment/aux.yaml

@@ -267,10 +267,10 @@ func TestAnchorSourceRewritesNothingButTheReference(t *testing.T) {
 			map[string]any{"kind": "helm-oci-chart", "url": "/srv/catalog/recipes/charts/app", "version": "1.0.0"},
 		},
 		{
-			"a structured absolute url already names where it is",
+			"a structured url that climbs and returns inside is anchored",
 			document,
-			map[string]any{"kind": "helm-oci-chart", "url": "/opt/charts/app", "version": "1.0.0"},
-			map[string]any{"kind": "helm-oci-chart", "url": "/opt/charts/app", "version": "1.0.0"},
+			map[string]any{"kind": "helm-oci-chart", "url": "./charts/../charts/app", "version": "1.0.0"},
+			map[string]any{"kind": "helm-oci-chart", "url": "/srv/catalog/recipes/charts/app", "version": "1.0.0"},
 		},
 		{
 			"a structured registry url is carried through",
@@ -347,10 +347,12 @@ func TestAnchorSourceDoesNotWriteIntoTheAuthoredMap(t *testing.T) {
 // a local relative source is resolved against, over every reference shape and
 // both document states.
 //
-// The four pass-through rows are the point of the table rather than edge cases:
+// The pass-through rows are the point of the table rather than edge cases:
 // each is a value that joining a directory onto would destroy, and each is a
 // value a source template can produce. A resolution that anchored them would be
-// indistinguishable, at this level, from the text-anchoring this replaces.
+// indistinguishable, at this level, from the text-anchoring this replaces. The
+// paths that leave the declaring directory are refused rather than resolved, and
+// have a table of their own below.
 func TestAnchorToDocumentResolvesOnlyWhatItShould(t *testing.T) {
 	t.Parallel()
 	const document = "/srv/catalog/recipes/app.yaml"
@@ -362,8 +364,7 @@ func TestAnchorToDocumentResolvesOnlyWhatItShould(t *testing.T) {
 	}{
 		{"a relative path is anchored to the declaring directory", document, "./charts/app", "/srv/catalog/recipes/charts/app"},
 		{"a bare name is anchored too", document, "charts/app", "/srv/catalog/recipes/charts/app"},
-		{"a parent-relative path resolves out of the directory", document, "../shared/charts/app", "/srv/catalog/shared/charts/app"},
-		{"an absolute path already names where it is", document, "/opt/charts/app", "/opt/charts/app"},
+		{"a climb that returns inside is anchored inside", document, "charts/../vendor/app", "/srv/catalog/recipes/vendor/app"},
 		{"a reference naming nothing stays naming nothing", document, "", ""},
 		{"a registry reference is carried through", document, "oci://example.test/chart:1.0.0", "oci://example.test/chart:1.0.0"},
 		{"a web reference is carried through", document, "https://example.test/chart.tgz", "https://example.test/chart.tgz"},
@@ -372,7 +373,6 @@ func TestAnchorToDocumentResolvesOnlyWhatItShould(t *testing.T) {
 		// cache slot rather than a file, so there is no directory for a
 		// relative reference to be relative to and it is handed back.
 		{"no declaring document leaves a relative path alone", "", "./charts/app", "./charts/app"},
-		{"no declaring document leaves an absolute path alone", "", "/opt/charts/app", "/opt/charts/app"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()

@@ -142,7 +142,9 @@ spec:
 
 // writeTerraformModule writes a minimal vendorable Terraform module — a
 // configuration body declaring no input variables, so the boundary root's module
-// block carries no arguments and the corpus turns on the input kinds alone.
+// block carries no arguments and the corpus turns on the input kinds alone. The
+// cases write it into the directory of the entity whose source names it, as
+// `./module`, because content an entity reads lives beside the entity.
 func writeTerraformModule(t *testing.T, dir string) {
 	t.Helper()
 	writeFixture(t, filepath.Join(dir, "main.tf"), `resource "null_resource" "server" {
@@ -266,10 +268,10 @@ func TestBuild_WorkloadPlusArtifactsOnTerraformHaltsAtGate(t *testing.T) {
 func TestBuild_SourcePlusWorkloadOnTerraformHaltsAtGate(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
-	moduleDir := filepath.Join(root, "module")
+	moduleDir := filepath.Join(root, "catalog", "recipes", "terraform", "module")
 	writeTerraformModule(t, moduleDir)
 	releasePath, catalogRoot := writeTerraformGateWorkspace(t, root,
-		"  source: "+moduleDir+"\n"+tfWorkloadBlock, "")
+		"  source: ./module\n"+tfWorkloadBlock, "")
 
 	err := renderInMemory(t, root, releasePath, catalogRoot)
 	assertGateRefusal(t, err, "synthesized", "sourced, artifacts-only")
@@ -283,11 +285,11 @@ func TestBuild_SourcePlusWorkloadOnTerraformHaltsAtGate(t *testing.T) {
 func TestBuild_AttachmentSourcePlusWorkloadOnTerraformHaltsAtGate(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
-	moduleDir := filepath.Join(root, "module")
+	moduleDir := filepath.Join(root, "catalog", "feature-recipes", "terraform", "module")
 	writeTerraformModule(t, moduleDir)
 	releasePath, catalogRoot := writeTerraformGateWorkspace(t, root,
 		tfArtifactsBlock,
-		"  source: "+moduleDir+"\n"+tfAttachmentWorkloadBlock)
+		"  source: ./module\n"+tfAttachmentWorkloadBlock)
 
 	err := renderInMemory(t, root, releasePath, catalogRoot)
 	assertGateRefusal(t, err, "synthesized", "sourced, artifacts-only")
@@ -302,10 +304,10 @@ func TestBuild_AttachmentSourcePlusWorkloadOnTerraformHaltsAtGate(t *testing.T) 
 func TestBuild_SourcePlusArtifactsOnTerraformStillBuilds(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
-	moduleDir := filepath.Join(root, "module")
+	moduleDir := filepath.Join(root, "catalog", "recipes", "terraform", "module")
 	writeTerraformModule(t, moduleDir)
 	releasePath, catalogRoot := writeTerraformGateWorkspace(t, root,
-		"  source: "+moduleDir+"\n"+tfArtifactsBlock, "")
+		"  source: ./module\n"+tfArtifactsBlock, "")
 
 	if err := renderInMemory(t, root, releasePath, catalogRoot); err != nil {
 		t.Fatalf("a node declaring two kinds the provider honours must still build: %v", err)
@@ -318,9 +320,9 @@ func TestBuild_SourcePlusArtifactsOnTerraformStillBuilds(t *testing.T) {
 func TestBuild_SourcedOnlyOnTerraformStillBuilds(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
-	moduleDir := filepath.Join(root, "module")
+	moduleDir := filepath.Join(root, "catalog", "recipes", "terraform", "module")
 	writeTerraformModule(t, moduleDir)
-	releasePath, catalogRoot := writeTerraformGateWorkspace(t, root, "  source: "+moduleDir+"\n", "")
+	releasePath, catalogRoot := writeTerraformGateWorkspace(t, root, "  source: ./module\n", "")
 
 	if err := renderInMemory(t, root, releasePath, catalogRoot); err != nil {
 		t.Fatalf("a sourced-only node on terraform must still build: %v", err)
@@ -336,10 +338,10 @@ func TestBuild_SourcedOnlyOnTerraformStillBuilds(t *testing.T) {
 func TestBuild_TerraformGateRefusalNamesTheDeclaredKindNotTheClassifiedOne(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
-	moduleDir := filepath.Join(root, "module")
+	moduleDir := filepath.Join(root, "catalog", "recipes", "terraform", "module")
 	writeTerraformModule(t, moduleDir)
 	releasePath, catalogRoot := writeTerraformGateWorkspace(t, root,
-		"  source: "+moduleDir+"\n"+tfWorkloadBlock, "")
+		"  source: ./module\n"+tfWorkloadBlock, "")
 
 	err := renderInMemory(t, root, releasePath, catalogRoot)
 	if err == nil {

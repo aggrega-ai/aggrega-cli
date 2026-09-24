@@ -5,7 +5,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -72,13 +71,13 @@ spec:
 `)
 	writeHelmRendererPlugin(t, filepath.Join(catalogRoot, "providers"))
 
-	// A local Helm chart rendering nameless documents. It lives OUTSIDE the catalog
-	// walk (its `kind: List` template is a valid manifest but not a catalog entity)
-	// and is referenced by an absolute path so it resolves independent of the recipe
-	// file's directory.
-	chartDir := filepath.Join(root, "charts", "nameless")
+	// A local Helm chart rendering nameless documents. It sits in the Recipe's own
+	// directory and is named relative to it, because content an entity reads lives
+	// beside the entity; the catalog walk passes over its templates, whose kinds are
+	// manifests rather than catalog entities.
+	chartDir := filepath.Join(catalogRoot, "recipes", "charts", "nameless")
 	writeNamelessDocChart(t, chartDir)
-	writeFixture(t, filepath.Join(catalogRoot, "recipes", "server.yaml"), fmt.Sprintf(`apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogRoot, "recipes", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
 kind: Recipe
 metadata:
   name: server
@@ -86,8 +85,8 @@ metadata:
 spec:
   capability: helm
   implements: server
-  source: %q
-`, chartDir))
+  source: ./charts/nameless
+`)
 	return filepath.Join(root, "release.yaml")
 }
 

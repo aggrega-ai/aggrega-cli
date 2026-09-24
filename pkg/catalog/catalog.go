@@ -1228,6 +1228,27 @@ func ParseFeatureEntity(data []byte, path string) (types.Feature, error) {
 	return parseFeatureEntity(data, path)
 }
 
+// ParseRecipeEntity is the Recipe counterpart of [ParseComponentEntity], and
+// exists for the same reason: the per-entity resolve is where a Recipe's local
+// source and every file its imports name are anchored to the directory holding the
+// Recipe and held inside it, so a surface that decoded the bytes for itself would
+// read those paths against whatever directory it happened to run in, and would
+// never meet the refusal a path leaving that directory gets everywhere else.
+//
+// It resolves the document and reads nothing beside it: the lock the catalog
+// backings read alongside is not part of what the document declares, and a
+// surface asking about one entity in isolation has no use for the pins it
+// records.
+func ParseRecipeEntity(data []byte, path string) (types.Recipe, error) {
+	return resolveRecipeDocument(data, path)
+}
+
+// ParseFeatureRecipeEntity is the FeatureRecipe counterpart of
+// [ParseRecipeEntity], and exists for the same reason.
+func ParseFeatureRecipeEntity(data []byte, path string) (types.FeatureRecipe, error) {
+	return resolveFeatureRecipeDocument(data, path)
+}
+
 // parseComponentEntity is the single per-entity Component resolution shared by the
 // eager (catalog.Load, per file) and lazy (LazyLookup, per URI on cache miss)
 // catalog-access backings: full unmarshal, kind-check, the static per-entity
@@ -1300,46 +1321,59 @@ func parseFeatureEntity(data []byte, path string) (types.Feature, error) {
 // distinct message; ValidateRecipe already returns a shaped error) so a single
 // `return err` at the caller preserves byte-identical diagnostics.
 func parseRecipeEntity(data []byte, path string) (types.Recipe, recipepin.Pins, error) {
-	if _, eerr := envelope.ValidateBytes(envelope.KindRecipe, data, path); eerr != nil {
-		return types.Recipe{}, recipepin.Pins{}, cerrors.Wrap(eerr, cerrors.CatalogError, cerrors.SourceLocation{File: path}, eerr.Error())
-	}
-	var e types.Recipe
-	if err := yaml.Unmarshal(data, &e); err != nil {
-		return types.Recipe{}, recipepin.Pins{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, "unmarshal Recipe")
-	}
-	if e.Kind != "Recipe" {
-		return types.Recipe{}, recipepin.Pins{}, fmt.Errorf("expected kind Recipe, got %q", e.Kind)
-	}
-	if err := validator.ValidateRecipe(&e, path); err != nil {
-		return types.Recipe{}, recipepin.Pins{}, err
-	}
-	anchoredSource, err := anchorEntitySource(path, "Recipe", e.Spec.Source)
+	e, err := resolveRecipeDocument(data, path)
 	if err != nil {
 		return types.Recipe{}, recipepin.Pins{}, err
 	}
-	e.Spec.Source = anchoredSource
-
-	mappingTarget, err := resolveImportPath(path, e.Spec.ValuesMapping.Import, e.Spec.ValuesMapping)
-	if err != nil {
-		return types.Recipe{}, recipepin.Pins{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, fmt.Sprintf("resolve Recipe valuesMapping $import target %q", e.Spec.ValuesMapping.Import))
-	}
-	e.Spec.ValuesMapping.Import = mappingTarget
-
-	workloadTarget, err := resolveImportPath(path, e.Spec.Workload.Import, e.Spec.Workload)
-	if err != nil {
-		return types.Recipe{}, recipepin.Pins{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, fmt.Sprintf("resolve Recipe workload $import target %q", e.Spec.Workload.Import))
-	}
-	e.Spec.Workload.Import = workloadTarget
-
-	if err := resolveArtifactImports(path, "Recipe", &e.Spec.Artifacts); err != nil {
-		return types.Recipe{}, recipepin.Pins{}, err
-	}
-
 	pins, err := recordedPins(path)
 	if err != nil {
 		return types.Recipe{}, recipepin.Pins{}, err
 	}
 	return e, pins, nil
+}
+
+// resolveRecipeDocument is the half of parseRecipeEntity that reads the document
+// alone: every step that decides what the authored Recipe resolves to, and none
+// that reads what lies beside it. It is a separate body so that a surface holding
+// one entity's bytes reaches exactly these steps — see [ParseRecipeEntity] — while
+// the catalog backings reach them through parseRecipeEntity, so there is still one
+// statement of what an authored Recipe resolves to.
+func resolveRecipeDocument(data []byte, path string) (types.Recipe, error) {
+	if _, eerr := envelope.ValidateBytes(envelope.KindRecipe, data, path); eerr != nil {
+		return types.Recipe{}, cerrors.Wrap(eerr, cerrors.CatalogError, cerrors.SourceLocation{File: path}, eerr.Error())
+	}
+	var e types.Recipe
+	if err := yaml.Unmarshal(data, &e); err != nil {
+		return types.Recipe{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, "unmarshal Recipe")
+	}
+	if e.Kind != "Recipe" {
+		return types.Recipe{}, fmt.Errorf("expected kind Recipe, got %q", e.Kind)
+	}
+	if err := validator.ValidateRecipe(&e, path); err != nil {
+		return types.Recipe{}, err
+	}
+	anchoredSource, err := anchorEntitySource(path, "Recipe", e.Spec.Source)
+	if err != nil {
+		return types.Recipe{}, err
+	}
+	e.Spec.Source = anchoredSource
+
+	mappingTarget, err := resolveImportPath(path, e.Spec.ValuesMapping.Import, e.Spec.ValuesMapping)
+	if err != nil {
+		return types.Recipe{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, fmt.Sprintf("resolve Recipe valuesMapping $import target %q", e.Spec.ValuesMapping.Import))
+	}
+	e.Spec.ValuesMapping.Import = mappingTarget
+
+	workloadTarget, err := resolveImportPath(path, e.Spec.Workload.Import, e.Spec.Workload)
+	if err != nil {
+		return types.Recipe{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, fmt.Sprintf("resolve Recipe workload $import target %q", e.Spec.Workload.Import))
+	}
+	e.Spec.Workload.Import = workloadTarget
+
+	if err := resolveArtifactImports(path, "Recipe", &e.Spec.Artifacts); err != nil {
+		return types.Recipe{}, err
+	}
+	return e, nil
 }
 
 // recordedPins reads the content pins recorded for the entity at path, from the
@@ -1403,6 +1437,11 @@ func recordedPins(path string) (recipepin.Pins, error) {
 // is over the REFERENCE, not over the source's identity: a structured source whose
 // version is a template still has a url its author wrote out in full.
 //
+// A local reference that leaves the entity's directory, or names an absolute
+// location, is refused by that same resolution with
+// [sourceref.ErrContentOutsideEntityDirectory], the refusal every content path an
+// entity declares meets; a templated one meets it at render, once it has a value.
+//
 // kind names the entity in the failure, as it does for the artifacts rewrite, so
 // each caller's diagnostic reads as its own.
 func anchorEntitySource(entityPath, kind string, source any) (any, error) {
@@ -1433,8 +1472,8 @@ type importRef interface {
 // bare-name library reference and a registry-host reference are identities
 // rather than paths, and the consumption site reads their exact leading text to
 // resolve the first and to reject the second — so rewriting either would turn a
-// named refusal into a missing-file report. Everything else is a local path and
-// is anchored to the entity's directory.
+// named refusal into a missing-file report. Everything else is a local path, and
+// it is anchored to the entity's directory and refused where it leaves it.
 //
 // The registry-host arm is not reachable from a document: every `$import:`
 // position on either kind refuses a registry host as the document is read, so
@@ -1454,14 +1493,23 @@ func resolveImportPath(entityPath, authored string, ref importRef) (string, erro
 	return resolveAgainstEntityDir(entityPath, authored)
 }
 
-// resolveAgainstEntityDir anchors a relative authored path to the directory
-// holding the entity file that declared it, and returns an already-absolute
-// path unchanged.
+// resolveAgainstEntityDir anchors an authored import path to the directory
+// holding the entity file that declared it, and refuses one that does not stay
+// inside that directory — an absolute path included — with
+// [sourceref.ErrContentOutsideEntityDirectory].
+//
+// Both halves are sourceref.AnchorContent's, reached rather than restated: it is
+// the one statement of what an entity's content path is relative to and bounded
+// by, shared with the source resolution and the render, so an import and a source
+// cannot come to disagree about which paths an entity may name. The bound exists
+// because the entity's directory is what a publication packages: an import naming
+// a file outside it names content that would not travel with the entity.
 //
 // An entity parsed from bytes carrying no file of their own resolves against
 // the directory the process runs in, which is what an empty path's directory
 // component yields; such an entity has no directory to be relative to, so
-// there is no better anchor available at this point.
+// there is no better anchor available at this point. It is held to the same
+// bound, which does not depend on which directory that is.
 //
 // It shares an idiom with sourceref.AnchorToDocument and answers a DIFFERENT
 // question, which is why the two are deliberately separate rather than one body
@@ -1473,10 +1521,7 @@ func resolveImportPath(entityPath, authored string, ref importRef) (string, erro
 // would put a gate in front of the import path that its callers have already
 // answered differently.
 func resolveAgainstEntityDir(entityPath, authored string) (string, error) {
-	if authored == "" || filepath.IsAbs(authored) {
-		return authored, nil
-	}
-	return filepath.Abs(filepath.Join(filepath.Dir(entityPath), authored))
+	return sourceref.AnchorContent(entityPath, authored)
 }
 
 // resolveArtifactImports rewrites each artifacts entry's `$import:` target
@@ -1514,46 +1559,56 @@ func resolveArtifactImports(entityPath, kind string, artifacts *types.OrderedMap
 // drift; those functions document what each resolution decides and why.
 // Self-wraps its failures like parseRecipeEntity.
 func parseFeatureRecipeEntity(data []byte, path string) (types.FeatureRecipe, recipepin.Pins, error) {
-	if _, eerr := envelope.ValidateBytes(envelope.KindFeatureRecipe, data, path); eerr != nil {
-		return types.FeatureRecipe{}, recipepin.Pins{}, cerrors.Wrap(eerr, cerrors.CatalogError, cerrors.SourceLocation{File: path}, eerr.Error())
-	}
-	var e types.FeatureRecipe
-	if err := yaml.Unmarshal(data, &e); err != nil {
-		return types.FeatureRecipe{}, recipepin.Pins{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, "unmarshal FeatureRecipe")
-	}
-	if e.Kind != "FeatureRecipe" {
-		return types.FeatureRecipe{}, recipepin.Pins{}, fmt.Errorf("expected kind FeatureRecipe, got %q", e.Kind)
-	}
-	if err := validator.ValidateFeatureRecipe(&e, path); err != nil {
-		return types.FeatureRecipe{}, recipepin.Pins{}, err
-	}
-	anchoredSource, err := anchorEntitySource(path, "FeatureRecipe", e.Spec.Source)
+	e, err := resolveFeatureRecipeDocument(data, path)
 	if err != nil {
 		return types.FeatureRecipe{}, recipepin.Pins{}, err
 	}
-	e.Spec.Source = anchoredSource
-
-	mappingTarget, err := resolveImportPath(path, e.Spec.ValuesMapping.Import, e.Spec.ValuesMapping)
-	if err != nil {
-		return types.FeatureRecipe{}, recipepin.Pins{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, fmt.Sprintf("resolve FeatureRecipe valuesMapping $import target %q", e.Spec.ValuesMapping.Import))
-	}
-	e.Spec.ValuesMapping.Import = mappingTarget
-
-	workloadTarget, err := resolveImportPath(path, e.Spec.Workload.Import, e.Spec.Workload)
-	if err != nil {
-		return types.FeatureRecipe{}, recipepin.Pins{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, fmt.Sprintf("resolve FeatureRecipe workload $import target %q", e.Spec.Workload.Import))
-	}
-	e.Spec.Workload.Import = workloadTarget
-
-	if err := resolveArtifactImports(path, "FeatureRecipe", &e.Spec.Artifacts); err != nil {
-		return types.FeatureRecipe{}, recipepin.Pins{}, err
-	}
-
 	pins, err := recordedPins(path)
 	if err != nil {
 		return types.FeatureRecipe{}, recipepin.Pins{}, err
 	}
 	return e, pins, nil
+}
+
+// resolveFeatureRecipeDocument is the FeatureRecipe counterpart of
+// resolveRecipeDocument: the steps that read the document alone, split out for the
+// same reason.
+func resolveFeatureRecipeDocument(data []byte, path string) (types.FeatureRecipe, error) {
+	if _, eerr := envelope.ValidateBytes(envelope.KindFeatureRecipe, data, path); eerr != nil {
+		return types.FeatureRecipe{}, cerrors.Wrap(eerr, cerrors.CatalogError, cerrors.SourceLocation{File: path}, eerr.Error())
+	}
+	var e types.FeatureRecipe
+	if err := yaml.Unmarshal(data, &e); err != nil {
+		return types.FeatureRecipe{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, "unmarshal FeatureRecipe")
+	}
+	if e.Kind != "FeatureRecipe" {
+		return types.FeatureRecipe{}, fmt.Errorf("expected kind FeatureRecipe, got %q", e.Kind)
+	}
+	if err := validator.ValidateFeatureRecipe(&e, path); err != nil {
+		return types.FeatureRecipe{}, err
+	}
+	anchoredSource, err := anchorEntitySource(path, "FeatureRecipe", e.Spec.Source)
+	if err != nil {
+		return types.FeatureRecipe{}, err
+	}
+	e.Spec.Source = anchoredSource
+
+	mappingTarget, err := resolveImportPath(path, e.Spec.ValuesMapping.Import, e.Spec.ValuesMapping)
+	if err != nil {
+		return types.FeatureRecipe{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, fmt.Sprintf("resolve FeatureRecipe valuesMapping $import target %q", e.Spec.ValuesMapping.Import))
+	}
+	e.Spec.ValuesMapping.Import = mappingTarget
+
+	workloadTarget, err := resolveImportPath(path, e.Spec.Workload.Import, e.Spec.Workload)
+	if err != nil {
+		return types.FeatureRecipe{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, fmt.Sprintf("resolve FeatureRecipe workload $import target %q", e.Spec.Workload.Import))
+	}
+	e.Spec.Workload.Import = workloadTarget
+
+	if err := resolveArtifactImports(path, "FeatureRecipe", &e.Spec.Artifacts); err != nil {
+		return types.FeatureRecipe{}, err
+	}
+	return e, nil
 }
 
 // parseAggregateEntity is the single per-entity Aggregate resolution: unmarshal

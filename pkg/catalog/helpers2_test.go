@@ -5,6 +5,7 @@ package catalog
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
@@ -96,8 +97,8 @@ spec: [not, a, mapping]
 }
 
 // TestIndexFile_RecipeWithStringValuesMapping pins the canonical
-// string-valuesMapping shape (matching testdata fixtures) plus the
-// absolute-source pass-through.
+// string-valuesMapping shape (matching testdata fixtures) plus the anchoring of
+// a relative source to the directory the Recipe file sits in.
 func TestIndexFile_RecipeWithStringValuesMapping(t *testing.T) {
 	t.Parallel()
 	c := makeEmptyCatalog()
@@ -109,21 +110,25 @@ metadata:
 spec:
   implements: core/compute/api
   capability: helm
-  source: /absolute/path
+  source: ./charts/app
   valuesMapping: '{"image": "x:latest"}'
 `
-	_ = c.indexFile([]byte(src), "/some/dir/r.yaml")
-	if len(recipesImplementing(c.Recipes, "core/compute/api")) > 0 {
-		var r types.Recipe
-		for _, rr := range c.Recipes {
-			if resolver.ImplementsSatisfies(rr.Spec.Implements, "core/compute/api") {
-				r = rr
-				break
-			}
+	if err := c.indexFile([]byte(src), "/some/dir/r.yaml"); err != nil {
+		t.Fatalf("index a Recipe with a string valuesMapping: %v", err)
+	}
+	var r types.Recipe
+	found := false
+	for _, rr := range c.Recipes {
+		if resolver.ImplementsSatisfies(rr.Spec.Implements, "core/compute/api") {
+			r, found = rr, true
+			break
 		}
-		if s, _ := r.Spec.Source.(string); s != "/absolute/path" {
-			t.Errorf("absolute source rewritten unexpectedly: %q", s)
-		}
+	}
+	if !found {
+		t.Fatal("the Recipe was not indexed")
+	}
+	if s, _ := r.Spec.Source.(string); filepath.ToSlash(s) != "/some/dir/charts/app" {
+		t.Errorf("relative source not anchored to the Recipe's directory: %q", s)
 	}
 }
 

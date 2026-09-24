@@ -31,6 +31,8 @@ kind: Component
 metadata:
   name: core/api-server
   version: 1.0.0
+  labels:
+    component.aggrega.ai/type: server
 spec:
   schema:
     values:

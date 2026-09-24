@@ -57,6 +57,12 @@ entity of any other kind is refused when another entity sits in its directory,
 before anything is pinned or bundled, and the refusal names the entity in the way.
 The directory's name is not judged.
 
+A Component, Feature, Recipe or FeatureRecipe is read the way a build reads it
+before it is bundled, and one that read refuses is refused here for the same
+reason: a document that fails its kind's schema, a path naming content outside
+the entity's own directory, which would not travel with the entity, or a schema
+a Component or Feature imports that cannot be read or used.
+
 A content digest is computed over the entity's authoring tree and embedded in
 the OCI manifest, so "aggrega pull" can detect tampering between publish and
 pull.

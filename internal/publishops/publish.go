@@ -328,7 +328,9 @@ func writePublicationFacts(out io.Writer, kind, mediaType string, size, pluginSi
 // directory with another entity where its kind has a directory of its own;
 // routes a Plugin to the one-manifest packer and every other kind through
 // pkg/oci.Bundle (per-kind dispatch, Recipe / FeatureRecipe tar.gz directory
-// walking); constructs the OCI repository reference; publishes via pkg/oci.Push.
+// walking), after reading a Component or Feature through the catalog's
+// per-entity parse; constructs the OCI repository reference; publishes via
+// pkg/oci.Push.
 //
 // Signing is sign-before-publish: when signing is requested, Push computes
 // the proposed manifest digest, constructs the signer, and signs the digest
@@ -345,7 +347,9 @@ func writePublicationFacts(out io.Writer, kind, mediaType string, size, pluginSi
 // directory of its own with another entity beside it, the unpinned-entity halt
 // (recipepin.ErrEntityNotPinned) for a Recipe or FeatureRecipe whose lock does
 // not record every pin the pin step would record, where this invocation does not
-// run the step, bundle failure (including ErrUnknownEntityKind for
+// run the step, the catalog parse's own refusal for a document it cannot read —
+// reached for a Recipe or FeatureRecipe through the pin step or the hold, and for
+// a Component or Feature before the bundle — bundle failure (including ErrUnknownEntityKind for
 // non-publishable kinds), signer-construction / signing failure (refused before
 // publishing), and publication failure. The directory's name is not judged: an
 // entity alone in its directory publishes wherever that directory sits.
@@ -516,6 +520,16 @@ func Push(ctx context.Context, cfg PushConfig) (PushResult, error) {
 		}
 	}
 
+	// A Component or a Feature is read here the way a build reads it, and for the
+	// same reason as the hold above sits where it does: immediately before the
+	// bundle, after every refusal that is about the invocation rather than the
+	// entity. It judges the entity, so it follows the pin step rather than
+	// preceding it, and it reads only files beside the entity, so it costs less
+	// than any fetch a later step makes.
+	if err := parseBeforeBundling(header.Kind, cfg.EntityPath, data); err != nil {
+		return PushResult{}, err
+	}
+
 	bundleBytes, mediaType, err := oci.Bundle(header.Kind, cfg.EntityPath)
 	if err != nil {
 		return PushResult{}, fmt.Errorf("bundle %s: %w", cfg.EntityPath, err)
@@ -652,6 +666,38 @@ func Push(ctx context.Context, cfg PushConfig) (PushResult, error) {
 		fmt.Fprintf(out, "Signature attached: %s:%s\n", reference, tag)
 	}
 	return result, nil
+}
+
+// parseBeforeBundling reads a Component or a Feature through the catalog's own
+// per-entity parse, so a publication refuses exactly the documents a catalog load
+// of them refuses, in the same words: one that fails its kind's schema, and one
+// whose imported schema file is missing, unusable, or outside the entity's own
+// directory. Publishing such a document would ship an entity whose consumer's
+// first load refuses it, and — for a schema import that leaves the directory — one
+// naming a file that does not travel with it.
+//
+// It is the parse a build reaches, not a check of its own: a publication that
+// judged these documents by a reading of its own would refuse a different set,
+// and the two would disagree the first time either was changed.
+//
+// A Recipe and a FeatureRecipe are not read here because every publication of
+// either already reads it through the catalog, in the pin step or in the hold
+// that stands in for it. A Plugin never reaches this point, and every other kind
+// carries no path to content and is bundled as its header describes it.
+func parseBeforeBundling(kind, path string, data []byte) error {
+	var err error
+	switch kind {
+	case "Component":
+		_, err = catalog.ParseComponentEntity(data, path)
+	case "Feature":
+		_, err = catalog.ParseFeatureEntity(data, path)
+	default:
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("parse %s at %q: %w", kind, path, err)
+	}
+	return nil
 }
 
 // BuildPushReference composes the canonical OCI repository reference

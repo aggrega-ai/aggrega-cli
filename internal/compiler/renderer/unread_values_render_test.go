@@ -6,7 +6,7 @@ package renderer_test
 import (
 	"context"
 	"encoding/json"
-	"strconv"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -174,22 +174,31 @@ func TestRenderAll_NoPerEdgeValuesNoPerEdgeWarning(t *testing.T) {
 //
 // The fixture is a terraform recipe sourcing a local module directory, so the
 // source resolves from disk and the render completes with nothing fetched. The
-// second infra key is the positive control in the same render: a reading that had
-// simply gone quiet would satisfy the first assertion perfectly, so the two run
-// together or neither means anything.
+// module sits inside the Recipe's own directory and the template produces a path
+// relative to it, because a path a source template produces is held to that
+// directory like every content path a Recipe declares; the lookup reports the
+// Recipe's document so the produced path is resolved against it. The second infra
+// key is the positive control in the same render: a reading that had simply gone
+// quiet would satisfy the first assertion perfectly, so the two run together or
+// neither means anything.
 func TestRenderAll_KeyConsumedBySourceIsNotReportedUnread(t *testing.T) {
-	moduleDir := writeTerraformModule(t, terraformModuleFixture())
+	files := map[string]string{}
+	for rel, body := range terraformModuleFixture() {
+		files["module/"+rel] = body
+	}
+	recipeDir := writeTerraformModule(t, files)
 
 	const valuesPillar = `{"db_name":"appdb","upstream_endpoint":"${aws_db_instance.main.endpoint}"}`
 	const valuesMapping = `db_name: "{{ .values.db_name }}"
 rds_endpoint: "{{ .values.upstream_endpoint }}"
 `
 	input := terraformLocalInput("db", valuesPillar)
-	input.Graph.Spec.InfraMapping.Set("db", json.RawMessage(
-		`{"module_dir":`+strconv.Quote(moduleDir)+`,"read_by_nothing":"x"}`))
+	input.Graph.Spec.InfraMapping.Set("db", json.RawMessage(`{"module_dir":"./module","read_by_nothing":"x"}`))
 
 	// The source is a template over the infra key, and nothing else reads it.
 	lookup := terraformLocalRecipeLookup("{{ .infra.module_dir }}", valuesMapping)
+	recipePath := filepath.Join(recipeDir, "recipe.yaml")
+	lookup.RecipeDocument = func(*types.Recipe) (string, bool) { return recipePath, true }
 
 	result, err := renderer.RenderAll(context.Background(), input, lookup, wasmEngineFactory(t))
 	if err != nil {

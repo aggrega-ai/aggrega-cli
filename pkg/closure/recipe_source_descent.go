@@ -441,7 +441,7 @@ func buildSourceSpec(source any, values, infra map[string]any, locals types.Orde
 //
 // It is a declared table rather than a switch because the key set has to stay
 // enumerable. The same six authored keys are the set a source's identity is read
-// out of, in the stdlib-only leaf this package imports, and the two sites share no
+// out of, in the source-reference leaf this package imports, and the two sites share no
 // symbol — a switch gives a guard nothing to compare, so a seventh key taught to
 // one side could sit there unread by the other with every test green. This table
 // is what that guard reads, on this side.

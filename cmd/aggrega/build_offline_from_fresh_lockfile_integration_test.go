@@ -280,8 +280,9 @@ spec:
 	// document, which is what makes a render REQUEST an external input: the guest
 	// compiles that schema through the host's fetch seam. Its values are overlaid
 	// from a mapping-library entry, and the chart echoes the overlaid image, so that
-	// library's contribution is observable in the rendered artifact too.
-	cacheChart := filepath.Join(root, "charts", "cache")
+	// library's contribution is observable in the rendered artifact too. The chart
+	// sits in the Recipe's own directory, where content an entity reads lives.
+	cacheChart := filepath.Join(catalogDir, "recipes", "cache", "chart")
 	writeFixture(t, filepath.Join(cacheChart, "Chart.yaml"), "apiVersion: v2\nname: cache\nversion: 0.1.0\n")
 	writeFixture(t, filepath.Join(cacheChart, "values.yaml"), "image: placeholder:latest\n")
 	writeFixture(t, filepath.Join(cacheChart, "templates", "cm.yaml"), `apiVersion: v1
@@ -293,7 +294,7 @@ data:
 `)
 	writeFixture(t, filepath.Join(cacheChart, "values.schema.json"),
 		fmt.Sprintf(`{"$schema":"https://json-schema.org/draft/2020-12/schema","$ref":%q}`, schemaURL))
-	writeFixture(t, filepath.Join(catalogDir, "recipes", "cache", "cache.yaml"), fmt.Sprintf(`apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogDir, "recipes", "cache", "cache.yaml"), `apiVersion: aggrega.ai/v1alpha1
 kind: Recipe
 metadata:
   name: cache-recipe
@@ -301,10 +302,10 @@ metadata:
 spec:
   capability: helm
   implements: core/cache
-  source: %q
+  source: ./chart
   valuesMapping:
     $import: HelmHelpers#/mappings/CacheValues
-`, cacheChart))
+`)
 
 	// The queue Recipe is sourceless: its workload and its extra artifacts each
 	// come from a library, which is what puts those two library kinds in the

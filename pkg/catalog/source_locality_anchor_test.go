@@ -36,10 +36,13 @@
 package catalog
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/sourceref"
 )
 
 // anchorRelativeSource is the relative value the local rows author, kept in one
@@ -386,15 +389,50 @@ func TestScalarSourceAnchorsLocalPathsAgainstTheEntityDirectory(t *testing.T) {
 	}
 }
 
-// TestScalarSourceAbsoluteLocalPathIsHandedBackUnchanged pins that an
-// already-absolute local path is neither re-anchored nor refused: it passes the
-// locality reading, reaches the resolution, and comes back as written.
-func TestScalarSourceAbsoluteLocalPathIsHandedBackUnchanged(t *testing.T) {
-	absolute := filepath.Join(t.TempDir(), "charts", "app")
-	catalogDir := sourceAnchorCatalog(t, absolute)
+// TestScalarSourceThatLeavesTheEntityDirectoryIsRefused pins the bound the
+// anchoring enforces: a local path that names somewhere outside the directory
+// holding the entity — an absolute path, or one that climbs out — passes the
+// locality reading, reaches the resolution, and is refused there with the
+// registered condition, rather than being handed back or anchored.
+//
+// Each row is refused on its own: the fixture's two entities share the path, so
+// the load halts on whichever the walk reaches first, and the assertion is on the
+// condition rather than on which of the two named it.
+func TestScalarSourceThatLeavesTheEntityDirectoryIsRefused(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		authored func(t *testing.T) string
+	}{
+		{"an absolute path", func(t *testing.T) string { return filepath.Join(t.TempDir(), "charts", "app") }},
+		{"a climb out of the directory", func(*testing.T) string { return "../charts/app" }},
+		{"a climb that names the directory again on the way back", func(*testing.T) string { return "../catalog/charts/app" }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			catalogDir := sourceAnchorCatalog(t, tc.authored(t))
+			_, err := LoadAll("", catalogDir)
+			if err == nil {
+				t.Fatal("a source naming a path outside the entity's directory loaded; want it refused")
+			}
+			if !errors.Is(err, sourceref.ErrContentOutsideEntityDirectory()) {
+				t.Errorf("refused for another reason; want the content-outside-the-entity-directory condition: %v", err)
+			}
+		})
+	}
+}
+
+// TestScalarSourceThatClimbsAndReturnsInsideIsAnchored is the negative control
+// for the refusal above: a path whose climb stays inside the directory is an
+// ordinary path inside it, anchored like any other.
+func TestScalarSourceThatClimbsAndReturnsInsideIsAnchored(t *testing.T) {
+	catalogDir := sourceAnchorCatalog(t, "./charts/../charts/app")
 	for kind, got := range loadedScalarSources(t, catalogDir) {
-		if got != absolute {
-			t.Errorf("%s: absolute local path was rewritten: %q became %q", kind, absolute, got)
+		body, err := os.ReadFile(filepath.Join(got, "Chart.yaml"))
+		if err != nil {
+			t.Errorf("%s: anchored path unreadable: %v", kind, err)
+			continue
+		}
+		if read := strings.TrimSpace(string(body)); read != beside {
+			t.Errorf("%s: anchored against the wrong base: read %q from %q, want %q", kind, read, got, beside)
 		}
 	}
 }

@@ -66,7 +66,9 @@ spec:
 `)
 	writeHelmRendererPlugin(t, filepath.Join(catalogRoot, "providers"))
 
-	chartDir := filepath.Join(root, "charts", "echo")
+	// The chart sits in the Recipe's own directory and is named relative to it:
+	// content an entity reads lives beside the entity.
+	chartDir := filepath.Join(catalogRoot, "recipes", "charts", "echo")
 	writeFixture(t, filepath.Join(chartDir, "Chart.yaml"), "apiVersion: v2\nname: echo\nversion: 0.1.0\n")
 	writeFixture(t, filepath.Join(chartDir, "templates", "cm.yaml"), `apiVersion: v1
 kind: ConfigMap
@@ -75,7 +77,7 @@ metadata:
 data:
   releaseName: {{ .Release.Name | quote }}
 `)
-	writeFixture(t, filepath.Join(catalogRoot, "recipes", "server.yaml"), fmt.Sprintf(`apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogRoot, "recipes", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
 kind: Recipe
 metadata:
   name: server
@@ -83,8 +85,8 @@ metadata:
 spec:
   capability: helm
   implements: server
-  source: %q
-`, chartDir))
+  source: ./charts/echo
+`)
 	return filepath.Join(root, "release.yaml")
 }
 

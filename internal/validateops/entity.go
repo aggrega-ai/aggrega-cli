@@ -305,12 +305,19 @@ func validatePluginEntity(res *EntityResult, path string, data []byte) error {
 // Both declines are named in Diagnostics, so the report states which surface it
 // did not cover instead of leaving a silent difference between what validate
 // checks and what a build checks.
+//
+// The Recipe is read through the shared per-entity resolve rather than decoded
+// here, for the reason the Component path gives: that resolve is where the local
+// source and every file an import names are anchored to the directory holding the
+// Recipe, and refused where a path leaves it. Decoded here, the render would read
+// those paths against the directory the command runs in, so the same Recipe would
+// validate from one directory and fail from another, and a path escaping the
+// Recipe's directory would meet no refusal at all. The render is handed that same
+// document, so a source written as a template is anchored against it once it has
+// a value.
 func validateRecipeEntity(ctx context.Context, res *EntityResult, wsRoot, cacheDir string, dirs []string, path string, data []byte, suppressUnsupportedFieldWarnings bool) error {
-	var rec types.Recipe
-	if err := yaml.Unmarshal(data, &rec); err != nil {
-		return fmt.Errorf("parse Recipe at %q: %w", path, err)
-	}
-	if err := validator.ValidateRecipe(&rec, path); err != nil {
+	rec, err := catalog.ParseRecipeEntity(data, path)
+	if err != nil {
 		return fmt.Errorf("shape: %w", err)
 	}
 	res.Diagnostics = append(res.Diagnostics, "Shape:  valid")
@@ -365,7 +372,8 @@ func validateRecipeEntity(ctx context.Context, res *EntityResult, wsRoot, cacheD
 		// Recipe under test is the recipe for every node — return it directly
 		// rather than resolving through the catalog, which lets the loose
 		// (possibly not-yet-published or edited-in-place) file drive the render.
-		Recipe: func(string, string) (*types.Recipe, bool) { return &rec, true },
+		Recipe:         func(string, string) (*types.Recipe, bool) { return &rec, true },
+		RecipeDocument: func(*types.Recipe) (string, bool) { return path, true },
 	}
 	return runRenderTiers(ctx, res, harness, tierLookup, recipeLookup, cat.SubAggregateLoader(),
 		suppressUnsupportedFieldWarnings, sourceref.NeedsFetch(rec.Spec.Source))
@@ -440,12 +448,12 @@ func lookupWithSocketsOptional(lookup resolver.CatalogLookup, typeURI string, so
 // tiers for a FeatureRecipe need a host component the attached Feature applies
 // to; synthesizing a guard-passing host for an arbitrary Feature is not
 // attempted here, so the FeatureRecipe path stops after shape validation.
+//
+// It reads the entity through the shared per-entity resolve, as the Recipe path
+// does, so a path the FeatureRecipe names outside its own directory is refused
+// here exactly as a catalog read refuses it.
 func validateFeatureRecipeEntity(res *EntityResult, path string, data []byte) error {
-	var fr types.FeatureRecipe
-	if err := yaml.Unmarshal(data, &fr); err != nil {
-		return fmt.Errorf("parse FeatureRecipe at %q: %w", path, err)
-	}
-	if err := validator.ValidateFeatureRecipe(&fr, path); err != nil {
+	if _, err := catalog.ParseFeatureRecipeEntity(data, path); err != nil {
 		return fmt.Errorf("shape: %w", err)
 	}
 	res.Diagnostics = append(res.Diagnostics,

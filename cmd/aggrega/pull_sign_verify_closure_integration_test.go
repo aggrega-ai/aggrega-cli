@@ -37,7 +37,7 @@ import (
 // differs from the manifest digest the registry mints.
 const signedCatalogComponentBody = "apiVersion: aggrega.ai/v1alpha1\n" +
 	"kind: Component\n" +
-	"metadata:\n  name: core/api-server\n  version: 1.0.0\n" +
+	"metadata:\n  name: core/api-server\n  version: 1.0.0\n  labels:\n    component.aggrega.ai/type: server\n" +
 	"spec:\n  schema:\n    infra:\n      port: { type: integer, default: 8080 }\n"
 
 // TestIntegration_EntitySignatureVerifiesAgainstManifestDigest is the F1

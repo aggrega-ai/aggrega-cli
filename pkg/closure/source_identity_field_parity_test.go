@@ -7,7 +7,7 @@
 // The authored structured-source keys this package reads a source's fetch
 // coordinates out of, and the keys the source-reference leaf reads a source's
 // IDENTITY out of, are the same set asked about from two packages that share no
-// symbol. That leaf is a stdlib-only leaf and cannot import this package, so the
+// symbol. That leaf imports nothing of this package's and cannot import it, so the
 // correspondence has no structural direction available to it and nothing but this
 // compares the two.
 //

@@ -130,10 +130,9 @@ func loadedArtifactEntries(t *testing.T, catalogDir string) map[string]types.Art
 // The rows are the whole authoring axis:
 //
 //   - A relative local path is the case the resolution rewrites, so it is the
-//     one where the authored text would otherwise be lost.
-//   - An already-absolute local path is handed back unchanged, so a retention
-//     written into the rewrite alone would report "nothing authored" for an
-//     entry that has an authored path.
+//     one where the authored text would otherwise be lost. An absolute path is
+//     not an authoring form here: it names a file outside the entity and the load
+//     refuses it, which the containment tests cover.
 //   - A bare-name library reference is an identity rather than a path and is
 //     also handed back unchanged.
 //   - An empty value is what makes the empty authored value readable as absent:
@@ -169,22 +168,6 @@ func TestArtifactAuthoredImportRetainsWhatWasWritten(t *testing.T) {
 				if got := strings.TrimSpace(string(body)); got != beside {
 					t.Errorf("%s: resolved against the wrong base: read %q from %q, want %q",
 						kind, got, entry.Import, beside)
-				}
-			},
-		},
-		{
-			name: "already-absolute local path",
-			authored: func(t *testing.T) (string, string) {
-				abs := filepath.Join(t.TempDir(), "absolute.yaml")
-				if err := os.WriteFile(abs, []byte(beside), 0o644); err != nil {
-					t.Fatal(err)
-				}
-				return abs, abs
-			},
-			check: func(t *testing.T, kind string, entry types.ArtifactEntry) {
-				if entry.Import != entry.AuthoredImport {
-					t.Errorf("%s: an absolute authored path was rewritten: %q became %q",
-						kind, entry.AuthoredImport, entry.Import)
 				}
 			},
 		},

@@ -5,10 +5,12 @@ package renderer
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/sourceref"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
@@ -176,12 +178,14 @@ func TestAnchorSourceToDocument(t *testing.T) {
 		want     any
 	}{
 		{"templated scalar producing a relative path anchors", "{{ .locals.dir }}", "./charts/mon", document, "/catalog/features/mon/charts/mon"},
-		{"templated scalar producing an absolute path passes through", "{{ .locals.dir }}", "/opt/charts/mon", document, "/opt/charts/mon"},
 		{"templated scalar producing a transport reference passes through", "{{ .locals.url }}", "oci://hub.aggrega.ai/charts/mon", document, "oci://hub.aggrega.ai/charts/mon"},
 		{"templated scalar producing nothing leaves the node sourceless", "{{ .locals.dir }}", "", document, ""},
 		{"literal relative path is not anchored a second time", "./charts/mon", "./charts/mon", document, "./charts/mon"},
 		{"no declaring document leaves the produced value as produced", "{{ .locals.dir }}", "./charts/mon", "", "./charts/mon"},
-		{"a structured source is not a scalar and passes through", map[string]any{"url": "oci://x"}, map[string]any{"url": "oci://x"}, document, map[string]any{"url": "oci://x"}},
+		{"a structured source written out in full passes through", map[string]any{"url": "oci://x"}, map[string]any{"url": "oci://x"}, document, map[string]any{"url": "oci://x"}},
+		{"a structured source's literal url anchored at load is not anchored again", map[string]any{"url": "/catalog/features/mon/charts/mon"}, map[string]any{"url": "/catalog/features/mon/charts/mon"}, document, map[string]any{"url": "/catalog/features/mon/charts/mon"}},
+		{"a templated structured url producing a relative path anchors", map[string]any{"url": "{{ .locals.dir }}"}, map[string]any{"url": "./charts/mon"}, document, map[string]any{"url": "/catalog/features/mon/charts/mon"}},
+		{"a templated structured url producing a transport reference passes through", map[string]any{"url": "{{ .locals.url }}"}, map[string]any{"url": "oci://x"}, document, map[string]any{"url": "oci://x"}},
 		{"a sourceless entity passes through", nil, nil, document, nil},
 	}
 	for _, tc := range tests {
@@ -200,6 +204,39 @@ func TestAnchorSourceToDocument(t *testing.T) {
 			}
 			if got != tc.want {
 				t.Errorf("anchorSourceToDocument = %#v; want %#v", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestAnchorSourceToDocumentRefusesAProducedPathOutsideTheDocumentDirectory is the
+// render's half of the bound on a source's path. A template names nothing until it
+// runs, so this is the one moment its value can be judged; each row produces a path
+// that leaves the declaring document's directory, in each shape a source is
+// authored in, and each is refused with the condition every content path meets.
+func TestAnchorSourceToDocumentRefusesAProducedPathOutsideTheDocumentDirectory(t *testing.T) {
+	t.Parallel()
+	const document = "/catalog/features/mon/featurerecipe.yaml"
+	for _, tc := range []struct {
+		name     string
+		authored any
+		produced any
+		document string
+	}{
+		{"a templated scalar climbing out", "{{ .locals.dir }}", "../../shared/charts/mon", document},
+		{"a templated scalar producing an absolute path", "{{ .locals.dir }}", "/opt/charts/mon", document},
+		{"a templated structured url climbing out", map[string]any{"url": "{{ .locals.dir }}"}, map[string]any{"url": "../charts/mon"}, document},
+		{"a templated structured url producing an absolute path", map[string]any{"url": "{{ .locals.dir }}"}, map[string]any{"url": "/opt/charts/mon"}, document},
+		{"a templated scalar climbing out with no declaring document", "{{ .locals.dir }}", "../charts/mon", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := anchorSourceToDocument(tc.authored, tc.produced, tc.document)
+			if err == nil {
+				t.Fatal("a produced path outside the declaring directory was accepted")
+			}
+			if !errors.Is(err, sourceref.ErrContentOutsideEntityDirectory()) {
+				t.Errorf("refused for another reason: %v", err)
 			}
 		})
 	}

@@ -151,9 +151,10 @@ func TestBuild_SourcelessRecipeStillBuilds(t *testing.T) {
 func TestBuild_RealSourceRecipeStillBuilds(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
-	chartDir := filepath.Join(root, "chart")
-	writeMinimalChart(t, chartDir)
-	releasePath, catalogRoot := writeEmptySourceWorkspace(t, root, "  source: "+chartDir+"\n")
+	releasePath, catalogRoot := writeEmptySourceWorkspace(t, root, "  source: ./chart\n")
+	// The chart sits in the Recipe's own directory, which is where content an
+	// entity reads has to live.
+	writeMinimalChart(t, filepath.Join(catalogRoot, "recipes", "helm", "chart"))
 	primeLockfile(t, root, releasePath, catalogRoot)
 
 	if err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogRoot}, false, os.Stderr, os.Stdout); err != nil {

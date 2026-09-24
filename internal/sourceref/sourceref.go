@@ -3,10 +3,22 @@
 
 // Package sourceref owns the single rule for reading a Recipe's source
 // reference as local or remote, and the single statement of what a local one is
-// resolved against. It is a stdlib-only leaf, and that is what makes it the one
-// home reachable from every side that asks: the render imports the dependency
-// descent and the catalog load precedes both, so a rule living inside any one of
-// them would be reachable from that one and re-implemented in the others.
+// resolved against. It is a leaf — it imports the standard library and two
+// packages that import nothing of this module's, the containment predicate and
+// the condition registry — and that is what makes it the one home reachable from
+// every side that asks: the render imports the dependency descent and the
+// catalog load precedes both, so a rule living inside any one of them would be
+// reachable from that one and re-implemented in the others.
+//
+// # What a local path is bounded by
+//
+// A local path an entity declares for content it carries — its source, and every
+// file an `$import:` names — is resolved against the directory holding the
+// entity's document and must stay inside it; [AnchorContent] states both halves
+// once, for every such path. That directory is what a publication packages, so a
+// path leaving it names content that would not travel with the entity. The bound
+// is stated here rather than in the catalog load because the render resolves a
+// templated source's value too, and the two must refuse the same paths.
 //
 // The locality rule is a heuristic over the reference's own text, and the whole
 // of what it reads is that text: a reference carrying a recognised transport
@@ -46,7 +58,6 @@
 package sourceref
 
 import (
-	"path/filepath"
 	"strings"
 )
 
@@ -78,7 +89,7 @@ var identityFields = [...]string{"kind", "url", "chart", "module_subdir", "versi
 //
 // It is exported for one reason: the package that builds a source's fetch
 // coordinates declares the same keys, and it declares them from a package this
-// stdlib-only leaf cannot import, so the correspondence between the two sets can
+// leaf cannot import, so the correspondence between the two sets can
 // only be checked from that side. Nothing in the reading itself needs this, and a
 // caller reaching for it to re-derive the reading is re-implementing
 // [IdentityTemplated] rather than checking it.
@@ -115,7 +126,7 @@ func IdentityFields() []string {
 // other, because they ask different questions and are reached from different
 // sides: the catalog load and the dependency descent read a source long before any
 // render and cannot import the renderer, which is what puts this projection in a
-// stdlib-only leaf. Each site composes its own question over it — where a relative
+// leaf. Each site composes its own question over it — where a relative
 // reference is anchored, what path a local one names, whether the author already
 // knows which artifact is meant — and a single classifier folding those together
 // would answer none of them cleanly. What must stay in step is only the union of
@@ -271,27 +282,38 @@ func IsTemplated(ref string) bool {
 // document that declared it, and is the one statement of what a relative source
 // is relative TO.
 //
-// Four references come back exactly as given, and each for its own reason. An
-// empty documentPath names no declaring document — an entity resolved from a
-// registry lives in a cache slot rather than in a file anybody
-// authored, so there is no directory for its reference to be relative to and
-// handing the reference back is the honest answer. A reference that is not local
-// names something fetched over a transport, and joining it to a directory would
-// destroy the reference while leaving a value every later pass reads as local. An
-// empty reference names nothing at all, which the locality reading already
-// answers. An absolute reference already names where it is.
+// Two references come back exactly as given, each for its own reason. A
+// reference that is not local names something fetched over a transport, and
+// joining it to a directory would destroy the reference while leaving a value
+// every later pass reads as local. An empty reference names nothing at all, which
+// the locality reading already answers.
 //
-// Everything else is a path the author wrote beside their own document, and it
-// reads the same whatever directory the build runs from.
+// Everything else is a path the author wrote beside their own document, and it is
+// held to the bound every content path is held to: [AnchorContent] resolves it and
+// refuses one that leaves the document's directory, an absolute path included.
+// What it resolves to reads the same whatever directory the build runs from.
+//
+// An empty documentPath names no declaring document — an entity resolved from a
+// registry lives in a cache slot rather than in a file anybody authored — so there
+// is no directory for the reference to be relative to, and it comes back as
+// given. It is still judged: the verdict is a property of the path rather than of
+// the directory it is relative to, so a path that could leave any directory is
+// refused here as it is everywhere else.
 //
 // It takes the document rather than the directory so that "the directory that
 // declared it" is derived once here instead of at each call site, where a second
 // spelling would be free to differ.
 func AnchorToDocument(documentPath, ref string) (string, error) {
-	if documentPath == "" || !IsLocalURL(ref) || filepath.IsAbs(ref) {
+	if !IsLocalURL(ref) {
 		return ref, nil
 	}
-	return filepath.Abs(filepath.Join(filepath.Dir(documentPath), ref))
+	if documentPath == "" {
+		if _, err := containInDocumentDirectory(documentPath, ref); err != nil {
+			return "", err
+		}
+		return ref, nil
+	}
+	return AnchorContent(documentPath, ref)
 }
 
 // AnchorSource resolves a source VALUE against the directory of the document that

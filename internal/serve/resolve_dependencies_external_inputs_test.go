@@ -76,7 +76,9 @@ func externalInputFetchWorkspace(t *testing.T, schemaURL string) (ws, releaseRel
 	t.Helper()
 	ws, releaseRel = renderDialWorkspace(t)
 
-	chartDir := filepath.Join(ws, "charts", "svc")
+	// The chart sits in the Recipe's own directory and is named relative to it:
+	// content an entity reads lives beside the entity.
+	chartDir := filepath.Join(ws, "catalog", "recipes", "charts", "svc")
 	writeFixtureFile(t, filepath.Join(chartDir, "Chart.yaml"), "apiVersion: v2\nname: svc\nversion: 0.1.0\n")
 	writeFixtureFile(t, filepath.Join(chartDir, "templates", "cm.yaml"), `apiVersion: v1
 kind: ConfigMap
@@ -88,8 +90,7 @@ data:
 	writeFixtureFile(t, filepath.Join(chartDir, "values.schema.json"),
 		fmt.Sprintf(`{"$schema":"https://json-schema.org/draft/2020-12/schema","$ref":%q}`, schemaURL))
 
-	writeFixtureFile(t, filepath.Join(ws, "catalog", "recipes", "server.yaml"),
-		fmt.Sprintf(`apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(ws, "catalog", "recipes", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
 kind: Recipe
 metadata:
   name: demo-server-synthesized
@@ -99,8 +100,8 @@ spec:
   implements: demo/svc
   provides:
     host: "{{ .context.instance_id }}"
-  source: %q
-`, chartDir))
+  source: ./charts/svc
+`)
 
 	if err := os.WriteFile(filepath.Join(ws, ".aggrega-config.yaml"),
 		[]byte("workspace:\n  catalog_dirs: [catalog]\n"), 0o644); err != nil {

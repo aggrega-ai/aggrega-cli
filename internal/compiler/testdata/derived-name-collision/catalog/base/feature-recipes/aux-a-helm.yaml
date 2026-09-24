@@ -4,4 +4,4 @@ metadata: { name: aux-a-helm, version: "1.0.0" }
 spec:
   capability: helm
   implements: feature.id/aux-a
-  source: ../chart-a
+  source: ./chart-a

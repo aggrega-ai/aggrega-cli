@@ -148,10 +148,22 @@ func EvaluateBoundaryScopeFeatureRecipeSource(source any, frCtx *types.TemplateC
 // both run the same resolution — so what a relative source is resolved against is
 // one answer given at two moments rather than two answers.
 //
-// The produced value decides its own treatment: an absolute path, a transport
-// reference and an empty result each pass through, which is precisely what
-// anchoring the template's text could not do, because all three are settled by text
-// a join has already prefixed by the time they exist.
+// The produced value decides its own treatment: a transport reference and an empty
+// result each pass through, which is precisely what anchoring the template's text
+// could not do, because both are settled by text a join has already prefixed by the
+// time they exist. A produced path is held to the bound every content path an
+// entity declares is held to: one that leaves the document's directory, or names an
+// absolute location, is refused with sourceref.ErrContentOutsideEntityDirectory.
+// This is the one moment such a path can be judged, since it names nothing until
+// the template has run.
+//
+// Both shapes a source is authored in are covered, through the one resolution the
+// load uses for them: a scalar source is its own reference, and a structured
+// source has its url resolved with every other key carried through. Whether the
+// anchoring is owed is decided by the REFERENCE the author wrote — a scalar, or a
+// structured source's url — carrying a template, which is the same test the load
+// used to leave it for here. A structured source whose url was written out in full
+// was anchored at load, and is not anchored a second time.
 //
 // Whether the anchoring is owed is a property of what the AUTHOR wrote, which is
 // why authored and produced are both read here: they are the same value either side
@@ -159,12 +171,11 @@ func EvaluateBoundaryScopeFeatureRecipeSource(source any, frCtx *types.TemplateC
 // template would answer about the result of the evaluation rather than about
 // whether there was one to run.
 func anchorSourceToDocument(authored, produced any, documentPath string) (any, error) {
-	authoredText, authoredScalar := authored.(string)
-	producedText, producedScalar := produced.(string)
-	if !authoredScalar || !producedScalar || !sourceref.IsTemplated(authoredText) {
+	ref, readable := sourceref.Reference(authored)
+	if !readable || !sourceref.IsTemplated(ref) {
 		return produced, nil
 	}
-	return sourceref.AnchorToDocument(documentPath, producedText)
+	return sourceref.AnchorSource(documentPath, produced)
 }
 
 // sourceTemplateSurface names the entity surface one source template is evaluated
@@ -253,8 +264,8 @@ func (s sourceTemplateSurface) where(label string) string {
 // resolution asks what path a local one names, and the lock-time descent asks
 // whether the author already knows which artifact it is. None of them asks which
 // PARTS carry a template or what each part is called, which is the only question
-// this walk answers and the reason the two cannot be merged: that leaf is
-// stdlib-only, which is what lets the catalog load and the dependency descent
+// this walk answers and the reason the two cannot be merged: that package is a
+// leaf, which is what lets the catalog load and the dependency descent
 // reach it at all, and neither can import this package. A reader tempted to unify
 // them would be folding a per-field question into a per-source one and would get
 // a classifier answering neither cleanly.

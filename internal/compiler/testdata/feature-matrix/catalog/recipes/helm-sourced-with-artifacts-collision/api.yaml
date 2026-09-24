@@ -6,7 +6,7 @@ metadata:
 spec:
   capability: helm
   implements: core/server
-  source: ../helm-sourced-with-artifacts/charts/api
+  source: ./charts/api
   provides:
     host: "{{ .context.instance_id }}.svc.cluster.local"
     service_port: "{{ optional .infra `port` 8080 }}"

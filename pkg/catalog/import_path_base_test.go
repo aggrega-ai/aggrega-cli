@@ -176,13 +176,9 @@ spec:
 // find the library and the entry — so rebasing one would turn a resolvable
 // identity into a path under the entity's directory. Both fragment surfaces an
 // author can reference by identity are covered, so a change reaching one and
-// not the other is visible. An absolute path is already anchored.
+// not the other is visible. An absolute path is not among these values: it names
+// a file outside the entity and is refused, which the containment tests cover.
 func TestImportPathsThatAreNotLocalPathsSurviveResolution(t *testing.T) {
-	absTarget := filepath.Join(t.TempDir(), "absolute.tmpl")
-	if err := os.WriteFile(absTarget, []byte(beside), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
 	path := importBaseFixture(t, "recipe.yaml", `apiVersion: aggrega.ai/v1alpha1
 kind: Recipe
 metadata:
@@ -191,14 +187,11 @@ metadata:
 spec:
   capability: helm
   implements: core/compute/server:1.0.0
-  source: /already/absolute/chart
+  source: ./charts/app
   valuesMapping:
     $import: BaseMappings#/mappings/SimpleValues
   workload:
     $import: BaseWorkloads#/workloads/StatelessService
-  artifacts:
-    extra.yaml:
-      $import: `+absTarget+`
 `)
 
 	r, _, err := parseRecipeEntity(mustRead(t, path), path)
@@ -217,13 +210,6 @@ spec:
 	}
 	if !r.Spec.Workload.IsLibraryImport() {
 		t.Error("library reference no longer reports as a library import after load")
-	}
-	entry, ok := r.Spec.Artifacts.Get("extra.yaml")
-	if !ok {
-		t.Fatal("artifacts entry not loaded")
-	}
-	if entry.Import != absTarget {
-		t.Errorf("absolute path was rewritten: got %q want %q", entry.Import, absTarget)
 	}
 }
 
@@ -245,7 +231,7 @@ metadata:
 spec:
   capability: helm
   implements: core/compute/server:1.0.0
-  source: /already/absolute/chart
+  source: ./charts/app
   valuesMapping:
     $import: %s
 `

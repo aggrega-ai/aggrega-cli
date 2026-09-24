@@ -10,8 +10,8 @@
 // is the same directory either way — which is exactly what makes the difference
 // invisible in a build's output and is why the relative row asserts on the
 // resolved value the build carries rather than on the files it emitted. The rows
-// where the produced value is NOT relative are where the readings part company,
-// and those assert on the build's outcome.
+// where the produced value leaves the Recipe's directory are where the readings
+// part company, and those assert on the build's outcome: a refusal.
 //
 // Every case builds its own workspace under a temporary directory, so the
 // anchoring is distinguishable from a resolution against the directory the tests
@@ -20,6 +20,7 @@
 package compiler_test
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"sort"
@@ -28,6 +29,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline/pipelinetest"
+	"github.com/aggrega-ai/aggrega-cli/internal/sourceref"
 )
 
 // anchorTraceSlot is the trace entry the source resolution writes for this
@@ -169,26 +171,28 @@ func TestPlainRelativeSourceResolvesAgainstTheRecipeDirectory(t *testing.T) {
 
 // TestTemplatedSourceResolvesAgainstTheValueTheTemplateProduced is the property.
 //
-// The Recipe's source is a template yielding a relative path that climbs out of
-// the Recipe's own directory. Resolving the template's TEXT leaves the climb
-// unresolved inside the value the build carries — the source reads
-// `<recipeDir>/../shared/charts/app`, a path naming a directory nobody authored
-// by a route nobody wrote — while resolving the produced VALUE yields the
-// directory the author's path names.
+// The Recipe's source is a template yielding a relative path with an interior
+// climb that stays inside the Recipe's own directory. Resolving the template's
+// TEXT leaves the climb unresolved inside the value the build carries — the source
+// reads `<recipeDir>/sub/../charts/app`, a route nobody wrote — while resolving
+// the produced VALUE yields the directory the author's path names.
 //
 // Both spellings open the same chart, which is why this row asserts on the value
-// and the rows below assert on the outcome: the defect is invisible in what a
+// and the row below asserts on the outcome: the defect is invisible in what a
 // build emits for exactly as long as the produced value stays relative.
 func TestTemplatedSourceResolvesAgainstTheValueTheTemplateProduced(t *testing.T) {
 	t.Parallel()
 	root, releasePath := anchorWorkspace(t,
-		"  source: \"{{ .locals.chart_dir }}\"\n  locals:\n    chart_dir: ../shared/charts/app\n")
-	writeAnchorChart(t, filepath.Join(root, "catalog", "shared", "charts", "app"), "beside-the-catalog")
+		"  source: \"{{ .locals.chart_dir }}\"\n  locals:\n    chart_dir: ./sub/../charts/app\n")
+	writeAnchorChart(t, filepath.Join(root, "catalog", "recipes", "charts", "app"), "beside-the-recipe")
+	if err := os.MkdirAll(filepath.Join(root, "catalog", "recipes", "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 
 	result := anchorBuild(t, releasePath)
 
 	got := resolvedSourceFromTrace(t, result)
-	want := filepath.Join(root, "catalog", "shared", "charts", "app")
+	want := filepath.Join(root, "catalog", "recipes", "charts", "app")
 	if got != want {
 		t.Errorf("a templated source must resolve against the value the template produced:\n got  %q\n want %q", got, want)
 	}
@@ -198,42 +202,53 @@ func TestTemplatedSourceResolvesAgainstTheValueTheTemplateProduced(t *testing.T)
 	if strings.Contains(got, string(filepath.Separator)+".."+string(filepath.Separator)) {
 		t.Errorf("the resolved source carries an unresolved climb, so the anchoring ran on the template's text: %q", got)
 	}
-	if sentinel := emittedChartSentinel(t, result); sentinel != "beside-the-catalog" {
+	if sentinel := emittedChartSentinel(t, result); sentinel != "beside-the-recipe" {
 		t.Errorf("the build read the wrong chart directory: sentinel %q", sentinel)
 	}
 }
 
-// TestTemplatedSourceYieldingAnAbsolutePathIsNotPrefixed is where the two
-// readings part company in the build's OUTCOME rather than in a value it carries.
+// TestTemplatedSourceYieldingAPathOutsideTheRecipeDirectoryIsRefused is where
+// the two readings part company in the build's OUTCOME rather than in a value it
+// carries, and where the bound on a content path is judged for a template.
 //
-// An absolute path already names where it is, so the resolution hands it back. A
-// resolution that ran on the template's text has no such value to read — the
-// directory is joined to the template's spelling, and the absolute path the
-// author produced lands underneath it — so the build fails to find a chart that
-// is sitting exactly where the author said.
-func TestTemplatedSourceYieldingAnAbsolutePathIsNotPrefixed(t *testing.T) {
+// A produced path that leaves the Recipe's own directory — an absolute path, or
+// one climbing out — names content that would not travel with the Recipe, so the
+// build refuses it at the one moment it can be judged: once the template has
+// produced it. Each row plants a real chart at the place the path names, so the
+// refusal is attributable to where the path points rather than to a missing chart.
+func TestTemplatedSourceYieldingAPathOutsideTheRecipeDirectoryIsRefused(t *testing.T) {
 	t.Parallel()
-	root, releasePath := anchorWorkspace(t,
-		"  source: \"{{ .locals.chart_dir }}\"\n  locals:\n    chart_dir: PLACEHOLDER\n")
+	for _, tc := range []struct {
+		name     string
+		produced func(root string) string
+	}{
+		{"an absolute path", func(root string) string { return filepath.Join(root, "outside", "charts", "app") }},
+		{"a climb out of the Recipe's directory", func(string) string { return "../shared/charts/app" }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			root, releasePath := anchorWorkspace(t,
+				"  source: \"{{ .locals.chart_dir }}\"\n  locals:\n    chart_dir: PLACEHOLDER\n")
+			writeAnchorChart(t, filepath.Join(root, "outside", "charts", "app"), "outside-the-catalog")
+			writeAnchorChart(t, filepath.Join(root, "catalog", "shared", "charts", "app"), "beside-the-catalog")
 
-	// The chart sits outside the catalog tree entirely, so nothing but an absolute
-	// resolution can reach it.
-	chart := filepath.Join(root, "outside", "charts", "app")
-	writeAnchorChart(t, chart, "outside-the-catalog")
+			recipePath := filepath.Join(root, "catalog", "recipes", "anchored.yaml")
+			body, err := os.ReadFile(recipePath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			writeAnchorFile(t, recipePath, strings.Replace(string(body), "PLACEHOLDER", tc.produced(root), 1))
 
-	recipePath := filepath.Join(root, "catalog", "recipes", "anchored.yaml")
-	body, err := os.ReadFile(recipePath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	writeAnchorFile(t, recipePath, strings.Replace(string(body), "PLACEHOLDER", chart, 1))
-
-	result := anchorBuild(t, releasePath)
-
-	if got := resolvedSourceFromTrace(t, result); got != chart {
-		t.Errorf("an absolute path a template produced must be handed back as it stands:\n got  %q\n want %q", got, chart)
-	}
-	if sentinel := emittedChartSentinel(t, result); sentinel != "outside-the-catalog" {
-		t.Errorf("the build read the wrong chart directory: sentinel %q", sentinel)
+			_, err = pipelinetest.BuildE(t, pipelinetest.Input{
+				ReleasePath:  releasePath,
+				CatalogPaths: []string{"testdata/fullstack-app/catalog/base", filepath.Dir(releasePath) + "/catalog"},
+			})
+			if err == nil {
+				t.Fatal("a templated source producing a path outside the Recipe's directory built")
+			}
+			if !errors.Is(err, sourceref.ErrContentOutsideEntityDirectory()) {
+				t.Errorf("refused for another reason; want the content-outside-the-entity-directory condition: %v", err)
+			}
+		})
 	}
 }

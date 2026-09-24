@@ -130,16 +130,16 @@ spec:
 	// A minimal local Helm chart whose deployment template echoes .Values.image —
 	// the valuesMapping output overlays the chart values, so the imported mapping
 	// fragment's evaluated `image` materializes in the rendered manifest. A local
-	// source path is forwarded verbatim (no network). The chart lives OUTSIDE the
-	// catalog walk (its templated `{{ }}` files are not parseable catalog YAML),
-	// referenced by an absolute path so it resolves independent of the recipe
-	// file's directory.
-	chartDir := filepath.Join(root, "charts", "server")
+	// source path is forwarded verbatim (no network). The chart sits in the Recipe's
+	// own directory and is named relative to it, because content an entity reads
+	// lives beside the entity; the catalog walk passes over its files, which declare
+	// no entity kind.
+	chartDir := filepath.Join(catalogRoot, "recipes", "charts", "server")
 	writeMinimalChart(t, chartDir)
 	// Sourced Recipe: a local chart source paired with a valuesMapping that imports
 	// the MappingLibrary entry (the values-mapping rule: valuesMapping requires
 	// source).
-	writeFixture(t, filepath.Join(catalogRoot, "recipes", "server.yaml"), fmt.Sprintf(`apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogRoot, "recipes", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
 kind: Recipe
 metadata:
   name: server
@@ -147,10 +147,10 @@ metadata:
 spec:
   capability: helm
   implements: server
-  source: %q
+  source: ./charts/server
   valuesMapping:
     $import: HelmHelpers#/mappings/ServerValues
-`, chartDir))
+`)
 	return filepath.Join(root, "release.yaml")
 }
 
