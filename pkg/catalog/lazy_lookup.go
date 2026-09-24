@@ -91,6 +91,7 @@ func NewLazyLookup(workspaceRoot, cacheDir string, catalogDirs []string, puller 
 		entityBytes:       map[string][]byte{},
 		localEntityPaths:  map[string]string{},
 		layoutDocuments:   map[string]string{},
+		fromCacheSlot:     map[string]struct{}{},
 		recordedPins:      recipepin.Lookup{},
 	}
 }
@@ -324,6 +325,7 @@ func (l *LazyLookup) Reset() {
 	l.entityBytes = map[string][]byte{}
 	l.localEntityPaths = map[string]string{}
 	l.layoutDocuments = map[string]string{}
+	l.fromCacheSlot = map[string]struct{}{}
 	l.recordedPins = recipepin.Lookup{}
 }
 
@@ -537,6 +539,16 @@ type LazyLookup struct {
 	// drop it with the rest of the enumerated state.
 	layoutDocuments map[string]string
 
+	// fromCacheSlot records entityBytesKey(kind, identityKey) for every Recipe,
+	// FeatureRecipe and Plugin the pinned fold placed in the index from a cache
+	// slot — the entries whose win the fold learned came from a slot rather than
+	// from a catalog-directory file. It is the positive half of the same decision
+	// localEntityPaths records the other half of, written in the same callback, so
+	// the two cannot come to disagree about one entry. The recipe-catalog shell
+	// carries it to the closure lookup, which reports those entries as resolved
+	// from the cache. It depends on the pins, so SetPins and Reset drop it.
+	fromCacheSlot map[string]struct{}
+
 	// entityBytes retains the RAW authored bytes of every enumerated /
 	// resolved entity, keyed by entityBytesKey(kind, metadata.name) — the same
 	// key the eager catalog uses. The closure lookup (ClosureLookup) hashes
@@ -606,6 +618,7 @@ func (l *LazyLookup) SetPins(pins map[string]Pin) {
 	l.aggregateSources = map[string]string{}
 	l.recipeSkips = map[string]error{}
 	l.layoutDocuments = map[string]string{}
+	l.fromCacheSlot = map[string]struct{}{}
 }
 
 // VerifyPinnedIntegrity is the BUILD's loud integrity gate: it reads every pinned
@@ -1389,7 +1402,10 @@ func (l *LazyLookup) buildRecipeIndex() {
 // localEntityPaths retention: a Tier-1 file's src is a document on this machine,
 // while a pinned slot's src is a label naming the pin rather than a path anybody
 // could open. So the bytes are retained either way — the digest covers both — and
-// the path only where there is one.
+// the path only where there is one. Where the winning entry came from a slot, the
+// same decision is recorded positively in fromCacheSlot, for the Recipe,
+// FeatureRecipe and Plugin kinds, so that a closure walk over the index reports
+// that entry as resolved from the cache and not as authored in a catalog.
 //
 // It also decides what a Recipe's or FeatureRecipe's parse is anchored at, those
 // being the kinds whose document names content by a path relative to itself. A
@@ -1432,6 +1448,7 @@ func (l *LazyLookup) foldRecipeShellEntity(kind string, parseData, rawBytes []by
 					l.recordedPins.Record(src, pins)
 				} else {
 					l.layoutDocuments[entityBytesKey("Recipe", key)] = docPath
+					l.fromCacheSlot[entityBytesKey("Recipe", key)] = struct{}{}
 				}
 			},
 			func() {
@@ -1464,6 +1481,7 @@ func (l *LazyLookup) foldRecipeShellEntity(kind string, parseData, rawBytes []by
 					l.recordedPins.Record(src, pins)
 				} else {
 					l.layoutDocuments[entityBytesKey("FeatureRecipe", key)] = docPath
+					l.fromCacheSlot[entityBytesKey("FeatureRecipe", key)] = struct{}{}
 				}
 			},
 			func() {
@@ -1543,6 +1561,8 @@ func (l *LazyLookup) foldRecipeShellEntity(kind string, parseData, rawBytes []by
 				l.entityBytes[entityBytesKey("Plugin", e.Coordinate())] = rawBytes
 				if local {
 					l.localEntityPaths[entityBytesKey("Plugin", key)] = src
+				} else {
+					l.fromCacheSlot[entityBytesKey("Plugin", key)] = struct{}{}
 				}
 			},
 			func() {
@@ -1718,7 +1738,11 @@ func (l *LazyLookup) recipeCatalog() *Catalog {
 		// in its slot's layout — never reported as a file anybody authored, and read
 		// only to anchor what a templated source produces at render.
 		layoutDocuments: l.layoutDocuments,
-		workspaceRoot:   l.workspaceRoot,
+		// The entries the pinned fold placed in the index from a cache slot, so the
+		// closure lookup over this shell reports each of them as resolved from the
+		// cache — the answer the fold already holds — rather than as a catalog entry.
+		fromCacheSlot: l.fromCacheSlot,
+		workspaceRoot: l.workspaceRoot,
 		// The lazy backing is the production build/pull resolution path, so it
 		// resolves core providers from the binary's embedded set (embedded-wins).
 		resolveEmbeddedProviders: true,

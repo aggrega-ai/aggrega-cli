@@ -526,8 +526,9 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 
 	// Ensure the per-Release lockfile exists (filled when the pull step is asked
 	// for, else required), returning whether it pre-existed — drift is verified
-	// only for a pre-existing lockfile; a filled one matches the closure already —
-	// and the render the fill performed, where it performed one.
+	// here only for a pre-existing lockfile, because the fill held the one it wrote
+	// to this same verify before writing it and refuses to write one it disagrees
+	// with — and the render the fill performed, where it performed one.
 	report.phase(PhaseLockfile)
 	lockfilePreexisted, filled, err := ensureLockfile(buildCtx, cfg, wsCfg, run, renderOptions, diagOut, out)
 	if err != nil {
@@ -816,7 +817,8 @@ func ensureLockfile(ctx context.Context, cfg Config, wsCfg workspaceconfig.Confi
 	// is a full refresh: it discards the existing pin set and re-resolves every
 	// dependency, floating each to the highest satisfying version. There is no
 	// absent-vs-partial special case: any incomplete/empty state runs the same fill,
-	// and lockfile.Verify (in the preview's gate sequence) is the post-condition. The
+	// and lockfile.Verify (in the preview's gate sequence) is the post-condition,
+	// which the fill runs itself over the lockfile it composes before writing it. The
 	// build's own resolution runs through the nil-puller pinned lazy lookup, untouched
 	// — so build output is unchanged by this fill.
 	//

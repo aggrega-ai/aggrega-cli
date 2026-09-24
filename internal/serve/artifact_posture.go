@@ -113,8 +113,10 @@ const (
 // It fills no lockfile either, and lockfileFilled is how it is told that its
 // caller already did. The parameter reports a fact rather than requesting an
 // action: a caller that resolved the dependencies before calling holds a
-// lockfile derived from the closure this run is about to compute, so the drift
-// verify below is stood down for it. Passing true without having filled would
+// lockfile the fill already held to this drift verify, over the closure a build
+// reconstructs, before writing it — the fill refuses to write one the verify
+// disagrees with — so the verify below is stood down for it. Passing true
+// without having filled would
 // suppress a real drift verdict, which is why the only caller that passes it is
 // the one that performs the fill.
 //

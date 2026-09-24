@@ -47,6 +47,17 @@ import (
 // drifting apart: the resolution pins from the closure it walked, while the
 // lockfile is what the write records, and only one of the two is read here.
 //
+// # The build's own drift verify, before the lockfile is written
+//
+// The render holds the lockfile to the drift verify a build of this Release runs,
+// over the closure that build reconstructs, before the caller writes it. The
+// resolution above and a build compute what the Release depends on through
+// different walks, and a lockfile the one records and the other refuses is a
+// lockfile no build can use — so the render refuses it (see
+// compilerops.WithComposedLockfile) and the caller writes neither it nor anything
+// after it. That refusal is the one render failure the caller does not report and
+// write past.
+//
 // # What it writes
 //
 // Nothing here writes a file. What it does write is content — each acquired
@@ -118,13 +129,16 @@ func discoverExternalInputs(
 			workspaceRoot,
 			wsCfg,
 			cfg.CompilerVersion,
-			// The lockfile goes in as a source of pins, not as something to be
-			// held to: it was assembled from the closure this run has just
-			// computed rather than read off disk, so a drift verify would compare
-			// that closure against itself. Naming it as not pre-existing is what
-			// says so, and it is the truthful answer rather than a way around the
-			// gate.
-			compilerops.WithLockfile(lf, false),
+			// The lockfile goes in as the one this run composed and has not yet
+			// written: the source of the render's pins, and the subject of the
+			// drift verify a build of this Release will run. The two were computed
+			// by different walks — this run's resolution and the build's own
+			// reconstruction — so their agreement is checked here rather than
+			// assumed, and a disagreement refuses the render with the composed-
+			// lockfile refusal, which the caller treats as fatal and writes nothing
+			// on. That check is what lets a build that filled its own lockfile
+			// through this operation skip the verify afterwards.
+			compilerops.WithComposedLockfile(lf),
 		),
 		cfg.RenderOptions,
 	)

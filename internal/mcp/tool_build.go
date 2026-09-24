@@ -415,10 +415,11 @@ func buildInvoke(s *server, ctx context.Context, args json.RawMessage) (*callToo
 		// one here would publish that claim exactly where it does not hold.
 		//
 		// The drift verify stands down on a lockfile this call filled, and that is not a
-		// relaxation. A resolution and the closure it was derived from cannot disagree,
-		// so comparing them would hold a set against itself; the verify is there to
-		// catch a lockfile that went stale between one run and another, which a file
-		// written moments ago by this run cannot have done.
+		// relaxation. The fill already held that lockfile to this same verify, over the
+		// closure a build reconstructs, before writing it, and refuses to write one the
+		// verify disagrees with; the verify here is there to catch a lockfile that went
+		// stale between one run and another, which a file written moments ago by this
+		// run, and checked as it was written, cannot have done.
 		//
 		// The absent case pays nothing for that either, and it needs no condition of its
 		// own: the drift verify reads the lockfile from the inputs and stands down when
@@ -568,7 +569,10 @@ func previewFailureSummary(preview *compilerops.PreviewResult, deprecationNotice
 			"path and no 'upgrade_targets': it reconciles the lockfile against what the Release resolves to " +
 			"today, which is what this condition needs. The command line the diagnostic names is that same " +
 			"operation at a terminal, asked additionally to re-resolve every pin to the highest available " +
-			"version — more than this refusal requires, and it clears it too."
+			"version — more than this refusal requires, and it clears it too. Where the pull tool completes " +
+			"and this refusal comes back, the two calls resolved over different inputs — most often " +
+			"'catalog_dirs' given to one and not the other, or a workspace configuration edited between " +
+			"them — so call both with the same ones."
 	case compilerops.GateClosurePillars:
 		return "The build refused: an entity this Release reaches does not satisfy its schema."
 	case compilerops.GateExtends:

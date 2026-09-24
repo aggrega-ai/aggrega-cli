@@ -201,8 +201,9 @@ func TestSubAggregateAxisAgreesAcrossLockAndBuild(t *testing.T) {
 	}
 
 	// Side B — the hermetic reconstruction, wired exactly as the build path wires
-	// it: the lazy view pinned to the lockfile, a nil puller, and the reconstruction
-	// reusing the Lookup the closure was walked through.
+	// it: the lazy view pinned to the lockfile, a nil puller, the sub-aggregate pass
+	// reusing the Lookup the closure was walked through, and the plugin passes a
+	// lookup carrying the lockfile's pins.
 	rw := resolveTempWorkspace(t, tempWorkspaceOptions{Root: root})
 	wsCfg := rw.Config()
 	cacheDir := wsCfg.ResolvedArtifactCacheDir()
@@ -242,7 +243,8 @@ func TestSubAggregateAxisAgreesAcrossLockAndBuild(t *testing.T) {
 		view.SetPins(catalog.PinsFromClosure(cl))
 		return view.ClosureRecipeLoader(), nil
 	}
-	if rerr := closure.ReconstructClosureAxes(context.Background(), &cl, aggLoader, view.ClosureRecipeLoader(), resolved.Lookup, reconResolver, reconRefold); rerr != nil {
+	pinned := view.ClosureLookupWithPins(nil, root, cacheDir, nil, catalog.PinsFromLockfile(lf))
+	if rerr := closure.ReconstructClosureAxes(context.Background(), &cl, aggLoader, view.ClosureRecipeLoader(), resolved.Lookup, pinned, reconResolver, reconRefold); rerr != nil {
 		t.Fatalf("ReconstructClosureAxes: %v", rerr)
 	}
 	view.SetPins(catalog.PinsFromLockfile(lf))

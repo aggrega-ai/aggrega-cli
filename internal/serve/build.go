@@ -184,8 +184,9 @@ func (s *Server) dispatchBuild(ctx context.Context, req *jsonRPCRequest) error {
 // Asked for, the resolution runs here, before the render — so the gates the
 // render opens with read the lockfile this build just wrote rather than the
 // absence they would otherwise refuse. A lockfile filled this run is not
-// drift-verified, because a resolution and the closure it was derived from
-// cannot disagree, and comparing them would hold a set against itself. Left
+// drift-verified again, because the fill held it to the same verify, over the
+// closure a build reconstructs, before writing it, and refuses to write one the
+// verify disagrees with. Left
 // off, the render is held to the lockfile as it stands and a Release without one
 // is refused.
 //

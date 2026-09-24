@@ -34,6 +34,16 @@ import (
 // workspace-config change. Every loader is nil-safe — a nil loader makes its pass
 // a no-op — so a caller with no registry tier reconstructs nothing.
 //
+// lookup serves the sub-aggregate descent and pluginLookup the two plugin
+// descents, and they are separate parameters because the two passes need
+// different things of a lookup. A pinned plugin .wasm sits in a cache slot keyed
+// by the content digest only its lockfile pin names, so a lookup that carries no
+// pins cannot address it and the artifact resolves as absent — which is why a
+// verifier hands the plugin passes a lookup carrying the lockfile's pins. The
+// sub-aggregate pass keeps the caller's own lookup, which carries what it needs
+// and the pinned one does not: the Release's external documents. A nil
+// pluginLookup uses lookup for all three passes.
+//
 // The lock-time descent does not route through this wrapper: its descent is
 // interleaved with lock-time-only passes (provider-binding writes, host-function
 // verification, and source descent) that must run between the same primitives, so
@@ -46,13 +56,17 @@ func ReconstructClosureAxes(
 	aggLoader AggregateLoader,
 	recipeLoader RecipeLoader,
 	lookup Lookup,
+	pluginLookup Lookup,
 	providerResolver ProviderPluginResolver,
 	refold func() (RecipeLoader, error),
 ) error {
+	if pluginLookup == nil {
+		pluginLookup = lookup
+	}
 	if err := DescendSubAggregates(ctx, cl, aggLoader, lookup); err != nil {
 		return fmt.Errorf("sub-aggregate descent: %w", err)
 	}
-	if err := DescendRecipePluginEntities(ctx, cl, recipeLoader, lookup, providerResolver); err != nil {
+	if err := DescendRecipePluginEntities(ctx, cl, recipeLoader, pluginLookup, providerResolver); err != nil {
 		return fmt.Errorf("pipeline-plugin entity descent: %w", err)
 	}
 	artifactLoader := recipeLoader
@@ -63,7 +77,7 @@ func ReconstructClosureAxes(
 		}
 		artifactLoader = loader2
 	}
-	if err := DescendRecipePluginArtifacts(ctx, cl, artifactLoader, lookup); err != nil {
+	if err := DescendRecipePluginArtifacts(ctx, cl, artifactLoader, pluginLookup); err != nil {
 		return fmt.Errorf("pipeline-plugin artifact descent: %w", err)
 	}
 	return nil
@@ -87,10 +101,11 @@ func ReconstructClosureAxes(
 // axis) is not duplicated — its referenced-from unions and its kind hint is kept
 // so the artifact descent still reaches it.
 //
-// Unlike DescendRecipePluginEntities, a Tier-1-resolved socket entity is NOT
-// filtered out: a lockfile-pinned socket plugin folded into the hermetic view's
-// local enumeration resolves as tier-1-catalog, and dropping it is precisely the
-// reconstruction gap that surfaces as spurious "no longer used" drift. Integrity
+// Unlike DescendRecipePluginEntities, a socket entity is NOT filtered by where it
+// resolved from: every URI here is one the lockfile records as a socket pin, so
+// this pass reconstructs exactly what the lockfile records, and filtering any of
+// them out would be the reconstruction gap that surfaces as spurious "no longer
+// used" drift. Integrity
 // is unchanged: the entity bytes are re-hashed here and its .wasm content digest is
 // re-read from the content-addressed cache slot the lockfile pin names, so a
 // drifted cache slot or a tampered lockfile pin still surfaces (a missing slot
@@ -150,9 +165,9 @@ func ReconstructWorkspaceSocketEntities(ctx context.Context, c *Closure, entityU
 		pluginIndex[p.URI] = i
 	}
 	for _, entityURI := range sorted {
-		// A lockfile-pinned socket .wasm can resolve as locally-present when its pinned
-		// cache slot is folded into the hermetic view's local enumeration, so the
-		// registry-only rule is disabled — the artifact is pinned regardless of tier.
+		// The registry-only rule is disabled for the same reason the entity loop
+		// above filters nothing: the artifact belongs to a socket entity the
+		// lockfile pins, so it is pinned regardless of where it resolved from.
 		if err := pinPluginArtifact(ctx, c, loader, lookup, entityURI, pluginIndex, false /* registryOnly */); err != nil {
 			return err
 		}

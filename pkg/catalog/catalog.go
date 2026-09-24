@@ -156,6 +156,21 @@ type Catalog struct {
 	// A catalog loaded from directories holds none, so it stays empty there.
 	layoutDocuments map[string]string
 
+	// fromCacheSlot holds "<Kind>:<identity-key>" for every entity this catalog's
+	// index received from a lockfile-pinned cache slot rather than from a document
+	// in a catalog directory. It is written where that fact is learned — the fold
+	// that places a pinned slot's entity in the index — and read by the closure
+	// lookup's first tier, which reports such an entity as resolved from the cache
+	// rather than from the catalog. That report is what a pull-time pin decision
+	// keys on, so a build reconstructing the closure keeps the pin a pull wrote.
+	//
+	// The record is positive on purpose: an entity is marked because the fold saw
+	// it arrive from a slot, never inferred from the absence of a document path,
+	// since some kinds record no path even when a catalog document supplied them.
+	// A catalog loaded from directories holds none, and a nil set answers every
+	// entity as catalog-resolved, which is what such a catalog is.
+	fromCacheSlot map[string]struct{}
+
 	// Shadows records, in deterministic listed-directory order, every entity a
 	// higher-precedence catalog directory overrode during a multi-directory
 	// load (see ShadowedEntity). Empty for a single-directory load. Surfaced on

@@ -7,6 +7,7 @@ import (
 	"context"
 	stderrors "errors"
 	"fmt"
+	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
@@ -99,10 +100,20 @@ type PreviewInputs struct {
 	lockfile *lockfile.Lockfile
 
 	// lockfilePreexisted reports whether the lockfile was on disk before this
-	// run rather than filled during it. Only a pre-existing lockfile is drift-
-	// verified: one just filled matches the closure by construction, so
-	// verifying it would compare a set against itself.
+	// run rather than filled during it. A pre-existing lockfile is drift-verified.
+	// One a fill wrote during this run is not verified again, because the fill
+	// already held it to this same verify before writing it: the resolution that
+	// fills a lockfile renders it through this computation with lockfileComposed
+	// set, and refuses to write one this verify disagrees with.
 	lockfilePreexisted bool
+
+	// lockfileComposed reports that the lockfile is one the caller has just
+	// composed and has not yet written, handed in so it can be held to the build's
+	// drift verify before it reaches disk. A disagreement then is not a stale
+	// lockfile — nothing has been written that could have gone stale — but the
+	// composing resolution and the build disagreeing about the same Release, so it
+	// is reported as that rather than as drift.
+	lockfileComposed bool
 
 	// catalogWarnings are advisories the caller's own catalog load produced.
 	// They are handed in rather than re-derived because only a caller that
@@ -137,6 +148,21 @@ func WithLockfile(lf *lockfile.Lockfile, preexisted bool) PreviewOption {
 	return func(in *PreviewInputs) {
 		in.lockfile = lf
 		in.lockfilePreexisted = preexisted
+	}
+}
+
+// WithComposedLockfile supplies a lockfile the caller has composed and is about
+// to write, as the source of the render's pins and as the subject of the drift
+// verify a build of the same Release will run. It is the one lockfile state the
+// verify is not a staleness check for: nothing has been written yet, so a
+// disagreement means the composing resolution and the build disagree about what
+// the Release depends on, and the run refuses with errComposedLockfileRefused
+// instead of the drift refusal. Its caller writes nothing on that refusal.
+func WithComposedLockfile(lf *lockfile.Lockfile) PreviewOption {
+	return func(in *PreviewInputs) {
+		in.lockfile = lf
+		in.lockfilePreexisted = false
+		in.lockfileComposed = true
 	}
 }
 
@@ -213,6 +239,65 @@ func (in PreviewInputs) ExternalInputs() wasm.FetchService { return in.externalI
 var errPreviewInputsZeroValue = stderrors.New(
 	"preview inputs were not built by NewPreviewInputs, so no external-input seam was chosen; " +
 		"build them with NewPreviewInputs, naming either a fetch service or NoExternalInputs")
+
+// errComposedLockfileRefused is the refusal for a composed lockfile (see
+// WithComposedLockfile) that the build's drift verify disagrees with. It names an
+// internal inconsistency rather than a condition of the workspace: the lockfile
+// was computed from this Release a moment ago and has not been written, so no
+// edit made since can explain it, and resolving again would compose the same
+// lockfile and meet the same refusal.
+//
+// It deliberately does not carry the drift condition's identity. That condition
+// tells a reader their lockfile is out of date and that resolving again clears
+// it; neither is true here, and a surface that routes on the condition would
+// hand the reader that advice. The verify's own findings travel as the text of
+// composedLockfileRefusal instead, so every disagreement is still named.
+var errComposedLockfileRefused = stderrors.New(
+	"internal: the lockfile composed for this Release does not match what a build of the same Release " +
+		"resolves to, so it was not written. The resolution that composed it and the build disagree about " +
+		"what the Release depends on, which is a defect in the compiler rather than in the workspace; " +
+		"report it with the Release and the findings below")
+
+// composedLockfileRefusal carries errComposedLockfileRefused together with the
+// drift verify's own findings. It unwraps to the refusal and never to the drift
+// condition, for the reason errComposedLockfileRefused gives.
+type composedLockfileRefusal struct{ findings error }
+
+func (e *composedLockfileRefusal) Error() string {
+	return errComposedLockfileRefused.Error() + ":\n" + driftFindings(e.findings)
+}
+
+// driftFindings is the text of the entries a drift verify collected, one per
+// line, without the drift condition's own opening sentence — that sentence says
+// the lockfile is out of date, which is the one reading a composed lockfile
+// cannot have. The entries are read off the verify's error tree rather than cut
+// out of its text; a tree that does not have the shape looked for is reported
+// whole, so no finding can be lost to the presentation.
+func driftFindings(err error) string {
+	multi, ok := err.(interface{ Unwrap() []error })
+	if !ok {
+		return err.Error()
+	}
+	var entries []string
+	for _, part := range multi.Unwrap() {
+		if stderrors.Is(part, lockfile.ErrLockfileDrift()) {
+			continue
+		}
+		entries = append(entries, part.Error())
+	}
+	if len(entries) == 0 {
+		return err.Error()
+	}
+	return strings.Join(entries, "\n")
+}
+
+func (e *composedLockfileRefusal) Unwrap() error { return errComposedLockfileRefused }
+
+// IsComposedLockfileRefusal reports whether err is the refusal a preview over a
+// composed lockfile raises when the build's drift verify disagrees with it.
+func IsComposedLockfileRefusal(err error) bool {
+	return stderrors.Is(err, errComposedLockfileRefused)
+}
 
 // PreviewPhase names a stage of the preview sequence, for a caller reporting
 // progress. The values are the stages a caller can meaningfully display; they
@@ -635,12 +720,16 @@ func runPreview(ctx context.Context, in PreviewInputs, pol previewPolicy, opts p
 		}
 	}
 
-	// Drift verification against the freshly-computed closure. Only a
-	// pre-existing lockfile is verified; one filled during this run matches by
-	// construction.
-	if pol.verifyLockfileDrift && in.lockfile != nil && in.lockfilePreexisted {
+	// Drift verification against the freshly-computed closure, for a lockfile that
+	// was on disk before this run and for one the caller composed and is about to
+	// write. A lockfile a fill wrote during this run is not verified again: the fill
+	// held it to this same verify, as a composed lockfile, before it wrote it.
+	if pol.verifyLockfileDrift && in.lockfile != nil && (in.lockfilePreexisted || in.lockfileComposed) {
 		if err := lockfile.Verify(in.lockfile, resolved.Closure); err != nil {
 			out.FailedGate = GateLockfileDrift
+			if in.lockfileComposed {
+				return out, &composedLockfileRefusal{findings: err}
+			}
 			return out, fmt.Errorf("%w; run `aggrega pull --upgrade --release %s` to refresh the lockfile against current catalog state",
 				err, in.releasePath)
 		}
@@ -788,7 +877,15 @@ func reconstructPreviewClosureAxes(ctx context.Context, in PreviewInputs, resolv
 		view.SetPins(catalog.PinsFromClosure(resolved.Closure))
 		return view.ClosureRecipeLoader(), nil
 	}
-	if err := closure.ReconstructClosureAxes(ctx, &resolved.Closure, aggLoader, recipeLoader, lookup, resolvePlugin, refold); err != nil {
+	// The plugin passes resolve through a lookup carrying the lockfile's pins. A
+	// pinned plugin .wasm sits in a cache slot addressed by the content digest its
+	// pin names, so a lookup without pins cannot reach it and the artifact would
+	// resolve as absent — reported as drift against a lockfile that pins it. The
+	// sub-aggregate pass keeps the resolved lookup, which carries the Release's
+	// external documents that pass reads. One pinned lookup serves every plugin
+	// pass, the workspace-socket one below included.
+	pinned := view.ClosureLookupWithPins(nil, in.workspaceRoot, in.workspaceConfig.ResolvedArtifactCacheDir(), nil, catalog.PinsFromLockfile(in.lockfile))
+	if err := closure.ReconstructClosureAxes(ctx, &resolved.Closure, aggLoader, recipeLoader, lookup, pinned, resolvePlugin, refold); err != nil {
 		view.SetPins(catalog.PinsFromLockfile(in.lockfile))
 		return err
 	}
@@ -796,18 +893,16 @@ func reconstructPreviewClosureAxes(ctx context.Context, in PreviewInputs, resolv
 
 	// The output-shaping workspace-socket plugin entities and their .wasm are
 	// pull-time choices recorded only in the lockfile, so ComputeClosure cannot
-	// re-derive them hermetically. The socket lookup honors the lockfile pins so
-	// a pinned socket .wasm resolves from the content-addressed cache offline;
-	// the entity and artifact are re-read so a drifted pin still surfaces as
-	// drift.
+	// re-derive them hermetically. They resolve through the same pinned lookup, so
+	// a pinned socket .wasm resolves from the content-addressed cache offline; the
+	// entity and artifact are re-read so a drifted pin still surfaces as drift.
 	socketEntityURIs := lockfile.WorkspaceSocketEntityURIs(in.lockfile)
 	if len(socketEntityURIs) == 0 {
 		return nil
 	}
-	socketLookup := view.ClosureLookupWithPins(nil, in.workspaceRoot, in.workspaceConfig.ResolvedArtifactCacheDir(), nil, catalog.PinsFromLockfile(in.lockfile))
-	socketRecipeLoader, err := closure.RequireRecipeLoader(socketLookup)
+	socketRecipeLoader, err := closure.RequireRecipeLoader(pinned)
 	if err != nil {
 		return err
 	}
-	return closure.ReconstructWorkspaceSocketEntities(ctx, &resolved.Closure, socketEntityURIs, socketRecipeLoader, socketLookup)
+	return closure.ReconstructWorkspaceSocketEntities(ctx, &resolved.Closure, socketEntityURIs, socketRecipeLoader, pinned)
 }

@@ -953,10 +953,10 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	// resolver, which re-parses internally.
 	//
 	// What this needs is the graph, not a gated preview. This is the operation
-	// that FILLS the record a drift verify reads, so running that verify from
-	// inside it would compare the record against itself and refuse every first
-	// resolution. The gates that belong here are the ones already run above,
-	// against the closure this pass is pinning.
+	// that FILLS the record a drift verify reads, and at this point no record
+	// exists to hold anything to; the verify runs once one does, over the lockfile
+	// this pass composes, in the discovery render below. The gates that belong here
+	// are the ones already run above, against the closure this pass is pinning.
 	report.phase(PhaseSources)
 	aggBytes := aggRes.Bytes
 	pullLookup := lazyView.AsCatalogLookup()
@@ -1253,11 +1253,16 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	// single moment exists to remove: a Release that resolves cleanly while an
 	// input it needs is still unpinned.
 	//
-	// A failure here does not fail the run. The dependency resolution above
-	// finished and its pins are correct whatever stopped the render, so the pins
-	// are written and the failure is reported: a resolution that names what it
-	// could not reach is more use than one that throws away work a reader would
-	// only redo.
+	// A failure here does not fail the run, with one exception. The dependency
+	// resolution above finished and its pins are correct whatever stopped the
+	// render, so the pins are written and the failure is reported: a resolution
+	// that names what it could not reach is more use than one that throws away work
+	// a reader would only redo. The exception is the render refusing the lockfile
+	// itself — the build's drift verify, run over the closure a build of this
+	// Release reconstructs, disagreeing with what this run composed. Then the pins
+	// are NOT correct for the build that reads them, so the run fails and writes
+	// neither the lockfile nor the plugin trust record, rather than leaving a
+	// lockfile on disk that the next build refuses.
 	//
 	// A withdrawal is observed ahead of it for the same reason: the render is the
 	// one moment anything here acquires, reaching the network and writing what it
@@ -1277,6 +1282,9 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	// stop leaves the pins already on disk exactly as they were.
 	if err := stopped(ctx); err != nil {
 		return Result{}, err
+	}
+	if compilerops.IsComposedLockfileRefusal(discoveryErr) {
+		return Result{}, discoveryErr
 	}
 	if discoveryErr != nil {
 		reportExternalInputDiscoveryFailure(cfg.DiagOut, lockfilePath, len(pins), cfg.DryRun, discoveryErr)

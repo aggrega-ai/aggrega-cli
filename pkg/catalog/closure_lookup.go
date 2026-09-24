@@ -829,11 +829,11 @@ func (l *catalogLookup) tier1CatalogEntity(uri string) (closure.Resolution, bool
 
 	if key, ok, _ := l.catalog.resolveComponentKey(uri); ok {
 		c := l.catalog.Components[key]
-		return l.tier1Resolution("Component", c.Metadata.Name, c.Metadata.Version, version), true
+		return l.tier1Resolution("Component", c.Metadata.Name, key, c.Metadata.Version, version), true
 	}
 	if key, ok, _ := l.catalog.resolveFeatureKey(uri); ok {
 		f := l.catalog.Features[key]
-		return l.tier1Resolution("Feature", f.Metadata.Name, f.Metadata.Version, version), true
+		return l.tier1Resolution("Feature", f.Metadata.Name, key, f.Metadata.Version, version), true
 	}
 	// Recipe / FeatureRecipe lookups go through RecipeByURI /
 	// FeatureRecipeByURI, which implement the provider-qualified /
@@ -844,23 +844,27 @@ func (l *catalogLookup) tier1CatalogEntity(uri string) (closure.Resolution, bool
 	// digest below is the resolved entity's own bytes even when another
 	// provider ships a recipe of the same name.
 	if r, ok := l.catalog.RecipeByURI(uri); ok {
-		return l.tier1Resolution("Recipe", recipeIdentityKey(r.Spec.Capability, r.Metadata.Name, r.Metadata.Version), r.Metadata.Version, version), true
+		key := recipeIdentityKey(r.Spec.Capability, r.Metadata.Name, r.Metadata.Version)
+		return l.tier1Resolution("Recipe", key, key, r.Metadata.Version, version), true
 	}
 	if fr, ok := l.catalog.FeatureRecipeByURI(uri); ok {
-		return l.tier1Resolution("FeatureRecipe", recipeIdentityKey(fr.Spec.Capability, fr.Metadata.Name, fr.Metadata.Version), fr.Metadata.Version, version), true
+		key := recipeIdentityKey(fr.Spec.Capability, fr.Metadata.Name, fr.Metadata.Version)
+		return l.tier1Resolution("FeatureRecipe", key, key, fr.Metadata.Version, version), true
 	}
 	// A Plugin is keyed by its coordinate identity (<pluginType>/<name>:version).
 	// A workspace plugin socket or a recipe pipeline step references a
 	// Plugin ENTITY URI, which the closure walk resolves here; a local
 	// (Tier-1) entity must resolve at Tier-1 like every other local entity rather
-	// than falling through to a fatal Tier-3 NotFound.
+	// than falling through to a fatal Tier-3 NotFound. Its retained bytes are
+	// keyed by the bare coordinate and its index entry by the versioned one, so
+	// both are passed.
 	if key, ok, _ := l.catalog.resolvePluginKey(uri); ok {
 		wp := l.catalog.Plugins[key]
-		return l.tier1Resolution("Plugin", wp.Coordinate(), wp.Metadata.Version, version), true
+		return l.tier1Resolution("Plugin", wp.Coordinate(), key, wp.Metadata.Version, version), true
 	}
 	if key, ok, _ := l.catalog.resolveAggregateKey(uri); ok {
 		a := l.catalog.Aggregates[key]
-		return l.tier1Resolution("Aggregate", a.Metadata.Name, a.Metadata.Version, version), true
+		return l.tier1Resolution("Aggregate", a.Metadata.Name, key, a.Metadata.Version, version), true
 	}
 	return closure.Resolution{}, false
 }
@@ -882,7 +886,7 @@ func (l *catalogLookup) tier1Library(axis closure.LibraryAxis, uri string) (clos
 	if _, v, hasV := resolver.SplitVersionedURI(uri); hasV && v != "" {
 		resolved = v
 	}
-	return l.tier1Resolution(axis.Kind, metaName, metaVersion, resolved), entries, true
+	return l.tier1Resolution(axis.Kind, metaName, metaName, metaVersion, resolved), entries, true
 }
 
 // localLibrary reads one library out of the locally-authored catalog, returning its
@@ -939,7 +943,17 @@ func (l *catalogLookup) localLibrary(axis closure.LibraryAxis, name string) (met
 	return "", "", nil, false
 }
 
-func (l *catalogLookup) tier1Resolution(kind, identifier, metaVersion, requestedVersion string) closure.Resolution {
+// tier1Resolution is the resolution descriptor for an entity this lookup's
+// catalog indexes. identifier keys the retained bytes the digest is taken over,
+// and indexKey is the entity's key in its kind's index, which is what the
+// catalog records the entity's provenance under; the two differ only for a
+// Plugin, whose bytes are keyed by its bare coordinate.
+//
+// The resolution path is the catalog's own answer to where that index entry came
+// from, never an assumption that an indexed entity was authored in a catalog
+// directory: an index can also hold an entity it received from a lockfile-pinned
+// cache slot, and a pull-time pin decision keys on the difference.
+func (l *catalogLookup) tier1Resolution(kind, identifier, indexKey, metaVersion, requestedVersion string) closure.Resolution {
 	bytes := l.catalog.entityBytes[entityBytesKey(kind, identifier)]
 	resolved := metaVersion
 	if requestedVersion != "" {
@@ -948,8 +962,21 @@ func (l *catalogLookup) tier1Resolution(kind, identifier, metaVersion, requested
 	return closure.Resolution{
 		ResolvedVersion: resolved,
 		Digest:          contentDigest(bytes),
-		ResolutionPath:  closure.ResolutionPathCatalog,
+		ResolutionPath:  l.catalog.indexedResolutionPath(kind, indexKey),
 	}
+}
+
+// indexedResolutionPath reports where the entry this catalog indexes under kind
+// and indexKey came from: the content cache, for an entry the pinned fold placed
+// from a cache slot, and otherwise a catalog directory. It reads the record the
+// fold wrote when it placed the entry, which is the one place that fact is
+// decided; a catalog that holds no such record — one loaded from directories —
+// answers every entry as a catalog-directory one.
+func (c *Catalog) indexedResolutionPath(kind, indexKey string) string {
+	if _, fromSlot := c.fromCacheSlot[entityBytesKey(kind, indexKey)]; fromSlot {
+		return closure.ResolutionPathCache
+	}
+	return closure.ResolutionPathCatalog
 }
 
 func (l *catalogLookup) tier2(uri string) ([]byte, closure.Resolution, bool) {

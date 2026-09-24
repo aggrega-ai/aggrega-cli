@@ -310,10 +310,8 @@ func DescendRecipePluginArtifacts(ctx context.Context, c *Closure, loader Recipe
 // truly-missing artifact). registryOnly controls whether the registry-only rule
 // applies at all: the pull-side pipeline descent passes true, so an artifact
 // artifactNeedsNoPin reports is left out; the workspace-socket reconstruction passes
-// false, because a socket artifact the lockfile already pins can surface as
-// locally-resolved once the pinned cache slot is folded into the hermetic view's local
-// enumeration, and dropping it is exactly the reconstruction gap that surfaces as
-// spurious drift.
+// false, because it reconstructs the socket pins the lockfile records and dropping
+// one of them is exactly the reconstruction gap that surfaces as spurious drift.
 func pinPluginArtifact(ctx context.Context, c *Closure, loader RecipeLoader, lookup Lookup, entityURI string, pluginIndex map[string]int, registryOnly bool) error {
 	wp, err := loader.LoadPlugin(entityURI)
 	if err != nil {

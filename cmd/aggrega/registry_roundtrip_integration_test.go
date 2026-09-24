@@ -949,10 +949,40 @@ spec:
 		t.Errorf("second build not byte-identical: %s != %s", second, firstTree)
 	}
 
-	// Tamper: corrupt the cached plugin entity's persisted manifest blob and freeze
-	// the build (auto_pull off, so it resolves strictly from cache rather than
-	// re-pulling and healing). The cached-manifest verify must REJECT the tampered
-	// slot rather than silently build on it.
+	// Freeze the build (auto_pull off) over the untampered cache first. Every build
+	// above filled its own lockfile, and a build that fills skips the drift verify,
+	// so this is the one build in the test that holds the pulled lockfile to the
+	// closure the build reconstructs — every recipe here and both plugins were
+	// resolved from the registry, so the whole closure arrives from the cache.
+	writeWorkspaceConfig(t, ws, "default_registry: \""+host+"\"\nauto_pull: false\noffline: false")
+	_ = os.RemoveAll("dist")
+	if err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", []string{std}, false, os.Stderr, os.Stdout); err != nil {
+		t.Fatalf("frozen build over the pulled lockfile refused it: %v", err)
+	}
+	if frozen := hashDistTree(t, "dist"); frozen != firstTree {
+		t.Errorf("frozen build not byte-identical to the filling build: %s != %s", frozen, firstTree)
+	}
+
+	// Tamper: corrupt the cached plugin entity's persisted manifest blob and build
+	// frozen again, so it resolves strictly from cache rather than re-pulling and
+	// healing. The build's pinned-integrity gate, which reads every pinned cache slot
+	// before the closure is walked, must REJECT the tampered slot rather than
+	// silently build on it — and the refusal must be an integrity condition, not any
+	// error: a build that reached the drift verify instead would also fail, and would
+	// pass an "any error" check while reporting the wrong thing.
+	//
+	// WHICH integrity condition is fixed by the entity row this build reads, and that
+	// row carries no manifest digest. The lockfile on disk was last written by the
+	// second build's fill (auto_pull is on for every build above), and a pull that
+	// finds the plugin entity already in the cache records its version and content
+	// digest but not its manifest digest — only the cold first pull records one,
+	// which is what the entity-axis assertion above reads. With no manifest pin the
+	// gate has nothing to hold the cached manifest to, so it skips that check (the
+	// cached-manifest condition) and the refusal comes from the next one, content
+	// against manifest: the tampered blob no longer parses as a manifest, which is
+	// the fetch-integrity condition. A row that carries its manifest digest is
+	// refused one check earlier, with the cached-manifest condition instead, so this
+	// assertion is tied to what a warm pull records for a cached entity.
 	entitySlot := oci.CachePath(ws, ".aggrega/cache", recipePluginURI, "1.0.0")
 	tamperedManifest := filepath.Join(entitySlot, "manifest")
 	if _, err := os.Stat(tamperedManifest); err != nil {
@@ -961,10 +991,18 @@ spec:
 	if err := os.WriteFile(tamperedManifest, []byte("{ not a manifest }"), 0o644); err != nil {
 		t.Fatalf("tamper cached manifest: %v", err)
 	}
-	writeWorkspaceConfig(t, ws, "default_registry: \""+host+"\"\nauto_pull: false\noffline: false")
 	_ = os.RemoveAll("dist")
-	if err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", []string{std}, false, os.Stderr, os.Stdout); err == nil {
-		t.Fatal("frozen build SUCCEEDED against a tampered plugin manifest; the cached-manifest verify did not reject it")
+	err = dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", []string{std}, false, os.Stderr, os.Stdout)
+	if err == nil {
+		t.Fatal("frozen build SUCCEEDED against a tampered plugin manifest; the pinned-integrity gate did not reject it")
+	}
+	if errors.Is(err, lockfile.ErrLockfileDrift()) {
+		t.Fatalf("frozen build over a tampered plugin manifest refused as lockfile drift, not as an integrity failure: %v", err)
+	}
+	if !errors.Is(err, oci.ErrFetchIntegrity()) {
+		t.Fatalf("frozen build over a tampered plugin manifest refused with the wrong condition; want the fetch-integrity "+
+			"refusal of content checked against a manifest that no longer parses (the entity row carries no manifest "+
+			"pin): %v", err)
 	}
 }
 

@@ -196,8 +196,8 @@ func TestPluginDescent_UnpinnedArtifactAdoptsAChangeSilently(t *testing.T) {
 // TestPluginDescent_UnpinnedSocketArtifactDisagreesWithReconstruction drives the
 // second half: the workspace-socket reconstruction a build performs from the
 // lockfile pins a socket plugin's artifact regardless of type or resolution path,
-// because a pinned cache slot folded into the hermetic view can surface as
-// locally-present and dropping it is itself a reconstruction gap. So the two sides
+// because every socket entity it reconstructs is one the lockfile records as a pin
+// and dropping one is itself a reconstruction gap. So the two sides
 // agree only while the acquisition pins what the reconstruction will pin.
 //
 // An acquisition that declined an artifact the reconstruction then produces leaves
