@@ -6,8 +6,32 @@ package workspaceconfig
 import (
 	"os"
 	"path/filepath"
+	"reflect"
+	"strings"
 	"testing"
 )
+
+// TestEachPinKeyConstantMatchesItsWireTag holds the two exported pin keys
+// against the yaml tags that define them, for the reason the offline key's guard
+// gives: a struct tag cannot be written from a constant, so each key is spelled
+// twice on purpose, and a divergence would fail nothing else — the loader would
+// go on reading the tag while the halt told a reader to set the constant.
+func TestEachPinKeyConstantMatchesItsWireTag(t *testing.T) {
+	for _, tc := range []struct{ field, key string }{
+		{"PinSourcesAtPull", PinSourcesAtPullKey},
+		{"PinSourcesAtPush", PinSourcesAtPushKey},
+	} {
+		field, ok := reflect.TypeOf(Config{}).FieldByName(tc.field)
+		if !ok {
+			t.Errorf("Config has no %s field; the constant %q now names a setting the type does not carry", tc.field, tc.key)
+			continue
+		}
+		if tag := strings.Split(field.Tag.Get("yaml"), ",")[0]; tag != tc.key {
+			t.Errorf("the key constant for %s is %q but the field is authored as %q; every halt naming the key now tells "+
+				"a reader to write one the loader does not read", tc.field, tc.key, tag)
+		}
+	}
+}
 
 // TestTheInvocationOverridesEachPinKeyInBothDirections is the whole grid of the
 // precedence both operations share: two settings crossed with three invocation

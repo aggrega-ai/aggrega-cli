@@ -120,7 +120,7 @@ func TestTheUnpinnedHaltNamesTheEntityEachClassAndTheStep(t *testing.T) {
 		"Recipe", "server", []Unrecorded{
 			{Class: "remote source", Input: "https://example.invalid/c.tgz@1.0.0"},
 			{Class: "imported file", Input: "netpol.yaml", Stale: true},
-		})
+		}, Remedy{Operation: "pull", Setting: "pin_sources_at_pull"})
 	if !errors.Is(err, ErrEntityNotPinned()) {
 		t.Fatalf("the halt must carry the unpinned-entity condition; got %v", err)
 	}
@@ -138,6 +138,61 @@ func TestTheUnpinnedHaltNamesTheEntityEachClassAndTheStep(t *testing.T) {
 		if !strings.Contains(msg, want) {
 			t.Errorf("the halt does not carry %q:\n%s", want, msg)
 		}
+	}
+}
+
+// TestOneHaltNamesTheRemedyOfTheOperationThatRaisedIt holds the one condition to
+// carrying each operation's own remediation, and nothing else that differs.
+//
+// Two operations raise the halt, and what a reader can do about it differs by
+// which one they ran: the setting is each operation's own, and only a caller that
+// has a way to ask for one run names it. Both rows must be the same condition
+// under the same short code over the same composed values, so the remediation is
+// the one thing a second operation adds — and the pull row is asserted byte for
+// byte, because the remediation a pull prints is the one the published reference
+// quotes, and parameterising it must not move it.
+func TestOneHaltNamesTheRemedyOfTheOperationThatRaisedIt(t *testing.T) {
+	missing := []Unrecorded{{Class: "remote source", Input: "https://example.invalid/c.tgz@1.0.0"}}
+	const values = `(Recipe "server", remote source https://example.invalid/c.tgz@1.0.0: no pin recorded)`
+	rows := []struct {
+		name   string
+		remedy Remedy
+		want   string
+	}{
+		{
+			name:   "a pull names the author's step and its own setting, and no per-run request",
+			remedy: Remedy{Operation: "pull", Setting: "pin_sources_at_pull"},
+			want: "remediation: run `aggrega pin catalog/recipes/server/recipe.yaml` and commit the entity.lock it writes " +
+				"beside the entity; to have every pull in this workspace record the pins itself instead, set " +
+				"`pin_sources_at_pull: true` in the workspace configuration",
+		},
+		{
+			name:   "a publication names the author's step, the caller's own per-run request and its own setting",
+			remedy: Remedy{Operation: "publication", Setting: "pin_sources_at_push", Invocation: "re-run it with `--pin-sources`"},
+			want: "remediation: run `aggrega pin catalog/recipes/server/recipe.yaml` and commit the entity.lock it writes " +
+				"beside the entity; to have this publication record the pins itself instead, re-run it with " +
+				"`--pin-sources`; to have every publication in this workspace record them, set " +
+				"`pin_sources_at_push: true` in the workspace configuration",
+		},
+	}
+	for _, row := range rows {
+		t.Run(row.name, func(t *testing.T) {
+			err := UnpinnedEntity("/ws/catalog/recipes/server/recipe.yaml", "catalog/recipes/server/recipe.yaml",
+				"Recipe", "server", missing, row.remedy)
+			if !errors.Is(err, ErrEntityNotPinned()) {
+				t.Fatalf("every operation raises the one unpinned-entity condition; got %v", err)
+			}
+			if code, ok := cerrors.ShortCodeOf(err); !ok || code != "E0302" {
+				t.Errorf("the halt's short code = %q (found %v); want E0302", code, ok)
+			}
+			msg := err.Error()
+			if !strings.Contains(msg, values) {
+				t.Errorf("the composed values differ by operation, and they must not:\n%s", msg)
+			}
+			if !strings.HasSuffix(msg, row.want) {
+				t.Errorf("the remediation is not this operation's:\n got: %s\nwant suffix: %s", msg, row.want)
+			}
+		})
 	}
 }
 

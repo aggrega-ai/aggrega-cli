@@ -138,7 +138,7 @@ func TestUnpinnedHaltsUntilTheStepHasWrittenAndThenIsSilent(t *testing.T) {
 		return plan
 	}
 
-	err := compute().Unpinned()
+	err := compute().Unpinned(testRemedy)
 	if !errors.Is(err, recipepin.ErrEntityNotPinned()) {
 		t.Fatalf("an entity with no lock must halt under the unpinned-entity condition; got %v", err)
 	}
@@ -151,8 +151,76 @@ func TestUnpinnedHaltsUntilTheStepHasWrittenAndThenIsSilent(t *testing.T) {
 	if _, err := compute().Write(); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
-	if err := compute().Unpinned(); err != nil {
+	if err := compute().Unpinned(testRemedy); err != nil {
 		t.Fatalf("once the step has written the lock the same plan must be silent; got %v", err)
+	}
+}
+
+// testRemedy is a remediation no production operation uses, so a test that finds
+// its words in a halt knows the remedy it passed is the one that reached it.
+var testRemedy = recipepin.Remedy{Operation: "exercise", Setting: "exercise_setting", Invocation: "send exercise"}
+
+// TestHoldRefusesWhatTheStepWouldWriteAndAcceptsWhatItWrote drives the hold over
+// one entity document through the same named-document path the step takes: it
+// refuses an entity whose lock is missing a pin, names the remedy it was handed,
+// writes nothing, and accepts the entity once the step has written its lock.
+//
+// The input is an imported file, so the proof needs no network — and an imported
+// file is not a remote source, so a hold that looked at remote sources alone would
+// pass this entity and fail the first assertion. The halt's subject is the lock's
+// pin classes as a set.
+func TestHoldRefusesWhatTheStepWouldWriteAndAcceptsWhatItWrote(t *testing.T) {
+	ws := t.TempDir()
+	rw := resolvedWorkspace(t, ws)
+	recipe := filepath.Join(ws, "catalog", "server", "recipe.yaml")
+	writeFile(t, recipe, recipeYAML("server", "", true))
+	writeFile(t, filepath.Join(ws, "catalog", "server", "extra.yaml"), "kind: ConfigMap\n")
+	opts := Options{Workspace: rw, EntityPath: recipe}
+
+	err := Hold(context.Background(), opts, testRemedy)
+	if !errors.Is(err, recipepin.ErrEntityNotPinned()) {
+		t.Fatalf("an entity whose lock records no pin must be held under the unpinned-entity condition; got %v", err)
+	}
+	for _, want := range []string{"imported file extra.yaml: no pin recorded", "aggrega pin catalog/server/recipe.yaml",
+		"to have this exercise record the pins itself instead, send exercise", "exercise_setting: true"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the hold's halt must carry %q:\n%v", want, err)
+		}
+	}
+	if _, statErr := os.Stat(recipepin.LockPath(recipe)); !os.IsNotExist(statErr) {
+		t.Fatalf("the hold wrote a lock; stat err = %v", statErr)
+	}
+
+	if _, err := Pin(context.Background(), opts); err != nil {
+		t.Fatalf("Pin: %v", err)
+	}
+	if err := Hold(context.Background(), opts, testRemedy); err != nil {
+		t.Fatalf("the lock the step wrote must satisfy the hold; got %v", err)
+	}
+}
+
+// TestHoldAcceptsAnEntityWithNothingToPin is the hold's negative half: an entity
+// that reads nothing a lock records passes untouched, whether it is a kind with no
+// pin class at all or a Recipe whose source is filled in per Release. A hold that
+// refused either would refuse legal input, which a publication must never do.
+func TestHoldAcceptsAnEntityWithNothingToPin(t *testing.T) {
+	ws := t.TempDir()
+	rw := resolvedWorkspace(t, ws)
+	component := filepath.Join(ws, "catalog", "c", "component.yaml")
+	writeFile(t, component, "apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: c\n  version: \"1.0.0\"\nspec: {}\n")
+	templated := filepath.Join(ws, "catalog", "templated", "recipe.yaml")
+	writeFile(t, templated, recipeYAML("templated",
+		"  source:\n    kind: helm-https-chart\n    url: https://example.invalid/t.tgz\n    version: \"{{ .infra.v }}\"\n", false))
+	workload := filepath.Join(ws, "catalog", "workload", "recipe.yaml")
+	writeFile(t, workload, recipeYAML("workload", "", false))
+
+	for _, doc := range []string{component, templated, workload} {
+		if err := Hold(context.Background(), Options{Workspace: rw, EntityPath: doc}, testRemedy); err != nil {
+			t.Errorf("%s has nothing to pin and must pass the hold; got %v", doc, err)
+		}
+		if _, statErr := os.Stat(recipepin.LockPath(doc)); !os.IsNotExist(statErr) {
+			t.Errorf("the hold wrote a lock beside %s; stat err = %v", doc, statErr)
+		}
 	}
 }
 

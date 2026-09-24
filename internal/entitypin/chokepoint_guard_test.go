@@ -24,11 +24,13 @@ import (
 //     nowhere else in the module. A second function calling the lock's writer
 //     would be a second pin step, free to route a pin to another entity or order
 //     the rows another way.
-//   - The plan is computed by the author's own step and by the dependency
-//     resolution's run of it, and by nothing else.
+//   - The plan is computed from a named entity document in one place, which both
+//     the author's own step and a publication's hold on the lock read, and
+//     otherwise only by the dependency resolution's run of it.
 //   - The author's own step is reached by exactly the surfaces that carry it: the
 //     command line's pin command, a publication that pins first, the daemon's pin
-//     method and the tool protocol's pin tool.
+//     method and the tool protocol's pin tool. The hold is reached by a
+//     publication that does not pin, and by nothing else.
 //
 // A legitimate new caller changes one of the sets below, and the failure is the
 // point: whoever adds one has to say so here, next to the others, rather than
@@ -180,13 +182,28 @@ func TestThePinStepIsOneImplementation(t *testing.T) {
 		},
 		{
 			callee: "entitypin.Compute",
-			why:    "the plan is computed by the author's own step and by a dependency resolution's run of it",
-			want:   []string{"entitypin.Pin", "pullops.entityPins"},
+			why:    "the plan is computed from a named document in one place, and by a dependency resolution's run of it",
+			want:   []string{"entitypin.planNamed", "pullops.entityPins"},
+		},
+		{
+			callee: "entitypin.planNamed",
+			why:    "a named document becomes a plan for the step that writes it and the hold that checks it, and for nothing else",
+			want:   []string{"entitypin.Hold", "entitypin.Pin"},
 		},
 		{
 			callee: "entitypin.Pin",
 			why:    "the author's own step is reached by exactly the surfaces that carry it",
 			want:   []string{"main.pinRun", "mcp.pinInvoke", "publishops.pinBeforePublishing", "serve.Server.dispatchPin"},
+		},
+		{
+			callee: "entitypin.Hold",
+			why:    "a publication that does not pin holds the entity's lock to the step, and nothing else holds a named document",
+			want:   []string{"publishops.holdBeforeBundling"},
+		},
+		{
+			callee: "publishops.holdBeforeBundling",
+			why:    "a publication holds the lock once, immediately before it bundles",
+			want:   []string{"publishops.Push"},
 		},
 		{
 			callee: "pullops.entityPins",

@@ -98,16 +98,18 @@ type Config struct {
 	ArtifactCacheDir string `yaml:"artifact_cache_dir"`
 
 	// PinSourcesAtPull and PinSourcesAtPush are each operation's own default for
-	// whether it runs the entity author's pin step rather than halting, or
-	// publishing unpinned: pull's resolution over the entities a Release builds,
-	// and push's publication of the one entity it is given. Both are false by
-	// default, and a command's own --pin-sources answer overrides its key in both
-	// directions — see PullPinsSources and PushPinsSources, which are where that
-	// precedence is decided.
+	// whether it runs the entity author's pin step rather than halting on an
+	// entity whose lock does not record the pins: pull's resolution over the
+	// entities a Release builds, and push's publication of the one entity it is
+	// given. Both are false by default, and a command's own --pin-sources answer
+	// overrides its key in both directions — see PullPinsSources and
+	// PushPinsSources, which are where that precedence is decided.
 	//
 	// They are two keys rather than one because they are two operations, and a
 	// key's name should say which operation it governs: one key governing both
-	// would span an axis its name hides.
+	// would span an axis its name hides. Their authored keys are
+	// PinSourcesAtPullKey and PinSourcesAtPushKey, and the yaml tags here are
+	// those keys' definition, as for Offline.
 	PinSourcesAtPull bool `yaml:"pin_sources_at_pull"`
 	PinSourcesAtPush bool `yaml:"pin_sources_at_push"`
 

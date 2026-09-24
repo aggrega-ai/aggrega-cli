@@ -123,6 +123,8 @@ var (
 	toolDestinationSupply publishops.DestinationSupply = "send 'registry', or set the workspace's " +
 		"default registry in its configuration"
 
+	toolPinSourcesSupply publishops.PinSourcesSupply = "send 'pin_sources' as true"
+
 	toolIdentitySupply = signing.IdentityTokenSupply{
 		AbsentInput: "no 'identity_token' was sent",
 		Remedy:      "send 'identity_token'",
@@ -307,12 +309,14 @@ var publishEntityToolSpec = toolSpec{
 		"anyone who has already fetched it. Pass the entity document as `entity`, absolute or relative to the " +
 		"workspace root; a Plugin entity also needs `plugin`, the executable published inside its manifest. The " +
 		"destination is `registry`, defaulting to the workspace's configured one. Set `dry_run` to compute the " +
-		"bundle and contact nothing. Signing follows the destination registry's policy unless `sign` says " +
+		"bundle and publish nothing. Signing follows the destination registry's policy unless `sign` says " +
 		"otherwise, and a registry that requires signatures refuses an unsigned publication whatever you send — " +
 		"there is no argument that bypasses that refusal. Keyless signing resolves an identity from " +
 		"`identity_token`, and refuses loudly when nothing carries one, because nothing here can prompt. Set " +
 		"`pin_sources` to run the entity author's pin step first — the pin tool's step, writing the entity.lock " +
-		"beside the entity inside your workspace so it is part of what is published. The result carries where " +
+		"beside the entity inside your workspace so it is part of what is published; a publication that does not " +
+		"run the step refuses a Recipe or FeatureRecipe whose entity.lock is missing a pin, a dry run included. " +
+		"The result carries where " +
 		"the entity landed, the tag, the published digest, whether it was signed, what the pin step did, and " +
 		"how far the call reached.",
 	inputSchema: `{
@@ -445,6 +449,7 @@ func (s *server) publishEntityConfig(a publishEntityArgs) (publishops.PushConfig
 		Workspace:                 tw.rw,
 		IdentitySupply:            credentials.supply,
 		DestinationSupply:         toolDestinationSupply,
+		PinSourcesSupply:          toolPinSourcesSupply,
 		Out:                       io.Discard,
 	}, ""
 }

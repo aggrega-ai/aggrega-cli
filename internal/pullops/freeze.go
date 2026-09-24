@@ -10,6 +10,8 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/entitypin"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
+	"github.com/aggrega-ai/aggrega-cli/pkg/recipepin"
+	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
 // entityPins is the pin step as a dependency resolution runs it: over every
@@ -74,7 +76,7 @@ func entityPins(lazyView *catalog.LazyLookup, entities []closure.ResolvedRef, us
 	var reported []dryrunreport.File
 	switch {
 	case !pin:
-		if err := plan.Unpinned(); err != nil {
+		if err := plan.Unpinned(pullRemedy); err != nil {
 			return nil, nil, err
 		}
 	case reportOnly:
@@ -97,6 +99,13 @@ func entityPins(lazyView *catalog.LazyLookup, entities []closure.ResolvedRef, us
 	}
 	return digests, reported, nil
 }
+
+// pullRemedy is what the unpinned-entity halt tells a pull's reader the pull can
+// do instead of halting. It names the pull's own setting and no per-run request:
+// a dependency resolution is reached from a pull and from a build that fills its
+// own lockfile, and a request spelled for one of them would name something the
+// other cannot send, while the author's step and the setting are true for both.
+var pullRemedy = recipepin.Remedy{Operation: "pull", Setting: workspaceconfig.PinSourcesAtPullKey}
 
 // uriShadowedByComponentOrFeature reports whether a recipe URI also resolves to a
 // Component or Feature. The closure resolves an entity URI component-first, then

@@ -38,6 +38,20 @@ const ConfigFilename = ".aggrega-config.yaml"
 // cannot be written from a constant; a package guard holds the two together.
 const OfflineSettingKey = "offline"
 
+// PinSourcesAtPullKey and PinSourcesAtPushKey are the authored keys of the two
+// operations' pin defaults.
+//
+// They are exported for the reason OfflineSettingKey is: the halt that stops an
+// operation over an entity whose lock does not record its pins tells the reader
+// which key to set, and it has to name the key the loader actually reads. Both
+// are top-level keys. Their definition is the yaml tag on Config.PinSourcesAtPull
+// and Config.PinSourcesAtPush, and a package guard holds each constant to its
+// tag.
+const (
+	PinSourcesAtPullKey = "pin_sources_at_pull"
+	PinSourcesAtPushKey = "pin_sources_at_push"
+)
+
 // AppendCIConfigFilename is the basename of the CI-owned additive overlay that
 // sits beside the hand-authored ConfigFilename at any cascade directory. It is
 // a separate file so an automated pipeline owns and may overwrite it wholesale

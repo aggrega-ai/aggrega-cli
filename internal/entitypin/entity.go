@@ -85,58 +85,9 @@ type pinnedEntityHeader struct {
 // An entity of a kind that reads nothing a lock records — a Component, say —
 // reports that it is not pinnable and touches nothing.
 func Pin(ctx context.Context, opts Options) (Result, error) {
-	rw := opts.Workspace
-	if rw == nil {
-		return Result{}, fmt.Errorf("internal: no resolved workspace supplied — the caller must resolve one and pass it in")
-	}
-	if strings.TrimSpace(opts.EntityPath) == "" {
-		return Result{}, fmt.Errorf("an entity document to pin is required")
-	}
-	abs, err := filepath.Abs(opts.EntityPath)
-	if err != nil {
-		return Result{}, fmt.Errorf("resolve %s: %w", opts.EntityPath, err)
-	}
-	data, err := os.ReadFile(abs)
-	if err != nil {
-		return Result{}, fmt.Errorf("read %s: %w", opts.EntityPath, err)
-	}
-	var header pinnedEntityHeader
-	if err := yaml.Unmarshal(data, &header); err != nil {
-		return Result{}, fmt.Errorf("parse %s: %w", opts.EntityPath, err)
-	}
-	if header.Kind == "" {
-		return Result{}, fmt.Errorf("%s: missing kind field", opts.EntityPath)
-	}
-	res := Result{EntityPath: abs, Kind: header.Kind, Name: header.Metadata.Name}
-	if header.Kind != "Recipe" && header.Kind != "FeatureRecipe" {
-		return res, nil
-	}
-	res.Pinnable = true
-
-	wsCfg := rw.Config()
-	root := rw.Root()
-	cacheDir := wsCfg.ResolvedArtifactCacheDir()
-	view := catalog.NewLazyLookup(root, cacheDir, []string{filepath.Dir(abs)}, nil)
-
-	uri := catalog.RecipeMappingURI(header.Metadata.Name, header.Metadata.Version)
-	if header.Spec.Capability != "" {
-		uri = header.Spec.Capability + "/" + uri
-	}
-	if err := ctx.Err(); err != nil {
-		return Result{}, fmt.Errorf("aggrega pin: stopped before anything was resolved: %w", err)
-	}
-	plan, err := Compute(Inputs{
-		View:          view,
-		URIs:          []string{uri},
-		Resolver:      SourceResolver(ctx, wsCfg),
-		WorkspaceRoot: root,
-		CacheDir:      cacheDir,
-	})
-	if err != nil {
-		return Result{}, err
-	}
-	if len(plan.entities) != 1 || plan.entities[0].path != abs {
-		return Result{}, notReadAsItself(view, abs, plan)
+	res, plan, err := planNamed(ctx, opts)
+	if err != nil || !res.Pinnable {
+		return res, err
 	}
 
 	if opts.DryRun {
@@ -157,6 +108,100 @@ func Pin(ctx context.Context, opts Options) (Result, error) {
 	}
 	res.Outcome = outcomes[0]
 	return res, nil
+}
+
+// Hold runs the pin step's resolution over the entity document at
+// opts.EntityPath and holds the lock beside it to what the step would record:
+// it returns the unpinned-entity halt, [recipepin.ErrEntityNotPinned], where the
+// lock records no pin for an input the entity reads or one the input no longer
+// matches, and nil where it records every one. It writes nothing whatever it
+// finds, so opts.DryRun changes nothing here.
+//
+// It is the plan [Pin] computes, read the third way a plan is read — checked
+// rather than written or reported — so what it refuses is exactly what a
+// writing run of the step would have written, and a lock that run wrote is one
+// it accepts. remedy is what the operation holding the lock can do instead, in
+// its own words; the condition and its composition are the one halt every
+// operation that holds a lock raises.
+//
+// An entity of a kind that reads nothing a lock records has nothing to hold, and
+// Hold returns nil for it without resolving anything.
+func Hold(ctx context.Context, opts Options, remedy recipepin.Remedy) error {
+	res, plan, err := planNamed(ctx, opts)
+	if err != nil || !res.Pinnable {
+		return err
+	}
+	return plan.Unpinned(remedy)
+}
+
+// planNamed reads the entity document at opts.EntityPath and, where it is a
+// kind that reads anything a lock records, computes the step's plan for it.
+//
+// It is the one place a named document becomes a plan, shared by the step that
+// writes it and the hold that checks it, so the two cannot come to read an
+// entity through different views or resolve its sources differently. It reads
+// the entity through a catalog view over the entity's own directory, which is
+// what a writable home is for a document named by path: the walk records the
+// file it read, so the one predicate every caller of the step reads is
+// satisfied here without a case of its own. The returned Result is filled in
+// as far as reading the document goes; its Outcome is the caller's to fill.
+func planNamed(ctx context.Context, opts Options) (Result, Plan, error) {
+	rw := opts.Workspace
+	if rw == nil {
+		return Result{}, Plan{}, fmt.Errorf("internal: no resolved workspace supplied — the caller must resolve one and pass it in")
+	}
+	if strings.TrimSpace(opts.EntityPath) == "" {
+		return Result{}, Plan{}, fmt.Errorf("an entity document to pin is required")
+	}
+	abs, err := filepath.Abs(opts.EntityPath)
+	if err != nil {
+		return Result{}, Plan{}, fmt.Errorf("resolve %s: %w", opts.EntityPath, err)
+	}
+	data, err := os.ReadFile(abs)
+	if err != nil {
+		return Result{}, Plan{}, fmt.Errorf("read %s: %w", opts.EntityPath, err)
+	}
+	var header pinnedEntityHeader
+	if err := yaml.Unmarshal(data, &header); err != nil {
+		return Result{}, Plan{}, fmt.Errorf("parse %s: %w", opts.EntityPath, err)
+	}
+	if header.Kind == "" {
+		return Result{}, Plan{}, fmt.Errorf("%s: missing kind field", opts.EntityPath)
+	}
+	res := Result{EntityPath: abs, Kind: header.Kind, Name: header.Metadata.Name}
+	if header.Kind != "Recipe" && header.Kind != "FeatureRecipe" {
+		return res, Plan{}, nil
+	}
+	res.Pinnable = true
+
+	wsCfg := rw.Config()
+	root := rw.Root()
+	cacheDir := wsCfg.ResolvedArtifactCacheDir()
+	view := catalog.NewLazyLookup(root, cacheDir, []string{filepath.Dir(abs)}, nil)
+
+	uri := catalog.RecipeMappingURI(header.Metadata.Name, header.Metadata.Version)
+	if header.Spec.Capability != "" {
+		uri = header.Spec.Capability + "/" + uri
+	}
+	// The step is reached from several surfaces, each of which names itself in
+	// its own frame, so this one names none.
+	if err := ctx.Err(); err != nil {
+		return Result{}, Plan{}, fmt.Errorf("stopped before anything was resolved: %w", err)
+	}
+	plan, err := Compute(Inputs{
+		View:          view,
+		URIs:          []string{uri},
+		Resolver:      SourceResolver(ctx, wsCfg),
+		WorkspaceRoot: root,
+		CacheDir:      cacheDir,
+	})
+	if err != nil {
+		return Result{}, Plan{}, err
+	}
+	if len(plan.entities) != 1 || plan.entities[0].path != abs {
+		return Result{}, Plan{}, notReadAsItself(view, abs, plan)
+	}
+	return res, plan, nil
 }
 
 // notReadAsItself explains why the catalog view over an entity's own directory

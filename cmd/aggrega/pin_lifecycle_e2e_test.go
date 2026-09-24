@@ -283,12 +283,12 @@ func TestPinSourcesOverridesItsOwnKeyInBothDirections(t *testing.T) {
 			t.Errorf("a workspace configured to pin at push wrote no lock: %v", err)
 		}
 	})
-	t.Run("push, key on, --pin-sources=false: publishes unpinned", func(t *testing.T) {
+	t.Run("push, key on, --pin-sources=false: skips the step and refuses the unpinned entity", func(t *testing.T) {
 		root := t.TempDir()
 		t.Chdir(root)
 		recipePath := pinLifecycleWorkspace(t, root, url, "pin_sources_at_push: true\n", false)
-		if err := pinLifecyclePush(t, root, recipePath, boolPtr(false)); err != nil {
-			t.Fatalf("push --pin-sources=false: %v", err)
+		if err := pinLifecyclePush(t, root, recipePath, boolPtr(false)); !errors.Is(err, recipepin.ErrEntityNotPinned()) {
+			t.Fatalf("--pin-sources=false over an unpinned entity must restore the publication's refusal; got %v", err)
 		}
 		if _, err := os.Stat(recipepin.LockPath(recipePath)); !os.IsNotExist(err) {
 			t.Errorf("--pin-sources=false must skip the step over a workspace configured to pin; stat err = %v", err)
@@ -305,6 +305,104 @@ func TestPinSourcesOverridesItsOwnKeyInBothDirections(t *testing.T) {
 			t.Errorf("--pin-sources wrote no lock: %v", err)
 		}
 	})
+}
+
+// holdFixtureRecipe lays down a Recipe named name in a per-version directory of
+// its own under root, carrying the source block given (already indented under
+// spec, or empty for a Recipe that builds a workload and reads no remote source),
+// and returns its document path.
+func holdFixtureRecipe(t *testing.T, root, name, source string) string {
+	t.Helper()
+	body := "apiVersion: aggrega.ai/v1alpha1\nkind: Recipe\nmetadata:\n  name: " + name + "\n  version: \"1.0.0\"\n" +
+		"spec:\n  capability: helm\n  implements: " + name + "\n" + source
+	if source == "" {
+		body += "  workload: |\n    apiVersion: aggrega.ai/v1alpha1\n    kind: Workload\n    containers:\n      main:\n        image: demo:1\n"
+	}
+	path := filepath.Join(root, "catalog", "recipe", "helm", name, "1.0.0", "recipe.yaml")
+	writeFixture(t, path, body)
+	return path
+}
+
+// TestAPublicationHoldsTheEntityLockToThePinStep drives the publication's refusal
+// through the command's own entry point, over one workspace, in the four cells the
+// refusal has to tell apart and the one the flag adds.
+//
+// The positive half alone would pass for a publication that refused everything,
+// so the negative half is what makes it mean something: an entity that reads no
+// remote source, and one whose source identity is filled in per Release, both
+// publish untouched and leave nothing beside them. Every refusing cell is asked
+// twice, as a dry run and as a publication, and must answer the same way — a dry
+// run that reported a bundle the publication would refuse would be confidently
+// wrong at the moment an author decides.
+func TestAPublicationHoldsTheEntityLockToThePinStep(t *testing.T) {
+	srv := serveChart(t, pinChartTgz(t))
+	concrete := "  source:\n    kind: helm-https-chart\n    url: " + srv.URL + "/pinchart.tgz\n    version: \"1.0.0\"\n"
+	templated := "  source:\n    kind: helm-https-chart\n    url: " + srv.URL + "/pinchart.tgz\n    version: \"{{ .infra.chart_version }}\"\n"
+	root := t.TempDir()
+	t.Chdir(root)
+	writeFixture(t, filepath.Join(root, ".aggrega-config.yaml"), "workspace: {}\nauto_pull: false\n")
+	ws := resolveTempWorkspace(t, tempWorkspaceOptions{Root: root})
+	push := func(path string, dryRun bool, pinSources *bool) error {
+		return pushRun(context.Background(), pushConfig{
+			Workspace: ws, EntityPath: path, Registry: "example.com", PushTarget: memory.New(),
+			DryRun: dryRun, PinSources: pinSources, Out: io.Discard,
+		})
+	}
+
+	unpinned := holdFixtureRecipe(t, root, "unpinned", concrete)
+	for _, dryRun := range []bool{true, false} {
+		err := push(unpinned, dryRun, nil)
+		if !errors.Is(err, recipepin.ErrEntityNotPinned()) {
+			t.Fatalf("dry run %v: an entity with a concrete remote source and no lock must be refused under the unpinned-entity condition; got %v", dryRun, err)
+		}
+		for _, want := range []string{"remote source " + srv.URL + "/pinchart.tgz@1.0.0: no pin recorded",
+			"aggrega pin catalog/recipe/helm/unpinned/1.0.0/recipe.yaml", "re-run it with `--pin-sources`", "pin_sources_at_push: true"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("dry run %v: the refusal must name %q:\n%v", dryRun, want, err)
+			}
+		}
+	}
+	if _, err := os.Stat(recipepin.LockPath(unpinned)); !os.IsNotExist(err) {
+		t.Fatalf("a refused publication wrote the lock; stat err = %v", err)
+	}
+
+	if err := pinRun(context.Background(), io.Discard, ws, unpinned, false); err != nil {
+		t.Fatalf("aggrega pin: %v", err)
+	}
+	for _, dryRun := range []bool{true, false} {
+		if err := push(unpinned, dryRun, nil); err != nil {
+			t.Errorf("dry run %v: the same entity, pinned, must publish; got %v", dryRun, err)
+		}
+	}
+
+	for name, source := range map[string]string{"no-remote-source": "", "templated": templated} {
+		path := holdFixtureRecipe(t, root, name, source)
+		for _, dryRun := range []bool{true, false} {
+			if err := push(path, dryRun, nil); err != nil {
+				t.Errorf("%s, dry run %v: an entity with nothing its author can pin must publish untouched; got %v", name, dryRun, err)
+			}
+		}
+		if _, err := os.Stat(recipepin.LockPath(path)); !os.IsNotExist(err) {
+			t.Errorf("%s: a publication wrote a lock beside an entity with nothing to pin; stat err = %v", name, err)
+		}
+	}
+
+	flagged := holdFixtureRecipe(t, root, "flagged", concrete)
+	if err := push(flagged, true, boolPtr(true)); err != nil {
+		t.Fatalf("push --pin-sources --dry-run over an unpinned entity must pass: a real run would pin before it is judged; got %v", err)
+	}
+	if _, err := os.Stat(recipepin.LockPath(flagged)); !os.IsNotExist(err) {
+		t.Fatalf("a dry run wrote the lock; stat err = %v", err)
+	}
+	if err := push(flagged, false, boolPtr(true)); err != nil {
+		t.Fatalf("push --pin-sources over an unpinned entity must pin and publish; got %v", err)
+	}
+	if _, err := os.Stat(recipepin.LockPath(flagged)); err != nil {
+		t.Fatalf("after push --pin-sources the lock must be on disk: %v", err)
+	}
+	if err := push(flagged, true, nil); err != nil {
+		t.Errorf("the lock push --pin-sources wrote must satisfy the refusal of a publication without the flag; got %v", err)
+	}
 }
 
 // TestTheFlagReadsAsThreeAnswers holds the command line's reading of the flag to

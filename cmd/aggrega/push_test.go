@@ -196,6 +196,10 @@ spec:
 // 4) flows through naturally as Recipe YAML content; the YAML
 // round-trip in pulled.Bytes covers it without a separate test
 // fixture.
+//
+// The imported file is an input the entity's lock pins, so the publication
+// runs the pin step first: a publication that did not would refuse the entity,
+// and the lock the step writes is then one more co-located file in the bundle.
 func TestPushRecipeBundlesCoLocatedTreeAsTarGz(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
@@ -224,6 +228,7 @@ spec:
 		EntityPath: filepath.Join(recipeDir, "server.yaml"),
 		Registry:   "example.com",
 		PushTarget: store,
+		PinSources: boolPtr(true),
 	}); err != nil {
 		t.Fatalf("pushRun: %v", err)
 	}
@@ -237,7 +242,7 @@ spec:
 	}
 
 	names := tarEntryNames(t, pulled.Bytes)
-	wantEntries := []string{"server.yaml", "templates/deployment.yaml.tmpl", "partials/header.yaml"}
+	wantEntries := []string{"server.yaml", "templates/deployment.yaml.tmpl", "partials/header.yaml", "entity.lock"}
 	for _, want := range wantEntries {
 		if !containsString(names, want) {
 			t.Errorf("tar archive missing %q; got entries: %v", want, names)
@@ -248,7 +253,15 @@ spec:
 // TestPushRecipePreservesRemoteSourceURL pins the acceptance
 // criterion: a Recipe's remote `source:` URL is published as-is
 // in the YAML; the chart bytes are NOT pulled-then-bundled.
+//
+// The source's coordinates are written out in full, so its pin belongs in the
+// entity's lock and a publication holds the lock to it. The chart is therefore
+// served on the loopback interface and the publication pins it first: the pin
+// step fetches the chart into the content cache to digest it, and the bundle
+// still carries the reference and the lock, never the chart.
 func TestPushRecipePreservesRemoteSourceURL(t *testing.T) {
+	srv := serveChart(t, pinChartTgz(t))
+	chartURL := srv.URL + "/mariadb-25.0.8.tgz"
 	root := t.TempDir()
 	t.Chdir(root)
 	recipeDir := filepath.Join(root, "recipes", "mariadb", "1.0.0")
@@ -260,7 +273,10 @@ metadata:
 spec:
   capability: helm-chart
   implements: stateful/mariadb
-  source: oci://registry-1.docker.io/bitnamicharts/mariadb:25.0.8
+  source:
+    kind: helm-https-chart
+    url: ` + chartURL + `
+    version: "25.0.8"
   workload: |
     apiVersion: aggrega.ai/v1alpha1
     kind: Workload
@@ -273,6 +289,8 @@ spec:
 		EntityPath: filepath.Join(recipeDir, "mariadb.yaml"),
 		Registry:   "example.com",
 		PushTarget: store,
+		PinSources: boolPtr(true),
+		Out:        io.Discard,
 	}); err != nil {
 		t.Fatalf("pushRun: %v", err)
 	}
@@ -285,8 +303,11 @@ spec:
 	if !ok {
 		t.Fatalf("tar archive missing mariadb.yaml")
 	}
-	if !strings.Contains(string(yamlBytes), "oci://registry-1.docker.io/bitnamicharts/mariadb:25.0.8") {
+	if !strings.Contains(string(yamlBytes), chartURL) {
 		t.Errorf("source URL not preserved verbatim; got:\n%s", yamlBytes)
+	}
+	if _, ok := entries["entity.lock"]; !ok {
+		t.Errorf("the lock the pin step wrote is missing from the bundle; entries: %v", tarEntryNames(t, pulled.Bytes))
 	}
 	// Defensive: ensure no random `.tgz` artifact crept in via a
 	// hypothetical publish-time pull-then-bundle.

@@ -529,6 +529,59 @@ func TestPublishEntityOnTheDaemonRefusesUnsignedWhereASignatureIsRequired(t *tes
 	}
 }
 
+// TestPublishEntityOnTheDaemonRefusesAnUnpinnedRecipeInItsOwnWords drives, over
+// the wire, a dry-run publication of a Recipe whose lock does not record the pin
+// for the file it imports.
+//
+// The refusal is the one condition every surface raises, and what this surface
+// adds is only how to ask for the step on one request: a caller here sends fields
+// and has no command line, so a refusal naming a flag would name something it
+// cannot do. The request that then asks for the step is the positive control —
+// the same entity, the same dry run, answered — so a refusal of everything would
+// fail here rather than pass.
+func TestPublishEntityOnTheDaemonRefusesAnUnpinnedRecipeInItsOwnWords(t *testing.T) {
+	t.Parallel()
+	srv, root := publishFixture(t, defaultRegistryWorkspace)
+	dir := filepath.Join(root, "recipe", "1.0.0")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("make the recipe directory: %v", err)
+	}
+	recipe := "apiVersion: aggrega.ai/v1alpha1\nkind: Recipe\nmetadata:\n  name: server\n  version: 1.0.0\nspec:\n" +
+		"  capability: helm\n  implements: server\n  workload: |\n    apiVersion: aggrega.ai/v1alpha1\n    kind: Workload\n" +
+		"  artifacts:\n    extra.yaml:\n      $import: ./extra.yaml\n"
+	if err := os.WriteFile(filepath.Join(dir, "recipe.yaml"), []byte(recipe), 0o644); err != nil {
+		t.Fatalf("write the recipe: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "extra.yaml"), []byte("kind: ConfigMap\n"), 0o644); err != nil {
+		t.Fatalf("write the imported file: %v", err)
+	}
+
+	resp := callDaemonMethod(t, srv, "aggrega/publishEntity", map[string]any{
+		"entity": "recipe/1.0.0/recipe.yaml",
+		"dryRun": true,
+	})
+	if resp.Error == nil {
+		t.Fatalf("a publication of an entity whose lock is missing a pin must be refused; got result %s", resp.Result)
+	}
+	for _, want := range []string{"imported file extra.yaml: no pin recorded", "send pinSources as true", "pin_sources_at_push: true"} {
+		if !strings.Contains(resp.Error.Message, want) {
+			t.Errorf("the refusal must carry %q: %q", want, resp.Error.Message)
+		}
+	}
+	if strings.Contains(resp.Error.Message, "--pin-sources") {
+		t.Errorf("the refusal names a flag, which a caller of this surface cannot pass: %q", resp.Error.Message)
+	}
+
+	pinned := callDaemonMethod(t, srv, "aggrega/publishEntity", map[string]any{
+		"entity":     "recipe/1.0.0/recipe.yaml",
+		"dryRun":     true,
+		"pinSources": true,
+	})
+	if pinned.Error != nil {
+		t.Fatalf("the same dry run asking for the pin step must be answered: %q", pinned.Error.Message)
+	}
+}
+
 // TestSignatureTheDaemonAttachedDoesNotVerifyAgainstAnotherKey is the second half
 // of the relocation guard, and the one a positive test cannot see at all.
 //

@@ -30,7 +30,7 @@ in full, and a file an artifacts entry imports with $import.
 Pinning is the entity author's step. Run it on an entity before it is consumed — before you
 publish it, and after every change to one of its inputs — and commit the entity.lock it writes
 beside the entity. A pull over an entity whose lock does not record these pins halts and names
-this command.
+this command, and so does a push of it.
 
 No Release is needed. A source whose coordinates carry no template names one artifact for every
 Release that uses the entity, so it is resolved and pinned here, with nothing supplied. A source
@@ -82,7 +82,8 @@ const (
 		"directions: --pin-sources pins for this run and --pin-sources=false halts for this run, whatever the " +
 		"setting says"
 	helpPushPinSources = "Run the entity author's pin step on the entity before bundling it, so the entity.lock the " +
-		"step writes beside it is part of what is published. The same step as aggrega pin, writing the same bytes. It " +
+		"step writes beside it is part of what is published, instead of refusing an entity whose lock does not record " +
+		"its pins. The same step as aggrega pin, writing the same bytes. It " +
 		"writes beside the entity, so it runs only where the entity has a writable home: a document in a directory " +
 		"it was read from — which a push always has, since it publishes the entity document you name. Overrides the " +
 		"workspace's pin_sources_at_push in both directions: --pin-sources pins for this run and " +

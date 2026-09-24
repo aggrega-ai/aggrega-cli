@@ -160,29 +160,60 @@ func sourceInputName(p types.SourceDigest) string {
 	return name
 }
 
-// ErrEntityNotPinned is the loud halt a dependency resolution raises, by
-// default, over an entity in one of the workspace's catalog directories that
+// ErrEntityNotPinned is the loud halt raised over a Recipe or FeatureRecipe that
 // reads an input the lock beside it records no pin for — or records at a value
-// the input no longer has.
+// the input no longer has — by the two operations that hold an entity's lock to
+// the pin step rather than running it: a dependency resolution, over each such
+// entity in one of the workspace's catalog directories that the Release builds,
+// and a publication, over the one entity it is about to bundle.
 //
-// Pinning is the entity author's step, run before the entity is consumed, so a
-// resolution that meets an unpinned entity stops rather than recording pins in
-// the author's directory on its own. It names the entity, every input whose pin
-// is missing or stale and the class each belongs to, and the step that records
-// them. A resolution the caller asked to pin — or one a workspace configured to
-// pin — runs that step instead and never raises this. Category: CATALOG_ERROR.
-// Match with errors.Is(err, ErrEntityNotPinned()).
+// Pinning is the entity author's step, run before the entity is consumed or
+// published, so an operation that meets an unpinned entity stops rather than
+// recording pins in the author's directory on its own. It names the entity,
+// every input whose pin is missing or stale and the class each belongs to, and
+// the step that records them. An operation the caller asked to pin — or one a
+// workspace configured to pin — runs that step instead and never raises this.
+// Category: CATALOG_ERROR. Match with errors.Is(err, ErrEntityNotPinned()).
 func ErrEntityNotPinned() error { return errEntityNotPinned }
 
 var errEntityNotPinned = cerrors.Register("entity-not-pinned", cerrors.Meta{
 	ShortCode: "E0302",
 	Message:   "an input the entity reads has no pin recorded for it in the entity.lock beside it",
-	RulePlace: cerrors.RuleNoStageReaches("A dependency resolution evaluates the rule, once per Recipe or FeatureRecipe in a " +
-		"workspace catalog directory that the resolution reaches, comparing the pins that entity's inputs " +
-		"would record now against the lock file beside it. The inputs are acquired and digested during the " +
-		"resolution rather than during a compilation, and the lock is a file beside the entity rather than a " +
-		"document a compilation reads, so no declared stage holds the two values the rule compares."),
+	RulePlace: cerrors.RuleNoStageReaches("A dependency resolution evaluates the rule once per Recipe or FeatureRecipe in a " +
+		"workspace catalog directory that the resolution reaches, and a publication evaluates it once over the " +
+		"entity it is about to bundle, comparing the pins that entity's inputs would record now against the lock " +
+		"file beside it. The inputs are acquired and digested during that operation rather than during a " +
+		"compilation, and the lock is a file beside the entity rather than a document a compilation reads, so " +
+		"no declared stage holds the two values the rule compares."),
 })
+
+// Remedy is what the unpinned-entity halt tells its reader the operation that
+// halted can do instead, in that operation's own words: what the operation is
+// called, the workspace setting that makes every run of it record the pins, and
+// how the caller asks it to record them on this one run.
+//
+// It is a value rather than a second halt for the same reason a publication's
+// missing-destination refusal carries its caller's vocabulary: the condition —
+// an input the entity reads has no pin the step would record — is one
+// condition with one home, while what a reader can do about it differs by the
+// operation they ran and the surface they ran it from. So the words travel in,
+// and the condition, its composition and its class set stay single.
+type Remedy struct {
+	// Operation names the operation that halted, as its reader meets it: "pull",
+	// "publication".
+	Operation string
+
+	// Setting is the workspace configuration key that makes every run of the
+	// operation record the pins instead of halting.
+	Setting string
+
+	// Invocation is how the caller asks the operation to record the pins on this
+	// one run, in that caller's own vocabulary — a flag at a terminal, a request
+	// field elsewhere. Empty names none, and the remediation is then the author's
+	// step and the setting alone, which is true wherever the operation is run
+	// from.
+	Invocation string
+}
 
 // UnpinnedEntity composes the halt for one entity whose lock does not record
 // every pin its inputs need.
@@ -192,11 +223,12 @@ var errEntityNotPinned = cerrors.Register("entity-not-pinned", cerrors.Meta{
 // into the remedy — relative to the workspace root where it sits inside one. kind
 // and name identify the entity, and missing is every input the halt reports, each
 // naming its class so a reader knows whether a source or a file needs pinning.
+// remedy is what the operation that halted can do instead.
 //
 // The composition lives here, beside the class table, so the sentence a reader
 // is given for a class and the class the comparison found cannot come to name
 // two different things.
-func UnpinnedEntity(entityPath, displayPath, kind, name string, missing []Unrecorded) error {
+func UnpinnedEntity(entityPath, displayPath, kind, name string, missing []Unrecorded, remedy Remedy) error {
 	condition := ErrEntityNotPinned()
 	values := []string{fmt.Sprintf("%s %q", kind, name)}
 	for _, u := range missing {
@@ -208,17 +240,22 @@ func UnpinnedEntity(entityPath, displayPath, kind, name string, missing []Unreco
 	}
 	return cerrors.Wrap(condition, cerrors.CatalogError,
 		cerrors.SourceLocation{File: entityPath},
-		cerrors.ComposeMessage(condition, values, unpinnedEntityRemediation(displayPath)))
+		cerrors.ComposeMessage(condition, values, unpinnedEntityRemediation(displayPath, remedy)))
 }
 
 // unpinnedEntityRemediation is what the unpinned-entity halt tells its reader to
 // do. It names the entity author's own step first, because pinning is the
-// author's duty and the lock it writes is the file they commit; and the
-// workspace setting second, for a reader who consumes the entity rather than
-// authoring it and wants every resolution in the workspace to record the pins
-// instead of stopping.
-func unpinnedEntityRemediation(displayPath string) string {
-	return "remediation: run `aggrega pin " + displayPath + "` and commit the " + LockFileName +
-		" it writes beside the entity; to have every pull in this workspace record the pins itself instead, " +
-		"set `pin_sources_at_pull: true` in the workspace configuration"
+// author's duty and the lock it writes is the file they commit; then, where the
+// caller has one, the way to have this one run record the pins; and the
+// workspace setting last, for a reader who wants every run of the operation in
+// the workspace to record the pins instead of stopping.
+func unpinnedEntityRemediation(displayPath string, remedy Remedy) string {
+	step := "remediation: run `aggrega pin " + displayPath + "` and commit the " + LockFileName +
+		" it writes beside the entity"
+	setting := "set `" + remedy.Setting + ": true` in the workspace configuration"
+	if remedy.Invocation == "" {
+		return step + "; to have every " + remedy.Operation + " in this workspace record the pins itself instead, " + setting
+	}
+	return step + "; to have this " + remedy.Operation + " record the pins itself instead, " + remedy.Invocation +
+		"; to have every " + remedy.Operation + " in this workspace record them, " + setting
 }

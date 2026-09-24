@@ -342,6 +342,7 @@ func (s *Server) publishEntityConfig(params publishEntityParams, progressOut io.
 		Workspace:         s.resolvedWorkspace,
 		IdentitySupply:    daemonIdentitySupply,
 		DestinationSupply: daemonDestinationSupply,
+		PinSourcesSupply:  daemonPinSourcesSupply,
 		Out:               progressOut,
 	}, nil
 }
@@ -715,6 +716,8 @@ func runDeprecateArtifact(ctx context.Context, cfg publishops.DeprecateConfig) (
 var (
 	daemonDestinationSupply publishops.DestinationSupply = "send registry, or set the workspace's " +
 		"default registry in its configuration"
+
+	daemonPinSourcesSupply publishops.PinSourcesSupply = "send pinSources as true"
 
 	daemonIdentitySupply = signing.IdentityTokenSupply{
 		AbsentInput: "no identityToken was sent",

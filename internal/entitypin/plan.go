@@ -242,8 +242,10 @@ func (p Plan) EntityDigests() map[string]string {
 //
 // Every such entity is reported in one run, in document order, and each report
 // names every input it is missing and the class that input belongs to, so one
-// halt hands the reader the whole list of what to pin.
-func (p Plan) Unpinned() error {
+// halt hands the reader the whole list of what to pin. remedy is what the
+// operation holding the lock can do instead of halting, in its own words; it
+// changes the advice the halt ends with and nothing the halt found.
+func (p Plan) Unpinned(remedy recipepin.Remedy) error {
 	var findings []error
 	for _, e := range p.entities {
 		missing := recipepin.UnrecordedPins(e.want, e.recorded)
@@ -251,7 +253,7 @@ func (p Plan) Unpinned() error {
 			continue
 		}
 		findings = append(findings, recipepin.UnpinnedEntity(e.path,
-			catalog.RelativeToWorkspace(p.workspaceRoot, e.path), e.kind, e.name, missing))
+			catalog.RelativeToWorkspace(p.workspaceRoot, e.path), e.kind, e.name, missing, remedy))
 	}
 	return errors.Join(findings...)
 }

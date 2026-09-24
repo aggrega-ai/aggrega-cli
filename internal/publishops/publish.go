@@ -62,8 +62,15 @@ type PushConfig struct {
 	// entity author's pin step on the entity before bundling it: nil defers to
 	// the workspace's pin_sources_at_push, and a value overrides that setting in
 	// either direction. The step is the one every caller that pins reaches, so
-	// the lock it writes is the lock `aggrega pin` writes.
+	// the lock it writes is the lock `aggrega pin` writes. A publication that does
+	// not run the step refuses an entity whose lock does not record every pin the
+	// step would record.
 	PinSources *bool
+
+	// PinSourcesSupply is how this caller asks for the step on one invocation, in
+	// its own vocabulary, carried into that refusal so it names something the
+	// caller can actually do. Zero names nothing beyond what every caller shares.
+	PinSourcesSupply PinSourcesSupply
 
 	// Workspace is the resolved workspace the caller threads in. Required: Push
 	// refuses a nil rather than resolving one of its own, because resolving here
@@ -338,7 +345,10 @@ func writePublicationFacts(out io.Writer, kind, mediaType string, size, pluginSi
 // signature is valid for the published bytes.
 //
 // Returns wrapped errors on workspace-config validation failure,
-// entity-file read / parse failure, bundle failure (including
+// entity-file read / parse failure, the unpinned-entity halt
+// (recipepin.ErrEntityNotPinned) for a Recipe or FeatureRecipe whose lock does
+// not record every pin the pin step would record, where this invocation does not
+// run the step, bundle failure (including
 // ErrUnknownEntityKind for non-publishable kinds and
 // ErrEntityVersionPathMismatch for an entity whose metadata.version
 // disagrees with its per-version subdirectory), signer-construction /
@@ -348,7 +358,8 @@ func writePublicationFacts(out io.Writer, kind, mediaType string, size, pluginSi
 // <reference>:<tag> + mediatype + bundle byte count and returns
 // without constructing a remote target. Useful for authoring and
 // for verifying the reference-shape construction without binding to
-// a registry.
+// a registry. Everything a dry run reaches, it judges as a publication would,
+// the unpinned-entity halt included.
 func Push(ctx context.Context, cfg PushConfig) (PushResult, error) {
 	if cfg.EntityPath == "" {
 		return PushResult{}, fmt.Errorf("entity path required (pass as positional arg or via --entity)")
@@ -371,8 +382,10 @@ func Push(ctx context.Context, cfg PushConfig) (PushResult, error) {
 	// so an offline workspace refuses it here rather than after the entity has
 	// been read, its signing policy evaluated and its bundle built. A dry run is
 	// the exception and is excluded by what it does rather than by its name: it
-	// returns below without constructing a target, so it reaches no network and
-	// is the offline-safe form of this command.
+	// returns below without constructing a target, so it never reaches the
+	// registry. It is not network-free for every entity — the pin step, and the
+	// hold that stands in for it, acquire a remote source the entity writes out in
+	// full, and an offline workspace refuses that acquisition in its own words.
 	if !cfg.DryRun {
 		if err := refuseIfOffline(rw, "publishing a catalog entity is a network round trip"); err != nil {
 			return PushResult{}, err
@@ -421,9 +434,18 @@ func Push(ctx context.Context, cfg PushConfig) (PushResult, error) {
 	// document's own directory. So the restriction a dependency resolution meets
 	// on a cache-resident entity is the same predicate here, satisfied rather
 	// than skipped.
-	pinned, err := pinBeforePublishing(ctx, out, cfg, rw)
-	if err != nil {
-		return PushResult{}, err
+	//
+	// Whether this publication runs the step is decided once, here, and read
+	// again at the hold below: where it runs, the lock it writes is exactly what
+	// the hold would compare against, so the hold is satisfied by construction;
+	// where it does not, the hold is what stands in for it.
+	pinning := wsCfg.PushPinsSources(cfg.PinSources)
+	var pinned *entitypin.Result
+	if pinning {
+		pinned, err = pinBeforePublishing(ctx, out, cfg, rw)
+		if err != nil {
+			return PushResult{}, err
+		}
 	}
 
 	// Signing policy. A publication is refused unsigned when EITHER the destination
@@ -470,6 +492,20 @@ func Push(ctx context.Context, cfg PushConfig) (PushResult, error) {
 			res.Pin = pinned
 		}
 		return res, perr
+	}
+
+	// The lock is held to the pin step here, immediately before the bundle and
+	// after every refusal that costs nothing, because it is the one judgement on
+	// this path that may acquire a source: a refusal here builds no archive and
+	// reaches no registry, and an invocation a cheaper refusal would have stopped
+	// never pays for the acquisition. A Plugin never reaches it — its publication
+	// holds its own machine-owned records to its binary above and does not route
+	// through the bundler — and a dry run reaches it exactly as a publication does,
+	// so a dry run that reports a bundle is one this would not have refused.
+	if !pinning {
+		if err := holdBeforeBundling(ctx, cfg, rw); err != nil {
+			return PushResult{}, err
+		}
 	}
 
 	bundleBytes, mediaType, err := oci.Bundle(header.Kind, cfg.EntityPath)

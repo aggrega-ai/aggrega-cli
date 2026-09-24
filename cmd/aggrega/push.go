@@ -65,6 +65,8 @@ publish changed content under a new version instead.
 
 A Recipe or FeatureRecipe carries the pins for its own inputs in the entity.lock
 beside it, and pinning them is a step you run before publishing: aggrega pin.
+A push that does not run that step refuses an entity whose entity.lock is
+missing a pin, or holds one an input no longer matches, and names the step.
 Pass --pin-sources, or set pin_sources_at_push in the workspace configuration, to
 have push run that same step first, so the lock it writes is part of what is
 published; --pin-sources=false skips it for one run.`,
@@ -129,7 +131,7 @@ published; --pin-sources=false skips it for one run.`,
 	}
 	c.Flags().StringVar(&opts.entityPath, "entity", "", "Path to the entity YAML to publish (alternatively pass as the positional arg)")
 	c.Flags().StringVar(&opts.registry, "registry", "", "Destination registry host (overrides the workspace's default_registry)")
-	c.Flags().BoolVar(&opts.dryRun, "dry-run", false, "Compute the bundle and print the proposed <reference>:<tag>; skip the network call")
+	c.Flags().BoolVar(&opts.dryRun, "dry-run", false, "Compute the bundle and print the proposed <reference>:<tag> without contacting the registry. An entity the publication would refuse for a missing pin is refused here too")
 	c.Flags().BoolVar(&opts.sign, "sign", false, "Sign the published artifact and attach the signature as an OCI referrer. When omitted, signing follows the destination registry's policy.")
 	c.Flags().StringVar(&opts.keyPath, "key", "", "Path to a held ECDSA P-256 private key PEM for offline keyed signing. When omitted, keyless signing is used.")
 	c.Flags().StringVar(&opts.fulcio, "fulcio-url", "", "Fulcio certificate-authority URL for keyless signing. When omitted, the public-good Fulcio instance is used.")
@@ -181,6 +183,7 @@ func pushRun(ctx context.Context, cfg pushConfig) error {
 	cfg.EnvLookup = envLookupOrGetenv(cfg.EnvLookup)
 	cfg.IdentitySupply = commandLineIdentitySupply
 	cfg.DestinationSupply = commandLineDestinationSupply
+	cfg.PinSourcesSupply = commandLinePinSourcesSupply
 	// projection-omits PushResult: the publication writes an account of itself to this surface's own status output that names every fact the result carries, so projecting it here would restate in full what the terminal has just been shown
 	if _, err := publishops.Push(ctx, cfg); err != nil {
 		return fmt.Errorf("aggrega push: %w", err)
