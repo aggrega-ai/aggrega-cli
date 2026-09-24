@@ -241,6 +241,7 @@ func importInvoke(s *server, ctx context.Context, args json.RawMessage) (*callTo
 		return errorResult(explainDiagnostic(importRefusal(source, err), ""))
 	}
 
+	// projection-omits internal/importops.Result.OutputDir: here it is always the resolved workspace root, answered as workspace_root
 	payload := importPayload{
 		WorkspaceRoot: tw.root,
 		Source:        source,
