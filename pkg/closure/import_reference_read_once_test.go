@@ -36,9 +36,9 @@ func templateAxes() []axisFixture {
 			libs:     func(c closure.Closure) []closure.ResolvedLibrary { return c.WorkloadLibraries },
 		},
 		{
-			name: "ArtifactsLibraries", section: "ArtifactsLibraries", fragment: "#/artifacts/Web",
+			name: "ArtifactLibraries", section: "ArtifactLibraries", fragment: "#/artifacts/Web",
 			resolved: func(f *fakeLookup) map[string]closure.LibraryResolution { return f.artifactsLibs },
-			libs:     func(c closure.Closure) []closure.ResolvedLibrary { return c.ArtifactsLibraries },
+			libs:     func(c closure.Closure) []closure.ResolvedLibrary { return c.ArtifactLibraries },
 		},
 	}
 }

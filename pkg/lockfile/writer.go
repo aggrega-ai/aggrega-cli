@@ -29,7 +29,7 @@ import (
 //   - Inside each ExternalInput: RequiredBy sorted lexicographically
 //     and deduplicated.
 //   - Inside each SchemaLibrary / MappingLibrary / WorkloadLibrary /
-//     ArtifactsLibrary: Consumers sorted by ConsumerURI; within each
+//     ArtifactLibrary: Consumers sorted by ConsumerURI; within each
 //     LibraryConsumer, Fragments sorted lexicographically.
 //   - Inside each SourceArtifact: ReferencedBy sorted by the
 //     composite (URI, Field).

@@ -868,7 +868,7 @@ func BuildReferenceSet(lockPaths []string) (map[string]bool, int) {
 		for _, e := range lf.WorkloadLibraries {
 			addDigest(refset, e.Digest)
 		}
-		for _, e := range lf.ArtifactsLibraries {
+		for _, e := range lf.ArtifactLibraries {
 			addDigest(refset, e.Digest)
 		}
 		for _, e := range lf.Plugins {

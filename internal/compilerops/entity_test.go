@@ -18,16 +18,16 @@ import (
 // else, so a row of the table below exercises one rung of the resolution and
 // proves the rest of the ladder is walked past it.
 type stubEntityView struct {
-	component        string
-	plugin           string
-	feature          string
-	recipe           string
-	featureRecipe    string
-	aggregate        string
-	schemaLibrary    string
-	mappingLibrary   string
-	workloadLibrary  string
-	artifactsLibrary string
+	component       string
+	plugin          string
+	feature         string
+	recipe          string
+	featureRecipe   string
+	aggregate       string
+	schemaLibrary   string
+	mappingLibrary  string
+	workloadLibrary string
+	artifactLibrary string
 
 	// declaredIn answers for one exact identity tuple and nothing else, so a row
 	// proves the resolution asked with the identity it read off the matched entity
@@ -137,11 +137,11 @@ func (v stubEntityView) WorkloadLibrary(uri string) (types.WorkloadLibrary, bool
 	return l, true
 }
 
-func (v stubEntityView) ArtifactsLibrary(uri string) (types.ArtifactsLibrary, bool) {
-	if v.artifactsLibrary == "" || uri != v.artifactsLibrary {
-		return types.ArtifactsLibrary{}, false
+func (v stubEntityView) ArtifactLibrary(uri string) (types.ArtifactLibrary, bool) {
+	if v.artifactLibrary == "" || uri != v.artifactLibrary {
+		return types.ArtifactLibrary{}, false
 	}
-	l := types.ArtifactsLibrary{}
+	l := types.ArtifactLibrary{}
 	l.Metadata.Name = uri
 	return l, true
 }
@@ -160,16 +160,16 @@ func TestResolveEntityReachesEveryKind(t *testing.T) {
 		view  stubEntityView
 		scope string
 	}{
-		"Component":        {stubEntityView{component: "core/compute/api"}, ""},
-		"Plugin":           {stubEntityView{plugin: "provider/helm"}, "provider"},
-		"Feature":          {stubEntityView{feature: "core/metrics"}, ""},
-		"Recipe":           {stubEntityView{recipe: "helm-api"}, "helm"},
-		"FeatureRecipe":    {stubEntityView{featureRecipe: "compose-metrics"}, "compose"},
-		"Aggregate":        {stubEntityView{aggregate: "db-module"}, ""},
-		"SchemaLibrary":    {stubEntityView{schemaLibrary: "Probes"}, ""},
-		"MappingLibrary":   {stubEntityView{mappingLibrary: "BaseMappings"}, ""},
-		"WorkloadLibrary":  {stubEntityView{workloadLibrary: "Workloads"}, ""},
-		"ArtifactsLibrary": {stubEntityView{artifactsLibrary: "Extras"}, ""},
+		"Component":       {stubEntityView{component: "core/compute/api"}, ""},
+		"Plugin":          {stubEntityView{plugin: "provider/helm"}, "provider"},
+		"Feature":         {stubEntityView{feature: "core/metrics"}, ""},
+		"Recipe":          {stubEntityView{recipe: "helm-api"}, "helm"},
+		"FeatureRecipe":   {stubEntityView{featureRecipe: "compose-metrics"}, "compose"},
+		"Aggregate":       {stubEntityView{aggregate: "db-module"}, ""},
+		"SchemaLibrary":   {stubEntityView{schemaLibrary: "Probes"}, ""},
+		"MappingLibrary":  {stubEntityView{mappingLibrary: "BaseMappings"}, ""},
+		"WorkloadLibrary": {stubEntityView{workloadLibrary: "Workloads"}, ""},
+		"ArtifactLibrary": {stubEntityView{artifactLibrary: "Extras"}, ""},
 	}
 
 	kinds := compilerops.EntityKinds()
@@ -211,7 +211,7 @@ func TestResolveEntityReachesEveryKind(t *testing.T) {
 func nameFor(v stubEntityView) string {
 	for _, n := range []string{
 		v.component, v.plugin, v.feature, v.recipe, v.featureRecipe,
-		v.aggregate, v.schemaLibrary, v.mappingLibrary, v.workloadLibrary, v.artifactsLibrary,
+		v.aggregate, v.schemaLibrary, v.mappingLibrary, v.workloadLibrary, v.artifactLibrary,
 	} {
 		if n != "" {
 			return n
@@ -281,16 +281,16 @@ func TestResolveEntityReportsTheDocumentEveryKindWasDeclaredIn(t *testing.T) {
 		t.Fatal("the resolution reports no kinds at all; the census is broken, not the code")
 	}
 	views := map[string]stubEntityView{
-		"Component":        {component: "core/compute/api"},
-		"Plugin":           {plugin: "provider/helm"},
-		"Feature":          {feature: "core/metrics"},
-		"Recipe":           {recipe: "helm-api"},
-		"FeatureRecipe":    {featureRecipe: "compose-metrics"},
-		"Aggregate":        {aggregate: "db-module"},
-		"SchemaLibrary":    {schemaLibrary: "Probes"},
-		"MappingLibrary":   {mappingLibrary: "BaseMappings"},
-		"WorkloadLibrary":  {workloadLibrary: "Workloads"},
-		"ArtifactsLibrary": {artifactsLibrary: "Extras"},
+		"Component":       {component: "core/compute/api"},
+		"Plugin":          {plugin: "provider/helm"},
+		"Feature":         {feature: "core/metrics"},
+		"Recipe":          {recipe: "helm-api"},
+		"FeatureRecipe":   {featureRecipe: "compose-metrics"},
+		"Aggregate":       {aggregate: "db-module"},
+		"SchemaLibrary":   {schemaLibrary: "Probes"},
+		"MappingLibrary":  {mappingLibrary: "BaseMappings"},
+		"WorkloadLibrary": {workloadLibrary: "Workloads"},
+		"ArtifactLibrary": {artifactLibrary: "Extras"},
 	}
 	if len(views) != len(kinds) {
 		t.Errorf("this test carries %d views for %d kinds; a view names a kind the resolution does not reach",

@@ -237,25 +237,25 @@ func maximalWorkloadLibrary() types.WorkloadLibrary {
 	}
 }
 
-// maximalArtifactsLibrary carries a two-file bundle rather than the single body
+// maximalArtifactLibrary carries a two-file bundle rather than the single body
 // its sibling libraries hold, because a bundle addressing many files under one
 // reference is the shape that distinguishes this kind. One body spans lines and
 // one does not, so marshalling exercises both arms of the entry's literal-style
 // choice; the whole metadata surface is populated so Direction-1 validates every
 // optional field the schema must admit rather than only the required two.
-func maximalArtifactsLibrary() types.ArtifactsLibrary {
-	return types.ArtifactsLibrary{
+func maximalArtifactLibrary() types.ArtifactLibrary {
+	return types.ArtifactLibrary{
 		APIVersion: "aggrega.ai/v1alpha1",
-		Kind:       "ArtifactsLibrary",
-		Metadata: types.ArtifactsLibraryMetadata{
+		Kind:       "ArtifactLibrary",
+		Metadata: types.ArtifactLibraryMetadata{
 			Name:        "BaseArtifacts",
 			Version:     "1.0.0",
-			Description: "maximal artifacts library",
+			Description: "maximal artifact library",
 			Labels:      om[string]("l", "v"),
 			Annotations: om[string]("a", "b"),
 		},
-		Spec: types.ArtifactsLibrarySpec{
-			Artifacts: om[types.ArtifactsLibraryEntry]("OperatorSupport", types.ArtifactsLibraryEntry{
+		Spec: types.ArtifactLibrarySpec{
+			Artifacts: om[types.ArtifactLibraryEntry]("OperatorSupport", types.ArtifactLibraryEntry{
 				Files: om[string](
 					"crd.yaml", "apiVersion: apiextensions.k8s.io/v1\nkind: CustomResourceDefinition",
 					"rbac.yaml", "kind: Role",
@@ -634,7 +634,7 @@ func maximalLockfile() lockfile.Lockfile {
 			Digest:          pinDigest,
 			Consumers:       consumers,
 		}},
-		ArtifactsLibraries: []lockfile.ArtifactsLibrary{{
+		ArtifactLibraries: []lockfile.ArtifactLibrary{{
 			URI:             "core/artifacts/common:1.0.0",
 			ResolvedVersion: "1.0.0",
 			Digest:          pinDigest,

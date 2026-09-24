@@ -100,7 +100,7 @@ func TestArtifactEntry_RejectsMapWithExtraKeys(t *testing.T) {
 
 // TestArtifactEntry_IsLibraryImport pins mode-3 discrimination on the
 // `#/artifacts/` fragment surface, mirroring WorkloadTemplate.IsLibraryImport:
-// only a host-less bare-name ArtifactsLibrary reference is a library import; an
+// only a host-less bare-name ArtifactLibrary reference is a library import; an
 // inline body, a local-file import, and a host-bearing oci:// form are not.
 func TestArtifactEntry_IsLibraryImport(t *testing.T) {
 	t.Parallel()

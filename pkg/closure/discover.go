@@ -205,11 +205,11 @@ func (c *Closure) DiscoverWorkloadLibraries(ctx context.Context, lookup Lookup, 
 	return c.DiscoverTemplateLibraries(ctx, LibraryAxisNamed("WorkloadLibraries"), lookup, consumers, body)
 }
 
-// DiscoverArtifactsLibraries discovers the ArtifactsLibrary closure reachable from
+// DiscoverArtifactLibraries discovers the ArtifactLibrary closure reachable from
 // a set of Recipe / FeatureRecipe artifacts-map bodies. An artifacts map may
 // contribute several consumers from one entity. See DiscoverTemplateLibraries.
-func (c *Closure) DiscoverArtifactsLibraries(ctx context.Context, lookup Lookup, consumers []ArtifactsConsumer, body ArtifactsBodyFunc) error {
-	return c.DiscoverTemplateLibraries(ctx, LibraryAxisNamed("ArtifactsLibraries"), lookup, consumers, body)
+func (c *Closure) DiscoverArtifactLibraries(ctx context.Context, lookup Lookup, consumers []ArtifactsConsumer, body ArtifactsBodyFunc) error {
+	return c.DiscoverTemplateLibraries(ctx, LibraryAxisNamed("ArtifactLibraries"), lookup, consumers, body)
 }
 
 // DiscoverSchemaLibraries discovers the SchemaLibrary closure reachable from a set

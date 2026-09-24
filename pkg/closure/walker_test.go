@@ -48,10 +48,10 @@ func (f *fakeLookup) ResolveAggregate(ctx context.Context, uri string) (closure.
 // populated.
 func (f *fakeLookup) ResolveLibrary(ctx context.Context, axis closure.LibraryAxis, uri string) (closure.LibraryResolution, error) {
 	byAxis := map[string]map[string]closure.LibraryResolution{
-		"SchemaLibraries":    f.schemaLibs,
-		"MappingLibraries":   f.mappingLibs,
-		"WorkloadLibraries":  f.workloadLibs,
-		"ArtifactsLibraries": f.artifactsLibs,
+		"SchemaLibraries":   f.schemaLibs,
+		"MappingLibraries":  f.mappingLibs,
+		"WorkloadLibraries": f.workloadLibs,
+		"ArtifactLibraries": f.artifactsLibs,
 	}
 	if res, ok := byAxis[axis.Axis][fakeBaseName(uri)]; ok {
 		return res, nil

@@ -2890,7 +2890,7 @@ var ArtifactsEntryImportIsWellShaped = constraint.Check[
 }
 
 // ArtifactsEntryNamesADeclaredLibrary reports an artifacts entry whose library
-// import names an ArtifactsLibrary the load did not resolve — neither in the
+// import names an ArtifactLibrary the load did not resolve — neither in the
 // local catalog nor among the libraries a lockfile pinned and the load bridged
 // in.
 //
@@ -2908,7 +2908,7 @@ var ArtifactsEntryNamesADeclaredLibrary = constraint.Check[
 	constraint.DescribedView,
 	constraint.NodeArtifactsEntrySubject,
 ]{
-	Sentinel: ErrArtifactsLibraryNotFound(),
+	Sentinel: ErrArtifactLibraryNotFound(),
 	Severity: constraint.SeverityFatal,
 	Run: func(
 		v constraint.DescribedView,
@@ -2923,7 +2923,7 @@ var ArtifactsEntryNamesADeclaredLibrary = constraint.Check[
 			return nil
 		}
 		return []constraint.Objection{s.RaiseWith(
-			ErrArtifactsLibraryNotFound(),
+			ErrArtifactLibraryNotFound(),
 			constraint.Uncaptioned(library),
 			constraint.Captioned("bundle", bundle),
 			constraint.Captioned("artifacts entry", s.ArtifactsEntryKey()),
@@ -2932,7 +2932,7 @@ var ArtifactsEntryNamesADeclaredLibrary = constraint.Check[
 }
 
 // ArtifactsEntryNamesADeclaredBundle reports an artifacts entry whose library
-// import names a bundle the ArtifactsLibrary it resolved to does not declare.
+// import names a bundle the ArtifactLibrary it resolved to does not declare.
 //
 // It declines an entry whose library was not found at all, because a library
 // nothing declares declares no bundle either — the rule above names the library,
@@ -2946,7 +2946,7 @@ var ArtifactsEntryNamesADeclaredBundle = constraint.Check[
 	constraint.DescribedView,
 	constraint.NodeArtifactsEntrySubject,
 ]{
-	Sentinel: ErrArtifactsLibraryEntryNotFound(),
+	Sentinel: ErrArtifactLibraryEntryNotFound(),
 	Severity: constraint.SeverityFatal,
 	Run: func(
 		v constraint.DescribedView,
@@ -2961,9 +2961,9 @@ var ArtifactsEntryNamesADeclaredBundle = constraint.Check[
 			return nil
 		}
 		return []constraint.Objection{s.RaiseWith(
-			ErrArtifactsLibraryEntryNotFound(),
+			ErrArtifactLibraryEntryNotFound(),
 			constraint.Uncaptioned(bundle),
-			constraint.Captioned("ArtifactsLibrary", library),
+			constraint.Captioned("ArtifactLibrary", library),
 			constraint.Captioned("artifacts entry", s.ArtifactsEntryKey()),
 		)}
 	},
@@ -2999,7 +2999,7 @@ var ArtifactsEntryBundleFilesStayUnderTheirKey = constraint.Check[
 	constraint.DescribedView,
 	constraint.NodeArtifactsEntrySubject,
 ]{
-	Sentinel: ErrArtifactsLibraryFileEscapesKey(),
+	Sentinel: ErrArtifactLibraryFileEscapesKey(),
 	Severity: constraint.SeverityFatal,
 	Run: func(
 		v constraint.DescribedView,
@@ -3016,11 +3016,11 @@ var ArtifactsEntryBundleFilesStayUnderTheirKey = constraint.Check[
 				continue
 			}
 			out = append(out, s.RaiseWithAdvice(
-				ErrArtifactsLibraryFileEscapesKey(),
-				"rename the file inside the ArtifactsLibrary bundle so its name stays under "+
+				ErrArtifactLibraryFileEscapesKey(),
+				"rename the file inside the ArtifactLibrary bundle so its name stays under "+
 					"the artifacts key it is consumed at",
 				constraint.Uncaptioned(file),
-				constraint.Captioned("ArtifactsLibrary", library),
+				constraint.Captioned("ArtifactLibrary", library),
 				constraint.Captioned("artifacts entry", s.ArtifactsEntryKey()),
 			))
 		}

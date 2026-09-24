@@ -109,9 +109,9 @@ func withdrawalCorpus() []withdrawalKind {
 			header: "WorkloadLibrary: BaseWorkloads:1.0.0",
 		},
 		{
-			kind: "ArtifactsLibrary", fileName: "artifactslibrary.yaml", body: proofArtifactsLibrary,
-			identifier: "SharedArtifacts", repoPath: "artifactslibrary/sharedartifacts",
-			header: "ArtifactsLibrary: SharedArtifacts:1.0.0",
+			kind: "ArtifactLibrary", fileName: "artifactlibrary.yaml", body: proofArtifactLibrary,
+			identifier: "SharedArtifacts", repoPath: "artifactlibrary/sharedartifacts",
+			header: "ArtifactLibrary: SharedArtifacts:1.0.0",
 		},
 	}
 }

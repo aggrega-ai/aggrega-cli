@@ -246,7 +246,7 @@ func TestDiscoverLibraryDeprecationRecordsMarker(t *testing.T) {
 func TestLibraryVerifyLocationEqualsPushLocation(t *testing.T) {
 	t.Parallel()
 	const reg = "reg.example"
-	for _, kind := range []string{"SchemaLibrary", "MappingLibrary", "WorkloadLibrary", "ArtifactsLibrary"} {
+	for _, kind := range []string{"SchemaLibrary", "MappingLibrary", "WorkloadLibrary", "ArtifactLibrary"} {
 		axis := closure.VerifiableAxis{Axis: kind + "s", Kind: kind}
 		// The pinned form must bind to the same location as the bare form: the
 		// location is version-independent, and a version left in the path would name

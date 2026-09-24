@@ -68,10 +68,10 @@ func librarySections() []librarySection {
 			},
 		},
 		{
-			axis: closure.LibraryAxisNamed("ArtifactsLibraries"),
-			keys: func(lf *Lockfile) []driftKey { return driftKeysOf(lf.ArtifactsLibraries, artifactsLibraryKey) },
+			axis: closure.LibraryAxisNamed("ArtifactLibraries"),
+			keys: func(lf *Lockfile) []driftKey { return driftKeysOf(lf.ArtifactLibraries, artifactLibraryKey) },
 			canonicalise: func(dst, src *Lockfile) {
-				dst.ArtifactsLibraries = canonicaliseLibrarySection(src.ArtifactsLibraries, artifactsLibraryView)
+				dst.ArtifactLibraries = canonicaliseLibrarySection(src.ArtifactLibraries, artifactLibraryView)
 			},
 		},
 	}
@@ -86,7 +86,7 @@ func mappingLibraryKey(l MappingLibrary) driftKey {
 func workloadLibraryKey(l WorkloadLibrary) driftKey {
 	return driftKey{URI: l.URI, ResolvedVersion: l.ResolvedVersion, Digest: l.Digest}
 }
-func artifactsLibraryKey(l ArtifactsLibrary) driftKey {
+func artifactLibraryKey(l ArtifactLibrary) driftKey {
 	return driftKey{URI: l.URI, ResolvedVersion: l.ResolvedVersion, Digest: l.Digest}
 }
 
@@ -99,7 +99,7 @@ func mappingLibraryView(l *MappingLibrary) libraryRowView {
 func workloadLibraryView(l *WorkloadLibrary) libraryRowView {
 	return libraryRowView{l.URI, &l.Consumers, &l.Signature, &l.Deprecation}
 }
-func artifactsLibraryView(l *ArtifactsLibrary) libraryRowView {
+func artifactLibraryView(l *ArtifactLibrary) libraryRowView {
 	return libraryRowView{l.URI, &l.Consumers, &l.Signature, &l.Deprecation}
 }
 

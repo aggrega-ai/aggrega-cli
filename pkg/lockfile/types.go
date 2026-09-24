@@ -16,14 +16,14 @@
 //     was pulled in from — answers "why is this in the closure?".
 //   - consumers (list of {consumer_uri, fragments} records) appears on
 //     schema_libraries, mapping_libraries, workload_libraries, and
-//     artifacts_libraries. It records which catalog entity references
+//     artifact_libraries. It records which catalog entity references
 //     which <entry-name> fragments of the library — answers "if this
 //     library bumps, who is affected and at which fragments?". The
 //     structured shape captures the library's fan-in (many consumers,
 //     each potentially at many fragments) cleanly.
 //
 // The Lockfile struct field declaration order is alphabetical — with
-// ArtifactsLibraries the single exception, appended rather than
+// ArtifactLibraries the single exception, appended rather than
 // inserted — so yaml.v3's marshaller (which emits struct fields in
 // declaration order) produces a fixed top-level key ordering. A field
 // added later goes in its alphabetical position. WriteLockfile
@@ -44,26 +44,26 @@ package lockfile
 
 // Lockfile is the typed Go representation of `<release-stem>.lock`.
 // Field declaration order drives yaml.v3's canonical key emission and
-// is alphabetical, with ArtifactsLibraries the single exception —
+// is alphabetical, with ArtifactLibraries the single exception —
 // appended rather than inserted, so the emitted order is fixed rather
 // than strictly alphabetical. A field added later goes in its
 // alphabetical position.
 type Lockfile struct {
-	Entities           []Entity            `yaml:"entities"`
-	ExternalInputs     []ExternalInput     `yaml:"external_inputs"`
-	GeneratedAt        string              `yaml:"generated_at"`
-	MappingLibraries   []MappingLibrary    `yaml:"mapping_libraries"`
-	Mutators           []MutatorAttachment `yaml:"mutators"`
-	Plugins            []Plugin            `yaml:"plugins"`
-	Providers          []ProviderBinding   `yaml:"providers"`
-	Release            string              `yaml:"release"`
-	SchemaLibraries    []SchemaLibrary     `yaml:"schema_libraries"`
-	SourceArtifacts    []SourceArtifact    `yaml:"source_artifacts"`
-	Toolchain          *ToolchainStamp     `yaml:"toolchain,omitempty"`
-	VerdictInputs      []VerdictInput      `yaml:"verdict_inputs"`
-	Version            int                 `yaml:"version"`
-	WorkloadLibraries  []WorkloadLibrary   `yaml:"workload_libraries"`
-	ArtifactsLibraries []ArtifactsLibrary  `yaml:"artifacts_libraries"`
+	Entities          []Entity            `yaml:"entities"`
+	ExternalInputs    []ExternalInput     `yaml:"external_inputs"`
+	GeneratedAt       string              `yaml:"generated_at"`
+	MappingLibraries  []MappingLibrary    `yaml:"mapping_libraries"`
+	Mutators          []MutatorAttachment `yaml:"mutators"`
+	Plugins           []Plugin            `yaml:"plugins"`
+	Providers         []ProviderBinding   `yaml:"providers"`
+	Release           string              `yaml:"release"`
+	SchemaLibraries   []SchemaLibrary     `yaml:"schema_libraries"`
+	SourceArtifacts   []SourceArtifact    `yaml:"source_artifacts"`
+	Toolchain         *ToolchainStamp     `yaml:"toolchain,omitempty"`
+	VerdictInputs     []VerdictInput      `yaml:"verdict_inputs"`
+	Version           int                 `yaml:"version"`
+	WorkloadLibraries []WorkloadLibrary   `yaml:"workload_libraries"`
+	ArtifactLibraries []ArtifactLibrary   `yaml:"artifact_libraries"`
 }
 
 // Entity carries a catalog-entity pin: Component, Feature, Recipe,
@@ -228,11 +228,11 @@ type WorkloadLibrary struct {
 	Signature   *VerifiedSignature `yaml:"signature,omitempty"`
 }
 
-// ArtifactsLibrary is structurally identical to SchemaLibrary,
+// ArtifactLibrary is structurally identical to SchemaLibrary,
 // MappingLibrary, and WorkloadLibrary — declared as a distinct type so the
 // lockfile's library sections remain visibly separate at the Go API surface
 // even though their shape coincides today.
-type ArtifactsLibrary struct {
+type ArtifactLibrary struct {
 	URI             string            `yaml:"uri"`
 	ResolvedVersion string            `yaml:"resolved_version"`
 	Digest          string            `yaml:"digest"`

@@ -10,12 +10,12 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 )
 
-// TestDiscoverArtifactsLibrariesTransitive asserts the discovery fixpoint on the
+// TestDiscoverArtifactLibrariesTransitive asserts the discovery fixpoint on the
 // artifacts axis: a recipe artifacts entry `$import:`s LibA, a file body inside
 // LibA's bundle `$import:`s LibB, so both are discovered and resolved — discovery
 // descends a resolved library's bundle file bodies, not just the consumer
 // artifacts entries.
-func TestDiscoverArtifactsLibrariesTransitive(t *testing.T) {
+func TestDiscoverArtifactLibrariesTransitive(t *testing.T) {
 	t.Parallel()
 
 	lookup := &fakeLookup{
@@ -35,24 +35,24 @@ func TestDiscoverArtifactsLibrariesTransitive(t *testing.T) {
 	}
 
 	var c closure.Closure
-	if err := c.DiscoverArtifactsLibraries(context.Background(), lookup, consumers, body); err != nil {
-		t.Fatalf("DiscoverArtifactsLibraries: %v", err)
+	if err := c.DiscoverArtifactLibraries(context.Background(), lookup, consumers, body); err != nil {
+		t.Fatalf("DiscoverArtifactLibraries: %v", err)
 	}
 
 	got := map[string]bool{}
-	for _, lib := range c.ArtifactsLibraries {
+	for _, lib := range c.ArtifactLibraries {
 		got[lib.URI] = true
 	}
 	if !got["LibA"] || !got["LibB"] {
-		t.Errorf("expected transitive discovery of LibA and LibB; got %+v", c.ArtifactsLibraries)
+		t.Errorf("expected transitive discovery of LibA and LibB; got %+v", c.ArtifactLibraries)
 	}
 }
 
-// TestDiscoverArtifactsLibrariesCycleTerminates asserts the visited-set terminates
+// TestDiscoverArtifactLibrariesCycleTerminates asserts the visited-set terminates
 // a library↔library reference cycle at discovery on the artifacts axis: a file in
 // LibA's bundle `$import:`s LibB and a file in LibB's bundle `$import:`s LibA.
 // Discovery descends each library once and returns without error.
-func TestDiscoverArtifactsLibrariesCycleTerminates(t *testing.T) {
+func TestDiscoverArtifactLibrariesCycleTerminates(t *testing.T) {
 	t.Parallel()
 
 	lookup := &fakeLookup{
@@ -75,24 +75,24 @@ func TestDiscoverArtifactsLibrariesCycleTerminates(t *testing.T) {
 	}
 
 	var c closure.Closure
-	if err := c.DiscoverArtifactsLibraries(context.Background(), lookup, consumers, body); err != nil {
+	if err := c.DiscoverArtifactLibraries(context.Background(), lookup, consumers, body); err != nil {
 		t.Fatalf("cycle should terminate cleanly at discovery; got %v", err)
 	}
 
 	got := map[string]bool{}
-	for _, lib := range c.ArtifactsLibraries {
+	for _, lib := range c.ArtifactLibraries {
 		got[lib.URI] = true
 	}
 	if !got["LibA"] || !got["LibB"] {
-		t.Errorf("expected both cycle members discovered; got %+v", c.ArtifactsLibraries)
+		t.Errorf("expected both cycle members discovered; got %+v", c.ArtifactLibraries)
 	}
 }
 
-// TestDiscoverArtifactsLibrariesIdentityGate asserts the walker records only
+// TestDiscoverArtifactLibrariesIdentityGate asserts the walker records only
 // host-less identity `#/artifacts/` references: a local-file import and a
 // host-bearing `oci://…` form are not cross-library edges and yield an empty
-// ArtifactsLibrary closure.
-func TestDiscoverArtifactsLibrariesIdentityGate(t *testing.T) {
+// ArtifactLibrary closure.
+func TestDiscoverArtifactLibrariesIdentityGate(t *testing.T) {
 	t.Parallel()
 
 	lookup := &fakeLookup{
@@ -112,12 +112,12 @@ func TestDiscoverArtifactsLibrariesIdentityGate(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			var c closure.Closure
-			if err := c.DiscoverArtifactsLibraries(context.Background(), lookup,
+			if err := c.DiscoverArtifactLibraries(context.Background(), lookup,
 				[]closure.ArtifactsConsumer{{URI: "consumer", Template: tmpl}}, noBody); err != nil {
-				t.Fatalf("DiscoverArtifactsLibraries: %v", err)
+				t.Fatalf("DiscoverArtifactLibraries: %v", err)
 			}
-			if len(c.ArtifactsLibraries) != 0 {
-				t.Errorf("expected no artifacts-library edge for %q; got %+v", tmpl, c.ArtifactsLibraries)
+			if len(c.ArtifactLibraries) != 0 {
+				t.Errorf("expected no artifact-library edge for %q; got %+v", tmpl, c.ArtifactLibraries)
 			}
 		})
 	}

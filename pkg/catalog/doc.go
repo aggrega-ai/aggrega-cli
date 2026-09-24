@@ -5,7 +5,7 @@
 // filesystem-resident YAML. It walks one or more directory trees, identifies
 // each .yaml / .yml file's entity kind from the top-level "kind:" field
 // (Component, Feature, Recipe, FeatureRecipe, Aggregate, SchemaLibrary,
-// MappingLibrary, WorkloadLibrary, ArtifactsLibrary, Plugin — the
+// MappingLibrary, WorkloadLibrary, ArtifactLibrary, Plugin — the
 // catalog-resident kinds; Manifest and Release are deployment-side and live
 // outside the catalog), unmarshals into the matching pkg/types struct, and
 // indexes the result for in-process lookup.

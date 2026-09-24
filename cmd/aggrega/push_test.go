@@ -512,15 +512,15 @@ type referenceFixture struct {
 // hand-listed set of cases could not fail that way — it would simply stop
 // mentioning the new kind, and agree with itself forever.
 var referenceFixtures = map[string]referenceFixture{
-	"Component":        {"", "core/api-server", "1.0.0"},
-	"Feature":          {"", "core/ingress", "1.2.0"},
-	"Recipe":           {"helm", "server", "2.0.0"},
-	"FeatureRecipe":    {"helm", "ingress-nginx", "1.0.0"},
-	"SchemaLibrary":    {"", "Probes", "1.0.0"},
-	"MappingLibrary":   {"", "BaseMappings", "2.1.0"},
-	"WorkloadLibrary":  {"", "BaseWorkloads", "1.0.0"},
-	"ArtifactsLibrary": {"", "SharedArtifacts", "1.0.0"},
-	"Aggregate":        {"", "core/storefront", "1.0.0"},
+	"Component":       {"", "core/api-server", "1.0.0"},
+	"Feature":         {"", "core/ingress", "1.2.0"},
+	"Recipe":          {"helm", "server", "2.0.0"},
+	"FeatureRecipe":   {"helm", "ingress-nginx", "1.0.0"},
+	"SchemaLibrary":   {"", "Probes", "1.0.0"},
+	"MappingLibrary":  {"", "BaseMappings", "2.1.0"},
+	"WorkloadLibrary": {"", "BaseWorkloads", "1.0.0"},
+	"ArtifactLibrary": {"", "SharedArtifacts", "1.0.0"},
+	"Aggregate":       {"", "core/storefront", "1.0.0"},
 	// Plugin kind: path segment is "plugin"; the plugin's metadata.name
 	// path-encodes the socket. Reference shape:
 	// <registry>/plugin/<socket>/<name>.

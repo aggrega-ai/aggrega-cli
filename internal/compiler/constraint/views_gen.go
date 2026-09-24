@@ -4387,7 +4387,7 @@ type DescribedView interface {
 	// Keyed by (node, artifacts-entry); read from types.RecipeSpec.Artifacts.
 	ArtifactsEntryImportReference(node string, entry string) string
 
-	// ArtifactsEntryLibraryDeclared reports whether the ArtifactsLibrary one
+	// ArtifactsEntryLibraryDeclared reports whether the ArtifactLibrary one
 	// entry of a node's own artifacts block names is in the set the catalog
 	// resolved — the local catalog plus any lockfile-pinned libraries
 	// bridged in at load.
@@ -4406,10 +4406,10 @@ type DescribedView interface {
 	// them.
 	//
 	// Keyed by (node, artifacts-entry); read from
-	// renderer.RenderInput.ArtifactsLibraries.
+	// renderer.RenderInput.ArtifactLibraries.
 	ArtifactsEntryLibraryDeclared(node string, entry string) bool
 
-	// ArtifactsEntryBundleDeclared reports whether the ArtifactsLibrary one
+	// ArtifactsEntryBundleDeclared reports whether the ArtifactLibrary one
 	// entry of a node's own artifacts block names declares the bundle that
 	// entry's reference asks for.
 	//
@@ -4427,7 +4427,7 @@ type DescribedView interface {
 	// inside a library that is already there.
 	//
 	// Keyed by (node, artifacts-entry); read from
-	// renderer.RenderInput.ArtifactsLibraries.
+	// renderer.RenderInput.ArtifactLibraries.
 	ArtifactsEntryBundleDeclared(node string, entry string) bool
 
 	// ArtifactsEntryBundleFileNames are the names of the files the bundle one
@@ -4452,7 +4452,7 @@ type DescribedView interface {
 	// ordinary outcome rather than an approval.
 	//
 	// Keyed by (node, artifacts-entry); read from
-	// types.ArtifactsLibraryEntry.Files.
+	// types.ArtifactLibraryEntry.Files.
 	ArtifactsEntryBundleFileNames(node string, entry string) []string
 
 	// ArtifactsEntryBundleNestedImportFiles are the names of the files whose
@@ -4479,7 +4479,7 @@ type DescribedView interface {
 	// whose every file body is template content.
 	//
 	// Keyed by (node, artifacts-entry); read from
-	// types.ArtifactsLibraryEntry.Files.
+	// types.ArtifactLibraryEntry.Files.
 	ArtifactsEntryBundleNestedImportFiles(node string, entry string) []string
 
 	// RecipeValuesMappingImportReference is the library reference a node's own

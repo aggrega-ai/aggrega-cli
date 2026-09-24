@@ -89,4 +89,4 @@ source_artifacts: []
 verdict_inputs: []
 version: 1
 workload_libraries: []
-artifacts_libraries: []
+artifact_libraries: []

@@ -87,8 +87,8 @@ func TestArtifactOutputNames_BundleNestsUnderTheConsumptionKey(t *testing.T) {
 	tmplCtx, state, nodeCtx := newArtifactsCtx()
 	resetArtifacts(state)
 	state.Recipe.Spec.Artifacts.Set("widgets", types.ArtifactEntry{Import: "SharedCRDs#/artifacts/WidgetCRD"})
-	state.ArtifactsLibraries = map[string]types.ArtifactsLibrary{
-		"SharedCRDs": artifactsLibraryFixtureOrdered("SharedCRDs", "WidgetCRD",
+	state.ArtifactLibraries = map[string]types.ArtifactLibrary{
+		"SharedCRDs": artifactLibraryFixtureOrdered("SharedCRDs", "WidgetCRD",
 			[]string{"widget-crd.yaml", "widget-rbac.yaml"},
 			[]string{albCRDBody, albRBACBody}),
 	}
@@ -139,8 +139,8 @@ func TestArtifactOutputCollisionStillHaltsOnWhatSurvivesTheDerivation(t *testing
 	resetArtifacts(state)
 	state.Recipe.Spec.Artifacts.Set("widgets", types.ArtifactEntry{Import: "SharedCRDs#/artifacts/WidgetCRD"})
 	state.Recipe.Spec.Artifacts.Set("widgets/widget-crd.yaml", types.ArtifactEntry{Inline: albCRDBody})
-	state.ArtifactsLibraries = map[string]types.ArtifactsLibrary{
-		"SharedCRDs": artifactsLibraryFixtureOrdered("SharedCRDs", "WidgetCRD",
+	state.ArtifactLibraries = map[string]types.ArtifactLibrary{
+		"SharedCRDs": artifactLibraryFixtureOrdered("SharedCRDs", "WidgetCRD",
 			[]string{"widget-crd.yaml"}, []string{albCRDBody}),
 	}
 
@@ -156,7 +156,7 @@ func TestArtifactOutputCollisionStillHaltsOnWhatSurvivesTheDerivation(t *testing
 	resetArtifacts(ok)
 	ok.Recipe.Spec.Artifacts.Set("widgets", types.ArtifactEntry{Import: "SharedCRDs#/artifacts/WidgetCRD"})
 	ok.Recipe.Spec.Artifacts.Set("widget-crd.yaml", types.ArtifactEntry{Inline: albCRDBody})
-	ok.ArtifactsLibraries = state.ArtifactsLibraries
+	ok.ArtifactLibraries = state.ArtifactLibraries
 	if _, err := buildArtifactsProjection(nil, tmplCtx2, ok, nodeCtx2, "{{", "}}"); err != nil {
 		t.Fatalf("single-segment keys must not collide with a nested bundle name: %v", err)
 	}
@@ -312,14 +312,14 @@ func TestArtifactBundleFileLeavingItsKeyHalts(t *testing.T) {
 			tmplCtx, state, nodeCtx := newArtifactsCtx()
 			resetArtifacts(state)
 			state.Recipe.Spec.Artifacts.Set(key, types.ArtifactEntry{Import: "SharedCRDs#/artifacts/WidgetCRD"})
-			state.ArtifactsLibraries = map[string]types.ArtifactsLibrary{
-				"SharedCRDs": artifactsLibraryFixtureOrdered("SharedCRDs", "WidgetCRD",
+			state.ArtifactLibraries = map[string]types.ArtifactLibrary{
+				"SharedCRDs": artifactLibraryFixtureOrdered("SharedCRDs", "WidgetCRD",
 					[]string{tc.fname}, []string{albCRDBody}),
 			}
 
 			_, err := buildArtifactsProjection(nil, tmplCtx, state, nodeCtx, "{{", "}}")
-			if !errors.Is(err, ErrArtifactsLibraryFileEscapesKey()) {
-				t.Fatalf("bundle file %q under key %q: got %v; want ErrArtifactsLibraryFileEscapesKey — %s",
+			if !errors.Is(err, ErrArtifactLibraryFileEscapesKey()) {
+				t.Fatalf("bundle file %q under key %q: got %v; want ErrArtifactLibraryFileEscapesKey — %s",
 					tc.fname, key, err, tc.why)
 			}
 
@@ -361,8 +361,8 @@ func TestArtifactBundleFileMayNestInsideItsKey(t *testing.T) {
 	tmplCtx, state, nodeCtx := newArtifactsCtx()
 	resetArtifacts(state)
 	state.Recipe.Spec.Artifacts.Set("widgets", types.ArtifactEntry{Import: "SharedCRDs#/artifacts/WidgetCRD"})
-	state.ArtifactsLibraries = map[string]types.ArtifactsLibrary{
-		"SharedCRDs": artifactsLibraryFixtureOrdered("SharedCRDs", "WidgetCRD",
+	state.ArtifactLibraries = map[string]types.ArtifactLibrary{
+		"SharedCRDs": artifactLibraryFixtureOrdered("SharedCRDs", "WidgetCRD",
 			// The third name is the interior-climb form that resolves back inside:
 			// legal, and the case a refusal written against the literal characters
 			// rather than against the resolved name would wrongly reject.

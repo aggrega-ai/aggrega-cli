@@ -69,8 +69,8 @@ func discriminatingArtifactCorpus(t *testing.T, node string) *RenderResult {
 	recipe.Spec.Artifacts = artifacts
 
 	input, lookup, factory := corpusFromRecipes(map[string]*types.Recipe{node: recipe})
-	input.ArtifactsLibraries = map[string]types.ArtifactsLibrary{
-		"SharedPolicies": artifactsLibraryFixtureOrdered("SharedPolicies", "PolicyPair",
+	input.ArtifactLibraries = map[string]types.ArtifactLibrary{
+		"SharedPolicies": artifactLibraryFixtureOrdered("SharedPolicies", "PolicyPair",
 			[]string{"bundle-one.yaml", "bundle-two.yaml"},
 			[]string{axisBundleOneBody, axisBundleTwoBody}),
 	}

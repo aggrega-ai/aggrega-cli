@@ -109,9 +109,9 @@ var libraryAxes = []LibraryAxis{
 		libs: func(c *Closure) *[]ResolvedLibrary { return &c.WorkloadLibraries },
 	},
 	{
-		Axis: "ArtifactsLibraries", Kind: "ArtifactsLibrary",
-		FragmentPrefix: "/artifacts/", Label: "artifacts-library",
-		libs: func(c *Closure) *[]ResolvedLibrary { return &c.ArtifactsLibraries },
+		Axis: "ArtifactLibraries", Kind: "ArtifactLibrary",
+		FragmentPrefix: "/artifacts/", Label: "artifact-library",
+		libs: func(c *Closure) *[]ResolvedLibrary { return &c.ArtifactLibraries },
 	},
 }
 

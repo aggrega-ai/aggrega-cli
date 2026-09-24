@@ -811,6 +811,67 @@ plugins: []
 	}
 }
 
+// TestLoadLockfileRefusesTheRetiredArtifactLibrarySectionKey pins that the
+// artifact-library section is read under one key only. Each library kind's
+// section is the snake-case plural of its kind name, so the section is
+// artifact_libraries; a lockfile still carrying the plural-of-plural spelling
+// is refused where it is loaded, naming the key, rather than read as a second
+// spelling of the same section. The rows share one fixture and differ only in
+// that key, so the first row is the positive control that makes the refusal
+// attributable to the key alone.
+//
+// The retired key is derived from the current one rather than written out, so
+// the tree carries no literal copy of a key the schema no longer admits.
+func TestLoadLockfileRefusesTheRetiredArtifactLibrarySectionKey(t *testing.T) {
+	t.Parallel()
+	const current = "artifact_libraries"
+	retired := strings.Replace(current, "artifact_", "artifacts_", 1)
+	fixture := func(key string) string {
+		return `version: 1
+release: ./r.yaml
+generated_at: 2026-05-22T10:23:14Z
+entities: []
+` + key + `:
+  - uri: Bundles
+    resolved_version: 1.0.0
+    digest: sha256:a
+    consumers:
+      - consumer_uri: helm/web:1.0.0
+        fragments:
+          - '#/artifacts/Pair'
+`
+	}
+	cases := []struct {
+		name    string
+		key     string
+		refused bool
+	}{
+		{"current key loads", current, false},
+		{"retired key is refused", retired, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			lf, _, err := lockfile.LoadLockfile(writeFixture(t, fixture(tc.key)))
+			if !tc.refused {
+				if err != nil {
+					t.Fatalf("a lockfile carrying %s must load: %v", tc.key, err)
+				}
+				if len(lf.ArtifactLibraries) != 1 || lf.ArtifactLibraries[0].URI != "Bundles" {
+					t.Fatalf("the %s section must decode into ArtifactLibraries; got %+v", tc.key, lf.ArtifactLibraries)
+				}
+				return
+			}
+			if !errors.Is(err, lockfile.ErrLockfileInvalid()) {
+				t.Fatalf("a lockfile carrying %s must be refused with ErrLockfileInvalid; got %v", tc.key, err)
+			}
+			if !strings.Contains(err.Error(), tc.key) {
+				t.Errorf("the refusal must name the key it did not admit, %q; got %v", tc.key, err)
+			}
+		})
+	}
+}
+
 func TestSchemaRequiresAtLeastOneReferencedBy(t *testing.T) {
 	t.Parallel()
 	content := `version: 1

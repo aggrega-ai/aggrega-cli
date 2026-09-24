@@ -16,7 +16,7 @@ import (
 )
 
 // The shared artifact bundle, authored once and consumed two ways: as the
-// ArtifactsLibrary bundle the import recipe pulls in (one artifacts entry → two
+// ArtifactLibrary bundle the import recipe pulls in (one artifacts entry → two
 // output files), and as two inline artifacts entries the comparison recipe carries
 // verbatim. What the two forms share is the rendered CONTENT — the bundle expands
 // to the same documents the equivalent inline entries produce. What they
@@ -62,8 +62,8 @@ spec:
         name: store-{{ .values.port }}-policy
 `
 
-const proofArtifactsLibrary = `apiVersion: aggrega.ai/v1alpha1
-kind: ArtifactsLibrary
+const proofArtifactLibrary = `apiVersion: aggrega.ai/v1alpha1
+kind: ArtifactLibrary
 metadata:
   name: SharedArtifacts
   version: "1.0.0"
@@ -86,7 +86,7 @@ spec:
 
 // writeArtifactsProofWorkspace authors a buildable workspace whose store Recipe
 // emits artifacts through the builtin helm engine. recipeYAML selects the artifacts
-// form (library `$import` vs inline). The SharedArtifacts library is authored
+// form (library `$import` vs inline). The SharedArtifact library is authored
 // locally when authorLibrary is set (so an initial pull pins it).
 func writeArtifactsProofWorkspace(t *testing.T, root, recipeYAML string, authorLibrary bool) string {
 	t.Helper()
@@ -146,31 +146,31 @@ spec:
 	writeHelmRendererPlugin(t, filepath.Join(catalogRoot, "base", "providers"))
 	writeFixture(t, filepath.Join(catalogRoot, "recipes", "helm", "store.yaml"), recipeYAML)
 	if authorLibrary {
-		writeFixture(t, filepath.Join(catalogRoot, "base", "artifactslibraries", "sharedartifacts.yaml"), proofArtifactsLibrary)
+		writeFixture(t, filepath.Join(catalogRoot, "base", "artifactlibraries", "sharedartifacts.yaml"), proofArtifactLibrary)
 	}
 	return filepath.Join(root, "release.yaml")
 }
 
-// relocateArtifactsLibraryToCache moves SharedArtifacts from the local catalog into
+// relocateArtifactLibraryToCache moves SharedArtifacts from the local catalog into
 // the content cache, reproducing the post-pull state of a remote-pulled library:
 // present in the cache under the library layout, pinned in the lockfile, ABSENT
 // from the local catalog. Mirrors relocateWorkloadLibraryToCache.
-func relocateArtifactsLibraryToCache(t *testing.T, root, cacheDir, version string) {
+func relocateArtifactLibraryToCache(t *testing.T, root, cacheDir, version string) {
 	t.Helper()
-	if err := os.Remove(filepath.Join(root, "catalog", "base", "artifactslibraries", "sharedartifacts.yaml")); err != nil {
-		t.Fatalf("remove local artifacts library: %v", err)
+	if err := os.Remove(filepath.Join(root, "catalog", "base", "artifactlibraries", "sharedartifacts.yaml")); err != nil {
+		t.Fatalf("remove local artifact library: %v", err)
 	}
 	slot := oci.CachePath(root, cacheDir, "SharedArtifacts:"+version, version)
 	if err := os.MkdirAll(slot, 0o755); err != nil {
 		t.Fatalf("mkdir cache slot: %v", err)
 	}
-	body := []byte(proofArtifactsLibrary)
+	body := []byte(proofArtifactLibrary)
 	if err := os.WriteFile(filepath.Join(slot, "library.yaml"), body, 0o644); err != nil {
 		t.Fatalf("write cache slot: %v", err)
 	}
-	mb, _, err := ociManifestArtifact(oci.MediaTypeArtifactsLibrary, body)
+	mb, _, err := ociManifestArtifact(oci.MediaTypeArtifactLibrary, body)
 	if err != nil {
-		t.Fatalf("build artifacts-library manifest: %v", err)
+		t.Fatalf("build artifact-library manifest: %v", err)
 	}
 	if err := oci.WriteCachedManifest(root, cacheDir, "SharedArtifacts:"+version, version, mb); err != nil {
 		t.Fatalf("write cache manifest: %v", err)
@@ -188,8 +188,8 @@ func clearDist(t *testing.T, distDir string) {
 	}
 }
 
-// TestBuildResolvesRemotePinnedArtifactsLibrary is the end-to-end proof on the
-// artifacts axis: a build resolves an ArtifactsLibrary pinned in the lockfile +
+// TestBuildResolvesRemotePinnedArtifactLibrary is the end-to-end proof on the
+// artifacts axis: a build resolves an ArtifactLibrary pinned in the lockfile +
 // present in the content cache but ABSENT from the local catalog, via the
 // pinned-cache bridge, and the imported bundle's files' EVALUATED output
 // materializes in the rendered dist tree.
@@ -215,7 +215,7 @@ func clearDist(t *testing.T, distDir string) {
 // can survive into the next variant's reading. The rebuild check is the deliberate
 // exception and clears nothing: a stale file left by the previous build of that
 // same variant has to show up as a difference.
-func TestBuildResolvesRemotePinnedArtifactsLibrary(t *testing.T) {
+func TestBuildResolvesRemotePinnedArtifactLibrary(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
 	releasePath := writeArtifactsProofWorkspace(t, root, proofArtifactsImportRecipe, true)
@@ -229,14 +229,14 @@ func TestBuildResolvesRemotePinnedArtifactsLibrary(t *testing.T) {
 		t.Fatalf("initial pullRun: %v", err)
 	}
 
-	// Host-less pin: the lockfile pins the artifacts library by its bare-name
+	// Host-less pin: the lockfile pins the artifact library by its bare-name
 	// identity, no registry host.
 	lf, _, err := lockfile.LoadLockfile(filepath.Join(root, "release.lock"))
 	if err != nil {
 		t.Fatalf("LoadLockfile: %v", err)
 	}
 	var pinned bool
-	for _, a := range lf.ArtifactsLibraries {
+	for _, a := range lf.ArtifactLibraries {
 		if a.URI == "SharedArtifacts" {
 			pinned = true
 			if strings.Contains(a.URI, "://") || strings.Contains(a.URI, "/") {
@@ -248,23 +248,23 @@ func TestBuildResolvesRemotePinnedArtifactsLibrary(t *testing.T) {
 		}
 	}
 	if !pinned {
-		t.Fatalf("lockfile did not pin SharedArtifacts; artifacts_libraries=%+v", lf.ArtifactsLibraries)
+		t.Fatalf("lockfile did not pin SharedArtifacts; artifact_libraries=%+v", lf.ArtifactLibraries)
 	}
 
 	// Local-resolution baseline: the library is pinned in the lockfile and still
 	// present in the catalog on disk, so this build reads it from there. Captured
 	// as a (path, content) tree identity for the comparison after the relocation.
 	if err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false, os.Stderr, os.Stdout); err != nil {
-		t.Fatalf("dispatchBuild with local artifacts library: %v", err)
+		t.Fatalf("dispatchBuild with local artifact library: %v", err)
 	}
 	localTree := hashDistTree(t, distDir)
 	localPaths := distFileList(t, distDir)
 	clearDist(t, distDir)
 
-	relocateArtifactsLibraryToCache(t, root, cacheDir, "1.0.0")
+	relocateArtifactLibraryToCache(t, root, cacheDir, "1.0.0")
 
 	if err := dispatchBuild(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false, os.Stderr, os.Stdout); err != nil {
-		t.Fatalf("dispatchBuild with bridged remote artifacts library: %v", err)
+		t.Fatalf("dispatchBuild with bridged remote artifact library: %v", err)
 	}
 	remote := readDistTree(t, distDir)
 	remotePaths := distFileList(t, distDir)
@@ -286,7 +286,7 @@ func TestBuildResolvesRemotePinnedArtifactsLibrary(t *testing.T) {
 	}
 
 	// Rewrite the recipe to carry the identical two files as inline artifacts
-	// entries, re-pull to a fresh lockfile (no artifacts library in closure), and
+	// entries, re-pull to a fresh lockfile (no artifact library in closure), and
 	// rebuild from a cleared dist so the tree read back is this variant's alone.
 	writeFixture(t, filepath.Join(catalogDir, "recipes", "helm", "store.yaml"), proofArtifactsInlineRecipe)
 	if err := os.Remove(filepath.Join(root, "release.lock")); err != nil {

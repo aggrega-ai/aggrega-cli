@@ -174,12 +174,12 @@ type Inputs struct {
 	// WorkloadLibraries are present.
 	WorkloadLibraries map[string]types.WorkloadLibrary
 
-	// ArtifactsLibraries is the resolved ArtifactsLibrary set (local catalog plus
+	// ArtifactLibraries is the resolved ArtifactLibrary set (local catalog plus
 	// lockfile-pinned libraries bridged in at load), keyed by bare name. It flows
 	// to the renderer so a Recipe / FeatureRecipe artifacts entry's bare-name
 	// `artifacts.<name>: { $import: <Library>#/artifacts/<entry> }` resolves at
-	// render. nil when no ArtifactsLibraries are present.
-	ArtifactsLibraries map[string]types.ArtifactsLibrary
+	// render. nil when no ArtifactLibraries are present.
+	ArtifactLibraries map[string]types.ArtifactLibrary
 
 	// RecordedPins are the content pins the load recorded for each pin-bearing
 	// entity, keyed by the document that entity was read from. They flow to the
@@ -1794,13 +1794,13 @@ func RunPipeline(
 			// presentation plus its own facts. Forwarding it is what keeps one
 			// fact to one producer: rebuilding it inside the render would give
 			// every earlier fact a second answer, free to disagree with this one.
-			GraphView:          stepsOut.GraphView,
-			FeatureOrder:       featureOrder,
-			ResolveResult:      resolveResult,
-			CatalogLookup:      catalogLookup,
-			MappingLibraries:   inputs.MappingLibraries,
-			WorkloadLibraries:  inputs.WorkloadLibraries,
-			ArtifactsLibraries: inputs.ArtifactsLibraries,
+			GraphView:         stepsOut.GraphView,
+			FeatureOrder:      featureOrder,
+			ResolveResult:     resolveResult,
+			CatalogLookup:     catalogLookup,
+			MappingLibraries:  inputs.MappingLibraries,
+			WorkloadLibraries: inputs.WorkloadLibraries,
+			ArtifactLibraries: inputs.ArtifactLibraries,
 			// The pins the load recorded, forwarded for the reason the library sets
 			// above are: the load is where an entity and the directory it was read
 			// from are both in hand, so a render that asked the filesystem again

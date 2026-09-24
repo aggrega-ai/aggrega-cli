@@ -85,12 +85,12 @@ func TestVerifiedFactRowsCoverEveryVerifiableClosureAxis(t *testing.T) {
 // discovery it made and the lockfile would carry nothing.
 func TestVerifiedFactRowRecordsThroughToTheRow(t *testing.T) {
 	lf := &Lockfile{
-		Entities:           []Entity{{URI: "core/compute/api-server", Digest: "sha256:e"}},
-		SchemaLibraries:    []SchemaLibrary{{URI: "PortSpec", Digest: "sha256:s"}},
-		MappingLibraries:   []MappingLibrary{{URI: "HelmValues", Digest: "sha256:m"}},
-		WorkloadLibraries:  []WorkloadLibrary{{URI: "Deployments", Digest: "sha256:w"}},
-		ArtifactsLibraries: []ArtifactsLibrary{{URI: "Bundles", Digest: "sha256:a"}},
-		Plugins:            []Plugin{{URI: "provider/helm", Digest: "sha256:p"}},
+		Entities:          []Entity{{URI: "core/compute/api-server", Digest: "sha256:e"}},
+		SchemaLibraries:   []SchemaLibrary{{URI: "PortSpec", Digest: "sha256:s"}},
+		MappingLibraries:  []MappingLibrary{{URI: "HelmValues", Digest: "sha256:m"}},
+		WorkloadLibraries: []WorkloadLibrary{{URI: "Deployments", Digest: "sha256:w"}},
+		ArtifactLibraries: []ArtifactLibrary{{URI: "Bundles", Digest: "sha256:a"}},
+		Plugins:           []Plugin{{URI: "provider/helm", Digest: "sha256:p"}},
 	}
 
 	for _, row := range lf.VerifiedFactRows() {
@@ -112,7 +112,7 @@ func TestVerifiedFactRowRecordsThroughToTheRow(t *testing.T) {
 	check("schema_libraries", lf.SchemaLibraries[0].URI, lf.SchemaLibraries[0].Deprecation, lf.SchemaLibraries[0].Signature)
 	check("mapping_libraries", lf.MappingLibraries[0].URI, lf.MappingLibraries[0].Deprecation, lf.MappingLibraries[0].Signature)
 	check("workload_libraries", lf.WorkloadLibraries[0].URI, lf.WorkloadLibraries[0].Deprecation, lf.WorkloadLibraries[0].Signature)
-	check("artifacts_libraries", lf.ArtifactsLibraries[0].URI, lf.ArtifactsLibraries[0].Deprecation, lf.ArtifactsLibraries[0].Signature)
+	check("artifact_libraries", lf.ArtifactLibraries[0].URI, lf.ArtifactLibraries[0].Deprecation, lf.ArtifactLibraries[0].Signature)
 	check("plugins", lf.Plugins[0].URI, lf.Plugins[0].Deprecation, lf.Plugins[0].Signature)
 
 	// Deprecation() reads the slot rather than a snapshot taken when the view was
@@ -136,10 +136,10 @@ func TestCanonicaliseClonesLibraryRecordedFacts(t *testing.T) {
 		Signer:   &VerifiedSignature{Mode: "keyed", BundleDigest: "sha256:mb"},
 	}
 	lf := &Lockfile{
-		SchemaLibraries:    []SchemaLibrary{{URI: "PortSpec", Signature: sig, Deprecation: dep}},
-		MappingLibraries:   []MappingLibrary{{URI: "HelmValues", Signature: sig, Deprecation: dep}},
-		WorkloadLibraries:  []WorkloadLibrary{{URI: "Deployments", Signature: sig, Deprecation: dep}},
-		ArtifactsLibraries: []ArtifactsLibrary{{URI: "Bundles", Signature: sig, Deprecation: dep}},
+		SchemaLibraries:   []SchemaLibrary{{URI: "PortSpec", Signature: sig, Deprecation: dep}},
+		MappingLibraries:  []MappingLibrary{{URI: "HelmValues", Signature: sig, Deprecation: dep}},
+		WorkloadLibraries: []WorkloadLibrary{{URI: "Deployments", Signature: sig, Deprecation: dep}},
+		ArtifactLibraries: []ArtifactLibrary{{URI: "Bundles", Signature: sig, Deprecation: dep}},
 	}
 
 	out := canonicalise(lf)
@@ -153,7 +153,7 @@ func TestCanonicaliseClonesLibraryRecordedFacts(t *testing.T) {
 		{"schema_libraries", out.SchemaLibraries[0].Signature, out.SchemaLibraries[0].Deprecation, out.SchemaLibraries[0].Deprecation.Signer},
 		{"mapping_libraries", out.MappingLibraries[0].Signature, out.MappingLibraries[0].Deprecation, out.MappingLibraries[0].Deprecation.Signer},
 		{"workload_libraries", out.WorkloadLibraries[0].Signature, out.WorkloadLibraries[0].Deprecation, out.WorkloadLibraries[0].Deprecation.Signer},
-		{"artifacts_libraries", out.ArtifactsLibraries[0].Signature, out.ArtifactsLibraries[0].Deprecation, out.ArtifactsLibraries[0].Deprecation.Signer},
+		{"artifact_libraries", out.ArtifactLibraries[0].Signature, out.ArtifactLibraries[0].Deprecation, out.ArtifactLibraries[0].Deprecation.Signer},
 	}
 	for _, p := range pairs {
 		if p.outSig == sig {

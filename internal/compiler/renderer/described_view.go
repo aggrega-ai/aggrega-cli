@@ -100,7 +100,7 @@ type describedView struct {
 	// resolved it. A node with no bound Recipe is absent rather than nil-valued.
 	recipes map[string]*types.Recipe
 
-	// artifactsLibraries is the ArtifactsLibrary set the load resolved, keyed by
+	// artifactLibraries is the ArtifactLibrary set the load resolved, keyed by
 	// bare name, read only for the facts about what an authored artifacts entry's
 	// library reference resolves to.
 	//
@@ -110,13 +110,13 @@ type describedView struct {
 	// A render given none answers every fact over it as an entry naming a library
 	// nothing declares, which is the same answer the render's own walk would
 	// reach for such a build.
-	artifactsLibraries map[string]types.ArtifactsLibrary
+	artifactLibraries map[string]types.ArtifactLibrary
 
 	// mappingLibraries is the MappingLibrary set the load resolved, keyed by bare
 	// name, read only for the facts about what an authored values-mapping import
 	// reference resolves to.
 	//
-	// It is held rather than reached for, on the reading the ArtifactsLibrary set
+	// It is held rather than reached for, on the reading the ArtifactLibrary set
 	// beside it carries: the set arrives on the render's input already resolved,
 	// and a presentation resolving one itself would be a second reading of the
 	// catalog. A render given none answers every fact over it as a field naming a
@@ -211,7 +211,7 @@ type describedView struct {
 // presentation and the retention key whole classes of fact; the Release
 // document keys one, and a render given none enumerates no boundary at all — so a
 // rule over that fact is invoked zero times rather than being answered emptily.
-// The ArtifactsLibrary set is taken but is NOT among the products whose absence
+// The ArtifactLibrary set is taken but is NOT among the products whose absence
 // returns nil, on the same reading the Release document carries: a render
 // given none has no entry importing a library that could resolve, so the facts
 // over it answer as they would for a library nothing declares — which is an
@@ -228,7 +228,7 @@ func newDescribedView(
 	lookup pluginpath.Lookup,
 	engineFactory EngineFactory,
 	renderedNames NodeRenderedNames,
-	artifactsLibraries map[string]types.ArtifactsLibrary,
+	artifactLibraries map[string]types.ArtifactLibrary,
 	mappingLibraries map[string]types.MappingLibrary,
 	workloadLibraries map[string]types.WorkloadLibrary,
 ) constraint.DescribedView {
@@ -236,19 +236,19 @@ func newDescribedView(
 		return nil
 	}
 	return &describedView{
-		GraphView:          earlier,
-		ctx:                ctx,
-		graph:              graph,
-		recipes:            recipes,
-		recipeLookup:       recipeLookup,
-		release:            release,
-		describe:           stepDescriberOver(descriptors, lookup),
-		lookup:             lookup,
-		engineFactory:      engineFactory,
-		renderedNames:      renderedNames,
-		artifactsLibraries: artifactsLibraries,
-		mappingLibraries:   mappingLibraries,
-		workloadLibraries:  workloadLibraries,
+		GraphView:         earlier,
+		ctx:               ctx,
+		graph:             graph,
+		recipes:           recipes,
+		recipeLookup:      recipeLookup,
+		release:           release,
+		describe:          stepDescriberOver(descriptors, lookup),
+		lookup:            lookup,
+		engineFactory:     engineFactory,
+		renderedNames:     renderedNames,
+		artifactLibraries: artifactLibraries,
+		mappingLibraries:  mappingLibraries,
+		workloadLibraries: workloadLibraries,
 	}
 }
 
@@ -707,7 +707,7 @@ func (v *describedView) ArtifactsEntryImportReference(node string, entry string)
 	return authored.Import
 }
 
-// ArtifactsEntryLibraryDeclared reports whether the ArtifactsLibrary one entry of
+// ArtifactsEntryLibraryDeclared reports whether the ArtifactLibrary one entry of
 // a node's own artifacts block names is in the set the load resolved.
 //
 // An entry naming no library, and a reference that does not split into the
@@ -718,7 +718,7 @@ func (v *describedView) ArtifactsEntryLibraryDeclared(node string, entry string)
 	return v.artifactsEntryLookup(node, entry).LibraryFound
 }
 
-// ArtifactsEntryBundleDeclared reports whether the ArtifactsLibrary one entry of
+// ArtifactsEntryBundleDeclared reports whether the ArtifactLibrary one entry of
 // a node's own artifacts block names declares the bundle that entry asks for.
 //
 // It reports false wherever the library itself was not found, because a library
@@ -949,7 +949,7 @@ func (v *describedView) artifactsEntry(node string, entry string) (types.Artifac
 }
 
 // artifactsEntryLookup resolves one entry's library reference against the
-// resolved ArtifactsLibrary set, through the single reading the artifacts walk
+// resolved ArtifactLibrary set, through the single reading the artifacts walk
 // expands a bundle through.
 //
 // It is one helper under four accessors rather than four resolutions, and the
@@ -963,7 +963,7 @@ func (v *describedView) artifactsEntryLookup(node string, entry string) artifact
 	if !held || authored.HasOCIPrefix() || !authored.IsLibraryImport() {
 		return artifactLibraryLookup{}
 	}
-	return lookUpArtifactLibraryBundle(authored.Import, v.artifactsLibraries)
+	return lookUpArtifactLibraryBundle(authored.Import, v.artifactLibraries)
 }
 
 // ProviderArtifactTemplateDelimiters returns the delimiter pair the provider

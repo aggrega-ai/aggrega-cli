@@ -195,7 +195,7 @@ func describeRootEntries(names []string) string {
 // switches on):
 //
 //   - Component / Feature / Aggregate / SchemaLibrary /
-//     MappingLibrary / WorkloadLibrary / ArtifactsLibrary / Plugin → bare
+//     MappingLibrary / WorkloadLibrary / ArtifactLibrary / Plugin → bare
 //     YAML, no archive; bytes are the file contents unchanged. A library
 //     kind is self-contained: every fragment it publishes — a schema, a
 //     mapping, a workload body, an artifact file body — is authored inline
@@ -219,7 +219,7 @@ func Bundle(kind, entityPath string) ([]byte, string, error) {
 	}
 
 	switch kind {
-	case "Component", "Feature", "Aggregate", "SchemaLibrary", "MappingLibrary", "WorkloadLibrary", "ArtifactsLibrary", "Plugin":
+	case "Component", "Feature", "Aggregate", "SchemaLibrary", "MappingLibrary", "WorkloadLibrary", "ArtifactLibrary", "Plugin":
 		data, err := os.ReadFile(entityPath)
 		if err != nil {
 			return nil, "", fmt.Errorf("oci: bundle read %s: %w", entityPath, err)

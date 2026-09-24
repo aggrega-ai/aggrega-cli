@@ -91,7 +91,7 @@ spec:
     SimpleService: 'kind: Deployment'
 `
 	localPathArtifactsLibYAML = `apiVersion: aggrega.ai/v1alpha1
-kind: ArtifactsLibrary
+kind: ArtifactLibrary
 metadata:
   name: SharedCRDs
   version: 1.0.0
@@ -152,7 +152,7 @@ func TestLocalEntityPathReportsTheDocumentPerKind(t *testing.T) {
 		{"SchemaLibrary", "", "DbSizing", "1.0.0", "catalog/libraries/db-sizing.yaml"},
 		{"MappingLibrary", "", "BaseMappings", "1.0.0", "catalog/libraries/mappings.yaml"},
 		{"WorkloadLibrary", "", "BaseWorkloads", "1.0.0", "catalog/libraries/workloads.yaml"},
-		{"ArtifactsLibrary", "", "SharedCRDs", "1.0.0", "catalog/libraries/artifacts.yaml"},
+		{"ArtifactLibrary", "", "SharedCRDs", "1.0.0", "catalog/libraries/artifacts.yaml"},
 	} {
 		t.Run(tc.kind, func(t *testing.T) {
 			got, ok := l.LocalEntityPath(tc.kind, tc.scope, tc.name, tc.version)

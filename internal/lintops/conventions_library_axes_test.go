@@ -57,7 +57,7 @@ spec:
       kind: Deployment
 `,
 		"artifacts.yaml": `apiVersion: aggrega.ai/v1alpha1
-kind: ArtifactsLibrary
+kind: ArtifactLibrary
 metadata:
   name: ProbeArtifacts
   version: "1.0.0"
@@ -77,17 +77,17 @@ spec:
 
 	// The name index the collection joins on, one entry per authored library.
 	index := map[string]string{
-		"SchemaLibrary|ProbeSchemas":      paths["schema.yaml"],
-		"MappingLibrary|ProbeMappings":    paths["mapping.yaml"],
-		"WorkloadLibrary|ProbeWorkloads":  paths["workload.yaml"],
-		"ArtifactsLibrary|ProbeArtifacts": paths["artifacts.yaml"],
+		"SchemaLibrary|ProbeSchemas":     paths["schema.yaml"],
+		"MappingLibrary|ProbeMappings":   paths["mapping.yaml"],
+		"WorkloadLibrary|ProbeWorkloads": paths["workload.yaml"],
+		"ArtifactLibrary|ProbeArtifacts": paths["artifacts.yaml"],
 	}
 
 	cl := closure.Closure{
-		SchemaLibraries:    []closure.ResolvedLibrary{{URI: "ProbeSchemas"}},
-		MappingLibraries:   []closure.ResolvedLibrary{{URI: "ProbeMappings"}},
-		WorkloadLibraries:  []closure.ResolvedLibrary{{URI: "ProbeWorkloads"}},
-		ArtifactsLibraries: []closure.ResolvedLibrary{{URI: "ProbeArtifacts"}},
+		SchemaLibraries:   []closure.ResolvedLibrary{{URI: "ProbeSchemas"}},
+		MappingLibraries:  []closure.ResolvedLibrary{{URI: "ProbeMappings"}},
+		WorkloadLibraries: []closure.ResolvedLibrary{{URI: "ProbeWorkloads"}},
+		ArtifactLibraries: []closure.ResolvedLibrary{{URI: "ProbeArtifacts"}},
 	}
 
 	lazyView := catalog.NewLazyLookup(ws, "", []string{ws}, nil)
@@ -107,10 +107,10 @@ spec:
 
 	for _, axis := range closure.LibraryAxes() {
 		want := map[string]string{
-			"SchemaLibraries":    paths["schema.yaml"],
-			"MappingLibraries":   paths["mapping.yaml"],
-			"WorkloadLibraries":  paths["workload.yaml"],
-			"ArtifactsLibraries": paths["artifacts.yaml"],
+			"SchemaLibraries":   paths["schema.yaml"],
+			"MappingLibraries":  paths["mapping.yaml"],
+			"WorkloadLibraries": paths["workload.yaml"],
+			"ArtifactLibraries": paths["artifacts.yaml"],
 		}[axis.Axis]
 		if want == "" {
 			continue

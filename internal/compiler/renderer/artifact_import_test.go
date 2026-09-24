@@ -24,8 +24,8 @@ import (
 // three rather than of the two that happen to be reachable.
 func TestResolveArtifactLibraryImport_Errors(t *testing.T) {
 	t.Parallel()
-	libs := map[string]types.ArtifactsLibrary{
-		"SharedCRDs": artifactsLibraryFixtureOrdered("SharedCRDs", "WidgetCRD",
+	libs := map[string]types.ArtifactLibrary{
+		"SharedCRDs": artifactLibraryFixtureOrdered("SharedCRDs", "WidgetCRD",
 			[]string{"widget-crd.yaml"}, []string{"BODY"}),
 	}
 	cases := []struct {
@@ -33,8 +33,8 @@ func TestResolveArtifactLibraryImport_Errors(t *testing.T) {
 		ref  string
 		want error
 	}{
-		{"unknown library", "Absent#/artifacts/WidgetCRD", ErrArtifactsLibraryNotFound()},
-		{"unknown bundle", "SharedCRDs#/artifacts/Missing", ErrArtifactsLibraryEntryNotFound()},
+		{"unknown library", "Absent#/artifacts/WidgetCRD", ErrArtifactLibraryNotFound()},
+		{"unknown bundle", "SharedCRDs#/artifacts/Missing", ErrArtifactLibraryEntryNotFound()},
 		{"host-bearing", "oci://hub/SharedCRDs:1.0.0#/artifacts/WidgetCRD", ErrHostInLibraryImport()},
 		{"stale @ version separator", "SharedCRDs@1.0.0#/artifacts/WidgetCRD", ErrArtifactImportShape()},
 		{"non-artifacts fragment", "SharedCRDs#/mappings/WidgetCRD", ErrArtifactImportShape()},
@@ -58,8 +58,8 @@ func TestResolveArtifactLibraryImport_Errors(t *testing.T) {
 // accept the authored form.
 func TestResolveArtifactLibraryImport_BareNameResolves(t *testing.T) {
 	t.Parallel()
-	libs := map[string]types.ArtifactsLibrary{
-		"SharedCRDs": artifactsLibraryFixtureOrdered("SharedCRDs", "WidgetCRD",
+	libs := map[string]types.ArtifactLibrary{
+		"SharedCRDs": artifactLibraryFixtureOrdered("SharedCRDs", "WidgetCRD",
 			[]string{"widget-crd.yaml"}, []string{"BODY"}),
 	}
 	for _, ref := range []string{

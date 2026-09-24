@@ -1429,8 +1429,8 @@ func buildLockfile(releasePath string, cl closure.Closure, toolchain *lockfile.T
 	}
 	sort.Slice(lf.WorkloadLibraries, func(i, j int) bool { return lf.WorkloadLibraries[i].URI < lf.WorkloadLibraries[j].URI })
 
-	for _, l := range cl.ArtifactsLibraries {
-		lf.ArtifactsLibraries = append(lf.ArtifactsLibraries, lockfile.ArtifactsLibrary{
+	for _, l := range cl.ArtifactLibraries {
+		lf.ArtifactLibraries = append(lf.ArtifactLibraries, lockfile.ArtifactLibrary{
 			URI:             l.URI,
 			ResolvedVersion: l.ResolvedVersion,
 			Digest:          l.Digest,
@@ -1438,7 +1438,7 @@ func buildLockfile(releasePath string, cl closure.Closure, toolchain *lockfile.T
 			Consumers:       copyConsumers(l.Consumers),
 		})
 	}
-	sort.Slice(lf.ArtifactsLibraries, func(i, j int) bool { return lf.ArtifactsLibraries[i].URI < lf.ArtifactsLibraries[j].URI })
+	sort.Slice(lf.ArtifactLibraries, func(i, j int) bool { return lf.ArtifactLibraries[i].URI < lf.ArtifactLibraries[j].URI })
 
 	for _, w := range cl.Plugins {
 		lf.Plugins = append(lf.Plugins, lockfile.Plugin{

@@ -13,8 +13,8 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
 )
 
-const artifactsLibraryYAML = `apiVersion: aggrega.ai/v1alpha1
-kind: ArtifactsLibrary
+const artifactLibraryYAML = `apiVersion: aggrega.ai/v1alpha1
+kind: ArtifactLibrary
 metadata:
   name: SharedCRDs
   version: 1.0.0
@@ -34,22 +34,22 @@ spec:
       widget-config.yaml: "kind: ConfigMap"
 `
 
-// TestArtifactsLibrary_LoadBundleValidatesAndPreservesFileOrder asserts a
+// TestArtifactLibrary_LoadBundleValidatesAndPreservesFileOrder asserts a
 // multi-file bundle entry passes envelope validation, unmarshals with each file
 // body captured verbatim, and preserves author file order (determinism-load-
 // bearing per Invariant 8).
-func TestArtifactsLibrary_LoadBundleValidatesAndPreservesFileOrder(t *testing.T) {
+func TestArtifactLibrary_LoadBundleValidatesAndPreservesFileOrder(t *testing.T) {
 	t.Parallel()
 
-	if _, err := envelope.ValidateBytes(envelope.KindArtifactsLibrary, []byte(artifactsLibraryYAML), "test.yaml"); err != nil {
+	if _, err := envelope.ValidateBytes(envelope.KindArtifactLibrary, []byte(artifactLibraryYAML), "test.yaml"); err != nil {
 		t.Fatalf("envelope validation of a valid multi-file bundle failed: %v", err)
 	}
 
-	var lib types.ArtifactsLibrary
-	if err := yaml.Unmarshal([]byte(artifactsLibraryYAML), &lib); err != nil {
+	var lib types.ArtifactLibrary
+	if err := yaml.Unmarshal([]byte(artifactLibraryYAML), &lib); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if lib.Kind != "ArtifactsLibrary" || lib.Metadata.Name != "SharedCRDs" {
+	if lib.Kind != "ArtifactLibrary" || lib.Metadata.Name != "SharedCRDs" {
 		t.Fatalf("unexpected envelope: kind=%q name=%q", lib.Kind, lib.Metadata.Name)
 	}
 	entry, ok := lib.Spec.Artifacts.Get("WidgetCRD")
@@ -75,14 +75,14 @@ func TestArtifactsLibrary_LoadBundleValidatesAndPreservesFileOrder(t *testing.T)
 	}
 }
 
-// TestArtifactsLibrary_RejectsNonMappingEntry asserts a bundle entry that is a
+// TestArtifactLibrary_RejectsNonMappingEntry asserts a bundle entry that is a
 // scalar (not a filename→body mapping) fails the Go-side typed unmarshal with the
 // shape sentinel.
-func TestArtifactsLibrary_RejectsNonMappingEntry(t *testing.T) {
+func TestArtifactLibrary_RejectsNonMappingEntry(t *testing.T) {
 	t.Parallel()
 
 	const src = `apiVersion: aggrega.ai/v1alpha1
-kind: ArtifactsLibrary
+kind: ArtifactLibrary
 metadata:
   name: Bad
   version: 1.0.0
@@ -90,27 +90,27 @@ spec:
   artifacts:
     Bundle: "not a mapping"
 `
-	var lib types.ArtifactsLibrary
+	var lib types.ArtifactLibrary
 	err := yaml.Unmarshal([]byte(src), &lib)
-	if !errors.Is(err, types.ErrArtifactsLibraryEntryShape()) {
-		t.Fatalf("expected ErrArtifactsLibraryEntryShape, got %v", err)
+	if !errors.Is(err, types.ErrArtifactLibraryEntryShape()) {
+		t.Fatalf("expected ErrArtifactLibraryEntryShape, got %v", err)
 	}
 }
 
-// TestArtifactsLibrary_RoundTrip asserts a loaded bundle re-marshals with
+// TestArtifactLibrary_RoundTrip asserts a loaded bundle re-marshals with
 // multi-line file bodies in literal block style so newlines survive round-trip.
-func TestArtifactsLibrary_RoundTrip(t *testing.T) {
+func TestArtifactLibrary_RoundTrip(t *testing.T) {
 	t.Parallel()
 
-	var lib types.ArtifactsLibrary
-	if err := yaml.Unmarshal([]byte(artifactsLibraryYAML), &lib); err != nil {
+	var lib types.ArtifactLibrary
+	if err := yaml.Unmarshal([]byte(artifactLibraryYAML), &lib); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
 	out, err := yaml.Marshal(&lib)
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
-	var round types.ArtifactsLibrary
+	var round types.ArtifactLibrary
 	if err := yaml.Unmarshal(out, &round); err != nil {
 		t.Fatalf("re-unmarshal: %v", err)
 	}

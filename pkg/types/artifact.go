@@ -37,7 +37,7 @@ var errArtifactEntryShape = cerrors.Register("artifact-entry-shape", cerrors.Met
 //     written.
 //   - Mode 3 (library import): a YAML map of exactly one key
 //     `$import: <Library>#/artifacts/<entry>`, a host-less bare-name
-//     reference into an ArtifactsLibrary bundle (the version is supplied
+//     reference into an ArtifactLibrary bundle (the version is supplied
 //     by the per-Release lockfile; no registry host appears in the
 //     reference). Import carries the identity reference; IsLibraryImport
 //     returns true. The referenced entry is a bundle of files that expands
@@ -75,7 +75,7 @@ func (a ArtifactEntry) IsEmpty() bool {
 }
 
 // IsLibraryImport reports whether a.Import is a host-less bare-name
-// ArtifactsLibrary reference (mode 3, `<Library>#/artifacts/<entry>`) as
+// ArtifactLibrary reference (mode 3, `<Library>#/artifacts/<entry>`) as
 // opposed to a local file path (mode 2). The discriminator is the
 // `#/artifacts/` fragment surface with no registry host, mirroring
 // WorkloadTemplate's `#/workloads/` gate. The host-bearing `oci://…` form is

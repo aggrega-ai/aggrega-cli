@@ -9,6 +9,7 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -18,17 +19,18 @@ import (
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	orasoci "oras.land/oras-go/v2/content/oci"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/entitykind"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 )
 
-// artifactsLibraryPublishBody is a complete, schema-shaped ArtifactsLibrary: a
+// artifactLibraryPublishBody is a complete, schema-shaped ArtifactLibrary: a
 // PascalCase bare identity, a semver version matching its version directory, and
 // one named bundle carrying two output files whose bodies are Go-template
 // fragments authored inline as YAML strings. Every file body being inline is the
 // property that decides how this kind publishes — the entity references nothing
 // beside it, so the artifact is the entity file and nothing else.
-const artifactsLibraryPublishBody = `apiVersion: aggrega.ai/v1alpha1
-kind: ArtifactsLibrary
+const artifactLibraryPublishBody = `apiVersion: aggrega.ai/v1alpha1
+kind: ArtifactLibrary
 metadata:
   name: SharedArtifacts
   version: 1.0.0
@@ -50,7 +52,7 @@ spec:
           name: store-{{ .values.port }}-policy
 `
 
-// TestPublishArtifactsLibraryEndToEnd publishes a real ArtifactsLibrary through
+// TestPublishArtifactLibraryEndToEnd publishes a real ArtifactLibrary through
 // the production publish path and inspects what actually landed, in both
 // directions: that the expected artifact is there in the expected shape, and that
 // nothing else came with it.
@@ -74,15 +76,15 @@ spec:
 // bytes equal the entity verbatim therefore does more than confirm a round trip —
 // it discriminates between the two shapes the bundler can produce, which is
 // exactly the choice that had to be made for this kind.
-func TestPublishArtifactsLibraryEndToEnd(t *testing.T) {
+func TestPublishArtifactLibraryEndToEnd(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
 
 	// The catalog layout for every library kind: library.yaml inside a directory
 	// named for the entity's metadata.version.
-	versionDir := filepath.Join(root, "artifactslibrary", "shared-artifacts", "1.0.0")
+	versionDir := filepath.Join(root, "artifactlibrary", "shared-artifacts", "1.0.0")
 	entityPath := filepath.Join(versionDir, "library.yaml")
-	writeEntityFixture(t, entityPath, artifactsLibraryPublishBody)
+	writeEntityFixture(t, entityPath, artifactLibraryPublishBody)
 
 	// The stray sibling: present on disk beside the entity, and required to be
 	// absent from the published artifact. Its body is a distinctive token so a
@@ -110,13 +112,13 @@ func TestPublishArtifactsLibraryEndToEnd(t *testing.T) {
 		PushTarget: store,
 		Out:        &out,
 	}); err != nil {
-		t.Fatalf("publishing an ArtifactsLibrary must succeed: %v", err)
+		t.Fatalf("publishing an ArtifactLibrary must succeed: %v", err)
 	}
 
 	// PRESENCE — the reference. The kind lowercases into its own repository
 	// segment and the PascalCase bare identity lowercases into the path, so the
 	// published reference is the one a consumer's pin will address.
-	const wantRef = "Push complete: example.com/artifactslibrary/sharedartifacts:1.0.0"
+	const wantRef = "Push complete: example.com/artifactlibrary/sharedartifacts:1.0.0"
 	if !strings.Contains(out.String(), wantRef) {
 		t.Errorf("publish output missing %q; got:\n%s", wantRef, out.String())
 	}
@@ -124,20 +126,20 @@ func TestPublishArtifactsLibraryEndToEnd(t *testing.T) {
 
 	pulled, err := oci.Pull(context.Background(), store, "1.0.0")
 	if err != nil {
-		t.Fatalf("pulling the published ArtifactsLibrary back: %v", err)
+		t.Fatalf("pulling the published ArtifactLibrary back: %v", err)
 	}
 
 	// PRESENCE — the media type the transport recorded is this kind's own.
-	if pulled.MediaType != oci.MediaTypeArtifactsLibrary {
-		t.Errorf("published artifactType = %q; want %q", pulled.MediaType, oci.MediaTypeArtifactsLibrary)
+	if pulled.MediaType != oci.MediaTypeArtifactLibrary {
+		t.Errorf("published artifactType = %q; want %q", pulled.MediaType, oci.MediaTypeArtifactLibrary)
 	}
 
 	// PRESENCE — the content is the entity, byte for byte. ABSENCE — therefore
 	// not an archive of the entity's directory, and the stray sibling is not in
 	// it.
-	if string(pulled.Bytes) != artifactsLibraryPublishBody {
+	if string(pulled.Bytes) != artifactLibraryPublishBody {
 		t.Errorf("published bytes are not the entity verbatim.\n got (%d bytes):\n%s\nwant (%d bytes):\n%s",
-			len(pulled.Bytes), pulled.Bytes, len(artifactsLibraryPublishBody), artifactsLibraryPublishBody)
+			len(pulled.Bytes), pulled.Bytes, len(artifactLibraryPublishBody), artifactLibraryPublishBody)
 	}
 	if oci.IsTarGzBundle(pulled.Bytes) {
 		t.Error("published content carries the gzip magic: this kind was bundled as an archive. " +
@@ -163,17 +165,17 @@ func TestPublishArtifactsLibraryEndToEnd(t *testing.T) {
 	}
 	if len(manifest.Layers) != 1 {
 		t.Errorf("published manifest carries %d layers; want exactly 1 (the entity body)", len(manifest.Layers))
-	} else if manifest.Layers[0].MediaType != oci.MediaTypeArtifactsLibrary {
-		t.Errorf("layer mediaType = %q; want %q", manifest.Layers[0].MediaType, oci.MediaTypeArtifactsLibrary)
+	} else if manifest.Layers[0].MediaType != oci.MediaTypeArtifactLibrary {
+		t.Errorf("layer mediaType = %q; want %q", manifest.Layers[0].MediaType, oci.MediaTypeArtifactLibrary)
 	}
-	if manifest.ArtifactType != oci.MediaTypeArtifactsLibrary {
-		t.Errorf("manifest artifactType = %q; want %q", manifest.ArtifactType, oci.MediaTypeArtifactsLibrary)
+	if manifest.ArtifactType != oci.MediaTypeArtifactLibrary {
+		t.Errorf("manifest artifactType = %q; want %q", manifest.ArtifactType, oci.MediaTypeArtifactLibrary)
 	}
 
 	// PRESENCE — the searchable annotations name the kind, so a registry index
-	// can find this artifact as an ArtifactsLibrary without fetching its body.
-	if got := manifest.Annotations[oci.AnnotationKind]; got != "ArtifactsLibrary" {
-		t.Errorf("manifest %s annotation = %q; want %q", oci.AnnotationKind, got, "ArtifactsLibrary")
+	// can find this artifact as an ArtifactLibrary without fetching its body.
+	if got := manifest.Annotations[oci.AnnotationKind]; got != "ArtifactLibrary" {
+		t.Errorf("manifest %s annotation = %q; want %q", oci.AnnotationKind, got, "ArtifactLibrary")
 	}
 
 	// ABSENCE — the publish tagged exactly one version and created no others.
@@ -186,17 +188,17 @@ func TestPublishArtifactsLibraryEndToEnd(t *testing.T) {
 	}
 }
 
-// TestPublishArtifactsLibraryIsDeterministic pins that two independent publishes
-// of the same ArtifactsLibrary land the same manifest digest. It matters for this
+// TestPublishArtifactLibraryIsDeterministic pins that two independent publishes
+// of the same ArtifactLibrary land the same manifest digest. It matters for this
 // kind specifically because the digest is what the immutability guard compares: a
 // non-reproducible bundle would make an identical re-push look like an attempt to
 // overwrite a published version, and the operator would have no way to tell that
 // from a real conflict.
-func TestPublishArtifactsLibraryIsDeterministic(t *testing.T) {
+func TestPublishArtifactLibraryIsDeterministic(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
 	entityPath := filepath.Join(root, "1.0.0", "library.yaml")
-	writeEntityFixture(t, entityPath, artifactsLibraryPublishBody)
+	writeEntityFixture(t, entityPath, artifactLibraryPublishBody)
 
 	store, err := orasoci.New(t.TempDir())
 	if err != nil {
@@ -216,6 +218,56 @@ func TestPublishArtifactsLibraryIsDeterministic(t *testing.T) {
 	}
 	if !strings.Contains(second.String(), "Already published:") {
 		t.Errorf("identical re-publish should report 'Already published:'; got:\n%s", second.String())
+	}
+}
+
+// TestPublishRefusesTheRetiredPluralKindSpelling pins that the artifact-library
+// kind answers to one spelling. A document declaring the plural-of-plural form is
+// refused at publication with ErrUnknownEntityKind and nothing reaches the store,
+// rather than being published under a second coordinate and a second media type.
+// TestPublishArtifactLibraryEndToEnd above publishes the same body under the
+// current spelling, which is the positive control that makes this refusal
+// attributable to the kind line alone.
+//
+// The retired spelling is derived from the current kind name rather than written
+// out, so the tree carries no literal copy of a kind no longer accepted.
+func TestPublishRefusesTheRetiredPluralKindSpelling(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+
+	current := string(entitykind.ArtifactLibrary)
+	retired := strings.Replace(current, "Library", "sLibrary", 1)
+	body := strings.Replace(artifactLibraryPublishBody, "kind: "+current+"\n", "kind: "+retired+"\n", 1)
+	// Calibration: a replacement that matched nothing would publish the current
+	// spelling and turn this into a second copy of the end-to-end test.
+	if body == artifactLibraryPublishBody || retired == current {
+		t.Fatalf("the fixture must declare the retired spelling %q; the kind line was not rewritten", retired)
+	}
+	entityPath := filepath.Join(root, "library", "shared-artifacts", "1.0.0", "library.yaml")
+	writeEntityFixture(t, entityPath, body)
+
+	store, err := orasoci.New(t.TempDir())
+	if err != nil {
+		t.Fatalf("orasoci.New: %v", err)
+	}
+	var out bytes.Buffer
+	err = pushRun(t.Context(), pushConfig{
+		Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
+		EntityPath: entityPath,
+		Registry:   "example.com",
+		PushTarget: store,
+		Out:        &out,
+	})
+	if !errors.Is(err, oci.ErrUnknownEntityKind()) {
+		t.Fatalf("publishing a document declaring %q must be refused with ErrUnknownEntityKind; got %v (output:\n%s)",
+			retired, err, out.String())
+	}
+	tags, err := listStoreTags(t, store)
+	if err != nil {
+		t.Fatalf("list published tags: %v", err)
+	}
+	if len(tags) != 0 {
+		t.Errorf("a refused publication left tags %v in the store; nothing may be published", tags)
 	}
 }
 

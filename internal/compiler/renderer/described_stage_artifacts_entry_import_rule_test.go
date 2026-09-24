@@ -49,16 +49,16 @@ metadata:
 	artifactsEntryNestedBody = "$import: Shared#/artifacts/Settings"
 )
 
-// artifactsEntryLibraries is the resolved ArtifactsLibrary set every row below is
+// artifactsEntryLibraries is the resolved ArtifactLibrary set every row below is
 // driven against: one well-formed bundle, one whose file body imports another
 // bundle, and one whose file name climbs out of the key it would be nested under.
-func artifactsEntryLibraries() map[string]types.ArtifactsLibrary {
-	return map[string]types.ArtifactsLibrary{
-		"Shared": artifactsLibraryFixtureOrdered("Shared", "Settings",
+func artifactsEntryLibraries() map[string]types.ArtifactLibrary {
+	return map[string]types.ArtifactLibrary{
+		"Shared": artifactLibraryFixtureOrdered("Shared", "Settings",
 			[]string{"settings.yaml"}, []string{artifactsEntryBundleBody}),
-		"Nested": artifactsLibraryFixtureOrdered("Nested", "Bad",
+		"Nested": artifactLibraryFixtureOrdered("Nested", "Bad",
 			[]string{"one.yaml"}, []string{artifactsEntryNestedBody}),
-		"Climbing": artifactsLibraryFixtureOrdered("Climbing", "Escapes",
+		"Climbing": artifactLibraryFixtureOrdered("Climbing", "Escapes",
 			[]string{"../outside.yaml"}, []string{artifactsEntryBundleBody}),
 	}
 }
@@ -89,7 +89,7 @@ func artifactsEntryRecipe(entries ...string) *types.Recipe {
 // reports — and this kind exists to be reachable for the entries whose resolution
 // fails, which is the claim that would otherwise go unproved.
 func declaredArtifactsEntryHalt(
-	t *testing.T, recipe *types.Recipe, libs map[string]types.ArtifactsLibrary,
+	t *testing.T, recipe *types.Recipe, libs map[string]types.ArtifactLibrary,
 ) error {
 	t.Helper()
 	const node = "api"
@@ -125,7 +125,7 @@ func declaredArtifactsEntryHalt(
 // what a build does, and the walk is where the entry's authoring mode is dispatched
 // on before the resolver is reached at all.
 func resolvedArtifactsEntryHalt(
-	t *testing.T, recipe *types.Recipe, libs map[string]types.ArtifactsLibrary,
+	t *testing.T, recipe *types.Recipe, libs map[string]types.ArtifactLibrary,
 ) error {
 	t.Helper()
 	tmplCtx, state, nodeCtx := newArtifactsCtx()
@@ -134,7 +134,7 @@ func resolvedArtifactsEntryHalt(
 		entry, _ := recipe.Spec.Artifacts.Get(key)
 		state.Recipe.Spec.Artifacts.Set(key, entry)
 	}
-	state.ArtifactsLibraries = libs
+	state.ArtifactLibraries = libs
 	_, err := buildArtifactsProjection(nil, tmplCtx, state, nodeCtx, "{{", "}}")
 	return err
 }
@@ -175,13 +175,13 @@ func artifactsEntryCases() []artifactsEntryCase {
 			name: "a library nothing declares",
 			key:  "settings",
 			ref:  "Absent#/artifacts/Settings",
-			want: ErrArtifactsLibraryNotFound(),
+			want: ErrArtifactLibraryNotFound(),
 		},
 		{
 			name: "a bundle the library does not declare",
 			key:  "settings",
 			ref:  "Shared#/artifacts/Missing",
-			want: ErrArtifactsLibraryEntryNotFound(),
+			want: ErrArtifactLibraryEntryNotFound(),
 		},
 		{
 			name: "a bundle file body that imports another bundle is the shape class",
@@ -193,7 +193,7 @@ func artifactsEntryCases() []artifactsEntryCase {
 			name: "a bundle file name climbing out of its key",
 			key:  "settings",
 			ref:  "Climbing#/artifacts/Escapes",
-			want: ErrArtifactsLibraryFileEscapesKey(),
+			want: ErrArtifactLibraryFileEscapesKey(),
 		},
 	}
 }
@@ -423,21 +423,21 @@ func TestArtifactsEntryImportRules_DeclineAnEntryWhoseEarlierStepFailed(t *testi
 			name:    "the retired separator is not also reported as an absent library",
 			ref:     "Shared@1.0.0#/artifacts/Settings",
 			want:    ErrArtifactImportShape(),
-			absent:  []error{ErrArtifactsLibraryNotFound(), ErrArtifactsLibraryEntryNotFound()},
+			absent:  []error{ErrArtifactLibraryNotFound(), ErrArtifactLibraryEntryNotFound()},
 			wantOne: true,
 		},
 		{
 			name:    "an absent library is not also reported as an absent bundle",
 			ref:     "Absent#/artifacts/Settings",
-			want:    ErrArtifactsLibraryNotFound(),
-			absent:  []error{ErrArtifactsLibraryEntryNotFound(), ErrArtifactImportShape()},
+			want:    ErrArtifactLibraryNotFound(),
+			absent:  []error{ErrArtifactLibraryEntryNotFound(), ErrArtifactImportShape()},
 			wantOne: true,
 		},
 		{
 			name:    "an absent bundle is not also reported as an escaping file name",
 			ref:     "Shared#/artifacts/Missing",
-			want:    ErrArtifactsLibraryEntryNotFound(),
-			absent:  []error{ErrArtifactsLibraryFileEscapesKey(), ErrArtifactsLibraryNotFound()},
+			want:    ErrArtifactLibraryEntryNotFound(),
+			absent:  []error{ErrArtifactLibraryFileEscapesKey(), ErrArtifactLibraryNotFound()},
 			wantOne: true,
 		},
 	}

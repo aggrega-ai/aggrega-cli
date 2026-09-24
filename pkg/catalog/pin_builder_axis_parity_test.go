@@ -16,12 +16,12 @@ import (
 // make this guard compare two different closures and report their difference as a
 // builder defect.
 const (
-	parityEntityURI           = "core/mariadb:1.0.0"
-	paritySchemaLibraryURI    = "core/DbSizing:1.0.0"
-	parityMappingLibraryURI   = "core/BaseMappings:1.0.0"
-	parityWorkloadLibraryURI  = "core/BaseWorkloads:1.0.0"
-	parityArtifactsLibraryURI = "core/BaseArtifacts:1.0.0"
-	parityPluginURI           = "core/policy:1.0.0"
+	parityEntityURI          = "core/mariadb:1.0.0"
+	paritySchemaLibraryURI   = "core/DbSizing:1.0.0"
+	parityMappingLibraryURI  = "core/BaseMappings:1.0.0"
+	parityWorkloadLibraryURI = "core/BaseWorkloads:1.0.0"
+	parityArtifactLibraryURI = "core/BaseArtifacts:1.0.0"
+	parityPluginURI          = "core/policy:1.0.0"
 )
 
 // TestPinBuildersProjectTheSameAxes enforces that PinsFromLockfile and
@@ -65,8 +65,8 @@ func TestPinBuildersProjectTheSameAxes(t *testing.T) {
 		WorkloadLibraries: []lockfile.WorkloadLibrary{
 			{URI: parityWorkloadLibraryURI, ResolvedVersion: "1.0.0", Digest: "sha256:lock-workload"},
 		},
-		ArtifactsLibraries: []lockfile.ArtifactsLibrary{
-			{URI: parityArtifactsLibraryURI, ResolvedVersion: "1.0.0", Digest: "sha256:lock-artifacts"},
+		ArtifactLibraries: []lockfile.ArtifactLibrary{
+			{URI: parityArtifactLibraryURI, ResolvedVersion: "1.0.0", Digest: "sha256:lock-artifacts"},
 		},
 		Plugins: []lockfile.Plugin{
 			{URI: parityPluginURI, ResolvedVersion: "1.0.0", Digest: "sha256:lock-plugin"},
@@ -93,8 +93,8 @@ func TestPinBuildersProjectTheSameAxes(t *testing.T) {
 		WorkloadLibraries: []closure.ResolvedLibrary{
 			{URI: parityWorkloadLibraryURI, ResolvedVersion: "1.0.0", Digest: "sha256:walk-workload"},
 		},
-		ArtifactsLibraries: []closure.ResolvedLibrary{
-			{URI: parityArtifactsLibraryURI, ResolvedVersion: "1.0.0", Digest: "sha256:walk-artifacts"},
+		ArtifactLibraries: []closure.ResolvedLibrary{
+			{URI: parityArtifactLibraryURI, ResolvedVersion: "1.0.0", Digest: "sha256:walk-artifacts"},
 		},
 		Plugins: []closure.ResolvedRef{
 			{URI: parityPluginURI, ResolvedVersion: "1.0.0", Digest: "sha256:walk-plugin"},
@@ -129,7 +129,7 @@ func TestPinBuildersProjectTheSameAxes(t *testing.T) {
 		{"schema libraries", paritySchemaLibraryURI},
 		{"mapping libraries", parityMappingLibraryURI},
 		{"workload libraries", parityWorkloadLibraryURI},
-		{"artifacts libraries", parityArtifactsLibraryURI},
+		{"artifact libraries", parityArtifactLibraryURI},
 	} {
 		if _, ok := fromLockfile[want.uri]; !ok {
 			t.Errorf("PinsFromLockfile does not project the %s axis: %q absent", want.axis, want.uri)

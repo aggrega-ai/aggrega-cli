@@ -866,7 +866,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 	result.DescribedView = newDescribedView(
 		ctx, graph, input.GraphView, nodeRecipes, recipeLookup, releaseOf(input.ResolveResult),
 		input.stepDescriptors, input.PluginPathLookup, engineFactory, renderedNames,
-		input.ArtifactsLibraries, input.MappingLibraries, input.WorkloadLibraries,
+		input.ArtifactLibraries, input.MappingLibraries, input.WorkloadLibraries,
 	)
 
 	// The rules declared over that presentation are invoked here, against the
@@ -1497,7 +1497,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 
 		state.MappingLibraries = input.MappingLibraries
 		state.WorkloadLibraries = input.WorkloadLibraries
-		state.ArtifactsLibraries = input.ArtifactsLibraries
+		state.ArtifactLibraries = input.ArtifactLibraries
 		state.AttachmentProvides = attachmentProvides
 
 		// Phase B.0 — publishes the Pass-1 locals and evaluates

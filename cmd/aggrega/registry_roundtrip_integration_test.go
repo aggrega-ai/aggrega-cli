@@ -140,7 +140,7 @@ func startRegistry(t *testing.T, handlerWrap func(http.Handler) http.Handler) st
 // A kind is listed here only when pushing it would be WRONG, never merely because
 // the catalog happens to hold none of it: the walk below is zero-count safe, so a
 // kind with no instances contributes no pushes and needs no exclusion. Reading it
-// the other way is how ArtifactsLibrary came to be excluded on the strength of an
+// the other way is how ArtifactLibrary came to be excluded on the strength of an
 // empty catalog — which then read as a standing decision not to publish the kind,
 // when publishing it is exactly what it is for.
 var nonRoundTripKinds = map[string]string{

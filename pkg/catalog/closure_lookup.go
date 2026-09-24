@@ -925,8 +925,8 @@ func (l *catalogLookup) localLibrary(axis closure.LibraryAxis, name string) (met
 			entries[n] = struct{}{}
 		}
 		return lib.Metadata.Name, lib.Metadata.Version, entries, true
-	case "ArtifactsLibrary":
-		lib, found := l.catalog.ArtifactsLibraries[name]
+	case "ArtifactLibrary":
+		lib, found := l.catalog.ArtifactLibraries[name]
 		if !found {
 			return "", "", nil, false
 		}

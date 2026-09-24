@@ -11,7 +11,7 @@ import (
 )
 
 // artifactLibraryLookup is how far one artifacts entry's library import
-// reference got against the ArtifactsLibrary set the catalog resolved: the names
+// reference got against the ArtifactLibrary set the catalog resolved: the names
 // it gave, and which step of the resolution each of them answered.
 //
 // It is the cascade rather than a verdict, because two readers ask the same
@@ -33,7 +33,7 @@ import (
 // true of an entry supplied by a file of the workspace, where the read happens
 // once inside the walk and is retained rather than repeated.
 type artifactLibraryLookup struct {
-	// Library is the ArtifactsLibrary the reference names, with any `:version`
+	// Library is the ArtifactLibrary the reference names, with any `:version`
 	// floor stripped. It is empty where the reference does not split.
 	Library string
 
@@ -60,10 +60,10 @@ type artifactLibraryLookup struct {
 	// Bundle is the bundle itself — the ordered filename-to-body mapping the
 	// consumption site expands into one output per file. It is the zero value
 	// wherever BundleFound is false.
-	Bundle types.ArtifactsLibraryEntry
+	Bundle types.ArtifactLibraryEntry
 }
 
-// lookUpArtifactLibraryBundle resolves a bare-name ArtifactsLibrary import
+// lookUpArtifactLibraryBundle resolves a bare-name ArtifactLibrary import
 // reference against the resolved library set, reporting how far it got.
 //
 // It is the single reading of that resolution. Every reader of it — the walk that
@@ -71,12 +71,12 @@ type artifactLibraryLookup struct {
 // — comes through here, so a refusal and the facts describing it cannot come
 // apart the way two derivations of one answer are free to.
 //
-// libs is the resolved ArtifactsLibrary set: the local catalog plus any
+// libs is the resolved ArtifactLibrary set: the local catalog plus any
 // lockfile-pinned remote libraries bridged in at load. The version is supplied by
 // that set, keyed by bare name, so a `:version` floor in the reference is a
 // lock-time selection assertion and is stripped here.
 func lookUpArtifactLibraryBundle(
-	ref string, libs map[string]types.ArtifactsLibrary,
+	ref string, libs map[string]types.ArtifactLibrary,
 ) artifactLibraryLookup {
 	library, entry, ok := splitLibraryImportRef(ref, "/artifacts/")
 	if !ok {
@@ -101,26 +101,26 @@ func lookUpArtifactLibraryBundle(
 	return out
 }
 
-// resolveArtifactLibraryImport resolves a bare-name ArtifactsLibrary import
+// resolveArtifactLibraryImport resolves a bare-name ArtifactLibrary import
 // reference `<Library>#/artifacts/<Entry>` to the entry's bundle — the ordered
 // filename→body map the consumption site expands into one output per file. It
 // mirrors resolveWorkloadLibraryImport / resolveMappingLibraryImport keyed on
 // `/artifacts/`, with one deliberate divergence forced by the bundle entry shape:
-// an ArtifactsLibrary entry is a set of files, not a single body, so resolution
+// an ArtifactLibrary entry is a set of files, not a single body, so resolution
 // returns the whole bundle rather than a scalar. A bundle file body is TERMINAL
 // template content — a field-root `$import:` as a whole file body is not supported
 // (a single file slot cannot expand into another bundle) and halts with
 // ErrArtifactImportShape; cross-library composition happens at the consumption
 // site, not nested inside a bundle file.
 //
-// libs is the resolved ArtifactsLibrary set — the local catalog plus any
+// libs is the resolved ArtifactLibrary set — the local catalog plus any
 // lockfile-pinned remote libraries bridged in at load. The version is supplied by
 // that set (keyed by bare name); a `:version` floor in the reference is a
 // lock-time selection assertion and is stripped by the lookup this reads.
 //
 // Error model: a host-bearing reference is rejected (ErrHostInLibraryImport); a
 // non-`#/artifacts/` shape is ErrArtifactImportShape; an unknown library or bundle
-// surfaces ErrArtifactsLibraryNotFound / ErrArtifactsLibraryEntryNotFound.
+// surfaces ErrArtifactLibraryNotFound / ErrArtifactLibraryEntryNotFound.
 //
 // # Every arm below is retained although a declared rule now stands in front of
 // some of them
@@ -137,7 +137,7 @@ func lookUpArtifactLibraryBundle(
 // rather than a defect to close here. Removing an arm would leave both silently
 // admitting a reference the compiler refuses everywhere else; a resolver must
 // also return a value, so an arm cannot simply be dropped the way a guard can.
-func resolveArtifactLibraryImport(ref string, libs map[string]types.ArtifactsLibrary) (types.ArtifactsLibraryEntry, error) {
+func resolveArtifactLibraryImport(ref string, libs map[string]types.ArtifactLibrary) (types.ArtifactLibraryEntry, error) {
 	found := lookUpArtifactLibraryBundle(ref, libs)
 	if !found.WellFormed {
 		// No production path reaches this arm, and it is retained deliberately.
@@ -151,20 +151,20 @@ func resolveArtifactLibraryImport(ref string, libs map[string]types.ArtifactsLib
 		// conformance is proved against its specification by a direct test rather
 		// than by a caller.
 		if strings.HasPrefix(ref, "oci://") {
-			return types.ArtifactsLibraryEntry{}, fmt.Errorf("%w: %q", ErrHostInLibraryImport(), ref)
+			return types.ArtifactLibraryEntry{}, fmt.Errorf("%w: %q", ErrHostInLibraryImport(), ref)
 		}
-		return types.ArtifactsLibraryEntry{}, fmt.Errorf("%w: %q", ErrArtifactImportShape(), ref)
+		return types.ArtifactLibraryEntry{}, fmt.Errorf("%w: %q", ErrArtifactImportShape(), ref)
 	}
 	// A stale `@` version separator is rejected with a steer to `:` rather than
 	// falling through to an opaque library-not-found.
 	if found.StaleVersionSeparator {
-		return types.ArtifactsLibraryEntry{}, fmt.Errorf("%w: version separator is ':', not '@' — use %q", ErrArtifactImportShape(), strings.Replace(ref, "@", ":", 1))
+		return types.ArtifactLibraryEntry{}, fmt.Errorf("%w: version separator is ':', not '@' — use %q", ErrArtifactImportShape(), strings.Replace(ref, "@", ":", 1))
 	}
 	if !found.LibraryFound {
-		return types.ArtifactsLibraryEntry{}, fmt.Errorf("%w: ArtifactsLibrary %q (bundle %q)", ErrArtifactsLibraryNotFound(), found.Library, found.BundleName)
+		return types.ArtifactLibraryEntry{}, fmt.Errorf("%w: ArtifactLibrary %q (bundle %q)", ErrArtifactLibraryNotFound(), found.Library, found.BundleName)
 	}
 	if !found.BundleFound {
-		return types.ArtifactsLibraryEntry{}, fmt.Errorf("%w: bundle %q in ArtifactsLibrary %q", ErrArtifactsLibraryEntryNotFound(), found.BundleName, found.Library)
+		return types.ArtifactLibraryEntry{}, fmt.Errorf("%w: bundle %q in ArtifactLibrary %q", ErrArtifactLibraryEntryNotFound(), found.BundleName, found.Library)
 	}
 	// A bundle file body is terminal content: a field-root `$import:` as a whole
 	// file body cannot expand into another bundle (one file slot, many files),
@@ -173,7 +173,7 @@ func resolveArtifactLibraryImport(ref string, libs map[string]types.ArtifactsLib
 	// resolver returns one error, and the rule declared over the same fact is the
 	// reading that reports every one of them.
 	if nested := bundleNestedImportFiles(found.Bundle); len(nested) > 0 {
-		return types.ArtifactsLibraryEntry{}, fmt.Errorf("%w: bundle %q file %q body is a field-root $import: (nested library import inside a bundle file is not supported; compose at the consumption site)",
+		return types.ArtifactLibraryEntry{}, fmt.Errorf("%w: bundle %q file %q body is a field-root $import: (nested library import inside a bundle file is not supported; compose at the consumption site)",
 			ErrArtifactImportShape(), found.BundleName, nested[0])
 	}
 	return found.Bundle, nil
@@ -188,7 +188,7 @@ func resolveArtifactLibraryImport(ref string, libs map[string]types.ArtifactsLib
 // differ the next time the field-root vocabulary moves, with nothing comparing
 // them — and the disagreement would surface as a build that refuses a bundle the
 // rule admitted, or admits one the rule refused.
-func bundleNestedImportFiles(bundle types.ArtifactsLibraryEntry) []string {
+func bundleNestedImportFiles(bundle types.ArtifactLibraryEntry) []string {
 	var out []string
 	for _, fname := range bundle.Files.Keys() {
 		body, _ := bundle.Files.Get(fname)

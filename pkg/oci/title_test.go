@@ -60,15 +60,15 @@ func titleManifestTagged(t *testing.T, store *memory.Store, tag string) ocispec.
 func TestEveryPublishableKindIsTitledByItsTransportShape(t *testing.T) {
 	t.Parallel()
 	want := map[string]string{
-		oci.MediaTypeComponent:        "entity.yaml",
-		oci.MediaTypeFeature:          "entity.yaml",
-		oci.MediaTypeAggregate:        "entity.yaml",
-		oci.MediaTypeSchemaLibrary:    "entity.yaml",
-		oci.MediaTypeMappingLibrary:   "entity.yaml",
-		oci.MediaTypeWorkloadLibrary:  "entity.yaml",
-		oci.MediaTypeArtifactsLibrary: "entity.yaml",
-		oci.MediaTypeRecipe:           "entity.tar.gz",
-		oci.MediaTypeFeatureRecipe:    "entity.tar.gz",
+		oci.MediaTypeComponent:       "entity.yaml",
+		oci.MediaTypeFeature:         "entity.yaml",
+		oci.MediaTypeAggregate:       "entity.yaml",
+		oci.MediaTypeSchemaLibrary:   "entity.yaml",
+		oci.MediaTypeMappingLibrary:  "entity.yaml",
+		oci.MediaTypeWorkloadLibrary: "entity.yaml",
+		oci.MediaTypeArtifactLibrary: "entity.yaml",
+		oci.MediaTypeRecipe:          "entity.tar.gz",
+		oci.MediaTypeFeatureRecipe:   "entity.tar.gz",
 		// A Plugin publishes through its own manifest; its titles are proven by
 		// TestPluginManifestTitlesBothDescriptors. The catalog path still titles
 		// the Plugin media type, which is the entity document.

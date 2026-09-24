@@ -57,7 +57,7 @@ func (r VerifiedFactRow) RecordSignature(sig *VerifiedSignature) {
 // slice; a caller that appends to a section takes the views again afterwards.
 func (lf *Lockfile) VerifiedFactRows() []VerifiedFactRow {
 	total := len(lf.Entities) + len(lf.SchemaLibraries) + len(lf.MappingLibraries) +
-		len(lf.WorkloadLibraries) + len(lf.ArtifactsLibraries) + len(lf.Plugins)
+		len(lf.WorkloadLibraries) + len(lf.ArtifactLibraries) + len(lf.Plugins)
 	rows := make([]VerifiedFactRow, 0, total)
 
 	for i := range lf.Entities {
@@ -92,12 +92,12 @@ func (lf *Lockfile) VerifiedFactRows() []VerifiedFactRow {
 			signature:   &lf.WorkloadLibraries[i].Signature,
 		})
 	}
-	for i := range lf.ArtifactsLibraries {
+	for i := range lf.ArtifactLibraries {
 		rows = append(rows, VerifiedFactRow{
-			URI:         lf.ArtifactsLibraries[i].URI,
-			Digest:      lf.ArtifactsLibraries[i].Digest,
-			deprecation: &lf.ArtifactsLibraries[i].Deprecation,
-			signature:   &lf.ArtifactsLibraries[i].Signature,
+			URI:         lf.ArtifactLibraries[i].URI,
+			Digest:      lf.ArtifactLibraries[i].Digest,
+			deprecation: &lf.ArtifactLibraries[i].Deprecation,
+			signature:   &lf.ArtifactLibraries[i].Signature,
 		})
 	}
 	for i := range lf.Plugins {

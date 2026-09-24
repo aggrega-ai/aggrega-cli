@@ -30,15 +30,15 @@ import "sort"
 // deployment-side, lived in the workspace's source-control system, not
 // pushed to a registry.
 const (
-	MediaTypeComponent        = "application/vnd.aggrega.component.v1alpha1+yaml"
-	MediaTypeFeature          = "application/vnd.aggrega.feature.v1alpha1+yaml"
-	MediaTypeRecipe           = "application/vnd.aggrega.recipe.v1alpha1+tar+gz"
-	MediaTypeFeatureRecipe    = "application/vnd.aggrega.featurerecipe.v1alpha1+tar+gz"
-	MediaTypeSchemaLibrary    = "application/vnd.aggrega.schemalibrary.v1alpha1+yaml"
-	MediaTypeMappingLibrary   = "application/vnd.aggrega.mappinglibrary.v1alpha1+yaml"
-	MediaTypeWorkloadLibrary  = "application/vnd.aggrega.workloadlibrary.v1alpha1+yaml"
-	MediaTypeArtifactsLibrary = "application/vnd.aggrega.artifactslibrary.v1alpha1+yaml"
-	MediaTypeAggregate        = "application/vnd.aggrega.aggregate.v1alpha1+yaml"
+	MediaTypeComponent       = "application/vnd.aggrega.component.v1alpha1+yaml"
+	MediaTypeFeature         = "application/vnd.aggrega.feature.v1alpha1+yaml"
+	MediaTypeRecipe          = "application/vnd.aggrega.recipe.v1alpha1+tar+gz"
+	MediaTypeFeatureRecipe   = "application/vnd.aggrega.featurerecipe.v1alpha1+tar+gz"
+	MediaTypeSchemaLibrary   = "application/vnd.aggrega.schemalibrary.v1alpha1+yaml"
+	MediaTypeMappingLibrary  = "application/vnd.aggrega.mappinglibrary.v1alpha1+yaml"
+	MediaTypeWorkloadLibrary = "application/vnd.aggrega.workloadlibrary.v1alpha1+yaml"
+	MediaTypeArtifactLibrary = "application/vnd.aggrega.artifactlibrary.v1alpha1+yaml"
+	MediaTypeAggregate       = "application/vnd.aggrega.aggregate.v1alpha1+yaml"
 	// MediaTypePlugin is the mediatype of the Plugin entity's YAML, which a
 	// Plugin publication carries as its manifest's config blob.
 	MediaTypePlugin = "application/vnd.aggrega.wasmplugin.v1alpha1+yaml"
@@ -66,16 +66,16 @@ const (
 // values pkg/catalog/catalog.go switches on) to its canonical OCI
 // mediatype.
 var kindMediaTypes = map[string]string{
-	"Component":        MediaTypeComponent,
-	"Feature":          MediaTypeFeature,
-	"Recipe":           MediaTypeRecipe,
-	"FeatureRecipe":    MediaTypeFeatureRecipe,
-	"SchemaLibrary":    MediaTypeSchemaLibrary,
-	"MappingLibrary":   MediaTypeMappingLibrary,
-	"WorkloadLibrary":  MediaTypeWorkloadLibrary,
-	"ArtifactsLibrary": MediaTypeArtifactsLibrary,
-	"Aggregate":        MediaTypeAggregate,
-	"Plugin":           MediaTypePlugin,
+	"Component":       MediaTypeComponent,
+	"Feature":         MediaTypeFeature,
+	"Recipe":          MediaTypeRecipe,
+	"FeatureRecipe":   MediaTypeFeatureRecipe,
+	"SchemaLibrary":   MediaTypeSchemaLibrary,
+	"MappingLibrary":  MediaTypeMappingLibrary,
+	"WorkloadLibrary": MediaTypeWorkloadLibrary,
+	"ArtifactLibrary": MediaTypeArtifactLibrary,
+	"Aggregate":       MediaTypeAggregate,
+	"Plugin":          MediaTypePlugin,
 }
 
 // MediaTypeForKind returns the canonical OCI mediatype for the given

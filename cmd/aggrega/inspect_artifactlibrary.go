@@ -13,7 +13,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
-// renderArtifactsLibraryFile renders an ArtifactsLibrary authored as a standalone
+// renderArtifactLibraryFile renders an ArtifactLibrary authored as a standalone
 // file. Each bundle is shown with an Aggrega-synthesized usage line — the
 // `artifacts.<name>: { $import: <Library>#/artifacts/<Entry> }` form a Recipe /
 // FeatureRecipe writes to consume it. The reference uses the library's bare-name
@@ -23,13 +23,13 @@ import (
 //   - levelList: bundle names only.
 //   - levelDefault: header, description, per-bundle usage line + file list, labels / annotations.
 //   - levelDetail: adds the full Go-template body per file, verbatim.
-func renderArtifactsLibraryFile(_ context.Context, _ *workspaceconfig.ResolvedWorkspace, path string, data []byte, _ []string, opts inspectOptions) error {
+func renderArtifactLibraryFile(_ context.Context, _ *workspaceconfig.ResolvedWorkspace, path string, data []byte, _ []string, opts inspectOptions) error {
 	if opts.output == outputYAML {
 		return emitYAMLRoundTrip(opts, path, data)
 	}
-	var lib types.ArtifactsLibrary
+	var lib types.ArtifactLibrary
 	if err := yaml.Unmarshal(data, &lib); err != nil {
-		return fmt.Errorf("parse ArtifactsLibrary at %q: %w", path, err)
+		return fmt.Errorf("parse ArtifactLibrary at %q: %w", path, err)
 	}
 	name := lib.Metadata.Name
 
@@ -40,7 +40,7 @@ func renderArtifactsLibraryFile(_ context.Context, _ *workspaceconfig.ResolvedWo
 		return nil
 	}
 
-	renderIdentityBlock(opts, "ArtifactsLibrary", identifierVersion(name, lib.Metadata.Version), lib.Metadata.Description)
+	renderIdentityBlock(opts, "ArtifactLibrary", identifierVersion(name, lib.Metadata.Version), lib.Metadata.Description)
 
 	fmt.Fprintln(opts.out, "Artifacts:")
 	for bundle, entry := range lib.Spec.Artifacts.All() {

@@ -75,19 +75,19 @@ type kindSource struct {
 }
 
 var kindSources = map[string]kindSource{
-	"feature_gen.go":          {"Feature", schemas.FeatureV1alpha1},
-	"manifest_gen.go":         {"Manifest", schemas.ManifestV1alpha1},
-	"recipe_gen.go":           {"Recipe", schemas.RecipeV1alpha1},
-	"featurerecipe_gen.go":    {"FeatureRecipe", schemas.FeatureRecipeV1alpha1},
-	"schemalibrary_gen.go":    {"SchemaLibrary", schemas.SchemaLibraryV1alpha1},
-	"mappinglibrary_gen.go":   {"MappingLibrary", schemas.MappingLibraryV1alpha1},
-	"workloadlibrary_gen.go":  {"WorkloadLibrary", schemas.WorkloadLibraryV1alpha1},
-	"artifactslibrary_gen.go": {"ArtifactsLibrary", schemas.ArtifactsLibraryV1alpha1},
-	"aggregate_gen.go":        {"Aggregate", schemas.AggregateV1alpha1},
-	"release_gen.go":          {"Release", schemas.ReleaseV1alpha1},
-	"component_gen.go":        {"Component", schemas.ComponentV1alpha1},
-	"plugin_gen.go":           {"Plugin", schemas.PluginV1alpha1},
-	"workload_gen.go":         {"Workload", schemas.WorkloadV1alpha1},
+	"feature_gen.go":         {"Feature", schemas.FeatureV1alpha1},
+	"manifest_gen.go":        {"Manifest", schemas.ManifestV1alpha1},
+	"recipe_gen.go":          {"Recipe", schemas.RecipeV1alpha1},
+	"featurerecipe_gen.go":   {"FeatureRecipe", schemas.FeatureRecipeV1alpha1},
+	"schemalibrary_gen.go":   {"SchemaLibrary", schemas.SchemaLibraryV1alpha1},
+	"mappinglibrary_gen.go":  {"MappingLibrary", schemas.MappingLibraryV1alpha1},
+	"workloadlibrary_gen.go": {"WorkloadLibrary", schemas.WorkloadLibraryV1alpha1},
+	"artifactlibrary_gen.go": {"ArtifactLibrary", schemas.ArtifactLibraryV1alpha1},
+	"aggregate_gen.go":       {"Aggregate", schemas.AggregateV1alpha1},
+	"release_gen.go":         {"Release", schemas.ReleaseV1alpha1},
+	"component_gen.go":       {"Component", schemas.ComponentV1alpha1},
+	"plugin_gen.go":          {"Plugin", schemas.PluginV1alpha1},
+	"workload_gen.go":        {"Workload", schemas.WorkloadV1alpha1},
 }
 
 // enumSource binds an output filename to a string-enum-const emission: the

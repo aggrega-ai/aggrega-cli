@@ -92,7 +92,7 @@ pub const FEATURE_RECIPE_NAME_SHAPE: &str = r"^[a-z][a-z0-9-]*$";
 pub const SCHEMA_LIBRARY_NAME_SHAPE: &str = r"^[A-Z][A-Za-z0-9]*$";
 pub const MAPPING_LIBRARY_NAME_SHAPE: &str = r"^[A-Z][A-Za-z0-9]*$";
 pub const WORKLOAD_LIBRARY_NAME_SHAPE: &str = r"^[A-Z][A-Za-z0-9]*$";
-pub const ARTIFACTS_LIBRARY_NAME_SHAPE: &str = r"^[A-Z][A-Za-z0-9]*$";
+pub const ARTIFACT_LIBRARY_NAME_SHAPE: &str = r"^[A-Z][A-Za-z0-9]*$";
 
 /// `NAME_SHAPES` pairs each entity kind with its documented name
 /// pattern, and is the only place that pairing is written down. A kind
@@ -109,7 +109,7 @@ pub const NAME_SHAPES: &[(&str, &str)] = &[
     ("SchemaLibrary", SCHEMA_LIBRARY_NAME_SHAPE),
     ("MappingLibrary", MAPPING_LIBRARY_NAME_SHAPE),
     ("WorkloadLibrary", WORKLOAD_LIBRARY_NAME_SHAPE),
-    ("ArtifactsLibrary", ARTIFACTS_LIBRARY_NAME_SHAPE),
+    ("ArtifactLibrary", ARTIFACT_LIBRARY_NAME_SHAPE),
 ];
 
 fn per_kind_pattern(kind: &str) -> Option<&'static str> {

@@ -34,15 +34,15 @@ func TestCatalogWalkAdmitsEveryConventionsLintedKind(t *testing.T) {
 	// a bare header. The walk only peeks at the header, but a realistic body keeps
 	// the fixture usable if the walk ever parses further.
 	bodies := map[entitykind.Kind]string{
-		entitykind.Component:        "spec:\n  type: service\n",
-		entitykind.Feature:          "spec: {}\n",
-		entitykind.Recipe:           "spec:\n  capability: helm\n",
-		entitykind.FeatureRecipe:    "spec:\n  capability: helm\n",
-		entitykind.SchemaLibrary:    "spec:\n  schemas:\n    Storage:\n      size: { type: string }\n",
-		entitykind.MappingLibrary:   "spec:\n  mappings:\n    Simple: |\n      key: value\n",
-		entitykind.WorkloadLibrary:  "spec:\n  workloads:\n    Deploy: |\n      kind: Deployment\n",
-		entitykind.ArtifactsLibrary: "spec:\n  artifacts:\n    Bundle:\n      note.txt: |\n        hello\n",
-		entitykind.Plugin:           "spec:\n  pluginType: linter\n",
+		entitykind.Component:       "spec:\n  type: service\n",
+		entitykind.Feature:         "spec: {}\n",
+		entitykind.Recipe:          "spec:\n  capability: helm\n",
+		entitykind.FeatureRecipe:   "spec:\n  capability: helm\n",
+		entitykind.SchemaLibrary:   "spec:\n  schemas:\n    Storage:\n      size: { type: string }\n",
+		entitykind.MappingLibrary:  "spec:\n  mappings:\n    Simple: |\n      key: value\n",
+		entitykind.WorkloadLibrary: "spec:\n  workloads:\n    Deploy: |\n      kind: Deployment\n",
+		entitykind.ArtifactLibrary: "spec:\n  artifacts:\n    Bundle:\n      note.txt: |\n        hello\n",
+		entitykind.Plugin:          "spec:\n  pluginType: linter\n",
 	}
 
 	linted := entitykind.ConventionsLinted()

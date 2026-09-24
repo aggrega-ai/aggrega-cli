@@ -5,9 +5,9 @@ package hover
 
 import "fmt"
 
-// ArtifactsLibrary renders the hover content for an ArtifactsLibrary target.
+// ArtifactLibrary renders the hover content for an ArtifactLibrary target.
 // Surfaces the bundle count for spec.artifacts.
-func ArtifactsLibrary(e Entity) string {
+func ArtifactLibrary(e Entity) string {
 	name := scalarValueAtPath(e.Doc, "metadata", "name")
 	version := scalarValueAtPath(e.Doc, "metadata", "version")
 	desc := scalarValueAtPath(e.Doc, "metadata", "description")
@@ -19,7 +19,7 @@ func ArtifactsLibrary(e Entity) string {
 	}
 
 	return Assemble(
-		Header("ArtifactsLibrary", name, version),
+		Header("ArtifactLibrary", name, version),
 		Description(desc),
 		Separator(),
 		joinLines(body),

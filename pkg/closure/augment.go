@@ -28,7 +28,7 @@ type LibrarySource interface {
 	FeatureRecipeByURI(uri string) (types.FeatureRecipe, bool)
 	MappingLibrary(uri string) (types.MappingLibrary, bool)
 	WorkloadLibrary(uri string) (types.WorkloadLibrary, bool)
-	ArtifactsLibrary(uri string) (types.ArtifactsLibrary, bool)
+	ArtifactLibrary(uri string) (types.ArtifactLibrary, bool)
 }
 
 // AugmentClosure resolves the cross-document library axes the entity walk does not
@@ -67,7 +67,7 @@ func libraryDiscoverers() []libraryDiscoverer {
 		{LibraryAxisNamed("SchemaLibraries"), discoverClosureLibraries},
 		{LibraryAxisNamed("MappingLibraries"), discoverClosureMappingLibraries},
 		{LibraryAxisNamed("WorkloadLibraries"), discoverClosureWorkloadLibraries},
-		{LibraryAxisNamed("ArtifactsLibraries"), discoverClosureArtifactsLibraries},
+		{LibraryAxisNamed("ArtifactLibraries"), discoverClosureArtifactLibraries},
 	}
 }
 
@@ -260,11 +260,11 @@ func discoverClosureWorkloadLibraries(ctx context.Context, cl *Closure, src Libr
 	return cl.DiscoverTemplateLibraries(ctx, LibraryAxisNamed("WorkloadLibraries"), lookup, consumers, body)
 }
 
-// discoverClosureArtifactsLibraries is the single producer of the closure's
-// ArtifactsLibrary axis. Unlike the workload and mapping axes — where an entity
+// discoverClosureArtifactLibraries is the single producer of the closure's
+// ArtifactLibrary axis. Unlike the workload and mapping axes — where an entity
 // carries a single field — artifacts is a MAP, so one entity may contribute several
 // edges, one per entry that imports a bundle. Entry author order is preserved.
-func discoverClosureArtifactsLibraries(ctx context.Context, cl *Closure, src LibrarySource, lookup Lookup) error {
+func discoverClosureArtifactLibraries(ctx context.Context, cl *Closure, src LibrarySource, lookup Lookup) error {
 	consumers := collectTemplateConsumers(cl, src,
 		func(uri string, r types.Recipe) []TemplateConsumer {
 			return artifactsImportConsumers(uri, r.Spec.Artifacts)
@@ -275,7 +275,7 @@ func discoverClosureArtifactsLibraries(ctx context.Context, cl *Closure, src Lib
 
 	// A discovered bundle's own file bodies, flattened across every bundle entry.
 	body := func(lib ResolvedLibrary) ([]string, bool, error) {
-		al, ok := src.ArtifactsLibrary(lib.URI)
+		al, ok := src.ArtifactLibrary(lib.URI)
 		if !ok {
 			return nil, false, nil
 		}
@@ -290,7 +290,7 @@ func discoverClosureArtifactsLibraries(ctx context.Context, cl *Closure, src Lib
 		return bodies, true, nil
 	}
 
-	return cl.DiscoverTemplateLibraries(ctx, LibraryAxisNamed("ArtifactsLibraries"), lookup, consumers, body)
+	return cl.DiscoverTemplateLibraries(ctx, LibraryAxisNamed("ArtifactLibraries"), lookup, consumers, body)
 }
 
 // artifactsImportConsumers carries every artifacts-map entry's `$import:` target

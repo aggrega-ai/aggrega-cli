@@ -26,7 +26,7 @@ metadata:
 `
 )
 
-// TestArtifactsLibraryImport_ByteIdenticalToInline is the load-bearing proof
+// TestArtifactLibraryImport_ByteIdenticalToInline is the load-bearing proof
 // (Invariant 8): a bundle imported at one artifacts entry expands into N outputs
 // whose CONTENT is byte-identical to the equivalent inline artifacts. The library
 // indirection resolves in buildArtifactsProjection — the resolver returns each
@@ -38,7 +38,7 @@ metadata:
 // expands into many files and the key alone cannot name them; an inline entry's
 // key names exactly one file. So the names differ by construction and the bytes do
 // not, and a proof conflating the two would fail for the wrong reason.
-func TestArtifactsLibraryImport_ByteIdenticalToInline(t *testing.T) {
+func TestArtifactLibraryImport_ByteIdenticalToInline(t *testing.T) {
 	t.Parallel()
 
 	// Inline: two artifacts entries authored directly, keyed by output filename.
@@ -55,8 +55,8 @@ func TestArtifactsLibraryImport_ByteIdenticalToInline(t *testing.T) {
 	tmplCtx2, libState, nodeCtx2 := newArtifactsCtx()
 	resetArtifacts(libState)
 	libState.Recipe.Spec.Artifacts.Set("widgets", types.ArtifactEntry{Import: "SharedCRDs#/artifacts/WidgetCRD"})
-	libState.ArtifactsLibraries = map[string]types.ArtifactsLibrary{
-		"SharedCRDs": artifactsLibraryFixtureOrdered("SharedCRDs", "WidgetCRD",
+	libState.ArtifactLibraries = map[string]types.ArtifactLibrary{
+		"SharedCRDs": artifactLibraryFixtureOrdered("SharedCRDs", "WidgetCRD",
 			[]string{"widget-crd.yaml", "widget-rbac.yaml"},
 			[]string{albCRDBody, albRBACBody}),
 	}
@@ -95,35 +95,35 @@ func TestArtifactsLibraryImport_ByteIdenticalToInline(t *testing.T) {
 	}
 }
 
-// artifactsLibraryFixtureOrdered builds a one-bundle library with the given file
+// artifactLibraryFixtureOrdered builds a one-bundle library with the given file
 // order (map iteration is unordered, so tests that assert output order set the
 // slice form explicitly).
-func artifactsLibraryFixtureOrdered(lib, bundle string, names, bodies []string) types.ArtifactsLibrary {
-	entry := types.ArtifactsLibraryEntry{}
+func artifactLibraryFixtureOrdered(lib, bundle string, names, bodies []string) types.ArtifactLibrary {
+	entry := types.ArtifactLibraryEntry{}
 	for i, n := range names {
 		entry.Files.Set(n, bodies[i])
 	}
-	spec := types.ArtifactsLibrarySpec{}
+	spec := types.ArtifactLibrarySpec{}
 	spec.Artifacts.Set(bundle, entry)
-	return types.ArtifactsLibrary{
+	return types.ArtifactLibrary{
 		APIVersion: "aggrega.ai/v1alpha1",
-		Kind:       "ArtifactsLibrary",
-		Metadata:   types.ArtifactsLibraryMetadata{Name: lib, Version: "1.0.0"},
+		Kind:       "ArtifactLibrary",
+		Metadata:   types.ArtifactLibraryMetadata{Name: lib, Version: "1.0.0"},
 		Spec:       spec,
 	}
 }
 
-// TestArtifactsLibraryImport_LoudFailures proves the error paths through the real
+// TestArtifactLibraryImport_LoudFailures proves the error paths through the real
 // buildArtifactsProjection path: a host-bearing oci:// reference, an unknown
 // library, an unknown bundle, and a nested field-root $import inside a bundle file
 // each halt loudly with the mirrored sentinel.
-func TestArtifactsLibraryImport_LoudFailures(t *testing.T) {
+func TestArtifactLibraryImport_LoudFailures(t *testing.T) {
 	t.Parallel()
 
-	libs := map[string]types.ArtifactsLibrary{
-		"SharedCRDs": artifactsLibraryFixtureOrdered("SharedCRDs", "WidgetCRD",
+	libs := map[string]types.ArtifactLibrary{
+		"SharedCRDs": artifactLibraryFixtureOrdered("SharedCRDs", "WidgetCRD",
 			[]string{"widget-crd.yaml"}, []string{albCRDBody}),
-		"Nested": artifactsLibraryFixtureOrdered("Nested", "Bad",
+		"Nested": artifactLibraryFixtureOrdered("Nested", "Bad",
 			[]string{"f.yaml"}, []string{"$import: SharedCRDs#/artifacts/WidgetCRD"}),
 	}
 	cases := []struct {
@@ -132,8 +132,8 @@ func TestArtifactsLibraryImport_LoudFailures(t *testing.T) {
 		want error
 	}{
 		{"oci host rejected", "oci://hub/SharedCRDs#/artifacts/WidgetCRD", ErrHostInLibraryImport()},
-		{"unknown library", "Absent#/artifacts/WidgetCRD", ErrArtifactsLibraryNotFound()},
-		{"unknown bundle", "SharedCRDs#/artifacts/Missing", ErrArtifactsLibraryEntryNotFound()},
+		{"unknown library", "Absent#/artifacts/WidgetCRD", ErrArtifactLibraryNotFound()},
+		{"unknown bundle", "SharedCRDs#/artifacts/Missing", ErrArtifactLibraryEntryNotFound()},
 		{"nested import in bundle file", "Nested#/artifacts/Bad", ErrArtifactImportShape()},
 	}
 	for _, tc := range cases {
@@ -143,7 +143,7 @@ func TestArtifactsLibraryImport_LoudFailures(t *testing.T) {
 			tmplCtx, state, nodeCtx := newArtifactsCtx()
 			resetArtifacts(state)
 			state.Recipe.Spec.Artifacts.Set("slot", types.ArtifactEntry{Import: tc.imp})
-			state.ArtifactsLibraries = libs
+			state.ArtifactLibraries = libs
 			_, err := buildArtifactsProjection(nil, tmplCtx, state, nodeCtx, "{{", "}}")
 			if err == nil {
 				t.Fatalf("expected a loud failure for %q; got nil", tc.imp)
@@ -155,7 +155,7 @@ func TestArtifactsLibraryImport_LoudFailures(t *testing.T) {
 	}
 }
 
-// TestArtifactsLibraryImport_InlineAndBundleFileDoNotCollide proves the input that
+// TestArtifactLibraryImport_InlineAndBundleFileDoNotCollide proves the input that
 // used to be the collision no longer is one: an inline entry whose key is a bundle
 // file's filename, beside an entry importing that bundle, emits BOTH files.
 //
@@ -164,7 +164,7 @@ func TestArtifactsLibraryImport_LoudFailures(t *testing.T) {
 // filename. This is the collision reached by construction rather than by refusal;
 // the refusal is retained for what the naming does not make impossible, which is
 // proved separately.
-func TestArtifactsLibraryImport_InlineAndBundleFileDoNotCollide(t *testing.T) {
+func TestArtifactLibraryImport_InlineAndBundleFileDoNotCollide(t *testing.T) {
 	t.Parallel()
 
 	tmplCtx, state, nodeCtx := newArtifactsCtx()
@@ -173,8 +173,8 @@ func TestArtifactsLibraryImport_InlineAndBundleFileDoNotCollide(t *testing.T) {
 	// widget-crd.yaml file — the same filename authored twice, at two forms.
 	state.Recipe.Spec.Artifacts.Set("widget-crd.yaml", types.ArtifactEntry{Inline: albCRDBody})
 	state.Recipe.Spec.Artifacts.Set("slot", types.ArtifactEntry{Import: "SharedCRDs#/artifacts/WidgetCRD"})
-	state.ArtifactsLibraries = map[string]types.ArtifactsLibrary{
-		"SharedCRDs": artifactsLibraryFixtureOrdered("SharedCRDs", "WidgetCRD",
+	state.ArtifactLibraries = map[string]types.ArtifactLibrary{
+		"SharedCRDs": artifactLibraryFixtureOrdered("SharedCRDs", "WidgetCRD",
 			[]string{"widget-crd.yaml"}, []string{albCRDBody}),
 	}
 	proj, err := buildArtifactsProjection(nil, tmplCtx, state, nodeCtx, "{{", "}}")

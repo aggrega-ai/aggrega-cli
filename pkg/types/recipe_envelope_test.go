@@ -263,7 +263,7 @@ spec:
 }
 
 // TestRecipeEnvelope_AcceptsArtifactsBareNameLibraryImport pins that the envelope
-// admits a bare-name ArtifactsLibrary reference at an artifacts entry — the
+// admits a bare-name ArtifactLibrary reference at an artifacts entry — the
 // supported library-import mode `<Library>#/artifacts/<entry>` (the entry names a
 // bundle). The host-bearing `oci://` form stays rejected (see
 // TestRecipeEnvelope_RejectsArtifactsOCIImport); the bare-name identity form is the

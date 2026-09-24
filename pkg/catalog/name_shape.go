@@ -105,6 +105,6 @@ const MappingLibraryNameShape = `^[A-Z][A-Za-z0-9]*$`
 // SchemaLibraryNameShape. Example match: "BaseWorkloads".
 const WorkloadLibraryNameShape = `^[A-Z][A-Za-z0-9]*$`
 
-// ArtifactsLibraryNameShape matches the same PascalCase shape as
+// ArtifactLibraryNameShape matches the same PascalCase shape as
 // SchemaLibraryNameShape.
-const ArtifactsLibraryNameShape = `^[A-Z][A-Za-z0-9]*$`
+const ArtifactLibraryNameShape = `^[A-Z][A-Za-z0-9]*$`

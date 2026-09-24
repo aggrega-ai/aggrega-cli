@@ -173,12 +173,12 @@ func TestAxisCoverageReportsAStaleExemption(t *testing.T) {
 // one wins depend on the caller.
 func TestEveryAxisStatesItsKindExactlyOnce(t *testing.T) {
 	cl := Closure{
-		Entities:           []ResolvedRef{{URI: "core/compute/api-server", KindHint: "component"}},
-		SchemaLibraries:    []ResolvedLibrary{{URI: "PortSpec"}},
-		MappingLibraries:   []ResolvedLibrary{{URI: "HelmValues"}},
-		WorkloadLibraries:  []ResolvedLibrary{{URI: "Deployments"}},
-		ArtifactsLibraries: []ResolvedLibrary{{URI: "Bundles"}},
-		Plugins:            []ResolvedRef{{URI: "oci://reg.example/plugin/provider/helm", KindHint: "plugin"}},
+		Entities:          []ResolvedRef{{URI: "core/compute/api-server", KindHint: "component"}},
+		SchemaLibraries:   []ResolvedLibrary{{URI: "PortSpec"}},
+		MappingLibraries:  []ResolvedLibrary{{URI: "HelmValues"}},
+		WorkloadLibraries: []ResolvedLibrary{{URI: "Deployments"}},
+		ArtifactLibraries: []ResolvedLibrary{{URI: "Bundles"}},
+		Plugins:           []ResolvedRef{{URI: "oci://reg.example/plugin/provider/helm", KindHint: "plugin"}},
 	}
 
 	seen := map[string]struct{}{}
@@ -214,10 +214,10 @@ func TestLibraryAxesCarryTheManifestDigest(t *testing.T) {
 	const manifest = "sha256:1111111111111111111111111111111111111111111111111111111111111111"
 	lib := []ResolvedLibrary{{URI: "PortSpec", ManifestDigest: manifest, ResolutionPath: "tier-3-pull"}}
 	cl := Closure{
-		SchemaLibraries:    lib,
-		MappingLibraries:   lib,
-		WorkloadLibraries:  lib,
-		ArtifactsLibraries: lib,
+		SchemaLibraries:   lib,
+		MappingLibraries:  lib,
+		WorkloadLibraries: lib,
+		ArtifactLibraries: lib,
 	}
 
 	for _, axis := range cl.VerifiableAxes() {

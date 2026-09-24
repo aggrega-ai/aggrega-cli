@@ -21,13 +21,13 @@ func markerFor(severity, message string) *lockfile.DeprecationRecord {
 // forgot to sort would surface here.
 func lockfileWithAMarkerInEverySection(generatedAt string) *lockfile.Lockfile {
 	return &lockfile.Lockfile{
-		GeneratedAt:        generatedAt,
-		Entities:           []lockfile.Entity{{URI: "f-entity", Deprecation: markerFor("warning", "superseded")}},
-		SchemaLibraries:    []lockfile.SchemaLibrary{{URI: "e-schema", Deprecation: markerFor("error", "unsound")}},
-		MappingLibraries:   []lockfile.MappingLibrary{{URI: "d-mapping", Deprecation: markerFor("retracted", "withdrawn")}},
-		WorkloadLibraries:  []lockfile.WorkloadLibrary{{URI: "c-workload", Deprecation: markerFor("warning", "superseded")}},
-		ArtifactsLibraries: []lockfile.ArtifactsLibrary{{URI: "b-artifacts", Deprecation: markerFor("error", "stale")}},
-		Plugins:            []lockfile.Plugin{{URI: "a-plugin", Deprecation: markerFor("retracted", "recalled")}},
+		GeneratedAt:       generatedAt,
+		Entities:          []lockfile.Entity{{URI: "f-entity", Deprecation: markerFor("warning", "superseded")}},
+		SchemaLibraries:   []lockfile.SchemaLibrary{{URI: "e-schema", Deprecation: markerFor("error", "unsound")}},
+		MappingLibraries:  []lockfile.MappingLibrary{{URI: "d-mapping", Deprecation: markerFor("retracted", "withdrawn")}},
+		WorkloadLibraries: []lockfile.WorkloadLibrary{{URI: "c-workload", Deprecation: markerFor("warning", "superseded")}},
+		ArtifactLibraries: []lockfile.ArtifactLibrary{{URI: "b-artifacts", Deprecation: markerFor("error", "stale")}},
+		Plugins:           []lockfile.Plugin{{URI: "a-plugin", Deprecation: markerFor("retracted", "recalled")}},
 	}
 }
 

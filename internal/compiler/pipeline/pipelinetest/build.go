@@ -175,13 +175,13 @@ func loadInputs(in Input) (*loadedWorkspace, error) {
 	wsCfg := workspaceconfig.Default()
 	return &loadedWorkspace{
 		inputs: pipeline.Inputs{
-			Release:            rel,
-			Manifest:           manifest,
-			AggregateRawBytes:  aggRes.Bytes,
-			AggregatePath:      aggRes.Path,
-			MappingLibraries:   cat.MappingLibraries,
-			WorkloadLibraries:  cat.WorkloadLibraries,
-			ArtifactsLibraries: cat.ArtifactsLibraries,
+			Release:           rel,
+			Manifest:          manifest,
+			AggregateRawBytes: aggRes.Bytes,
+			AggregatePath:     aggRes.Path,
+			MappingLibraries:  cat.MappingLibraries,
+			WorkloadLibraries: cat.WorkloadLibraries,
+			ArtifactLibraries: cat.ArtifactLibraries,
 			// The pins the fixture's own catalog load recorded, so a fixture whose
 			// entity carries a lock beside it drives the same comparison a build
 			// does rather than a quieter one.

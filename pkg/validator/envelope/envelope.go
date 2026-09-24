@@ -73,23 +73,23 @@ const adviceCorrectDocument = "correct the document to match its kind's schema"
 type Kind string
 
 const (
-	KindComponent        Kind = "Component"
-	KindFeature          Kind = "Feature"
-	KindRecipe           Kind = "Recipe"
-	KindFeatureRecipe    Kind = "FeatureRecipe"
-	KindPlugin           Kind = "Plugin"
-	KindPluginsTrust     Kind = "PluginsTrust"
-	KindSchemaLibrary    Kind = "SchemaLibrary"
-	KindMappingLibrary   Kind = "MappingLibrary"
-	KindWorkloadLibrary  Kind = "WorkloadLibrary"
-	KindArtifactsLibrary Kind = "ArtifactsLibrary"
-	KindAggregate        Kind = "Aggregate"
-	KindManifest         Kind = "Manifest"
-	KindRelease          Kind = "Release"
-	KindAggregaConfig    Kind = "AggregaConfig"
-	KindLockfile         Kind = "Lockfile"
-	KindEntityLock       Kind = "EntityLock"
-	KindWorkload         Kind = "Workload"
+	KindComponent       Kind = "Component"
+	KindFeature         Kind = "Feature"
+	KindRecipe          Kind = "Recipe"
+	KindFeatureRecipe   Kind = "FeatureRecipe"
+	KindPlugin          Kind = "Plugin"
+	KindPluginsTrust    Kind = "PluginsTrust"
+	KindSchemaLibrary   Kind = "SchemaLibrary"
+	KindMappingLibrary  Kind = "MappingLibrary"
+	KindWorkloadLibrary Kind = "WorkloadLibrary"
+	KindArtifactLibrary Kind = "ArtifactLibrary"
+	KindAggregate       Kind = "Aggregate"
+	KindManifest        Kind = "Manifest"
+	KindRelease         Kind = "Release"
+	KindAggregaConfig   Kind = "AggregaConfig"
+	KindLockfile        Kind = "Lockfile"
+	KindEntityLock      Kind = "EntityLock"
+	KindWorkload        Kind = "Workload"
 	// KindIR is the emitted intermediate representation. It is an
 	// OUTPUT-side, TEST-ONLY kind: no loader calls ValidateBytes/
 	// ValidateInstance with it, so it creates no runtime gate (a gate is
@@ -106,24 +106,24 @@ const (
 
 // schemaSource maps each kind to its embedded schema document.
 var schemaSource = map[Kind]string{
-	KindComponent:        schemas.ComponentV1alpha1,
-	KindFeature:          schemas.FeatureV1alpha1,
-	KindRecipe:           schemas.RecipeV1alpha1,
-	KindFeatureRecipe:    schemas.FeatureRecipeV1alpha1,
-	KindPlugin:           schemas.PluginV1alpha1,
-	KindPluginsTrust:     schemas.PluginsTrustV1alpha1,
-	KindSchemaLibrary:    schemas.SchemaLibraryV1alpha1,
-	KindMappingLibrary:   schemas.MappingLibraryV1alpha1,
-	KindWorkloadLibrary:  schemas.WorkloadLibraryV1alpha1,
-	KindArtifactsLibrary: schemas.ArtifactsLibraryV1alpha1,
-	KindAggregate:        schemas.AggregateV1alpha1,
-	KindManifest:         schemas.ManifestV1alpha1,
-	KindRelease:          schemas.ReleaseV1alpha1,
-	KindAggregaConfig:    schemas.AggregaConfigV1alpha1,
-	KindLockfile:         schemas.LockfileV1alpha1,
-	KindEntityLock:       schemas.EntityLockV1alpha1,
-	KindWorkload:         clischemas.WorkloadJSONSchema,
-	KindIR:               schemas.IRSchemaV1alpha1,
+	KindComponent:       schemas.ComponentV1alpha1,
+	KindFeature:         schemas.FeatureV1alpha1,
+	KindRecipe:          schemas.RecipeV1alpha1,
+	KindFeatureRecipe:   schemas.FeatureRecipeV1alpha1,
+	KindPlugin:          schemas.PluginV1alpha1,
+	KindPluginsTrust:    schemas.PluginsTrustV1alpha1,
+	KindSchemaLibrary:   schemas.SchemaLibraryV1alpha1,
+	KindMappingLibrary:  schemas.MappingLibraryV1alpha1,
+	KindWorkloadLibrary: schemas.WorkloadLibraryV1alpha1,
+	KindArtifactLibrary: schemas.ArtifactLibraryV1alpha1,
+	KindAggregate:       schemas.AggregateV1alpha1,
+	KindManifest:        schemas.ManifestV1alpha1,
+	KindRelease:         schemas.ReleaseV1alpha1,
+	KindAggregaConfig:   schemas.AggregaConfigV1alpha1,
+	KindLockfile:        schemas.LockfileV1alpha1,
+	KindEntityLock:      schemas.EntityLockV1alpha1,
+	KindWorkload:        clischemas.WorkloadJSONSchema,
+	KindIR:              schemas.IRSchemaV1alpha1,
 }
 
 // Kinds returns every document family this package validates, in lexical

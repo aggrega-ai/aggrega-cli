@@ -119,14 +119,14 @@ fn name_shape_workloadlibrary_rejects_non_pascalcase() {
 }
 
 #[test]
-fn name_shape_artifactslibrary_pascalcase_passes() {
-    passes("ArtifactsLibrary", "BaseArtifacts");
+fn name_shape_artifactlibrary_pascalcase_passes() {
+    passes("ArtifactLibrary", "BaseArtifacts");
 }
 
 #[test]
-fn name_shape_artifactslibrary_rejects_non_pascalcase() {
-    rejects("ArtifactsLibrary", "base-artifacts");
-    rejects("ArtifactsLibrary", "not_snake_case_either");
+fn name_shape_artifactlibrary_rejects_non_pascalcase() {
+    rejects("ArtifactLibrary", "base-artifacts");
+    rejects("ArtifactLibrary", "not_snake_case_either");
 }
 
 #[test]

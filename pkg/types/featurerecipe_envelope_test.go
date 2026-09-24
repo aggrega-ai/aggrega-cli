@@ -63,7 +63,7 @@ spec:
 }
 
 // TestFeatureRecipeEnvelope_AcceptsArtifactsBareNameLibraryImport pins the
-// artifacts-site relax at the FeatureRecipe surface: a bare-name ArtifactsLibrary
+// artifacts-site relax at the FeatureRecipe surface: a bare-name ArtifactLibrary
 // reference `<Library>#/artifacts/<entry>` is admitted (the entry names a bundle).
 func TestFeatureRecipeEnvelope_AcceptsArtifactsBareNameLibraryImport(t *testing.T) {
 	t.Parallel()

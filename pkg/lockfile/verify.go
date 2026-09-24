@@ -17,7 +17,7 @@ import (
 // errors.Is(err, ErrLockfileDrift()) carry a
 // wrapped message naming every offending URI surfaced across the
 // closure axes (entities, schema libraries, mapping libraries,
-// workload libraries, artifacts libraries, Wasm plugins), or — from
+// workload libraries, artifact libraries, Wasm plugins), or — from
 // VerifySourceReferences — every source reference whose authored ref now
 // resolves elsewhere. Each axis collects all of its drift entries before
 // returning, so an operator with multiple drifts sees the full list
@@ -58,7 +58,7 @@ var errLockfileDrift = cerrors.Register("lockfile-drift", cerrors.Meta{
 // operators see the full picture.
 //
 // Walks six axes: Entities, SchemaLibraries, MappingLibraries,
-// WorkloadLibraries, ArtifactsLibraries, Plugins.
+// WorkloadLibraries, ArtifactLibraries, Plugins.
 //
 // SourceArtifacts are not walked here, and the reason is the shape of the
 // argument rather than a judgement about their importance: every axis above is

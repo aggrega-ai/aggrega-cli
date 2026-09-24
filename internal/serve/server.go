@@ -1023,7 +1023,7 @@ type Server struct {
 	// lazyCatalog is this workspace's catalog lookup: the per-URI Tier-1/2/3
 	// cascade for the WHOLE catalog surface — Component + Feature (on-demand
 	// cascade) plus the tolerantly-enumerated Recipe / FeatureRecipe / Aggregate /
-	// Plugin / SchemaLibrary / MappingLibrary / WorkloadLibrary / ArtifactsLibrary shell. Constructed once when
+	// Plugin / SchemaLibrary / MappingLibrary / WorkloadLibrary / ArtifactLibrary shell. Constructed once when
 	// the workspace's entry is created, via catalog.NewLazyLookup; no
 	// per-request reconstruction, no eager whole-catalog load. It holds the
 	// workspace-stable, pin-independent Tier-1 filesystem indexes; Reset() on

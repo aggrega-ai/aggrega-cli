@@ -228,8 +228,8 @@ spec:
           ports:
             web: {{ .values.port }}
 `)
-	writeFixture(t, filepath.Join(catalogDir, "artifactslibraries", "sharedartifacts.yaml"), `apiVersion: aggrega.ai/v1alpha1
-kind: ArtifactsLibrary
+	writeFixture(t, filepath.Join(catalogDir, "artifactlibraries", "sharedartifacts.yaml"), `apiVersion: aggrega.ai/v1alpha1
+kind: ArtifactLibrary
 metadata:
   name: SharedArtifacts
   version: "1.0.0"
@@ -358,17 +358,17 @@ plugins:
 // distinguish a section that came back empty from one nobody thought to look at.
 func lockfileAxisCensus(lf *lockfile.Lockfile) map[string]int {
 	return map[string]int{
-		"entities":            len(lf.Entities),
-		"schema_libraries":    len(lf.SchemaLibraries),
-		"mapping_libraries":   len(lf.MappingLibraries),
-		"workload_libraries":  len(lf.WorkloadLibraries),
-		"artifacts_libraries": len(lf.ArtifactsLibraries),
-		"source_artifacts":    len(lf.SourceArtifacts),
-		"external_inputs":     len(lf.ExternalInputs),
-		"plugins":             len(lf.Plugins),
-		"providers":           len(lf.Providers),
-		"mutators":            len(lf.Mutators),
-		"verdict_inputs":      len(lf.VerdictInputs),
+		"entities":           len(lf.Entities),
+		"schema_libraries":   len(lf.SchemaLibraries),
+		"mapping_libraries":  len(lf.MappingLibraries),
+		"workload_libraries": len(lf.WorkloadLibraries),
+		"artifact_libraries": len(lf.ArtifactLibraries),
+		"source_artifacts":   len(lf.SourceArtifacts),
+		"external_inputs":    len(lf.ExternalInputs),
+		"plugins":            len(lf.Plugins),
+		"providers":          len(lf.Providers),
+		"mutators":           len(lf.Mutators),
+		"verdict_inputs":     len(lf.VerdictInputs),
 	}
 }
 
@@ -384,7 +384,7 @@ var hermeticCoveredAxes = []string{
 	"schema_libraries",
 	"mapping_libraries",
 	"workload_libraries",
-	"artifacts_libraries",
+	"artifact_libraries",
 	"source_artifacts",
 	"external_inputs",
 	"plugins",
@@ -506,8 +506,8 @@ var hermeticExpectedArtifacts = []struct {
 	{"dist/main/helm/queue-deployment.yaml", "value: 10Gi", "the schema library"},
 	// The label is injected by the transform-role attachment the lockfile pins.
 	{"dist/main/helm/queue-deployment.yaml", "inject.aggrega.ai/mark=hit", "the pinned governance attachment"},
-	// The bundle's document and its path both come from the artifacts library.
-	{"dist/main/helm/queue/bundle/queue-config.yaml", `port: "8080"`, "the artifacts library"},
+	// The bundle's document and its path both come from the artifact library.
+	{"dist/main/helm/queue/bundle/queue-config.yaml", `port: "8080"`, "the artifact library"},
 }
 
 // assertHermeticArtifacts requires the rendered tree to be exactly the expected

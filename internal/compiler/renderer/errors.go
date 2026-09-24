@@ -226,28 +226,28 @@ func ErrArtifactImportShape() error { return errArtifactImportShape }
 
 var errArtifactImportShape = cerrors.Register("artifact-import-shape", cerrors.Meta{
 	ShortCode: "E0027",
-	Message:   "artifacts $import: is not a bare-name artifacts-library reference (<Library>#/artifacts/<entry>)",
+	Message:   "artifacts $import: is not a bare-name artifact-library reference (<Library>#/artifacts/<entry>)",
 	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
-// ErrArtifactsLibraryNotFound fires when a bare-name artifacts-library import
-// names an ArtifactsLibrary absent from the resolved set (the local catalog
+// ErrArtifactLibraryNotFound fires when a bare-name artifact-library import
+// names an ArtifactLibrary absent from the resolved set (the local catalog
 // plus any lockfile-pinned libraries bridged in at load).
-func ErrArtifactsLibraryNotFound() error { return errArtifactsLibraryNotFound }
+func ErrArtifactLibraryNotFound() error { return errArtifactLibraryNotFound }
 
-var errArtifactsLibraryNotFound = cerrors.Register("artifacts-library-not-found", cerrors.Meta{
+var errArtifactLibraryNotFound = cerrors.Register("artifact-library-not-found", cerrors.Meta{
 	ShortCode: "E0031",
-	Message:   "artifacts-library import references an ArtifactsLibrary not present in the catalog",
+	Message:   "artifact-library import references an ArtifactLibrary not present in the catalog",
 	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
-// ErrArtifactsLibraryEntryNotFound fires when a bare-name artifacts-library
-// import names a bundle absent from the resolved ArtifactsLibrary's artifacts map.
-func ErrArtifactsLibraryEntryNotFound() error { return errArtifactsLibraryEntryNotFound }
+// ErrArtifactLibraryEntryNotFound fires when a bare-name artifact-library
+// import names a bundle absent from the resolved ArtifactLibrary's artifacts map.
+func ErrArtifactLibraryEntryNotFound() error { return errArtifactLibraryEntryNotFound }
 
-var errArtifactsLibraryEntryNotFound = cerrors.Register("artifacts-library-entry-not-found", cerrors.Meta{
+var errArtifactLibraryEntryNotFound = cerrors.Register("artifact-library-entry-not-found", cerrors.Meta{
 	ShortCode: "E0030",
-	Message:   "artifacts-library import references a bundle not present in the ArtifactsLibrary",
+	Message:   "artifact-library import references a bundle not present in the ArtifactLibrary",
 	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
@@ -942,8 +942,8 @@ var errEmptySource = cerrors.Register("recipe-source-is-empty", cerrors.Meta{
 	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
-// ErrArtifactsLibraryFileEscapesKey is the Loud Guardrail halt raised when a
-// file inside an ArtifactsLibrary bundle carries a name that leaves the
+// ErrArtifactLibraryFileEscapesKey is the Loud Guardrail halt raised when a
+// file inside an ArtifactLibrary bundle carries a name that leaves the
 // artifacts key the bundle was consumed at. One artifacts entry importing a
 // bundle expands into one output per bundle file, each nested under that key —
 // so the key names a directory and every file the bundle contributes belongs
@@ -975,12 +975,12 @@ var errEmptySource = cerrors.Register("recipe-source-is-empty", cerrors.Meta{
 // Category: CATALOG_ERROR, because the offending value came from an authored
 // catalog document, unlike the provider-supplied sub-directory name one layer up
 // that ErrNestSegmentNotOneDirectory refuses as a translation fault. Match with
-// errors.Is(err, ErrArtifactsLibraryFileEscapesKey()).
-func ErrArtifactsLibraryFileEscapesKey() error { return errArtifactsLibraryFileEscapesKey }
+// errors.Is(err, ErrArtifactLibraryFileEscapesKey()).
+func ErrArtifactLibraryFileEscapesKey() error { return errArtifactLibraryFileEscapesKey }
 
-var errArtifactsLibraryFileEscapesKey = cerrors.Register("artifacts-library-file-escapes-key", cerrors.Meta{
+var errArtifactLibraryFileEscapesKey = cerrors.Register("artifact-library-file-escapes-key", cerrors.Meta{
 	ShortCode: "E0252",
-	Message:   "artifacts-library bundle file name leaves the artifacts key its output is nested under",
+	Message:   "artifact-library bundle file name leaves the artifacts key its output is nested under",
 	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 

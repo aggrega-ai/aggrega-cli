@@ -139,7 +139,7 @@ func TestLibraryKindsShareOneNameShape(t *testing.T) {
 		entitykind.SchemaLibrary,
 		entitykind.MappingLibrary,
 		entitykind.WorkloadLibrary,
-		entitykind.ArtifactsLibrary,
+		entitykind.ArtifactLibrary,
 	}
 
 	// The library kinds are read from the vocabulary rather than trusted from the

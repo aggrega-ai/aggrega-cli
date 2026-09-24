@@ -38,7 +38,7 @@ type EntityView interface {
 	SchemaLibrary(uri string) (types.SchemaLibrary, bool)
 	MappingLibrary(uri string) (types.MappingLibrary, bool)
 	WorkloadLibrary(uri string) (types.WorkloadLibrary, bool)
-	ArtifactsLibrary(uri string) (types.ArtifactsLibrary, bool)
+	ArtifactLibrary(uri string) (types.ArtifactLibrary, bool)
 	LocalEntityPath(kind, scope, name, version string) (string, bool)
 }
 
@@ -192,12 +192,12 @@ var entityKinds = []entityKind{
 		return Entity{Kind: "WorkloadLibrary", Name: lib.Metadata.Name, Version: lib.Metadata.Version,
 			Description: lib.Metadata.Description, Definition: lib}, true
 	}},
-	{"ArtifactsLibrary", func(v EntityView, n string) (Entity, bool) {
-		lib, ok := v.ArtifactsLibrary(n)
+	{"ArtifactLibrary", func(v EntityView, n string) (Entity, bool) {
+		lib, ok := v.ArtifactLibrary(n)
 		if !ok {
 			return Entity{}, false
 		}
-		return Entity{Kind: "ArtifactsLibrary", Name: lib.Metadata.Name, Version: lib.Metadata.Version,
+		return Entity{Kind: "ArtifactLibrary", Name: lib.Metadata.Name, Version: lib.Metadata.Version,
 			Description: lib.Metadata.Description, Definition: lib}, true
 	}},
 }

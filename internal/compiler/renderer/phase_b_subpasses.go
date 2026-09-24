@@ -662,7 +662,7 @@ func phaseB6(
 		frFiles, frComponentID, err := renderFeatureRecipeFiles(ctx, frEngine, fr, &frCtx, frNodeCtx, frValues.Resolved, resolvedSrc, frDocument,
 			input.RecordedPins.For(frDocument), item.Identity,
 			ownerProductsOf(state).attachmentOnNode(nodeID, item.Instance),
-			featureAttachmentSlots(fr, input), input.WorkloadLibraries, input.ArtifactsLibraries,
+			featureAttachmentSlots(fr, input), input.WorkloadLibraries, input.ArtifactLibraries,
 			nodeAnnotations, input.CatalogLookup.ProviderPlugin)
 		if err != nil {
 			return nil, nil, nil, nil, err
@@ -1120,7 +1120,7 @@ func renderFeatureRecipeFiles(
 	hydrated attachmentOwner,
 	slots types.OrderedMap[types.AttachmentSlot],
 	workloadLibs map[string]types.WorkloadLibrary,
-	artifactsLibs map[string]types.ArtifactsLibrary,
+	artifactsLibs map[string]types.ArtifactLibrary,
 	annotations types.OrderedMap[string],
 	providerPlugin func(ref string) (types.Plugin, bool, error),
 ) ([]EmittedFile, string, error) {
@@ -1274,9 +1274,9 @@ func renderFeatureRecipeFiles(
 	// the render input — single source, no second lib map.
 	state.WorkloadLibraries = workloadLibs
 	// The FR artifacts flow through the same phaseB3 buildArtifactsProjection as a
-	// base Recipe; an artifacts library `$import` resolves against this set,
+	// base Recipe; an artifact library `$import` resolves against this set,
 	// sourced identically from the render input — single source, no second map.
-	state.ArtifactsLibraries = artifactsLibs
+	state.ArtifactLibraries = artifactsLibs
 
 	// Sourced mode hits engine.Render; synthesized renders at B.4, artifacts at
 	// B.3. EmitOriginSource files accumulate by sorted filename for

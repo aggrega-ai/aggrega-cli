@@ -55,7 +55,7 @@ func pinnedRetractedLibraryLockfile(generatedAt string) *lockfile.Lockfile {
 		WorkloadLibraries: []lockfile.WorkloadLibrary{{
 			URI: workloadURI, ResolvedVersion: pinned, Deprecation: retracted("withdrawn: bad probe defaults"),
 		}},
-		ArtifactsLibraries: []lockfile.ArtifactsLibrary{{
+		ArtifactLibraries: []lockfile.ArtifactLibrary{{
 			URI: artifactsURI, ResolvedVersion: pinned, Deprecation: retracted("withdrawn: stale bundle"),
 		}},
 	}

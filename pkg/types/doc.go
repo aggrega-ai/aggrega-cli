@@ -10,7 +10,7 @@
 //
 // The authoring entities modelled here: Aggregate, Component, Feature,
 // Recipe, FeatureRecipe, Plugin, SchemaLibrary, MappingLibrary,
-// WorkloadLibrary, ArtifactsLibrary, Manifest, Release. The declaring
+// WorkloadLibrary, ArtifactLibrary, Manifest, Release. The declaring
 // source for the set is the document-envelope kind enumeration, which
 // also carries the non-authoring kinds (configuration, lockfile,
 // workload, IR); read it there rather than counting this list.

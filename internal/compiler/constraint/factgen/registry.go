@@ -4693,14 +4693,14 @@ var facts = []factDecl{
 	{
 		Name:        "artifacts-entry-library-declared",
 		Stage:       "described",
-		SourceField: "renderer.RenderInput.ArtifactsLibraries",
+		SourceField: "renderer.RenderInput.ArtifactLibraries",
 		Subject:     []string{"node", "artifacts-entry"},
 		Params: []paramDecl{
 			{Name: "node", Type: "string"},
 			{Name: "entry", Type: "string"},
 		},
 		Returns: "bool",
-		Doc: "ArtifactsEntryLibraryDeclared reports whether the ArtifactsLibrary " +
+		Doc: "ArtifactsEntryLibraryDeclared reports whether the ArtifactLibrary " +
 			"one entry of a node's own artifacts block names is in the set the " +
 			"catalog resolved — the local catalog plus any lockfile-pinned " +
 			"libraries bridged in at load.\n\nIt is false for an entry naming no " +
@@ -4718,14 +4718,14 @@ var facts = []factDecl{
 	{
 		Name:        "artifacts-entry-bundle-declared",
 		Stage:       "described",
-		SourceField: "renderer.RenderInput.ArtifactsLibraries",
+		SourceField: "renderer.RenderInput.ArtifactLibraries",
 		Subject:     []string{"node", "artifacts-entry"},
 		Params: []paramDecl{
 			{Name: "node", Type: "string"},
 			{Name: "entry", Type: "string"},
 		},
 		Returns: "bool",
-		Doc: "ArtifactsEntryBundleDeclared reports whether the ArtifactsLibrary " +
+		Doc: "ArtifactsEntryBundleDeclared reports whether the ArtifactLibrary " +
 			"one entry of a node's own artifacts block names declares the bundle " +
 			"that entry's reference asks for.\n\nIt is false wherever the library " +
 			"itself was not found, because a library the set does not hold declares " +
@@ -4743,7 +4743,7 @@ var facts = []factDecl{
 	{
 		Name:        "artifacts-entry-bundle-file-names",
 		Stage:       "described",
-		SourceField: "types.ArtifactsLibraryEntry.Files",
+		SourceField: "types.ArtifactLibraryEntry.Files",
 		Subject:     []string{"node", "artifacts-entry"},
 		Params: []paramDecl{
 			{Name: "node", Type: "string"},
@@ -4770,7 +4770,7 @@ var facts = []factDecl{
 	{
 		Name:        "artifacts-entry-bundle-nested-import-files",
 		Stage:       "described",
-		SourceField: "types.ArtifactsLibraryEntry.Files",
+		SourceField: "types.ArtifactLibraryEntry.Files",
 		Subject:     []string{"node", "artifacts-entry"},
 		Params: []paramDecl{
 			{Name: "node", Type: "string"},

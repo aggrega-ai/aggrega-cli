@@ -2586,30 +2586,30 @@ func (HydratedViewBase) ArtifactsEntryImportReference(node string, entry string)
 
 // ArtifactsEntryLibraryDeclared panics. This view does not carry
 // artifacts-entry-library-declared, which is read from
-// renderer.RenderInput.ArtifactsLibraries.
+// renderer.RenderInput.ArtifactLibraries.
 func (HydratedViewBase) ArtifactsEntryLibraryDeclared(node string, entry string) bool {
-	panic("this view does not carry artifacts-entry-library-declared, which is read from renderer.RenderInput.ArtifactsLibraries")
+	panic("this view does not carry artifacts-entry-library-declared, which is read from renderer.RenderInput.ArtifactLibraries")
 }
 
 // ArtifactsEntryBundleDeclared panics. This view does not carry
 // artifacts-entry-bundle-declared, which is read from
-// renderer.RenderInput.ArtifactsLibraries.
+// renderer.RenderInput.ArtifactLibraries.
 func (HydratedViewBase) ArtifactsEntryBundleDeclared(node string, entry string) bool {
-	panic("this view does not carry artifacts-entry-bundle-declared, which is read from renderer.RenderInput.ArtifactsLibraries")
+	panic("this view does not carry artifacts-entry-bundle-declared, which is read from renderer.RenderInput.ArtifactLibraries")
 }
 
 // ArtifactsEntryBundleFileNames panics. This view does not carry
 // artifacts-entry-bundle-file-names, which is read from
-// types.ArtifactsLibraryEntry.Files.
+// types.ArtifactLibraryEntry.Files.
 func (HydratedViewBase) ArtifactsEntryBundleFileNames(node string, entry string) []string {
-	panic("this view does not carry artifacts-entry-bundle-file-names, which is read from types.ArtifactsLibraryEntry.Files")
+	panic("this view does not carry artifacts-entry-bundle-file-names, which is read from types.ArtifactLibraryEntry.Files")
 }
 
 // ArtifactsEntryBundleNestedImportFiles panics. This view does not carry
 // artifacts-entry-bundle-nested-import-files, which is read from
-// types.ArtifactsLibraryEntry.Files.
+// types.ArtifactLibraryEntry.Files.
 func (HydratedViewBase) ArtifactsEntryBundleNestedImportFiles(node string, entry string) []string {
-	panic("this view does not carry artifacts-entry-bundle-nested-import-files, which is read from types.ArtifactsLibraryEntry.Files")
+	panic("this view does not carry artifacts-entry-bundle-nested-import-files, which is read from types.ArtifactLibraryEntry.Files")
 }
 
 // RecipeValuesMappingImportReference panics. This view does not carry

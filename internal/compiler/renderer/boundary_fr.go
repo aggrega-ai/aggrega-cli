@@ -646,7 +646,7 @@ func dispatchBoundaryScopeFR(
 	emitted, _, err := renderFeatureRecipeFiles(ctx, frEngine, fr, frCtx, frNodeCtx, frValues.Resolved, resolvedSrc, frDocument,
 		input.RecordedPins.For(frDocument), attachmentIdentity{},
 		ownerProductsOf(state).attachmentOnBoundary(key.BoundaryPath, frInstance),
-		featureAttachmentSlots(fr, input), input.WorkloadLibraries, input.ArtifactsLibraries,
+		featureAttachmentSlots(fr, input), input.WorkloadLibraries, input.ArtifactLibraries,
 		boundaryAnnotations[key.BoundaryPath], input.CatalogLookup.ProviderPlugin)
 	if err != nil {
 		return err

@@ -53,13 +53,13 @@ import (
 // confines source-descent's dependencies (RecipeLoader,
 // SourceResolver) to the new function.
 type Closure struct {
-	Entities           []ResolvedRef
-	MappingLibraries   []ResolvedLibrary
-	SchemaLibraries    []ResolvedLibrary
-	WorkloadLibraries  []ResolvedLibrary
-	ArtifactsLibraries []ResolvedLibrary
-	SourceArtifacts    []SourceArtifact
-	Plugins            []ResolvedRef
+	Entities          []ResolvedRef
+	MappingLibraries  []ResolvedLibrary
+	SchemaLibraries   []ResolvedLibrary
+	WorkloadLibraries []ResolvedLibrary
+	ArtifactLibraries []ResolvedLibrary
+	SourceArtifacts   []SourceArtifact
+	Plugins           []ResolvedRef
 }
 
 // SourceArtifact mirrors lockfile.SourceArtifact field-for-field;
@@ -339,8 +339,8 @@ type ResolvedRef struct {
 }
 
 // ResolvedLibrary captures a SchemaLibrary, MappingLibrary, WorkloadLibrary, or
-// ArtifactsLibrary resolution result with its consumer chain. Mirrors the lockfile
-// package's SchemaLibrary / MappingLibrary / WorkloadLibrary / ArtifactsLibrary
+// ArtifactLibrary resolution result with its consumer chain. Mirrors the lockfile
+// package's SchemaLibrary / MappingLibrary / WorkloadLibrary / ArtifactLibrary
 // wire shapes so the lockfile writer can copy field-for-field.
 type ResolvedLibrary struct {
 	URI             string

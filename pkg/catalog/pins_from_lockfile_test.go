@@ -32,7 +32,7 @@ func TestPinsFromLockfileCoversSameURIsAsPinsByURI(t *testing.T) {
 		WorkloadLibraries: []lockfile.WorkloadLibrary{
 			{URI: "core/BaseWorkloads:1.0.0", ResolvedVersion: "1.0.0", Digest: "sha256:ddd"},
 		},
-		ArtifactsLibraries: []lockfile.ArtifactsLibrary{
+		ArtifactLibraries: []lockfile.ArtifactLibrary{
 			{URI: "core/BaseArtifacts:1.0.0", ResolvedVersion: "1.0.0", Digest: "sha256:eee"},
 		},
 		Plugins: []lockfile.Plugin{

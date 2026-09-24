@@ -47,9 +47,9 @@ const (
 	// WorkloadLibrary publishes reusable workload templates for other entities to
 	// import.
 	WorkloadLibrary Kind = "WorkloadLibrary"
-	// ArtifactsLibrary publishes reusable artifact bundles for other entities to
+	// ArtifactLibrary publishes reusable artifact bundles for other entities to
 	// import.
-	ArtifactsLibrary Kind = "ArtifactsLibrary"
+	ArtifactLibrary Kind = "ArtifactLibrary"
 	// Aggregate is the developer's application-intent document.
 	Aggregate Kind = "Aggregate"
 	// Plugin is the authoring surface that pins a WebAssembly plugin artifact by
@@ -104,7 +104,7 @@ var entries = []Entry{
 	{Kind: SchemaLibrary, ConventionsLinted: true, ReferencePage: true},
 	{Kind: MappingLibrary, ConventionsLinted: true, ReferencePage: true},
 	{Kind: WorkloadLibrary, ConventionsLinted: true, ReferencePage: false},
-	{Kind: ArtifactsLibrary, ConventionsLinted: true, ReferencePage: false},
+	{Kind: ArtifactLibrary, ConventionsLinted: true, ReferencePage: false},
 	{Kind: Aggregate, ConventionsLinted: false, ReferencePage: true, SharesDirectory: true},
 	{Kind: Plugin, ConventionsLinted: true, ReferencePage: true},
 	{Kind: Workload, ConventionsLinted: false, ReferencePage: true},

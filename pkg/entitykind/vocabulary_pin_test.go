@@ -331,12 +331,12 @@ func TestCategorisedKindsAreEntityKinds(t *testing.T) {
 	// partiality is legible; a change either way fails here and is then a decision
 	// someone made rather than a drift nobody saw.
 	expectedUncovered := map[entitykind.Kind]bool{
-		entitykind.SchemaLibrary:    true,
-		entitykind.MappingLibrary:   true,
-		entitykind.WorkloadLibrary:  true,
-		entitykind.ArtifactsLibrary: true,
-		entitykind.Plugin:           true,
-		entitykind.Workload:         true,
+		entitykind.SchemaLibrary:   true,
+		entitykind.MappingLibrary:  true,
+		entitykind.WorkloadLibrary: true,
+		entitykind.ArtifactLibrary: true,
+		entitykind.Plugin:          true,
+		entitykind.Workload:        true,
 	}
 
 	var covered, uncovered []string

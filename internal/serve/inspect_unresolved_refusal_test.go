@@ -173,7 +173,7 @@ func TestEntityDefinitionRefusalArguesWithNoDeclaredAbsenceOfALocalCatalog(t *te
 func TestIndefiniteArticleAgreesWithTheKindItPrecedes(t *testing.T) {
 	for _, tc := range []struct{ kind, want string }{
 		{"Aggregate", "an"},
-		{"ArtifactsLibrary", "an"},
+		{"ArtifactLibrary", "an"},
 		{"Component", "a"},
 		{"Feature", "a"},
 		{"Manifest", "a"},

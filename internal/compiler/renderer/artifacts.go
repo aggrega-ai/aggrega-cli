@@ -80,14 +80,14 @@ type ArtifactsEmitter interface {
 //     importing different files that share a base name are two distinct outputs.
 //     The artifactDigests file-pin is verified.
 //   - Mode 3 (library $import, `<Library>#/artifacts/<entry>`): the referenced
-//     ArtifactsLibrary bundle expands into one output per file, each nested under
+//     ArtifactLibrary bundle expands into one output per file, each nested under
 //     the consumption key as `<key>/<filename>` — one key names many files, so
 //     the key alone cannot name them and the pair identifies both the consumption
 //     and the file within the bundle. The library version is lockfile-pinned, so
 //     no artifactDigests file-pin applies. A host-bearing `oci://…` reference is
 //     rejected (ErrHostInLibraryImport), and a bundle file whose name would not
 //     stay under the consumption key is rejected
-//     (ErrArtifactsLibraryFileEscapesKey) before the name is composed.
+//     (ErrArtifactLibraryFileEscapesKey) before the name is composed.
 //
 // origin records which form the entry took so a guest that rejects one form can
 // halt on it. Two outputs resolving to the same filename halt loudly with
@@ -258,10 +258,10 @@ func buildArtifactsProjection(
 			// is what keeps both halves readable in the output. The library version
 			// is lockfile-pinned, so no artifactDigests file-pin applies here (that
 			// check guards only mode-2 local-file imports).
-			bundle, err := resolveArtifactLibraryImport(entry.Import, state.ArtifactsLibraries)
+			bundle, err := resolveArtifactLibraryImport(entry.Import, state.ArtifactLibraries)
 			if err != nil {
 				return ArtifactsProjection{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: state.RecipeName},
-					fmt.Sprintf("Recipe %q artifacts library import %q", state.RecipeName, entry.Import))
+					fmt.Sprintf("Recipe %q artifact library import %q", state.RecipeName, entry.Import))
 			}
 			for _, fname := range bundle.Files.Keys() {
 				// The nesting above is only true of the composed name while the
@@ -275,13 +275,13 @@ func buildArtifactsProjection(
 				// path in the host's own spelling — a backslash is an ordinary
 				// character in it on every platform.
 				if !pathscope.IsLocalSlash(fname) {
-					return ArtifactsProjection{}, cerrors.Wrap(ErrArtifactsLibraryFileEscapesKey(),
+					return ArtifactsProjection{}, cerrors.Wrap(ErrArtifactLibraryFileEscapesKey(),
 						cerrors.CatalogError, cerrors.SourceLocation{File: state.RecipeName},
-						cerrors.ComposeMessage(ErrArtifactsLibraryFileEscapesKey(), []string{
+						cerrors.ComposeMessage(ErrArtifactLibraryFileEscapesKey(), []string{
 							fmt.Sprintf("Recipe %q", state.RecipeName),
 							fmt.Sprintf("artifact %q", key),
 							fmt.Sprintf("bundle file %q", fname),
-						}, "rename the file inside the ArtifactsLibrary bundle so its name stays under the artifacts key it is consumed at"))
+						}, "rename the file inside the ArtifactLibrary bundle so its name stays under the artifacts key it is consumed at"))
 				}
 				body, _ := bundle.Files.Get(fname)
 				if err := emit(key+"/"+fname, "import", body); err != nil {

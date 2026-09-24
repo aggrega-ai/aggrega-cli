@@ -82,18 +82,18 @@ const (
 // side cannot disagree with itself, and the disagreement is the whole signal.
 // Unifying them removes the only thing either side is here to catch.
 var declaredKindDisposition = map[entitykind.Kind]documentDisposition{
-	entitykind.Aggregate:        standaloneDocument,
-	entitykind.Component:        standaloneDocument,
-	entitykind.Feature:          standaloneDocument,
-	entitykind.Recipe:           standaloneDocument,
-	entitykind.FeatureRecipe:    standaloneDocument,
-	entitykind.SchemaLibrary:    standaloneDocument,
-	entitykind.MappingLibrary:   standaloneDocument,
-	entitykind.WorkloadLibrary:  standaloneDocument,
-	entitykind.ArtifactsLibrary: standaloneDocument,
-	entitykind.Plugin:           standaloneDocument,
-	entitykind.Manifest:         standaloneDocument,
-	entitykind.Release:          standaloneDocument,
+	entitykind.Aggregate:       standaloneDocument,
+	entitykind.Component:       standaloneDocument,
+	entitykind.Feature:         standaloneDocument,
+	entitykind.Recipe:          standaloneDocument,
+	entitykind.FeatureRecipe:   standaloneDocument,
+	entitykind.SchemaLibrary:   standaloneDocument,
+	entitykind.MappingLibrary:  standaloneDocument,
+	entitykind.WorkloadLibrary: standaloneDocument,
+	entitykind.ArtifactLibrary: standaloneDocument,
+	entitykind.Plugin:          standaloneDocument,
+	entitykind.Manifest:        standaloneDocument,
+	entitykind.Release:         standaloneDocument,
 
 	// Workload content is written inside a Recipe or a FeatureRecipe, in its
 	// `workload:` field — inline or from a file that field imports. There is no

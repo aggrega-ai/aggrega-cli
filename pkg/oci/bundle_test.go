@@ -156,7 +156,7 @@ func TestBundleBareKindsWhereverTheySit(t *testing.T) {
 		{"Feature", "feature.yaml", oci.MediaTypeFeature},
 		{"Aggregate", "aggregate.yaml", oci.MediaTypeAggregate},
 		{"WorkloadLibrary", "library.yaml", oci.MediaTypeWorkloadLibrary},
-		{"ArtifactsLibrary", "library.yaml", oci.MediaTypeArtifactsLibrary},
+		{"ArtifactLibrary", "library.yaml", oci.MediaTypeArtifactLibrary},
 	}
 	body := func(kind string) []byte {
 		return []byte("apiVersion: aggrega.ai/v1alpha1\nkind: " + kind + "\nmetadata:\n  name: demo/x\n  version: 1.0.0\n")
@@ -260,7 +260,7 @@ func TestBundlePluginIsItsDocumentWhereverItSits(t *testing.T) {
 // on its own switch, so a kind can sit in the table with no matching case: the
 // gate lets it through and the switch drops it on ErrUnknownEntityKind. That is
 // the one shape where the two homes disagree, and it is invisible until somebody
-// pushes that kind — which is how ArtifactsLibrary came to be publishable by the
+// pushes that kind — which is how ArtifactLibrary came to be publishable by the
 // table and unbundleable in fact for as long as it was.
 //
 // So this walks the enumeration rather than a hand-listed set: every kind the

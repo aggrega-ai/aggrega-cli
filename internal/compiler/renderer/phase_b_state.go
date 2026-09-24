@@ -184,12 +184,12 @@ type PhaseBState struct {
 	// WorkloadLibraries are present (a non-library workload never reads it).
 	WorkloadLibraries map[string]types.WorkloadLibrary
 
-	// ArtifactsLibraries is the local-catalog ArtifactsLibrary set, keyed by bare
+	// ArtifactLibraries is the local-catalog ArtifactLibrary set, keyed by bare
 	// name. B.3 resolves a Recipe / FeatureRecipe artifacts entry's bare-name
 	// `artifacts.<name>: { $import: <Library>#/artifacts/<entry> }` against it. The
 	// orchestrator populates it once per node from the RendererInput; nil when no
-	// ArtifactsLibraries are present (a non-library artifacts entry never reads it).
-	ArtifactsLibraries map[string]types.ArtifactsLibrary
+	// ArtifactLibraries are present (a non-library artifacts entry never reads it).
+	ArtifactLibraries map[string]types.ArtifactLibrary
 
 	// hydrated is the render's retained set of per-node mid-render projections,
 	// carried here so the artifacts walk can record the template text standing at

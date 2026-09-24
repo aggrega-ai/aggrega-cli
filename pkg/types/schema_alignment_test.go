@@ -246,14 +246,14 @@ func alignmentCases() []alignmentCase {
 			// The bundle shape needs no exception: a bundle and its file bodies
 			// are declared through additionalProperties rather than as named
 			// properties, so the schema contributes no property name below
-			// spec.artifacts, and ArtifactsLibraryEntry's verbatim-capture
+			// spec.artifacts, and ArtifactLibraryEntry's verbatim-capture
 			// field is deliberately yaml:"-" — the filenames are data, not
 			// struct fields.
-			kind:       envelope.KindArtifactsLibrary,
-			schema:     schemas.ArtifactsLibraryV1alpha1,
-			roots:      []reflect.Type{reflect.TypeOf(types.ArtifactsLibrary{})},
+			kind:       envelope.KindArtifactLibrary,
+			schema:     schemas.ArtifactLibraryV1alpha1,
+			roots:      []reflect.Type{reflect.TypeOf(types.ArtifactLibrary{})},
 			exceptions: map[string]string{},
-			maximals:   []any{maximalArtifactsLibrary()},
+			maximals:   []any{maximalArtifactLibrary()},
 		},
 		{
 			kind:   envelope.KindAggregate,

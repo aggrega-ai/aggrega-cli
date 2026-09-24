@@ -232,7 +232,7 @@ they are from the readable layouts. Pass --unredacted to print them instead.`,
 //   - Anything else → treated as a catalog entity name, resolved by identity
 //     across every entity kind (Component, Plugin, Feature, Recipe,
 //     FeatureRecipe, Aggregate, SchemaLibrary, MappingLibrary, WorkloadLibrary,
-//     ArtifactsLibrary) and rendered by the matched kind's inspector.
+//     ArtifactLibrary) and rendered by the matched kind's inspector.
 //
 // catalogDirs supplies the repeatable --catalog flag directories for both the
 // catalog-name branch and the Release branch's pipeline; each load site resolves
@@ -454,18 +454,18 @@ type kindRenderer func(ctx context.Context, rw *workspaceconfig.ResolvedWorkspac
 // embedded-only where it exists only inside another entity and as unknown
 // otherwise.
 var kindRenderers = map[string]kindRenderer{
-	"Component":        renderComponentFile,
-	"Feature":          renderFeatureFile,
-	"Recipe":           renderRecipeFile,
-	"FeatureRecipe":    renderFeatureRecipeFile,
-	"Plugin":           renderPluginFile,
-	"MappingLibrary":   renderMappingLibraryFile,
-	"WorkloadLibrary":  renderWorkloadLibraryFile,
-	"ArtifactsLibrary": renderArtifactsLibraryFile,
-	"SchemaLibrary":    renderSchemaLibraryFile,
-	"Manifest":         renderManifestFile,
-	"Aggregate":        renderAggregateFile,
-	"Release":          renderReleaseFile,
+	"Component":       renderComponentFile,
+	"Feature":         renderFeatureFile,
+	"Recipe":          renderRecipeFile,
+	"FeatureRecipe":   renderFeatureRecipeFile,
+	"Plugin":          renderPluginFile,
+	"MappingLibrary":  renderMappingLibraryFile,
+	"WorkloadLibrary": renderWorkloadLibraryFile,
+	"ArtifactLibrary": renderArtifactLibraryFile,
+	"SchemaLibrary":   renderSchemaLibraryFile,
+	"Manifest":        renderManifestFile,
+	"Aggregate":       renderAggregateFile,
+	"Release":         renderReleaseFile,
 }
 
 // nonStandalone names the kinds that exist only embedded under another entity
@@ -691,8 +691,8 @@ func (v catalogEntityView) WorkloadLibrary(uri string) (types.WorkloadLibrary, b
 	return lib, ok
 }
 
-func (v catalogEntityView) ArtifactsLibrary(uri string) (types.ArtifactsLibrary, bool) {
-	lib, ok := v.cat.ArtifactsLibraries[uri]
+func (v catalogEntityView) ArtifactLibrary(uri string) (types.ArtifactLibrary, bool) {
+	lib, ok := v.cat.ArtifactLibraries[uri]
 	return lib, ok
 }
 
