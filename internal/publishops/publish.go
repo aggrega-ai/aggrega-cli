@@ -285,6 +285,14 @@ type PushResult struct {
 	// built, and nil where this publication did not run it. On a dry run it
 	// reports what the step would have written, and wrote nothing.
 	Pin *entitypin.Result
+
+	// WholeDirectory is the authored source reference that made the publication
+	// carry every file in the entity's directory, and empty where it carries only
+	// the files the entity names. A Recipe or FeatureRecipe whose local source is
+	// written as a template picks its directory only once a Release fills the
+	// template in, so the publication cannot tell which directory that is and
+	// carries all of them; this is how a caller learns that it did.
+	WholeDirectory string
 }
 
 // writePublicationFacts writes the transport facts of a publication — what kind
@@ -322,14 +330,30 @@ func writePublicationFacts(out io.Writer, kind, mediaType string, size, pluginSi
 	fmt.Fprintf(out, "  mediatype: %s\n  size: %d bytes\n", mediaType, size)
 }
 
+// writeWholeDirectoryNote writes, beneath the facts above, the one case in which a
+// publication carries more than the entity names: a local source written as a
+// template, whose directory no publication can know, so every file in the
+// entity's directory travels. It writes nothing when source is empty. The
+// over-inclusion is the accepted price of keeping such a source publishable, and
+// it is said out loud because a file travelling that nothing named is the kind of
+// thing an author should not have to discover from a consumer.
+func writeWholeDirectoryNote(out io.Writer, source string) {
+	if source == "" {
+		return
+	}
+	fmt.Fprintf(out, "  carries: every file in the entity's directory, because its source %q is a template "+
+		"and the directory it names is decided by each Release that uses it\n", source)
+}
+
 // Push bundles the entity at cfg.EntityPath and publishes it.
 // Reads workspace config; parses the entity envelope (kind,
 // metadata.name, metadata.version); refuses an entity that shares its
 // directory with another entity where its kind has a directory of its own;
 // routes a Plugin to the one-manifest packer and every other kind through
-// pkg/oci.Bundle (per-kind dispatch, Recipe / FeatureRecipe tar.gz directory
-// walking), after reading a Component or Feature through the catalog's
-// per-entity parse; constructs the OCI repository reference; publishes via
+// pkg/oci.Bundle, after reading the entity through the catalog's per-entity
+// parse for the files it declares beside its document — which the bundle
+// carries, and which decide whether it publishes as that document or as an
+// archive; constructs the OCI repository reference; publishes via
 // pkg/oci.Push.
 //
 // Signing is sign-before-publish: when signing is requested, Push computes
@@ -432,9 +456,9 @@ func Push(ctx context.Context, cfg PushConfig) (PushResult, error) {
 	}
 
 	// The pin step runs here, ahead of every refusal that judges the entity and
-	// ahead of the bundle, and both positions are the point. The bundle is built
-	// from the entity's directory, so a lock written after it would be missing
-	// from what is published and the published digest would describe a directory
+	// ahead of the bundle, and both positions are the point. The bundle carries
+	// the lock beside the entity, so a lock written after it would be missing
+	// from what is published and the published digest would describe a lock
 	// that no longer exists. And a publication that pins on the author's behalf
 	// pins before the entity is judged, so what is judged is the entity as
 	// pinned. The refusals above it are about the invocation — the offline
@@ -520,17 +544,19 @@ func Push(ctx context.Context, cfg PushConfig) (PushResult, error) {
 		}
 	}
 
-	// A Component or a Feature is read here the way a build reads it, and for the
-	// same reason as the hold above sits where it does: immediately before the
-	// bundle, after every refusal that is about the invocation rather than the
-	// entity. It judges the entity, so it follows the pin step rather than
-	// preceding it, and it reads only files beside the entity, so it costs less
-	// than any fetch a later step makes.
-	if err := parseBeforeBundling(header.Kind, cfg.EntityPath, data); err != nil {
+	// The entity is read here the way a build reads it, and for the same reason as
+	// the hold above sits where it does: immediately before the bundle, after every
+	// refusal that is about the invocation rather than the entity. It judges the
+	// entity, so it follows the pin step rather than preceding it — and it must,
+	// because the lock the step writes is one of the files the entity carries. It
+	// reads only files beside the entity, so it costs less than any fetch a later
+	// step makes.
+	declared, err := declaredBeforeBundling(header.Kind, cfg.EntityPath, data)
+	if err != nil {
 		return PushResult{}, err
 	}
 
-	bundleBytes, mediaType, err := oci.Bundle(header.Kind, cfg.EntityPath)
+	bundleBytes, mediaType, err := oci.Bundle(header.Kind, cfg.EntityPath, declared.Files())
 	if err != nil {
 		return PushResult{}, fmt.Errorf("bundle %s: %w", cfg.EntityPath, err)
 	}
@@ -538,13 +564,14 @@ func Push(ctx context.Context, cfg PushConfig) (PushResult, error) {
 	reference := BuildPushReference(registry, header.Kind, header.Spec.Capability, header.Metadata.Name)
 	tag := header.Metadata.Version
 	result := PushResult{
-		Reference: reference,
-		Tag:       tag,
-		Kind:      header.Kind,
-		MediaType: mediaType,
-		Size:      len(bundleBytes),
-		Signed:    wantSign,
-		Pin:       pinned,
+		Reference:      reference,
+		Tag:            tag,
+		Kind:           header.Kind,
+		MediaType:      mediaType,
+		Size:           len(bundleBytes),
+		Signed:         wantSign,
+		Pin:            pinned,
+		WholeDirectory: declared.WholeDirectory(),
 	}
 
 	// Searchable catalog annotations, built once and stamped identically onto
@@ -570,6 +597,7 @@ func Push(ctx context.Context, cfg PushConfig) (PushResult, error) {
 	if cfg.DryRun {
 		fmt.Fprintf(out, "aggrega push (dry-run): %s:%s\n", reference, tag)
 		writePublicationFacts(out, header.Kind, mediaType, len(bundleBytes), 0)
+		writeWholeDirectoryNote(out, result.WholeDirectory)
 		result.DryRun = true
 		// A dry run reports no signature: nothing was signed, because signing
 		// happens against the digest a publication is about to land and this one
@@ -620,6 +648,7 @@ func Push(ctx context.Context, cfg PushConfig) (PushResult, error) {
 		if existingDigest == proposedDigest {
 			fmt.Fprintf(out, "Already published: %s:%s (%s)\n", reference, tag, existingDigest)
 			writePublicationFacts(out, header.Kind, mediaType, len(bundleBytes), 0)
+			writeWholeDirectoryNote(out, result.WholeDirectory)
 			result.Digest = existingDigest
 			result.AlreadyPublished = true
 			// The bytes were already there, so no signature was produced on this
@@ -657,6 +686,7 @@ func Push(ctx context.Context, cfg PushConfig) (PushResult, error) {
 	}
 	fmt.Fprintf(out, "Push complete: %s:%s (%s)\n", reference, tag, digest)
 	writePublicationFacts(out, header.Kind, mediaType, len(bundleBytes), 0)
+	writeWholeDirectoryNote(out, result.WholeDirectory)
 	result.Digest = digest
 
 	if wantSign {
@@ -668,36 +698,32 @@ func Push(ctx context.Context, cfg PushConfig) (PushResult, error) {
 	return result, nil
 }
 
-// parseBeforeBundling reads a Component or a Feature through the catalog's own
-// per-entity parse, so a publication refuses exactly the documents a catalog load
-// of them refuses, in the same words: one that fails its kind's schema, and one
-// whose imported schema file is missing, unusable, or outside the entity's own
-// directory. Publishing such a document would ship an entity whose consumer's
-// first load refuses it, and — for a schema import that leaves the directory — one
-// naming a file that does not travel with it.
+// declaredBeforeBundling reads the entity through the catalog's own per-entity
+// parse and returns the files its declarations name beside its document, which
+// are the files the bundle carries.
 //
-// It is the parse a build reaches, not a check of its own: a publication that
-// judged these documents by a reading of its own would refuse a different set,
-// and the two would disagree the first time either was changed.
+// Reading through the parse is what makes a publication refuse exactly the
+// documents a catalog load of them refuses, in the same words: one that fails its
+// kind's schema, one naming content outside the entity's own directory, and a
+// Component or Feature whose imported schema file is missing or unusable.
+// Publishing such a document would ship an entity whose consumer's first load
+// refuses it. It is the parse a build reaches, not a check of its own: a
+// publication that judged these documents by a reading of its own would refuse a
+// different set, and the two would disagree the first time either was changed. A
+// Recipe or FeatureRecipe has already been read through the same parse by the pin
+// step or the hold that stands in for it, so for those two kinds this reading
+// finds nothing that one did not.
 //
-// A Recipe and a FeatureRecipe are not read here because every publication of
-// either already reads it through the catalog, in the pin step or in the hold
-// that stands in for it. A Plugin never reaches this point, and every other kind
-// carries no path to content and is bundled as its header describes it.
-func parseBeforeBundling(kind, path string, data []byte) error {
-	var err error
-	switch kind {
-	case "Component":
-		_, err = catalog.ParseComponentEntity(data, path)
-	case "Feature":
-		_, err = catalog.ParseFeatureEntity(data, path)
-	default:
-		return nil
-	}
+// It is also the one reading of which files travel, and so of the shape the
+// publication takes: an entity carrying nothing beside its document publishes as
+// that document. A Plugin never reaches this point, and every other kind declares
+// no file of its own and publishes as its document.
+func declaredBeforeBundling(kind, path string, data []byte) (catalog.DeclaredFiles, error) {
+	declared, err := catalog.DeclaredFilesOf(data, path)
 	if err != nil {
-		return fmt.Errorf("parse %s at %q: %w", kind, path, err)
+		return catalog.DeclaredFiles{}, fmt.Errorf("parse %s at %q: %w", kind, path, err)
 	}
-	return nil
+	return declared, nil
 }
 
 // BuildPushReference composes the canonical OCI repository reference

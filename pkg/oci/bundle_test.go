@@ -34,7 +34,8 @@ func TestPullPushTarGzRecipeRoundTrip(t *testing.T) {
 	mustWrite(t, filepath.Join(dir, "source", "Chart.yaml"), []byte("name: mariadb\nversion: 25.0.8\n"))
 	mustWrite(t, filepath.Join(dir, "source", "values.yaml"), []byte("primary:\n  replicaCount: 1\n"))
 
-	bundleBytes, mediaType, err := oci.Bundle("Recipe", filepath.Join(dir, "recipe.yaml"))
+	bundleBytes, mediaType, err := oci.Bundle("Recipe", filepath.Join(dir, "recipe.yaml"),
+		[]string{"source/Chart.yaml", "source/values.yaml"})
 	if err != nil {
 		t.Fatalf("Bundle: %v", err)
 	}
@@ -71,7 +72,8 @@ func TestPullPushTarGzRecipeRoundTrip(t *testing.T) {
 // not an input to the artifact. A library in a directory named for its version,
 // one in a directory named for a different version, and a Recipe in a directory
 // named for nothing at all each bundle — the first as the control that the
-// fixture reaches the arm, the other two as the cases a name check would refuse.
+// fixture reaches the packing, the other two as the cases a name check would
+// refuse. The flat Recipe carries nothing, so it publishes as its document.
 func TestBundleJudgesNoDirectoryName(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
@@ -91,7 +93,7 @@ func TestBundleJudgesNoDirectoryName(t *testing.T) {
 		}
 		body := library(tc.declared)
 		mustWrite(t, filepath.Join(tc.dir, "library.yaml"), body)
-		data, mediaType, err := oci.Bundle("SchemaLibrary", filepath.Join(tc.dir, "library.yaml"))
+		data, mediaType, err := oci.Bundle("SchemaLibrary", filepath.Join(tc.dir, "library.yaml"), nil)
 		if err != nil {
 			t.Fatalf("%s: a library must bundle wherever it sits; got %v", tc.name, err)
 		}
@@ -107,16 +109,17 @@ func TestBundleJudgesNoDirectoryName(t *testing.T) {
 	if err := os.MkdirAll(flat, 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	mustWrite(t, filepath.Join(flat, "server.yaml"), []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Recipe\nmetadata:\n  name: server\n  version: 1.0.0\n"))
-	archive, mediaType, err := oci.Bundle("Recipe", filepath.Join(flat, "server.yaml"))
+	recipe := []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Recipe\nmetadata:\n  name: server\n  version: 1.0.0\n")
+	mustWrite(t, filepath.Join(flat, "server.yaml"), recipe)
+	data, mediaType, err := oci.Bundle("Recipe", filepath.Join(flat, "server.yaml"), nil)
 	if err != nil {
 		t.Fatalf("a Recipe in a directory named for nothing must bundle; got %v", err)
 	}
-	if mediaType != oci.MediaTypeRecipe {
-		t.Errorf("flat Recipe mediaType %q", mediaType)
+	if want, _ := oci.MediaTypeFor("Recipe", false); mediaType != want {
+		t.Errorf("flat Recipe mediaType %q; want %q", mediaType, want)
 	}
-	if files := readTarGz(t, archive); len(files) != 1 || files["server.yaml"] == nil {
-		t.Errorf("the flat Recipe's archive must carry its document; carries %v", files)
+	if !bytes.Equal(data, recipe) {
+		t.Errorf("a Recipe carrying nothing publishes as its document unchanged; got %d bytes", len(data))
 	}
 }
 
@@ -130,11 +133,12 @@ func TestBundleDeterminism(t *testing.T) {
 	mustWrite(t, filepath.Join(dir, "recipe.yaml"), []byte("kind: Recipe\nmetadata:\n  version: 2.0.0\n"))
 	mustWrite(t, filepath.Join(dir, "source", "Chart.yaml"), []byte("name: x\n"))
 
-	first, _, err := oci.Bundle("Recipe", filepath.Join(dir, "recipe.yaml"))
+	first, _, err := oci.Bundle("Recipe", filepath.Join(dir, "recipe.yaml"), []string{"source/Chart.yaml"})
 	if err != nil {
 		t.Fatalf("first Bundle: %v", err)
 	}
-	second, _, err := oci.Bundle("Recipe", filepath.Join(dir, "recipe.yaml"))
+	// The same files named in another order: the archive is a function of the set.
+	second, _, err := oci.Bundle("Recipe", filepath.Join(dir, "recipe.yaml"), []string{"source/Chart.yaml", "recipe.yaml"})
 	if err != nil {
 		t.Fatalf("second Bundle: %v", err)
 	}
@@ -143,9 +147,10 @@ func TestBundleDeterminism(t *testing.T) {
 	}
 }
 
-// TestBundleBareKindsWhereverTheySit covers the bare-YAML publishable kinds: each
-// bundles as its document unchanged, under its own mediatype, both in the
-// catalog's per-version layout and in a directory whose name is not its version.
+// TestBundleBareKindsWhereverTheySit covers entities carrying nothing beside
+// their document: each bundles as its document unchanged, under its kind's
+// document mediatype, both in the catalog's per-version layout and in a directory
+// whose name is not its version.
 func TestBundleBareKindsWhereverTheySit(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
@@ -168,7 +173,7 @@ func TestBundleBareKindsWhereverTheySit(t *testing.T) {
 				t.Fatalf("mkdir: %v", err)
 			}
 			mustWrite(t, filepath.Join(ver, tc.file), body(tc.kind))
-			data, mt, err := oci.Bundle(tc.kind, filepath.Join(ver, tc.file))
+			data, mt, err := oci.Bundle(tc.kind, filepath.Join(ver, tc.file), nil)
 			if err != nil {
 				t.Fatalf("in-layout %s should bundle; got %v", tc.kind, err)
 			}
@@ -185,7 +190,7 @@ func TestBundleBareKindsWhereverTheySit(t *testing.T) {
 				t.Fatalf("mkdir: %v", err)
 			}
 			mustWrite(t, filepath.Join(ver, tc.file), body(tc.kind))
-			data, mt, err := oci.Bundle(tc.kind, filepath.Join(ver, tc.file))
+			data, mt, err := oci.Bundle(tc.kind, filepath.Join(ver, tc.file), nil)
 			if err != nil {
 				t.Fatalf("off-layout %s must bundle: a directory's name is not judged; got %v", tc.kind, err)
 			}
@@ -196,17 +201,17 @@ func TestBundleBareKindsWhereverTheySit(t *testing.T) {
 	}
 }
 
-// TestBundlePluginIsItsDocumentWhereverItSits proves the Plugin arm returns the
-// verbatim entity YAML under the Plugin entity mediatype both in the catalog's
-// per-version layout and in a directory whose name is not its version, with a
-// Component in that same directory as the contrast that the second answer is the
-// arm's rather than something Plugin-specific.
+// TestBundlePluginIsItsDocumentWhereverItSits proves a Plugin carrying nothing
+// bundles as the verbatim entity YAML under the Plugin entity mediatype both in
+// the catalog's per-version layout and in a directory whose name is not its
+// version, with a Component in that same directory as the contrast that the
+// second answer is the shape rule's rather than something Plugin-specific.
 func TestBundlePluginIsItsDocumentWhereverItSits(t *testing.T) {
 	t.Parallel()
 	body := []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Plugin\nmetadata:\n  name: frp/patch\n  version: 1.0.0\nspec:\n  plugin: \"oci://hub.aggrega.ai/plugin/frp/patch:1.0.0\"\n")
 
-	// In-layout: the parent dir equals metadata.version, and the bare-YAML arm
-	// returns the entity file unchanged.
+	// In-layout: the parent dir equals metadata.version, and a publication
+	// carrying nothing is the entity file unchanged.
 	inLayout := filepath.Join(t.TempDir(), "1.0.0")
 	if err := os.MkdirAll(inLayout, 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
@@ -214,7 +219,7 @@ func TestBundlePluginIsItsDocumentWhereverItSits(t *testing.T) {
 	inPath := filepath.Join(inLayout, "plugin.yaml")
 	mustWrite(t, inPath, body)
 
-	data, mt, err := oci.Bundle("Plugin", inPath)
+	data, mt, err := oci.Bundle("Plugin", inPath, nil)
 	if err != nil {
 		t.Fatalf("in-layout Plugin should bundle; got %v", err)
 	}
@@ -233,7 +238,7 @@ func TestBundlePluginIsItsDocumentWhereverItSits(t *testing.T) {
 	}
 	offPath := filepath.Join(dir, "plugin.yaml")
 	mustWrite(t, offPath, body)
-	offData, offMT, err := oci.Bundle("Plugin", offPath)
+	offData, offMT, err := oci.Bundle("Plugin", offPath, nil)
 	if err != nil {
 		t.Fatalf("off-layout Plugin must bundle; got %v", err)
 	}
@@ -242,11 +247,12 @@ func TestBundlePluginIsItsDocumentWhereverItSits(t *testing.T) {
 	}
 
 	// The contrast: a Component in the same directory answers the same way, so
-	// the Plugin answer above is the bare arm's and not something Plugin-specific.
+	// the Plugin answer above is the shape rule's and not something
+	// Plugin-specific.
 	compBody := []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: demo/x\n  version: 1.0.0\n")
 	compPath := filepath.Join(dir, "component.yaml")
 	mustWrite(t, compPath, compBody)
-	compData, _, err := oci.Bundle("Component", compPath)
+	compData, _, err := oci.Bundle("Component", compPath, nil)
 	if err != nil {
 		t.Fatalf("Component off-layout must bundle; got %v", err)
 	}
@@ -255,26 +261,20 @@ func TestBundlePluginIsItsDocumentWhereverItSits(t *testing.T) {
 	}
 }
 
-// TestBundleCoversEveryMediaTypeKind converts Bundle's default arm from an
-// assertion into a check. Bundle gates on the mediatype table and then dispatches
-// on its own switch, so a kind can sit in the table with no matching case: the
-// gate lets it through and the switch drops it on ErrUnknownEntityKind. That is
-// the one shape where the two homes disagree, and it is invisible until somebody
-// pushes that kind — which is how ArtifactLibrary came to be publishable by the
-// table and unbundleable in fact for as long as it was.
+// TestEveryKindTakesTheShapeWhatItCarriesDecides is the shape rule over the whole
+// kind set, read from the mediatype table rather than a list written here: an
+// entity of any kind carrying nothing publishes as its document, byte for byte,
+// under the kind's document mediatype, and the same entity carrying one file
+// publishes as an archive under the kind's archive mediatype.
 //
-// So this walks the enumeration rather than a hand-listed set: every kind the
-// transport resolves a mediatype for must reach an arm. The assertion is
-// deliberately narrow — that the kind is NOT rejected as unknown, and that the
-// returned mediatype is the one the table resolves. It says nothing about WHICH
-// arm, because that is a per-kind judgement about the entity's shape and belongs
-// in the per-kind tests above; a check that guessed would either forbid a
-// legitimate archive kind or wave a mis-filed one through.
+// Each half is the other's control. A packer that archived everything passes the
+// second half for every kind and fails the first; one that kept a per-kind
+// answer passes whichever half its kind was filed under and fails the other.
 //
 // The non-emptiness guard is calibration: an empty enumeration would make the
 // loop body run zero times and the test pass while checking nothing, and a
 // vacuous pass reads exactly like a real one.
-func TestBundleCoversEveryMediaTypeKind(t *testing.T) {
+func TestEveryKindTakesTheShapeWhatItCarriesDecides(t *testing.T) {
 	t.Parallel()
 	kinds := oci.MediaTypeKinds()
 	if len(kinds) == 0 {
@@ -283,52 +283,126 @@ func TestBundleCoversEveryMediaTypeKind(t *testing.T) {
 	for _, kind := range kinds {
 		t.Run(kind, func(t *testing.T) {
 			t.Parallel()
-			// The catalog's per-version layout for every kind, so the fixture is
-			// the shape a published entity is authored in.
 			ver := filepath.Join(t.TempDir(), "1.0.0")
 			if err := os.MkdirAll(ver, 0o755); err != nil {
 				t.Fatalf("mkdir: %v", err)
 			}
 			path := filepath.Join(ver, "entity.yaml")
-			mustWrite(t, path, []byte("apiVersion: aggrega.ai/v1alpha1\nkind: "+kind+
-				"\nmetadata:\n  name: demo/x\n  version: 1.0.0\n"))
+			body := []byte("apiVersion: aggrega.ai/v1alpha1\nkind: " + kind +
+				"\nmetadata:\n  name: demo/x\n  version: 1.0.0\n")
+			mustWrite(t, path, body)
+			mustWrite(t, filepath.Join(ver, "carried.yaml"), []byte("carried: true\n"))
 
-			data, mt, err := oci.Bundle(kind, path)
-			if errors.Is(err, oci.ErrUnknownEntityKind()) {
-				t.Fatalf("kind %q resolves a mediatype but Bundle has no case for it: it is publishable "+
-					"by the mediatype table and unbundleable in fact. Add an arm to Bundle's switch — "+
-					"bare YAML for a self-contained entity, tar.gz for one whose directory "+
-					"carries co-located source.", kind)
-			}
+			document, documentType, err := oci.Bundle(kind, path, nil)
 			if err != nil {
-				t.Fatalf("kind %q: Bundle: %v", kind, err)
+				t.Fatalf("kind %q carrying nothing: Bundle: %v", kind, err)
 			}
-			want, err := oci.MediaTypeForKind(kind)
+			wantDocument, err := oci.MediaTypeFor(kind, false)
 			if err != nil {
-				t.Fatalf("kind %q came from MediaTypeKinds but MediaTypeForKind rejects it: %v", kind, err)
+				t.Fatalf("kind %q came from MediaTypeKinds but MediaTypeFor rejects it: %v", kind, err)
 			}
-			if mt != want {
-				t.Errorf("kind %q mediatype = %q; want %q", kind, mt, want)
+			if documentType != wantDocument || !bytes.Equal(document, body) {
+				t.Errorf("kind %q carrying nothing published as %q (%d bytes); want its document unchanged under %q",
+					kind, documentType, len(document), wantDocument)
 			}
-			if len(data) == 0 {
-				t.Errorf("kind %q bundled to zero bytes", kind)
+
+			archive, archiveType, err := oci.Bundle(kind, path, []string{"carried.yaml"})
+			if err != nil {
+				t.Fatalf("kind %q carrying a file: Bundle: %v", kind, err)
+			}
+			wantArchive, _ := oci.MediaTypeFor(kind, true)
+			if archiveType != wantArchive || !oci.IsTarGzBundle(archive) {
+				t.Errorf("kind %q carrying a file published as %q; want an archive under %q", kind, archiveType, wantArchive)
+			}
+			files := readTarGz(t, archive)
+			if len(files) != 2 || !bytes.Equal(files["entity.yaml"], body) || files["carried.yaml"] == nil {
+				t.Errorf("kind %q archive carries %d entries; want the document and the one carried file", kind, len(files))
 			}
 		})
 	}
 }
 
-// TestMediaTypeForKindPlugin proves MediaTypeForKind resolves the Plugin
-// entity mediatype, so the kind is in the publishable set the bundle dispatch
-// gates on.
-func TestMediaTypeForKindPlugin(t *testing.T) {
+// TestBundleReadsOnlyWhatItIsNamed holds the packer to the files it is handed. A
+// note sitting beside the entity is neither carried nor able to change the shape;
+// a named file is carried; and a name that is not a file inside the entity's
+// directory is refused rather than packed.
+func TestBundleReadsOnlyWhatItIsNamed(t *testing.T) {
 	t.Parallel()
-	mt, err := oci.MediaTypeForKind("Plugin")
+	ver := filepath.Join(t.TempDir(), "1.0.0")
+	if err := os.MkdirAll(filepath.Join(ver, "chart"), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	body := []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Recipe\nmetadata:\n  name: helm/x\n  version: 1.0.0\n")
+	path := filepath.Join(ver, "recipe.yaml")
+	mustWrite(t, path, body)
+	mustWrite(t, filepath.Join(ver, "chart", "Chart.yaml"), []byte("name: x\n"))
+	mustWrite(t, filepath.Join(ver, "NOTES.md"), []byte("a note nothing declares\n"))
+
+	document, _, err := oci.Bundle("Recipe", path, nil)
+	if err != nil || !bytes.Equal(document, body) {
+		t.Fatalf("a note beside a Recipe carrying nothing changed what it publishes (err %v, %d bytes)", err, len(document))
+	}
+	archive, _, err := oci.Bundle("Recipe", path, []string{"chart/Chart.yaml"})
 	if err != nil {
-		t.Fatalf("MediaTypeForKind(Plugin): %v", err)
+		t.Fatalf("Bundle: %v", err)
 	}
-	if mt != oci.MediaTypePlugin {
-		t.Errorf("MediaTypeForKind(Plugin) = %q; want %q", mt, oci.MediaTypePlugin)
+	files := readTarGz(t, archive)
+	if _, stray := files["NOTES.md"]; stray || len(files) != 2 || files["chart/Chart.yaml"] == nil {
+		t.Errorf("archive carries %v; want recipe.yaml and chart/Chart.yaml alone", keysOf(files))
 	}
+
+	for _, bad := range []string{"../outside.yaml", "/etc/hostname", "chart/../chart/Chart.yaml", "missing.yaml"} {
+		if _, _, err := oci.Bundle("Recipe", path, []string{bad}); err == nil {
+			t.Errorf("carried %q was packed; a name that is not a file inside the directory must be refused", bad)
+		}
+	}
+}
+
+// TestMediaTypesReadBackToTheirKindAndShape holds the table's two directions to
+// one another: every media type MediaTypeFor derives reads back to the kind and
+// shape it was derived from, and one naming no kind reads back to nothing.
+func TestMediaTypesReadBackToTheirKindAndShape(t *testing.T) {
+	t.Parallel()
+	for _, kind := range oci.MediaTypeKinds() {
+		for _, archive := range []bool{false, true} {
+			mt, err := oci.MediaTypeFor(kind, archive)
+			if err != nil {
+				t.Fatalf("MediaTypeFor(%q, %v): %v", kind, archive, err)
+			}
+			gotKind, gotArchive, ok := oci.KindOfMediaType(mt)
+			if !ok || gotKind != kind || gotArchive != archive {
+				t.Errorf("KindOfMediaType(%q) = %q, %v, %v; want %q, %v, true", mt, gotKind, gotArchive, ok, kind, archive)
+			}
+		}
+		if !oci.IsPublishableKind(kind) {
+			t.Errorf("kind %q is enumerated but not publishable", kind)
+		}
+	}
+	if mt, _ := oci.MediaTypeFor("Plugin", false); mt != oci.MediaTypePlugin {
+		t.Errorf("MediaTypeFor(Plugin, document) = %q; want %q", mt, oci.MediaTypePlugin)
+	}
+	for _, other := range []string{oci.MediaTypeWasm, oci.MediaTypeDocs, oci.MediaTypeSignatureBundle, ""} {
+		if kind, _, ok := oci.KindOfMediaType(other); ok {
+			t.Errorf("KindOfMediaType(%q) = %q; a media type naming no entity kind must read back to nothing", other, kind)
+		}
+	}
+	for _, kind := range []string{"Release", "Manifest", "NotARealKind"} {
+		if oci.IsPublishableKind(kind) {
+			t.Errorf("kind %q reads as publishable", kind)
+		}
+		if _, err := oci.MediaTypeFor(kind, false); !errors.Is(err, oci.ErrUnknownEntityKind()) {
+			t.Errorf("MediaTypeFor(%q) = %v; want ErrUnknownEntityKind", kind, err)
+		}
+	}
+}
+
+func keysOf(m map[string][]byte) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func mustWrite(t *testing.T, path string, data []byte) {

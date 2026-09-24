@@ -1412,15 +1412,20 @@ func writeEntityToCacheSlot(workspaceRoot, cacheDir, uri, version string, result
 }
 
 // isLibraryMediaType reports whether mt is the mediatype of a library on any
-// declared axis.
+// declared axis, published as its document.
 //
 // It is derived from the declared axis set rather than listed here, because a list
 // is what let this decision cover some axes and not others: the branch it gates
 // named two of the four, so the remaining two were cached under a different
 // filename than their siblings with nothing reporting the difference.
+//
+// It matches the document shape alone because what it gates writes the bytes as a
+// YAML file: a library declares no file beside its document, so the document is
+// the one shape it publishes in, and an archive that claimed a library's kind would
+// be cached as the archive it is rather than under a YAML file name.
 func isLibraryMediaType(mt string) bool {
 	for _, axis := range closure.LibraryAxes() {
-		if libraryMT, err := oci.MediaTypeForKind(axis.Kind); err == nil && libraryMT == mt {
+		if libraryMT, err := oci.MediaTypeFor(axis.Kind, false); err == nil && libraryMT == mt {
 			return true
 		}
 	}

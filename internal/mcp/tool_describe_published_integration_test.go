@@ -61,10 +61,11 @@ type publishedFixture struct {
 	archive   bool
 }
 
-// publishDescribeFixtures publishes a Component, which ships as its document, and
-// a Recipe, which ships as an archive of its version directory with a file beside
-// the entity, to the registry at host. Both go through oci.Bundle, the packing
-// every publication uses, so the archive is the shape a real publication makes.
+// publishDescribeFixtures publishes a Component, which carries nothing beside it
+// and ships as its document, and a Recipe, which carries a file beside the entity
+// and ships as an archive, to the registry at host. Both go through oci.Bundle,
+// the packing every publication uses, so the archive is the shape a real
+// publication makes.
 func publishDescribeFixtures(t *testing.T, host string) (component, recipe publishedFixture) {
 	t.Helper()
 	dir := t.TempDir()
@@ -86,8 +87,8 @@ func publishDescribeFixtures(t *testing.T, host string) (component, recipe publi
 	recipePath := write("recipe/helm/svc/1.0.0/recipe.yaml", recipeDoc)
 	write("recipe/helm/svc/1.0.0/notes.yaml", "notes: co-located beside the entity, and not an entity\n")
 
-	publish := func(kind, path, repository string) string {
-		content, mediaType, err := oci.Bundle(kind, path)
+	publish := func(kind, path, repository string, carried ...string) string {
+		content, mediaType, err := oci.Bundle(kind, path, carried)
 		if err != nil {
 			t.Fatalf("bundle %s: %v", kind, err)
 		}
@@ -101,7 +102,7 @@ func publishDescribeFixtures(t *testing.T, host string) (component, recipe publi
 		return "oci://" + host + "/" + repository + ":1.0.0"
 	}
 	component = publishedFixture{publish("Component", componentPath, "component/test/svc"), []byte(componentDoc), false}
-	recipe = publishedFixture{publish("Recipe", recipePath, "recipe/helm/svc"), []byte(recipeDoc), true}
+	recipe = publishedFixture{publish("Recipe", recipePath, "recipe/helm/svc", "notes.yaml"), []byte(recipeDoc), true}
 	return component, recipe
 }
 

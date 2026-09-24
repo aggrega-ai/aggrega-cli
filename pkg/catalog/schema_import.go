@@ -43,8 +43,15 @@ var schemaPillars = [...]string{"values", "infra", "provides"}
 // carry bare pillar content and so have a root only. Reaching further down is
 // deliberately not done: below a pillar every mapping is a property's own schema,
 // and the import vocabulary replaces whole content rather than splicing fragments.
-func resolveEntitySchemaImports(entityPath string, schema *yaml.Node, sockets *types.OrderedMap[types.UsesSchemaEntry]) error {
-	if err := resolveSchemaSurfaceImports(entityPath, schema, "spec.schema", true); err != nil {
+//
+// read, when it is not nil, is told each file the substitution read and the
+// surface that imported it, in the order they were read — every hop of a chain
+// included. The substitution replaces an import with its content, so after this
+// returns nothing on the entity says which files it came from; this is the one
+// walk that knows, which is why the files an entity's schema imports are
+// collected here rather than by a second reading of the directives.
+func resolveEntitySchemaImports(entityPath string, schema *yaml.Node, sockets *types.OrderedMap[types.UsesSchemaEntry], read schemaFileRead) error {
+	if err := resolveSchemaSurfaceImports(entityPath, schema, "spec.schema", true, read); err != nil {
 		return err
 	}
 	if sockets == nil {
@@ -53,12 +60,12 @@ func resolveEntitySchemaImports(entityPath string, schema *yaml.Node, sockets *t
 	for _, name := range sockets.Keys() {
 		entry, _ := sockets.Get(name)
 		if err := resolveSchemaSurfaceImports(
-			entityPath, &entry.ValueSchema, "spec.usesSchema."+name+".valueSchema", false,
+			entityPath, &entry.ValueSchema, "spec.usesSchema."+name+".valueSchema", false, read,
 		); err != nil {
 			return err
 		}
 		if err := resolveSchemaSurfaceImports(
-			entityPath, &entry.InfraSchema, "spec.usesSchema."+name+".infraSchema", false,
+			entityPath, &entry.InfraSchema, "spec.usesSchema."+name+".infraSchema", false, read,
 		); err != nil {
 			return err
 		}
@@ -66,6 +73,10 @@ func resolveEntitySchemaImports(entityPath string, schema *yaml.Node, sockets *t
 	}
 	return nil
 }
+
+// schemaFileRead is told a file a schema import read, as the absolute path it was
+// read from, and the surface whose import led to it.
+type schemaFileRead func(surface, file string)
 
 // resolveSchemaSurfaceImports resolves one schema-bearing node: the node itself,
 // and — when withPillars is set, which is the entity-level `spec.schema` shape —
@@ -75,11 +86,11 @@ func resolveEntitySchemaImports(entityPath string, schema *yaml.Node, sockets *t
 // all, and the inheritance marker a Component declaring `extends` writes is a
 // scalar. Neither can carry an import, and neither is this function's business to
 // reject — the pillar validator owns what a schema surface may be.
-func resolveSchemaSurfaceImports(entityPath string, node *yaml.Node, where string, withPillars bool) error {
+func resolveSchemaSurfaceImports(entityPath string, node *yaml.Node, where string, withPillars bool, read schemaFileRead) error {
 	if node == nil || node.Kind == 0 {
 		return nil
 	}
-	if err := substituteSchemaImport(entityPath, node, where, nil); err != nil {
+	if err := substituteSchemaImport(entityPath, node, where, nil, read); err != nil {
 		return err
 	}
 	if !withPillars {
@@ -98,7 +109,7 @@ func resolveSchemaSurfaceImports(entityPath string, node *yaml.Node, where strin
 			continue
 		}
 		if err := substituteSchemaImport(
-			entityPath, target.Content[i+1], where+"."+key.Value, nil,
+			entityPath, target.Content[i+1], where+"."+key.Value, nil, read,
 		); err != nil {
 			return err
 		}
@@ -126,7 +137,11 @@ func isSchemaPillar(key string) bool {
 //
 // The chain is guarded by resolution stack: an import that reaches a file already
 // in flight halts naming the chain, rather than recursing until the process dies.
-func substituteSchemaImport(entityPath string, node *yaml.Node, where string, stack []string) error {
+//
+// Each file it reads is reported to read, when that is not nil, once the file has
+// been read and parsed as schema content — so a file that did not yield content
+// is never reported as part of what the entity carries.
+func substituteSchemaImport(entityPath string, node *yaml.Node, where string, stack []string, read schemaFileRead) error {
 	target, declared, err := schemaImportTarget(node, where, entityPath)
 	if err != nil {
 		return err
@@ -179,8 +194,11 @@ func substituteSchemaImport(entityPath string, node *yaml.Node, where string, st
 				" must be a YAML map of schema content; it is not")
 	}
 
+	if read != nil {
+		read(where, resolved)
+	}
 	*node = *content
-	return substituteSchemaImport(entityPath, node, where, refcycle.Push(stack, resolved))
+	return substituteSchemaImport(entityPath, node, where, refcycle.Push(stack, resolved), read)
 }
 
 // schemaImportTarget reads the `$import:` directive off a schema-bearing node.

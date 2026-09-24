@@ -214,7 +214,7 @@ type publishedEntityHeader struct {
 // publishedHeader reads the identity an entity document declares, and refuses a
 // document that does not declare a kind a registry publishes.
 //
-// The publishable set is read through oci.MediaTypeForKind, which is where that
+// The publishable set is read through oci.IsPublishableKind, which is where that
 // set lives, so a kind added to it is readable here with nothing to update — and a
 // Release or a Manifest, which an operator authors in the workspace and never
 // publishes, is refused as the non-entity it is at a coordinate.
@@ -228,7 +228,7 @@ func publishedHeader(document []byte) (publishedEntityHeader, error) {
 		return publishedEntityHeader{}, fmt.Errorf("the published document declares no kind: %w",
 			oci.ErrPublishedArtifactNotAnEntity())
 	}
-	if _, err := oci.MediaTypeForKind(header.Kind); err != nil {
+	if !oci.IsPublishableKind(header.Kind) {
 		return publishedEntityHeader{}, fmt.Errorf("the published document declares kind %s, which a registry "+
 			"does not publish: %w", header.Kind, oci.ErrPublishedArtifactNotAnEntity())
 	}

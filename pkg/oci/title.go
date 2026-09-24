@@ -24,10 +24,11 @@ import (
 // The title names what the descriptor carries, and its extension is the media
 // type's structured-syntax suffix, with each "+" read as a ".":
 //
-//   - everything an entity publication carries is called entity — a bare-YAML
-//     kind's document is entity.yaml, an archive kind's bundle is entity.tar.gz,
-//     and a Plugin publishes entity.yaml (the entity, as the config descriptor)
-//     beside entity.wasm (its executable, as the layer);
+//   - everything an entity publication carries is called entity — an entity
+//     published as its document alone is entity.yaml, one published with the
+//     files it declares is entity.tar.gz, and a Plugin publishes entity.yaml
+//     (the entity, as the config descriptor) beside entity.wasm (its
+//     executable, as the layer);
 //   - a signature bundle attached as a referrer is signature.json;
 //   - a deprecation marker attached as a referrer is deprecation.json.
 //
@@ -56,8 +57,10 @@ func contentTitle(mediaType string) string {
 }
 
 // titleStem returns the name of what a descriptor of mediaType carries. The
-// entity kinds are read from the mediatype table rather than listed here, so a
-// kind added to that table is titled without a second list to update.
+// entity kinds are read from the mediatype table rather than listed here, in
+// both of the shapes a kind publishes in, so a kind added to that table is
+// titled without a second list to update and an entity is called entity
+// whichever shape its content gave it.
 func titleStem(mediaType string) string {
 	switch mediaType {
 	case MediaTypeWasm:
@@ -67,10 +70,8 @@ func titleStem(mediaType string) string {
 	case deprecation.ArtifactType:
 		return titleStemDeprecation
 	}
-	for _, kindMediaType := range kindMediaTypes {
-		if kindMediaType == mediaType {
-			return titleStemEntity
-		}
+	if _, _, ok := KindOfMediaType(mediaType); ok {
+		return titleStemEntity
 	}
 	return ""
 }

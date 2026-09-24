@@ -30,8 +30,9 @@ import (
 )
 
 // TestIntegration_EntityDefinitionReadsAPublishedEntity publishes a Component,
-// which ships as its document, and a Recipe, which ships as an archive of its
-// version directory with a file beside the entity, and asks the daemon for each
+// which carries nothing beside it and ships as its document, and a Recipe,
+// which carries a file beside the entity and ships as an archive, and asks the
+// daemon for each
 // by its coordinate. Each answer must be the published entity document byte for
 // byte — unpacked for the archive — carrying the published facts, and naming no
 // file on this machine. A coordinate nothing is published at is the negative,
@@ -64,8 +65,8 @@ func TestIntegration_EntityDefinitionReadsAPublishedEntity(t *testing.T) {
 	recipePath := write("recipe/helm/svc/1.0.0/recipe.yaml", recipeDoc)
 	write("recipe/helm/svc/1.0.0/notes.yaml", "notes: co-located beside the entity, and not an entity\n")
 
-	publish := func(kind, path, repository string) (string, string) {
-		content, mediaType, err := oci.Bundle(kind, path)
+	publish := func(kind, path, repository string, carried ...string) (string, string) {
+		content, mediaType, err := oci.Bundle(kind, path, carried)
 		if err != nil {
 			t.Fatalf("bundle %s: %v", kind, err)
 		}
@@ -79,7 +80,7 @@ func TestIntegration_EntityDefinitionReadsAPublishedEntity(t *testing.T) {
 		return "oci://" + host + "/" + repository + ":1.0.0", mediaType
 	}
 	componentRef, componentType := publish("Component", componentPath, "component/test/svc")
-	recipeRef, recipeType := publish("Recipe", recipePath, "recipe/helm/svc")
+	recipeRef, recipeType := publish("Recipe", recipePath, "recipe/helm/svc", "notes.yaml")
 
 	ws := t.TempDir()
 	srv := newTestServer(t, ws, &strings.Reader{}, &strings.Builder{})

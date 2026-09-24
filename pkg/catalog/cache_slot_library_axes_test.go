@@ -29,7 +29,7 @@ func TestCacheSlotUsesLibraryFilenameOnEveryAxis(t *testing.T) {
 			ws := t.TempDir()
 			const cacheDir = ".aggrega/cache"
 
-			mediaType, err := oci.MediaTypeForKind(axis.Kind)
+			mediaType, err := oci.MediaTypeFor(axis.Kind, false)
 			if err != nil {
 				t.Fatalf("no mediatype for declared axis kind %q: %v", axis.Kind, err)
 			}

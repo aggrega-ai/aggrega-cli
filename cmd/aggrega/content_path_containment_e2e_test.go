@@ -27,8 +27,8 @@ import (
 // What this file proves.
 //
 // A path an entity declares for content it carries is bounded by the directory
-// holding the entity's document, because that directory is what a publication
-// packages. A path that leaves it — by climbing out, or by naming an absolute
+// holding the entity's document, because every file a publication carries is
+// taken from there. A path that leaves it — by climbing out, or by naming an absolute
 // location — is refused at every moment the entity is read: a whole-catalog
 // validate, a single-entity validate, a pull, a build, the pin step, and a
 // publication, with and without the pin step. A path that climbs and comes back

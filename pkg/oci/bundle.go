@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -18,9 +19,9 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-// IsTarGzBundle reports whether b begins with the gzip magic — i.e. it is a
-// Recipe / FeatureRecipe tar.gz bundle (Bundle's tar.gz arm) rather than a
-// plain-YAML entity (Component / Feature / Aggregate).
+// IsTarGzBundle reports whether b begins with the gzip magic — i.e. it is the
+// archive Bundle packs for an entity that carries files beside its document,
+// rather than an entity document published on its own.
 //
 // It answers a question about the PUBLISHED SHAPE and nothing else. A consumer
 // that holds bytes from a coordinate and wants the entity inside them calls
@@ -37,11 +38,11 @@ func IsTarGzBundle(b []byte) bool {
 //
 // # Why this is the only entry, and the unwrapper is not
 //
-// Which kinds publish as an archive is a property of [Bundle]'s dispatch, not
-// of any consumer, so a consumer that asks "is this one of those" has taken on
-// a fact it cannot keep current — and every consumer that fails to ask reads an
-// archive as a document, which a YAML decode answers with an empty envelope
-// rather than a refusal. Routing the question through one function makes the
+// Whether an entity publishes as an archive is decided by what the entity
+// declares when it is published, not by its kind and not by any consumer, so a
+// consumer that tries to predict it has taken on a fact it cannot know — and
+// every consumer that fails to ask reads an archive as a document, which a YAML
+// decode answers with an empty envelope rather than a refusal. Routing the question through one function makes the
 // answer a property of this package: a caller states what it HAS (bytes from a
 // coordinate) and is handed what it NEEDS, with no shape test of its own.
 //
@@ -85,21 +86,22 @@ func EntityFile(published []byte) (string, []byte, error) {
 const SingleDocumentFileName = titleStemEntity + ".yaml"
 
 // entityFileInBundle extracts the entity YAML, and the name it is carried under,
-// from a tar.gz bundle produced by Bundle's archive arm. The bundle carries the
-// entity's directory — the entity file plus any co-located source — and this is
-// the inverse of that arm, used to fold a registry-pulled entity into the catalog
-// (the catalog holds the parsed entity; the lockfile-drift pin stays over the
-// whole bundle blob).
+// from a tar.gz bundle produced by Bundle for an entity carrying files beside its
+// document. The bundle carries the entity file plus the files the entity
+// declares, at their places in its directory, and this is the inverse of that
+// packing, used to fold a registry-pulled entity into the catalog (the catalog
+// holds the parsed entity; the lockfile-drift pin stays over the whole bundle
+// blob).
 //
 // # The entity is located by what the document IS, never by what it is called
 //
-// The bundle is built from a directory and no file in it is privileged, so the
-// entity file's name is whatever its author chose; a name this function matched
-// on would be a convention nothing imposes, and an entity file named anything
-// else would bundle cleanly and never unbundle. The anchor is therefore the
-// preamble: the one document at the bundle ROOT whose kind is a kind this
-// transport publishes, read through MediaTypeForKind so the kind set has a
-// single home rather than a second list here.
+// No file in the bundle is marked as the entity's, so the entity file's name is
+// whatever its author chose; a name this function matched on would be a
+// convention nothing imposes, and an entity file named anything else would
+// bundle cleanly and never unbundle. The anchor is therefore the preamble: the
+// one document at the bundle ROOT whose kind is a kind this transport publishes,
+// read through IsPublishableKind so the kind set has a single home rather than a
+// second list here.
 //
 // The rule cannot instead be parameterised by the kind the caller is looking
 // for. A consumer reads an entity's kind FROM the entity, which is inside the
@@ -121,11 +123,11 @@ const SingleDocumentFileName = titleStemEntity + ".yaml"
 // whole sentence a caller composes around it. No candidate returns
 // ErrBundleNoEntityDocument listing the root entries that were present; more
 // than one returns ErrBundleAmbiguousEntityDocument naming the colliding
-// documents. The last is the case that matters most: two same-version entities
-// authored in one directory bundle to byte-identical archives, so each of their
-// coordinates carries the same bytes, and returning either document would hand
-// a consumer the other entity under the name it asked for — a substitution
-// nothing downstream could detect.
+// documents. The last is the case that matters most: an archive packed by
+// another client from a directory holding two same-version entities could sit at
+// each of their coordinates as the same bytes, and returning either document
+// would hand a consumer the other entity under the name it asked for — a
+// substitution nothing downstream could detect.
 func entityFileInBundle(blob []byte) (string, []byte, error) {
 	gz, err := gzip.NewReader(bytes.NewReader(blob))
 	if err != nil {
@@ -181,7 +183,7 @@ func entityFileInBundle(blob []byte) (string, []byte, error) {
 // declaresPublishableKind reports whether data is an entity document of a kind
 // this transport publishes.
 //
-// The kind set is read from the mediatype table through MediaTypeForKind rather
+// The kind set is read from the mediatype table through IsPublishableKind rather
 // than listed here, so a kind added to that table becomes locatable inside a
 // bundle without a second list to update — and a document declaring some other
 // `kind:`, such as a Kubernetes manifest shipped as co-located source, is not a
@@ -190,7 +192,7 @@ func entityFileInBundle(blob []byte) (string, []byte, error) {
 // The header decode is local rather than shared with the catalog's own kind peek:
 // the catalog package consumes this one, so the dependency cannot run the other
 // way. What single-sourcing buys here is the kind SET, and that is what the
-// MediaTypeForKind call reads.
+// IsPublishableKind call reads.
 func declaresPublishableKind(data []byte) bool {
 	var hdr struct {
 		Kind string `yaml:"kind"`
@@ -198,8 +200,7 @@ func declaresPublishableKind(data []byte) bool {
 	if err := yaml.Unmarshal(data, &hdr); err != nil {
 		return false
 	}
-	_, err := MediaTypeForKind(hdr.Kind)
-	return err == nil
+	return IsPublishableKind(hdr.Kind)
 }
 
 // describeRootEntries renders the root listing carried on the no-entity refusal.
@@ -212,82 +213,65 @@ func describeRootEntries(names []string) string {
 	return fmt.Sprintf("no entity document among %s", strings.Join(names, ", "))
 }
 
-// Bundle reads the entity at entityPath and returns the bundled
-// bytes plus the canonical OCI mediatype for that kind.
+// Bundle returns the bytes a publication of the entity at entityPath carries, and
+// the media type they publish under, given carried: the files the entity declares
+// beside its document, each a slash-separated path relative to the directory
+// holding the document.
 //
-// Per-kind dispatch (matching the kind strings pkg/catalog/catalog.go
-// switches on):
+// # The shape follows what is carried, and nothing else
 //
-//   - Component / Feature / Aggregate / SchemaLibrary /
-//     MappingLibrary / WorkloadLibrary / ArtifactLibrary / Plugin → bare
-//     YAML, no archive; bytes are the file contents unchanged. A library
-//     kind is self-contained: every fragment it publishes — a schema, a
-//     mapping, a workload body, an artifact file body — is authored inline
-//     in the entity, so there is no co-located source to collect and a file
-//     sitting beside the entity is not part of the artifact.
-//   - Recipe / FeatureRecipe → tar.gz containing the YAML plus any
-//     co-located source: directories, $import:-referenced files in
-//     the same directory tree, and inline artifacts: payloads. File
-//     entries within the archive are sorted lexicographically and
-//     carry zeroed timestamps so two independent Bundle invocations
-//     against the same input produce byte-identical archives.
+// With nothing carried the bytes are the entity document, unchanged, under the
+// kind's document media type. With anything carried they are a gzipped tar
+// holding the document at its root under its own file name and each carried file
+// at its path, under the kind's archive media type. So the kind decides only
+// which pair of media types applies: an entity of any kind publishes as its
+// document exactly when it declares nothing beside it, and a document published
+// alone is byte-identical to the file it was authored as.
 //
-// Bundle judges nothing about where the entity sits. The name of the entity's
-// directory is a catalog convention and no input to the artifact, and whether
-// the directory belongs to the entity alone is decided before Bundle is reached,
-// by the publication that calls it.
-func Bundle(kind, entityPath string) ([]byte, string, error) {
-	mediaType, err := MediaTypeForKind(kind)
+// # It reads only what it is named
+//
+// Which files an entity declares is decided by the entity's own declarations,
+// read where its document is parsed, and handed in here. A file sitting in the
+// entity's directory that no declaration names is never opened, so it neither
+// travels nor changes the shape; and two entities sharing a directory could only
+// ever carry the files each declares. Bundle judges nothing about where the entity
+// sits either: the name of its directory is a catalog convention and no input to
+// the artifact, and whether the directory belongs to the entity alone is decided
+// before Bundle is reached, by the publication that calls it.
+//
+// A carried path must be local to the entity's directory — relative, cleaned, and
+// not climbing out of it. The declarations that hand it in hold every content path
+// inside that directory already, so one that is not is a fault in the caller and
+// is refused rather than packed. The document's own name among them is packed
+// once.
+//
+// Entries are sorted by path and carry a zeroed modification time and each
+// file's permission bits, so two invocations over the same files produce
+// byte-identical archives.
+func Bundle(kind, entityPath string, carried []string) ([]byte, string, error) {
+	mediaType, err := MediaTypeFor(kind, len(carried) > 0)
 	if err != nil {
 		return nil, "", err
 	}
-
-	switch kind {
-	case "Component", "Feature", "Aggregate", "SchemaLibrary", "MappingLibrary", "WorkloadLibrary", "ArtifactLibrary", "Plugin":
+	if len(carried) == 0 {
 		data, err := os.ReadFile(entityPath)
 		if err != nil {
 			return nil, "", fmt.Errorf("oci: bundle read %s: %w", entityPath, err)
 		}
 		return data, mediaType, nil
-
-	case "Recipe", "FeatureRecipe":
-		archive, err := bundleTarGzDirectory(filepath.Dir(entityPath))
-		if err != nil {
-			return nil, "", fmt.Errorf("oci: bundle %s as tar.gz: %w", entityPath, err)
-		}
-		return archive, mediaType, nil
-
-	default:
-		// A new publishable kind needs BOTH a kindMediaTypes entry and a
-		// matching case above, and the two are easy to get half-right: a kind
-		// with a mediatype and no case passes the gate at the top of Bundle and
-		// then lands here, so it is publishable by the mediatype table and
-		// unbundleable in fact. That happened once, while a comment here
-		// asserted this arm was unreachable — an assertion nothing checked. It
-		// is checked now: TestBundleCoversEveryMediaTypeKind bundles every kind
-		// MediaTypeKinds enumerates and fails on this sentinel, so the gap reds
-		// the build instead of waiting for a push. Which arm a new kind joins is
-		// still a judgement — bare YAML for a self-contained entity, tar.gz for
-		// one whose directory carries co-located source.
-		return nil, "", ErrUnknownEntityKind()
 	}
+	archive, err := packArchive(entityPath, carried)
+	if err != nil {
+		return nil, "", fmt.Errorf("oci: bundle %s as tar.gz: %w", entityPath, err)
+	}
+	return archive, mediaType, nil
 }
 
-// bundleTarGzDirectory walks dirPath (a Recipe / FeatureRecipe
-// directory) and returns the contents packed into a deterministic
-// tar.gz archive. Every non-hidden file reachable from dirPath is
-// included: the top-level YAML the
-// directory is named for, plus any co-located source/, mappings/,
-// artifacts/ subtrees. The archive entries are sorted
-// lexicographically by their relative path; every entry carries a
-// zeroed modification time so two independent invocations against
-// the same input produce byte-identical archive bytes.
-//
-// Hidden files (those whose basename starts with ".") are skipped —
-// they're typically editor temp files, .gitignore, or .DS_Store
-// entries that the operator does not intend to publish.
-func bundleTarGzDirectory(dirPath string) ([]byte, error) {
-	entries, err := collectArchiveEntries(dirPath)
+// packArchive packs the entity document at entityPath and the carried files into
+// a deterministic tar.gz archive, each at its path relative to the document's
+// directory.
+func packArchive(entityPath string, carried []string) ([]byte, error) {
+	entries, err := collectArchiveEntries(entityPath, carried)
 	if err != nil {
 		return nil, err
 	}
@@ -332,39 +316,33 @@ type archiveEntry struct {
 	data    []byte
 }
 
-func collectArchiveEntries(dirPath string) ([]archiveEntry, error) {
-	var entries []archiveEntry
-	err := filepath.WalkDir(dirPath, func(path string, d os.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
+// collectArchiveEntries reads the entity document and every carried file, each
+// once. A file's mode is read from the entry itself rather than from what a link
+// points at, and its bytes from what it names, so a packed archive is the same one
+// whether the files were reached one by one or by walking their directory.
+func collectArchiveEntries(entityPath string, carried []string) ([]archiveEntry, error) {
+	dir := filepath.Dir(entityPath)
+	names := append([]string{filepath.Base(entityPath)}, carried...)
+	seen := make(map[string]bool, len(names))
+	entries := make([]archiveEntry, 0, len(names))
+	for _, rel := range names {
+		if !filepath.IsLocal(filepath.FromSlash(rel)) || path.Clean(rel) != rel {
+			return nil, fmt.Errorf("oci: carried path %q does not name a file inside %s", rel, dir)
 		}
-		if d.IsDir() {
-			return nil
+		if seen[rel] {
+			continue
 		}
-		if strings.HasPrefix(d.Name(), ".") {
-			return nil
-		}
-		rel, err := filepath.Rel(dirPath, path)
+		seen[rel] = true
+		full := filepath.Join(dir, filepath.FromSlash(rel))
+		info, err := os.Lstat(full)
 		if err != nil {
-			return fmt.Errorf("oci: rel path %s: %w", path, err)
+			return nil, fmt.Errorf("oci: stat %s: %w", full, err)
 		}
-		info, err := d.Info()
+		data, err := os.ReadFile(full)
 		if err != nil {
-			return fmt.Errorf("oci: stat %s: %w", path, err)
+			return nil, fmt.Errorf("oci: read %s: %w", full, err)
 		}
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return fmt.Errorf("oci: read %s: %w", path, err)
-		}
-		entries = append(entries, archiveEntry{
-			relPath: filepath.ToSlash(rel),
-			mode:    info.Mode(),
-			data:    data,
-		})
-		return nil
-	})
-	if err != nil {
-		return nil, err
+		entries = append(entries, archiveEntry{relPath: rel, mode: info.Mode(), data: data})
 	}
 	return entries, nil
 }

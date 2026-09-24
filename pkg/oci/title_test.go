@@ -49,38 +49,51 @@ func titleManifestTagged(t *testing.T, store *memory.Store, tag string) ocispec.
 }
 
 // TestEveryPublishableKindIsTitledByItsTransportShape proves the catalog path
-// titles the content layer of every publishable kind: entity.yaml where the kind
-// ships as its authored document, entity.tar.gz where it ships as an archive.
+// titles the content layer of every publishable kind in both of its shapes:
+// entity.yaml where the entity ships as its authored document, entity.tar.gz
+// where it ships as an archive with the files it declares.
 //
 // The expectation is written per media type rather than computed from the media
 // type's suffix, so the test does not share the rule it checks. The set
-// difference against the media-type table names any publishable kind the table
-// below does not cover, so a kind added there fails here until its title is
-// stated.
+// difference against the media-type table names any publishable kind and shape
+// the table below does not cover, so a kind added there fails here until its
+// titles are stated.
 func TestEveryPublishableKindIsTitledByItsTransportShape(t *testing.T) {
 	t.Parallel()
 	want := map[string]string{
-		oci.MediaTypeComponent:       "entity.yaml",
-		oci.MediaTypeFeature:         "entity.yaml",
-		oci.MediaTypeAggregate:       "entity.yaml",
-		oci.MediaTypeSchemaLibrary:   "entity.yaml",
-		oci.MediaTypeMappingLibrary:  "entity.yaml",
-		oci.MediaTypeWorkloadLibrary: "entity.yaml",
-		oci.MediaTypeArtifactLibrary: "entity.yaml",
-		oci.MediaTypeRecipe:          "entity.tar.gz",
-		oci.MediaTypeFeatureRecipe:   "entity.tar.gz",
+		oci.MediaTypeComponent:                                    "entity.yaml",
+		"application/vnd.aggrega.component.v1alpha1+tar+gz":       "entity.tar.gz",
+		oci.MediaTypeFeature:                                      "entity.yaml",
+		"application/vnd.aggrega.feature.v1alpha1+tar+gz":         "entity.tar.gz",
+		oci.MediaTypeAggregate:                                    "entity.yaml",
+		"application/vnd.aggrega.aggregate.v1alpha1+tar+gz":       "entity.tar.gz",
+		oci.MediaTypeSchemaLibrary:                                "entity.yaml",
+		"application/vnd.aggrega.schemalibrary.v1alpha1+tar+gz":   "entity.tar.gz",
+		oci.MediaTypeMappingLibrary:                               "entity.yaml",
+		"application/vnd.aggrega.mappinglibrary.v1alpha1+tar+gz":  "entity.tar.gz",
+		oci.MediaTypeWorkloadLibrary:                              "entity.yaml",
+		"application/vnd.aggrega.workloadlibrary.v1alpha1+tar+gz": "entity.tar.gz",
+		oci.MediaTypeArtifactLibrary:                              "entity.yaml",
+		"application/vnd.aggrega.artifactlibrary.v1alpha1+tar+gz": "entity.tar.gz",
+		oci.MediaTypeRecipe:                                       "entity.tar.gz",
+		"application/vnd.aggrega.recipe.v1alpha1+yaml":            "entity.yaml",
+		oci.MediaTypeFeatureRecipe:                                "entity.tar.gz",
+		"application/vnd.aggrega.featurerecipe.v1alpha1+yaml":     "entity.yaml",
 		// A Plugin publishes through its own manifest; its titles are proven by
 		// TestPluginManifestTitlesBothDescriptors. The catalog path still titles
-		// the Plugin media type, which is the entity document.
+		// the Plugin media types, which name the entity document.
 		oci.MediaTypePlugin: "entity.yaml",
+		"application/vnd.aggrega.wasmplugin.v1alpha1+tar+gz": "entity.tar.gz",
 	}
 	for _, kind := range oci.MediaTypeKinds() {
-		mt, err := oci.MediaTypeForKind(kind)
-		if err != nil {
-			t.Fatalf("MediaTypeForKind(%q): %v", kind, err)
-		}
-		if _, ok := want[mt]; !ok {
-			t.Errorf("publishable kind %q (%s) has no stated title; add it to this table", kind, mt)
+		for _, archive := range []bool{false, true} {
+			mt, err := oci.MediaTypeFor(kind, archive)
+			if err != nil {
+				t.Fatalf("MediaTypeFor(%q, %v): %v", kind, archive, err)
+			}
+			if _, ok := want[mt]; !ok {
+				t.Errorf("publishable kind %q (%s) has no stated title; add it to this table", kind, mt)
+			}
 		}
 	}
 

@@ -52,7 +52,7 @@ func TestBundledEntityIsFoundWhateverTheEntityFileIsNamed(t *testing.T) {
 			// Co-located source, which must never be mistaken for the entity.
 			mustWrite(t, filepath.Join(ver, "source", "Chart.yaml"), []byte("name: mariadb\nversion: 25.0.8\n"))
 
-			archive, _, err := oci.Bundle("Recipe", filepath.Join(ver, fileName))
+			archive, _, err := oci.Bundle("Recipe", filepath.Join(ver, fileName), []string{"source/Chart.yaml"})
 			if err != nil {
 				t.Fatalf("Bundle: %v", err)
 			}
@@ -90,7 +90,8 @@ func TestBundleRootDocumentThatIsNotAnEntityIsNotMistakenForOne(t *testing.T) {
 	mustWrite(t, filepath.Join(ver, "gateway.yaml"),
 		[]byte("apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: gw\n"))
 
-	archive, _, err := oci.Bundle("FeatureRecipe", filepath.Join(ver, "recipe.yaml"))
+	archive, _, err := oci.Bundle("FeatureRecipe", filepath.Join(ver, "recipe.yaml"),
+		[]string{"bridge-fragment.yaml", "gateway.yaml"})
 	if err != nil {
 		t.Fatalf("Bundle: %v", err)
 	}
@@ -117,7 +118,7 @@ func TestBundledEntityIsFoundOnlyAtTheBundleRoot(t *testing.T) {
 	mustWrite(t, filepath.Join(ver, "recipe.yaml"), body)
 	mustWrite(t, filepath.Join(ver, "source", "nested.yaml"), entityBody("Component", "demo/nested"))
 
-	archive, _, err := oci.Bundle("Recipe", filepath.Join(ver, "recipe.yaml"))
+	archive, _, err := oci.Bundle("Recipe", filepath.Join(ver, "recipe.yaml"), []string{"source/nested.yaml"})
 	if err != nil {
 		t.Fatalf("Bundle: %v", err)
 	}
@@ -130,20 +131,21 @@ func TestBundledEntityIsFoundOnlyAtTheBundleRoot(t *testing.T) {
 	}
 }
 
-// TestSiblingEntitiesBundleByteIdenticallyAndTheReadSideRefuses drives the
-// consequence the sibling case produces end to end.
+// TestAnArchiveCarryingBothSiblingsIsOneArtifactAndTheReadSideRefuses drives
+// the read side over the artifact another client can produce from a directory
+// holding two entities.
 //
-// Two same-version entities sharing one directory bundle to byte-identical
-// archives, because the archive is built from the DIRECTORY and neither entity
-// file is privileged. So the two coordinates a publisher tags carry the same
-// bytes, and nothing on the write side reports it. The read side is what must
-// not then silently hand one of them back as the other: it refuses, naming both
-// documents.
+// A publication through this product never packs it: each entity carries only
+// the files it declares, and a document is no declaration of its neighbour's.
+// But a client that packs a whole directory does, and packed from either entity
+// the result is the same archive, so the two coordinates it is tagged at carry
+// the same bytes. The read side is what must not then silently hand one of them
+// back as the other: it refuses, naming both documents.
 //
 // The byte-identity half is the premise and is asserted first — if the two
 // archives ever stopped being identical the refusal below would be proving
 // something else.
-func TestSiblingEntitiesBundleByteIdenticallyAndTheReadSideRefuses(t *testing.T) {
+func TestAnArchiveCarryingBothSiblingsIsOneArtifactAndTheReadSideRefuses(t *testing.T) {
 	t.Parallel()
 	ver := filepath.Join(t.TempDir(), "1.0.0")
 	if err := os.MkdirAll(ver, 0o755); err != nil {
@@ -154,16 +156,16 @@ func TestSiblingEntitiesBundleByteIdenticallyAndTheReadSideRefuses(t *testing.T)
 	mustWrite(t, first, entityBody("Recipe", "helm/frontend"))
 	mustWrite(t, second, entityBody("Recipe", "helm/database"))
 
-	firstArchive, _, err := oci.Bundle("Recipe", first)
+	firstArchive, _, err := oci.Bundle("Recipe", first, []string{"db-recipe.yaml"})
 	if err != nil {
 		t.Fatalf("Bundle first: %v", err)
 	}
-	secondArchive, _, err := oci.Bundle("Recipe", second)
+	secondArchive, _, err := oci.Bundle("Recipe", second, []string{"recipe.yaml"})
 	if err != nil {
 		t.Fatalf("Bundle second: %v", err)
 	}
 	if !bytes.Equal(firstArchive, secondArchive) {
-		t.Fatalf("two sibling entities in one directory no longer bundle byte-identically "+
+		t.Fatalf("the whole-directory archive packed from either sibling is no longer one artifact "+
 			"(%d vs %d bytes); the refusal below would be proving something else",
 			len(firstArchive), len(secondArchive))
 	}
@@ -198,7 +200,7 @@ func TestBundleWithNoEntityDocumentIsRefused(t *testing.T) {
 	// holds no entity, not one that fails to unpack.
 	mustWrite(t, filepath.Join(ver, "recipe.yaml"), entityBody("Recipe", "helm/mariadb"))
 	mustWrite(t, filepath.Join(ver, "source", "Chart.yaml"), []byte("name: mariadb\n"))
-	archive, _, err := oci.Bundle("Recipe", filepath.Join(ver, "recipe.yaml"))
+	archive, _, err := oci.Bundle("Recipe", filepath.Join(ver, "recipe.yaml"), []string{"source/Chart.yaml"})
 	if err != nil {
 		t.Fatalf("Bundle: %v", err)
 	}
@@ -214,26 +216,24 @@ func TestBundleWithNoEntityDocumentIsRefused(t *testing.T) {
 	}
 }
 
-// TestEveryBundlingKindRoundTripsThroughTheAnchor walks the kinds the transport
-// itself publishes rather than a list written here, and for each one that ships
-// as an archive it bundles, unwraps, and checks the entity that comes back is
-// the one that went in.
+// TestEveryKindCarryingFilesRoundTripsThroughTheAnchor walks the kinds the
+// transport itself publishes rather than a list written here, bundles each with
+// one file carried beside its document, unwraps it, and checks the entity that
+// comes back is the one that went in.
 //
-// The kinds that reach the anchor are DERIVED, not enumerated: a kind reaches it
-// exactly when Bundle produces archive bytes for it, which is the same predicate
-// the consume side applies (IsTarGzBundle) before unwrapping anything. A kind
-// that ships as the bare entity document never reaches the anchor and is skipped
-// with its reason recorded, so the count below is readable rather than bare.
+// Every kind reaches the anchor here, because whether a publication is an
+// archive follows from what it carries rather than from its kind: a kind the
+// anchor could not locate inside an archive would publish cleanly and never
+// unpack the first time an entity of it declared a file.
 //
 // The non-emptiness guard is calibration: an empty enumeration would run the
 // loop zero times and pass while checking nothing.
-func TestEveryBundlingKindRoundTripsThroughTheAnchor(t *testing.T) {
+func TestEveryKindCarryingFilesRoundTripsThroughTheAnchor(t *testing.T) {
 	t.Parallel()
 	kinds := oci.MediaTypeKinds()
 	if len(kinds) == 0 {
 		t.Fatal("the transport publishes no kinds at all, so the loop below asserts nothing")
 	}
-	var archived, bare []string
 	for _, kind := range kinds {
 		ver := filepath.Join(t.TempDir(), "1.0.0")
 		if err := os.MkdirAll(ver, 0o755); err != nil {
@@ -244,16 +244,16 @@ func TestEveryBundlingKindRoundTripsThroughTheAnchor(t *testing.T) {
 		path := filepath.Join(ver, "authored.yaml")
 		body := entityBody(kind, "demo/x")
 		mustWrite(t, path, body)
+		mustWrite(t, filepath.Join(ver, "companion.txt"), []byte("carried\n"))
 
-		data, _, err := oci.Bundle(kind, path)
+		data, _, err := oci.Bundle(kind, path, []string{"companion.txt"})
 		if err != nil {
 			t.Fatalf("kind %q: Bundle: %v", kind, err)
 		}
 		if !oci.IsTarGzBundle(data) {
-			bare = append(bare, kind)
+			t.Errorf("kind %q carried a file and did not publish as an archive", kind)
 			continue
 		}
-		archived = append(archived, kind)
 		got, uerr := oci.EntityYAML(data)
 		if uerr != nil {
 			t.Errorf("kind %q ships as an archive but its entity cannot be located in it: %v", kind, uerr)
@@ -263,11 +263,6 @@ func TestEveryBundlingKindRoundTripsThroughTheAnchor(t *testing.T) {
 			t.Errorf("kind %q: unbundled entity is not the authored document.\n got: %q\nwant: %q", kind, got, body)
 		}
 	}
-	if len(archived) == 0 {
-		t.Fatal("no kind produced archive bytes, so the anchor was never exercised")
-	}
-	t.Logf("kinds the transport publishes: %d; reaching the anchor (archive-shipped): %v; "+
-		"never reaching it (shipped as the bare entity document): %v", len(kinds), archived, bare)
 }
 
 // repackWithout rewrites archive without the named root entry, preserving every

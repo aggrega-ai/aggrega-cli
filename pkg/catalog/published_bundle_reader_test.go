@@ -15,15 +15,15 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 )
 
-// bundledEntity returns the tar.gz an entity of this shape publishes as: the
-// entity's per-version directory packed by the real bundler, with the document
-// at the archive root.
+// bundledEntity returns the entity as a tar.gz with the document at the archive
+// root, packed by the real bundler.
 //
-// The kind argument handed to Bundle selects the ARCHIVE ARM and nothing else —
-// it is not required to agree with the document's own `kind:`, and the bundler
-// does not read the two against each other. That is what lets one helper produce
-// the published shape for every kind a reader below may meet, rather than a
-// hand-rolled tar that could drift from what the bundler emits.
+// The document names itself as carried, which is what makes the bundler pack an
+// archive rather than hand back the document: a reader must open an archive
+// whatever kind it holds, and this is how one helper produces that shape for
+// every kind a reader below may meet, rather than a hand-rolled tar that could
+// drift from what the bundler emits. The kind handed to Bundle picks only the
+// media type the bundler reports, which these readers take from the puller.
 func bundledEntity(t *testing.T, fileName, body string) []byte {
 	t.Helper()
 	dir := filepath.Join(t.TempDir(), entityVersionOf(t, body))
@@ -34,7 +34,7 @@ func bundledEntity(t *testing.T, fileName, body string) []byte {
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	blob, _, err := oci.Bundle("Recipe", path)
+	blob, _, err := oci.Bundle("Recipe", path, []string{fileName})
 	if err != nil {
 		t.Fatalf("Bundle: %v", err)
 	}
@@ -122,11 +122,16 @@ func (p *archivePuller) PullAggregate(context.Context, string, string) (*oci.Pul
 	return p.result(), p.tag, nil
 }
 
-func mediaTypeFor(t *testing.T, kind string) string {
+// mediaTypeFor returns the media type a registry declares for kind in the shape
+// archive names. The library and Aggregate rows below declare their kind's
+// document type over archive bytes on purpose: what is under test is a reader
+// that discriminates on the bytes it was served rather than on what the manifest
+// says they are.
+func mediaTypeFor(t *testing.T, kind string, archive bool) string {
 	t.Helper()
-	mt, err := oci.MediaTypeForKind(kind)
+	mt, err := oci.MediaTypeFor(kind, archive)
 	if err != nil {
-		t.Fatalf("MediaTypeForKind(%q): %v", kind, err)
+		t.Fatalf("MediaTypeFor(%q, %v): %v", kind, archive, err)
 	}
 	return mt
 }
@@ -139,7 +144,7 @@ func TestRegistryTierPinsTheEntityIdentityInsideAnArchive(t *testing.T) {
 	t.Run("entity tier", func(t *testing.T) {
 		p := &archivePuller{
 			blob:      bundledEntity(t, "recipe.yaml", bundledRecipeBody),
-			mediaType: mediaTypeFor(t, "Recipe"),
+			mediaType: mediaTypeFor(t, "Recipe", true),
 			tag:       "9.9.9",
 		}
 		_, res, err := tier3PullCatalogEntity(context.Background(), t.TempDir(), ".aggrega/cache", p, "helm/service", "Recipe")
@@ -155,7 +160,7 @@ func TestRegistryTierPinsTheEntityIdentityInsideAnArchive(t *testing.T) {
 	t.Run("library tier", func(t *testing.T) {
 		p := &archivePuller{
 			blob:      bundledEntity(t, "library.yaml", bundledSchemaLibraryBody),
-			mediaType: mediaTypeFor(t, "SchemaLibrary"),
+			mediaType: mediaTypeFor(t, "SchemaLibrary", false),
 			tag:       "9.9.9",
 		}
 		l := &catalogLookup{catalog: &Catalog{}, ociPuller: p, workspaceRoot: t.TempDir(), cacheDir: ".aggrega/cache"}
@@ -172,7 +177,7 @@ func TestRegistryTierPinsTheEntityIdentityInsideAnArchive(t *testing.T) {
 	t.Run("aggregate tier", func(t *testing.T) {
 		p := &archivePuller{
 			blob:      bundledEntity(t, "aggregate.yaml", bundledAggregateBody),
-			mediaType: mediaTypeFor(t, "Aggregate"),
+			mediaType: mediaTypeFor(t, "Aggregate", false),
 			tag:       "9.9.9",
 		}
 		_, version, _, _, found, err := PullAndCacheAggregate(context.Background(), t.TempDir(), ".aggrega/cache", p, "acme/db-module")
@@ -196,7 +201,7 @@ func TestRegistryTierPinsTheEntityIdentityInsideAnArchive(t *testing.T) {
 // is what the pin commits to.
 func TestPullAndCacheAggregateHandsBackTheEntityDocument(t *testing.T) {
 	blob := bundledEntity(t, "aggregate.yaml", bundledAggregateBody)
-	p := &archivePuller{blob: blob, mediaType: mediaTypeFor(t, "Aggregate"), tag: "9.9.9"}
+	p := &archivePuller{blob: blob, mediaType: mediaTypeFor(t, "Aggregate", false), tag: "9.9.9"}
 
 	data, _, digest, _, _, err := PullAndCacheAggregate(context.Background(), t.TempDir(), ".aggrega/cache", p, "acme/db-module")
 	if err != nil {
@@ -235,7 +240,7 @@ func TestSubAggregateDescentReadsAnArchivedCacheSlot(t *testing.T) {
 	blob := bundledEntity(t, "aggregate.yaml", bundledAggregateBody)
 
 	store := memory.New()
-	if _, err := oci.Push(ctx, store, "3.0.0", mediaTypeFor(t, "Aggregate"), blob, nil); err != nil {
+	if _, err := oci.Push(ctx, store, "3.0.0", mediaTypeFor(t, "Aggregate", false), blob, nil); err != nil {
 		t.Fatalf("oci.Push: %v", err)
 	}
 	pulled, err := oci.Pull(ctx, store, "3.0.0")

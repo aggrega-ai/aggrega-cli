@@ -205,7 +205,7 @@ var errImmutableTagConflict = cerrors.Register("immutable-tag-conflict", cerrors
 		"registry refusing to have published bytes replaced."),
 })
 
-// ErrUnknownEntityKind is returned by MediaTypeForKind for kind
+// ErrUnknownEntityKind is returned by MediaTypeFor, and so by Bundle, for kind
 // strings not in the canonical entity-kind set. Programming error
 // at the dispatch boundary, not a user-input error.
 func ErrUnknownEntityKind() error { return errUnknownEntityKind }

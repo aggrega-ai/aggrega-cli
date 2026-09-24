@@ -31,11 +31,11 @@ func writeEntityFixture(t *testing.T, path, content string) {
 	}
 }
 
-// TestPushBareYAMLEntity pins per-kind round-trip for Component and Feature: each
-// bundles to bare YAML bytes under its canonical mediatype and round-trips through
-// Push + Pull against an in-memory CAS. It is a sample of the bare-YAML kinds
-// rather than a census of them — the census that every kind the transport resolves
-// reaches a bundle arm at all lives with the bundler, in pkg/oci.
+// TestPushBareYAMLEntity pins per-kind round-trip for Component and Feature: each,
+// declaring no file beside its document, bundles to bare YAML bytes under its
+// document mediatype and round-trips through Push + Pull against an in-memory CAS.
+// It is a sample of the kinds rather than a census of them — the census that every
+// kind takes the shape what it carries decides lives with the bundler, in pkg/oci.
 func TestPushBareYAMLEntity(t *testing.T) {
 	cases := []struct {
 		name      string
@@ -182,29 +182,22 @@ spec:
 	}
 }
 
-// TestPushRecipeBundlesCoLocatedTreeAsTarGz pins the acceptance
-// criterion 4: a Recipe directory's co-located content lands in the
-// published .tar.gz under the canonical mediatype.
+// TestPushRecipeCarriesWhatItDeclaresAndNothingBeside pins what a Recipe's
+// published .tar.gz holds, under the canonical mediatype: the files the Recipe
+// declares, and not the files that merely sit in its directory.
 //
-// Two on-disk co-location forms are covered explicitly:
+//   - partials/header.yaml — a file its artifacts entry imports with $import:,
+//     at a path no convention names. It is declared, so it travels.
+//   - templates/<file>.yaml.tmpl — a file beside the Recipe that nothing it
+//     declares names. It does not travel, whatever it is called.
 //
-//   - templates/<file>.yaml.tmpl — colocated source files alongside
-//     the Recipe YAML, picked up by the bundler's recursive directory
-//     walk.
-//   - partials/header.yaml — a file referenced by a $import: field in
-//     the Recipe YAML at a non-templates path. Pinned explicitly so
-//     a future bundler change that accidentally restricted the walk
-//     to a known-subtrees allowlist would surface here.
-//
-// Inline artifacts: content (the third form enumerated in criterion
-// 4) flows through naturally as Recipe YAML content; the YAML
-// round-trip in pulled.Bytes covers it without a separate test
-// fixture.
+// Inline artifacts: content flows through as Recipe YAML content; the YAML
+// round-trip in pulled.Bytes covers it without a separate test fixture.
 //
 // The imported file is an input the entity's lock pins, so the publication
 // runs the pin step first: a publication that did not would refuse the entity,
-// and the lock the step writes is then one more co-located file in the bundle.
-func TestPushRecipeBundlesCoLocatedTreeAsTarGz(t *testing.T) {
+// and the lock the step writes is then one more file the bundle carries.
+func TestPushRecipeCarriesWhatItDeclaresAndNothingBeside(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
 	recipeDir := filepath.Join(root, "recipes", "server", "1.0.0")
@@ -246,11 +239,14 @@ spec:
 	}
 
 	names := tarEntryNames(t, pulled.Bytes)
-	wantEntries := []string{"server.yaml", "templates/deployment.yaml.tmpl", "partials/header.yaml", "entity.lock"}
+	wantEntries := []string{"server.yaml", "partials/header.yaml", "entity.lock"}
 	for _, want := range wantEntries {
 		if !containsString(names, want) {
 			t.Errorf("tar archive missing %q; got entries: %v", want, names)
 		}
+	}
+	if containsString(names, "templates/deployment.yaml.tmpl") || len(names) != len(wantEntries) {
+		t.Errorf("tar archive carries %v; a file the Recipe does not declare must not travel", names)
 	}
 }
 

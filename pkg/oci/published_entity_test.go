@@ -38,7 +38,7 @@ func TestPullPublishedEntityReadsTheDescriptorEachShapeCarriesItsEntityIn(t *tes
 	recipe := entityBody("Recipe", "svc")
 	mustWrite(t, filepath.Join(ver, "recipe.yaml"), recipe)
 	mustWrite(t, filepath.Join(ver, "source", "values.yaml"), []byte("replicas: 1\n"))
-	archive, archiveType, err := oci.Bundle("Recipe", filepath.Join(ver, "recipe.yaml"))
+	archive, archiveType, err := oci.Bundle("Recipe", filepath.Join(ver, "recipe.yaml"), []string{"source/values.yaml"})
 	if err != nil {
 		t.Fatalf("Bundle: %v", err)
 	}
@@ -150,7 +150,8 @@ func TestEntityYAMLNamesAnArchiveThatDoesNotUnpack(t *testing.T) {
 	}
 	body := append(entityBody("Recipe", "svc"), bytes.Repeat([]byte("# a body long enough to cut in half\n"), 200)...)
 	mustWrite(t, filepath.Join(ver, "recipe.yaml"), body)
-	archive, _, err := oci.Bundle("Recipe", filepath.Join(ver, "recipe.yaml"))
+	mustWrite(t, filepath.Join(ver, "values.yaml"), []byte("replicas: 1\n"))
+	archive, _, err := oci.Bundle("Recipe", filepath.Join(ver, "recipe.yaml"), []string{"values.yaml"})
 	if err != nil {
 		t.Fatalf("Bundle: %v", err)
 	}

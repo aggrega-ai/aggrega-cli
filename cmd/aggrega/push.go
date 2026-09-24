@@ -63,9 +63,19 @@ reason: a document that fails its kind's schema, a path naming content outside
 the entity's own directory, which would not travel with the entity, or a schema
 a Component or Feature imports that cannot be read or used.
 
-A content digest is computed over the entity's authoring tree and embedded in
-the OCI manifest, so "aggrega pull" can detect tampering between publish and
-pull.
+What is published is the entity document and the files the entity itself names
+beside it — a Recipe's or FeatureRecipe's local source, each file an $import:
+names, the entity.lock beside it, and each schema file a Component or Feature
+imports — and nothing else in its directory. An entity that names nothing
+publishes as its document, unchanged; one that names a file publishes as a
+gzipped archive of the document and those files. A directory it names travels
+with every file under it except those whose name starts with a dot. A local
+source written as a template names no one directory until a Release fills it in,
+so an entity with one carries every such file in its own directory, and push
+says so.
+
+A content digest is computed over what is published and embedded in the OCI
+manifest, so "aggrega pull" can detect tampering between publish and pull.
 
 Push signs before it publishes: where signing applies, the signature is made
 over the manifest digest before any bytes reach the registry, so a failed

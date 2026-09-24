@@ -16,8 +16,9 @@ import (
 // names — that does not stay inside the directory holding the entity's own
 // document.
 //
-// That directory is what a publication packages, so it is the one place content
-// the entity carries can be read from and still travel with it. A path that
+// Everything a publication carries for the entity is taken from that directory,
+// so it is the one place content the entity carries can be read from and still
+// travel with it. A path that
 // climbs out of it, or names an absolute location, points at a file that would
 // not be there for anybody who received the entity, and a digest recorded over
 // such a file vouches for bytes nobody else can obtain.
@@ -60,8 +61,8 @@ var errContentOutsideEntityDirectory = cerrors.Register("content-outside-entity-
 // than to adjust the path.
 const contentRemediation = "remediation: move the file into the directory holding the entity, or a directory " +
 	"beneath it, and name it with a path relative to that directory. An entity's content lives in the entity's " +
-	"own directory because that directory is what gets published; a path that leaves it points at a file that " +
-	"would not travel with the entity"
+	"own directory because every file a publication of it carries is taken from there; a path that leaves it " +
+	"points at a file that would not travel with the entity"
 
 // AnchorContent resolves a path an entity declares for content it carries against
 // the directory of the document that declared it, and refuses one that does not

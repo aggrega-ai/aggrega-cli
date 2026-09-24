@@ -56,17 +56,22 @@ func writeRecipeVersionDir(t *testing.T, version string) string {
 	return path
 }
 
-// publishRecipe puts a Recipe into the in-memory registry in the shape the
-// publish path actually produces — through the real bundler, so the artifact
-// under test is the artifact a registry holds and not an approximation of one.
+// publishRecipe puts a Recipe into the in-memory registry as an archive —
+// through the real bundler, carrying one file beside the document, which is the
+// shape a Recipe declaring a file publishes in — so the artifact under test is
+// the artifact a registry holds and not an approximation of one.
 func publishRecipe(t *testing.T, target *memoryRegistryTarget, version string) {
 	t.Helper()
-	blob, mediaType, err := oci.Bundle("Recipe", writeRecipeVersionDir(t, version))
+	path := writeRecipeVersionDir(t, version)
+	if err := os.WriteFile(filepath.Join(filepath.Dir(path), "companion.yaml"), []byte("carried: true\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	blob, mediaType, err := oci.Bundle("Recipe", path, []string{"companion.yaml"})
 	if err != nil {
 		t.Fatalf("Bundle: %v", err)
 	}
 	if !oci.IsTarGzBundle(blob) {
-		t.Fatal("a Recipe no longer publishes as an archive; this test is then about nothing")
+		t.Fatal("a Recipe carrying a file no longer publishes as an archive; this test is then about nothing")
 	}
 	if _, perr := oci.Push(t.Context(), target.Store, version, mediaType, blob, nil); perr != nil {
 		t.Fatalf("Push: %v", perr)
@@ -75,10 +80,10 @@ func publishRecipe(t *testing.T, target *memoryRegistryTarget, version string) {
 }
 
 // TestPrePublishComparesAgainstAnArchivedPredecessor is the evolution gate's
-// coverage for the kinds that publish as an archive.
+// coverage for an entity published as an archive.
 //
-// A Recipe's published bytes are a tar.gz, so the predecessor the gate pulls is
-// an artifact rather than a document. The assertion is that the comparison is
+// The predecessor's published bytes are a tar.gz, so the artifact the gate pulls
+// is an archive rather than a document. The assertion is that the comparison is
 // PERFORMED — the predecessor's own version is selected and a rule verdict is
 // reported over it — rather than that the run merely completed: a gate that
 // fetched nothing and a gate that compared nothing both exit without objecting,

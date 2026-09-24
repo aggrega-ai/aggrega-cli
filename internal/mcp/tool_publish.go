@@ -300,6 +300,10 @@ type publishEntityPayload struct {
 	// Pin is what the pin step did to the entity's lock before the bundle was
 	// built, in the pin tool's own shape, and absent where the call did not pin.
 	Pin *pinPayload `json:"pin,omitempty"`
+	// WholeDirectorySource is the templated local source that made the
+	// publication carry every file in the entity's directory, and absent where it
+	// carries only the files the entity names.
+	WholeDirectorySource string `json:"whole_directory_source,omitempty"`
 }
 
 var publishEntityToolSpec = toolSpec{
@@ -466,17 +470,18 @@ func runPublishEntity(ctx context.Context, cfg publishops.PushConfig) (publishEn
 		return publishEntityPayload{}, err
 	}
 	payload := publishEntityPayload{
-		Reference:        res.Reference,
-		Tag:              res.Tag,
-		Kind:             res.Kind,
-		MediaType:        res.MediaType,
-		Size:             res.Size,
-		PluginSize:       res.PluginSize,
-		Digest:           res.Digest,
-		Signed:           res.Signed,
-		AlreadyPublished: res.AlreadyPublished,
-		DryRun:           res.DryRun,
-		Reach:            reachOf(res.Reference, !res.DryRun),
+		Reference:            res.Reference,
+		Tag:                  res.Tag,
+		Kind:                 res.Kind,
+		MediaType:            res.MediaType,
+		Size:                 res.Size,
+		PluginSize:           res.PluginSize,
+		Digest:               res.Digest,
+		Signed:               res.Signed,
+		AlreadyPublished:     res.AlreadyPublished,
+		DryRun:               res.DryRun,
+		Reach:                reachOf(res.Reference, !res.DryRun),
+		WholeDirectorySource: res.WholeDirectory,
 	}
 	if res.Pin != nil {
 		pin := pinPayloadOf(*res.Pin, res.DryRun)
@@ -498,6 +503,10 @@ func renderPublishEntityText(p publishEntityPayload) string {
 	default:
 		fmt.Fprintf(&b, "Published %s:%s as %s (%s, %d bytes) at %s.",
 			p.Reference, p.Tag, p.Kind, p.MediaType, p.Size, p.Digest)
+	}
+	if p.WholeDirectorySource != "" {
+		fmt.Fprintf(&b, " It carries every file in the entity's directory, because its source %q is a template "+
+			"and the directory it names is decided by each Release that uses it.", p.WholeDirectorySource)
 	}
 	if p.Signed {
 		b.WriteString(" A signature was attached and cannot be recalled from anyone who fetches it.")

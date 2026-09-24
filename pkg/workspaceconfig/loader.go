@@ -271,7 +271,7 @@ func validateSigningKinds(kinds []string, path string) error {
 		if k == signingKindsAll {
 			continue
 		}
-		if _, err := oci.MediaTypeForKind(k); err != nil {
+		if !oci.IsPublishableKind(k) {
 			return fmt.Errorf("workspaceconfig: %s: signing.kinds entry %q is not a signable artifact kind; use a catalog entity or plugin kind, or %q for every kind: %w", path, k, signingKindsAll, ErrConfigInvalid())
 		}
 	}

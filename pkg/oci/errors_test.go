@@ -36,45 +36,55 @@ func TestSentinelPassThroughErrorsIs(t *testing.T) {
 	}
 }
 
-func TestMediaTypeForKindDispatchesAllKinds(t *testing.T) {
+// TestMediaTypeForDispatchesAllKinds pins each named media type to the kind and
+// shape that yields it, and spells the shapes no constant names in full, so a
+// change to what a registry is told a publication is fails here by name.
+func TestMediaTypeForDispatchesAllKinds(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
-		kind string
-		want string
+		kind    string
+		archive bool
+		want    string
 	}{
-		{"Component", oci.MediaTypeComponent},
-		{"Feature", oci.MediaTypeFeature},
-		{"Recipe", oci.MediaTypeRecipe},
-		{"FeatureRecipe", oci.MediaTypeFeatureRecipe},
-		{"SchemaLibrary", oci.MediaTypeSchemaLibrary},
-		{"MappingLibrary", oci.MediaTypeMappingLibrary},
-		{"WorkloadLibrary", oci.MediaTypeWorkloadLibrary},
+		{"Component", false, oci.MediaTypeComponent},
+		{"Component", true, "application/vnd.aggrega.component.v1alpha1+tar+gz"},
+		{"Feature", false, oci.MediaTypeFeature},
+		{"Feature", true, "application/vnd.aggrega.feature.v1alpha1+tar+gz"},
+		{"Recipe", true, oci.MediaTypeRecipe},
+		{"Recipe", false, "application/vnd.aggrega.recipe.v1alpha1+yaml"},
+		{"FeatureRecipe", true, oci.MediaTypeFeatureRecipe},
+		{"FeatureRecipe", false, "application/vnd.aggrega.featurerecipe.v1alpha1+yaml"},
+		{"SchemaLibrary", false, oci.MediaTypeSchemaLibrary},
+		{"MappingLibrary", false, oci.MediaTypeMappingLibrary},
+		{"WorkloadLibrary", false, oci.MediaTypeWorkloadLibrary},
+		{"ArtifactLibrary", false, oci.MediaTypeArtifactLibrary},
+		{"Plugin", false, oci.MediaTypePlugin},
 	}
 	for _, tc := range cases {
 		tc := tc
-		t.Run(tc.kind, func(t *testing.T) {
+		t.Run(fmt.Sprintf("%s/archive=%v", tc.kind, tc.archive), func(t *testing.T) {
 			t.Parallel()
-			got, err := oci.MediaTypeForKind(tc.kind)
+			got, err := oci.MediaTypeFor(tc.kind, tc.archive)
 			if err != nil {
 				t.Fatalf("unexpected error for %s: %v", tc.kind, err)
 			}
 			if got != tc.want {
-				t.Errorf("MediaTypeForKind(%q): got %q; want %q", tc.kind, got, tc.want)
+				t.Errorf("MediaTypeFor(%q, %v): got %q; want %q", tc.kind, tc.archive, got, tc.want)
 			}
 		})
 	}
 }
 
-func TestMediaTypeForKindUnknownReturnsErrUnknownEntityKind(t *testing.T) {
+func TestMediaTypeForUnknownReturnsErrUnknownEntityKind(t *testing.T) {
 	t.Parallel()
-	_, err := oci.MediaTypeForKind("NotARealKind")
+	_, err := oci.MediaTypeFor("NotARealKind", false)
 	if !errors.Is(err, oci.ErrUnknownEntityKind()) {
 		t.Errorf("unknown kind should return ErrUnknownEntityKind; got %v", err)
 	}
 	// Aggregate is publishable — it resolves to its mediatype.
-	mt, err := oci.MediaTypeForKind("Aggregate")
+	mt, err := oci.MediaTypeFor("Aggregate", false)
 	if err != nil {
-		t.Errorf("Aggregate should resolve via MediaTypeForKind; got %v", err)
+		t.Errorf("Aggregate should resolve via MediaTypeFor; got %v", err)
 	}
 	if mt != oci.MediaTypeAggregate {
 		t.Errorf("Aggregate mediatype = %q; want %q", mt, oci.MediaTypeAggregate)

@@ -90,7 +90,7 @@ type PushArtifactResult struct {
 // and hands them to the kind-agnostic pkg/oci.PushNamed transport under
 // cfg.MediaType, named cfg.Name — it never parses an entity envelope, never
 // dispatches on a Kind, and never resolves a mediatype through
-// MediaTypeForKind. The bytes are opaque: any media type is accepted,
+// MediaTypeFor. The bytes are opaque: any media type is accepted,
 // defaulting to the documentation-bundle media type.
 //
 // Per Aggrega's deterministic-output discipline, callers SHOULD supply the

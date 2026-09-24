@@ -21,17 +21,22 @@ import (
 // reader laying an artifact out and a reader parsing it cannot disagree.
 func TestEntityFileNamesTheDocumentWhereItIsLaidOut(t *testing.T) {
 	t.Parallel()
+	// archiveOf packs every file in files — the entity file named among them
+	// included, so the result is an archive even where the entity file is the only
+	// one — which is how a fixture reaches the archive reading whatever it holds.
 	archiveOf := func(t *testing.T, files map[string][]byte, entityFile, kind string) []byte {
 		t.Helper()
 		ver := filepath.Join(t.TempDir(), "1.0.0")
+		carried := make([]string, 0, len(files))
 		for rel, body := range files {
 			p := filepath.Join(ver, filepath.FromSlash(rel))
 			if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 				t.Fatalf("mkdir: %v", err)
 			}
 			mustWrite(t, p, body)
+			carried = append(carried, rel)
 		}
-		published, _, err := oci.Bundle(kind, filepath.Join(ver, entityFile))
+		published, _, err := oci.Bundle(kind, filepath.Join(ver, entityFile), carried)
 		if err != nil {
 			t.Fatalf("Bundle: %v", err)
 		}

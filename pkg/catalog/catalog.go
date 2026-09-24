@@ -1268,6 +1268,14 @@ func ParseFeatureRecipeEntity(data []byte, path string) (types.FeatureRecipe, er
 // validation (validateSchemaPillarsPass) needs the complete SchemaLibraries map and
 // is not a per-entity step.
 func parseComponentEntity(data []byte, path string) (types.Component, error) {
+	return resolveComponentDocument(data, path, nil)
+}
+
+// resolveComponentDocument is parseComponentEntity's body, with read told each
+// file the schema imports substitute. It is one body with an optional listener
+// rather than two parses, so the files a publication carries for a Component are
+// the files the same parse a build runs actually read.
+func resolveComponentDocument(data []byte, path string, read schemaFileRead) (types.Component, error) {
 	if _, err := envelope.ValidateBytes(envelope.KindComponent, data, path); err != nil {
 		return types.Component{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, err.Error())
 	}
@@ -1278,7 +1286,7 @@ func parseComponentEntity(data []byte, path string) (types.Component, error) {
 	if e.Kind != "Component" {
 		return types.Component{}, fmt.Errorf("expected kind Component, got %q", e.Kind)
 	}
-	if err := resolveEntitySchemaImports(path, &e.Spec.Schema, &e.Spec.UsesSchema); err != nil {
+	if err := resolveEntitySchemaImports(path, &e.Spec.Schema, &e.Spec.UsesSchema, read); err != nil {
 		return types.Component{}, err
 	}
 	validator.DiscourageDirectXAggregaInSchema(e.Metadata.Name, &e.Spec.Schema)
@@ -1287,6 +1295,12 @@ func parseComponentEntity(data []byte, path string) (types.Component, error) {
 
 // parseFeatureEntity mirrors parseComponentEntity for the Feature surface.
 func parseFeatureEntity(data []byte, path string) (types.Feature, error) {
+	return resolveFeatureDocument(data, path, nil)
+}
+
+// resolveFeatureDocument mirrors resolveComponentDocument for the Feature
+// surface.
+func resolveFeatureDocument(data []byte, path string, read schemaFileRead) (types.Feature, error) {
 	if _, err := envelope.ValidateBytes(envelope.KindFeature, data, path); err != nil {
 		return types.Feature{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, err.Error())
 	}
@@ -1297,7 +1311,7 @@ func parseFeatureEntity(data []byte, path string) (types.Feature, error) {
 	if e.Kind != "Feature" {
 		return types.Feature{}, fmt.Errorf("expected kind Feature, got %q", e.Kind)
 	}
-	if err := resolveEntitySchemaImports(path, &e.Spec.Schema, &e.Spec.UsesSchema); err != nil {
+	if err := resolveEntitySchemaImports(path, &e.Spec.Schema, &e.Spec.UsesSchema, read); err != nil {
 		return types.Feature{}, err
 	}
 	validator.DiscourageDirectXAggregaInSchema(e.Metadata.Name, &e.Spec.Schema)
@@ -1495,10 +1509,20 @@ type importRef interface {
 // This is the one home of that resolution for every import-bearing field, so
 // the surfaces cannot come to disagree on what a relative path means.
 func resolveImportPath(entityPath, authored string, ref importRef) (string, error) {
-	if authored == "" || ref.IsLibraryImport() || ref.HasOCIPrefix() {
+	if !importNamesFile(authored, ref) {
 		return authored, nil
 	}
 	return resolveAgainstEntityDir(entityPath, authored)
+}
+
+// importNamesFile reports whether an authored `$import:` value names a file
+// beside the entity, rather than nothing, a library entry or a registry location.
+// It is the one reading of that question: the resolution above anchors exactly the
+// values it answers yes for, and the files a publication carries for an import are
+// exactly the ones it answers yes for, so the two cannot come to disagree about
+// which imports are files.
+func importNamesFile(authored string, ref importRef) bool {
+	return authored != "" && !ref.IsLibraryImport() && !ref.HasOCIPrefix()
 }
 
 // resolveAgainstEntityDir anchors an authored import path to the directory
@@ -1510,8 +1534,9 @@ func resolveImportPath(entityPath, authored string, ref importRef) (string, erro
 // the one statement of what an entity's content path is relative to and bounded
 // by, shared with the source resolution and the render, so an import and a source
 // cannot come to disagree about which paths an entity may name. The bound exists
-// because the entity's directory is what a publication packages: an import naming
-// a file outside it names content that would not travel with the entity.
+// because every file a publication carries for the entity is taken from its
+// directory: an import naming a file outside it names content that would not
+// travel with the entity.
 //
 // An entity parsed from bytes carrying no file of their own resolves against
 // the directory the process runs in, which is what an empty path's directory

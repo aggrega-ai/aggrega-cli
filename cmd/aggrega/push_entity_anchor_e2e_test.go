@@ -53,7 +53,20 @@ func TestPublishedRecipeYieldsItsEntityWhateverTheFileIsNamed(t *testing.T) {
 	// Named for the entity rather than for its kind, which is what a Recipe
 	// author routinely does and what the old anchor could not read back.
 	recipeDir := filepath.Join(root, "recipes", "mariadb", "1.0.0")
-	body := anchorRecipeBody("mariadb")
+	// The Recipe declares its chart, which is what makes it publish as an archive:
+	// a file beside it that it did not declare would not travel at all.
+	body := `apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: mariadb
+  version: 1.0.0
+spec:
+  capability: helm
+  implements: core/mariadb
+  source: ./source
+  valuesMapping: |
+    {}
+`
 	writeEntityFixture(t, filepath.Join(recipeDir, "mariadb.yaml"), body)
 	writeEntityFixture(t, filepath.Join(recipeDir, "source", "Chart.yaml"), "name: mariadb\nversion: 25.0.8\n")
 
@@ -93,11 +106,12 @@ func TestPublishedRecipeYieldsItsEntityWhateverTheFileIsNamed(t *testing.T) {
 // Two same-version Recipes authored side by side in one version directory are
 // refused by this product's publication, each naming the other, and nothing
 // reaches either store. The read side must still be correct for an artifact
-// built from such a directory, because an artifact already published — by an
-// earlier publisher, or by a client that is not this product — carries exactly
-// that shape. So the two archives are built as the bundler builds them, and the
-// assertion that matters is what a consumer gets for the SECOND coordinate: not
-// the first entity under the second's name, but a refusal naming both documents.
+// built from such a directory, because an artifact a client that is not this
+// product published — one that packs a whole directory — carries exactly that
+// shape. So the two archives are built as such a client builds them, every file
+// of the directory carried, and the assertion that matters is what a consumer
+// gets for the SECOND coordinate: not the first entity under the second's name,
+// but a refusal naming both documents.
 //
 // The byte-identity check runs first and fatals rather than errors: if the two
 // artifacts ever stopped being identical there would be no substitution left to
@@ -136,7 +150,7 @@ func TestTwoSiblingRecipesAreRefusedAtPublicationAndTheirArtifactAtTheConsumer(t
 
 	bundle := func(entityPath string) []byte {
 		t.Helper()
-		data, _, err := oci.Bundle("Recipe", entityPath)
+		data, _, err := oci.Bundle("Recipe", entityPath, []string{"database.yaml", "frontend.yaml"})
 		if err != nil {
 			t.Fatalf("oci.Bundle %s: %v", entityPath, err)
 		}

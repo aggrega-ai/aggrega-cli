@@ -15,8 +15,9 @@
 // A local path an entity declares for content it carries — its source, and every
 // file an `$import:` names — is resolved against the directory holding the
 // entity's document and must stay inside it; [AnchorContent] states both halves
-// once, for every such path. That directory is what a publication packages, so a
-// path leaving it names content that would not travel with the entity. The bound
+// once, for every such path. Everything a publication carries for the entity is
+// taken from that directory, so a path leaving it names content that would not
+// travel with the entity. The bound
 // is stated here rather than in the catalog load because the render resolves a
 // templated source's value too, and the two must refuse the same paths.
 //

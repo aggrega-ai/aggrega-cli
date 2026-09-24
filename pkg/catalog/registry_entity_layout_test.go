@@ -9,8 +9,10 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"go.yaml.in/yaml/v3"
 	"oras.land/oras-go/v2/content/memory"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/sourceref"
@@ -35,17 +37,42 @@ func writeTree(t *testing.T, dir string, files map[string]string) {
 	}
 }
 
-// seedPinnedSlot publishes the entity at entityPath through the real bundler,
+// publishedArtifact returns what a publication of the entity at entityPath
+// carries, and its media type: the files the entity declares, read through the
+// same function a publication reads them through, packed by the real bundler.
+func publishedArtifact(t *testing.T, kind, entityPath string) ([]byte, string) {
+	t.Helper()
+	data, err := os.ReadFile(entityPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	declared, err := DeclaredFilesOf(data, entityPath)
+	if err != nil {
+		t.Fatalf("DeclaredFilesOf: %v", err)
+	}
+	blob, mediaType, err := oci.Bundle(kind, entityPath, declared.Files())
+	if err != nil {
+		t.Fatalf("Bundle: %v", err)
+	}
+	return blob, mediaType
+}
+
+// seedPinnedSlot publishes the entity at entityPath as a publication would,
 // pushes it to an in-memory registry and pulls it back, so the manifest the
 // verified read demands is a real one, then writes the cache slot a registry
 // pull writes. It returns the pin a lockfile would record for it.
 func seedPinnedSlot(t *testing.T, root, kind, entityPath, slotURI, version string) Pin {
 	t.Helper()
+	blob, mediaType := publishedArtifact(t, kind, entityPath)
+	return seedPinnedArtifact(t, root, blob, mediaType, slotURI, version)
+}
+
+// seedPinnedArtifact is seedPinnedSlot over bytes the caller packed itself — the
+// shape of an artifact some other client published, which no publication through
+// this product would have produced.
+func seedPinnedArtifact(t *testing.T, root string, blob []byte, mediaType, slotURI, version string) Pin {
+	t.Helper()
 	ctx := context.Background()
-	blob, mediaType, err := oci.Bundle(kind, entityPath)
-	if err != nil {
-		t.Fatalf("Bundle: %v", err)
-	}
 	store := memory.New()
 	if _, err := oci.Push(ctx, store, version, mediaType, blob, nil); err != nil {
 		t.Fatalf("oci.Push: %v", err)
@@ -297,10 +324,7 @@ func TestPinnedSlotWhoseBlobFailsVerificationIsNeverLaidOut(t *testing.T) {
 		"chart/Chart.yaml":            carriedChart["chart/Chart.yaml"],
 		"chart/templates/banner.yaml": "substituted\n",
 	})
-	forged, _, err := oci.Bundle("Recipe", filepath.Join(substitute, "recipe.yaml"))
-	if err != nil {
-		t.Fatalf("Bundle: %v", err)
-	}
+	forged, _ := publishedArtifact(t, "Recipe", filepath.Join(substitute, "recipe.yaml"))
 	if err := os.WriteFile(filepath.Join(slot, "blob"), forged, 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -316,11 +340,12 @@ func TestPinnedSlotWhoseBlobFailsVerificationIsNeverLaidOut(t *testing.T) {
 }
 
 // TestPinnedRecipeSourceLeavingItsDirectoryIsRefused publishes, through the
-// bundler alone, a Recipe whose source climbs out of its own directory, and plants
-// a real directory exactly where the climb lands inside the slot. The containment
-// rule holds over the layout unchanged: the Recipe is refused under the pinned
-// reference with the named condition, and the planted directory is never taken
-// as its source.
+// bundler alone — the one route by which such a Recipe reaches a registry, since
+// a publication through the parse refuses it — a Recipe whose source climbs out
+// of its own directory, and plants a real directory exactly where the climb lands
+// inside the slot. The containment rule holds over the layout unchanged: the
+// Recipe is refused under the pinned reference with the named condition, and the
+// planted directory is never taken as its source.
 func TestPinnedRecipeSourceLeavingItsDirectoryIsRefused(t *testing.T) {
 	const uri = "helm/escape:1.0.0"
 	pub := t.TempDir()
@@ -337,7 +362,11 @@ spec:
     {"k": "v"}
 `})
 	root := t.TempDir()
-	pin := seedPinnedSlot(t, root, "Recipe", filepath.Join(pub, "recipe.yaml"), uri, "1.0.0")
+	blob, mediaType, err := oci.Bundle("Recipe", filepath.Join(pub, "recipe.yaml"), nil)
+	if err != nil {
+		t.Fatalf("Bundle: %v", err)
+	}
+	pin := seedPinnedArtifact(t, root, blob, mediaType, uri, "1.0.0")
 	slot := oci.CachePath(root, layoutCacheDir, uri, "1.0.0")
 	writeTree(t, slot, map[string]string{"outside-chart/Chart.yaml": "apiVersion: v2\nname: outside\nversion: 0.1.0\n"})
 
@@ -355,14 +384,14 @@ spec:
 	}
 }
 
-// TestPulledComponentSchemaImportAnchorsInsideItsSlot pins where a pulled
-// Component's schema import is read from. A Component publishes as its document
-// alone, so its slot's layout holds that document and nothing else; an import
-// naming a file beside it therefore names nothing, and the Component does not
-// resolve. The file planted in the working directory, at the path the import
+// TestPulledComponentReadsTheSchemaItsArchiveCarries pins where a pulled
+// Component's schema import is read from. A Component whose schema is imported
+// from a file publishes that file beside its document, so its slot's layout holds
+// both, and the import resolves inside the layout to the contract that was
+// published. The file planted in the working directory, at the path the import
 // would reach if it were anchored at the Component's coordinate, is the needle:
 // it must never be taken as the published contract.
-func TestPulledComponentSchemaImportAnchorsInsideItsSlot(t *testing.T) {
+func TestPulledComponentReadsTheSchemaItsArchiveCarries(t *testing.T) {
 	const uri = "acme/compute/imported:1.0.0"
 	pub := t.TempDir()
 	const doc = `apiVersion: aggrega.ai/v1alpha1
@@ -392,18 +421,29 @@ spec:
 
 	ll := NewLazyLookup(root, layoutCacheDir, nil, nil)
 	ll.SetPins(map[string]Pin{uri: pin})
-	if c, ok := ll.Component(uri); ok {
-		t.Fatalf("the Component resolved with a contract its publication does not carry: %+v", c.Spec.Schema)
+	c, ok := ll.Component(uri)
+	if !ok {
+		t.Fatalf("the pinned Component did not resolve from the archive carrying its schema; skips = %v", ll.Skips())
 	}
-	laid, err := os.ReadFile(filepath.Join(sourcecache.ExtractedDir(slot), oci.SingleDocumentFileName))
+	contract, err := yaml.Marshal(&c.Spec.Schema)
 	if err != nil {
-		t.Fatalf("the slot's layout does not hold the published document: %v", err)
+		t.Fatalf("marshal the resolved schema: %v", err)
+	}
+	if !strings.Contains(string(contract), "replicas_hint") {
+		t.Errorf("the resolved contract is not the published one:\n%s", contract)
+	}
+	if strings.Contains(string(contract), "planted_by_the_consumer") {
+		t.Errorf("the resolved contract was read from the consumer's working directory:\n%s", contract)
+	}
+	laid, err := os.ReadFile(filepath.Join(sourcecache.ExtractedDir(slot), "component.yaml"))
+	if err != nil {
+		t.Fatalf("the slot's layout does not hold the published document under its own name: %v", err)
 	}
 	if string(laid) != doc {
 		t.Errorf("the laid-out document differs from the one published:\n%s", laid)
 	}
-	if _, err := os.Stat(filepath.Join(sourcecache.ExtractedDir(slot), "schema.yaml")); !os.IsNotExist(err) {
-		t.Errorf("the layout holds a schema file the publication never carried (stat err = %v)", err)
+	if _, err := os.Stat(filepath.Join(sourcecache.ExtractedDir(slot), "schema.yaml")); err != nil {
+		t.Errorf("the layout does not hold the schema file the publication carried: %v", err)
 	}
 }
 

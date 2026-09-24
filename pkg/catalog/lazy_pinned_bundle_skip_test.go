@@ -15,9 +15,11 @@ import (
 )
 
 // bundleWith builds a real published archive over a version directory holding
-// the named entity documents, through the production bundler. Building the
-// fixture with the bundler rather than by hand is what makes the archive under
-// test the shape a publish actually produces.
+// the named entity documents, every one of them carried, through the production
+// bundler. Building the fixture with the bundler rather than by hand is what
+// makes the archive under test the shape a publish actually produces; carrying
+// every document is what an archive another client packed from the whole
+// directory holds, which is the shape the ambiguous rows need.
 func bundleWith(t *testing.T, entities map[string]string) []byte {
 	t.Helper()
 	ver := filepath.Join(t.TempDir(), "1.0.0")
@@ -25,11 +27,13 @@ func bundleWith(t *testing.T, entities map[string]string) []byte {
 		t.Fatalf("mkdir: %v", err)
 	}
 	var anchorPath string
+	carried := make([]string, 0, len(entities))
 	for name, body := range entities {
 		p := filepath.Join(ver, name)
 		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
 			t.Fatalf("write %s: %v", name, err)
 		}
+		carried = append(carried, name)
 		if anchorPath == "" || p < anchorPath {
 			anchorPath = p
 		}
@@ -37,7 +41,7 @@ func bundleWith(t *testing.T, entities map[string]string) []byte {
 	if anchorPath == "" {
 		t.Fatal("bundleWith needs at least one document to bundle")
 	}
-	blob, _, err := oci.Bundle("Recipe", anchorPath)
+	blob, _, err := oci.Bundle("Recipe", anchorPath, carried)
 	if err != nil {
 		t.Fatalf("Bundle: %v", err)
 	}
