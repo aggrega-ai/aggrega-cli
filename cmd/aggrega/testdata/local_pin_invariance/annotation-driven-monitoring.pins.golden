@@ -47,6 +47,9 @@ providers:
     - capability: helm
       plugin: provider/helm
 release: release.yaml
+release_documents:
+    - digest: sha256:834dd58041ac0aec6f5ea72438928906865177383694a75dd6e156543e588bd1
+      path: release.yaml
 schema_libraries:
     - uri: BaseComponents
       resolved_version: 1.0.0

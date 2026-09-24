@@ -50,6 +50,9 @@ providers:
     - capability: compose
       plugin: provider/compose
 release: release-compose.yaml
+release_documents:
+    - digest: sha256:3b6c44a9bb53a92779810d147736399803fdbcc59ed3dc8b9256e3401fa2f223
+      path: release-compose.yaml
 schema_libraries:
     - uri: BaseComponents
       resolved_version: 1.0.0

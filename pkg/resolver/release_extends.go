@@ -20,9 +20,14 @@ import (
 // metadata.name — an environment pair naming the deployed system rather than the
 // environment is the ordinary shape — so a chain keyed on the name would fold two
 // distinct links into one and report a loop nobody wrote.
+//
+// Digest is the content digest of the bytes the Release was decoded from, set by
+// LoadResolvedRelease from the same read. It is what a lockfile records for the
+// document, and it is empty for a value assembled from a Release already in hand.
 type ResolvedRelease struct {
 	Release *types.Release
 	Path    string
+	Digest  string
 }
 
 // ReleaseExtendsChain follows a Release's extends chain and returns it in walk
@@ -85,12 +90,13 @@ func ReleaseExtendsChain(releaseDir string, child ResolvedRelease) ([]ResolvedRe
 // resolveReleaseExtendsRef resolves one extends reference to the Release it
 // names, relative to releaseDir.
 //
-// The document itself is read by [LoadRelease], so a parent along a chain is
-// loaded by the one function that loads a Release anywhere else: the envelope
+// The document itself is read by [LoadResolvedRelease], so a parent along a chain
+// is loaded by the one function that loads a Release anywhere else: the envelope
 // gate it runs, the normalization it applies and the failure it reports for a
 // file that cannot be read are the same for a parent as for the Release a caller
-// named directly. What this function decides is which file the reference points
-// at, which is the only part a chain step has of its own.
+// named directly, and the parent carries the digest of the bytes it was decoded
+// from. What this function decides is which file the reference points at, which
+// is the only part a chain step has of its own.
 //
 // It admits the explicit relative-path form alone, and the narrowness is a
 // limit of what a Release reference can address today rather than a choice taken
@@ -111,12 +117,7 @@ func resolveReleaseExtendsRef(releaseDir, ref string) (ResolvedRelease, error) {
 			Err: ErrYAMLLoad(),
 		}
 	}
-	path := filepath.Join(releaseDir, ref)
-	rel, err := LoadRelease(path)
-	if err != nil {
-		return ResolvedRelease{}, err
-	}
-	return ResolvedRelease{Release: rel, Path: path}, nil
+	return LoadResolvedRelease(filepath.Join(releaseDir, ref))
 }
 
 // releaseLinkKey is the chain-membership key for one resolved link: its file path

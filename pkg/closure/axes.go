@@ -178,6 +178,13 @@ var axesWithoutVerifiableRefs = map[string]string{
 		"or attaches a withdrawal marker to one, and the pin carries no slot to record either. " +
 		"Its integrity rests instead on the content digest, which the cached read recomputes and " +
 		"compares on every build",
+	"ReleaseDocuments": "a Release document is the Release a resolution was asked for, or one it " +
+		"extends, read as a file beside it — never an artifact this toolchain publishes and never " +
+		"fetched from a registry, so nothing here ever signs one or attaches a withdrawal marker to " +
+		"one, and the record carries no slot to hold either. Its integrity rests instead on the " +
+		"content digest, which each load takes from the bytes it read and the drift comparison " +
+		"checks against the recorded one whenever a lockfile written earlier is held to the " +
+		"Release as it now stands",
 }
 
 // VerifiableAxes returns every closure section that carries references a

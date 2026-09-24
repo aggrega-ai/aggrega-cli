@@ -24,6 +24,8 @@ import (
 //     entry's Sources by base name. Mutators is the exception: its order
 //     is semantic (each transform runner applies its role's attachments
 //     in list order), so it is copied in author order and never sorted.
+//     ReleaseDocuments is likewise copied in the order it was recorded —
+//     the Release, then each Release it extends — which the documents fix.
 //   - Inside each Entity / Plugin: ReferencedFrom sorted
 //     lexicographically.
 //   - Inside each ExternalInput: RequiredBy sorted lexicographically
@@ -259,6 +261,16 @@ func canonicalise(lf *Lockfile) *Lockfile {
 	sort.Slice(out.Providers, func(i, j int) bool {
 		return out.Providers[i].Capability < out.Providers[j].Capability
 	})
+
+	// ReleaseDocuments keeps the order it was recorded in — the Release, then each
+	// Release along its extends chain — which the documents themselves fix, so two
+	// independent calls over the same input still produce byte-identical output. A
+	// lockfile recording none stays nil, so the section is omitted rather than
+	// written as an empty list.
+	if len(lf.ReleaseDocuments) > 0 {
+		out.ReleaseDocuments = make([]ReleaseDocument, len(lf.ReleaseDocuments))
+		copy(out.ReleaseDocuments, lf.ReleaseDocuments)
+	}
 
 	out.Toolchain = cloneToolchain(lf.Toolchain)
 

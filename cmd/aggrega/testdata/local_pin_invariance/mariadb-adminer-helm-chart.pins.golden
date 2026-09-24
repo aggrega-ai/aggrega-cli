@@ -79,6 +79,9 @@ providers:
     - capability: helm-chart
       plugin: provider/helm-chart
 release: release-helm-chart.yaml
+release_documents:
+    - digest: sha256:e642e84cc06c47ed2a3d4547072175084742058bc274625b7aa1b99c625ad793
+      path: release-helm-chart.yaml
 schema_libraries:
     - uri: DbSizing
       resolved_version: 1.0.0

@@ -77,6 +77,9 @@ providers:
     - capability: helm
       plugin: provider/helm
 release: release-helm-synth.yaml
+release_documents:
+    - digest: sha256:b8a9e2d8ffd83a50b4ca24928a34972d1d99ee07f1262ae3b535ef0e9e6ad9f8
+      path: release-helm-synth.yaml
 schema_libraries:
     - uri: DbSizing
       resolved_version: 1.0.0

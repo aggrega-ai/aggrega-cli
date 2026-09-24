@@ -57,6 +57,7 @@ type Lockfile struct {
 	Plugins           []Plugin            `yaml:"plugins"`
 	Providers         []ProviderBinding   `yaml:"providers"`
 	Release           string              `yaml:"release"`
+	ReleaseDocuments  []ReleaseDocument   `yaml:"release_documents,omitempty"`
 	SchemaLibraries   []SchemaLibrary     `yaml:"schema_libraries"`
 	SourceArtifacts   []SourceArtifact    `yaml:"source_artifacts"`
 	Toolchain         *ToolchainStamp     `yaml:"toolchain,omitempty"`
@@ -149,6 +150,43 @@ type VerifiedSignature struct {
 	// Mode is "keyless" or "keyed" — the verification mode that admitted
 	// the signature.
 	Mode string `yaml:"mode" json:"mode"`
+}
+
+// ReleaseDocument records one Release file the resolution read, by content: the
+// Release this lockfile belongs to, or one it extends. The section lists the
+// Release first and then each Release along its extends chain, in the order the
+// chain is walked, and that order is kept as recorded: it is fixed by what the
+// documents themselves declare, so it is the same on every run, and it reads as
+// the chain it describes.
+//
+// Release names which Release the lockfile belongs to; this section records what
+// that Release held when it was resolved. The distinction is what lets a build
+// notice an edit to the Release: the name stays the same whatever the file holds,
+// while the digest moves with every byte. Everything a Release asks for is
+// resolved from what it holds, so a Release edited after the pull that wrote this
+// file is a Release the recorded pins may no longer describe, and the drift
+// comparison reports it as one.
+//
+// The digest is taken over the file's bytes as they are, with nothing normalised
+// away, which is the rule every other document a lockfile pins by content follows.
+// A comment or a whitespace change therefore counts as a change, exactly as it
+// does for the Aggregate and the Manifest the Release names.
+//
+// The section is omitted only from a lockfile that records no Release document at
+// all. A pull always records at least the Release itself, and a build holding a
+// lockfile without the section reports the Release as not recorded rather than
+// passing it unchecked.
+//
+// Field declaration order is alphabetical to drive yaml.v3's canonical key
+// emission, matching the Lockfile-wide discipline.
+type ReleaseDocument struct {
+	// Digest is the sha256:... content digest of the Release file's bytes when
+	// the resolution read them.
+	Digest string `yaml:"digest"`
+	// Path is the Release file's path relative to the directory holding the
+	// Release this lockfile belongs to, with forward slashes — never an absolute
+	// host path, so the record is the same on every machine.
+	Path string `yaml:"path"`
 }
 
 // ExternalInput pins one remote input a render consumed: the URL requested

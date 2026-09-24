@@ -601,6 +601,10 @@ func maximalLockfile() lockfile.Lockfile {
 		Version:     1,
 		Release:     "prod",
 		GeneratedAt: "2026-01-01T00:00:00Z",
+		ReleaseDocuments: []lockfile.ReleaseDocument{
+			{Path: "prod.yaml", Digest: pinDigest},
+			{Path: "../shared/base-release.yaml", Digest: pinDigest},
+		},
 		Entities: []lockfile.Entity{{
 			URI:             "core/compute/api-server:1.0.0",
 			ResolvedVersion: "1.0.0",

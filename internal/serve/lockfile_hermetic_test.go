@@ -20,13 +20,17 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
-// lockfileFromClosure builds a lockfile whose four verifiable axes mirror the
-// supplied closure field-for-field. Verify against the same closure is clean by
+// lockfileFromClosure builds a lockfile whose verifiable axes mirror the supplied
+// closure field-for-field. Verify against the same closure is clean by
 // construction; verify against a differently-shaped closure surfaces the delta
 // as drift. It is the test analogue of what a real pull writes after a full
-// closure descent — a lockfile that pins exactly the reconstructed axes.
+// closure descent — a lockfile that pins exactly the reconstructed axes and
+// records the Release files the resolution read.
 func lockfileFromClosure(rel string, cl closure.Closure) *lockfile.Lockfile {
 	lf := &lockfile.Lockfile{Version: 1, Release: rel, GeneratedAt: "2026-06-03T10:00:00Z"}
+	for _, d := range cl.ReleaseDocuments {
+		lf.ReleaseDocuments = append(lf.ReleaseDocuments, lockfile.ReleaseDocument{Path: d.Path, Digest: d.Digest})
+	}
 	for _, e := range cl.Entities {
 		lf.Entities = append(lf.Entities, lockfile.Entity{URI: e.URI, ResolvedVersion: e.ResolvedVersion, Digest: e.Digest})
 	}

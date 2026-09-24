@@ -498,9 +498,23 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	}
 	wsCfg := rw.Config()
 
-	rel, err := resolver.LoadRelease(cfg.ReleasePath)
+	authored, err := resolver.LoadResolvedRelease(cfg.ReleasePath)
 	if err != nil {
 		return Result{}, fmt.Errorf("load release: %w", err)
+	}
+	// The Release files this composition reads, recorded by content so a build
+	// notices an edit to any of them. They are recorded BEFORE the composition
+	// below re-walks the chain, and the order is the safe one: a file edited while
+	// this run is under way is then recorded as it stood before the edit, so the
+	// next build halts on it rather than trusting pins resolved from content the
+	// record does not describe. The Release named here needs no such ordering — its
+	// digest comes from the very read the composition folds.
+	//
+	// A failure here is the composition's own, raised by the same walk, so it is
+	// reported in the composition's words.
+	releaseDocs, err := resolver.ReleaseDocuments(releaseDir, authored)
+	if err != nil {
+		return Result{}, fmt.Errorf("compose release extends: %w", err)
 	}
 	// Compose the Release's own extends chain before either sibling is looked
 	// for, because both pointers are things a child may inherit rather than
@@ -512,10 +526,7 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	// This operation pins what a build will resolve, and the build composes the
 	// same chain and reports the same readings; emitting them at both would show
 	// an author one finding twice for one cause.
-	rel, _, err = resolver.ResolveReleaseExtends(releaseDir, resolver.ResolvedRelease{
-		Release: rel,
-		Path:    cfg.ReleasePath,
-	})
+	rel, _, err := resolver.ResolveReleaseExtends(releaseDir, authored)
 	if err != nil {
 		return Result{}, fmt.Errorf("compose release extends: %w", err)
 	}
@@ -733,6 +744,7 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	if err != nil {
 		return Result{}, cfg.annotate(fmt.Errorf("resolve: %w", err), skipped)
 	}
+	cl.ReleaseDocuments = releaseDocs
 	// Resolve the workspace provider-socket bindings to their Plugin entities at
 	// resolution time only. ComputeClosure is config-blind to the provider socket,
 	// so build / serve reconstruct these entities from the lockfile rather than
@@ -1375,6 +1387,10 @@ func buildLockfile(releasePath string, cl closure.Closure, toolchain *lockfile.T
 	// Verdict-input digest records are provenance (WriteLockfile canonicalises
 	// their order), so they are carried through with only an aliasing-safe copy.
 	lf.VerdictInputs = append([]lockfile.VerdictInput(nil), verdictInputs...)
+
+	for _, d := range cl.ReleaseDocuments {
+		lf.ReleaseDocuments = append(lf.ReleaseDocuments, lockfile.ReleaseDocument{Path: d.Path, Digest: d.Digest})
+	}
 
 	for _, e := range cl.Entities {
 		// A writable recipe's content digest is overlaid from the pin step's own

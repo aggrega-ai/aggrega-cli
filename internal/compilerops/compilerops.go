@@ -173,7 +173,9 @@ func (e *ClosureError) Unwrap() error { return e.err }
 // The Release's own extends chain is followed first, ahead of either sibling, so
 // a chain that loops, runs past the depth bound or names a parent that cannot be
 // resolved is reported against the Release rather than as a sibling pointer that
-// arrived empty.
+// arrived empty. The returned closure records every Release file that chain read,
+// by content, so a drift comparison against a lockfile notices an edit to any of
+// them.
 //
 // The top-level Aggregate is resolved through the request-scoped view's
 // aggregate lookup — a same-directory scan, a `./`/`../` file, or the catalog
@@ -201,7 +203,7 @@ func (e *ClosureError) Unwrap() error { return e.err }
 // rendered detail; the *ResolvedClosure is nil. On success the error is nil and
 // the caller owes a verdict on ManifestConsistencyFindings.
 func ResolveClosure(ctx context.Context, in ClosureInputs) (*ResolvedClosure, *ClosureError) {
-	rel, err := resolver.LoadRelease(in.ReleasePath)
+	authored, err := resolver.LoadResolvedRelease(in.ReleasePath)
 	if err != nil {
 		return nil, &ClosureError{
 			Stage: ClosureStageLoadRelease,
@@ -209,7 +211,22 @@ func ResolveClosure(ctx context.Context, in ClosureInputs) (*ResolvedClosure, *C
 			err:   err,
 		}
 	}
+	rel := authored.Release
 	releaseDir := filepath.Dir(in.ReleasePath)
+	// The Release files the composition below reads, recorded by content so the
+	// drift comparison notices an edit to any of them. They are read ahead of the
+	// composition's own walk for the reason the pull gives: a file edited mid-run
+	// is then compared as it stood before the edit, which halts rather than
+	// passing. A failure is the composition's own, raised by the same walk, so it
+	// is reported at the composition's stage and in its words.
+	releaseDocs, derr := resolver.ReleaseDocuments(releaseDir, authored)
+	if derr != nil {
+		return nil, &ClosureError{
+			Stage: ClosureStageResolveReleaseExtends,
+			msg:   fmt.Sprintf("resolve release %q extends chain: %v", in.ReleasePath, derr),
+			err:   derr,
+		}
+	}
 	// The Release's own extends chain is followed before either sibling is looked
 	// for. A chain that loops, runs past the depth bound, or names a parent that
 	// cannot be resolved is a fault in the Release the caller named, and reporting
@@ -226,10 +243,7 @@ func ResolveClosure(ctx context.Context, in ClosureInputs) (*ResolvedClosure, *C
 	//
 	// A Release declaring no extends reference folds to itself, so the assignment
 	// is a no-op for every Release that heads no chain.
-	folded, releaseAdvisories, cerr := resolver.ResolveReleaseExtends(releaseDir, resolver.ResolvedRelease{
-		Release: rel,
-		Path:    in.ReleasePath,
-	})
+	folded, releaseAdvisories, cerr := resolver.ResolveReleaseExtends(releaseDir, authored)
 	if cerr != nil {
 		return nil, &ClosureError{
 			Stage: ClosureStageResolveReleaseExtends,
@@ -317,6 +331,7 @@ func ResolveClosure(ctx context.Context, in ClosureInputs) (*ResolvedClosure, *C
 			err:   err,
 		}
 	}
+	cl.ReleaseDocuments = releaseDocs
 	// Fold the cross-document library axes into the closure (the SchemaLibrary and
 	// MappingLibrary references the entity walk does not descend) so the resolved
 	// closure matches the one a build or lint verifies against. Opt-in: a caller

@@ -116,23 +116,44 @@ func TestEveryClosureSectionIsClassified(t *testing.T) {
 	}
 }
 
-// TestSourceArtifactsIsTheOnlyExemptSection pins the exemption set to exactly one
-// member. The coverage assertion above tolerates any exemption that carries a
-// reason, which is right — it must not decide which sections deserve one — so this
-// asserts the count separately: a second exemption appearing is a design change
-// that should be read, not absorbed.
-func TestSourceArtifactsIsTheOnlyExemptSection(t *testing.T) {
-	if len(axesWithoutVerifiableRefs) != 1 {
-		t.Fatalf("expected exactly one exempt closure section, got %d: %v",
-			len(axesWithoutVerifiableRefs), axesWithoutVerifiableRefs)
+// TestSourceArtifactsAndReleaseDocumentsAreTheOnlyExemptSections pins the exemption
+// set to exactly those two members. The coverage assertion above tolerates any
+// exemption that carries a reason, which is right — it must not decide which
+// sections deserve one — so this asserts the membership separately: a further
+// exemption appearing is a design change that should be read, not absorbed, and
+// one of these two disappearing is the same change in the other direction.
+//
+// It compares names rather than a count, so a set that swapped one member for
+// another at the same size is still reported, and each difference is named.
+func TestSourceArtifactsAndReleaseDocumentsAreTheOnlyExemptSections(t *testing.T) {
+	want := []string{"ReleaseDocuments", "SourceArtifacts"}
+
+	wantSet := make(map[string]struct{}, len(want))
+	for _, name := range want {
+		wantSet[name] = struct{}{}
 	}
-	reason, ok := axesWithoutVerifiableRefs["SourceArtifacts"]
-	if !ok {
-		t.Fatalf("SourceArtifacts is not the exempt section; the exemption set is %v", axesWithoutVerifiableRefs)
+	got := make([]string, 0, len(axesWithoutVerifiableRefs))
+	for name := range axesWithoutVerifiableRefs {
+		got = append(got, name)
 	}
-	if reason == "" {
-		t.Error("an exemption with no reason cannot be reviewed; state why the section can carry " +
-			"neither a signature nor a withdrawal marker")
+	sort.Strings(got)
+
+	for _, name := range want {
+		if _, ok := axesWithoutVerifiableRefs[name]; !ok {
+			t.Errorf("closure section %q is no longer exempt; the exemption set is %v. Dropping an "+
+				"exemption is a design change too: remove it from this pin once the section is covered", name, got)
+		}
+	}
+	for _, name := range got {
+		if _, ok := wantSet[name]; !ok {
+			t.Errorf("closure section %q is exempt (%q) but is not one of the pinned exemptions %v: a "+
+				"further exemption is a design change to be read, not absorbed. Cover the section, or add "+
+				"it here once the exemption has been reviewed", name, axesWithoutVerifiableRefs[name], want)
+		}
+		if axesWithoutVerifiableRefs[name] == "" {
+			t.Errorf("closure section %q is exempt with no reason, so the exemption cannot be reviewed; "+
+				"state why the section can carry neither a signature nor a withdrawal marker", name)
+		}
 	}
 }
 

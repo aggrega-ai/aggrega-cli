@@ -9,6 +9,7 @@ import (
 	"os"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
+	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
 	"go.yaml.in/yaml/v3"
@@ -156,16 +157,38 @@ func LoadAggregateFromBytes(data []byte, path string) (*types.Aggregate, error) 
 
 // LoadRelease reads and unmarshals a Release YAML file.
 func LoadRelease(path string) (*types.Release, error) {
+	r, err := LoadResolvedRelease(path)
+	if err != nil {
+		return nil, err
+	}
+	return r.Release, nil
+}
+
+// LoadResolvedRelease reads a Release YAML file once and returns the Release it
+// decodes to, the path it was read from, and the content digest of the bytes it
+// was decoded from.
+//
+// The digest is taken from the same read the document is decoded from, and that
+// is the reason this exists beside LoadRelease rather than a digest being taken
+// afterwards: a second read would describe whatever the file held at that later
+// moment, so a lockfile could record bytes other than the ones the resolution
+// composed. It is the one place a Release file is read; LoadRelease delegates to
+// it, so a read failure reports the same way whichever of the two a caller used.
+func LoadResolvedRelease(path string) (ResolvedRelease, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, &ResolverError{
+		return ResolvedRelease{}, &ResolverError{
 			Entity:  "Release",
 			Field:   path,
 			Message: fmt.Sprintf("failed to read file: %v", err),
 			Err:     ErrYAMLLoad(),
 		}
 	}
-	return LoadReleaseFromBytes(data, path)
+	rel, err := LoadReleaseFromBytes(data, path)
+	if err != nil {
+		return ResolvedRelease{}, err
+	}
+	return ResolvedRelease{Release: rel, Path: path, Digest: digest.ContentDigest(data)}, nil
 }
 
 // LoadReleaseFromBytes unmarshals a Release from already-read bytes, running the

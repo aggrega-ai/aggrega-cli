@@ -52,6 +52,11 @@ import (
 // ComputeClosure's existing surface (and test suite) untouched and
 // confines source-descent's dependencies (RecipeLoader,
 // SourceResolver) to the new function.
+//
+// ReleaseDocuments is populated by neither pass. ComputeClosure is handed the
+// Release already composed, with no file behind it, so it cannot say which files
+// the composition read; the caller that loaded and composed the Release fills it
+// from the same load.
 type Closure struct {
 	Entities          []ResolvedRef
 	MappingLibraries  []ResolvedLibrary
@@ -60,6 +65,21 @@ type Closure struct {
 	ArtifactLibraries []ResolvedLibrary
 	SourceArtifacts   []SourceArtifact
 	Plugins           []ResolvedRef
+	ReleaseDocuments  []ReleaseDocument
+}
+
+// ReleaseDocument records one Release file a composition of the Release read, by
+// content: the Release the resolution was asked for, or one it extends. It mirrors
+// lockfile.ReleaseDocument field-for-field.
+//
+// Path is relative to the directory holding the Release the resolution was asked
+// for, written with forward slashes, so two machines with different directory
+// layouts record the same value. Digest is the content digest of the file's bytes
+// as they stand, with nothing normalised away: a Release is recorded by the same
+// rule as every other document a lockfile pins by content.
+type ReleaseDocument struct {
+	Path   string
+	Digest string
 }
 
 // SourceArtifact mirrors lockfile.SourceArtifact field-for-field;

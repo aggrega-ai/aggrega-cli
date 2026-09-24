@@ -17,13 +17,15 @@ import (
 // errors.Is(err, ErrLockfileDrift()) carry a
 // wrapped message naming every offending URI surfaced across the
 // closure axes (entities, schema libraries, mapping libraries,
-// workload libraries, artifact libraries, Wasm plugins), or — from
+// workload libraries, artifact libraries, Wasm plugins), every Release
+// file edited since the lockfile was written, or — from
 // VerifySourceReferences — every source reference whose authored ref now
 // resolves elsewhere. Each axis collects all of its drift entries before
 // returning, so an operator with multiple drifts sees the full list
 // in one diagnostic rather than one URI per iteration. The
 // documented remediation is
-// `aggrega pull --upgrade --release <release>`.
+// `aggrega pull --upgrade --release <release>`; an edited Release file
+// needs only `aggrega pull --release <release>`, which its entry says.
 //
 // The two raise sites report one condition rather than two, because what an
 // operator is told and what they do about it are the same in both: a pin
@@ -57,8 +59,13 @@ var errLockfileDrift = cerrors.Register("lockfile-drift", cerrors.Meta{
 // drift entry across every axis is reported in one joined error so
 // operators see the full picture.
 //
-// Walks six axes: Entities, SchemaLibraries, MappingLibraries,
-// WorkloadLibraries, ArtifactLibraries, Plugins.
+// The axes it walks are the calls below, which are the statement; a count
+// written beside them would be a second copy that goes stale the moment an axis
+// is added. One of them is not a pinned reference at all: the Release files the
+// resolution read, compared by content, so a Release edited after the pull that
+// wrote the lockfile is reported here — at the same moment, and as the same
+// condition, as any other drift — rather than surfacing later as whatever the
+// edit makes the render fail on.
 //
 // SourceArtifacts are not walked here, and the reason is the shape of the
 // argument rather than a judgement about their importance: every axis above is
@@ -81,10 +88,56 @@ func Verify(lf *Lockfile, expected closure.Closure) error {
 	}
 	driftErrs = append(driftErrs, collectDrift("wasm-plugin",
 		driftKeysOf(lf.Plugins, pluginKey), refKeys(expected.Plugins))...)
+	driftErrs = append(driftErrs, releaseDocumentDrift(lf.ReleaseDocuments, expected.ReleaseDocuments)...)
 	if len(driftErrs) == 0 {
 		return nil
 	}
 	return fmt.Errorf("%w: %w", ErrLockfileDrift(), errors.Join(driftErrs...))
+}
+
+// releaseDocumentDrift reports every way the Release files the lockfile records
+// disagree with the files the Release is composed from now: a file edited since
+// the lockfile was written, a file the lockfile does not record — including every
+// file of a lockfile written before it recorded any — and a recorded file the
+// Release no longer reads.
+//
+// It is not collectDrift, because what it compares is not the pinned pair that
+// function compares: a Release file has no resolved version, only content, and its
+// entries name a file the reader edits rather than a reference the catalog serves.
+//
+// The remediation rides on each entry, for the reason VerifySourceReferences gives:
+// a joined chain is rendered element by element and the enclosing frame's text is
+// not shown. It is a plain pull rather than an upgrade, because nothing needs to
+// float: a pull reads the Release as it now stands, re-resolves what it asks for
+// while honouring every other pin, and records the file again.
+func releaseDocumentDrift(have []ReleaseDocument, want []closure.ReleaseDocument) []error {
+	const remedy = "run `aggrega pull --release <release>` to resolve the Release as it now stands and record it"
+	recorded := make(map[string]string, len(have))
+	for _, d := range have {
+		recorded[d.Path] = d.Digest
+	}
+	seen := make(map[string]struct{}, len(want))
+	var out []error
+	// want is walked in its own order — the Release, then each Release it
+	// extends — so the entries come out in a fixed order for a given pair of inputs.
+	for _, w := range want {
+		seen[w.Path] = struct{}{}
+		was, ok := recorded[w.Path]
+		switch {
+		case !ok:
+			out = append(out, fmt.Errorf("release document %q is not recorded in the lockfile, so an edit to it "+
+				"cannot be noticed; %s", w.Path, remedy))
+		case was != w.Digest:
+			out = append(out, fmt.Errorf("release document %q was edited after the lockfile was written: "+
+				"its content no longer matches the recorded digest (lockfile=%s current=%s), so the pins may no "+
+				"longer describe what it asks for; %s", w.Path, was, w.Digest, remedy))
+		}
+	}
+	for _, path := range sortedExtras(recorded, seen) {
+		out = append(out, fmt.Errorf("release document %q is recorded in the lockfile but the Release no longer "+
+			"reads it; %s", path, remedy))
+	}
+	return out
 }
 
 // sourceRefKey joins a recorded source reference to a freshly-resolved one.
