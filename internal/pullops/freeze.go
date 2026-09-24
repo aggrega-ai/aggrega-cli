@@ -67,7 +67,7 @@ func entityPins(lazyView *catalog.LazyLookup, entities []closure.ResolvedRef, us
 		}
 		uris = append(uris, ent.URI)
 	}
-	plan, err := entitypin.Compute(entitypin.Inputs{
+	plan, err := entitypin.Compute(entitypin.PlanInputs{
 		View:          lazyView,
 		URIs:          uris,
 		Resolver:      resolver,

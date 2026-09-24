@@ -108,15 +108,41 @@ type entityDefinitionParams struct {
 // answer to what the entity IS, and a second document beside it — the one file
 // that happened to declare it — would answer a question this request was not
 // asked, at the cost of the payload.
+//
+// Published is what a registry reference read, and it is present on exactly the
+// answers read from one. Its presence is therefore what tells a client the
+// definition came from a coordinate rather than from a catalog resolution, and a
+// name resolved by the catalog never carries it.
 type entityDefinitionResult struct {
-	Kind           string `json:"kind"`
-	Name           string `json:"name"`
-	Version        string `json:"version"`
-	Description    string `json:"description,omitempty"`
-	PublishScope   string `json:"publishScope,omitempty"`
-	File           string `json:"file"`
-	AuthoredLength int    `json:"authoredLength"`
-	Definition     string `json:"definition"`
+	Kind           string             `json:"kind"`
+	Name           string             `json:"name"`
+	Version        string             `json:"version"`
+	Description    string             `json:"description,omitempty"`
+	PublishScope   string             `json:"publishScope,omitempty"`
+	File           string             `json:"file"`
+	AuthoredLength int                `json:"authoredLength"`
+	Definition     string             `json:"definition"`
+	Published      *publishedArtifact `json:"published,omitempty"`
+}
+
+// publishedArtifact is what an `aggrega/entityDefinition` request naming a
+// registry reference read: the coordinate, how it held the entity, and the
+// manifest it was read through.
+//
+// Every field is set on every answer that carries it. Archive false is a
+// statement rather than an absence — the coordinate held the entity document
+// itself — which is why these facts sit in an object of their own rather than
+// beside the by-name fields, where an omitted false would read the same as a
+// name the catalog resolved.
+//
+// MediaType is the artifact type the manifest declares, and ManifestDigest is
+// that manifest's digest: the value to name, after `@`, to read the same bytes
+// again exactly.
+type publishedArtifact struct {
+	Reference      string `json:"reference"`
+	Archive        bool   `json:"archive"`
+	MediaType      string `json:"mediaType"`
+	ManifestDigest string `json:"manifestDigest"`
 }
 
 // dispatchEntityDefinition answers with the definition the named entity
@@ -251,6 +277,9 @@ func (s *Server) entityDefinition(ctx context.Context, name string) (entityDefin
 //   - PublishScope is omitted. The request already holds the coordinate, which
 //     is where the entity is published, so a second statement of that read out
 //     of its content would say the same thing another way.
+//   - Published carries what was read: the reference, whether its bytes were
+//     an archive the entity was unpacked from, the media type the manifest
+//     declares, and that manifest's digest.
 //
 // A reference nothing is published under, a credential the registry refuses, an
 // artifact that cannot be unpacked or holds no entity, and an offline workspace
@@ -277,6 +306,12 @@ func (s *Server) publishedEntityDefinition(ctx context.Context, reference string
 		Description:    entity.Description,
 		AuthoredLength: len(entity.Document),
 		Definition:     string(entity.Document),
+		Published: &publishedArtifact{
+			Reference:      entity.Reference,
+			Archive:        entity.Archive,
+			MediaType:      entity.MediaType,
+			ManifestDigest: entity.Digest,
+		},
 	}, nil
 }
 

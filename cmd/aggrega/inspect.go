@@ -288,15 +288,20 @@ func dispatchInspect(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace,
 // to name the subject in their own diagnostics, never to read from disk, so a
 // refusal from one of them names the coordinate a person typed.
 //
-// Under the readable layouts the coordinate and the manifest digest follow the
-// entity, because which manifest was read is the one fact about the answer the
-// view itself cannot show. Under --output yaml nothing follows the document, so a
-// consumer parsing it receives the document and nothing else.
+// Under the readable layouts what was read follows the entity: the coordinate,
+// whether its bytes were an archive the entity was unpacked from, the media type
+// the manifest declares, and that manifest's digest. Those are facts about the
+// artifact rather than about the entity, so the view itself cannot show them.
+// Under --output yaml nothing follows the document, so a consumer parsing it
+// receives the document and nothing else.
 func inspectPublishedEntity(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, reference string, catalogDirs []string, opts inspectOptions) error {
 	rw, err := workspaceOrResolve(rw)
 	if err != nil {
 		return err
 	}
+	// projection-omits internal/compilerops.PublishedEntity.Name: the kind's own view is rendered from the document this is read off, and names the entity in the identity block every kind's view shares, exactly as it does for a file of that kind
+	// projection-omits internal/compilerops.PublishedEntity.Version: the same view names the version in that identity block, read from the same document
+	// projection-omits internal/compilerops.PublishedEntity.Description: the same view prints the description beneath that identity block, read from the same document
 	entity, err := compilerops.ReadPublishedEntity(ctx, rw.Config(), reference)
 	if err != nil {
 		return err
@@ -312,9 +317,19 @@ func inspectPublishedEntity(ctx context.Context, rw *workspaceconfig.ResolvedWor
 		return err
 	}
 	if opts.output != outputYAML {
-		fmt.Fprintf(opts.out, "\nPublished at: %s\nManifest digest: %s\n", entity.Reference, entity.Digest)
+		fmt.Fprintf(opts.out, "\nPublished at: %s\nPublished as: %s\nMedia type: %s\nManifest digest: %s\n",
+			entity.Reference, publishedShape(entity.Archive), entity.MediaType, entity.Digest)
 	}
 	return nil
+}
+
+// publishedShape says, in a reader's words, how a coordinate held the entity
+// shown: as an archive the document was unpacked from, or as the document itself.
+func publishedShape(archive bool) string {
+	if archive {
+		return "an archive, which the entity was unpacked from"
+	}
+	return "the entity document"
 }
 
 // refuseReleaseOnly reports a request for a document only a Release resolves,
@@ -454,7 +469,7 @@ var kindRenderers = map[string]kindRenderer{
 }
 
 // nonStandalone names the kinds that exist only embedded under another entity
-// and so cannot be inspected as standalone files (A8 hard error).
+// and so cannot be inspected as standalone files (a hard error).
 var nonStandalone = map[string]bool{
 	"Workload": true,
 }

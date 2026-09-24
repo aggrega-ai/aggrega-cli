@@ -85,7 +85,7 @@ func TestComputeRoutesOnlyAnAuthoredIdentityBesideItsEntity(t *testing.T) {
 
 	view := catalog.NewLazyLookup(ws, "", []string{cat}, nil)
 	res := &recordingResolver{}
-	plan, err := Compute(Inputs{
+	plan, err := Compute(PlanInputs{
 		View:          view,
 		URIs:          []string{"helm/authored:1.0.0", "helm/templated:1.0.0", "helm/local:1.0.0"},
 		Resolver:      res,
@@ -126,7 +126,7 @@ func TestUnpinnedHaltsUntilTheStepHasWrittenAndThenIsSilent(t *testing.T) {
 	writeFile(t, filepath.Join(cat, "server", "extra.yaml"), "kind: ConfigMap\n")
 	compute := func(forWriting bool) Plan {
 		t.Helper()
-		plan, err := Compute(Inputs{
+		plan, err := Compute(PlanInputs{
 			View:          catalog.NewLazyLookup(ws, "", []string{cat}, nil),
 			URIs:          []string{"helm/server:1.0.0"},
 			Resolver:      &recordingResolver{},
@@ -233,7 +233,7 @@ func TestReportIsTheWriteWithoutTheWrite(t *testing.T) {
 	recipe := filepath.Join(cat, "server", "recipe.yaml")
 	writeFile(t, recipe, recipeYAML("server", "", true))
 	writeFile(t, filepath.Join(cat, "server", "extra.yaml"), "kind: ConfigMap\n")
-	plan, err := Compute(Inputs{View: catalog.NewLazyLookup(ws, "", []string{cat}, nil),
+	plan, err := Compute(PlanInputs{View: catalog.NewLazyLookup(ws, "", []string{cat}, nil),
 		URIs: []string{"helm/server:1.0.0"}, Resolver: &recordingResolver{}, WorkspaceRoot: ws, ForWriting: true})
 	if err != nil {
 		t.Fatalf("Compute: %v", err)

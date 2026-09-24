@@ -134,6 +134,10 @@ var runtimeErrorCommands = []struct {
 	// or render work.
 	{path: "aggrega validate", args: []string{"validate", "/nonexistent-aggrega-xyz/entity.yaml"}},
 	{path: "aggrega push", args: []string{"push", "/nonexistent-aggrega-xyz/entity.yaml"}},
+	// pin reaches its RunE with a well-formed single argument, then fails in its
+	// own work reading the non-existent entity document, before any catalog view
+	// is built, any source is resolved or any lock is written.
+	{path: "aggrega pin", args: []string{"pin", "/nonexistent-aggrega-xyz/recipe.yaml"}},
 	// push-artifact reaches RunE with valid flags, then fails reading the
 	// non-existent bundle file locally, before any network call.
 	{path: "aggrega push-artifact", args: []string{"push-artifact", "/nonexistent-aggrega-xyz/bundle.tar.gz", "--name", "aggrega-docs", "--tag", "1.0.0", "--registry", "example.com"}},

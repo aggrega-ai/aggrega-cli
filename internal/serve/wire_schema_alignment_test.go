@@ -273,6 +273,7 @@ func wireSubjects() []wireSubject {
 		{name: "publishDiagnosticsParams", typ: reflect.TypeOf(publishDiagnosticsParams{}), def: "#/$defs/PublishDiagnosticsParams"},
 		{name: "publishEntityParams", typ: reflect.TypeOf(publishEntityParams{}), def: "#/$defs/PublishEntityParams"},
 		{name: "publishEntityResult", typ: reflect.TypeOf(publishEntityResult{}), def: "#/$defs/PublishEntityResult"},
+		{name: "publishedArtifact", typ: reflect.TypeOf(publishedArtifact{}), def: "#/$defs/PublishedArtifact"},
 		{name: "registryAddParams", typ: reflect.TypeOf(registryAddParams{}), def: "#/$defs/RegistryAddParams"},
 		{name: "registryAddResult", typ: reflect.TypeOf(registryAddResult{}), def: "#/$defs/RegistryAddResult"},
 		{name: "registryListResult", typ: reflect.TypeOf(registryListResult{}), def: "#/$defs/RegistryListResult"},

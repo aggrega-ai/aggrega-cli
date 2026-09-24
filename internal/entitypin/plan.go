@@ -17,7 +17,12 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// Inputs is what one run of the pin step reads.
+// PlanInputs is what one run of the pin step reads.
+//
+// It is not named Inputs, the compiler pipeline's own inputs type: the pin step
+// drives no pipeline and resolves no plugin, so it has no plugin pin source to
+// name, and a type sharing that name would be read as a pipeline construction by
+// every check that matches the pipeline's inputs by name.
 //
 // View is the catalog the entities are read through, and the one whose walk
 // decides which of them has a writable home. URIs names the entities to
@@ -33,7 +38,7 @@ import (
 // to that, which is what keeps a pull that does not pin from refusing a
 // directory it writes nothing into. Only a plan computed for writing can be
 // written or reported.
-type Inputs struct {
+type PlanInputs struct {
 	View          *catalog.LazyLookup
 	URIs          []string
 	Resolver      closure.SourceResolver
@@ -117,7 +122,7 @@ type Outcome struct {
 // it is free and local, and because resolving a source for an entity that could
 // never be pinned would spend a fetch on a verdict already decided — or, for a
 // source that does not resolve, report the fetch instead of the rule.
-func Compute(in Inputs) (Plan, error) {
+func Compute(in PlanInputs) (Plan, error) {
 	plan := Plan{workspaceRoot: in.WorkspaceRoot, digests: map[string]string{}, forWriting: in.ForWriting}
 	loader := in.View.ClosureRecipeLoader()
 

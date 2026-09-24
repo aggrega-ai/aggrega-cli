@@ -57,6 +57,10 @@ var workspacePathArguments = map[string]string{
 	"gen-catalog: plugin":     "the .wasm an entity is generated for",
 	"gen-catalog: output_dir": "the directory generated entities are WRITTEN into",
 	"gen-catalog: overlay":    "the authored overlay a generated entity takes its identity from",
+	// Read rather than written, and spelled out because the tool taking it writes
+	// beside it: the entity.lock lands in the directory the named document sits in,
+	// so this one path decides both what is read and where that write lands.
+	"pin: entity": "the Recipe or FeatureRecipe document pinned, beside which the entity.lock is WRITTEN",
 }
 
 // resolversReachedOnlyByTheHelper are the path-resolving calls that may appear

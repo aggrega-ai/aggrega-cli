@@ -90,6 +90,19 @@ var proseOnlyFailureReturns = map[string]int{
 	// refusal carries the resolution the run had computed, which is what makes a
 	// drift verdict readable field by field.
 	"tool_pull.go": 6,
+	// The entity author's pin step. Three of these are decided before the step is
+	// entered: the refusal of a request naming no entity, a workspace that could
+	// not be resolved, and an entity path this session may not name. At each of
+	// them nothing has been read or resolved, so there is nothing in hand to carry.
+	//
+	// The fourth is the only post-run one, and that it loses nothing is established
+	// rather than assumed: every failing return of the pin step's entry point hands
+	// back the zero result. The step runs over the one entity the call names, so a
+	// write that failed has no other entity's outcome to report, and a refusal of
+	// an entity sharing its directory names every entity in the way in its own
+	// words. What stopped the step reaches the caller as the prose, and the lock
+	// beside the entity is unchanged.
+	"tool_pin.go": 4,
 	// The generated command-tool surface. Its post-run failure path holds both
 	// captured streams and concatenates them into prose, so the bytes survive
 	// and the separation between output and diagnostics does not.

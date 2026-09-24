@@ -182,7 +182,7 @@ func TestAPlanForWritingRefusesASharedDirectoryBeforeResolvingAnything(t *testin
 			"  source:\n    kind: helm-https-chart\n    url: https://example.invalid/"+name+".tgz\n    version: \"1.0.0\"\n", false))
 	}
 	compute := func(forWriting bool, res *recordingResolver) (Plan, error) {
-		return Compute(Inputs{
+		return Compute(PlanInputs{
 			View:          catalog.NewLazyLookup(ws, "", []string{cat}, nil),
 			URIs:          []string{"helm/one:1.0.0", "helm/two:1.0.0"},
 			Resolver:      res,
@@ -231,7 +231,7 @@ func TestAPlanComputedToBeCheckedCannotBeWritten(t *testing.T) {
 	writeFile(t, filepath.Join(cat, "server", "extra.yaml"), "kind: ConfigMap\n")
 	compute := func(forWriting bool) Plan {
 		t.Helper()
-		plan, err := Compute(Inputs{View: catalog.NewLazyLookup(ws, "", []string{cat}, nil),
+		plan, err := Compute(PlanInputs{View: catalog.NewLazyLookup(ws, "", []string{cat}, nil),
 			URIs: []string{"helm/server:1.0.0"}, Resolver: &recordingResolver{}, WorkspaceRoot: ws, ForWriting: forWriting})
 		if err != nil {
 			t.Fatalf("Compute: %v", err)

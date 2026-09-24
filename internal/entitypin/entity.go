@@ -194,7 +194,7 @@ func planNamed(ctx context.Context, opts Options, forWriting bool) (Result, Plan
 	if err := ctx.Err(); err != nil {
 		return Result{}, Plan{}, fmt.Errorf("stopped before anything was resolved: %w", err)
 	}
-	plan, err := Compute(Inputs{
+	plan, err := Compute(PlanInputs{
 		View:          view,
 		URIs:          []string{uri},
 		Resolver:      SourceResolver(ctx, wsCfg),

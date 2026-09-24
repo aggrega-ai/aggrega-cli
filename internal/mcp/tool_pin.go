@@ -81,9 +81,10 @@ func pinPayloadOf(res entitypin.Result, dryRun bool) pinPayload {
 var pinToolSpec = toolSpec{
 	kinds:   []string{"featurerecipe", "recipe"},
 	summary: "Records the content pins for an entity's external inputs in the entity.lock beside it.",
-	description: "Record, in the entity.lock beside a Recipe or FeatureRecipe, the content pin for every input the " +
+	description: "Write, into the lock file beside a Recipe or FeatureRecipe, the content pin for every input the " +
 		"entity reads from outside its own document — it writes inside your workspace and reaches the hosts the " +
-		"entity's sources name. Pass the entity document as `entity`, absolute or relative to the workspace root. " +
+		"entity's sources name. That lock file is the entity.lock in the entity's own directory. Pass the entity " +
+		"document as `entity`, absolute or relative to the workspace root. " +
 		"It pins a remote source whose coordinates are written out in full, and a file an artifacts entry imports; " +
 		"a source whose coordinates come from a template is pinned per Release by the pull tool instead, so no " +
 		"Release is needed here. Pinning is the entity author's step: call it before an entity is consumed or " +

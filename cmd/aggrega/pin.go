@@ -115,6 +115,15 @@ func explicitBool(cmd *cobra.Command, name string, value bool) *bool {
 // pins reaches; this translates the command's arguments into that step's options
 // and turns its result into the lines a terminal expects.
 func pinRun(ctx context.Context, out io.Writer, rw *workspaceconfig.ResolvedWorkspace, entityPath string, dryRun bool) error {
+	// The terminal is shown the step's own sentence about what it did, the one a
+	// publication that pins prints too, so the result's facts reach it through
+	// that sentence rather than field by field here.
+	//
+	// projection-omits internal/entitypin.Result.Pinnable: the summary printed below opens "Nothing to pin" where it is false, which is the whole of what it tells a terminal reader
+	// projection-omits internal/entitypin.Result.Kind: the summary printed below names the entity's kind on every outcome
+	// projection-omits internal/entitypin.Result.Name: the summary printed below names a pinned entity by the name its outcome records, and an entity with nothing to pin is named by the document the invocation gave
+	// projection-omits internal/entitypin.Result.EntityPath: the invocation named the entity document itself, and the summary printed below names the lock written beside it, or that document where there was nothing to pin
+	// projection-omits internal/entitypin.Result.Outcome: the summary printed below states the outcome — whether the lock moved or was removed, the lock's path, and how many pins of each class it holds
 	res, err := entitypin.Pin(ctx, entitypin.Options{
 		Workspace:  rw,
 		EntityPath: entityPath,
