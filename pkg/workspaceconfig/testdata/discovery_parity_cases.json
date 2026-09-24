@@ -1,7 +1,7 @@
 {
   "_comment": "Single source of workspace-discovery parity cases. The Go resolver test (pkg/workspaceconfig) and the VS Code extension's discovery test both materialize each case and assert their discovery matches the expected anchor and marker here. Adding a case (or a new marker) here updates both sides at once; neither keeps a private copy. Per case: files[] (path + content, or path + dir:true) build a fixture tree; start is the directory discovery runs from (relative to the fixture root); anchor is the expected marker path relative to the fixture root (null when nothing anchors); marker is the wire token the Go resolver reports (\"\" when no marker — the CWD fallback).",
   "_revision_comment": "revision names this case set. Each side pins its OWN copy of the number and refuses a fixture declaring a different one, so a green from a side is evidence that side READ this revision — not merely that it agreed with the other. Change a case, add one, or remove one, and bump revision: both sides then refuse until each side's own pinned copy is moved, which cannot be done without running both. That is the whole mechanism — a pair that only asserts agreement is green when one side never executed, because a comparison nothing performed reports nothing.",
-  "revision": 2,
+  "revision": 3,
   "cases": [
     {
       "name": "workspace-config anchors the root",
@@ -108,11 +108,21 @@
       "marker": "config"
     },
     {
-      "name": "a workspace line inside a block scalar does not anchor",
-      "files": [{"path": ".aggrega-config.yaml", "content": "|\nworkspace: {}\n"}],
+      "name": "a block-scalar workspace line in an ancestor does not beat a nearer release",
+      "files": [
+        {"path": ".aggrega-config.yaml", "content": "|\nworkspace: {}\n"},
+        {"path": "svc/release.yaml", "content": "kind: Release\n"}
+      ],
+      "start": "svc",
+      "anchor": "svc/release.yaml",
+      "marker": "release-glob"
+    },
+    {
+      "name": "a workspace key in a flow mapping anchors the root",
+      "files": [{"path": ".aggrega-config.yaml", "content": "{workspace: {}}\n"}],
       "start": ".",
-      "anchor": null,
-      "marker": ""
+      "anchor": ".aggrega-config.yaml",
+      "marker": "config"
     }
   ]
 }

@@ -38,7 +38,7 @@ import (
 // runs. And it says nothing about the OTHER side's execution: it pins this
 // side's reading, and two greens pinned to one revision are what jointly mean
 // both sides read it.
-const wantParityFixtureRevision = 2
+const wantParityFixtureRevision = 3
 
 // parityCase mirrors one entry of testdata/discovery_parity_cases.json — the
 // single shared source of workspace-discovery cases. The extension's discovery
