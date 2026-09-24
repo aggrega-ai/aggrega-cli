@@ -14,7 +14,8 @@
 #
 # That script is a different program with the same basename, and the umbrella root
 # is where every gate invocation belongs. Anything asking for a build gate wants
-# that one, not this one.
+# that one, not this one. So any --test… flag given here is answered with that
+# pointer and exit 2, rather than with a bare "unknown argument".
 #
 # Builds the version-stamped aggrega binary with its provider/linter guests
 # embedded (default), or the no-embed aggrega-light binary (--light). Runs from a
@@ -50,6 +51,7 @@
 #   scripts/build.sh            # embedded aggrega binary (default)
 #   scripts/build.sh --light    # no-embed aggrega-light binary
 #   scripts/build.sh --help
+#   scripts/build.sh --test…    # refused (exit 2): names the workspace build script
 #
 # Exit non-zero on the first failing step.
 set -euo pipefail
@@ -92,6 +94,17 @@ for arg in "$@"; do
     -h|--help)
       sed -n '2,/^# Exit non-zero on the first failing step\.$/p' "$0" | sed 's/^# \{0,1\}//'
       exit 0
+      ;;
+    --test*)
+      # Answered rather than rejected as unknown: running a test mode from here is
+      # the common mistake, and the fix is a different script at a different root.
+      fail "$arg: this script builds the CLI and has no test modes."
+      fail "  The test modes belong to the umbrella workspace's own build script —"
+      fail "  scripts/build.sh at the workspace root, a different script with the same name."
+      fail "  Run it from the workspace root:"
+      fail "    ./scripts/build.sh $arg aggrega-cli"
+      fail "  Outside the umbrella workspace, run this module's tests directly: go test ./..."
+      exit 2
       ;;
     *)
       fail "unknown argument: $arg"
