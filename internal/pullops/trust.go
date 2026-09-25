@@ -234,9 +234,9 @@ func recordableVerdictResolutions(resolutions []verdictPluginResolution) []verdi
 // attachment resolved to against the identity recorded as trusted for it, and
 // halts on a disagreement this run did not ask for.
 //
-// It runs on every pull — including one that only verifies, which writes nothing
-// and is exactly the surface a user reaches to be told whether the committed files
-// still describe what resolves today. A verify that passed over the record while
+// It runs on every pull — including a verify, which writes no record and is the
+// surface a user reaches to be told whether the committed files still describe
+// what a pull would resolve now. A verify that passed over the record while
 // checking its sibling would report agreement it never looked for.
 //
 // The escape is the run itself: a full refresh re-resolves everything, and a

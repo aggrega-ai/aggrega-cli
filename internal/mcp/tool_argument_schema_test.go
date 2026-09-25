@@ -186,8 +186,8 @@ func TestDeclaredSchemasStateTheArgumentRulesTheToolsEnforce(t *testing.T) {
 		{"explain-error", "a blank diagnostic", `{"message":""}`, false},
 
 		// pull: a Release, optionally compared rather than written, or narrowed to
-		// named upgrade targets — and never both, because one writes nothing and the
-		// other rewrites the lockfile. There is deliberately no argument that
+		// named upgrade targets — and never both, because one leaves the lockfile as
+		// it is and the other rewrites it. There is deliberately no argument that
 		// re-resolves every pin at once, so the wholesale form cannot be composed
 		// here at all rather than being accepted and then refused.
 		{"pull", "a Release", `{"release":"r.yaml"}`, true},

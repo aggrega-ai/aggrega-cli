@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -308,6 +309,74 @@ func TestPullVerifyStillRefusesEachFaultItExistsToRefuse(t *testing.T) {
 			}
 			if !bytes.Equal(before, after) {
 				t.Errorf("the verify rewrote the lockfile")
+			}
+		})
+	}
+}
+
+// TestPullVerifyRefusesPinSourcesWhicheverValueItIsGiven holds --verify beside
+// --pin-sources to a refusal, for each value the flag can be given. That flag
+// decides whether a pull records the pins an entity.lock is missing or halts on
+// them, and a verify does neither, so accepting the pair would leave the flag doing
+// nothing while reading as though it had done something.
+//
+// It runs the real command over a workspace the verify can answer, so a pair that
+// is accepted shows up as a verify that returned without an error rather than as a
+// refusal. The first row is the positive control: the same command with the flag
+// absent answers, so a refusal below is the pair's and not the workspace's.
+func TestPullVerifyRefusesPinSourcesWhicheverValueItIsGiven(t *testing.T) {
+	cases := []struct {
+		name    string
+		extra   []string
+		refused bool
+	}{
+		{name: "no --pin-sources: the verify answers", extra: nil, refused: false},
+		{name: "--pin-sources", extra: []string{"--pin-sources"}, refused: true},
+		{name: "--pin-sources=false", extra: []string{"--pin-sources=false"}, refused: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			// The configuration layer above the workspace is emptied before the
+			// fixture's pull, so the pull and the command below resolve the same
+			// workspace whatever the machine running this carries.
+			home := t.TempDir()
+			t.Setenv("HOME", home)
+			t.Setenv("XDG_CONFIG_HOME", home)
+			f := writeRefusalFixture(t)
+			lockPath := filepath.Join(f.root, "release.lock")
+			before, err := os.ReadFile(lockPath)
+			if err != nil {
+				t.Fatalf("read the lockfile before the command: %v", err)
+			}
+
+			root := newRootCmd()
+			root.SetOut(io.Discard)
+			root.SetErr(io.Discard)
+			root.SetArgs(append([]string{"--workspace-root", f.root,
+				"pull", "--release", "release.yaml", "--catalog", f.catalogDir, "--verify", "--quiet"}, tc.extra...))
+			err = root.ExecuteContext(context.Background())
+
+			if !tc.refused {
+				if err != nil {
+					t.Fatalf("the verify refused a workspace nothing changed in: %v", err)
+				}
+			} else {
+				if err == nil {
+					t.Fatalf("pull --verify %s was accepted; the pair must be refused, because the flag does nothing under a verify",
+						strings.Join(tc.extra, " "))
+				}
+				const want = "--verify and --pin-sources are mutually exclusive"
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("the refusal does not name the pair as mutually exclusive; want %q in: %v", want, err)
+				}
+			}
+
+			after, err := os.ReadFile(lockPath)
+			if err != nil {
+				t.Fatalf("read the lockfile after the command: %v", err)
+			}
+			if !bytes.Equal(before, after) {
+				t.Errorf("the command rewrote the lockfile")
 			}
 		})
 	}

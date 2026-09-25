@@ -615,7 +615,7 @@ func TestIntegration_VerdictTrustRefusesAChangedRecordedIdentity(t *testing.T) {
 
 	t.Run("verify_covers_the_record_and_halts_on_the_same_disagreement", func(t *testing.T) {
 		// The record still carries the bogus digest from the phase above, and a
-		// verify-only run writes nothing — so this proves the comparison sits above
+		// verify-only run writes no record — so this proves the comparison sits above
 		// the verify-only return rather than inside the write path.
 		err := pull(t, pullConfig{Verify: true})
 		if !errors.Is(err, pullops.ErrVerdictPluginIdentityChanged()) {

@@ -568,9 +568,9 @@ func TestVerdictTrustRefusesAChangedIdentityUnlessTheRunAsksForIt(t *testing.T) 
 			wantInMessage: []string{coordinate},
 		},
 		{
-			// A verify-only run writes nothing, so it can adopt nothing: it reports
-			// whether the committed files still describe what resolves today, and the
-			// record is one of those files.
+			// A verify-only run writes no record, so it can adopt nothing: it reports
+			// whether the committed files still describe the resolution a pull would
+			// perform now, and the record is one of those files.
 			name:          "a_verify_only_run_covers_the_record_and_halts",
 			seedRecord:    true,
 			resolved:      verdictPluginResolution{BareURI: coordinate, Coordinate: coordinate, Version: "2.0.0", Digest: movedDigest},

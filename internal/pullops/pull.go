@@ -877,18 +877,18 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	// The identities the caching walk resolved are collected here and recorded
 	// further down, after the verify-only branch has had its chance to return.
 	// Collecting and recording are deliberately separate steps: the caching walk
-	// runs on every invocation, including a verify-only one, and a verify-only run
-	// writes nothing at all.
+	// runs on every invocation and may fill the content cache, and a verify-only
+	// run records no identity and writes no trust record.
 	verdictResolutions, err := cacheVerdictSocketPlugins(ctx, wsCfg, lookup, catalogArtifacts, lazyView, workspaceRoot, cacheDir, pluginfetchverify.RemoteTargetFor(verdictHTTPClient), cfg.DiagOut)
 	if err != nil {
 		return Result{}, err
 	}
 	// Hold each resolved identity to the one recorded as trusted for it. This sits
 	// ABOVE the verify-only return below on purpose: comparing needs no write, so
-	// the mode that exists to report whether the committed files still describe
-	// what resolves today covers the record as well as the lockfile. It also sits
-	// as early as the identities exist, so a disagreement stops the run before it
-	// does further work on a resolution it is not going to accept.
+	// the mode that exists to report whether the committed files still describe the
+	// resolution a pull would perform now covers the record as well as the lockfile.
+	// It also sits as early as the identities exist, so a disagreement stops the run
+	// before it does further work on a resolution it is not going to accept.
 	if err := holdVerdictPluginsToTheirRecord(cfg.ReleasePath, verdictResolutions, pinMode); err != nil {
 		return Result{}, err
 	}
