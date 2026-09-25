@@ -88,6 +88,7 @@ func NewLazyLookup(workspaceRoot, cacheDir string, catalogDirs []string, puller 
 		artifactLibraries: map[string]types.ArtifactLibrary{},
 		plugins:           map[string]types.Plugin{},
 		recipeSkips:       map[string]error{},
+		announced:         map[string]struct{}{},
 		entityBytes:       map[string][]byte{},
 		origins:           map[string]entityOrigin{},
 		recordedPins:      recipepin.Lookup{},
@@ -336,6 +337,7 @@ func (l *LazyLookup) Reset() {
 	l.recipeSkips = map[string]error{}
 	l.recipeIndexBuilt = false
 	l.recipeCat = nil
+	l.announced = map[string]struct{}{}
 	l.entityBytes = map[string][]byte{}
 	l.origins = map[string]entityOrigin{}
 	l.recordedPins = recipepin.Lookup{}
@@ -510,6 +512,17 @@ type LazyLookup struct {
 	recipeSkips      map[string]error
 	recipeIndexBuilt bool
 
+	// announced holds every notice line this view has printed about a catalog file
+	// it did not place — refused, or shadowed by an earlier catalog directory — so
+	// each is printed once for the life of the view, however many times the walk
+	// that meets the file runs. A pin change rebuilds the recipe-shell enumeration,
+	// and the rebuilt walk meets every such file again: the file is no less shadowed
+	// the second time, and a reader told once has been told. The key is the whole
+	// line, so a file refused for a different reason on a later walk is still
+	// announced. SetPins keeps it; Reset clears it, because a changed workspace can
+	// hold a different set of such files.
+	announced map[string]struct{}
+
 	// shellClaims records, for each identity the recipe-shell enumeration placed,
 	// the position in catalogDirs of the directory whose file claimed it, or
 	// noCatalogDirectory for a pinned cache slot. It is what tells a later file
@@ -609,7 +622,9 @@ func (l *LazyLookup) SetPins(pins map[string]Pin) {
 	// newly-pinned library/recipe/aggregate (discovered after the first SetPins)
 	// would never be folded. The Tier-1 catalog-dir walk re-runs too (cheap; the
 	// maps rebuild identically from disk). The Component/Feature on-demand cascade
-	// reads l.pins directly, so it needs no invalidation here.
+	// reads l.pins directly, so it needs no invalidation here. The record of notices
+	// already printed is kept, so a file the re-run walk meets again is not
+	// announced again.
 	l.schemaLibrariesBuilt = false
 	l.recipeIndexBuilt = false
 	l.recipeCat = nil
@@ -1689,7 +1704,7 @@ func claimShellIdentity[V any](l *LazyLookup, claimed map[string]V, kind, key st
 func (l *LazyLookup) recordShellDuplicate(src string, data []byte, dir int, claim string, duplicate error) {
 	claimedBy := l.shellClaims[claim]
 	if dir != noCatalogDirectory && claimedBy != noCatalogDirectory && dir != claimedBy {
-		announceSkip(src, duplicate)
+		l.announceSkip(src, duplicate)
 		return
 	}
 	reason := duplicate
@@ -1699,7 +1714,7 @@ func (l *LazyLookup) recordShellDuplicate(src string, data []byte, dir int, clai
 		}
 	}
 	if _, already := l.recipeSkips[src]; !already {
-		announceSkip(src, duplicate)
+		l.announceSkip(src, duplicate)
 	}
 	l.recipeSkips[src] = reason
 }
@@ -1716,7 +1731,7 @@ func (l *LazyLookup) recordParseRefusal(src string, data []byte, local bool, per
 		reason = refusalOr(loadRefusal(l.workspaceRoot, data, src), perr)
 	}
 	if _, already := l.recipeSkips[src]; !already {
-		announceSkip(src, perr)
+		l.announceSkip(src, perr)
 	}
 	l.recipeSkips[src] = reason
 }
@@ -1876,15 +1891,15 @@ func (l *LazyLookup) foldPinnedSchemaLibrary(parseData, rawBytes []byte, src, sl
 // matters and is written unconditionally; the warning follows it.
 func (l *LazyLookup) recordRecipeSkip(source string, err error) {
 	if _, already := l.recipeSkips[source]; !already {
-		announceSkip(source, err)
+		l.announceSkip(source, err)
 	}
 	l.recipeSkips[source] = err
 }
 
 // announceSkip is the one-line tolerance warning for a file the recipe-shell
 // enumeration did not place, whether it was refused or shadowed.
-func announceSkip(source string, err error) {
-	fmt.Fprintf(os.Stderr, "  recipe: %s skipped: %s\n", source, err.Error())
+func (l *LazyLookup) announceSkip(source string, err error) {
+	l.announce(fmt.Sprintf("  recipe: %s skipped: %s\n", source, err.Error()))
 }
 
 // recordShadowedComponent emits the one-line first-win notice when a later
@@ -1893,7 +1908,18 @@ func announceSkip(source string, err error) {
 // the shadowed path is reported so the override is never silent. Stderr-only,
 // mirroring the recipe-shell skip diagnostic's form.
 func (l *LazyLookup) recordShadowedComponent(kind, name, path string) {
-	fmt.Fprintf(os.Stderr, "  catalog: %s %q at %s is shadowed (first-win precedence)\n", kind, name, path)
+	l.announce(fmt.Sprintf("  catalog: %s %q at %s is shadowed (first-win precedence)\n", kind, name, path))
+}
+
+// announce writes one notice line to stderr unless this view has already written
+// it (announced). Every notice about a file the view did not place is written
+// through here, so none is repeated by a walk that runs again.
+func (l *LazyLookup) announce(line string) {
+	if _, done := l.announced[line]; done {
+		return
+	}
+	l.announced[line] = struct{}{}
+	fmt.Fprint(os.Stderr, line)
 }
 
 // recipeCatalog returns the cached *Catalog shell over the tolerantly-enumerated
