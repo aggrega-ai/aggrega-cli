@@ -18,10 +18,11 @@ import (
 //
 // Three forms rather than one, because the footing has two halves that are only
 // correct together. The library fold resolves the cross-document axes the entity
-// walk does not descend; the two reconstruction calls rebuild the axes
-// ComputeClosure leaves empty. A surface that runs one half and not the other
-// produces a closure that is neither the compute-only one nor the build's, and a
-// drift verify against it reports entries that are not drift.
+// walk does not descend; the pinned-axis descent and the workspace-socket
+// reconstruction rebuild the axes ComputeClosure leaves empty. A surface that runs
+// one half and not the other produces a closure that is neither the compute-only
+// one nor the build's, and a drift verify against it reports entries that are not
+// drift.
 //
 // Each form is the call shape and nothing else: the selector, dot-prefixed, and
 // the parenthesis that opens the argument list. Both halves earn their place, and
@@ -61,8 +62,15 @@ import (
 // closure, taken by editing this file — which is the point: the edit is what puts
 // the decision in front of a reviewer.
 var hermeticReconstructionHomes = map[string][]string{
-	".ReconstructClosureAxes(": {
+	// The pinned-axis descent has two homes, and they are one computation run over
+	// two lookups rather than a duplicate: the pull descends the axes it is about to
+	// pin over its reconciling lookup, and the build descends the same axes over its
+	// hermetic one to hold the lockfile to them. Everything that differs between the
+	// two is an argument of the call, so a third caller is a third place that could
+	// pass a different one.
+	".DescendPinnedAxes(": {
 		"internal/compilerops/preview.go",
+		"internal/pullops/pull.go",
 	},
 	".ReconstructWorkspaceSocketEntities(": {
 		"internal/compilerops/preview.go",
@@ -77,7 +85,8 @@ var hermeticReconstructionHomes = map[string][]string{
 }
 
 // TestHermeticClosureReconstructionHasOneHome asserts that a closure is brought
-// onto its hermetic footing only where this file says it may be.
+// onto its hermetic footing, and that its pinned axes are descended, only where
+// this file says either may be.
 //
 // The failure it exists to catch produces no symptom at the call site. A surface
 // that assembles the fold and the two descents for itself gets a closure — so

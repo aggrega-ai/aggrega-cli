@@ -86,12 +86,9 @@ func NewLazyLookup(workspaceRoot, cacheDir string, catalogDirs []string, puller 
 		workloadLibraries: map[string]types.WorkloadLibrary{},
 		artifactLibraries: map[string]types.ArtifactLibrary{},
 		plugins:           map[string]types.Plugin{},
-		aggregateSources:  map[string]string{},
 		recipeSkips:       map[string]error{},
 		entityBytes:       map[string][]byte{},
-		localEntityPaths:  map[string]string{},
-		layoutDocuments:   map[string]string{},
-		fromCacheSlot:     map[string]struct{}{},
+		origins:           map[string]entityOrigin{},
 		recordedPins:      recipepin.Lookup{},
 	}
 }
@@ -240,8 +237,9 @@ func (l *LazyLookup) PluginColocatedDirs() map[string]string {
 // pluginColocatedDirs maps each Tier-1-enumerated Plugin entity's bare-identity
 // artifact reference to the catalog directory its plugin.yaml was authored in —
 // the directory a co-located .wasm sits in beside the entity. It mirrors the
-// eager catalog's PluginColocatedDirs over the lazily-walked local set; a
-// registry-resolved (Tier-2) entity has no authored directory and is skipped.
+// eager catalog's PluginColocatedDirs over the lazily-walked local set, reading
+// each entity's authored document from the one record of where it came from; an
+// entity read from a pinned cache slot has no authored directory and is skipped.
 // The caller (AsCatalogLookup, PluginColocatedDirs) holds l.mu. Returns nil when no local Plugin
 // entity was enumerated. On two versions of one identity, the lexicographically
 // last source path wins, so the map is deterministic regardless of map order.
@@ -257,8 +255,8 @@ func (l *LazyLookup) pluginColocatedDirs() map[string]string {
 	sort.Strings(keys)
 	dirs := make(map[string]string, len(l.plugins))
 	for _, key := range keys {
-		src, ok := l.localEntityPaths[entityBytesKey("Plugin", key)]
-		if !ok || src == "" {
+		src, ok := l.origins[entityBytesKey("Plugin", key)].authoredDocument()
+		if !ok {
 			continue
 		}
 		p := l.plugins[key]
@@ -334,14 +332,11 @@ func (l *LazyLookup) Reset() {
 	l.workloadLibraries = map[string]types.WorkloadLibrary{}
 	l.artifactLibraries = map[string]types.ArtifactLibrary{}
 	l.plugins = map[string]types.Plugin{}
-	l.aggregateSources = map[string]string{}
 	l.recipeSkips = map[string]error{}
 	l.recipeIndexBuilt = false
 	l.recipeCat = nil
 	l.entityBytes = map[string][]byte{}
-	l.localEntityPaths = map[string]string{}
-	l.layoutDocuments = map[string]string{}
-	l.fromCacheSlot = map[string]struct{}{}
+	l.origins = map[string]entityOrigin{}
 	l.recordedPins = recipepin.Lookup{}
 }
 
@@ -503,7 +498,6 @@ type LazyLookup struct {
 	workloadLibraries map[string]types.WorkloadLibrary
 	artifactLibraries map[string]types.ArtifactLibrary
 	plugins           map[string]types.Plugin // keyed by identity (metadata.name:version), like the eager catalog
-	aggregateSources  map[string]string
 	// recipeSkips records every catalog file this backing could not index, keyed
 	// by file path, with the reason. It spans more kinds than its name suggests:
 	// recipe, FeatureRecipe, Aggregate, mapping / workload / artifacts / schema
@@ -512,58 +506,39 @@ type LazyLookup struct {
 	recipeSkips      map[string]error
 	recipeIndexBuilt bool
 
-	// localEntityPaths maps entityBytesKey(kind, identityKey) to the filesystem
-	// path an enumerated entity was authored in, for Tier-1 (catalog-directory)
-	// entities only. A registry-resolved (Tier-2) entity lives in a cache slot,
-	// which nobody authored, and is never recorded here.
+	// origins is the one record of where each enumerated entity was read from,
+	// keyed by entityBytesKey(kind, identityKey): the catalog-directory document
+	// that authored it, or the lockfile-pinned cache slot it was read from together
+	// with the document in that slot's layout its content paths anchor at (see
+	// entityOrigin). It is written once per identity, by the fold that places the
+	// winning entry in its kind's index — foldRecipeShellEntity, and for a schema
+	// library the Tier-1 walk in buildSchemaLibraries and foldPinnedSchemaLibrary —
+	// and it covers every kind those folds admit: Recipe and FeatureRecipe keyed by
+	// capability-scoped identity, Plugin by its versioned coordinate, Aggregate by
+	// name, and the schema, mapping, workload and artifacts libraries by bare name.
 	//
-	// That Tier-1-only rule serves two consumers at once. A caller writing beside
-	// an entity — the entity author's pin step — is scoped to author-owned
-	// directories and never touches a pinned cache slot. A caller reporting where an
-	// entity was declared is answered with a document that exists on this machine
-	// as a document, rather than with a cache slot's location.
+	// Every provenance answer this backing gives is derived from it, and none has an
+	// index of its own: whether an author owns a document for the entity (the pin
+	// step writes only beside one, and never into a cache slot), where its content
+	// paths anchor, which tier a closure walk reports for it, the directory a
+	// co-located artifact sits in, and the source a flattened Aggregate records.
 	//
-	// It spans the enumerated kinds, keyed as entityBytes keys them for each:
-	// Recipe and FeatureRecipe by capability-scoped identity, Plugin by its
-	// versioned coordinate, and the mapping / workload / artifacts / schema
-	// libraries by bare name. Component and Feature are not here — their paths are
-	// componentIndex and featureIndex, which are the maps the per-URI cascade
-	// reads to find the file in the first place. Populated by the Tier-1 walks.
-	localEntityPaths map[string]string
+	// Component and Feature are not here — their paths are componentIndex and
+	// featureIndex, which are the maps the per-URI cascade reads to find the file in
+	// the first place, and those kinds are resolved on demand rather than folded. A
+	// record depends on the pins, so SetPins and Reset drop it with the rest of the
+	// enumerated state.
+	origins map[string]entityOrigin
 
 	// recordedPins holds the content pins in force for each pin-bearing entity
 	// this backing enumerated, keyed by the document it was read from. It is the
 	// lazy backing's half of what the eager load records under the same name, and
 	// the recipe-catalog shell hands it on to the render.
 	//
-	// It follows localEntityPaths' Tier-1-only rule and for the same reason: a
-	// pinned cache slot is not a directory a lock could sit beside, so a Tier-2
-	// entity records nothing here and is answered as recording nothing.
+	// Only an entity with an authored document records pins here: a pinned cache
+	// slot is not a directory a lock could sit beside, so an entity read from one
+	// records nothing here and is answered as recording nothing.
 	recordedPins recipepin.Lookup
-
-	// layoutDocuments maps entityBytesKey(kind, identityKey) to the document a
-	// pinned (Tier-2) Recipe's or FeatureRecipe's parse was anchored at: its place
-	// in the layout of its cache slot's verified artifact. It is what a source
-	// written as a template is anchored at once the render has evaluated it, so a
-	// relative result resolves inside what was published exactly as the load's
-	// anchoring of every other source does.
-	//
-	// It is kept apart from localEntityPaths on purpose. That map answers where an
-	// author's file is — and a caller writing beside it, the pin step, must never
-	// write into a cache slot — while this one answers only what a pulled entity's
-	// content paths are relative to. It depends on the pins, so SetPins and Reset
-	// drop it with the rest of the enumerated state.
-	layoutDocuments map[string]string
-
-	// fromCacheSlot records entityBytesKey(kind, identityKey) for every Recipe,
-	// FeatureRecipe and Plugin the pinned fold placed in the index from a cache
-	// slot — the entries whose win the fold learned came from a slot rather than
-	// from a catalog-directory file. It is the positive half of the same decision
-	// localEntityPaths records the other half of, written in the same callback, so
-	// the two cannot come to disagree about one entry. The recipe-catalog shell
-	// carries it to the closure lookup, which reports those entries as resolved
-	// from the cache. It depends on the pins, so SetPins and Reset drop it.
-	fromCacheSlot map[string]struct{}
 
 	// entityBytes retains the RAW authored bytes of every enumerated /
 	// resolved entity, keyed by entityBytesKey(kind, metadata.name) — the same
@@ -579,7 +554,7 @@ type LazyLookup struct {
 
 	// recipeCat is the cached *Catalog shell over the enumerated recipe/FR/
 	// aggregate maps. The shell carries ONLY the maps the matcher methods read
-	// (Recipes, FeatureRecipes, Aggregates, aggregateSources, workspaceRoot), so
+	// (Recipes, FeatureRecipes, Aggregates, origins, workspaceRoot), so
 	// RecipeLookupWithManifest / VerifyRecipeResolution / SubAggregateLoader are
 	// reused verbatim against a lazily-enumerated set — no matcher reimplemented.
 	// nil after construction / Reset; rebuilt on first recipeCatalog() call so a
@@ -631,10 +606,11 @@ func (l *LazyLookup) SetPins(pins map[string]Pin) {
 	l.workloadLibraries = map[string]types.WorkloadLibrary{}
 	l.artifactLibraries = map[string]types.ArtifactLibrary{}
 	l.plugins = map[string]types.Plugin{}
-	l.aggregateSources = map[string]string{}
 	l.recipeSkips = map[string]error{}
-	l.layoutDocuments = map[string]string{}
-	l.fromCacheSlot = map[string]struct{}{}
+	// The record of where each entity came from is rebuilt with the enumeration
+	// that writes it: an entry placed from a slot depends on the pins, and the
+	// catalog-directory entries are rewritten identically by the walks that re-run.
+	l.origins = map[string]entityOrigin{}
 }
 
 // VerifyPinnedIntegrity is the BUILD's loud integrity gate: it reads every pinned
@@ -1236,7 +1212,7 @@ func (l *LazyLookup) buildSchemaLibraries() error {
 			}
 			l.schemaLibraries[lib.Metadata.Name] = lib
 			l.entityBytes[entityBytesKey("SchemaLibrary", lib.Metadata.Name)] = data
-			l.localEntityPaths[entityBytesKey("SchemaLibrary", lib.Metadata.Name)] = path
+			l.origins[entityBytesKey("SchemaLibrary", lib.Metadata.Name)] = authoredOrigin(path)
 			return nil
 		})
 	}
@@ -1286,8 +1262,8 @@ func (l *LazyLookup) LocalFeatureRecipePath(target, name, version string) (strin
 // it is reported as no path rather than as the slot's location.
 //
 // The Aggregate is deliberately not answered here. Its own accessor already
-// carries the document it was loaded from, and answering it a second way would
-// give one fact two producers, free to disagree. A kind this does not recognise
+// carries the document it was loaded from, and answering it here as well would
+// give one fact two accessors, free to drift apart. A kind this does not recognise
 // reports no path, which is what an unenumerated kind honestly has.
 //
 // It triggers whichever walk holds the kind on first call. Every accessor that
@@ -1308,6 +1284,10 @@ func (l *LazyLookup) LocalEntityPath(kind, scope, name, version string) (string,
 // under. It hands back the path as the walk recorded it; rendering it for a
 // reader is the reporting accessor's own step.
 //
+// For a folded kind the answer is the authored document the record of where the
+// entity came from holds, so an entity read from a pinned cache slot answers no
+// path from the same value that makes a closure walk report it as cache-served.
+//
 // The caller holds l.mu. Each arm triggers the walk that populates its own index
 // rather than the caller choosing one, so a kind added to an index cannot be
 // looked up before that index exists.
@@ -1323,20 +1303,16 @@ func (l *LazyLookup) localPathFor(kind, scope, name, version string) (string, bo
 		return p, ok
 	case "Recipe", "FeatureRecipe":
 		l.buildRecipeIndex()
-		p, ok := l.localEntityPaths[entityBytesKey(kind, recipeIdentityKey(scope, name, version))]
-		return p, ok
+		return l.origins[entityBytesKey(kind, recipeIdentityKey(scope, name, version))].authoredDocument()
 	case "Plugin":
 		l.buildRecipeIndex()
-		p, ok := l.localEntityPaths[entityBytesKey(kind, entityIndexKey(types.PluginCoordinate(scope, name), version))]
-		return p, ok
+		return l.origins[entityBytesKey(kind, entityIndexKey(types.PluginCoordinate(scope, name), version))].authoredDocument()
 	case "MappingLibrary", "WorkloadLibrary", "ArtifactLibrary":
 		l.buildRecipeIndex()
-		p, ok := l.localEntityPaths[entityBytesKey(kind, name)]
-		return p, ok
+		return l.origins[entityBytesKey(kind, name)].authoredDocument()
 	case "SchemaLibrary":
 		_ = l.buildSchemaLibraries()
-		p, ok := l.localEntityPaths[entityBytesKey(kind, name)]
-		return p, ok
+		return l.origins[entityBytesKey(kind, name)].authoredDocument()
 	}
 	return "", false
 }
@@ -1416,14 +1392,19 @@ func (l *LazyLookup) buildRecipeIndex() {
 // feeds both the Tier-1 walk and the pinned Tier-2 pass, so the two cannot drift.
 //
 // slot is the cache slot a pinned entity was read from, and empty for a Tier-1
-// file; it says which of those two the entity arrived through. It gates the
-// localEntityPaths retention: a Tier-1 file's src is a document on this machine,
-// while a pinned slot's src is a label naming the pin rather than a path anybody
-// could open. So the bytes are retained either way — the digest covers both — and
-// the path only where there is one. Where the winning entry came from a slot, the
-// same decision is recorded positively in fromCacheSlot, for the Recipe,
-// FeatureRecipe and Plugin kinds, so that a closure walk over the index reports
-// that entry as resolved from the cache and not as authored in a catalog.
+// file; it says which of those two the entity arrived through, and this is the one
+// step that knows. For the winning entry of every kind it admits, the fold records
+// that fact once, in origins: the document a Tier-1 file was authored in, or the
+// slot a pinned entity was read from together with its label and, for a Recipe or
+// FeatureRecipe, the document its parse was anchored at in the slot's layout. A
+// Tier-1 file's src is a document on this machine, while a pinned slot's src is a
+// label naming the pin rather than a path anybody could open, so the bytes are
+// retained either way — the digest covers both — and every answer that needs a
+// document (the pin step's writable home, a report of where the entity was
+// declared, a co-located artifact's directory) is derived from the record rather
+// than from an index kept beside it. A closure walk over the index reports the
+// tier from the same record, so an entry read from a slot is reported as resolved
+// from the cache and not as authored in a catalog, whatever its kind.
 //
 // It also decides what a Recipe's or FeatureRecipe's parse is anchored at, those
 // being the kinds whose document names content by a path relative to itself. A
@@ -1433,9 +1414,9 @@ func (l *LazyLookup) buildRecipeIndex() {
 // the label every skip is recorded under. A pinned slot's document is parsed alone:
 // the lock its publication carries is laid out beside it and not read, because
 // pins are recorded only for a catalog-directory entity and a pulled one's sources
-// are held to the Release's lockfile. Every other kind is parsed at src as it
-// always is: none of them names content by a path, and an Aggregate's src is its
-// source provenance, which a layout path would move.
+// are held to the Release's lockfile. Every other kind is parsed at src: none of
+// them names content by a path, and an Aggregate's src is its source provenance,
+// which a layout path would move.
 func (l *LazyLookup) foldRecipeShellEntity(kind string, parseData, rawBytes []byte, src, slot string) {
 	local := slot == ""
 	switch kind {
@@ -1461,12 +1442,9 @@ func (l *LazyLookup) foldRecipeShellEntity(kind string, parseData, rawBytes []by
 		foldFirstWin(l.recipes, key, e,
 			func() {
 				l.entityBytes[entityBytesKey("Recipe", key)] = rawBytes
+				l.origins[entityBytesKey("Recipe", key)] = foldedOrigin(src, slot, docPath)
 				if local {
-					l.localEntityPaths[entityBytesKey("Recipe", key)] = src
 					l.recordedPins.Record(src, pins)
-				} else {
-					l.layoutDocuments[entityBytesKey("Recipe", key)] = docPath
-					l.fromCacheSlot[entityBytesKey("Recipe", key)] = struct{}{}
 				}
 			},
 			func() {
@@ -1494,12 +1472,9 @@ func (l *LazyLookup) foldRecipeShellEntity(kind string, parseData, rawBytes []by
 		foldFirstWin(l.featureRecipes, key, e,
 			func() {
 				l.entityBytes[entityBytesKey("FeatureRecipe", key)] = rawBytes
+				l.origins[entityBytesKey("FeatureRecipe", key)] = foldedOrigin(src, slot, docPath)
 				if local {
-					l.localEntityPaths[entityBytesKey("FeatureRecipe", key)] = src
 					l.recordedPins.Record(src, pins)
-				} else {
-					l.layoutDocuments[entityBytesKey("FeatureRecipe", key)] = docPath
-					l.fromCacheSlot[entityBytesKey("FeatureRecipe", key)] = struct{}{}
 				}
 			},
 			func() {
@@ -1513,7 +1488,7 @@ func (l *LazyLookup) foldRecipeShellEntity(kind string, parseData, rawBytes []by
 		}
 		foldFirstWin(l.aggregates, e.Metadata.Name, e,
 			func() {
-				l.aggregateSources[e.Metadata.Name] = src
+				l.origins[entityBytesKey("Aggregate", e.Metadata.Name)] = foldedOrigin(src, slot, "")
 				l.entityBytes[entityBytesKey("Aggregate", e.Metadata.Name)] = rawBytes
 			},
 			func() {
@@ -1528,9 +1503,7 @@ func (l *LazyLookup) foldRecipeShellEntity(kind string, parseData, rawBytes []by
 		foldFirstWin(l.mappingLibraries, e.Metadata.Name, e,
 			func() {
 				l.entityBytes[entityBytesKey("MappingLibrary", e.Metadata.Name)] = rawBytes
-				if local {
-					l.localEntityPaths[entityBytesKey("MappingLibrary", e.Metadata.Name)] = src
-				}
+				l.origins[entityBytesKey("MappingLibrary", e.Metadata.Name)] = foldedOrigin(src, slot, "")
 			},
 			func() {
 				l.recordRecipeSkip(src, fmt.Errorf("duplicate mapping library name %q; this file is shadowed", e.Metadata.Name))
@@ -1544,9 +1517,7 @@ func (l *LazyLookup) foldRecipeShellEntity(kind string, parseData, rawBytes []by
 		foldFirstWin(l.workloadLibraries, e.Metadata.Name, e,
 			func() {
 				l.entityBytes[entityBytesKey("WorkloadLibrary", e.Metadata.Name)] = rawBytes
-				if local {
-					l.localEntityPaths[entityBytesKey("WorkloadLibrary", e.Metadata.Name)] = src
-				}
+				l.origins[entityBytesKey("WorkloadLibrary", e.Metadata.Name)] = foldedOrigin(src, slot, "")
 			},
 			func() {
 				l.recordRecipeSkip(src, fmt.Errorf("duplicate workload library name %q; this file is shadowed", e.Metadata.Name))
@@ -1560,9 +1531,7 @@ func (l *LazyLookup) foldRecipeShellEntity(kind string, parseData, rawBytes []by
 		foldFirstWin(l.artifactLibraries, e.Metadata.Name, e,
 			func() {
 				l.entityBytes[entityBytesKey("ArtifactLibrary", e.Metadata.Name)] = rawBytes
-				if local {
-					l.localEntityPaths[entityBytesKey("ArtifactLibrary", e.Metadata.Name)] = src
-				}
+				l.origins[entityBytesKey("ArtifactLibrary", e.Metadata.Name)] = foldedOrigin(src, slot, "")
 			},
 			func() {
 				l.recordRecipeSkip(src, fmt.Errorf("duplicate artifact library name %q; this file is shadowed", e.Metadata.Name))
@@ -1577,11 +1546,7 @@ func (l *LazyLookup) foldRecipeShellEntity(kind string, parseData, rawBytes []by
 		foldFirstWin(l.plugins, key, e,
 			func() {
 				l.entityBytes[entityBytesKey("Plugin", e.Coordinate())] = rawBytes
-				if local {
-					l.localEntityPaths[entityBytesKey("Plugin", key)] = src
-				} else {
-					l.fromCacheSlot[entityBytesKey("Plugin", key)] = struct{}{}
-				}
+				l.origins[entityBytesKey("Plugin", key)] = foldedOrigin(src, slot, "")
 			},
 			func() {
 				l.recordRecipeSkip(src, fmt.Errorf("duplicate wasm plugin identity %q; this file is shadowed", key))
@@ -1651,7 +1616,7 @@ func (l *LazyLookup) foldPinnedCacheEntities(allowed map[string]bool) {
 			continue
 		}
 		if kind == "SchemaLibrary" {
-			l.foldPinnedSchemaLibrary(parseData, blob, "lockfile-pinned:"+uri)
+			l.foldPinnedSchemaLibrary(parseData, blob, "lockfile-pinned:"+uri, slot)
 			continue
 		}
 		l.foldRecipeShellEntity(kind, parseData, blob, "lockfile-pinned:"+uri, slot)
@@ -1673,8 +1638,10 @@ func contentAnchor(src, slot string, rawBytes []byte) (string, error) {
 // foldPinnedSchemaLibrary folds one lockfile-pinned SchemaLibrary cache slot into
 // l.schemaLibraries, first-wins (a Tier-1 library of the same name already present
 // is kept). Mirrors the SchemaLibrary arm of buildSchemaLibraries' Tier-1 walk; the
-// raw bytes are retained for digest fidelity.
-func (l *LazyLookup) foldPinnedSchemaLibrary(parseData, rawBytes []byte, src string) {
+// raw bytes are retained for digest fidelity, and the library placed is recorded as
+// read from slot under the label src, so it is answered as cache-served rather than
+// as authored in a catalog directory.
+func (l *LazyLookup) foldPinnedSchemaLibrary(parseData, rawBytes []byte, src, slot string) {
 	lib, perr := parseSchemaLibraryEntity(parseData, src)
 	if perr != nil {
 		l.recipeSkips[src] = perr
@@ -1685,6 +1652,7 @@ func (l *LazyLookup) foldPinnedSchemaLibrary(parseData, rawBytes []byte, src str
 	}
 	l.schemaLibraries[lib.Metadata.Name] = lib
 	l.entityBytes[entityBytesKey("SchemaLibrary", lib.Metadata.Name)] = rawBytes
+	l.origins[entityBytesKey("SchemaLibrary", lib.Metadata.Name)] = pinnedOrigin(src, slot, "")
 }
 
 // recordRecipeSkip emits the one-line tolerance warning and records the reason.
@@ -1737,29 +1705,22 @@ func (l *LazyLookup) recipeCatalog() *Catalog {
 		WorkloadLibraries: l.workloadLibraries,
 		ArtifactLibraries: l.artifactLibraries,
 		Plugins:           l.plugins,
-		aggregateSources:  l.aggregateSources,
 		entityBytes:       l.entityBytes,
-		// The documents the Tier-1 walk recorded, under the same kind-namespaced
-		// identity the eager load claims each entity under — so the shell answers
-		// "which file declared this entity" from the walk that read it, rather than
-		// from a second record free to disagree. A Tier-2 entity is absent by
-		// construction: its slot is a label naming a pin, not a document, and the
-		// walk deliberately retains no path for one.
-		pathByIdentity: l.localEntityPaths,
-		// The pins the same walk recorded, under the same documents, so the shell
-		// answers "what was recorded for this entity" from the reading that
-		// resolved it rather than from a second one free to disagree. A Tier-2
-		// entity is absent here for the reason it is absent above: its slot is a
-		// label naming a pin, and a lock sits beside a document.
-		recordedPins: l.recordedPins,
-		// The documents a pinned Recipe's or FeatureRecipe's parse was anchored at,
-		// in its slot's layout — never reported as a file anybody authored, and read
-		// only to anchor what a templated source produces at render.
-		layoutDocuments: l.layoutDocuments,
-		// The entries the pinned fold placed in the index from a cache slot, so the
-		// closure lookup over this shell reports each of them as resolved from the
-		// cache — the answer the fold already holds — rather than as a catalog entry.
-		fromCacheSlot: l.fromCacheSlot,
+		// The one record of where each enumerated entity came from, under the same
+		// kind-namespaced identity the eager load claims each entity under — so the
+		// shell answers "which file declared this entity", "what are its content
+		// paths anchored at", "which tier served it" and "what source does a
+		// flattened Aggregate record" from the fold that placed the entity, rather
+		// than from records kept beside it and free to disagree. The shell carries no
+		// pathByIdentity or aggregateSources of its own: every entity it indexes has
+		// a record here.
+		origins: l.origins,
+		// The pins the same walk recorded, keyed by each entity's authored document,
+		// so the shell answers "what was recorded for this entity" from the reading
+		// that resolved it rather than from a second one free to disagree. An entity
+		// read from a pinned slot is absent here: its slot is a label naming a pin,
+		// and a lock sits beside a document.
+		recordedPins:  l.recordedPins,
 		workspaceRoot: l.workspaceRoot,
 		// The lazy backing is the production build/pull resolution path, so it
 		// resolves core providers from the binary's embedded set (embedded-wins).

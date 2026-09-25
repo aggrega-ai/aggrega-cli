@@ -143,8 +143,8 @@ func TestPluginDescent_ArtifactPinFollowsDeclaredType(t *testing.T) {
 	}
 }
 
-// TestPluginDescent_UnpinnedArtifactAdoptsAChangeSilently drives the first half of
-// what an absent pin costs: an artifact that is pinned records its content digest,
+// TestPluginDescent_UnpinnedArtifactAdoptsAChangeSilently drives what an absent pin
+// costs: an artifact that is pinned records its content digest,
 // so a change to the guest's bytes moves the closure and a build comparing against
 // the recorded one reports it; an artifact that is not pinned records nothing, so
 // the same change moves nothing and is adopted by the very next build.
@@ -193,32 +193,29 @@ func TestPluginDescent_UnpinnedArtifactAdoptsAChangeSilently(t *testing.T) {
 	})
 }
 
-// TestPluginDescent_UnpinnedSocketArtifactDisagreesWithReconstruction drives the
-// second half: the workspace-socket reconstruction a build performs from the
-// lockfile pins a socket plugin's artifact regardless of type or resolution path,
-// because every socket entity it reconstructs is one the lockfile records as a pin
-// and dropping one is itself a reconstruction gap. So the two sides
-// agree only while the acquisition pins what the reconstruction will pin.
+// TestPluginDescent_SocketReconstructionAgreesWithAcquisitionOnDeclaredType holds the
+// workspace-socket reconstruction a build performs from the lockfile to the same
+// declared-type rule the acquisition's artifact descent applies. For every plugin type
+// an entity may declare, the two sides either both pin its .wasm artifact or both leave
+// it out, and which of the two follows the declared-type table above: an
+// output-shaping type is pinned on both sides, a type that only inspects or judges on
+// neither. A disagreement is what a build reports as drift against a lockfile nobody
+// changed — the reconstruction producing an artifact row the acquisition never wrote,
+// or dropping one it did.
 //
-// An acquisition that declined an artifact the reconstruction then produces leaves
-// a build comparing a reconstructed axis against a record that never carried the
-// entry — reported as drift, on a tree nobody changed. The output-shaping row is
-// the control: there the two sides agree and no such report is possible.
+// Every row resolves the entity and its artifact from the registry, so the declared
+// type is the only input that varies; TestTheSocketReconstructionPinsWhatThePullPinned
+// varies the resolution path instead, over the provider and governance types. Each row
+// asserts the entity is present on both sides — pinned by the acquisition, and re-added
+// by the reconstruction from the URI the lockfile records — which is the per-row
+// positive control: without it, a row pinned on neither side would pass just as well
+// when neither side descended anything at all.
 //
-// Neither row is a defect in the shipped product — what a build reconstructs is the
-// provider and transform-attachment set, both output-shaping — and that is the
-// point: the disagreeing row is what a misclassified output-shaping type would
-// have produced.
-func TestPluginDescent_UnpinnedSocketArtifactDisagreesWithReconstruction(t *testing.T) {
-	cases := map[string]struct {
-		declaredType string
-		wantAgree    bool
-	}{
-		"output-shaping-type-agrees":     {string(plugintype.PipelineStep), true},
-		"non-output-shaping-type-drifts": {string(plugintype.Linter), false},
-	}
-	for name, tc := range cases {
-		name, tc := name, tc
+// What a build reconstructs in the shipped product is the provider and
+// transform-attachment set, both output-shaping. The rows declaring any other type hold
+// the rule itself, so a change to how a type is classified moves both sides together.
+func TestPluginDescent_SocketReconstructionAgreesWithAcquisitionOnDeclaredType(t *testing.T) {
+	for name, tc := range declaredTypeCases() {
 		t.Run(name, func(t *testing.T) {
 			lookup, loader, entityURI, artifactURI := declaredTypeFixture(t, tc.declaredType, "sha256:socket-artifact")
 
@@ -226,25 +223,38 @@ func TestPluginDescent_UnpinnedSocketArtifactDisagreesWithReconstruction(t *test
 			if err != nil {
 				t.Fatalf("plugin descent: %v", err)
 			}
-			_, acquiredPin := pluginByURI(acquired, artifactURI)
-
 			var rebuilt closure.Closure
 			if err := closure.ReconstructWorkspaceSocketEntities(
 				context.Background(), &rebuilt, []string{entityURI}, loader, lookup, nil); err != nil {
 				t.Fatalf("workspace-socket reconstruction: %v", err)
 			}
-			_, rebuiltPin := pluginByURI(rebuilt, artifactURI)
 
-			if !rebuiltPin {
-				t.Fatalf("the reconstruction pins a socket artifact unconditionally, so %q must be "+
-					"present on the rebuilt axis whatever its declared type; plugins=%+v",
-					artifactURI, rebuilt.Plugins)
+			if _, ok := entityByURI(acquired, entityURI); !ok {
+				t.Fatalf("the acquisition must pin entity %q for every declared type; its absence means "+
+					"the fixture never reached the descent and the artifact verdicts below measure "+
+					"nothing; entities=%+v", entityURI, acquired.Entities)
 			}
-			if agree := acquiredPin == rebuiltPin; agree != tc.wantAgree {
-				t.Errorf("declared plugin type %q: acquisition pinned = %v, reconstruction pinned = %v; "+
-					"want the two sides to agree = %v — a disagreement is what a build reports as drift "+
-					"against a record nobody changed",
-					tc.declaredType, acquiredPin, rebuiltPin, tc.wantAgree)
+			if _, ok := entityByURI(rebuilt, entityURI); !ok {
+				t.Fatalf("the reconstruction must re-add entity %q, a URI the lockfile records, for every "+
+					"declared type; its absence means the artifact verdicts below measure nothing; "+
+					"entities=%+v", entityURI, rebuilt.Entities)
+			}
+
+			acquiredArt, acquiredPin := pluginByURI(acquired, artifactURI)
+			rebuiltArt, rebuiltPin := pluginByURI(rebuilt, artifactURI)
+			if acquiredPin != tc.wantPinned {
+				t.Errorf("declared plugin type %q: the acquisition pinned artifact %q = %v; want %v (%s); "+
+					"plugins=%+v", tc.declaredType, artifactURI, acquiredPin, tc.wantPinned, tc.why, acquired.Plugins)
+			}
+			if rebuiltPin != acquiredPin {
+				t.Errorf("declared plugin type %q: the reconstruction pinned artifact %q = %v and the "+
+					"acquisition = %v, so a build holds the lockfile to an artifact row the pull did not "+
+					"write, or drops one it did; plugins=%+v",
+					tc.declaredType, artifactURI, rebuiltPin, acquiredPin, rebuilt.Plugins)
+			}
+			if acquiredPin && rebuiltPin && (rebuiltArt.ResolvedVersion != acquiredArt.ResolvedVersion || rebuiltArt.Digest != acquiredArt.Digest) {
+				t.Errorf("declared plugin type %q: the reconstruction pinned (%s, %s); the acquisition pinned (%s, %s)",
+					tc.declaredType, rebuiltArt.ResolvedVersion, rebuiltArt.Digest, acquiredArt.ResolvedVersion, acquiredArt.Digest)
 			}
 		})
 	}

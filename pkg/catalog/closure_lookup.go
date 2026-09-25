@@ -978,11 +978,12 @@ func (l *catalogLookup) tier1Resolution(kind, identifier, indexKey, metaVersion,
 // and indexKey came from: the content cache, for an entry the pinned fold placed
 // from a cache slot, and otherwise a catalog directory. It reads the record the
 // fold wrote when it placed the entry, which is the one place that fact is
-// decided; a catalog that holds no such record — one loaded from directories —
-// answers every entry as a catalog-directory one.
+// decided, for every kind the fold places — a Recipe, FeatureRecipe, Plugin or
+// Aggregate, and a library on any axis. A catalog that holds no such record — one
+// loaded from directories — answers every entry as a catalog-directory one.
 func (c *Catalog) indexedResolutionPath(kind, indexKey string) string {
-	if _, fromSlot := c.fromCacheSlot[entityBytesKey(kind, indexKey)]; fromSlot {
-		return closure.ResolutionPathCache
+	if origin, ok := c.origins[entityBytesKey(kind, indexKey)]; ok {
+		return origin.resolutionPath()
 	}
 	return closure.ResolutionPathCatalog
 }

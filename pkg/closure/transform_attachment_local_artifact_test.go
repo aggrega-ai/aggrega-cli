@@ -209,7 +209,7 @@ func TestTheReconstructionPinsACatalogAuthoredAttachmentAsThePullDid(t *testing.
 
 	rebuildLookup, rebuildLoader, rebuilt := transformAttachmentFixture(t)
 	local := (&localAnswers{}).ask
-	if err := closure.ReconstructClosureAxes(context.Background(), &rebuilt, nil, rebuildLoader, rebuildLookup, rebuildLookup, nil, nil, local); err != nil {
+	if err := closure.DescendPinnedAxes(context.Background(), &rebuilt, nil, rebuildLoader, rebuildLookup, rebuildLookup, nil, nil, nil, local); err != nil {
 		t.Fatalf("reconstruction: %v", err)
 	}
 	if err := closure.ReconstructWorkspaceSocketEntities(context.Background(), &rebuilt, []string{localMutatorEntity}, rebuildLoader, rebuildLookup, local); err != nil {

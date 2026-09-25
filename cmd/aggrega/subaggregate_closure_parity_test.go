@@ -161,12 +161,12 @@ spec:
 // transitive sub-aggregate axis: the set the lock-time descent PINS and the set
 // the hermetic reconstruction RE-DERIVES must be the same set.
 //
-// The two sides reach that axis through different orchestrations over the same
-// primitives — the lock-time path drives the descent inline between passes only it
-// runs, while a build or a serve drift check drives it through
-// closure.ReconstructClosureAxes — and each side obtains the resolved-body loader
-// from its own catalog lookup. Nothing in the type system couples them, so
-// agreement is a property that has to be measured. When it fails, the failure is
+// The two sides reach that axis through one orchestration,
+// closure.DescendPinnedAxes, and each hands it its own lookup and obtains the
+// resolved-body loader from its own catalog lookup — the pull's reconciling one,
+// and the build's hermetic one. Nothing in the type system makes those two
+// lookups answer alike, so agreement is a property that has to be measured. When
+// it fails, the failure is
 // silent in the worst possible way: the side that comes up short reports the
 // other side's pins as entities "no longer used by the release", and the
 // remediation it prints names the very command that wrote them.
@@ -246,8 +246,8 @@ func TestSubAggregateAxisAgreesAcrossLockAndBuild(t *testing.T) {
 	}
 	pinned := view.ClosureLookupWithPins(nil, root, cacheDir, nil, catalog.PinsFromLockfile(lf))
 	catalogArtifacts := pipeline.CatalogPluginArtifacts(root, wsCfg, view.PluginColocatedDirs())
-	if rerr := closure.ReconstructClosureAxes(context.Background(), &cl, aggLoader, view.ClosureRecipeLoader(), resolved.Lookup, pinned, reconResolver, reconRefold, catalogArtifacts); rerr != nil {
-		t.Fatalf("ReconstructClosureAxes: %v", rerr)
+	if rerr := closure.DescendPinnedAxes(context.Background(), &cl, aggLoader, view.ClosureRecipeLoader(), resolved.Lookup, pinned, reconResolver, reconRefold, nil, catalogArtifacts); rerr != nil {
+		t.Fatalf("DescendPinnedAxes: %v", rerr)
 	}
 	view.SetPins(catalog.PinsFromLockfile(lf))
 

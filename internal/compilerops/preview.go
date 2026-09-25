@@ -852,6 +852,11 @@ func enforceDeprecation(in PreviewInputs, warn func(WarningClass, string)) (halt
 // plugins.providers change made after the pull does not move the reconstructed
 // closure and the drift comparison stays honest.
 //
+// The first two axes are descended by the same computation the pull ran to pin
+// them (closure.DescendPinnedAxes), handed the build's side of each difference: the
+// resolution's hermetic lookup, a plugin lookup carrying the lockfile's pins, the
+// lockfile's recorded provider bindings, and a re-fold over this view.
+//
 // Reconstruction is hermetic: the closure Lookup carries a nil puller, so no
 // registry fetch fires. The re-fold shifts the view's pin set to the augmented
 // closure to make the just-pinned plugin entities visible, and the pins are
@@ -888,9 +893,12 @@ func reconstructPreviewClosureAxes(ctx context.Context, in PreviewInputs, resolv
 	// The artifact of a Plugin entity authored in a catalog directory is resolved from
 	// this machine by the same question the pull asked when it wrote the lockfile, so
 	// a transform-role attachment authored there reconstructs to the pin the pull
-	// recorded from the same bytes. Both plugin passes below ask it.
+	// recorded from the same bytes. The artifact pass of the descent and the
+	// workspace-socket pass below ask it. The entity pass asks nothing: a build loads
+	// each plugin through the cascade that raises the same condition where it loads
+	// it, so it refuses nothing at that step that its render would not.
 	catalogArtifacts := pipeline.CatalogPluginArtifacts(in.workspaceRoot, in.workspaceConfig, view.PluginColocatedDirs())
-	if err := closure.ReconstructClosureAxes(ctx, &resolved.Closure, aggLoader, recipeLoader, lookup, pinned, resolvePlugin, refold, catalogArtifacts); err != nil {
+	if err := closure.DescendPinnedAxes(ctx, &resolved.Closure, aggLoader, recipeLoader, lookup, pinned, resolvePlugin, refold, nil, catalogArtifacts); err != nil {
 		view.SetPins(catalog.PinsFromLockfile(in.lockfile))
 		return err
 	}

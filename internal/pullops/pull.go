@@ -772,32 +772,20 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	if err := closure.AugmentClosure(ctx, &cl, lazyView, lookup); err != nil {
 		return Result{}, fmt.Errorf("resolve: %w", err)
 	}
-	// Transitive sub-aggregate descent: pin the closure of every Aggregate
-	// reachable through a chain of sub-aggregate references, loading each from the
-	// cache the resolution just populated. This is where the pins are WRITTEN; a
-	// build or a serve drift check re-derives the same axis hermetically from the
-	// pinned cache, so the two sides must reach the identical set.
+	// The pinned axes the closure walk leaves empty — the transitive sub-aggregates,
+	// the pipeline and provider plugin entities the closure's Recipes and
+	// FeatureRecipes reach, and those plugins' .wasm artifacts — are descended by the
+	// one computation a build runs to hold the lockfile to (closure.DescendPinnedAxes).
+	// This is where those pins are WRITTEN; what a pull hands it differs from what a
+	// build hands it only where the two must differ, and each difference is one of
+	// the arguments below.
+	//
+	// The sub-aggregate pass and both plugin passes read the reconciling lookup the
+	// walk used, which honours the prior pins and may fetch.
 	aggLoader, aggErr := closure.RequireAggregateLoader(lookup)
 	if aggErr != nil {
 		return Result{}, aggErr
 	}
-	if err := closure.DescendSubAggregates(ctx, &cl, aggLoader, lookup); err != nil {
-		return Result{}, fmt.Errorf("resolve: sub-aggregate descent: %w", err)
-	}
-	// Pipeline-plugin descent, two-pass: Phase A reads each in-closure
-	// Recipe / FeatureRecipe's spec.pipeline[].plugin URIs — and its spec.provider
-	// binding, resolved by name to the provider-rendering plugin serving it — and pins
-	// a registry-resolved plugin ENTITY into the closure (catalog-entity axis), so a
-	// registry-published pipeline or provider plugin participates in the deterministic
-	// lockfile pin like any other catalog entity. The freshly-pinned plugin entities
-	// are then folded into the lazy index by re-applying the closure's pins, so Phase
-	// B's entity-body load resolves them; the Phase-B loader is RE-DERIVED after the
-	// re-fold (SetPins drops the cached recipe view). Phase B derives each entity's
-	// .wasm reference from its identity and pins the ARTIFACT (plugin axis). A
-	// Tier-1-local plugin entity is left out (resolved at build through its local path),
-	// save a transform-role attachment's, whose artifact is pinned from the local bytes.
-	// Resolution-time only — the build path reads plugin pins from the lockfile and
-	// never descends.
 	// Provider resolution honors the workspace-config plugins.providers selection
 	// and records the resolved target → plugin binding for the lockfile, so build
 	// selects the engine from the lockfile rather than re-reading the config. On an
@@ -825,17 +813,31 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	// machine and never fetched, and a build fetches no plugin, so an artifact the
 	// build could not read now it could not read then either. What it resolves to is
 	// asked of the cascade the build itself loads plugins through, over the same
-	// sources, before the lockfile is written: the entity descent refuses the one no
-	// tier holds, and the artifact descent pins the bytes of a transform-role
-	// attachment authored there. The build's reconstruction asks the same question, so
-	// a pull and the build it feeds cannot disagree about either.
+	// sources, before the lockfile is written, and a pull asks it at both plugin
+	// passes: the entity descent refuses the one no tier holds, and the artifact
+	// descent pins the bytes of a transform-role attachment authored there. The
+	// build's computation asks the artifact pass the same question, so a pull and the
+	// build it feeds cannot disagree about that pin. The same question serves the
+	// verdict-plugin caching further down.
+	//
+	// It is taken over the co-located directories the view holds now, which are the
+	// ones the entity pass reads: the descent changes the view's pins only at its
+	// re-fold, after the entity pass has asked its questions.
 	catalogArtifacts := pipeline.CatalogPluginArtifacts(workspaceRoot, wsCfg, lazyView.PluginColocatedDirs())
-	if err := closure.DescendRecipePluginEntities(ctx, &cl, lazyView.ClosureRecipeLoader(), lookup, providerBindResolver, catalogArtifacts); err != nil {
-		return Result{}, fmt.Errorf("resolve: pipeline-plugin entity descent: %w", err)
+	// The re-fold makes the plugin entities the entity pass just pinned visible to
+	// the artifact pass: re-applying the closure's pins drops the view's recipe set,
+	// and the loader the artifact pass reads is re-derived from the view afterwards.
+	refold := func() (closure.RecipeLoader, error) {
+		lazyView.SetPins(catalog.PinsFromClosure(cl))
+		return lazyView.ClosureRecipeLoader(), nil
 	}
-	lazyView.SetPins(catalog.PinsFromClosure(cl))
-	if err := closure.DescendRecipePluginArtifacts(ctx, &cl, lazyView.ClosureRecipeLoader(), lookup, catalogArtifacts); err != nil {
-		return Result{}, fmt.Errorf("resolve: pipeline-plugin artifact descent: %w", err)
+	// The recipe loader handed in is taken before the sub-aggregate pass. It reads the
+	// view's recipe set as it stands, and nothing changes that set until the re-fold:
+	// the sub-aggregate pass walks the reconciling lookup, which does not hold the
+	// view, and no pin set is installed on the view before the entity pass reads it.
+	if err := closure.DescendPinnedAxes(ctx, &cl, aggLoader, lazyView.ClosureRecipeLoader(), lookup, lookup,
+		providerBindResolver, refold, catalogArtifacts, catalogArtifacts); err != nil {
+		return Result{}, fmt.Errorf("resolve: %w", err)
 	}
 	// Resolve the transform-role governance attachments (label-transform /
 	// annotation-transform) to their pinned lockfile records, in authored order. A

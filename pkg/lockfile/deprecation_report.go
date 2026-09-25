@@ -84,8 +84,8 @@ func (f DeprecationFinding) Notice() string {
 // The bound on that reasoning, stated rather than glossed: the drift gate runs
 // only against a lockfile that pre-existed the build, because a lockfile the
 // build itself pulled is taken to match the closure it was computed from. That
-// correspondence is between two code paths — the pull's closure computation and
-// the build's — which share no symbol, so nothing fails when it stops holding.
+// correspondence is between two computations running the same passes over two
+// lookups, which a pull checks before writing only where its render gets that far.
 // This report does not depend on it: the rows it reads are the rows the pull
 // wrote, whichever path wrote them.
 //

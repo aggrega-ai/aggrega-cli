@@ -9,55 +9,56 @@ import (
 	"sort"
 )
 
-// ReconstructClosureAxes rebuilds the sub-aggregate and pipeline-plugin axes of an
-// already-computed closure from the pinned cache alone, with no registry fetch —
-// the hermetic counterpart to the lock-time descent. A consumer that verifies a
-// closure against an existing lockfile runs it so the closure it diffs carries the
-// same sub-aggregate and plugin entries the lock-time closure pinned, giving the
-// drift check an honest, non-empty expected set rather than the empty plugin and
-// transitive-sub-aggregate axes ComputeClosure leaves.
+// DescendPinnedAxes fills in the pinned axes a closure walk leaves empty — the
+// transitive sub-aggregates, the pipeline and provider plugin entities the closure's
+// Recipes and FeatureRecipes reach, and those plugins' .wasm artifacts. It is the one
+// orchestration of that descent: a pull runs it to compute the axes it pins, and a
+// build or a serve drift check runs it to compute the axes it holds a lockfile to, so
+// the two sides reach their expected closures through the same sequence rather than
+// through two copies of it kept in step by hand.
 //
-// It runs the same primitives the lock-time descent orchestrates, in the same
-// order: transitive sub-aggregate descent, then the two-pass pipeline-plugin
-// descent. The entity descent (DescendRecipePluginEntities) pins each plugin
-// ENTITY on the catalog-entity axis; the caller then re-folds the loader's pin
-// set from the now-augmented closure via refold so the just-pinned entities are
-// visible; the artifact descent
-// (DescendRecipePluginArtifacts) loads each entity to pin its .wasm ARTIFACT on the
-// plugin axis. The refold is caller-supplied because re-deriving a loader's pin set
-// is a catalog-side operation this package does not reach; a nil refold reuses the
-// same loader for both phases.
+// It runs, back to back and in this order: the transitive sub-aggregate descent
+// (DescendSubAggregates); the plugin entity descent (DescendRecipePluginEntities),
+// which pins each plugin ENTITY on the catalog-entity axis; the re-fold, which
+// re-derives the recipe loader over a pin set that includes the entities just pinned,
+// so they are visible to the next pass; and the artifact descent
+// (DescendRecipePluginArtifacts), which loads each entity to pin its .wasm ARTIFACT
+// on the plugin axis. No step of either caller has to run between two of these, so
+// every pass a pull runs only at lock time — attaching the transform-role governance
+// plugins, caching the verdict-role ones, verifying host functions, and descending
+// sources — runs after this returns.
 //
-// providerResolver resolves each Recipe / FeatureRecipe spec.capability binding to
-// its serving provider-rendering Plugin. A verifier passes a resolver that reads
-// the lockfile's recorded bindings, so reconstruction stays invariant to a later
-// workspace-config change. Every loader is nil-safe — a nil loader makes its pass
-// a no-op — so a caller with no registry tier reconstructs nothing.
+// Its parameters are exactly what differs between the two callers, and nothing else
+// does:
 //
-// lookup serves the sub-aggregate descent and pluginLookup the two plugin
-// descents, and they are separate parameters because the two passes need
-// different things of a lookup. A pinned plugin .wasm sits in a cache slot keyed
-// by the content digest only its lockfile pin names, so a lookup that carries no
-// pins cannot address it and the artifact resolves as absent — which is why a
-// verifier hands the plugin passes a lookup carrying the lockfile's pins. The
-// sub-aggregate pass keeps the caller's own lookup, which carries what it needs
-// and the pinned one does not: the Release's external documents. A nil
-// pluginLookup uses lookup for all three passes.
-//
-// localArtifact is the question the lock-time artifact descent asks about the
-// artifact of a Plugin entity authored in a local catalog directory, and a verifier
-// supplies the same one, so a transform-role attachment authored there is pinned
-// from the same local bytes on both sides. It is handed to the artifact descent only:
-// the entity descent's refusal belongs to a pull, and a build loads each plugin
-// through the cascade that raises the same condition where it loads it.
-//
-// The lock-time descent does not route through this wrapper: its descent is
-// interleaved with lock-time-only passes (provider-binding writes, host-function
-// verification, and source descent) that must run between the same primitives, so
-// it orchestrates them inline. This function is the reconstruction path for the
-// hermetic verifiers only; keep the two in sync deliberately rather than folding
-// the lock-time path into it.
-func ReconstructClosureAxes(
+//   - lookup serves the sub-aggregate descent. A pull passes its reconciling lookup,
+//     which carries a puller and honours its prior pins; a build passes the
+//     resolution's own lookup, which carries the Release's external documents and no
+//     puller, because a build never touches the network.
+//   - pluginLookup serves both plugin descents. A pull passes the same lookup it
+//     walked; a build passes one carrying the lockfile's pins, because a pinned .wasm
+//     sits in a cache slot keyed by the content digest only its pin names, and a
+//     lookup without pins resolves it as absent. A nil pluginLookup uses lookup.
+//   - aggLoader and recipeLoader read the bodies each descent walks; each caller
+//     takes them from its own lookup or view. A nil loader makes its pass a no-op.
+//   - providerResolver resolves each Recipe / FeatureRecipe spec.capability binding
+//     to its serving provider-rendering Plugin: from the workspace configuration at
+//     pull, recording what it resolves, and from the lockfile's recorded bindings at
+//     build, so a build is invariant to a configuration edit made after the pull.
+//   - refold re-derives the recipe loader after the entity descent; re-deriving a
+//     view's pin set is a catalog-side operation this package does not reach, so each
+//     caller supplies it over its own view. A nil refold reuses recipeLoader.
+//   - entityLocalArtifact and artifactLocalArtifact are the question each plugin
+//     descent asks about the artifact of a Plugin entity authored in a local catalog
+//     directory (see LocalPluginArtifact). A pull asks it at both: the entity descent
+//     reads only its refusal, so an artifact no local source holds halts the pull
+//     before the lockfile is written, and the artifact descent pins a transform-role
+//     attachment authored there from the local bytes. A build asks it at the artifact
+//     descent only, so the attachment reconstructs to the pin the pull recorded, and
+//     asks the entity descent nothing: a build loads each plugin through the cascade
+//     that raises the same condition where it loads it, so it refuses nothing at that
+//     step that its render would not.
+func DescendPinnedAxes(
 	ctx context.Context,
 	cl *Closure,
 	aggLoader AggregateLoader,
@@ -66,7 +67,8 @@ func ReconstructClosureAxes(
 	pluginLookup Lookup,
 	providerResolver ProviderPluginResolver,
 	refold func() (RecipeLoader, error),
-	localArtifact LocalPluginArtifact,
+	entityLocalArtifact LocalPluginArtifact,
+	artifactLocalArtifact LocalPluginArtifact,
 ) error {
 	if pluginLookup == nil {
 		pluginLookup = lookup
@@ -74,9 +76,7 @@ func ReconstructClosureAxes(
 	if err := DescendSubAggregates(ctx, cl, aggLoader, lookup); err != nil {
 		return fmt.Errorf("sub-aggregate descent: %w", err)
 	}
-	// No local-artifact check: a reconstruction runs no pull, and a build loads each
-	// plugin through the cascade that raises the same condition where it loads it.
-	if err := DescendRecipePluginEntities(ctx, cl, recipeLoader, pluginLookup, providerResolver, nil); err != nil {
+	if err := DescendRecipePluginEntities(ctx, cl, recipeLoader, pluginLookup, providerResolver, entityLocalArtifact); err != nil {
 		return fmt.Errorf("pipeline-plugin entity descent: %w", err)
 	}
 	artifactLoader := recipeLoader
@@ -87,7 +87,7 @@ func ReconstructClosureAxes(
 		}
 		artifactLoader = loader2
 	}
-	if err := DescendRecipePluginArtifacts(ctx, cl, artifactLoader, pluginLookup, localArtifact); err != nil {
+	if err := DescendRecipePluginArtifacts(ctx, cl, artifactLoader, pluginLookup, artifactLocalArtifact); err != nil {
 		return fmt.Errorf("pipeline-plugin artifact descent: %w", err)
 	}
 	return nil
@@ -111,14 +111,27 @@ func ReconstructClosureAxes(
 // axis) is not duplicated — its referenced-from unions and its kind hint is kept
 // so the artifact descent still reaches it.
 //
-// Unlike DescendRecipePluginEntities, a socket entity is NOT filtered by where it
-// resolved from: every URI here is one the lockfile records as a socket pin, so
-// this pass reconstructs exactly what the lockfile records, and filtering any of
-// them out would be the reconstruction gap that surfaces as spurious "no longer
-// used" drift. Integrity
-// is unchanged: the entity bytes are re-hashed here and its .wasm content digest is
-// re-read from the content-addressed cache slot the lockfile pin names, so a
-// drifted cache slot or a tampered lockfile pin still surfaces (a missing slot
+// Unlike DescendRecipePluginEntities, a socket ENTITY is not filtered by where it
+// resolved from, and entityNeedsNoPin is deliberately not applied to it: every URI
+// here is a row the lockfile records, and one of those rows resolves from a local
+// catalog directory by design — a transform-role governance attachment authored
+// there, which the closure walk keeps on the entity axis wherever it resolved from.
+// The registry-only rule would drop that row, and with it the resolution path that
+// sends its artifact to localArtifact, which is the reconstruction gap that surfaces
+// as spurious "no longer used" drift. A socket entity read from a pinned cache slot
+// resolves the cache tier, which the rule keeps anyway.
+//
+// A socket ARTIFACT is pinned by the one pin rule every artifact pin site applies
+// (artifactNeedsNoPin), to the resolution path this pass reads, and the pull's
+// artifact descent applied the same rule to the same entity, whose artifact resolved
+// the same way, when it wrote the row. So this pass reconstructs exactly the
+// artifact rows the pull wrote: a core provider whose .wasm the binary carries is
+// left out on both sides, because the build loads its rendering engine from the same
+// binary, and every other output-shaping socket plugin is pinned on both.
+//
+// Integrity is unchanged: the entity bytes are re-hashed here and its .wasm content
+// digest is re-read from the content-addressed cache slot the lockfile pin names, so
+// a drifted cache slot or a tampered lockfile pin still surfaces (a missing slot
 // leaves the axis short and drift fires; changed bytes fail the pinned-integrity
 // gate or the render read).
 //
@@ -181,10 +194,7 @@ func ReconstructWorkspaceSocketEntities(ctx context.Context, c *Closure, entityU
 		pluginIndex[p.URI] = i
 	}
 	for _, entityURI := range sorted {
-		// The registry-only rule is disabled for the same reason the entity loop
-		// above filters nothing: the artifact belongs to a socket entity the
-		// lockfile pins, so it is pinned regardless of where it resolved from.
-		if err := pinPluginArtifact(ctx, c, loader, lookup, entityURI, entityPaths[entityURI], pluginIndex, false /* registryOnly */, localArtifact); err != nil {
+		if err := pinPluginArtifact(ctx, c, loader, lookup, entityURI, entityPaths[entityURI], pluginIndex, localArtifact); err != nil {
 			return err
 		}
 	}

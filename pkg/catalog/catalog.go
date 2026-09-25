@@ -68,7 +68,8 @@ type Catalog struct {
 	// aggregateSources records the absolute filesystem path each Aggregate
 	// entity was loaded from. Populated by the indexing walk (indexFile) and
 	// exposed by AggregateSourceFile (and the SubAggregateLoader callback) after
-	// normalization against workspaceRoot — see RelativeToWorkspace.
+	// normalization against workspaceRoot — see RelativeToWorkspace. The lazy
+	// view's shell leaves it empty and answers from origins instead.
 	aggregateSources map[string]string
 
 	// workspaceRoot is the workspace directory the caller resolved its
@@ -133,6 +134,7 @@ type Catalog struct {
 	// an identity already seen in the same directory load is the homogenized
 	// ErrDuplicateEntityIdentity collision). It also supplies the winner/shadowed
 	// file paths when an ordered multi-directory merge records a ShadowedEntity.
+	// The lazy view's shell leaves it empty and answers from origins instead.
 	pathByIdentity map[string]string
 
 	// recordedPins holds the content pins in force for each pin-bearing entity
@@ -148,28 +150,21 @@ type Catalog struct {
 	// does. An entity read from no file on disk records nothing.
 	recordedPins recipepin.Lookup
 
-	// layoutDocuments maps "<Kind>:<identity-key>" to the document a
-	// registry-resolved Recipe's or FeatureRecipe's parse was anchored at — its
-	// place in the layout of its cache slot's verified artifact. It is consulted
-	// only after pathByIdentity, and only to say what a source a template produced
-	// at render is relative to; it is never reported as a file anybody authored.
-	// A catalog loaded from directories holds none, so it stays empty there.
-	layoutDocuments map[string]string
-
-	// fromCacheSlot holds "<Kind>:<identity-key>" for every entity this catalog's
-	// index received from a lockfile-pinned cache slot rather than from a document
-	// in a catalog directory. It is written where that fact is learned — the fold
-	// that places a pinned slot's entity in the index — and read by the closure
-	// lookup's first tier, which reports such an entity as resolved from the cache
-	// rather than from the catalog. That report is what a pull-time pin decision
-	// keys on, so a build reconstructing the closure keeps the pin a pull wrote.
+	// origins maps "<Kind>:<identity-key>" to where the entity indexed under that
+	// identity was read from — a catalog-directory document, or a lockfile-pinned
+	// cache slot with the document its content paths anchor at inside the slot's
+	// layout (see entityOrigin). It is the lazy view's one record of that fact,
+	// handed to the shell it builds, and every provenance answer that shell gives is
+	// derived from it: the document an entity was declared in, the anchor its
+	// content paths resolve against, the tier a closure walk reports for it, and the
+	// source a flattened Aggregate records.
 	//
-	// The record is positive on purpose: an entity is marked because the fold saw
-	// it arrive from a slot, never inferred from the absence of a document path,
-	// since some kinds record no path even when a catalog document supplied them.
-	// A catalog loaded from directories holds none, and a nil set answers every
-	// entity as catalog-resolved, which is what such a catalog is.
-	fromCacheSlot map[string]struct{}
+	// A catalog loaded from directories folds no pinned slot and holds no record.
+	// It answers the same questions from its own load-time indexes (pathByIdentity,
+	// aggregateSources), and an identity absent from this map is answered that way —
+	// which is how every entity of such a catalog, and of a Catalog literal, keeps
+	// the answer it has always had.
+	origins map[string]entityOrigin
 
 	// Shadows records, in deterministic listed-directory order, every entity a
 	// higher-precedence catalog directory overrode during a multi-directory
@@ -2237,11 +2232,25 @@ func (c *Catalog) AggregateSourceFile(name string) (string, bool) {
 	if !ok {
 		return "", false
 	}
-	path, ok := c.aggregateSources[key]
+	path, ok := c.aggregateSource(key)
 	if !ok {
 		return "", false
 	}
 	return RelativeToWorkspace(c.workspaceRoot, path), true
+}
+
+// aggregateSource returns the source the Aggregate indexed under key was read from,
+// as the index recorded it: the document path for one authored in a catalog
+// directory, and the label naming its lockfile pin for one read from a cache slot.
+// The lazy view's shell answers from the one record of where each entity came from;
+// a catalog loaded from directories, which holds no record, answers from the path
+// its walk recorded.
+func (c *Catalog) aggregateSource(key string) (string, bool) {
+	if origin, ok := c.origins[entityBytesKey("Aggregate", key)]; ok {
+		return origin.source, true
+	}
+	path, ok := c.aggregateSources[key]
+	return path, ok
 }
 
 // EntityBytes returns the raw authored bytes the catalog retained for the entity
@@ -2297,11 +2306,11 @@ func (c *Catalog) SubAggregateLoader() topology.SubAggregateLoader {
 			return nil, "", nil, cerrors.Unidentified(cerrors.CatalogError, cerrors.SourceLocation{}, fmt.Sprintf("sub-aggregate %q not found in catalog (check the aggregates-block reference names a known Aggregate type, or run `aggrega pull --release <release>` if it must be fetched)", typeName), nil, nil)
 		}
 		agg := c.Aggregates[key]
-		// The return path (TopologyNode provenance) always comes from
-		// aggregateSources, exactly as before — decoupled from raw-byte
-		// acquisition, so a cache-bridged sub-aggregate (bytes, no path) or a
-		// failed re-read does not lose source provenance.
-		absPath := c.aggregateSources[key]
+		// The return path (TopologyNode provenance) always comes from the
+		// recorded source — decoupled from raw-byte acquisition, so a
+		// cache-bridged sub-aggregate (bytes, no path) or a failed re-read does
+		// not lose source provenance.
+		absPath, _ := c.aggregateSource(key)
 		returnPath := RelativeToWorkspace(c.workspaceRoot, absPath)
 		raw := c.subAggregateRawBytes(agg.Metadata.Name, absPath)
 		return resolveSubAggregateParameters(typeName, raw, absPath, returnPath, agg, parentParams)

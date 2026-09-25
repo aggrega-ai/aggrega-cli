@@ -95,13 +95,14 @@ func RequireAggregateLoader(lookup Lookup) (AggregateLoader, error) {
 // It is a separate pass, run after ComputeClosure (and the library discovery
 // passes) — never inside ComputeClosure, which takes no loader and so cannot
 // obtain the parsed bodies this pass re-walks. Every path that pins or verifies a
-// closure runs it: the lock-time descent that writes the pins, and the hermetic
-// reconstruction a build or a serve drift check performs against an existing
-// lockfile (ReconstructClosureAxes). A hermetic caller is unaffected by that
-// reach, because the loader's contract is a read of already-resolved bytes —
-// authored catalog bytes, or the cache slot the pin names, verified
-// against that pin — never a fetch. The shape mirrors DescendRecipeSources: a
-// separate pass over the resolved closure driven by an injected loader.
+// closure runs it, through the one descent of the pinned axes (DescendPinnedAxes):
+// the pull that writes the pins, and the hermetic computation a build or a serve
+// drift check performs against an existing lockfile. A hermetic caller is
+// unaffected by that reach, because the loader's contract is a read of
+// already-resolved bytes — authored catalog bytes, or the cache slot the pin
+// names, verified against that pin — never a fetch. The shape mirrors
+// DescendRecipeSources: a separate pass over the resolved closure driven by an
+// injected loader.
 //
 // Termination has two disciplines, matching the topology flattener:
 //

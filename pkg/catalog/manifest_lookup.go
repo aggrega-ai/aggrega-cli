@@ -392,10 +392,11 @@ func (c *Catalog) RecordedPins() recipepin.Lookup {
 // fact under it.
 //
 // For an entity read from a catalog directory it is the file the entity was
-// indexed from. It reads the one index each backing populates as it walks — the
-// eager load claims each identity as it indexes a file, and the lazy backing
-// hands its own record of the same fact to the shell it builds — so the two
-// backings cannot answer differently.
+// indexed from. The lazy backing answers from its one record of where each entity
+// came from, which it hands to the shell it builds; the eager load, which folds no
+// pinned slot and holds no such record, answers from the identity it claimed as it
+// indexed each file. Each backing therefore answers from the reading that
+// resolved the entity, never from a second record free to disagree with it.
 //
 // For a Recipe or FeatureRecipe resolved from a registry it is the entity's
 // document in the layout of its cache slot, which is where the load anchored the
@@ -403,14 +404,14 @@ func (c *Catalog) RecordedPins() recipepin.Lookup {
 // the same document, so a relative result resolves inside what was published
 // rather than against the directory the build runs in. That document is not a
 // file anybody authored, and nothing that reports where an entity was declared
-// reads it: the authored-file index is consulted first and holds none for such an
-// entity.
+// reads it: the record distinguishes it from an authored document, and every
+// accessor that reports a declaration asks for the authored one.
 func (c *Catalog) entityDocument(kind, provider, name, version string) (string, bool) {
 	key := entityBytesKey(kind, recipeIdentityKey(provider, name, version))
-	if path, ok := c.pathByIdentity[key]; ok && path != "" {
-		return path, true
+	if origin, ok := c.origins[key]; ok {
+		return origin.anchorDocument()
 	}
-	if path, ok := c.layoutDocuments[key]; ok && path != "" {
+	if path, ok := c.pathByIdentity[key]; ok && path != "" {
 		return path, true
 	}
 	return "", false

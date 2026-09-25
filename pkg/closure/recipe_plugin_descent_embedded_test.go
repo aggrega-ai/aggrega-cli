@@ -78,9 +78,7 @@ func TestPluginDescent_BinaryResolvedNotPinned(t *testing.T) {
 // absence let an over-broad decline-to-pin ship: an output-shaping plugin whose .wasm
 // resolves from the compiler binary is STILL recorded on the plugin axis. It shapes the
 // rendered output bytes, so the lockfile pin is what keeps a build reproducible — an
-// unpinned one is adopted the moment it changes rather than at the next pull, and the
-// build's own reconstruction from the lockfile pins it regardless, so a pull that
-// declined it writes a lockfile the very next build reports as drifted.
+// unpinned one is adopted the moment it changes rather than at the next pull.
 //
 // The provider that also resolves from the binary is asserted absent in the SAME
 // descent, so the test cannot pass by pinning everything, and the registry-published

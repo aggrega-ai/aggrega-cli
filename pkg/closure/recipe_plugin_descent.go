@@ -124,11 +124,14 @@ func entityNeedsNoPin(resolutionPath string) bool {
 // Every other output-shaping type IS pinned, even when the binary carries it,
 // and which types those are is read from the canonical plugin-type registry
 // rather than restated here — see shapesRenderedOutput. The lockfile pin is what
-// holds an output-shaping plugin's bytes still until the next pull, and two
-// things break without it: such a plugin is adopted the moment it changes rather
-// than at a pull, and the workspace-socket reconstruction the build performs from
-// the lockfile pins the artifact regardless, so a pull that declined it writes a
-// lockfile the very next build reports as drifted.
+// holds an output-shaping plugin's bytes still until the next pull: without it,
+// such a plugin is adopted the moment it changes rather than at a pull.
+//
+// It is the one pin rule for an artifact. Every site that pins one — the artifact
+// descent a pull and a build both run, and the workspace-socket reconstruction a
+// build performs from the lockfile — applies it to the resolution path it read, so
+// what a pull declines a build declines too, and the build's drift check holds the
+// lockfile to the same artifact rows the pull wrote.
 //
 // An artifact read from beside its entity in a catalog directory is pinned by the
 // same rule. It reaches this predicate only for the entity that stays on the entity
@@ -179,14 +182,14 @@ func shapesRenderedOutput(declaredType plugintype.Type) bool {
 // providerResolver disables provider-plugin descent.
 //
 // The split exists because a freshly-pulled plugin entity is pinned here but is
-// not yet visible to the entity-front the artifact-load phase reads: the caller
-// must re-fold the lazy index from the now-augmented closure between the two
-// phases so the artifact descent's LoadPlugin resolves the just-pinned entity. A
-// single-pass descent loads the body against a pin set that predates the
-// entity's own pin and misses it.
+// not yet visible to the entity-front the artifact-load phase reads: the lazy
+// index is re-folded from the now-augmented closure between the two phases — the
+// re-fold DescendPinnedAxes runs — so the artifact descent's LoadPlugin resolves
+// the just-pinned entity. A single-pass descent loads the body against a pin set
+// that predates the entity's own pin and misses it.
 //
-// Both phases are pull-side augmentations, run after ComputeClosure (and the
-// sub-aggregate / library discovery passes) at lock time — never
+// Both phases run after ComputeClosure (and the sub-aggregate / library discovery
+// passes), through DescendPinnedAxes, for a pull and for a build alike — never
 // inside ComputeClosure, which also runs on the hermetic build and serve paths
 // where no registry pull may occur. The shape mirrors DescendSubAggregates and
 // DescendRecipeSources: a separate pass over the resolved closure driven by an
@@ -351,8 +354,7 @@ func DescendRecipePluginArtifacts(ctx context.Context, c *Closure, loader Recipe
 	sort.Strings(entityURIs)
 
 	for _, entityURI := range entityURIs {
-		registryOnly := true
-		if err := pinPluginArtifact(ctx, c, loader, lookup, entityURI, entityPaths[entityURI], pluginIndex, registryOnly, localArtifact); err != nil {
+		if err := pinPluginArtifact(ctx, c, loader, lookup, entityURI, entityPaths[entityURI], pluginIndex, localArtifact); err != nil {
 			return err
 		}
 	}
@@ -370,17 +372,17 @@ func DescendRecipePluginArtifacts(ctx context.Context, c *Closure, loader Recipe
 //
 // A NotFound artifact is skipped (it may resolve at build through a local path the
 // lock-time lookup does not see, and the build-time loader gate halts on a
-// truly-missing artifact). registryOnly controls whether the registry-only rule
-// applies at all: the pull-side pipeline descent passes true, so an artifact
-// artifactNeedsNoPin reports is left out; the workspace-socket reconstruction passes
-// false, because it reconstructs the socket pins the lockfile records and dropping
-// one of them is exactly the reconstruction gap that surfaces as spurious drift.
+// truly-missing artifact). An artifact artifactNeedsNoPin reports is left out, at
+// every site that pins one — the artifact descent a pull and a build both run, and
+// the workspace-socket reconstruction — so the one pin rule decides each artifact
+// from the resolution path it actually has, and a build reconstructs exactly the
+// artifact rows the pull wrote.
 //
 // entityPath is where the entity itself resolved from, and it decides where the
 // artifact is resolved from (see ResolvePluginArtifact). A refusal from localArtifact
 // halts, because an artifact no local source holds is one no later step can supply. A
 // nil localArtifact leaves such an artifact out.
-func pinPluginArtifact(ctx context.Context, c *Closure, loader RecipeLoader, lookup Lookup, entityURI, entityPath string, pluginIndex map[string]int, registryOnly bool, localArtifact LocalPluginArtifact) error {
+func pinPluginArtifact(ctx context.Context, c *Closure, loader RecipeLoader, lookup Lookup, entityURI, entityPath string, pluginIndex map[string]int, localArtifact LocalPluginArtifact) error {
 	wp, err := loader.LoadPlugin(entityURI)
 	if err != nil {
 		return fmt.Errorf("resolve: load wasm plugin entity %q for artifact descent: %w", entityURI, err)
@@ -396,7 +398,7 @@ func pinPluginArtifact(ctx context.Context, c *Closure, loader RecipeLoader, loo
 	if artRes.NotFound {
 		return nil
 	}
-	if registryOnly && artifactNeedsNoPin(artRes.ResolutionPath, plugintype.Type(wp.Metadata.PluginType)) {
+	if artifactNeedsNoPin(artRes.ResolutionPath, plugintype.Type(wp.Metadata.PluginType)) {
 		return nil
 	}
 	artRef := ResolvedRef{

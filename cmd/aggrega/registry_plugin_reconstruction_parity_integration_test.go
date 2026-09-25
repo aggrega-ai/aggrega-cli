@@ -23,8 +23,12 @@ import (
 // TestIntegration_RegistryPipelinePlugin_PullAndReconstructionAgree compares the
 // two sides of the drift verify directly: what the pull pinned, and what the
 // build's reconstruction re-derives, on the entity axis and on the plugin axis —
-// both non-empty, since the plugin rows are the subject. The workspace is the
-// one registry_plugin_frozen_build_integration_test.go lays down.
+// both non-empty, since the plugin rows are the subject. Both sides descend those
+// axes through the one computation (closure.DescendPinnedAxes), each reached
+// through its own surface — the pull through pullops, the build through the
+// preview — so the comparison is between the two sets of arguments that
+// computation is handed. The workspace is the one
+// registry_plugin_frozen_build_integration_test.go lays down.
 //
 // The negative control reconstructs the same closure with its plugin passes
 // handed a lookup that carries no pins, which cannot address a pinned .wasm. The
@@ -83,7 +87,7 @@ func TestIntegration_RegistryPipelinePlugin_PullAndReconstructionAgree(t *testin
 	}
 	bindings := lockfile.ProviderBindings(lf)
 	control := resolved.Closure
-	if rerr := closure.ReconstructClosureAxes(context.Background(), &control, aggLoader, controlView.ClosureRecipeLoader(), resolved.Lookup,
+	if rerr := closure.DescendPinnedAxes(context.Background(), &control, aggLoader, controlView.ClosureRecipeLoader(), resolved.Lookup,
 		nil, // no pinned lookup: the plugin passes fall back to the unpinned one
 		func(ref string) (types.Plugin, bool, error) {
 			return controlView.ProviderPluginForTarget(ref, bindings)
@@ -92,6 +96,7 @@ func TestIntegration_RegistryPipelinePlugin_PullAndReconstructionAgree(t *testin
 			controlView.SetPins(catalog.PinsFromClosure(control))
 			return controlView.ClosureRecipeLoader(), nil
 		},
+		nil, // a build asks the entity pass nothing
 		nil, // the plugin under test is registry-published, so no catalog-local artifact is asked about
 	); rerr != nil {
 		t.Fatalf("control reconstruction: %v", rerr)
