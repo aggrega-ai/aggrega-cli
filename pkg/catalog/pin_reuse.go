@@ -20,7 +20,12 @@ type PinReuseMode struct {
 	Upgrade bool
 	// UpgradeTargets names the entity URIs to upgrade. Read only when Upgrade is set.
 	UpgradeTargets []string
-	// VerifyOnly is a read-only run: it writes no lockfile and re-fetches nothing.
+	// VerifyOnly marks a run that compares the lockfile against the resolution
+	// instead of writing it. It moves no pin decision: a verifying run is handed
+	// the reuse verification the writing run it stands in for is handed, so the
+	// pins it honours — and what it reads from and fetches into the content cache —
+	// are that run's, which is what lets it answer whether that run would change
+	// the lockfile.
 	VerifyOnly bool
 }
 
@@ -54,11 +59,11 @@ type PinReuse struct {
 // read, exactly once, so every consumer reads the returned PinReuse rather than
 // the file.
 //
-// The outcomes:
+// The outcomes below hold for a verify-only run exactly as for the writing run it
+// stands in for, so a verification compares the lockfile against the resolution
+// that run would perform — the recorded pins honoured, the cache slots they name
+// read — rather than against one no pull performs.
 //
-//   - A verify-only run establishes no reuse verification. It compares the
-//     lockfile against the freshly-computed closure instead of re-fetching, so
-//     there is nothing to re-pin.
 //   - A targeted upgrade holds every pin it did not name, so it requires a prior
 //     lockfile: with none there is no pin set to reduce, and it halts. Reducing
 //     that set is the whole mechanism — a URI dropped from the honored pins
@@ -95,9 +100,6 @@ func PinReuseFromLockfile(lockfilePath, releasePath string, mode PinReuseMode, u
 		if lf, _, err := lockfile.LoadLockfile(lockfilePath); err == nil {
 			reuse.Prior = lf
 		}
-	}
-	if mode.VerifyOnly {
-		return reuse, nil
 	}
 	if mode.Targeted() {
 		if reuse.Prior == nil {

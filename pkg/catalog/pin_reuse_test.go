@@ -44,8 +44,7 @@ func priorPinFixture(t *testing.T) string {
 }
 
 // inlineReuseDecision is an independent re-derivation of the fill-vs-refuse
-// policy, written out longhand as the pull command's own control flow expressed
-// it before the decision became callable. It is the oracle
+// policy, written out longhand. It is the oracle
 // TestPinReuseFromLockfile_ParityWithIndependentDerivation compares against.
 //
 // DELIBERATE NEAR-DUPLICATE — do not "unify" it with PinReuseFromLockfile. A
@@ -79,26 +78,26 @@ func inlineReuseDecision(lockfilePath, releasePath string, mode catalog.PinReuse
 		}
 	}
 
+	// mode.VerifyOnly is deliberately not read: a verifying run is handed exactly
+	// the verification the writing run it stands in for is handed.
 	var reuse *catalog.ReuseVerification
-	if !mode.VerifyOnly {
-		if targeted {
-			if prior == nil {
-				return nil, nil, fmt.Errorf("no lockfile to upgrade at %s; run `aggrega pull --release %s` first to create one", lockfilePath, releasePath)
-			}
-			pins := catalog.PinsFromLockfile(prior)
-			for _, target := range mode.UpgradeTargets {
-				_, pinned := pins[target]
-				if !pinned && !vouchedFor(target) {
-					return nil, nil, fmt.Errorf("%q is not pinned in the lockfile, and it is not a plugin whose identity is recorded beside the lockfile; nothing to upgrade", target)
-				}
-				if pinned {
-					delete(pins, target)
-				}
-			}
-			reuse = &catalog.ReuseVerification{PriorPins: pins}
-		} else if prior != nil {
-			reuse = &catalog.ReuseVerification{PriorPins: catalog.PinsFromLockfile(prior)}
+	if targeted {
+		if prior == nil {
+			return nil, nil, fmt.Errorf("no lockfile to upgrade at %s; run `aggrega pull --release %s` first to create one", lockfilePath, releasePath)
 		}
+		pins := catalog.PinsFromLockfile(prior)
+		for _, target := range mode.UpgradeTargets {
+			_, pinned := pins[target]
+			if !pinned && !vouchedFor(target) {
+				return nil, nil, fmt.Errorf("%q is not pinned in the lockfile, and it is not a plugin whose identity is recorded beside the lockfile; nothing to upgrade", target)
+			}
+			if pinned {
+				delete(pins, target)
+			}
+		}
+		reuse = &catalog.ReuseVerification{PriorPins: pins}
+	} else if prior != nil {
+		reuse = &catalog.ReuseVerification{PriorPins: catalog.PinsFromLockfile(prior)}
 	}
 	return prior, reuse, nil
 }
@@ -242,10 +241,16 @@ func TestPinReuseFromLockfile_ParityWithIndependentDerivation(t *testing.T) {
 			},
 		},
 		{
-			name:        "verify-only reads the prior lockfile and honors nothing",
+			name:        "verify-only with a prior lockfile honors every recorded pin, as the reconcile it stands in for does",
 			mode:        catalog.PinReuseMode{VerifyOnly: true},
 			priorExists: true,
 			wantPrior:   true,
+			wantPins:    []string{"core/DbSizing", "core/cache", "core/database", "core/database-recipe", "core/helm-renderer"},
+		},
+		{
+			name:        "verify-only with no prior lockfile has nothing to honor",
+			mode:        catalog.PinReuseMode{VerifyOnly: true},
+			priorExists: false,
 		},
 	}
 
@@ -334,6 +339,82 @@ func TestPinReuseFromLockfile_ParityWithIndependentDerivation(t *testing.T) {
 				if pin != wantReuse.PriorPins[uri] {
 					t.Errorf("pin %q = %+v; independent derivation has %+v", uri, pin, wantReuse.PriorPins[uri])
 				}
+			}
+		})
+	}
+}
+
+// TestPinReuseFromLockfile_VerifyOnlyHonoursWhatTheReconcileHonours pins the one
+// pin policy the verify-only run shares with the reconcile it answers for: over
+// the same prior lockfile, the verify-only decision reads the same prior, honours
+// the same pins at the same versions and digests, and threads the same notice
+// sink. A verification handed fewer pins than the reconcile would compare the
+// lockfile against a resolution no pull performs — a floated bare reference read
+// as drift, a cached plugin artifact nothing can address — so each row fails if
+// the two decisions part.
+//
+// Each row is asserted to honour a non-empty set before the sets are compared,
+// where the fixture has pins to honour, so equality cannot pass on two empties.
+func TestPinReuseFromLockfile_VerifyOnlyHonoursWhatTheReconcileHonours(t *testing.T) {
+	unparsable := func(t *testing.T) string {
+		path := filepath.Join(t.TempDir(), "release.lock")
+		if err := os.WriteFile(path, []byte("this: is: not: a: lockfile\n"), 0o644); err != nil {
+			t.Fatalf("seed unparsable lockfile: %v", err)
+		}
+		return path
+	}
+	cases := []struct {
+		name     string
+		lockfile func(t *testing.T) string
+		wantPins bool
+	}{
+		{name: "a prior lockfile", lockfile: priorPinFixture, wantPins: true},
+		{name: "no prior lockfile", lockfile: func(t *testing.T) string { return filepath.Join(t.TempDir(), "release.lock") }},
+		{name: "an unreadable prior lockfile", lockfile: unparsable},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			path := tc.lockfile(t)
+			var reconcileNotices, verifyNotices []string
+			reconcile, rerr := catalog.PinReuseFromLockfile(path, "release.yaml", catalog.PinReuseMode{}, nil,
+				func(n string) { reconcileNotices = append(reconcileNotices, n) })
+			verify, verr := catalog.PinReuseFromLockfile(path, "release.yaml", catalog.PinReuseMode{VerifyOnly: true}, nil,
+				func(n string) { verifyNotices = append(verifyNotices, n) })
+			if rerr != nil || verr != nil {
+				t.Fatalf("decision halted: reconcile %v, verify-only %v", rerr, verr)
+			}
+			if (reconcile.Prior != nil) != (verify.Prior != nil) {
+				t.Errorf("prior lockfile read: reconcile %t, verify-only %t", reconcile.Prior != nil, verify.Prior != nil)
+			}
+			if (reconcile.Verification != nil) != (verify.Verification != nil) {
+				t.Fatalf("reuse verification established: reconcile %t, verify-only %t — the verify-only run would compare against a resolution the reconcile does not perform",
+					reconcile.Verification != nil, verify.Verification != nil)
+			}
+			if !tc.wantPins {
+				if verify.Verification != nil {
+					t.Errorf("verify-only honoured %v over a fixture with nothing to honour", pinKeys(verify.Verification.PriorPins))
+				}
+				return
+			}
+			if verify.Verification == nil || len(verify.Verification.PriorPins) == 0 {
+				t.Fatalf("verify-only honours no pins over a prior lockfile that records some")
+			}
+			if !slices.Equal(pinKeys(reconcile.Verification.PriorPins), pinKeys(verify.Verification.PriorPins)) {
+				t.Errorf("honoured pins: reconcile %v, verify-only %v",
+					pinKeys(reconcile.Verification.PriorPins), pinKeys(verify.Verification.PriorPins))
+			}
+			for uri, pin := range reconcile.Verification.PriorPins {
+				if got := verify.Verification.PriorPins[uri]; got != pin {
+					t.Errorf("pin %q: reconcile %+v, verify-only %+v", uri, pin, got)
+				}
+			}
+			if verify.Verification.Warn == nil {
+				t.Fatalf("verify-only dropped the notice sink: a drifted cache slot it refetches would be refetched silently")
+			}
+			verify.Verification.Warn("probe")
+			reconcile.Verification.Warn("probe")
+			if len(verifyNotices) != 1 || len(reconcileNotices) != 1 {
+				t.Errorf("notices reaching each sink: reconcile %v, verify-only %v; want one each", reconcileNotices, verifyNotices)
 			}
 		})
 	}

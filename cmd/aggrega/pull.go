@@ -83,11 +83,11 @@ that same step instead; --pin-sources=false restores the halt for one run.`,
 			if opts.verify && opts.upgrade {
 				return fmt.Errorf("--verify and --upgrade are mutually exclusive")
 			}
-			// A verify already writes nothing, so the pair would leave --dry-run with
-			// nothing to do. It is refused rather than ignored, because a flag that
-			// quietly does nothing is read as a flag that did something.
+			// A verify already writes none of the files a dry run reports, so the pair
+			// would leave --dry-run with nothing to do. It is refused rather than ignored,
+			// because a flag that quietly does nothing is read as a flag that did something.
 			if opts.verify && opts.dryRun {
-				return fmt.Errorf("--verify and --dry-run are mutually exclusive: --verify already writes nothing")
+				return fmt.Errorf("--verify and --dry-run are mutually exclusive: --verify already writes no lockfile, entity.lock or plugin trust record")
 			}
 			if len(args) > 0 && !opts.upgrade {
 				return fmt.Errorf("positional arguments name upgrade targets and require --upgrade")
@@ -129,13 +129,13 @@ that same step instead; --pin-sources=false restores the halt for one run.`,
 	c.Flags().StringVar(&opts.releasePath, "release", "", helpReleasePath)
 	c.Flags().StringArrayVar(&opts.catalogDirs, "catalog", nil, helpCatalogDir)
 	c.Flags().BoolVar(&opts.upgrade, "upgrade", false, "Re-resolve dependencies from current registry state, floating each to the highest available version. Bare (no positional URIs) discards the lockfile and re-resolves every entity, and asks for confirmation first because it drops every recorded pin; with one or more entity URIs, re-resolves only those, holding all other pins and the recorded external inputs unchanged, and asks nothing (mutually exclusive with --verify)")
-	c.Flags().BoolVar(&opts.verify, "verify", false, "Verify the existing lockfile against the current dependency resolution without writing; exits non-zero on drift or missing lockfile. Also holds the entity.lock beside each Recipe and FeatureRecipe in your catalog directories that the Release reaches to what a build compares it with, and exits non-zero on a pin a build would refuse: an imported file that no longer matches its recorded digest, a local source whose files no longer match their recorded digests, or a source pin that disagrees with the lockfile. Also reports the compiler and core-plugin versions the lockfile records — reported for audit and never compared against this binary, so a toolchain difference is never drift (mutually exclusive with --upgrade)")
+	c.Flags().BoolVar(&opts.verify, "verify", false, "Verify the existing lockfile against the dependency resolution a pull would perform now, without writing the lockfile, the plugin trust record or any entity.lock; exits non-zero on drift or missing lockfile. The resolution honors the pins the lockfile records exactly as a pull does: a reference whose registry has published a newer version since the pull is not drift, because a pull would hold its pin, and a registry now serving different bytes under a pinned version halts the verify as it halts a pull. The content cache is read and filled as a pull reads and fills it: an entry the cache holds under its pin is read from there without asking a registry, one it does not hold is fetched, and one that no longer matches its pin is treated exactly as a pull treats it. Also holds the entity.lock beside each Recipe and FeatureRecipe in your catalog directories that the Release reaches to what a build compares it with, and exits non-zero on a pin a build would refuse: an imported file that no longer matches its recorded digest, a local source whose files no longer match their recorded digests, or a source pin that disagrees with the lockfile. Also reports the compiler and core-plugin versions the lockfile records — reported for audit and never compared against this binary, so a toolchain difference is never drift (mutually exclusive with --upgrade)")
 	c.Flags().BoolVar(&opts.includePrerelease, "include-prerelease", false, "Not yet implemented: accepted and ignored, so a script that passes it keeps working when it starts having an effect")
 	c.Flags().BoolVar(&opts.detail, "detail", false, "Print, per resolved entity, what this pull did — fetched fresh from a registry, reused a cache slot, found in a local catalog, served from inside the compiler binary, or external. Stdout only; not written to the lockfile")
 	c.Flags().BoolVar(&opts.quiet, "quiet", false, "Silence the pull-progress surface on stderr. Does not affect stdout. Takes precedence over --progress")
 	c.Flags().BoolVar(&opts.progress, "progress", false, "Force the pull-progress surface on even when stderr is not a terminal, printing plain static phase lines. The default is auto: the interactive phase checklist is shown only when stderr is a terminal")
 	c.Flags().BoolVar(&opts.assumeYes, "yes", false, "Answer the bare --upgrade confirmation in advance, for non-interactive use. It reaches that one prompt and nothing else: every other form of pull asks nothing, so passing it changes no behaviour there")
-	c.Flags().BoolVar(&opts.dryRun, "dry-run", false, "Resolve the dependencies and print what this pull would write instead of writing it: each file's path and the content it would hold go to stdout, and the lockfile, the entity.lock beside every Recipe and FeatureRecipe whose recorded pins would move under --pin-sources, and the plugin trust record are all left untouched. Only the files that would actually change are named. The resolution itself runs exactly as it would otherwise, so the content cache still fills, a pull that would halt on an unpinned entity halts here too, and a bare --upgrade asks nothing because it drops no pin — what a dry run shows is what a pull would write. Not accepted with --verify, which already writes nothing")
+	c.Flags().BoolVar(&opts.dryRun, "dry-run", false, "Resolve the dependencies and print what this pull would write instead of writing it: each file's path and the content it would hold go to stdout, and the lockfile, the entity.lock beside every Recipe and FeatureRecipe whose recorded pins would move under --pin-sources, and the plugin trust record are all left untouched. Only the files that would actually change are named. The resolution itself runs exactly as it would otherwise, so the content cache still fills, a pull that would halt on an unpinned entity halts here too, and a bare --upgrade asks nothing because it drops no pin — what a dry run shows is what a pull would write. Not accepted with --verify, which already writes none of them")
 	c.Flags().BoolVar(&opts.pinSources, "pin-sources", false, helpPullPinSources)
 	if err := c.MarkFlagRequired("release"); err != nil {
 		panic(err)
@@ -330,8 +330,8 @@ func pullRunWithResult(ctx context.Context, cfg pullConfig) (pullops.Result, err
 	if out == nil {
 		out = os.Stdout
 	}
-	// Verify is a quick read-only check with an early return, so it carries no
-	// progress surface; the default and --upgrade paths walk the full spine.
+	// Verify returns before the lockfile and the files beside it are written, so it
+	// carries no progress surface; the default and --upgrade paths walk the full spine.
 	diag := cfg.diag
 	if cfg.Verify {
 		diag.quiet = true

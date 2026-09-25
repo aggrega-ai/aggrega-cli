@@ -240,8 +240,9 @@ data:
 }
 
 // TestPullDryRunIsRefusedWithVerify holds the pairing to a refusal rather than to
-// a silent no-op. A verify already writes nothing, so accepting the pair would
-// leave the flag doing nothing while reading as though it had done something.
+// a silent no-op. A verify already writes none of the files a dry run reports, so
+// accepting the pair would leave the flag doing nothing while reading as though it
+// had done something.
 func TestPullDryRunIsRefusedWithVerify(t *testing.T) {
 	cmd := newPullCmd()
 	cmd.SetOut(io.Discard)

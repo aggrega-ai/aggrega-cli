@@ -145,8 +145,13 @@ type Config struct {
 	// there is none to drop — and re-resolves the attachment it names.
 	UpgradeTargets []string
 
-	// Verify checks the existing lockfile against the current resolution without
-	// writing anything at all, and reports what the lockfile records.
+	// Verify checks the existing lockfile against the resolution the same run
+	// would perform if it wrote — the recorded pins honoured exactly as that run
+	// honours them — and reports what the lockfile records. It writes no lockfile,
+	// no plugin trust record and no entity lock. The content cache it resolves
+	// through is read and filled as that run reads and fills it: an entry the cache
+	// holds under its pin is read from there, one it does not hold is fetched, and
+	// one that no longer matches its pin is met exactly as that run meets it.
 	Verify bool
 
 	// DryRun computes everything the run would put on disk and puts none of it
@@ -258,8 +263,9 @@ type Result struct {
 	// LockfilePath is the per-Release lockfile this run wrote, or verified.
 	LockfilePath string
 
-	// Verified reports that this run only checked the lockfile against the current
-	// resolution and wrote nothing at all.
+	// Verified reports that this run only checked the lockfile against the
+	// resolution it would have performed had it written, and wrote none of the
+	// files a writing run produces.
 	Verified bool
 
 	// Closure is the resolution this run computed.
@@ -906,7 +912,11 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 
 	if cfg.Verify {
 		// Verify-only path: load the existing lockfile and check drift against the
-		// freshly-computed closure. No disk writes.
+		// closure just computed, which honoured the recorded pins exactly as a writing
+		// run does — the reuse decision above makes no distinction between the two,
+		// and nothing here builds a pin set of its own. This branch writes
+		// none of the files a writing run produces; the content cache the walk read
+		// through is the only thing it may have filled.
 		//
 		// The source-artifact axis is checked separately, and it has to be: this
 		// branch returns before the graph build below, so the closure in hand has
